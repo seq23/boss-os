@@ -24,6 +24,7 @@ import { bridge } from "./routes/bridge";
 import { quant } from "./routes/quant";
 import { continuity } from "./routes/continuity";
 import { sync } from "./routes/sync";
+import { policy } from "./routes/policy";
 import { runSentinel } from "./governance/sentinel";
 import { investor } from "./routes/investor";
 import { wealth } from "./routes/wealth";
@@ -112,6 +113,7 @@ app.route("/api/vault", vault);
 app.route("/api/trading", trading);
 app.route("/api/system", system);
 app.route("/api/sync", sync);
+app.route("/api/policy", policy);
 
 app.all("/api/*", (c) => c.json({ ok: false, error: "No such endpoint" }, 404));
 

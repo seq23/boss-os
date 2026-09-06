@@ -325,6 +325,12 @@ export const api = {
   proposeHandoff: (body: unknown) => call<any>("/bridge/handoffs", post("", body)),
   bridgeCheck: (direction: string, category: string) => call<any>(`/bridge/check/${direction}/${category}`),
 
+  // ── The airlock, made legible (Batch 8) ──
+  policyOverview: () => call<any>("/policy/overview"),
+  policyFor: (entity: string, recordId?: string) =>
+    call<any>(`/policy/for/${entity}${recordId ? `?record_id=${encodeURIComponent(recordId)}` : ""}`),
+  tightenRecord: (body: unknown) => call<any>("/policy/tighten", post("", body)),
+
   // ── Sync: devices, conflicts, and the resolution of one (Batch 6) ──
   syncStatus: () => call<any>("/sync/status"),
   syncDevices: () => call<any>("/sync/devices"),

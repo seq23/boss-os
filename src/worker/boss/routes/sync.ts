@@ -5,7 +5,7 @@ import { logEvent } from "../lib/log";
 import { AirlockRefusal } from "../policy/airlock";
 import {
   prepareMutation, commitMutation, pull as pullLedger, registerDevice, revokeDevice,
-  advanceCursor, openConflicts, SyncRefusal,
+  advanceCursor, openConflicts, assertEntityMaySync, SyncRefusal,
 } from "../sync/ledger";
 import { ensureDay, dayId } from "./today";
 
@@ -357,6 +357,22 @@ sync.post("/conflicts/:id/resolve", async (c) => {
    * it pulls anything else, and the version moves - deliberately, even for KEPT_CURRENT, because
    * everyone must re-base on the state that was agreed rather than the one they happened to hold.
    */
+  /*
+   * THE RESOLUTION GOES THROUGH THE SAME DOOR AS EVERY OTHER MUTATION.
+   *
+   * Found in review: this path wrote to sync_ledger directly, which is the one place in the system
+   * that reaches the ledger without passing prepareMutation — and therefore without the airlock or
+   * the never-syncs list. A conflict row for a sovereign entity, however it got there, would have
+   * been resolvable into a ledger entry naming it. The pull query would still have filtered it, but
+   * "a second gate would have caught it" is not a reason to leave the first one open.
+   */
+  await assertEntityMaySync(c.env.DB, row.entity, row.record_id).catch((err) => {
+    throw badRequest(
+      `${row.entity} is not eligible to synchronize, so a resolution cannot be recorded for it.`,
+      (err as Error).message,
+    );
+  });
+
   const nextVersion = (row.current_version ?? 0) + 1;
   await c.env.DB.batch([
     c.env.DB

@@ -145,6 +145,62 @@ describe("Batch 9 — sovereign data must not reach any cloud exit", () => {
     expect(all).not.toContain(SENTINEL);
   });
 
+  /**
+   * EVERY NEW SURFACE IS A NEW EXIT. The airlock overview and the conflict inbox were added after
+   * this suite existed, and both describe sovereign entities for a living — which is exactly the
+   * shape that leaks content while looking like metadata. They may name an entity and an id; they
+   * may never carry what is inside one.
+   */
+  it("describes sovereign entities without quoting them (airlock overview)", async () => {
+    const { body } = await apiJson("/api/policy/overview");
+    expect(JSON.stringify(body)).not.toContain(SENTINEL);
+    // …and it is genuinely describing them, so the assertion above is not vacuous.
+    const names = (body.data.entities ?? []).map((e: any) => e.entity);
+    expect(names).toContain("dream_entries");
+    expect(body.data.counts.local_only).toBeGreaterThan(0);
+  });
+
+  it("names a record in the conflict inbox without carrying its contents", async () => {
+    await api("/api/sync/devices", { method: "POST", body: { device_id: "dev_inbox", kind: "private", label: "inbox" } });
+    // A conflict on a cloud-eligible entity, so there IS something in the inbox to inspect.
+    for (const base of [null, 1, 1]) {
+      await apiJson("/api/sync/push", {
+        method: "POST",
+        body: { device_id: "dev_inbox", mutations: [{ mutation_id: `mut_${crypto.randomUUID()}`, entity: "tasks", record_id: "t_leak", base_version: base }] },
+      });
+    }
+    const { body } = await apiJson("/api/sync/conflicts");
+    expect(body.data.conflicts.length).toBeGreaterThan(0);
+    expect(JSON.stringify(body)).not.toContain(SENTINEL);
+  });
+
+  it("the per-record policy lookup answers about a sovereign record without returning it", async () => {
+    const { body } = await apiJson("/api/policy/for/dream_entries?record_id=dream_canary");
+    expect(body.data.stays_here).toBe(true);
+    expect(JSON.stringify(body)).not.toContain(SENTINEL);
+  });
+
+  /**
+   * Found in the Batch 10 review: resolving a conflict wrote to the ledger directly, which was the
+   * only path to it that skipped prepareMutation and therefore the airlock. A planted conflict on a
+   * sovereign entity is the exploit, so it is the test.
+   */
+  it("cannot be talked into ledgering a sovereign entity through a planted conflict", async () => {
+    await env.DB
+      .prepare(
+        `INSERT INTO sync_conflict (id, entity, record_id, mutation_id, base_version, current_version, device_id)
+         VALUES ('cfl_planted', 'dream_entries', 'dream_canary', 'mut_planted', 0, 1, 'dev_hostile')`,
+      )
+      .run();
+    const res = await api("/api/sync/conflicts/cfl_planted/resolve", {
+      method: "POST",
+      body: { resolution: "MERGED_BY_HAND", by: "attacker" },
+    });
+    expect(res.status).toBe(400);
+    const led = await env.DB.prepare(`SELECT COUNT(*) AS n FROM sync_ledger WHERE entity = 'dream_entries'`).first<{ n: number }>();
+    expect(led!.n).toBe(0);
+  });
+
   it("does not carry a sovereign record across the Firm OS bridge", async () => {
     const res = await api("/api/bridge/handoffs", {
       method: "POST",

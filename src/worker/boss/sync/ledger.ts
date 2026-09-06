@@ -80,7 +80,7 @@ async function assertDeviceMaySync(db: D1Database, deviceId: string): Promise<vo
  */
 const NEVER_SYNCS = new Set(["settings"]);
 
-async function assertEntityMaySync(db: D1Database, entity: string, recordId: string): Promise<void> {
+export async function assertEntityMaySync(db: D1Database, entity: string, recordId: string): Promise<void> {
   if (NEVER_SYNCS.has(entity)) {
     throw new SyncRefusal(
       "NEVER_SYNCS",

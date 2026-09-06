@@ -10,3 +10,8 @@ playwright-report/
 test-results/
 *.local
 backups/
+
+# Baseline snapshot ZIPs. Build outputs of a released state, not source: they are
+# regenerated from a commit with `git archive`, so storing them here would be storing
+# the repo inside itself.
+ARTIFACTS/

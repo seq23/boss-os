@@ -144,6 +144,40 @@ describe("Boss OS v20.1 §2.3 — the sync substrate", () => {
     if (committed.status === "APPLIED" && retried.status === "REPLAY") expect(retried.version).toBe(committed.version);
   });
 
+  /**
+   * Deletion is a tombstone, never an absence.
+   *
+   * A row that simply vanishes is indistinguishable from a row that never arrived, so the other
+   * device re-creates it on the next pull and the deletion undoes itself — quietly, and for ever.
+   * The tombstone is the difference between "gone" and "never here".
+   */
+  it("carries a deletion as a tombstone the other side can see", async () => {
+    await commitMutation(env.DB, await prepareMutation(env.DB, mut({ recordId: "doomed" })));
+    const gone = await commitMutation(env.DB, await prepareMutation(env.DB, mut({ recordId: "doomed", baseVersion: 1, tombstone: true })));
+    expect(gone.status).toBe("APPLIED");
+
+    const rv = await env.DB.prepare("SELECT version, tombstone FROM record_version WHERE entity='tasks' AND record_id='doomed'").first<{ version: number; tombstone: number }>();
+    expect(rv!.version).toBe(2);
+    expect(rv!.tombstone).toBe(1);
+
+    // It travels: a puller learns the record was deleted rather than never hearing of it again.
+    const page = await pull(env.DB, CLOUD, 0, 100);
+    const last = page.rows.filter((r: any) => r.record_id === "doomed").pop();
+    expect(last.tombstone).toBe(1);
+  });
+
+  it("a tombstoned record can still be edited afterwards, and the version keeps moving", async () => {
+    await commitMutation(env.DB, await prepareMutation(env.DB, mut({ recordId: "back" })));
+    await commitMutation(env.DB, await prepareMutation(env.DB, mut({ recordId: "back", baseVersion: 1, tombstone: true })));
+    // Undeleting is an ordinary mutation from the tombstone's version, not a special case — which
+    // is what stops "restore a deleted thing" needing a second code path nobody tests.
+    const back = await commitMutation(env.DB, await prepareMutation(env.DB, mut({ recordId: "back", baseVersion: 2, tombstone: false })));
+    expect(back.status).toBe("APPLIED");
+    const rv = await env.DB.prepare("SELECT version, tombstone FROM record_version WHERE entity='tasks' AND record_id='back'").first<{ version: number; tombstone: number }>();
+    expect(rv!.version).toBe(3);
+    expect(rv!.tombstone).toBe(0);
+  });
+
   it("registering the replacement machine is a row, not a migration", async () => {
     await revokeDevice(env.DB, MAC, "upgraded");
     await registerDevice(env.DB, { deviceId: "dev_private_the_real_one", kind: "private", label: "The laptop she actually wanted" });

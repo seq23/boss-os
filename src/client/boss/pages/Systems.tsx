@@ -16,9 +16,10 @@ import { ErrorNotice } from "../components/Notice";
  * nothing, which is a state each panel names rather than showing an empty box. None of them
  * fabricates a number the server did not send.
  */
-type SectionId = "governance" | "knowledge" | "prompt" | "quant" | "bridge" | "capability" | "runtimes" | "sync";
+type SectionId = "airlock" | "governance" | "knowledge" | "prompt" | "quant" | "bridge" | "capability" | "runtimes" | "sync";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
+  { id: "airlock", label: "Airlock" },
   { id: "governance", label: "Governance" },
   { id: "knowledge", label: "Knowledge" },
   { id: "prompt", label: "Prompts" },
@@ -30,7 +31,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
 ];
 
 export function Systems() {
-  const [section, setSection] = useState<SectionId>("governance");
+  const [section, setSection] = useState<SectionId>("airlock");
   return (
     <>
       <div className="seg" role="tablist" aria-label="Systems">
@@ -46,6 +47,7 @@ export function Systems() {
           </button>
         ))}
       </div>
+      {section === "airlock" && <Airlock />}
       {section === "governance" && <Governance />}
       {section === "knowledge" && <Knowledge />}
       {section === "prompt" && <Prompts />}
@@ -441,6 +443,86 @@ function Sync() {
                 </div>
               </div>
             </div>
+          ))
+        )}
+      </section>
+    </>
+  );
+}
+
+
+/* ─── The airlock, legible ────────────────────────────────────────────────── */
+
+/**
+ * Batch 8 asks for the boundary to be legible "without creating daily friction", and those pull
+ * against each other. The resolution: this ANSWERS rather than warns. It is somewhere you look,
+ * not something that interrupts you — a banner on every screen would be read for a week and then
+ * not at all, which is worse than no banner because it looks like protection.
+ *
+ * It reports private compute honestly. No local runtime exists on this deployment, so it says so
+ * and says what would make it true, rather than showing a status that reads like readiness.
+ */
+function Airlock() {
+  const view = usePanel(() => api.policyOverview());
+  const d = view.data as any;
+  const [showAll, setShowAll] = useState(false);
+
+  if (view.error) return <section className="panel"><ErrorNotice error={view.error} /></section>;
+  if (d === null) return <section className="panel"><p className="eyebrow">Airlock</p><Loading /></section>;
+
+  const entities = asList(d.entities);
+  const sovereign = entities.filter((e: any) => e.residency === "LOCAL_ONLY");
+  const shown = showAll ? entities : sovereign;
+
+  return (
+    <>
+      <section className="panel">
+        <p className="eyebrow">What may leave</p>
+        <div className="stats">
+          <div className="stat"><div className="stat-n">{text(d.counts?.local_only)}</div><div className="stat-l">stay here</div></div>
+          <div className="stat"><div className="stat-n">{text(d.counts?.entities)}</div><div className="stat-l">classified</div></div>
+          <div className="stat"><div className="stat-n">{text(d.counts?.ai_local_only)}</div><div className="stat-l">no external AI</div></div>
+          <div className="stat"><div className="stat-n">{text(d.counts?.ai_needs_approval)}</div><div className="stat-l">AI on approval</div></div>
+        </div>
+        <p className="row-sub" style={{ marginTop: 10 }}>
+          Anything not classified is refused, not allowed. {text(d.counts?.record_overrides)} single records are held tighter than their kind.
+        </p>
+      </section>
+
+      <section className="panel">
+        <p className="eyebrow">Private compute</p>
+        <dl className="kv">
+          <dt>status</dt><dd>{text(d.private_compute?.status)}</dd>
+          <dt>registered</dt><dd>{d.private_compute?.registered ? "yes" : "no"}</dd>
+          <dt>provider</dt><dd>{d.provider_selected ? `${text(d.provider_selected.name)}${d.provider_selected.enabled ? "" : " (disabled)"}` : "none selected"}</dd>
+        </dl>
+        <p className="row-sub">{text(d.private_compute?.detail)}</p>
+      </section>
+
+      <section className="panel">
+        <p className="eyebrow">Sync</p>
+        <div className="stats">
+          <div className="stat"><div className="stat-n">{text(d.sync?.devices_active)}</div><div className="stat-l">devices active</div></div>
+          <div className="stat"><div className="stat-n">{text(d.sync?.open_conflicts)}</div><div className="stat-l">open conflicts</div></div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <p className="eyebrow">{showAll ? "Every entity" : "Never leaves this system"}</p>
+        <div className="btn-row">
+          <button className="btn" aria-pressed={!showAll} onClick={() => setShowAll(false)}>Sovereign only</button>
+          <button className="btn" aria-pressed={showAll} onClick={() => setShowAll(true)}>All {text(d.counts?.entities)}</button>
+        </div>
+        {shown.length === 0 ? (
+          <Empty title="Nothing is classified" hint="That is itself the finding: an unclassified system refuses everything." />
+        ) : (
+          shown.map((e: any) => (
+            <Row
+              key={e.entity}
+              title={text(e.entity)}
+              sub={text(e.reason)}
+              val={e.residency === "LOCAL_ONLY" ? "STAYS HERE" : e.ai_processing === "LOCAL_ONLY" ? "NO EXT AI" : text(e.merge_policy)}
+            />
           ))
         )}
       </section>
