@@ -5,7 +5,7 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { getNumber } from "../lib/settings";
-import { isLane } from "../../shared/lanes";
+import { isLane } from "../../../shared/boss/lanes";
 import { executeDecision, type ApprovalRow } from "../approvals/execute";
 import { assertProtectedAction, decisionRight } from "../governance/gate";
 

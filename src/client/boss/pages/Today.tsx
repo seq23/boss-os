@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice, InfoNotice } from "../components/Notice";
-import { usd } from "../../shared/types";
+import { usd } from "../../../shared/boss/types";
 
 /**
  * Today — canon §15.
@@ -68,7 +68,7 @@ export function Today() {
       else if (which === "midday") await api.middayGate(body);
       else await api.nightGate(body);
       setGate(null);
-      setFlash(`${which[0].toUpperCase()}${which.slice(1)} gate recorded.`);
+      setFlash(`${which[0]!.toUpperCase()}${which.slice(1)} gate recorded.`);
       await load();
     } catch (e) {
       setError(e);

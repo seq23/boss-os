@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { runPromotionSweep } from "../src/server/routes/memory";
-import { executeDecision, type ApprovalRow } from "../src/server/approvals/execute";
+import { runPromotionSweep } from "../../src/worker/boss/routes/memory";
+import { executeDecision, type ApprovalRow } from "../../src/worker/boss/approvals/execute";
 import { apiJson, insertMemory, row, all } from "./helpers";
 
 const post = (path: string, body?: unknown) => apiJson(path, { method: "POST", body: body ?? {} });

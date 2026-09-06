@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { all, api, apiJson, insertApproval, insertTask, row } from "./helpers";
 import {
   moonPhase, moonPosition, buildAlmanac, ZODIAC, NO_EPHEMERIS, AWAITING_ALMANAC, CANON_WINDOW_TYPES,
-} from "../src/server/spirit/astro";
+} from "../../src/worker/boss/spirit/astro";
 
 /**
  * Phase 16 — Spirit OS, astrology, contribution, ancestors.
@@ -58,14 +58,20 @@ describe("Phase 16 — the sky is computed, not fetched", () => {
         .filter((e) => e.kind === "new_moon")
         .map((e) => Math.abs(e.starts_at - known))
         .sort((a, b) => a - b)[0];
-      expect(nearest / 60_000).toBeLessThan(10);
+      // An empty almanac would make the comparison below vacuously pass, so the presence of a
+      // computed event is asserted rather than assumed.
+      expect(nearest).toBeDefined();
+      expect(nearest! / 60_000).toBeLessThan(10);
     }
     for (const known of KNOWN_FULL_MOONS.slice(0, 1)) {
       const nearest = events
         .filter((e) => e.kind === "full_moon")
         .map((e) => Math.abs(e.starts_at - known))
         .sort((a, b) => a - b)[0];
-      expect(nearest / 60_000).toBeLessThan(10);
+      // An empty almanac would make the comparison below vacuously pass, so the presence of a
+      // computed event is asserted rather than assumed.
+      expect(nearest).toBeDefined();
+      expect(nearest! / 60_000).toBeLessThan(10);
     }
   });
 

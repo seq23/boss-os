@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { takeSnapshot } from "../src/server/routes/vault";
+import { takeSnapshot } from "../../src/worker/boss/routes/vault";
 import { apiJson, insertMemory, row, all } from "./helpers";
 
 const post = (path: string, body?: unknown) => apiJson(path, { method: "POST", body: body ?? {} });

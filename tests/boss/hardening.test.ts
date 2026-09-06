@@ -1,14 +1,14 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { logEvent } from "../src/server/lib/log";
-import { MAX_UNLOCK_ATTEMPTS } from "../src/server/auth";
+import { logEvent } from "../../src/worker/boss/lib/log";
+import { MAX_UNLOCK_ATTEMPTS } from "../../src/worker/boss/auth";
 import { api, apiJson, insertTask, row } from "./helpers";
 
 const post = (path: string, body?: unknown) => apiJson(path, { method: "POST", body: body ?? {} });
 
 describe("Phase 5 — the door is actually locked", () => {
   it("refuses an API call with no session", async () => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
     const res = await worker.fetch(new Request("https://boss.test/api/system/status"), env, ctx);
@@ -18,7 +18,7 @@ describe("Phase 5 — the door is actually locked", () => {
   });
 
   it("answers liveness without a passcode", async () => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
     const res = await worker.fetch(new Request("https://boss.test/api/health"), env, ctx);
@@ -29,7 +29,7 @@ describe("Phase 5 — the door is actually locked", () => {
   });
 
   it("locks the deep health check behind a session", async () => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
     const res = await worker.fetch(new Request("https://boss.test/api/system/health"), env, ctx);
@@ -46,7 +46,7 @@ describe("Phase 5 — the door is actually locked", () => {
  */
 describe("Phase 5 — the door does not allow unlimited guessing", () => {
   const unlock = async (passcode: string, ip: string) => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
     const res = await worker.fetch(
@@ -103,7 +103,7 @@ describe("Phase 5 — the door does not allow unlimited guessing", () => {
     const token = /boss_session=([^;]+)/.exec(issued.cookie ?? "")?.[1];
     expect(token).toBeTruthy();
 
-    const { readSession } = await import("../src/server/auth");
+    const { readSession } = await import("../../src/worker/boss/auth");
     expect(await readSession(env as any, token)).not.toBeNull();
 
     // Rotate the secret. The stored record is untouched; it simply no longer
@@ -120,12 +120,12 @@ describe("Phase 5 — the door does not allow unlimited guessing", () => {
     // The shape a pre-rotation build would have written. It is not a session.
     const forged = "ses_forged_no_fingerprint";
     await env.SESSIONS.put(`session:${forged}`, JSON.stringify({ id: forged, issuedAt: Date.now() }));
-    const { readSession } = await import("../src/server/auth");
+    const { readSession } = await import("../../src/worker/boss/auth");
     expect(await readSession(env as any, forged)).toBeNull();
   });
 
   it("answers a malformed unlock body with a 401 rather than a crash", async () => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
     const res = await worker.fetch(
@@ -234,7 +234,7 @@ describe("Phase 5 — cost governor", () => {
 
 describe("Phase 5 — the nightly cron records what it did", () => {
   it("writes a per-step record instead of claiming success wholesale", async () => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
 

@@ -1,8 +1,8 @@
 import { env } from "cloudflare:test";
 import { afterEach, describe, expect, it } from "vitest";
-import { routeCompletion, BudgetExceeded, RoutingBlocked } from "../src/server/router";
-import { rollBudgetWindows, windowStart, laneBudgetState } from "../src/server/router/budget";
-import { handleTask } from "../src/server/queue/consumer";
+import { routeCompletion, BudgetExceeded, RoutingBlocked } from "../../src/worker/boss/router";
+import { rollBudgetWindows, windowStart, laneBudgetState } from "../../src/worker/boss/router/budget";
+import { handleTask } from "../../src/worker/boss/queue/consumer";
 import { insertTask, row, all, stubFetch, completionResponse } from "./helpers";
 
 let restore: (() => void) | null = null;
@@ -249,7 +249,7 @@ describe("Phase 2 — queue execution and evidence", () => {
   });
 
   it("records a dead letter rather than losing an exhausted message", async () => {
-    const { handleDeadLetter } = await import("../src/server/queue/consumer");
+    const { handleDeadLetter } = await import("../../src/worker/boss/queue/consumer");
     const taskId = await insertTask({ status: "failed" });
 
     await handleDeadLetter(env, { taskId, lane: "ops" }, "Retries exhausted");

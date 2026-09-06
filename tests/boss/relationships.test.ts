@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, row } from "./helpers";
-import { healthScore, recencyScore } from "../src/server/relationships/scoring";
+import { healthScore, recencyScore } from "../../src/worker/boss/relationships/scoring";
 
 /**
  * Phase 13 — Relationship Capital OS.
@@ -93,7 +93,7 @@ describe("Phase 13 — the five scoring dimensions", () => {
 
     expect(late.health).toBeLessThan(clean.health);
     expect(dropped.health).toBeLessThan(clean.health);
-    expect(late.detail.penalties[0].reason).toMatch(/late/);
+    expect(late.detail.penalties[0]!.reason).toMatch(/late/);
     // The cap is real: ten late follow-ups do not zero a relationship.
     expect(healthScore({ ...base, overdue_follow_ups: 10 }).detail.penalty_total).toBe(24);
   });
@@ -548,7 +548,7 @@ describe("Phase 13 — follow-ups reach the screen", () => {
       body: { person_id: person.id, title: "Reply to their email", due_at: Date.now() - 2 * DAY },
     });
 
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
     await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: Date.now(), noRetry() {} } as any, env, ctx);

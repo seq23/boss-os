@@ -1,8 +1,8 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { executeDecision, type ApprovalRow } from "../src/server/approvals/execute";
-import { runExpirySweep } from "../src/server/routes/approvals";
-import { loadAuthority, unmetGates } from "../src/server/trading/authority";
+import { executeDecision, type ApprovalRow } from "../../src/worker/boss/approvals/execute";
+import { runExpirySweep } from "../../src/worker/boss/routes/approvals";
+import { loadAuthority, unmetGates } from "../../src/worker/boss/trading/authority";
 import { api, apiJson, row, all } from "./helpers";
 
 const post = (path: string, body?: unknown) => apiJson(path, { method: "POST", body: body ?? {} });

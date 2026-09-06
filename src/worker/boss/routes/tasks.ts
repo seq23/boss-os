@@ -5,10 +5,10 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { getSetting } from "../lib/settings";
-import { isLane } from "../../shared/lanes";
+import { isLane } from "../../../shared/boss/lanes";
 import { classify, KIND_TO_DEPARTMENT } from "../intake/classify";
 import { buildEnvelope } from "../intake/envelope";
-import { costPolicy } from "../../shared/governance";
+import { costPolicy } from "../../../shared/boss/governance";
 
 export const tasks = new Hono<{ Bindings: Env; Variables: Vars }>();
 

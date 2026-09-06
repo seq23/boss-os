@@ -3,7 +3,7 @@ import { api } from "../api";
 import { Docket } from "../components/Docket";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
-import { usd } from "../../shared/types";
+import { usd } from "../../../shared/boss/types";
 
 export function Inbox({ onCountChange, onOpen }: {
   onCountChange: (n: number) => void;

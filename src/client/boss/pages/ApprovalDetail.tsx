@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
-import { usd } from "../../shared/types";
+import { usd } from "../../../shared/boss/types";
 
 /**
  * The full docket: what is being asked, what it will act on, the evidence behind

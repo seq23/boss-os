@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { executeDecision, type ApprovalRow } from "../src/server/approvals/execute";
-import { runExpirySweep } from "../src/server/routes/approvals";
+import { executeDecision, type ApprovalRow } from "../../src/worker/boss/approvals/execute";
+import { runExpirySweep } from "../../src/worker/boss/routes/approvals";
 import { api, apiJson, insertApproval, insertMemory, insertTask, row, all } from "./helpers";
 
 const load = (id: string) =>

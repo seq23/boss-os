@@ -1,4 +1,4 @@
-import { riskAllows, type CostModePolicy } from "../../shared/governance";
+import { riskAllows, type CostModePolicy } from "../../../shared/boss/governance";
 
 /**
  * Model eligibility.

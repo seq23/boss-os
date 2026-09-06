@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, insertTask, row } from "./helpers";
-import { TIER_1_TRIGGERS, compilePacket, detectTriggers, scorePacket } from "../src/server/prompt/compile";
-import { PEDESTAL_NAMES } from "../src/server/routes/prompt";
+import { TIER_1_TRIGGERS, compilePacket, detectTriggers, scorePacket } from "../../src/worker/boss/prompt/compile";
+import { PEDESTAL_NAMES } from "../../src/worker/boss/routes/prompt";
 
 /**
  * Phase 17 — Prompt Intelligence and the Mastery Lens Bench.

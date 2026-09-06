@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { classify } from "../src/server/intake/classify";
-import { buildEnvelope } from "../src/server/intake/envelope";
+import { classify } from "../../src/worker/boss/intake/classify";
+import { buildEnvelope } from "../../src/worker/boss/intake/envelope";
 import { apiJson, insertTask, row } from "./helpers";
 
 const post = (path: string, body: unknown) => apiJson(path, { method: "POST", body });

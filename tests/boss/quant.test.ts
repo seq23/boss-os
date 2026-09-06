@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, row, stubFetch } from "./helpers";
-import { killSwitchProof } from "../src/server/trading/quant";
+import { killSwitchProof } from "../../src/worker/boss/trading/quant";
 
 /**
  * Phase 22 — the AI Quant Fund, Parts B–G.

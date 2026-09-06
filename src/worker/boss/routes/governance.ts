@@ -305,7 +305,7 @@ governance.post("/brand/check", async (c) => {
 
   const forbidden: string[] = JSON.parse(profile.forbidden);
   const lowered = text.toLowerCase();
-  const hits = forbidden.filter((f) => lowered.includes(f.toLowerCase().split(" ")[0]));
+  const hits = forbidden.filter((f) => lowered.includes(f.toLowerCase().split(" ")[0] ?? f.toLowerCase()));
   // Emoji are on the forbidden list and are worth catching properly.
   const hasEmoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text);
 

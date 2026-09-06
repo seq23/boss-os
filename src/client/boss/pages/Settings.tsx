@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { usd } from "../../shared/types";
+import { usd } from "../../../shared/boss/types";
 import { Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 

@@ -1,8 +1,8 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, row } from "./helpers";
-import { DEFERRED_CHECKS, probe, runChecks } from "../src/server/runtimes/seo";
-import { NO_NETWORK } from "../src/server/runtimes/run";
+import { DEFERRED_CHECKS, probe, runChecks } from "../../src/worker/boss/runtimes/seo";
+import { NO_NETWORK } from "../../src/worker/boss/runtimes/run";
 
 /**
  * Phase 20 — the SEO/GEO and Document Compiler runtimes.
@@ -287,10 +287,10 @@ describe("Phase 20 — the SEO/GEO runtime produces evidence, not claims", () =>
       "How does a commitment become an open loop?",
       "What is the pricing for enterprise customers?",
     ]);
-    expect(probes[0].answered).toBe(true);
-    expect(probes[0].excerpt).toBeTruthy();
-    expect(probes[1].answered).toBe(false);
-    expect(probes[1].excerpt).toBeNull();
+    expect(probes[0]!.answered).toBe(true);
+    expect(probes[0]!.excerpt).toBeTruthy();
+    expect(probes[1]!.answered).toBe(false);
+    expect(probes[1]!.excerpt).toBeNull();
   });
 
   it("audits a compiled artifact, closing the loop between the runtimes", async () => {

@@ -10,6 +10,9 @@ export default defineConfig({
   },
   test: {
     include: ["tests/**/*.test.ts"],
+    // The ported Boss OS suites need the workers pool, which cannot coexist with this file's
+    // per-file miniflare setup. They run under vitest.boss.config.ts instead.
+    exclude: ["tests/boss/**"],
     environment: "node",
     testTimeout: 60_000,
     hookTimeout: 60_000,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, row } from "./helpers";
-import { FORBIDDEN_CATEGORIES, checkCategory } from "../src/server/bridge/categories";
+import { FORBIDDEN_CATEGORIES, checkCategory } from "../../src/worker/boss/bridge/categories";
 
 /**
  * Phase 21 — the Firm OS bridge and separation.

@@ -111,10 +111,12 @@ export function moonPosition(ts: number): MoonPosition {
 
   return {
     longitude,
-    sign: ZODIAC[index],
+    // index is Math.floor(longitude / 30) on a value already normalised to [0, 360), so it is
+    // always 0..11. The chassis compiles with noUncheckedIndexedAccess, which the artifact did not.
+    sign: ZODIAC[index]!,
     degrees_in_sign: degreesInSign,
     cusp,
-    next_sign: cusp ? ZODIAC[(index + (degreesInSign > 15 ? 1 : 11)) % 12] : null,
+    next_sign: cusp ? ZODIAC[(index + (degreesInSign > 15 ? 1 : 11)) % 12]! : null,
   };
 }
 
@@ -153,7 +155,8 @@ export function moonPhase(ts: number): MoonPhase {
   const octant = Math.floor((elongation + 22.5) / 45) % 8;
 
   return {
-    phase: PHASE_NAMES[octant],
+    // octant is `% 8` over eight names.
+    phase: PHASE_NAMES[octant]!,
     age_days: ageDays,
     illumination,
     waxing: elongation < 180,

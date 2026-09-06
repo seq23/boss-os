@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, row } from "./helpers";
-import { brierBps } from "../src/server/investor/calibration";
+import { brierBps } from "../../src/worker/boss/investor/calibration";
 
 /**
  * Phase 14 — Investor OS and Wealth Command Center.

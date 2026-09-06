@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, insertApproval, row } from "./helpers";
-import { WATCH_LIST } from "../src/server/governance/gate";
+import { WATCH_LIST } from "../../src/worker/boss/governance/gate";
 
 /**
  * Phase 19 — the Operating Governance Layer.
@@ -280,7 +280,7 @@ describe("Phase 19 — canon §4, the Compliance Sentinel", () => {
   });
 
   it("runs on the nightly cron as its own recorded step", async () => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
     await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: Date.now(), noRetry() {} } as any, env, ctx);

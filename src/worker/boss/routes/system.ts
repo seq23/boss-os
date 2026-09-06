@@ -6,7 +6,7 @@ import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { getSetting, setSetting } from "../lib/settings";
 import { rollBudgetWindows } from "../router/budget";
-import { COST_MODES, COST_MODE_POLICY, isCostMode } from "../../shared/governance";
+import { COST_MODES, COST_MODE_POLICY, isCostMode } from "../../../shared/boss/governance";
 
 export const system = new Hono<{ Bindings: Env; Variables: Vars }>();
 

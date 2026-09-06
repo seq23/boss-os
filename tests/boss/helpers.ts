@@ -1,6 +1,6 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
-import worker from "../src/server/index";
-import { sessionFingerprint } from "../src/server/auth";
+import worker from "../../src/worker/boss/index";
+import { sessionFingerprint } from "../../src/worker/boss/auth";
 
 let counter = 0;
 

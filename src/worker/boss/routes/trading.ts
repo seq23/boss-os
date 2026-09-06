@@ -6,7 +6,7 @@ import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { loadAuthority, unmetGates, assertOrderAllowed, setLiveEnabled } from "../trading/authority";
 import { cancelOrder, recordIncident } from "../trading/execute";
-import { LIVE_TRADING_GATES, LIVE_GATE_LABELS } from "../../shared/governance";
+import { LIVE_TRADING_GATES, LIVE_GATE_LABELS } from "../../../shared/boss/governance";
 import { assertProtectedAction } from "../governance/gate";
 
 /**

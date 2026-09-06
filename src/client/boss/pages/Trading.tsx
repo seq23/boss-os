@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
-import { usd } from "../../shared/types";
+import { usd } from "../../../shared/boss/types";
 
 export function Trading() {
   const [data, setData] = useState<any | null>(null);

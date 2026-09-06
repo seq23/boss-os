@@ -2,7 +2,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { getBool, getSetting } from "../lib/settings";
-import { costPolicy } from "../../shared/governance";
+import { costPolicy } from "../../../shared/boss/governance";
 import { fireworks } from "./fireworks";
 import type { ChatMessage, ProviderAdapter } from "./types";
 import { evaluateModel, estimateCostMicros, type ModelRow } from "./policy";

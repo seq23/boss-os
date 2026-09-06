@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { SNAPSHOT_TABLES } from "../src/server/routes/vault";
+import { SNAPSHOT_TABLES } from "../../src/worker/boss/routes/vault";
 
 describe("schema", () => {
   it("applies every migration and seeds both lanes", async () => {

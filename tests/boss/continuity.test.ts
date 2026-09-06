@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, row, stubFetch } from "./helpers";
-import { CHECKLIST_STEPS } from "../src/server/continuity/documents";
+import { CHECKLIST_STEPS } from "../../src/worker/boss/continuity/documents";
 
 /**
  * Phase 23 — continuity hardening.

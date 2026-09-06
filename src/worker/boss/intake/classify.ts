@@ -3,8 +3,8 @@ import type {
   IntakeKind,
   RiskLevel,
   Sensitivity,
-} from "../../shared/governance";
-import { isIntakeKind } from "../../shared/governance";
+} from "../../../shared/boss/governance";
+import { isIntakeKind } from "../../../shared/boss/governance";
 
 /**
  * The Task Intake Engine, checklist slice.

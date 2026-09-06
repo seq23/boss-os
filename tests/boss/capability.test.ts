@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, insertTask, row } from "./helpers";
-import { DISCOVERY_TRIGGERS, SERIOUS_JOB_TYPES, DEFERRED_JOB_TYPES } from "../src/server/routes/capability";
+import { DISCOVERY_TRIGGERS, SERIOUS_JOB_TYPES, DEFERRED_JOB_TYPES } from "../../src/worker/boss/routes/capability";
 
 /**
  * Phase 18 — Capability Intelligence.
@@ -376,7 +376,7 @@ describe("Phase 18 — a core capability does not change on somebody's say-so", 
 
 describe("Phase 18 — the standing cadence", () => {
   it("runs as a recorded cron step", async () => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
     await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: Date.now(), noRetry() {} } as any, env, ctx);

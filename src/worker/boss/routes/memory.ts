@@ -4,7 +4,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
-import { isLane } from "../../shared/lanes";
+import { isLane } from "../../../shared/boss/lanes";
 
 export const memory = new Hono<{ Bindings: Env; Variables: Vars }>();
 

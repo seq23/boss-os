@@ -20,7 +20,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
-import { INTAKE_KINDS } from "../../shared/governance";
+import { INTAKE_KINDS } from "../../../shared/boss/governance";
 
 export const capability = new Hono<{ Bindings: Env; Variables: Vars }>();
 

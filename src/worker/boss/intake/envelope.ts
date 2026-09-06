@@ -1,5 +1,5 @@
 import { newId } from "../lib/id";
-import { costPolicy } from "../../shared/governance";
+import { costPolicy } from "../../../shared/boss/governance";
 import type { Classification } from "./classify";
 
 export interface Envelope {

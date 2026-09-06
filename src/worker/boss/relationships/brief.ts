@@ -290,7 +290,7 @@ export async function generateBrief(
       commitments_received: parseList(m.commitments_received),
     })),
     meetings_held: held.length,
-    first_meeting_at: prior.length ? prior[prior.length - 1].scheduled_at : null,
+    first_meeting_at: prior.length ? prior[prior.length - 1]!.scheduled_at : null,
     last_capture: lastCapture
       ? { meeting_id: lastCapture.id, captured_at: lastCapture.captured_at, sentiment: lastCapture.sentiment, notes: lastCapture.notes }
       : null,

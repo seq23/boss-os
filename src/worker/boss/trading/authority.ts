@@ -1,5 +1,5 @@
 import { AppError } from "../lib/http";
-import { LIVE_TRADING_GATES, LIVE_GATE_LABELS } from "../../shared/governance";
+import { LIVE_TRADING_GATES, LIVE_GATE_LABELS } from "../../../shared/boss/governance";
 
 export interface TradingAuthority {
   id: string;

@@ -1,8 +1,8 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, insertApproval, insertMemory, insertTask, row, uid } from "./helpers";
-import { TODAY_BLOCKS } from "../src/server/routes/today";
-import { SNAPSHOT_TABLES } from "../src/server/routes/vault";
+import { TODAY_BLOCKS } from "../../src/worker/boss/routes/today";
+import { SNAPSHOT_TABLES } from "../../src/worker/boss/routes/vault";
 
 /**
  * Phase 11 — Executive OS Core.
@@ -407,7 +407,7 @@ describe("Phase 11 — continuity covers the executive tables", () => {
 
 describe("Phase 11 — the day exists whether or not anyone opened it", () => {
   it("rolls the day from the nightly cron", async () => {
-    const { default: worker } = await import("../src/server/index");
+    const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
 
