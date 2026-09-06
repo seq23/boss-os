@@ -18,7 +18,10 @@ import { FORWARDED_TURNS } from "./session";
 
 export interface CoachingResult {
   reply: string;
+  /** True only when something OTHER than the backend she approved answered her. */
   degraded: boolean;
+  /** The router's own flag: the route's declared primary was not what ran. Kept for the ledger. */
+  off_route: boolean;
   model: string | null;
 }
 
@@ -93,11 +96,29 @@ export async function runCoachingTurn(
     ],
   });
 
+  /*
+   * "DEGRADED" MEANS SOMETHING ELSE ANSWERED, AND UNDER CONFINEMENT NOTHING ELSE CAN.
+   *
+   * The router flags a run as degraded whenever the route's declared primary was not what ran, and
+   * on this route the declared models are both Fireworks — which has no key, so a coaching turn
+   * ALWAYS arrives via the continuity tier. Reported raw, that put a "degraded" badge on every
+   * morning conversation forever, for the normal, correct, deliberately chosen state of the system.
+   * A warning that is always on is one she learns to ignore, and then it cannot warn her.
+   *
+   * So the honest question here is not "was this the route default?" but "did she get the backend
+   * she approved?" If the model that answered belongs to the provider she consented to, that is
+   * compliance, not degradation. Anything else genuinely is, and still says so.
+   *
+   * The router's own flag is preserved as `off_route` for anyone reading the ledger, because the
+   * routing decision and this screen should not disagree about what happened.
+   */
+  const offRoute = Boolean((result as { degraded?: boolean }).degraded);
+  const ranOnApproved = result.providerId === onlyProviderId;
+
   return {
-    // A degraded route says so to the caller. She is entitled to know a cheaper model answered her,
-    // because the answer will read differently and she should not have to wonder why.
     reply: result.text,
-    degraded: Boolean((result as { degraded?: boolean }).degraded),
+    degraded: offRoute && !ranOnApproved,
+    off_route: offRoute,
     model: (result as { modelName?: string }).modelName ?? null,
   };
 }

@@ -150,6 +150,12 @@ export interface RouteResult {
   modelName: string;
   /** The same name without the label, for anywhere that wants it plain. */
   modelDisplayName: string;
+  /**
+   * WHICH PROVIDER ACTUALLY ANSWERED. Callers that confined a run with `onlyProviderId` need to be
+   * able to CHECK that, rather than assume it held — a promise verified against the result is worth
+   * more than the same promise inferred from the fact that a reply came back.
+   */
+  providerId: string;
   usedFallback: boolean;
   decisionId: string;
   backendId: string | null;
@@ -679,6 +685,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
         ? `${model.display_name} — DEGRADED TIER via ${backendName}`
         : model.display_name,
       modelDisplayName: model.display_name,
+      providerId: model.provider_id,
       usedFallback: degraded,
       decisionId,
       backendId: def.backendId,

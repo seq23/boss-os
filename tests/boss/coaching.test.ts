@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { isExit, EXIT_PHRASES, MAX_TURNS, buildCoachingPrompt } from "../../src/worker/boss/coaching/session";
 import { apiJson, row } from "./helpers";
+import { runCoachingTurn } from "../../src/worker/boss/coaching/run";
 
 /**
  * THE LOAD-BEARING TESTS HERE ARE THE ONES THAT PROVE NOTHING IS KEPT.
@@ -158,6 +159,36 @@ describe("consent is a constraint, not a label", () => {
       `SELECT candidates FROM routing_decisions ORDER BY ts DESC LIMIT 1`,
     );
     expect(decision!.candidates).not.toContain("named no task kind");
+  });
+
+  it("does not cry DEGRADED every morning for the system's normal state", async () => {
+    /*
+     * FOUND BY RUNNING IT IN PRODUCTION. The reply came back correct and flagged `degraded: true`,
+     * because the router flags any run where the route's declared primary did not answer — and on
+     * `rt_ops_default` both declared models are Fireworks, which has no key. So every morning
+     * conversation, forever, would have carried a warning badge for the deliberately chosen $0
+     * configuration. A warning that is always on is one she learns to ignore, and then it cannot
+     * warn her about anything real.
+     *
+     * The honest question is not "was this the route default" but "did she get the backend she
+     * approved" — and `off_route` still carries the router's own answer for the ledger.
+     *
+     * Driven at the runCoachingTurn level because the test runtime has no AI binding to reach; the
+     * HTTP path above already covers consent, the airlock and the confinement.
+     */
+    await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_workers_ai'`).run();
+    await apiJson("/api/models/provision/bk_workers_ai", { method: "POST", body: {} });
+
+    const bound = Object.create(env) as typeof env;
+    (bound as any).AI = { async run() { return { response: "What is the first block?", usage: {} }; } };
+
+    const result = await runCoachingTurn(bound as any, "bk_workers_ai", "You are the coach.", [], "I slept badly");
+
+    expect(result.reply).toContain("first block");
+    // She got the backend she approved. That is compliance, not degradation.
+    expect(result.degraded).toBe(false);
+    // The router's own view is preserved rather than overwritten: it really was off the route.
+    expect(result.off_route).toBe(true);
   });
 
   it("REFUSES BY NAME rather than answering on a backend she did not approve", async () => {
