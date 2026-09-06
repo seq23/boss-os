@@ -67,6 +67,10 @@ const SNAPSHOT_TABLES = [
   // Consent, not content. The coaching conversation itself has no table here and must never get
   // one — its residency is LOCAL_ONLY and this design honours that by not having a row to classify.
   "coaching_consent",
+  // 0178 — her Run of Show and the movement novelty history. A restore that lost the movement log
+  // would silently reset the rotation, and the day after a restore would repeat the day before it.
+  "run_of_show",
+  "movement_log",
   "trading_engines", "kill_switch_probes", "deployment_stages", "strategy_desks",
   "promotion_scorecards", "scale_rungs", "trading_sequence", "trading_nevers",
   "sovereignty_packages", "sovereignty_drills",

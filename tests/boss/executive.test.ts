@@ -88,12 +88,26 @@ describe("Phase 11 — Today renders the thirteen canon elements", () => {
     expect(by.spirit_signal.content.available).toBeUndefined();
     expect(by.spirit_signal.content.moon.phase).toBeTruthy();
 
-    for (const [key, phase] of [["coaching_focus", 12], ["daily_thinking_lens", 12]] as const) {
-      expect(by[key].content.available).toBe(false);
-      expect(by[key].content.arrives_in_phase).toBe(phase);
-      expect(by[key].is_empty).toBe(true);
-      expect(by[key].content.reason).toBeTruthy();
-    }
+    /*
+     * BLOCKS 08 AND 09 ARE NO LONGER ABSENT, and this is where that gets pinned. They waited on a
+     * "Phase 12" for the whole port while their substrate sat in the owner's own contract: §11's
+     * three Modes and §10's five Tracks. Both must now render real content and say why they chose.
+     */
+    expect(by.coaching_focus.is_empty).toBe(false);
+    expect(by.coaching_focus.content.mode).toBeTruthy();
+    expect(by.coaching_focus.content.because).toBeTruthy();
+    expect(by.coaching_focus.content.law.n).toBeGreaterThanOrEqual(1);
+
+    expect(by.daily_thinking_lens.is_empty).toBe(false);
+    expect(by.daily_thinking_lens.content.track).toBeTruthy();
+    expect(by.daily_thinking_lens.content.prompts.length).toBeGreaterThan(0);
+
+    // The Run of Show replaced Day Flow's five machine stages with her seven blocks.
+    expect(by.day_flow.content.total).toBe(7);
+    expect(by.day_flow.content.blocks.map((b: any) => b.key)).toEqual([
+      "morning_launch", "first_wealth_block", "midday_stabilizer", "afternoon_wealth_admin",
+      "food_guardrail_check", "evening_close", "night_reset",
+    ]);
 
     const rendered = JSON.stringify(body.data.blocks);
     expect(rendered).not.toMatch(/TODO|FIXME|lorem|placeholder/i);
@@ -143,8 +157,18 @@ describe("Phase 11 — the three gates", () => {
     const day = await row(`SELECT * FROM days WHERE id = ?`, date);
     expect(day!.morning_completed_at).toBeTruthy();
     expect(JSON.parse(day!.morning_contract).approvals_waiting_at_gate).toBeGreaterThanOrEqual(1);
-    // The agenda engine is Phase 12; its absence is recorded, not guessed at.
-    expect(JSON.parse(day!.morning_agenda).available).toBe(false);
+    /*
+     * The agenda is real now, and only where it is real. Body is fully specified by §6.9/§6.10, so
+     * it renders; Spirit, Wealth and Execution are not collected at this gate yet and each says so
+     * BY NAME rather than being filled with a plausible sentence.
+     */
+    const agenda = JSON.parse(day!.morning_agenda);
+    expect(agenda.pillars.body.launch_sequence[0]).toBe("10 in-bed leg raises per side");
+    expect(agenda.pillars.body.somatic.length).toBeGreaterThan(0);
+    for (const pillar of ["spirit", "wealth", "execution"] as const) {
+      expect(agenda.pillars[pillar].available).toBe(false);
+      expect(agenda.pillars[pillar].reason).toBeTruthy();
+    }
     expect(day!.gate_entries_count).toBe(1);
 
     const again = await apiJson(`/api/today/gates/morning`, {

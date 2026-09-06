@@ -14,6 +14,10 @@ import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
 import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relationships/follow_ups";
 import { spiritSignal } from "../spirit/day";
+import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from "../today/runOfShow";
+import { coachingFocus, lensFor } from "../today/faculty";
+import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
+import { scoreDay, FLOORS } from "../today/verdict";
 
 export const today = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -60,14 +64,12 @@ export type BlockKey = (typeof TODAY_BLOCKS)[number]["key"];
  * Meetings left this list in Phase 13, when it got real tables to read.
  */
 const AWAITING_SUBSTRATE: Partial<Record<BlockKey, { phase: number; reason: string }>> = {
-  coaching_focus: {
-    phase: 12,
-    reason: "No coaching faculty exists yet. The daily panel lands in Phase 12.",
-  },
-  daily_thinking_lens: {
-    phase: 12,
-    reason: "No mental model library exists yet. The daily lens lands in Phase 12.",
-  },
+  /*
+   * EMPTY, AND THAT IS THE POINT. Coaching Focus and the Daily Thinking Lens sat here waiting on a
+   * "Phase 12" that was never going to arrive, because the substrate was never missing — §10's five
+   * Tracks and §11's three Modes are a fixed set the owner had already written down. The blocks were
+   * waiting on a document, not on a build. See src/worker/boss/today/faculty.ts.
+   */
 };
 
 // ─── Day identity ─────────────────────────────────────────────────────────────
@@ -108,6 +110,12 @@ export interface DayRow {
   day_flow_json: string | null;
   open_loops_count: number;
   gate_entries_count: number;
+  // Added by 0177 (the morning coaching) and 0178 (the Night Gate verdict).
+  day_mode: string | null;
+  day_mode_source: string | null;
+  verdict: string | null;
+  verdict_floors: string | null;
+  verdict_at: number | null;
 }
 
 /**
@@ -356,6 +364,21 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   const priorities = json<{ text: string; order: number }[]>(day.morning_priorities, []);
   const contract = json<Record<string, unknown> | null>(day.morning_contract, null);
   const middayChecks = json<{ text: string; done?: boolean }[]>(day.midday_checks, []);
+
+  /*
+   * THE THREE PIECES THE OWNER'S CONTRACT REQUIRES AND THIS ASSEMBLER DID NOT HAVE.
+   *
+   * The Run of Show rows are created on first render of the day rather than at the Morning Gate,
+   * because §15.5 calls it a rendering aid for the WHOLE day — a day she opens at noon without
+   * having run a gate still has seven blocks, and showing her none would be the screen deciding she
+   * had no day.
+   */
+  await ensureRunOfShow(env, day.id);
+  const [runOfShow, focus] = await Promise.all([
+    readRunOfShow(env, day.id),
+    coachingFocus(env, day.id, (day as { day_mode?: string | null }).day_mode ?? null),
+  ]);
+  const lens = lensFor(day.id);
   const attention = json<{ focus_area: string; pct: number; note?: string }[]>(day.night_attention, []);
   const tomorrowSeed = json<Record<string, unknown> | null>(day.night_tomorrow_seed, null);
 
@@ -464,24 +487,33 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
           },
       isEmpty: !report,
     },
+    /*
+     * THE RUN OF SHOW, WHICH IS WHAT THIS BLOCK WAS ALWAYS MEANT TO BE.
+     *
+     * It rendered five "stages" — Morning Gate, Agenda Calculation, Today's Contract, Midday Reset,
+     * Night Gate — every one of which is a stage of THIS SYSTEM rather than a part of her day.
+     * "0 of 5 stages complete" was a progress bar for the machinery, on the screen whose entire job
+     * is telling her how far she has got. §15.2 has named seven blocks since the beginning.
+     *
+     * The gates are still here, under `gates`, because knowing which gates have run is genuinely
+     * useful — it is just not the day.
+     */
     day_flow: {
       content: {
-        stages: [
-          { stage: "Morning Gate", done: Boolean(day.morning_completed_at), at: day.morning_completed_at },
-          {
-            stage: "Agenda Calculation",
-            done: false,
-            absent: true,
-            reason: "The agenda engine lands in Phase 12. Priorities come from the Morning Gate until then.",
-          },
-          { stage: "Today's Contract", done: Boolean(contract), at: day.morning_completed_at },
-          { stage: "Midday Reset", done: Boolean(day.midday_completed_at), at: day.midday_completed_at },
-          { stage: "Night Gate", done: Boolean(day.night_completed_at), at: day.night_completed_at },
-        ],
+        blocks: runOfShow,
+        complete: runOfShow.filter((b) => b.done).length,
+        total: runOfShow.length,
+        gates: {
+          morning: day.morning_completed_at,
+          midday: day.midday_completed_at,
+          night: day.night_completed_at,
+        },
         priorities,
         midday_checks: middayChecks,
+        // §15.5, said on the screen rather than only enforced in code.
+        conflict_rule: "If the Run of Show conflicts with the Pillar Contracts, the Pillar Contracts win.",
       },
-      isEmpty: !day.morning_completed_at && !day.midday_completed_at && !day.night_completed_at,
+      isEmpty: runOfShow.every((b) => !b.done),
     },
     meetings: {
       content: {
@@ -532,8 +564,34 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       // sense the other blocks are, because the sky is always something.
       isEmpty: false,
     },
-    coaching_focus: { content: absent("coaching_focus"), isEmpty: true },
-    daily_thinking_lens: { content: absent("daily_thinking_lens"), isEmpty: true },
+    /*
+     * BLOCKS 08 AND 09, BUILT FROM HER OWN DOCUMENTS AND FROM NO MODEL AT ALL.
+     *
+     * Both said "awaiting substrate, lands in Phase 12" since the port. The substrate was never
+     * missing: §11's three Modes and §10's five Tracks are a fixed set she wrote down herself. A
+     * rotating lens and a named mode are decidable from the day's state, so neither block spends an
+     * inference call, and each says why it chose what it chose.
+     */
+    coaching_focus: {
+      content: {
+        mode: focus.mode.title,
+        trigger: focus.mode.trigger,
+        rules: focus.mode.rules,
+        because: focus.because,
+        law: { n: focus.law.n, title: focus.law.title, text: focus.law.text, because: focus.law_because },
+      },
+      isEmpty: false,
+    },
+    daily_thinking_lens: {
+      content: {
+        track: lens.title,
+        purpose: lens.purpose,
+        prompts: lens.prompts,
+        // §10's own framing, kept on the screen: a track is a filter, never a task list.
+        note: "A filter for how today gets read, not a thing to do.",
+      },
+      isEmpty: false,
+    },
     approval_inbox: {
       content: {
         pending: pendingTotal,
@@ -950,16 +1008,42 @@ today.post("/gates/morning", async (c) => {
     agreed_at: Date.now(),
   };
 
-  const payload = { priorities, state, contract, inbox_scan: { pending: pending?.n ?? 0 } };
+  /*
+   * THE AGENDA IS NO LONGER "PHASE 12". This column stored `{available: false, reason: "The agenda
+   * engine lands in Phase 12"}` on every morning since the port. The engine it was waiting for is
+   * §15.4's Pillar Contracts, and the Body pillar is the one her documents specify exactly: §6.9's
+   * stored sequence verbatim, §6.10's somatic lane, and the Somatic brain's novelty rotation.
+   *
+   * SPIRIT, WEALTH AND EXECUTION ARE NAMED AS ABSENT rather than invented. §15.4 requires an exact
+   * gratitude sentence, an exact first money move and an exact first completion action — none of
+   * which this gate collects yet. Writing a plausible one would be the fabrication the old comment
+   * was right to avoid; the difference now is that Body is real instead of everything being absent.
+   */
+  const bodyContract = await buildBodyContract(c.env, day.id, day.day_mode);
+  await logSomatic(c.env, day.id, bodyContract.somatic);
+
+  const agenda = {
+    anchor: contract.commitment,
+    pillars: {
+      body: bodyContract,
+      spirit: { available: false, reason: "The Morning Gate does not collect the gratitude sentence or the manifestation sequence yet." },
+      wealth: { available: false, reason: "The first money move is not collected at this gate yet; the priorities stand in for it." },
+      execution: { available: false, reason: "The first completion action is not collected at this gate yet." },
+    },
+  };
+
+  const payload = { priorities, state, contract, agenda, inbox_scan: { pending: pending?.n ?? 0 } };
   const entry = await recordGate(c.env, day, "morning", payload, {
     morning_completed_at: Date.now(),
     morning_priorities: JSON.stringify(priorities),
     morning_state: JSON.stringify(state),
-    // The agenda engine is Phase 12. Recording its absence is the honest
-    // rendering; a fabricated agenda would be worse than none.
-    morning_agenda: JSON.stringify({ available: false, reason: "The agenda engine lands in Phase 12.", arrives_in_phase: 12 }),
+    morning_agenda: JSON.stringify(agenda),
     morning_contract: JSON.stringify(contract),
   });
+
+  // Morning Launch is Body + Spirit + first setup, which is exactly what this gate captured.
+  await ensureRunOfShow(c.env, day.id);
+  await closeBlocksForGate(c.env, day.id, "morning");
 
   const refreshed = await ensureDay(c.env.DB, day.id);
   const blocks = await assembleDayFlow(c.env, refreshed);
@@ -992,15 +1076,47 @@ today.post("/gates/midday", async (c) => {
     .prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'open'`)
     .first<{ n: number }>();
 
+  /*
+   * LAW 4 VERSUS THE MIDDAY RESET — the conflict the owner named, drawn where she asked for a line.
+   *
+   * "No Mid-Day Renegotiation: the day is an execution environment. Emotional spikes do not rewrite
+   * the morning plan." And yet this gate exists to adjust the day. Both are right, and the
+   * difference is not WHETHER the plan changes but WHY:
+   *
+   *   STABILISING is reality changing — a meeting moved, a deal landed, the body gave out. The
+   *   Operator Discipline track states it exactly: "plans execute unless reality changes."
+   *   RENEGOTIATING is the same plan looking harder than it did at 7am.
+   *
+   * So dropping a priority now requires `because`, in her own words, and the reset is REFUSED
+   * without it. That is the track's other rule made mechanical — "renegotiation must be explicit" —
+   * and it is deliberately not a block: she can still drop anything she likes, she just cannot do it
+   * silently. A gate that quietly absorbed a dropped priority would let Law 4 be broken by default.
+   */
+  const dropped = Array.isArray(b.dropped) ? b.dropped.map(String).filter((d: string) => d.trim()) : [];
+  const because = b.because ? String(b.because).trim() : "";
+  if (dropped.length && !because) {
+    throw badRequest(
+      "Dropping something at midday needs a reason",
+      "Law 4: the day is an execution environment. Plans execute unless REALITY changes — so name what changed. " +
+        "Send { because }. If nothing changed and it just looks harder than it did this morning, that is the law talking, not the plan.",
+    );
+  }
+
   const adjustments = {
     note: b.adjustments ? String(b.adjustments) : null,
-    dropped: Array.isArray(b.dropped) ? b.dropped.map(String) : [],
+    dropped,
+    because: because || null,
+    // Recorded so a week of these can be read back. Repeated "reality changed" is itself a pattern.
+    classification: dropped.length ? "stabilised" : "unchanged",
   };
   const approvalSweep = {
     pending_by_risk: pendingByRisk,
     open_loops: stillOpen?.n ?? 0,
     swept_at: Date.now(),
   };
+
+  await ensureRunOfShow(c.env, day.id);
+  await closeBlocksForGate(c.env, day.id, "midday");
 
   const entry = await recordGate(c.env, day, "midday", { checks, adjustments, approval_sweep: approvalSweep }, {
     midday_completed_at: Date.now(),
@@ -1081,13 +1197,35 @@ today.post("/gates/night", async (c) => {
     candidates: candidates.results ?? [],
   };
 
-  const entry = await recordGate(c.env, day, "night", { attention, review, evidence, tomorrow_seed: seed, promotions }, {
+  /*
+   * THE VERDICT — §14, scored against §13's five floors.
+   *
+   * §14.2 is the rule that shapes this: "Ask what was completed before assigning a verdict. DO NOT
+   * GUESS COMPLETION." So the floors come from the request — from her — and NOTHING here infers one
+   * from the database. A closed Run of Show block is not evidence she manifested; a logged movement
+   * is not evidence she reached ten minutes. A floor she does not answer stays `unknown`, and
+   * `scoreDay` carries that forward as an open question rather than rounding it.
+   *
+   * NOT REQUIRED, DELIBERATELY. A night gate that refuses to close without five answers is one she
+   * abandons at 11pm, and Law 2 puts continuity above completeness. An unscored day records that it
+   * was unscored.
+   */
+  const verdict = b.floors ? scoreDay(b.floors as Record<string, unknown>) : null;
+
+  const entry = await recordGate(c.env, day, "night", { attention, review, evidence, tomorrow_seed: seed, promotions, verdict }, {
     night_completed_at: Date.now(),
     night_attention: JSON.stringify(attention),
     night_promotions: JSON.stringify(promotions),
     night_evidence: JSON.stringify({ ...evidence, review }),
     night_tomorrow_seed: JSON.stringify(seed),
+    ...(verdict
+      ? { verdict: verdict.verdict, verdict_floors: JSON.stringify(verdict.floors), verdict_at: Date.now() }
+      : {}),
   });
+
+  // Evening Close and Night Reset are what this gate is; both close with it.
+  await ensureRunOfShow(c.env, day.id);
+  await closeBlocksForGate(c.env, day.id, "night");
 
   /*
    * A seed that only lives in tonight's JSON is a note to nobody. Each seeded
@@ -1118,7 +1256,7 @@ today.post("/gates/night", async (c) => {
   // than waiting for someone to open the screen.
   await assembleDayFlow(c.env, await ensureDay(c.env.DB, tomorrow.id));
 
-  return ok(c, { gate: entry, day: refreshed, blocks, promotions, tomorrow_seed: seed }, 201);
+  return ok(c, { gate: entry, day: refreshed, blocks, promotions, tomorrow_seed: seed, verdict }, 201);
 });
 
 // ─── Morning coaching ─────────────────────────────────────────────────────────
@@ -1270,6 +1408,52 @@ today.post("/coaching/turn", async (c) => {
   const result = await runCoachingTurn(c.env, consent.backend_id, system, recent, text);
   return ok(c, { ended: false, reply: result.reply, backend_id: consent.backend_id, degraded: result.degraded });
 });
+
+/**
+ * Close (or reopen) a Run of Show block she owns.
+ *
+ * THE THREE BLOCKS NO GATE CAN SPEAK FOR: the two wealth blocks and the food check. Nothing this
+ * system observes proves she made a brokerage move or ate in her lane, and marking them done because
+ * a gate ran would be the system claiming to know something it does not.
+ *
+ * REOPENING IS ALLOWED, and it is not an edge case. A block ticked by accident at 9am and left wrong
+ * all day is worse than one she can untick — and `done_source` records that she did it, so a
+ * gate-closed block reopened by hand still reads as her decision.
+ */
+today.post("/run-of-show/:key", async (c) => {
+  const key = c.req.param("key");
+  const block = RUN_OF_SHOW.find((b) => b.key === key);
+  if (!block) {
+    throw notFound(`"${key}" is not one of the seven Run of Show blocks`);
+  }
+
+  const body = await c.req.json<{ done?: boolean; day_id?: string }>().catch(() => ({}) as { done?: boolean; day_id?: string });
+  const day = await ensureDay(c.env.DB, body.day_id ? String(body.day_id) : dayId(Date.now()));
+  await ensureRunOfShow(c.env, day.id);
+
+  const done = body.done !== false;
+  await c.env.DB
+    .prepare(
+      `UPDATE run_of_show SET done_at = ?, done_source = ? WHERE day_id = ? AND block_key = ?`,
+    )
+    .bind(done ? Date.now() : null, done ? "boss" : null, day.id, key)
+    .run();
+
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "run_of_show", entityId: `${day.id}:${key}`,
+    action: done ? "closed" : "reopened", detail: { block: block.title },
+  });
+
+  return ok(c, { day_id: day.id, blocks: await readRunOfShow(c.env, day.id) });
+});
+
+/**
+ * The five floors, so the Night Gate form asks her §13.2's questions in §13.2's words.
+ *
+ * SERVED RATHER THAN RESTATED IN THE CLIENT. A screen that spelled the floors itself would be a
+ * second copy of her contract, free to drift from the one that scores the day.
+ */
+today.get("/floors", (c) => ok(c, { floors: FLOORS }));
 
 /** How the day should be RUN. The one thing the conversation leaves behind. */
 today.post("/coaching/mode", async (c) => {

@@ -71,6 +71,10 @@ export const api = {
   morningGate: (body: unknown) => call<any>("/today/gates/morning", post("", body)),
   middayGate: (body: unknown) => call<any>("/today/gates/midday", post("", body)),
   nightGate: (body: unknown) => call<any>("/today/gates/night", post("", body)),
+  runOfShowBlock: (key: string, body: unknown) => call<any>(`/today/run-of-show/${key}`, post("", body)),
+  // Served rather than restated in the client: a screen that spelled the five floors itself would
+  // be a second copy of her contract, free to drift from the one that scores the day.
+  floors: () => call<any>("/today/floors"),
 
   status: () => call<any>("/system/status"),
   health: () => call<any>("/system/health"),

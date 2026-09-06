@@ -182,10 +182,14 @@ function summarise(block: Block): string {
       return c.status === "partial"
         ? `${c.summary ?? "Report delivered"} — ${(c.gaps ?? []).length} gap${(c.gaps ?? []).length === 1 ? "" : "s"} named.`
         : c.summary ?? "Report delivered.";
-    case "day_flow": {
-      const done = (c.stages ?? []).filter((s: any) => s.done).length;
-      return `${done} of ${(c.stages ?? []).length} stages complete.`;
-    }
+    case "day_flow":
+      // Her blocks, and the word is "blocks" because that is what her contract calls them. "Stages"
+      // was the machine's vocabulary for the machine's list.
+      return `${c.complete} of ${c.total} blocks done.`;
+    case "coaching_focus":
+      return `${c.mode}. Law ${c.law?.n}: ${c.law?.title}.`;
+    case "daily_thinking_lens":
+      return `${c.track}.`;
     case "meetings": {
       const parts: string[] = [];
       parts.push(
@@ -283,21 +287,94 @@ function renderDetail(
         </>
       );
 
-    case "day_flow":
+    /*
+     * THE RUN OF SHOW.
+     *
+     * A block a gate closed is shown as closed and is NOT tappable — re-ticking something the
+     * Morning Gate already recorded would let her produce two different stories about the same
+     * morning. The three blocks no gate can speak for are hers, and they are the ones that respond
+     * to a tap.
+     */
+    case "day_flow": {
+      /*
+       * The toggle calls the API here rather than being threaded down as a prop, which is how the
+       * other interactive blocks on this screen already work — `onChanged` re-reads Today, so the
+       * count in the summary line and the block state can never disagree.
+       */
+      const toggle = async (key: string, done: boolean) => {
+        try {
+          await api.runOfShowBlock(key, { done });
+          await onChanged();
+        } catch (e) { onError(e); }
+      };
       return (
         <>
-          {(c.stages ?? []).map((s: any) => (
-            <div className="row" key={s.stage}>
-              <div className="row-main">
-                <div className="row-title">{s.stage}</div>
-                {s.absent && <div className="row-sub">{s.reason}</div>}
+          {(c.blocks ?? []).map((b: any) => {
+            const mine = b.closedBy === null;
+            return (
+              <div
+                className={mine ? "row row-tap" : "row"}
+                key={b.key}
+                role={mine ? "button" : undefined}
+                tabIndex={mine ? 0 : undefined}
+                aria-pressed={mine ? b.done : undefined}
+                onClick={mine ? () => void toggle(b.key, !b.done) : undefined}
+                onKeyDown={mine ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void toggle(b.key, !b.done); } } : undefined}
+              >
+                <div className="row-main">
+                  <div className="row-title">{b.done ? "✓" : "○"} {b.title}</div>
+                  <div className="row-sub">{b.instruction ?? b.intent}</div>
+                </div>
+                <div className="row-val">
+                  {b.done ? time(b.done_at) : mine ? "tap" : "—"}
+                </div>
               </div>
-              <div className="row-val">{s.done ? time(s.at) : s.absent ? "absent" : "—"}</div>
-            </div>
-          ))}
+            );
+          })}
           {(c.midday_checks ?? []).map((chk: any, i: number) => (
             <div className="row-sub" key={i}>{chk.done ? "✓" : "○"} {chk.text}</div>
           ))}
+          {/* §15.5's conflict rule, on the screen rather than only in the schema. */}
+          <p className="row-sub">{c.conflict_rule}</p>
+        </>
+      );
+    }
+
+    /*
+     * BLOCKS 08 AND 09. Both spent the whole port rendering "awaiting substrate"; both now say what
+     * they chose AND why, because a focus that cannot name its evidence is a horoscope.
+     */
+    case "coaching_focus":
+      return (
+        <>
+          <div className="row">
+            <div className="row-main">
+              <div className="row-title">{c.mode}</div>
+              <div className="row-sub">{c.because}</div>
+            </div>
+          </div>
+          {(c.rules ?? []).map((r: string, i: number) => (
+            <div className="row-sub" key={i}>{r}</div>
+          ))}
+          <p className="eyebrow">Law {c.law?.n} — {c.law?.title}</p>
+          <p className="row-sub">{c.law?.text}</p>
+          <p className="row-sub">{c.law?.because}</p>
+        </>
+      );
+
+    case "daily_thinking_lens":
+      return (
+        <>
+          <div className="row">
+            <div className="row-main">
+              <div className="row-title">{c.track}</div>
+              <div className="row-sub">{c.purpose}</div>
+            </div>
+          </div>
+          {(c.prompts ?? []).map((q: string, i: number) => (
+            <div className="row-sub" key={i}>{q}</div>
+          ))}
+          <p className="row-sub">{c.note}</p>
         </>
       );
 
@@ -585,6 +662,24 @@ function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRu
   const allocated = attention.reduce((sum, a) => sum + (Number(a.pct) || 0), 0);
   const usable = attention.filter((a) => a.focus_area.trim() && Number(a.pct) > 0);
 
+  /*
+   * THE FIVE FLOORS, ASKED RATHER THAN INFERRED.
+   *
+   * §14.2: "Ask what was completed before assigning a verdict. Do not guess completion." So the
+   * three-state control is the design, not a UI nicety — met, missed, and NOT ANSWERED are three
+   * different things, and a checkbox would collapse the last two into "missed" and quietly
+   * manufacture the guess the rule forbids. Unanswered is the default and it stays that way unless
+   * she touches it.
+   *
+   * The floor list is fetched rather than written here, so this screen cannot drift from the
+   * contract that scores the day.
+   */
+  const [floors, setFloors] = useState<{ key: string; title: string; floor: string }[]>([]);
+  const [reported, setReported] = useState<Record<string, boolean | undefined>>({});
+  useEffect(() => { api.floors().then((f: any) => setFloors(f.floors)).catch(() => setFloors([])); }, []);
+
+  const answered = Object.values(reported).filter((v) => v !== undefined).length;
+
   return (
     <form
       className="docket"
@@ -595,6 +690,9 @@ function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRu
           review: review.filter((r) => r.trim()),
           evidence: note ? { note } : undefined,
           tomorrow_seed: { priorities: seed.filter((s) => s.trim()) },
+          // Sent only when she answered something. An empty object would look like a report of
+          // five unknowns rather than a night she chose not to score.
+          floors: answered > 0 ? reported : undefined,
         });
       }}
     >
@@ -625,6 +723,36 @@ function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRu
       <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => setAttention([...attention, { focus_area: "", pct: "" }])}>
         Add focus area
       </button>
+
+      <p className="eyebrow" style={{ marginTop: 14 }}>Floors</p>
+      {floors.map((f) => (
+        <div className="row" key={f.key}>
+          <div className="row-main">
+            <div className="row-title">{f.title}</div>
+            <div className="row-sub">{f.floor}</div>
+          </div>
+          <div className="btn-row">
+            {([["met", true], ["missed", false]] as const).map(([label, value]) => (
+              <button
+                key={label}
+                type="button"
+                className="btn"
+                aria-pressed={reported[f.key] === value}
+                // Pressing the active answer clears it. Nothing else can return a floor to
+                // unanswered, and she should never be trapped into a claim by a mis-tap.
+                onClick={() => setReported((r) => ({ ...r, [f.key]: r[f.key] === value ? undefined : value }))}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <p className="row-sub">
+        {answered === 0
+          ? "Answer none of these and the day closes unscored. That is allowed."
+          : `${answered} of ${floors.length} answered. The rest stay unanswered rather than counting as missed.`}
+      </p>
 
       <p className="eyebrow" style={{ marginTop: 14 }}>Review</p>
       <Lines value={review} onChange={setReview} max={max} label="Prompt" />

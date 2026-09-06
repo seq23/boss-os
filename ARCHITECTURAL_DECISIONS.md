@@ -709,3 +709,82 @@ only the `-fp8` build is. The row provisioned cleanly, passed every validator, a
 at the first call, landing on whoever typed the first sentence of a morning conversation.
 `scripts/ops/provision-backend.mjs` now checks every slug against `wrangler ai models` before writing,
 and hard-fails when it cannot check: an unreadable catalogue is an unanswered question, not a pass.
+
+### ADR-029 — Her four documents are the agenda engine; v10.19 is dead
+
+The owner supplied four documents and named what each one feeds. Only one of them — the Executive
+Intelligence Report — had been built. The other three were the specification for a screen that was
+already shipping something else.
+
+| Document | Feeds | Was |
+| --- | --- | --- |
+| A-Player Mode OS Contract | the agenda engine — §15 runtime, §26 template, laws, floors, verdicts | not built |
+| Billionaire High-Performance Coach | the coaching layer — laws, modes, tracks | not built |
+| Executive Intelligence Report | Today's Executive Briefing block | shipped, ADR-027 era |
+| Morning Movement / Somatic | the Body contract — exact sequences, bed-first, novelty | not built |
+
+All three are now in `docs/boss/`. **v10.19 is dead** and the owner said so plainly when asked; the
+A-Player contract supersedes it in practice and now in writing. `BOSS_OS_AI_Sovereignty_Continuity_Addendum_v1.md`
+already recorded that v20 supersedes v10.19 — this closes the question rather than leaving it as a
+"preserved baseline" a future chat might treat as live.
+
+**Her four conflicts, and how each was resolved.**
+
+**1 · Seven blocks versus five stages.** Day Flow rendered Morning Gate, Agenda Calculation, Today's
+Contract, Midday Reset and Night Gate — every one of which is a stage of THIS SYSTEM, not a part of
+her day. "0 of 5 stages complete" was a progress bar for the machinery, on the screen whose entire
+job is telling her how far *she* has got. §15.2 has specified seven blocks from the beginning.
+Migration 0178 adds `run_of_show`, and the gates become EVIDENCE: completing one closes the block it
+speaks for. The three blocks no gate can speak for — the two wealth blocks and the food check — are
+hers to close, because nothing this system observes proves she made a brokerage move or ate in her
+lane. A gate never overwrites a block she closed herself; "she did it at 9" and "a gate implied it at
+2" are different facts and the specific one wins.
+
+**2 · A conversation versus a screen.** Already answered and already built — see ADR-028. The
+morning coaching is a real 1:1 flow that stores nothing.
+
+**3 · Three chats versus one system.** Confirmed by the owner: **Boss OS replaces Chat B.** Chat A is
+the contract in the database, Chat C is the approval inbox.
+
+**4 · Law 4 versus the Midday Reset.** The line she asked for, drawn in code. Law 4 says the day is an
+execution environment and emotional spikes do not rewrite the morning plan; the Midday Reset exists to
+adjust the day. Both are right, and the difference is not WHETHER the plan changes but WHY —
+**stabilising** is reality changing (the Operator Discipline track: "plans execute unless reality
+changes"), **renegotiating** is the same plan looking harder than it did at 7am. So dropping a
+priority at midday now requires `because`, and the gate refuses without it. Deliberately not a block:
+she can drop anything she likes, she just cannot do it silently. That is the track's other rule made
+mechanical — "renegotiation must be explicit."
+
+**The verdict does not guess, and that cost something.** §14.2 says "ask what was completed before
+assigning a verdict; do not guess completion", so nothing infers a floor from the database — a closed
+Run of Show block is not evidence she manifested. Floors are three-state: met, missed, and NOT
+ANSWERED, which is why the Night Gate uses paired buttons rather than checkboxes. A checkbox would
+collapse unanswered into missed and manufacture exactly the guess the rule forbids. A day with
+nothing reported met but floors still unanswered is held open, not scored a Miss. §13.3's flexible
+items cannot create a Miss, and the mechanism is that they are absent from `FLOORS` entirely.
+
+**Blocks 08 and 09 were never waiting on a build.** Both rendered "awaiting substrate — lands in
+Phase 12" for the whole port. The substrate was §11's three Modes and §10's five Tracks, a fixed set
+she had already written down; the blocks were waiting on a DOCUMENT. Neither calls a model: a
+rotating lens and a named mode are decidable from the day's state, so the faculty runs at $0 by
+construction rather than by policy. §10.6's background track stays out of the rotation, because
+promoting it silently would be this system changing her contract.
+
+**The novelty engine needed a memory to be one.** The Somatic brain says "track recent movement
+selections whenever history is available" — a novelty engine with no history is a random number
+generator that repeats as often as it varies. `movement_log` is that history, and selection is
+least-recently-used rather than random, which makes "avoid the same major movement on consecutive
+days" literal instead of true-on-average. It is deterministic, so it never needs a model either.
+
+**Bed-first broke in the copy, not in a movement.** §6.8: no standing, walking pad or outdoor walking
+may appear in the minimum-viable fallback. Every movement in `body.ts` is bed-based — and the movement
+FLOOR string still read "outside walk, walking pad, bed yoga or somatic all count", which put a walking
+pad inside a recovery day's contract. Caught by a test that checks the whole rendered contract rather
+than only the fallback list, which is the only way that class of leak gets caught.
+
+**What is still absent, and says so by name.** §15.4 requires exact Spirit, Wealth and Execution
+contracts — a gratitude sentence, a first money move, a first completion action. The Morning Gate does
+not collect any of them yet, so `morning_agenda` names each as absent with its reason rather than
+filling in a plausible sentence. Body is real because her documents specify it exactly. That is the
+difference between this and the old `{available: false, reason: "the agenda engine lands in Phase 12"}`:
+the absence is now specific and shrinking.

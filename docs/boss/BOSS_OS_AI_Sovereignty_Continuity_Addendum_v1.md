@@ -23,6 +23,10 @@ This addendum extends the existing architecture. It creates no parallel router, 
 | Sections 201–211: Model runtime, router, registry, evaluations | Capability-qualified failover and archival model records |
 | Sections 222–225: Existing agents, tasks, approvals, entities | Assign preservation duties through existing ownership and permission envelopes |
 
+**v10.19 IS DEAD — owner's decision, 6 September 2026, stated plainly when asked.** The A-Player Mode
+OS Contract (`A_PLAYER_MODE_OS_CONTRACT.md`) is the live agenda specification. Nothing in v10.19 is
+authoritative any more, and a future chat finding it should treat it as history, not as a baseline.
+
 The v20 header explicitly supersedes v10.19. A later upload or modification timestamp on v10.19 does not by itself supersede v20. Historical version references inside v20 remain preserved history.
 
 The consolidated v20 Build Plan v2 defers local inference and uses cloud infrastructure for normal operation. This addendum does not claim those deferred requirements are implemented. Its future offline runtime requirement must be reconciled explicitly in the implementation plan; cloud-only deployment must never be reported as offline readiness.
