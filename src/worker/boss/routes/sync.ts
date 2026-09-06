@@ -273,7 +273,42 @@ sync.post("/devices/:id/revoke", async (c) => {
   return ok(c, { device_id: c.req.param("id"), revoked: true });
 });
 
-sync.get("/conflicts", async (c) => ok(c, { conflicts: await openConflicts(c.env.DB) }));
+/**
+ * The conflict inbox (Batch 6).
+ *
+ * It shows what a person needs to decide with: the entity, both versions, the base they diverged
+ * from, why it conflicted, and which resolutions are SAFE for that entity. A NEVER_AUTOMATIC
+ * entity - a decision, a capital allocation, the emotional-state gate - offers no one-press
+ * "apply theirs", because the whole point of that class is that a machine may not pick a winner
+ * and a UI that offers it invites one anyway.
+ */
+sync.get("/conflicts", async (c) => {
+  const rows = await openConflicts(c.env.DB);
+  const conflicts = [];
+  for (const r of rows) {
+    const policy = await c.env.DB
+      .prepare(`SELECT merge_policy, residency FROM data_policy WHERE entity = ?1`)
+      .bind(r.entity)
+      .first<{ merge_policy: string; residency: string }>();
+    const merge = policy?.merge_policy ?? "VERSIONED";
+    conflicts.push({
+      ...r,
+      merge_policy: merge,
+      base_version: r.base_version,
+      cloud_version: r.current_version,
+      local_version: r.base_version,
+      reason:
+        merge === "IMMUTABLE"
+          ? "This record is written once. A different version arrived, and both are kept."
+          : `Edited from version ${r.base_version ?? 0} while the record had already moved to ${r.current_version}.`,
+      safe_actions:
+        merge === "NEVER_AUTOMATIC"
+          ? ["MERGED_BY_HAND"]
+          : ["KEPT_CURRENT", "APPLIED_INCOMING", "MERGED_BY_HAND"],
+    });
+  }
+  return ok(c, { conflicts });
+});
 
 /**
  * Resolving a conflict is itself a mutation (Batch 6).
@@ -291,13 +326,56 @@ sync.post("/conflicts/:id/resolve", async (c) => {
   if (!row) throw badRequest("No such conflict");
   if (row.resolution !== "OPEN") throw badRequest("That conflict is already resolved", `It was ${row.resolution}.`);
 
+  /*
+   * A NEVER_AUTOMATIC entity accepts only a hand merge. The endpoint enforces it rather than
+   * trusting the UI to hide the other buttons: a rule that only exists in a screen is a rule that
+   * a curl command does not have to follow.
+   */
+  const policy = await c.env.DB
+    .prepare(`SELECT merge_policy FROM data_policy WHERE entity = ?1`)
+    .bind(row.entity)
+    .first<{ merge_policy: string }>();
+  if (policy?.merge_policy === "NEVER_AUTOMATIC" && b.resolution !== "MERGED_BY_HAND") {
+    throw badRequest(
+      `${row.entity} is NEVER_AUTOMATIC: a machine may not pick a winner here.`,
+      "Reconcile it by hand and record the result as MERGED_BY_HAND.",
+    );
+  }
+
+  const now = Date.now();
   await c.env.DB
     .prepare(`UPDATE sync_conflict SET resolution = ?2, resolved_at = ?3, resolved_by = ?4, note = ?5 WHERE id = ?1`)
-    .bind(c.req.param("id"), b.resolution, Date.now(), String(b.by), b.note ?? null)
+    .bind(c.req.param("id"), b.resolution, now, String(b.by), b.note ?? null)
     .run();
+
+  /*
+   * THE RESOLUTION IS ITSELF A MUTATION (Batch 6).
+   *
+   * Otherwise the two sides stay diverged: one of them decided, and the other has no way to learn
+   * that a decision happened, so it re-bases on a version that is no longer the agreed one and
+   * conflicts again. Writing it to the ledger means every device pulls the resolution the same way
+   * it pulls anything else, and the version moves - deliberately, even for KEPT_CURRENT, because
+   * everyone must re-base on the state that was agreed rather than the one they happened to hold.
+   */
+  const nextVersion = (row.current_version ?? 0) + 1;
+  await c.env.DB.batch([
+    c.env.DB
+      .prepare(
+        `INSERT INTO sync_ledger (mutation_id, entity, record_id, base_version, result_version, device_id, tombstone, payload_hash, wall_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'resolution', 0, NULL, ?6)`,
+      )
+      .bind(`mut_resolve_${c.req.param("id")}`, row.entity, row.record_id, row.current_version, nextVersion, now),
+    c.env.DB
+      .prepare(
+        `INSERT INTO record_version (entity, record_id, version, tombstone, updated_at)
+         VALUES (?1, ?2, ?3, 0, ?4)
+         ON CONFLICT (entity, record_id) DO UPDATE SET version = excluded.version, updated_at = excluded.updated_at`,
+      )
+      .bind(row.entity, row.record_id, nextVersion, now),
+  ]);
   await logEvent(c.env.DB, {
     level: "info", scope: "sync", event: "conflict_resolved",
     detail: { conflict: c.req.param("id"), entity: row.entity, resolution: b.resolution, by: b.by },
   }).catch(() => {});
-  return ok(c, { id: c.req.param("id"), resolution: b.resolution });
+  return ok(c, { id: c.req.param("id"), resolution: b.resolution, version: nextVersion });
 });

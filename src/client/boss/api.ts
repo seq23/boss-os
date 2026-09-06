@@ -325,6 +325,12 @@ export const api = {
   proposeHandoff: (body: unknown) => call<any>("/bridge/handoffs", post("", body)),
   bridgeCheck: (direction: string, category: string) => call<any>(`/bridge/check/${direction}/${category}`),
 
+  // ── Sync: devices, conflicts, and the resolution of one (Batch 6) ──
+  syncStatus: () => call<any>("/sync/status"),
+  syncDevices: () => call<any>("/sync/devices"),
+  syncConflicts: () => call<any>("/sync/conflicts"),
+  resolveConflict: (id: string, body: unknown) => call<any>(`/sync/conflicts/${id}/resolve`, post("", body)),
+
   // ── Governance watch list — the sentinel's eleven items. ──
   watchList: () => call<any[]>("/governance/watch-list"),
 

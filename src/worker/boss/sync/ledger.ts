@@ -26,10 +26,14 @@ export interface Mutation {
   wallMs?: number;
 }
 
+export type MergePolicy = "APPEND_ONLY" | "IMMUTABLE" | "VERSIONED" | "NEVER_AUTOMATIC" | "REGENERATE";
+
 export type MutationOutcome =
   | { status: "APPLIED"; seq: number; version: number }
   | { status: "REPLAY"; seq: number; version: number }
-  | { status: "CONFLICT"; conflictId: string; currentVersion: number; baseVersion: number | null };
+  | { status: "MERGED"; seq: number; version: number }
+  | { status: "NOOP"; version: number }
+  | { status: "CONFLICT"; conflictId: string; currentVersion: number; baseVersion: number | null; mergePolicy: MergePolicy };
 
 export class SyncRefusal extends Error {
   constructor(readonly code: string, message: string) {
@@ -120,12 +124,65 @@ export async function prepareMutation(
     return { outcome: { status: "REPLAY", seq: seen.seq, version: seen.result_version }, statements: [], mutationId: m.mutationId };
   }
 
+  const policyRow = await db
+    .prepare(`SELECT merge_policy FROM data_policy WHERE entity = ?1`)
+    .bind(m.entity)
+    .first<{ merge_policy: MergePolicy }>();
+  const mergePolicy: MergePolicy = policyRow?.merge_policy ?? "VERSIONED";
+
+  /*
+   * Derived state is rebuilt, not reconciled. Sending it at all is a mistake worth naming: two
+   * machines arguing about the contents of a cache is a disagreement neither of them needs to win.
+   */
+  if (mergePolicy === "REGENERATE") {
+    throw new SyncRefusal(
+      "REGENERATE",
+      `${m.entity} is derived or machine-local and is rebuilt rather than synchronized. Nothing was transmitted.`,
+    );
+  }
+
   const current = await db
     .prepare(`SELECT version FROM record_version WHERE entity = ?1 AND record_id = ?2`)
     .bind(m.entity, m.recordId)
     .first<{ version: number }>();
   const currentVersion = current?.version ?? 0;
   const base = m.baseVersion ?? 0;
+
+  /*
+   * An append-only log has no conflicts to have. Two devices each adding a different row are not
+   * disagreeing about anything, so a version mismatch here means "you had not seen the other
+   * rows yet", which is not a question for a person.
+   */
+  if (base !== currentVersion && mergePolicy === "APPEND_ONLY") {
+    const version = currentVersion + 1;
+    const wall = m.wallMs ?? Date.now();
+    return {
+      outcome: { status: "MERGED", seq: -1, version },
+      statements: appendStatements(db, m, version, wall),
+      mutationId: m.mutationId,
+    };
+  }
+
+  /*
+   * Immutable evidence: an identical rewrite is a no-op rather than a new version, and a DIFFERENT
+   * one is a conflict where both copies survive. Overwriting evidence with a later version of
+   * itself is how provenance quietly stops being provenance.
+   */
+  if (mergePolicy === "IMMUTABLE" && currentVersion > 0) {
+    const prior = await db
+      .prepare(`SELECT payload_hash FROM sync_ledger WHERE entity = ?1 AND record_id = ?2 ORDER BY seq DESC LIMIT 1`)
+      .bind(m.entity, m.recordId)
+      .first<{ payload_hash: string | null }>();
+    if (prior && prior.payload_hash && m.payloadHash && prior.payload_hash === m.payloadHash) {
+      return { outcome: { status: "NOOP", version: currentVersion }, statements: [], mutationId: m.mutationId };
+    }
+    const conflictId = await recordConflict(db, m, currentVersion, "IMMUTABLE");
+    return {
+      outcome: { status: "CONFLICT", conflictId, currentVersion, baseVersion: m.baseVersion, mergePolicy },
+      statements: [],
+      mutationId: m.mutationId,
+    };
+  }
 
   if (base !== currentVersion) {
     /*
@@ -136,16 +193,9 @@ export async function prepareMutation(
      * This is the case naive last-write-wins gets wrong every time, and it is the reason clocks
      * are not the arbiter here.
      */
-    const conflictId = `cfl_${crypto.randomUUID()}`;
-    await db
-      .prepare(
-        `INSERT INTO sync_conflict (id, entity, record_id, mutation_id, base_version, current_version, device_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
-      )
-      .bind(conflictId, m.entity, m.recordId, m.mutationId, m.baseVersion, currentVersion, m.deviceId)
-      .run();
+    const conflictId = await recordConflict(db, m, currentVersion, mergePolicy);
     return {
-      outcome: { status: "CONFLICT", conflictId, currentVersion, baseVersion: m.baseVersion },
+      outcome: { status: "CONFLICT", conflictId, currentVersion, baseVersion: m.baseVersion, mergePolicy },
       statements: [],
       mutationId: m.mutationId,
     };
@@ -153,7 +203,15 @@ export async function prepareMutation(
 
   const version = currentVersion + 1;
   const wall = m.wallMs ?? Date.now();
-  const statements = [
+  const statements = appendStatements(db, m, version, wall);
+  // seq is assigned by SQLite on insert, so it is only knowable after the batch commits.
+  return { outcome: { status: "APPLIED", seq: -1, version }, statements, mutationId: m.mutationId };
+}
+
+/** Commit a prepared mutation together with the caller's own write, in one transaction. */
+/** The two statements every applied mutation writes, shared by the versioned and merged paths. */
+function appendStatements(db: D1Database, m: Mutation, version: number, wall: number) {
+  return [
     db
       .prepare(
         `INSERT INTO sync_ledger (mutation_id, entity, record_id, base_version, result_version, device_id, tombstone, payload_hash, wall_ms)
@@ -168,17 +226,26 @@ export async function prepareMutation(
       )
       .bind(m.entity, m.recordId, version, m.tombstone ? 1 : 0, wall),
   ];
-  // seq is assigned by SQLite on insert, so it is only knowable after the batch commits.
-  return { outcome: { status: "APPLIED", seq: -1, version }, statements, mutationId: m.mutationId };
 }
 
-/** Commit a prepared mutation together with the caller's own write, in one transaction. */
+async function recordConflict(db: D1Database, m: Mutation, currentVersion: number, mergePolicy: MergePolicy): Promise<string> {
+  const conflictId = `cfl_${crypto.randomUUID()}`;
+  await db
+    .prepare(
+      `INSERT INTO sync_conflict (id, entity, record_id, mutation_id, base_version, current_version, device_id, note)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    )
+    .bind(conflictId, m.entity, m.recordId, m.mutationId, m.baseVersion, currentVersion, m.deviceId, `merge policy ${mergePolicy}`)
+    .run();
+  return conflictId;
+}
+
 export async function commitMutation(
   db: D1Database,
   prepared: Awaited<ReturnType<typeof prepareMutation>>,
   callerStatements: ReturnType<D1Database["prepare"]>[] = [],
 ): Promise<MutationOutcome> {
-  if (prepared.outcome.status !== "APPLIED") return prepared.outcome;
+  if (prepared.outcome.status !== "APPLIED" && prepared.outcome.status !== "MERGED") return prepared.outcome;
   /*
    * ONE BATCH, BOTH OR NEITHER. The caller's write and the ledger entry go in together, which is
    * the Batch 3 requirement that a syncable mutation "must not be considered successfully

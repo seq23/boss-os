@@ -65,7 +65,7 @@ test.describe("Boss OS surface", () => {
     await unlock(page);
     await page.getByRole("button", { name: "Systems", exact: true }).click();
 
-    for (const label of ["Governance", "Knowledge", "Prompts", "Quant", "Bridge", "Capability", "Runtimes"]) {
+    for (const label of ["Governance", "Knowledge", "Prompts", "Quant", "Bridge", "Capability", "Runtimes", "Sync"]) {
       await page.getByRole("tab", { name: label }).click();
       const main = page.locator("main.page");
       /*

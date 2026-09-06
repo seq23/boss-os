@@ -16,7 +16,7 @@ import { ErrorNotice } from "../components/Notice";
  * nothing, which is a state each panel names rather than showing an empty box. None of them
  * fabricates a number the server did not send.
  */
-type SectionId = "governance" | "knowledge" | "prompt" | "quant" | "bridge" | "capability" | "runtimes";
+type SectionId = "governance" | "knowledge" | "prompt" | "quant" | "bridge" | "capability" | "runtimes" | "sync";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "governance", label: "Governance" },
@@ -26,6 +26,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "bridge", label: "Bridge" },
   { id: "capability", label: "Capability" },
   { id: "runtimes", label: "Runtimes" },
+  { id: "sync", label: "Sync" },
 ];
 
 export function Systems() {
@@ -52,6 +53,7 @@ export function Systems() {
       {section === "bridge" && <Bridge />}
       {section === "capability" && <Capability />}
       {section === "runtimes" && <Runtimes />}
+      {section === "sync" && <Sync />}
     </>
   );
 }
@@ -354,6 +356,94 @@ function Runtimes() {
           <Row key={a.id} title={text(a.target ?? a.url ?? a.id)} sub={text(a.created_at, "")} val={text(a.checks_passed ?? a.status)} />
         ))}
       </Panel>
+    </>
+  );
+}
+
+
+/* ─── Sync: devices and the conflict inbox ────────────────────────────────── */
+
+/**
+ * A conflict nobody can see is a conflict nobody resolves, and the two sides stay diverged while
+ * the system looks fine. Batch 6 asks for the inbox to show the entity, both versions, the base
+ * they came apart from, why, and which resolutions are SAFE for that entity — and for a
+ * NEVER_AUTOMATIC record that is a hand merge only, because a machine may not pick a winner
+ * between two capital allocations however confident the rule looks.
+ */
+function Sync() {
+  const status = usePanel(() => api.syncStatus());
+  const conflicts = usePanel(() => api.syncConflicts());
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  async function resolve(id: string, resolution: string) {
+    setBusy(id);
+    try {
+      await api.resolveConflict(id, { resolution, by: "owner" });
+      conflicts.reload();
+      status.reload();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const rows = asList((conflicts.data as any)?.conflicts ?? conflicts.data);
+  return (
+    <>
+      <section className="panel">
+        <p className="eyebrow">Devices</p>
+        <ErrorNotice error={status.error} />
+        {status.data === null && !status.error ? (
+          <Loading />
+        ) : asList((status.data as any)?.devices).length === 0 ? (
+          <Empty title="No device is registered" hint="A device is registered before it may sync. Nothing else has asked to." />
+        ) : (
+          asList((status.data as any)?.devices).map((d: any) => (
+            <Row
+              key={d.device_id}
+              title={text(d.label)}
+              sub={`${text(d.kind)} · ${text(d.device_id)}`}
+              val={d.revoked_at ? "REVOKED" : "ACTIVE"}
+            />
+          ))
+        )}
+      </section>
+
+      <section className="panel">
+        <p className="eyebrow">Conflict inbox</p>
+        <ErrorNotice error={error ?? conflicts.error} onDismiss={() => setError(null)} />
+        {conflicts.data === null && !conflicts.error ? (
+          <Loading />
+        ) : rows.length === 0 ? (
+          <Empty title="Nothing disagrees" hint="Both sides hold the same version of every record. This is the state you want it to stay in." />
+        ) : (
+          rows.map((cf: any) => (
+            <div className="row" key={cf.id}>
+              <div className="row-main">
+                <div className="row-title">{text(cf.entity)} · {text(cf.record_id)}</div>
+                <div className="row-sub">{text(cf.reason)}</div>
+                <div className="row-sub mono">
+                  base {text(cf.base_version, "none")} · here {text(cf.cloud_version)} · {text(cf.merge_policy)}
+                </div>
+                <div className="decide" style={{ marginTop: 8 }}>
+                  {asList(cf.safe_actions).map((a: string) => (
+                    <button
+                      key={a}
+                      className={a === "KEPT_CURRENT" ? "btn btn-approve" : a === "APPLIED_INCOMING" ? "btn btn-defer" : "btn"}
+                      disabled={busy === cf.id}
+                      onClick={() => resolve(cf.id, a)}
+                    >
+                      {a === "KEPT_CURRENT" ? "Keep this" : a === "APPLIED_INCOMING" ? "Take theirs" : "Merged by hand"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </section>
     </>
   );
 }
