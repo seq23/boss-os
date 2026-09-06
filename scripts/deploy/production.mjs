@@ -82,15 +82,61 @@ try {
   die(`deploy failed:\n${err.stdout ?? err.message}`);
 }
 
+/*
+ * STEP 4 USED TO BE DECORATION. Its catch printed "check manually" and fell through to a final
+ * line that said "deployed and verified" regardless - so a deploy whose health check never
+ * connected reported success in the same words as one that passed. Observed on the first real
+ * deploy of this repo, 5 Sep 2026: the custom domain's certificate was still issuing, curl
+ * returned nothing, and the script congratulated itself.
+ *
+ * A verification that cannot fail is not a verification. It retries, because a freshly created
+ * custom domain legitimately takes a minute to serve TLS, and then it either passes or the
+ * script exits non-zero saying which.
+ */
 say("4/4  verifying the worker answers…");
-try {
-  const code = run(`curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://boss.sequoiataylor.com/api/health`).trim();
-  // 302 is correct and expected: Cloudflare Access redirects an unauthenticated probe to its login.
-  // A 5xx would mean the worker is up but broken, which is the case worth catching here.
-  if (code === "302" || code === "200") say(`     ok (HTTP ${code} — Access redirect is expected)`);
-  else die(`health check returned HTTP ${code}`);
-} catch {
-  say("     could not reach the health endpoint; check manually");
+const HOST = "boss.sequoiataylor.com";
+const HEALTH = `https://${HOST}/api/health`;
+
+/*
+ * RESOLVED THROUGH A PUBLIC RESOLVER, NOT THIS MACHINE'S.
+ *
+ * The first deploy of a new custom domain creates the DNS record moments after the operator's
+ * resolver has already cached a miss for that name. `dig` saw the record and `curl` said "could
+ * not resolve host" for several minutes afterwards - so a check that trusts the local resolver is
+ * testing the laptop, not the deployment. It asks 1.1.1.1 and pins the answer with --resolve, and
+ * falls back to ordinary resolution if that lookup fails.
+ */
+let health = null;
+for (let attempt = 1; attempt <= 6; attempt++) {
+  let pin = "";
+  try {
+    const ip = run(`dig +short ${HOST} @1.1.1.1`).trim().split("\n").filter((l) => /^\d+\./.test(l))[0];
+    if (ip) pin = `--resolve ${HOST}:443:${ip}`;
+  } catch {
+    pin = "";
+  }
+  try {
+    health = run(`curl -s ${pin} -o /dev/null -w "%{http_code}" --max-time 20 ${HEALTH}`).trim();
+  } catch {
+    health = "000";
+  }
+  // 302 is correct and expected where Cloudflare Access fronts the Worker: it redirects an
+  // unauthenticated probe to its login. A 5xx means the Worker is up and broken.
+  if (health === "200" || health === "302") break;
+  if (attempt < 6) {
+    say(`     HTTP ${health} — not answering yet, retrying (${attempt}/5)`);
+    run(`sleep 20`);
+  }
+}
+if (health === "200" || health === "302") {
+  say(`     ok (HTTP ${health})`);
+} else {
+  die(
+    `the Worker deployed but ${HEALTH} never answered (last: HTTP ${health}).\n` +
+    `  A new custom domain can take a few minutes to serve TLS. This already resolves through\n` +
+    `  1.1.1.1 rather than trusting the local resolver, so a failure here is the edge, not DNS.\n` +
+    `  The code IS deployed. This is a failed verification, not a failed deploy.`,
+  );
 }
 
 say("\n✓ deployed and verified");
