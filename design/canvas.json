@@ -1,0 +1,41 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 1500,
+      "title": "Proposed v2 \u2014 deliveries lead, faces attached"
+    },
+    {
+      "file": "Current.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 900,
+      "h": 1180,
+      "title": "Today"
+    },
+    {
+      "file": "Quiet.dc.html",
+      "x": 2580,
+      "y": 0,
+      "w": 900,
+      "h": 1180,
+      "title": "A quiet day, and an unloaded firm"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "v2-change",
+      "x": 0,
+      "y": -240,
+      "w": 640,
+      "text": "What changed from v1.\n\nThe byline moved onto the thing it belongs to. Wren's name and face now sit on the briefing itself, the way a byline sits on an article \u2014 not floating in the top-right corner of the page.\n\nDeliveries lead, everything else sits below. Each one is a person handing you something, with their face beside it, rather than a titled panel that happens to have a name at the bottom.\n\nAn employee with nothing to report stays on the page, quieter and smaller. Silence from a named colleague is information; an absent card is just a gap."
+    }
+  ],
+  "launch": {
+    "view": "focused",
+    "file": "Main.dc.html"
+  }
+}

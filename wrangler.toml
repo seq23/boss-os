@@ -1,0 +1,198 @@
+# West Peek OS — Cloudflare Worker configuration.
+#
+# Top level = the LOCAL development/validation profile. `wrangler dev`, `npm run e2e`, and
+# `npm run migrate:local` run fully offline against miniflare and keep WP_OS_ENV = "local",
+# which is what enables the `x-wpos-dev-user` dev identity header (src/worker/auth.ts).
+# That profile must never be what gets deployed. Its remote identifiers stay ADR-007
+# placeholders on purpose — local dev and local validation never need them.
+#
+# Remote deployment targets the explicit `[env.production]` profile below
+# (`wrangler deploy --env production`), where WP_OS_ENV = "production" and identity is
+# `Cf-Access-Authenticated-User-Email` only. See docs/ENVIRONMENTS.md.
+#
+# Declaring that profile is NOT a deployment and NOT a proof of one: remote deployment,
+# Cloudflare Access configuration, and remote migration apply all remain human-gated and
+# UNPROVEN. No secret value appears in this file — resource ids are non-secret; secrets
+# live only in the encrypted vault and in Worker secret storage.
+name = "west-peek-os"
+main = "src/worker/index.ts"
+compatibility_date = "2025-10-01"
+# Required by @cloudflare/puppeteer, which pulls in node:buffer. Without it the Worker does not
+# start at all — caught by E2E, invisible to unit tests because they never boot the runtime.
+compatibility_flags = ["nodejs_compat"]
+
+# Static React client built by `vite build` into dist/client.
+# The worker handles /api/* itself and delegates everything else to ASSETS.
+[assets]
+directory = "./dist/client"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# D1 — relational operational truth. database_id below is a placeholder:
+# local `wrangler dev` / migrations work without a real id; remote use requires
+# operator-supplied Cloudflare account configuration (UNPROVEN — CREDENTIAL GATE).
+[[d1_databases]]
+binding = "WP_OS_DB"
+database_name = "west-peek-os-db"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# R2 — governed binary documents/artifacts only. D1 holds metadata/provenance.
+# Workers AI — the cheap tier. A binding, so no hostname, no key, nothing on the egress allowlist.
+# 10,000 neurons a day are included, which makes small routine work genuinely free.
+[ai]
+binding = "AI"
+
+[[r2_buckets]]
+binding = "WP_OS_DOCUMENTS"
+bucket_name = "west-peek-os-documents"
+
+# KV — ephemeral/config/cache ONLY. Never institutional truth.
+[[kv_namespaces]]
+binding = "WP_OS_KV"
+id = "00000000000000000000000000000000"
+
+# Browser Rendering (P44). A BINDING, not an HTTP client — which is why browser tasks need no
+# egress exemption: nothing here calls fetch(). Native to the platform this Worker already runs on,
+# so there is no second vendor, no second credential, and no x402 autonomous-payment surface.
+[browser]
+binding = "BROWSER"
+
+# Email Sending (P33) — DISABLED, and the reason is not technical.
+#
+# Cloudflare Email Sending requires the Workers Paid plan: "Email Sending is currently only
+# available with the Workers Paid plan." This firm is not on it and does not want to be, so the
+# binding cannot send and is commented out rather than left deployed.
+#
+# LEAVING IT DEPLOYED WOULD HAVE BEEN WORSE THAN USELESS. The executor prefers Cloudflare whenever
+# the binding is present, so a live binding against an un-onboarded domain would have captured
+# every send and failed it — while Resend sat configured and unused. An unusable transport that
+# outranks a working one is a trap, so it goes.
+#
+# Outbound mail goes through Resend instead (src/worker/effects/resendClient.ts): free to 3,000
+# messages a month and 100 a day, which is far beyond what this fund sends. To switch back, upgrade
+# the plan, run `wrangler email sending enable westpeek.ventures`, and uncomment.
+# [[send_email]]
+# name = "EMAIL"
+# # The binding may only send AS this address, so a bug or a prompt injection cannot make the fund
+# # appear to email as anybody else on the domain.
+# allowed_sender_addresses = ["os@westpeek.ventures"]
+
+[vars]
+# local | preview | production
+WP_OS_ENV = "local"
+
+# Cron Trigger — the ONLY scheduling primitive this system uses (ADR-017).
+# It calls the Worker's scheduled() handler, which runs due jobs from D1. Queues and Durable
+# Objects are deliberately not used. A trigger cannot fire in local `wrangler dev`, so the same
+# code path is exercised locally through POST /api/jobs/tick and directly in tests.
+[triggers]
+crons = ["*/15 * * * *"]
+
+# ---------------------------------------------------------------------------
+# production — the deployed profile (`wrangler deploy --env production`).
+#
+# Wrangler does NOT inherit bindings or vars into a named environment, so assets,
+# D1, R2, KV and vars are each restated here deliberately and explicitly. `main`,
+# `compatibility_date` and `[triggers]` ARE inherited from the top level, so the
+# entrypoint, compatibility date and the ADR-017 cron are identical to local.
+#
+# `name` is restated because a named environment would otherwise deploy to
+# "west-peek-os-production"; the proven existing Worker is "west-peek-os".
+#
+# The identifiers below are REAL provisioned Cloudflare resources. They are
+# non-secret. Declaring them here does not deploy, migrate, or configure anything.
+# ---------------------------------------------------------------------------
+[env.production]
+name = "west-peek-os"
+
+[env.production.assets]
+directory = "./dist/client"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[env.production.d1_databases]]
+binding = "WP_OS_DB"
+database_name = "west-peek-os-db"
+database_id = "1d7c242b-fddc-41f1-843c-03dd2db6fbef"
+migrations_dir = "migrations"
+
+[env.production.ai]
+binding = "AI"
+
+[[env.production.r2_buckets]]
+binding = "WP_OS_DOCUMENTS"
+bucket_name = "west-peek-os-documents"
+
+[[env.production.kv_namespaces]]
+binding = "WP_OS_KV"
+id = "bf0750e8e9a648758a5de978088c97da"
+
+# Browser Rendering (P44). A BINDING, not an HTTP client — which is why browser tasks need no
+# egress exemption: nothing here calls fetch(). Native to the platform this Worker already runs on,
+# so there is no second vendor, no second credential, and no x402 autonomous-payment surface.
+[env.production.browser]
+binding = "BROWSER"
+
+# Email Sending (P33) — DISABLED, and the reason is not technical.
+#
+# Cloudflare Email Sending requires the Workers Paid plan: "Email Sending is currently only
+# available with the Workers Paid plan." This firm is not on it and does not want to be, so the
+# binding cannot send and is commented out rather than left deployed.
+#
+# LEAVING IT DEPLOYED WOULD HAVE BEEN WORSE THAN USELESS. The executor prefers Cloudflare whenever
+# the binding is present, so a live binding against an un-onboarded domain would have captured
+# every send and failed it — while Resend sat configured and unused. An unusable transport that
+# outranks a working one is a trap, so it goes.
+#
+# Outbound mail goes through Resend instead (src/worker/effects/resendClient.ts): free to 3,000
+# messages a month and 100 a day, which is far beyond what this fund sends. To switch back, upgrade
+# the plan, run `wrangler email sending enable westpeek.ventures`, and uncomment.
+# [[env.production.send_email]]
+# name = "EMAIL"
+# # The binding may only send AS this address, so a bug or a prompt injection cannot make the fund
+# # appear to email as anybody else on the domain.
+# allowed_sender_addresses = ["os@westpeek.ventures"]
+
+[env.production.vars]
+# ── Whether an AI employee may email anybody (P33) ──
+#
+# BOTH OFF, and separate because they are different decisions. An employee emailing the partners is
+# an internal convenience — worst case a partner reads something wrong in their own inbox and says
+# so. An employee emailing the outside world is the firm speaking to a founder, an LP or a
+# co-investor, and there is no undo.
+#
+# Deployment settings rather than buttons on a page, on purpose: flipping one should leave a diff, a
+# review and a timestamp, not be a click any session with an MP cookie can make. Anything other than
+# exactly "enabled" is off, so a typo fails safe.
+WP_OS_AI_EMAIL_PARTNERS = "off"
+WP_OS_AI_EMAIL_EXTERNAL = "off"
+# Not "local": the dev identity header `x-wpos-dev-user` is refused outside local,
+# and identity comes from `Cf-Access-Authenticated-User-Email` (src/worker/auth.ts).
+WP_OS_ENV = "production"
+
+# ── Outbound email (P33) ──
+# Configuration rather than secrets, so the switch is visible in the repo and in review instead of
+# hidden in a dashboard. The credential itself is a Worker secret (RESEND_API_KEY).
+#
+# WP_OS_EMAIL_SEND must be the literal "enabled". "true", "yes" and "1" all leave sending off, which
+# is deliberate: a transport being available has never been consent to start emailing people, and it
+# should be impossible to switch on by accident.
+#
+# os@westpeek.ventures needs no mailbox behind it to send. Inbound mail for this domain goes to
+# Google Workspace and is untouched by any of this — Resend's records live on the `send` and
+# `resend._domainkey` subdomains precisely so the root MX is left alone.
+WP_OS_EMAIL_FROM = "os@westpeek.ventures"
+WP_OS_EMAIL_SEND = "enabled"
+
+# Network OS live pull (P35, canon §12A). Non-secret: an origin and an identity, both of which
+# are useless without WP_OS_NETWORK_OS_SESSION_SECRET, which is a Worker secret and never in this
+# file. The pull stays 503 until all three are present.
+WP_OS_NETWORK_OS_BASE_URL = "https://network.joinwestpeek.com"
+# sequoia@, and this was tried as info@ for one deploy on 22 Aug 2026 and reverted. Network OS's
+# own `ADMIN_EMAIL_ALLOWLIST` holds sequoia@ and scooter@ and NOT info@, so the alternative could
+# never have authenticated — checked in that repo rather than guessed at from here.
+WP_OS_NETWORK_OS_USER_EMAIL = "sequoia@westpeek.ventures"
+
+[env.production.observability]
+enabled = true

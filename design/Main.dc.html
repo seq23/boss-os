@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    a { color: #b4400f; text-decoration: none; }
+    a:hover { color: #8f3309; }
+    .lbl { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: #6b635b; font-weight: 600; }
+    .card { background: #ffffff; border: 1px solid #e4ddd2; border-radius: 6px; }
+    .who { display: flex; align-items: center; gap: 10px; }
+    .face { width: 36px; height: 36px; border-radius: 999px; background: #e4ddd2; color: #4a443e;
+            display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  </style>
+</helmet>
+
+<div style="width: 1080px; height: 1500px; background: #f7f2ea; color: #15120f; padding: 32px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px;">
+
+  <header style="display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding-bottom: 14px; border-bottom: 1px solid #cdc4b7;">
+    <div>
+      <div class="lbl" style="margin-bottom: 6px;">Tuesday 18 August 2026</div>
+      <h1 style="margin: 0; font-size: 28px; line-height: 1.1; letter-spacing: -0.011em; font-weight: 700;">This morning, Sequoia</h1>
+    </div>
+    <div style="font-size: 12px; color: #6b635b; text-align: right;">4 of your team have something for you</div>
+  </header>
+
+  <!-- THE BRIEF, with Wren ON it. The byline sits where the thing she delivered is. -->
+  <section class="card" style="padding: 0; overflow: hidden;">
+    <div style="display: flex; gap: 12px; align-items: center; padding: 16px 24px; background: #fbf8f3; border-bottom: 1px solid #e4ddd2;">
+      <div class="face" style="background: #15120f; color: #ffffff;">WR</div>
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="font-size: 15px; font-weight: 700;">Wren delivered your morning briefing</div>
+        <div style="font-size: 12px; color: #6b635b;">Sequoia&#8217;s Chief of Staff &middot; 7:03 AM &middot; from 47 items swept overnight</div>
+      </div>
+      <span class="pill" style="background: #fff1e9; color: #b4400f;">Read it</span>
+    </div>
+
+    <div style="padding: 20px 24px;">
+      <div class="lbl" style="margin-bottom: 8px;">The one-minute version</div>
+      <ol style="margin: 0 0 16px; padding-left: 20px; font-size: 14px; line-height: 1.55;">
+        <li style="margin-bottom: 6px;">Long rates and oil moved together overnight &mdash; the pressure on growth valuations is the discount rate, not the Fed.</li>
+        <li style="margin-bottom: 6px;">Two ed-tech seed rounds priced above where Psyflo would raise, which helps the comp you are building.</li>
+        <li>Nothing in your pipeline changed stage. Psyflo has been screening nine days.</li>
+      </ol>
+      <div style="display: flex; gap: 10px; align-items: flex-start; padding-top: 14px; border-top: 1px solid #e4ddd2;">
+        <span class="pill" style="background: #f05a1a; color: #0a0a0a; flex-shrink: 0;">10/10</span>
+        <div>
+          <div style="font-size: 14px; font-weight: 600;">Thirty-year yields at their highest since 2007</div>
+          <div style="font-size: 13px; color: #4a443e; line-height: 1.5;"><strong>Why it matters:</strong> your cost of capital moves with the long end, not the funds rate.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DELIVERIES: face + name attached to what each one brought. -->
+  <div>
+    <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px;">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.011em;">From your team</h2>
+      <span style="font-size: 12px; color: #6b635b;">five on duty this shift</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+
+      <div class="card" style="padding: 16px 20px; display: flex; gap: 14px; align-items: flex-start; border-left: 3px solid #f05a1a;">
+        <div class="face">WA</div>
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 14px;"><strong>Walker</strong> <span style="color: #6b635b; font-size: 12px;">Scooter&#8217;s Chief of Staff</span></div>
+          <div style="font-size: 14px; margin-top: 2px;">Two decisions are waiting on you &mdash; the oldest is four days old.</div>
+        </div>
+        <span class="pill" style="background: #15120f; color: #ffffff; flex-shrink: 0;">Decide</span>
+      </div>
+
+      <div class="card" style="padding: 16px 20px; display: flex; gap: 14px; align-items: flex-start;">
+        <div class="face">PO</div>
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 14px;"><strong>Poppy</strong> <span style="color: #6b635b; font-size: 12px;">IC Facilitator</span></div>
+          <div style="font-size: 14px; margin-top: 2px;">Psyflo has been screening nine days. Blocked on a founder call nobody has booked.</div>
+        </div>
+        <span class="pill" style="background: #ffffff; border: 1px solid #9a9086; color: #15120f; flex-shrink: 0;">Open</span>
+      </div>
+
+      <div class="card" style="padding: 16px 20px; display: flex; gap: 14px; align-items: flex-start;">
+        <div class="face">WE</div>
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 14px;"><strong>Wesley</strong> <span style="color: #6b635b; font-size: 12px;">LP Relations</span></div>
+          <div style="font-size: 14px; margin-top: 2px;">Three LP conversations open. None have moved in two weeks.</div>
+        </div>
+        <span class="pill" style="background: #ffffff; border: 1px solid #9a9086; color: #15120f; flex-shrink: 0;">Open</span>
+      </div>
+
+      <div class="card" style="padding: 16px 20px; display: flex; gap: 14px; align-items: flex-start;">
+        <div class="face">WT</div>
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 14px;"><strong>Walter</strong> <span style="color: #6b635b; font-size: 12px;">Meeting Buddy</span></div>
+          <div style="font-size: 14px; margin-top: 2px;">10:00 with Deana Oliver, Psyflo. Prep is ready.</div>
+        </div>
+        <span class="pill" style="background: #ffffff; border: 1px solid #9a9086; color: #15120f; flex-shrink: 0;">Open</span>
+      </div>
+
+      <!-- Silence from a named colleague is information. It stays on the page, quieter. -->
+      <div class="card" style="padding: 14px 20px; display: flex; gap: 14px; align-items: center; opacity: 0.66;">
+        <div class="face" style="width: 28px; height: 28px; font-size: 11px;">WI</div>
+        <div style="font-size: 13px; color: #4a443e;">
+          <strong style="color: #15120f;">Winter</strong> &mdash; no open alerts on anything you own.
+        </div>
+      </div>
+
+      <div class="card" style="padding: 14px 20px; display: flex; gap: 14px; align-items: center; opacity: 0.66;">
+        <div class="face" style="width: 28px; height: 28px; font-size: 11px;">PA</div>
+        <div style="font-size: 13px; color: #4a443e;">
+          <strong style="color: #15120f;">Pax</strong> &mdash; the workforce cost $0.42 today, of a $25 cap.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <section class="card" style="padding: 14px 20px; background: #fbf8f3; display: flex; justify-content: space-between; align-items: center; gap: 16px;">
+    <div>
+      <div style="font-size: 14px; font-weight: 600;">Private layer</div>
+      <div style="font-size: 12px; color: #6b635b;">Visible only to you. Never firm evidence.</div>
+    </div>
+    <span style="font-size: 13px; padding: 6px 14px; border-radius: 4px; border: 1px solid #9a9086;">Show</span>
+  </section>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

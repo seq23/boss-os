@@ -1,0 +1,85 @@
+{
+  "_note": "Casting sheet for the AI employee portraits (roster v4.1). Direction: everyone reads 28-40, attractive and modelesque, deliberately diverse — protected through the consolidation rather than left to chance, so senior seats keep it. Expertise is veteran-level regardless of apparent age; depth is in the persona text, not the face. The LP-facing seat (Wesley) is white and blonde per operator direction; Piper's entry stays below although her seat was merged into his on 21 Aug 2026, because a retired employee keeps her face — an employee brought back with a grey initial arrives as a stranger. Appearance lives ONLY here: there is no race, appearance or demographic field in the registry, the database or the worker.",
+  "_style": "Editorial fashion-portrait quality headshot. Strikingly attractive, model-like features: excellent bone structure, high cheekbones, symmetrical face, flawless clear complexion, expressive eyes, groomed and polished. Youthful and vibrant. Natural window light from the left, soft neutral grey-warm backdrop, shoulders-up framing, shallow depth of field, 85mm lens look, direct confident eye contact, subtle natural smile, impeccably styled modern business-casual, photorealistic, high-end magazine quality, no text, no logos, no watermark.",
+  "cast": [
+    {
+      "name": "Walker",
+      "look": "man, 34, Black British, close-cropped hair, sharp cheekbones, charcoal crew-neck"
+    },
+    {
+      "name": "Wren",
+      "look": "woman, 36, mixed Black and white heritage, natural curls pulled back, deep navy blazer"
+    },
+    {
+      "name": "Porter",
+      "look": "man, 38, Black American, neat short beard, steady gaze, slate grey shirt"
+    },
+    {
+      "name": "Waverly",
+      "look": "woman, 33, African American, long braids, radiant smile, emerald top"
+    },
+    {
+      "name": "Wells",
+      "look": "man, 35, South Asian, dark-framed glasses, trimmed beard, oatmeal sweater"
+    },
+    {
+      "name": "Willow",
+      "look": "woman, 37, Black American, short natural afro, composed steady expression, deep green blazer"
+    },
+    {
+      "name": "Pierce",
+      "look": "man, 39, white with Mediterranean colouring, dark hair greying slightly at temples, confident, navy jacket over tee"
+    },
+    {
+      "name": "Wyatt",
+      "look": "man, 33, Black American, short locs, alert attentive expression, black crew-neck"
+    },
+    {
+      "name": "Poppy",
+      "look": "woman, 35, white, auburn hair in a low bun, assured expression, burgundy blazer"
+    },
+    {
+      "name": "Walter",
+      "look": "man, 36, Chinese, side-parted dark hair, attentive thoughtful expression, soft charcoal crew-neck"
+    },
+    {
+      "name": "Piper",
+      "look": "woman, 30, white, blonde hair in a low ponytail, warm open expression, ivory blouse",
+      "retired": "Seat merged into Wesley, 21 Aug 2026. Portrait kept; see _note."
+    },
+    {
+      "name": "Wesley",
+      "look": "man, 35, white, blonde hair swept back, blue eyes, warm approachable smile, open-collar white oxford"
+    },
+    {
+      "name": "Winter",
+      "look": "woman, 34, Black American, shoulder-length twists, attentive caring expression, camel knit"
+    },
+    {
+      "name": "Parker",
+      "look": "man, 30, Middle Eastern, dark curly hair, energetic expression, forest green shirt"
+    },
+    {
+      "name": "Pippa",
+      "look": "woman, 27, Nigerian, short natural hair, expressive creative energy, terracotta top"
+    },
+    {
+      "name": "Pax",
+      "look": "man, 37, Pacific Islander, broad build, pragmatic steady expression, denim shirt"
+    },
+    {
+      "name": "Preston",
+      "look": "man, 33, white, neat dark hair, exact precise expression, crisp white shirt"
+    },
+    {
+      "name": "Whitney",
+      "look": "woman, 34, Black American, long straight dark hair, direct appraising gaze, cobalt-blue top",
+      "note": "From the original run of thirty-one; kept when she was un-retired to teach in University."
+    },
+    {
+      "name": "Percy",
+      "look": "man, 31, mixed heritage, short dark hair, black jacket over burgundy tee, direct level gaze",
+      "note": "From the original run of thirty-one; kept when he was un-retired for design review."
+    }
+  ]
+}

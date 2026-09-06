@@ -1,0 +1,13 @@
+{
+  "worker_name": "west-peek-os",
+  "secret_names": [
+    "OPENROUTER_API_KEY",
+    "RESEND_API_KEY",
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "RUNWARE_API_KEY",
+    "CF_ACCESS_CLIENT_ID",
+    "CF_ACCESS_CLIENT_SECRET",
+    "WP_OS_NETWORK_OS_SESSION_SECRET"
+  ]
+}

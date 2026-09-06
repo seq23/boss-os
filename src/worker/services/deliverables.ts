@@ -1,0 +1,480 @@
+import { z } from "zod";
+import type { Env } from "../env";
+import type { RouteContext } from "../router";
+import { json } from "../router";
+import { appendEvent } from "../events";
+import { recordSwallowed } from "./swallowed";
+import { actorFromIdentity, authorize, privacyVisibilityClause, type Actor } from "./authorize";
+import { uploadDocument } from "./documents";
+import {
+  type DeliverableForExport,
+  exportFilename,
+  kindDef,
+  renderMarkdown,
+} from "../../shared/deliverables/deliverable";
+import { isCloudflareEmailEnabled, sendViaCloudflare } from "../effects/cloudflareEmailClient";
+import { isEmailSendEnabled, sendViaResend } from "../effects/resendClient";
+
+/**
+ * Delivering things, and letting people keep them.
+ *
+ * ONE ROAD FOR FOUR ARTIFACTS. See `shared/deliverables/deliverable.ts` for why this is a concept
+ * rather than a pair of buttons on Research.
+ *
+ * FILED THE MOMENT IT IS DELIVERED, not when it ages out of a page. The operator's instinct was
+ * recent ones on Research and historical ones in Documents; making it MOVE would create a window
+ * where it is in neither and a question — "where is it now" — the system can answer wrongly. So it
+ * becomes a document immediately, Research shows the most recent few as a convenience view, and
+ * nothing migrates.
+ */
+
+export interface DeliverableRow {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  prepared_by: string;
+  prepared_for: string;
+  source_type: string | null;
+  source_id: string | null;
+  document_id: string | null;
+  privacy_label: string;
+  firm_scope: string;
+  created_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  dismissed_at: string | null;
+  dismissed_by: string | null;
+}
+
+export interface DeliverInput {
+  kind: string;
+  title: string;
+  body: string;
+  /** Roster name of whoever signs it. */
+  preparedBy: string;
+  /** firm_user id of whoever asked. Puts it on their Home page. */
+  preparedFor: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  privacyLabel?: string;
+}
+
+/**
+ * Hand something over: record it, file it, and return it.
+ *
+ * FILING IS BEST-EFFORT AND VISIBLE. If R2 is unavailable the deliverable is still recorded and
+ * still readable — losing the handover because the archive is down would be the wrong trade — but
+ * `document_id` stays null and the interface says the filed copy is missing rather than pretending
+ * it exists.
+ */
+export async function deliver(env: Env, actor: Actor, input: DeliverInput): Promise<DeliverableRow> {
+  const firmScope = actor.firmScopes[0] ?? "west-peek";
+  const id = `dlv_${crypto.randomUUID()}`;
+  const privacy = input.privacyLabel ?? "INTERNAL";
+
+  /*
+   * Re-delivering the same source updates rather than stacking duplicates on a Home page.
+   *
+   * THE `WHERE` IS LOAD-BEARING AND WAS MISSING. The unique index on (source_type, source_id) is
+   * PARTIAL — it only covers rows where both are non-null — and SQLite requires a conflict target
+   * to match a real index including its predicate. Without the WHERE repeated here, every call
+   * failed with "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint".
+   *
+   * It failed SILENTLY, which is the worse half: both callers wrap `deliver()` in a try/catch so
+   * that a handover failure cannot fail the brief or the research packet it belongs to. So the
+   * whole deliverables road would have thrown on every single call and reported nothing, and the
+   * first thing to exercise it would have been an unattended cron job at six in the morning.
+   * Typecheck, 1,154 tests and four validators all passed with this in place; it was found by
+   * running the statement against the real schema.
+   */
+  await env.WP_OS_DB.prepare(
+    `INSERT INTO deliverable (id, kind, title, body, prepared_by, prepared_for, source_type, source_id, privacy_label, firm_scope)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+     ON CONFLICT (source_type, source_id) WHERE source_type IS NOT NULL AND source_id IS NOT NULL
+     DO UPDATE SET
+       title = excluded.title, body = excluded.body, prepared_by = excluded.prepared_by,
+       created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
+  )
+    .bind(
+      id, input.kind, input.title, input.body, input.preparedBy, input.preparedFor,
+      input.sourceType ?? null, input.sourceId ?? null, privacy, firmScope,
+    )
+    .run();
+
+  const row = (await env.WP_OS_DB.prepare(
+    input.sourceType && input.sourceId
+      ? "SELECT * FROM deliverable WHERE source_type = ?1 AND source_id = ?2"
+      : "SELECT * FROM deliverable WHERE id = ?1",
+  )
+    .bind(...(input.sourceType && input.sourceId ? [input.sourceType, input.sourceId] : [id]))
+    .first<DeliverableRow>())!;
+
+  /*
+   * NOT EVERYTHING IS WORTH FILING. A morning brief is read once, on the morning it is about, and
+   * superseded the next day — three hundred and sixty-five of them a year turns Documents into a
+   * place nobody looks, which is what the operator found there. The brief is not lost: it lives in
+   * full on Home and in `intelligence_report`. Only the second copy stops being made.
+   */
+  if (!row.document_id && kindDef(row.kind)?.file !== false) {
+    try {
+      const markdown = renderMarkdown(toExport(row, input.preparedFor));
+      const { document } = await uploadDocument(env, actor, {
+        title: row.title,
+        doc_type: kindDef(row.kind)?.docType ?? "BRIEF",
+        privacy_label: privacy,
+        content_type: "text/markdown",
+        content_base64: base64(markdown),
+      });
+      await env.WP_OS_DB.prepare("UPDATE deliverable SET document_id = ?2 WHERE id = ?1")
+        .bind(row.id, document.id)
+        .run();
+      row.document_id = document.id;
+    } catch (err) {
+      // Filing failed. The handover stands and the interface reports the missing archive
+      // copy — but it also goes in the ledger, because a filing path that has quietly stopped
+      // working is otherwise only discoverable by noticing the documents table is empty.
+      await recordSwallowed(env, "deliverables.file", err, { deliverable_id: row.id, kind: row.kind });
+    }
+  }
+
+  await appendEvent(env, {
+    eventType: "deliverable.delivered",
+    actorType: actor.type === "HUMAN" ? "firm_user" : "ai_employee",
+    actorId: actor.firmUserId ?? input.preparedBy,
+    objectType: "deliverable",
+    objectId: row.id,
+    firmScope,
+    payload: { kind: row.kind, prepared_by: row.prepared_by, prepared_for: row.prepared_for, filed: Boolean(row.document_id) },
+  });
+
+  return row;
+}
+
+function base64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function toExport(row: DeliverableRow, forName: string): DeliverableForExport {
+  return {
+    kind: row.kind,
+    title: row.title,
+    body: row.body,
+    preparedBy: row.prepared_by,
+    preparedFor: forName,
+    preparedAt: row.created_at,
+  };
+}
+
+/** GET /api/deliverables — what has been handed to you, newest first. */
+export async function handleListDeliverables(ctx: RouteContext): Promise<Response> {
+  const url = new URL(ctx.request.url);
+  const kind = url.searchParams.get("kind");
+  const limit = Math.min(Number(url.searchParams.get("limit") ?? 20), 100);
+  const visibility = privacyVisibilityClause(ctx.identity!, "privacy_label");
+  /*
+   * DISMISSED IS HIDDEN, NOT GONE. The default view is what still wants attention; `?dismissed=1`
+   * is how you get the rest back. Deleting was the obvious alternative and the wrong one — a
+   * partner clearing a busy page should not be able to destroy the week's work with one click.
+   */
+  const dismissed = url.searchParams.get("dismissed") === "1";
+  const dismissClause = dismissed ? "dismissed_at IS NOT NULL" : "dismissed_at IS NULL";
+  /*
+   * "PREPARED FOR YOU" HAS TO MEAN FOR YOU.
+   *
+   * Sharing is right for research — the operator asked for it in those words, so that if Scooter
+   * commissions something she can find it. It is wrong for a morning brief, which is addressed,
+   * personal, and signed by that partner's own chief of staff. Home listed both under "Prepared for
+   * you", and because Scooter's brief was generated later in the day it sat ABOVE hers, signed by
+   * Walker — so the page appeared to say her chief of staff had changed.
+   *
+   * `mine=1` filters to the reader. Everywhere that stays shared now labels whose it is instead of
+   * leaving the byline to be misread.
+   */
+  const mineOnly = url.searchParams.get("mine") === "1";
+  const mineClause = mineOnly ? "prepared_for = ?mine" : "1=1";
+
+  // BOTH PARTNERS SEE EACH OTHER'S. Research is INTERNAL by default, and the operator's question was
+  // explicitly "if scooter requests research i can find it". Anything labelled more sensitive is
+  // filtered by the visibility clause, which is where that decision belongs.
+  // The reader's name travels with each row so a shared list can say whose a piece is without a
+  // second request per row.
+  const select = `SELECT d.*, (SELECT full_name FROM firm_user u WHERE u.id = d.prepared_for) AS prepared_for_name
+                    FROM deliverable d`;
+  const me = ctx.identity!.id;
+  const rows = kind
+    ? await ctx.env.WP_OS_DB.prepare(
+        `${select} WHERE kind = ?1 AND ${dismissClause} AND ${mineClause.replace("?mine", "?3")} AND ${visibility}
+          ORDER BY created_at DESC LIMIT ?2`,
+      )
+        .bind(...(mineOnly ? [kind, limit, me] : [kind, limit]))
+        .all<DeliverableRow>()
+    : await ctx.env.WP_OS_DB.prepare(
+        `${select} WHERE ${dismissClause} AND ${mineClause.replace("?mine", "?2")} AND ${visibility}
+          ORDER BY created_at DESC LIMIT ?1`,
+      )
+        .bind(...(mineOnly ? [limit, me] : [limit]))
+        .all<DeliverableRow>();
+
+  return json({ deliverables: rows.results ?? [] });
+}
+
+/*
+ * ── Answering something that was prepared for you ────────────────────────────
+ *
+ * Three verbs, and the difference between them is the whole design.
+ *
+ * ACKNOWLEDGE says "I read it". The piece stays exactly where it is; it simply stops being one of
+ * the things waiting on you. This is the common case and it is deliberately one click with no
+ * dialogue — anything heavier and nobody does it, and an unacknowledged pile is the state we were
+ * already in.
+ *
+ * DISMISS says "I did not want this". It leaves the page. It does NOT leave the database, and the
+ * page carries a way back, because the first question the operator asked about dismissing was
+ * "should I bring it back?" — and a feature whose answer to that is "no, it's gone" is one people
+ * learn not to use.
+ *
+ * FEEDBACK is the one that changes anything. A note addressed to the employee who signed the piece,
+ * kept against their name, so their next run can be told what the partner thought of the last one.
+ * Without it the other two are filing; with it they are management.
+ */
+const feedbackSchema = z.object({
+  note: z.string().trim().min(1).max(2000),
+  verdict: z.enum(["GOOD", "NOT_WHAT_I_WANTED", "TOO_LONG", "WRONG_FOCUS", "NOTE"]).default("NOTE"),
+});
+
+export async function handleAcknowledgeDeliverable(ctx: RouteContext): Promise<Response> {
+  const row = await loadVisible(ctx, ctx.params.id!);
+  if (!row) return json({ error: "not_found" }, { status: 404 });
+  await ctx.env.WP_OS_DB.prepare(
+    `UPDATE deliverable SET acknowledged_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), acknowledged_by = ?2 WHERE id = ?1`,
+  )
+    .bind(row.id, ctx.identity!.id)
+    .run();
+  await appendEvent(ctx.env, {
+    eventType: "deliverable.acknowledged",
+    actorType: "firm_user",
+    actorId: ctx.identity!.id,
+    objectType: "deliverable",
+    objectId: row.id,
+    firmScope: row.firm_scope,
+    payload: { kind: row.kind, title: row.title },
+  });
+  return json({ ok: true, acknowledged: true });
+}
+
+export async function handleDismissDeliverable(ctx: RouteContext): Promise<Response> {
+  const row = await loadVisible(ctx, ctx.params.id!);
+  if (!row) return json({ error: "not_found" }, { status: 404 });
+  // Idempotent both ways: dismissing a dismissed row and restoring a live one are both fine, and
+  // neither is an error worth showing a partner.
+  const restore = new URL(ctx.request.url).searchParams.get("restore") === "1";
+  await ctx.env.WP_OS_DB.prepare(
+    restore
+      ? "UPDATE deliverable SET dismissed_at = NULL, dismissed_by = NULL WHERE id = ?1"
+      : "UPDATE deliverable SET dismissed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), dismissed_by = ?2 WHERE id = ?1",
+  )
+    .bind(...(restore ? [row.id] : [row.id, ctx.identity!.id]))
+    .run();
+  await appendEvent(ctx.env, {
+    eventType: restore ? "deliverable.restored" : "deliverable.dismissed",
+    actorType: "firm_user",
+    actorId: ctx.identity!.id,
+    objectType: "deliverable",
+    objectId: row.id,
+    firmScope: row.firm_scope,
+    payload: { kind: row.kind, title: row.title },
+  });
+  return json({ ok: true, dismissed: !restore });
+}
+
+export async function handleDeliverableFeedback(ctx: RouteContext): Promise<Response> {
+  const row = await loadVisible(ctx, ctx.params.id!);
+  if (!row) return json({ error: "not_found" }, { status: 404 });
+  const parsed = feedbackSchema.safeParse(await ctx.request.json().catch(() => null));
+  if (!parsed.success) return json({ error: "invalid_input", issues: parsed.error.issues }, { status: 400 });
+
+  /*
+   * A JOINT BYLINE IS TWO EMPLOYEES, NOT A NAME.
+   *
+   * The weekly operating review is signed "Walker and Wren", and the first cut of this stored the
+   * feedback against that whole string. `recentFeedbackFor("Walker")` matches on the employee's
+   * name, so the note would have reached neither of them — a feedback feature that silently posts
+   * into a void is worse than none, because the partner believes they have been heard.
+   *
+   * One row per named employee. Both are told, both carry it into their next run, and the note
+   * itself is identical because it was one piece of work.
+   */
+  const recipients = row.prepared_by.split(/\s+and\s+/i).map((n) => n.trim()).filter(Boolean);
+  const ids: string[] = [];
+  for (const to of recipients.length > 0 ? recipients : [row.prepared_by]) {
+    const id = `dfb_${crypto.randomUUID()}`;
+    ids.push(id);
+    await ctx.env.WP_OS_DB.prepare(
+      `INSERT INTO deliverable_feedback (id, deliverable_id, to_employee, from_user_id, note, verdict, firm_scope)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+    )
+      .bind(id, row.id, to, ctx.identity!.id, parsed.data.note, parsed.data.verdict, row.firm_scope)
+      .run();
+  }
+  const id = ids[0]!;
+
+  await appendEvent(ctx.env, {
+    eventType: "deliverable.feedback_left",
+    actorType: "firm_user",
+    actorId: ctx.identity!.id,
+    objectType: "deliverable",
+    objectId: row.id,
+    firmScope: row.firm_scope,
+    payload: { to_employees: recipients, verdict: parsed.data.verdict },
+  });
+  return json({ ok: true, id }, { status: 201 });
+}
+
+export async function handleListDeliverableFeedback(ctx: RouteContext): Promise<Response> {
+  const row = await loadVisible(ctx, ctx.params.id!);
+  if (!row) return json({ error: "not_found" }, { status: 404 });
+  const rows = await ctx.env.WP_OS_DB.prepare(
+    "SELECT * FROM deliverable_feedback WHERE deliverable_id = ?1 ORDER BY created_at DESC",
+  )
+    .bind(row.id)
+    .all();
+  return json({ feedback: rows.results ?? [] });
+}
+
+/**
+ * What a partner has said about this employee's recent work, for their next run's prompt.
+ *
+ * THE POINT OF THE WHOLE FEATURE. Feedback that only a human ever reads is a comment box. This is
+ * the function that makes it management: an employee about to write another brief is told what the
+ * partner thought of the last three, in the partner's own words.
+ */
+export async function recentFeedbackFor(env: Env, employeeName: string, limit = 3): Promise<string> {
+  const rows = await env.WP_OS_DB.prepare(
+    "SELECT note, verdict, created_at FROM deliverable_feedback WHERE to_employee = ?1 ORDER BY created_at DESC LIMIT ?2",
+  )
+    .bind(employeeName, limit)
+    .all<{ note: string; verdict: string; created_at: string }>()
+    .catch(() => ({ results: [] }));
+  const notes = rows.results ?? [];
+  if (notes.length === 0) return "";
+  return [
+    "WHAT THE PARTNERS SAID ABOUT YOUR LAST PIECES — take this seriously, it is the point of doing this again:",
+    ...notes.map((n) => `  · (${n.verdict.toLowerCase().replace(/_/g, " ")}) ${n.note}`),
+    "",
+  ].join("\n");
+}
+
+async function loadVisible(ctx: RouteContext, id: string): Promise<DeliverableRow | null> {
+  const visibility = privacyVisibilityClause(ctx.identity!, "privacy_label");
+  return await ctx.env.WP_OS_DB.prepare(`SELECT * FROM deliverable WHERE id = ?1 AND ${visibility}`)
+    .bind(id)
+    .first<DeliverableRow>();
+}
+
+async function nameOf(env: Env, firmUserId: string): Promise<string> {
+  const row = await env.WP_OS_DB.prepare("SELECT full_name FROM firm_user WHERE id = ?1")
+    .bind(firmUserId)
+    .first<{ full_name: string }>();
+  return row?.full_name ?? "the firm";
+}
+
+/** GET /api/deliverables/:id/download — the file itself. */
+export async function handleDownloadDeliverable(ctx: RouteContext): Promise<Response> {
+  const row = await loadVisible(ctx, ctx.params.id!);
+  if (!row) return json({ error: "not_found" }, { status: 404 });
+
+  const forExport = toExport(row, await nameOf(ctx.env, row.prepared_for));
+  const markdown = renderMarkdown(forExport);
+  return new Response(markdown, {
+    headers: {
+      "content-type": "text/markdown; charset=utf-8",
+      "content-disposition": `attachment; filename="${exportFilename(forExport)}"`,
+      // A deliverable is firm-internal and must not be cached by anything between here and the tab.
+      "cache-control": "no-store",
+    },
+  });
+}
+
+const emailSchema = z.object({
+  /** Omitted means "to me". A firm user id, never a typed address — see below. */
+  to_firm_user_id: z.string().trim().max(120).optional(),
+});
+
+/**
+ * POST /api/deliverables/:id/email — send it to a partner's own inbox.
+ *
+ * WHY THIS DOES NOT RAISE AN APPROVAL, which is the one genuinely awkward decision here.
+ *
+ * `effect.email.send` is an external effect and gates every send behind an approval card. Its own
+ * registry description says it is for delivering "to an outside recipient", and that is exactly the
+ * right gate for what it was written for: information leaving the firm.
+ *
+ * A partner emailing themselves a deliverable they are already reading on screen has not moved
+ * anything across that boundary. The recipient is inside it, the content was already visible to
+ * them, and requiring a countersignature from their own partner to put a copy in their own inbox
+ * would be ceremony that teaches people to route around the gate.
+ *
+ * SO THE NARROWNESS IS THE WHOLE SAFETY ARGUMENT, and it is enforced rather than described:
+ * the recipient MUST resolve to a `firm_user` row. There is no free-text address parameter, so
+ * there is no version of this that can reach outside the firm. A typed address is an external send
+ * and goes through the ordinary approval path like everything else.
+ *
+ * It is still recorded, because "who sent what to whom" stays answerable either way.
+ */
+export async function handleEmailDeliverable(ctx: RouteContext): Promise<Response> {
+  const row = await loadVisible(ctx, ctx.params.id!);
+  if (!row) return json({ error: "not_found" }, { status: 404 });
+
+  const parsed = emailSchema.safeParse(await ctx.request.json().catch(() => ({})));
+  if (!parsed.success) return json({ error: "invalid_input" }, { status: 400 });
+
+  const actor = actorFromIdentity(ctx.identity!);
+  const authz = await authorize(ctx.env, actor, "deliverable.email_self", {
+    objectType: "deliverable",
+    objectId: row.id,
+    firmScope: row.firm_scope,
+  });
+  if (authz.decision !== "ALLOW") return json({ error: "forbidden", detail: authz.reason }, { status: 403 });
+
+  const recipientId = parsed.data.to_firm_user_id ?? ctx.identity!.id;
+  // THE GATE. A recipient who is not a firm user cannot be reached from here at all.
+  const recipient = await ctx.env.WP_OS_DB.prepare("SELECT id, full_name, email FROM firm_user WHERE id = ?1")
+    .bind(recipientId)
+    .first<{ id: string; full_name: string; email: string | null }>();
+  if (!recipient?.email) {
+    return json(
+      { error: "not_a_firm_recipient", detail: "This route only sends to a partner's registered address. Anything else is an external send and needs an approval." },
+      { status: 400 },
+    );
+  }
+
+  const markdown = renderMarkdown(toExport(row, recipient.full_name));
+  const message = {
+    to: recipient.email,
+    subject: `${kindDef(row.kind)?.label ?? "Deliverable"}: ${row.title}`,
+    text: markdown,
+    from: ctx.env.WP_OS_EMAIL_FROM,
+  };
+
+  const result = isCloudflareEmailEnabled(ctx.env)
+    ? await sendViaCloudflare(ctx.env, message)
+    : isEmailSendEnabled(ctx.env)
+      ? await sendViaResend(ctx.env, message)
+      : { sent: false, provider: "resend" as const, detail: "Email sending is switched off, so nothing was sent." };
+
+  await appendEvent(ctx.env, {
+    eventType: "deliverable.emailed",
+    actorType: "firm_user",
+    actorId: ctx.identity!.id,
+    objectType: "deliverable",
+    objectId: row.id,
+    firmScope: row.firm_scope,
+    payload: { to: recipient.id, sent: result.sent, provider: result.provider },
+  });
+
+  return json({ sent: result.sent, detail: result.detail, to: recipient.full_name });
+}
