@@ -480,12 +480,55 @@ export async function runJob(
 
   const refusal = await checkPreconditions(env, job);
   const runId = `jrun_${crypto.randomUUID()}`;
+  /*
+   * TWO DIFFERENT QUESTIONS WERE BEING ANSWERED BY ONE NUMBER, AND THAT IS THE BUG.
+   *
+   * `attempt` is how many consecutive tries this JOB has had - it is what max_attempts is compared
+   * against and what sends a job to DEAD_LETTER. A manual re-run mints a fresh occurrence key every
+   * time, so that count has to chain off the job's last run or the dead-letter machinery can never
+   * reach its limit.
+   *
+   * The idempotency KEY suffix is a different question: how many rows already exist for THIS
+   * occurrence. The two coincide for a daily job retried the same day, which is why one number was
+   * used for both - and they come apart the moment a job has run on more than one day. Retrying an
+   * earlier failed occurrence looked at a LATER run, usually SUCCEEDED, numbered the retry 1, and
+   * rebuilt the key the failed row already holds: `UNIQUE constraint failed: job_run.
+   * idempotency_key`, thrown out of runJob, taking down the tick that was trying to recover it and
+   * every job behind it in that sweep.
+   *
+   * So they are now counted separately, from the same table, by the questions they actually ask,
+   * and `attempt` prefers the occurrence's own history when it has one:
+   *
+   *   - retrying an occurrence that already has rows continues THAT occurrence's numbering, which
+   *     is what a scheduled retry of a failed day means;
+   *   - a manual re-run mints a new key, so its occurrence is empty and it falls back to chaining
+   *     off the job's last run - the path max_attempts and DEAD_LETTER depend on.
+   */
   const previous = await env.WP_OS_DB.prepare(
     "SELECT attempt, status FROM job_run WHERE job_id = ?1 ORDER BY started_at DESC LIMIT 1",
   )
     .bind(job.id)
     .first<{ attempt: number; status: string }>();
-  const attempt = previous && (previous.status === "FAILED") ? previous.attempt + 1 : 1;
+
+  /*
+   * `instr(...) = 1` rather than `LIKE ?2 || '#%'`: D1 rejects a LIKE whose pattern is built by
+   * concatenation with "LIKE or GLOB pattern too complex", and a prefix test is what was meant.
+   * The `#` is part of the needle so `key#2` matches while a different key that merely begins with
+   * the same characters does not.
+   */
+  const family = await env.WP_OS_DB.prepare(
+    `SELECT COUNT(*) AS n, MAX(attempt) AS max_attempt FROM job_run
+      WHERE job_id = ?1 AND (idempotency_key = ?2 OR instr(idempotency_key, ?2 || '#') = 1)`,
+  )
+    .bind(job.id, key)
+    .first<{ n: number; max_attempt: number | null }>();
+  const priorInFamily = family?.n ?? 0;
+  const attempt =
+    priorInFamily > 0
+      ? (family?.max_attempt ?? 0) + 1
+      : previous && previous.status === "FAILED"
+        ? previous.attempt + 1
+        : 1;
 
   await env.WP_OS_DB.prepare(
     `INSERT INTO job_run (id, job_id, idempotency_key, trigger_kind, status, attempt, requested_by, firm_scope)
@@ -494,9 +537,11 @@ export async function runJob(
     .bind(
       runId,
       job.id,
-      // The occurrence key is UNIQUE, so a retry of the same occurrence carries its attempt number.
-      // The occurrence is still identifiable by its prefix; the row is no longer a collision.
-      attempt > 1 ? `${key}#${attempt}` : key,
+      // The occurrence key is UNIQUE, so a retry of the same occurrence carries a suffix counted
+      // from that occurrence's own rows - NOT from `attempt`, which counts the job's consecutive
+      // failures and can be 1 while the occurrence already holds a row. The occurrence stays
+      // identifiable by its prefix.
+      priorInFamily > 0 ? `${key}#${priorInFamily + 1}` : key,
       opts.trigger,
       attempt,
       actor.firmUserId ?? actor.aiEmployeeId ?? "system",
