@@ -60,7 +60,14 @@ try {
   const applied = [...out.matchAll(/│ (\d{4}_[a-z_]+\.sql)\s+│ ✅/g)].map((m) => m[1]);
   say(applied.length ? `     applied: ${applied.join(", ")}` : "     nothing to apply");
 } catch (err) {
-  die(`migration apply failed:\n${err.stdout ?? err.message}`);
+  /*
+   * PRINT BOTH STREAMS. This said `err.stdout ?? err.message` and wrangler writes its diagnosis to
+   * STDERR, so two real deploys failed here with the reason rendered as an empty line under a
+   * banner. A failure report that omits the failure turns a two-minute fix into an investigation,
+   * and it did — twice.
+   */
+  const detail = [err.stderr, err.stdout, err.message].filter(Boolean).join("\n").trim();
+  die(`migration apply failed:\n${detail || "(wrangler produced no output at all)"}`);
 }
 
 say("2/4  verifying no migrations are pending…");
