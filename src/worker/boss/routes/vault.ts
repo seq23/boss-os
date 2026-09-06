@@ -19,6 +19,11 @@ const SNAPSHOT_TABLES = [
   // snapshot; as a table it is state like any other, and work accepted but not yet run must
   // survive a rebuild rather than be silently dropped by the restore that was meant to save it.
   "boss_task_queue",
+  // The airlock's classification registry. A restore that brought the records back without the
+  // policy that governs them would rebuild the system with its residency rules erased - every
+  // entity unclassified, which the guard refuses, so the restored system would be inert rather
+  // than leaky. Either way the vault must carry the rules alongside what they protect.
+  "data_policy", "record_policy", "policy_change_log",
   "lanes", "settings",
   "providers", "models", "routes", "budgets",
   "workload_profiles", "model_benchmarks",

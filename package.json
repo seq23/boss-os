@@ -19,6 +19,7 @@
     "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/seed/generate-ai-employee-seed.mjs --check",
     "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test && node scripts/seed/generate-machine-seed.mjs --check",
     "validate:brand": "node scripts/validate/boss-os-brand-system.mjs && node scripts/validate/boss-os-brand-system.mjs --self-test",
+    "validate:classification": "node scripts/validate/data-classification.mjs",
     "validate:css-classes": "node scripts/validate/css-classes.mjs",
     "validate:css-variables": "node scripts/validate/css-variables.mjs",
     "validate:design-tokens": "node scripts/validate/design-tokens.mjs && node scripts/validate/design-tokens.mjs --self-test",

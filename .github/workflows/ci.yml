@@ -81,6 +81,9 @@ jobs:
       - name: Lists speak while loading
         run: npm run validate:lists-speak
 
+      - name: Every Boss entity is classified
+        run: npm run validate:classification
+
       - name: SQL against schema
         run: npm run validate:sql
 
