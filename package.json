@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "backup:local": "node scripts/backup/backup.mjs",
+    "baseline": "node scripts/baseline.mjs",
     "build": "vite build",
     "deploy:production": "node scripts/deploy/production.mjs",
     "dev": "npm run build && wrangler dev",
