@@ -141,6 +141,25 @@ describe("consent is a constraint, not a label", () => {
     ]);
   });
 
+  it("DECLARES ITS TASK KIND, without which no backend can admit it", async () => {
+    await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_workers_ai'`).run();
+    await apiJson("/api/models/provision/bk_workers_ai", { method: "POST", body: {} });
+    await post("/api/today/coaching/consent", { backend_id: "bk_workers_ai" });
+    await post("/api/today/coaching/turn", { text: "I slept badly", turn: 1 });
+
+    /*
+     * FOUND IN PRODUCTION, NOT IN A TEST. The turn passed the airlock, the consent gate and the
+     * provider confinement, and was then refused by the backend guard with "the request named no
+     * task kind" — because `runCoachingTurn` never declared one. The guard was right to fail
+     * closed; the caller was the bug. This pins the declaration rather than the outcome, so a
+     * future edit that drops `intakeKind` fails here instead of on her first sentence of the day.
+     */
+    const decision = await row<{ candidates: string }>(
+      `SELECT candidates FROM routing_decisions ORDER BY ts DESC LIMIT 1`,
+    );
+    expect(decision!.candidates).not.toContain("named no task kind");
+  });
+
   it("REFUSES BY NAME rather than answering on a backend she did not approve", async () => {
     await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_workers_ai'`).run();
     await apiJson("/api/models/provision/bk_workers_ai", { method: "POST", body: {} });

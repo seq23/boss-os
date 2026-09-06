@@ -66,6 +66,19 @@ export async function runCoachingTurn(
     sensitivity: "private",
     risk: "low",
     employeeId: "emp_chief",
+    /*
+     * THE TASK KIND, WITHOUT WHICH NOTHING RUNS — and this is where the whole feature was broken.
+     *
+     * `checkBackend` refuses an unnamed kind by design: "an unmapped kind is an absent input, and
+     * there is no default." This call named none, so every model was rejected at the availability
+     * stage with "the request named no task kind", and a conversation that passed the airlock, the
+     * consent gate and the confinement still could not reach a model. `coaching` maps to the
+     * backend kind `document` in INTAKE_KIND_TO_BACKEND_KIND, which is in Workers AI's allowed list.
+     *
+     * The guard was right and the caller was wrong, which is why it failed closed rather than
+     * quietly picking a kind on the caller's behalf.
+     */
+    intakeKind: "coaching",
     onlyProviderId,
     messages: [
       { role: "system", content: system },
