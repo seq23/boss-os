@@ -8,6 +8,8 @@ export interface Env {
   BOSS_OS_VERSION: string;
   DEFAULT_PROVIDER: string;
 
+  /** "cloud" (default) or "private". A cloud runtime never snapshots LOCAL_ONLY tables. */
+  BOSS_DOMAIN?: string;
   BOSS_PASSCODE: string;
   SESSION_SECRET: string;
   FIREWORKS_API_KEY?: string;

@@ -43,6 +43,17 @@ export default defineWorkersConfig(async () => {
             queueProducers: { TASKS: "boss-os-tasks" },
             bindings: {
               TEST_MIGRATIONS: migrations,
+              /*
+               * THE SUITE RUNS AS THE PRIVATE RUNTIME.
+               *
+               * Most of these tests are about mechanism - does a snapshot round-trip, does a
+               * restore drill pass - and the private vault is the one that covers everything, so
+               * it is the honest place to test the mechanism. The CLOUD restriction is not left
+               * untested by that: tests/boss/leakage.test.ts states its domain explicitly on every
+               * snapshot it takes, and asserts both directions - excluded on cloud, included on
+               * private. Production defaults to cloud when this is unset.
+               */
+              BOSS_DOMAIN: "private",
               BOSS_OS_VERSION: "20.0.0-test",
               DEFAULT_PROVIDER: "fireworks",
               BOSS_PASSCODE: "test-passcode",

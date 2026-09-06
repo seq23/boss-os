@@ -96,8 +96,41 @@ vault.get("/restores", async (c) => {
 });
 
 /**
- * Full JSON export of every table to R2. This is the thing that makes the
- * system rebuildable: if the Worker vanishes, the vault still has the state.
+ * Which tables this runtime is allowed to snapshot.
+ *
+ * THE LEAK THIS CLOSES. `takeSnapshot` wrote every table in SNAPSHOT_TABLES to R2, and R2 is a
+ * CLOUD bucket. All eighteen sovereign tables were in that list, so the continuity vault - running
+ * on a cron, nightly, with nobody watching - copied every dream, decision, prediction, emotional
+ * state, meeting capture and promoted memory into cloud storage. §3.3 says LOCAL_ONLY must "never
+ * enter cloud snapshots". It was entering them on a schedule. Found by the Batch 9 hostile suite,
+ * which planted a sentinel in three sovereign tables and read the snapshot back out of R2.
+ *
+ * The exclusion is DERIVED from data_policy, not a second hand-written list. Two lists that must
+ * agree and have no link is how the first one gets updated alone.
+ *
+ * The private runtime sets BOSS_DOMAIN=private and snapshots everything, because that vault is on
+ * the machine the data already lives on. Absent or unrecognised means cloud, so a misconfigured
+ * runtime excludes rather than exports.
+ */
+async function snapshotTablesFor(env: Env): Promise<{ tables: string[]; excluded: string[] }> {
+  if (env.BOSS_DOMAIN === "private") return { tables: [...SNAPSHOT_TABLES], excluded: [] };
+  const rows = await env.DB
+    .prepare(`SELECT entity FROM data_policy WHERE residency = 'LOCAL_ONLY'`)
+    .all<{ entity: string }>();
+  const sovereign = new Set((rows.results ?? []).map((r) => r.entity));
+  return {
+    tables: SNAPSHOT_TABLES.filter((t) => !sovereign.has(t)),
+    excluded: SNAPSHOT_TABLES.filter((t) => sovereign.has(t)),
+  };
+}
+
+/**
+ * Full JSON export to R2 of every table this runtime may snapshot. This is the thing that makes
+ * the system rebuildable: if the Worker vanishes, the vault still has the state.
+ *
+ * A CLOUD SNAPSHOT IS PARTIAL BY DESIGN, and says so in its own manifest. A restore that did not
+ * know which tables were never in the file would look complete and be missing the whole private
+ * half - so the excluded list travels inside the snapshot rather than in someone's memory.
  */
 export async function takeSnapshot(env: Env, label: string) {
   const id = newId("snp");
@@ -108,9 +141,10 @@ export async function takeSnapshot(env: Env, label: string) {
     .run();
 
   try {
+    const { tables: allowed, excluded } = await snapshotTablesFor(env);
     const dump: Record<string, unknown[]> = {};
     const counts: Record<string, number> = {};
-    for (const table of SNAPSHOT_TABLES) {
+    for (const table of allowed) {
       const rows = await env.DB.prepare(`SELECT * FROM ${table}`).all();
       dump[table] = rows.results ?? [];
       counts[table] = dump[table].length;
@@ -120,6 +154,9 @@ export async function takeSnapshot(env: Env, label: string) {
       snapshot_version: SNAPSHOT_VERSION,
       version: env.BOSS_OS_VERSION,
       ts,
+      domain: env.BOSS_DOMAIN === "private" ? "private" : "cloud",
+      // Named, so a restore knows what was never here rather than inferring completeness.
+      excluded_local_only: excluded,
       tables: dump,
     });
     const bytes = new TextEncoder().encode(payload);
@@ -211,6 +248,8 @@ interface ParsedSnapshot {
   ts?: number;
   tables: Record<string, any[]>;
   totalRows: number;
+  /** Tables the writing runtime deliberately left out. Absent on snapshots taken before §3.3. */
+  excludedLocalOnly?: string[];
 }
 
 function parseSnapshot(text: string): ParsedSnapshot {
@@ -230,7 +269,13 @@ function parseSnapshot(text: string): ParsedSnapshot {
     }
     totalRows += rows.length;
   }
-  return { ok: true, ts: doc.ts, tables: doc.tables as Record<string, any[]>, totalRows };
+  return {
+    ok: true,
+    ts: doc.ts,
+    tables: doc.tables as Record<string, any[]>,
+    totalRows,
+    excludedLocalOnly: Array.isArray(doc.excluded_local_only) ? doc.excluded_local_only : [],
+  };
 }
 
 /** Columns that actually exist, so a snapshot from an older schema still loads. */
@@ -424,7 +469,16 @@ vault.post("/drill", async (c) => {
   const text = await obj.text();
   const computed = await sha256Hex(text);
   const parsed = parseSnapshot(text);
-  const missing = SNAPSHOT_TABLES.filter((t) => !(t in (parsed.tables ?? {})));
+  /*
+   * A DELIBERATE EXCLUSION IS NOT A MISSING TABLE.
+   *
+   * On a cloud runtime the sovereign tables are never written to the vault, by design (§3.3). A
+   * drill that counted them as missing would fail every night and be switched off within a week -
+   * and then the drill that catches a REAL missing table would be off too. The snapshot carries
+   * its own list of what it left out, so the drill reads it rather than assuming.
+   */
+  const excluded = new Set<string>((parsed.excludedLocalOnly ?? []) as string[]);
+  const missing = SNAPSHOT_TABLES.filter((t) => !excluded.has(t) && !(t in (parsed.tables ?? {})));
 
   const passed = computed === snapshot.sha256 && parsed.ok && missing.length === 0;
   const restoreId = newId("rst");
@@ -452,9 +506,12 @@ vault.post("/drill", async (c) => {
     restore_id: restoreId,
     sha_match: computed === snapshot.sha256,
     parse_ok: parsed.ok,
-    tables_covered: SNAPSHOT_TABLES.length - missing.length,
-    tables_expected: SNAPSHOT_TABLES.length,
+    tables_covered: SNAPSHOT_TABLES.length - missing.length - excluded.size,
+    tables_expected: SNAPSHOT_TABLES.length - excluded.size,
     missing_tables: missing,
+    // Named rather than silent: a partial vault that does not say so is a full vault to whoever
+    // reads it next.
+    excluded_local_only: [...excluded],
     total_rows: parsed.totalRows,
     bytes: snapshot.bytes,
     took_ms: Date.now() - started,
