@@ -73,7 +73,21 @@ test.describe("Boss OS surface", () => {
    * or what the reader's text size is. A test against `padding-bottom: 128px` would pass on the
    * day someone adds an eleventh tab and the bug comes back.
    */
-  test("no page hides its last content behind the tab bar", async ({ page }) => {
+  /*
+   * RUN AT PHONE WIDTH AS WELL AS DESKTOP.
+   *
+   * The first version of this test ran only at Playwright's default 1280x720 and passed while the
+   * owner was still looking at a clipped screen. Boss OS is installed to a phone home screen - that
+   * is the whole premise of the product - and the nav is at its tallest relative to the viewport
+   * exactly there. A layout guard that never opens the layout the owner actually uses is not a
+   * guard, it is a reassurance.
+   */
+  for (const vp of [
+    { name: "phone", width: 390, height: 844 },
+    { name: "laptop", width: 1280, height: 720 },
+  ]) {
+  test(`no page hides its last content behind the tab bar (${vp.name})`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
     await unlock(page);
 
     // Deliberately the tall ones. Today carries thirteen blocks and Vault a snapshot list, which
@@ -118,7 +132,7 @@ test.describe("Boss OS surface", () => {
        */
       expect(
         m!.reserved,
-        `${label}: the shell reserves ${m!.reserved}px for a nav that is ${m!.navHeight}px tall`,
+        `${label} @ ${vp.name}: the shell reserves ${m!.reserved}px for a nav that is ${m!.navHeight}px tall`,
       ).toBeGreaterThanOrEqual(m!.navHeight);
 
       // THE SYMPTOM. Kept as well as the cause, because the reservation being right is not the
@@ -126,10 +140,11 @@ test.describe("Boss OS surface", () => {
       expect(m!.lastBottom, `${label}: expected content in main.page`).not.toBeNull();
       expect(
         m!.lastBottom!,
-        `${label}: last content ends at ${m!.lastBottom}, nav starts at ${m!.navTop} — the tab bar is covering it`,
+        `${label} @ ${vp.name}: last content ends at ${m!.lastBottom}, nav starts at ${m!.navTop} — the tab bar is covering it`,
       ).toBeLessThanOrEqual(m!.navTop + 1);
     }
   });
+  }
 
   test("all seven Systems panels reach their endpoint and name what they found", async ({ page }) => {
     await unlock(page);

@@ -56,6 +56,10 @@ const SNAPSHOT_TABLES = [
   "maintenance_items", "ip_assets", "brand_profiles", "learning_entries",
   "runtime_jobs", "document_artifacts", "seo_audits", "geo_probes",
   "bridge_handoffs",
+  // Where work may run, and what each run did. The registry is load-bearing on restore: bring the
+  // records back without it and the system rebuilds with no idea which backends were permitted,
+  // which the guard refuses - inert rather than leaky, but still not restored.
+  "execution_backends", "backend_runs",
   "trading_engines", "kill_switch_probes", "deployment_stages", "strategy_desks",
   "promotion_scorecards", "scale_rungs", "trading_sequence", "trading_nevers",
   "sovereignty_packages", "sovereignty_drills",
