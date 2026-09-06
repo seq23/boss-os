@@ -135,10 +135,53 @@ recorded there. **Read the plan, not the old decisions, for anything about Stage
 | **2 · Claude Code as a backend** | In progress |
 | **3 · Dispatch UI + notifications wired** | In progress |
 | **4 · Continuity: fallback and cost** | In progress |
-| **5 · Standing duties** *(Phase 10)* | **Waiting on the owner's own materials.** Do not build from the plan alone |
-| **6 · Agenda engine + coaching** *(Phase 12)* | **Waiting on the owner's own materials.** Do not build from the plan alone |
+| **5 · Standing duties** *(Phase 10)* | **Built and live.** `standing_duties` + Camille's daily report duty. Skill packs and assignments deliberately not built — nothing asks for them yet |
+| **6 · Agenda engine + coaching** *(Phase 12)* | **Half built.** Today's block 02 is Camille's report. Blocks 08 and 09 still empty — they need the A-Player contract's agenda, and one decision from the owner (below) |
 | **7 · The model bench** *(Phase 8)* | In progress. Reframed — see the $0 rule below |
 | **8 · Ledger truth** *(Phase 6)* | **First half done** (`0174`). Second half needs her key and money |
+
+### The roster — seven people, and where appearance lives
+
+Migration 0175. Eight seats became seven and one capability appeared, because the owner read her own
+roster and said what was wrong with it: *"Task Intake, Repository, Knowledge, Relationship… are not
+real roles someone can have when they work for a Boss."*
+
+| | Role | |
+|---|---|---|
+| **Simone** | Chief of Staff | absorbed Task Intake |
+| **Camille** | Director of Research | new — the morning report |
+| **Danielle** | Technical Program Manager | |
+| **Zora** | Archivist | |
+| **Monique** | Director of Relationships | |
+| **Kendra** | Systems Manager | absorbed Model Router |
+| **Toni** | Chief Risk Officer | trading lane, isolated by design |
+
+**Merged, not deleted** — `lifecycle = 'merged'` with `merged_into` pointing at the survivor.
+
+**APPEARANCE LIVES IN `src/client/public/employees-boss/CASTING.json` AND NOWHERE ELSE.** The owner
+directed that her employees are Black women. There is no race, appearance or demographic column in
+`employees`, in the registry, or in the worker, and none may be added. A face is a rendering
+concern; a charter is what the system reasons about. Every portrait's alt text and the manifest
+beside the files state that these are AI-generated images of people who do not exist — not a
+disclaimer, the thing that stops a face being taken later for a colleague.
+
+**Names avoid P and W**, the initials West Peek's entire roster uses, so an employee of one business
+can never be read as the other's. That is the whole of the constraint (ADR-026).
+
+### Camille's standing duty
+
+**06:30 America/Chicago, daily** — half an hour before the owner looks, because research takes
+minutes and she asked for the report to BE there at seven.
+
+**A wall-clock time and a zone, never a UTC hour.** `0 12 * * *` is correct in September and an hour
+early from November; nobody files a bug for that, the report is just quietly stale for five months a
+year. Duty materialisation runs on EVERY hourly tick rather than inside the 03:00 UTC maintenance
+block — that block fires at 21:00 the previous evening in Chicago, so a 06:30 CT duty checked there
+would arrive a full day late.
+
+**Nothing runs until two deliberate acts:** commission the `bk_claude_code` backend, and run the Mac
+agent so it can claim the task. Until then the duty fires, the task queues, and Today's block says so
+plainly.
 
 ### The spend lever, and the $0 rule
 
