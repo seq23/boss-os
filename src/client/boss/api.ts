@@ -28,6 +28,29 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (path: string, body?: unknown) =>
   ({ method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }) as RequestInit;
 
+/**
+ * A write that could not be sent is KEPT, not lost — Batch 7.
+ *
+ * Only a transport failure qualifies. A refusal, a validation error or any answer the server
+ * actually gave is a real result and is thrown as one: queueing a rejected capture would build a
+ * queue that can never drain and a badge that never clears.
+ */
+async function captureOffline<T>(
+  attempt: () => Promise<T>,
+  kind: import("./offline/outbox").OutboxKind,
+  payload: Record<string, unknown>,
+): Promise<T | { queued: true; id: string }> {
+  try {
+    return await attempt();
+  } catch (err) {
+    const unreachable = err instanceof ApiError && err.status === undefined;
+    if (!unreachable) throw err;
+    const { enqueue } = await import("./offline/outbox");
+    const item = await enqueue(kind, payload);
+    return { queued: true, id: item.recordId };
+  }
+}
+
 export const api = {
   authState: () => call<{ unlocked: boolean }>("/auth/state"),
   unlock: (passcode: string) => call<{ unlocked: boolean }>("/auth/unlock", post("", { passcode })),
@@ -37,7 +60,8 @@ export const api = {
   days: () => call<any[]>("/today/days"),
   todayGates: (date?: string) => call<any[]>(`/today/gates${date ? `?date=${date}` : ""}`),
   loops: (date?: string) => call<any[]>(`/today/loops${date ? `?date=${date}` : ""}`),
-  openLoop: (body: unknown) => call<any>("/today/loops", post("", body)),
+  openLoop: (body: Record<string, unknown>) =>
+    captureOffline(() => call<any>("/today/loops", post("", body)), "open_loop", body),
   closeLoop: (id: string, action: "resolve" | "dismiss" | "defer", note?: string) =>
     call<any>(`/today/loops/${id}/${action}`, post("", { note })),
   morningGate: (body: unknown) => call<any>("/today/gates/morning", post("", body)),

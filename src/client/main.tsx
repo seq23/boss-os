@@ -24,7 +24,10 @@ const isBoss = location.pathname === "/boss" || location.pathname.startsWith("/b
 
 if (isBoss) {
   void (async () => {
-    await import("./boss/styles.css");
+    // A stylesheet is not load-bearing. Awaiting it unguarded meant one uncached CSS file offline
+    // rejected before the app was even imported, and the reader got a blank page instead of an
+    // unstyled one — the worse of the two failures by a distance.
+    await import("./boss/styles.css").catch(() => {});
     const { default: BossApp } = await import("./boss/App");
     root.render(
       <React.StrictMode>
@@ -34,7 +37,7 @@ if (isBoss) {
   })();
 } else {
   void (async () => {
-    await import("./styles.css");
+    await import("./styles.css").catch(() => {});
     const { App } = await import("./App");
     root.render(
       <React.StrictMode>

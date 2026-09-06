@@ -116,4 +116,62 @@ test.describe("Boss OS surface", () => {
     await openLoops();
     await expect(page.getByText(unique)).toBeVisible({ timeout: 15_000 });
   });
+
+  /**
+   * Batch 7, end to end: the only offline promise Boss OS makes.
+   *
+   * Write with no connection, see that it was KEPT rather than saved or lost, then reconnect and
+   * find it in D1. The plan is explicit that this is capture and not offline operation — so the
+   * test also proves the other half, that reads do NOT come back from a cache pretending to be
+   * synchronized state.
+   */
+  test("a capture written offline is kept, and lands in D1 when the connection returns", async ({ page, context }) => {
+    await unlock(page);
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    const openLoops = async () => {
+      const holder = page.locator("details", { has: page.getByLabel("New open loop") });
+      await expect(holder).toHaveCount(1, { timeout: 15_000 });
+      if (!(await holder.getByLabel("New open loop").isVisible())) await holder.locator("summary").click();
+    };
+    await openLoops();
+
+    const unique = `Offline capture ${Date.now()}`;
+    await context.setOffline(true);
+
+    await page.getByLabel("New open loop").fill(unique);
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+
+    // It says so. Silence here is the failure: a reader who cannot tell "saved" from "kept" either
+    // stops trusting the app or writes the same thing twice.
+    const bar = page.getByRole("status");
+    await expect(bar).toContainText("Offline", { timeout: 15_000 });
+    await expect(bar).toContainText("1 waiting to send", { timeout: 15_000 });
+
+    await context.setOffline(false);
+    // The outbox flushes on the browser's own online event; the badge clearing is the evidence.
+    await expect(bar).toHaveCount(0, { timeout: 30_000 });
+
+    /*
+     * A FULL RELOAD, so nothing in memory can be mistaken for persistence. If it comes back now it
+     * came back out of D1, through the sync ledger, from a capture typed with no connection.
+     */
+    await page.reload();
+    await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    await openLoops();
+    await expect(page.getByText(unique)).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("offline reads are not served from a cache pretending to be current", async ({ page, context }) => {
+    await unlock(page);
+    await context.setOffline(true);
+    await page.reload();
+    // The shell still opens — that part is cached and is allowed to be.
+    await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "Systems", exact: true }).click();
+    await page.getByRole("tab", { name: "Governance" }).click();
+    // …and the data says it could not be reached, rather than showing yesterday's answer as today's.
+    await expect(page.locator("main.page")).toContainText(/could not be reached/i, { timeout: 20_000 });
+    await context.setOffline(false);
+  });
 });

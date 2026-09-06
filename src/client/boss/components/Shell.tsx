@@ -23,7 +23,7 @@ const LABELS: Record<TabId, string> = {
 };
 
 export function Shell({
-  tab, onTab, title, lane, pending, onSettings, settingsOpen, children,
+  tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, children,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
@@ -32,6 +32,10 @@ export function Shell({
   pending: number;
   onSettings: () => void;
   settingsOpen: boolean;
+  /** The browser says there is no connection. */
+  offline?: boolean;
+  /** Captures written offline and not yet sent. */
+  waiting?: number;
   children: ReactNode;
 }) {
   return (
@@ -50,6 +54,22 @@ export function Shell({
           {settingsOpen ? "Close" : lane === "trading" ? "Trading" : "Operations"}
         </button>
       </header>
+
+      {/*
+        * Batch 7 requires the offline and sync state to be VISIBLE. Silence here is the failure
+        * mode: a person who cannot tell "saved" from "kept" either stops trusting the app or
+        * writes the same thing twice. It says nothing at all when there is nothing to say.
+        */}
+      {(offline || (waiting ?? 0) > 0) && (
+        <div className="syncbar" role="status">
+          {offline ? "Offline" : "Back online"}
+          {(waiting ?? 0) > 0 && (
+            <span className="syncbar-count">
+              {waiting} waiting to send
+            </span>
+          )}
+        </div>
+      )}
 
       <main className="page">{children}</main>
 

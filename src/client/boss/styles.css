@@ -581,3 +581,22 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 }
 .field-inline:focus { outline: none; border-color: var(--gold); }
 .field-inline::placeholder { color: var(--muted); }
+
+/* The offline / waiting strip. Quiet, and never present when there is nothing to say. */
+.syncbar {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  background: var(--blush);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.syncbar-count { color: var(--rose); }
