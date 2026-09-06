@@ -80,3 +80,9 @@ CREATE TABLE gate_entries (
 );
 CREATE INDEX idx_gate_entries_day ON gate_entries(day_id, gate);
 CREATE UNIQUE INDEX idx_gate_entries_unique ON gate_entries(day_id, gate);
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0156_boss_executive_os');

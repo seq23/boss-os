@@ -31,3 +31,10 @@ CREATE TABLE bridge_handoffs (
 );
 CREATE INDEX idx_handoffs_status ON bridge_handoffs(status, requested_at DESC);
 CREATE INDEX idx_handoffs_direction ON bridge_handoffs(direction, category);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0165_boss_firm_bridge');

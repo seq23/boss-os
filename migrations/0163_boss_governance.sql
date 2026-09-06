@@ -216,3 +216,10 @@ INSERT INTO brand_profiles (id, key, name, voice, forbidden, audiences, notes, c
    '["Hype","Manufactured urgency","Claims without provenance","Apologising for existing","Emoji in outbound work"]',
    '["Investors","Operators","Collaborators"]',
    'Canon §14. Outbound work is checked against this before it goes.', unixepoch() * 1000, unixepoch() * 1000);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0163_boss_governance');

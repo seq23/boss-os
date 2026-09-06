@@ -315,3 +315,10 @@ INSERT INTO bench_candidates (id, job_type, capability_id, status, note, benched
    'Kept on the bench precisely because it is not installed. Benching it is how the option stays visible without becoming runtime.',
    unixepoch() * 1000);
 
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0162_boss_capability_intelligence');

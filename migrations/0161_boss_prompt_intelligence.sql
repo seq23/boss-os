@@ -377,3 +377,10 @@ INSERT INTO pov_cards (id, key, name, stance, wants, fears, questions, tier_mini
   ('pov_future_self', 'future_self', 'The Boss in six months', 'Will be judged by how this aged.',
    '["A decision that still looks sound","Recorded reasoning"]', '["Regret with no record of why"]',
    '["Will this look obvious or foolish later?","What did I know when I decided?"]', 1, 'active', unixepoch() * 1000);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0161_boss_prompt_intelligence');

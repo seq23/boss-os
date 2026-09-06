@@ -132,3 +132,10 @@ INSERT INTO knowledge_surfaces (key, name, description, backing, tier_floor, sur
   ('offline_library', 'Emergency Offline Library',
    'What must remain readable with no network, no provider and no account.',
    'memory', 'capture', 12, 0, 1, unixepoch() * 1000);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0159_boss_knowledge_os');

@@ -144,3 +144,10 @@ INSERT OR IGNORE INTO trading_strategies
    'Max one open position. Paper mode only. No leverage. Kill switch honoured.',
    1, 'No backtest run. This strategy exists to prove the pipeline, not to be traded.',
    'paper', 0, 'active', unixepoch() * 1000);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0155_boss_seed_phase1_5');

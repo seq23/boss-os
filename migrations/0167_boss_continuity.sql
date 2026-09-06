@@ -59,3 +59,10 @@ INSERT INTO maintenance_items (id, key, title, kind, cadence_days, due_at, note,
   ('mnt_offline_drill', 'offline_restore_drill', 'Run the offline restore drill', 'continuity', 90,
    unixepoch() * 1000 + 90 * 86400000,
    'From the package alone. A package nobody has restored from is a hope.', unixepoch() * 1000, unixepoch() * 1000);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0167_boss_continuity');

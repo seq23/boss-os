@@ -44,3 +44,10 @@ INSERT OR IGNORE INTO promotion_rules (id, lane, name, from_tier, to_tier, condi
 
 INSERT OR IGNORE INTO trading_accounts (id, label, broker, mode, enabled, created_at) VALUES
   ('acct_paper', 'Paper book', 'manual', 'paper', 1, unixepoch() * 1000);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0153_boss_seed');

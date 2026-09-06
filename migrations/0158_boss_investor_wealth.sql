@@ -252,3 +252,10 @@ CREATE TABLE capital_allocations (
 );
 CREATE INDEX idx_allocations_track ON capital_allocations(track_id, as_of DESC);
 CREATE INDEX idx_allocations_vehicle ON capital_allocations(vehicle_id);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0158_boss_investor_wealth');

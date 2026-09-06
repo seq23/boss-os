@@ -152,3 +152,10 @@ CREATE TABLE astro_days (
   computed_at       INTEGER NOT NULL
 );
 CREATE INDEX idx_astro_days_ts ON astro_days(date_ts DESC);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0160_boss_spirit');

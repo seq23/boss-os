@@ -354,7 +354,7 @@ describe("the PWA surface exists and never caches institutional state", () => {
       display: string;
       icons: unknown[];
     };
-    expect(manifest.name).toBe("West Peek OS");
+    expect(manifest.name).toBe("Boss OS");
     expect(manifest.display).toBe("standalone");
     expect(manifest.start_url).toBe("/");
     expect(manifest.icons.length).toBeGreaterThan(0);

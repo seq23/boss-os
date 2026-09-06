@@ -22,3 +22,10 @@ CREATE TABLE boss_task_queue (
 
 -- The drain query: eligible work, oldest first.
 CREATE INDEX idx_boss_task_queue_ready ON boss_task_queue (state, visible_at);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0168_boss_task_queue');

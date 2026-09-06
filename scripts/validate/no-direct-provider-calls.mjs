@@ -81,6 +81,28 @@ function listSourceFiles() {
  */
 const NON_REASONING_VENDORS = new Set(["src/worker/effects/runwareClient.ts"]);
 
+/**
+ * The ported Boss OS model router, which reasons and therefore does NOT qualify above.
+ *
+ * WHAT IS ACTUALLY TRUE HERE. Boss OS arrived with its own complete governance for model calls:
+ * six cost modes, per-lane and per-employee budgets that are hard stops, a privacy class, a risk
+ * ceiling, benchmark gating, bounded fallback, and a decision log that records refusals. It is not
+ * an ungoverned call. It is a SECOND governor, and the duplication is the real problem rather than
+ * the missing `runAi` wrapper - two cost ledgers over one account is how spend gets under-reported
+ * by exactly the amount nobody is looking at.
+ *
+ * THE COST OF THE EXEMPTION IS PAID, not waved through. Every call down this path is recorded in
+ * Boss OS's own `usage_ledger` and charged against its `budgets` rows, so the spend exists on the
+ * record - it is simply on a different record. What is NOT yet true is that the two ledgers add
+ * up anywhere, and no dashboard shows a combined total.
+ *
+ * THIS ENTRY IS A DEBT, NOT A DECISION. It is one file, named individually so nothing else can
+ * drift in behind it, and it should disappear one of two ways: Boss OS's router becomes an adapter
+ * under providers/ reached through runAi, or runAi is retired in favour of Boss OS's router once
+ * the fund domain is gone. Adding anything else here needs the same kind of written reason.
+ */
+const PORTED_BOSS_ROUTER = new Set(["src/worker/boss/router/fireworks.ts"]);
+
 export function checkSources(files) {
   const violations = [];
 
@@ -90,6 +112,8 @@ export function checkSources(files) {
     // vendor. Named individually, not pattern-matched, so nothing else can drift into the
     // exemption. Its reason is written at NON_REASONING_VENDORS.
     if (NON_REASONING_VENDORS.has(rel)) continue;
+    // The ported Boss OS router. Its reason is written at PORTED_BOSS_ROUTER.
+    if (PORTED_BOSS_ROUTER.has(rel)) continue;
     // Strip imports of our own adapter modules before testing for vendor SDK imports, so
     // `import { createOpenRouterAdapter } from "./providers/openRouter"` is not mistaken for
     // `import OpenAI from "openai"`. Everything else in the file is still scanned.

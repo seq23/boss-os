@@ -161,3 +161,10 @@ CREATE TABLE follow_ups (
 CREATE INDEX idx_follow_ups_due ON follow_ups(status, due_at);
 CREATE INDEX idx_follow_ups_person ON follow_ups(person_id, status, due_at);
 CREATE INDEX idx_follow_ups_loop ON follow_ups(loop_id);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0157_boss_relationships');

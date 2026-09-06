@@ -255,3 +255,10 @@ INSERT INTO trading_nevers (id, key, text, enforced_by, enforcement, evidence, c
    'Nothing in code can detect intent. The Boss holds this one.', 'procedural', NULL, unixepoch() * 1000),
   ('nvr_tax', 'no_live_without_tax_workflow', 'No live system without a tax and ledger workflow.',
    'Stage 5 lists it as a pass criterion; the workflow itself is outside this repository.', 'procedural', NULL, unixepoch() * 1000);
+
+
+-- The chassis answers "what schema is applied" from this table, and /api/health and the
+-- policy suite both read it. A migration that runs without recording itself leaves the
+-- system reporting a version older than the one it is actually running, so every ported
+-- Boss OS migration registers here exactly as the chassis's own do.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0166_boss_quant_fund');

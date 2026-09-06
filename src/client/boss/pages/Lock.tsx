@@ -29,6 +29,10 @@ export function Lock({ onUnlock }: { onUnlock: () => void }) {
       <input
         type="password"
         inputMode="text"
+        // A placeholder is not an accessible name: it is announced inconsistently and disappears
+        // the moment anything is typed, which leaves a screen reader on an unlabelled field on the
+        // one screen that gates the entire app.
+        aria-label="Passcode"
         autoFocus
         value={passcode}
         placeholder="passcode"
