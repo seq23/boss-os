@@ -2,10 +2,15 @@
 
 ## Roots
 
-- Application root: `west-peek-os/` (this directory), at
-  `/Users/sequoiataylor/Github/west-peek-os`. It must be packageable independently.
-- **Parent authority container:**
-  `/Users/sequoiataylor/REPO_OPERATOR_PROJECTS/west-peek-os-odysseus/WORK/WEST_PEEK_OS_v3_2_14_AND_ODYSSEUS_IMPL_v1_11_FULL_ARTIFACT_PACKAGE/`
+- Application root: `boss-os/` (this directory), at
+  `/Users/sequoiataylor/GitHub/boss-os`. It must be packageable independently.
+- **Parent authority container (INHERITED, and now archived):**
+  `/Users/sequoiataylor/REPO_OPERATOR_ARCHIVE/deprecated-repos/west-peek-os-odysseus/WORK/WEST_PEEK_OS_v3_2_14_AND_ODYSSEUS_IMPL_v1_11_FULL_ARTIFACT_PACKAGE/`
+
+  **Repathed 5 Sep 2026.** This is West Peek's authority, inherited by the clone, and the folder
+  was moved to `deprecated-repos/` on 5 Sep 2026. The path is corrected rather than deleted so the
+  provenance of the chassis stays traceable, but it governs the West Peek domain being removed -
+  not Boss OS. Boss OS's own authority is `docs/boss/` - PHASES.md, the build plans and the recovery documents, copied in from the v20 artifact on 5 Sep 2026 so the spec lives with the code rather than in an archived folder.
 
   **Corrected 24 Aug 2026.** This said "the directory containing this `west-peek-os/` folder", and
   the two load-bearing authorities are not there and never have been — the parent of this repo is
