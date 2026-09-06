@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
+import { inOwnerZone, dayInOwnerZone, OWNER_TIMEZONE_LABEL } from "../../../shared/boss/timezone";
 
 /**
  * Spirit — canon §43, §42.1–42.3, §44, and §5.2.
@@ -12,7 +13,16 @@ import { ErrorNotice } from "../components/Notice";
  * which is not decorative — nothing here is a streak, a score or a red number.
  */
 
-const day = (ts: number | null) => (ts ? new Date(ts).toLocaleDateString() : "—");
+/*
+ * EVERY TIME ON THIS PAGE IS IN THE OWNER'S ZONE, not the browser's.
+ *
+ * These read `toLocaleDateString()` and `toLocaleString()` with no arguments, which renders in
+ * whatever zone the device is in. That happened to be right — and it made the whole almanac read
+ * as UTC in any session where it was not, which is how a Moon phase at 10:28pm becomes one at
+ * 5:28am on the wrong day. An astronomical instant is fixed; only its presentation is local, and it
+ * should be local to HER.
+ */
+const day = (ts: number | null) => dayInOwnerZone(ts);
 const pct = (bps: number) => `${Math.round(bps / 100)}%`;
 
 export function Spirit() {
@@ -143,7 +153,7 @@ export function Spirit() {
           <div className="row-main">
             <div className="row-title">{e.label}</div>
             <div className="row-sub">
-              {new Date(e.starts_at).toLocaleString()} · {e.source === "imported" ? "entered from an almanac" : "computed"}
+              {inOwnerZone(e.starts_at)} {OWNER_TIMEZONE_LABEL} · {e.source === "imported" ? "entered from an almanac" : "computed"}
             </div>
           </div>
         </div>

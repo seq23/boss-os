@@ -15,6 +15,7 @@
  */
 
 import { newId } from "../lib/id";
+import { monthIdInZone } from "../../../shared/boss/timezone";
 import {
   ADVISORY_NOTE, CANON_WINDOW_TYPES, buildAlmanac, moonPhase, moonPosition, type AlmanacEvent,
 } from "./astro";
@@ -44,7 +45,14 @@ export const ANCESTOR_MINUTES_TARGET = 60;
 export const ALMANAC_MONTHS = 24;
 
 export const dayId = (ts: number): string => new Date(Math.floor(ts / DAY_MS) * DAY_MS).toISOString().slice(0, 10);
-export const monthId = (ts: number): string => new Date(ts).toISOString().slice(0, 7);
+/*
+ * THE MONTH IS THE OWNER'S MONTH, NOT UTC'S.
+ *
+ * This read the UTC month, so anything logged after 7pm Central on the last day of a month was
+ * filed under the NEXT one — and the contribution floor is "one a month", counted from this
+ * column. A record could satisfy a month she had already closed and leave the current one empty.
+ */
+export const monthId = (ts: number): string => monthIdInZone(ts);
 
 /**
  * Computes and stores an arbitrary stretch of almanac.

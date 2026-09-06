@@ -13,6 +13,8 @@
  * matters because the interesting cases are the two days a year nobody is looking.
  */
 
+import { zonedTime } from "../../../shared/boss/timezone";
+
 const DAY_MS = 86_400_000;
 
 /**
@@ -56,11 +58,16 @@ export function utcForLocalTime(
   timeZone: string,
   y: number, m: number, d: number, h: number, min: number,
 ): number {
-  let guess = Date.UTC(y, m - 1, d, h, min);
-  for (let i = 0; i < 2; i += 1) {
-    guess = Date.UTC(y, m - 1, d, h, min) - offsetMinutes(timeZone, guess) * 60_000;
-  }
-  return guess;
+  /*
+   * ONE IMPLEMENTATION, TWO CALLERS. This solved the conversion itself until the Spirit page needed
+   * the same thing and got its own copy — two components each holding their own version of one
+   * rule, which is the duplication this repository names by name. They agreed, which is precisely
+   * why it would have gone unnoticed until the day they stopped.
+   *
+   * The shared one keeps the two-pass iteration and the reasoning for it. This signature stays
+   * because the scheduler's callers read naturally in this order.
+   */
+  return zonedTime(y, m, d, h, timeZone, min);
 }
 
 export interface DutySchedule {

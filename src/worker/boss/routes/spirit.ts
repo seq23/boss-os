@@ -23,6 +23,7 @@ import {
   moonPhase, moonPosition,
 } from "../spirit/astro";
 import { METHOD_PLANETS, STATION_UNCERTAINTY_HOURS } from "../spirit/planets";
+import { monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL } from "../../../shared/boss/timezone";
 import { TIME_ACCURACY, natalChart, transits, type BirthData, type TimeAccuracy } from "../spirit/natal";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
@@ -87,10 +88,18 @@ spirit.get("/day", async (c) => {
  */
 spirit.get("/month", async (c) => {
   const month = c.req.query("month") ?? monthId(Date.now());
-  if (!/^\d{4}-\d{2}$/.test(month)) throw badRequest("A month is YYYY-MM in UTC");
+  if (!/^\d{4}-\d{2}$/.test(month)) throw badRequest(`A month is YYYY-MM in ${OWNER_TIMEZONE_LABEL} time`);
 
-  const start = Date.parse(`${month}-01T00:00:00.000Z`);
-  const end = Date.parse(`${month}-01T00:00:00.000Z`) + 31 * DAY_MS;
+  /*
+   * THE MONTH IS HERS, AND IT IS THE ACTUAL MONTH.
+   *
+   * Two things were wrong in one line. The window ran on UTC, so an event at 8pm Central on the
+   * last day of a month appeared in the next one — the almanac showing her a September evening
+   * under October. And the end was the start plus a fixed 31 days, so every shorter month swept up
+   * the beginning of the next: September carried the 1st of October, February carried three days
+   * of March.
+   */
+  const { start, end } = monthRange(month);
   // Any month, not only the ones inside the rolling horizon.
   await ensureAlmanac(c.env.DB, Date.now());
   await ensureAlmanacAround(c.env.DB, start + 15 * DAY_MS);
@@ -148,6 +157,10 @@ spirit.get("/month", async (c) => {
     // so the month says how complete that is rather than implying it is whole.
     window_types: CANON_WINDOW_TYPES,
     coverage: await almanacCoverage(c.env.DB, Date.now()),
+    // Said in the payload rather than assumed by the screen: every instant on this page is rendered
+    // on this clock, and a reader comparing it to another chart needs to know which one.
+    timezone: OWNER_TIMEZONE,
+    timezone_label: OWNER_TIMEZONE_LABEL,
     deferred: DEFERRED_ASTRONOMY,
     // The month view carries the question too, so the one remaining gap is visible where the
     // almanac is read rather than only on an endpoint nobody opens.
