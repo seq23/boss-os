@@ -12,6 +12,7 @@
     "dev": "npm run build && wrangler dev",
     "e2e": "node scripts/e2e/prepare-local.mjs && CI=true npx wrangler d1 migrations apply WP_OS_DB --local && node scripts/e2e/prepare-local.mjs --verify-only && playwright test",
     "migrate:local": "wrangler d1 migrations apply WP_OS_DB --local",
+    "ops:workers-ai-usage": "node scripts/ops/workers-ai-usage.mjs",
     "restore:local": "node scripts/backup/restore.mjs",
     "test": "vitest run && vitest run --config vitest.boss.config.ts",
     "test:boss": "vitest run --config vitest.boss.config.ts",

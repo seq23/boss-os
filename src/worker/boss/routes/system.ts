@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
+import { reconcileSpend } from "../spend/reconcile";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { getSetting, setSetting } from "../lib/settings";
@@ -316,4 +317,28 @@ system.post("/maintenance", async (c) => {
   const rolled = await rollBudgetWindows(c.env.DB);
   await audit(c.env.DB, { actor: "boss", lane: "ops", entityType: "system", action: "maintenance_run" });
   return ok(c, { budget_rows_rolled: rolled });
+});
+
+/**
+ * One spend figure, from every ledger that holds one.
+ *
+ * Three ledgers record money here and nothing added them together, so "what did I spend" was
+ * answered by whichever one the reader opened. This reports the total with its parts still visible
+ * and each part's basis attached, so a figure that looks wrong is traceable to the ledger that
+ * produced it rather than being an unexplained number.
+ *
+ * The window defaults to the ops month budget's window, because that is the window the hard stop
+ * she actually feels is measured against.
+ */
+system.get("/spend-reconciliation", async (c) => {
+  const since = Number(c.req.query("since"));
+  const window = await c.env.DB
+    .prepare(`SELECT window_started_at FROM budgets WHERE lane = 'ops' AND period = 'month' LIMIT 1`)
+    .first<{ window_started_at: number }>();
+
+  const startedAt = Number.isFinite(since) && since > 0
+    ? since
+    : window?.window_started_at ?? Date.now() - 30 * 86_400_000;
+
+  return ok(c, await reconcileSpend(c.env, startedAt));
 });

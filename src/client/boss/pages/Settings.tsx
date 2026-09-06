@@ -275,17 +275,64 @@ function AuditPanel() {
   const [audit, setAudit] = useState<any[] | null>(null);
   const [usage, setUsage] = useState<any[]>([]);
   const [settings, setSettings] = useState<any[]>([]);
+  const [recon, setRecon] = useState<any>(null);
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    Promise.all([api.audit(), api.usage(), api.settings()])
-      .then(([a, u, st]) => { setAudit(a); setUsage(u); setSettings(st); })
-      .catch((e) => { setError(e); setAudit([]); });
+    Promise.all([api.audit(), api.usage(), api.settings(), api.spendReconciliation()])
+      .then(([a, u, st, r]) => { setAudit(a); setUsage(u); setSettings(st); setRecon(r); })
+      // The reconciliation must not be able to take the audit trail down with it: if it throws,
+      // the rest of the panel still renders and the error is named.
+      .catch((e) => { setError(e); setAudit([]); setRecon({ parts: [], unobservable: [] }); });
   }, []);
 
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      {/*
+        * EVERY LEDGER THAT HOLDS MONEY, ADDED UP ONCE.
+        *
+        * Three of them record spend here and nothing used to add them together, so the answer to
+        * "what did I spend" depended on which screen you opened. Each part shows its own basis,
+        * because a total whose parts are estimates should not be read as a measurement — and the
+        * one cost that genuinely cannot be seen from inside a Worker says so rather than appearing
+        * as a confident zero.
+        */}
+      <p className="eyebrow">Everything spent</p>
+      {recon === null ? (
+        <Loading />
+      ) : (
+        <>
+          <div className="row">
+            <div className="row-main">
+              <div className="row-title">Total across every ledger</div>
+              <div className="row-sub">
+                {recon.fully_measured ? "Every part measured" : "Includes estimated figures"}
+              </div>
+            </div>
+            <div className="row-val">${((recon.total_micros ?? 0) / 1_000_000).toFixed(4)}</div>
+          </div>
+          {(recon.parts ?? []).map((p: any) => (
+            <div className="row" key={p.source}>
+              <div className="row-main">
+                <div className="row-title">{p.source}</div>
+                <div className="row-sub">{p.basis} · {p.rows} row{p.rows === 1 ? "" : "s"} · {p.note}</div>
+              </div>
+              <div className="row-val">${((p.cost_micros ?? 0) / 1_000_000).toFixed(4)}</div>
+            </div>
+          ))}
+          {(recon.unobservable ?? []).map((p: any) => (
+            <div className="row" key={p.source}>
+              <div className="row-main">
+                <div className="row-title">{p.source}</div>
+                <div className="row-sub">{p.note}</div>
+              </div>
+              <div className="row-val">not measured</div>
+            </div>
+          ))}
+        </>
+      )}
 
       <p className="eyebrow">Spend by model</p>
       {usage.length === 0 ? (

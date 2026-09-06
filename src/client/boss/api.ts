@@ -75,6 +75,7 @@ export const api = {
   usage: () => call<any[]>("/system/usage"),
   audit: () => call<any[]>("/system/audit"),
   settings: () => call<any[]>("/system/settings"),
+  spendReconciliation: () => call<any>("/system/spend-reconciliation"),
   costModes: () => call<any[]>("/system/cost-modes"),
   setSetting: (key: string, value: string) =>
     call(`/system/settings/${key}`, { method: "PUT", body: JSON.stringify({ value }) }),
