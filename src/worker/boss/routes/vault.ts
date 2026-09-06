@@ -64,6 +64,9 @@ const SNAPSHOT_TABLES = [
   // that generates them would leave a system that has yesterday's intelligence and no way to get
   // tomorrow's - and one that restored the duty without its next_due_at would fire it immediately.
   "standing_duties", "executive_reports",
+  // Consent, not content. The coaching conversation itself has no table here and must never get
+  // one — its residency is LOCAL_ONLY and this design honours that by not having a row to classify.
+  "coaching_consent",
   "trading_engines", "kill_switch_probes", "deployment_stages", "strategy_desks",
   "promotion_scorecards", "scale_rungs", "trading_sequence", "trading_nevers",
   "sovereignty_packages", "sovereignty_drills",

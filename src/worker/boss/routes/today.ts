@@ -3,6 +3,12 @@ import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
+import {
+  MAX_TURNS, EXIT_PHRASES, FORWARDED_TURNS, isExit, consentFor, grantConsent, revokeConsent,
+  setDayMode, buildCoachingPrompt,
+} from "../coaching/session";
+import { assertMayReachExternalModel } from "../policy/airlock";
+import { runCoachingTurn } from "../coaching/run";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
 import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relationships/follow_ups";
@@ -1112,4 +1118,132 @@ today.post("/gates/night", async (c) => {
   await assembleDayFlow(c.env, await ensureDay(c.env.DB, tomorrow.id));
 
   return ok(c, { gate: entry, day: refreshed, blocks, promotions, tomorrow_seed: seed }, 201);
+});
+
+// ─── Morning coaching ─────────────────────────────────────────────────────────
+
+/**
+ * Where the day stands on coaching: consented or not, and why not.
+ *
+ * The reason is a sentence rather than a code because it is shown to her, and because the honest
+ * version of "not approved" needs explaining: what she types is never stored by this system, and a
+ * model still has to read it. Both halves are true and only saying one of them would mislead.
+ */
+today.get("/coaching", async (c) => {
+  const day = dayId(Date.now());
+  const consent = await consentFor(c.env, day);
+  const row = await c.env.DB
+    .prepare(`SELECT day_mode, day_mode_source FROM days WHERE id = ?`)
+    .bind(day)
+    .first<{ day_mode: string | null; day_mode_source: string | null }>();
+
+  return ok(c, {
+    day_id: day,
+    consent,
+    max_turns: MAX_TURNS,
+    exit_phrases: EXIT_PHRASES,
+    day_mode: row?.day_mode ?? null,
+    day_mode_source: row?.day_mode_source ?? null,
+    /*
+     * SAID OUT LOUD IN THE PAYLOAD, not only in a comment, because the client renders it and she
+     * should be able to read the promise on the screen where she is deciding.
+     */
+    storage: "Nothing you type here is stored by Boss OS. The conversation lives only in this browser.",
+  });
+});
+
+/** One deliberate act, scoped to one day and one backend. */
+today.post("/coaching/consent", async (c) => {
+  const day = dayId(Date.now());
+  const body = await c.req.json<{ backend_id?: string; revoke?: boolean }>().catch(() => ({}) as { backend_id?: string; revoke?: boolean });
+
+  if (body.revoke) {
+    await revokeConsent(c.env, day);
+    await audit(c.env.DB, { actor: "boss", lane: "ops", entityType: "coaching_consent", entityId: day, action: "revoked" });
+    return ok(c, await consentFor(c.env, day));
+  }
+
+  const backendId = body.backend_id;
+  if (!backendId) throw badRequest("Name the backend you are approving.", "Consent to one backend is not consent to another.");
+
+  await grantConsent(c.env, day, backendId);
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "coaching_consent", entityId: day,
+    action: "granted", detail: { backend_id: backendId },
+  });
+  return ok(c, await consentFor(c.env, day));
+});
+
+/**
+ * One exchange. Stores nothing.
+ *
+ * THE AIRLOCK IS ASKED, NOT ASSUMED. `assertMayReachExternalModel` runs with the consent as its
+ * `approved` argument, so if `coaching_turns` were ever classified LOCAL_ONLY on the processing
+ * axis this refuses even with consent in hand — which is correct, and is the difference between a
+ * governed path and a bypass with a nicer name.
+ */
+today.post("/coaching/turn", async (c) => {
+  const day = dayId(Date.now());
+  const body = await c.req.json<{ text?: string; turn?: number; recent?: { role: string; text: string }[] }>()
+    .catch(() => ({}) as any);
+
+  const text = String(body.text ?? "").trim();
+  if (!text) throw badRequest("Nothing was said.", "Type something, or use an exit phrase to finish.");
+
+  // An exit phrase ends the coaching without reaching a model at all. Her own words, her own rule,
+  // and no reason to spend a call on them.
+  if (isExit(text)) return ok(c, { ended: true, reason: "exit_phrase", reply: null });
+
+  const turn = Number(body.turn ?? 1);
+  if (turn > MAX_TURNS) {
+    return ok(c, { ended: true, reason: "max_turns", reply: null });
+  }
+
+  const consent = await consentFor(c.env, day);
+  if (!consent.granted || !consent.backend_id) {
+    throw conflict(consent.reason ?? "Coaching is not approved for today.", "Approve it once for today, on the Today screen.");
+  }
+
+  await assertMayReachExternalModel(c.env.DB, "coaching_turns", null, true);
+
+  const dayRow = await c.env.DB
+    .prepare(`SELECT morning_contract, day_mode FROM days WHERE id = ?`)
+    .bind(day)
+    .first<{ morning_contract: string | null; day_mode: string | null }>();
+  const [loops, approvals] = await Promise.all([
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'open'`).first<{ n: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending'`).first<{ n: number }>(),
+  ]);
+
+  const system = buildCoachingPrompt({
+    anchor: dayRow?.morning_contract ?? null,
+    openLoops: loops?.n ?? 0,
+    approvalsWaiting: approvals?.n ?? 0,
+    turn,
+    dayMode: (dayRow?.day_mode as any) ?? null,
+  });
+
+  // Only the current turn and at most two prior exchanges travel. A morning is not a transcript.
+  const recent = (body.recent ?? []).slice(-FORWARDED_TURNS * 2);
+
+  const result = await runCoachingTurn(c.env, consent.backend_id, system, recent, text);
+  return ok(c, { ended: false, reply: result.reply, backend_id: consent.backend_id, degraded: result.degraded });
+});
+
+/** How the day should be RUN. The one thing the conversation leaves behind. */
+today.post("/coaching/mode", async (c) => {
+  const day = dayId(Date.now());
+  const body = await c.req.json<{ mode?: string; source?: string }>().catch(() => ({}) as { mode?: string; source?: string });
+  const mode = body.mode;
+  if (mode !== "full" && mode !== "mvd" && mode !== "recovery") {
+    throw badRequest("A day is full, mvd, or recovery.", "Nothing else is a mode this system knows.");
+  }
+  const source = body.source === "coaching" ? "coaching" : "declared";
+  await ensureDay(c.env.DB, day);
+  await setDayMode(c.env, day, mode, source);
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "day", entityId: day,
+    action: "mode_set", detail: { mode, source },
+  });
+  return ok(c, { day_id: day, day_mode: mode, day_mode_source: source });
 });

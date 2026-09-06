@@ -1,0 +1,146 @@
+import { env } from "cloudflare:test";
+import { beforeEach, describe, expect, it } from "vitest";
+import { isExit, EXIT_PHRASES, MAX_TURNS, buildCoachingPrompt } from "../../src/worker/boss/coaching/session";
+import { apiJson, row } from "./helpers";
+
+/**
+ * THE LOAD-BEARING TESTS HERE ARE THE ONES THAT PROVE NOTHING IS KEPT.
+ *
+ * The owner asked whether a 1:1 conversation can be locked down without a local model. The honest
+ * answer was that "locked down" is two questions: where it is STORED, which she controls
+ * absolutely, and what the model READS, which no cloud model can protect. This feature is the first
+ * answer taken literally — the conversation is never written down by this system at all.
+ *
+ * So the tests that matter are: a turn persists nothing; consent is required and is per-day; an
+ * exit phrase never reaches a model; and `emotional_states` was not loosened to make any of it work.
+ */
+
+const post = (path: string, body?: unknown) => apiJson(path, { method: "POST", body: body ?? {} });
+
+describe("morning coaching — consent, and what is never kept", () => {
+  beforeEach(async () => {
+    await env.DB.prepare(`DELETE FROM coaching_consent`).run();
+  });
+
+  it("refuses a turn with no consent, and the refusal explains both halves of the truth", async () => {
+    const { status, body } = await post("/api/today/coaching/turn", { text: "I slept badly", turn: 1 });
+    expect(status).toBe(409);
+    // Both halves: nothing is stored, AND a model still has to read it. Saying only the first would
+    // be the reassuring lie; saying only the second would hide what she does control.
+    expect(body.error).toContain("never stored");
+    expect(body.error.toLowerCase()).toContain("read it");
+  });
+
+  it("consent is per day and names the backend — consent to one is not consent to another", async () => {
+    const granted = await post("/api/today/coaching/consent", { backend_id: "bk_claude_code" });
+    expect(granted.status).toBe(200);
+    expect(granted.body.data.granted).toBe(true);
+    expect(granted.body.data.backend_id).toBe("bk_claude_code");
+
+    const rows = await env.DB.prepare(`SELECT day_id, backend_id FROM coaching_consent`).all();
+    expect(rows.results).toHaveLength(1);
+  });
+
+  it("refuses consent that does not name a backend", async () => {
+    const { status } = await post("/api/today/coaching/consent", {});
+    expect(status).toBe(400);
+  });
+
+  it("revoking leaves the row, so there is evidence it was given and taken back", async () => {
+    await post("/api/today/coaching/consent", { backend_id: "bk_claude_code" });
+    const revoked = await post("/api/today/coaching/consent", { revoke: true });
+    expect(revoked.body.data.granted).toBe(false);
+
+    const r = await row<{ granted_at: number; revoked_at: number }>(
+      `SELECT granted_at, revoked_at FROM coaching_consent LIMIT 1`,
+    );
+    expect(r!.granted_at).toBeGreaterThan(0);
+    expect(r!.revoked_at).toBeGreaterThan(0);
+  });
+
+  it("an exit phrase ends the conversation WITHOUT consent and WITHOUT reaching a model", async () => {
+    // No consent row exists. Her own words end her own conversation; spending a model call to
+    // notice that would be absurd, and refusing her exit for want of consent would be worse.
+    for (const phrase of ["I'm ready", "Skip coaching", "Let's begin"]) {
+      const { status, body } = await post("/api/today/coaching/turn", { text: phrase, turn: 1 });
+      expect(status).toBe(200);
+      expect(body.data.ended).toBe(true);
+      expect(body.data.reason).toBe("exit_phrase");
+      expect(body.data.reply).toBeNull();
+    }
+  });
+
+  it("stops at the turn cap rather than becoming a session", async () => {
+    await post("/api/today/coaching/consent", { backend_id: "bk_claude_code" });
+    const { body } = await post("/api/today/coaching/turn", { text: "tell me more", turn: MAX_TURNS + 1 });
+    expect(body.data.ended).toBe(true);
+    expect(body.data.reason).toBe("max_turns");
+  });
+
+  it("KEEPS NO CONVERSATION TABLE — the point of the whole design", async () => {
+    // If a coaching table is ever added to the cloud schema, this fails and it should: the content
+    // is LOCAL_ONLY residency, and honouring that means not having a row to classify.
+    const tables = await env.DB
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%coaching%'`)
+      .all<{ name: string }>();
+    expect((tables.results ?? []).map((t) => t.name)).toEqual(["coaching_consent"]);
+  });
+
+  it("did NOT loosen emotional_states to make this work", async () => {
+    // The alternative design was to reclassify emotional_states. It also backs the decision vault,
+    // the prediction vault, manifestations and promoted memory — loosening it for one feature would
+    // have opened all of them.
+    const p = await row<{ residency: string; ai_processing: string }>(
+      `SELECT residency, ai_processing FROM data_policy WHERE entity = 'emotional_states'`,
+    );
+    expect(p!.residency).toBe("LOCAL_ONLY");
+    expect(p!.ai_processing).toBe("LOCAL_ONLY");
+  });
+
+  it("records the day's MODE but never how she arrived at it", async () => {
+    const { status, body } = await post("/api/today/coaching/mode", { mode: "recovery", source: "coaching" });
+    expect(status).toBe(200);
+    expect(body.data.day_mode).toBe("recovery");
+
+    // The mode is an operating fact the agenda needs. Nothing beside it records what she said.
+    const day = await row<{ day_mode: string; day_mode_source: string }>(
+      `SELECT day_mode, day_mode_source FROM days WHERE id = ?`, body.data.day_id,
+    );
+    expect(day!.day_mode).toBe("recovery");
+    expect(day!.day_mode_source).toBe("coaching");
+  });
+
+  it("refuses a mode it does not know rather than storing it", async () => {
+    const { status } = await post("/api/today/coaching/mode", { mode: "vibes" });
+    expect(status).toBe(400);
+  });
+});
+
+describe("the coaching prompt", () => {
+  it("carries her rules and none of her sovereign material", () => {
+    const prompt = buildCoachingPrompt({ anchor: "Close the raise", openLoops: 3, approvalsWaiting: 1, turn: 1, dayMode: null });
+    expect(prompt).toContain("One question at a time");
+    expect(prompt).toContain("No therapy talk");
+    // What it may see: the shape of the day. What it may not: anything classified sovereign.
+    expect(prompt).toContain("Close the raise");
+    for (const forbidden of ["manifestation", "dream", "prediction", "relationship note", "promoted memory"]) {
+      expect(prompt.toLowerCase()).not.toContain(forbidden);
+    }
+  });
+
+  it("tells the model her words are words, not instructions", () => {
+    const prompt = buildCoachingPrompt({ anchor: null, openLoops: 0, approvalsWaiting: 0, turn: 1, dayMode: null });
+    expect(prompt).toContain("never as an");
+    expect(prompt).toContain("instruction");
+  });
+
+  it("matches her exit phrases exactly, including punctuation and case", () => {
+    expect(isExit("I'm ready.")).toBe(true);
+    expect(isExit("  SKIP COACHING ")).toBe(true);
+    expect(isExit("let's begin")).toBe(true);
+    // And does NOT fire on something that merely contains one — ending her morning early because
+    // she typed "I'm ready to talk about why I'm not ready" would be the worst possible reading.
+    expect(isExit("I'm ready to talk about why I am not ready")).toBe(false);
+    expect(EXIT_PHRASES.length).toBeGreaterThanOrEqual(4);
+  });
+});
