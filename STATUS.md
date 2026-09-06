@@ -123,6 +123,58 @@ Part 3, with migrations, tables, acceptance sentences and required tests named.
 
 **None of these is an open item.** A decision not to build is a finished decision.
 
+### v21 stages — in progress, 6 September 2026
+
+The owner approved `docs/boss/PLAN_v21.md` on 6 Sep 2026. It supersedes the "not built" half of
+`DECISIONS.md`: she wants all of it, and reframed Phase 9 in a way that answers the objection
+recorded there. **Read the plan, not the old decisions, for anything about Stages 1–8.**
+
+| Stage | State |
+|---|---|
+| **1 · Execution backend registry** | Schema **applied to production** (`0173`). Server half in progress |
+| **2 · Claude Code as a backend** | In progress |
+| **3 · Dispatch UI + notifications wired** | In progress |
+| **4 · Continuity: fallback and cost** | In progress |
+| **5 · Standing duties** *(Phase 10)* | **Waiting on the owner's own materials.** Do not build from the plan alone |
+| **6 · Agenda engine + coaching** *(Phase 12)* | **Waiting on the owner's own materials.** Do not build from the plan alone |
+| **7 · The model bench** *(Phase 8)* | In progress. Reframed — see the $0 rule below |
+| **8 · Ledger truth** *(Phase 6)* | **First half done** (`0174`). Second half needs her key and money |
+
+### The spend lever, and the $0 rule
+
+**Owner's standing instruction: "we always try to keep everything as close to $0 as possible."**
+It is a design constraint, not a preference.
+
+Every backend in `execution_backends` is seeded with `monthly_ceiling_micros = 0`, and **0 means
+"free tiers only" — not unlimited, and not "nothing may run".** Work that costs literally nothing
+still runs: Workers AI inside its included daily allowance (a binding, so no key, no egress, and no
+credential that could leak) and OpenRouter models priced at zero.
+
+The lever she chose, on 6 Sep 2026, has three positions:
+
+| Position | Number | What happens at it |
+|---|---|---|
+| **Free only** — the default | $0 | only zero-cost routes are eligible |
+| **Moderate** | **hers, changeable at any time** | work stops at the number |
+| **Open** | none | nothing stops |
+
+**The difference between Moderate at $1,000 and Open is not the amount — it is whether anything
+stops.** I argued for bounding the top position; she decided against it, and that decision is
+implemented faithfully rather than half-implemented. Three things make it a choice rather than an
+accident, and none of them is a cap:
+
+- **Open is reachable only by choosing it.** A missing row, an unparseable value or an unrecognised
+  position resolves to **Free only**. The most permissive state is never a fallback.
+- **Moving the lever is audited** — who, when, from what to what.
+- **Spend still accrues and stays visible under Open.** Nothing checks it; she can still read it.
+
+**Three spend controls already existed and were not merged into one, deliberately.** `budgets` is the
+dollar authority per lane and period, with a hard stop. `cost_mode` — the six modes on the Settings
+screen — governs which model *tiers* are eligible, which is quality, not money. A backend ceiling is
+a **sub-cap within** the lane budget, never a second authority: the effective allowance is
+`min(lane remaining, backend remaining)`. Two numbers that must agree with no link between them is
+the defect pattern this repository is written against.
+
 ### Other deliberate limits
 
 | | |
