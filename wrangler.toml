@@ -1,4 +1,10 @@
-# West Peek OS — Cloudflare Worker configuration.
+# Boss OS — Cloudflare Worker configuration.
+#
+# DERIVED FROM WEST PEEK OS. Every remote identifier below is a deliberate
+# ALL-ZERO PLACEHOLDER, not a real resource. Boss OS must never deploy to, read
+# from, or migrate West Peek's Worker, D1, KV or R2. Provision Boss OS's own
+# resources and paste their ids here; until then `npm run deploy:production`
+# refuses to run (scripts/deploy/production.mjs).
 #
 # Top level = the LOCAL development/validation profile. `wrangler dev`, `npm run e2e`, and
 # `npm run migrate:local` run fully offline against miniflare and keep WP_OS_ENV = "local",
@@ -14,7 +20,7 @@
 # Cloudflare Access configuration, and remote migration apply all remain human-gated and
 # UNPROVEN. No secret value appears in this file — resource ids are non-secret; secrets
 # live only in the encrypted vault and in Worker secret storage.
-name = "west-peek-os"
+name = "boss-os"
 main = "src/worker/index.ts"
 compatibility_date = "2025-10-01"
 # Required by @cloudflare/puppeteer, which pulls in node:buffer. Without it the Worker does not
@@ -33,7 +39,7 @@ not_found_handling = "single-page-application"
 # operator-supplied Cloudflare account configuration (UNPROVEN — CREDENTIAL GATE).
 [[d1_databases]]
 binding = "WP_OS_DB"
-database_name = "west-peek-os-db"
+database_name = "boss-os-db"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
@@ -45,7 +51,7 @@ binding = "AI"
 
 [[r2_buckets]]
 binding = "WP_OS_DOCUMENTS"
-bucket_name = "west-peek-os-documents"
+bucket_name = "boss-os-documents"
 
 # KV — ephemeral/config/cache ONLY. Never institutional truth.
 [[kv_namespaces]]
@@ -71,12 +77,12 @@ binding = "BROWSER"
 #
 # Outbound mail goes through Resend instead (src/worker/effects/resendClient.ts): free to 3,000
 # messages a month and 100 a day, which is far beyond what this fund sends. To switch back, upgrade
-# the plan, run `wrangler email sending enable westpeek.ventures`, and uncomment.
+# the plan, run `wrangler email sending enable <boss-os-domain>`, and uncomment.
 # [[send_email]]
 # name = "EMAIL"
 # # The binding may only send AS this address, so a bug or a prompt injection cannot make the fund
 # # appear to email as anybody else on the domain.
-# allowed_sender_addresses = ["os@westpeek.ventures"]
+# allowed_sender_addresses = ["os@<boss-os-domain>"]
 
 [vars]
 # local | preview | production
@@ -98,13 +104,13 @@ crons = ["*/15 * * * *"]
 # entrypoint, compatibility date and the ADR-017 cron are identical to local.
 #
 # `name` is restated because a named environment would otherwise deploy to
-# "west-peek-os-production"; the proven existing Worker is "west-peek-os".
+# "boss-os-production"; the Worker this deploys to is "boss-os".
 #
 # The identifiers below are REAL provisioned Cloudflare resources. They are
 # non-secret. Declaring them here does not deploy, migrate, or configure anything.
 # ---------------------------------------------------------------------------
 [env.production]
-name = "west-peek-os"
+name = "boss-os"
 
 [env.production.assets]
 directory = "./dist/client"
@@ -113,8 +119,8 @@ not_found_handling = "single-page-application"
 
 [[env.production.d1_databases]]
 binding = "WP_OS_DB"
-database_name = "west-peek-os-db"
-database_id = "1d7c242b-fddc-41f1-843c-03dd2db6fbef"
+database_name = "boss-os-db"
+database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
 [env.production.ai]
@@ -122,11 +128,11 @@ binding = "AI"
 
 [[env.production.r2_buckets]]
 binding = "WP_OS_DOCUMENTS"
-bucket_name = "west-peek-os-documents"
+bucket_name = "boss-os-documents"
 
 [[env.production.kv_namespaces]]
 binding = "WP_OS_KV"
-id = "bf0750e8e9a648758a5de978088c97da"
+id = "00000000000000000000000000000000"
 
 # Browser Rendering (P44). A BINDING, not an HTTP client — which is why browser tasks need no
 # egress exemption: nothing here calls fetch(). Native to the platform this Worker already runs on,
@@ -147,12 +153,12 @@ binding = "BROWSER"
 #
 # Outbound mail goes through Resend instead (src/worker/effects/resendClient.ts): free to 3,000
 # messages a month and 100 a day, which is far beyond what this fund sends. To switch back, upgrade
-# the plan, run `wrangler email sending enable westpeek.ventures`, and uncomment.
+# the plan, run `wrangler email sending enable <boss-os-domain>`, and uncomment.
 # [[env.production.send_email]]
 # name = "EMAIL"
 # # The binding may only send AS this address, so a bug or a prompt injection cannot make the fund
 # # appear to email as anybody else on the domain.
-# allowed_sender_addresses = ["os@westpeek.ventures"]
+# allowed_sender_addresses = ["os@<boss-os-domain>"]
 
 [env.production.vars]
 # ── Whether an AI employee may email anybody (P33) ──
@@ -179,20 +185,20 @@ WP_OS_ENV = "production"
 # is deliberate: a transport being available has never been consent to start emailing people, and it
 # should be impossible to switch on by accident.
 #
-# os@westpeek.ventures needs no mailbox behind it to send. Inbound mail for this domain goes to
+# os@<boss-os-domain> needs no mailbox behind it to send. Inbound mail for that domain goes to
 # Google Workspace and is untouched by any of this — Resend's records live on the `send` and
 # `resend._domainkey` subdomains precisely so the root MX is left alone.
-WP_OS_EMAIL_FROM = "os@westpeek.ventures"
-WP_OS_EMAIL_SEND = "enabled"
+WP_OS_EMAIL_FROM = ""
+WP_OS_EMAIL_SEND = "off"
 
 # Network OS live pull (P35, canon §12A). Non-secret: an origin and an identity, both of which
 # are useless without WP_OS_NETWORK_OS_SESSION_SECRET, which is a Worker secret and never in this
 # file. The pull stays 503 until all three are present.
-WP_OS_NETWORK_OS_BASE_URL = "https://network.joinwestpeek.com"
+# WP_OS_NETWORK_OS_BASE_URL — West Peek only. Boss OS has no network lane.
 # sequoia@, and this was tried as info@ for one deploy on 22 Aug 2026 and reverted. Network OS's
 # own `ADMIN_EMAIL_ALLOWLIST` holds sequoia@ and scooter@ and NOT info@, so the alternative could
 # never have authenticated — checked in that repo rather than guessed at from here.
-WP_OS_NETWORK_OS_USER_EMAIL = "sequoia@westpeek.ventures"
+# WP_OS_NETWORK_OS_USER_EMAIL — West Peek only.
 
 [env.production.observability]
 enabled = true

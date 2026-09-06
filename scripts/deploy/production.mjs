@@ -22,6 +22,32 @@ const run = (cmd, opts = {}) => execSync(cmd, { stdio: "pipe", encoding: "utf8",
 const say = (s) => process.stdout.write(`${s}\n`);
 const die = (s) => { process.stderr.write(`\n✗ ${s}\n`); process.exit(1); };
 
+// ---------------------------------------------------------------------------
+// COMMISSIONING GATE (Boss OS). This repo began as a copy of West Peek OS, whose
+// wrangler.toml named REAL provisioned West Peek resources. Deploying before Boss
+// OS has its own would have published Boss OS code onto West Peek's live Worker
+// and migrated West Peek's production database.
+//
+// So: refuse to deploy while any production identifier is still a placeholder.
+// A named stop nobody sees is not a named stop, so this prints why and exits 1.
+// ---------------------------------------------------------------------------
+import { readFileSync } from "node:fs";
+const toml = readFileSync(new URL("../../wrangler.toml", import.meta.url), "utf8");
+const prod = toml.slice(toml.indexOf("[env.production]"));
+const placeholders = [];
+if (/database_id = "0{8}-0{4}-0{4}-0{4}-0{12}"/.test(prod)) placeholders.push("D1 database_id");
+if (/\bid = "0{32}"/.test(prod)) placeholders.push("KV namespace id");
+if (!process.env.BOSS_OS_HEALTH_URL) placeholders.push("BOSS_OS_HEALTH_URL (env)");
+if (placeholders.length) {
+  die(
+    `NAMED STOP: Boss OS is not commissioned, so this refuses to deploy.\n` +
+    `  still placeholder: ${placeholders.join(", ")}\n\n` +
+    `  Provision Boss OS's OWN Cloudflare resources and put their ids in\n` +
+    `  wrangler.toml under [env.production], then export BOSS_OS_HEALTH_URL to\n` +
+    `  the deployed hostname's /api/health. Never reuse a West Peek id here.`
+  );
+}
+
 say("1/4  applying migrations…");
 try {
   const out = run("npx wrangler d1 migrations apply WP_OS_DB --env production --remote");
@@ -52,7 +78,7 @@ try {
 
 say("4/4  verifying the worker answers…");
 try {
-  const code = run(`curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://os.joinwestpeek.com/api/health`).trim();
+  const code = run(`curl -s -o /dev/null -w "%{http_code}" --max-time 20 ${process.env.BOSS_OS_HEALTH_URL}`).trim();
   // 302 is correct and expected: Cloudflare Access redirects an unauthenticated probe to its login.
   // A 5xx would mean the worker is up but broken, which is the case worth catching here.
   if (code === "302" || code === "200") say(`     ok (HTTP ${code} — Access redirect is expected)`);
