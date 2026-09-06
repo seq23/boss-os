@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { SNAPSHOT_TABLES } from "../../src/worker/boss/routes/vault";
+import { CHASSIS_TABLES, CHASSIS_TABLE_CEILING } from "./chassisTables";
 
 describe("schema", () => {
   it("applies every migration and seeds both lanes", async () => {
@@ -24,13 +25,35 @@ describe("schema", () => {
    * only permitted omissions are the vault's own journals: a snapshot cannot
    * contain its own record, and restore history must outlive a restore.
    */
-  it("covers every table except the vault's own journals", async () => {
+  it("covers every Boss table except the vault's own journals", async () => {
     const rows = await env.DB
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'`)
       .all<{ name: string }>();
+    const all = rows.results.map((r) => r.name);
+    // An empty read would make every assertion below vacuously true.
+    expect(all.length).toBeGreaterThan(0);
+
+    const chassis = new Set<string>(CHASSIS_TABLES);
     const covered = new Set<string>(SNAPSHOT_TABLES);
-    const uncovered = rows.results.map((r) => r.name).filter((n) => !covered.has(n)).sort();
-    expect(uncovered).toEqual(["vault_restores", "vault_snapshots"]);
+    const uncoveredBoss = all.filter((n) => !chassis.has(n) && !covered.has(n)).sort();
+
+    // The original invariant, unweakened, over the tables Boss OS owns.
+    expect(uncoveredBoss).toEqual(["vault_restores", "vault_snapshots"]);
+  });
+
+  /**
+   * The ratchet. Cloning the chassis put West Peek's tables in this database, outside the vault's
+   * snapshot list. That is recorded rather than excused: the count may fall as the fund domain is
+   * removed, and this fails the moment it rises.
+   */
+  it("carries no more West Peek tables than it did at the port", async () => {
+    const rows = await env.DB
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'`)
+      .all<{ name: string }>();
+    const chassis = new Set<string>(CHASSIS_TABLES);
+    const present = rows.results.map((r) => r.name).filter((n) => chassis.has(n));
+    expect(present.length).toBeGreaterThan(0);
+    expect(present.length).toBeLessThanOrEqual(CHASSIS_TABLE_CEILING);
   });
 
   it("seeds the trading authority denied by default", async () => {

@@ -15,6 +15,10 @@ export const vault = new Hono<{ Bindings: Env; Variables: Vars }>();
  * every table added by a migration belongs here.
  */
 const SNAPSHOT_TABLES = [
+  // The employee work queue. On Cloudflare Queues this lived outside the database and outside the
+  // snapshot; as a table it is state like any other, and work accepted but not yet run must
+  // survive a rebuild rather than be silently dropped by the restore that was meant to save it.
+  "boss_task_queue",
   "lanes", "settings",
   "providers", "models", "routes", "budgets",
   "workload_profiles", "model_benchmarks",
