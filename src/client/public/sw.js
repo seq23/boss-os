@@ -13,7 +13,10 @@
  *   one exists, it belongs here — pretending otherwise would put a dead feature in the manifest.
  */
 
-const CACHE = "boss-shell-v1";
+// v2: the app that answers at this host CHANGED. A browser that loaded the old bundle has the
+// chassis in its shell cache, and the activate handler deletes every cache but this one - so
+// bumping the name is what actually evicts it rather than leaving it to expire.
+const CACHE = "boss-shell-v2";
 /*
  * "/index.html" IS DELIBERATELY NOT HERE, AND THAT IS THE WHOLE OFFLINE FIX.
  *

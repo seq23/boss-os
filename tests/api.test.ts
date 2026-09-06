@@ -118,3 +118,4 @@ describe("SPA delegation", () => {
     expect(await res.text()).toContain("spa");
   });
 });
+

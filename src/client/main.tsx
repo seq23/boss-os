@@ -20,7 +20,30 @@ const root = createRoot(document.getElementById("root")!);
  * finish line tests/boss/chassisTables.ts ratchets towards - Boss OS becomes the root app and this
  * branch goes away with it.
  */
-const isBoss = location.pathname === "/boss" || location.pathname.startsWith("/boss/");
+/*
+ * WHICH APP MOUNTS IS DECIDED BY THE HOST, NOT ONLY THE PATH.
+ *
+ * boss.sequoiataylor.com served West Peek Ventures' entire fund interface - branded West Peek,
+ * asking the owner to sign in as you@westpeek.ventures, with Thesis, Dealflow, Portfolio and Fund
+ * strategy in the sidebar - because this line defaulted to the chassis and only /boss escaped it.
+ * That is one business's interface on another's domain, which is the exact thing the owner's
+ * separation rule exists to prevent.
+ *
+ * IT HAD TO BE FIXED HERE, NOT ON THE SERVER. The first fix was a redirect in the Worker, and it
+ * could never have run: Cloudflare's assets binding answers "/" directly and the fetch handler is
+ * never invoked for it. Verified against production - the redirect deployed and "/" still returned
+ * 200. The client is the only place that sees every navigation.
+ *
+ * BOSS_HOSTS is an allowlist rather than a pattern, because "does this look like a Boss host" is a
+ * question with a wrong answer. Anywhere else - localhost, previews - keeps the old behaviour, so
+ * the chassis's 129 E2E journeys still drive it at "/". They are the regression suite for the
+ * domain being removed, and they go when it does.
+ */
+const BOSS_HOSTS = new Set(["boss.sequoiataylor.com"]);
+const isBoss =
+  BOSS_HOSTS.has(location.hostname) ||
+  location.pathname === "/boss" ||
+  location.pathname.startsWith("/boss/");
 
 if (isBoss) {
   void (async () => {

@@ -1266,6 +1266,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (typeof env.ASSETS === "undefined") {
       return json({ error: "assets binding unavailable" }, { status: 503 });
     }
+
     return env.ASSETS.fetch(request);
   }
 
