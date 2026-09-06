@@ -200,5 +200,12 @@ WP_OS_EMAIL_SEND = "off"
 # never have authenticated — checked in that repo rather than guessed at from here.
 # WP_OS_NETWORK_OS_USER_EMAIL — West Peek only.
 
+# Custom domain. Boss OS answers on boss.sequoiataylor.com. `custom_domain = true`
+# makes Cloudflare provision the hostname and certificate for this Worker rather
+# than matching a route on an existing zone.
+[[env.production.routes]]
+pattern = "boss.sequoiataylor.com"
+custom_domain = true
+
 [env.production.observability]
 enabled = true

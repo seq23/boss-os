@@ -25,7 +25,7 @@
     "vault:doctor": "node scripts/vault/vault.mjs doctor",
     "vault:sync:cloudflare": "node scripts/vault/vault.mjs sync:cloudflare",
     "validate:network-boundary": "node scripts/validate/no-cross-repo-coupling.mjs && node scripts/validate/no-cross-repo-coupling.mjs --self-test",
-    "validate:brand": "node scripts/validate/west-peek-brand-system.mjs && node scripts/validate/west-peek-brand-system.mjs --self-test",
+    "validate:brand": "node scripts/validate/boss-os-brand-system.mjs && node scripts/validate/boss-os-brand-system.mjs --self-test",
     "deploy:production": "node scripts/deploy/production.mjs",
     "validate:sql": "node scripts/validate/sql-against-schema.mjs && node scripts/validate/sql-against-schema.mjs --self-test",
     "validate:value-shapes": "node scripts/validate/value-shapes.mjs && node scripts/validate/value-shapes.mjs --self-test",

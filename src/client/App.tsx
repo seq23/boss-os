@@ -3469,7 +3469,7 @@ export function App() {
         Skip to content
       </a>
       <div className="shell-topbar">
-        <img className="rail-mark" src="/wp-mark.svg" alt="" width={30} height={30} />
+        <img className="rail-mark" src="/boss-mark.svg" alt="" width={30} height={30} />
         <span className="topbar-wordmark">West Peek OS</span>
         <button
           type="button"
@@ -3485,7 +3485,7 @@ export function App() {
       <div className="shell-body">
         <nav className="shell-nav" id="wp-nav" aria-label="Primary" data-open={navOpen ? "true" : "false"}>
           <div className="rail-brand">
-            <img className="rail-mark" src="/wp-mark.svg" alt="" width={30} height={30} />
+            <img className="rail-mark" src="/boss-mark.svg" alt="" width={30} height={30} />
             <span>
               <h1 className="rail-wordmark">West Peek OS</h1>
               <span className="rail-context">West Peek Ventures</span>

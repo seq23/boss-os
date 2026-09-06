@@ -37,14 +37,14 @@ const prod = toml.slice(toml.indexOf("[env.production]"));
 const placeholders = [];
 if (/database_id = "0{8}-0{4}-0{4}-0{4}-0{12}"/.test(prod)) placeholders.push("D1 database_id");
 if (/\bid = "0{32}"/.test(prod)) placeholders.push("KV namespace id");
-if (!process.env.BOSS_OS_HEALTH_URL) placeholders.push("BOSS_OS_HEALTH_URL (env)");
+
 if (placeholders.length) {
   die(
     `NAMED STOP: Boss OS is not commissioned, so this refuses to deploy.\n` +
     `  still placeholder: ${placeholders.join(", ")}\n\n` +
     `  Provision Boss OS's OWN Cloudflare resources and put their ids in\n` +
-    `  wrangler.toml under [env.production], then export BOSS_OS_HEALTH_URL to\n` +
-    `  the deployed hostname's /api/health. Never reuse a West Peek id here.`
+    `  wrangler.toml under [env.production].\n` +
+    `  Never reuse a West Peek id here.`
   );
 }
 
@@ -78,7 +78,7 @@ try {
 
 say("4/4  verifying the worker answers…");
 try {
-  const code = run(`curl -s -o /dev/null -w "%{http_code}" --max-time 20 ${process.env.BOSS_OS_HEALTH_URL}`).trim();
+  const code = run(`curl -s -o /dev/null -w "%{http_code}" --max-time 20 https://boss.sequoiataylor.com/api/health`).trim();
   // 302 is correct and expected: Cloudflare Access redirects an unauthenticated probe to its login.
   // A 5xx would mean the worker is up but broken, which is the case worth catching here.
   if (code === "302" || code === "200") say(`     ok (HTTP ${code} — Access redirect is expected)`);

@@ -13,7 +13,7 @@ import { setDevUser } from "../lib/api";
 function BrandLockup({ tagline }: { tagline: string }): JSX.Element {
   return (
     <div className="auth-brand">
-      <img src="/wp-mark.svg" alt="" width={44} height={44} />
+      <img src="/boss-mark.svg" alt="" width={44} height={44} />
       <div>
         <p className="auth-wordmark">West Peek OS</p>
         <p className="auth-tagline">{tagline}</p>

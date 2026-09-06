@@ -1,15 +1,25 @@
 {
-  "name": "West Peek OS",
-  "short_name": "West Peek",
-  "description": "Governed institutional operating system for West Peek Ventures.",
+  "name": "Boss OS",
+  "short_name": "Boss",
+  "description": "Private single-user executive OS. The system holds complexity, the human executes.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#f7f2ea",
-  "theme_color": "#050505",
+  "background_color": "#0E141B",
+  "theme_color": "#0E141B",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/wp-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/boss-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ]
 }

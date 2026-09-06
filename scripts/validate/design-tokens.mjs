@@ -7,7 +7,7 @@
  * pages set its sentence at `--text-sm` (13px) and the line directly beneath it at `--text-xs`
  * (12px). One pixel apart — too small to read as a deliberate hierarchy, large enough to read as a
  * mistake. It shipped because nothing was checking, exactly as the blue-and-purple drift did before
- * `west-peek-brand-system.mjs` existed.
+ * `boss-os-brand-system.mjs` existed.
  *
  * The hostile review of 21 August covered whether things WORK. It did not cover whether they LOOK
  * consistent, which is a different question and needs a different check. This is that check.

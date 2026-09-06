@@ -4,7 +4,7 @@
  *
  * This is not a validator invented to prove design work happened. It is the family convention —
  * `seq23/westpeek-live`, `seq23/west-peek-network-os`, and `seq23/west-peek-pitch-lab` each ship a
- * `validate-west-peek-brand-system.mjs`, and `WEST_PEEK_BRAND_SYSTEM.md` is marked CANONICAL /
+ * `boss-os-brand-system.mjs`, and `WEST_PEEK_BRAND_SYSTEM.md` is marked CANONICAL /
  * LOCKED with a change-control clause binding every West Peek repo.
  *
  * It exists because this repo already suffered the exact drift it catches. Before the design
@@ -40,7 +40,7 @@ const STALE_ORANGES = ["#ff6a00", "#f26a21", "#ff7a00", "#ff8500", "#ff8a00"];
 const ALLOWED_LITERALS = new Set(["#050505", "#f7f2ea", "#ffffff", "#f05a1a", "#fff"]);
 
 /** The two approved brand assets. Their colours come from the parent brand, not from this repo. */
-const BRAND_ASSETS = new Set(["wp-mark.svg", "icon.svg"]);
+const BRAND_ASSETS = new Set(["boss-mark.svg", "icon.svg"]);
 
 const COLOUR = /#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|hsla?\([^)]*\)|oklch\([^)]*\)/g;
 const SCANNED = new Set([".css", ".ts", ".tsx", ".html", ".svg", ".webmanifest", ".json"]);
@@ -173,11 +173,11 @@ export function scan(root) {
   const appPath = join(clientDir, "App.tsx");
   if (!existsSync(appPath)) {
     failures.push("src/client/App.tsx is missing — the shell cannot carry the brand anchor");
-  } else if (!readFileSync(appPath, "utf8").includes("/wp-mark.svg")) {
-    failures.push("the approved West Peek mark (/wp-mark.svg) is not wired into the primary shell");
+  } else if (!readFileSync(appPath, "utf8").includes("/boss-mark.svg")) {
+    failures.push("the approved Boss OS mark (/boss-mark.svg) is not wired into the primary shell");
   }
-  if (!existsSync(join(clientDir, "public", "wp-mark.svg"))) {
-    failures.push("approved West Peek mark asset is missing: src/client/public/wp-mark.svg");
+  if (!existsSync(join(clientDir, "public", "boss-mark.svg"))) {
+    failures.push("approved Boss OS mark asset is missing: src/client/public/boss-mark.svg");
   }
 
   return failures;
@@ -194,12 +194,12 @@ function fixtureRoot() {
   const dir = mkdtempSync(join(tmpdir(), "wp-brand-"));
   mkdirSync(join(dir, "src", "client", "public"), { recursive: true });
   cpSync(join(ROOT, "WEST_PEEK_BRAND_SYSTEM.md"), join(dir, "WEST_PEEK_BRAND_SYSTEM.md"));
-  cpSync(join(ROOT, "src", "client", "public", "wp-mark.svg"), join(dir, "src", "client", "public", "wp-mark.svg"));
+  cpSync(join(ROOT, "src", "client", "public", "boss-mark.svg"), join(dir, "src", "client", "public", "boss-mark.svg"));
   writeFileSync(
     join(dir, "src", "client", "styles.css"),
     `:root {\n  --wp-orange: ${CANONICAL_ORANGE};\n  --wp-ink: #15120f;\n}\n\n.card { color: var(--wp-ink); }\n`,
   );
-  writeFileSync(join(dir, "src", "client", "App.tsx"), `export const mark = "/wp-mark.svg";\n`);
+  writeFileSync(join(dir, "src", "client", "App.tsx"), `export const mark = "/boss-mark.svg";\n`);
   return dir;
 }
 
