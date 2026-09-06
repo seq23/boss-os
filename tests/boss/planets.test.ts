@@ -1,4 +1,7 @@
+import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { apiJson, row } from "./helpers";
+import { EXPECTED_COMPUTED_KINDS } from "../../src/worker/boss/spirit/day";
 import {
   geocentricLongitude, dailyMotion, stations, retrogrades, ingresses,
   RETROGRADING, PLANET_BY_KEY, natalChart,
@@ -219,5 +222,40 @@ describe("the natal chart — the one thing that waits on a person", () => {
   it("never marks the Sun retrograde, because it does not", () => {
     const chart = natalChart({ born_at: BIRTH, birth_place: "Memphis", time_accuracy: "unknown" });
     expect(chart.placements.find((p) => p.key === "sun")!.retrograde).toBe(false);
+  });
+});
+
+describe("the almanac notices a kind it has never been given", () => {
+  it("REBUILDS when a computed kind is missing, not only when the horizon is short", async () => {
+    /*
+     * THE BUG THIS PINS, FOUND IN PRODUCTION. `ensureAlmanac` asked only how far ahead the rows
+     * reached. Every existing database already had twenty-four months of lunar rows, so the check
+     * passed, the rebuild reported `built: 0`, and not a single retrograde was ever written — a
+     * stage that runs and does nothing.
+     */
+    // FIRST cover the horizon, so the horizon test cannot be what triggers the rebuild. Without
+    // this the test passed with the guard removed — it was proving that an EMPTY almanac gets
+    // built, which was never in doubt.
+    await apiJson("/api/spirit/astro/almanac/rebuild", { method: "POST", body: {} });
+    const settled = await apiJson("/api/spirit/astro/almanac/rebuild", { method: "POST", body: {} });
+    expect(settled.body.data.built).toBe(0);
+
+    // Now remove ONLY the planetary kinds. The horizon is still covered, so a rebuild can only
+    // happen if the missing kind is noticed.
+    await env.DB.prepare(`DELETE FROM astro_calendar WHERE kind IN ('retrograde','shadow','ingress')`).run();
+    const before = await row<{ n: number }>(`SELECT COUNT(*) AS n FROM astro_calendar WHERE kind = 'retrograde'`);
+    expect(before!.n).toBe(0);
+
+    const { body } = await apiJson("/api/spirit/astro/almanac/rebuild", { method: "POST", body: {} });
+    expect(body.data.built).toBeGreaterThan(0);
+
+    const after = await row<{ n: number }>(`SELECT COUNT(*) AS n FROM astro_calendar WHERE kind = 'retrograde'`);
+    expect(after!.n).toBeGreaterThan(0);
+  });
+
+  it("names every kind it knows how to compute, so the next one added cannot go missing", () => {
+    expect([...EXPECTED_COMPUTED_KINDS]).toEqual(
+      expect.arrayContaining(["new_moon", "full_moon", "window", "retrograde", "shadow", "ingress"]),
+    );
   });
 });

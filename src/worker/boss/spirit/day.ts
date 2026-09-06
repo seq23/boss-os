@@ -90,11 +90,38 @@ export async function ensureAlmanac(db: D1Database, now = Date.now(), months = A
     .prepare(`SELECT MAX(starts_at) AS latest, COUNT(*) AS n FROM astro_calendar WHERE source = 'computed'`)
     .first<{ latest: number | null; n: number }>();
 
-  if (covered?.latest && covered.latest >= horizon - 45 * DAY_MS) {
+  /*
+   * "FAR ENOUGH AHEAD" IS NOT THE SAME QUESTION AS "EVERYTHING IT SHOULD HOLD".
+   *
+   * This check used to ask only how far the rows reached. When the planetary layer was added, every
+   * production database already had twenty-four months of lunar rows — so the horizon test passed,
+   * the rebuild returned `built: 0`, and not one retrograde was ever written. A stage that runs and
+   * does nothing, which is exactly the failure this repository names.
+   *
+   * So the horizon AND the set of kinds both have to hold. A kind that is expected and absent means
+   * this build knows how to compute something the table has never been given.
+   */
+  const kinds = await db
+    .prepare(`SELECT DISTINCT kind FROM astro_calendar WHERE source = 'computed'`)
+    .all<{ kind: string }>();
+  const present = new Set((kinds.results ?? []).map((k) => k.kind));
+  const missingKind = EXPECTED_COMPUTED_KINDS.find((k) => !present.has(k));
+
+  if (covered?.latest && covered.latest >= horizon - 45 * DAY_MS && !missingKind) {
     return { built: 0, total: covered.n };
   }
   return ensureAlmanacRange(db, now - DAY_MS, months, now);
 }
+
+/**
+ * Every kind `buildAlmanac` produces, named so their absence is detectable.
+ *
+ * ADDING A KIND WITHOUT ADDING IT HERE is the way this breaks again: the rows would be computed for
+ * a fresh database and never backfilled into an existing one, and nothing would say so.
+ */
+export const EXPECTED_COMPUTED_KINDS = [
+  "new_moon", "full_moon", "window", "retrograde", "shadow", "ingress",
+] as const;
 
 /**
  * Covers a specific moment, whenever it is.
