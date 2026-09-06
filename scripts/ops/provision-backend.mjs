@@ -75,6 +75,45 @@ if (status !== "enabled") {
   process.exit(1);
 }
 
+/*
+ * EVERY SLUG IS CHECKED AGAINST THE ACCOUNT BEFORE A ROW IS WRITTEN.
+ *
+ * A model row whose slug does not exist provisions perfectly and then fails at the first call,
+ * which means the failure lands on whoever typed the first sentence rather than on the operator
+ * who installed it. That is exactly how `@cf/meta/llama-3.1-8b-instruct` got seeded: a plausible
+ * name for a build this account does not carry.
+ *
+ * IT HARD-FAILS WHEN IT CANNOT CHECK. A catalogue that comes back empty or unreadable is an
+ * unanswered question, not a pass — treating it as one would restore the silence this exists to
+ * end. Only Workers AI has a catalogue command; other providers are skipped by name, and say so.
+ */
+if (def.baseUrl === "binding:AI") {
+  let catalogue = "";
+  try {
+    catalogue = execFileSync("npx", ["wrangler", "ai", "models"], { encoding: "utf8" });
+  } catch (err) {
+    console.error(`Could not read the Workers AI model catalogue, so no slug could be checked: ${err.message}`);
+    process.exit(1);
+  }
+  const known = new Set(catalogue.match(/@cf\/[^\s│|]+/g) ?? []);
+  if (!known.size) {
+    console.error("`wrangler ai models` returned no model slugs. Refusing to provision unverified rows.");
+    process.exit(1);
+  }
+  const missing = def.models.filter((m) => !known.has(m.slug));
+  if (missing.length) {
+    console.error(
+      `These slugs are not in the account's catalogue, so they would fail at the first call:\n` +
+        missing.map((m) => `  ${m.id}  ${m.slug}`).join("\n") +
+        `\n\nFix them in src/worker/boss/router/backends.ts. Run \`npx wrangler ai models\` to see what exists.`,
+    );
+    process.exit(1);
+  }
+  console.log(`Checked ${def.models.length} slug(s) against the account catalogue: all present.\n`);
+} else {
+  console.log(`No catalogue command exists for ${def.providerName}, so its slugs are UNCHECKED.\n`);
+}
+
 const sql = [
   `INSERT OR IGNORE INTO providers (id, name, base_url, api_key_var, enabled)`,
   `VALUES (${q(def.providerId)}, ${q(def.providerName)}, ${q(def.baseUrl)}, ${q(def.credential.name)}, 1);`,

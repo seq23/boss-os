@@ -65,7 +65,12 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
     note: "A binding, so no key and no egress. The included daily allowance makes routine work genuinely $0.",
     models: [
       {
-        id: "mdl_cf_llama31_8b", slug: "@cf/meta/llama-3.1-8b-instruct",
+        // THE SLUG IS `-fp8` BECAUSE THAT IS THE ONE THAT EXISTS. The unquantised
+        // `@cf/meta/llama-3.1-8b-instruct` was seeded here and is not in the account's model
+        // catalogue at all, so this row would have provisioned cleanly and then failed at the
+        // first call — the failure landing on whoever typed the first sentence. The provisioning
+        // script now checks every slug against `wrangler ai models` before writing a row.
+        id: "mdl_cf_llama31_8b", slug: "@cf/meta/llama-3.1-8b-instruct-fp8",
         displayName: "Llama 3.1 8B (Workers AI)", capabilityTier: "fast",
         inMicros1k: 0, outMicros1k: 0, contextTokens: 8192,
       },
