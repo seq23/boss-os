@@ -22,10 +22,8 @@ import {
   AWAITING_OWNER, OWNER_INPUTS,
   moonPhase, moonPosition,
 } from "../spirit/astro";
-import {
-  METHOD_PLANETS, STATION_UNCERTAINTY_HOURS, TIME_ACCURACY, natalChart,
-  type BirthData, type TimeAccuracy,
-} from "../spirit/planets";
+import { METHOD_PLANETS, STATION_UNCERTAINTY_HOURS } from "../spirit/planets";
+import { TIME_ACCURACY, natalChart, transits, type BirthData, type TimeAccuracy } from "../spirit/natal";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
   ANCESTOR_MINUTES_TARGET, CONTRIBUTION_IDEAL, CONTRIBUTION_MINIMUM,
@@ -257,6 +255,9 @@ spirit.get("/astro/natal", async (c) => {
       available: true,
       birth: { ...birth, born_at_iso: new Date(birth.born_at).toISOString() },
       chart: natalChart(birth),
+      // The transits the endpoint promised would follow. `at` lets a specific moment be asked for
+      // rather than only "now", which is what makes a past or future day inspectable.
+      transits: transits(natalChart(birth), Number(c.req.query("at")) || Date.now()),
       advisory: true,
       note: ADVISORY_NOTE,
     });

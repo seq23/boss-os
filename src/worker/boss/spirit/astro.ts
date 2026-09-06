@@ -7,9 +7,11 @@
  * 49), which is why the Spirit screens work on a plane with no signal.
  *
  * The accuracy is stated rather than implied. The phase times are good to a few
- * minutes; the lunar longitude is good to roughly a third of a degree, which is
- * ample for a thirty-degree sign except within a degree or so of a cusp — and
- * near a cusp this module says so instead of picking. Anything that would need
+ * minutes; the lunar longitude carries the full Meeus 47.A series and is good to
+ * about 0.01°. It used to carry six terms of that table and claim a third of a
+ * degree, which it did not deliver — a natal Moon came out 1.6° wrong, and the
+ * owner caught it on her own chart. Near a cusp this module still says so
+ * instead of picking. Anything that would need
  * a real ephemeris — natal placements, transits to them — is not computed here
  * and is not invented: it is reported as deferred.
  *
@@ -99,15 +101,65 @@ export function moonPosition(ts: number): MoonPosition {
   const Mp = 134.963_3964 + 477_198.867_505_5 * T + 0.008_7414 * T * T;
   const F = 93.272_095 + 483_202.017_5233 * T - 0.003_6539 * T * T;
 
-  const longitude = norm360(
-    Lp +
-      6.289 * sin(Mp) -
-      1.274 * sin(2 * D - Mp) +
-      0.658 * sin(2 * D) +
-      0.214 * sin(2 * Mp) -
-      0.186 * sin(M) -
-      0.114 * sin(2 * F),
-  );
+  /*
+   * THE FULL MEEUS 47.A LONGITUDE SERIES, NOT SIX TERMS OF IT.
+   *
+   * This used to carry the six largest periodic terms and claim a third of a degree. It was not
+   * worth a third of a degree: the omitted terms reach 0.059° individually and well over a degree
+   * in combination, and a natal Moon computed from it landed 1.6° — nearly three hours of lunar
+   * motion — from the value a real ephemeris gives. The owner noticed, on her own chart.
+   *
+   * THE MOON IS THE FASTEST THING ON THIS SCREEN, which is why it is the one that could not afford
+   * the shortcut: 13° a day means an error tolerable for Saturn puts the Moon in the wrong sign for
+   * half a day either side of a cusp. With the full table this is good to about 0.01°.
+   *
+   * Columns are the multipliers of D, M, M′ and F, then the coefficient in millionths of a degree.
+   */
+  const TERMS: [number, number, number, number, number][] = [
+    [0,0,1,0,6288774],[2,0,-1,0,1274027],[2,0,0,0,658314],[0,0,2,0,213618],
+    [0,1,0,0,-185116],[0,0,0,2,-114332],[2,0,-2,0,58793],[2,-1,-1,0,57066],
+    [2,0,1,0,53322],[2,-1,0,0,45758],[0,1,-1,0,-40923],[1,0,0,0,-34720],
+    [0,1,1,0,-30383],[2,0,0,-2,15327],[0,0,1,2,-12528],[0,0,1,-2,10980],
+    [4,0,-1,0,10675],[0,0,3,0,10034],[4,0,-2,0,8548],[2,1,-1,0,-7888],
+    [2,1,0,0,-6766],[1,0,-1,0,-5163],[1,1,0,0,4987],[2,-1,1,0,4036],
+    [2,0,2,0,3994],[4,0,0,0,3861],[2,0,-3,0,3665],[0,1,-2,0,-2689],
+    [2,0,-1,2,-2602],[2,-1,-2,0,2390],[1,0,1,0,-2348],[2,-2,0,0,2236],
+    [0,1,2,0,-2120],[0,2,0,0,-2069],[2,-2,-1,0,2048],[2,0,1,-2,-1773],
+    [2,0,0,2,-1595],[4,-1,-1,0,1215],[0,0,2,2,-1110],[3,0,-1,0,-892],
+    [2,1,1,0,-810],[4,-1,-2,0,759],[0,2,-1,0,-713],[2,2,-1,0,-700],
+    [2,1,-2,0,691],[2,-1,0,-2,596],[4,0,1,0,549],[0,0,4,0,537],
+    [4,-1,0,0,520],[1,0,-2,0,-487],[2,1,0,-2,-399],[0,0,2,-2,-381],
+    [1,1,1,0,351],[3,0,-2,0,-340],[4,0,-3,0,330],[2,-1,2,0,327],
+    [0,2,1,0,-323],[1,1,-1,0,299],[2,0,3,0,294],
+  ];
+
+  /*
+   * THE ECCENTRICITY FACTOR. The Earth's orbit is not fixed, and terms involving the SUN's mean
+   * anomaly have to be scaled by it — squared where M appears twice. Dropping E is a classic
+   * silent error: it changes nothing structurally and quietly biases every solar-coupled term.
+   */
+  const E = 1 - 0.002_516 * T - 0.000_0074 * T * T;
+
+  let sigmaL = 0;
+  for (const [cD, cM, cMp, cF, coeff] of TERMS) {
+    const arg = cD * D + cM * M + cMp * Mp + cF * F;
+    const scale = cM === 0 ? 1 : Math.abs(cM) === 1 ? E : E * E;
+    sigmaL += coeff * scale * sin(arg);
+  }
+
+  // Meeus's additive terms: Venus (A1), Jupiter (A2), and the flattening of the Earth.
+  const A1 = 119.75 + 131.849 * T;
+  const A2 = 53.09 + 479_264.290 * T;
+  sigmaL += 3958 * sin(A1) + 1962 * sin(Lp - F) + 318 * sin(A2);
+
+  /*
+   * NUTATION, so this is the APPARENT longitude the zodiac actually uses. Only about 17 arcseconds,
+   * which did not matter when the series itself was a degree out and does now.
+   */
+  const omega = 125.04452 - 1934.136261 * T;
+  const nutation = (-17.20 * sin(omega) - 1.32 * sin(2 * (280.4665 + 36_000.7698 * T))) / 3600;
+
+  const longitude = norm360(Lp + sigmaL / 1_000_000 + nutation);
 
   const index = Math.floor(longitude / 30) % 12;
   const degreesInSign = longitude - index * 30;

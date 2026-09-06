@@ -101,6 +101,33 @@ export const PLANETS: PlanetDef[] = [
     rate: { a: -0.00196176, e: -0.00004397, I: -0.00242939, L: 428.48202785, peri: 0.40805281, node: 0.04240589 },
   },
   {
+    key: "chiron", name: "Chiron",
+    /*
+     * CHIRON'S ELEMENTS COME FROM JPL, FETCHED ONCE AND WRITTEN DOWN — not recalled. It is a centaur
+     * on a Saturn-crossing orbit, so its elements are not the sort of thing to reconstruct from
+     * memory, and a plausible-looking guess would have produced a plausible-looking degree.
+     *
+     * CONVERTED FROM ITS OWN EPOCH (JD 2461200.5) back to J2000 through its mean motion, because
+     * this table is J2000-plus-rates and a second convention here would be a second thing to get
+     * wrong. Only the mean longitude advances: the node and perihelion of a perturbed centaur do
+     * drift, and holding them fixed is the honest limit of this method rather than a claim that
+     * they do not move.
+     */
+    at: { a: 13.68426761, e: 0.37976563, I: 6.93057447, L: 217.30876620, peri: 188.58395852, node: 209.29612586 },
+    rate: { a: 0, e: 0, I: 0, L: 711.15122187, peri: 0, node: 0 },
+  },
+  {
+    key: "pluto", name: "Pluto",
+    /*
+     * PLUTO IS IN THE SAME JPL TABLE, in the 1800–2050 half of it, so it needs no special case and
+     * no separate series. It moves about a degree and a half a year, which makes it the one body
+     * here whose sign is effectively independent of the birth TIME — and therefore the best
+     * cross-check on the elements when someone quotes their chart from memory.
+     */
+    at: { a: 39.48211675, e: 0.24882730, I: 17.14001206, L: 238.92903833, peri: 224.06891629, node: 110.30393684 },
+    rate: { a: -0.00031596, e: 0.00005170, I: 0.00004818, L: 145.20780515, peri: -0.04062942, node: -0.01183482 },
+  },
+  {
     key: "neptune", name: "Neptune",
     at: { a: 30.06992276, e: 0.00859048, I: 1.77004347, L: -55.12002969, peri: 44.96476227, node: 131.78422574 },
     rate: { a: 0.00026291, e: 0.00005105, I: 0.00035372, L: 218.45945325, peri: -0.32241464, node: -0.00508664 },
@@ -423,144 +450,4 @@ export function ingresses(key: string, fromTs: number, toTs: number): Ingress[] 
     prevSign = sign;
   }
   return found;
-}
-
-// ─── The natal chart ─────────────────────────────────────────────────────────
-
-/**
- * How well the birth time is known, which decides how much of the chart is real.
- *
- * THIS IS NOT A DISCLAIMER FIELD. The planets move slowly enough that an hour either way barely
- * touches them; the ascendant moves a degree every four minutes. So the accuracy determines what
- * gets returned, not merely what gets footnoted — an unknown time returns placements and NO houses,
- * because a house cusp computed from a guess is a number that looks exactly like a fact.
- */
-export const TIME_ACCURACY = ["exact", "approximate", "unknown"] as const;
-export type TimeAccuracy = (typeof TIME_ACCURACY)[number];
-
-export interface BirthData {
-  /** Epoch ms of the birth instant, UTC. */
-  born_at: number;
-  birth_place: string;
-  time_accuracy: TimeAccuracy;
-  /** Degrees north, needed for the ascendant. */
-  latitude?: number | null;
-  /** Degrees east, needed for the ascendant. */
-  longitude?: number | null;
-}
-
-export interface NatalPlacement {
-  key: string;
-  name: string;
-  longitude: number;
-  sign: string;
-  degrees_in_sign: number;
-  retrograde: boolean;
-}
-
-export interface NatalChart {
-  placements: NatalPlacement[];
-  ascendant: { longitude: number; sign: string; degrees_in_sign: number } | null;
-  /** The Midheaven — the ecliptic point on the meridian. Null whenever the ascendant is. */
-  midheaven: { longitude: number; sign: string; degrees_in_sign: number } | null;
-  /** Why there is no ascendant, when there is none. Never silent. */
-  houses_note: string;
-  method: string;
-}
-
-/** Greenwich mean sidereal time in degrees. Meeus ch. 12. */
-function gmstDegrees(ts: number): number {
-  const jd = ts / DAY_MS + 2_440_587.5;
-  const T = (jd - J2000_JD) / 36_525;
-  return norm360(
-    280.46061837 + 360.98564736629 * (jd - J2000_JD) + 0.000387933 * T * T - (T * T * T) / 38_710_000,
-  );
-}
-
-/** Mean obliquity of the ecliptic, degrees. */
-function obliquity(ts: number): number {
-  const T = (ts / DAY_MS + 2_440_587.5 - J2000_JD) / 36_525;
-  return 23.439291111 - 0.0130041667 * T - 1.6667e-7 * T * T + 5.027778e-7 * T * T * T;
-}
-
-/**
- * The natal chart, from the same arithmetic as everything else on the Spirit screen.
- *
- * NOTHING WAS EVER MISSING BUT THE BIRTH DATA. This function existed the moment `planets.ts` did;
- * what it needs is three facts, and the screen asks for them rather than reporting the whole layer
- * as permanently deferred for want of an ephemeris.
- */
-export function natalChart(birth: BirthData): NatalChart {
-  const bodies = ["sun", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"];
-  const placements: NatalPlacement[] = bodies.map((key) => {
-    const p = planetPosition(key, birth.born_at);
-    return {
-      key, name: p.name,
-      longitude: p.longitude,
-      sign: ZODIAC_SIGNS[Math.floor(p.longitude / 30)]!,
-      degrees_in_sign: p.longitude % 30,
-      // The Sun never retrogrades; reporting it as direct is a fact, not a special case.
-      retrograde: key === "sun" ? false : p.retrograde,
-    };
-  });
-
-  /*
-   * THE ASCENDANT IS RETURNED ONLY WHEN IT CAN BE. It needs an exact time AND a latitude and
-   * longitude, and each missing piece is named — "houses unavailable" with no reason is the kind of
-   * blank a person fills in with the wrong assumption.
-   */
-  const missing: string[] = [];
-  if (birth.time_accuracy !== "exact") missing.push(`the birth time is ${birth.time_accuracy}`);
-  if (birth.latitude === null || birth.latitude === undefined) missing.push("no birth latitude");
-  if (birth.longitude === null || birth.longitude === undefined) missing.push("no birth longitude");
-
-  if (missing.length) {
-    return {
-      placements,
-      ascendant: null,
-      midheaven: null,
-      houses_note:
-        `No ascendant or houses: ${missing.join(", ")}. The planetary placements above are unaffected — ` +
-        `they move slowly enough that a time to the nearest hour does not change them, whereas the ` +
-        `ascendant moves a degree every four minutes.`,
-      method: METHOD_PLANETS,
-    };
-  }
-
-  const lst = norm360(gmstDegrees(birth.born_at) + birth.longitude!);
-  const e = obliquity(birth.born_at) * RAD;
-  const ramc = lst * RAD;
-  const lat = birth.latitude! * RAD;
-
-  /*
-   * THE ASCENDANT, AND THE +180 THAT USED TO BE HERE WAS THE DESCENDANT.
-   *
-   * This atan2 form already lands on the eastern horizon; adding 180° on top of it turned every
-   * chart a half-turn and returned the western point instead. Her chart came back with a
-   * Sagittarius rising at 2:29am, which is roughly the opposite of what a birth three hours before
-   * dawn gives, and that is what caught it — the arithmetic was self-consistent and confidently
-   * wrong.
-   *
-   * THE TEST THAT CANNOT LIE, and the one that now guards this: AT SUNRISE THE ASCENDANT IS THE
-   * SUN. The Sun is on the eastern horizon at the moment it rises, so the two longitudes must
-   * agree. No external reference, no published table — a fact about what the ascendant means.
-   */
-  const asc = norm360(
-    Math.atan2(Math.cos(ramc), -(Math.sin(ramc) * Math.cos(e) + Math.tan(lat) * Math.sin(e))) / RAD,
-  );
-
-  /*
-   * THE MIDHEAVEN, which is worth having in its own right and is also what makes the ascendant
-   * checkable without an external table. The MC needs no latitude — it is where the meridian cuts
-   * the ecliptic — so an error in the ascendant cannot hide behind a matching error here.
-   */
-  const mc = norm360(Math.atan2(Math.sin(ramc), Math.cos(ramc) * Math.cos(e)) / RAD);
-
-  return {
-    placements,
-    ascendant: { longitude: asc, sign: ZODIAC_SIGNS[Math.floor(asc / 30)]!, degrees_in_sign: asc % 30 },
-    midheaven: { longitude: mc, sign: ZODIAC_SIGNS[Math.floor(mc / 30)]!, degrees_in_sign: mc % 30 },
-    houses_note: "Ascendant and Midheaven computed from an exact birth time and the given coordinates.",
-    method: METHOD_PLANETS,
-  };
 }

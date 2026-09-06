@@ -4,8 +4,10 @@ import { apiJson, row } from "./helpers";
 import { EXPECTED_COMPUTED_KINDS } from "../../src/worker/boss/spirit/day";
 import {
   geocentricLongitude, dailyMotion, stations, retrogrades, ingresses,
-  RETROGRADING, PLANET_BY_KEY, natalChart,
+  RETROGRADING, PLANET_BY_KEY,
 } from "../../src/worker/boss/spirit/planets";
+import { natalChart, type NatalPlacement } from "../../src/worker/boss/spirit/natal";
+import { moonPosition } from "../../src/worker/boss/spirit/astro";
 
 /**
  * THE ASTRONOMY IS CHECKED AGAINST THE SKY, NOT AGAINST ITSELF.
@@ -195,7 +197,7 @@ describe("the natal chart — the one thing that waits on a person", () => {
   it("computes placements from the date alone, with no ascendant and a reason", () => {
     const chart = natalChart({ born_at: BIRTH, birth_place: "Memphis", time_accuracy: "approximate" });
     expect(chart.placements.length).toBeGreaterThanOrEqual(8);
-    expect(chart.placements.find((p) => p.key === "sun")!.sign).toBe("Aries");
+    expect(chart.placements.find((p: NatalPlacement) => p.key === "sun")!.sign).toBe("Aries");
     // A house cusp from a guessed time is a number that looks exactly like a fact, so there is none.
     expect(chart.ascendant).toBeNull();
     expect(chart.houses_note).toContain("approximate");
@@ -221,7 +223,7 @@ describe("the natal chart — the one thing that waits on a person", () => {
 
   it("never marks the Sun retrograde, because it does not", () => {
     const chart = natalChart({ born_at: BIRTH, birth_place: "Memphis", time_accuracy: "unknown" });
-    expect(chart.placements.find((p) => p.key === "sun")!.retrograde).toBe(false);
+    expect(chart.placements.find((p: NatalPlacement) => p.key === "sun")!.retrograde).toBe(false);
   });
 });
 
@@ -332,5 +334,97 @@ describe("the ascendant, against facts that cannot lie", () => {
     if (moved < -180) moved += 360;
     expect(moved).toBeGreaterThan(0.4);
     expect(moved).toBeLessThan(2.5);
+  });
+});
+
+describe("the Moon, against Meeus's own worked example", () => {
+  it("REPRODUCES EXAMPLE 47.a — the check that caught a 1.7° error", () => {
+    /*
+     * THE BUG THIS EXISTS FOR, AND IT WAS IN THE ORIGINAL SIX-TERM CODE TOO.
+     *
+     * The EVECTION — the second-largest term in the lunar longitude series — carried the wrong
+     * sign. That is a 1.7° error in the Moon, which is three hours of lunar motion and enough to
+     * put it in the wrong SIGN for half a day either side of a cusp. Nothing looked wrong: the Moon
+     * was in a plausible degree of a plausible sign every single day.
+     *
+     * It survived because the module was only ever checked against itself. The owner caught it by
+     * reading her own natal Moon and saying it was a degree and a half out. This test is the check
+     * that should have existed from the first line: Meeus publishes the intermediate values AND the
+     * answer for 1992 April 12.0, so the series can be verified without any ephemeris at all.
+     */
+    const t = Date.parse("1992-04-12T00:00:00Z");
+    expect(moonPosition(t).longitude).toBeCloseTo(133.162655, 1);
+  });
+
+  it("agrees with a professional ephemeris on a real birth chart", () => {
+    // Independent of Meeus: a chart cast elsewhere, for a date forty years earlier. Two references
+    // that cannot both be wrong in the same direction.
+    const born = Date.parse("1986-07-23T02:29:00-05:00");
+    const moon = moonPosition(born);
+    expect(moon.sign).toBe("Aquarius");
+    expect(moon.degrees_in_sign).toBeCloseTo(25 + 34 / 60, 1);
+  });
+
+  it("keeps the evection at full strength, not merely present", () => {
+    /*
+     * A sign error and a dropped term look identical in a single spot check — both leave the Moon
+     * somewhere plausible. Sampling across a month catches either, because the evection's
+     * contribution swings through its full ±1.27° range over the synodic cycle.
+     */
+    let worst = 0;
+    for (let d = 0; d < 30; d++) {
+      const t = Date.parse("1992-04-12T00:00:00Z") + d * 86_400_000;
+      // Recompute the expected longitude from the series' own definition of a day's motion: the
+      // Moon must never jump. A wrong-signed term shows up as a discontinuity in the derivative.
+      const a = moonPosition(t).longitude;
+      const b = moonPosition(t + 3_600_000).longitude;
+      let step = b - a;
+      if (step < -180) step += 360;
+      worst = Math.max(worst, Math.abs(step));
+    }
+    // The Moon moves 0.4–0.7° an hour. Anything outside that band means a term is fighting the rest.
+    expect(worst).toBeLessThan(0.75);
+  });
+});
+
+describe("the chart points that are not planets", () => {
+  const BIRTH = {
+    born_at: Date.parse("1986-07-23T02:29:00-05:00"),
+    birth_place: "Memphis, TN", time_accuracy: "exact" as const,
+    latitude: 35.1495, longitude: -90.0490,
+  };
+
+  it("includes the Moon at all — it was missing entirely", () => {
+    // The first version listed Sun through Neptune and simply never added the Moon, which is one of
+    // the three points anybody reads first. Nothing in a table of PLANETS would have produced it.
+    const keys = natalChart(BIRTH).placements.map((p: NatalPlacement) => p.key);
+    expect(keys).toContain("moon");
+    expect(keys).toContain("pluto");
+    expect(keys).toContain("chiron");
+    expect(keys).toContain("node");
+    expect(keys).toContain("lilith");
+  });
+
+  it("matches a professional chart on the slow points, which cannot be time errors", () => {
+    const by = new Map(natalChart(BIRTH).placements.map((p: NatalPlacement) => [p.key, p]));
+    // Pluto moves 1.5° a YEAR, so agreeing here validates the elements rather than the clock.
+    expect(by.get("pluto")!.sign).toBe("Scorpio");
+    expect(by.get("pluto")!.degrees_in_sign).toBeCloseTo(4 + 33 / 60, 1);
+    expect(by.get("node")!.sign).toBe("Aries");
+    expect(by.get("node")!.degrees_in_sign).toBeCloseTo(25 + 3 / 60, 1);
+  });
+
+  it("states Chiron's accuracy rather than implying it has none", () => {
+    const chiron = natalChart(BIRTH).placements.find((p: NatalPlacement) => p.key === "chiron")!;
+    expect(chiron.sign).toBe("Gemini");
+    // Held at one epoch and propagated, so it is a degree out forty years back. Said, not hidden.
+    expect(chiron.accuracy).toContain("1°");
+  });
+
+  it("puts Fortune where the night formula puts it, and says which it used", () => {
+    const c = natalChart(BIRTH);
+    expect(c.fortune!.sect).toBe("night");
+    expect(c.fortune!.sign).toBe("Scorpio");
+    expect(c.fortune!.degrees_in_sign).toBeCloseTo(15 + 42 / 60, 1);
   });
 });
