@@ -61,6 +61,76 @@ test.describe("Boss OS surface", () => {
     }
   });
 
+  /**
+   * THE NAV MUST NOT SIT ON TOP OF THE PAGE.
+   *
+   * `.shell` reserved `--tab-h` (64px) for a nav of ten tabs laid out five to a row - two rows,
+   * ~128px - so the last 64px of every scrollable screen was permanently underneath it. It shipped
+   * that way and nothing noticed, because no test had ever asked where anything was on screen.
+   *
+   * Measured rather than asserted about CSS: the check is that the last piece of content ENDS
+   * above where the nav BEGINS, which stays true however the nav is built, how many tabs it has,
+   * or what the reader's text size is. A test against `padding-bottom: 128px` would pass on the
+   * day someone adds an eleventh tab and the bug comes back.
+   */
+  test("no page hides its last content behind the tab bar", async ({ page }) => {
+    await unlock(page);
+
+    // Deliberately the tall ones. Today carries thirteen blocks and Vault a snapshot list, which
+    // is where the overlap was first visible.
+    for (const label of ["Today", "Systems", "Vault", "Capital"]) {
+      await page.getByRole("button", { name: label, exact: true }).click();
+      await page.waitForTimeout(400);
+
+      await page.keyboard.press("End");
+      await page.mouse.wheel(0, 4000);
+      await page.waitForTimeout(400);
+
+      const m = await page.evaluate(() => {
+        const main = document.querySelector("main.page");
+        const nav = document.querySelector("nav.tabs") as HTMLElement | null;
+        const shell = document.querySelector(".shell");
+        if (!main || !nav || !shell) return null;
+        // The end-mark is the page's own terminator and may sit in the reserved gap; everything
+        // before it is content and must be clear of the nav.
+        const kids = [...main.children].filter((el) => !el.classList.contains("page-end"));
+        const last = kids[kids.length - 1];
+        return {
+          navTop: nav.getBoundingClientRect().top,
+          navHeight: nav.offsetHeight,
+          reserved: parseFloat(getComputedStyle(shell).paddingBottom),
+          lastBottom: last ? last.getBoundingClientRect().bottom : null,
+        };
+      });
+
+      expect(m, `${label}: expected a shell, a nav and content in main.page`).not.toBeNull();
+
+      /*
+       * THE CAUSE. The shell must reserve at least as much room as the nav occupies. This is the
+       * assertion that actually catches the original bug - `--tab-h` (64px) reserved against a
+       * two-row, 125px nav - and it catches it whatever else is on the page.
+       *
+       * IT IS HERE BECAUSE THE SYMPTOM ASSERTION BELOW WAS NOT ENOUGH. Restoring the 64px
+       * reservation and re-running this spec passed: the end-mark and the page's own bottom
+       * padding happen to add ~65px of trailing space, which incidentally covered the shortfall
+       * for the last element while the reservation stayed wrong. A guard that only watches the
+       * symptom can be satisfied by an accident somewhere else on the page.
+       */
+      expect(
+        m!.reserved,
+        `${label}: the shell reserves ${m!.reserved}px for a nav that is ${m!.navHeight}px tall`,
+      ).toBeGreaterThanOrEqual(m!.navHeight);
+
+      // THE SYMPTOM. Kept as well as the cause, because the reservation being right is not the
+      // only way content can end up underneath a fixed bar.
+      expect(m!.lastBottom, `${label}: expected content in main.page`).not.toBeNull();
+      expect(
+        m!.lastBottom!,
+        `${label}: last content ends at ${m!.lastBottom}, nav starts at ${m!.navTop} — the tab bar is covering it`,
+      ).toBeLessThanOrEqual(m!.navTop + 1);
+    }
+  });
+
   test("all seven Systems panels reach their endpoint and name what they found", async ({ page }) => {
     await unlock(page);
     await page.getByRole("button", { name: "Systems", exact: true }).click();

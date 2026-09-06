@@ -1,4 +1,105 @@
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+
+/**
+ * THE NAV MEASURES ITSELF, AND THE PAGE READS THE MEASUREMENT.
+ *
+ * THE DEFECT. `.shell` reserved `--tab-h` (64px) of bottom padding for a nav declared
+ * `grid-template-columns: repeat(5, 1fr)` and handed TEN tabs. Ten items across five columns is
+ * two rows, so the nav was ~128px tall and the page reserved half of it: the last 64px of every
+ * scrollable screen sat underneath it, permanently. Visible on Capital ("Nothing in the pipeline"
+ * cut in half), on Vault (the seventh snapshot row), on Spirit and on Team.
+ *
+ * WHY MEASURE RATHER THAN WRITE `calc(var(--tab-h) * 2)`. Two is the answer for ten tabs at this
+ * width with this font. It is the wrong answer the moment a tab is added, the label wraps, the
+ * reader has a larger text size set, or the safe-area inset changes on rotation - and it would be
+ * wrong silently, in exactly the way the original 64px was wrong silently. A measurement cannot
+ * drift out of agreement with the thing it measures.
+ *
+ * The observer writes `--nav-h` onto the shell. The static default below is a floor for the first
+ * paint and for anyone running without JS layout effects; it is deliberately the two-row value, so
+ * the failure mode of the fallback is a little too much space rather than a hidden row.
+ */
+function useMeasuredNav() {
+  const navRef = useRef<HTMLElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const shell = shellRef.current;
+    if (!nav || !shell) return;
+
+    const apply = () => shell.style.setProperty("--nav-h", `${nav.offsetHeight}px`);
+    apply();
+
+    // ResizeObserver rather than a resize listener: the nav can change height without the window
+    // doing so - a font finishing loading, a text-size preference, a tab label wrapping.
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(apply);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, []);
+
+  return { navRef, shellRef };
+}
+
+/**
+ * How far down the page the reader is, and whether there is anything left.
+ *
+ * Drives two things and adds no chrome for either: the rail doubles as a reading gauge, and the
+ * scrim above the nav retracts once there is nothing more to see. Both answer "is something
+ * hidden down there?" - which, given the defect above, this interface owed the reader an answer to.
+ */
+function useReadingPosition() {
+  const [progress, setProgress] = useState(0);
+  const [scrollable, setScrollable] = useState(false);
+  const [atEnd, setAtEnd] = useState(true);
+
+  useEffect(() => {
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const doc = document.documentElement;
+      const max = doc.scrollHeight - doc.clientHeight;
+      // A page shorter than the viewport is not "0% read", it is "all of it". Reporting 0 there
+      // would leave the gauge showing an empty rail on a page with nothing missing.
+      if (max <= 1) {
+        setScrollable(false);
+        setProgress(1);
+        setAtEnd(true);
+        return;
+      }
+      const y = doc.scrollTop;
+      setScrollable(true);
+      setProgress(Math.min(1, Math.max(0, y / max)));
+      // A couple of pixels of slack: sub-pixel layout and elastic scrolling both mean the exact
+      // equality never quite lands, which would leave the end-mark forever one pixel away.
+      setAtEnd(max - y <= 2);
+    };
+
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(measure);
+    };
+
+    measure();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    // Content arriving after load changes the answer, and this app renders almost everything after
+    // a fetch, so the first measurement is nearly always the wrong one on its own.
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onScroll);
+    observer?.observe(document.body);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      observer?.disconnect();
+    };
+  }, []);
+
+  return { progress, scrollable, atEnd };
+}
 
 export type TabId = "today" | "inbox" | "people" | "capital" | "spirit" | "team" | "memory" | "trading" | "vault" | "systems";
 
@@ -38,11 +139,33 @@ export function Shell({
   waiting?: number;
   children: ReactNode;
 }) {
+  const { navRef, shellRef } = useMeasuredNav();
+  const { progress, scrollable, atEnd } = useReadingPosition();
+
   return (
     <div
       className="shell"
-      style={{ ["--lane" as string]: lane === "trading" ? "var(--lane-trading)" : "var(--lane-ops)" }}
+      ref={shellRef}
+      data-scrollable={scrollable ? "yes" : "no"}
+      data-at-end={atEnd ? "yes" : "no"}
+      style={{
+        ["--lane" as string]: lane === "trading" ? "var(--lane-trading)" : "var(--lane-ops)",
+        ["--read" as string]: String(progress),
+      }}
     >
+      {/*
+        * The lane rail, doing a second job.
+        *
+        * The stripe down the left edge is already the one element that is always on screen and
+        * always means something - gold for operations, plum for trading. Giving it a brighter
+        * travelling segment turns it into a reading gauge without adding a scrollbar, a widget or
+        * a percentage anywhere. It is the only ornament in this interface that earns its place by
+        * answering a question the reader actually has.
+        *
+        * aria-hidden: it is a restatement of scroll position, which assistive technology already
+        * conveys properly. Announcing it again would be noise.
+        */}
+      <div className="railgauge" aria-hidden="true" />
       <header className="topbar">
         <h1>{title}</h1>
         <button
@@ -71,9 +194,33 @@ export function Shell({
         </div>
       )}
 
-      <main className="page">{children}</main>
+      <main className="page">
+        {children}
+        {/*
+          * The page says it has finished, rather than just stopping.
+          *
+          * With the nav overlapping content, "the end" and "cut off" looked identical, which is
+          * what made the defect survive - you could not tell a short page from a clipped one.
+          *
+          * ALWAYS RENDERED, HIDDEN BY CSS. Rendering it conditionally froze the renderer, and the
+          * loop is worth writing down because it is easy to rebuild: the mark is ~41px tall, so
+          * mounting it makes the page taller, which can flip `scrollable` from false to true;
+          * ResizeObserver reports the height change, the mark unmounts, the page shrinks, and the
+          * two states oscillate inside the observer callback forever. Keeping it in the layout at
+          * all times means no state this component holds can change the document's height, which
+          * is what breaks the cycle at the source rather than damping it with a threshold.
+          */}
+        <div className="page-end" aria-hidden="true" />
+      </main>
 
-      <nav className="tabs" aria-label="Sections">
+      {/*
+        * A scrim, not a wall. Content dissolves into the page edge instead of being guillotined by
+        * the nav's top border, and it retracts at the bottom so the last row is never left looking
+        * like there is something beyond it.
+        */}
+      <div className="page-scrim" aria-hidden="true" />
+
+      <nav className="tabs" aria-label="Sections" ref={navRef}>
         {(Object.keys(LABELS) as TabId[]).map((id) => (
           <button
             key={id}

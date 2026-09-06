@@ -56,6 +56,22 @@
   --rail: 4px;
   --tab-h: 64px;
   --lane: var(--lane-ops);
+
+  /*
+   * How much room the nav actually takes.
+   *
+   * Overwritten at runtime by Shell.tsx, which measures the rendered nav. The default here is the
+   * TWO-ROW value, because ten tabs across five columns is two rows - the old `--tab-h` reserved
+   * one, and the bottom 64px of every scrollable page lived underneath the nav as a result. A
+   * fallback that is slightly too generous leaves a gap; one that is too small hides content.
+   */
+  --nav-h: calc(var(--tab-h) * 2);
+
+  /* How far the reader has travelled, 0 to 1. Written by Shell.tsx; drives the rail gauge. */
+  --read: 0;
+
+  /* The distance over which content dissolves into the page edge above the nav. */
+  --scrim-h: 56px;
 }
 
 * { box-sizing: border-box; }
@@ -80,7 +96,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .shell {
   min-height: 100%;
   padding-left: calc(var(--rail) + env(safe-area-inset-left));
-  padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom));
+  /*
+   * `--nav-h` is MEASURED, and the measurement already includes the nav's own safe-area padding,
+   * so the inset must not be added a second time here. Adding it twice is how a fix for content
+   * hidden behind the nav becomes a permanent band of dead space on a phone.
+   */
+  padding-bottom: var(--nav-h);
 }
 
 .shell::before {
@@ -298,9 +319,126 @@ button { font: inherit; color: inherit; cursor: pointer; }
   z-index: 30;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  background: color-mix(in srgb, var(--ground) 92%, black);
+  /*
+   * Translucent, so content visibly passes BENEATH the nav rather than terminating at it. Paired
+   * with the scrim above, the page reads as continuing under the bar - which is what it does -
+   * instead of ending in a hard edge that looked identical to being cut off.
+   */
+  background: color-mix(in srgb, var(--ground) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/*
+ * Without backdrop-filter a translucent bar is just a smeared, unreadable one, so the fallback is
+ * the opaque original. Feature-detected rather than assumed: legibility of the controls is not
+ * something to trade for an effect.
+ */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabs { background: color-mix(in srgb, var(--ground) 92%, black); }
+}
+
+/* ─── The page edge ──────────────────────────────────────────────────────── */
+
+/*
+ * THE SCRIM. Content fades into the ground just above the nav instead of being guillotined by its
+ * border. Sits under the nav (z-index 29 against its 30) and ignores the pointer, so it changes
+ * nothing about what is clickable.
+ *
+ * It retracts at the bottom of the page: a fade that persists once there is nothing left implies
+ * more content below, which is the exact lie the original overlap was telling.
+ */
+.page-scrim {
+  position: fixed;
+  left: var(--rail); right: 0;
+  bottom: calc(var(--nav-h) - 1px);
+  height: var(--scrim-h);
+  z-index: 29;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--ground), color-mix(in srgb, var(--ground) 0%, transparent));
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+.shell[data-scrollable="no"] .page-scrim,
+.shell[data-at-end="yes"] .page-scrim { opacity: 0; }
+
+/*
+ * THE READING GAUGE. The lane rail already runs the full height and already carries meaning; this
+ * gives it a second, quieter one. A brighter segment travels the rail as the page scrolls, so the
+ * reader can see there is more below without a scrollbar, a widget, or a number.
+ *
+ * `--read` is written by Shell.tsx. The segment is a fixed fraction of the rail that TRAVELS,
+ * rather than a bar that fills, because a filling bar reads as progress through a task and this is
+ * position in a document.
+ */
+.railgauge {
+  position: fixed;
+  left: 0;
+  width: var(--rail);
+  height: 18%;
+  top: calc(var(--read) * 82%);
+  z-index: 21;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--lane) 0%, transparent),
+    var(--card),
+    color-mix(in srgb, var(--lane) 0%, transparent)
+  );
+  opacity: 0.55;
+  transition: opacity 220ms ease;
+}
+
+.shell[data-scrollable="no"] .railgauge { opacity: 0; }
+
+/*
+ * THE END MARK. A page that has finished says so. Before this, "the end of the page" and "the part
+ * you cannot see" looked the same, which is most of why the nav overlap went unnoticed for so
+ * long - there was no way to tell a short screen from a clipped one.
+ *
+ * A hairline with a diamond, echoing the ladder of dashes down the left of a docket card.
+ */
+/*
+ * Hidden with `visibility`, never with `display` or by unmounting: it must keep occupying its
+ * space in every state, or its presence becomes an input to the scroll measurement that decides
+ * whether to show it. See the note in Shell.tsx.
+ */
+.shell[data-scrollable="no"] .page-end { visibility: hidden; }
+
+.page-end {
+  height: 1px;
+  margin: 34px auto 6px;
+  max-width: 180px;
+  position: relative;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--line) 0%, transparent),
+    var(--line),
+    color-mix(in srgb, var(--line) 0%, transparent)
+  );
+}
+
+.page-end::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: var(--ground);
+  border: 1px solid var(--gold);
+}
+
+/*
+ * Motion is decoration here, and decoration is the first thing to go when someone has asked for
+ * less of it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .page-scrim, .railgauge { transition: none; }
 }
 
 .tab {
