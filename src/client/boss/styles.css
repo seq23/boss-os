@@ -53,6 +53,10 @@
   --body: "Karla", ui-sans-serif, system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
 
+  /* The one lift in the interface. Declared here because colour lives only in this block — the
+   * rule that made the redesign a token swap rather than a rewrite, and that caught this shadow. */
+  --lift: 0 8px 24px rgba(61, 47, 51, 0.06);
+
   --rail: 4px;
   --tab-h: 64px;
   --lane: var(--lane-ops);
@@ -145,7 +149,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: transparent;
 }
 
-.page { padding: 0 18px 24px; }
+/*
+ * A READING WIDTH, because this is used on a desktop as well as a phone.
+ *
+ * Boss OS was designed phone-first and every screen simply stretched to the window. On a 1900px
+ * display that puts a name at one edge and a count at the other with two feet of nothing between
+ * them, and the eye has to travel the whole way to connect them. The column is capped and centred;
+ * on a phone the cap never binds, so nothing about the original layout changes there.
+ */
+.page {
+  padding: 0 18px 24px;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+/* The masthead follows the same column, or the title floats away from the content under it. */
+.topbar { max-width: 1040px; margin: 0 auto; width: 100%; }
 
 .eyebrow {
   font-family: var(--mono);
@@ -261,7 +280,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-bottom: 1px solid var(--line);
 }
 .row:last-child { border-bottom: none; }
-.row-main { min-width: 0; }
+/*
+ * GROWS, so the row's middle is pinned to the left rather than floating.
+ *
+ * `.row` is `justify-content: space-between`. With two children that put the text hard left and the
+ * value hard right, which was right. Adding the employee avatar made it THREE children, and a
+ * middle child that does not grow gets centred in whatever space is left — at its own intrinsic
+ * width, which differs per row. The result on the Team screen was seven names each starting at a
+ * different x, with a lake of empty space beside each one. `flex: 1` is the whole fix.
+ */
+.row-main { flex: 1; min-width: 0; }
 .row-title { font-weight: 500; }
 .row-sub { color: var(--muted); font-size: 13px; }
 .row-val { font-family: var(--mono); font-size: 13px; color: var(--muted); white-space: nowrap; }
@@ -591,6 +619,61 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 3px;
 }
+
+/*
+ * The employee sheet — what someone is for, on top of the list rather than beside it.
+ *
+ * A panel rather than a route: the roster is short and the reader is comparing people, so losing
+ * the list to see one person would be the wrong trade. Card ground and a gold edge, matching the
+ * docket, so it reads as the same system rather than a modal from somewhere else.
+ */
+.sheet {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold);
+  border-radius: 0 3px 3px 0;
+  padding: 16px 18px 20px;
+  margin-bottom: 18px;
+  box-shadow: var(--lift);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.sheet-id { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
+
+/* The charter is prose and wants a reading measure, not the full width of a desk monitor. */
+.charter {
+  max-width: 62ch;
+  color: var(--ink);
+  margin: 0 0 4px;
+  line-height: 1.55;
+}
+
+.avatar-lg { width: 64px; height: 64px; margin-right: 0; }
+
+/*
+ * A row that opens something. It is a <button>, so the browser's own defaults have to be undone —
+ * and it needs a visible hover and focus state, because a row that acts like a control and does not
+ * look like one is a control nobody finds.
+ */
+.row-tap {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.row-tap:hover { background: var(--card-2); }
+.row-tap:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 
 /*
  * Employee portraits. Sized to the row rather than the file: the images are 768px so they stay

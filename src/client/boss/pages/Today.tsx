@@ -166,7 +166,13 @@ function summarise(block: Block): string {
         ? `${c.contract.priorities.length} priorit${c.contract.priorities.length === 1 ? "y" : "ies"} agreed${c.contract.commitment ? ` — ${c.contract.commitment}` : ""}.`
         : c.reason;
     case "executive_briefing":
-      return c.lines?.[0] ?? "Nothing to report.";
+      // The report, or an honest account of why there is not one. "Nothing to report" was the old
+      // block's line and it is now a lie in two directions: the world always has something, and a
+      // missing report is a fact about this system rather than about the news.
+      if (c.reason) return c.reason;
+      return c.status === "partial"
+        ? `${c.summary ?? "Report delivered"} — ${(c.gaps ?? []).length} gap${(c.gaps ?? []).length === 1 ? "" : "s"} named.`
+        : c.summary ?? "Report delivered.";
     case "day_flow": {
       const done = (c.stages ?? []).filter((s: any) => s.done).length;
       return `${done} of ${(c.stages ?? []).length} stages complete.`;
@@ -226,12 +232,45 @@ function renderDetail(
       ) : null;
 
     case "executive_briefing":
+      // No report is not an error state, so it renders as prose rather than a notice. Model spend
+      // is gone from here deliberately: it moved to Settings beside the ledger reconciliation,
+      // where a figure you audit rather than act on belongs.
+      if (!c.sections) {
+        return c.last_report_at ? (
+          <div className="row-sub">Camille delivers this at 06:30 America/Chicago.</div>
+        ) : null;
+      }
       return (
         <>
-          {(c.lines ?? []).slice(1).map((l: string, i: number) => (
-            <div className="row-sub" key={i}>{l}</div>
+          {(c.sections ?? []).map((sec: any, i: number) => (
+            <div className="row" key={i}>
+              <div className="row-main">
+                <div className="row-title">{sec.title ?? `Section ${i + 1}`}</div>
+                <div className="row-sub">{sec.body ?? ""}</div>
+              </div>
+            </div>
           ))}
-          <div className="row-sub">Model spend today: {usd(c.spend_micros_today ?? 0)}</div>
+          {(c.gaps ?? []).length > 0 && (
+            <>
+              {/*
+                * GAPS ARE PART OF THE REPORT, not an error beside it. Her spec: "if a required fact
+                * cannot be verified, say so". Rendering them quietly at the end would bury exactly
+                * the thing she asked to be told.
+                */}
+              <p className="eyebrow">Could not be verified</p>
+              {c.gaps.map((g: any, i: number) => (
+                <div className="row-sub" key={i}>{typeof g === "string" ? g : g.what ?? JSON.stringify(g)}</div>
+              ))}
+            </>
+          )}
+          {(c.corrections ?? []).length > 0 && (
+            <>
+              <p className="eyebrow">Corrects yesterday</p>
+              {c.corrections.map((g: any, i: number) => (
+                <div className="row-sub" key={i}>{typeof g === "string" ? g : g.what ?? JSON.stringify(g)}</div>
+              ))}
+            </>
+          )}
         </>
       );
 

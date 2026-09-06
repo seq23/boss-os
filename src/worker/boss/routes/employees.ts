@@ -32,11 +32,49 @@ employees.get("/:id", async (c) => {
     c.env.DB.prepare(`SELECT id, title, status, cost_micros, created_at FROM tasks WHERE employee_id = ? ORDER BY created_at DESC LIMIT 20`).bind(id).all(),
     c.env.DB.prepare(`SELECT COALESCE(SUM(cost_micros),0) AS total FROM usage_ledger WHERE employee_id = ?`).bind(id).first<{ total: number }>(),
   ]);
+  /*
+   * THE DUTIES SHE OWNS, AND THE DOCUMENTS SHE WORKS FROM.
+   *
+   * The owner asked two questions that turned out to be the same question: "why cant i click on an
+   * employee name or pic and get a read on what they do for me?" and, of the Executive Intelligence
+   * Report, "how do i find the input doc? where is that stored?"
+   *
+   * The charter says what someone is FOR. The duties say when they act without being asked. The
+   * spec says what they follow when they do. All three lived somewhere the interface could not
+   * reach - the charter behind an endpoint nothing called, and the spec at a repository path that
+   * means nothing to anyone without a checkout.
+   */
+  const duties = await c.env.DB
+    .prepare(
+      `SELECT id, name, local_hour, local_minute, timezone, cadence, next_due_at, last_run_at,
+              suspended, success_criteria, task_input
+         FROM standing_duties WHERE employee_id = ? ORDER BY next_due_at`,
+    )
+    .bind(id)
+    .all<{ task_input: string | null }>();
+
+  // The spec paths a duty names, surfaced as data rather than left buried in its input JSON. The
+  // reader still cannot open the file from here - it lives in the repository - but she can at least
+  // see WHICH document governs the work, which is the question that was actually being asked.
+  const specs = new Set<string>();
+  for (const d of duties.results ?? []) {
+    if (!d.task_input) continue;
+    try {
+      const parsed = JSON.parse(d.task_input) as { spec?: unknown };
+      if (typeof parsed.spec === "string") specs.add(parsed.spec);
+    } catch {
+      // A malformed input is the duty's problem, not this endpoint's. Skipped rather than thrown:
+      // one bad row must not make an employee unreadable.
+    }
+  }
+
   return ok(c, {
     employee,
     reviews: reviews.results ?? [],
     recent_tasks: recent.results ?? [],
     lifetime_cost_micros: spend?.total ?? 0,
+    duties: duties.results ?? [],
+    specs: [...specs],
   });
 });
 

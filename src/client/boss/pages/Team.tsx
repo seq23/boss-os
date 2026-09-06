@@ -157,6 +157,7 @@ function Roster() {
   const [sprawl, setSprawl] = useState<any>(null);
   const [error, setError] = useState<unknown>(null);
   const [open, setOpen] = useState(false);
+  const [openEmployee, setOpenEmployee] = useState<string | null>(null);
 
   function load() {
     Promise.all([api.employees(), api.tasks(), api.templates(), api.sprawl()])
@@ -199,6 +200,8 @@ function Roster() {
         </div>
       )}
 
+      {openEmployee && <EmployeeSheet id={openEmployee} onClose={() => setOpenEmployee(null)} />}
+
       <p className="eyebrow">Employees</p>
       {employees === null ? (
         <Loading />
@@ -206,7 +209,14 @@ function Roster() {
         <Empty title="No one hired yet" hint="Employees run tasks and raise approvals on your behalf." />
       ) : (
         employees.map((e) => (
-          <div className="row" key={e.id}>
+          /*
+            * A BUTTON, NOT A DIV. The owner asked "why cant i click on an employee name or pic and
+            * get a read on what they do for me?" — and the answer was that the endpoint returning
+            * her charter existed and nothing in the interface called it. A row that opens something
+            * must be operable by keyboard and announce itself as operable, which a div cannot do
+            * however many click handlers it carries.
+            */
+          <button className="row row-tap" key={e.id} onClick={() => setOpenEmployee(e.id)}>
             {/*
               * THE ALT TEXT IS THE HONESTY STATEMENT, and it is not optional.
               *
@@ -236,7 +246,7 @@ function Roster() {
               </div>
             </div>
             <div className="row-val">{e.open_tasks} open</div>
-          </div>
+          </button>
         ))
       )}
 
@@ -503,5 +513,133 @@ function Prompts() {
       ))}
       {lenses && <p className="row-sub">{lenses.law.text}</p>}
     </>
+  );
+}
+
+/**
+ * WHAT THIS PERSON ACTUALLY DOES FOR YOU.
+ *
+ * The list gave a name, a role and a department — none of which says what someone is FOR. The
+ * charter does, and it was sitting behind `GET /employees/:id`, an endpoint that existed and that
+ * nothing in the interface had ever called.
+ *
+ * THE THREE THINGS THAT MAKE AN EMPLOYEE LEGIBLE, in this order: what she is for (the charter),
+ * when she acts without being asked (her standing duties), and what she follows when she does (the
+ * spec). The owner asked for the first and the third in the same breath, of Camille and her morning
+ * report, and they belong on one screen because they are one question.
+ */
+function EmployeeSheet({ id, onClose }: { id: string; onClose: () => void }) {
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    let live = true;
+    api.employee(id).then((d) => live && setData(d)).catch((e) => live && setError(e));
+    return () => { live = false; };
+  }, [id]);
+
+  const e = data?.employee;
+
+  return (
+    <div className="sheet" role="dialog" aria-label="Employee detail">
+      <div className="sheet-head">
+        <p className="eyebrow" style={{ margin: 0 }}>{e?.name ?? "Loading"}</p>
+        <button className="btn btn-small" onClick={onClose}>Close</button>
+      </div>
+
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      {!data && !error ? (
+        <Loading />
+      ) : e ? (
+        <>
+          <div className="sheet-id">
+            <img
+              className="avatar avatar-lg"
+              src={`/employees-boss/${String(e.name ?? "").toLowerCase()}.jpg`}
+              alt={`${e.name} — an AI-generated portrait of a person who does not exist`}
+              onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+            />
+            <div>
+              <div className="row-title">{e.role}</div>
+              <div className="row-sub">
+                {e.department ?? "unassigned"} · {e.lane} lane ·{" "}
+                {e.autonomy === "auto" ? "acts alone" : "asks before acting"}
+              </div>
+            </div>
+          </div>
+
+          {/* The charter is the point of this panel, so it leads and it is quoted, not summarised. */}
+          <p className="eyebrow">What she is for</p>
+          <p className="charter">{e.charter ?? "No charter recorded — which means nothing governs what she does."}</p>
+
+          <p className="eyebrow">When she acts without being asked</p>
+          {(data.duties ?? []).length === 0 ? (
+            <Empty title="No standing duties" hint="She acts only when work is routed to her." />
+          ) : (
+            data.duties.map((d: any) => (
+              <div className="row" key={d.id}>
+                <div className="row-main">
+                  <div className="row-title">{d.name}</div>
+                  <div className="row-sub">
+                    {d.cadence} at {String(d.local_hour).padStart(2, "0")}:{String(d.local_minute).padStart(2, "0")} {d.timezone}
+                    {d.suspended ? " · suspended" : ""}
+                    {" · "}{d.success_criteria}
+                  </div>
+                </div>
+                <div className="row-val">
+                  {d.suspended ? "off" : d.next_due_at ? new Date(d.next_due_at).toLocaleString() : "next tick"}
+                </div>
+              </div>
+            ))
+          )}
+
+          {/*
+            * WHERE THE DOCUMENT LIVES, stated plainly including the part that is inconvenient: it
+            * is in the repository, not in this product. Naming the path is not the same as being
+            * able to open it, and pretending otherwise would answer her question wrongly.
+            */}
+          {(data.specs ?? []).length > 0 && (
+            <>
+              <p className="eyebrow">What she follows</p>
+              {data.specs.map((sp: string) => (
+                <div className="row" key={sp}>
+                  <div className="row-main">
+                    <div className="row-title">{sp.split("/").pop()}</div>
+                    <div className="row-sub">{sp} — in the repository. Not readable from here yet.</div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          <p className="eyebrow">Cost</p>
+          <div className="row">
+            <div className="row-main">
+              <div className="row-title">${((e.budget_micros_day ?? 0) / 1_000_000).toFixed(2)} a day</div>
+              <div className="row-sub">
+                Her own ceiling. The lane budget and the spend lever bind first when either is tighter.
+              </div>
+            </div>
+            <div className="row-val">${((data.lifetime_cost_micros ?? 0) / 1_000_000).toFixed(4)} ever</div>
+          </div>
+
+          <p className="eyebrow">Recent work</p>
+          {(data.recent_tasks ?? []).length === 0 ? (
+            <Empty title="Nothing yet" hint="Tasks routed to her appear here with what they cost." />
+          ) : (
+            data.recent_tasks.slice(0, 8).map((t: any) => (
+              <div className="row" key={t.id}>
+                <div className="row-main">
+                  <div className="row-title">{t.title}</div>
+                  <div className="row-sub">{t.status} · {new Date(t.created_at).toLocaleString()}</div>
+                </div>
+                <div className="row-val">${((t.cost_micros ?? 0) / 1_000_000).toFixed(4)}</div>
+              </div>
+            ))
+          )}
+        </>
+      ) : null}
+    </div>
   );
 }
