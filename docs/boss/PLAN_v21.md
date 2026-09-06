@@ -229,9 +229,20 @@ should" becomes a question with money attached.
 Phase 6 is otherwise already satisfied — deployed, migrated, cron proven, snapshots written and read
 back, all suites and validators green.
 
-1. **Replace the placeholder token prices** carried in from `0002_seed.sql`, via a new migration.
-   The ledger is only as honest as those numbers. **This one needs no credential — only the current
-   rate card — and can be done on request.**
+1. ~~**Replace the placeholder token prices**~~ — **DONE, 6 Sep 2026, and the premise was wrong.**
+   `0174_boss_model_price_provenance.sql`. Two corrections worth carrying forward:
+   - **The prices live in `0153_boss_seed.sql`, not `0002_seed.sql`.** That reference was inherited
+     from the standalone artifact's deploy doc and is wrong for this repository; `0002` here is a
+     chassis migration about company and fund policy.
+   - **They were not invented.** Qwen 2.5 72B's $0.90/$0.90 is *exactly* Fireworks' published
+     size-tier price for a dense model over 16B, uniform across input and output — the equal in/out
+     pair that reads like a placeholder is simply how that tier is priced. Kimi K2 could not be
+     confirmed by any vendor page and was **left exactly as seeded** rather than replaced by a
+     plausible guess, and now says so in its own row.
+
+   What changed is provenance, carried as data: `pricing_state`, `price_source`, `price_checked_at`,
+   reusing the chassis's existing SOURCED / ILLUSTRATIVE / STALE / UNKNOWN vocabulary rather than a
+   second one.
 2. **Reconcile one real inference call against a real invoice line.** Needs `FIREWORKS_API_KEY` and
    costs money. Until then the ledger's arithmetic is proven and its prices are not, and it says so.
 

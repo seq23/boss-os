@@ -28,17 +28,44 @@ replace the placeholder token prices from the seed.
 | An R2 snapshot written and re-read | Written, hash-verified, and a restore drill passed |
 | Every binding proven live | D1, R2, KV and ASSETS all reachable from `/api/health` |
 
-**Two items remain, and both are the owner's, not an engineer's:**
+**Two items remained. One is now closed; one still is the owner's, not an engineer's.**
 
-1. **One real Fireworks inference reconciled against a real invoice line.** Needs
-   `FIREWORKS_API_KEY` and costs money. Until then the model ledger's arithmetic is proven and its
-   *prices* are not.
-2. **The placeholder token prices in `0002_seed.sql`** — carried into this repo — must be replaced
-   with the current rate card, via a new migration. The ledger is only as honest as those numbers,
-   and correcting them is a fact-checking task against a provider's public pricing, not a build.
+### ✅ CLOSED, 6 September 2026 — the seeded token prices, checked against the vendors' rate cards
 
-**These are NAMED STOPS.** The cost ledger reports what it computed from the prices it was given; it
-does not claim those prices are current.
+`0174_boss_model_price_provenance.sql`. The seed (`0153_boss_seed.sql`) said in its own third line
+that its prices were placeholders to be verified. They have now been verified — and **neither number
+changed**, because verification is what the item actually was and the check did not find a wrong
+number.
+
+| Model | Stored | Outcome |
+|---|---|---|
+| **Qwen 2.5 72B** (`mdl_qwen_fast`) | $0.90 in / $0.90 out per 1M | **Confirmed correct.** Fireworks' size-based serverless tier prices dense models over 16B at $0.90/1M, uniform across input and output; its own model page gives 72.7B, not MoE. The equal in/out pair reads like a placeholder and is in fact how Fireworks prices that tier |
+| **Kimi K2 Instruct** (`mdl_kimi_k2`) | $0.60 in / $2.50 out per 1M | **Could not be confirmed. Left exactly as seeded.** Fireworks publishes no price for it, it is absent from the headline table, and at 1.02T MoE it is above every published size tier. Third-party trackers report the same $0.60/$2.50 — which suggests the seed copied a real historical rate rather than inventing one — but a tracker is not the vendor |
+
+**What actually changed is provenance, and it is carried as data.** `models` gains `pricing_state`,
+`price_source` and `price_checked_at`, reusing the chassis's existing four-word vocabulary
+(SOURCED / ILLUSTRATIVE / STALE / UNKNOWN) rather than inventing a second one. Every price in the
+ledger now says where it came from and when it was last read, and the one that could not be
+confirmed says so in its own row instead of in a comment nobody opens. `GET /api/models` selects
+`m.*`, so the Model Registry screen inherits the fields with no code change.
+
+**No number was invented, and that was the point.** Replacing an acknowledged placeholder with a
+plausible figure would have made an unverifiable price look authoritative — in a cost ledger that is
+strictly worse than the placeholder. `price_checked_at` is a literal date, not `unixepoch()`, so
+applying the migration to a new database cannot restamp a stale check as fresh.
+
+### ◻ STILL OPEN — one real inference call reconciled against one real invoice line
+
+Needs `FIREWORKS_API_KEY` and costs money, so it is hers to spend. Until then the ledger's arithmetic
+is proven, one of its two prices is vendor-confirmed, and the other is marked unconfirmed in the row
+that holds it.
+
+**Two ways to close it**, both above a price correction and so deliberately not taken by the
+migration: run the call and read the invoice, or repoint the ops lane at a model Fireworks prices
+today — a routing decision that belongs with Stage 4, not with fact-checking a number.
+
+**This remains a NAMED STOP.** The cost ledger reports what it computed from the prices it was
+given, and now states, per row, how much each of those prices is worth trusting.
 
 ---
 
