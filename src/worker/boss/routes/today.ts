@@ -39,7 +39,14 @@ export const MAX_NIGHT_REVIEW_PROMPTS = 3;
 export const TODAY_BLOCKS = [
   { key: "todays_contract", title: "Today's Contract", source: "manual" },
   { key: "executive_briefing", title: "Executive Briefing", source: "tasks" },
-  { key: "day_flow", title: "Day Flow", source: "manual" },
+  /*
+   * THE KEY STAYS `day_flow`, THE TITLE DOES NOT. Renaming the key would orphan every persisted
+   * `day_flow_blocks` row and every client that reads it; the title is what she actually reads, and
+   * "Day Flow" was the name of the five machine stages this block no longer contains. Seen on the
+   * live site with the heading saying one thing and the conflict rule beneath it — "if the Run of
+   * Show conflicts with the Pillar Contracts" — saying another.
+   */
+  { key: "day_flow", title: "Run of Show", source: "manual" },
   { key: "meetings", title: "Meetings", source: "calendar" },
   { key: "open_loops", title: "Open Loops", source: "manual" },
   { key: "critical_alerts", title: "Critical Alerts", source: "tasks" },
