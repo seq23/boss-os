@@ -64,6 +64,28 @@ const SOVEREIGN_TABLES = new Set([
 /** Spirit's computed sky is arithmetic anyone can redo, and is deliberately not sovereign. */
 const SOVEREIGN_EXCEPTIONS = new Set(["astro_calendar", "astro_days"]);
 
+/**
+ * Entities that are CLASSIFIED but deliberately have NO TABLE, with the reason each one does not.
+ *
+ * The rule below — a policy row with no table is stale — exists to catch a table that was dropped
+ * while its classification lingered, which hides a real gap. A deliberately table-less entity is
+ * the opposite case and has to be declared here rather than silently tolerated, or the check that
+ * catches the real thing has to be weakened to accommodate it.
+ *
+ * A NEW ENTRY HERE IS A DESIGN DECISION, not a way past a failing build. It says: this material is
+ * classified, the airlock governs it, and it is never written down in the cloud domain at all.
+ */
+const CLASSIFIED_BUT_NEVER_STORED = new Map([
+  [
+    "coaching_turns",
+    "The morning coaching conversation. LOCAL_ONLY residency is honoured LITERALLY: there is no " +
+      "table for it here and there must never be one. Turns live in the browser on the owner's " +
+      "device and the endpoint that reaches a model persists nothing — the classification exists " +
+      "so the airlock can govern whether a model may READ them, which is the other axis and a " +
+      "different question. tests/boss/coaching.test.ts asserts no such table appears.",
+  ],
+]);
+
 const files = readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
 const bossTables = new Set();
 let policy = new Map();
@@ -83,7 +105,16 @@ for (const t of [...bossTables].sort()) {
   if (!policy.has(t)) problems.push(`${t}: no data_policy row — an unclassified table is refused at runtime, so classify it in a migration`);
 }
 for (const [entity, p] of [...policy].sort()) {
-  if (!bossTables.has(entity)) problems.push(`${entity}: classified but no such Boss table — a stale policy row hides a real gap`);
+  if (!bossTables.has(entity) && !CLASSIFIED_BUT_NEVER_STORED.has(entity)) {
+    problems.push(`${entity}: classified but no such Boss table — a stale policy row hides a real gap`);
+  }
+  // The declared exceptions are checked in the other direction too: an entity listed as never
+  // stored that HAS acquired a table means the promise was broken and nobody noticed.
+  if (bossTables.has(entity) && CLASSIFIED_BUT_NEVER_STORED.has(entity)) {
+    problems.push(
+      `${entity}: declared as never stored, but a table now exists — ${CLASSIFIED_BUT_NEVER_STORED.get(entity)}`,
+    );
+  }
   const mustBeLocal = (SOVEREIGN_SUBSYSTEMS.has(p.subsystem) || SOVEREIGN_TABLES.has(entity)) && !SOVEREIGN_EXCEPTIONS.has(entity);
   if (mustBeLocal && p.residency !== "LOCAL_ONLY") {
     problems.push(`${entity}: residency is ${p.residency}, but the owner classified it sovereign — LOCAL_ONLY is required`);

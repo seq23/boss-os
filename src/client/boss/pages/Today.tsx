@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { Coaching } from "./Coaching";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice, InfoNotice } from "../components/Notice";
 import { usd } from "../../../shared/boss/types";
@@ -109,7 +110,15 @@ export function Today() {
         ))}
       </div>
 
+      {/*
+        * MANDATORY MORNING COACHING, after the gate rather than instead of it.
+        *
+        * Her §15.6 puts it AFTER the Daily Anchor, Pillar Contracts and Run of Show are printed —
+        * "before execution begins", not before the day is described. So it sits under the Morning
+        * Gate form: she sees what the day is, then is asked how she is landing in it.
+        */}
       {gate === "morning" && <MorningForm max={limits.morning_priorities} onRun={(b) => run("morning", b)} />}
+      {gate === "morning" && <Coaching onModeSet={load} />}
       {gate === "midday" && <MiddayForm max={limits.midday_checks} onRun={(b) => run("midday", b)} />}
       {gate === "night" && (
         <NightForm max={limits.night_review_prompts} maxSeed={limits.morning_priorities} onRun={(b) => run("night", b)} />

@@ -9,6 +9,7 @@ import {
 } from "../coaching/session";
 import { assertMayReachExternalModel } from "../policy/airlock";
 import { runCoachingTurn } from "../coaching/run";
+import { WIRING_BY_BACKEND } from "../router/backends";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
 import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relationships/follow_ups";
@@ -1137,11 +1138,51 @@ today.get("/coaching", async (c) => {
     .bind(day)
     .first<{ day_mode: string | null; day_mode_source: string | null }>();
 
+  /*
+   * WHICH BACKENDS COULD ACTUALLY ANSWER HER, asked of the database rather than assumed by the
+   * screen. The client used to carry a hardcoded backend id, which is the two-lists defect in its
+   * plainest form: the button said one thing and the router would have done another. The rule for
+   * appearing here is the same one the run enforces — enabled, a cloud model, and carrying at
+   * least one enabled model row — so consenting to something in this list cannot fail for want of
+   * a model, and something absent from it is absent for a reason the row can state.
+   */
+  const [enabledBackends, modelsByProvider] = await Promise.all([
+    c.env.DB
+      .prepare(`SELECT id, display_name FROM execution_backends WHERE status = 'enabled' AND class = 'cloud_model'`)
+      .all<{ id: string; display_name: string }>(),
+    c.env.DB
+      .prepare(
+        `SELECT m.provider_id, COUNT(*) AS models, MAX(m.in_micros_1k + m.out_micros_1k) AS dearest
+           FROM models m JOIN providers p ON p.id = m.provider_id
+          WHERE m.enabled = 1 AND p.enabled = 1
+          GROUP BY m.provider_id`,
+      )
+      .all<{ provider_id: string; models: number; dearest: number }>(),
+  ]);
+
+  /*
+   * BACKEND TO PROVIDER COMES FROM THE WIRING, NOT FROM A STRING MATCH. The registry stores
+   * `binding:AI` as Workers AI's credential_ref while the provider row stores the binding's name,
+   * `AI` — two true statements about the same credential that a SQL join on those columns would
+   * have quietly declared unequal, dropping the one free backend from the list.
+   */
+  const byProvider = new Map((modelsByProvider.results ?? []).map((r) => [r.provider_id, r]));
+  const backends = (enabledBackends.results ?? [])
+    .map((b) => {
+      const stats = byProvider.get(WIRING_BY_BACKEND.get(b.id)?.providerId ?? "");
+      return stats
+        ? { id: b.id, display_name: b.display_name, models: stats.models, free: stats.dearest === 0 }
+        : null;
+    })
+    .filter((b): b is NonNullable<typeof b> => b !== null)
+    .sort((a, b) => Number(b.free) - Number(a.free) || a.display_name.localeCompare(b.display_name));
+
   return ok(c, {
     day_id: day,
     consent,
     max_turns: MAX_TURNS,
     exit_phrases: EXIT_PHRASES,
+    backends,
     day_mode: row?.day_mode ?? null,
     day_mode_source: row?.day_mode_source ?? null,
     /*

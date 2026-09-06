@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { routeCompletion } from "../router/index";
+import { WIRING_BY_BACKEND } from "../router/backends";
 import { FORWARDED_TURNS } from "./session";
 
 /**
@@ -36,6 +37,21 @@ export async function runCoachingTurn(
    */
   const fence = `HER_WORDS_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
+  /*
+   * THE CONSENT IS TURNED INTO A CONSTRAINT HERE, and until it was, it was not one.
+   *
+   * She approves ONE backend for the day, and the endpoint recorded that faithfully — but the call
+   * below screens every model the ops route can reach, so a provider she never named could have
+   * answered her. It did not, only because the other one had no key. That is the shape this
+   * repository names: a guard that cannot reach the thing it governs.
+   *
+   * An unknown backend id confines the run to a provider that matches nothing, and the router
+   * refuses by name. Falling back to "anything" on an id we do not recognise would turn a typo
+   * into open routing at the exact moment she was being promised the opposite.
+   */
+  const wiring = WIRING_BY_BACKEND.get(backendId);
+  const onlyProviderId = wiring ? wiring.providerId : `unknown:${backendId}`;
+
   const history = recent
     .slice(-FORWARDED_TURNS * 2)
     .map((m) => `${m.role === "coach" ? "You said" : "She said"}: ${m.text}`)
@@ -50,6 +66,7 @@ export async function runCoachingTurn(
     sensitivity: "private",
     risk: "low",
     employeeId: "emp_chief",
+    onlyProviderId,
     messages: [
       { role: "system", content: system },
       {

@@ -78,3 +78,24 @@ VALUES ('pcl_coaching_0177', 'coaching_turns', NULL, 'LOCAL_ONLY', NULL, 'EXTERN
   'boss');
 
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0177_boss_morning_coaching');
+
+-- ─── The classification the airlock actually reads ───────────────────────────
+--
+-- CAUGHT BY THE AIRLOCK ITSELF, in the browser, before this shipped: the policy_change_log entry
+-- above records the DECISION, but `classify()` reads `data_policy`, and with no row there the
+-- entity fell closed to LOCAL_ONLY on both axes and refused every turn even with consent granted.
+-- Which is correct behaviour — an unclassified entity is refused rather than trusted — and it is
+-- why the guard exists.
+--
+-- A POLICY ROW WITHOUT A TABLE, DELIBERATELY. `coaching_turns` is classified so the airlock can
+-- govern whether a model may READ the conversation; it has no table because LOCAL_ONLY residency is
+-- honoured literally rather than by writing rows into Cloudflare's database. Those are the two axes
+-- doing two different jobs, which is the whole reason there are two.
+--
+-- scripts/validate/data-classification.mjs declares this exception by name with its reason, and
+-- checks it in BOTH directions: a classified entity with no table is normally stale and flagged,
+-- and this one is flagged if a table ever appears for it.
+INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
+  ('coaching_turns', 'coaching', 'LOCAL_ONLY', 'EXTERNAL_WITH_APPROVAL',
+   'The morning coaching conversation. Never stored in the cloud domain at all - no table exists for it and none may be added; the turns live in the owner''s browser. Classified so the airlock governs whether a model may read them, which she approves once a day, per backend.')
+ON CONFLICT(entity) DO NOTHING;

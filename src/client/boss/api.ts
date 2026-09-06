@@ -58,6 +58,10 @@ export const api = {
 
   today: (date?: string) => call<any>(`/today${date ? `?date=${date}` : ""}`),
   days: () => call<any[]>("/today/days"),
+  coachingState: () => call<any>("/today/coaching"),
+  coachingConsent: (body: unknown) => call<any>("/today/coaching/consent", post("", body)),
+  coachingTurn: (body: unknown) => call<any>("/today/coaching/turn", post("", body)),
+  setDayMode: (body: unknown) => call<any>("/today/coaching/mode", post("", body)),
   todayGates: (date?: string) => call<any[]>(`/today/gates${date ? `?date=${date}` : ""}`),
   loops: (date?: string) => call<any[]>(`/today/loops${date ? `?date=${date}` : ""}`),
   openLoop: (body: Record<string, unknown>) =>

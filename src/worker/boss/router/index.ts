@@ -2,6 +2,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { getBool, getSetting } from "../lib/settings";
+import { AppError } from "../lib/http";
 import { costPolicy } from "../../../shared/boss/governance";
 import { ProviderCallError, type ChatMessage } from "./types";
 import { evaluateModel, estimateCostMicros, type ModelRow, type RouteStage } from "./policy";
@@ -52,14 +53,35 @@ export class BudgetExceeded extends Error {
  * The router refused to run. `approvable` means a human could unblock it by
  * approving a sensitive-routing card rather than by changing configuration.
  */
-export class RoutingBlocked extends Error {
+/**
+ * A POLICY REFUSAL, AND THEREFORE A 409 — not a 500.
+ *
+ * It carried a message and a hint from the start, and nothing turned them into a response: every
+ * routing refusal that reached an HTTP route surfaced as a bare 500 with the hint dropped, AND was
+ * written to `system_events` as `unhandled_error`, which put refusals the system made ON PURPOSE
+ * into the log a person reads to find out what broke.
+ *
+ * Extending AppError is what fixes both at once, because `errorBody` already knows what to do with
+ * one. 409 is the honest code: a refusal by policy will fail identically forever, so it is a
+ * conflict with the request, never a fault on this side. `outcome` and `approvable` are untouched —
+ * the queue consumer branches on them and still does.
+ */
+export class RoutingBlocked extends AppError {
+  /*
+   * A HINT IS NOT OPTIONAL ON A REFUSAL, even though AppError allows it to be. Every caller here
+   * already passes one, the queue consumer reads it as a string to build the card it shows her,
+   * and a policy refusal with nothing to do about it is the thing this repository calls a red
+   * light with no remedy. `declare` narrows the inherited field without redefining it.
+   */
+  declare hint: string;
+
   constructor(
     message: string,
     public outcome: string,
-    public hint: string,
+    hint: string,
     public approvable = false,
   ) {
-    super(message);
+    super(409, message, hint);
   }
 }
 
@@ -98,6 +120,19 @@ export interface RouteRequest {
   /** Hard ceiling from the task's permission envelope. 0 means lane budget only. */
   budgetMicros?: number;
   cloudForRestrictedAllowed?: boolean;
+  /**
+   * CONFINE THIS RUN TO ONE PROVIDER, because something outside the router promised it would be.
+   *
+   * The morning coaching consent names a backend — "consent to Claude Code on her own Mac is not
+   * consent to OpenRouter" — and without this the promise had no mechanism behind it: the route
+   * would screen every eligible model and could have answered her on a provider she never
+   * approved. It only failed to because the unapproved one happened to have no key, which is luck,
+   * not a guard.
+   *
+   * It NARROWS and never widens. Every other stage still runs on whatever survives, so this cannot
+   * promote a model past privacy, capability, risk or budget — it can only take candidates away.
+   */
+  onlyProviderId?: string | null;
 }
 
 export interface RouteResult {
@@ -392,10 +427,29 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   // does not encode it, so it is enforced here, at the only place that chooses a
   // continuity candidate. A trading route falls back to its own declared models
   // or it stops; it never quietly acquires a new vendor.
-  const ordered: { model: ModelRow; tier: "route" | "continuity" }[] = [
+  const assembled: { model: ModelRow; tier: "route" | "continuity" }[] = [
     ...declared.map((model) => ({ model, tier: "route" as const })),
     ...(opts.lane === "trading" ? [] : continuity.map((model) => ({ model, tier: "continuity" as const }))),
   ];
+
+  /*
+   * THE CALLER'S OWN CONFINEMENT, applied before anything is screened.
+   *
+   * A dropped candidate is NOTED, never silently discarded. The decision log is what a person reads
+   * a month later to find out why a particular model answered, and "it was not on the approved
+   * backend" is exactly the kind of answer that has to be findable rather than inferred from an
+   * absence.
+   */
+  const ordered = assembled.filter(({ model, tier }) => {
+    if (!opts.onlyProviderId || model.provider_id === opts.onlyProviderId) return true;
+    considered.push({
+      model_id: model.id,
+      backend_id: WIRING_BY_PROVIDER.get(model.provider_id)?.backendId ?? null,
+      tier, stage: "privacy", verdict: "skipped",
+      reason: `this run is confined to ${opts.onlyProviderId} and this model is on ${model.provider_id}`,
+    });
+    return false;
+  });
 
   let approvable = false;
   let lastError: Error | null = null;
@@ -687,6 +741,19 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
 
   if (laneBudget.blocked) {
     throw new BudgetExceeded(opts.lane, laneBudget.blockedPeriod ?? "day");
+  }
+
+  /*
+   * A CONFINED RUN THAT FOUND NOTHING SAYS SO IN THOSE WORDS. Told only that "no model satisfied
+   * policy", a reader would go looking through privacy and budget for a refusal that never
+   * happened — the candidates were removed a stage earlier, by the caller's own promise.
+   */
+  if (opts.onlyProviderId && !ordered.length) {
+    throw new RoutingBlocked(
+      `Nothing is available on ${opts.onlyProviderId}, which is the only provider this run was allowed to use`,
+      "blocked_no_model",
+      "Provision or enable a model on that backend, or approve a different one. Nothing was tried elsewhere on purpose.",
+    );
   }
 
   throw new RoutingBlocked(

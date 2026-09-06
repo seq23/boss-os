@@ -32,10 +32,10 @@ describe("morning coaching — consent, and what is never kept", () => {
   });
 
   it("consent is per day and names the backend — consent to one is not consent to another", async () => {
-    const granted = await post("/api/today/coaching/consent", { backend_id: "bk_claude_code" });
+    const granted = await post("/api/today/coaching/consent", { backend_id: "bk_workers_ai" });
     expect(granted.status).toBe(200);
     expect(granted.body.data.granted).toBe(true);
-    expect(granted.body.data.backend_id).toBe("bk_claude_code");
+    expect(granted.body.data.backend_id).toBe("bk_workers_ai");
 
     const rows = await env.DB.prepare(`SELECT day_id, backend_id FROM coaching_consent`).all();
     expect(rows.results).toHaveLength(1);
@@ -47,7 +47,7 @@ describe("morning coaching — consent, and what is never kept", () => {
   });
 
   it("revoking leaves the row, so there is evidence it was given and taken back", async () => {
-    await post("/api/today/coaching/consent", { backend_id: "bk_claude_code" });
+    await post("/api/today/coaching/consent", { backend_id: "bk_workers_ai" });
     const revoked = await post("/api/today/coaching/consent", { revoke: true });
     expect(revoked.body.data.granted).toBe(false);
 
@@ -71,7 +71,7 @@ describe("morning coaching — consent, and what is never kept", () => {
   });
 
   it("stops at the turn cap rather than becoming a session", async () => {
-    await post("/api/today/coaching/consent", { backend_id: "bk_claude_code" });
+    await post("/api/today/coaching/consent", { backend_id: "bk_workers_ai" });
     const { body } = await post("/api/today/coaching/turn", { text: "tell me more", turn: MAX_TURNS + 1 });
     expect(body.data.ended).toBe(true);
     expect(body.data.reason).toBe("max_turns");
@@ -113,6 +113,47 @@ describe("morning coaching — consent, and what is never kept", () => {
   it("refuses a mode it does not know rather than storing it", async () => {
     const { status } = await post("/api/today/coaching/mode", { mode: "vibes" });
     expect(status).toBe(400);
+  });
+});
+
+describe("consent is a constraint, not a label", () => {
+  beforeEach(async () => {
+    await env.DB.prepare(`DELETE FROM coaching_consent`).run();
+  });
+
+  it("offers only backends that are commissioned AND carrying models", async () => {
+    // Nothing provisioned yet: Workers AI is registered, not enabled, and has no model rows.
+    const before = await apiJson("/api/today/coaching");
+    expect(before.body.data.backends).toEqual([]);
+
+    await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_workers_ai'`).run();
+    // Enabled but still no models — a backend that cannot answer must not be offered as one that can.
+    expect((await apiJson("/api/today/coaching")).body.data.backends).toEqual([]);
+
+    expect((await apiJson("/api/models/provision/bk_workers_ai", { method: "POST", body: {} })).status).toBe(201);
+
+    const after = await apiJson("/api/today/coaching");
+    // THE REGRESSION THIS PINS: backend→provider comes from the wiring, not from matching
+    // `credential_ref` against `api_key_var`. Workers AI stores `binding:AI` in one and `AI` in the
+    // other — both true, and a SQL join on them silently drops the only free backend she has.
+    expect(after.body.data.backends).toEqual([
+      { id: "bk_workers_ai", display_name: "Workers AI", models: 2, free: true },
+    ]);
+  });
+
+  it("REFUSES BY NAME rather than answering on a backend she did not approve", async () => {
+    await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_workers_ai'`).run();
+    await apiJson("/api/models/provision/bk_workers_ai", { method: "POST", body: {} });
+
+    // Claude Code is agent-executed: it has no cloud wiring and cannot hold a conversation. Before
+    // the router took a confinement, this turn would have been answered by whatever else was
+    // eligible — Workers AI, which she never named here.
+    await post("/api/today/coaching/consent", { backend_id: "bk_claude_code" });
+    const { status, body } = await post("/api/today/coaching/turn", { text: "I slept badly", turn: 1 });
+
+    expect(status).toBe(409);
+    expect(body.error).toContain("bk_claude_code");
+    expect(body.error).toContain("only provider this run was allowed to use");
   });
 });
 
