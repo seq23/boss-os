@@ -647,3 +647,65 @@ brought back later returns as herself rather than as a stranger.
 Task Intake were the closest honest pair on the roster, and the answer turned out to be that they
 were one job. `tests/boss/rosterOverlap.test.ts` now guards the next-closest pair — the Archivist and
 the Director of Research, both of whom are about evidence and sourcing, and are still two jobs.
+
+### ADR-028 — The morning coaching conversation is never stored, and consent is a constraint
+
+The owner asked the right question: *"i feel like i should have the option to have a 1:1 conversation
+with any model right? and keep it locked down? or can it only be locked down if its a local model?"*
+
+**"Locked down" is two questions, which is why the airlock has two axes.** Where a conversation is
+STORED she controls absolutely. What a model READS she cannot — a model must see a sentence to answer
+it, and no contract turns that into a mechanism. Both halves are said on the screen where she
+decides, because saying only the first would be the reassuring lie and only the second would hide
+what she does control.
+
+**Decision (migration 0177).** The conversation is never written to the cloud domain at all. There is
+no `coaching_turns` table and there must never be one; the turns are React state in her browser. Two
+things persist and neither is her interior life: her **consent** for the day, which is governance,
+and the day's **mode**, which the agenda needs before it renders because §17 rewrites all four pillar
+contracts to floors on a Recovery Day.
+
+**`emotional_states` was NOT loosened.** It also backs the decision vault, the prediction vault,
+manifestations and promoted memory. Reclassifying it to enable one feature would have opened all of
+them, and none of those needed opening.
+
+**A policy row with no table, deliberately.** `coaching_turns` is classified so the airlock can govern
+whether a model may read the conversation, and has no table because LOCAL_ONLY residency is honoured
+literally rather than by writing rows into Cloudflare's database and labelling them. The
+classification validator declares the exception by name and checks it in BOTH directions — a
+classified entity with no table is normally stale, and this one fails if a table ever appears.
+
+**Consent named a backend and constrained nothing, until it did.** The endpoint recorded which
+backend she approved — *"consent to Claude Code on her own Mac is not consent to OpenRouter"* — and
+then called the router with no confinement, so a provider she never named could have answered her. It
+did not, only because the other one happened to have no key. That is luck, not a guard, and it is the
+shape this repository names: a guard that cannot reach the thing it governs. `RouteRequest.onlyProviderId`
+narrows the candidate list before any screening, notes every candidate it removes in the decision log,
+and refuses by name when nothing survives. It only ever takes candidates away, so it cannot promote
+anything past privacy, capability, risk or budget.
+
+**The consent screen had a hardcoded backend id**, and it named `bk_claude_code` — which is
+agent-executed and cannot hold a conversation at all, since a turn would have become a task in a queue
+waiting on the Mac agent. Any hardcoded id would have been a second list free to drift from the one
+the router reaches. The server now reports which backends are commissioned AND carrying enabled
+models, free ones first. Backend-to-provider comes from the wiring, never from matching
+`credential_ref` against `api_key_var`: Workers AI stores `binding:AI` in one and `AI` in the other,
+both true, and a SQL join on those columns silently drops the only free backend she has.
+
+**Routing refusals are 409s.** `RoutingBlocked` always carried a message and a hint and nothing turned
+them into a response — every refusal reaching an HTTP route came back as a bare 500 with the hint
+dropped and was written to `system_events` as `unhandled_error`, putting deliberate refusals into the
+log a person reads to find what broke. A policy refusal fails identically forever, so it is a conflict
+with the request, never a fault on this side.
+
+**What is registered, and what stays hers.** Workers AI is commissioned and provisioned: two models,
+free, `unbenchmarked`, cleared only to low risk. They can carry continuity work. Becoming the
+`rt_ops_default` primary still needs an operator-scored benchmark and an approved promotion card, and
+this work did not touch either gate — note that the route's declared models are both Fireworks, which
+has no key in production, so coaching runs on the continuity tier by design rather than by accident.
+
+**One seeded slug did not exist.** `@cf/meta/llama-3.1-8b-instruct` is not in the account catalogue —
+only the `-fp8` build is. The row provisioned cleanly, passed every validator, and would have failed
+at the first call, landing on whoever typed the first sentence of a morning conversation.
+`scripts/ops/provision-backend.mjs` now checks every slug against `wrangler ai models` before writing,
+and hard-fails when it cannot check: an unreadable catalogue is an unanswered question, not a pass.
