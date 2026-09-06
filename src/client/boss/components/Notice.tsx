@@ -18,7 +18,12 @@ export function ErrorNotice({ error, onDismiss }: { error: unknown; onDismiss?: 
   );
 }
 
-export function InfoNotice({ children, tone = "brass" }: { children: React.ReactNode; tone?: string }) {
+/**
+ * The tone is a TOKEN NAME, interpolated - so the css-variables scan cannot see it and the
+ * redesign's rename slipped past here. It defaulted to the deleted `--brass` and would have drawn
+ * a border of nothing. Any caller passing a tone must pass a token that exists.
+ */
+export function InfoNotice({ children, tone = "gold" }: { children: React.ReactNode; tone?: string }) {
   return (
     <div className="notice" style={{ borderColor: `var(--${tone})` }}>
       {children}

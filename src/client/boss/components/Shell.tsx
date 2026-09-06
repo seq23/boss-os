@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type TabId = "today" | "inbox" | "people" | "capital" | "spirit" | "team" | "memory" | "trading" | "vault";
+export type TabId = "today" | "inbox" | "people" | "capital" | "spirit" | "team" | "memory" | "trading" | "vault" | "systems";
 
 const ICONS: Record<TabId, ReactNode> = {
   today: <path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.5 2" />,
@@ -12,12 +12,14 @@ const ICONS: Record<TabId, ReactNode> = {
   memory: <path d="M12 4v16M12 7a3 3 0 013-3h4v13h-4a3 3 0 00-3 3M12 7a3 3 0 00-3-3H5v13h4a3 3 0 013 3" />,
   trading: <path d="M3 17l5-6 4 3 5-8M21 6h-4M21 6v4" />,
   vault: <path d="M4 4h16v16H4zM12 9a3 3 0 100 6 3 3 0 000-6zM12 15v3" />,
+  systems: <path d="M12 15a3 3 0 100-6 3 3 0 000 6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" />,
 };
 
 /** Canon §15: Today is the default operating screen, and so the first tab. */
 const LABELS: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", people: "People", capital: "Capital",
   spirit: "Spirit", team: "Team", memory: "Memory", trading: "Trading", vault: "Vault",
+  systems: "Systems",
 };
 
 export function Shell({

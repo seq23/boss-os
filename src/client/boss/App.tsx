@@ -13,10 +13,12 @@ import { Memory } from "./pages/Memory";
 import { Trading } from "./pages/Trading";
 import { Vault } from "./pages/Vault";
 import { Settings } from "./pages/Settings";
+import { Systems } from "./pages/Systems";
 
 const TITLES: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", people: "People", capital: "Capital",
   spirit: "Spirit", team: "Team", memory: "Memory", trading: "Trading", vault: "Vault",
+  systems: "Systems",
 };
 
 export default function App() {
@@ -80,8 +82,10 @@ export default function App() {
         <Memory />
       ) : tab === "trading" ? (
         <Trading />
-      ) : (
+      ) : tab === "vault" ? (
         <Vault />
+      ) : (
+        <Systems />
       )}
     </Shell>
   );

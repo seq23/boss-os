@@ -277,5 +277,32 @@ export const api = {
   setStage: (id: string, stage: string) => call(`/trading/strategies/${id}/stage`, post("", { stage })),
   draftOrder: (body: unknown) => call<any>("/trading/orders", post("", body)),
   cancelOrder: (id: string, reason?: string) => call(`/trading/orders/${id}/cancel`, post("", { reason })),
+  // ── AI Quant Fund (Phase 22). Read-only here except the three acts that are
+  // themselves gated server-side: opening a rung, promoting a scorecard, and
+  // probing a kill switch. ──
+  quantLadder: () => call<any>("/quant/ladder"),
+  quantSequence: () => call<any[]>("/quant/sequence"),
+  advanceSequence: (week: string, action: string) => call<any>(`/quant/sequence/${week}/${action}`, post("")),
+  quantDesks: () => call<any[]>("/quant/desks"),
+  quantScorecards: () => call<any[]>("/quant/scorecards"),
+  promoteScorecard: (id: string) => call<any>(`/quant/scorecards/${id}/promote`, post("")),
+  quantRungs: () => call<any[]>("/quant/rungs"),
+  openRung: (rung: string) => call<any>(`/quant/rungs/${rung}/open`, post("")),
+  quantEngines: () => call<any[]>("/quant/engines"),
+  probeKillSwitch: (id: string) => call<any>(`/quant/engines/${id}/kill-switch-probe`, post("")),
+  quantNevers: () => call<any[]>("/quant/nevers"),
+  quantValidation: () => call<any>("/quant/validation"),
+
+  // ── Firm OS bridge (Phase 21). Every crossing is a proposal; nothing here executes. ──
+  bridgeCategories: () => call<any>("/bridge/categories"),
+  bridgeSeparation: () => call<any>("/bridge/separation"),
+  handoffs: () => call<any[]>("/bridge/handoffs"),
+  handoff: (id: string) => call<any>(`/bridge/handoffs/${id}`),
+  proposeHandoff: (body: unknown) => call<any>("/bridge/handoffs", post("", body)),
+  bridgeCheck: (direction: string, category: string) => call<any>(`/bridge/check/${direction}/${category}`),
+
+  // ── Governance watch list — the sentinel's eleven items. ──
+  watchList: () => call<any[]>("/governance/watch-list"),
+
   incidents: () => call<any[]>("/trading/incidents"),
 };

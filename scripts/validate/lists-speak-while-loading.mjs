@@ -331,14 +331,49 @@ function main() {
   }
 
   const bad = violations(lists);
-  if (bad.length > 0) {
-    console.error(`These lists are a bare blank while their data is in flight (${bad.length} of ${lists.length}):\n`);
-    for (const b of bad) console.error(`  ${b}`);
-    console.error("\nA reader cannot tell a blank from broken. Give the list a row that renders WHILE loading:");
-    console.error('  {q.loading && <li className="state-empty">Reading the record…</li>}');
+
+  /*
+   * THIS SCAN ARRIVED UNFINISHED AND UNWIRED.
+   *
+   * It came into this repo from West Peek's `fix/lists-must-speak-while-loading` branch, which was
+   * never merged: the file does not exist on that repo's main, and nothing here invoked it either -
+   * not package.json, not CI, not a test. It ran nowhere and found 31 real violations the moment it
+   * was pointed at the tree. A validator that exists but nothing calls is worse than none, because
+   * it looks like coverage.
+   *
+   * Wiring it in as a hard failure would have meant fixing 31 West Peek pages that are scheduled
+   * for deletion, so it is RATCHETED instead, with one rule that is absolute:
+   *
+   *   - Boss OS's own surface must have ZERO. It is new code and there is no reason to owe anything.
+   *   - The inherited chassis count may fall and may never rise.
+   *
+   * When the fund domain goes, the ceiling goes to 0 and the ratchet is deleted with it.
+   */
+  const BOSS_PREFIX = "src/client/boss/";
+  const CHASSIS_CEILING = 31;
+  const bossBad = bad.filter((b) => String(b).includes(BOSS_PREFIX));
+  const chassisBad = bad.filter((b) => !String(b).includes(BOSS_PREFIX));
+
+  if (bossBad.length > 0) {
+    console.error(`Boss OS lists must speak while they load — ${bossBad.length} do not:\n`);
+    for (const b of bossBad) console.error(`  ${b}`);
+    console.error("\nA reader cannot tell a blank from broken. Give the list a row that renders WHILE loading.");
     process.exit(1);
   }
-  console.log(`lists-speak-while-loading: ${lists.length} card-lists across ${files.length} files — every one says something while it loads.`);
+  if (chassisBad.length > CHASSIS_CEILING) {
+    console.error(`Inherited West Peek lists that stay blank while loading rose to ${chassisBad.length}, above the recorded ${CHASSIS_CEILING}:\n`);
+    for (const b of chassisBad) console.error(`  ${b}`);
+    console.error("\nThis number may fall as the fund domain is removed. It may not rise.");
+    process.exit(1);
+  }
+  if (chassisBad.length > 0) {
+    console.log(`lists-speak-while-loading: ${chassisBad.length} inherited West Peek lists still stay blank while loading (ceiling ${CHASSIS_CEILING}); Boss OS's own surface has none.`);
+  }
+  console.log(
+    chassisBad.length === 0
+      ? `lists-speak-while-loading: ${lists.length} card-lists across ${files.length} files — every one says something while it loads.`
+      : `lists-speak-while-loading: scanned ${lists.length} card-lists across ${files.length} files.`,
+  );
 }
 
 main();
