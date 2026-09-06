@@ -88,6 +88,13 @@ binding = "BROWSER"
 # local | preview | production
 WP_OS_ENV = "local"
 
+# ── Which build this is ──
+# v21 is the live line (this repo, ~/GitHub/boss-os). v20 is the deprecated build in
+# REPO_OPERATOR_ARCHIVE/deprecated-repos/. Declared here rather than left to the fallback in
+# bossMount.ts, which reported "v20" and made the live build indistinguishable from the archived
+# one in /api/system/health and in every snapshot payload.
+BOSS_OS_VERSION = "21.0.0"
+
 # ── Boss OS local unlock (LOCAL PROFILE ONLY) ──
 #
 # Boss OS gates on a passcode rather than Cloudflare Access, because a home-screen install has no
@@ -190,6 +197,9 @@ WP_OS_AI_EMAIL_EXTERNAL = "off"
 # Not "local": the dev identity header `x-wpos-dev-user` is refused outside local,
 # and identity comes from `Cf-Access-Authenticated-User-Email` (src/worker/auth.ts).
 WP_OS_ENV = "production"
+
+# See the note on the local profile. Restated because wrangler does not inherit vars.
+BOSS_OS_VERSION = "21.0.0"
 
 # ── Outbound email (P33) ──
 # Configuration rather than secrets, so the switch is visible in the repo and in review instead of

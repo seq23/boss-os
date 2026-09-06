@@ -54,7 +54,7 @@ export default defineWorkersConfig(async () => {
                * private. Production defaults to cloud when this is unset.
                */
               BOSS_DOMAIN: "private",
-              BOSS_OS_VERSION: "20.0.0-test",
+              BOSS_OS_VERSION: "21.0.0-test",
               DEFAULT_PROVIDER: "fireworks",
               BOSS_PASSCODE: "test-passcode",
               SESSION_SECRET: "test-session-secret",

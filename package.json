@@ -1,7 +1,7 @@
 {
   "name": "boss-os",
   "private": true,
-  "version": "0.25.0",
+  "version": "21.0.0",
   "description": "West Peek OS \u2014 governed institutional operating system (P0-P12 substrate, P13-P25 operating product).",
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "e2e": "node scripts/e2e/prepare-local.mjs && CI=true npx wrangler d1 migrations apply WP_OS_DB --local && node scripts/e2e/prepare-local.mjs --verify-only && playwright test",
     "migrate:local": "wrangler d1 migrations apply WP_OS_DB --local",
     "restore:local": "node scripts/backup/restore.mjs",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.boss.config.ts",
     "test:boss": "vitest run --config vitest.boss.config.ts",
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm run test",

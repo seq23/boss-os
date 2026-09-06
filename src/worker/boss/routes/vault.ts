@@ -4,6 +4,7 @@ import { newId, sha256Hex } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict, AppError } from "../lib/http";
+import { CHURN_TABLES, SNAPSHOT_KEEP } from "../cron/cadence";
 
 export const vault = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -132,7 +133,39 @@ async function snapshotTablesFor(env: Env): Promise<{ tables: string[]; excluded
  * know which tables were never in the file would look complete and be missing the whole private
  * half - so the excluded list travels inside the snapshot rather than in someone's memory.
  */
-export async function takeSnapshot(env: Env, label: string) {
+export interface SnapshotWritten {
+  id: string;
+  r2Key: string;
+  bytes: number;
+  sha256: string;
+  counts: Record<string, number>;
+}
+
+export interface SnapshotSkipped {
+  id: string;
+  skipped: true;
+  reason: "unchanged";
+  matches: string;
+  sha256: string;
+}
+
+/*
+ * OVERLOADED SO THE DEFAULT CALLER KEEPS ITS OLD SHAPE. `skipIfUnchanged` is the only way to get
+ * back something that might not have written an object, and a caller that does not ask for it
+ * cannot be handed one - which is what keeps the drill, the manual button and the restore path
+ * free of narrowing they have no reason to do.
+ */
+export async function takeSnapshot(env: Env, label: string): Promise<SnapshotWritten>;
+export async function takeSnapshot(
+  env: Env,
+  label: string,
+  opts: { skipIfUnchanged: true },
+): Promise<SnapshotWritten | SnapshotSkipped>;
+export async function takeSnapshot(
+  env: Env,
+  label: string,
+  opts: { skipIfUnchanged?: boolean } = {},
+): Promise<SnapshotWritten | SnapshotSkipped> {
   const id = newId("snp");
   const ts = Date.now();
   await env.DB
@@ -148,6 +181,43 @@ export async function takeSnapshot(env: Env, label: string) {
       const rows = await env.DB.prepare(`SELECT * FROM ${table}`).all();
       dump[table] = rows.results ?? [];
       counts[table] = dump[table].length;
+    }
+
+    /*
+     * HAS ANYTHING ACTUALLY CHANGED?
+     *
+     * Hashed over the tables MINUS the diagnostic spine, and minus the timestamp. Include either
+     * and the answer is yes forever - `cron_runs` gains a row for the very run asking the
+     * question, which is how a snapshot every fifteen minutes justified itself for a day. See
+     * cron/cadence.ts CHURN_TABLES for why `audit_log` is deliberately not in that exemption.
+     *
+     * Compared against the last COMPLETE snapshot's substance, so a run that skipped and a run
+     * that failed cannot be mistaken for a baseline.
+     */
+    const substance: Record<string, unknown[]> = {};
+    for (const table of allowed) if (!CHURN_TABLES.has(table)) substance[table] = dump[table] ?? [];
+    const substanceSha = await sha256Hex(JSON.stringify(substance));
+
+    if (opts.skipIfUnchanged) {
+      const previous = await env.DB
+        .prepare(
+          `SELECT id, substance_sha FROM vault_snapshots
+            WHERE status = 'complete' AND substance_sha IS NOT NULL
+            ORDER BY ts DESC LIMIT 1`,
+        )
+        .first<{ id: string; substance_sha: string }>();
+
+      if (previous?.substance_sha === substanceSha) {
+        await env.DB
+          .prepare(`UPDATE vault_snapshots SET status = 'skipped', substance_sha = ? WHERE id = ?`)
+          .bind(substanceSha, id)
+          .run();
+        await logEvent(env.DB, {
+          level: "info", scope: "vault", event: "snapshot_skipped_unchanged", entityId: id,
+          detail: { matches: previous.id, substance_sha: substanceSha },
+        });
+        return { id, skipped: true, reason: "unchanged", matches: previous.id, sha256: substanceSha } satisfies SnapshotSkipped;
+      }
     }
 
     const payload = JSON.stringify({
@@ -170,9 +240,9 @@ export async function takeSnapshot(env: Env, label: string) {
 
     await env.DB
       .prepare(
-        `UPDATE vault_snapshots SET r2_key = ?, bytes = ?, sha256 = ?, table_counts = ?, status = 'complete' WHERE id = ?`,
+        `UPDATE vault_snapshots SET r2_key = ?, bytes = ?, sha256 = ?, table_counts = ?, substance_sha = ?, status = 'complete' WHERE id = ?`,
       )
-      .bind(r2Key, bytes.byteLength, sha, JSON.stringify(counts), id)
+      .bind(r2Key, bytes.byteLength, sha, JSON.stringify(counts), substanceSha, id)
       .run();
 
     await logEvent(env.DB, {
@@ -191,6 +261,75 @@ export async function takeSnapshot(env: Env, label: string) {
     throw err;
   }
 }
+
+/**
+ * Retention. Keeps the newest `SNAPSHOT_KEEP` complete snapshots and deletes the rest from R2.
+ *
+ * WHY THIS EXISTS AT ALL. Nothing ever deleted a snapshot - not in R2, not in `vault_snapshots`.
+ * Paired with a maintenance run that fired 96 times a day, production reached 62 snapshots and
+ * 30.4 MB inside fifteen hours, each one larger than the last. The cadence fix stops the flood;
+ * this stops the puddle from being permanent.
+ *
+ * THE ROW SURVIVES ITS OBJECT. A pruned snapshot keeps its id, timestamp, hash and table counts
+ * and loses only the bytes, so the vault's history stays readable and a restore attempt against a
+ * pruned snapshot fails with "pruned" rather than a missing-key error that reads like corruption.
+ *
+ * NEVER PRUNES THE NEWEST, whatever the arithmetic says. A retention bug that empties the vault
+ * is strictly worse than one that keeps too much, so the floor is defended explicitly rather than
+ * left to follow from the ordering.
+ */
+export async function pruneSnapshots(env: Env, keep = SNAPSHOT_KEEP) {
+  const floor = Math.max(1, keep);
+  const stale = await env.DB
+    .prepare(
+      `SELECT id, r2_key FROM vault_snapshots
+        WHERE status = 'complete' AND r2_key IS NOT NULL
+        ORDER BY ts DESC
+        LIMIT -1 OFFSET ?`,
+    )
+    .bind(floor)
+    .all<{ id: string; r2_key: string }>();
+
+  const rows = stale.results ?? [];
+  let deleted = 0;
+  const failures: { id: string; error: string }[] = [];
+
+  for (const rowToPrune of rows) {
+    try {
+      await env.VAULT.delete(rowToPrune.r2_key);
+      await env.DB
+        .prepare(
+          `UPDATE vault_snapshots SET status = 'pruned', pruned_at = ?, r2_key = NULL, bytes = 0 WHERE id = ?`,
+        )
+        .bind(Date.now(), rowToPrune.id)
+        .run();
+      deleted += 1;
+    } catch (err) {
+      // A failed delete leaves the row COMPLETE and the object in place, so the next run tries
+      // again. Marking it pruned here would orphan the object forever - unreachable from the
+      // database and never billed to anyone's attention.
+      failures.push({ id: rowToPrune.id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  if (deleted || failures.length) {
+    await logEvent(env.DB, {
+      level: failures.length ? "warn" : "info", scope: "vault", event: "snapshots_pruned",
+      detail: { kept: floor, deleted, failures },
+    });
+  }
+  return { kept: floor, deleted, failures };
+}
+
+vault.post("/prune", async (c) => {
+  const body = await c.req.json<{ keep?: number }>().catch(() => ({ keep: undefined }));
+  const result = await pruneSnapshots(c.env, body.keep ?? SNAPSHOT_KEEP);
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "snapshot", entityId: "retention",
+    action: "pruned", detail: result,
+  });
+  return ok(c, result);
+});
 
 vault.post("/snapshots", async (c) => {
   const body = await c.req.json<{ label?: string }>().catch(() => ({ label: undefined }));

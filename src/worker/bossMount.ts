@@ -69,7 +69,17 @@ export function toBossEnv(env: Env): BossEnv {
     SESSIONS: env.WP_OS_KV,
     TASKS: d1Queue(env.WP_OS_DB),
     ASSETS: env.ASSETS,
-    BOSS_OS_VERSION: env.BOSS_OS_VERSION ?? "v20",
+    /*
+     * THE LIVE LINE IS v21. Owner's decision, 6 Sep 2026: the build in ~/GitHub/boss-os is v21;
+     * the v20 build in REPO_OPERATOR_ARCHIVE/deprecated-repos/ is deprecated. The two were
+     * indistinguishable from inside the product, because this fallback reported the literal
+     * string "v20" and `BOSS_OS_VERSION` was never set in wrangler.toml - so production, health
+     * checks and every snapshot payload all identified as the deprecated build.
+     *
+     * The canon in docs/boss/ keeps its v20 filenames: those are the AUTHORITY this implements,
+     * not the thing being versioned, and the v20.1 plan §1 forbids renumbering them.
+     */
+    BOSS_OS_VERSION: env.BOSS_OS_VERSION ?? "21.0.0",
     DEFAULT_PROVIDER: env.BOSS_DEFAULT_PROVIDER ?? "local",
     BOSS_PASSCODE: env.BOSS_PASSCODE ?? "",
     SESSION_SECRET: env.BOSS_SESSION_SECRET ?? "",

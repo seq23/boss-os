@@ -244,9 +244,13 @@ describe("Phase 5 — the nightly cron records what it did", () => {
     const run = await row(`SELECT status, steps FROM cron_runs ORDER BY started_at DESC LIMIT 1`);
     expect(run).toBeTruthy();
     const steps = JSON.parse(run!.steps);
+    // `prune_snapshots` joined the run when retention was added (0172). The snapshot step itself
+    // is now weekly and may report a skip; the STEP is still always present, because "no snapshot
+    // because not due" and "no snapshot" are different claims and only the first is trustworthy.
     expect(steps.map((s: any) => s.name)).toEqual([
       "roll_budgets", "roll_day", "surface_follow_ups", "roll_almanac",
       "capability_cadence", "compliance_sentinel", "expiry_sweep", "promotion_sweep", "snapshot",
+      "prune_snapshots",
     ]);
     expect(run!.status).toBe("complete");
   });
