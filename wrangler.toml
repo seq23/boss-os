@@ -119,8 +119,8 @@ not_found_handling = "single-page-application"
 
 [[env.production.d1_databases]]
 binding = "WP_OS_DB"
-database_name = "boss-os-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_name = "boss-os"
+database_id = "c3bf7512-60f8-4bcb-83e7-8fd18fa97d30"
 migrations_dir = "migrations"
 
 [env.production.ai]
@@ -132,7 +132,7 @@ bucket_name = "boss-os-documents"
 
 [[env.production.kv_namespaces]]
 binding = "WP_OS_KV"
-id = "00000000000000000000000000000000"
+id = "1d066abc950c4105973ed0e5a1f6f803"
 
 # Browser Rendering (P44). A BINDING, not an HTTP client — which is why browser tasks need no
 # egress exemption: nothing here calls fetch(). Native to the platform this Worker already runs on,

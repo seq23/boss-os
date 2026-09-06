@@ -33,7 +33,13 @@ const die = (s) => { process.stderr.write(`\n✗ ${s}\n`); process.exit(1); };
 // ---------------------------------------------------------------------------
 import { readFileSync } from "node:fs";
 const toml = readFileSync(new URL("../../wrangler.toml", import.meta.url), "utf8");
-const prod = toml.slice(toml.indexOf("[env.production]"));
+// Anchored to a real section header at the start of a line. `indexOf` matched the words
+// "[env.production]" inside a comment near the top of the file, so the slice began above the LOCAL
+// profile and the gate read its deliberate all-zero placeholders as if they were production's -
+// a gate that blocks a correctly commissioned deploy, which is how a gate gets bypassed.
+const prodStart = toml.search(/^\[env\.production\]$/m);
+if (prodStart === -1) die("wrangler.toml has no [env.production] section — refusing to deploy blind.");
+const prod = toml.slice(prodStart);
 const placeholders = [];
 if (/database_id = "0{8}-0{4}-0{4}-0{4}-0{12}"/.test(prod)) placeholders.push("D1 database_id");
 if (/\bid = "0{32}"/.test(prod)) placeholders.push("KV namespace id");
