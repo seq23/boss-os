@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm run test",
     "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/seed/generate-ai-employee-seed.mjs --check",
+    "validate:api-screens": "node scripts/validate/api-has-a-screen.mjs && node scripts/validate/api-has-a-screen.mjs --self-test",
     "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test && node scripts/seed/generate-machine-seed.mjs --check",
     "validate:brand": "node scripts/validate/boss-os-brand-system.mjs && node scripts/validate/boss-os-brand-system.mjs --self-test",
     "validate:classification": "node scripts/validate/data-classification.mjs",

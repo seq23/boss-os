@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { usd } from "../../../shared/boss/types";
-import { Loading } from "../components/Shell";
+import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 
-type Panel = "overview" | "cost" | "health" | "diagnostics" | "governance";
+type Panel = "overview" | "cost" | "audit" | "health" | "diagnostics" | "governance";
 
 export function Settings({ onLock }: { onLock: () => void }) {
   const [panel, setPanel] = useState<Panel>("overview");
@@ -32,7 +32,7 @@ export function Settings({ onLock }: { onLock: () => void }) {
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
 
       <div className="seg">
-        {(["overview", "cost", "health", "diagnostics", "governance"] as Panel[]).map((p) => (
+        {(["overview", "cost", "audit", "health", "diagnostics", "governance"] as Panel[]).map((p) => (
           <button key={p} className="seg-btn" aria-pressed={panel === p} onClick={() => setPanel(p)}>
             {p}
           </button>
@@ -98,9 +98,89 @@ export function Settings({ onLock }: { onLock: () => void }) {
       )}
 
       {panel === "cost" && <CostPanel />}
+      {panel === "audit" && <AuditPanel />}
       {panel === "health" && <HealthPanel />}
       {panel === "diagnostics" && <DiagnosticsPanel />}
       {panel === "governance" && <Governance />}
+    </>
+  );
+}
+
+/**
+ * THE AUDIT TRAIL AND THE SPEND LEDGER, both of which had endpoints and no screen.
+ *
+ * `/system/audit`, `/system/usage` and `/system/settings` all worked and were reachable only with
+ * curl. The audit log is the answer to "what actually happened", and BOSS_OS_DEPLOY.md's own
+ * reference table points at it as the place every state change is recorded - so leaving it
+ * unreadable from inside the product made the system's own documentation impossible to follow
+ * without a terminal.
+ *
+ * READ-ONLY, ALL THREE. `audit_log` is append-only by design; a screen that offered to edit it
+ * would be offering to break the one property that makes it worth having.
+ */
+function AuditPanel() {
+  const [audit, setAudit] = useState<any[] | null>(null);
+  const [usage, setUsage] = useState<any[]>([]);
+  const [settings, setSettings] = useState<any[]>([]);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    Promise.all([api.audit(), api.usage(), api.settings()])
+      .then(([a, u, st]) => { setAudit(a); setUsage(u); setSettings(st); })
+      .catch((e) => { setError(e); setAudit([]); });
+  }, []);
+
+  return (
+    <>
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      <p className="eyebrow">Spend by model</p>
+      {usage.length === 0 ? (
+        <Empty title="Nothing has been spent" hint="Every model call writes a row here with what it cost." />
+      ) : (
+        usage.slice(0, 20).map((u: any, i: number) => (
+          <div className="row" key={u.id ?? i}>
+            <div className="row-main">
+              <div className="row-title">{u.model_id ?? u.model ?? "—"}</div>
+              <div className="row-sub">{[u.lane, u.kind].filter(Boolean).join(" · ") || "—"}</div>
+            </div>
+            <div className="row-val">
+              {u.cost_micros === undefined ? "—" : `$${(Number(u.cost_micros) / 1_000_000).toFixed(4)}`}
+            </div>
+          </div>
+        ))
+      )}
+
+      <p className="eyebrow">Settings on record</p>
+      {settings.length === 0 ? (
+        <Empty title="No settings recorded" hint="Settings written by the system appear here with their current value." />
+      ) : (
+        settings.map((st: any, i: number) => (
+          <div className="row" key={st.key ?? i}>
+            <div className="row-main"><div className="row-title">{st.key}</div></div>
+            <div className="row-val">{String(st.value ?? "—")}</div>
+          </div>
+        ))
+      )}
+
+      <p className="eyebrow">Audit trail</p>
+      {audit === null ? (
+        <Loading />
+      ) : audit.length === 0 ? (
+        <Empty title="Nothing recorded yet" hint="Every state change lands here. It is append-only: a mistake is corrected with a new row, never by editing one." />
+      ) : (
+        audit.slice(0, 50).map((a: any, i: number) => (
+          <div className="row" key={a.id ?? i}>
+            <div className="row-main">
+              <div className="row-title">{[a.entity_type, a.action].filter(Boolean).join(" ") || "—"}</div>
+              <div className="row-sub">
+                {[a.actor, a.entity_id].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+            <div className="row-val">{a.ts ? new Date(a.ts).toLocaleString() : "—"}</div>
+          </div>
+        ))
+      )}
     </>
   );
 }

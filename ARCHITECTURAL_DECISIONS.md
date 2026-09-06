@@ -485,3 +485,104 @@ speech: their model wrote those words and nobody in the room said them. The acti
 deliberately NOT turned into commitments on import. Close-out reads the notes and PROPOSES
 commitments a person accepts, and a second path that assigned work straight out of a vendor's
 bullet list would go around the only step in the chain with a human in it.
+
+---
+
+# Boss OS ADRs
+
+`AGENTS.md` requires that canon deviations be recorded as ADRs. The Boss OS port made several and
+recorded none — ADR numbering stopped at 019, all of them the chassis's, while the decisions that
+put one product inside another's repository lived only in commit messages. These close that gap.
+
+Decided or ratified 6 September 2026.
+
+### ADR-020 — Boss OS is v21; the canon it implements stays v20
+
+Three things carried a v20 label: the live product, the specification it implements, and a
+deprecated earlier build in `REPO_OPERATOR_ARCHIVE/deprecated-repos/`. They were not distinguishable
+from inside the product, because `BOSS_OS_VERSION` was never declared in `wrangler.toml` and the
+fallback in `bossMount.ts` returned the literal string `"v20"` — so `/api/system/health` and every
+snapshot payload identified the live build as the archived one.
+
+**Decision.** The product is **v21**, declared explicitly in both wrangler profiles. The documents in
+`docs/boss/` keep their `BOSS_OS_v20_*` filenames.
+
+**Why the documents do not follow the product.** They are the authority, not the artefact. Every
+`§`-citation in the code resolves against them by name, and the v20.1 plan's §1 forbids renumbering
+preserved sections. Renaming the specification to match the thing it specifies would break the
+citations that exist so a future reader can find out *why* a rule is there.
+
+### ADR-021 — Which app mounts is decided by hostname, in the client
+
+boss.sequoiataylor.com served West Peek Ventures' entire fund interface — West Peek branding, a
+sign-in for `you@westpeek.ventures`, and Thesis, Dealflow and Portfolio down the side — because
+`main.tsx` chose between the two apps by pathname and defaulted to the chassis. One business's
+interface on another's domain, which is precisely what the owner's separation rule exists to prevent.
+
+**It had to be fixed in the client.** The first fix was a 302 in the Worker's fetch handler and it
+could never have worked: Cloudflare's assets binding answers `/` directly and the fetch handler is
+never invoked for it. It deployed, and `/` still returned 200 with the chassis.
+
+**Decision.** `BOSS_HOSTS` in `src/client/main.tsx` is an **allowlist**, not a pattern. "Does this
+look like a Boss host" is a question with a wrong answer, and the wrong answer puts one business's
+UI on another's domain. Anywhere not on the list keeps the old behaviour, so the chassis's E2E
+journeys still drive it at `/` — they are the regression suite for the domain being removed.
+
+### ADR-022 — One bundle, two apps, and only one ever mounts
+
+Boss OS arrived as a complete SPA with its own shell, lock screen and stylesheet. Both apps define
+global CSS and both own the whole screen, so loading them together would leave whichever stylesheet
+lost the race silently restyling the other.
+
+**Decision.** The import is dynamic and exclusive. This is the interim shape, not the destination:
+when the fund domain is stripped, Boss OS becomes the root app and the branch goes away with it.
+
+### ADR-023 — The Boss maintenance cadence belongs to Boss OS, not to the cron expression
+
+`runScheduled` was called from the Worker's `scheduled()` handler on every tick of a quarter-hourly
+cron inherited from the chassis job runner. It is documented as nightly everywhere it is mentioned.
+Production reached 62 snapshots and 30.4 MB of R2 in under fifteen hours, on a database holding no
+user data, because `audit_log`, `system_events` and `cron_runs` are all snapshotted and the run
+writes to all three.
+
+**Decision.** The trigger is hourly, and the cadence is enforced **inside `runScheduled`** rather
+than by the cron expression: daily maintenance at or after 03:00 UTC, weekly snapshot, skipped again
+when nothing of substance changed, retention to twelve.
+
+**Why the guard stays even though the trigger was fixed.** A cadence that lives only in
+`wrangler.toml` is one edit away from being wrong again, and the exported function would remain able
+to run ninety-six times a day for whatever calls it next. The guard makes the cadence a property of
+Boss OS.
+
+The consequence, accepted: `boss_task_queue` no longer drains every fifteen minutes. A request that
+may have queued something drains it itself, after the response, so the tick is a safety net rather
+than the only thing that moves the queue.
+
+### ADR-024 — Boss OS's stylesheet is outside the design-token scan, deliberately
+
+`validate:design-tokens` scans `src/client/styles.css` only. Boss OS's stylesheet uses raw pixel
+values throughout and declares no `--space-*` / `--text-*` scale.
+
+**Decision.** Leave it outside, and say so rather than let it look like an oversight.
+
+**Why.** The scan exists for a specific chassis defect — a purpose block running its sentence at
+13px above a line at 12px, one pixel apart, which reads as a mistake rather than a hierarchy.
+Retrofitting a scale onto a ported design would be a large cosmetic refactor with real regression
+risk, on a stylesheet whose sibling is scheduled for deletion. `validate:brand` (colour declared
+only in the token block), `validate:css-classes` and `validate:css-variables` all do cover it, so it
+is not unguarded — only unscaled.
+
+### ADR-025 — A detector may not report a grouping column as a finding
+
+The sprawl report ran `GROUP BY lane, department HAVING COUNT(*) > 1` and the Team screen rendered
+the result as "Two employees cover the same ground… Merge one before the roster grows again." On the
+live roster that accused four employees who each do work nobody else does.
+
+**Decision.** Evidence and recommendation are separated. `shared_departments` is a roster fact with
+no verb. `overlapping_charters` measures similarity between standing orders and is the only signal
+that carries a recommendation — and it shows its score, so the reader can disagree with the
+measurement rather than only with the verdict.
+
+**The general rule this states.** A detector that fires on the normal shape of the thing it watches
+is as useless as one that never fires, and worse when it fires as an accusation with an action
+attached. Every detector in this repository needs a test asserting what it must NOT fire on.

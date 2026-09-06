@@ -1259,7 +1259,11 @@ const router = new Router()
  * Pure request handler — exported so tests can exercise it directly with a
  * miniflare-backed Env, without standing up a server.
  */
-export async function handleRequest(request: Request, env: Env): Promise<Response> {
+export async function handleRequest(
+  request: Request,
+  env: Env,
+  ctx?: ExecutionContext,
+): Promise<Response> {
   const url = new URL(request.url);
 
   if (!url.pathname.startsWith("/api/")) {
@@ -1275,7 +1279,34 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   // resolution rather than after it - a home-screen install has no identity provider in front of
   // it, and requiring one would make Boss OS unreachable from the device it is built for.
   if (isBossRoute(url.pathname)) {
-    return handleBossRequest(request, env);
+    const response = await handleBossRequest(request, env);
+
+    /*
+     * DRAIN WHAT THIS REQUEST MAY HAVE JUST QUEUED.
+     *
+     * Boss OS's employee work used Cloudflare Queues in the artifact; here it waits in D1 and
+     * moves only when something drains it. That was the cron's job, and the cron was the ONLY
+     * reason the trigger needed to be quarter-hourly - 96 wake-ups a day so that submitting a task
+     * felt prompt.
+     *
+     * The owner asked for a less frequent cron. Draining here means the tick no longer carries
+     * that responsibility: a task queued by a request is picked up by the same request, and the
+     * hourly tick becomes a safety net for work nothing was watching - a retry with a delay, a
+     * task enqueued while the Worker was mid-deploy.
+     *
+     * AFTER THE RESPONSE, NEVER BEFORE IT. `waitUntil` keeps canon's rule intact - work executes
+     * outside the request/response cycle, never inside a handler that a person is waiting on - and
+     * a failure here cannot turn a successful submission into an error the caller sees. Read-only
+     * verbs are skipped because they cannot have queued anything.
+     */
+    if (ctx && request.method !== "GET" && request.method !== "HEAD") {
+      ctx.waitUntil(
+        drainBossTasks(env, new Date()).catch((err) => {
+          console.error("boss task drain (on request) failed", err);
+        }),
+      );
+    }
+    return response;
   }
 
   const matched = router.match(request.method, url.pathname);
@@ -1296,9 +1327,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 }
 
 export default {
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
-      return await handleRequest(request, env);
+      return await handleRequest(request, env, ctx);
     } catch (err) {
       // Fail closed, no internals leaked.
       console.error("worker error", err);

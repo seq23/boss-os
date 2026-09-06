@@ -33,3 +33,8 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_substance ON vault_snapshots(substance_
 -- was written; and 'pruned' - written, kept for its retention window, then deleted by retention.
 -- Both are complete descriptions of a deliberate non-event. Neither is a failure, and Diagnostics
 -- must not colour them as one.
+
+-- Every migration registers itself. `/api/health` reports the newest row here as the live schema
+-- version, and tests/helpers/db.ts asserts it matches the last file on disk - so a migration that
+-- skips this line makes the deployed schema version silently disagree with the repository.
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0172_the_nightly_cron_ran_ninety_six_times_a_day');

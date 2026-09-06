@@ -113,8 +113,20 @@ BOSS_SESSION_SECRET = "local-dev-session-secret-not-a-real-credential"
 # It calls the Worker's scheduled() handler, which runs due jobs from D1. Queues and Durable
 # Objects are deliberately not used. A trigger cannot fire in local `wrangler dev`, so the same
 # code path is exercised locally through POST /api/jobs/tick and directly in tests.
+#
+# HOURLY, NOT QUARTER-HOURLY. Owner's instruction, 6 Sep 2026: "the cron should not be running
+# 96x/day". It was `*/15 * * * *` - the West Peek chassis job runner's cadence, inherited when Boss
+# OS was ported into it - which woke the Worker 96 times a day. 24 is enough for everything that
+# is actually on this wire, and the daily maintenance still lands exactly at 03:00 UTC because the
+# first hourly tick at or after the documented hour IS 03:00.
+#
+# WHAT THE FREQUENT TICK WAS FOR, and why an hour costs nothing: draining `boss_task_queue`. Boss
+# OS's employee work used Cloudflare Queues in the artifact; here it waits in D1 and drains on this
+# tick. Submitting a task now ALSO drains it immediately (see bossMount.ts), so the tick is a
+# safety net for work that was enqueued by something other than a request - a retry with a delay,
+# a task queued while the Worker was mid-deploy - rather than the only thing that moves the queue.
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["0 * * * *"]
 
 # ---------------------------------------------------------------------------
 # production — the deployed profile (`wrangler deploy --env production`).

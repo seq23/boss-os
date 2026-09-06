@@ -16,10 +16,17 @@ import { ErrorNotice } from "../components/Notice";
  * nothing, which is a state each panel names rather than showing an empty box. None of them
  * fabricates a number the server did not send.
  */
-type SectionId = "airlock" | "governance" | "knowledge" | "prompt" | "quant" | "bridge" | "capability" | "runtimes" | "sync";
+type SectionId =
+  | "airlock" | "router" | "intake" | "governance" | "knowledge" | "prompt"
+  | "quant" | "bridge" | "capability" | "runtimes" | "sync";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "airlock", label: "Airlock" },
+  // Phase 7's "screens for what already exists but is unreachable". The router decides where every
+  // piece of work runs and logs why each candidate was refused; until now none of that was visible
+  // anywhere, so "why did nothing happen?" had no answer inside the product.
+  { id: "router", label: "Router" },
+  { id: "intake", label: "Intake" },
   { id: "governance", label: "Governance" },
   { id: "knowledge", label: "Knowledge" },
   { id: "prompt", label: "Prompts" },
@@ -48,6 +55,8 @@ export function Systems() {
         ))}
       </div>
       {section === "airlock" && <Airlock />}
+      {section === "router" && <Router />}
+      {section === "intake" && <Intake />}
       {section === "governance" && <Governance />}
       {section === "knowledge" && <Knowledge />}
       {section === "prompt" && <Prompts />}
@@ -132,6 +141,105 @@ function isEmpty(d: unknown) {
   if (Array.isArray(d)) return d.length === 0;
   if (typeof d === "object") return Object.keys(d as object).length === 0;
   return false;
+}
+
+/**
+ * THE ROUTER, MADE VISIBLE.
+ *
+ * `/models`, `/models/routes`, `/models/decisions` and `/models/benchmarks` all worked and none of
+ * them had a screen. The operator runbook's answer to "nothing is running" is literally *"`GET
+ * /api/models/decisions` records why every candidate model was refused"* - an instruction to open a
+ * terminal, about a system whose whole promise is that the Boss does not have to.
+ *
+ * THE REFUSALS ARE THE POINT, so they lead. `blocked_policy`, `blocked_budget`, `blocked_no_model`
+ * and `ask_human` are deliberate decisions, not errors, and a screen that showed only successful
+ * routings would hide the four states you actually need when work is not moving.
+ */
+function Router() {
+  const models = usePanel(() => api.models());
+  const routes = usePanel(() => api.routes());
+  const decisions = usePanel(() => api.decisions());
+  const benchmarks = usePanel(() => api.benchmarks());
+
+  return (
+    <>
+      <Panel title="Recent decisions" hint="Nothing has been routed yet. Every routing decision lands here, including the refusals." state={decisions}>
+        {asList(decisions.data).slice(0, 25).map((d: any, i: number) => (
+          <Row
+            key={d.id ?? i}
+            title={text(d.model_id ?? d.chosen_model, "No model chosen")}
+            sub={[text(d.lane, ""), text(d.reason ?? d.outcome, "")].filter(Boolean).join(" · ")}
+            val={text(d.outcome ?? d.status)}
+          />
+        ))}
+      </Panel>
+
+      <Panel title="Routes" hint="No routes are configured. A route is the lane-and-policy pairing a task is matched against." state={routes}>
+        {asList(routes.data).map((r: any, i: number) => (
+          <Row key={r.id ?? i} title={text(r.id)} sub={text(r.lane, "")} val={text(r.privacy_class ?? r.cost_mode, "")} />
+        ))}
+      </Panel>
+
+      <Panel title="Models" hint="No models are registered." state={models}>
+        {asList(models.data).map((m: any, i: number) => (
+          <Row key={m.id ?? i} title={text(m.id ?? m.name)} sub={text(m.provider_id ?? m.provider, "")} val={text(m.capability_tier ?? m.tier, "")} />
+        ))}
+      </Panel>
+
+      {/*
+        * Phase 8's harness is deliberately not built (docs/boss/DECISIONS.md, BD-003) because
+        * honest benchmarking means paying for real inference. The TABLE exists and the router
+        * already screens on it, so the panel shows what is there and says plainly when that is
+        * nothing - rather than implying a bench was run and came back empty.
+        */}
+      <Panel title="Benchmarks" hint="No model has been benchmarked. The bench is empty by decision, not by failure — running it means paying for real inference across several models." state={benchmarks}>
+        {asList(benchmarks.data).map((b: any, i: number) => (
+          <Row
+            key={b.id ?? i}
+            title={text(b.model_id)}
+            sub={text(b.workload_id, "")}
+            val={b.quality_score === undefined ? text(b.verdict) : `${Math.round(Number(b.quality_score) * 100)}% · ${text(b.verdict)}`}
+          />
+        ))}
+      </Panel>
+    </>
+  );
+}
+
+/**
+ * INTAKE GOVERNANCE — the Agent Creation Gate, and the workloads it matches against.
+ *
+ * The gate that refuses to invent a new employee when an existing one already covers the ground is
+ * one of the system's better ideas, and it ran entirely out of sight: `/intake/workloads`,
+ * `/intake/assessments` and `/intake/proposals` had no screen. A refusal nobody can read is a
+ * refusal nobody can check.
+ */
+function Intake() {
+  const workloads = usePanel(() => api.workloads());
+  const assessments = usePanel(() => api.assessments());
+  const proposals = usePanel(() => api.proposals());
+
+  return (
+    <>
+      <Panel title="Agent proposals" hint="No one has proposed a new employee. Proposals appear here with the gate's verdict attached." state={proposals}>
+        {asList(proposals.data).map((p: any, i: number) => (
+          <Row key={p.id ?? i} title={text(p.name ?? p.proposed_name)} sub={text(p.rationale ?? p.reason, "")} val={text(p.status ?? p.verdict)} />
+        ))}
+      </Panel>
+
+      <Panel title="Need assessments" hint="Nothing has been assessed. An assessment is what the No Agent Sprawl gate reads before it allows a proposal." state={assessments}>
+        {asList(assessments.data).map((a: any, i: number) => (
+          <Row key={a.id ?? i} title={text(a.need ?? a.summary)} sub={text(a.covered_by ? `Already covered by ${a.covered_by}` : "", "")} val={text(a.outcome ?? a.verdict)} />
+        ))}
+      </Panel>
+
+      <Panel title="Workload profiles" hint="No workload profiles are registered." state={workloads}>
+        {asList(workloads.data).map((w: any, i: number) => (
+          <Row key={w.id ?? i} title={text(w.id ?? w.name)} sub={text(w.description, "")} val={text(w.risk_ceiling ?? w.privacy_class, "")} />
+        ))}
+      </Panel>
+    </>
+  );
 }
 
 function Row({ title, sub, val }: { title: string; sub?: string; val?: string }) {

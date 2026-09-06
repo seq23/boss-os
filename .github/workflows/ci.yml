@@ -95,6 +95,11 @@ jobs:
       - name: SQL against schema
         run: npm run validate:sql
 
+      # Ratcheted. A backend that works and cannot be reached from the interface is
+      # indistinguishable, from the owner's chair, from one that does not work.
+      - name: Every endpoint has a way in
+        run: npm run validate:api-screens
+
       - name: Build client
         run: npm run build
 

@@ -1,3 +1,16 @@
+> ### ⚠️ This document describes the West Peek chassis, not Boss OS.
+>
+> This repository is **Boss OS v21**, live at boss.sequoiataylor.com. It was built by cloning West
+> Peek OS and porting the Boss OS v20 artifact into it, so the documents at the repository root —
+> this one included — were inherited from the chassis and describe *it*. They use **P0–P25**
+> numbering and talk about LPs, dealflow and Managing Partners. None of that is Boss OS.
+>
+> **Boss OS's own authority is [`docs/boss/`](docs/boss/), and [`STATUS.md`](STATUS.md) is the plain
+> account of what this repo is, what is built, and what is deliberately not.**
+>
+> This document is kept rather than deleted because the chassis is still in the tree and still under
+> test, and its rules still govern the half of the code it describes. It goes when the chassis does.
+
 # Backlog
 
 What is not finished, why, and what finishing it means. Written 17 Aug 2026, verified against the

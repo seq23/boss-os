@@ -22,6 +22,106 @@ export function Vault() {
   );
 }
 
+
+/**
+ * Choosing a snapshot and a mode, with the destructive one gated.
+ *
+ * Deliberately its own component with its own state: the mode and the confirmation must reset when
+ * the chosen snapshot changes, or a reader could type REPLACE against one snapshot, change their
+ * mind about which one, and fire it at another.
+ */
+function RestorePanel({
+  snapshots, busy, run,
+}: {
+  snapshots: any[];
+  busy: string | null;
+  run: (name: string, fn: () => Promise<string>) => Promise<void>;
+}) {
+  const restorable = snapshots.filter((s) => s.status === "complete");
+  const [id, setId] = useState<string>("");
+  const [mode, setMode] = useState<"verify" | "merge" | "replace">("verify");
+  const [confirm, setConfirm] = useState("");
+
+  const chosen = id || restorable[0]?.id || "";
+  const ready = chosen && (mode !== "replace" || confirm === "REPLACE");
+
+  if (restorable.length === 0) {
+    return (
+      <Empty
+        title="Nothing to restore from"
+        hint="A snapshot has to exist and be complete before it can be restored. Pruned snapshots keep their record and lose their contents."
+      />
+    );
+  }
+
+  return (
+    <>
+      <label className="field">
+        <span>Snapshot</span>
+        <select
+          value={chosen}
+          onChange={(e) => { setId(e.target.value); setConfirm(""); }}
+        >
+          {restorable.map((s) => (
+            <option key={s.id} value={s.id}>
+              {new Date(s.ts).toLocaleString()} · {s.label} · {size(s.bytes)}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="btn-row">
+        {(["verify", "merge", "replace"] as const).map((m) => (
+          <button
+            key={m}
+            className="btn"
+            aria-pressed={mode === m}
+            onClick={() => { setMode(m); setConfirm(""); }}
+          >
+            {m[0]!.toUpperCase() + m.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {mode === "replace" && (
+        <label className="field">
+          <span>
+            This wipes every covered table. Type REPLACE to confirm.
+          </span>
+          <input
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder="REPLACE"
+            aria-label="Type REPLACE to confirm"
+          />
+        </label>
+      )}
+
+      <button
+        className="btn"
+        style={{ width: "100%" }}
+        disabled={busy !== null || !ready}
+        onClick={() =>
+          run("restore", async () => {
+            const r = await api.restore(
+              mode === "replace"
+                ? { snapshot_id: chosen, mode, confirm: "REPLACE" }
+                : { snapshot_id: chosen, mode },
+            );
+            // Every attempt is recorded in vault_restores, including the failures - so the
+            // sentence here reports what came back rather than assuming success.
+            return `Restore (${mode}): ${r.ok === false ? "refused" : "completed"}. ${
+              r.tables_restored ?? r.tables ?? 0
+            } tables, ${r.rows_restored ?? r.rows ?? 0} rows.`;
+          })
+        }
+      >
+        {busy === "restore" ? "Restoring…" : `Run ${mode}`}
+      </button>
+    </>
+  );
+}
+
 /**
  * The Emergency Sovereignty Package — canon §19, §46, §45.2, §45.3.
  *
@@ -203,6 +303,27 @@ function Continuity() {
         A drill takes a snapshot, reads it back out of storage, re-hashes it, and checks every table is covered.
         It writes nothing to live state.
       </p>
+
+      {/*
+        * RESTORE — the one thing the vault exists FOR, and it had no screen.
+        *
+        * `POST /api/vault/restore` worked in all three modes and was reachable only from a
+        * terminal. The operator runbook's instructions for the worst day of the system's life were
+        * three curl commands. A vault you cannot restore from without a laptop and a shell is a
+        * vault whose whole value depends on the one thing being unavailable.
+        *
+        * THE THREE MODES ARE NOT PEERS, and the screen refuses to present them as one row of
+        * equal-looking buttons. `verify` writes nothing. `merge` fills gaps and lets existing rows
+        * win. `replace` WIPES the covered tables, and the API demands the literal string REPLACE -
+        * that confirmation is kept here rather than smoothed away, because a destructive action
+        * that is as easy to trigger as a safe one is a trap regardless of how clear the label is.
+        */}
+      <p className="eyebrow">Restore</p>
+      <p className="row-sub" style={{ marginBottom: 8 }}>
+        Verify proves a snapshot loads and writes nothing. Merge fills gaps, and existing rows win.
+        Replace wipes every covered table and loads the snapshot verbatim — take a fresh snapshot first.
+      </p>
+      <RestorePanel snapshots={snapshots ?? []} busy={busy} run={run} />
 
       <p className="eyebrow">Snapshots</p>
       {snapshots === null ? (
