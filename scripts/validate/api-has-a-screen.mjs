@@ -36,11 +36,15 @@ const CONSUMER_DIR = "src/client/boss";
  * THE CEILING. Lower it when you wire something up; never raise it.
  *
  * 100 was the count on 6 Sep 2026 before Phase 7's screens; 89 after wiring the router, the
- * intake gate, vault restore and the audit/spend ledger. If you are reading this
+ * intake gate, vault restore and the audit/spend ledger; 86 after Stage 3's dispatch surface,
+ * whose Watch screen reads a task's live state and offers cancel and requeue — so `task`,
+ * `cancelTask` and `requeueTask` have a way in for the first time. Stage 3's own five methods and
+ * the spend lever's two were wired the day they were written and never counted here at all.
+ * If you are reading this
  * because the build failed and you are tempted to raise the number: the failure is telling you that
  * an endpoint has no way in, which is the whole point.
  */
-const CEILING = 89;
+const CEILING = 86;
 
 /**
  * Names that appear at the same indentation as an API method but are not one.

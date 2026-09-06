@@ -70,6 +70,16 @@ export function toBossEnv(env: Env): BossEnv {
     TASKS: d1Queue(env.WP_OS_DB),
     ASSETS: env.ASSETS,
     /*
+     * Workers AI, passed through rather than dropped.
+     *
+     * The chassis Env carries it and Boss's Env now declares it, but this translation layer is
+     * where the two meet — and it was silently omitting the binding, so Boss OS saw `AI` as absent
+     * no matter what wrangler.toml said. A binding that exists on one side of a seam and not the
+     * other fails as "not configured", which is indistinguishable from a real misconfiguration and
+     * sends you looking in the wrong file.
+     */
+    AI: env.AI,
+    /*
      * THE LIVE LINE IS v21. Owner's decision, 6 Sep 2026: the build in ~/GitHub/boss-os is v21;
      * the v20 build in REPO_OPERATOR_ARCHIVE/deprecated-repos/ is deprecated. The two were
      * indistinguishable from inside the product, because this fallback reported the literal

@@ -674,6 +674,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
   vertical-align: middle;
 }
 
+/*
+ * THE SECTION SWITCHER SCROLLS RATHER THAN CRUSHING ITSELF.
+ *
+ * `flex: 1` on every button divides the width evenly, which is right for Settings' three panels and
+ * was already wrong for Systems' eleven - eleven labels across a 375px phone is about 30px each,
+ * and Stage 3's three dispatch sections would have made it fourteen. Past a certain point the
+ * labels stop being readable and the reader starts hunting, which is the exact failure the hub was
+ * built to avoid.
+ *
+ * `flex: 1 0 auto` keeps the old behaviour where the buttons fit - they still grow to fill the row -
+ * and lets the strip scroll sideways where they do not, instead of shrinking every label to a
+ * stump. Nothing is hidden: the overflow is reachable by the same thumb that is already there.
+ */
 .seg {
   display: flex;
   gap: 4px;
@@ -682,10 +695,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.seg::-webkit-scrollbar { display: none; }
 .seg-btn {
-  flex: 1;
-  padding: 9px 4px;
+  flex: 1 0 auto;
+  white-space: nowrap;
+  padding: 9px 8px;
   background: none;
   border: none;
   border-radius: 2px;
@@ -695,7 +712,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.seg-btn[aria-pressed="true"] { background: var(--card-2); color: var(--ink); }
+/*
+ * BOTH SELECTION IDIOMS, BECAUSE BOTH ARE IN USE AND ONLY ONE WAS STYLED.
+ *
+ * Settings' switcher is a group of toggles (`aria-pressed`); Systems' is a tablist (`aria-selected`),
+ * which is the correct role for it. Only the first had a rule, so the eleven Systems sections had no
+ * visible current one at all - you could tell which panel you were on from the content and from
+ * nothing else. Stating both is the fix; narrowing Systems to the wrong ARIA role to match the
+ * stylesheet would not have been.
+ */
+.seg-btn[aria-pressed="true"],
+.seg-btn[aria-selected="true"] { background: var(--card-2); color: var(--ink); }
 .seg-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 
 .level-error { color: var(--reject); }
@@ -738,3 +765,172 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
   text-transform: uppercase;
 }
 .syncbar-count { color: var(--rose); }
+
+/* ─── Stage 3: dispatch, and the backend registry ────────────────────────── */
+
+/*
+ * A NAMED STOP LOOKS LIKE A STATEMENT, NOT A WOUND.
+ *
+ * Three things in this product are deliberately off and each of them used to have no way to say so
+ * except by borrowing the error notice: the local model runtime ("DEFERRED - NO LOCAL HOST"), a
+ * backend that is registered but not commissioned, and a run a backend REFUSED on purpose. All
+ * three are the system working. Painting them in `--reject` teaches the reader that red means
+ * "normal", and then the one real failure a month goes unread with it.
+ *
+ * So: the card ground, a gold edge, and no icon. It reads as a note pinned to the page. It is
+ * deliberately NOT `.notice`, which is reserved for something having gone wrong.
+ */
+.standdown {
+  border-left: 2px solid var(--gold);
+  background: var(--card-2);
+  border-radius: 0 3px 3px 0;
+  padding: 11px 12px;
+  margin: 12px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.standdown strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+/*
+ * STATUS TONES. Four, and only four, because a fifth would be a shade nobody can name.
+ * `state-quiet` carries every deliberate state - refused, cancelled, registered, disabled - and is
+ * the reason this palette has no fifth entry: those are decisions, and a decision is not a colour
+ * you need to react to.
+ */
+.state-good  { color: var(--ok); }
+.state-bad   { color: var(--reject); }
+.state-live  { color: var(--gold-deep); }
+.state-quiet { color: var(--muted); }
+
+/* A wrapped run of pills with a label in front — capabilities, allowed kinds, forbidden actions. */
+.taglist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+}
+.taglist .pill { margin-left: 0; }
+.taglist-l {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.taglist-none { color: var(--muted); font-size: 13px; }
+
+/*
+ * WHAT A BACKEND MAY NEVER DO, LOOKING DIFFERENT FROM WHAT IT MAY.
+ *
+ * Rose rather than reject: the forbidden list is not an alarm, it is a boundary, and it is the same
+ * on every backend by design. It should read as firm, not as something has happened.
+ */
+.pill-forbid { color: var(--rose); border-color: var(--rose); }
+
+/* The expanded body of a registry row. */
+.detail {
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.detail .eyebrow { margin-top: 14px; }
+
+.btn-wide { width: 100%; margin: 4px 0 8px; }
+
+/*
+ * A CHOSEN ROW HAS TO LOOK CHOSEN. `.row-tap` is used both as a link into a detail screen and, on
+ * the launch screen, as a radio - and in the second job the whole control is useless without a
+ * selected state.
+ */
+.row-tap[aria-pressed="true"] {
+  background: var(--card-2);
+  box-shadow: inset 2px 0 0 var(--lane);
+}
+.row-tap:disabled { opacity: 0.55; cursor: default; }
+
+/* ─── The spend lever ────────────────────────────────────────────────────── */
+
+/*
+ * A LEVER, NOT A LIST — because the control above it is a list.
+ *
+ * Cost mode is six rows you pick from; this is three positions on a graduated control. They govern
+ * different things ("how good a model" against "how much money") and the fastest way to make both
+ * unusable is to draw them the same, so that the reader has to read to tell them apart. Three
+ * stacked positions, each with its consequence written on it, is a different SHAPE at a glance.
+ */
+.lever {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 14px;
+}
+.lever-btn {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  padding: 11px 13px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line);
+  border-radius: 3px;
+}
+.lever-btn[aria-pressed="true"] {
+  background: var(--card-2);
+  border-left-color: var(--gold);
+}
+.lever-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.lever-btn:disabled { opacity: 0.6; cursor: default; }
+.lever-l {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.lever-note { color: var(--muted); font-size: 13px; }
+
+/*
+ * OPEN, TOLD APART WITHOUT BEING TOLD OFF.
+ *
+ * She chooses OPEN deliberately, and a control that warns her about her own decision every time she
+ * opens Settings gets skipped - which costs her the one number this panel exists to show. So there
+ * is no red, no alert, no modal and no scolding sentence: just rose, which already means "this is
+ * consequential" in this app, on the edge and on the figure. Enough to see in a glance that nothing
+ * is currently bounding spend, and nothing more than that.
+ */
+.lever-open { border-left-color: var(--rose); }
+.lever-open[aria-pressed="true"] { border-left-color: var(--rose); }
+.lever-open .lever-l { color: var(--rose); }
+
+/* The figure, at every position — with a ceiling to sit against, or without one. */
+.spendfig {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 12px 14px;
+  background: var(--card);
+  margin-bottom: 10px;
+}
+.spendfig-n {
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.spendfig-l {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 7px;
+}
+.spendfig-open { border-left: 2px solid var(--rose); }
+.spendfig-open .spendfig-n { color: var(--rose); }

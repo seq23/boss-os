@@ -78,6 +78,24 @@ export const api = {
   costModes: () => call<any[]>("/system/cost-modes"),
   setSetting: (key: string, value: string) =>
     call(`/system/settings/${key}`, { method: "PUT", body: JSON.stringify({ value }) }),
+  /*
+   * ── The spend lever. ──
+   *
+   * NOT A FOURTH BUDGET, and not a seventh cost mode. `src/worker/boss/router/spend.ts` is explicit
+   * about both: the lever supplies the ALLOWANCE that a backend's sub-cap defers to, the lane
+   * budget stays the outer authority, and the effective allowance is always the smallest of the
+   * three — so no two numbers here can disagree. Cost mode is a different question entirely (which
+   * model tiers are good enough), it never moves the lever, and the lever never moves it. They are
+   * two controls on this screen for that reason and must never be merged into one list.
+   *
+   * THE POSITION AND THE FIGURE ARE TWO THINGS. `position` is FREE_ONLY | MODERATE | OPEN;
+   * `moderate_micros` is MODERATE's allowance, which the owner sets and changes in place. Sending
+   * the figure without a position is how she edits the number without moving the lever.
+   */
+  spendLever: () => call<any>("/system/spend-lever"),
+  setSpendLever: (body: { position?: string; moderate_micros?: number }) =>
+    call<any>("/system/spend-lever", post("", body)),
+
   deadLetters: () => call<any[]>("/system/dead-letters"),
   requeueDeadLetter: (id: string) => call(`/system/dead-letters/${id}/requeue`, post("")),
   dismissDeadLetter: (id: string) => call(`/system/dead-letters/${id}/dismiss`, post("")),
@@ -336,6 +354,32 @@ export const api = {
   syncDevices: () => call<any>("/sync/devices"),
   syncConflicts: () => call<any>("/sync/conflicts"),
   resolveConflict: (id: string, body: unknown) => call<any>(`/sync/conflicts/${id}/resolve`, post("", body)),
+
+  /*
+   * ── Stage 3 — dispatch. Where work is launched, and watched. ──
+   *
+   * THE REGISTRY IS THE AUTHORITY, not this file. `execution_backends` carries each backend's
+   * class, status, ceiling, what it may do and what it may NEVER do (migration
+   * `0173_boss_execution_backends.sql`), and the screen renders those rows rather than a list
+   * hard-coded here. A backend added to the table appears on the screen without a client change,
+   * which is the whole reason it is a table.
+   *
+   * `candidates` BEFORE `dispatch`, ALWAYS. The launch screen asks the server which backends can
+   * take a task and what each would cost, and shows the refusals alongside the offers — a backend
+   * with no credential, one handed a task kind outside its allowed list, and one over its ceiling
+   * are all deliberate refusals with a reason, not errors. Estimating in the client would mean
+   * guessing at rules the server enforces, and a guess that disagrees with the enforcement is
+   * worse than no estimate.
+   *
+   * CANCEL AND REQUEUE ACT ON THE TASK, not on the run. A run is the record of one attempt and is
+   * immutable once it ends; the thing you stop or send again is the work. So the Watch screen uses
+   * the task endpoints that already exist rather than inventing a second lifecycle beside them.
+   */
+  backends: () => call<any[]>("/backends"),
+  backendCandidates: (body: unknown) => call<any>("/backends/candidates", post("", body)),
+  dispatchToBackend: (body: unknown) => call<any>("/backends/dispatch", post("", body)),
+  backendRuns: (status?: string) => call<any[]>(`/backends/runs${status ? `?status=${status}` : ""}`),
+  backendRun: (id: string) => call<any>(`/backends/runs/${id}`),
 
   // ── Governance watch list — the sentinel's eleven items. ──
   watchList: () => call<any[]>("/governance/watch-list"),

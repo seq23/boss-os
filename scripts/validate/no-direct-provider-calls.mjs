@@ -101,7 +101,28 @@ const NON_REASONING_VENDORS = new Set(["src/worker/effects/runwareClient.ts"]);
  * under providers/ reached through runAi, or runAi is retired in favour of Boss OS's router once
  * the fund domain is gone. Adding anything else here needs the same kind of written reason.
  */
-const PORTED_BOSS_ROUTER = new Set(["src/worker/boss/router/fireworks.ts"]);
+const PORTED_BOSS_ROUTER = new Set([
+  "src/worker/boss/router/fireworks.ts",
+  // ── Stage 4 · continuity. Two more files, and the same written reason. ──
+  //
+  // THE EXEMPTION DOES NOT GROW IN KIND, ONLY IN COUNT, and the count is the point. The Sovereignty
+  // Addendum §1 forbids a critical capability depending permanently on ONE external provider
+  // without a tested continuity path; Boss OS's drafting and coding lanes depended entirely on
+  // Fireworks. A second vendor is the fix, so the file that speaks to it is the same debt as the
+  // first file, not a new one — governed by the same router, the same cost modes, the same hard
+  // budget stops, the same privacy class and risk ceiling, the same decision log, and now also by
+  // the spend lever and the execution-backend guard, which refuse before either adapter is reached.
+  //
+  // Named individually, exactly as the first one is, so nothing drifts in behind them.
+  "src/worker/boss/router/openrouter.ts",
+  // The registry that says which of the three adapters to call, at which host. It performs no call
+  // and holds no credential: it is here only because it carries the vendor hostnames as CONSTANTS,
+  // which is the whole reason a request body cannot move this system's egress. The scan is right to
+  // see a hostname; a config table would have hidden it, which is worse.
+  "src/worker/boss/router/backends.ts",
+  // Workers AI needs no entry at all — it is the env.AI BINDING, so it calls no fetch, holds no
+  // bearer token and names no host. That absence is the argument for preferring it.
+]);
 
 export function checkSources(files) {
   const violations = [];

@@ -13,6 +13,11 @@
  * degraded, retrying, half-connected agent has no path to widen residency, because it never had
  * one to begin with.
  *
+ * IT NOW HAS A SECOND JOB (Stage 2, runner.mjs): claiming approved `agent_executed` runs and
+ * executing them here, because Boss OS is a Cloudflare Worker and cannot reach a CLI or a model on
+ * this machine. The rule above is why that job could be added without a new one — the runner also
+ * decides nothing; it executes an already-approved envelope and never widens it.
+ *
  * NOTHING HERE IS MACHINE-SPECIFIC EXCEPT THE FILE PATH, which is exactly the kind of thing §3.4
  * says never syncs. The device identity is a row on both sides; replacing the laptop is a
  * registration.
@@ -227,6 +232,51 @@ async function main() {
     console.log(JSON.stringify(await syncOnce(db, { origin, deviceId, cookie }), null, 2));
     return;
   }
+  /*
+   * THE SECOND JOB (Stage 2). Claim one approved `agent_executed` run, execute it here, report the
+   * evidence back. It is a separate command rather than part of a sync cycle because the two jobs
+   * fail differently: a sync outage is routine and retried, while a run that cannot be reported has
+   * already changed a repository and needs a person. Keeping them apart keeps `once` honest.
+   */
+  if (cmd === "work-once" || cmd === "work") {
+    const { workOnce } = await import("./runner.mjs");
+    const { describeAuth } = await import("./backends/claudeCode.mjs");
+    const auth = describeAuth();
+    if (!auth.ok) {
+      // A backend that cannot run says WHICH thing is wrong, rather than failing obscurely.
+      console.error(auth.detail);
+      process.exit(1);
+    }
+    const run = async () => {
+      const out = await workOnce({ origin, deviceId, cookie });
+      if (out.evidence && !out.reported) {
+        /*
+         * THE RUN HAPPENED AND THE CLOUD DID NOT HEAR. Printing the whole packet is the only place
+         * this evidence still exists, so it goes to stdout in full rather than being summarised
+         * into something nobody can act on.
+         */
+        console.error("REPORT FAILED — the evidence for a completed run is below and nowhere else:");
+        console.error(JSON.stringify(out.evidence, null, 2));
+      }
+      return out;
+    };
+    if (cmd === "work-once") {
+      console.log(JSON.stringify(await run(), null, 2));
+      return;
+    }
+    let stopping = false;
+    process.on("SIGINT", () => { stopping = true; });
+    process.on("SIGTERM", () => { stopping = true; });
+    while (!stopping) {
+      const out = await run();
+      console.log(new Date().toISOString(), JSON.stringify({ claimed: out.claimed, status: out.evidence?.status ?? null, error: out.error }));
+      // Idle polling is slower than a busy loop on purpose: there is one owner and one machine, and
+      // an empty queue is the normal state.
+      await new Promise((r) => setTimeout(r, out.claimed ? 2_000 : 20_000));
+    }
+    return;
+  }
+
   if (cmd === "watch") {
     /*
      * SAFE CANCELLATION. A signal sets a flag; the loop finishes the cycle it is in and exits
@@ -249,7 +299,7 @@ async function main() {
     }
     return;
   }
-  console.error(`unknown command "${cmd}". One of: status, once, watch`);
+  console.error(`unknown command "${cmd}". One of: status, once, watch, work-once, work`);
   process.exit(1);
 }
 

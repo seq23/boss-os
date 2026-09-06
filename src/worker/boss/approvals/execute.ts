@@ -87,6 +87,9 @@ export async function executeDecision(
       case "trading_scale_up":
         result = await handleScaleUp(env, approval, disposition, note);
         break;
+      case "backend_run":
+        result = await handleBackendRun(env, approval, disposition, note);
+        break;
       default:
         result = {
           status: "not_applicable",
@@ -168,6 +171,123 @@ async function handleTaskOutput(
       .bind(newId("tev"), taskId, now, JSON.stringify({ approval_id: approval.id, reason })),
   ]);
   return { status: "executed", detail: { task_id: taskId, task_status: "cancelled", reason } };
+}
+
+// ─── backend_run ─────────────────────────────────────────────────────────────
+
+/**
+ * A run an execution backend proposed — Stage 1 of `docs/boss/PLAN_v21.md`, canon Phase 9 §33.
+ *
+ * ADDED TO THE EXISTING MECHANISM, NOT ALONGSIDE IT. The plan's own rule: "One approval mechanism.
+ * `backend_run` extends the existing one; it does not add a second." So this is one more case in
+ * the switch above, using the same payload, the same events, the same audit trail.
+ *
+ * APPROVING APPLIES NOTHING, AND THAT IS THE DESIGN RATHER THAN AN OMISSION. No backend commits,
+ * merges, pushes or deploys — the forbidden list says so in every seeded row. A run ends as a
+ * proposal with evidence; approving it is the owner accepting that proposal, and what happens next
+ * happens on her machine, by her hand.
+ *
+ * A REFUSED RUN CANNOT BE APPROVED. Approving a refusal would be talking a guard out of a decision
+ * it already made at the boundary, which is precisely the escalation path the addendum forbids.
+ *
+ * REJECTING DOES NOT REWRITE HISTORY. A run that succeeded still succeeded; the owner declining
+ * its proposal is a fact about the proposal, not about what the run did. Only a run still in
+ * flight is cancelled.
+ */
+async function handleBackendRun(
+  env: Env, approval: ApprovalRow, disposition: Disposition, note?: string | null,
+): Promise<ExecutionResult> {
+  const p = payloadOf(approval);
+  const runId = p.run_id ?? approval.origin_id;
+  if (!runId) return { status: "not_applicable", detail: { reason: "No backend run on this approval" } };
+
+  const run = await env.DB
+    .prepare(
+      `SELECT id, task_id, backend_id, status, summary, refusal_reason, evidence_id
+         FROM backend_runs WHERE id = ?`,
+    )
+    .bind(runId)
+    .first<{
+      id: string; task_id: string | null; backend_id: string; status: string;
+      summary: string | null; refusal_reason: string | null; evidence_id: string | null;
+    }>();
+  if (!run) return { status: "failed", detail: { error: `Backend run ${runId} no longer exists` } };
+
+  if (run.status === "refused") {
+    return {
+      status: "not_applicable",
+      detail: {
+        run_id: runId,
+        reason: "That run was refused at the boundary and never executed, so there is nothing to approve.",
+        refusal_reason: run.refusal_reason,
+      },
+    };
+  }
+
+  const now = Date.now();
+
+  if (disposition === "approved") {
+    if (run.task_id) {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE tasks SET status = 'done', finished_at = COALESCE(finished_at, ?) WHERE id = ?`)
+          .bind(now, run.task_id),
+        env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'released',?)`)
+          .bind(newId("tev"), run.task_id, now, JSON.stringify({ approval_id: approval.id, backend_run_id: runId })),
+      ]);
+    }
+    await audit(env.DB, {
+      actor: "boss", lane: approval.lane, entityType: "backend_run", entityId: runId,
+      action: "backend_run_accepted",
+      detail: { backend_id: run.backend_id, task_id: run.task_id, note: note ?? null },
+    });
+    return {
+      status: "executed",
+      detail: {
+        run_id: runId,
+        backend_id: run.backend_id,
+        task_id: run.task_id,
+        evidence_id: run.evidence_id,
+        outcome: "accepted",
+        nothing_applied: true,
+        note: "Accepting a proposal changes no repository. Nothing here commits, merges, pushes or deploys.",
+      },
+    };
+  }
+
+  const reason =
+    disposition === "expired"
+      ? "The proposal expired without a decision, so it was not accepted"
+      : (note ?? "The proposed run was not accepted");
+
+  const statements: D1PreparedStatement[] = [];
+  if (run.status === "running") {
+    statements.push(
+      env.DB
+        .prepare(`UPDATE backend_runs SET status = 'cancelled', finished_at = ?, error = ? WHERE id = ?`)
+        .bind(now, reason, runId),
+    );
+  }
+  if (run.task_id) {
+    statements.push(
+      env.DB.prepare(`UPDATE tasks SET status = 'cancelled', finished_at = COALESCE(finished_at, ?), error = ? WHERE id = ?`)
+        .bind(now, reason, run.task_id),
+      env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'cancelled',?)`)
+        .bind(newId("tev"), run.task_id, now, JSON.stringify({ approval_id: approval.id, backend_run_id: runId, reason })),
+    );
+  }
+  if (statements.length) await env.DB.batch(statements);
+
+  return {
+    status: "executed",
+    detail: {
+      run_id: runId,
+      backend_id: run.backend_id,
+      task_id: run.task_id,
+      outcome: "rejected",
+      run_status: run.status === "running" ? "cancelled" : run.status,
+      reason,
+    },
+  };
 }
 
 // ─── memory_promotion ────────────────────────────────────────────────────────

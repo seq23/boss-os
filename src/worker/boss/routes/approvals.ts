@@ -75,6 +75,18 @@ async function loadOrigin(env: Env, approval: any): Promise<unknown> {
         order: await env.DB.prepare(`SELECT * FROM trading_orders WHERE id = ?`).bind(orderId).first(),
       };
     }
+    case "backend_run": {
+      const runId = payload.run_id ?? approval.origin_id;
+      if (!runId) return null;
+      const run = await env.DB.prepare(`SELECT * FROM backend_runs WHERE id = ?`).bind(runId).first<any>();
+      if (!run) return null;
+      // The evidence is the point of the card: she is approving a proposal, and the proposal is
+      // what the run says it did. An approval that cannot show its evidence is a rubber stamp.
+      const evidence = await env.DB
+        .prepare(`SELECT * FROM evidence_packets WHERE task_id = ? ORDER BY ts DESC LIMIT 1`)
+        .bind(run.task_id).first();
+      return { type: "backend_run", run, evidence };
+    }
     case "agent_creation": {
       const proposalId = payload.proposal_id ?? approval.origin_id;
       if (!proposalId) return null;

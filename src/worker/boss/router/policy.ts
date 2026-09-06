@@ -37,19 +37,51 @@ export interface PolicyContext {
   cloudForRestrictedAllowed: boolean;
 }
 
+/**
+ * The order routes are evaluated in, fixed by addendum §3.1 and NOT negotiable:
+ *
+ *   permission and data sensitivity → required capability → availability →
+ *   approved budget → THEN performance/cost preference.
+ *
+ * It is expressed as a type rather than left implicit in the order of a few `if`
+ * statements, because every refusal records WHICH STAGE refused it. That is how
+ * "a cheaper route may never bypass a privacy rule" becomes a thing a test can
+ * assert instead of a sentence in a document: cost is the last stage, it only
+ * ORDERS what survived the earlier ones, and it can never return a candidate the
+ * privacy stage rejected.
+ */
+export type RouteStage = "privacy" | "capability" | "availability" | "budget" | "cost";
+
 export interface Verdict {
   eligible: boolean;
   reason: string;
+  /** Which stage of §3.1 refused. Absent when the model is eligible. */
+  stage?: RouteStage;
   /** True when a human could unblock this by approving a sensitive-routing card. */
   approvable?: boolean;
 }
 
 export function evaluateModel(model: ModelRow, ctx: PolicyContext): Verdict {
-  if (!model.enabled) return { eligible: false, reason: "model disabled" };
+  if (!model.enabled) return { eligible: false, stage: "availability", reason: "model disabled" };
 
+  // ── Stage 1 · PERMISSION AND DATA SENSITIVITY ──────────────────────────────
+  // FIRST, and first on purpose. Restricted content does not reach a public
+  // cloud model on its own authority, and no later stage — least of all cost —
+  // gets a chance to reconsider that.
+  if (ctx.sensitivity === "restricted" && model.privacy_class === "cloud" && !ctx.cloudForRestrictedAllowed) {
+    return {
+      eligible: false,
+      stage: "privacy",
+      approvable: true,
+      reason: "restricted content cannot go to a cloud model without an approved routing card",
+    };
+  }
+
+  // ── Stage 2 · REQUIRED CAPABILITY ──────────────────────────────────────────
   if (!ctx.policy.allowedTiers.includes(model.capability_tier as never)) {
     return {
       eligible: false,
+      stage: "capability",
       reason: `cost mode ${ctx.policy.id} does not allow ${model.capability_tier} models`,
     };
   }
@@ -57,13 +89,17 @@ export function evaluateModel(model: ModelRow, ctx: PolicyContext): Verdict {
   if (!riskAllows(model.max_risk, ctx.risk)) {
     return {
       eligible: false,
+      stage: "capability",
       reason: `model is cleared to ${model.max_risk} risk, task is ${ctx.risk}`,
     };
   }
 
+  // The quality gate. A cheaper, unbenchmarked model does not get high-risk work
+  // because it is cheaper — that is the exact bypass §3.1 forbids.
   if (ctx.risk === "high" && ctx.requireBenchmarkHighRisk && model.benchmark_status !== "benchmarked") {
     return {
       eligible: false,
+      stage: "capability",
       reason: `model is ${model.benchmark_status} and this task is high risk`,
     };
   }
@@ -71,21 +107,12 @@ export function evaluateModel(model: ModelRow, ctx: PolicyContext): Verdict {
   if (ctx.intakeKind) {
     const forbidden = parseList(model.forbidden_task_kinds);
     if (forbidden.includes(ctx.intakeKind)) {
-      return { eligible: false, reason: `model is forbidden for ${ctx.intakeKind} work` };
+      return { eligible: false, stage: "capability", reason: `model is forbidden for ${ctx.intakeKind} work` };
     }
     const approved = parseList(model.approved_task_kinds);
     if (approved.length && !approved.includes(ctx.intakeKind)) {
-      return { eligible: false, reason: `model is not approved for ${ctx.intakeKind} work` };
+      return { eligible: false, stage: "capability", reason: `model is not approved for ${ctx.intakeKind} work` };
     }
-  }
-
-  // Restricted content does not reach a public cloud model on its own authority.
-  if (ctx.sensitivity === "restricted" && model.privacy_class === "cloud" && !ctx.cloudForRestrictedAllowed) {
-    return {
-      eligible: false,
-      approvable: true,
-      reason: "restricted content cannot go to a cloud model without an approved routing card",
-    };
   }
 
   return { eligible: true, reason: "eligible" };

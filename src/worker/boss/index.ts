@@ -31,6 +31,7 @@ import { quant } from "./routes/quant";
 import { continuity } from "./routes/continuity";
 import { sync } from "./routes/sync";
 import { policy } from "./routes/policy";
+import { backends, spendLeverRoutes } from "./routes/backends";
 import { runSentinel } from "./governance/sentinel";
 import { investor } from "./routes/investor";
 import { wealth } from "./routes/wealth";
@@ -120,6 +121,25 @@ app.route("/api/trading", trading);
 app.route("/api/system", system);
 app.route("/api/sync", sync);
 app.route("/api/policy", policy);
+app.route("/api/backends", backends);
+/*
+ * The spend lever, at the exact path the client is already written against.
+ *
+ * MOUNTED BELOW /api/system, AND THAT IS SAFE FOR A REASON WORTH STATING. This line used to claim
+ * it was mounted above; it is not, and a comment that misdescribes route order is a trap — the next
+ * reader reorders something on the strength of it.
+ *
+ * It works because `routes/system.ts` declares no top-level `:param`: every route there is a
+ * literal (`/status`, `/health`, `/cost`, `/audit`…) or a param nested under one
+ * (`/settings/:key`, `/dead-letters/:id/requeue`). So the system app simply does not match
+ * `/spend-lever` and matching falls through to here. Verified against a running worker, not
+ * reasoned about: GET /api/boss/system/spend-lever returns 200 with the lever state.
+ *
+ * ADD A TOP-LEVEL `/:something` TO routes/system.ts AND THIS BREAKS SILENTLY — the lever would
+ * start 404ing through a route that looks unrelated. If that day comes, move this mount above
+ * `/api/system` rather than debugging the lever.
+ */
+app.route("/api/system/spend-lever", spendLeverRoutes);
 
 app.all("/api/*", (c) => c.json({ ok: false, error: "No such endpoint" }, 404));
 

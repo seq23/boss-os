@@ -3,18 +3,48 @@ import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { getBool, getSetting } from "../lib/settings";
 import { costPolicy } from "../../../shared/boss/governance";
-import { fireworks } from "./fireworks";
-import type { ChatMessage, ProviderAdapter } from "./types";
-import { evaluateModel, estimateCostMicros, type ModelRow } from "./policy";
+import { ProviderCallError, type ChatMessage } from "./types";
+import { evaluateModel, estimateCostMicros, type ModelRow, type RouteStage } from "./policy";
 import { rollBudgetWindows, laneBudgetState, employeeBudgetState } from "./budget";
+import { WIRING_BY_PROVIDER, adapterCredential, backendKindFor } from "./backends";
+import { formatMicros, spendLeverState } from "./spend";
+import { checkBackend } from "../backends/registry";
+import { laneAllowance, monthWindowStart, type Refusal } from "../backends/guard";
+import {
+  MAX_ATTEMPTS_PER_BACKEND, breakerState, recordFailure, recordSuccess, trip,
+} from "./breaker";
 
-const ADAPTERS: Record<string, ProviderAdapter> = {
-  prv_fireworks: fireworks,
-};
+/**
+ * Refusal codes from the backend guard that mean "money", as opposed to "not
+ * permitted" or "not available".
+ *
+ * They are separated because they end differently: a money refusal is held for a
+ * spend decision a human can make, and the queue consumer already turns a
+ * `BudgetExceeded` into exactly that card. A capability refusal is terminal and
+ * must not masquerade as one.
+ */
+/** How many FREE routes one run may try after the paid ones. Bounded, not unlimited. */
+export const MAX_FREE_HOPS = 2;
+
+const BUDGET_REFUSAL_CODES = new Set([
+  "lever_free_only",
+  "zero_ceiling_not_free_tier",
+  "budget_ceiling_breached",
+  "lane_budget_exhausted",
+  "lane_budget_absent",
+  "cost_estimate_absent",
+  "spend_window_absent",
+]);
 
 export class BudgetExceeded extends Error {
-  constructor(public lane: string, public period: string) {
-    super(`The ${lane} lane has spent its ${period} budget`);
+  constructor(
+    public lane: string,
+    public period: string,
+    message?: string,
+    /** One sentence naming what a person can change. Never a code. */
+    public remedy?: string,
+  ) {
+    super(message ?? `The ${lane} lane has spent its ${period} budget`);
   }
 }
 
@@ -74,9 +104,27 @@ export interface RouteResult {
   text: string;
   costMicros: number;
   modelId: string;
+  /**
+   * WHAT THE SCREEN SHOWS. When the run degraded this string carries the label,
+   * because the label must reach the screen through code paths this stage does
+   * not own: the queue consumer stores `{ text, model: modelName }` on the task
+   * and the approval card is built from it. Putting the honest words in the one
+   * provenance field every surface already renders is what stops a cheaper model
+   * quietly doing worse work without anybody being told.
+   */
   modelName: string;
+  /** The same name without the label, for anywhere that wants it plain. */
+  modelDisplayName: string;
   usedFallback: boolean;
   decisionId: string;
+  backendId: string | null;
+  backendName: string | null;
+  /** True whenever something other than the route's primary model ran. */
+  degraded: boolean;
+  degradedReason: string | null;
+  /** A full sentence for a person. Null on a normal run. */
+  notice: string | null;
+  freeTier: boolean;
 }
 
 async function loadModel(db: D1Database, modelId: string): Promise<ModelRow | null> {
@@ -91,6 +139,31 @@ async function loadModel(db: D1Database, modelId: string): Promise<ModelRow | nu
     )
     .bind(modelId)
     .first<ModelRow>();
+}
+
+/**
+ * Every other model that could carry this work — the continuity tier.
+ *
+ * These are consulted only after the route's OWN models have been refused or
+ * have failed, and they are sorted cheapest-first among themselves. That is
+ * where cost preference lives, and it is the LAST stage: it orders survivors,
+ * it never promotes a candidate past privacy, capability, availability or
+ * budget, and it never replaces an approved route default. Becoming a default is
+ * a promotion, and a promotion needs benchmark evidence and an approved card.
+ */
+async function loadContinuityModels(db: D1Database, exclude: string[]): Promise<ModelRow[]> {
+  const res = await db
+    .prepare(
+      `SELECT m.id, m.slug, m.provider_id, m.display_name, m.in_micros_1k, m.out_micros_1k,
+              m.enabled, m.privacy_class, m.capability_tier, m.benchmark_status,
+              m.approved_task_kinds, m.forbidden_task_kinds, m.max_risk,
+              p.base_url, p.api_key_var
+         FROM models m JOIN providers p ON p.id = m.provider_id
+        WHERE m.enabled = 1 AND p.enabled = 1`,
+    )
+    .all<ModelRow>();
+  const skip = new Set(exclude);
+  return (res.results ?? []).filter((m) => !skip.has(m.id) && WIRING_BY_PROVIDER.has(m.provider_id));
 }
 
 async function recordDecision(
@@ -120,12 +193,12 @@ async function recordDecision(
   return id;
 }
 
-async function recordUsage(
+export async function recordUsage(
   db: D1Database,
   row: {
     lane: string; routeId: string | null; modelId: string | null; employeeId?: string | null;
     taskId?: string | null; inTokens: number; outTokens: number; costMicros: number;
-    status: string; detail?: string | null;
+    status: string; detail?: string | null; backendId?: string | null;
   },
 ) {
   const statements: D1PreparedStatement[] = [
@@ -144,6 +217,11 @@ async function recordUsage(
 
   // Only real spend moves a budget. A blocked or errored call costs nothing and
   // must not eat the day's allowance.
+  //
+  // SPEND ACCRUES AT EVERY LEVER POSITION, INCLUDING OPEN. Nothing refuses on
+  // these numbers while the lever is open, but they are still the only record of
+  // what the month cost, and a number nobody is checking is still a number she
+  // needs to be able to read.
   if (row.costMicros > 0) {
     statements.push(
       db.prepare(`UPDATE budgets SET spent_micros = spent_micros + ? WHERE lane = ?`).bind(row.costMicros, row.lane),
@@ -155,17 +233,60 @@ async function recordUsage(
           .bind(row.costMicros, row.employeeId),
       );
     }
+    if (row.backendId) {
+      // THE SPEND AND ITS WINDOW ARE WRITTEN TOGETHER, ALWAYS.
+      //
+      // The guard refuses a backend that has recorded spend and no window it
+      // belongs to — correctly, because a figure with no month cannot be checked
+      // against a monthly ceiling. Accruing without stamping the window would
+      // therefore have taken the backend out of service on its first successful
+      // call, which is the sort of self-inflicted outage that only shows up in
+      // production. A lapsed window is replaced rather than added to.
+      const monthStart = monthWindowStart(Date.now());
+      statements.push(
+        db
+          .prepare(
+            `UPDATE execution_backends
+                SET spent_micros = CASE WHEN window_started_at IS NULL OR window_started_at < ?
+                                        THEN ? ELSE spent_micros + ? END,
+                    window_started_at = CASE WHEN window_started_at IS NULL OR window_started_at < ?
+                                        THEN ? ELSE window_started_at END
+              WHERE id = ?`,
+          )
+          .bind(monthStart, row.costMicros, row.costMicros, monthStart, monthStart, row.backendId),
+      );
+    }
   }
 
   await db.batch(statements);
 }
 
+interface CandidateNote {
+  model_id: string;
+  backend_id: string | null;
+  tier: "route" | "continuity";
+  stage: RouteStage | "call";
+  verdict: string;
+  reason: string;
+  estimate_micros?: number;
+  free?: boolean;
+}
+
 /**
  * Route a completion.
  *
- * Order matters: budget windows roll first so a stale window cannot block work,
- * then hard stops, then cost mode, then per-model policy. Every exit — including
- * every refusal — writes a `routing_decisions` row.
+ * THE ORDER IS THE ADDENDUM'S, §3.1, AND IS NOT NEGOTIABLE:
+ *   permission and data sensitivity → required capability → availability →
+ *   approved budget → then cost preference.
+ *
+ * Cost is last and only ORDERS the continuity tier. It cannot resurrect a
+ * candidate an earlier stage refused, which is what "a cheaper route may never
+ * bypass a privacy rule or a quality gate" means in code. Restricted material
+ * therefore has no automatic escape to cloud when a preferred route fails: the
+ * privacy stage refuses every cloud candidate the same way, and the run ends in
+ * `ask_human` rather than in a quiet downgrade.
+ *
+ * Every exit — including every refusal — writes a `routing_decisions` row.
  */
 export async function routeCompletion(env: Env, opts: RouteRequest): Promise<RouteResult> {
   const db = env.DB;
@@ -193,15 +314,11 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     );
   }
 
+  // The lane budget is the outer dollar authority and it is read, not thrown on,
+  // at this point. A blocked lane still permits a route that costs literally
+  // nothing — refusing free work because paid work is exhausted would be a
+  // continuity system switching itself off at the moment it is needed.
   const laneBudget = await laneBudgetState(db, opts.lane);
-  if (laneBudget.blocked) {
-    await recordDecision(db, {
-      ...base, outcome: "blocked_budget",
-      reason: `Lane ${opts.lane} is at its ${laneBudget.blockedPeriod} limit`,
-      candidates: [],
-    });
-    throw new BudgetExceeded(opts.lane, laneBudget.blockedPeriod ?? "day");
-  }
 
   const empBudget = await employeeBudgetState(db, opts.employeeId);
   if (empBudget.blocked) {
@@ -245,125 +362,303 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     cloudForRestrictedAllowed: opts.cloudForRestrictedAllowed ?? false,
   };
 
-  const ceiling = opts.budgetMicros && opts.budgetMicros > 0
-    ? Math.min(opts.budgetMicros, laneBudget.remainingMicros)
-    : laneBudget.remainingMicros;
+  const envelopeCeiling = opts.budgetMicros && opts.budgetMicros > 0 ? opts.budgetMicros : null;
   const promptChars = opts.messages.reduce((n, m) => n + m.content.length, 0);
 
-  const ordered = [route.primary_model_id, route.fallback_model_id].filter(Boolean) as string[];
-  const considered: { model_id: string; verdict: string; reason: string }[] = [];
-  let approvable = false;
-  let lastError: Error | null = null;
-  let attemptedCall = false;
-  // The hop limit caps how many provider calls a run may make. It deliberately
-  // does not cap how many models are screened: in a cheap cost mode the eligible
-  // model is often the second one on the route, and refusing to look at it would
-  // block work the mode was meant to allow.
-  let calls = 0;
-
-  for (const modelId of ordered) {
-    const model = await loadModel(db, modelId);
-    if (!model) {
-      considered.push({ model_id: modelId, verdict: "skipped", reason: "model or provider is disabled or missing" });
-      continue;
-    }
-
-    const verdict = evaluateModel(model, ctx);
-    if (!verdict.eligible) {
-      considered.push({ model_id: modelId, verdict: "rejected", reason: verdict.reason });
-      if (verdict.approvable) approvable = true;
-      continue;
-    }
-
-    const estimate = estimateCostMicros(model, promptChars, route.max_output_tokens);
-    if (ceiling > 0 && estimate > ceiling) {
+  const declaredIds = [route.primary_model_id, route.fallback_model_id].filter(Boolean) as string[];
+  const declared: ModelRow[] = [];
+  const considered: CandidateNote[] = [];
+  for (const id of declaredIds) {
+    const m = await loadModel(db, id);
+    if (m) declared.push(m);
+    else {
       considered.push({
-        model_id: modelId, verdict: "rejected",
-        reason: `estimated ${estimate} micros exceeds the ${ceiling} micros left for this task`,
-      });
-      continue;
-    }
-
-    const apiKey = (env as unknown as Record<string, string | undefined>)[model.api_key_var];
-    if (!apiKey) {
-      considered.push({ model_id: modelId, verdict: "skipped", reason: `${model.api_key_var} is not set` });
-      lastError = new Error(`${model.api_key_var} is not set`);
-      continue;
-    }
-
-    const adapter = ADAPTERS[model.provider_id];
-    if (!adapter) {
-      considered.push({ model_id: modelId, verdict: "skipped", reason: `no adapter for ${model.provider_id}` });
-      continue;
-    }
-
-    if (calls > policy.maxFallbackHops) {
-      considered.push({
-        model_id: modelId, verdict: "skipped",
-        reason: `cost mode ${policy.id} allows ${policy.maxFallbackHops} fallback hop(s), already used`,
-      });
-      break;
-    }
-
-    calls++;
-    attemptedCall = true;
-    try {
-      const result = await adapter.complete(
-        {
-          modelSlug: model.slug,
-          messages: opts.messages,
-          maxOutputTokens: route.max_output_tokens,
-          temperature: route.temperature,
-        },
-        apiKey,
-        model.base_url,
-      );
-
-      const costMicros = Math.round(
-        (result.inTokens / 1000) * model.in_micros_1k + (result.outTokens / 1000) * model.out_micros_1k,
-      );
-      await recordUsage(db, {
-        lane: opts.lane, routeId: route.route_id, modelId: model.id,
-        employeeId: opts.employeeId, taskId: opts.taskId,
-        inTokens: result.inTokens, outTokens: result.outTokens, costMicros, status: "ok",
-      });
-
-      considered.push({ model_id: modelId, verdict: "used", reason: "completed" });
-      const isPrimary = modelId === route.primary_model_id;
-      const decisionId = await recordDecision(db, {
-        ...base, chosenModelId: model.id,
-        outcome: isPrimary ? "routed" : "fallback",
-        reason: isPrimary ? "primary model accepted the work" : "primary was unavailable or ineligible",
-        candidates: considered,
-      });
-
-      return {
-        text: result.text, costMicros, modelId: model.id, modelName: model.display_name,
-        usedFallback: !isPrimary, decisionId,
-      };
-    } catch (err) {
-      lastError = err as Error;
-      considered.push({ model_id: modelId, verdict: "failed", reason: (err as Error).message.slice(0, 300) });
-      await recordUsage(db, {
-        lane: opts.lane, routeId: route.route_id, modelId: model.id,
-        employeeId: opts.employeeId, taskId: opts.taskId,
-        inTokens: 0, outTokens: 0, costMicros: 0, status: "error",
-        detail: (err as Error).message.slice(0, 500),
-      });
-      await logEvent(db, {
-        level: "warn", scope: "router", event: "model_call_failed", lane: opts.lane,
-        entityId: opts.taskId ?? null, detail: { model_id: model.id, message: (err as Error).message },
+        model_id: id, backend_id: null, tier: "route", stage: "availability",
+        verdict: "skipped", reason: "model or provider is disabled or missing",
       });
     }
   }
 
-  const outcome = approvable ? "ask_human" : attemptedCall ? "provider_failed" : "blocked_no_model";
+  // ── Stage 5 · COST PREFERENCE, applied to the continuity tier only. ─────────
+  const continuity = (await loadContinuityModels(db, declaredIds)).sort((a, b) => {
+    const ca = estimateCostMicros(a, promptChars, route.max_output_tokens);
+    const cb = estimateCostMicros(b, promptChars, route.max_output_tokens);
+    if (ca !== cb) return ca - cb;
+    return a.display_name.localeCompare(b.display_name);
+  });
+
+  // THE TRADING LANE GETS NO CONTINUITY TIER. PLAN_v21 Stage 1's table says it in
+  // one line — OpenRouter "may not touch the trading lane" — and the seeded row
+  // does not encode it, so it is enforced here, at the only place that chooses a
+  // continuity candidate. A trading route falls back to its own declared models
+  // or it stops; it never quietly acquires a new vendor.
+  const ordered: { model: ModelRow; tier: "route" | "continuity" }[] = [
+    ...declared.map((model) => ({ model, tier: "route" as const })),
+    ...(opts.lane === "trading" ? [] : continuity.map((model) => ({ model, tier: "continuity" as const }))),
+  ];
+
+  let approvable = false;
+  let lastError: Error | null = null;
+  let attemptedCall = false;
+  let budgetRefusal: { message: string; remedy: string } | null = null;
+  // The hop limit caps how many BACKENDS a run may call. It deliberately does not
+  // cap how many models are screened: in a cheap cost mode the eligible model is
+  // often further down the list, and refusing to look at it would block work the
+  // mode was meant to allow.
+  let hops = 0;
+  let freeHops = 0;
+
+  // Read ONCE and hand to the guard, so every candidate in one routing decision
+  // is judged against the same lever and the same lane budget.
+  const lever = await spendLeverState(db);
+  const lane = await laneAllowance(db, opts.lane);
+
+  for (const { model, tier } of ordered) {
+    const def = WIRING_BY_PROVIDER.get(model.provider_id);
+    const backendId = def?.backendId ?? null;
+
+    const note = (stage: CandidateNote["stage"], verdict: string, reason: string, extra: Partial<CandidateNote> = {}) => {
+      considered.push({ model_id: model.id, backend_id: backendId, tier, stage, verdict, reason, ...extra });
+    };
+
+    // ── Stages 1–2 · privacy and sensitivity, then capability. ───────────────
+    const verdict = evaluateModel(model, ctx);
+    if (!verdict.eligible) {
+      note(verdict.stage ?? "capability", "rejected", verdict.reason);
+      if (verdict.approvable) approvable = true;
+      continue;
+    }
+
+    // ── Stages 3–4 · AVAILABILITY, then APPROVED BUDGET ──────────────────────
+    //
+    // DELEGATED, NOT REIMPLEMENTED. `backends/guard.ts` is the one place this
+    // system decides whether a backend may run something: it owns the enabled
+    // check, the credential presence, the free-tier proof, the spend lever and
+    // the min(lane, ceiling) arithmetic. Repeating any of that here would create
+    // a second opinion about whether a call is affordable, and the two would
+    // eventually disagree in the direction of spending money.
+    if (!def) {
+      note("availability", "skipped", `provider ${model.provider_id} has no registered execution backend`);
+      continue;
+    }
+    const estimate = estimateCostMicros(model, promptChars, route.max_output_tokens);
+    const verdictBackend = await checkBackend(env, def.backendId, backendKindFor(opts.intakeKind), {
+      model: model.slug,
+      sensitivity: sensitivity as never,
+      cloudForRestrictedAllowed: opts.cloudForRestrictedAllowed ?? false,
+      estimatedCostMicros: estimate,
+      laneBudget: lane,
+      lever,
+    });
+
+    if (verdictBackend.refused) {
+      const refusal = verdictBackend as Refusal;
+      const budgetShaped = BUDGET_REFUSAL_CODES.has(refusal.code);
+      note(budgetShaped ? "budget" : refusal.approvable ? "privacy" : "availability", "rejected", refusal.sentence, {
+        estimate_micros: estimate,
+      });
+      if (refusal.approvable) approvable = true;
+      if (budgetShaped) budgetRefusal = { message: refusal.sentence, remedy: refusal.sentence };
+      continue;
+    }
+
+    const free = verdictBackend.cost_basis.free;
+    const backendName = def.providerName;
+
+    const cred = adapterCredential(env, def);
+    if (!cred.available) {
+      // The guard already checks that the credential EXISTS; this is the value
+      // itself, and a disagreement between the two is worth surfacing rather
+      // than crashing inside an adapter.
+      note("availability", "skipped", cred.detail);
+      lastError = new Error(cred.detail);
+      continue;
+    }
+
+    const breaker = await breakerState(db, def.backendId);
+    if (breaker.open) {
+      note(
+        "availability", "skipped",
+        `circuit breaker is open for ${backendName} until ${new Date(breaker.opensAgainAt ?? 0).toISOString()}: ${breaker.reason ?? "repeated failures"}`,
+      );
+      continue;
+    }
+
+    // The task's permission envelope binds on top of everything the guard said.
+    // It is what a human granted THIS piece of work, not a spending preference.
+    if (envelopeCeiling !== null && estimate > envelopeCeiling) {
+      const sentence =
+        `estimated ${formatMicros(estimate)} exceeds the ${formatMicros(envelopeCeiling)} this task's ` +
+        `permission envelope allows`;
+      note("budget", "rejected", sentence, { estimate_micros: estimate, free });
+      budgetRefusal = { message: sentence, remedy: "Raise the task's envelope budget, or approve the spend." };
+      continue;
+    }
+
+    // A FREE ROUTE DOES NOT CONSUME A FALLBACK HOP.
+    //
+    // The cost mode's hop limit exists to bound how much a single run may SPEND
+    // trying again. A route that costs nothing spends nothing, so counting it
+    // against that limit would switch off the continuity tier at exactly the
+    // moment the paid tier has used the budget up — the failure the free tier
+    // exists to cover. Free attempts are still bounded, by their own limit.
+    if (free) {
+      if (freeHops >= MAX_FREE_HOPS) {
+        note("availability", "skipped", `already tried ${MAX_FREE_HOPS} free routes on this run`);
+        break;
+      }
+      freeHops++;
+    } else {
+      if (hops > policy.maxFallbackHops) {
+        note(
+          "availability", "skipped",
+          `cost mode ${policy.id} allows ${policy.maxFallbackHops} paid fallback hop(s), already used`,
+        );
+        break;
+      }
+      hops++;
+    }
+    attemptedCall = true;
+
+    // Bounded retries: the same backend is tried again ONLY for an error the
+    // provider itself marked as temporary. A 400 or a 500 fails identically on a
+    // second call and spending a retry on it only delays the fallback.
+    let called: { text: string; inTokens: number; outTokens: number } | null = null;
+    let attempt = 0;
+    let attemptError: Error | null = null;
+    while (attempt < MAX_ATTEMPTS_PER_BACKEND) {
+      attempt++;
+      try {
+        called = await def.adapter.complete(
+          {
+            modelSlug: model.slug,
+            messages: opts.messages,
+            maxOutputTokens: route.max_output_tokens,
+            temperature: route.temperature,
+          },
+          { baseUrl: model.base_url, apiKey: cred.apiKey, ai: cred.ai },
+        );
+        attemptError = null;
+        break;
+      } catch (err) {
+        attemptError = err as Error;
+        const retryable = err instanceof ProviderCallError && err.retryable;
+        if (!retryable || attempt >= MAX_ATTEMPTS_PER_BACKEND) break;
+        note("call", "retried", `attempt ${attempt} failed and is retryable: ${attemptError.message.slice(0, 200)}`);
+      }
+    }
+
+    if (!called || attemptError) {
+      lastError = attemptError ?? new Error("provider returned nothing");
+      const state = await recordFailure(db, def.backendId, lastError.message);
+      note(
+        "call", "failed",
+        `${lastError.message.slice(0, 240)}${state.open ? " — circuit breaker opened" : ""}`,
+      );
+      await recordUsage(db, {
+        lane: opts.lane, routeId: route.route_id, modelId: model.id, backendId: def.backendId,
+        employeeId: opts.employeeId, taskId: opts.taskId,
+        inTokens: 0, outTokens: 0, costMicros: 0, status: "error",
+        detail: lastError.message.slice(0, 500),
+      });
+      await logEvent(db, {
+        level: "warn", scope: "router", event: "model_call_failed", lane: opts.lane,
+        entityId: opts.taskId ?? null,
+        detail: {
+          model_id: model.id, backend_id: def.backendId, attempts: attempt,
+          breaker_open: state.open, message: lastError.message,
+        },
+      });
+      continue;
+    }
+
+    const costMicros = free
+      ? 0
+      : Math.round(
+          (called.inTokens / 1000) * model.in_micros_1k + (called.outTokens / 1000) * model.out_micros_1k,
+        );
+
+    await recordSuccess(db, def.backendId);
+    await recordUsage(db, {
+      lane: opts.lane, routeId: route.route_id, modelId: model.id, backendId: def.backendId,
+      employeeId: opts.employeeId, taskId: opts.taskId,
+      inTokens: called.inTokens, outTokens: called.outTokens, costMicros, status: "ok",
+      detail: free
+        ? `Free route on ${backendName}. ${verdictBackend.cost_basis.basis} ` +
+          `A Worker cannot read how much of an included allowance is left, so $0 here is the tier's price and not a measurement.`
+        : null,
+    });
+
+    note("cost", "used", "completed", { estimate_micros: estimate, free });
+
+    const isPrimary = model.id === route.primary_model_id;
+    const degraded = !isPrimary;
+    const degradedReason = degraded ? firstRefusalReason(considered, model.id) : null;
+    const notice = degraded
+      ? `Degraded run: ${model.display_name} on ${backendName} produced this, not the route's ` +
+        `primary model. ${degradedReason ?? "The primary did not run."} A continuity route is not a ` +
+        `promise of equal quality — read this the way you would read a draft from a stand-in.`
+      : null;
+
+    const decisionId = await recordDecision(db, {
+      ...base, chosenModelId: model.id,
+      outcome: !degraded ? "routed" : tier === "route" ? "fallback" : "degraded",
+      reason: !degraded
+        ? "primary model accepted the work"
+        : `${tier === "route" ? "route fallback" : "continuity backend"} ran this: ${degradedReason ?? "primary unavailable"}`,
+      candidates: considered,
+    });
+
+    if (degraded) {
+      await logEvent(db, {
+        level: "warn", scope: "router", event: "degraded_route", lane: opts.lane,
+        entityId: opts.taskId ?? null,
+        detail: { model_id: model.id, backend_id: def.backendId, tier, reason: degradedReason, free },
+      });
+    }
+
+    return {
+      text: called.text,
+      costMicros,
+      modelId: model.id,
+      modelName: degraded
+        ? `${model.display_name} — DEGRADED TIER via ${backendName}`
+        : model.display_name,
+      modelDisplayName: model.display_name,
+      usedFallback: degraded,
+      decisionId,
+      backendId: def.backendId,
+      backendName,
+      degraded,
+      degradedReason,
+      notice,
+      freeTier: free,
+    };
+  }
+
+  // ── Nothing ran. Say precisely why, in the order §3.1 asks the question in. ──
+  const outcome = approvable
+    ? "ask_human"
+    : attemptedCall
+      ? "provider_failed"
+      : budgetRefusal
+        ? "blocked_budget"
+        : "blocked_no_model";
+
   await recordDecision(db, {
     ...base, outcome,
-    reason: lastError ? lastError.message.slice(0, 300) : "no model on this route satisfied policy",
+    reason: approvable
+      ? "restricted content and no permitted private route"
+      : budgetRefusal && !attemptedCall
+        ? budgetRefusal.message.slice(0, 300)
+        : lastError
+          ? lastError.message.slice(0, 300)
+          : "no model on this route satisfied policy",
     candidates: considered,
   });
 
+  // PRIVACY BEFORE CONTINUITY. Restricted material does not escape to cloud
+  // because a preferred route failed; it stops here and asks.
   if (approvable) {
     throw new RoutingBlocked(
       "This task holds restricted content and no private model is available",
@@ -381,9 +676,40 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     );
   }
 
+  if (budgetRefusal) {
+    throw new BudgetExceeded(
+      opts.lane,
+      laneBudget.blockedPeriod ?? "month",
+      budgetRefusal.message,
+      budgetRefusal.remedy,
+    );
+  }
+
+  if (laneBudget.blocked) {
+    throw new BudgetExceeded(opts.lane, laneBudget.blockedPeriod ?? "day");
+  }
+
   throw new RoutingBlocked(
     lastError ? `No model could run this: ${lastError.message}` : "No model on this route satisfied policy",
     "blocked_no_model",
     "Check the routing decision for why each model was refused.",
   );
+}
+
+/** Why the primary did not run, in the words already recorded for it. */
+function firstRefusalReason(considered: CandidateNote[], chosenId: string): string | null {
+  const first = considered.find((c) => c.model_id !== chosenId && c.verdict !== "used" && c.verdict !== "retried");
+  return first ? `${first.reason}.` : null;
+}
+
+/**
+ * Take a backend out of service deliberately — a cost-limit breach or a policy
+ * change, both named by §3.1 as breaker triggers alongside outage.
+ */
+export async function tripBackend(db: D1Database, backendId: string, reason: string): Promise<void> {
+  await trip(db, backendId, reason);
+  await logEvent(db, {
+    level: "warn", scope: "router", event: "breaker_tripped", entityId: backendId,
+    detail: { reason },
+  });
 }

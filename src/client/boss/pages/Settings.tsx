@@ -3,6 +3,7 @@ import { api } from "../api";
 import { usd } from "../../../shared/boss/types";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
+import { asList } from "../components/panels";
 
 type Panel = "overview" | "cost" | "audit" | "health" | "diagnostics" | "governance";
 
@@ -54,8 +55,10 @@ export function Settings({ onLock }: { onLock: () => void }) {
             </button>
           ))}
 
+          <SpendLever budgets={asList(status?.budgets)} />
+
           <p className="eyebrow">Budgets</p>
-          {(status?.budgets ?? []).map((b: any) => (
+          {asList(status?.budgets).map((b: any) => (
             <div className="row" key={b.id}>
               <div className="row-main">
                 <div className="row-title">{b.lane} · {b.period}</div>
@@ -102,6 +105,156 @@ export function Settings({ onLock }: { onLock: () => void }) {
       {panel === "health" && <HealthPanel />}
       {panel === "diagnostics" && <DiagnosticsPanel />}
       {panel === "governance" && <Governance />}
+    </>
+  );
+}
+
+/* ─── The spend lever ─────────────────────────────────────────────────────── */
+
+const POSITIONS: { id: string; label: string; note: string }[] = [
+  { id: "FREE_ONLY", label: "Free only", note: "$0. Only routes that cost nothing may run." },
+  { id: "MODERATE", label: "Moderate", note: "Up to a figure you set, per backend, per month." },
+  { id: "OPEN", label: "Open", note: "No dollar ceiling. Spend still accrues and is still shown." },
+];
+
+/**
+ * ONE GRADUATED CONTROL OVER MONEY — and it is NOT the cost mode above it.
+ *
+ * The six cost modes decide which model tiers are good enough. This decides how much money may be
+ * spent. Merging them would make both unusable: "use a better model" and "spend more" are separate
+ * decisions, and a single list that did both would force one every time she meant the other. They
+ * are deliberately different controls, in different shapes, with a rule between them.
+ *
+ * THE FIGURE IS ALWAYS ON SCREEN, AT EVERY POSITION. Under FREE_ONLY and MODERATE it is spend
+ * against a limit. Under OPEN there is no limit to show it against — so the accruing number is
+ * shown alone, because a figure with no ceiling is still the figure standing between her and a
+ * surprise. `src/worker/boss/router/spend.ts` keeps `spent_micros` accruing at every position for
+ * exactly this reason.
+ *
+ * OPEN LOOKS DIFFERENT, AND IS NOT SCOLDED. She chose it. Being warned about her own decision every
+ * time she opens Settings is worse than useless — it trains her to skip the panel. So: no red, no
+ * modal, no alert copy. One quiet difference, in `--rose`, which already carries "this is
+ * consequential" elsewhere in this app, so a glance is enough to see that nothing is bounding spend.
+ */
+function SpendLever({ budgets }: { budgets: any[] }) {
+  const [lever, setLever] = useState<any>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    api.spendLever()
+      .then((d) => live && (setLever(d), setError(null)))
+      .catch((e) => live && setError(e));
+    return () => { live = false; };
+  }, [nonce]);
+
+  /*
+   * THE FALLBACK SPEND FIGURE, so the panel is never silent about money.
+   *
+   * The lever's own endpoint is the authority. If it cannot be read, the ops month budget is
+   * already in hand from `/system/status` and carries the same accruing `spent_micros` — so the
+   * panel says the lever could not be read AND still shows what has been spent, rather than going
+   * blank on the one number that matters most when something is wrong.
+   */
+  const opsMonth = budgets.find((b: any) => b.lane === "ops" && b.period === "month") ?? budgets[0] ?? null;
+  const position = String(lever?.position ?? (opsMonth && opsMonth.hard_stop === 0 ? "OPEN" : "FREE_ONLY"));
+  const open = position === "OPEN";
+  const spent = Number(lever?.spent_micros ?? opsMonth?.spent_micros ?? 0);
+  const allowance = Number(lever?.allowance_micros ?? lever?.allowanceMicros ?? opsMonth?.limit_micros ?? 0);
+  const moderate = Number(lever?.moderate_micros ?? lever?.moderateMicros ?? opsMonth?.limit_micros ?? 0);
+  const pct = allowance > 0 ? Math.min(100, Math.round((spent / allowance) * 100)) : 0;
+
+  async function move(next: { position?: string; moderate_micros?: number }) {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.setSpendLever(next);
+      setDraft(null);
+      setNonce((n) => n + 1);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="eyebrow">Spend lever</p>
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+      <p className="row-sub">
+        How much money the router may spend. Separate from cost mode above, which decides how good a
+        model may be — not how much it may cost.
+      </p>
+
+      {lever === null && !error ? (
+        <Loading />
+      ) : (
+        <>
+          <div className="lever">
+            {POSITIONS.map((p) => (
+              <button
+                key={p.id}
+                className={p.id === "OPEN" ? "lever-btn lever-open" : "lever-btn"}
+                aria-pressed={position === p.id}
+                disabled={saving}
+                onClick={() => move({ position: p.id })}
+              >
+                <span className="lever-l">{p.label}</span>
+                <span className="lever-note">{p.note}</span>
+              </button>
+            ))}
+          </div>
+
+          {position === "MODERATE" && (
+            <label className="field">
+              <span>Moderate's figure, in dollars — change it whenever</span>
+              <input
+                inputMode="decimal"
+                value={draft ?? (moderate / 1_000_000).toFixed(2)}
+                onChange={(e) => setDraft(e.target.value)}
+              />
+            </label>
+          )}
+          {position === "MODERATE" && draft !== null && (
+            <button
+              className="btn btn-approve btn-wide"
+              disabled={saving || !Number.isFinite(Number(draft)) || Number(draft) < 0}
+              onClick={() => move({ position: "MODERATE", moderate_micros: Math.round(Number(draft) * 1_000_000) })}
+            >
+              {saving ? "Setting…" : `Set the ceiling to $${(Number(draft) || 0).toFixed(2)}`}
+            </button>
+          )}
+
+          {/*
+            * THE NUMBER, AT EVERY POSITION. Two shapes, because there are two truths: a figure
+            * against a ceiling, and a figure with none.
+            */}
+          <div className={open ? "spendfig spendfig-open" : "spendfig"}>
+            <div className="spendfig-n">{usd(spent)}</div>
+            <div className="spendfig-l">
+              {open
+                ? "spent this window · nothing is bounding it"
+                : `spent of ${usd(allowance)} allowed this window`}
+            </div>
+            {!open && (
+              <div className="meter"><span style={{ width: `${pct}%` }} /></div>
+            )}
+          </div>
+
+          {error && (
+            <p className="row-sub">
+              The lever itself could not be read, so the position shown is inferred from the budget
+              rows and the figure above is the ops month spend. Moving it will not take effect until
+              the endpoint answers.
+            </p>
+          )}
+          {!error && lever?.remedy && <p className="row-sub">{lever.remedy}</p>}
+        </>
+      )}
     </>
   );
 }

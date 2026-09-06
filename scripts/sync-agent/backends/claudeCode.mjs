@@ -1,0 +1,194 @@
+/**
+ * Stage 2 — the Claude Code backend adapter.
+ *
+ * The first `agent_executed` backend: migration 0173's `bk_claude_code` row, made real. It turns an
+ * approved envelope into one non-interactive `claude --print` invocation on the owner's Mac and
+ * turns its output back into the fields backend_runs stores.
+ *
+ * NO API KEY EXISTS AND NONE IS REQUESTED. This was verified on the machine rather than assumed:
+ * `claude` (2.1.263, /opt/homebrew/bin/claude) authenticates through the owner's own logged-in
+ * session, held in the macOS keychain as the item "Claude Code-credentials"; there is no
+ * ANTHROPIC_API_KEY in the environment and no ~/.claude/.credentials.json on disk. So the cloud half
+ * of Boss OS holds no coding credential — nothing to leak, nothing to spend — and that is a property
+ * to preserve rather than an accident: buildArgs() never adds an auth flag, and childEnv() strips
+ * every variable that looks like a credential before the process starts. If a future envelope ever
+ * arrives carrying a key, the runner refuses it (REFUSAL.CREDENTIAL_NOT_LOCAL) rather than using it.
+ *
+ * THE DENY FLAGS BELOW ARE THE OUTER LAYER, NOT THE ENFORCEMENT. `--disallowedTools` is a request to
+ * the CLI, and a request is exactly the thing this design refuses to depend on. The forbidden list is
+ * enforced by the runner: the child's environment carries no credentials, every command is scanned
+ * before it runs, and the repository's git state is compared before and after so a commit is
+ * detected however it was spelled. These flags simply mean the common case never starts.
+ *
+ * spawnImpl IS INJECTED, defaulting to the real one — the repository's own convention for services
+ * that reach outside the process. Tests pass a fake, so the whole of this adapter is exercised
+ * without invoking the CLI, calling a model, or spending anything.
+ */
+import { childEnv } from "../runner.mjs";
+
+/** Tools this backend may never use, spelled the way the CLI spells them. */
+export const DENIED_TOOLS = [
+  "Bash(git commit:*)",
+  "Bash(git merge:*)",
+  "Bash(git rebase:*)",
+  "Bash(git push:*)",
+  "Bash(gh pr create:*)",
+  "Bash(gh pr merge:*)",
+  "Bash(npm publish:*)",
+  "Bash(npm run deploy:*)",
+  "Bash(wrangler deploy:*)",
+  "Bash(wrangler publish:*)",
+  "Bash(wrangler secret:*)",
+  "Bash(security find-generic-password:*)",
+  "Bash(security find-internet-password:*)",
+];
+
+/**
+ * The argv for one run.
+ *
+ * THE PROMPT GOES ON STDIN, NOT IN ARGV. A task's text is untrusted and may be long, may contain
+ * anything, and appears in `ps` output if it is an argument — which would put a task's contents in
+ * front of every process on the machine. stdin has none of those properties.
+ */
+export function buildArgs(envelope, { model } = {}) {
+  const args = [
+    "--print",
+    "--output-format", "json",
+    /*
+     * acceptEdits, with --permission-prompts none.
+     *
+     * The run is unattended: there is nobody to answer a prompt, and "nobody answers" must mean
+     * DENIED rather than "hangs until the timeout". acceptEdits lets it write files — which is the
+     * work — while anything that would have prompted is refused automatically.
+     */
+    "--permission-mode", "acceptEdits",
+    "--permission-prompts", "none",
+    "--disallowedTools", ...DENIED_TOOLS,
+    // No session on disk. An unattended run must not leave a resumable context that a later
+    // interactive session could pick up and continue with the untrusted text still in it.
+    "--no-session-persistence",
+  ];
+  if (model ?? envelope?.model) args.push("--model", String(model ?? envelope.model));
+  return args;
+}
+
+/**
+ * What the CLI's JSON envelope tells us, reduced to the fields the packet needs.
+ *
+ * DEFENSIVE BECAUSE THE OUTPUT IS DOWNSTREAM OF UNTRUSTED TEXT. A malformed or hostile stdout must
+ * produce a packet that says so, not an exception that produces no packet at all — a run that
+ * vanishes is worse than a run that failed, because only one of them gets looked at.
+ */
+export function parseCliJson(stdout) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(String(stdout ?? ""));
+  } catch {
+    return { summary: "", is_error: true, cost_micros: 0, parse_error: "stdout was not JSON" };
+  }
+  const cost = Number(parsed?.total_cost_usd ?? 0);
+  return {
+    summary: typeof parsed?.result === "string" ? parsed.result : "",
+    is_error: parsed?.is_error === true || parsed?.subtype === "error_during_execution",
+    // ZERO ON A SUBSCRIPTION SESSION, and that is honest rather than missing: this backend spends
+    // through the owner's own plan, so there is no per-run charge to attribute. The field stays so a
+    // future keyed backend fills it without a schema change.
+    cost_micros: Number.isFinite(cost) ? Math.round(cost * 1_000_000) : 0,
+    session_id: parsed?.session_id ?? null,
+    num_turns: parsed?.num_turns ?? null,
+  };
+}
+
+/**
+ * Run the CLI once.
+ *
+ * Returns the adapter half of an evidence packet. It never decides the run's status — executeRun()
+ * does that, from things it observed itself — because a backend grading its own homework is the
+ * failure this whole design is arranged to avoid.
+ */
+export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl, binary = "claude" } = {}) {
+  const spawn = spawnImpl ?? (await import("node:child_process")).spawn;
+  const args = buildArgs(envelope);
+  const timeoutMs = Math.max(1, Number(envelope?.max_seconds ?? 900)) * 1000;
+
+  const child = spawn(binary, args, {
+    cwd,
+    env: childEnv(typeof process === "undefined" ? {} : process.env),
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout?.on("data", (c) => { stdout += c; });
+  child.stderr?.on("data", (c) => { stderr = (stderr + c).slice(-8000); });
+  child.stdin?.end(prompt);
+
+  const outcome = await new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    // A HARD TIMEOUT, because an unattended run that hangs holds the single work slot for ever and
+    // looks identical to one that is thinking.
+    const timer = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch { /* already gone */ }
+      finish({ exit_code: 124, timed_out: true });
+    }, timeoutMs);
+    child.on?.("close", (code) => { clearTimeout(timer); finish({ exit_code: code ?? -1, timed_out: false }); });
+    child.on?.("error", (err) => { clearTimeout(timer); finish({ exit_code: -1, timed_out: false, spawn_error: String(err) }); });
+  });
+
+  /*
+   * THE RECORDED INVOCATION ELIDES THE DENY FLAGS, and this is a real bug found by the runner's own
+   * scanner rather than a cosmetic choice. `--disallowedTools "Bash(git commit:*)"` contains the
+   * literal text "git commit", so recording the argv verbatim made every single run trip the
+   * command scan and fail as a forbidden-action violation — the deny list convicting itself. The
+   * scan must stay pattern-based (it is the layer that catches a command however it was spelled), so
+   * the fix belongs here: report the flag by count, and leave the exact list in DENIED_TOOLS, which
+   * is a constant a reviewer can read.
+   */
+  const shown = args
+    .filter((a) => !DENIED_TOOLS.includes(a))
+    .join(" ")
+    .replace("--disallowedTools", `--disallowedTools <${DENIED_TOOLS.length} denied tools>`);
+
+  const parsed = parseCliJson(stdout);
+  const risks = [];
+  if (outcome.timed_out) risks.push(`The run was killed after ${timeoutMs / 1000}s; the working tree may hold a partial change.`);
+  if (parsed.parse_error) risks.push("The backend's output could not be parsed, so its own summary is unavailable; the observed facts below still stand.");
+  if (outcome.spawn_error) risks.push(`Claude Code could not be started: ${outcome.spawn_error}`);
+
+  return {
+    // The CLI's own account of what it did — a claim, kept as a claim. executeRun() supplies the
+    // file list and the check results from what it observed.
+    summary: parsed.summary || (stderr ? `No summary. stderr tail: ${stderr}` : "No summary was produced."),
+    exit_code: outcome.exit_code,
+    commands: [{ cmd: `${binary} ${shown}`, exit_code: outcome.exit_code }],
+    cost_micros: parsed.cost_micros,
+    remaining_risks: risks,
+    error: parsed.is_error || outcome.exit_code !== 0 ? (stderr || parsed.parse_error || `exit ${outcome.exit_code}`) : null,
+    session_id: parsed.session_id,
+  };
+}
+
+/**
+ * Is this backend usable on this machine, and what does it authenticate as?
+ *
+ * A backend that cannot run must say WHICH thing is missing rather than failing obscurely — the
+ * Stage 1 acceptance sentence, applied to the one backend that has no credential to be missing.
+ */
+export function describeAuth(source = typeof process === "undefined" ? {} : process.env) {
+  if (source.ANTHROPIC_API_KEY) {
+    return {
+      mode: "api_key",
+      ok: false,
+      // NOT AN IMPROVEMENT. A key in the environment would be a credential this design says must not
+      // exist here, and it would be billed separately from the owner's session; the honest answer is
+      // to name it, not to quietly use it.
+      detail: "ANTHROPIC_API_KEY is set. This backend is designed to run on the owner's own session; remove the key or register a separate keyed backend deliberately.",
+    };
+  }
+  return {
+    mode: "owner_session",
+    ok: true,
+    detail: "Claude Code authenticates as the owner via her logged-in session (macOS keychain item \"Claude Code-credentials\"). No API key is held here or in the cloud half.",
+  };
+}

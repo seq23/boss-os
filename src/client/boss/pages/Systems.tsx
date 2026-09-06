@@ -1,7 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
+import { Panel, Row, asList, text, usePanel } from "../components/panels";
+import { BackendRegistry, Launch, Watch } from "./Backends";
 
 /**
  * The seven subsystems that had an API and no screen.
@@ -17,10 +19,20 @@ import { ErrorNotice } from "../components/Notice";
  * fabricates a number the server did not send.
  */
 type SectionId =
+  | "launch" | "watch" | "backends"
   | "airlock" | "router" | "intake" | "governance" | "knowledge" | "prompt"
   | "quant" | "bridge" | "capability" | "runtimes" | "sync";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
+  /*
+   * STAGE 3 — DISPATCH, AND WATCHING IT. These three lead because they are the only sections you
+   * ACT in; everything after them is machinery you inspect. They arrive as sections rather than a
+   * tab because the tab bar is full at ten and canon §5's Cognitive Load Budget governs it — an
+   * eleventh tab costs every screen a little legibility to buy this one a shortcut.
+   */
+  { id: "launch", label: "Launch" },
+  { id: "watch", label: "Watch" },
+  { id: "backends", label: "Backends" },
   { id: "airlock", label: "Airlock" },
   // Phase 7's "screens for what already exists but is unreachable". The router decides where every
   // piece of work runs and logs why each candidate was refused; until now none of that was visible
@@ -38,7 +50,7 @@ const SECTIONS: { id: SectionId; label: string }[] = [
 ];
 
 export function Systems() {
-  const [section, setSection] = useState<SectionId>("airlock");
+  const [section, setSection] = useState<SectionId>("launch");
   return (
     <>
       <div className="seg" role="tablist" aria-label="Systems">
@@ -54,6 +66,9 @@ export function Systems() {
           </button>
         ))}
       </div>
+      {section === "launch" && <Launch />}
+      {section === "watch" && <Watch />}
+      {section === "backends" && <BackendRegistry />}
       {section === "airlock" && <Airlock />}
       {section === "router" && <Router />}
       {section === "intake" && <Intake />}
@@ -67,80 +82,6 @@ export function Systems() {
       {section === "sync" && <Sync />}
     </>
   );
-}
-
-/**
- * One loader for every panel.
- *
- * A LIST MUST SPEAK WHILE IT IS LOADING. The chassis enforces that with a scan, and it is the same
- * rule here: three states, all named. Loading says so, a failure says what happened and keeps the
- * page, and an empty result says it is empty rather than rendering a blank rectangle that looks
- * like something is still coming.
- */
-function usePanel<T>(load: () => Promise<T>, deps: unknown[] = []) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [nonce, setNonce] = useState(0);
-  useEffect(() => {
-    let live = true;
-    setData(null);
-    setError(null);
-    load()
-      .then((d) => live && setData(d))
-      .catch((e) => live && setError(e));
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, nonce]);
-  return { data, error, reload: () => setNonce((n) => n + 1), setError };
-}
-
-function Panel({
-  title,
-  hint,
-  state,
-  children,
-}: {
-  title: string;
-  hint: string;
-  state: { data: unknown; error: unknown };
-  children: ReactNode;
-}) {
-  return (
-    <section className="panel">
-      <p className="eyebrow">{title}</p>
-      <ErrorNotice error={state.error} />
-      {state.error ? null : state.data === null ? <Loading /> : isEmpty(state.data) ? <Empty title="Nothing here yet" hint={hint} /> : children}
-    </section>
-  );
-}
-
-/**
- * Coerce a payload to a list, because `?.map` is not the guard it looks like.
- *
- * These endpoints are typed `any` on the client, and several of them return an OBJECT that wraps
- * the rows rather than the rows themselves. `data?.map(...)` survives null and undefined and then
- * walks straight into `data.map is not a function` on `{ flags: [...] }` — an uncaught TypeError,
- * which in React 18 unmounts the whole tree. The E2E suite caught exactly that: one governance
- * endpoint returned a wrapper and the entire Boss OS app went blank, tab bar and all.
- *
- * So no panel calls `.map` on a payload again. Anything that is not a list becomes one, and a
- * shape nobody anticipated renders as empty rather than taking the app down.
- */
-function asList(d: unknown): any[] {
-  if (Array.isArray(d)) return d;
-  if (d && typeof d === "object") {
-    for (const v of Object.values(d as Record<string, unknown>)) if (Array.isArray(v)) return v;
-  }
-  return [];
-}
-
-function isEmpty(d: unknown) {
-  if (d === null || d === undefined) return true;
-  if (Array.isArray(d)) return d.length === 0;
-  if (typeof d === "object") return Object.keys(d as object).length === 0;
-  return false;
 }
 
 /**
@@ -240,23 +181,6 @@ function Intake() {
       </Panel>
     </>
   );
-}
-
-function Row({ title, sub, val }: { title: string; sub?: string; val?: string }) {
-  return (
-    <div className="row">
-      <div className="row-main">
-        <div className="row-title">{title}</div>
-        {sub && <div className="row-sub">{sub}</div>}
-      </div>
-      {val && <div className="row-val">{val}</div>}
-    </div>
-  );
-}
-
-function text(v: unknown, fallback = "—") {
-  if (v === null || v === undefined || v === "") return fallback;
-  return String(v);
 }
 
 /* ─── Governance ──────────────────────────────────────────────────────────── */
