@@ -788,3 +788,43 @@ not collect any of them yet, so `morning_agenda` names each as absent with its r
 filling in a plausible sentence. Body is real because her documents specify it exactly. That is the
 difference between this and the old `{available: false, reason: "the agenda engine lands in Phase 12"}`:
 the absence is now specific and shrinking.
+
+### ADR-030 — Three defects that only a live run could find
+
+The coaching feature passed 2,400 tests, every validator and four deploys before anyone typed a
+sentence into it in production. It did not work. Recording this because the pattern matters more
+than the three bugs: each one sat in a seam BETWEEN components that were each individually correct
+and individually tested.
+
+**1 · The turn never declared its task kind.** `checkBackend` refuses an unnamed intake kind by
+design — "an unmapped kind is an absent input, and there is no default" — and `runCoachingTurn`
+called the router without one. So a conversation that cleared the airlock, the consent gate and the
+provider confinement was refused at the availability stage with "the request named no task kind".
+The guard was right; the caller was the bug, which is exactly why it failed closed rather than
+choosing a kind on the caller's behalf. `coaching` maps to the backend kind `document`. Pinned by
+asserting the DECLARATION rather than the outcome, so a future edit that drops it fails in the suite
+instead of on the first sentence of a morning.
+
+**2 · "Degraded" would have been on every morning forever.** The router flags any run where the
+route's declared primary did not answer, and `rt_ops_default`'s declared models are both Fireworks,
+which has no key — so a coaching turn ALWAYS arrives via the continuity tier. Reported raw, that put
+a permanent warning badge on the deliberately chosen $0 configuration, and a warning that is always
+on is one she learns to ignore. The honest question is not "was this the route default" but "did she
+get the backend she approved". `RouteResult` now carries `providerId` so the caller can CHECK the
+confinement held rather than infer it from the fact that a reply came back; the router's own flag
+survives as `off_route` so the screen and the ledger cannot disagree.
+
+**3 · "I am ready" did not end the conversation.** §15.6 promises she may end the coaching at any
+time and lists "I'm ready" as an exit phrase. The list carried the contraction and the
+apostrophe-less form; the expanded form went to a model and came back with another question. The
+contraction is not the phrase. Added, and nothing else — guessing at exits she did not write would
+end conversations she meant to have.
+
+**The mount prefix was also wrong in the diagnosis, not the code.** Boss OS is mounted at
+`/api/boss/*`; probes at `/api/*` hit the West Peek chassis and returned its 401 in its own error
+shape, which read convincingly like a Cloudflare Access rejection. `/api/health` answering 200 is
+what settled it. Worth knowing before the next session loses twenty minutes to it.
+
+**What made all three findable:** `BOSS_PASSCODE` reached the vault, so the production API could be
+driven from a terminal. Before that the last link was unverifiable from here and the feature had been
+reported as working on the strength of its parts.
