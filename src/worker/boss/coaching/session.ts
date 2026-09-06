@@ -30,8 +30,22 @@ export const MAX_TURNS = 5;
  */
 export const FORWARDED_TURNS = 2;
 
-/** Her §15.6 exit phrases, verbatim. Matching these ends the coaching rather than answering it. */
-export const EXIT_PHRASES = ["i'm ready", "im ready", "start the sequence", "skip coaching", "let's begin", "lets begin"];
+/**
+ * Her §15.6 exit phrases. Matching these ends the coaching rather than answering it.
+ *
+ * THE CONTRACTION IS NOT THE PHRASE. Her document writes "I'm ready", and typing "I am ready" is
+ * the same act by the same person — but it reached a model and came back with another question,
+ * which is the one thing §15.6 promises will not happen: "she may end this at any time." Found by
+ * typing it. The apostrophe-less and expanded forms are the same phrase, so they are listed; nothing
+ * beyond her four phrases is invented here, because guessing at exits she did not write would end
+ * conversations she meant to have.
+ */
+export const EXIT_PHRASES = [
+  "i'm ready", "im ready", "i am ready",
+  "start the sequence",
+  "skip coaching",
+  "let's begin", "lets begin",
+];
 
 export function isExit(text: string): boolean {
   const t = text.trim().toLowerCase().replace(/[.!]+$/, "");

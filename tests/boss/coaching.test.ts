@@ -227,6 +227,11 @@ describe("the coaching prompt", () => {
 
   it("matches her exit phrases exactly, including punctuation and case", () => {
     expect(isExit("I'm ready.")).toBe(true);
+    // FOUND BY TYPING IT AT THE LIVE SYSTEM: "I am ready" reached a model and came back with
+    // another question. The contraction is not the phrase, and §15.6 promises she can end this at
+    // any time.
+    expect(isExit("I am ready")).toBe(true);
+    expect(isExit("Im ready")).toBe(true);
     expect(isExit("  SKIP COACHING ")).toBe(true);
     expect(isExit("let's begin")).toBe(true);
     // And does NOT fire on something that merely contains one — ending her morning early because

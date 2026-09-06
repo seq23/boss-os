@@ -1406,7 +1406,13 @@ today.post("/coaching/turn", async (c) => {
   const recent = (body.recent ?? []).slice(-FORWARDED_TURNS * 2);
 
   const result = await runCoachingTurn(c.env, consent.backend_id, system, recent, text);
-  return ok(c, { ended: false, reply: result.reply, backend_id: consent.backend_id, degraded: result.degraded });
+  // `off_route` travels too: it is the router's own view of the run, and a screen that showed
+  // `degraded: false` while the ledger recorded a fallback would be two true statements that read
+  // as a contradiction to anyone comparing them.
+  return ok(c, {
+    ended: false, reply: result.reply, backend_id: consent.backend_id,
+    degraded: result.degraded, off_route: result.off_route,
+  });
 });
 
 /**
