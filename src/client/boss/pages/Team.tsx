@@ -207,6 +207,24 @@ function Roster() {
       ) : (
         employees.map((e) => (
           <div className="row" key={e.id}>
+            {/*
+              * THE ALT TEXT IS THE HONESTY STATEMENT, and it is not optional.
+              *
+              * Seven polished headshots on a team screen are indistinguishable from photographs of
+              * real staff. The one way this becomes a problem is if a face is later taken for a
+              * colleague, so every portrait says what it is to anyone who cannot see it — and
+              * MANIFEST.json says the same thing beside the files.
+              *
+              * A missing file degrades to nothing rather than a broken image: the row still reads,
+              * because the name and the role are the information and the face is decoration.
+              */}
+            <img
+              className="avatar"
+              src={`/employees-boss/${String(e.name ?? "").toLowerCase()}.jpg`}
+              alt={`${e.name}, ${e.role} — an AI-generated portrait of a person who does not exist`}
+              loading="lazy"
+              onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+            />
             <div className="row-main">
               <div className="row-title">
                 {e.name}

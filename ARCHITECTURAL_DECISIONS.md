@@ -586,3 +586,64 @@ measurement rather than only with the verdict.
 **The general rule this states.** A detector that fires on the normal shape of the thing it watches
 is as useless as one that never fires, and worse when it fires as an accusation with an action
 attached. Every detector in this repository needs a test asserting what it must NOT fire on.
+
+### ADR-026 — D10 reshaped for Boss OS: one principal, and a name convention that keeps two businesses apart
+
+D10 was written for West Peek: *"MP names never AI employees. MPs: Scooter Taylor, Sequoia Taylor"*,
+alongside a cap of five active employees. Neither clause fits here. Boss OS has one principal, not
+two Managing Partners, and it already runs seven employees.
+
+**Decision.** No Boss OS employee may carry the name of the principal it serves — Sequoia Taylor.
+Boss OS names are drawn from a convention distinct from West Peek's, so an employee of one business
+can never be read as the other's. The five-employee cap is West Peek's and does not bind Boss OS;
+the Agent Creation Gate governs roster growth here, as it already did.
+
+**The convention, stated so it can be checked.** West Peek's entire roster is P and W names — Paige,
+Parker, Porter, Walker, Wren, Whitney. **Boss OS avoids both initials.** That is the whole of the
+rule: the rest of the alphabet is free. It is a weaker constraint than an allocated letter and it
+buys the only property that matters, which is that a name is never ambiguous about which business
+employs it. An earlier draft proposed all-B names; the owner declined it, correctly — a
+single-letter roster of seven reads as a gimmick and makes the names harder to tell apart, not
+easier.
+
+**Appearance is not part of this decision, or of any decision.** The owner directed that her
+employees are Black women. That direction lives in `src/client/public/employees-boss/CASTING.json`
+and nowhere else: there is no race, appearance or demographic column in `employees`, in the
+registry, or in the worker, and none may be added. A face is a rendering concern; a charter is what
+the system reasons about. The chassis's own casting sheet states the same rule, and this one
+inherits it deliberately rather than by accident.
+
+**Portraits say what they are.** Seven editorial headshots on a team screen are indistinguishable
+from photographs of real staff. Every portrait's alt text and the manifest committed beside the
+files state that these are AI-generated images of people who do not exist. That sentence is load-
+bearing, not a disclaimer: the failure it prevents is a face later being taken for a colleague.
+
+### ADR-027 — Seven employees, because the roster had more seats than jobs
+
+The owner read her own roster and said it plainly: *"Task Intake, Repository, Knowledge,
+Relationship… are not real roles someone can have when they work for a Boss."* They were names for
+parts of a system wearing an employee's clothes. Her instruction on size was equally plain: *"u
+decide how many employees i need — dont overengineer this. 1 employee can do multiple things."*
+
+**Decision (migration 0175).** Eight seats become seven, and one new capability appears.
+
+- **Task Intake merged into the Chief of Staff.** Its charter was *"classify what comes in, pick the
+  existing employee, template or duty that fits"* — which is what a Chief of Staff **is**. Two seats
+  for one function, and the sprawl banner had been pointing at the pair for weeks for the wrong
+  reason (shared department) while being right by accident.
+- **Model Router merged into Continuity, as Systems Manager.** One decided where work runs, the
+  other kept the system rebuildable. Both are upkeep of the machine, and in an office this size one
+  person does both. `emp_continuity` survives rather than `emp_router` because the suite already
+  drives that id for the retire-through-review path.
+- **Director of Research added.** Nobody on the old roster looked outward — every seat watched
+  something inside the system. The Executive Intelligence Report is about markets, deals, policy and
+  the news, so the Agent Creation Gate admits it rather than refusing it as sprawl.
+
+**Merged, not deleted.** `lifecycle = 'merged'` with `merged_into` pointing at the survivor, which is
+the shape `/employees/:id/merge` already writes, and queued work follows the survivor. An employee
+brought back later returns as herself rather than as a stranger.
+
+**The merge removed the detector's hardest near-miss**, which is worth recording: Chief of Staff and
+Task Intake were the closest honest pair on the roster, and the answer turned out to be that they
+were one job. `tests/boss/rosterOverlap.test.ts` now guards the next-closest pair — the Archivist and
+the Director of Research, both of whom are about evidence and sourcing, and are still two jobs.

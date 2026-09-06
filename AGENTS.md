@@ -45,6 +45,9 @@ Parent authorities (IMMUTABLE — never modify, move, or rewrite):
 - TypeScript + React/Vite + Cloudflare (Workers/Pages, D1, R2, KV-only-for-ephemeral) + Playwright (D1).
 - 45 machines, seeded from ONE versioned registry source (`src/shared/registry/machines.ts`), tested from that source (D14).
 - A Managing Partner name may never be an AI employee (D10). MPs: Scooter Taylor, Sequoia Taylor.
+  **For Boss OS this is reshaped as ADR-026:** one principal (Sequoia Taylor), no five-employee cap,
+  and Boss names avoid the P and W initials West Peek's entire roster uses, so an employee of one
+  business can never be read as the other's.
 - Silence is never approval. Approval target ≤15 human cards/day steady-state (D7).
 - Privacy modes: `LOCAL | FRONTIER | LOCKDOWN` (D8). Cost modes: `NORMAL | CHEAPO | CRITICAL_ONLY | STRATEGIC_SURGE`.
 - Fail closed for authority, privacy, egress, external effects. Degrade gracefully for AI convenience features.
