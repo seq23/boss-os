@@ -259,3 +259,78 @@ describe("the almanac notices a kind it has never been given", () => {
     );
   });
 });
+
+describe("the ascendant, against facts that cannot lie", () => {
+  const MEMPHIS = { latitude: 35.1495, longitude: -90.0490 };
+  const chartAt = (ts: number) =>
+    natalChart({ born_at: ts, birth_place: "Memphis", time_accuracy: "exact", ...MEMPHIS });
+
+  /**
+   * Solar altitude, so "is the Sun rising here" is answerable without a sunrise table.
+   */
+  function solarAltitude(ts: number): number {
+    const RAD = Math.PI / 180;
+    const lon = geocentricLongitude("sun", ts) * RAD;
+    const T = (ts / 86_400_000 + 2_440_587.5 - 2_451_545.0) / 36_525;
+    const e = (23.439291111 - 0.0130041667 * T) * RAD;
+    const dec = Math.asin(Math.sin(e) * Math.sin(lon));
+    const ra = Math.atan2(Math.cos(e) * Math.sin(lon), Math.cos(lon)) / RAD;
+    const jd = ts / 86_400_000 + 2_440_587.5;
+    const gmst = 280.46061837 + 360.98564736629 * (jd - 2_451_545.0);
+    const ha = (((gmst + MEMPHIS.longitude - ra) % 360) + 360) % 360;
+    const lat = MEMPHIS.latitude * RAD;
+    return Math.asin(Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(ha * RAD)) / RAD;
+  }
+
+  it("IS THE SUN AT SUNRISE, AND SUNRISE IS WHEN THE SUN IS RISING", () => {
+    /*
+     * THE BUG THIS EXISTS FOR. The formula returned the DESCENDANT — an extra 180° on a form that
+     * already lands on the eastern horizon. Every chart was a half-turn wrong and entirely
+     * self-consistent; nothing about the output looked odd. What caught it was a birth three hours
+     * before dawn coming back with a Sagittarius rising.
+     *
+     * The check needs no published table: the Sun sits on the eastern horizon at the moment it
+     * rises, so at that instant the ascendant IS the Sun. The descendant would coincide at SUNSET,
+     * which is why the altitude has to be increasing for the test to mean anything — matching
+     * longitudes alone would pass either way, twelve hours apart.
+     */
+    const day = Date.UTC(1986, 6, 23);
+    let matched = false;
+
+    for (let m = 0; m < 24 * 60; m += 2) {
+      const t = day + m * 60_000;
+      const asc = chartAt(t).ascendant!.longitude;
+      const sun = geocentricLongitude("sun", t);
+      let gap = Math.abs(asc - sun);
+      if (gap > 180) gap = 360 - gap;
+      if (gap < 0.6) {
+        expect(solarAltitude(t + 600_000)).toBeGreaterThan(solarAltitude(t - 600_000));
+        // And it is genuinely near the horizon, not merely climbing at midday.
+        expect(Math.abs(solarAltitude(t))).toBeLessThan(3);
+        matched = true;
+      }
+    }
+    expect(matched).toBe(true);
+  });
+
+  it("runs forward through the zodiac, and never sits behind the Midheaven", () => {
+    // ASC leads MC through the signs. A flipped ascendant puts the gap past 180°, so this catches
+    // the same defect from a completely different direction.
+    for (let h = 0; h < 24; h += 3) {
+      const c = chartAt(Date.UTC(1986, 6, 23) + h * 3_600_000);
+      const gap = (((c.ascendant!.longitude - c.midheaven!.longitude) % 360) + 360) % 360;
+      expect(gap).toBeGreaterThan(0);
+      expect(gap).toBeLessThan(180);
+    }
+  });
+
+  it("moves about a degree every four minutes, which is why the birth time matters", () => {
+    const t = Date.UTC(1986, 6, 23, 7, 29);
+    const a = chartAt(t).ascendant!.longitude;
+    const b = chartAt(t + 4 * 60_000).ascendant!.longitude;
+    let moved = b - a;
+    if (moved < -180) moved += 360;
+    expect(moved).toBeGreaterThan(0.4);
+    expect(moved).toBeLessThan(2.5);
+  });
+});

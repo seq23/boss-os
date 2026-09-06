@@ -461,6 +461,8 @@ export interface NatalPlacement {
 export interface NatalChart {
   placements: NatalPlacement[];
   ascendant: { longitude: number; sign: string; degrees_in_sign: number } | null;
+  /** The Midheaven — the ecliptic point on the meridian. Null whenever the ascendant is. */
+  midheaven: { longitude: number; sign: string; degrees_in_sign: number } | null;
   /** Why there is no ascendant, when there is none. Never silent. */
   houses_note: string;
   method: string;
@@ -516,6 +518,7 @@ export function natalChart(birth: BirthData): NatalChart {
     return {
       placements,
       ascendant: null,
+      midheaven: null,
       houses_note:
         `No ascendant or houses: ${missing.join(", ")}. The planetary placements above are unaffected — ` +
         `they move slowly enough that a time to the nearest hour does not change them, whereas the ` +
@@ -529,16 +532,35 @@ export function natalChart(birth: BirthData): NatalChart {
   const ramc = lst * RAD;
   const lat = birth.latitude! * RAD;
 
-  // Standard ascendant formula. atan2 keeps it in the right quadrant without the sign patching the
-  // textbook version needs, and the +180 puts it on the eastern horizon.
+  /*
+   * THE ASCENDANT, AND THE +180 THAT USED TO BE HERE WAS THE DESCENDANT.
+   *
+   * This atan2 form already lands on the eastern horizon; adding 180° on top of it turned every
+   * chart a half-turn and returned the western point instead. Her chart came back with a
+   * Sagittarius rising at 2:29am, which is roughly the opposite of what a birth three hours before
+   * dawn gives, and that is what caught it — the arithmetic was self-consistent and confidently
+   * wrong.
+   *
+   * THE TEST THAT CANNOT LIE, and the one that now guards this: AT SUNRISE THE ASCENDANT IS THE
+   * SUN. The Sun is on the eastern horizon at the moment it rises, so the two longitudes must
+   * agree. No external reference, no published table — a fact about what the ascendant means.
+   */
   const asc = norm360(
-    Math.atan2(Math.cos(ramc), -(Math.sin(ramc) * Math.cos(e) + Math.tan(lat) * Math.sin(e))) / RAD + 180,
+    Math.atan2(Math.cos(ramc), -(Math.sin(ramc) * Math.cos(e) + Math.tan(lat) * Math.sin(e))) / RAD,
   );
+
+  /*
+   * THE MIDHEAVEN, which is worth having in its own right and is also what makes the ascendant
+   * checkable without an external table. The MC needs no latitude — it is where the meridian cuts
+   * the ecliptic — so an error in the ascendant cannot hide behind a matching error here.
+   */
+  const mc = norm360(Math.atan2(Math.sin(ramc), Math.cos(ramc) * Math.cos(e)) / RAD);
 
   return {
     placements,
     ascendant: { longitude: asc, sign: ZODIAC_SIGNS[Math.floor(asc / 30)]!, degrees_in_sign: asc % 30 },
-    houses_note: "Ascendant computed from an exact birth time and the given coordinates.",
+    midheaven: { longitude: mc, sign: ZODIAC_SIGNS[Math.floor(mc / 30)]!, degrees_in_sign: mc % 30 },
+    houses_note: "Ascendant and Midheaven computed from an exact birth time and the given coordinates.",
     method: METHOD_PLANETS,
   };
 }
