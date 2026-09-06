@@ -83,4 +83,13 @@ export interface Env {
   // shape is the platform's own SendEmail type, and cloudflareEmailClient.ts is the only module
   // allowed to call it.
   EMAIL?: SendEmail;
+
+  // ── Boss OS (ported subsystems, mounted at /api/boss) ──
+  // Boss OS is single-user and unlocks with a passcode rather than Cloudflare Access, because it
+  // has to be reachable from a home-screen install with no identity provider in front of it.
+  // Both are Worker secrets; absent means Boss OS stays locked rather than open.
+  BOSS_PASSCODE?: string;
+  BOSS_SESSION_SECRET?: string;
+  BOSS_OS_VERSION?: string;
+  BOSS_DEFAULT_PROVIDER?: string;
 }

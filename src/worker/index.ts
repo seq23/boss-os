@@ -16,6 +16,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
+import { isBossRoute, handleBossRequest, drainBossTasks, runBossNightly, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1268,6 +1269,14 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     return env.ASSETS.fetch(request);
   }
 
+  // Ported Boss OS subsystems own /api/boss/* outright. They carry their own session check
+  // (passcode + KV), so they are dispatched BEFORE this router's Cloudflare Access identity
+  // resolution rather than after it - a home-screen install has no identity provider in front of
+  // it, and requiring one would make Boss OS unreachable from the device it is built for.
+  if (isBossRoute(url.pathname)) {
+    return handleBossRequest(request, env);
+  }
+
   const matched = router.match(request.method, url.pathname);
   if (!matched) {
     // Unknown /api/* paths still require identity before revealing anything: fail closed.
@@ -1338,14 +1347,32 @@ export default {
   },
 
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const now = new Date();
     ctx.waitUntil(
-      runDueJobs(env, new Date())
+      runDueJobs(env, now)
         .then((results) => {
           if (results.length > 0) console.log("scheduled tick", JSON.stringify(results));
         })
         .catch((err) => {
           console.error("scheduled tick failed", err);
         }),
+    );
+    // Boss OS's employee work used Cloudflare Queues; here it waits in D1 and drains on this same
+    // tick. Kept as its own waitUntil so a failure in one lane cannot swallow the other - the
+    // chassis jobs and the Boss tasks fail, and are logged, independently.
+    ctx.waitUntil(
+      drainBossTasks(env, now)
+        .then((r) => {
+          if (r.ran || r.failed || r.dead) console.log("boss task drain", JSON.stringify(r));
+        })
+        .catch((err) => {
+          console.error("boss task drain failed", err);
+        }),
+    );
+    ctx.waitUntil(
+      runBossNightly(toBossEnvForCron(env)).catch((err) => {
+        console.error("boss nightly failed", err);
+      }),
     );
   },
 } satisfies ExportedHandler<Env>;
