@@ -103,8 +103,31 @@ function Panel({
   );
 }
 
+/**
+ * Coerce a payload to a list, because `?.map` is not the guard it looks like.
+ *
+ * These endpoints are typed `any` on the client, and several of them return an OBJECT that wraps
+ * the rows rather than the rows themselves. `data?.map(...)` survives null and undefined and then
+ * walks straight into `data.map is not a function` on `{ flags: [...] }` — an uncaught TypeError,
+ * which in React 18 unmounts the whole tree. The E2E suite caught exactly that: one governance
+ * endpoint returned a wrapper and the entire Boss OS app went blank, tab bar and all.
+ *
+ * So no panel calls `.map` on a payload again. Anything that is not a list becomes one, and a
+ * shape nobody anticipated renders as empty rather than taking the app down.
+ */
+function asList(d: unknown): any[] {
+  if (Array.isArray(d)) return d;
+  if (d && typeof d === "object") {
+    for (const v of Object.values(d as Record<string, unknown>)) if (Array.isArray(v)) return v;
+  }
+  return [];
+}
+
 function isEmpty(d: unknown) {
-  return Array.isArray(d) ? d.length === 0 : d === null || d === undefined;
+  if (d === null || d === undefined) return true;
+  if (Array.isArray(d)) return d.length === 0;
+  if (typeof d === "object") return Object.keys(d as object).length === 0;
+  return false;
 }
 
 function Row({ title, sub, val }: { title: string; sub?: string; val?: string }) {
@@ -133,17 +156,17 @@ function Governance() {
   return (
     <>
       <Panel title="Compliance sentinel" hint="The sentinel has raised nothing. Run it from Settings to check now." state={flags}>
-        {(flags.data as any[])?.map((f: any) => (
+        {asList(flags.data).map((f: any) => (
           <Row key={f.id} title={text(f.title ?? f.watch_item)} sub={text(f.detail ?? f.reason, "")} val={text(f.severity ?? f.status)} />
         ))}
       </Panel>
       <Panel title="Decision rights" hint="No decision classes are declared." state={rights}>
-        {(rights.data as any[])?.map((r: any) => (
+        {asList(rights.data).map((r: any) => (
           <Row key={r.id ?? r.action_class} title={text(r.action_class ?? r.id)} sub={text(r.rule ?? r.who, "")} val={text(r.decider ?? r.authority)} />
         ))}
       </Panel>
       <Panel title="Failure playbooks" hint="No playbook's condition is true right now, which is the good case." state={plays}>
-        {(plays.data as any[])?.map((p: any) => (
+        {asList(plays.data).map((p: any) => (
           <Row key={p.id ?? p.key} title={text(p.title ?? p.key)} sub={text(p.condition, "")} val={p.active ? "ACTIVE" : undefined} />
         ))}
       </Panel>
@@ -159,12 +182,12 @@ function Knowledge() {
   return (
     <>
       <Panel title="Surfaces" hint="No surface holds anything yet. Promote a memory to file it here." state={surfaces}>
-        {(surfaces.data as any[])?.map((s: any) => (
+        {asList(surfaces.data).map((s: any) => (
           <Row key={s.key ?? s.id} title={text(s.title ?? s.key)} sub={text(s.description, "")} val={text(s.item_count ?? s.items)} />
         ))}
       </Panel>
       <Panel title="Personal Operating Manual" hint="No version has been generated. It is built from promoted memory, so promote something first." state={versions}>
-        {(versions.data as any[])?.map((v: any) => (
+        {asList(versions.data).map((v: any) => (
           <Row key={v.id} title={`Version ${text(v.version ?? v.id)}`} sub={text(v.content_hash, "")} val={text(v.generated_at ?? v.created_at)} />
         ))}
       </Panel>
@@ -181,15 +204,15 @@ function Prompts() {
   return (
     <>
       <Panel title="Mastery lens bench" hint="The bench is empty, which should not happen — the lenses are seeded." state={lenses}>
-        {(lenses.data as any[])?.map((l: any) => (
+        {asList(lenses.data).map((l: any) => (
           <Row key={l.key ?? l.id} title={text(l.name ?? l.key)} sub={text(l.origin_discipline ?? l.method, "")} val={text(l.counter_lens, "")} />
         ))}
       </Panel>
       <Panel title="Points of view" hint="No POV cards are registered." state={pov}>
-        {(pov.data as any[])?.map((c: any) => <Row key={c.key ?? c.id} title={text(c.name ?? c.key)} sub={text(c.stance ?? c.description, "")} />)}
+        {asList(pov.data).map((c: any) => <Row key={c.key ?? c.id} title={text(c.name ?? c.key)} sub={text(c.stance ?? c.description, "")} />)}
       </Panel>
       <Panel title="Approved library" hint="Nothing has passed the library gate. A packet enters only through the approval inbox." state={lib}>
-        {(lib.data as any[])?.map((p: any) => (
+        {asList(lib.data).map((p: any) => (
           <Row key={p.id} title={text(p.title ?? p.id)} sub={text(p.output_contract, "")} val={text(p.uses ?? p.use_count)} />
         ))}
       </Panel>
@@ -223,17 +246,17 @@ function Quant() {
         )}
       </section>
       <Panel title="Scale ladder" hint="No rung is declared." state={rungs}>
-        {(rungs.data as any[])?.map((r: any) => (
+        {asList(rungs.data).map((r: any) => (
           <Row key={r.rung ?? r.id} title={`Rung ${text(r.rung ?? r.id)}`} sub={text(r.requirement ?? r.gate, "")} val={r.open ? "OPEN" : "CLOSED"} />
         ))}
       </Panel>
       <Panel title="The risk constitution" hint="No nevers are recorded, which would itself be the finding." state={nevers}>
-        {(nevers.data as any[])?.map((n: any) => (
+        {asList(nevers.data).map((n: any) => (
           <Row key={n.id ?? n.key} title={text(n.statement ?? n.key)} val={n.enforced_in_code ? "IN CODE" : "PROCEDURAL"} />
         ))}
       </Panel>
       <Panel title="Engines" hint="No engine is registered, so the kill switch stays UNPROVEN — which the status above says out loud." state={engines}>
-        {(engines.data as any[])?.map((e: any) => (
+        {asList(engines.data).map((e: any) => (
           <Row key={e.id} title={text(e.name ?? e.id)} sub={text(e.control_url, "no control endpoint")} val={text(e.last_probe_outcome, "never probed")} />
         ))}
       </Panel>
@@ -272,14 +295,14 @@ function Bridge() {
           <Loading />
         ) : (
           <div className="btn-row">
-            {((cats.data as any)?.forbidden ?? (cats.data as any)?.categories ?? []).map((c: any) => (
+            {asList((cats.data as any)?.forbidden ?? (cats.data as any)?.categories ?? cats.data).map((c: any) => (
               <span className="pill" key={String(c)}>{String(c)}</span>
             ))}
           </div>
         )}
       </section>
       <Panel title="Handoffs" hint="Nothing has crossed the boundary, in either direction." state={hand}>
-        {(hand.data as any[])?.map((h: any) => (
+        {asList(hand.data).map((h: any) => (
           <Row key={h.id} title={text(h.title)} sub={`${text(h.direction)} · ${text(h.category)}`} val={text(h.status)} />
         ))}
       </Panel>
@@ -295,12 +318,12 @@ function Capability() {
   return (
     <>
       <Panel title="Coverage" hint="No job types are declared." state={cover}>
-        {(Array.isArray(cover.data) ? (cover.data as any[]) : []).map((c: any) => (
+        {asList(cover.data).map((c: any) => (
           <Row key={c.job_type ?? c.id} title={text(c.job_type ?? c.id)} sub={text(c.default_capability ?? c.active_default, "no active default")} val={text(c.alternatives)} />
         ))}
       </Panel>
       <Panel title="Capability packages" hint="No capability is registered." state={caps}>
-        {(caps.data as any[])?.map((c: any) => (
+        {asList(caps.data).map((c: any) => (
           <Row key={c.key ?? c.id} title={text(c.name ?? c.key)} sub={text(c.mechanism ?? c.description, "")} val={c.is_core ? "CORE" : undefined} />
         ))}
       </Panel>
@@ -317,17 +340,17 @@ function Runtimes() {
   return (
     <>
       <Panel title="Runtime jobs" hint="No runtime has been asked to do anything yet." state={jobs}>
-        {(jobs.data as any[])?.map((j: any) => (
+        {asList(jobs.data).map((j: any) => (
           <Row key={j.id} title={text(j.kind ?? j.runtime)} sub={text(j.created_at, "")} val={text(j.status)} />
         ))}
       </Panel>
       <Panel title="Compiled documents" hint="The Document Compiler has produced nothing. It assembles from named live sources." state={arts}>
-        {(arts.data as any[])?.map((a: any) => (
+        {asList(arts.data).map((a: any) => (
           <Row key={a.id} title={text(a.title ?? a.id)} sub={text(a.content_hash, "")} val={text(a.section_count ?? a.sections)} />
         ))}
       </Panel>
       <Panel title="SEO/GEO audits" hint="No audit has run. Everything needing the network is reported as deferred, never guessed." state={audits}>
-        {(audits.data as any[])?.map((a: any) => (
+        {asList(audits.data).map((a: any) => (
           <Row key={a.id} title={text(a.target ?? a.url ?? a.id)} sub={text(a.created_at, "")} val={text(a.checks_passed ?? a.status)} />
         ))}
       </Panel>

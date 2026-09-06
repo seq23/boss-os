@@ -88,6 +88,20 @@ binding = "BROWSER"
 # local | preview | production
 WP_OS_ENV = "local"
 
+# ── Boss OS local unlock (LOCAL PROFILE ONLY) ──
+#
+# Boss OS gates on a passcode rather than Cloudflare Access, because a home-screen install has no
+# identity provider in front of it. `wrangler dev --local` and the E2E suite need one to get past
+# the lock screen, and a value that only exists on someone's machine turns a green suite into
+# folklore.
+#
+# These are FIXTURES, not secrets, and they cannot leak into production: wrangler does not inherit
+# vars into a named environment, and [env.production.vars] below restates its own set without them.
+# Production reads BOSS_PASSCODE and BOSS_SESSION_SECRET from Worker secrets, and Boss OS stays
+# locked if they are absent rather than opening.
+BOSS_PASSCODE = "local-dev-passcode"
+BOSS_SESSION_SECRET = "local-dev-session-secret-not-a-real-credential"
+
 # Cron Trigger — the ONLY scheduling primitive this system uses (ADR-017).
 # It calls the Worker's scheduled() handler, which runs due jobs from D1. Queues and Durable
 # Objects are deliberately not used. A trigger cannot fire in local `wrangler dev`, so the same
