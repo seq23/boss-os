@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import { all, api, apiJson, insertApproval, insertTask, row } from "./helpers";
 import {
   moonPhase, moonPosition, buildAlmanac, ZODIAC, NO_EPHEMERIS, AWAITING_ALMANAC, AWAITING_OWNER, CANON_WINDOW_TYPES,
@@ -651,5 +651,66 @@ describe("Phase 16 — acceptance", () => {
     const block = today.body.data.blocks.find((b: any) => b.key === "spirit_signal");
     expect(block.content.reality_priority.warning).toBe(true);
     expect(JSON.stringify(block)).not.toMatch(/TODO|FIXME|placeholder/i);
+  });
+});
+
+describe("the ancestor hour is a reminder that only completion clears", () => {
+  beforeEach(async () => {
+    await env.DB.prepare(`DELETE FROM ancestor_entries`).run();
+  });
+
+  it("stands until the hour is recorded, and says how it clears", async () => {
+    const { body } = await apiJson("/api/spirit/day");
+    const a = body.data.ancestors;
+    expect(a.standing).toBe(true);
+    expect(a.remaining_minutes).toBe(60);
+    expect(a.dismissal).toContain("day and time");
+  });
+
+  it("HAS NO DISMISS ENDPOINT — the only way out is doing it", async () => {
+    /*
+     * The owner asked for a reminder she can only clear by saying she completed it and when. A
+     * dismiss route would be the easiest thing to add and would defeat the whole request, so this
+     * asserts its absence rather than trusting nobody adds one later.
+     */
+    for (const path of ["/api/spirit/ancestors/dismiss", "/api/spirit/ancestors/skip"]) {
+      const { status } = await apiJson(path, { method: "POST", body: {} });
+      expect(status).toBe(404);
+    }
+  });
+
+  it("clears only when the recorded minutes reach the hour", async () => {
+    const at = Date.now();
+    await apiJson("/api/spirit/ancestors", { method: "POST", body: { who: "Grandmother", minutes: 25, ts: at } });
+
+    const partial = await apiJson("/api/spirit/day");
+    // Part of an hour is not the hour. It still stands, and it says how much is left.
+    expect(partial.body.data.ancestors.standing).toBe(true);
+    expect(partial.body.data.ancestors.remaining_minutes).toBe(35);
+
+    await apiJson("/api/spirit/ancestors", { method: "POST", body: { who: "Grandmother", minutes: 35, ts: at } });
+    const done = await apiJson("/api/spirit/day");
+    expect(done.body.data.ancestors.standing).toBe(false);
+    expect(done.body.data.ancestors.dismissal).toBeNull();
+  });
+
+  it("keeps the day and time SHE names, not the moment she typed it", async () => {
+    // An hour sat with on Sunday and recorded on Tuesday is a Sunday. Filing it under the moment of
+    // recording would make the record wrong in the one field the owner asked to be asked for.
+    const sunday = Date.parse("2026-09-06T19:30:00-05:00");
+    const { body } = await apiJson("/api/spirit/ancestors", {
+      method: "POST", body: { who: "The line", minutes: 60, ts: sunday },
+    });
+    expect(body.data.ts).toBe(sunday);
+    expect(body.data.month).toBe("2026-09");
+  });
+
+  it("files a late-evening hour in the month she was living in", async () => {
+    // 8pm Central on 30 September is 1 October in UTC. Before the zone fix this landed in October.
+    const lateSeptember = Date.parse("2026-10-01T01:00:00Z");
+    const { body } = await apiJson("/api/spirit/ancestors", {
+      method: "POST", body: { who: "The line", minutes: 60, ts: lateSeptember },
+    });
+    expect(body.data.month).toBe("2026-09");
   });
 });

@@ -297,7 +297,14 @@ export interface SpiritSignal {
     met: boolean;
     tone: string;
   };
-  ancestors: { month: string; minutes: number; target_minutes: number; met: boolean; tone: string };
+  ancestors: {
+    month: string; minutes: number; target_minutes: number; met: boolean; tone: string;
+    /** Outstanding, in the sense of not yet done. Never in the sense of late — §44 forbids that. */
+    standing: boolean;
+    remaining_minutes: number;
+    /** How it clears, stated on the reminder itself. Null once it has. */
+    dismissal: string | null;
+  };
   manifestations: { open: number; without_evidence_this_month: number };
   reality_priority: RealityPriority;
 }
@@ -425,6 +432,23 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
       minutes: ancestorMinutes,
       target_minutes: ANCESTOR_MINUTES_TARGET,
       met: ancestorMinutes >= ANCESTOR_MINUTES_TARGET,
+      /*
+       * A STANDING REMINDER, AND THE ONLY WAY IT CLEARS IS BY BEING DONE.
+       *
+       * The owner asked for exactly this: it stays until she can say she completed it and name the
+       * day and time. There is deliberately no dismiss — a reminder with a dismiss button is a
+       * reminder you get rid of instead of doing, and it would have been the easiest thing to build
+       * and the least use to her. It goes when the hour is recorded, and not before.
+       *
+       * Canon §44's tone still holds. `standing` is not "overdue": there is no schedule here and
+       * nothing is late. It is a thing outstanding, said plainly, once.
+       */
+      standing: ancestorMinutes < ANCESTOR_MINUTES_TARGET,
+      remaining_minutes: Math.max(0, ANCESTOR_MINUTES_TARGET - ancestorMinutes),
+      dismissal:
+        ancestorMinutes >= ANCESTOR_MINUTES_TARGET
+          ? null
+          : "This clears when you record the hour with the day and time you did it. There is no other way to clear it, on purpose.",
       tone:
         ancestorMinutes === 0
           ? "An hour a month, whenever it suits. There is no schedule and nothing is late."

@@ -104,7 +104,7 @@ spirit.get("/month", async (c) => {
   await ensureAlmanac(c.env.DB, Date.now());
   await ensureAlmanacAround(c.env.DB, start + 15 * DAY_MS);
 
-  const [events, contributions, ancestors, rituals, manifestations, dreams] = await Promise.all([
+  const [events, contributions, ancestors, rituals, manifestations, dreams, birthRow] = await Promise.all([
     c.env.DB
       .prepare(`SELECT * FROM astro_calendar WHERE starts_at >= ? AND starts_at < ? ORDER BY starts_at ASC`)
       .bind(start, end)
@@ -120,10 +120,12 @@ spirit.get("/month", async (c) => {
       .all<any>(),
     c.env.DB.prepare(`SELECT * FROM manifestations WHERE status = 'open' ORDER BY created_at DESC`).all<any>(),
     c.env.DB.prepare(`SELECT COUNT(*) AS n FROM dream_entries WHERE ts >= ? AND ts < ?`).bind(start, end).first<{ n: number }>(),
+    c.env.DB.prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`).first<{ value: string }>(),
   ]);
 
   const contributionRows = contributions.results ?? [];
   const ancestorMinutes = (ancestors.results ?? []).reduce((sum: number, a: any) => sum + a.minutes, 0);
+  const hasBirthData = Boolean(birthRow);
 
   return ok(c, {
     month,
@@ -162,9 +164,14 @@ spirit.get("/month", async (c) => {
     timezone: OWNER_TIMEZONE,
     timezone_label: OWNER_TIMEZONE_LABEL,
     deferred: DEFERRED_ASTRONOMY,
-    // The month view carries the question too, so the one remaining gap is visible where the
-    // almanac is read rather than only on an endpoint nobody opens.
-    owner_inputs: OWNER_INPUTS,
+    /*
+     * THE QUESTION DISAPPEARS ONCE IT IS ANSWERED.
+     *
+     * This was a constant, so the page went on asking for birth data she had already given —
+     * "Waiting on you: natal chart" sitting under a chart that existed. An ask that outlives its
+     * answer is worse than no ask: it teaches her the screen does not know what it holds.
+     */
+    owner_inputs: hasBirthData ? [] : OWNER_INPUTS,
   });
 });
 

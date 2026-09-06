@@ -31,6 +31,7 @@ export function Spirit() {
   const [error, setError] = useState<unknown>(null);
   const [openManifestation, setOpenManifestation] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [recordingHour, setRecordingHour] = useState(false);
 
   function load() {
     Promise.all([api.spiritDay(), api.spiritMonth()])
@@ -114,10 +115,38 @@ export function Spirit() {
         </button>
       </div>
 
+      {/*
+        * THE ANCESTOR HOUR IS A STANDING REMINDER, and there is deliberately no dismiss control.
+        *
+        * The owner asked for it in those terms: it clears when she can say she completed it and
+        * name the day and time. A dismiss button would have been the easiest thing to add and the
+        * least use to her — it turns a reminder into something you get rid of instead of doing.
+        *
+        * §44's tone is unchanged. It is outstanding, not late; there is no schedule here.
+        */}
       <p className="eyebrow">Ancestors — {ancestors.month}</p>
       <div className="panel">
         <p className="row-sub">{ancestors.minutes} of {ancestors.target_minutes} minutes.</p>
         <p className="row-sub">{ancestors.tone}</p>
+        {ancestors.standing ? (
+          <>
+            <p className="row-sub">{ancestors.dismissal}</p>
+            <div className="btn-row">
+              <button className="btn" onClick={() => setRecordingHour((v) => !v)}>
+                {recordingHour ? "Close" : "I did this"}
+              </button>
+            </div>
+            {recordingHour && (
+              <RecordAncestorHour
+                remaining={ancestors.remaining_minutes}
+                onDone={() => { setRecordingHour(false); load(); }}
+                onError={setError}
+              />
+            )}
+          </>
+        ) : (
+          <p className="row-sub">The hour is recorded for this month.</p>
+        )}
       </div>
 
       <p className="eyebrow">Manifestations</p>
@@ -342,4 +371,78 @@ function AddManifestation({ onDone }: { onDone: (id: string) => void }) {
       </button>
     </div>
   );
+}
+
+/**
+ * Recording the ancestor hour, which is the only thing that clears the reminder.
+ *
+ * THE DAY AND TIME ARE A FIELD, NOT A DEFAULT. The endpoint would happily stamp `now`, and that is
+ * the wrong shape for this: the owner asked to clear it by SAYING she completed it and when. An
+ * hour sat with on Sunday evening and recorded on Tuesday is a Sunday evening — silently filing it
+ * under Tuesday would quietly make the record wrong in the only field that matters.
+ *
+ * It is pre-filled with now because most of the time that is the answer, and it is editable because
+ * sometimes it is not.
+ */
+function RecordAncestorHour({ remaining, onDone, onError }: {
+  remaining: number;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  // datetime-local reads in the BROWSER's zone, and the browser is not authoritative here — the
+  // value is converted through the owner's zone on the way out so the record means the same thing
+  // wherever she happens to be sitting.
+  const [when, setWhen] = useState(() => localInputValue(Date.now()));
+  const [who, setWho] = useState("");
+  const [minutes, setMinutes] = useState(String(remaining || 60));
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    const ts = Date.parse(when);
+    if (!Number.isFinite(ts)) return onError(new Error("Say the day and time you did it."));
+    if (!who.trim()) return onError(new Error("Name who you sat with. That is the record."));
+    setBusy(true);
+    try {
+      await api.recordAncestorHour({
+        who: who.trim(),
+        minutes: Number(minutes) || 0,
+        ts,
+        note: note.trim() || undefined,
+      });
+      onDone();
+    } catch (e) { onError(e); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="panel">
+      <label className="field">
+        <span>The day and time you did it</span>
+        <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>Who you sat with</span>
+        <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="A name, or the line" />
+      </label>
+      <label className="field">
+        <span>Minutes</span>
+        <input value={minutes} onChange={(e) => setMinutes(e.target.value)} inputMode="numeric" />
+      </label>
+      <label className="field">
+        <span>Anything worth keeping (optional)</span>
+        <input value={note} onChange={(e) => setNote(e.target.value)} />
+      </label>
+      <div className="decide">
+        <button className="btn btn-approve" disabled={busy} onClick={() => void submit()}>
+          {busy ? "…" : "Record it"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** `YYYY-MM-DDTHH:mm` for a datetime-local input, from an instant. */
+function localInputValue(ts: number): string {
+  const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60_000);
+  return d.toISOString().slice(0, 16);
 }

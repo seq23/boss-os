@@ -311,9 +311,20 @@ describe("real subsystems emit notifications", () => {
      * firm-wide row has nobody whose preferences could be read. This proves the loop closes for the
      * kind the operator sees most.
      */
+    /*
+     * A WINDOW BUILT AROUND THE CURRENT HOUR, because no constant one can do this job.
+     *
+     * This used to be `{ start: 0, end: 23 }` with a comment claiming it covered the whole clock.
+     * It did not: `inQuietHours` reads `start < end` as `hour >= start && hour < end`, so hour 23
+     * fell outside — and the schema caps `end` at 23, so NO pair of constants covers all
+     * twenty-four. The test therefore failed for one hour in every day and passed the other
+     * twenty-three, which is the worst kind of flake: it looks like whatever changed most recently.
+     *
+     * Twelve hours forward from now always contains now, whichever side of the wrap it lands on.
+     */
+    const hour = new Date().getUTCHours();
     const saved = await call("/api/notifications/preferences", MP, "POST", {
-      // A window covering the whole clock, so this does not depend on when the suite runs.
-      quiet_hours: { start: 0, end: 23, timezone: "UTC" },
+      quiet_hours: { start: hour, end: (hour + 12) % 24, timezone: "UTC" },
       push_enabled: false,
     });
     expect(saved.status).toBe(201);

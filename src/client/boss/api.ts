@@ -75,6 +75,8 @@ export const api = {
   // Served rather than restated in the client: a screen that spelled the five floors itself would
   // be a second copy of her contract, free to drift from the one that scores the day.
   floors: () => call<any>("/today/floors"),
+  // The ancestor hour. `ts` is the day and time SHE names, never the moment of recording.
+  recordAncestorHour: (body: unknown) => call<any>("/spirit/ancestors", post("", body)),
 
   status: () => call<any>("/system/status"),
   health: () => call<any>("/system/health"),
