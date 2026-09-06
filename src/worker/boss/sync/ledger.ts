@@ -1,0 +1,239 @@
+/**
+ * The synchronization substrate: mutations, versions, conflicts and cursors.
+ *
+ * The rule this exists to keep (§2.3): two independently edited databases do not merge safely on
+ * their own. Every eligible write declares the version it was based on, and the substrate either
+ * advances that version or records a conflict. Nothing is decided by comparing clocks.
+ *
+ * WHAT THIS IS NOT. It is not a transport and not an endpoint. It is the local truth both sides
+ * keep, so that Batch 4's cloud API and Batch 5's local agent are thin things that move rows
+ * rather than clever things that decide outcomes.
+ */
+import type { D1Database } from "@cloudflare/workers-types";
+import { classify, AirlockRefusal } from "../policy/airlock";
+
+export interface Mutation {
+  /** Client-generated UUID. The unique key that makes replay idempotent. */
+  mutationId: string;
+  entity: string;
+  recordId: string;
+  /** The version the client believed it was editing. null means "this is a create". */
+  baseVersion: number | null;
+  deviceId: string;
+  tombstone?: boolean;
+  /** Hash of the payload the caller is writing, for integrity evidence. Never the payload. */
+  payloadHash?: string | null;
+  wallMs?: number;
+}
+
+export type MutationOutcome =
+  | { status: "APPLIED"; seq: number; version: number }
+  | { status: "REPLAY"; seq: number; version: number }
+  | { status: "CONFLICT"; conflictId: string; currentVersion: number; baseVersion: number | null };
+
+export class SyncRefusal extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = "SyncRefusal";
+  }
+}
+
+async function assertDeviceMaySync(db: D1Database, deviceId: string): Promise<void> {
+  const d = await db
+    .prepare(`SELECT device_id, revoked_at, revoked_reason FROM sync_device WHERE device_id = ?1`)
+    .bind(deviceId)
+    .first<{ device_id: string; revoked_at: number | null; revoked_reason: string | null }>();
+  // An unknown device is refused for the same reason an unclassified entity is: silence is not
+  // consent, and "register it on first use" is how a stolen token becomes a peer.
+  if (!d) throw new SyncRefusal("UNKNOWN_DEVICE", `Device ${deviceId} is not registered. Register it before it may sync.`);
+  if (d.revoked_at) {
+    throw new SyncRefusal("REVOKED_DEVICE", `Device ${deviceId} was revoked${d.revoked_reason ? `: ${d.revoked_reason}` : ""}. Nothing was accepted.`);
+  }
+}
+
+/**
+ * Refuse a sovereign entity BEFORE it is serialized (§2.3), not while filtering output.
+ *
+ * The distinction is the whole design. Filtering on the way out means the record was already
+ * written into a cloud structure and the only thing standing between it and a leak is a WHERE
+ * clause somebody has to remember. Refusing at admission means the ledger cannot contain it.
+ */
+async function assertEntityMaySync(db: D1Database, entity: string, recordId: string): Promise<void> {
+  const c = await classify(db, entity, recordId);
+  if (c.residency === "LOCAL_ONLY") {
+    throw new AirlockRefusal(
+      entity,
+      recordId,
+      "residency",
+      c,
+      `LOCAL_ONLY — NOTHING TRANSMITTED. ${entity} is not eligible to synchronize. ${c.reason}`,
+    );
+  }
+}
+
+/**
+ * Record a mutation.
+ *
+ * Returns the statements the caller must commit ALONGSIDE its own write, because §3 of Batch 3
+ * requires that "a database mutation eligible for sync must not be considered successfully
+ * committed if its required change-ledger entry cannot be created consistently". Handing back
+ * statements rather than executing them is what lets the caller put its write and this ledger
+ * entry into one `db.batch([...])` — one transaction, both or neither.
+ */
+export async function prepareMutation(
+  db: D1Database,
+  m: Mutation,
+): Promise<{ outcome: MutationOutcome; statements: ReturnType<D1Database["prepare"]>[]; mutationId: string }> {
+  await assertDeviceMaySync(db, m.deviceId);
+  await assertEntityMaySync(db, m.entity, m.recordId);
+
+  // Idempotent replay: the same mutation id answers with what it did the first time.
+  const seen = await db
+    .prepare(`SELECT seq, result_version FROM sync_ledger WHERE mutation_id = ?1`)
+    .bind(m.mutationId)
+    .first<{ seq: number; result_version: number }>();
+  if (seen) {
+    return { outcome: { status: "REPLAY", seq: seen.seq, version: seen.result_version }, statements: [], mutationId: m.mutationId };
+  }
+
+  const current = await db
+    .prepare(`SELECT version FROM record_version WHERE entity = ?1 AND record_id = ?2`)
+    .bind(m.entity, m.recordId)
+    .first<{ version: number }>();
+  const currentVersion = current?.version ?? 0;
+  const base = m.baseVersion ?? 0;
+
+  if (base !== currentVersion) {
+    /*
+     * A CONFLICT IS A ROW, NOT AN EXCEPTION.
+     *
+     * §11 requires explicit conflict handling rather than silent data loss. The incoming edit is
+     * NOT applied and the current value is NOT overwritten: both survive, and a person decides.
+     * This is the case naive last-write-wins gets wrong every time, and it is the reason clocks
+     * are not the arbiter here.
+     */
+    const conflictId = `cfl_${crypto.randomUUID()}`;
+    await db
+      .prepare(
+        `INSERT INTO sync_conflict (id, entity, record_id, mutation_id, base_version, current_version, device_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+      )
+      .bind(conflictId, m.entity, m.recordId, m.mutationId, m.baseVersion, currentVersion, m.deviceId)
+      .run();
+    return {
+      outcome: { status: "CONFLICT", conflictId, currentVersion, baseVersion: m.baseVersion },
+      statements: [],
+      mutationId: m.mutationId,
+    };
+  }
+
+  const version = currentVersion + 1;
+  const wall = m.wallMs ?? Date.now();
+  const statements = [
+    db
+      .prepare(
+        `INSERT INTO sync_ledger (mutation_id, entity, record_id, base_version, result_version, device_id, tombstone, payload_hash, wall_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+      )
+      .bind(m.mutationId, m.entity, m.recordId, m.baseVersion, version, m.deviceId, m.tombstone ? 1 : 0, m.payloadHash ?? null, wall),
+    db
+      .prepare(
+        `INSERT INTO record_version (entity, record_id, version, tombstone, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT (entity, record_id) DO UPDATE SET version = excluded.version, tombstone = excluded.tombstone, updated_at = excluded.updated_at`,
+      )
+      .bind(m.entity, m.recordId, version, m.tombstone ? 1 : 0, wall),
+  ];
+  // seq is assigned by SQLite on insert, so it is only knowable after the batch commits.
+  return { outcome: { status: "APPLIED", seq: -1, version }, statements, mutationId: m.mutationId };
+}
+
+/** Commit a prepared mutation together with the caller's own write, in one transaction. */
+export async function commitMutation(
+  db: D1Database,
+  prepared: Awaited<ReturnType<typeof prepareMutation>>,
+  callerStatements: ReturnType<D1Database["prepare"]>[] = [],
+): Promise<MutationOutcome> {
+  if (prepared.outcome.status !== "APPLIED") return prepared.outcome;
+  /*
+   * ONE BATCH, BOTH OR NEITHER. The caller's write and the ledger entry go in together, which is
+   * the Batch 3 requirement that a syncable mutation "must not be considered successfully
+   * committed if its required change-ledger entry cannot be created consistently".
+   */
+  await db.batch([...callerStatements, ...prepared.statements]);
+  const row = await db
+    .prepare(`SELECT seq FROM sync_ledger WHERE mutation_id = ?1`)
+    .bind(prepared.mutationId)
+    .first<{ seq: number }>();
+  return { ...prepared.outcome, seq: row?.seq ?? prepared.outcome.seq };
+}
+
+/**
+ * Incremental pull for one device.
+ *
+ * The LOCAL_ONLY check happens again here even though nothing sovereign can be in the table. Two
+ * independent refusals, because the one that matters is the one still standing after somebody
+ * edits the other — and a filter that is never load-bearing costs one query.
+ */
+export async function pull(
+  db: D1Database,
+  deviceId: string,
+  afterSeq = 0,
+  limit = 200,
+): Promise<{ rows: any[]; nextSeq: number }> {
+  await assertDeviceMaySync(db, deviceId);
+  const res = await db
+    .prepare(
+      `SELECT l.seq, l.mutation_id, l.entity, l.record_id, l.base_version, l.result_version,
+              l.device_id, l.tombstone, l.payload_hash, l.wall_ms
+         FROM sync_ledger l
+         JOIN data_policy p ON p.entity = l.entity
+        WHERE l.seq > ?1 AND p.residency = 'CLOUD_SYNC'
+        ORDER BY l.seq LIMIT ?2`,
+    )
+    .bind(afterSeq, limit)
+    .all<any>();
+  const rows = res.results ?? [];
+  return { rows, nextSeq: rows.length ? rows[rows.length - 1].seq : afterSeq };
+}
+
+/** A cursor only ever moves forward: a replayed or reordered ack must not rewind a device. */
+export async function advanceCursor(db: D1Database, deviceId: string, seq: number): Promise<number> {
+  await assertDeviceMaySync(db, deviceId);
+  await db
+    .prepare(
+      `INSERT INTO sync_cursor (device_id, last_seq, updated_at) VALUES (?1, ?2, ?3)
+       ON CONFLICT (device_id) DO UPDATE SET last_seq = MAX(sync_cursor.last_seq, excluded.last_seq), updated_at = excluded.updated_at`,
+    )
+    .bind(deviceId, seq, Date.now())
+    .run();
+  const row = await db.prepare(`SELECT last_seq FROM sync_cursor WHERE device_id = ?1`).bind(deviceId).first<{ last_seq: number }>();
+  return row?.last_seq ?? 0;
+}
+
+export async function registerDevice(
+  db: D1Database,
+  args: { deviceId: string; kind: "cloud" | "private"; label: string },
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO sync_device (device_id, kind, label) VALUES (?1, ?2, ?3)
+       ON CONFLICT (device_id) DO UPDATE SET label = excluded.label, revoked_at = NULL, revoked_reason = NULL`,
+    )
+    .bind(args.deviceId, args.kind, args.label)
+    .run();
+}
+
+export async function revokeDevice(db: D1Database, deviceId: string, reason: string): Promise<void> {
+  await db
+    .prepare(`UPDATE sync_device SET revoked_at = ?2, revoked_reason = ?3 WHERE device_id = ?1`)
+    .bind(deviceId, Date.now(), reason)
+    .run();
+}
+
+export async function openConflicts(db: D1Database): Promise<any[]> {
+  const res = await db
+    .prepare(`SELECT * FROM sync_conflict WHERE resolution = 'OPEN' ORDER BY detected_at DESC`)
+    .all<any>();
+  return res.results ?? [];
+}

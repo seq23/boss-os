@@ -24,6 +24,10 @@ const SNAPSHOT_TABLES = [
   // entity unclassified, which the guard refuses, so the restored system would be inert rather
   // than leaky. Either way the vault must carry the rules alongside what they protect.
   "data_policy", "record_policy", "policy_change_log",
+  // The sync substrate. record_version is the load-bearing one: restore the records without the
+  // versions they were at and every subsequent mutation from every device conflicts at once, so a
+  // vault that saved the data would have destroyed the ability to sync it.
+  "sync_device", "record_version", "sync_ledger", "sync_cursor", "sync_conflict",
   "lanes", "settings",
   "providers", "models", "routes", "budgets",
   "workload_profiles", "model_benchmarks",
