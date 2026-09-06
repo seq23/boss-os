@@ -169,7 +169,37 @@ interface Block {
  * says what Today contains, Phase 12 decides what belongs in it. What happens
  * here is rendering and persistence, from live tables only.
  */
+/**
+ * Read a JSON column without letting a bad row take the screen down.
+ *
+ * These are TEXT columns written by a research run. A malformed value is a reason to render the
+ * rest of the day, not to throw inside the assembler that builds every block — the failure mode
+ * this repo already met once, where one endpoint's unexpected shape unmounted the whole app.
+ */
+function parseJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== "string" || raw.length === 0) return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
 export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
+  /*
+   * Today's report, and the last good one.
+   *
+   * Both, in one pass: the block must be able to say "no report today, the last was Tuesday"
+   * rather than rendering an unexplained blank, and that sentence needs the second row. A report is
+   * keyed to the day it is FOR, not the day it was written, so a retry at 09:00 still fills the
+   * 06:30 slot rather than creating a second Tuesday.
+   */
+  const [report, lastReport] = await Promise.all([
+    env.DB
+      .prepare(`SELECT * FROM executive_reports WHERE day_id = ? LIMIT 1`)
+      .bind(day.id)
+      .first<any>(),
+    env.DB
+      .prepare(`SELECT generated_at FROM executive_reports WHERE status != 'failed' ORDER BY generated_at DESC LIMIT 1`)
+      .first<{ generated_at: number }>(),
+  ]);
+
   const db = env.DB;
   const now = Date.now();
   const from = day.date_ts;
@@ -389,27 +419,43 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         : { reason: "The Morning Gate has not run. Today has no contract yet." },
       isEmpty: !contract,
     },
+    /*
+     * THE EXECUTIVE BRIEFING IS THE REPORT NOW, AND THAT REMOVED DUPLICATION RATHER THAN ADDING
+     * ANYTHING.
+     *
+     * It used to print four lines of internal system status, and three of them were already on this
+     * screen: `pendingTotal` is the exact variable block 10 (Approval Inbox) renders, tasks in
+     * flight is what block 11 (AI Employee Status) shows, and captures belong to Memory. It was a
+     * status line wearing a briefing's name, and it said the same things twice.
+     *
+     * Canon calls this element a BRIEFING, and a briefing is what an analyst hands a principal about
+     * the world — not a count of her own inbox. Camille's Executive Intelligence Report fills it,
+     * the duplication goes, and Today keeps exactly thirteen elements with no fourteenth. Model
+     * spend, the one figure that was not duplicated, moved to Settings beside the ledger
+     * reconciliation, which is where a number you audit rather than act on belongs.
+     *
+     * A PARTIAL REPORT STILL RENDERS, AND NAMES ITS GAPS. The owner's instruction: "on failure just
+     * say so and name the gaps". A report that refuses to appear teaches her to stop looking at 7am.
+     * A missing report says when the last good one was, so a blank is never unexplained.
+     */
     executive_briefing: {
-      content: {
-        lines: [
-          pendingTotal === 0
-            ? "Nothing is waiting on you."
-            : `${pendingTotal} approval${pendingTotal === 1 ? "" : "s"} waiting on you${pendingByRisk.high ? `, ${pendingByRisk.high} of them high risk` : ""}.`,
-          openTaskCount === 0
-            ? "No work is in flight."
-            : `${openTaskCount} task${openTaskCount === 1 ? "" : "s"} in flight.`,
-          `${openedToday} task${openedToday === 1 ? "" : "s"} opened today; ${spendToday >= 10_000 ? `$${(spendToday / 1_000_000).toFixed(2)}` : "under a cent"} of model spend.`,
-          captureCount === 0
-            ? "Nothing captured to memory today."
-            : `${captureCount} thing${captureCount === 1 ? "" : "s"} captured to memory today.`,
-        ],
-        pending_approvals: pendingTotal,
-        open_tasks: openTaskCount,
-        tasks_opened_today: openedToday,
-        spend_micros_today: spendToday,
-        captures_today: captureCount,
-      },
-      isEmpty: false,
+      content: report
+        ? {
+            status: report.status,
+            summary: report.summary,
+            sections: parseJson(report.sections, []),
+            gaps: parseJson(report.gaps, []),
+            corrections: parseJson(report.corrections, []),
+            sources: parseJson(report.sources, []),
+            generated_at: report.generated_at,
+          }
+        : {
+            reason: lastReport
+              ? `No report for today yet. The last one arrived ${new Date(lastReport.generated_at).toLocaleString()}.`
+              : "No Executive Intelligence Report has been produced yet. Camille delivers it at 06:30 America/Chicago.",
+            last_report_at: lastReport?.generated_at ?? null,
+          },
+      isEmpty: !report,
     },
     day_flow: {
       content: {

@@ -39,6 +39,7 @@ import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
 import { ensureAlmanac } from "./spirit/day";
 import { handleTask, handleDeadLetter } from "./queue/consumer";
 import { rollBudgetWindows } from "./router/budget";
+import { materialiseDueDuties } from "./duties/materialise";
 import { newId } from "./lib/id";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -265,6 +266,27 @@ export async function runScheduled(env: Env, now = Date.now()): Promise<CronOutc
   });
 
   return { ran: true, run_id: runId, steps: steps.length, failed };
+}
+
+/**
+ * Standing duties, on EVERY tick rather than inside the daily run.
+ *
+ * THE BUG THIS SHAPE AVOIDS, WHICH I WROTE AND CAUGHT BEFORE IT SHIPPED. Putting duty
+ * materialisation inside `runScheduled` looks natural — it is maintenance, and maintenance runs
+ * daily. But the daily run fires at 03:00 UTC, which is 21:00 or 22:00 the previous evening in
+ * America/Chicago. Camille's report is due at 06:30 Chicago, so the 03:00 run would find it not yet
+ * due, and the NEXT day's 03:00 run would find it due and fourteen hours stale. The report would
+ * arrive a day late, every day, and the cause would look like the duty rather than the cadence it
+ * was hung off.
+ *
+ * A duty may be due at any hour, so the thing that checks must run at every hour. It is cheap by
+ * construction: two number comparisons per duty, and at most one row written.
+ *
+ * ITS OWN waitUntil AT THE CALL SITE, so a failure here cannot swallow the task drain or the daily
+ * maintenance, and neither of them can swallow this.
+ */
+export async function runDuties(env: Env, now = Date.now()) {
+  return materialiseDueDuties(env, now);
 }
 
 /** What the tick decided. A skip carries its reason so silence is never the only evidence. */

@@ -60,6 +60,10 @@ const SNAPSHOT_TABLES = [
   // records back without it and the system rebuilds with no idea which backends were permitted,
   // which the guard refuses - inert rather than leaky, but still not restored.
   "execution_backends", "backend_runs",
+  // Recurring work and what it produced. A restore that brought the reports back without the duty
+  // that generates them would leave a system that has yesterday's intelligence and no way to get
+  // tomorrow's - and one that restored the duty without its next_due_at would fire it immediately.
+  "standing_duties", "executive_reports",
   "trading_engines", "kill_switch_probes", "deployment_stages", "strategy_desks",
   "promotion_scorecards", "scale_rungs", "trading_sequence", "trading_nevers",
   "sovereignty_packages", "sovereignty_drills",

@@ -16,7 +16,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, drainBossTasks, runBossNightly, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, drainBossTasks, runBossNightly, runBossDuties, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1400,6 +1400,18 @@ export default {
         .catch((err) => {
           console.error("boss task drain failed", err);
         }),
+    );
+    /*
+     * EVERY TICK, unlike the maintenance run below. A standing duty may be due at any hour — the
+     * owner's Executive Intelligence Report is due at 06:30 America/Chicago — and a check that only
+     * ran with the 03:00 UTC maintenance would find it due a full day late. See runDuties.
+     */
+    ctx.waitUntil(
+      runBossDuties(toBossEnvForCron(env), now.getTime()).then((r) => {
+        if (r.fired.length) console.log("boss duties materialised", JSON.stringify(r.fired));
+      }).catch((err) => {
+        console.error("boss duties failed", err);
+      }),
     );
     ctx.waitUntil(
       runBossNightly(toBossEnvForCron(env)).catch((err) => {

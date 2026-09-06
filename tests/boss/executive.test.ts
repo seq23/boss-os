@@ -51,8 +51,22 @@ describe("Phase 11 — Today renders the thirteen canon elements", () => {
     expect(by.approval_inbox.content.pending).toBeGreaterThanOrEqual(1);
     expect(by.approval_inbox.content.by_risk.high).toBeGreaterThanOrEqual(1);
     expect(by.approval_inbox.content.oldest).toBeTruthy();
-    expect(by.executive_briefing.content.open_tasks).toBeGreaterThanOrEqual(1);
-    expect(by.executive_briefing.content.captures_today).toBeGreaterThanOrEqual(1);
+    /*
+     * THE BRIEFING BLOCK NO LONGER REPEATS THIS SCREEN BACK AT ITSELF.
+     *
+     * It used to assert `open_tasks` and `captures_today` here — and three lines above, this same
+     * test asserts the approval count on `approval_inbox`, which the briefing was also printing.
+     * That is the duplication in the test as well as in the product: the block was a status line
+     * wearing a briefing's name.
+     *
+     * It now carries Camille's Executive Intelligence Report. With no report yet, the honest state
+     * is a named reason rather than a blank — and the reason says who delivers it and when, so a
+     * reader who has never seen one knows what is supposed to appear.
+     */
+    expect(by.executive_briefing.is_empty).toBe(true);
+    expect(by.executive_briefing.content.reason).toContain("06:30");
+    expect(by.executive_briefing.content.reason).toContain("Camille");
+    expect(by.executive_briefing.content).not.toHaveProperty("open_tasks");
     expect(by.employee_status.content.by_status.active).toBeGreaterThanOrEqual(1);
     expect(by.trading_status.content.live_enabled).toBe(false);
   });
