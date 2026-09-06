@@ -33,11 +33,57 @@ import { join, relative, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
+/**
+ * TWO BRANDS LIVE UNDER src/client, AND THIS SCAN ENFORCED ONE.
+ *
+ * The law is the same for both - colour is declared in exactly one token block per app, and every
+ * component consumes tokens - but the palettes are not. Run unchanged after the Boss OS port it
+ * flagged all fifteen Boss tokens as illegal literals, which is the noise that gets a scan
+ * switched off rather than obeyed. Each app now declares its own token home, its own canonical
+ * colour, and its own banned hue range.
+ *
+ * WHY THE BANNED RANGES DIFFER. West Peek bans 175-330 degrees: blue through purple may not be
+ * product colours. Boss OS bans 175-300, because plum IS a Boss product colour - it is the trading
+ * lane rail, the one thing on screen that is always true - while blue, cyan and indigo stay out.
+ * The rule is not weakened, it is stated for the brand it governs.
+ */
+const APPS = [
+  {
+    name: "Boss OS",
+    dir: "src/client/boss",
+    canonical: "#c8a45c",
+    canonicalName: "Boss gold",
+    bannedHue: [175, 300],
+    bannedLabel: "blue, cyan and indigo",
+  },
+  {
+    name: "West Peek",
+    dir: "src/client",
+    required: true,
+    // The chassis owns everything under src/client that Boss OS does not.
+    excludes: ["src/client/boss"],
+    canonical: "#f05a1a",
+    canonicalName: "canonical West Peek orange",
+    bannedHue: [175, 330],
+    bannedLabel: "blue, cyan, indigo, violet and purple",
+    staleOranges: ["#ff6a00", "#f26a21", "#ff7a00", "#ff8500", "#ff8a00"],
+  },
+];
+
 const CANONICAL_ORANGE = "#f05a1a";
 const STALE_ORANGES = ["#ff6a00", "#f26a21", "#ff7a00", "#ff8500", "#ff8a00"];
 
 /** Literals a non-CSS file may carry, because a manifest or an SVG cannot reference a CSS var. */
-const ALLOWED_LITERALS = new Set(["#050505", "#f7f2ea", "#ffffff", "#f05a1a", "#fff"]);
+/**
+ * The literals a non-CSS file may carry. index.html and the web manifest are SHARED by both apps -
+ * one document boots whichever surface the URL asks for - so the browser-chrome colours in them
+ * are Boss OS's, because Boss OS is what this repo is becoming.
+ */
+const ALLOWED_LITERALS = new Set([
+  "#050505", "#f7f2ea", "#ffffff", "#f05a1a", "#fff",
+  "#fdf8f4", // Boss ground — manifest background_color and the index.html theme-color
+  "#3d2f33", // Boss ink
+]);
 
 /** The two approved brand assets. Their colours come from the parent brand, not from this repo. */
 const BRAND_ASSETS = new Set(["boss-mark.svg", "icon.svg"]);
@@ -110,62 +156,75 @@ export function scan(root) {
     return failures;
   }
 
-  // 2 · Colour lives in the token block, and nowhere else.
-  const stylesPath = join(clientDir, "styles.css");
-  let tokenBlock = "";
-  if (!existsSync(stylesPath)) {
-    failures.push("src/client/styles.css is missing — the token block has no home");
-  } else {
-    const css = stripCssComments(readFileSync(stylesPath, "utf8"));
-    const start = css.indexOf(":root {");
-    const end = start === -1 ? -1 : css.indexOf("\n}", start);
-    if (start === -1 || end === -1) {
-      failures.push("src/client/styles.css has no :root token block");
+  // 2 · Colour lives in one token block per app, and nowhere else.
+  // 3 · Stale oranges, anywhere, including the brand assets.
+  // 4 · No off-brand hue as a product colour — the range is the app's own.
+  for (const app of APPS) {
+    const appDir = join(root, ...app.dir.split("/"));
+    if (!existsSync(appDir)) {
+      // The chassis surface is required; a tree with no Boss OS surface is a valid tree, and the
+      // self-test's fixtures are exactly that. `required: true` marks the one that must exist.
+      if (app.required) failures.push(`${app.dir} is missing — ${app.name} has nothing to scan`);
+      continue;
+    }
+    const stylesPath = join(appDir, "styles.css");
+    let tokenBlock = "";
+    if (!existsSync(stylesPath)) {
+      failures.push(`${app.dir}/styles.css is missing — ${app.name}'s token block has no home`);
     } else {
-      tokenBlock = css.slice(start, end);
-      const outside = css.slice(0, start) + css.slice(end);
-      for (const literal of new Set(outside.match(COLOUR) ?? [])) {
-        failures.push(`colour literal outside the token block in styles.css: ${literal} (use a var(--wp-*) token)`);
-      }
-      if (!tokenBlock.toLowerCase().includes(CANONICAL_ORANGE)) {
-        failures.push(`canonical orange ${CANONICAL_ORANGE} is not defined in the token block`);
-      }
-    }
-  }
-
-  for (const file of walk(clientDir)) {
-    const name = basename(file);
-    const ext = extname(file);
-    if (file === stylesPath) continue;
-    const raw = readFileSync(file, "utf8");
-    const text = ext === ".css" ? stripCssComments(raw) : ext === ".svg" ? raw : stripJsComments(raw);
-
-    // 3 · Stale oranges, anywhere, including the brand assets.
-    for (const stale of STALE_ORANGES) {
-      if (text.toLowerCase().includes(stale)) failures.push(`stale West Peek orange ${stale} in ${rel(file)}`);
-    }
-
-    for (const literal of new Set(text.match(COLOUR) ?? [])) {
-      const lower = literal.toLowerCase();
-      if (ext === ".ts" || ext === ".tsx" || ext === ".css") {
-        failures.push(`colour literal in ${rel(file)}: ${literal} (components consume tokens, they do not declare colour)`);
-        continue;
-      }
-      if (BRAND_ASSETS.has(name)) continue; // the approved parent-brand mark carries its own colours
-      if (!ALLOWED_LITERALS.has(lower)) {
-        failures.push(`unapproved colour literal in ${rel(file)}: ${literal}`);
+      const css = stripCssComments(readFileSync(stylesPath, "utf8"));
+      const start = css.indexOf(":root {");
+      const end = start === -1 ? -1 : css.indexOf("\n}", start);
+      if (start === -1 || end === -1) {
+        failures.push(`${app.dir}/styles.css has no :root token block`);
+      } else {
+        tokenBlock = css.slice(start, end);
+        const outside = css.slice(0, start) + css.slice(end);
+        for (const literal of new Set(outside.match(COLOUR) ?? [])) {
+          failures.push(`colour literal outside the token block in ${app.dir}/styles.css: ${literal} (use a token)`);
+        }
+        if (!tokenBlock.toLowerCase().includes(app.canonical)) {
+          failures.push(`${app.canonicalName} ${app.canonical} is not defined in ${app.name}'s token block`);
+        }
       }
     }
-  }
 
-  // 4 · No generic blue / indigo / violet / purple / cyan as a product colour.
-  for (const literal of new Set(tokenBlock.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [])) {
-    const hsl = hexHue(literal);
-    if (!hsl) continue;
-    if (hsl.hue >= 175 && hsl.hue <= 330 && hsl.sat > 0.12) {
-      failures.push(
-        `non-West-Peek hue in the token block: ${literal} (hue ${hsl.hue.toFixed(0)}°) — blue, cyan, indigo, violet, and purple may not be product colours`,
-      );
+    const files = walk(appDir).filter(
+      (f) => !(app.excludes ?? []).some((ex) => f.startsWith(join(root, ...ex.split("/")))) && f !== stylesPath,
+    );
+    // A scan that examines nothing is not a pass.
+    if (app.required && files.length === 0) failures.push(`${app.dir}: 0 files scanned for ${app.name}`);
+
+    for (const file of files) {
+      const name = basename(file);
+      const ext = extname(file);
+      const raw = readFileSync(file, "utf8");
+      const text = ext === ".css" ? stripCssComments(raw) : ext === ".svg" ? raw : stripJsComments(raw);
+
+      for (const stale of app.staleOranges ?? []) {
+        if (text.toLowerCase().includes(stale)) failures.push(`stale West Peek orange ${stale} in ${rel(file)}`);
+      }
+
+      for (const literal of new Set(text.match(COLOUR) ?? [])) {
+        const lower = literal.toLowerCase();
+        if (ext === ".ts" || ext === ".tsx" || ext === ".css") {
+          failures.push(`colour literal in ${rel(file)}: ${literal} (components consume tokens, they do not declare colour)`);
+          continue;
+        }
+        if (BRAND_ASSETS.has(name)) continue; // the approved marks carry their own colours
+        if (!ALLOWED_LITERALS.has(lower)) failures.push(`unapproved colour literal in ${rel(file)}: ${literal}`);
+      }
+    }
+
+    const [lo, hi] = app.bannedHue;
+    for (const literal of new Set(tokenBlock.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [])) {
+      const hsl = hexHue(literal);
+      if (!hsl) continue;
+      if (hsl.hue >= lo && hsl.hue <= hi && hsl.sat > 0.12) {
+        failures.push(
+          `off-brand hue in ${app.name}'s token block: ${literal} (hue ${hsl.hue.toFixed(0)}°) — ${app.bannedLabel} may not be product colours`,
+        );
+      }
     }
   }
 
@@ -242,7 +301,7 @@ function selfTest() {
         const p = join(dir, "src", "client", "styles.css");
         writeFileSync(p, readFileSync(p, "utf8").replace("--wp-ink: #15120f;", "--wp-ink: #15120f;\n  --wp-link: #7fa8c9;"));
       },
-      expect: (f) => f.some((x) => x.includes("non-West-Peek hue") && x.includes("#7fa8c9")),
+      expect: (f) => f.some((x) => x.includes("off-brand hue") && x.includes("#7fa8c9")),
       describe: "generic blue token (the exact pre-overhaul drift)",
     },
     {
@@ -251,7 +310,7 @@ function selfTest() {
         const p = join(dir, "src", "client", "styles.css");
         writeFileSync(p, readFileSync(p, "utf8").replace("--wp-ink: #15120f;", "--wp-ink: #15120f;\n  --wp-private: #6b5b95;"));
       },
-      expect: (f) => f.some((x) => x.includes("non-West-Peek hue") && x.includes("#6b5b95")),
+      expect: (f) => f.some((x) => x.includes("off-brand hue") && x.includes("#6b5b95")),
       describe: "purple token (the exact pre-overhaul drift)",
     },
     {

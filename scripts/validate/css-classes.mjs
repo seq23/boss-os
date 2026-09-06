@@ -18,8 +18,28 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const CSS = "src/client/styles.css";
 const ROOT = "src/client";
+
+/**
+ * TWO APPS LIVE UNDER src/client, AND EACH HAS ITS OWN STYLESHEET.
+ *
+ * This scan read one stylesheet and walked the whole tree, which was correct while there was one
+ * app. After the Boss OS port it reported 208 violations - every Boss class, because Boss's rules
+ * are in Boss's stylesheet - and it runs in CI rather than under vitest, so the test suites stayed
+ * green while the CI gate was red. A guard that cannot reach what it governs reports noise, and
+ * noise is how a guard gets switched off.
+ *
+ * A file is now checked against the stylesheet its own app owns. Longest prefix wins, so adding a
+ * third surface means adding a line here rather than widening an allowlist.
+ */
+const STYLESHEETS = [
+  { prefix: "src/client/boss/", css: "src/client/boss/styles.css" },
+  { prefix: "src/client/", css: "src/client/styles.css" },
+];
+
+function stylesheetFor(file) {
+  return STYLESHEETS.find((s) => file.startsWith(s.prefix))?.css ?? null;
+}
 
 /**
  * Classes that are deliberately not styled. Kept SHORT and each one justified — a long list here
@@ -92,6 +112,20 @@ function scan(cssText, files) {
   return problems;
 }
 
+/** Scan every app against its own stylesheet, and refuse to pass on a surface with no files. */
+function scanAll(files) {
+  const problems = [];
+  for (const { prefix, css } of STYLESHEETS) {
+    const owned = files.filter((f) => stylesheetFor(f) === css);
+    if (owned.length === 0) {
+      problems.push(`${prefix}: 0 .tsx files resolved to ${css} - a surface that checks nothing is not a pass`);
+      continue;
+    }
+    problems.push(...scan(readFileSync(css, "utf8"), owned));
+  }
+  return problems;
+}
+
 function selfTest() {
   const css = ".real { color: red; }\n/* .mentioned-in-a-comment is not a definition */\n";
   const cases = [
@@ -141,15 +175,19 @@ function braceBalance(css) {
       if (depth < 0) return `a stray closing brace at ${CSS}:${i + 1} — everything after it is parsed at the wrong nesting level`;
     }
   }
-  return depth === 0 ? null : `${depth} unclosed rule(s) in ${CSS}`;
+  return depth === 0 ? null : `${depth} unclosed rule(s)`;
 }
 
-const unbalanced = braceBalance(readFileSync(CSS, "utf8"));
-if (unbalanced) {
-  console.error(`CSS CLASS SCAN FAILED — ${unbalanced}.\n`);
-  console.error("esbuild reports this only as a warning during minify, so the build still succeeds");
-  console.error("and the damage shows up as styling that silently does not apply.");
-  process.exit(1);
+// Every app's stylesheet, not just the first one: an unclosed rule in Boss's sheet is exactly as
+// invisible as one in the chassis's, and esbuild reports both only as a minify warning.
+for (const { css } of STYLESHEETS) {
+  const unbalanced = braceBalance(readFileSync(css, "utf8"));
+  if (unbalanced) {
+    console.error(`CSS CLASS SCAN FAILED — ${unbalanced} in ${css}.\n`);
+    console.error("esbuild reports this only as a warning during minify, so the build still succeeds");
+    console.error("and the damage shows up as styling that silently does not apply.");
+    process.exit(1);
+  }
 }
 
 const tsxFiles = walk(ROOT);
@@ -162,7 +200,7 @@ if (tsxFiles.length === 0) {
   process.exit(1);
 }
 
-const problems = scan(readFileSync(CSS, "utf8"), tsxFiles);
+const problems = scanAll(tsxFiles);
 if (problems.length > 0) {
   console.error("CSS CLASS SCAN FAILED — these are applied to elements and style nothing:\n");
   for (const p of problems) console.error(`  ${p}`);
@@ -170,5 +208,8 @@ if (problems.length > 0) {
   console.error("is the one front-end mistake with no symptom: the element renders, unstyled, forever.");
   process.exit(1);
 }
-console.log(`CSS CLASS SCAN PASSED: every className in ${ROOT} has a rule in ${CSS}.`);
+console.log(
+  `CSS CLASS SCAN PASSED: every className in ${ROOT} has a rule in the stylesheet its app owns ` +
+    `(${STYLESHEETS.map((s) => s.css).join(", ")}).`,
+);
 selfTest();

@@ -41,7 +41,7 @@ export function Spirit() {
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
 
       {/* Canon §5.2: reality first, before anything about the sky. */}
-      <div className="notice" style={{ borderColor: reality_priority.warning ? "var(--risk-high, #b4482f)" : undefined }}>
+      <div className="notice" style={{ borderColor: reality_priority.warning ? "var(--reject)" : undefined }}>
         <strong>{reality_priority.warning ? "Reality first" : "Nothing operational is waiting"}</strong>
         <div className="row-sub">{reality_priority.text}</div>
         <div className="row-sub">{reality_priority.rule}</div>

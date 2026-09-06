@@ -101,7 +101,7 @@ export function Today() {
             aria-pressed={gate === g}
             disabled={done[g]}
           >
-            <div className="stat-n" style={{ fontSize: 15, color: done[g] ? "var(--ok)" : "var(--brass)" }}>
+            <div className="stat-n" style={{ fontSize: 15, color: done[g] ? "var(--ok)" : "var(--gold)" }}>
               {done[g] ? time(day[`${g}_completed_at`]) : "Open"}
             </div>
             <div className="stat-l">{g === "midday" ? "Midday reset" : `${g} gate`}</div>
@@ -407,8 +407,7 @@ function Loops({ loops, onChanged, onError }: {
           ))}
       <form onSubmit={add} style={{ display: "flex", gap: 8, marginTop: 10 }}>
         <input
-          className="lock-input"
-          style={{ flex: 1, background: "var(--raised-2)", border: "1px solid var(--line)", color: "var(--paper)", borderRadius: 3, padding: "8px 10px" }}
+          className="field-inline"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Something that must not be forgotten"
@@ -437,7 +436,7 @@ function Lines({ value, onChange, max, label }: {
           onChange={(e) => onChange(value.map((x, j) => (j === i ? e.target.value : x)))}
           placeholder={`${label} ${i + 1}`}
           aria-label={`${label} ${i + 1}`}
-          style={{ display: "block", width: "100%", marginTop: 8, background: "var(--raised-2)", border: "1px solid var(--line)", color: "var(--paper)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
+          style={{ display: "block", width: "100%", marginTop: 8, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
         />
       ))}
       {value.length < max && (
@@ -489,7 +488,7 @@ function MorningForm({ max, onRun }: { max: number; onRun: (b: unknown) => void 
           onChange={(e) => set(e.target.value)}
           placeholder={label}
           aria-label={label}
-          style={{ display: "block", width: "100%", marginTop: 8, background: "var(--raised-2)", border: "1px solid var(--line)", color: "var(--paper)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
+          style={{ display: "block", width: "100%", marginTop: 8, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
         />
       ))}
       <div className="decide">
@@ -520,7 +519,7 @@ function MiddayForm({ max, onRun }: { max: number; onRun: (b: unknown) => void }
         onChange={(e) => setAdjustments(e.target.value)}
         placeholder="What changed"
         aria-label="What changed"
-        style={{ display: "block", width: "100%", marginTop: 8, background: "var(--raised-2)", border: "1px solid var(--line)", color: "var(--paper)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
+        style={{ display: "block", width: "100%", marginTop: 8, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
       />
       <div className="decide">
         <button className="btn btn-approve" disabled={filled.length === 0}>Reset</button>
@@ -563,7 +562,7 @@ function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRu
             onChange={(e) => setAttention(attention.map((x, j) => (j === i ? { ...x, focus_area: e.target.value } : x)))}
             placeholder="Where the attention went"
             aria-label={`Focus area ${i + 1}`}
-            style={{ flex: 1, background: "var(--raised-2)", border: "1px solid var(--line)", color: "var(--paper)", borderRadius: 3, padding: "8px 10px" }}
+            style={{ flex: 1, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px" }}
           />
           <input
             value={a.pct}
@@ -571,7 +570,7 @@ function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRu
             placeholder="%"
             inputMode="numeric"
             aria-label={`Percentage ${i + 1}`}
-            style={{ width: 64, background: "var(--raised-2)", border: "1px solid var(--line)", color: "var(--paper)", borderRadius: 3, padding: "8px 10px" }}
+            style={{ width: 64, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px" }}
           />
         </div>
       ))}
@@ -590,7 +589,7 @@ function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRu
         onChange={(e) => setNote(e.target.value)}
         placeholder="Evidence from the day"
         aria-label="Evidence from the day"
-        style={{ display: "block", width: "100%", marginTop: 8, background: "var(--raised-2)", border: "1px solid var(--line)", color: "var(--paper)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
+        style={{ display: "block", width: "100%", marginTop: 8, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
       />
 
       <div className="decide">

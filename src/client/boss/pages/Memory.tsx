@@ -77,7 +77,7 @@ function MemoryTiers() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {msg && <div className="notice" style={{ borderColor: "var(--brass)" }}>{msg}</div>}
+      {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
       <div className="stats">
         {TIERS.map((t) => (
@@ -205,7 +205,7 @@ function Knowledge() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {msg && <div className="notice" style={{ borderColor: "var(--brass)" }}>{msg}</div>}
+      {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
       <p className="eyebrow">Personal Operating Manual</p>
       {current ? (

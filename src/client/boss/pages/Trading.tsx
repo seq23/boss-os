@@ -37,7 +37,7 @@ export function Trading() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {msg && <div className="notice" style={{ borderColor: "var(--brass)" }}>{msg}</div>}
+      {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
       <div className="notice" style={{ borderColor: auth.kill_switch ? "var(--reject)" : "var(--lane-trading)" }}>
         {auth.kill_switch

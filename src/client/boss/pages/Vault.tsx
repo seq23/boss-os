@@ -68,7 +68,7 @@ function Sovereignty() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {msg && <div className="notice" style={{ borderColor: "var(--brass)" }}>{msg}</div>}
+      {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
       <p className="row-sub">{status.verdict}</p>
 
@@ -177,7 +177,7 @@ function Continuity() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {msg && <div className="notice" style={{ borderColor: "var(--brass)" }}>{msg}</div>}
+      {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
       <div className="btn-row">
         <button className="btn" disabled={busy !== null}

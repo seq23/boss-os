@@ -1,22 +1,56 @@
-/* Boss OS v20 — deck styling.
-   The lane rail on the left edge of every screen is the one thing that is
-   always true: brass means operations, teal means trading. */
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Karla:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Pinyon+Script&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+/* Boss OS — blush, gold and cream.
+ *
+ * A light ground, on purpose. Boss OS is the screen that opens first thing in the morning and last
+ * thing at night, and the ported deck theme was near-black - correct for a trading terminal, wrong
+ * for a personal operating system that is meant to feel like somewhere you want to be.
+ *
+ * THE LANE RAIL STILL RULES. The stripe down the left edge is the one thing that is always true:
+ * gold means operations, plum means trading. The colours changed, the promise did not - you can
+ * still tell which book you are looking at without reading a word.
+ *
+ * THREE TYPEFACES, EACH DOING ONE JOB.
+ *   Pinyon Script is the wordmark and nothing else. A script at interface sizes is a legibility
+ *   problem wearing a nice dress, so it appears at 32px and above, never in a control or a label.
+ *   Cormorant Garamond carries headings - a high-contrast old-style serif, feminine without being
+ *   decorative, and readable down to 15px.
+ *   Karla is the body and every control. Numbers stay in IBM Plex Mono so a ledger column lines up.
+ *
+ * Every colour in this file lives in the block below. There is not one hard-coded hex anywhere
+ * after it, which is what made this redesign a token swap rather than a rewrite - and what will
+ * keep the next one honest.
+ */
 
 :root {
-  --deck: #0e141b;
-  --raised: #161f2a;
-  --raised-2: #1d2836;
-  --line: #24313f;
-  --paper: #e7eaee;
-  --muted: #8a9aab;
-  --brass: #cfa355;
-  --lane-ops: #cfa355;
-  --lane-trading: #4fb3a5;
-  --reject: #d2554f;
-  --ok: #6bbf7a;
+  /* Ground and surfaces — warm cream, never grey. */
+  --ground: #fdf8f4;
+  --card: #fffcfa;
+  --card-2: #f9eee9;
+  --line: #ecdcd6;
 
-  --display: "Familjen Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --body: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
+  /* Ink — a warm plum-brown. Pure black on cream reads as a printing error. */
+  --ink: #3d2f33;
+  --muted: #907e84;
+
+  /* Blush and gold. */
+  --blush: #f4dade;
+  --blush-deep: #d99aa6;
+  --rose: #b4626f;
+  --gold: #c8a45c;
+  --gold-deep: #a8842f;
+
+  /* Lanes. Gold is operations, plum is trading — the rail's whole job. */
+  --lane-ops: #c8a45c;
+  --lane-trading: #8a5c7a;
+
+  /* State. Kept distinguishable without shouting. */
+  --reject: #c05a5a;
+  --ok: #6f9d78;
+
+  --script: "Pinyon Script", "Snell Roundhand", cursive;
+  --display: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --body: "Karla", ui-sans-serif, system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
 
   --rail: 4px;
@@ -30,8 +64,8 @@ html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--deck);
-  color: var(--paper);
+  background: var(--ground);
+  color: var(--ink);
   font-family: var(--body);
   font-size: 16px;
   line-height: 1.45;
@@ -67,7 +101,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   justify-content: space-between;
   gap: 12px;
   padding: calc(14px + env(safe-area-inset-top)) 18px 12px;
-  background: linear-gradient(var(--deck) 70%, transparent);
+  background: linear-gradient(var(--ground) 70%, transparent);
 }
 
 .topbar h1 {
@@ -105,7 +139,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .docket {
   position: relative;
-  background: var(--raised);
+  background: var(--card);
   border: 1px solid var(--line);
   border-left: none;
   border-radius: 0 3px 3px 0;
@@ -165,7 +199,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 2px;
 }
 .risk-low    { color: var(--muted); border: 1px solid var(--line); }
-.risk-medium { color: var(--brass); border: 1px solid var(--brass); }
+.risk-medium { color: var(--gold); border: 1px solid var(--gold); }
 .risk-high   { color: var(--reject); border: 1px solid var(--reject); }
 
 .decide {
@@ -177,7 +211,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn {
   flex: 1;
   border: 1px solid var(--line);
-  background: var(--raised-2);
+  background: var(--card-2);
   border-radius: 2px;
   padding: 11px 8px;
   font-family: var(--mono);
@@ -190,7 +224,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn-approve { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 .btn-reject  { color: var(--reject); border-color: color-mix(in srgb, var(--reject) 45%, var(--line)); }
 .btn-defer   { color: var(--muted); }
-.btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
 /* A decided docket leaves the list immediately and comes back on failure, so
    there is no lingering "stamped" state to animate. */
@@ -216,7 +250,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 3px;
   padding: 12px 14px;
-  background: var(--raised);
+  background: var(--card);
 }
 .stat-n {
   font-family: var(--display);
@@ -244,7 +278,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-align: center;
   color: var(--muted);
 }
-.empty strong { display: block; color: var(--paper); font-family: var(--display); font-size: 17px; margin-bottom: 5px; }
+.empty strong { display: block; color: var(--ink); font-family: var(--display); font-size: 17px; margin-bottom: 5px; }
 
 .notice {
   position: relative;
@@ -264,7 +298,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   z-index: 30;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  background: color-mix(in srgb, var(--deck) 92%, black);
+  background: color-mix(in srgb, var(--ground) 92%, black);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -288,8 +322,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tab-badge {
   position: absolute;
   transform: translate(14px, -4px);
-  background: var(--brass);
-  color: var(--deck);
+  background: var(--gold);
+  color: var(--ground);
   border-radius: 8px;
   font-size: 9px;
   padding: 0 4px;
@@ -315,10 +349,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .lock p { color: var(--muted); margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
 .lock input {
-  background: var(--raised);
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: 2px;
-  color: var(--paper);
+  color: var(--ink);
   font-family: var(--mono);
   font-size: 16px;
   padding: 13px 14px;
@@ -326,9 +360,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   letter-spacing: 0.1em;
   width: min(300px, 78vw);
 }
-.lock input:focus { outline: none; border-color: var(--brass); }
+.lock input:focus { outline: none; border-color: var(--gold); }
 
-.skel { height: 66px; background: var(--raised); border-radius: 3px; margin-bottom: 10px; opacity: 0.6; }
+.skel { height: 66px; background: var(--card); border-radius: 3px; margin-bottom: 10px; opacity: 0.6; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
@@ -347,7 +381,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 0;
   margin: 0;
 }
-.docket-open:focus-visible { outline: 2px solid var(--brass); outline-offset: 4px; }
+.docket-open:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
 .docket-more {
   display: block;
   margin-top: 8px;
@@ -367,7 +401,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--muted);
   font-size: 14px;
 }
-.link-back:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.link-back:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
 .notice-error { border-color: var(--reject); }
 .notice-hint { display: block; color: var(--muted); font-size: 13px; margin-top: 5px; }
@@ -394,7 +428,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
 .pre {
-  background: var(--raised-2);
+  background: var(--card-2);
   border: 1px solid var(--line);
   border-radius: 3px;
   padding: 12px;
@@ -415,7 +449,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   bottom: calc(8px + env(safe-area-inset-bottom));
   margin-top: 18px;
   padding: 14px;
-  background: var(--raised);
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: 3px;
 }
@@ -435,10 +469,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .field select {
   width: 100%;
   padding: 12px;
-  background: var(--raised-2);
+  background: var(--card-2);
   border: 1px solid var(--line);
   border-radius: 3px;
-  color: var(--paper);
+  color: var(--ink);
   font: inherit;
   /* 16px keeps iOS from zooming the viewport on focus. */
   font-size: 16px;
@@ -446,12 +480,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .field textarea { resize: vertical; min-height: 72px; }
 .field input:focus,
 .field textarea:focus,
-.field select:focus { outline: none; border-color: var(--brass); }
+.field select:focus { outline: none; border-color: var(--gold); }
 
 .panel {
   margin: 12px 0 18px;
   padding: 14px;
-  background: var(--raised);
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: 3px;
 }
@@ -460,7 +494,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 4px 0 14px;
   padding: 11px 12px;
   border-left: 2px solid var(--lane);
-  background: var(--raised-2);
+  background: var(--card-2);
   border-radius: 0 3px 3px 0;
   font-size: 14px;
 }
@@ -487,7 +521,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 12px;
   padding: 13px 0;
 }
-.row-tap:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; }
+.row-tap:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 
 .pill {
   margin-left: 8px;
@@ -507,7 +541,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 4px;
   margin: 4px 0 16px;
   padding: 3px;
-  background: var(--raised);
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: 3px;
 }
@@ -523,11 +557,27 @@ button { font: inherit; color: inherit; cursor: pointer; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.seg-btn[aria-pressed="true"] { background: var(--raised-2); color: var(--paper); }
-.seg-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; }
+.seg-btn[aria-pressed="true"] { background: var(--card-2); color: var(--ink); }
+.seg-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 
 .level-error { color: var(--reject); }
-.level-warn  { color: var(--brass); }
+.level-warn  { color: var(--gold); }
 .level-info  { color: var(--muted); }
 
 a.btn { text-decoration: none; text-align: center; display: inline-block; }
+
+/* An inline field on a list — the "add an open loop" row on Today.
+   It was carrying its own inline style pointed at token names that no longer exist, which is the
+   failure the class scan and the variable scan below both exist to make impossible. */
+.field-inline {
+  flex: 1;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  padding: 8px 10px;
+}
+.field-inline:focus { outline: none; border-color: var(--gold); }
+.field-inline::placeholder { color: var(--muted); }

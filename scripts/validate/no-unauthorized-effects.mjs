@@ -45,6 +45,10 @@ const EGRESS_ALLOWED = new Map([
   ["src/worker/effects/networkOsClient.ts", "Network OS snapshot pull (§12A); READ-ONLY by construction — no POST in the file — and inert unless base URL, session secret and approved email are all set"],
   ["src/worker/effects/runwareClient.ts", "Runware image generation; the PROMPT is the only thing that leaves — no firm records travel with it — https-only to one host, inert unless RUNWARE_API_KEY is set, one image per call, size and time capped"],
   ["src/worker/effects/googleClient.ts", "Google OAuth + Calendar (P51); READ-ONLY scopes so nothing here can alter a calendar, inert unless GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are both set, and reachable only for a partner who granted consent themselves"],
+
+  // ── Ported Boss OS. Both entries are DEBT, and both say what pays for them. ──
+  ["src/worker/boss/router/fireworks.ts", "Boss OS model router (ported); the ONLY adapter in the Boss subtree that calls a vendor, reached solely through Boss's own router, which applies its cost mode, per-lane and per-employee budget hard stops, privacy class, risk ceiling and decision log before the call. Inert unless FIREWORKS_API_KEY is set. Duplicates runAi rather than escaping it — see PORTED_BOSS_ROUTER in no-direct-provider-calls.mjs for the two ways that ends"],
+  ["src/worker/boss/trading/quant.ts", "Boss OS kill-switch probe (ported); sends ONE command — kill_switch or ping — to an operator-registered engine control URL, with a hard AbortSignal timeout and no firm or personal record in the body. No engine is registered in this build, so control_url is null and the file returns not_configured without reaching the network: the quant validation status reports the kill switch as UNPROVEN rather than claiming it works"],
 ]);
 
 /**

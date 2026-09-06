@@ -82,7 +82,7 @@ export function Inbox({ onCountChange, onOpen }: {
       )}
 
       {costMode && costMode !== "NORMAL" && (
-        <div className="notice" style={{ borderColor: "var(--brass)" }}>
+        <div className="notice" style={{ borderColor: "var(--gold)" }}>
           Cost mode is <strong>{status.cost_mode_policy?.label ?? costMode}</strong>. {status.cost_mode_policy?.note}
         </div>
       )}

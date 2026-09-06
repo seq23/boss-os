@@ -57,7 +57,7 @@ export function ApprovalDetail({ id, onBack, onDecided }: {
       <button className="link-back" onClick={onBack}>← Inbox</button>
 
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {outcome && <div className="notice" style={{ borderColor: "var(--brass)" }}>{outcome}</div>}
+      {outcome && <div className="notice" style={{ borderColor: "var(--gold)" }}>{outcome}</div>}
 
       <article className="docket docket-full"
         style={{ ["--lane" as string]: a.lane === "trading" ? "var(--lane-trading)" : "var(--lane-ops)" }}>

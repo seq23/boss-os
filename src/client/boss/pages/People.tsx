@@ -60,7 +60,7 @@ export function People() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {msg && <div className="notice" style={{ borderColor: "var(--brass)" }}>{msg}</div>}
+      {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
       <div className="stats">
         <Score label="relationships" value={rows?.length ?? null} />

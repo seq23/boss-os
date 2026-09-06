@@ -342,7 +342,7 @@ function Decision({ id, onBack }: { id: string; onBack: () => void }) {
         ))}
         {decision.rationale && <><p className="eyebrow">Rationale</p><p>{decision.rationale}</p></>}
         {decision.red_team_override && (
-          <div className="notice" style={{ borderColor: "var(--brass)" }}>
+          <div className="notice" style={{ borderColor: "var(--gold)" }}>
             Committed over a kill verdict: {decision.red_team_override.reason}
           </div>
         )}

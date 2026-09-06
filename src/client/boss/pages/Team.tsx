@@ -175,7 +175,7 @@ function Roster() {
       {open && <NewTask templates={templates} onDone={() => { setOpen(false); load(); }} />}
 
       {sprawl?.duplicate_departments?.length > 0 && (
-        <div className="notice" style={{ borderColor: "var(--brass)" }}>
+        <div className="notice" style={{ borderColor: "var(--gold)" }}>
           Two employees cover the same ground: {sprawl.duplicate_departments.map((d: any) => d.names).join("; ")}.
           Merge one before the roster grows again.
         </div>
@@ -276,7 +276,7 @@ function NewTask({ templates, onDone }: { templates: any[]; onDone: () => void }
   return (
     <div className="panel">
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {result && <div className="notice" style={{ borderColor: "var(--brass)" }}>{result}</div>}
+      {result && <div className="notice" style={{ borderColor: "var(--gold)" }}>{result}</div>}
 
       <label className="field">
         <span>What needs doing</span>
@@ -359,7 +359,7 @@ function Prompts() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {msg && <div className="notice" style={{ borderColor: "var(--brass)" }}>{msg}</div>}
+      {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
       <div className="panel">
         <label className="field">
