@@ -4,6 +4,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
+import { overlappingCharters, type RosterMember } from "@shared/boss/rosterOverlap";
 
 export const employees = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -138,18 +139,39 @@ employees.post("/:id/merge", async (c) => {
 });
 
 /**
- * Agent sprawl check. Reports duplicate departments and employees that have
- * earned nothing, so the roster can be pruned deliberately.
+ * Agent sprawl check. Reports employees that have earned nothing, reviews that are due, and
+ * charters that genuinely say the same thing - so the roster can be pruned deliberately.
+ *
+ * `duplicate_departments` IS GONE, AND SO IS THE CLAIM IT CARRIED. It was
+ * `GROUP BY lane, department HAVING COUNT(*) > 1` - a count of who shares a department - and the
+ * Team screen rendered it as "Two employees cover the same ground... Merge one before the roster
+ * grows again." On the live roster that accused Chief of Staff and Task Intake, and Model Router
+ * and Continuity: four employees who each do a job nobody else does. Continuity keeps the system
+ * rebuildable and runs restore drills; Model Router decides where work runs, honouring privacy
+ * class and budget. They share a label.
+ *
+ * Two people in a department is the normal shape of a department. Firing on the normal shape of
+ * the thing you watch is the same defect as never firing, and worse when it fires as an accusation
+ * with a recommended action - the standing advice was to merge away a job nobody else covers.
+ *
+ * What replaces it is two separate answers, because they were two different questions all along:
+ *   `shared_departments`  - a roster FACT, no verb, no recommendation.
+ *   `overlapping_charters` - measured similarity between standing orders, which is the closest
+ *                            thing this schema has to what an employee is FOR.
  */
 employees.get("/review/sprawl", async (c) => {
   const now = Date.now();
-  const [roster, duplicates, idle, due] = await Promise.all([
+  const [roster, shared, rosterRows, idle, due] = await Promise.all([
     c.env.DB.prepare(`SELECT COUNT(*) AS n FROM employees WHERE lifecycle IN ('active','provisional')`).first<{ n: number }>(),
     c.env.DB.prepare(
       `SELECT lane, department, COUNT(*) AS n, GROUP_CONCAT(name, ', ') AS names
          FROM employees WHERE lifecycle IN ('active','provisional') AND department IS NOT NULL
         GROUP BY lane, department HAVING COUNT(*) > 1`,
     ).all(),
+    c.env.DB.prepare(
+      `SELECT id, name, lane, department, charter FROM employees
+        WHERE lifecycle IN ('active','provisional')`,
+    ).all<RosterMember>(),
     c.env.DB.prepare(
       `SELECT e.id, e.name, e.department, e.created_at
          FROM employees e
@@ -165,7 +187,10 @@ employees.get("/review/sprawl", async (c) => {
 
   return ok(c, {
     roster_size: roster?.n ?? 0,
-    duplicate_departments: duplicates.results ?? [],
+    // Stated, not accused. Two employees in one department is a fact about the roster.
+    shared_departments: shared.results ?? [],
+    // Evidence of actual duplication, or an empty list. Only this one carries a recommendation.
+    overlapping_charters: overlappingCharters(rosterRows.results ?? []),
     idle_over_14_days: idle.results ?? [],
     reviews_due: due.results ?? [],
   });

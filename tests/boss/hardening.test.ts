@@ -260,7 +260,10 @@ describe("Phase 5 — employee lifecycle", () => {
   it("reports sprawl signals from real roster data", async () => {
     const { body } = await apiJson("/api/employees/review/sprawl");
     expect(body.data.roster_size).toBeGreaterThan(0);
-    expect(Array.isArray(body.data.duplicate_departments)).toBe(true);
+    // `duplicate_departments` was replaced: it counted who shares a department and the Team
+    // screen reported that as shared work. See tests/boss/rosterOverlap.test.ts.
+    expect(Array.isArray(body.data.shared_departments)).toBe(true);
+    expect(Array.isArray(body.data.overlapping_charters)).toBe(true);
     expect(Array.isArray(body.data.reviews_due)).toBe(true);
   });
 

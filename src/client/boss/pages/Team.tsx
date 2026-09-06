@@ -174,10 +174,28 @@ function Roster() {
       </button>
       {open && <NewTask templates={templates} onDone={() => { setOpen(false); load(); }} />}
 
-      {sprawl?.duplicate_departments?.length > 0 && (
+      {/*
+        * ONLY MEASURED OVERLAP EARNS A RECOMMENDATION.
+        *
+        * This banner used to read "Two employees cover the same ground: Chief of Staff, Task
+        * Intake; Model Router, Continuity. Merge one before the roster grows again." - rendered
+        * from a COUNT of who shares a department. Those four each do a job nobody else does, so
+        * the screen's standing advice was to merge away a job the system needs. See the note on
+        * `/review/sprawl`.
+        *
+        * Now it appears only when two charters genuinely say the same thing, it names the pair
+        * rather than a department's whole membership, and it shows the score - so the reader can
+        * disagree with the measurement instead of only with the verdict.
+        */}
+      {sprawl?.overlapping_charters?.length > 0 && (
         <div className="notice" style={{ borderColor: "var(--gold)" }}>
-          Two employees cover the same ground: {sprawl.duplicate_departments.map((d: any) => d.names).join("; ")}.
-          Merge one before the roster grows again.
+          {sprawl.overlapping_charters.map((o: any) => (
+            <div key={`${o.a.id}-${o.b.id}`}>
+              {o.a.name} and {o.b.name} have nearly the same standing orders
+              {" "}({Math.round(o.similarity * 100)}% of the wording is shared). Read both charters,
+              then merge or narrow one.
+            </div>
+          ))}
         </div>
       )}
 
