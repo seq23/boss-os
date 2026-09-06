@@ -58,7 +58,31 @@ async function assertDeviceMaySync(db: D1Database, deviceId: string): Promise<vo
  * written into a cloud structure and the only thing standing between it and a leak is a WHERE
  * clause somebody has to remember. Refusing at admission means the ledger cannot contain it.
  */
+/**
+ * Entities that never synchronize, whatever their residency says.
+ *
+ * §3.4 lists what must never cross: API keys, provider tokens, cookies, active sessions, passcode
+ * material, signing keys, model weights and caches, private inference logs, machine-specific paths,
+ * runtime credentials, build state. Most of those have no table — sessions live in KV, and
+ * `providers` was already written to hold `api_key_var`, the NAME of a secret rather than a secret.
+ *
+ * `settings` is the one that is free-form: a TEXT key and a TEXT value, which is exactly the shape
+ * a machine-specific path or a runtime credential ends up in. It is blocked by default rather than
+ * audited by hope. If the private runtime turns out to need synced configuration, the fix is to
+ * split settings into config and local runtime state in a migration — not to loosen this.
+ *
+ * This is a SECOND gate, not the first: residency already governs. It exists so that classifying an
+ * entity CLOUD_SYNC by mistake is not sufficient to move a secret.
+ */
+const NEVER_SYNCS = new Set(["settings"]);
+
 async function assertEntityMaySync(db: D1Database, entity: string, recordId: string): Promise<void> {
+  if (NEVER_SYNCS.has(entity)) {
+    throw new SyncRefusal(
+      "NEVER_SYNCS",
+      `${entity} never synchronizes: it can carry credentials, paths or runtime state (§3.4). Nothing was transmitted.`,
+    );
+  }
   const c = await classify(db, entity, recordId);
   if (c.residency === "LOCAL_ONLY") {
     throw new AirlockRefusal(

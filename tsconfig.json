@@ -42,6 +42,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts",
-    "vitest.boss.config.ts"
+    "vitest.boss.config.ts",
+    "scripts"
   ]
 }
