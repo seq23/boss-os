@@ -19,8 +19,13 @@ import { audit } from "../lib/audit";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import {
   ADVISORY_NOTE, CANON_WINDOW_TYPES, DEFERRED_ASTRONOMY, MANUAL_ALMANAC, NO_EPHEMERIS,
+  AWAITING_OWNER, OWNER_INPUTS,
   moonPhase, moonPosition,
 } from "../spirit/astro";
+import {
+  METHOD_PLANETS, STATION_UNCERTAINTY_HOURS, TIME_ACCURACY, natalChart,
+  type BirthData, type TimeAccuracy,
+} from "../spirit/planets";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
   ANCESTOR_MINUTES_TARGET, CONTRIBUTION_IDEAL, CONTRIBUTION_MINIMUM,
@@ -146,6 +151,9 @@ spirit.get("/month", async (c) => {
     window_types: CANON_WINDOW_TYPES,
     coverage: await almanacCoverage(c.env.DB, Date.now()),
     deferred: DEFERRED_ASTRONOMY,
+    // The month view carries the question too, so the one remaining gap is visible where the
+    // almanac is read rather than only on an endpoint nobody opens.
+    owner_inputs: OWNER_INPUTS,
   });
 });
 
@@ -227,26 +235,123 @@ spirit.get("/astro/at", async (c) => {
  * and not filled with plausible dates: it is reported as deferred, with the
  * reason.
  *
- * The two gaps are kept apart on purpose. The natal layer waits on a source that
- * does not exist for this build; the retrograde calendar waits on a paste. The
- * response says which is which, because a person can close one of them today.
+ * WHAT CHANGED. This endpoint used to report "DEFERRED — NO EPHEMERIS SOURCE" over three items, and
+ * two of them were wrong about themselves: planetary ingresses are computed now, and so are the
+ * retrogrades and shadow windows that were filed separately as awaiting a paste. What is left is not
+ * an ephemeris gap at all — the same arithmetic produces a natal chart the moment it has a birth
+ * date, a birth time and a birth place. That is a question for one person, not a missing dependency,
+ * and the response now asks it.
  */
-spirit.get("/astro/natal", async (c) =>
-  ok(c, {
+spirit.get("/astro/natal", async (c) => {
+  const stored = await c.env.DB
+    .prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)
+    .first<{ value: string }>();
+  const birth = stored ? (JSON.parse(stored.value) as BirthData) : null;
+
+  /*
+   * ONCE THE BIRTH DATA EXISTS THE CHART IS JUST COMPUTED. There is no second dependency behind it,
+   * which is exactly what "no ephemeris source" obscured for the life of this build.
+   */
+  if (birth) {
+    return ok(c, {
+      available: true,
+      birth: { ...birth, born_at_iso: new Date(birth.born_at).toISOString() },
+      chart: natalChart(birth),
+      advisory: true,
+      note: ADVISORY_NOTE,
+    });
+  }
+
+  return ok(c, {
     available: false,
-    status: NO_EPHEMERIS,
+    status: AWAITING_OWNER,
+    // Empty, and that IS the finding: nothing here is blocked on a source any more.
     deferred: DEFERRED_ASTRONOMY,
+    owner_inputs: OWNER_INPUTS,
     reason:
-      "This build computes the Moon from a closed-form series. Natal placements and transits to them need a real ephemeris, which this build does not ship and cannot fetch, and no vendor is acceptable for it — birth data would leave the Worker.",
-    what_would_change_it: "An ephemeris source on disk. Nothing about it is waiting on this build.",
-    not_deferred_here: {
-      manual: MANUAL_ALMANAC,
+      "The planets are computed here, not fetched — the same arithmetic that produces the retrogrades " +
+      "and ingresses on this screen produces a natal chart. What it does not have is your birth date, " +
+      "your birth time and your birth place, and no computation can supply those.",
+    what_would_change_it:
+      "Three facts from you. The date and place are easy; the time matters most, because the ascendant " +
+      "and houses move a degree every four minutes.",
+    holds_birth_data: false,
+    now_computed: {
       note:
-        "Retrograde periods and shadow windows are not an ephemeris problem. Canon §42.3 makes the hand-entered calendar the primary implementation; they are imported, and the coverage endpoint says how much of the horizon is entered.",
+        "Retrograde periods, pre- and post-retrograde shadow windows, and planetary sign ingresses are " +
+        "computed and in the almanac. Nothing on this screen is waiting for a paste.",
+      method: METHOD_PLANETS,
+      station_uncertainty_hours: STATION_UNCERTAINTY_HOURS,
       coverage: await almanacCoverage(c.env.DB, Date.now()),
     },
-  }),
-);
+  });
+});
+
+/**
+ * Take the birth data, once.
+ *
+ * WHAT IT REFUSES AND WHY. An unparseable instant, an unknown accuracy word, or coordinates outside
+ * the globe are all rejected rather than coerced — a chart built on a silently corrected input is
+ * wrong in a way nobody can see. Coordinates are optional and their absence is reported by the
+ * chart itself, because a chart with no houses is a real chart and a chart with guessed houses is
+ * not.
+ */
+spirit.post("/astro/natal", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (!b) throw badRequest("Send { born_at, birth_place, time_accuracy }");
+
+  const bornAt = typeof b.born_at === "number" ? b.born_at : Date.parse(String(b.born_at ?? ""));
+  if (!Number.isFinite(bornAt)) {
+    throw badRequest(
+      "born_at must be a birth instant",
+      "An ISO timestamp WITH its offset, e.g. 1990-04-17T06:12:00-05:00, or epoch milliseconds. " +
+        "The offset matters: an hour of drift moves the ascendant fifteen degrees.",
+    );
+  }
+  const place = String(b.birth_place ?? "").trim();
+  if (!place) throw badRequest("birth_place is needed", "The city is enough. It is recorded, not looked up.");
+
+  const accuracy = String(b.time_accuracy ?? "");
+  if (!(TIME_ACCURACY as readonly string[]).includes(accuracy)) {
+    throw badRequest(
+      `time_accuracy is ${TIME_ACCURACY.join(", ")}`,
+      "Say which honestly. 'exact' is the only one that produces an ascendant, and claiming it for a " +
+        "remembered time produces a confident wrong answer instead of an honest missing one.",
+    );
+  }
+
+  const num = (v: unknown) => (v === undefined || v === null || v === "" ? null : Number(v));
+  const latitude = num(b.latitude);
+  const longitude = num(b.longitude);
+  if (latitude !== null && (!Number.isFinite(latitude) || Math.abs(latitude) > 90)) {
+    throw badRequest("latitude is degrees north, between -90 and 90");
+  }
+  if (longitude !== null && (!Number.isFinite(longitude) || Math.abs(longitude) > 180)) {
+    throw badRequest("longitude is degrees EAST, between -180 and 180", "West is negative.");
+  }
+
+  const birth: BirthData = {
+    born_at: Math.round(bornAt), birth_place: place,
+    time_accuracy: accuracy as TimeAccuracy, latitude, longitude,
+  };
+
+  await c.env.DB
+    .prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('natal_birth_data', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .bind(JSON.stringify(birth), Date.now())
+    .run();
+
+  // Audited without the data. That she set it, and when, is governance; the birth instant itself is
+  // hers and does not need repeating into a log that other things read.
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "settings", entityId: "natal_birth_data",
+    action: "set", detail: { time_accuracy: accuracy, has_coordinates: latitude !== null && longitude !== null },
+  });
+
+  return ok(c, { available: true, birth, chart: natalChart(birth), note: ADVISORY_NOTE }, 201);
+});
 
 // ─── Manifestations, and the anti-delusion rule ───────────────────────────────
 

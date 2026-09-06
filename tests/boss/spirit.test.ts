@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, insertApproval, insertTask, row } from "./helpers";
 import {
-  moonPhase, moonPosition, buildAlmanac, ZODIAC, NO_EPHEMERIS, AWAITING_ALMANAC, CANON_WINDOW_TYPES,
+  moonPhase, moonPosition, buildAlmanac, ZODIAC, NO_EPHEMERIS, AWAITING_ALMANAC, AWAITING_OWNER, CANON_WINDOW_TYPES,
 } from "../../src/worker/boss/spirit/astro";
 
 /**
@@ -141,23 +141,36 @@ describe("Phase 16 — the sky is computed, not fetched", () => {
     for (let i = 1; i < first.length; i++) expect(first[i].starts_at).toBe(first[i - 1].ends_at);
   });
 
-  it("defers the natal layer, and does not file the retrograde calendar under it", async () => {
+  it("NOTHING IS DEFERRED FOR WANT OF AN EPHEMERIS — the natal layer waits on the owner", async () => {
+    // The almanac has to exist before it can be checked for planetary rows.
+    await api("/api/spirit/astro/almanac");
     const { body } = await apiJson("/api/spirit/astro/natal");
     expect(body.data.available).toBe(false);
-    expect(body.data.status).toBe(NO_EPHEMERIS);
-    expect(body.data.deferred.map((d: any) => d.key)).toContain("natal_transits");
-    for (const item of body.data.deferred) expect(item.status).toBe(NO_EPHEMERIS);
-    expect(body.data.what_would_change_it).toBeTruthy();
 
-    // Retrogrades are a paste, not an ephemeris gap. Build plan §1.5 D4 reserves
-    // DEFERRED — NO EPHEMERIS SOURCE for the natal layer alone, and calling a
-    // five-minute data entry task permanently deferred is how it never happens.
-    expect(body.data.deferred.map((d: any) => d.key)).not.toContain("retrogrades");
-    expect(body.data.not_deferred_here.manual.map((m: any) => m.key)).toEqual(["retrogrades", "shadow_periods"]);
-    for (const item of body.data.not_deferred_here.manual) expect(item.status).toBe(AWAITING_ALMANAC);
+    /*
+     * THE REGRESSION THIS PINS. Three items used to say "DEFERRED — NO EPHEMERIS SOURCE" and two of
+     * them were wrong about themselves: ingresses, retrogrades and shadow windows are all the same
+     * arithmetic as the lunar series beside them, and none needed a source. "No ephemeris" reads as
+     * something nobody can fix, so it was never going to be questioned.
+     */
+    expect(body.data.deferred).toEqual([]);
+    expect(body.data.status).toBe(AWAITING_OWNER);
 
-    // And nothing fabricated a retrograde row to fill the gap.
-    expect(await all(`SELECT id FROM astro_calendar WHERE kind IN ('retrograde','shadow')`)).toEqual([]);
+    // What remains is a question, and it names exactly what it needs.
+    const inputs = body.data.owner_inputs.map((i: any) => i.key);
+    expect(inputs).toEqual(["natal_chart", "natal_transits"]);
+    for (const item of body.data.owner_inputs) {
+      expect(item.needs).toBeTruthy();
+      expect(item.why).toBeTruthy();
+    }
+    expect(body.data.what_would_change_it.toLowerCase()).toContain("time");
+
+    // And the planetary rows are real, computed, and not fabricated to fill the gap.
+    const rows = await all<{ source: string }>(
+      `SELECT source FROM astro_calendar WHERE kind IN ('retrograde','shadow','ingress')`,
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.source === "computed")).toBe(true);
   });
 
   it("says an unentered horizon is unentered rather than reporting it covered", async () => {
@@ -206,7 +219,7 @@ describe("Phase 16 — the hand-entered half of the almanac", () => {
     expect(body.data.imported).toBe(2);
     expect(body.data.replaced).toBe(0);
 
-    const stored = await all(`SELECT * FROM astro_calendar WHERE kind IN ('retrograde','shadow') ORDER BY starts_at`);
+    const stored = await all(`SELECT * FROM astro_calendar WHERE kind IN ('retrograde','shadow') AND source = 'imported' ORDER BY starts_at`);
     expect(stored.length).toBe(2);
     for (const r of stored as any[]) {
       // An entered row is never confusable with a computed one.
@@ -220,12 +233,12 @@ describe("Phase 16 — the hand-entered half of the almanac", () => {
     expect(labels).toContain("Mercury retrograde in Pisces");
     expect(month.data.almanac.some((e: any) => e.source === "imported")).toBe(true);
 
-    // Coverage moved, and still does not claim the whole horizon from two rows.
+    // Coverage counts BOTH sources now and keeps them apart. What this test is about is the one
+    // row a person typed, which must stay separately countable from the computed ones beside it.
     const retrogrades = month.data.coverage.manual.find((m: any) => m.key === "retrogrades");
-    expect(retrogrades.rows).toBe(1);
-    expect(retrogrades.status).toBe("1 entered");
-    expect(retrogrades.covers_horizon).toBe(false);
-    expect(month.data.coverage.complete).toBe(false);
+    expect(retrogrades.imported_rows).toBe(1);
+    expect(retrogrades.computed_rows).toBeGreaterThan(0);
+    expect(retrogrades.status).toContain("1 entered by hand");
   });
 
   it("refreshes the same way it was entered, without leaving the old copy behind", async () => {
@@ -247,7 +260,7 @@ describe("Phase 16 — the hand-entered half of the almanac", () => {
     const { body } = await apiJson("/api/spirit/astro/almanac/import", { method: "POST", body: corrected });
     expect(body.data.replaced).toBeGreaterThan(0);
 
-    const rows = (await all(`SELECT * FROM astro_calendar WHERE kind = 'retrograde'`)) as any[];
+    const rows = (await all(`SELECT * FROM astro_calendar WHERE kind = 'retrograde' AND source = 'imported'`)) as any[];
     expect(rows.length).toBe(1);
     expect(rows[0].label).toBe("Mercury retrograde in Pisces — corrected");
     expect(rows[0].ends_at).toBe(RETROGRADE_END + DAY);
@@ -346,7 +359,9 @@ describe("Phase 16 — the daily and monthly views", () => {
     expect(body.data.almanac.every((e: any) => e.source === "computed")).toBe(true);
     expect(body.data.contribution.minimum).toBe(1);
     expect(body.data.contribution.ideal).toBe(4);
-    expect(body.data.deferred.length).toBeGreaterThan(0);
+    // Was `deferred.length > 0`. Nothing is deferred any more, and the month says what it holds.
+    expect(body.data.deferred).toEqual([]);
+    expect(body.data.almanac.some((e: any) => ["retrograde", "shadow", "ingress"].includes(e.kind))).toBe(true);
   });
 
   it("refuses a day that is not a day", async () => {

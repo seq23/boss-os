@@ -22,6 +22,10 @@ const DAY_MS = 86_400_000;
 const SYNODIC_MONTH_DAYS = 29.530_588_853;
 const J2000_JD = 2_451_545.0;
 
+import {
+  METHOD_PLANETS, RETROGRADING, STATION_UNCERTAINTY_HOURS, retrogrades, ingresses,
+} from "./planets";
+
 const RAD = Math.PI / 180;
 const sin = (deg: number) => Math.sin(deg * RAD);
 const cos = (deg: number) => Math.cos(deg * RAD);
@@ -233,7 +237,12 @@ function lunationNumber(ts: number): number {
 }
 
 export interface AlmanacEvent {
-  kind: "new_moon" | "full_moon" | "window";
+  /*
+   * `retrograde`, `shadow` and `ingress` joined this union when the planetary layer was computed.
+   * The first two were already legal values of `astro_calendar.kind` — the schema had been waiting
+   * for them since 0160, and only the import path could produce them.
+   */
+  kind: "new_moon" | "full_moon" | "window" | "retrograde" | "shadow" | "ingress";
   label: string;
   starts_at: number;
   ends_at: number | null;
@@ -309,11 +318,15 @@ const WINDOW_DERIVATION_NOTE =
   "available to this build fixes where the window starts and stops.";
 
 /**
- * Twenty-four months of new and full moons, the two ritual anchor windows, and
- * canon §42.2's five window types derived from the same computed lunation.
+ * Twenty-four months of new and full moons, the two ritual anchor windows, canon §42.2's five window
+ * types derived from the same computed lunation — and, since the planetary layer was built, every
+ * retrograde, shadow window and sign ingress in the same span.
  *
- * What is not here is what a person pastes in: retrograde periods and shadow
- * windows are imported, not computed. See `almanac_import.ts`.
+ * THE LAST SENTENCE OF THIS COMMENT USED TO SAY THE OPPOSITE: "retrograde periods and shadow windows
+ * are imported, not computed." They were never a sourcing problem — a retrograde is just apparent
+ * geocentric longitude moving backwards, which is arithmetic of exactly the kind the lunar series
+ * above already does. `almanac_import.ts` still works and is still the way a correction gets in by
+ * hand; it is no longer the only way the rows exist.
  */
 export function buildAlmanac(fromTs: number, months = 24): AlmanacEvent[] {
   const events: AlmanacEvent[] = [];
@@ -405,29 +418,127 @@ export function buildAlmanac(fromTs: number, months = 24): AlmanacEvent[] {
     }
   }
 
+  /*
+   * THE PLANETARY LAYER. Computed here rather than pasted, and marked `computed` so a reader can
+   * tell at a glance which rows arrived by arithmetic and which by hand — `almanac_import.ts`
+   * writes `imported`, and a correction entered by a person should not be indistinguishable from a
+   * number this file produced.
+   */
+  for (const key of RETROGRADING) {
+    for (const r of retrogrades(key, start, end)) {
+      events.push({
+        kind: "retrograde",
+        label: `${r.name} retrograde in ${r.from_sign}${r.to_sign === r.from_sign ? "" : ` → ${r.to_sign}`}`,
+        starts_at: r.starts_at,
+        ends_at: r.ends_at,
+        detail: {
+          planet: r.key,
+          from_longitude: Number(r.from_longitude.toFixed(3)),
+          to_longitude: Number(r.to_longitude.toFixed(3)),
+          from_sign: r.from_sign,
+          to_sign: r.to_sign,
+          // Carried on the row, because a station is the least certain instant this method produces
+          // and a screen quoting it to the minute would be claiming a precision that is not here.
+          station_uncertainty_hours: STATION_UNCERTAINTY_HOURS,
+        },
+        source: "computed",
+        method: METHOD_PLANETS,
+      });
+
+      // A shadow window is only written when both ends were actually found. A half-open shadow
+      // would render as a period with an invented boundary.
+      if (r.pre_shadow_starts_at !== null) {
+        events.push({
+          kind: "shadow",
+          label: `${r.name} pre-retrograde shadow`,
+          starts_at: r.pre_shadow_starts_at,
+          ends_at: r.starts_at,
+          detail: { planet: r.key, phase: "pre", retrograde_starts_at: r.starts_at, degree: Number(r.to_longitude.toFixed(3)) },
+          source: "computed",
+          method: METHOD_PLANETS,
+        });
+      }
+      if (r.post_shadow_ends_at !== null) {
+        events.push({
+          kind: "shadow",
+          label: `${r.name} post-retrograde shadow`,
+          starts_at: r.ends_at,
+          ends_at: r.post_shadow_ends_at,
+          detail: { planet: r.key, phase: "post", retrograde_ends_at: r.ends_at, degree: Number(r.from_longitude.toFixed(3)) },
+          source: "computed",
+          method: METHOD_PLANETS,
+        });
+      }
+    }
+
+    for (const i of ingresses(key, start, end)) {
+      events.push({
+        kind: "ingress",
+        label: `${i.name} enters ${i.sign}${i.retrograde ? " (retrograde)" : ""}`,
+        starts_at: i.at,
+        ends_at: null,
+        detail: { planet: i.key, sign: i.sign, from_sign: i.from_sign, retrograde: i.retrograde },
+        source: "computed",
+        method: METHOD_PLANETS,
+      });
+    }
+  }
+
   return events.sort((a, b) => a.starts_at - b.starts_at);
 }
 
 /**
- * The natal layer, and only the natal layer.
+ * NOTHING IS DEFERRED FOR WANT OF AN EPHEMERIS ANY MORE.
  *
- * Build plan §1.5 D4 defers exactly this much: transit-to-natal interpretation
- * needs a real ephemeris, has no acceptable vendor, and is not estimated into
- * existence. Retrograde periods and shadow windows are deliberately *not* here —
- * they are entered from a public almanac, which is a different kind of gap with
- * a different fix. Filing them under "no ephemeris" made them look permanent
- * when they are a paste away.
+ * This list held three items and all three were mis-filed. Planetary sign ingresses are computed by
+ * `planets.ts` and appear in the almanac. Natal placements and transits to them were never blocked
+ * on a source either: the same arithmetic produces a natal chart, and what it needs is a birth date,
+ * an exact birth time and a birth place — three facts only the owner has.
+ *
+ * So this is a NAMED STOP with a question, not a permanent absence. The distinction is the whole
+ * point: "no ephemeris source" reads as something nobody can fix, and a reader would never have
+ * thought to ask. `NO_EPHEMERIS` is kept as an exported constant because the import path and its
+ * tests still reference the vocabulary, and because a status that vanishes leaves no trace of what
+ * it used to say.
  */
-export const DEFERRED_ASTRONOMY = [
-  { key: "natal_chart", label: "Natal chart and placements", status: NO_EPHEMERIS },
-  { key: "natal_transits", label: "Transits to natal placements", status: NO_EPHEMERIS },
-  { key: "planetary_ingresses", label: "Planetary sign ingresses", status: NO_EPHEMERIS },
+export const DEFERRED_ASTRONOMY: readonly { key: string; label: string; status: string }[] = [];
+
+/** The one input the arithmetic cannot supply, and the exact question that unblocks it. */
+export const AWAITING_OWNER = "AWAITING BIRTH DATA — THE ONLY INPUT NOT COMPUTABLE HERE";
+
+export const OWNER_INPUTS = [
+  {
+    key: "natal_chart",
+    label: "Natal chart and placements",
+    status: AWAITING_OWNER,
+    needs: "Birth date, birth time as exactly as you know it, and birth city.",
+    /*
+     * WHY THE TIME MATTERS AND THE OTHER TWO DO NOT, MUCH. The planets move slowly enough that a day
+     * either way barely shifts them; the ascendant and the house cusps move a degree every four
+     * minutes. An approximate time gives real planetary placements and unreliable houses, and that
+     * is worth saying up front rather than discovering later.
+     */
+    why: "Planets need only the date. The ascendant and houses move a degree every four minutes, so an approximate time gives real placements and unreliable houses — which this will say rather than hide.",
+    how: "POST /api/spirit/astro/natal with { born_at, birth_place, time_accuracy }.",
+  },
+  {
+    key: "natal_transits",
+    label: "Transits to natal placements",
+    status: AWAITING_OWNER,
+    needs: "Nothing further — this follows automatically once the natal chart exists.",
+    why: "A transit is a computed planet against a natal degree. Both halves are arithmetic; only one of them is missing.",
+    how: "Nothing to send. It appears when the chart above does.",
+  },
 ] as const;
 
 /**
- * What the almanac holds only once a person has entered it. Canon §42.3 makes
- * the manual calendar the primary implementation, so this is the designed path
- * rather than a fallback, and each entry names what to paste.
+ * WHAT MAY STILL BE ENTERED BY HAND, WHICH IS NO LONGER THE SAME AS WHAT IS MISSING.
+ *
+ * Canon §42.3 permits a manually entered calendar and this build now computes both kinds anyway. The
+ * import path is kept — a published almanac disagreeing with the arithmetic is worth being able to
+ * record, and an imported row overrides nothing silently because `source` distinguishes them — but
+ * these are no longer gaps, and `almanacCoverage` reports them as covered by computation rather than
+ * as awaiting a paste.
  */
 export const MANUAL_ALMANAC = [
   {

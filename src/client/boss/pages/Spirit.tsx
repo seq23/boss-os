@@ -149,13 +149,21 @@ export function Spirit() {
         </div>
       ))}
 
-      {/* Canon §42.2's forward view is only as complete as its pasted half. */}
-      <p className="eyebrow">Entered by hand</p>
+      {/*
+        * WAS "ENTERED BY HAND", AND NOTHING HERE IS ANY MORE. Retrogrades, shadow windows and
+        * ingresses are computed now, so this section reports what exists rather than what is owed.
+        * The hand-entered count stays visible because a correction someone typed should never be
+        * indistinguishable from a number the arithmetic produced.
+        */}
+      <p className="eyebrow">Coverage</p>
       {month.coverage?.manual.map((m: any) => (
         <div className="row" key={m.key}>
           <div className="row-main">
             <div className="row-title">{m.label}</div>
-            <div className="row-sub">{m.rows > 0 ? `${m.months_covered} months covered` : m.how}</div>
+            <div className="row-sub">
+              {m.rows > 0 ? `${m.months_covered} months covered` : m.how}
+              {m.imported_rows > 0 && ` · ${m.imported_rows} entered by hand`}
+            </div>
           </div>
           <div className="row-val">{m.status}</div>
         </div>
@@ -164,13 +172,41 @@ export function Spirit() {
         <div className="row-sub">{month.coverage.note}</div>
       )}
 
-      <p className="eyebrow">Not computed here</p>
-      {month.deferred.map((d: any) => (
-        <div className="row" key={d.key}>
-          <div className="row-main"><div className="row-title">{d.label}</div></div>
-          <div className="row-val">{d.status}</div>
-        </div>
-      ))}
+      {/*
+        * THE SECTION ONLY APPEARS IF SOMETHING IS ACTUALLY DEFERRED. It used to list three items
+        * permanently, two of which were never blocked on anything. An empty heading reading "not
+        * computed here" over nothing would be the same mistake in a quieter font.
+        */}
+      {month.deferred?.length > 0 && (
+        <>
+          <p className="eyebrow">Not computed here</p>
+          {month.deferred.map((d: any) => (
+            <div className="row" key={d.key}>
+              <div className="row-main"><div className="row-title">{d.label}</div></div>
+              <div className="row-val">{d.status}</div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/*
+        * THE ONE THING ONLY SHE CAN SUPPLY. Not a deferral and not a gap in the build — a question,
+        * with what it needs and why the birth TIME is the part that matters.
+        */}
+      {month.owner_inputs?.length > 0 && (
+        <>
+          <p className="eyebrow">Waiting on you</p>
+          {month.owner_inputs.map((o: any) => (
+            <div className="row" key={o.key}>
+              <div className="row-main">
+                <div className="row-title">{o.label}</div>
+                <div className="row-sub">{o.needs}</div>
+                <div className="row-sub">{o.why}</div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
     </>
   );
 }

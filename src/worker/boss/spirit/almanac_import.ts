@@ -232,7 +232,12 @@ export interface ManualKindCoverage {
   label: string;
   status: string;
   how: string;
+  /** Everything that exists for this kind, from either source. */
   rows: number;
+  /** Produced by `planets.ts`. */
+  computed_rows: number;
+  /** Typed in by a person, which is a different claim and stays separately countable. */
+  imported_rows: number;
   earliest: number | null;
   latest: number | null;
   /** Months of the forward horizon this kind actually reaches. */
@@ -275,18 +280,41 @@ export async function almanacCoverage(db: D1Database, now = Date.now(), months =
       .bind(entry.kind)
       .all<{ method: string }>();
 
-    const rows = stats?.n ?? 0;
-    const latest = rows > 0 ? stats?.latest ?? null : null;
+    /*
+     * COMPUTED ROWS COUNT AS COVERAGE NOW, and before the planetary layer existed there were none to
+     * count — this query asked only for `source = 'imported'`, so the answer was always zero and the
+     * screen always said AWAITING. Both sources are counted for coverage; the imported tally is kept
+     * separate so a person can still see what they entered themselves.
+     */
+    const computed = await db
+      .prepare(
+        `SELECT COUNT(*) AS n, MAX(COALESCE(ends_at, starts_at)) AS latest
+           FROM astro_calendar WHERE kind = ? AND source = 'computed'`,
+      )
+      .bind(entry.kind)
+      .first<{ n: number; latest: number | null }>();
+
+    const imported = stats?.n ?? 0;
+    const rows = imported + (computed?.n ?? 0);
+    const latest = rows > 0
+      ? Math.max(stats?.latest ?? 0, computed?.latest ?? 0) || null
+      : null;
     const monthsCovered = latest && latest > now ? Math.floor((latest - now) / (30.44 * DAY_MS)) : 0;
 
     manual.push({
       key: entry.key,
       kind: entry.kind,
       label: entry.label,
-      status: rows > 0 ? `${rows} entered` : AWAITING_ALMANAC,
+      status: (computed?.n ?? 0) > 0
+        ? `${computed!.n} computed${imported ? `, ${imported} entered by hand` : ""}`
+        : imported > 0 ? `${imported} entered` : AWAITING_ALMANAC,
       how: entry.how,
       rows,
-      earliest: rows > 0 ? stats?.earliest ?? null : null,
+      // KEPT APART, because "how much exists" and "how much a person typed" are different questions
+      // and one screen asks each. Totalling them was what made the import test read 15 instead of 1.
+      computed_rows: computed?.n ?? 0,
+      imported_rows: imported,
+      earliest: imported > 0 ? stats?.earliest ?? null : null,
       latest,
       months_covered: monthsCovered,
       covers_horizon: rows > 0 && !!latest && latest >= horizonEndsAt,
