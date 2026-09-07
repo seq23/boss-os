@@ -200,3 +200,59 @@ describe("Phase 2 — No Agent Sprawl", () => {
     expect(approval!.risk).toBe("high");
   });
 });
+
+
+/**
+ * A DECLARED KIND BEATS AN INFERRED ONE — INCLUDING ITS VERDICT.
+ *
+ * `classify` already said "explicit caller overrides win — intake is a default, not a cage", and
+ * applied that to the kind alone: the caller's kind was recorded while the keyword rule's risk and
+ * assignment stayed in force. A task its owner had named `research` could still come out USER_ONLY
+ * because of one word in its prompt.
+ *
+ * FOUND THE HARD WAY. The trading rule matches `position`; the Executive Intelligence Report's
+ * instruction gained "every planetary position". The duty declared `research` and intake returned
+ * high-risk trading work assigned USER_ONLY — so the report would have sat awaiting an approval
+ * nobody knew to give, at 06:30, unattended, every morning.
+ */
+describe("a declared kind is not outvoted by a keyword", () => {
+  it("does not read a planetary position as a trading position", () => {
+    const prompt = "SKY.json holds every planetary position, computed to about one arcminute.";
+    // Undeclared, the keyword wins — which is the correct default and is left alone.
+    const inferred = classify({ title: "Executive Intelligence Report", prompt, lane: "ops" });
+    expect(inferred.intakeKind).toBe("trading");
+
+    // Declared, the declaration wins, verdict included.
+    const declared = classify({ title: "Executive Intelligence Report", prompt, lane: "ops", intakeKind: "research" });
+    expect(declared.intakeKind).toBe("research");
+    expect(declared.executionAssignment).not.toBe("USER_ONLY");
+    expect(declared.risk).not.toBe("high");
+    // The override is recorded rather than silent: a reader can see what was outvoted.
+    expect(declared.matched).toContain("inferred_trading_overridden");
+  });
+
+  it("still refuses to soften the trading LANE, which is a fact and not a guess", () => {
+    /*
+     * The line that must not move. A caller naming a kind may stop a keyword outvoting it; it may
+     * not take work out of the trading lane, because the lane is a property of the work rather than
+     * of its wording.
+     */
+    const c = classify({ title: "Summarise the week", prompt: "Nothing risky here.", lane: "trading", intakeKind: "research" });
+    expect(c.executionAssignment).toBe("USER_ONLY");
+    expect(c.risk).toBe("high");
+    expect(c.intakeKind).toBe("trading");
+  });
+
+  it("still escalates money and outbound over a declared kind", () => {
+    const money = classify({ title: "Pay the invoice", prompt: "Wire the payment and transfer the funds.", lane: "ops", intakeKind: "research" });
+    expect(money.risk).toBe("high");
+    expect(money.executionAssignment).not.toBe("AI_DRAFT");
+    expect(money.matched).toContain("spend");
+  });
+
+  it("leaves an undeclared task exactly as it was classified before", () => {
+    // The whole change is scoped to callers who name a kind. Everything else must be untouched.
+    const c = classify({ title: "Draft a note", prompt: "Write something short.", lane: "ops" });
+    expect(c.matched).not.toContain("explicit_kind");
+  });
+});

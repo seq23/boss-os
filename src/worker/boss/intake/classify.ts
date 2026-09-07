@@ -182,13 +182,39 @@ export function classify(input: {
     }
   }
 
-  let intakeKind: IntakeKind = chosen?.kind ?? "one_off";
-  let risk: RiskLevel = chosen?.risk ?? "low";
-  let sensitivity: Sensitivity = chosen?.sensitivity ?? "private";
-  let assignment: ExecutionAssignment = chosen?.assignment ?? "AI_DRAFT";
-  let reason = chosen?.reason ?? "No specific category matched, so this is a one-off drafting task.";
+  /*
+   * A DECLARED KIND BEATS AN INFERRED ONE, INCLUDING ITS VERDICT.
+   *
+   * This function already said "explicit caller overrides win — intake is a default, not a cage",
+   * and then applied that to the KIND alone: the caller's kind was recorded while the keyword
+   * rule's risk and execution assignment stayed in force. So a task whose owner had named it
+   * `research` could still be classified USER_ONLY by a word in its prompt.
+   *
+   * THAT IS NOT HYPOTHETICAL. The trading rule matches `position`, and the Executive Intelligence
+   * Report's instruction gained the phrase "every planetary position". The duty declared itself
+   * `research`; intake called it high-risk trading work, assigned USER_ONLY, and the task would
+   * have sat awaiting an approval nobody knew to give — at 06:30, unattended, every morning. The
+   * same rule matches `order`, `long`, `short` and `buy`, so "in order to" and "a short summary"
+   * carry the same consequence.
+   *
+   * WHAT IS NOT RELAXED. The trading LANE still forces USER_ONLY below, and outbound and money
+   * still escalate, because those are facts about the work rather than guesses about its wording.
+   * A caller naming a kind cannot escape any of them — it only stops a keyword outvoting a
+   * declaration.
+   */
+  const declared = isIntakeKind(input.intakeKind) ? input.intakeKind : null;
+  const declaredRule = declared ? RULES.find((r) => r.kind === declared) ?? null : null;
+  const base = declared && declared !== chosen?.kind ? declaredRule : chosen;
+  if (declared) matched.push("explicit_kind");
+  if (base !== chosen && chosen) matched.push(`inferred_${chosen.kind}_overridden`);
 
-  // The trading lane never inherits a softer assignment from a text match.
+  let intakeKind: IntakeKind = declared ?? chosen?.kind ?? "one_off";
+  let risk: RiskLevel = base?.risk ?? "low";
+  let sensitivity: Sensitivity = base?.sensitivity ?? "private";
+  let assignment: ExecutionAssignment = base?.assignment ?? "AI_DRAFT";
+  let reason = base?.reason ?? "No specific category matched, so this is a one-off drafting task.";
+
+  // The trading lane never inherits a softer assignment from a text match — or from a declared kind.
   if (input.lane === "trading") {
     intakeKind = "trading";
     risk = "high";
@@ -212,11 +238,6 @@ export function classify(input: {
     matched.push("spend");
   }
 
-  // Explicit caller overrides win — intake is a default, not a cage.
-  if (isIntakeKind(input.intakeKind)) {
-    intakeKind = input.intakeKind;
-    matched.push("explicit_kind");
-  }
   if (input.risk === "low" || input.risk === "medium" || input.risk === "high") {
     risk = input.risk;
     matched.push("explicit_risk");

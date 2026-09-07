@@ -15,6 +15,12 @@
 #
 # One-shot on a timer rather than the `work` daemon: no long-lived process sits holding her session.
 #
+# THE SKY SNAPSHOT RUNS FIRST, and it is separated by `;` rather than `&&` on purpose: if it fails
+# the run must still happen. The first real report filed three gaps because it went to the open web
+# for planetary positions this system already computes to about an arcminute, and got 403s. It was
+# right to refuse to invent them; it simply had no way to ask. `sky-snapshot.mjs` leaves SKY.json in
+# the workspace so it never has to.
+#
 # THE PASSCODE IS READ FROM THE VAULT AND NEVER WRITTEN ANYWHERE. `vault:run` puts BOSS_PASSCODE in
 # the child's environment for the life of the process; the agent exchanges it for a session cookie
 # and holds no credential of its own. The plist contains no secret, which is why it is safe to keep
@@ -55,7 +61,7 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
+    <string>cd $REPO && npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>

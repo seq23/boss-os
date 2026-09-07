@@ -22,7 +22,7 @@ import {
   AWAITING_OWNER, OWNER_INPUTS,
   moonPhase, moonPosition,
 } from "../spirit/astro";
-import { METHOD_PLANETS, STATION_UNCERTAINTY_HOURS } from "../spirit/planets";
+import { METHOD_PLANETS, STATION_UNCERTAINTY_HOURS, planetPosition, ZODIAC_SIGNS } from "../spirit/planets";
 import { monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL } from "../../../shared/boss/timezone";
 import {
   gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
@@ -349,6 +349,9 @@ spirit.post("/astro/almanac/import", async (c) => {
 spirit.get("/astro/almanac/coverage", async (c) => ok(c, await almanacCoverage(c.env.DB, Date.now())));
 
 /** The sky at an instant, computed on the spot. Useful for checking the method. */
+/** Everything with a position, in the order a chart is usually read. */
+const SKY_BODIES = ["sun", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto", "chiron"];
+
 spirit.get("/astro/at", async (c) => {
   const ts = Number(c.req.query("ts") ?? Date.now());
   if (!Number.isFinite(ts)) throw badRequest("ts is an epoch millisecond timestamp");
@@ -361,9 +364,36 @@ spirit.get("/astro/at", async (c) => {
     age_days: phase.age_days,
     waxing: phase.waxing,
     moon: position,
+    /*
+     * THE PLANETS, WHICH THIS ENDPOINT DID NOT RETURN DESPITE BEING NAMED FOR THE WHOLE SKY.
+     *
+     * It answered with the Moon and nothing else, and the omission was invisible because a caller
+     * asking "where is the sky" and getting a moon does not obviously have half an answer. The
+     * positions were always computable — `planetPosition` is the same function the natal chart and
+     * the transits already use — so this was a gap in what was RETURNED, not in what was known.
+     *
+     * It cost something real. The first Executive Intelligence Report went to the open web for
+     * planetary longitudes, collected four 403s and 404s, and filed a gap saying its positions
+     * carried ±1° — while this system held them to about an arcminute the whole time.
+     */
+    planets: SKY_BODIES.map((key) => {
+      const p = planetPosition(key, ts);
+      return {
+        key,
+        name: p.name,
+        longitude: p.longitude,
+        sign: ZODIAC_SIGNS[Math.floor(p.longitude / 30)]!,
+        degrees_in_sign: p.longitude % 30,
+        // The Sun never retrogrades; saying so is a fact, not a special case.
+        retrograde: key === "sun" ? false : p.retrograde,
+      };
+    }),
     advisory: true,
     note: ADVISORY_NOTE,
-    method: "Meeus truncated series, computed here. Longitude good to about a third of a degree; near a cusp the next sign is named rather than guessed between.",
+    method:
+      "Computed here. The Moon comes from the full Meeus 47.A series (about 0.005°); the planets " +
+      "from Standish elements with IAU 2006 precession to the equinox of date (about one arcminute, " +
+      "and about a degree for Chiron far from 2026). Nothing is retrieved from any site.",
   });
 });
 

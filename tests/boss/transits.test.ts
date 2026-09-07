@@ -163,3 +163,46 @@ describe("canon §5.2 — the copy describes weather and never instructs", () =>
     for (const a of ASPECTS) expect(ASPECT_TONE[a.name]).toBeDefined();
   });
 });
+
+/**
+ * THE SKY ENDPOINT HAD TO BE ASKED FOR THE SKY AND ANSWERED WITH A MOON.
+ *
+ * `/astro/at` is named for the whole sky at an instant and returned lunar data only. The omission
+ * was invisible from the outside — a caller asking where the sky is and getting a moon does not
+ * obviously have half an answer — and it cost something real: the first Executive Intelligence
+ * Report went to the open web for planetary longitudes, collected four 403s and 404s, and filed a
+ * gap saying its positions carried ±1°, while this system held them to about an arcminute.
+ */
+describe("the sky endpoint returns the whole sky", () => {
+  it("names every body with a position, not only the Moon", async () => {
+    const { apiJson } = await import("./helpers");
+    const { status, body } = await apiJson(`/api/spirit/astro/at?ts=${Date.UTC(2026, 8, 7, 12)}`);
+    expect(status).toBe(200);
+    expect(body.data.moon).toBeTruthy();
+
+    const keys = body.data.planets.map((p: any) => p.key);
+    for (const k of ["sun", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto", "chiron"]) {
+      expect(keys, `${k} missing from the sky`).toContain(k);
+    }
+  });
+
+  it("agrees with the natal chart's own arithmetic, rather than being a second implementation", async () => {
+    // Two code paths producing two answers for one sky is how a screen and a report quietly
+    // disagree. They must be the same function, and this is what proves they are.
+    const { apiJson } = await import("./helpers");
+    const at = Date.UTC(2026, 8, 7, 12);
+    const { body } = await apiJson(`/api/spirit/astro/at?ts=${at}`);
+    const chart = natalChart({ ...OWNER, born_at: at });
+    for (const p of body.data.planets) {
+      const same = chart.placements.find((x) => x.key === p.key);
+      if (!same) continue;
+      expect(Math.abs(same.longitude - p.longitude)).toBeLessThan(1e-9);
+    }
+  });
+
+  it("says plainly that nothing is retrieved from a site", async () => {
+    const { apiJson } = await import("./helpers");
+    const { body } = await apiJson(`/api/spirit/astro/at?ts=${Date.now()}`);
+    expect(body.data.method).toContain("Nothing is retrieved");
+  });
+});
