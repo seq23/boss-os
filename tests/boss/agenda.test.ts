@@ -221,6 +221,20 @@ describe("the gate proposes the day and she overrides it", () => {
     expect(contract.anchor_source).toContain("derived");
   });
 
+  it("never lists the same priority twice", async () => {
+    /*
+     * CAUGHT ON THE FIRST REAL RUN AGAINST HER LIVE DAY. With no open loops the Execution contract
+     * correctly falls through to the active project in its lane — the raise — and the West Peek line
+     * was then appended beneath it. The screen showed "Work today's LP list" twice and looked like a
+     * full day. §17 caps the list at three because CHOOSING three is the work; padding it with a
+     * repeat is the same failure as exceeding the cap, better dressed.
+     */
+    const { body } = await apiJson("/api/today/gates/morning", { method: "POST", body: {} });
+    const agenda = JSON.parse(body.data.day.morning_agenda);
+    const texts = agenda.proposed.map((p: any) => p.text);
+    expect(new Set(texts).size, `duplicate priority: ${JSON.stringify(texts)}`).toBe(texts.length);
+  });
+
   it("lets her override, and records that she did", async () => {
     const { body } = await apiJson("/api/today/gates/morning", {
       method: "POST",

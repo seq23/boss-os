@@ -240,22 +240,32 @@ export function proposedPriorities(
   wealth: PillarContract,
   execution: PillarContract,
 ): { text: string; source: string }[] {
-  const out: { text: string; source: string }[] = [
-    { text: wealth.action, source: "wealth — §5.3, right of first refusal" },
-  ];
+  const out: { text: string; source: string }[] = [];
+
+  /*
+   * DE-DUPLICATED, BECAUSE THREE PRIORITIES WHERE TWO ARE THE SAME IS TWO PRIORITIES.
+   *
+   * Caught on the first real run against her live day. With no open loops, the Execution contract
+   * correctly falls through to the active project in its lane — which is the raise — and the West
+   * Peek line was then added again beneath it. The screen listed "Work today's LP list" twice and
+   * looked like a full day. §17 caps the list at three because CHOOSING three is the work; padding
+   * it with a repeat is the same failure as exceeding it, wearing better clothes.
+   */
+  const add = (text: string, source: string) => {
+    if (!text) return;
+    if (out.some((p) => p.text === text)) return;
+    out.push({ text, source });
+  };
+
+  add(wealth.action, "wealth — §5.3, right of first refusal");
 
   const wp = PROJECTS.find((p) => p.key === "west_peek_raise")!;
   if (isWestPeekDay(weekday)) {
-    out.push({ text: wp.next_action ?? "Advance the raise.", source: "west peek — §5.4, Wednesday is the meeting" });
+    add(wp.next_action ?? "Advance the raise.", "west peek — §5.4, Wednesday is the meeting");
   }
 
-  if (out.length < 3 && execution.action !== wealth.action) {
-    out.push({ text: execution.action, source: "execution — §5.7, one concrete asset-advancing action" });
-  }
-
-  if (out.length < 3) {
-    out.push({ text: wp.next_action ?? "Advance the raise.", source: "west peek — the second active lane" });
-  }
+  add(execution.action, "execution — §5.7, one concrete asset-advancing action");
+  add(wp.next_action ?? "Advance the raise.", "west peek — the second active lane");
 
   // §17's cap is three. More than three priorities is no priorities.
   return out.slice(0, 3);
