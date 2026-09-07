@@ -268,7 +268,17 @@ backends.post("/dispatch", async (c) => {
                           execution_assignment, risk, sensitivity, cost_mode)
        VALUES (?,?,?,?,'queued',?,?,?,?,?,?)`,
     ).bind(
-      taskId, lane, title, JSON.stringify({ prompt, backend_id: backendId, kind }), now,
+      taskId, lane, title,
+      /*
+       * THE DELIVERY CONTRACT TRAVELS ON THE TASK, and it was missing here.
+       *
+       * `deliverExecutiveReport` reads `input.delivers` off the task to decide whether a run's
+       * output becomes a stored report. A duty writes that; this endpoint did not, so a report
+       * dispatched BY HAND produced a perfectly good `delivers.json`, reported it, and had it
+       * silently dropped — the run succeeded and the Executive Briefing block still said no report
+       * had ever been produced. Found by dispatching the real thing rather than by reading the code.
+       */
+      JSON.stringify({ prompt, backend_id: backendId, kind, ...(optionalText(b?.delivers) ? { delivers: optionalText(b?.delivers) } : {}) }), now,
       classification.intakeKind, classification.executionAssignment,
       classification.risk, classification.sensitivity, costMode,
     ),

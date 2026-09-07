@@ -145,6 +145,44 @@ describe("delivering the executive intelligence report", () => {
  * wrong one — a Worker cannot read this morning's news, and a model asked to recall it returns
  * something shaped exactly like a report, citing sources it never opened.
  */
+describe("the delivery contract survives the dispatch endpoint", () => {
+  it("carries `delivers` onto the task, or a hand-dispatched report is silently dropped", async () => {
+    /*
+     * FOUND BY DISPATCHING THE REAL REPORT, NOT BY READING THE CODE. The run researched for ten
+     * minutes, wrote a good `delivers.json`, reported it — and the Executive Briefing block still
+     * said no report had ever been produced, because the endpoint wrote a task input of
+     * { prompt, backend_id, kind } and `deliverExecutiveReport` reads `input.delivers` to decide
+     * whether a run's output is a report at all. The duty carried the contract; a hand dispatch did
+     * not, which is exactly the path anyone re-running a failed morning would take.
+     */
+    const { apiJson } = await import("./helpers");
+    const { status, body } = await apiJson("/api/backends/dispatch", {
+      method: "POST",
+      body: {
+        title: "Executive Intelligence Report",
+        prompt: "Produce the report.",
+        kind: "research",
+        backend_id: "bk_claude_code",
+        lane: "ops",
+        delivers: "executive_reports",
+      },
+    });
+    expect(status).toBe(201);
+    const task = await row<any>(`SELECT input FROM tasks WHERE id = ?`, body.data.run.task_id);
+    expect(JSON.parse(task.input).delivers).toBe("executive_reports");
+  });
+
+  it("writes no contract when none was asked for", async () => {
+    const { apiJson } = await import("./helpers");
+    const { body } = await apiJson("/api/backends/dispatch", {
+      method: "POST",
+      body: { title: "Repo work", prompt: "Do the thing.", kind: "repo_work", backend_id: "bk_claude_code", lane: "ops" },
+    });
+    const task = await row<any>(`SELECT input FROM tasks WHERE id = ?`, body.data.run.task_id);
+    expect(JSON.parse(task.input).delivers).toBeUndefined();
+  });
+});
+
 describe("a task that names a backend leaves the cloud", () => {
   it("dispatches a claimable run instead of asking a model, and never calls out", async () => {
     const { handleTask } = await import("../../src/worker/boss/queue/consumer");
