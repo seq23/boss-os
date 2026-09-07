@@ -4,8 +4,21 @@ import { isWestPeekDay } from "../spirit/arcs";
 /**
  * THE WEDNESDAY PACKET — what she did this week, and what she needs to say to him.
  *
- * Her words: "maybe i should have a packet prepared before each meeting on wed with scooter showing
- * what ive done for the week and anything i need to discuss with him."
+ * Her words: "a packet prepared before each meeting on wed with scooter showing what ive done for
+ * the week and anything i need to discuss with him."
+ *
+ * ─── It is partner-facing, which was worth asking about ─────────────────────
+ *
+ * Asked what it is FOR, her answer was "showing Scooter I did the work" — accountability between
+ * partners, evidence of a week rather than an assertion about it. Not private prep, which is what
+ * the first version assumed and built.
+ *
+ * That decides content. HER ANCHOR RECORD IS NOT IN HERE: whether she held her own morning floor is
+ * her business and belongs nowhere near a document a business partner reads. The Night Gate keeps
+ * it; this does not, and if it ever reappears here it is a mistake rather than an improvement.
+ *
+ * And it decides order. She wanted "what changed since last Wednesday" first, not the blocking asks
+ * — a partner meeting opens on movement.
  *
  * ─── Computed here, not researched by an agent ─────────────────────────────
  *
@@ -43,9 +56,6 @@ export interface WeeklyPacket {
   /** The seven days ending the day before the packet, as ISO day ids. */
   window: { from: string; to: string };
   done: {
-    anchors_kept: number;
-    anchors_missed: number;
-    anchors_unanswered: number;
     loops_closed: number;
     deals_advanced: number;
     candidates_reviewed: number;
@@ -54,6 +64,8 @@ export interface WeeklyPacket {
   /** Named plainly when the week was thin, rather than left for her to work out from zeros. */
   headline: string;
   to_raise: PacketItem[];
+  /** One-offs she added by hand. Nothing derives these and nothing ever will. */
+  misc: PacketItem[];
   /** What this packet could not see. Never silent about it. */
   gaps: string[];
 }
@@ -65,19 +77,25 @@ function shiftDay(dayId: string, days: number): string {
   return new Date(t).toISOString().slice(0, 10);
 }
 
+/**
+ * The last meeting, not seven days ago.
+ *
+ * "Since last Wednesday" has to mean since last Wednesday, or the packet quietly reports a window
+ * that overlaps or skips the previous one — and a partner reading two consecutive packets would see
+ * the same work twice, or a gap with nothing in it.
+ */
+function lastMeeting(dayId: string): string {
+  const weekday = new Date(`${dayId}T12:00:00Z`).getUTCDay();
+  // On Wednesday itself the window is the full previous week, not zero days.
+  const back = weekday === 3 ? 7 : (weekday + 4) % 7 || 7;
+  return shiftDay(dayId, -back);
+}
+
 export async function weeklyPacket(env: Env, dayId: string, counterpart = "scooter"): Promise<WeeklyPacket> {
-  const from = shiftDay(dayId, -7);
+  const from = lastMeeting(dayId);
   const fromTs = Date.parse(`${from}T00:00:00Z`);
 
-  const [anchors, loops, deals, candidates, touches, items] = await Promise.all([
-    env.DB.prepare(
-      `SELECT
-         SUM(CASE WHEN anchor_outcome = 'done' THEN 1 ELSE 0 END) AS kept,
-         SUM(CASE WHEN anchor_outcome = 'missed' THEN 1 ELSE 0 END) AS missed,
-         SUM(CASE WHEN anchor_outcome IS NULL OR anchor_outcome = 'unknown' THEN 1 ELSE 0 END) AS unanswered
-       FROM days WHERE id >= ? AND id < ? AND morning_completed_at IS NOT NULL`,
-    ).bind(from, dayId).first<{ kept: number | null; missed: number | null; unanswered: number | null }>(),
-
+  const [loops, deals, candidates, touches, items, misc] = await Promise.all([
     env.DB.prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'resolved' AND resolved_at >= ?`)
       .bind(fromTs).first<{ n: number }>(),
 
@@ -97,15 +115,24 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
     env.DB.prepare(
       `SELECT id, title, detail, priority, source
          FROM meeting_agenda_items
-        WHERE counterpart = ? AND status = 'open'
+        WHERE counterpart = ? AND status = 'open' AND section = 'raise'
         ORDER BY priority ASC, created_at ASC`,
+    ).bind(counterpart).all<PacketItem>(),
+
+    /*
+     * THE FLEX SECTION. Everything else here is derived, and derived means it can only contain what
+     * the system already knows. A number he asked for, a document to bring, something said on a
+     * call — none of that has a table and never will.
+     */
+    env.DB.prepare(
+      `SELECT id, title, detail, priority, source
+         FROM meeting_agenda_items
+        WHERE counterpart = ? AND status = 'open' AND section = 'misc'
+        ORDER BY created_at ASC`,
     ).bind(counterpart).all<PacketItem>(),
   ]);
 
   const done = {
-    anchors_kept: anchors?.kept ?? 0,
-    anchors_missed: anchors?.missed ?? 0,
-    anchors_unanswered: anchors?.unanswered ?? 0,
     loops_closed: loops?.n ?? 0,
     deals_advanced: deals?.n ?? 0,
     candidates_reviewed: candidates?.n ?? 0,
@@ -124,9 +151,7 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
    */
   const headline =
     moved === 0
-      ? done.anchors_unanswered >= 5
-        ? "Nothing recorded this week, and most nights went unclosed — so this is a gap in the record as much as in the work."
-        : "Nothing moved that the system can see this week."
+      ? "Nothing moved that the system can see since the last meeting."
       : `${moved} thing${moved === 1 ? "" : "s"} moved: ` +
         [
           done.deals_advanced ? `${done.deals_advanced} deal${done.deals_advanced === 1 ? "" : "s"} advanced` : null,
@@ -144,9 +169,6 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
   const gaps = [
     "LP outreach volume and replies are not in here: they live in Scooter's tracker and the outreach log, which Boss OS cannot read yet.",
   ];
-  if (done.anchors_unanswered > 0) {
-    gaps.push(`${done.anchors_unanswered} night${done.anchors_unanswered === 1 ? "" : "s"} closed without saying whether the first money move happened, so those days are unknown rather than missed.`);
-  }
 
   return {
     counterpart,
@@ -154,6 +176,7 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
     done,
     headline,
     to_raise: items.results ?? [],
+    misc: misc.results ?? [],
     gaps,
   };
 }
@@ -161,9 +184,10 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
 /**
  * Should the packet be on today's screen?
  *
- * TUESDAY AS WELL AS WEDNESDAY, and that is the whole point of preparing a packet rather than
- * printing one. Seeing "ask him for the Google grant" at 6am on Wednesday is seeing it as the
- * meeting starts. Seeing it on Tuesday is time to do something first.
+ * TUESDAY AND WEDNESDAY, WHILE THE REMINDER FIRES ONLY ON WEDNESDAY, and that difference is
+ * deliberate rather than a leftover. A block costs nothing to render and being able to look at
+ * tomorrow's packet on a Tuesday is useful; a notification on a day she did not ask for one is the
+ * thing that gets it muted. The screen may be early. The interruption may not.
  */
 export function packetIsDue(weekday: number): boolean {
   return isWestPeekDay(weekday) || weekday === 2;

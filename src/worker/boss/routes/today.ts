@@ -1218,12 +1218,14 @@ today.post("/agenda/:counterpart", async (c) => {
   const now = Date.now();
   await c.env.DB
     .prepare(
-      `INSERT INTO meeting_agenda_items (id, counterpart, title, detail, source, priority, status, created_at, updated_at)
-       VALUES (?,?,?,?,?,?, 'open', ?, ?)`,
+      `INSERT INTO meeting_agenda_items (id, counterpart, title, detail, source, priority, section, status, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?, 'open', ?, ?)`,
     )
     .bind(id, c.req.param("counterpart"), title, b?.detail ? String(b.detail) : null,
           b?.source ? String(b.source) : "owner",
-          [1, 2, 3].includes(priority) ? priority : 2, now, now)
+          [1, 2, 3].includes(priority) ? priority : 2,
+          // `misc` is a one-off to have in the room; `raise` is something needing his decision.
+          b?.section === "misc" ? "misc" : "raise", now, now)
     .run();
   return ok(c, { id, title }, 201);
 });

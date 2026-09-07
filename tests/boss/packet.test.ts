@@ -58,8 +58,9 @@ describe("what she did this week", () => {
      * easier to query and always look complete. This counts closed loops, advanced stages, reviewed
      * candidates and logged touches.
      */
-    await env.DB.prepare(`INSERT INTO days (id, date_ts, morning_completed_at, anchor_outcome, created_at) VALUES (?,?,?,?,?)`)
-      .bind(TUE, Date.parse(`${TUE}T00:00:00Z`), Date.now(), "done", Date.now()).run();
+    // The loop needs a day to hang off; the anchor columns it used to carry are gone from the packet.
+    await env.DB.prepare(`INSERT INTO days (id, date_ts, created_at) VALUES (?,?,?) ON CONFLICT(id) DO NOTHING`)
+      .bind(TUE, Date.parse(`${TUE}T00:00:00Z`), Date.now()).run();
     await env.DB.prepare(`INSERT INTO open_loops (id, day_id, kind, title, status, resolved_at, created_at, updated_at) VALUES (?,?,?,?, 'resolved', ?, ?, ?)`)
       .bind(uid("loop"), TUE, "other", "Closed one", daysAgo(2), daysAgo(9), Date.now()).run();
     await env.DB.prepare(`INSERT INTO deals (id, lane, name, kind, stage, stage_since, opened_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
@@ -68,7 +69,6 @@ describe("what she did this week", () => {
     const p = await weeklyPacket(env as any, WED, "testpartner");
     expect(p.done.loops_closed).toBe(1);
     expect(p.done.deals_advanced).toBe(1);
-    expect(p.done.anchors_kept).toBe(1);
     expect(p.headline).toContain("2 things moved");
   });
 
@@ -92,16 +92,33 @@ describe("what she did this week", () => {
     expect(p.headline).not.toMatch(/should|failed|poor|behind/i);
   });
 
-  it("distinguishes a week of missed anchors from a week of unclosed nights", async () => {
-    for (let i = 1; i <= 6; i++) {
-      const d = `2026-09-0${i}`;
-      await env.DB.prepare(`INSERT INTO days (id, date_ts, morning_completed_at, created_at) VALUES (?,?,?,?)`)
-        .bind(d, Date.parse(`${d}T00:00:00Z`), Date.now(), Date.now()).run();
-    }
-    const p = await weeklyPacket(env as any, "2026-09-08", "testpartner");
-    expect(p.done.anchors_unanswered).toBeGreaterThanOrEqual(5);
-    expect(p.headline).toContain("gap in the record");
-    expect(p.gaps.join(" ")).toContain("unknown rather than missed");
+  it("keeps her own anchor record out of a document her partner reads", async () => {
+    /*
+     * ASKED, NOT ASSUMED. Her answer to what the packet is FOR was "showing Scooter I did the work"
+     * — accountability between partners. Whether she held her own morning floor is her business, and
+     * a system that put it in a partner-facing document would be quietly reporting on her to someone
+     * else. The Night Gate keeps that record; this must never carry it.
+     */
+    const p = await weeklyPacket(env as any, WED, "testpartner");
+    const text = JSON.stringify(p).toLowerCase();
+    expect(text).not.toContain("anchor");
+    expect(Object.keys(p.done)).not.toContain("anchors_kept");
+  });
+
+  it("counts since the last Wednesday, not a rolling seven days", async () => {
+    /*
+     * "Since last Wednesday" has to mean it, or two consecutive packets either double-count a week
+     * or leave a gap — and a partner reading both would see the same work twice.
+     */
+    await env.DB.prepare(`INSERT INTO deals (id, lane, name, kind, stage, stage_since, opened_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .bind(uid("deal"), "ops", "Moved 5 days back", "secondary", "diligence", daysAgo(5), daysAgo(40), daysAgo(40), Date.now()).run();
+    await env.DB.prepare(`INSERT INTO deals (id, lane, name, kind, stage, stage_since, opened_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .bind(uid("deal"), "ops", "Moved 9 days back", "secondary", "diligence", daysAgo(9), daysAgo(40), daysAgo(40), Date.now()).run();
+
+    // Asked on a Wednesday, the window is the previous seven days: one deal, not two.
+    const p = await weeklyPacket(env as any, WED, "testpartner");
+    expect(p.done.deals_advanced).toBe(1);
+    expect(p.window.from).toBe("2026-09-02");
   });
 
   it("names what it cannot see rather than looking complete", async () => {
@@ -155,6 +172,23 @@ describe("what she needs to say to him", () => {
     await apiJson(`/api/today/agenda/testpartner/${body.data.id}/raised`, { method: "POST", body: {} });
     const { status } = await apiJson(`/api/today/agenda/testpartner/${body.data.id}/raised`, { method: "POST", body: {} });
     expect(status).toBe(404);
+  });
+
+  it("keeps a flex section for one-offs nothing can derive", async () => {
+    /*
+     * Her one addition: "need a flex section for anything we need to add one-off." Everything else
+     * in the packet is derived, and derived means it can only contain what the system already knows.
+     * A number he asked for on a call has no table and never will.
+     */
+    const { status } = await apiJson("/api/today/agenda/testpartner", {
+      method: "POST", body: { title: "Bring the updated deck", section: "misc" },
+    });
+    expect(status).toBe(201);
+
+    const p = await weeklyPacket(env as any, WED, "testpartner");
+    expect(p.misc.map((i) => i.title)).toContain("Bring the updated deck");
+    // A one-off is not a decision he has to make, so it must not be mixed into the asks.
+    expect(p.to_raise.map((i) => i.title)).not.toContain("Bring the updated deck");
   });
 
   it("refuses an item with no title", async () => {

@@ -8,19 +8,21 @@
  *
  * ─── Two deliveries, because one of them always fails ───────────────────────
  *
- *   · A macOS notification, which is what "see it" means at 5pm on a Tuesday.
- *   · A markdown file on disk, because a notification is gone the moment it is dismissed and the
- *     three items she needs to raise are not something to hold in your head until the morning.
+ *   · A macOS notification, which is what "see it" means on a Wednesday morning.
+ *   · A markdown file on disk, because a notification is gone the moment it is dismissed and a
+ *     record of the week is something to have open in the meeting, not glanced at before it.
  *
  * The notification carries the single most important line — the top blocking item — not a summary.
  * "You have 3 items" is a notification she learns to swipe away; "Ask Scooter for the Google grant"
  * is one she acts on.
  *
- * ─── Tuesday evening AND Wednesday morning ──────────────────────────────────
+ * ─── Wednesday morning, which was her call and not mine ─────────────────────
  *
- * Tuesday is the one that matters. A reminder at 6am on the day of the meeting is a reminder that
- * arrives too late to do anything about — the whole point of preparing a packet is the hours before
- * it, when an access grant can still be asked for. Wednesday's is the reread on the way in.
+ * I built it to fire Tuesday evening as well, on the reasoning that a blocking item needs hours to
+ * act on. Asked directly, she wanted Wednesday morning only. That is the right answer for what the
+ * packet turned out to be FOR — showing him the work — because a record of the week is read on the
+ * way into the meeting, not acted on the night before. Two reminders for a document you read once
+ * is how a notification becomes something to swipe away.
  *
  * ─── It is quiet when there is nothing ──────────────────────────────────────
  *
@@ -42,33 +44,103 @@ async function notify(title, subtitle, body) {
   return new Promise((resolve) => execFile("osascript", ["-e", script], () => resolve()));
 }
 
-function markdown(p, day) {
+function markdown(p, day, lp) {
+  /*
+   * WHAT CHANGED LEADS, which was her answer and not my guess. I had put the blocking asks first;
+   * she wanted "what changed since last Wednesday". A partner meeting opens on movement, and the
+   * asks read better once he knows what the week actually contained.
+   */
   const lines = [
     `# West Peek — ${day}`,
+    `_Since ${p.window.from}_`,
     "",
-    `## This week`,
+    `## What changed`,
     "",
     p.headline,
     "",
-    `- Anchors kept: ${p.done.anchors_kept} · missed: ${p.done.anchors_missed} · unanswered: ${p.done.anchors_unanswered}`,
     `- Deals advanced: ${p.done.deals_advanced}`,
     `- Counterparties touched: ${p.done.touches_logged}`,
-    `- Candidates reviewed: ${p.done.candidates_reviewed}`,
+    `- Buyer candidates reviewed: ${p.done.candidates_reviewed}`,
     `- Loops closed: ${p.done.loops_closed}`,
-    "",
-    `## To raise (${p.to_raise.length})`,
-    "",
   ];
+
+  /*
+   * THE LP NUMBERS COME FROM HERE, NOT FROM BOSS OS, because only this side can read the sheets.
+   * The Worker computes what it holds; this process holds Sheets access. Splitting it the other way
+   * would mean either putting LP rows into the OS — which her naming rule forbids — or a packet that
+   * is silent about the thing the meeting is actually about.
+   */
+  if (lp) {
+    lines.push(
+      `- LP outreach sent: ${lp.sent_in_window} this week (${lp.total} logged all-time)`,
+      `- People reached: ${lp.people} across ${lp.firms} firms`,
+    );
+  }
+
+  lines.push("", `## To raise (${p.to_raise.length})`, "");
   for (const i of p.to_raise) {
     lines.push(`### ${i.priority === 1 ? "**BLOCKING** — " : ""}${i.title}`);
     if (i.detail) lines.push("", i.detail);
     lines.push("");
   }
   if (p.to_raise.length === 0) lines.push("_Nothing outstanding._", "");
+
+  // The flex section: one-offs nothing derives and nothing ever will.
+  if (p.misc?.length) {
+    lines.push("## Also", "");
+    for (const i of p.misc) lines.push(`- ${i.title}${i.detail ? ` — ${i.detail}` : ""}`);
+    lines.push("");
+  }
   // What the packet cannot see is part of the packet — otherwise she walks in believing it complete.
   lines.push("## Not in here", "");
   for (const g of p.gaps) lines.push(`- ${g}`);
   return lines.join("\n");
+}
+
+/**
+ * LP outreach volume, read straight from the Twin log.
+ *
+ * FAILS SOFT AND SILENTLY BY DESIGN. If the sheet cannot be read the packet still arrives without
+ * these two lines, because a reminder that does not fire is worse than one missing a number — and
+ * the packet's own "not in here" section already says what it could not see.
+ */
+async function lpNumbers(sinceDay) {
+  const SHEET = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
+  const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
+  if (!creds) return null;
+
+  const { createSign } = await import("node:crypto");
+  const b64 = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const now = Math.floor(Date.now() / 1000);
+  const h = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  // As itself, not impersonating: the sheet was shared with the service account directly.
+  const cl = b64(JSON.stringify({
+    iss: creds.client_email, scope: "https://www.googleapis.com/auth/spreadsheets",
+    aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600,
+  }));
+  const sg = createSign("RSA-SHA256"); sg.update(`${h}.${cl}`);
+  const tok = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: `${h}.${cl}.${b64(sg.sign(creds.private_key))}`,
+    }),
+  });
+  if (!tok.ok) return null;
+  const access = (await tok.json()).access_token;
+
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET}/values/Sent%20Log`, {
+    headers: { authorization: `Bearer ${access}` },
+  });
+  if (!res.ok) return null;
+  const rows = ((await res.json()).values ?? []).slice(1).filter((r) => (r[0] ?? "").trim());
+  const inWindow = rows.filter((r) => String(r[0]).slice(0, 10) >= sinceDay);
+  return {
+    total: rows.length,
+    sent_in_window: inWindow.length,
+    people: new Set(rows.map((r) => (r[5] ?? "").toLowerCase()).filter(Boolean)).size,
+    firms: new Set(rows.map((r) => r[3]).filter(Boolean)).size,
+  };
 }
 
 async function main() {
@@ -76,9 +148,9 @@ async function main() {
   const weekday = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short" })
     .format(now).replace(/Sun|Mon|Tue|Wed|Thu|Fri|Sat/, (d) => ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 })[d]));
 
-  if (!FORCE && weekday !== 2 && weekday !== 3) {
-    // Not a packet day. Says so and exits rather than firing something she did not ask for.
-    console.log("Not Tuesday or Wednesday; nothing to remind about.");
+  if (!FORCE && weekday !== 3) {
+    // Not Wednesday. Says so and exits rather than firing something she did not ask for.
+    console.log("Not Wednesday; nothing to remind about.");
     return;
   }
 
@@ -97,8 +169,9 @@ async function main() {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   await mkdir(OUT_DIR, { recursive: true });
+  const lp = await lpNumbers(p.window.from).catch(() => null);
   const path = join(OUT_DIR, `${day}-${COUNTERPART}.md`);
-  await writeFile(path, markdown(p, day));
+  await writeFile(path, markdown(p, day, lp));
 
   const blocking = p.to_raise.filter((i) => i.priority === 1);
   const top = blocking[0] ?? p.to_raise[0] ?? null;
@@ -114,7 +187,7 @@ async function main() {
   }
 
   await notify(
-    weekday === 2 ? "Tomorrow: West Peek" : "Today: West Peek",
+    "Today: West Peek",
     `${p.to_raise.length} to raise${blocking.length ? ` · ${blocking.length} blocking` : ""}`,
     top.title,
   );

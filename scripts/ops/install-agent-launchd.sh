@@ -88,9 +88,10 @@ launchctl load "$PLIST"
 # schedules into one plist means the packet either fires five times a day or the agent runs twice a
 # week. StartCalendarInterval takes a Weekday, so each job says plainly when it runs.
 #
-# TUESDAY 17:00 IS THE ONE THAT MATTERS. A reminder at 6am on the day of the meeting arrives too
-# late to act on — the point of preparing a packet is the hours before it, when an access grant can
-# still be asked for. Wednesday 07:00 is the reread on the way in.
+# WEDNESDAY 07:00 ONLY, WHICH WAS HER CALL. It also fired Tuesday at 17:00, on my reasoning that a
+# blocking item needs hours to act on. Asked directly, she wanted Wednesday morning alone — and that
+# follows from what the packet turned out to be FOR: showing him the week's work, which is read on
+# the way into the meeting rather than acted on the night before.
 PACKET_LABEL="com.seq.boss-packet"
 PACKET_PLIST="$HOME/Library/LaunchAgents/$PACKET_LABEL.plist"
 
@@ -108,7 +109,6 @@ cat > "$PACKET_PLIST" <<PACKETEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
     <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/packet.log</string>
