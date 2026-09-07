@@ -305,6 +305,10 @@ backends.post("/dispatch", async (c) => {
     repo_path: optionalText(b?.repo_path),
     allowed_paths: stringList(b?.allowed_paths),
     verification: stringList(b?.verification),
+    // Read-only files copied into the run's own directory, and the read-only web tools it may use.
+    // Both are checked by the runner, not here — see the envelope assembly in /claim.
+    materials: stringList(b?.materials),
+    web_tools: stringList(b?.web_tools),
     required_capability: optionalText(b?.requires),
     model: optionalText(b?.model),
     max_seconds: b?.max_seconds === undefined || b?.max_seconds === null ? null : Number(b.max_seconds),
@@ -424,6 +428,17 @@ backends.post("/claim", async (c) => {
     if (requested.required_capability) envelope.required_capability = requested.required_capability;
     if (requested.model) envelope.model = requested.model;
     if (requested.max_seconds) envelope.max_seconds = requested.max_seconds;
+
+    /*
+     * MATERIALS AND WEB TOOLS PASS THROUGH UNCHANGED AND UNVALIDATED HERE, ON PURPOSE.
+     *
+     * This side does not decide what is grantable — the runner does, and it refuses an envelope key
+     * it does not know and a web tool outside its own two-item list. Adding a second opinion here
+     * would create two vocabularies for one rule, which is the drift this codebase has already been
+     * bitten by twice today. Passing them straight through means the runner's refusal is the answer.
+     */
+    if (Array.isArray(requested.materials) && requested.materials.length) envelope.materials = requested.materials;
+    if (Array.isArray(requested.web_tools) && requested.web_tools.length) envelope.web_tools = requested.web_tools;
 
     await c.env.DB
       .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'claimed',?)`)

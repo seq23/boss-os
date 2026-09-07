@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   REQUIRED_FORBIDDEN, REFUSAL, fenceUntrusted, buildPrompt, scanCommand,
-  validateEnvelope, executeRun, workOnce, childEnv, defaultRunCommand, matchesGlob,
+  validateEnvelope, executeRun, workOnce, childEnv, defaultRunCommand, matchesGlob, ALLOWED_WEB_TOOLS,
 } from "../../scripts/sync-agent/runner.mjs";
 import {
   DENIED_TOOLS, buildArgs, parseCliJson, claudeCodeExecutor, describeAuth,
@@ -506,6 +506,85 @@ describe("Stage 2 — the Claude Code adapter", () => {
    * account of itself, a claim kept as a claim, and a summary that merely QUOTED some JSON must
    * never become a delivered report.
    */
+  /**
+   * MATERIALS AND WEB TOOLS — both added because the first live report run failed and said exactly
+   * why: it could not read its own specification, and it could not search the web. Both refusals
+   * were correct, and neither is fixed by widening `allowed_paths`.
+   */
+  describe("materials and web tools", () => {
+    const withKeys = (over: Record<string, unknown>) => ({ ...envelope(), ...over });
+
+    it("refuses a relative material, for the same reason repo_path must be absolute", () => {
+      const v = validateEnvelope(withKeys({ materials: ["docs/SPEC.md"] }), {}) as any;
+      expect(v.ok).toBe(false);
+      expect(v.reason).toBe(REFUSAL.MATERIALS_NOT_ABSOLUTE);
+    });
+
+    it("accepts absolute materials", () => {
+      expect(validateEnvelope(withKeys({ materials: ["/abs/SPEC.md"] }), {}).ok).toBe(true);
+    });
+
+    it("refuses a web tool nobody reviewed rather than trimming it", () => {
+      /*
+       * A SILENTLY DROPPED REQUEST IS INDISTINGUISHABLE FROM AN HONOURED ONE. `--allowedTools` takes
+       * whatever it is handed, so an envelope free to name any tool is an envelope free to grant any
+       * tool — this is the check that keeps that list to two read-only ones.
+       */
+      const v = validateEnvelope(withKeys({ web_tools: ["WebSearch", "Bash"] }), {}) as any;
+      expect(v.ok).toBe(false);
+      expect(v.reason).toBe(REFUSAL.WEB_TOOL_NOT_ALLOWED);
+    });
+
+    it("accepts only the two read-only research tools", () => {
+      expect(validateEnvelope(withKeys({ web_tools: ALLOWED_WEB_TOOLS }), {}).ok).toBe(true);
+      expect(ALLOWED_WEB_TOOLS).toEqual(["WebSearch", "WebFetch"]);
+    });
+
+    it("puts granted web tools in argv, and grants nothing when none are asked for", () => {
+      expect(buildArgs(withKeys({ web_tools: ["WebSearch"] })).join(" ")).toContain("--allowedTools WebSearch");
+      expect(buildArgs(envelope()).join(" ")).not.toContain("--allowedTools");
+    });
+
+    it("never lets a web grant reach into the deny list", () => {
+      const args = buildArgs(withKeys({ web_tools: ALLOWED_WEB_TOOLS }));
+      for (const t of DENIED_TOOLS) expect(args).toContain(t);
+      expect(args.join(" ")).not.toContain("--dangerously-skip-permissions");
+    });
+
+    it("copies materials into the sandbox under their base names and reports them", async () => {
+      const copied: [string, string][] = [];
+      const out = await executeRun(withKeys({ materials: ["/repo/docs/SPEC.md"] }), {
+        backend: {},
+        gitProbe: async () => ({ head: null, branch: null, upstream: null, dirty: false, changed_files: [] }),
+        placeMaterials: async (cwd: string, mats: string[]) => {
+          for (const m of mats) copied.push([m, cwd]);
+          return mats.map((m) => m.split("/").pop()!);
+        },
+        runCommand: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
+        execute: async () => ({ summary: "ok", exit_code: 0, commands: [], cost_micros: 0, remaining_risks: [] }),
+      });
+      expect(copied).toEqual([["/repo/docs/SPEC.md", "/Users/owner/GitHub/example"]]);
+      // Evidence has to say what the run could see, not only what it did.
+      expect((out as any).materials_placed).toEqual(["SPEC.md"]);
+      expect(out.status).toBe("succeeded");
+    });
+
+    it("refuses rather than running without a material it was told to read", async () => {
+      /*
+       * A run that proceeds without the spec it was told to follow produces something confident and
+       * unmoored. The first live attempt reported exactly that and was right to call it a failure.
+       */
+      const out = await executeRun(withKeys({ materials: ["/repo/docs/SPEC.md"] }), {
+        backend: {},
+        gitProbe: async () => ({ head: null, branch: null, upstream: null, dirty: false, changed_files: [] }),
+        placeMaterials: async () => { throw Object.assign(new Error("gone"), { code: "ENOENT" }); },
+        execute: async () => { throw new Error("the backend must never be reached"); },
+      });
+      expect(out.status).toBe("refused");
+      expect((out as any).refusal_reason).toBe(REFUSAL.MATERIAL_UNREADABLE);
+    });
+  });
+
   describe("structured delivery", () => {
     // The read is injected for the same reason the spawn is: these run in workerd, which has no
     // filesystem, and a delivery path testable only by writing real files gets checked by hand once

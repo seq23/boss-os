@@ -68,6 +68,22 @@ export function buildArgs(envelope, { model } = {}) {
     // interactive session could pick up and continue with the untrusted text still in it.
     "--no-session-persistence",
   ];
+  /*
+   * WEB TOOLS ARE GRANTED EXPLICITLY OR NOT AT ALL.
+   *
+   * The first live report run reported "WebSearch denied — session has no approval surface", which
+   * is correct: `--permission-prompts none` means nobody can say yes, so a tool needing permission
+   * is a tool that is off. For a research run that is the difference between reading the news and
+   * inventing it.
+   *
+   * ENUMERATED BY THE RUNNER, NOT BY THE ENVELOPE'S FREE TEXT. `validateEnvelope` refuses any value
+   * outside WebSearch and WebFetch before this is reached, so `--allowedTools` can never be handed a
+   * tool nobody reviewed. Both are read-only: they fetch, they do not act, and the deny list above
+   * is untouched by this.
+   */
+  const web = Array.isArray(envelope?.web_tools) ? envelope.web_tools : [];
+  if (web.length) args.push("--allowedTools", ...web);
+
   if (model ?? envelope?.model) args.push("--model", String(model ?? envelope.model));
   return args;
 }

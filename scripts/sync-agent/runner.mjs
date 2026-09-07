@@ -77,6 +77,9 @@ export const REFUSAL = {
   CAPABILITY_MISSING: "capability_missing",
   NO_REPO_PATH: "no_repo_path",
   NO_ALLOWED_PATHS: "no_allowed_paths",
+  MATERIALS_NOT_ABSOLUTE: "materials_not_absolute",
+  WEB_TOOL_NOT_ALLOWED: "web_tool_not_allowed",
+  MATERIAL_UNREADABLE: "material_unreadable",
   FORBIDDEN_LIST_NARROWED: "forbidden_list_narrowed",
   FORBIDDEN_COMMAND: "verification_command_forbidden",
   INSTRUCTION_NOT_TEXT: "instruction_not_text",
@@ -96,7 +99,24 @@ const KNOWN_KEYS = new Set([
   "kind", "repo_path", "allowed_paths", "instruction", "instruction_origin",
   "verification", "forbidden_actions", "allowed_kinds", "capabilities",
   "credential_ref", "required_capability", "max_seconds", "model",
+  /*
+   * MATERIALS AND WEB TOOLS, ADDED DELIBERATELY AND NAMED HERE FIRST.
+   *
+   * Both exist because the first live report run failed and said exactly why: it could not read its
+   * own specification (outside its allowed directory) and it could not search the web (no tool, and
+   * no approval surface in an unattended run). Both are honest refusals of a genuinely unscoped
+   * request, and neither is fixed by widening `allowed_paths`.
+   *
+   * `materials` copies named files INTO the sandbox, so the run reads a copy in its own directory
+   * and is granted no access to where the original lives. `web_tools` is an explicit, enumerated
+   * grant rather than a general loosening. Adding them to KNOWN_KEYS is the whole review: an
+   * envelope key the runner does not know is refused, so a capability cannot arrive by accident.
+   */
+  "materials", "web_tools",
 ]);
+
+/** The only web tools an envelope may ask for. Anything else is an escalation, not a typo. */
+export const ALLOWED_WEB_TOOLS = ["WebSearch", "WebFetch"];
 
 /* ─── Prompt injection: fencing ──────────────────────────────────────────── */
 
@@ -221,6 +241,30 @@ export function validateEnvelope(envelope, backend = {}) {
     return refuse(REFUSAL.NO_ALLOWED_PATHS, "envelope names no allowed paths");
   }
 
+  /*
+   * MATERIALS ARE ABSOLUTE PATHS TO FILES, AND THAT IS CHECKED BEFORE ANYTHING IS COPIED. A relative
+   * path resolves against whatever directory the agent was started in — the same reason `repo_path`
+   * must be absolute — and a directory would put an unbounded amount of unreviewed content into the
+   * sandbox under one name.
+   */
+  if (envelope.materials !== undefined) {
+    if (!Array.isArray(envelope.materials) || envelope.materials.some((m) => typeof m !== "string" || !m.startsWith("/"))) {
+      return refuse(REFUSAL.MATERIALS_NOT_ABSOLUTE, "every material must be an absolute file path");
+    }
+  }
+
+  /*
+   * WEB TOOLS ARE ENUMERATED, NEVER FREE TEXT. `--allowedTools` takes whatever it is given, so an
+   * envelope that could name any tool would be an envelope that could grant any tool. Only the two
+   * read-only research tools are grantable, and asking for a third is refused rather than trimmed —
+   * a silently dropped request is indistinguishable from one that was honoured.
+   */
+  if (envelope.web_tools !== undefined) {
+    if (!Array.isArray(envelope.web_tools) || envelope.web_tools.some((t) => !ALLOWED_WEB_TOOLS.includes(t))) {
+      return refuse(REFUSAL.WEB_TOOL_NOT_ALLOWED, `web_tools may only contain ${ALLOWED_WEB_TOOLS.join(", ")}`);
+    }
+  }
+
   const declared = envelope.forbidden_actions;
   if (Array.isArray(declared)) {
     const missing = REQUIRED_FORBIDDEN.filter((a) => !declared.includes(a));
@@ -269,6 +313,7 @@ function packet(envelope, over = {}) {
     // Structured output a run was contracted to produce, read from its workspace by the adapter.
     // Null for every ordinary run, which is most of them.
     delivers: null,
+    materials_placed: [],
     status: "failed",
     summary: "",
     files_touched: [],
@@ -298,6 +343,7 @@ export async function executeRun(envelope, deps = {}) {
     execute,                      // the backend adapter; default resolved lazily below
     runCommand = defaultRunCommand,
     gitProbe = defaultGitProbe,
+    placeMaterials = defaultPlaceMaterials,
     now = () => Date.now(),
     backend = {},
   } = deps;
@@ -323,6 +369,33 @@ export async function executeRun(envelope, deps = {}) {
   // it first is what makes the second half meaningful.
   const before = await gitProbe(envelope.repo_path);
   const rollbackRef = before.head ? `git:${before.head}` : null;
+
+  /*
+   * MATERIALS GO IN BEFORE THE RUN STARTS, AS COPIES INSIDE THE SANDBOX.
+   *
+   * The report needs its own specification, which lives in a repository this run has — correctly —
+   * no access to. The wrong fix is to add that repository to `allowed_paths`, which would hand a
+   * daily unattended run write scope over the system that schedules it. The right one is that the
+   * run never reaches outside its directory at all: named files are copied in, under their base
+   * names, and the run reads copies.
+   *
+   * A MATERIAL THAT CANNOT BE PLACED IS A REFUSAL, NOT A WARNING. A run that proceeds without the
+   * spec it was told to follow produces something confident and unmoored — which is exactly what
+   * the first live attempt reported, and it was right to call that a failure.
+   */
+  let placed = [];
+  try {
+    placed = await placeMaterials(envelope.repo_path, envelope.materials ?? []);
+  } catch (err) {
+    return packet(envelope, {
+      status: "refused",
+      refusal_reason: REFUSAL.MATERIAL_UNREADABLE,
+      summary: `Refused before starting: a material could not be placed — ${err?.code ?? err?.message ?? "unreadable"}`,
+      remaining_risks: ["Nothing ran. The task is unchanged and still needs doing."],
+      started_at: startedAt,
+      finished_at: now(),
+    });
+  }
 
   const runner = execute ?? (await defaultExecutor());
   let result;
@@ -392,6 +465,8 @@ export async function executeRun(envelope, deps = {}) {
     finished_at: finishedAt,
     violations,
     remaining_risks: [...(result.remaining_risks ?? []), ...gitRisks(before, after)],
+    // What the run was handed. Evidence has to say what it could see, not only what it did.
+    materials_placed: placed,
   });
 
   if (violations.length > 0) {
@@ -607,6 +682,30 @@ export function childEnv(source = {}) {
  * treats as evidence. If git cannot be read, it says so with nulls rather than guessing — and
  * gitRisks() turns that silence into a stated caveat rather than a clean-looking packet.
  */
+/**
+ * Copy each named material into the run's own directory, under its base name.
+ *
+ * FLATTENED ON PURPOSE. The run sees `EXECUTIVE_INTELLIGENCE.md`, not a path that hints at where the
+ * original lives — there is nothing useful it could do with that knowledge and one obvious misuse.
+ * Two materials with the same base name is a collision the caller has to resolve, so it throws
+ * rather than silently letting the second overwrite the first.
+ */
+export async function defaultPlaceMaterials(cwd, materials) {
+  if (!Array.isArray(materials) || materials.length === 0) return [];
+  const { copyFile, mkdir } = await import("node:fs/promises");
+  const { join, basename } = await import("node:path");
+  await mkdir(cwd, { recursive: true });
+
+  const placed = [];
+  for (const source of materials) {
+    const name = basename(source);
+    if (placed.includes(name)) throw Object.assign(new Error(`two materials named ${name}`), { code: "EEXIST" });
+    await copyFile(source, join(cwd, name));
+    placed.push(name);
+  }
+  return placed;
+}
+
 export async function defaultGitProbe(cwd) {
   const empty = { head: null, branch: null, upstream: null, dirty: false, changed_files: [] };
   try {

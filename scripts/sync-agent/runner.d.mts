@@ -84,12 +84,16 @@ export interface ExecutorResult {
   error?: string | null;
   refused?: boolean;
   refusal_reason?: string;
+  /** Structured output the run wrote to `delivers.json`, read from its workspace by the adapter. */
+  delivers?: Record<string, unknown> | null;
 }
 
 export interface RunDeps {
   execute?: (input: ExecutorInput) => Promise<ExecutorResult>;
   runCommand?: (cmd: string, opts: { cwd: string; forbidden?: string[]; timeoutMs?: number }) => Promise<{ exit_code: number; tail?: string }>;
   gitProbe?: (cwd: string) => Promise<GitState>;
+  /** Copies read-only materials into the run's own directory. Returns the base names placed. */
+  placeMaterials?: (cwd: string, materials: string[]) => Promise<string[]>;
   now?: () => number;
   backend?: { allowed_kinds?: string[]; capabilities?: string[]; credential_ref?: string };
 }
@@ -104,6 +108,8 @@ export interface WorkDeps extends RunDeps {
 
 export const REQUIRED_FORBIDDEN: string[];
 export const REFUSAL: Record<string, string>;
+/** The only web tools an envelope may ask for. Anything else is an escalation, not a typo. */
+export const ALLOWED_WEB_TOOLS: string[];
 export function fenceUntrusted(text: unknown, opts?: { sentinel?: string }): { sentinel: string; fenced: string };
 export function buildPrompt(envelope: Envelope, opts?: { sentinel?: string }): { sentinel: string; prompt: string };
 export function scanCommand(command: unknown, forbidden?: string[]): string[];
@@ -119,3 +125,4 @@ export function workOnce(deps: WorkDeps): Promise<{ claimed: boolean; reported?:
 export function defaultRunCommand(cmd: string, opts?: { cwd?: string; forbidden?: string[]; timeoutMs?: number }): Promise<{ exit_code: number; tail: string }>;
 export function childEnv(source?: Record<string, string | undefined>): Record<string, string>;
 export function defaultGitProbe(cwd: string): Promise<GitState>;
+export function defaultPlaceMaterials(cwd: string, materials: string[]): Promise<string[]>;
