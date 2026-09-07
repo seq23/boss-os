@@ -50,31 +50,42 @@ function markdown(p, day, lp) {
    * she wanted "what changed since last Wednesday". A partner meeting opens on movement, and the
    * asks read better once he knows what the week actually contained.
    */
+  /*
+   * WHAT CHANGED LEADS, and for West Peek that means LP OUTREACH. Her description of the meeting:
+   * "every wednesday i put together a packet for scooter to talk about what ive been working on and
+   * what i did for west peek specifically. so we can talk about how many LPs i reached out to via my
+   * twin agent."
+   *
+   * These numbers exist only here. Boss OS holds no LP row — her naming rule keeps counterparty
+   * names out of it, and the outreach sheets already have them — so the Worker contributes the
+   * agenda and this side contributes the week.
+   */
   const lines = [
     `# West Peek — ${day}`,
     `_Since ${p.window.from}_`,
     "",
-    `## What changed`,
+    "## What changed",
     "",
-    p.headline,
-    "",
-    `- Deals advanced: ${p.done.deals_advanced}`,
-    `- Counterparties touched: ${p.done.touches_logged}`,
-    `- Buyer candidates reviewed: ${p.done.candidates_reviewed}`,
-    `- Loops closed: ${p.done.loops_closed}`,
   ];
 
-  /*
-   * THE LP NUMBERS COME FROM HERE, NOT FROM BOSS OS, because only this side can read the sheets.
-   * The Worker computes what it holds; this process holds Sheets access. Splitting it the other way
-   * would mean either putting LP rows into the OS — which her naming rule forbids — or a packet that
-   * is silent about the thing the meeting is actually about.
-   */
   if (lp) {
     lines.push(
-      `- LP outreach sent: ${lp.sent_in_window} this week (${lp.total} logged all-time)`,
-      `- People reached: ${lp.people} across ${lp.firms} firms`,
+      `**${lp.sent_in_window} LP outreach emails** went out this week, to ${lp.people_in_window} ` +
+      `people across ${lp.firms_in_window} firms.`,
+      "",
+      `- New people contacted for the first time: ${lp.first_time_in_window}`,
+      `- Follow-ups to people already in sequence: ${lp.sent_in_window - lp.first_time_in_window}`,
+      `- Replies logged: ${lp.replies === null ? "not tracked in the sheet yet" : lp.replies}`,
+      "",
+      `_All time: ${lp.total} emails to ${lp.people} people across ${lp.firms} firms._`,
     );
+  } else {
+    /*
+     * NO NUMBERS IS SAID OUT LOUD. A packet whose entire "what changed" section is silently missing
+     * would be read as a quiet week rather than a broken read, and she would say so in the meeting.
+     */
+    lines.push("**The outreach sheet could not be read**, so this week's LP numbers are missing — " +
+      "that is a failure to fetch, not a quiet week.");
   }
 
   lines.push("", `## To raise (${p.to_raise.length})`, "");
@@ -135,11 +146,31 @@ async function lpNumbers(sinceDay) {
   if (!res.ok) return null;
   const rows = ((await res.json()).values ?? []).slice(1).filter((r) => (r[0] ?? "").trim());
   const inWindow = rows.filter((r) => String(r[0]).slice(0, 10) >= sinceDay);
+  const before = new Set(rows.filter((r) => String(r[0]).slice(0, 10) < sinceDay).map((r) => (r[5] ?? "").toLowerCase()));
+  const emails = (rs) => new Set(rs.map((r) => (r[5] ?? "").toLowerCase()).filter(Boolean));
+
+  /*
+   * WINDOWED AND ALL-TIME ARE LABELLED SEPARATELY, because the first version was not. It printed
+   * "146 this week" beside "213 people across 202 firms" where the 213 was every person ever
+   * contacted — two different windows presented as one line, in a document whose only job is to be
+   * accurate about a week.
+   */
+  const replyRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET}/values/Reply%20Log`, {
+    headers: { authorization: `Bearer ${access}` },
+  });
+  const replyRows = replyRes.ok ? ((await replyRes.json()).values ?? []).slice(1).filter((r) => (r[0] ?? "").trim()) : null;
+
   return {
     total: rows.length,
-    sent_in_window: inWindow.length,
-    people: new Set(rows.map((r) => (r[5] ?? "").toLowerCase()).filter(Boolean)).size,
+    people: emails(rows).size,
     firms: new Set(rows.map((r) => r[3]).filter(Boolean)).size,
+    sent_in_window: inWindow.length,
+    people_in_window: emails(inWindow).size,
+    firms_in_window: new Set(inWindow.map((r) => r[3]).filter(Boolean)).size,
+    // A first-time contact is someone with no row before the window. That is the top-of-funnel
+    // number; the rest are follow-ups, and conflating them overstates reach every week.
+    first_time_in_window: [...emails(inWindow)].filter((e) => !before.has(e)).length,
+    replies: replyRows === null ? null : replyRows.length,
   };
 }
 
@@ -177,8 +208,12 @@ async function main() {
   const top = blocking[0] ?? p.to_raise[0] ?? null;
 
   console.log(`Packet written to ${path}`);
-  console.log(`  ${p.headline}`);
-  console.log(`  ${p.to_raise.length} to raise (${blocking.length} blocking)`);
+  // The log echoes the WEST PEEK line, not the Worker's headline — that one only says where the
+  // numbers come from, which is true and useless in a log.
+  console.log(lp
+    ? `  ${lp.sent_in_window} LP emails this week · ${lp.first_time_in_window} new · ${lp.replies ?? "?"} replies`
+    : "  LP numbers unavailable (sheet unreadable)");
+  console.log(`  ${p.to_raise.length} to raise (${blocking.length} blocking)${p.misc?.length ? ` · ${p.misc.length} misc` : ""}`);
 
   if (!top) {
     // Nothing to say. Silence is the correct output, and it is stated for the log.

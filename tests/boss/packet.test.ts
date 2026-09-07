@@ -49,82 +49,59 @@ describe("when the packet appears", () => {
   });
 });
 
-describe("what she did this week", () => {
+describe("the packet reports West Peek, and Boss OS cannot see West Peek", () => {
   beforeEach(clean);
 
-  it("counts what MOVED, not what was planned", async () => {
+  it("counts no brokerage activity, because it is a different business", async () => {
     /*
-     * The temptation in a "what I did" packet is to list the week's intentions, because they are
-     * easier to query and always look complete. This counts closed loops, advanced stages, reviewed
-     * candidates and logged touches.
+     * HER CORRECTION, AND IT WAS A REAL BUG: "in west peek we have LP outreach, in brokerage they
+     * are not LPs." The first version counted deals advanced, counterparties touched and buyer
+     * candidates reviewed — every one of them brokerage. The relationships came from her brokerage
+     * mailbox; the candidates are secondaries buyers. A West Peek partner document was reporting
+     * her other business's numbers as if they were his.
+     *
+     * Her two businesses are deliberately separate. This asserts the packet carries no counter at
+     * all, so nothing can drift back in by looking useful.
      */
-    // The loop needs a day to hang off; the anchor columns it used to carry are gone from the packet.
     await env.DB.prepare(`INSERT INTO days (id, date_ts, created_at) VALUES (?,?,?) ON CONFLICT(id) DO NOTHING`)
       .bind(TUE, Date.parse(`${TUE}T00:00:00Z`), Date.now()).run();
-    await env.DB.prepare(`INSERT INTO open_loops (id, day_id, kind, title, status, resolved_at, created_at, updated_at) VALUES (?,?,?,?, 'resolved', ?, ?, ?)`)
-      .bind(uid("loop"), TUE, "other", "Closed one", daysAgo(2), daysAgo(9), Date.now()).run();
     await env.DB.prepare(`INSERT INTO deals (id, lane, name, kind, stage, stage_since, opened_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-      .bind(uid("deal"), "ops", "Moved deal", "secondary", "diligence", daysAgo(3), daysAgo(40), daysAgo(40), Date.now()).run();
+      .bind(uid("deal"), "ops", "A brokerage deal", "secondary", "diligence", daysAgo(2), daysAgo(40), daysAgo(40), Date.now()).run();
+    await env.DB.prepare(`INSERT INTO sourcing_candidates (id, name, kind, source_url, origin, status, created_at, updated_at) VALUES (?,?, 'buyer', ?, 'public_research', 'reviewed', ?, ?)`)
+      .bind(uid("src"), "A buyer", "https://example.com", daysAgo(2), Date.now()).run();
 
     const p = await weeklyPacket(env as any, WED, "testpartner");
-    expect(p.done.loops_closed).toBe(1);
-    expect(p.done.deals_advanced).toBe(1);
-    expect(p.headline).toContain("2 things moved");
+    const text = JSON.stringify(p);
+    expect(text).not.toContain("A brokerage deal");
+    expect(text).not.toContain("A buyer");
+    expect((p as any).done).toBeUndefined();
   });
 
-  it("counts a deal that ADVANCED, not one that was merely edited", async () => {
-    // `updated_at` moves for any change; `stage_since` moves only when the stage does. A week of
-    // diligent note-taking must not read as a week of progress.
-    await env.DB.prepare(`INSERT INTO deals (id, lane, name, kind, stage, stage_since, opened_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-      .bind(uid("deal"), "ops", "Fussed over", "secondary", "diligence", daysAgo(60), daysAgo(90), daysAgo(90), Date.now()).run();
-    const p = await weeklyPacket(env as any, WED, "testpartner");
-    expect(p.done.deals_advanced).toBe(0);
-  });
-
-  it("says a quiet week was quiet, rather than showing zeros and no sentence", async () => {
+  it("says the LP numbers come from somewhere else rather than pretending to have them", async () => {
     /*
-     * A packet of zeros with no line on top reads as a broken report. A quiet week is information
-     * she is walking into a meeting to explain, and it is stated as a fact with no verdict attached
-     * — §14 scores days, and a partner meeting is not where a system grades her.
+     * Boss OS holds no LP data and is not meant to — her naming rule keeps counterparty names out
+     * of it and the outreach sheets already hold them. A packet that quietly omitted the numbers
+     * would let her walk in believing it complete.
      */
     const p = await weeklyPacket(env as any, WED, "testpartner");
-    expect(p.headline).toContain("Nothing moved");
-    expect(p.headline).not.toMatch(/should|failed|poor|behind/i);
+    expect(p.headline).toMatch(/added by the reminder/i);
+    expect(p.gaps.join(" ")).toMatch(/Boss OS holds no LP data/i);
+    expect(p.gaps.join(" ")).toMatch(/Brokerage activity is deliberately absent/i);
   });
 
   it("keeps her own anchor record out of a document her partner reads", async () => {
     /*
-     * ASKED, NOT ASSUMED. Her answer to what the packet is FOR was "showing Scooter I did the work"
-     * — accountability between partners. Whether she held her own morning floor is her business, and
-     * a system that put it in a partner-facing document would be quietly reporting on her to someone
-     * else. The Night Gate keeps that record; this must never carry it.
+     * Her answer to what the packet is FOR was "showing Scooter I did the work". Whether she held
+     * her own morning floor is her business, and a system that put it in a partner-facing document
+     * would be reporting on her to someone else.
      */
     const p = await weeklyPacket(env as any, WED, "testpartner");
-    const text = JSON.stringify(p).toLowerCase();
-    expect(text).not.toContain("anchor");
-    expect(Object.keys(p.done)).not.toContain("anchors_kept");
+    expect(JSON.stringify(p).toLowerCase()).not.toContain("anchor");
   });
 
   it("counts since the last Wednesday, not a rolling seven days", async () => {
-    /*
-     * "Since last Wednesday" has to mean it, or two consecutive packets either double-count a week
-     * or leave a gap — and a partner reading both would see the same work twice.
-     */
-    await env.DB.prepare(`INSERT INTO deals (id, lane, name, kind, stage, stage_since, opened_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-      .bind(uid("deal"), "ops", "Moved 5 days back", "secondary", "diligence", daysAgo(5), daysAgo(40), daysAgo(40), Date.now()).run();
-    await env.DB.prepare(`INSERT INTO deals (id, lane, name, kind, stage, stage_since, opened_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-      .bind(uid("deal"), "ops", "Moved 9 days back", "secondary", "diligence", daysAgo(9), daysAgo(40), daysAgo(40), Date.now()).run();
-
-    // Asked on a Wednesday, the window is the previous seven days: one deal, not two.
     const p = await weeklyPacket(env as any, WED, "testpartner");
-    expect(p.done.deals_advanced).toBe(1);
     expect(p.window.from).toBe("2026-09-02");
-  });
-
-  it("names what it cannot see rather than looking complete", async () => {
-    // The LP numbers he actually cares about live in two spreadsheets this system cannot read.
-    const p = await weeklyPacket(env as any, WED, "testpartner");
-    expect(p.gaps.join(" ")).toContain("Boss OS cannot read");
   });
 });
 

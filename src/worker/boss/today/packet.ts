@@ -28,6 +28,22 @@ import { isWestPeekDay } from "../spirit/arcs";
  * database already holds exactly. So this is deterministic, free, and available on any day rather
  * than only on the morning a duty happened to fire.
  *
+ * ─── IT REPORTS WEST PEEK WORK, AND BOSS OS CANNOT SEE ANY OF IT ────────────
+ *
+ * The first version counted deals advanced, counterparties touched and buyer candidates reviewed.
+ * Every one of those is BROKERAGE activity — the relationships were derived from her brokerage
+ * mailbox, and the candidates are secondaries buyers. Her correction: "in west peek we have LP
+ * outreach, in brokerage they are not LPs." A West Peek partner document was reporting her other
+ * business's numbers as if they were his.
+ *
+ * That is worse than a wrong number. Her two businesses are deliberately separate, and a packet
+ * that blends them puts brokerage counterparty activity in front of a fund partner.
+ *
+ * So this side now contributes what it legitimately holds — the agenda, and what it cannot see —
+ * and the WEST PEEK numbers are added by `scripts/ops/packet-remind.mjs`, which can read the
+ * outreach sheets. The Worker holds no LP row and should not: her naming rule keeps counterparty
+ * names out of the OS, and the sheets already hold them.
+ *
  * ─── It reports what happened, not what was planned ────────────────────────
  *
  * The temptation in a "what I did this week" packet is to list the week's intentions, because those
@@ -55,12 +71,6 @@ export interface WeeklyPacket {
   counterpart: string;
   /** The seven days ending the day before the packet, as ISO day ids. */
   window: { from: string; to: string };
-  done: {
-    loops_closed: number;
-    deals_advanced: number;
-    candidates_reviewed: number;
-    touches_logged: number;
-  };
   /** Named plainly when the week was thin, rather than left for her to work out from zeros. */
   headline: string;
   to_raise: PacketItem[];
@@ -95,23 +105,7 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
   const from = lastMeeting(dayId);
   const fromTs = Date.parse(`${from}T00:00:00Z`);
 
-  const [loops, deals, candidates, touches, items, misc] = await Promise.all([
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'resolved' AND resolved_at >= ?`)
-      .bind(fromTs).first<{ n: number }>(),
-
-    /*
-     * A DEAL THAT ADVANCED, not one that was edited. `stage_since` moves only when the stage does,
-     * which is the same distinction the stall detector rests on — and the reason a week of diligent
-     * note-taking does not read as a week of progress.
-     */
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM deals WHERE stage_since >= ?`).bind(fromTs).first<{ n: number }>(),
-
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM sourcing_candidates WHERE status != 'new' AND updated_at >= ?`)
-      .bind(fromTs).first<{ n: number }>(),
-
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM relationships WHERE last_contact_at >= ?`)
-      .bind(fromTs).first<{ n: number }>(),
-
+  const [items, misc] = await Promise.all([
     env.DB.prepare(
       `SELECT id, title, detail, priority, source
          FROM meeting_agenda_items
@@ -132,33 +126,23 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
     ).bind(counterpart).all<PacketItem>(),
   ]);
 
-  const done = {
-    loops_closed: loops?.n ?? 0,
-    deals_advanced: deals?.n ?? 0,
-    candidates_reviewed: candidates?.n ?? 0,
-    touches_logged: touches?.n ?? 0,
-  };
-
-  const moved = done.loops_closed + done.deals_advanced + done.candidates_reviewed + done.touches_logged;
-
   /*
-   * THE HEADLINE SAYS THE HONEST THING FIRST.
+   * NO COUNTERS HERE AT ALL, and their absence is the point rather than an omission. Everything
+   * this side can count is brokerage: `relationships` came from her brokerage mailbox,
+   * `sourcing_candidates` are secondaries buyers, `deals` is the brokerage pipeline. None of it is
+   * West Peek and none of it belongs in his packet.
    *
-   * A packet of zeros with no sentence on top invites her to read it as a broken report rather than
-   * as a quiet week — and a quiet week is information she is walking into a meeting to explain. It
-   * is stated as a fact, without a verdict attached: §14 scores days, and a partner meeting is not
-   * the place a system gets to grade her.
+   * THE HEADLINE IS DELIBERATELY NOT A SUMMARY OF THE WEEK, because this side cannot summarise a
+   * week it cannot see. Her description of the meeting: "every wednesday i put together a packet
+   * for scooter to talk about what ive been working on and what i did for west peek specifically.
+   * so we can talk about how many LPs i reached out to via my twin agent." Those numbers live in
+   * the outreach sheets, and `scripts/ops/packet-remind.mjs` writes the real headline from them.
+   * Claiming one here would be a sentence about nothing.
    */
   const headline =
-    moved === 0
-      ? "Nothing moved that the system can see since the last meeting."
-      : `${moved} thing${moved === 1 ? "" : "s"} moved: ` +
-        [
-          done.deals_advanced ? `${done.deals_advanced} deal${done.deals_advanced === 1 ? "" : "s"} advanced` : null,
-          done.touches_logged ? `${done.touches_logged} counterpart${done.touches_logged === 1 ? "" : "s"} touched` : null,
-          done.candidates_reviewed ? `${done.candidates_reviewed} candidate${done.candidates_reviewed === 1 ? "" : "s"} reviewed` : null,
-          done.loops_closed ? `${done.loops_closed} loop${done.loops_closed === 1 ? "" : "s"} closed` : null,
-        ].filter(Boolean).join(", ") + ".";
+    (items.results?.length ?? 0) + (misc.results?.length ?? 0) > 0
+      ? "LP outreach numbers are added by the reminder. Below is what needs saying."
+      : "LP outreach numbers are added by the reminder. Nothing else is outstanding.";
 
   /*
    * WHAT THE PACKET CANNOT SEE IS PART OF THE PACKET.
@@ -166,14 +150,20 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
    * The LP numbers he actually cares about live in two spreadsheets this system cannot read. A
    * packet that quietly omitted them would let her walk in believing it was complete.
    */
+  /*
+   * WHAT THE PACKET CANNOT SEE IS PART OF THE PACKET, and here that is almost all of it. This side
+   * holds the agenda and nothing else about West Peek — the numbers are added downstream by the
+   * reminder, which can read the sheets. Said plainly so a packet assembled without them is
+   * obviously incomplete rather than quietly thin.
+   */
   const gaps = [
-    "LP outreach volume and replies are not in here: they live in Scooter's tracker and the outreach log, which Boss OS cannot read yet.",
+    "West Peek numbers are added by the local reminder, which reads the outreach sheets. Boss OS holds no LP data and is not meant to.",
+    "Brokerage activity is deliberately absent: it is a different business and not his to review.",
   ];
 
   return {
     counterpart,
     window: { from, to: shiftDay(dayId, -1) },
-    done,
     headline,
     to_raise: items.results ?? [],
     misc: misc.results ?? [],
