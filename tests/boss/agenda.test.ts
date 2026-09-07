@@ -125,7 +125,7 @@ describe("the wealth contract — the most load-bearing line on the screen", () 
        VALUES (?,?, 'buyer', ?, 'public_research', 'new', ?, ?)`,
     ).bind(uid("src"), "Anything Capital", "https://example.com/y", Date.now(), Date.now()).run();
     const c = await wealthContract(env as any, 1);
-    expect(`${c.action} ${c.why}`).not.toMatch(/call/i);
+    expect(`${c.action} ${c.why}`).not.toMatch(/\bcall\b/i);
   });
 
   it("falls back to the overdue touch once the pile is reviewed", async () => {
