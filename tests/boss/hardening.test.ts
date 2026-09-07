@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { logEvent } from "../../src/worker/boss/lib/log";
 import { MAX_UNLOCK_ATTEMPTS } from "../../src/worker/boss/auth";
-import { api, apiJson, insertTask, row } from "./helpers";
+import { api, apiJson, inMaintenanceWindow, insertTask, row } from "./helpers";
 
 const post = (path: string, body?: unknown) => apiJson(path, { method: "POST", body: body ?? {} });
 
@@ -238,7 +238,7 @@ describe("Phase 5 — the nightly cron records what it did", () => {
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
 
-    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: Date.now(), noRetry() {} } as any, env, ctx);
+    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: inMaintenanceWindow(), noRetry() {} } as any, env, ctx);
     await waitOnExecutionContext(ctx);
 
     const run = await row(`SELECT status, steps FROM cron_runs ORDER BY started_at DESC LIMIT 1`);

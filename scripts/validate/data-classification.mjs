@@ -77,6 +77,14 @@ const SOVEREIGN_EXCEPTIONS = new Set(["astro_calendar", "astro_days"]);
  */
 const CLASSIFIED_BUT_NEVER_STORED = new Map([
   [
+    "gratitude_sentences",
+    "Spirit is a sovereign subsystem, so the daily gratitude sentence is LOCAL_ONLY on both axes " +
+      "and is never written into the cloud domain. The owner asked for an LLM to write it daily AND " +
+      "classified spirit as local-only; those conflict, and the screen names the stop rather than " +
+      "resolving it by loosening her rule. A table appearing here would mean that decision was made " +
+      "without her.",
+  ],
+  [
     "coaching_turns",
     "The morning coaching conversation. LOCAL_ONLY residency is honoured LITERALLY: there is no " +
       "table for it here and there must never be one. Turns live in the browser on the owner's " +

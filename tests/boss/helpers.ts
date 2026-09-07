@@ -127,3 +127,21 @@ export function completionResponse(text: string, inTokens = 100, outTokens = 50)
     { status: 200, headers: { "content-type": "application/json" } },
   );
 }
+
+/**
+ * A moment inside today's maintenance window, for tests that drive the nightly cron.
+ *
+ * WHY NOT `Date.now()`. `maintenanceDue` opens the window at 03:00 UTC and refuses before it, so a
+ * suite run between midnight and 3am UTC found the run "not due", got no `cron_runs` row, and five
+ * tests failed on an assertion about the nightly step list. That is 7pm to 10pm in the owner's own
+ * timezone — the three hours she is most likely to be running things — and the failure looked
+ * exactly like whatever had been changed most recently.
+ *
+ * A cron test is about what the run DOES, never about what hour the suite happens to start at.
+ */
+export function inMaintenanceWindow(now = Date.now()): number {
+  const DAY = 86_400_000;
+  const opens = Math.floor(now / DAY) * DAY + 3 * 60 * 60 * 1000;
+  // If the window has not opened yet today, use yesterday's — always in the past, always inside.
+  return now >= opens ? now : opens - DAY;
+}

@@ -24,6 +24,10 @@ import {
 } from "../spirit/astro";
 import { METHOD_PLANETS, STATION_UNCERTAINTY_HOURS } from "../spirit/planets";
 import { monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL } from "../../../shared/boss/timezone";
+import {
+  gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
+} from "../spirit/practice";
+import { buildBodyContract } from "../today/body";
 import { TIME_ACCURACY, natalChart, transits, type BirthData, type TimeAccuracy } from "../spirit/natal";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
@@ -78,7 +82,87 @@ spirit.get("/day", async (c) => {
   const requested = c.req.query("date");
   const id = requested ? String(requested) : dayId(Date.now());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(id)) throw badRequest("A day is YYYY-MM-DD in UTC");
-  return ok(c, await spiritSignal(c.env.DB, id));
+
+  const signal = await spiritSignal(c.env.DB, id);
+
+  /*
+   * THE PRACTICE, WHICH IS WHAT THIS SCREEN IS FOR.
+   *
+   * Everything below existed before this endpoint returned it. The Body contract was computed at the
+   * Morning Gate and written to `morning_agenda`, where nothing read it — built, stored, invisible.
+   * The gratitude sentence and the manifestation sequence were in her contract and in no code at
+   * all. The screen showed the sky and none of the practice, which is the wrong way round: §5.2 puts
+   * reality first, and the practice IS the reality here.
+   */
+  const day = await c.env.DB
+    .prepare(`SELECT day_mode FROM days WHERE id = ?`).bind(id)
+    .first<{ day_mode: string | null }>();
+  const mode = day?.day_mode ?? null;
+  const reduced = mode === "recovery" || mode === "mvd";
+
+  const [gratitude, body] = await Promise.all([
+    gratitudeFor(c.env, id),
+    buildBodyContract(c.env, id, mode),
+  ]);
+
+  /*
+   * TRANSITS, FILTERED TO THE ONES THAT ACTUALLY TOUCH HER.
+   *
+   * The natal endpoint returns all ten bodies with their degrees, which is a table to read rather
+   * than a thing to know. What matters at 6am is the short list making an aspect to her own chart —
+   * usually two or three — and on most days the honest answer is "nothing is close", which this
+   * says rather than padding the list to look busy.
+   *
+   * §5.2 AND §1.5 BOUND THE WORDING. The sky is context, never a cause and never a permission, so
+   * these are reported as what is overhead and never as a reason to do or not do anything. No
+   * interpretation is generated: an aspect is named, and what it means is hers.
+   */
+  const birthRow = await c.env.DB
+    .prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)
+    .first<{ value: string }>();
+
+  let sky: unknown = {
+    available: false,
+    reason: "No birth data yet, so there is no natal chart for anything to transit.",
+  };
+  if (birthRow) {
+    const birth = JSON.parse(birthRow.value) as BirthData;
+    const chart = natalChart(birth);
+    const active = transits(chart, Date.now())
+      .filter((t) => t.aspect !== null)
+      .sort((a, b) => a.from_natal - b.from_natal);
+    sky = {
+      available: true,
+      active,
+      // Said plainly, because an empty list is a real answer and a blank space is not.
+      quiet: active.length === 0,
+      note: ADVISORY_NOTE,
+    };
+  }
+
+  return ok(c, {
+    ...signal,
+    sky,
+    practice: {
+      day_mode: mode,
+      gratitude,
+      /*
+       * §8.4's floor is a DIFFERENT sequence, not a truncated one — her document lists it
+       * separately, and its last item is a real-world action precisely because §8.2 forbids
+       * manifestation standing in for one. Swapping in a shortened version of the twenty-minute
+       * sequence would have dropped that.
+       */
+      manifestation: {
+        steps: reduced ? HARD_DAY_FLOOR : MANIFESTATION_SEQUENCE,
+        minutes: reduced ? 9 : SEQUENCE_MINUTES,
+        floor: reduced,
+        note: reduced
+          ? "The hard-day floor. §8.2: this never replaces the real-world action, which is why one is on the list."
+          : "Morning only. Twenty minutes.",
+      },
+      body,
+    },
+  });
 });
 
 /**

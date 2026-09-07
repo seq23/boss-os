@@ -46,6 +46,8 @@ export function Spirit() {
   if (!signal || !month) return <Loading />;
 
   const { astro, reality_priority, rituals_due, contribution, ancestors, manifestations } = signal;
+  const practice = signal.practice;
+  const sky = signal.sky;
 
   return (
     <>
@@ -57,6 +59,126 @@ export function Spirit() {
         <div className="row-sub">{reality_priority.text}</div>
         <div className="row-sub">{reality_priority.rule}</div>
       </div>
+
+      {/*
+        * THIS MORNING COMES FIRST, and everything about the sky comes after it.
+        *
+        * The page used to open on moon phase and illumination — true, computed, and not a thing to
+        * do at 6am. §8.1 says Spirit is an ACTIVE operating pillar that must be rendered explicitly
+        * in the daily agenda, and the agenda was rendering astronomy instead. The order on this
+        * screen is now the order of §5.2: what is real, then what she does, then what is overhead.
+        */}
+      {practice && (
+        <>
+          <p className="eyebrow">This morning</p>
+
+          {/*
+            * THE SENTENCE IS THE LARGEST THING ON THE PAGE, because §8.5 says she should not have
+            * to invent it and it is meant to be said out loud. Rendering it as one more row of
+            * small grey text would make it something to skim past.
+            */}
+          <div className="panel">
+            {practice.gratitude.sentence ? (
+              <>
+                <p className="coach-promise" style={{ marginTop: 0 }}>{practice.gratitude.sentence}</p>
+                <p className="row-sub">
+                  Out loud. Theme today: {practice.gratitude.theme}
+                  {practice.gratitude.model ? ` · written by ${practice.gratitude.model}` : ""}
+                </p>
+              </>
+            ) : (
+              // Named, never replaced with something generic — that is the whole of §8.5's ban on
+              // filler, and a stock line here would be indistinguishable from a real one.
+              <p className="row-sub">{practice.gratitude.unavailable}</p>
+            )}
+          </div>
+
+          <div className="panel">
+            <div className="row">
+              <div className="row-main">
+                <div className="row-title">
+                  {practice.manifestation.floor ? "Spirit floor" : "Manifestation"} — {practice.manifestation.minutes} minutes
+                </div>
+                <div className="row-sub">{practice.manifestation.note}</div>
+              </div>
+            </div>
+            {practice.manifestation.steps.map((step: any, i: number) => (
+              <div className="row" key={i}>
+                <div className="row-main">
+                  <div className="row-sub">{i + 1}. {step.what}</div>
+                </div>
+                <div className="row-val">{step.minutes ? `${step.minutes} min` : "—"}</div>
+              </div>
+            ))}
+          </div>
+
+          {/*
+            * THE MOVEMENT WAS ALREADY BEING COMPUTED AND SHOWN NOWHERE. The Morning Gate wrote the
+            * whole contract — the stored sequence, today's rotated somatic lanes — into
+            * `morning_agenda`, and no screen read it. Built, stored, invisible.
+            */}
+          <div className="panel">
+            <div className="row">
+              <div className="row-main">
+                <div className="row-title">Movement{practice.body.bed_only ? " — all of it in bed" : ""}</div>
+                <div className="row-sub">{practice.body.movement_floor}</div>
+              </div>
+            </div>
+            {practice.body.launch_sequence.map((m: string, i: number) => (
+              <div className="row-sub" key={i}>{i + 1}. {m}</div>
+            ))}
+            {practice.body.somatic.length > 0 && (
+              <>
+                <p className="eyebrow">Somatic — today's rotation</p>
+                {practice.body.somatic.map((sq: any) => (
+                  <div className="row" key={sq.lane}>
+                    <div className="row-main">
+                      <div className="row-sub">{sq.title}: {sq.movement}</div>
+                    </div>
+                    {/* The novelty engine saying why, so a rotation is visibly a rotation. */}
+                    <div className="row-val">{sq.because}</div>
+                  </div>
+                ))}
+              </>
+            )}
+            <p className="row-sub">{practice.body.hydration} {practice.body.medication}</p>
+            <p className="row-sub">{practice.body.safety_stop}</p>
+          </div>
+        </>
+      )}
+
+      {/*
+        * WHAT IS OVERHEAD, AND ONLY WHAT TOUCHES HER CHART. Ten bodies with their degrees is a
+        * table to read; two or three aspects is something to know. On a quiet day it says so
+        * rather than padding the list to look busy.
+        */}
+      {sky && (
+        <>
+          <p className="eyebrow">What the sky is doing to your chart</p>
+          <div className="panel">
+            {!sky.available ? (
+              <p className="row-sub">{sky.reason}</p>
+            ) : sky.quiet ? (
+              <p className="row-sub">Nothing is close to your chart today. That is a real answer, not a gap.</p>
+            ) : (
+              sky.active.map((t: any) => (
+                <div className="row" key={t.key}>
+                  <div className="row-main">
+                    <div className="row-title">
+                      {t.name} {t.aspect} your natal {t.name}
+                      {t.retrograde ? " (retrograde)" : ""}
+                    </div>
+                    <div className="row-sub">
+                      Now in {t.sign} {t.degrees_in_sign.toFixed(1)}° · {t.from_natal.toFixed(1)}° from where it was when you were born
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+            {sky.available && <p className="row-sub">{sky.note}</p>}
+          </div>
+        </>
+      )}
 
       <p className="eyebrow">Sky — advisory</p>
       <div className="panel">

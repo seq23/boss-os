@@ -324,7 +324,17 @@ export default {
     }
   },
 
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runScheduled(env));
+  /*
+   * THE EVENT KNOWS WHEN IT WAS SUPPOSED TO FIRE, AND THAT IS THE CLOCK THAT MATTERS.
+   *
+   * This read `Date.now()` and ignored `scheduledTime`. Two consequences, one real and one that
+   * only ever bit the suite: a tick delivered late — which Cloudflare explicitly permits — was
+   * judged against the wall clock rather than against the window it belonged to; and the maintenance
+   * window could not be reached by a test at all, so five tests asserting the nightly run failed
+   * for the three hours between 00:00 and 03:00 UTC every day. That is 7pm to 10pm in the owner's
+   * own timezone, which is exactly when someone is most likely to be looking.
+   */
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runScheduled(env, event.scheduledTime ?? Date.now()));
   },
 };

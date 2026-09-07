@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { all, api, apiJson, row } from "./helpers";
+import { all, api, apiJson, inMaintenanceWindow, row } from "./helpers";
 import { healthScore, recencyScore } from "../../src/worker/boss/relationships/scoring";
 
 /**
@@ -551,7 +551,7 @@ describe("Phase 13 — follow-ups reach the screen", () => {
     const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
-    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: Date.now(), noRetry() {} } as any, env, ctx);
+    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: inMaintenanceWindow(), noRetry() {} } as any, env, ctx);
     await waitOnExecutionContext(ctx);
 
     expect((await all(`SELECT * FROM open_loops WHERE source_id = ?`, created.data.id)).length).toBe(1);

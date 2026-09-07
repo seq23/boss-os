@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { all, api, apiJson, insertApproval, row } from "./helpers";
+import { all, api, apiJson, inMaintenanceWindow, insertApproval, row } from "./helpers";
 import { WATCH_LIST } from "../../src/worker/boss/governance/gate";
 
 /**
@@ -283,7 +283,7 @@ describe("Phase 19 — canon §4, the Compliance Sentinel", () => {
     const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
-    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: Date.now(), noRetry() {} } as any, env, ctx);
+    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: inMaintenanceWindow(), noRetry() {} } as any, env, ctx);
     await waitOnExecutionContext(ctx);
 
     const run = await row(`SELECT steps FROM cron_runs ORDER BY started_at DESC LIMIT 1`);

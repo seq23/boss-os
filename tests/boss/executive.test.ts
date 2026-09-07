@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { all, api, apiJson, insertApproval, insertMemory, insertTask, row, uid } from "./helpers";
+import { all, api, apiJson, inMaintenanceWindow, insertApproval, insertMemory, insertTask, row, uid } from "./helpers";
 import { TODAY_BLOCKS } from "../../src/worker/boss/routes/today";
 import { SNAPSHOT_TABLES } from "../../src/worker/boss/routes/vault";
 
@@ -449,7 +449,7 @@ describe("Phase 11 — the day exists whether or not anyone opened it", () => {
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
 
-    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: Date.now(), noRetry() {} } as any, env, ctx);
+    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: inMaintenanceWindow(), noRetry() {} } as any, env, ctx);
     await waitOnExecutionContext(ctx);
 
     const run = await row(`SELECT steps FROM cron_runs ORDER BY started_at DESC LIMIT 1`);

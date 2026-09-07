@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { all, api, apiJson, insertTask, row } from "./helpers";
+import { all, api, apiJson, inMaintenanceWindow, insertTask, row } from "./helpers";
 import { DISCOVERY_TRIGGERS, SERIOUS_JOB_TYPES, DEFERRED_JOB_TYPES } from "../../src/worker/boss/routes/capability";
 
 /**
@@ -379,7 +379,7 @@ describe("Phase 18 — the standing cadence", () => {
     const { default: worker } = await import("../../src/worker/boss/index");
     const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
     const ctx = createExecutionContext();
-    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: Date.now(), noRetry() {} } as any, env, ctx);
+    await worker.scheduled!({ cron: "0 3 * * *", scheduledTime: inMaintenanceWindow(), noRetry() {} } as any, env, ctx);
     await waitOnExecutionContext(ctx);
 
     const run = await row(`SELECT steps FROM cron_runs ORDER BY started_at DESC LIMIT 1`);

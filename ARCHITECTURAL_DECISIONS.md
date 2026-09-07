@@ -828,3 +828,61 @@ what settled it. Worth knowing before the next session loses twenty minutes to i
 **What made all three findable:** `BOSS_PASSCODE` reached the vault, so the production API could be
 driven from a terminal. Before that the last link was unverifiable from here and the feature had been
 reported as working on the strength of its parts.
+
+### ADR-031 — The Spirit screen shows the practice, and stops at one rule it cannot resolve
+
+The owner asked for the page to be overhauled from her own point of view: something that tells her
+what is happening, what it means for her decisions, and takes cognitive load off — with a gratitude
+sentence, the day's movement, and a schedule built from what she actually has on.
+
+**The audit answered the question before the design did.** Three things her contract specifies
+exactly were either missing or invisible:
+
+| Required | State before this |
+| --- | --- |
+| §8.5 one exact gratitude sentence, every morning | did not exist anywhere |
+| §8.3 the seven-step twenty-minute manifestation sequence, §8.4 the hard-day floor | did not exist |
+| §6.9 movement sequence + the somatic rotation | computed at the Morning Gate, written to `days.morning_agenda`, **read by no screen** |
+
+The third is the worst of the three and it was this session's own doing: built, stored, invisible —
+the "runs but inert" shape this repository names, shipped a few hours earlier. The page rendered
+moon phase, illumination percentage and a contribution counter: all correct, all computed, and
+nothing to DO at 6am. §8.1 makes Spirit an *active* operating pillar that "must be rendered
+explicitly in the daily agenda", and the agenda was rendering astronomy.
+
+**The order on the screen is now §5.2's order:** what is real, then what she does, then what is
+overhead. The practice leads — the sentence set large because it is meant to be said out loud, the
+sequence with its minutes, the movement with today's rotated somatic lanes and the novelty engine
+saying why it chose each one. The sky follows as context, filtered to the transits actually making
+an aspect to her natal chart, because ten bodies with their degrees is a table to read and two or
+three aspects is something to know. On a quiet day it says the sky is quiet rather than padding the
+list to look busy.
+
+**AND THEN IT STOPPED, ON A CONFLICT BETWEEN TWO OF HER OWN RULES.**
+
+She said plainly that the gratitude sentence is written by the LLM daily. She also classified
+`spirit` as a SOVEREIGN SUBSYSTEM — LOCAL_ONLY on both axes, which means spirit material may not be
+stored outside the private domain *and* may not be reasoned about by any cloud model.
+`scripts/validate/data-classification.mjs` enforces it at build time, and its own header explains
+why: the airlock would catch this at runtime, but only once the feature is written and wired, "by
+which point the table exists, holds data, and the cheapest fix is to classify it in whatever
+direction unblocks the demo."
+
+That is exactly the fix that was available. Adding `spirit` to the exception list is one line and
+would have shipped the sentence today. It would also have traded a sovereignty guarantee for one
+sentence, silently, inside a feature she asked for — which is not a decision an implementation gets
+to make, and is specifically what the owner's standing instruction forbids.
+
+**So it is a NAMED STOP.** `gratitude_sentences` is classified LOCAL_ONLY on both axes and has NO
+TABLE: nothing about her gratitude is written into Cloudflare's database while the question is open.
+The generator, the theme rotation and the 90-day no-repeat check are all built and tested, and the
+screen states the rule, says both routes forward — her word, or the local runtime — and makes clear
+nothing is broken. §8.5 bans filler, so there is deliberately no stock sentence standing in: a
+generic line dressed as her daily gratitude would be indistinguishable from a real one and she would
+have no way to tell she had been handed nothing.
+
+**A branch that queried the missing table was caught by the SQL validator**, and that is worth
+recording too: "kept whole rather than stubbed" is a good instinct that produced broken code on a
+path nobody would execute for months. The migration that loosens the classification is now the same
+one that creates the table, so both halves of her decision land together and neither can arrive
+without the other.
