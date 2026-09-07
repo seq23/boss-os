@@ -7,6 +7,9 @@
  * no Cloudflare credentials involved. `--remote` is never used.
  */
 import { execFileSync } from "node:child_process";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const APP_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -37,6 +40,32 @@ export function d1Query(sql) {
 /** Run SQL without needing result rows (DDL/DML). */
 export function d1Exec(sql) {
   wrangler(["d1", "execute", DB_BINDING, "--local", "--command", sql]);
+}
+
+/**
+ * Run many statements in ONE wrangler invocation, via a temporary file.
+ *
+ * WHY THIS EXISTS. `d1Exec` launches a process per call. A restore of three thousand rows across
+ * three hundred tables is hundreds of launches, and essentially all of the elapsed time is process
+ * startup rather than SQLite — a production pull took over nine minutes and had not finished.
+ *
+ * That is not merely slow, it decides whether a feature is used at all: the sync is a button in her
+ * Dock, and a button that appears to hang for ten minutes gets clicked once and then never again.
+ *
+ * The same lesson the SQL validator learned when it stopped spawning one `wrangler` per statement.
+ */
+export function d1ExecMany(statements) {
+  if (statements.length === 0) return;
+  const file = path.join(tmpdir(), `wpos-restore-${Date.now()}.sql`);
+  // Each statement is already terminated by the caller's semicolon-free convention, so they are
+  // joined with one here rather than trusting the input to carry it.
+  writeFileSync(file, statements.map((s) => `${s.replace(/;\s*$/, "")};`).join("\n"));
+  try {
+    wrangler(["d1", "execute", DB_BINDING, "--local", "--file", file]);
+  } finally {
+    // The file can hold real rows from her database; it does not outlive the run.
+    try { unlinkSync(file); } catch { /* already gone */ }
+  }
 }
 
 /** Apply all pending migrations to the local D1 (idempotent; wrangler tracks d1_migrations). */

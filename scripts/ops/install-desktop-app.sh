@@ -85,17 +85,43 @@ exec "'"$CHROME"'" --app="http://127.0.0.1:$PORT" --user-data-dir="'"$PROFILE"'-
 
 make_app "Boss OS (Local)" "$LOCAL_CMD" "💻"
 
+# ─── The sync app ────────────────────────────────────────────────────────────
+#
+# HER QUESTION, AND IT IS THE RIGHT ONE: "when i want to update the bridge to sync them how do i do
+# that? that should be easy to do in the app." A bridge that needs two terminal commands is a bridge
+# that gets crossed once, on the day it is built.
+#
+# So syncing is a third icon. It pulls production, loads it locally, and says how much came across.
+# It takes a couple of minutes, so it notifies at the start as well as the end — a Dock icon that
+# bounces and then appears to do nothing for ninety seconds is one she clicks again.
+#
+# IT NEVER TOUCHES PRODUCTION. `pull-production.mjs` refuses to issue anything but a SELECT, and
+# nothing here has a reverse direction to invoke.
+SYNC_CMD='cd '"$REPO"'
+note() { osascript -e "display notification \"$1\" with title \"Boss OS Sync\"" >/dev/null 2>&1 || true; }
+note "Pulling your data from the cloud. This takes a minute or two."
+if out=$(npm run --silent local:pull 2>&1) && npm run --silent local:restore -- --force >/dev/null 2>&1; then
+  rows=$(printf "%s" "$out" | grep -oE "[0-9]+ tables / [0-9]+ rows" | tail -1)
+  note "${rows:-Done} — local now matches the cloud."
+else
+  # A FAILED SYNC MUST SAY SO. A local app quietly running on last month'"'"'s data is the exact
+  # failure this bridge exists to prevent, and silence here would produce it.
+  osascript -e "display alert \"Boss OS Sync failed\" message \"Local data is unchanged and may be stale. Run: npm run local:pull\"" >/dev/null 2>&1 || true
+  exit 1
+fi'
+
+make_app "Boss OS Sync" "$SYNC_CMD" "🔄"
+
 echo
-echo "Two apps installed in ~/Applications. Drag either to the Dock."
+echo "Three apps installed in ~/Applications. Drag them to the Dock."
 echo
-echo "  Boss OS          — your real data, needs the internet."
-echo "  Boss OS (Local)  — this laptop only, no network, SEPARATE EMPTY DATABASE."
-echo
-echo "Before the local one works the first time:  cd $REPO && npm run migrate:local"
+echo "  Boss OS          — your real data, live, needs the internet."
+echo "  Boss OS (Local)  — this laptop only, no network. Shows whatever the last sync pulled."
+echo "  Boss OS Sync     — click to copy the cloud down to this laptop. Never pushes."
 
 # RULE 0: an installer that installed nothing must not exit 0 looking pleased.
 missing=""
-for n in "Boss OS" "Boss OS (Local)"; do
+for n in "Boss OS" "Boss OS (Local)" "Boss OS Sync"; do
   [ -x "$APPS/$n.app/Contents/MacOS/run" ] || missing="$missing \"$n\""
 done
 if [ -n "$missing" ]; then
@@ -105,8 +131,8 @@ fi
 if [ ! -x "$CHROME" ]; then
   # Named rather than silently producing an app that fails on first click.
   echo
-  echo "WARNING: Google Chrome is not at $CHROME, so both apps will fail to open a window."
+  echo "WARNING: Google Chrome is not at $CHROME, so the two window apps will fail to open."
   exit 1
 fi
 echo
-echo "Verified: both app bundles are executable and Chrome is where they expect it."
+echo "Verified: all three app bundles are executable and Chrome is where they expect it."
