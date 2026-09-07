@@ -40,10 +40,12 @@
     "vault:status": "node scripts/vault/vault.mjs status",
     "vault:sync:cloudflare": "node scripts/vault/vault.mjs sync:cloudflare",
     "validate:gmail": "node scripts/validate/gmail-metadata-only.mjs",
-    "holdings": "vault:run -- node scripts/ops/holdings-lookup.mjs",
-    "lp:sync": "vault:run -- node scripts/ops/lp-tracker-sync.mjs",
-    "backend:provision": "vault:run -- node scripts/ops/provision-backend.mjs",
-    "validate:reachable": "node scripts/validate/reachable.mjs"
+    "holdings": "node scripts/vault/vault.mjs run -- node scripts/ops/holdings-lookup.mjs",
+    "lp:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-tracker-sync.mjs",
+    "backend:provision": "node scripts/vault/vault.mjs run -- node scripts/ops/provision-backend.mjs",
+    "validate:reachable": "node scripts/validate/reachable.mjs",
+    "contacts:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/contacts-sync.mjs",
+    "spry:heartbeat": "node scripts/ops/spry-heartbeat.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

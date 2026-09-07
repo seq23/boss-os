@@ -96,6 +96,108 @@ relationships.post("/organizations", async (c) => {
 
 // ─── People ───────────────────────────────────────────────────────────────────
 
+/**
+ * The touch list, derived from her mailbox rather than typed.
+ *
+ * WHY THIS ENDPOINT EXISTS AT ALL. The first design asked her to name five people who had sent her
+ * deals. Her verdict was that this is stupid, and the reason is sharper than effort: a list she
+ * types is a list of who she REMEMBERS, and the whole failure this instrument catches is that a
+ * referral business decays silently. The people who have gone quiet are the first to fall out of
+ * memory, so asking the person with the blind spot to enumerate it produces a list with the answer
+ * missing. Her mailbox has no blind spot.
+ *
+ * WHAT ARRIVES HERE IS ALREADY CODE-NAMED. `scripts/ops/contacts-sync.mjs` reads the extraction on
+ * her Mac, assigns a stable code name from a hash, and keeps the mapping in a local file that never
+ * leaves the machine. This side learns that SANDPIPER has gone 94 days and cannot learn who that
+ * is — which is her naming rule honoured by construction rather than by discipline.
+ *
+ * IT REFUSES A REAL ADDRESS, LOUDLY. An `@` in a code name means the mapping leaked into the
+ * payload, and the right response is to reject the whole batch rather than store one and hope
+ * somebody notices.
+ */
+relationships.post("/sync", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const contacts = Array.isArray(b?.contacts) ? b.contacts : null;
+  if (!contacts) throw badRequest("Send { contacts: [...] }", "Produced by scripts/ops/contacts-sync.mjs.");
+
+  for (const row of contacts) {
+    const name = String(row?.code_name ?? "");
+    if (!name) throw badRequest("Every contact needs a code_name");
+    if (name.includes("@") || name.includes(".")) {
+      throw badRequest(
+        `"${name}" looks like a real address, not a code name`,
+        "The mapping stays on her machine. Nothing here may carry a counterparty's actual address.",
+      );
+    }
+  }
+
+  const now = Date.now();
+  let created = 0;
+  let updated = 0;
+
+  for (const row of contacts) {
+    const codeName = String(row.code_name);
+    const cadence = Math.max(1, Math.round(Number(row.cadence_days) || 30));
+    const importance = Math.min(100, Math.max(0, Math.round(Number(row.strategic_importance) || 50)));
+    const lastContact = Number(row.last_contact_at) || null;
+    /*
+     * DUE AGAINST THEIR OWN RHYTHM. Someone she exchanges mail with fortnightly is overdue at three
+     * weeks; someone she speaks to twice a year is not. A single default would make one of those
+     * two groups permanently wrong, and the noisy one is the group she would learn to ignore.
+     */
+    const nextDue = lastContact ? lastContact + cadence * 86_400_000 : now;
+
+    const existing = await c.env.DB
+      .prepare(`SELECT p.id AS person_id, r.id AS rel_id FROM people p LEFT JOIN relationships r ON r.person_id = p.id WHERE p.full_name = ? LIMIT 1`)
+      .bind(codeName)
+      .first<{ person_id: string; rel_id: string | null }>();
+
+    if (existing?.rel_id) {
+      await c.env.DB
+        .prepare(
+          `UPDATE relationships
+              SET cadence_days = ?, strategic_importance = ?, relationship_health = ?,
+                  last_contact_at = ?, next_touch_due_at = ?, scored_at = ?, updated_at = ?
+            WHERE id = ?`,
+        )
+        .bind(cadence, importance, importance, lastContact, nextDue, now, now, existing.rel_id)
+        .run();
+      updated++;
+      continue;
+    }
+
+    const personId = existing?.person_id ?? newId("per");
+    if (!existing?.person_id) {
+      await c.env.DB
+        .prepare(
+          // `restricted` because a counterparty is the most sensitive class of person here, and the
+          // row carries a code name precisely so that even this side cannot identify them.
+          `INSERT INTO people (id, lane, full_name, privacy_class, created_at, updated_at)
+           VALUES (?, 'ops', ?, 'restricted', ?, ?)`,
+        )
+        .bind(personId, codeName, now, now)
+        .run();
+    }
+    await c.env.DB
+      .prepare(
+        `INSERT INTO relationships
+           (id, person_id, lane, kind, strategic_importance, trust_level, relationship_health,
+            cadence_days, last_contact_at, next_touch_due_at, scored_at, status, created_at, updated_at)
+         VALUES (?,?, 'ops', 'professional', ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+      )
+      .bind(newId("rel"), personId, importance, importance, importance, cadence, lastContact, nextDue, now, now, now)
+      .run();
+    created++;
+  }
+
+  await audit(c.env.DB, {
+    actor: "system", lane: "ops", entityType: "relationship", action: "synced_from_mailbox",
+    detail: { created, updated, total: contacts.length },
+  });
+
+  return ok(c, { created, updated, total: contacts.length }, 201);
+});
+
 relationships.get("/people", async (c) => {
   const rows = await c.env.DB
     .prepare(

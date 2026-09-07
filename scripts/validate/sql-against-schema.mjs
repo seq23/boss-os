@@ -71,7 +71,21 @@ export function extractStatements(files) {
     /"(\s*(?:SELECT|INSERT|UPDATE|DELETE)\b[^"]{10,700})"/gi,
   ];
   for (const file of files) {
-    const src = readFileSync(file, "utf8");
+    /*
+     * COMMENTS ARE STRIPPED BEFORE EXTRACTION, AND THIS IS NOT TIDINESS.
+     *
+     * The patterns below pair backticks naively, so a backtick inside a comment steals the opening
+     * quote of the statement underneath it and the statement is never checked. Found the hard way:
+     * a `// \`restricted\` because...` line sitting directly above an INSERT hid that INSERT
+     * completely, and the scan reported PASSED on a statement naming a column that does not exist.
+     *
+     * That is the worst failure a validator can have — not a wrong answer, but a silent omission
+     * that still prints a pass. A statement can now only escape this scan by being interpolated,
+     * which is stated and deliberate.
+     */
+    const src = readFileSync(file, "utf8")
+      .replace(/^[ \t]*\/\/.*$/gm, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
     for (const re of patterns) {
       for (const m of src.matchAll(re)) {
         const raw = m[1];
@@ -143,9 +157,24 @@ function checkOne(db, sql) {
     return null;
   } catch (err) {
     const message = String(err?.message ?? err);
-    return /no such (table|column)/i.test(message) ? message : null;
+    return SCHEMA_ERROR.test(message) ? message : null;
   }
 }
+
+/**
+ * The error messages that mean "this statement does not match the schema".
+ *
+ * SQLITE PHRASES THE INSERT CASE DIFFERENTLY, AND THAT HOLE WAS REAL. A bad column in a SELECT says
+ * "no such column: x"; the same mistake in an INSERT says "table t has no column named x". This
+ * matched only the first, so EVERY bad column in EVERY INSERT in the codebase went unchecked — by a
+ * validator whose own comment says it exists for "exactly the class of bug that shipped three times
+ * in one day".
+ *
+ * Found by writing a deliberately broken INSERT to prove the scan caught it, and watching it pass.
+ * A validator is only worth what its negative proof demonstrates, and this one had never been given
+ * an INSERT to fail on.
+ */
+const SCHEMA_ERROR = /no such (table|column)|has no column named/i;
 
 /**
  * The self-test this validator never had — and it was the only one of the eight without one.
@@ -159,6 +188,13 @@ function selfTest(db) {
     ["SELECT id FROM firm_user WHERE firm_scope = ?1", /no such column/i, "the column that broke the weekly review is caught"],
     ["SELECT id FROM table_that_does_not_exist", /no such table/i, "a missing table is caught"],
     ["SELECT id, superseded_by FROM knowledge_record", /no such column/i, "the LP-claim column that pointed the wrong way is caught"],
+    /*
+     * THE INSERT CASE, which this validator silently ignored until 7 Sep 2026. SQLite words it as
+     * "table X has no column named Y" rather than "no such column", so the pattern never matched and
+     * every INSERT in the repo was effectively unchecked.
+     */
+    ["INSERT INTO people (id, lane, full_name, column_that_does_not_exist) VALUES (?,?,?,?)", /has no column named/i, "a bad column in an INSERT is caught, not only in a SELECT"],
+    ["INSERT INTO people (id, lane, full_name, privacy_class, created_at, updated_at) VALUES (?,?,?,?,?,?)", null, "a correct INSERT still passes"],
     ["INSERT INTO firm_user (id, email, full_name) VALUES (?1, ?2, ?3)", null, "a bound insert passes — arguments are not the point"],
   ];
   let failed = 0;
