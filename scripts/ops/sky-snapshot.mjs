@@ -22,6 +22,7 @@
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const WORKSPACE = process.env.BOSS_OS_REPORT_WORKSPACE ?? `${process.env.HOME}/.boss-os/reports`;
+const SOURCING_DIR = process.env.BOSS_OS_SOURCING_WORKSPACE ?? `${process.env.HOME}/.boss-os/sourcing`;
 
 async function main() {
   if (!process.env.BOSS_PASSCODE) {
@@ -72,6 +73,38 @@ async function main() {
 
   await writeFile(join(WORKSPACE, "SKY.json"), JSON.stringify(snapshot, null, 2));
   console.log(`SKY.json written to ${WORKSPACE}`);
+
+  /*
+   * KNOWN.json — the firms already on her list, so the daily buyer hunt looks for what is NEW.
+   *
+   * WITHOUT THIS THE DAILY RUN RE-FINDS THE SAME INSTITUTIONS, which is both why it cost $2 a day
+   * and why the list repeated itself. She said the hunt should be daily; making it incremental is
+   * what makes daily affordable, and a run that skips what she already has is also just a better
+   * run.
+   *
+   * NAMES ONLY. This is a do-not-repeat list, not a briefing — the thesis, source and verdict for
+   * each firm are already in the database where she reviews them.
+   */
+  const cands = await fetch(`${ORIGIN}/api/boss/wealth/sourcing`, { headers: { cookie } })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  const names = Array.isArray(cands?.data?.candidates)
+    ? cands.data.candidates.map((c) => c.name).filter(Boolean)
+    : null;
+
+  if (names) {
+    await mkdir(SOURCING_DIR, { recursive: true });
+    await writeFile(join(SOURCING_DIR, "KNOWN.json"), JSON.stringify({
+      computed_at: new Date().toISOString(),
+      note: "Firms already on her list. Do not deliver these again — find what is new.",
+      count: names.length,
+      names,
+    }, null, 2));
+    console.log(`KNOWN.json — ${names.length} firms already on the list.`);
+  } else {
+    // Soft: a missing KNOWN.json costs a duplicated candidate, not a lost run.
+    console.error("Could not read the candidate list; KNOWN.json not written.");
+  }
 }
 
 // NEVER THROWS INTO THE LAUNCH AGENT. This runs immediately before the report; a crash here that

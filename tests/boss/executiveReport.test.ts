@@ -398,9 +398,18 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
     const duty = await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
     const input = JSON.parse(duty.task_input);
     expect(input.prompt).toContain("$5M+");
-    expect(input.prompt).toMatch(/\$20M\+ is strongly preferred/);
-    // Ten sourced names beat fifty guesses — the instruction has to say so or it will pad.
-    expect(input.prompt).toMatch(/Ten well-sourced names beat fifty guesses/);
+    expect(input.prompt).toMatch(/\$20M\+ strongly preferred/);
+    /*
+     * IT MUST TELL THE RUN THAT A SMALL ANSWER IS A GOOD ANSWER, or it pads. The wording changed
+     * when the sweep became incremental — "ten well-sourced names" was right for a first sweep of
+     * the whole universe and wrong for a daily hunt for what changed, where two is a good day and
+     * zero is legitimate.
+     */
+    expect(input.prompt).toMatch(/TWO GOOD NEW NAMES IS A GOOD DAY/);
+    expect(input.prompt).toMatch(/zero is a real answer/i);
+    // And it must not re-deliver what she already has, which is what made a daily run expensive.
+    expect(input.prompt).toContain("KNOWN.json");
+    expect(input.prompt).toMatch(/DO NOT DELIVER ANY OF THEM AGAIN/);
   });
 
   it("runs after the report so the two never contend for the single work slot", async () => {
@@ -423,11 +432,16 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
      */
     const duty = await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
     const input = JSON.parse(duty.task_input);
-    expect(input.prompt).toMatch(/AFTER EVERY CANDIDATE YOU VERIFY — not at the end/);
-    expect(input.prompt).toMatch(/killed without warning/i);
-    expect(input.prompt).toMatch(/Do not batch the write/i);
-    // Fifteen minutes was simply too short for the work.
-    expect(input.requested.max_seconds).toBeGreaterThanOrEqual(1800);
+    expect(input.prompt).toMatch(/AFTER EVERY CANDIDATE YOU VERIFY, not at the end/);
+    expect(input.prompt).toMatch(/hard timeout/i);
+    /*
+     * THE CEILING WENT DOWN, NOT UP, AND THAT IS THE FIX WORKING. Thirty minutes was needed when the
+     * run re-scanned the whole universe. Hunting only what changed, five is enough — and her budget
+     * is $25 a month for everything, so a run that can wander for half an hour is the problem.
+     */
+    expect(input.requested.max_seconds).toBeLessThanOrEqual(600);
+    // Every duty names its model now. Defaulting to the most expensive one is what cost $3.88.
+    expect(input.requested.model).toBeTruthy();
   });
 
   it("has its own workspace, separate from the report's", async () => {

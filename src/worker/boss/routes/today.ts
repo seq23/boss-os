@@ -442,7 +442,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * Duty health, read here rather than on a cron, so it is true at the moment she looks rather than
    * at the moment something last checked.
    */
-  const [staleDuties, stuckDuties, lastNetworkRefresh] = await Promise.all([
+  const [staleDuties, stuckDuties, lastNetworkRefresh, agentBudget, warnSetting] = await Promise.all([
     env.DB.prepare(
       `SELECT id, name, last_run_at, created_at
          FROM standing_duties
@@ -468,7 +468,18 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     env.DB.prepare(
       `SELECT ts FROM system_events WHERE event = 'network_refreshed' ORDER BY ts DESC LIMIT 1`,
     ).first<{ ts: number }>(),
+
+    env.DB.prepare(
+      `SELECT monthly_ceiling_micros, spent_micros, window_started_at FROM execution_backends WHERE id = 'bk_claude_code'`,
+    ).first<{ monthly_ceiling_micros: number; spent_micros: number; window_started_at: number | null }>(),
+
+    env.DB.prepare(`SELECT value FROM settings WHERE key = 'agent_budget_warn_pct'`)
+      .first<{ value: string }>(),
   ]);
+
+  // A window from a previous month is last month's total, not this month's spend.
+  const monthStartUtc = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1);
+  const warnPct = Number(warnSetting?.value ?? 70) || 70;
 
   const [runOfShow, focus] = await Promise.all([
     readRunOfShow(env, day.id, {
@@ -525,6 +536,40 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       source_type: "tasks", source_id: d.id,
     });
   }
+  /*
+   * THE BUDGET, WHERE SHE WILL SEE IT.
+   *
+   * Her instruction: "if we are out of budget or dangerously so i get notified." Dangerously comes
+   * first — a warning that only arrives at the stop is a warning that arrives when the only option
+   * left is to stop.
+   *
+   * THE FIGURE IS CLAUDE MAX CAPACITY, NOT A BILL, and the wording says so. She and the employees
+   * draw on the same subscription, so running out does not produce an invoice: it produces a week
+   * where she cannot use Claude Code for her own work because her staff spent it.
+   */
+  if (agentBudget && (agentBudget.monthly_ceiling_micros ?? 0) > 0) {
+    const ceiling = agentBudget.monthly_ceiling_micros;
+    const spent = agentBudget.window_started_at && agentBudget.window_started_at >= monthStartUtc
+      ? (agentBudget.spent_micros ?? 0)
+      : 0;
+    const pct = Math.round((spent / ceiling) * 100);
+    const money = (m: number) => `$${(m / 1e6).toFixed(2)}`;
+
+    if (spent >= ceiling) {
+      alerts.push({
+        severity: "high",
+        text: `The agents have spent this month's budget — ${money(spent)} of ${money(ceiling)}. Scheduled duties are paused. Anything you ask for directly still runs.`,
+        source_type: "tasks", source_id: "bk_claude_code",
+      });
+    } else if (pct >= warnPct) {
+      alerts.push({
+        severity: "medium",
+        text: `The agents are at ${pct}% of this month's budget (${money(spent)} of ${money(ceiling)}). That is Claude Max capacity you also use, not a bill.`,
+        source_type: "tasks", source_id: "bk_claude_code",
+      });
+    }
+  }
+
   /*
    * MONIQUE'S NETWORK REFRESH IS WATCHED THE SAME WAY A DUTY IS, even though a scheduled local job
    * executes it rather than an agent. The touch list is only as true as its last refresh: a

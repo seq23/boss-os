@@ -69,6 +69,46 @@ function micros(value: unknown, what: string): number {
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
+/**
+ * The buyer candidates the sourcing sweep found, and the list she reviews.
+ *
+ * IT IS ALSO WHAT MAKES THE DAILY HUNT AFFORDABLE. `sky-snapshot.mjs` reads this before each run and
+ * writes the names into the run's workspace as KNOWN.json, so the sweep looks for what is NEW rather
+ * than re-finding the same institutions — which was both why a daily run cost $2 and why the list
+ * repeated itself.
+ *
+ * `status` filters: new (awaiting her), reviewed, contacted, rejected, promoted.
+ */
+wealth.get("/sourcing", async (c) => {
+  const status = c.req.query("status");
+  const rows = status
+    ? await c.env.DB.prepare(
+        `SELECT * FROM sourcing_candidates WHERE status = ? ORDER BY COALESCE(ticket_floor_usd,0) DESC, created_at DESC LIMIT 200`,
+      ).bind(status).all()
+    : await c.env.DB.prepare(
+        `SELECT * FROM sourcing_candidates ORDER BY COALESCE(ticket_floor_usd,0) DESC, created_at DESC LIMIT 200`,
+      ).all();
+
+  const candidates = rows.results ?? [];
+  const fresh = candidates.filter((x: any) => x.status === "new").length;
+  return ok(c, { candidates, total: candidates.length, awaiting_review: fresh });
+});
+
+/** Her verdict on one candidate. Nothing else in the system may move a row out of `new`. */
+wealth.post("/sourcing/:id/status", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const status = b?.status ? String(b.status) : "";
+  const allowed = ["new", "reviewed", "contacted", "rejected", "promoted"];
+  if (!allowed.includes(status)) throw badRequest(`"${status}" is not a candidate status`, `One of: ${allowed.join(", ")}.`);
+
+  const res = await c.env.DB
+    .prepare(`UPDATE sourcing_candidates SET status = ?, notes = COALESCE(?, notes), updated_at = ? WHERE id = ?`)
+    .bind(status, b?.notes ? String(b.notes) : null, Date.now(), c.req.param("id"))
+    .run();
+  if (!res.meta.changes) throw notFound("No candidate with that id");
+  return ok(c, { id: c.req.param("id"), status });
+});
+
 wealth.get("/entities", async (c) => {
   const rows = await c.env.DB
     .prepare(

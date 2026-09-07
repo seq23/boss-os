@@ -28,6 +28,8 @@ export interface DutyRow {
   timezone: string;
   cadence: "daily" | "weekly" | "monthly";
   weekday: number | null;
+  /** JSON array of weekdays a DAILY duty runs on. Null means every day. */
+  weekdays: string | null;
   next_due_at: number;
   task_kind: string;
   task_title: string;
@@ -56,12 +58,18 @@ export async function materialiseDueDuties(env: Env, now = Date.now()): Promise<
       continue;
     }
 
+    let weekdays: number[] | null = null;
+    // A malformed list must not silently become "every day" — that is how a duty triples its cost
+    // without anyone editing a schedule. It stays null and the duty runs as it always did.
+    try { weekdays = duty.weekdays ? (JSON.parse(duty.weekdays) as number[]) : null; } catch { weekdays = null; }
+
     const schedule: DutySchedule = {
       local_hour: duty.local_hour,
       local_minute: duty.local_minute,
       timezone: duty.timezone,
       cadence: duty.cadence,
       weekday: duty.weekday,
+      weekdays,
     };
 
     /*

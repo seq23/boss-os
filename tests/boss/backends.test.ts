@@ -114,7 +114,17 @@ describe("Stage 1 — the registry as seeded", () => {
       "bk_claude_code", "bk_fireworks", "bk_local_runtime", "bk_openrouter", "bk_workers_ai",
     ]);
     for (const b of rows) {
-      expect(b.monthly_ceiling_micros).toBe(0);
+      /*
+       * $0 EXCEPT WHERE A CEILING IS THE POINT. Every backend shipped at zero, which meant "may not
+       * spend" — correct while nothing was commissioned. `bk_claude_code` now carries a real $25
+       * ceiling because it turned out to cost her Claude Max capacity while being reported as free,
+       * and a budget of zero on the one backend that actually runs would stop everything.
+       *
+       * The invariant that survives is the one that mattered: no backend may spend without a
+       * deliberate, reviewable number against its name.
+       */
+      if (b.id === "bk_claude_code") expect(b.monthly_ceiling_micros).toBeGreaterThan(0);
+      else expect(b.monthly_ceiling_micros).toBe(0);
       // The forbidden list is the invariant that never moves, enabled or not. No backend may commit,
       // merge, push, deploy or read a secret, and enabling one does not buy it any of those.
       expect(b.forbidden_actions).toEqual(expect.arrayContaining(["commit", "merge", "push", "deploy", "secret_read"]));

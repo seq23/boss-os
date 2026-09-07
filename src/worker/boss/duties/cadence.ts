@@ -71,6 +71,11 @@ export function utcForLocalTime(
 }
 
 export interface DutySchedule {
+  /**
+   * For a DAILY duty, the weekdays it actually runs on. 0 = Sunday. Empty or absent means every day.
+   * Ignored for weekly and monthly cadences, which already name their day.
+   */
+  weekdays?: number[] | null;
   local_hour: number;
   local_minute: number;
   timezone: string;
@@ -106,6 +111,20 @@ export function nextDueAt(schedule: DutySchedule, after: number): number {
         // Unreachable in practice; kept so a future edit that breaks the assumption is loud.
       }
       if (dayOfWeekIn(timezone, candidate) !== want) continue;
+    }
+
+    /*
+     * A DAILY DUTY MAY NAME THE DAYS IT ACTUALLY RUNS.
+     *
+     * The owner asked for buyer sourcing "2-3x per week if needed", and the cadence vocabulary had
+     * only daily, weekly and monthly — so the choice was seven runs or one. Seven was three times
+     * her whole budget for a single duty; one loses the recency that makes the hunt worth doing.
+     *
+     * `weekdays` is the missing middle: a daily duty with [1,3,5] fires Monday, Wednesday and
+     * Friday. Absent, a daily duty is every day exactly as before, so nothing else changes shape.
+     */
+    if (cadence === "daily" && schedule.weekdays && schedule.weekdays.length > 0) {
+      if (!schedule.weekdays.includes(dayOfWeekIn(timezone, candidate))) continue;
     }
 
     if (cadence === "monthly" && probe.d !== 1) continue;

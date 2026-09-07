@@ -70,6 +70,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   const backendId = typeof input.backend_id === "string" ? input.backend_id : null;
   if (backendId) {
     const dispatched = await dispatchRunForTask(env, {
+      // Scheduled: a duty made this, so the budget may refuse it. Work she asks for arrives through
+      // POST /backends/dispatch instead and is never gated.
+      scheduled: true,
       taskId: task.id,
       lane: task.lane,
       backendId,
