@@ -382,7 +382,10 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    */
   await ensureRunOfShow(env, day.id);
   const [runOfShow, focus] = await Promise.all([
-    readRunOfShow(env, day.id),
+    readRunOfShow(env, day.id, {
+      dayMode: (day as { day_mode?: string | null }).day_mode ?? null,
+      anchor: (contract as { commitment?: string } | null)?.commitment ?? null,
+    }),
     coachingFocus(env, day.id, (day as { day_mode?: string | null }).day_mode ?? null),
   ]);
   const lens = lensFor(day.id);

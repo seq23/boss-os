@@ -82,9 +82,10 @@ export function Spirit() {
               <>
                 <p className="coach-promise" style={{ marginTop: 0 }}>{practice.gratitude.sentence}</p>
                 <p className="row-sub">
-                  Out loud. Theme today: {practice.gratitude.theme}
-                  {practice.gratitude.model ? ` · written by ${practice.gratitude.model}` : ""}
+                  Say it out loud. Today's theme: {practice.gratitude.theme}
                 </p>
+                {/* Provenance, so it is never mistaken for something a vendor wrote. */}
+                <p className="row-sub">{practice.gratitude.source}</p>
               </>
             ) : (
               // Named, never replaced with something generic — that is the whole of §8.5's ban on

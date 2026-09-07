@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { ENGINE, secondBlockVehicle, isWestPeekDay } from "../spirit/arcs";
 
 /**
  * HER RUN OF SHOW — §15.2, §15.5 and the §26 master template, which all name the same seven blocks.
@@ -86,7 +87,15 @@ export interface RenderedBlock extends RunOfShowBlock {
   done_source: string | null;
 }
 
-export async function readRunOfShow(env: Env, dayId: string): Promise<RenderedBlock[]> {
+export async function readRunOfShow(
+  env: Env, dayId: string, context: { dayMode?: string | null; anchor?: string | null } = {},
+): Promise<RenderedBlock[]> {
+  const derived = instructionsFor({
+    weekday: new Date(`${dayId}T12:00:00Z`).getUTCDay(),
+    dayMode: context.dayMode ?? null,
+    anchor: context.anchor ?? null,
+  });
+
   const rows = await env.DB
     .prepare(`SELECT block_key, position, instruction, done_at, done_source FROM run_of_show WHERE day_id = ? ORDER BY position`)
     .bind(dayId)
@@ -103,10 +112,73 @@ export async function readRunOfShow(env: Env, dayId: string): Promise<RenderedBl
     return {
       ...b,
       position: row?.position ?? i,
-      instruction: row?.instruction ?? null,
+      // The stored instruction wins if one was ever written; otherwise the day's derived one, which
+      // is a real lane rather than a description of the shape of the work.
+      instruction: row?.instruction ?? derived[b.key] ?? null,
       done: Boolean(row?.done_at),
       done_at: row?.done_at ?? null,
       done_source: row?.done_source ?? null,
     };
   });
+}
+
+// ─── What each block actually IS today ───────────────────────────────────────
+
+/**
+ * The day's instructions, derived from her arcs and vehicles rather than left blank.
+ *
+ * WHAT WAS WRONG BEFORE. Every block rendered its `intent` — "the first concrete brokerage or
+ * active wealth action" — which describes the SHAPE of the work and names none of it. Her §15.4
+ * requires each pillar contract to contain "exact actionable instructions", and §7 of the coach
+ * manual is blunter: the whole promise is zero cognitive load. A block that tells her to do a
+ * concrete wealth action is asking her to decide what that is, which is the decision the system
+ * exists to have already made.
+ *
+ * NOTHING HERE INVENTS A TASK. It names the vehicle her own rules say owns this block today —
+ * §5.3's right of first refusal, §5.4's Wednesday cadence, §5.5's weekend build order — and stops
+ * there. What to DO inside a block is hers; which lane it belongs to is a rule she already wrote,
+ * and having her re-derive it every morning is the cognitive load.
+ */
+export function instructionsFor(opts: {
+  weekday: number;
+  dayMode: string | null;
+  anchor: string | null;
+}): Record<string, string> {
+  const second = secondBlockVehicle(opts.weekday);
+  const reduced = opts.dayMode === "recovery" || opts.dayMode === "mvd";
+
+  return {
+    morning_launch: reduced
+      ? "Body floor in bed, spirit floor, water and medicine. Nothing else has to happen before you start."
+      : "Movement, the manifestation sequence, water and medicine. Then set up.",
+
+    /*
+     * §5.3, VERBATIM IN EFFECT: "Brokerage gets right of first refusal every day." It is not
+     * weighed against the others — it is the answer unless it is blocked, and the sentence says so
+     * rather than leaving her to remember which vehicle is protected.
+     */
+    first_wealth_block: `${ENGINE.name}. ${ENGINE.note}`,
+
+    midday_stabilizer: "Water, the food guardrail, and one thing that puts you back in the chair.",
+
+    afternoon_wealth_admin: isWestPeekDay(opts.weekday)
+      ? "West Peek Ventures — this is the Wednesday cadence with Scooter."
+      : `${second.name}.${second.note ? ` ${second.note}` : ""}`,
+
+    // §7's food arc is one of the two active pushes, so this block is not housekeeping.
+    food_guardrail_check: "One safe keto lane. This is the weight-loss arc, not an afterthought.",
+
+    evening_close: opts.anchor
+      ? `Log the verdict, carry one thing forward, and set tomorrow's first money move. Today was: ${opts.anchor}`
+      : "Log the verdict, carry one thing forward, and set tomorrow's first money move.",
+
+    /*
+     * MORE THAN THE BLOCK TITLE. This returned the block's own `intent` verbatim, which is a
+     * sentence describing the block rather than an instruction for tonight — and a test caught it
+     * by asserting no instruction may simply restate its intent. Tomorrow's first move is already
+     * decided by §5.3, so saying so is the difference between shutting down and lying awake
+     * planning.
+     */
+    night_reset: "Skincare, shutdown, phone down. Tomorrow's first money move is already decided — you do not have to work it out tonight.",
+  };
 }

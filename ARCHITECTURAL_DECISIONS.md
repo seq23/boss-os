@@ -886,3 +886,60 @@ recording too: "kept whole rather than stubbed" is a good instinct that produced
 path nobody would execute for months. The migration that loosens the classification is now the same
 one that creates the table, so both halves of her decision land together and neither can arrive
 without the other.
+
+### ADR-032 — The gratitude sentence is composed here, and the false choice that preceded it
+
+ADR-031 shipped the daily gratitude sentence as a NAMED STOP: her instruction that an LLM writes it
+against her classification of `spirit` as a sovereign subsystem, presented to her as a decision only
+she could make. She asked instead which was actually best.
+
+**It was a false choice, and the reasoning that produced it was incomplete.** The airlock would only
+ever have shown a cloud model the SHAPE of her day — the anchor, a count of open loops, the day mode
+— because every fact that makes a gratitude sentence specific is sovereign: her arcs, her vehicles,
+what she is holding, what she actually did yesterday. So the real comparison was never "a good
+sentence or your sovereignty". It was a THIN sentence written by a vendor, or a grounded one composed
+in the Worker. The sovereignty rule was protecting her from the worse option, not withholding the
+better one.
+
+**Composed in the Worker. No model, no table, no exception.** LOCAL_ONLY processing holds because
+nothing reasons about it but this code; LOCAL_ONLY residency holds because nothing is written down.
+It is deterministic for a given day, which is what she actually asked for — "a sentence to repeat
+every day, like the day's mantra" — and which a generator would have spoiled by producing something
+different each time it ran. §8.5's 90-day no-repeat is met by construction: the theme rotates every
+six days, the form rotates within the theme, so a pair does not recur for months with nothing stored.
+
+**Every form requires a real fact and declines without one.** That is the mechanism against §8.5's
+four named prohibitions — stiff, generic, corny, filler. A form that cannot find its fact does not
+soften into something that would be true of anybody; it stands aside and the next is tried. Nothing
+in the set can produce a sentence that is not about her, today.
+
+### ADR-033 — The system knew her rules and not her goals
+
+The same request named the actual failure: the point of all of it is to stop her deciding what to do
+each day, and the Run of Show was rendering seven correct block titles with nothing in them. "The
+first concrete brokerage or active wealth action" describes the shape of the work and names none of
+it — which is asking her to make the decision the system exists to have already made.
+
+Pillars, floors, laws and verdicts were all encoded. §4's arcs and §5's wealth system were in a
+document and in no code at all.
+
+**`spirit/arcs.ts` is her §4 and §5, in code and not in a table.** §5.2 is the reason: "Do not treat
+every vehicle as an active project at the same time. Only explicitly named projects are active in
+execution." These are standing commitments, not settings — a row anyone can edit is how a third
+active arc appears without a decision behind it, and §4 opens by warning against foregrounding too
+many at once. A test holds the active-push count at two.
+
+**The blocks now name the lane her own rules give them**, and nothing more:
+
+- **First Wealth Block** is the brokerage, every day, on weekdays and weekends and recovery days
+  alike — §5.3's right of first refusal is not a preference weighed against others, it is the answer
+  unless brokerage is blocked.
+- **Afternoon** is West Peek on a weekday and says "this is the Wednesday cadence with Scooter" on a
+  Wednesday; at the weekend it runs §5.5's build order, Industry Guides first.
+- **Food Guardrail** says it is the weight-loss arc, because §4.3 makes it one of the two active
+  pushes rather than housekeeping.
+- **Night Reset** says tomorrow's first money move is already decided, which is the difference
+  between shutting down and lying awake planning.
+
+**What it deliberately does not do is invent a task.** Which lane owns a block is a rule she already
+wrote and should never re-derive at 6am; what to do inside it is hers.

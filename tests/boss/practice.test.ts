@@ -107,39 +107,37 @@ describe("the day payload — what the screen can actually render", () => {
     expect(body.data.practice.manifestation.floor).toBe(false);
   });
 
-  it("STOPS AT THE SOVEREIGNTY RULE, AND SAYS SO IN HER OWN TERMS", async () => {
+  it("COMPOSES THE SENTENCE HERE, WITH NO MODEL AND NO ROW", async () => {
     /*
-     * THE CONFLICT THIS RECORDS. She asked for an LLM-written gratitude sentence daily, and she
-     * classified `spirit` as a sovereign subsystem — LOCAL_ONLY storage AND local-only reasoning.
-     * A sentence drawn from her life, written by Workers AI, is exactly what that forbids.
+     * THE CHOICE WAS FALSE AND IT TOOK THE OWNER ASKING TO SEE IT.
      *
-     * Both are hers and they cannot both hold. The one thing an implementation must not do is pick
-     * — least of all silently, in the direction that ships the feature. Adding `spirit` to the
-     * validator's exception list would have taken about a minute and traded a sovereignty
-     * guarantee for one sentence.
+     * This was a named stop: her instruction that an LLM writes the daily gratitude sentence
+     * against her classification of `spirit` as sovereign, presented to her as a decision between
+     * a good sentence and her own rule.
      *
-     * So the refusal is the FEATURE here, and the message has to be usable: it names the rule, says
-     * both routes forward, and makes clear nothing is broken.
+     * It was not that. The airlock would only ever have shown a cloud model the SHAPE of her day —
+     * anchor, a count of open loops, day mode — because everything that makes the sentence specific
+     * is sovereign. The model version was going to be THINNER, not richer. Composed in the Worker
+     * it can read all of it, because none of it leaves.
+     *
+     * So: no model, no table, no classification change, and a better sentence. Both axes are
+     * honoured literally rather than by permission.
      */
     const { body } = await apiJson("/api/spirit/day");
     const g = body.data.practice.gratitude;
-    expect(g.sentence).toBe("");
-    expect(g.unavailable).toContain("sovereign");
-    expect(g.unavailable).toContain("local runtime");
-    // §8.5 bans filler, so there is deliberately nothing generic standing in for it.
-    expect(g.unavailable.toLowerCase()).toContain("filler");
-    // And the theme still rotates, so the moment the rule changes nothing else has to.
-    expect(g.theme).toBeTruthy();
+    expect(g.sentence.length).toBeGreaterThan(0);
+    expect(g.unavailable).toBeNull();
+    expect(g.source).toContain("never sent anywhere");
   });
 
-  it("KEEPS SPIRIT SOVEREIGN — the check that would catch this being loosened later", async () => {
+  it("KEEPS SPIRIT SOVEREIGN, and now needs no exception to do it", async () => {
     const p = await row<{ residency: string; ai_processing: string }>(
       `SELECT residency, ai_processing FROM data_policy WHERE entity = 'gratitude_sentences'`,
     );
     expect(p!.residency).toBe("LOCAL_ONLY");
     expect(p!.ai_processing).toBe("LOCAL_ONLY");
 
-    // And nothing about her gratitude is written into the cloud domain while the question is open.
+    // Nothing is written down: LOCAL_ONLY residency honoured by there being no row to classify.
     const tables = await env.DB
       .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name = 'gratitude_sentences'`)
       .all<{ name: string }>();
