@@ -1,8 +1,8 @@
 import type { Env } from "../env";
-import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { isDue, nextDueAt, type DutySchedule } from "./cadence";
+import { admitTask } from "../tasks/admit";
 
 /**
  * Turning due duties into queued work.
@@ -91,22 +91,72 @@ export async function materialiseDueDuties(env: Env, now = Date.now()): Promise<
       continue;
     }
 
-    const taskId = newId("tsk");
-    await env.DB.batch([
-      env.DB
-        .prepare(
-          `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at)
-           VALUES (?,?,?,?,?,'queued',?)`,
-        )
-        .bind(taskId, duty.lane, duty.employee_id, duty.task_title, duty.task_input, now),
-      env.DB
-        .prepare(`UPDATE standing_duties SET next_due_at = ?, last_run_at = ?, last_task_id = ? WHERE id = ?`)
-        .bind(advanced, now, taskId, duty.id),
-    ]);
+    /*
+     * THE CLOCK ADVANCES BEFORE THE TASK IS MADE, and that ordering is the one this function
+     * already argued for above: a crash between the two must not leave a duty still due with its
+     * task already written, because that is a loop rather than an error. A duty that fails to be
+     * admitted therefore MISSES one occurrence rather than retrying for ever — and it says so, at
+     * error level, every single time, so a duty that can never be admitted is loud rather than
+     * quietly absent.
+     */
+    await env.DB
+      .prepare(`UPDATE standing_duties SET next_due_at = ?, last_run_at = ? WHERE id = ?`)
+      .bind(advanced, now, duty.id).run();
+
+    /*
+     * ADMITTED THROUGH THE REAL INTAKE, WHICH IT NEVER USED TO BE.
+     *
+     * What was here was a bare INSERT of seven columns — no classification, no execution
+     * assignment, no permission envelope, no `intake_kind`, and CRUCIALLY no `TASKS.send()`. The
+     * duty fired on time, `last_run_at` advanced, a row appeared with status 'queued', and the work
+     * never ran. `boss_task_queue` was empty while two tasks sat queued since the 6th, and the
+     * Executive Intelligence Report the owner opens Boss OS to read had never been produced once.
+     *
+     * Every observable signal said this was working. That is what makes "runs but inert" the defect
+     * class worth naming: it does not fail, it succeeds at the wrong thing.
+     *
+     * A `TASKS.send()` bolted on here would have fixed the symptom and left two intake paths to be
+     * kept in step by whoever noticed next. `admitTask` is the one path both callers use, so a task
+     * a duty creates is now indistinguishable from one created by hand.
+     */
+    let admitted;
+    try {
+      admitted = await admitTask(env, {
+        title: duty.task_title,
+        lane: duty.lane,
+        employee_id: duty.employee_id,
+        // The kind the duty was defined with, rather than one inferred from its title every morning.
+        intake_kind: duty.task_kind,
+        input: duty.task_input ? (JSON.parse(duty.task_input) as Record<string, unknown>) : {},
+      });
+    } catch (err) {
+      skipped.push({ duty: duty.id, reason: `not_admitted: ${err instanceof Error ? err.message : String(err)}` });
+      await logEvent(env.DB, {
+        level: "error", scope: "cron", event: "duty_not_admitted", entityId: duty.id,
+        detail: { lane: duty.lane, task_kind: duty.task_kind, error: err instanceof Error ? err.message : String(err) },
+      }).catch(() => {});
+      continue;
+    }
+
+    /*
+     * INTAKE IS ALLOWED TO REFUSE, and a refusal is a real outcome rather than a failure — the
+     * system is explicitly permitted to decide that a piece of standing work is not worth doing.
+     * It is recorded as a skip with its reason rather than reported as a firing.
+     */
+    if (!admitted.created || !admitted.task_id) {
+      skipped.push({ duty: duty.id, reason: `refused_by_intake: ${admitted.reason ?? "no reason given"}` });
+      continue;
+    }
+
+    const taskId = admitted.task_id;
+    await env.DB
+      .prepare(`UPDATE standing_duties SET last_task_id = ? WHERE id = ?`)
+      .bind(taskId, duty.id).run();
 
     await audit(env.DB, {
       actor: "system", lane: duty.lane, entityType: "standing_duty", entityId: duty.id,
-      action: "materialised", detail: { task_id: taskId, next_due_at: advanced },
+      action: "materialised",
+      detail: { task_id: taskId, next_due_at: advanced, queued: admitted.queued, kind: admitted.classification.intakeKind },
     });
 
     fired.push({ duty: duty.id, task_id: taskId, next_due_at: advanced });

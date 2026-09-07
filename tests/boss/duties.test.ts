@@ -92,6 +92,64 @@ describe("materialising due duties", () => {
     expect(tasks[0]!.status).toBe("queued");
   });
 
+  /**
+   * THE ASSERTION THAT WAS MISSING, AND THE REASON THE BUG SURVIVED.
+   *
+   * The test above passed against the broken code. It checked that a row appeared with status
+   * 'queued' — and a row did appear, with status 'queued', for months, while nothing ever ran. The
+   * word "queued" in that column is a claim the old code had no right to make: it wrote the string
+   * and never sent the message.
+   *
+   * So these check the things a bare INSERT cannot fake. Classification, an execution assignment, a
+   * permission envelope and an intake event are all written by `admitTask` and by nothing else, and
+   * every one of them was null or absent on the tasks the duty actually created.
+   */
+  it("admits the task through real intake — classified, enveloped, and given its kind", async () => {
+    const now = Date.parse("2026-06-15T13:00:00Z");
+    await materialiseDueDuties(env as any, now);
+
+    const task = await row<{ id: string; intake_kind: string | null; envelope_id: string | null; execution_assignment: string | null; cost_mode: string | null }>(
+      `SELECT id, intake_kind, envelope_id, execution_assignment, cost_mode FROM tasks WHERE employee_id = 'emp_research'`,
+    );
+    expect(task).not.toBeNull();
+
+    // `intake_kind` was null on every duty-created task. The spend report groups by it, the
+    // capability metrics filter on it, and the router reads it to decide which backend may take the
+    // work — so a task without one is invisible to all three at once.
+    expect(task!.intake_kind).toBeTruthy();
+    expect(task!.execution_assignment).toBeTruthy();
+    expect(task!.cost_mode).toBeTruthy();
+
+    // A permission envelope is what bounds the spend. No envelope means the task either cannot run
+    // or runs unbounded, and neither is a thing to discover afterwards.
+    expect(task!.envelope_id).toBeTruthy();
+    const envelope = await row(`SELECT id FROM permission_envelopes WHERE task_id = ?`, task!.id);
+    expect(envelope).not.toBeNull();
+
+    const intakeEvent = await row(`SELECT id FROM task_events WHERE task_id = ? AND event = 'intake'`, task!.id);
+    expect(intakeEvent).not.toBeNull();
+  });
+
+  it("actually sends the queue message, which is the whole difference between queued and running", async () => {
+    /*
+     * THE BUG, ASSERTED DIRECTLY. `boss_task_queue` was empty while tasks sat 'queued' since the
+     * 6th, because materialise never called `TASKS.send()`. Nothing else in this suite would notice
+     * — a status column is a string, and the string was right.
+     */
+    const sent: unknown[] = [];
+    const real = (env as any).TASKS.send.bind((env as any).TASKS);
+    (env as any).TASKS.send = async (msg: unknown) => { sent.push(msg); return real(msg); };
+    try {
+      const now = Date.parse("2026-06-15T13:00:00Z");
+      const result = await materialiseDueDuties(env as any, now);
+      const fired = result.fired.find((f) => f.duty === "duty_exec_intel");
+      expect(fired).toBeDefined();
+      expect(sent).toContainEqual(expect.objectContaining({ taskId: fired!.task_id }));
+    } finally {
+      (env as any).TASKS.send = real;
+    }
+  });
+
   it("does NOT fire again on the next tick — the loop this shape exists to prevent", async () => {
     const now = Date.parse("2026-06-15T13:00:00Z");
     await materialiseDueDuties(env as any, now);
