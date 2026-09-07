@@ -2,6 +2,7 @@ import type { Env } from "../env";
 import { PROJECTS, activeProjects, firstMoneyProject, type Project } from "./projects";
 import { gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR } from "../spirit/practice";
 import { isWestPeekDay } from "../spirit/arcs";
+import { stalledDeals, anchorStreak } from "./close";
 
 /**
  * THE THREE PILLAR CONTRACTS THAT SAID `available: false`.
@@ -221,6 +222,30 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
  */
 export async function executionContract(env: Env, weekday: number): Promise<PillarContract> {
   /*
+   * A STALLING DEAL OUTRANKS EVERYTHING HERE, because it is the symptom that costs the most and the
+   * one nothing could measure. Her third complaint was "deals stalling or falling through", and a
+   * deal does not announce that it is dying — it stops moving while the record still looks tended,
+   * since `updated_at` moves for any edit at all. `stage_since` is the honest clock.
+   *
+   * Ahead of the oldest open loop deliberately: a loop is something she wrote down and can see; a
+   * deal that has quietly aged past its stage threshold is the one she would otherwise discover at
+   * the point it is already dead.
+   */
+  const stalled = await stalledDeals(env);
+  if (stalled.length > 0) {
+    const d = stalled[0]!;
+    return {
+      available: true,
+      action: d.next_step ? `${d.name} — ${d.next_step}` : `${d.name} — decide the next step, or mark it dead.`,
+      why:
+        `${d.days_in_stage} days in ${d.stage}, past the ${d.threshold}-day mark for that stage. ` +
+        `Deals do not announce that they are dying; they stop moving.`,
+      detail: stalled.slice(1, 3).map((x) => `${x.name} — ${x.days_in_stage}d in ${x.stage}`),
+      ...(stalled.length > 3 ? { gap: `${stalled.length - 3} more deals are also past their stage threshold.` } : {}),
+    };
+  }
+
+  /*
    * OLDEST FIRST, BY `created_at` — the column this table actually has. An earlier draft ordered by
    * `opened_at`, which does not exist, behind a `.catch()` that would have reported "nothing is
    * owed" on a day with a month-old loop rotting in it. Priority breaks the tie, so a high-priority
@@ -335,14 +360,31 @@ export async function buildPillars(
   dayId: string,
   dayMode: string | null,
   weekday: number,
-): Promise<{ spirit: PillarContract; wealth: PillarContract; execution: PillarContract; proposed: { text: string; source: string }[] }> {
+): Promise<{
+  spirit: PillarContract;
+  wealth: PillarContract;
+  execution: PillarContract;
+  proposed: { text: string; source: string }[];
+  /** Said only when a run of missed anchors is long enough to be a pattern. Null otherwise. */
+  warning: string | null;
+}> {
   const hardDay = dayMode === "recovery" || dayMode === "mvd";
-  const [spirit, wealth, execution] = await Promise.all([
+  const [spirit, wealth, execution, streak] = await Promise.all([
     spiritContract(env, dayId, hardDay),
     wealthContract(env, weekday),
     executionContract(env, weekday),
+    anchorStreak(env, dayId),
   ]);
-  return { spirit, wealth, execution, proposed: proposedPriorities(weekday, wealth, execution) };
+
+  /*
+   * THE RUN OF MISSES IS SAID AT THE TOP OF THE DAY, ONCE, AND WITHOUT SCOLDING.
+   *
+   * A system that proposes the same first money move for a fortnight while it goes undone every
+   * time has stopped describing her life. It has to be able to say so — and it has to say it as a
+   * fact about the plan rather than about her, because "either the day is wrong or the move is" is
+   * the useful reading and the only one she can act on.
+   */
+  return { spirit, wealth, execution, proposed: proposedPriorities(weekday, wealth, execution), warning: streak.warning };
 }
 
 export type { Project };

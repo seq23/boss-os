@@ -20,6 +20,7 @@ import { coachingFocus, lensFor } from "../today/faculty";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { adjustToday } from "../today/adjust";
+import { anchorStreak, stalledDeals } from "../today/close";
 import { scoreDay, FLOORS } from "../today/verdict";
 
 export const today = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -1123,6 +1124,9 @@ today.post("/gates/morning", async (c) => {
     },
     proposed: pillars.proposed,
     overridden: overrode,
+    // Null on almost every day. Present when the engine has been skipped long enough to be a
+    // pattern rather than a bad week.
+    warning: pillars.warning,
   };
 
   const payload = { priorities, state, contract, agenda, inbox_scan: { pending: pending?.n ?? 0 } };
@@ -1352,16 +1356,44 @@ today.post("/gates/night", async (c) => {
    */
   const verdict = b.floors ? scoreDay(b.floors as Record<string, unknown>) : null;
 
+  /*
+   * DID THE ANCHOR HAPPEN? The one question the Night Gate never asked, about the one line the
+   * whole morning is built around.
+   *
+   * §14.2 APPLIES HERE EXACTLY AS IT DOES TO THE FLOORS: "DO NOT GUESS COMPLETION." This is read
+   * from her answer and inferred from nothing — a closed Run of Show block is not evidence a touch
+   * happened. Unanswered stays `unknown` rather than being counted as a miss, because a night she
+   * was too tired to close the gate is not the same as a day she skipped the work, and conflating
+   * the two would make the streak mean nothing.
+   *
+   * NOT REQUIRED, for the same reason the floors are not: a gate that refuses to close without it
+   * is one she abandons at 11pm, and Law 2 puts continuity above completeness.
+   */
+  const anchorRaw = b.anchor;
+  const anchorOutcome: "done" | "missed" | "unknown" =
+    anchorRaw?.done === true ? "done" : anchorRaw?.done === false ? "missed" : "unknown";
+  const anchorNote = anchorRaw?.note ? String(anchorRaw.note) : null;
+
   const entry = await recordGate(c.env, day, "night", { attention, review, evidence, tomorrow_seed: seed, promotions, verdict }, {
     night_completed_at: Date.now(),
     night_attention: JSON.stringify(attention),
     night_promotions: JSON.stringify(promotions),
     night_evidence: JSON.stringify({ ...evidence, review }),
     night_tomorrow_seed: JSON.stringify(seed),
+    anchor_outcome: anchorOutcome,
+    anchor_note: anchorNote,
     ...(verdict
       ? { verdict: verdict.verdict, verdict_floors: JSON.stringify(verdict.floors), verdict_at: Date.now() }
       : {}),
   });
+
+  /*
+   * THE PATTERN, NOT THE DAY. One missed anchor is a Tuesday and this says nothing about it;
+   * treating a single miss as a failure is how a system teaches someone to stop telling it the
+   * truth. A run of them is the thing she asked this to notice on her behalf, and it is surfaced
+   * here — at the close, where she is already looking — rather than waiting for her to go and ask.
+   */
+  const streak = await anchorStreak(c.env, day.id);
 
   // Evening Close and Night Reset are what this gate is; both close with it.
   await ensureRunOfShow(c.env, day.id);
@@ -1396,7 +1428,10 @@ today.post("/gates/night", async (c) => {
   // than waiting for someone to open the screen.
   await assembleDayFlow(c.env, await ensureDay(c.env.DB, tomorrow.id));
 
-  return ok(c, { gate: entry, day: refreshed, blocks, promotions, tomorrow_seed: seed, verdict }, 201);
+  return ok(c, {
+    gate: entry, day: refreshed, blocks, promotions, tomorrow_seed: seed, verdict,
+    anchor: { outcome: anchorOutcome, note: anchorNote, streak },
+  }, 201);
 });
 
 // ─── Morning coaching ─────────────────────────────────────────────────────────
