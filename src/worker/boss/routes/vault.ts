@@ -68,6 +68,11 @@ const SNAPSHOT_TABLES = [
   // funnel with no record of which firms had already been reviewed or rejected, so the next sweep
   // would hand her names she has already decided against. The review status is the valuable part.
   "sourcing_candidates",
+  // 0189 — things to raise with a standing counterpart. Losing these in a restore loses the half
+  // that was never derivable: items said in passing that exist nowhere else, including the access
+  // grant that unblocks reading LP replies. Everything else in the packet recomputes from records;
+  // this does not.
+  "meeting_agenda_items",
   // Consent, not content. The coaching conversation itself has no table here and must never get
   // one — its residency is LOCAL_ONLY and this design honours that by not having a row to classify.
   "coaching_consent",

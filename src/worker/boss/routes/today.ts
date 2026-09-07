@@ -21,6 +21,7 @@ import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
+import { weeklyPacket, packetIsDue } from "../today/packet";
 import { scoreDay, FLOORS } from "../today/verdict";
 
 export const today = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -249,6 +250,17 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 }
 
 export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
+  /*
+   * THE MEETING PACKET, on the two days it is worth having and null on the other five.
+   *
+   * Computed rather than researched: every figure in it is already in her own record — anchors
+   * kept, deals advanced, candidates reviewed, touches logged — so an agent run would cost money
+   * and minutes to fetch what a query returns instantly, and could be wrong about facts the
+   * database holds exactly.
+   */
+  const packetWeekday = new Date(`${day.id}T12:00:00Z`).getUTCDay();
+  const packet = packetIsDue(packetWeekday) ? await weeklyPacket(env, day.id) : null;
+
   /*
    * Today's report, and the last good one.
    *
@@ -572,6 +584,16 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     },
     meetings: {
       content: {
+        /*
+         * THE WEDNESDAY PACKET LIVES HERE RATHER THAN IN A FOURTEENTH BLOCK. This file states that
+         * canon fixes thirteen elements and the build plan adds no fourteenth, and a meeting brief
+         * is a meeting — this block was empty every day while the one recurring meeting she has was
+         * prepared for out of memory.
+         *
+         * Present on Tuesday as well as Wednesday. Seeing "ask him for the Google grant" at 6am on
+         * the day is seeing it as the meeting starts; seeing it on Tuesday is time to act first.
+         */
+        packet,
         meetings: meetingsToday,
         total: meetingsToday.length,
         unbriefed: unbriefed.length,
@@ -581,6 +603,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         touches_due: dueTouches.results ?? [],
       },
       isEmpty:
+        packet === null &&
         meetingsToday.length === 0 &&
         (heldNotCaptured.results?.length ?? 0) === 0 &&
         (overdueFollowUps?.n ?? 0) === 0 &&
@@ -1145,6 +1168,64 @@ today.post("/gates/morning", async (c) => {
   const refreshed = await ensureDay(c.env.DB, day.id);
   const blocks = await assembleDayFlow(c.env, refreshed);
   return ok(c, { gate: entry, day: refreshed, blocks }, 201);
+});
+
+/**
+ * The standing agenda for a recurring counterpart.
+ *
+ * WHAT THIS FIXES: an item said in passing on a Sunday has to survive in her head until Wednesday,
+ * or it is gone. Filing it as an open loop would be wrong — a loop is time-shaped and goes overdue,
+ * and this is person-shaped and simply waits for the next time those two are in a room.
+ *
+ * THE SYSTEM WRITES HERE TOO, which is the half a calendar note cannot do. A duty stalled on an
+ * access grant only he can give belongs on this list the moment it is discovered.
+ */
+today.get("/agenda/:counterpart", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT id, title, detail, source, status, priority, raised_at, created_at
+         FROM meeting_agenda_items WHERE counterpart = ?
+        ORDER BY status = 'open' DESC, priority ASC, created_at ASC`,
+    )
+    .bind(c.req.param("counterpart"))
+    .all();
+  return ok(c, { items: rows.results ?? [] });
+});
+
+today.post("/agenda/:counterpart", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const title = b?.title ? String(b.title).trim() : "";
+  if (!title) throw badRequest("An agenda item needs a title", "Send { title, detail?, priority? }.");
+
+  const priority = Number(b?.priority);
+  const id = newId("mai");
+  const now = Date.now();
+  await c.env.DB
+    .prepare(
+      `INSERT INTO meeting_agenda_items (id, counterpart, title, detail, source, priority, status, created_at, updated_at)
+       VALUES (?,?,?,?,?,?, 'open', ?, ?)`,
+    )
+    .bind(id, c.req.param("counterpart"), title, b?.detail ? String(b.detail) : null,
+          b?.source ? String(b.source) : "owner",
+          [1, 2, 3].includes(priority) ? priority : 2, now, now)
+    .run();
+  return ok(c, { id, title }, 201);
+});
+
+/**
+ * Mark an item as actually discussed.
+ *
+ * `raised` RATHER THAN DELETED, because an item that keeps coming back is a pattern — the same
+ * request made three Wednesdays running is a different conversation from a fresh idea, and a
+ * deleted row cannot tell her that.
+ */
+today.post("/agenda/:counterpart/:id/raised", async (c) => {
+  const res = await c.env.DB
+    .prepare(`UPDATE meeting_agenda_items SET status = 'raised', raised_at = ?, updated_at = ? WHERE id = ? AND counterpart = ? AND status = 'open'`)
+    .bind(Date.now(), Date.now(), c.req.param("id"), c.req.param("counterpart"))
+    .run();
+  if (!res.meta.changes) throw notFound("No open agenda item with that id for that counterpart");
+  return ok(c, { raised: true });
 });
 
 /**
