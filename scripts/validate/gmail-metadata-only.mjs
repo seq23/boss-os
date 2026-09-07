@@ -4,7 +4,8 @@ const src = readFileSync("scripts/ops/gmail-metadata.mjs", "utf8");
 let fail = 0;
 const must = [
   [/u\.searchParams\.set\("format", "metadata"\)/, "requests format=metadata"],
-  [/for \(const h of \["From", "To", "Date"\]\)/, "allowlists exactly From, To, Date"],
+  [/for \(const h of \["From", "To", "Date", "List-Unsubscribe"\]\)/,
+   "allowlists exactly From, To, Date and List-Unsubscribe — the last is a bulk-sender marker, not content"],
   [/gmail\.readonly/, "asks for a read-only scope"],
 ];
 const mustNot = [

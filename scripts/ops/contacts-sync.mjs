@@ -71,6 +71,22 @@ async function codeName(email) {
 }
 
 /**
+ * A collision suffix that reveals nothing.
+ *
+ * THE FIRST VERSION LEAKED THE ADDRESS. It appended the first three characters of the local part —
+ * producing `TERN-V.G` — which puts a fragment of the real address into the very field that exists
+ * so the real address is never stored. The endpoint's guard rejected the batch for containing a
+ * dot, which is the only reason it did not ship.
+ *
+ * A second slice of the same hash disambiguates just as well and says nothing about anybody.
+ */
+async function suffix(email) {
+  const { createHash } = await import("node:crypto");
+  const h = createHash("sha256").update(email.toLowerCase()).digest();
+  return String(h.readUInt16BE(4) % 100).padStart(2, "0");
+}
+
+/**
  * How often these two actually talk, in days.
  *
  * OBSERVED, WITH A FLOOR AND A CEILING. Fewer than 14 days would put a daily correspondent on the
@@ -117,13 +133,26 @@ async function main() {
     return;
   }
 
-  const candidates = (extract.contacts ?? []).filter((c) => c.sent + c.received >= MIN_EXCHANGES);
+  /*
+   * TWO-WAY IS THE TEST FOR A TOUCH LIST, and it is what turns 382 rows into a book she can work.
+   *
+   * Anyone can email her; the ones she wrote BACK to are the ones with something to resume. A seller
+   * who has only ever blasted offers at her is a real counterparty and belongs in the extraction —
+   * but reaching out to them is a cold email, not a touch, and putting them here would bury the
+   * people this instrument exists to surface.
+   *
+   * One-way contacts stay in CONTACTS.json on her machine, where the holdings lookup can still find
+   * them. Nothing is discarded; it is just not on this particular list.
+   */
+  const candidates = (extract.contacts ?? []).filter(
+    (c) => c.sent + c.received >= MIN_EXCHANGES && c.sent > 0 && c.received > 0,
+  );
   const map = {};
   const rows = [];
   for (const c of candidates) {
     const name = await codeName(c.email);
     // A collision keeps both people distinct rather than merging two relationships into one.
-    const key = map[name] && map[name] !== c.email ? `${name}-${c.email.split("@")[0].slice(0, 3).toUpperCase()}` : name;
+    const key = map[name] && map[name] !== c.email ? `${name}-${await suffix(c.email)}` : name;
     map[key] = c.email;
     rows.push({
       code_name: key,

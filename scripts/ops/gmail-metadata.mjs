@@ -43,7 +43,15 @@ const SUBJECT = process.env.BROKERAGE_MAILBOX ?? "staylor@spry.vc";
 const OUT_DIR = process.env.BOSS_OS_SOURCING_WORKSPACE ?? `${process.env.HOME}/.boss-os/sourcing`;
 const SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const LOOKBACK_DAYS = Number(process.env.BROKERAGE_LOOKBACK_DAYS ?? 540);
-const MAX_MESSAGES = Number(process.env.BROKERAGE_MAX_MESSAGES ?? 2000);
+/*
+ * THE CAP HAS TO CLEAR THE LOOKBACK OR THE LOOKBACK IS A LIE.
+ *
+ * At 2,000 the first run covered about 110 days of a 540-day window — Gmail returns newest first,
+ * so the cap silently truncated eighteen months to under four. Every contact's average gap then came
+ * out at one to three days, which floors every cadence and would have marked all 114 people
+ * permanently overdue. A touch list where everyone is overdue is a touch list she ignores.
+ */
+const MAX_MESSAGES = Number(process.env.BROKERAGE_MAX_MESSAGES ?? 12000);
 
 const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -144,7 +152,21 @@ async function main() {
   const people = new Map();
   const me = SUBJECT.toLowerCase();
 
-  for (const id of ids.slice(0, MAX_MESSAGES)) {
+  /*
+   * FETCHED IN PARALLEL, because eighteen months is twelve thousand messages and one at a time is
+   * half an hour of doing nothing. The holdings lookup already worked this way; this did not, and
+   * the difference only showed once the cap was raised to cover the window it claimed.
+   *
+   * Eight is deliberate and modest: Gmail's per-user rate limit is generous, and a run that gets
+   * itself throttled has to be re-run, which is slower than being polite.
+   */
+  const CONCURRENCY = 8;
+  const wanted = ids.slice(0, MAX_MESSAGES);
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < wanted.length) {
+      const id = wanted[cursor++];
     /*
      * `format=metadata` WITH AN EXPLICIT HEADER LIST. This is the line that makes the privacy claim
      * true rather than aspirational: Gmail does not return a subject, a snippet or a body for this
@@ -152,7 +174,15 @@ async function main() {
      */
     const u = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
     u.searchParams.set("format", "metadata");
-    for (const h of ["From", "To", "Date"]) u.searchParams.append("metadataHeaders", h);
+    /*
+     * `List-Unsubscribe` JOINS THE ALLOWLIST, AND IT IS NOT A WIDENING.
+     *
+     * It is a bulk-sender marker, not content: it says a message came from a mailing platform and
+     * reveals nothing about what the message says. Without it a Substack that emails weekly outranks
+     * a real broker on exchange volume — which it did on the first run, putting a newsletter in her
+     * top contacts. The holdings lookup already used this test; the two now agree.
+     */
+    for (const h of ["From", "To", "Date", "List-Unsubscribe"]) u.searchParams.append("metadataHeaders", h);
     const res = await fetch(u, { headers: auth });
     if (!res.ok) continue;
     const msg = await res.json();
@@ -161,6 +191,9 @@ async function main() {
     const from = parseAddress(header(msg, "From"));
     const tos = header(msg, "To").split(",").filter(Boolean).map(parseAddress);
     const outbound = from.email === me;
+
+    // A mailing list is not a relationship, however often it writes.
+    if (!outbound && (header(msg, "List-Unsubscribe") || /substack\.com$|beehiiv\.com$|@e\.[a-z-]+\.[a-z]+$|mailer|campaign/i.test(from.email))) continue;
 
     for (const p of outbound ? tos : [from]) {
       if (!p.email || p.email === me) continue;
@@ -180,7 +213,9 @@ async function main() {
       rec.last_at = Math.max(rec.last_at, ts);
       people.set(key, rec);
     }
-  }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, wanted.length) }, worker));
 
   const days = (ts) => (ts ? Math.floor((Date.now() - ts) / 86_400_000) : null);
   const contacts = [...people.values()]
