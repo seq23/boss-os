@@ -66,7 +66,6 @@ const WRITTEN_BY_MIGRATION_ONLY = new Map([
   ["brand_profiles", "Voice and standards per property, seeded."],
   ["deployment_stages", "The fixed release ladder."],
   ["trading_nevers", "The trading lane's absolute prohibitions. A never that code could add or remove is not a never."],
-  ["vault_entries", "NAMED STOP, not an exemption: nothing writes document entries yet, and GET /vault/entries now says so in its own response instead of returning a bare empty list. Remove this line the moment a writer exists."],
 ]);
 
 const errors = [];

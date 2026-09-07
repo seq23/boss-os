@@ -103,19 +103,14 @@ const MAX_RESTORE_STATEMENTS = 20_000;
 /**
  * The document vault — and it is empty by design rather than by accident, which it now says.
  *
- * FOUND BY THE REACHABILITY SCAN. `vault_entries` is read here and written by nothing, anywhere, so
- * this endpoint has returned `[]` since the table was created and would have gone on doing so. That
- * is the same shape as the Executive Intelligence Report: a reader with no writer renders an empty
- * state for ever, and an empty state is indistinguishable from "nothing here yet".
+ * FOUND BY THE REACHABILITY SCAN, WHICH IS WHY THERE IS NOW A WRITER. `vault_entries` was read here
+ * and written by nothing, anywhere, so this returned `[]` from the day the table was created — the
+ * same shape as the Executive Intelligence Report: a reader with no writer renders an empty state
+ * for ever, and an empty state is indistinguishable from "nothing here yet".
  *
- * The difference between those two is the whole point, so the response carries it. An empty list
- * with a reason is a named stop she can act on; an empty list on its own is a bug that looks like a
- * quiet day.
- *
- * WHAT IT IS FOR, when something does write it: her canon documents, exports and attachments, held
- * in R2 with a sha256 apiece. That matters more than it sounds — the contract this entire system
- * implements currently exists as text she pasted into a conversation, and a hash of it is what
- * would let anyone check that what is running still matches what she agreed to.
+ * `POST /vault/entries` below is the fix, and the response still carries a reason while the vault is
+ * empty, because the difference between "nothing stored" and "nothing can be stored" is the whole
+ * point and it costs one field to say.
  */
 vault.get("/entries", async (c) => {
   const rows = await c.env.DB
@@ -131,13 +126,80 @@ vault.get("/entries", async (c) => {
     ...(entries.length === 0
       ? {
           reason:
-            "Nothing writes document entries yet, so this is empty by design rather than because " +
-            "nothing was stored. It is meant to hold the canon documents, exports and attachments " +
-            "in R2 with a hash each — including the contract this system implements, which today " +
-            "exists only as text in a conversation.",
+            "No canon documents are stored yet. Run `npm run canon:sync` to put the documents in " +
+            "docs/boss/ here with a sha256 each — which is what makes \"does the system still match " +
+            "what I agreed to\" a diff rather than a memory exercise.",
         }
       : {}),
   });
+});
+
+/**
+ * Store a canon document, hashed.
+ *
+ * WHY THIS EXISTS NOW. The reachability scan found `vault_entries` read by an endpoint and written
+ * by nothing, so the document vault had returned `[]` since the day it was created. The honest
+ * short-term fix was to say so in the response. This is the actual fix.
+ *
+ * WHAT IT IS FOR, and it is not filing. The contract this entire system implements — her A-Player
+ * Mode document, the coaching manual, the sovereignty addendum — governs what every gate, floor and
+ * verdict in here does. A sha256 of each is what makes "the system still matches what I agreed to"
+ * a question anybody can answer in one command instead of by reading nineteen files.
+ *
+ * IDEMPOTENT ON CONTENT. Re-storing an unchanged document returns the existing row rather than
+ * writing a second copy, so this can run on every deploy. A CHANGED document stores a new row and
+ * keeps the old one: the point of a hash chain is that it shows the moment something changed, and
+ * overwriting would destroy exactly the evidence worth having.
+ */
+vault.post("/entries", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const key = b?.key ? String(b.key).trim() : "";
+  const content = typeof b?.content === "string" ? b.content : "";
+  if (!key || !content) throw badRequest("A vault entry needs { key, content }", "kind defaults to canon_doc.");
+
+  // `sha256Hex` already exists in lib/id and is what the rest of this file hashes with. Two hashing
+  // implementations in one module is how two "same" documents end up with different digests.
+  const bytes = new TextEncoder().encode(content);
+  const sha256 = await sha256Hex(content);
+
+  const existing = await c.env.DB
+    .prepare(`SELECT id, sha256, created_at FROM vault_entries WHERE lane = ? AND key = ? ORDER BY created_at DESC LIMIT 1`)
+    .bind("ops", key)
+    .first<{ id: string; sha256: string; created_at: number }>();
+
+  if (existing?.sha256 === sha256) {
+    return ok(c, { id: existing.id, key, sha256, bytes: bytes.length, stored: false, reason: "Unchanged since it was last stored." });
+  }
+
+  const id = newId("vlt");
+  const r2Key = `canon/${key}/${sha256}`;
+  if (!c.env.VAULT) {
+    /*
+     * NO BUCKET IS A REFUSAL, NOT A HALF-STORE. Writing the row without the object would leave a
+     * hash pointing at nothing — a record that says a document is preserved when it is not, which is
+     * worse than an empty vault.
+     */
+    throw conflict("No R2 bucket is bound, so nothing can be preserved", "Bind VAULT before storing documents.");
+  }
+  await c.env.VAULT.put(r2Key, bytes);
+
+  await c.env.DB
+    .prepare(
+      `INSERT INTO vault_entries (id, lane, key, kind, r2_key, sha256, bytes, note, created_at)
+       VALUES (?, 'ops', ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(id, key, b?.kind ? String(b.kind) : "canon_doc", r2Key, sha256, bytes.length,
+          existing ? `Replaces ${existing.sha256.slice(0, 12)} stored ${new Date(existing.created_at).toISOString().slice(0, 10)}` : null,
+          Date.now())
+    .run();
+
+  await audit(c.env.DB, {
+    actor: "system", lane: "ops", entityType: "vault_entry", entityId: id,
+    action: existing ? "canon_changed" : "canon_stored",
+    detail: { key, sha256, bytes: bytes.length, previous: existing?.sha256 ?? null },
+  });
+
+  return ok(c, { id, key, sha256, bytes: bytes.length, stored: true, changed: Boolean(existing) }, 201);
 });
 
 vault.get("/snapshots", async (c) => {

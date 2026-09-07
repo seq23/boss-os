@@ -30,6 +30,7 @@ import {
 import { buildBodyContract, logSomatic } from "../today/body";
 import { TIME_ACCURACY, natalChart, transits, transitAspects, type BirthData, type TimeAccuracy } from "../spirit/natal";
 import { TRANSIT_CAVEAT } from "../spirit/transitMeaning";
+import { monthAhead } from "../spirit/month";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
   ANCESTOR_MINUTES_TARGET, CONTRIBUTION_IDEAL, CONTRIBUTION_MINIMUM,
@@ -246,10 +247,27 @@ spirit.get("/month", async (c) => {
   const ancestorMinutes = (ancestors.results ?? []).reduce((sum: number, a: any) => sum + a.minutes, 0);
   const hasBirthData = Boolean(birthRow);
 
+  /*
+   * THE MONTH'S DATES THAT MATTER, above the full almanac rather than instead of it.
+   *
+   * The almanac is thirty-odd events — a calendar, not a signal, and shown all at once it says
+   * nothing about which two days are worth knowing in advance. `monthAhead` ranks by how directly
+   * something touches HER chart, which is the one thing an almanac structurally cannot do, and
+   * keeps the sky-wide events below that as context.
+   */
+  const monthBirthRow = await c.env.DB
+    .prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)
+    .first<{ value: string }>();
+  const highlights = monthAhead(
+    monthBirthRow ? (JSON.parse(monthBirthRow.value) as BirthData) : null,
+    Date.parse(`${month}-15T12:00:00Z`),
+  );
+
   return ok(c, {
     month,
     advisory: true,
     note: ADVISORY_NOTE,
+    highlights,
     almanac: (events.results ?? []).map((e) => ({ ...e, detail: e.detail ? JSON.parse(e.detail) : null })),
     contribution: {
       entries: contributionRows,

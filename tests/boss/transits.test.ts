@@ -206,3 +206,77 @@ describe("the sky endpoint returns the whole sky", () => {
     expect(body.data.method).toContain("Nothing is retrieved");
   });
 });
+
+/**
+ * THE MONTH'S IMPORTANT DATES.
+ *
+ * The almanac already computed thirty-odd events a month, and the page could already show them all.
+ * That is a calendar, not a signal: shown at once it says nothing about which two days are worth
+ * knowing in advance. What makes a date important is that it is HERS — a full moon belongs to
+ * everybody, a transit going exact on her Midheaven does not.
+ */
+describe("the month ahead", () => {
+  const at = (m: string) => Date.parse(`${m}-15T12:00:00Z`);
+
+  it("finds dates that touch her own chart, which an almanac structurally cannot", async () => {
+    const { monthAhead } = await import("../../src/worker/boss/spirit/month");
+    const m = monthAhead(OWNER, at("2026-10"));
+    const personal = m.dates.filter((d) => d.scope === "personal");
+    expect(personal.length).toBeGreaterThan(0);
+    expect(personal.map((d) => d.headline).join(" | ")).toMatch(/your natal/);
+  });
+
+  it("lists periods nowhere, because this is a list of dates", async () => {
+    /*
+     * The derived lunar windows — intention, push, visibility, release, reflection — cover most of a
+     * month between them, and on the first run they filled a third of the list with spans that have
+     * no particular day. They remain in the full almanac, where a period belongs.
+     */
+    const { monthAhead } = await import("../../src/worker/boss/spirit/month");
+    const m = monthAhead(OWNER, at("2026-09"));
+    expect(m.dates.map((d) => d.headline).join(" ")).not.toMatch(/window/i);
+  });
+
+  it("keeps every date inside the month it claims", async () => {
+    const { monthAhead } = await import("../../src/worker/boss/spirit/month");
+    for (const month of ["2026-09", "2026-10", "2026-11"]) {
+      const m = monthAhead(OWNER, at(month));
+      expect(m.month).toBe(month);
+      for (const d of m.dates) expect(d.day.startsWith(month), `${d.day} is not in ${month}`).toBe(true);
+    }
+  });
+
+  it("reports one date per transit, not forty consecutive ones", async () => {
+    /*
+     * A Saturn aspect stays in orb for weeks. Without taking the minimum it would appear on every
+     * day of that window, which is the opposite of a list of important dates.
+     */
+    const { monthAhead } = await import("../../src/worker/boss/spirit/month");
+    const m = monthAhead(OWNER, at("2026-10"));
+    const personal = m.dates.filter((d) => d.scope === "personal").map((d) => d.headline);
+    expect(new Set(personal).size).toBe(personal.length);
+  });
+
+  it("only lists slow bodies, because the fast ones do this every month", async () => {
+    const { monthAhead } = await import("../../src/worker/boss/spirit/month");
+    const m = monthAhead(OWNER, at("2026-09"));
+    for (const d of m.dates.filter((x) => x.scope === "personal")) {
+      expect(d.headline).not.toMatch(/^(Moon|Sun|Mercury|Venus|Mars) /);
+    }
+  });
+
+  it("says a quiet month is quiet rather than padding it", async () => {
+    const { monthAhead } = await import("../../src/worker/boss/spirit/month");
+    const m = monthAhead(null, at("2026-09"));
+    expect(m.note).toContain("No birth data");
+    expect(m.dates.every((d) => d.scope === "sky")).toBe(true);
+  });
+
+  it("carries §5.2 on the month view as well as the day view", async () => {
+    const { monthAhead } = await import("../../src/worker/boss/spirit/month");
+    const m = monthAhead(OWNER, at("2026-09"));
+    expect(m.caveat).toMatch(/reason to schedule or avoid/i);
+    // Approximate, and it says so rather than implying a precision it did not compute.
+    expect(m.caveat).toMatch(/approximate/i);
+  });
+});
