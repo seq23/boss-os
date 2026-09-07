@@ -10,6 +10,7 @@ import {
 import { assertMayReachExternalModel } from "../policy/airlock";
 import { runCoachingTurn } from "../coaching/run";
 import { WIRING_BY_BACKEND } from "../router/backends";
+import { dayIdInZone, zonedTime } from "../../../shared/boss/timezone";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
 import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relationships/follow_ups";
@@ -81,20 +82,61 @@ const AWAITING_SUBSTRATE: Partial<Record<BlockKey, { phase: number; reason: stri
 
 // ─── Day identity ─────────────────────────────────────────────────────────────
 
-/** Epoch ms at 00:00 UTC of the day containing `ts`. */
+/**
+ * Epoch ms at LOCAL midnight of the day containing `ts`.
+ *
+ * MOVED WITH `dayId`, BECAUSE HALF A BOUNDARY IS WORSE THAN THE OLD ONE. When `dayId` became
+ * zone-aware and this did not, the two disagreed for six hours every evening: the day's LABEL was
+ * hers and its START was UTC's. Four tests caught it immediately, and they were right to — a day
+ * whose id says the 6th and whose window opens on the 7th is a day nothing can be counted against.
+ */
 export function dayStart(ts: number): number {
-  return Math.floor(ts / DAY_MS) * DAY_MS;
+  return startOfDayId(dayIdInZone(ts));
+}
+
+/** The instant local midnight opens on a given `YYYY-MM-DD`. */
+export function startOfDayId(id: string): number {
+  const [y, m, d] = id.split("-").map(Number) as [number, number, number];
+  return zonedTime(y, m, d, 0);
+}
+
+/**
+ * The date string one day after `id`.
+ *
+ * ADDING 86,400,000ms IS NOT ADDING A DAY. `dayId(day.date_ts + DAY_MS)` computed "tomorrow" that
+ * way and, once the boundary moved, returned TODAY — because local midnight plus 24 hours is still
+ * inside the same local date on the two days a year the clocks move, and lands an hour off the rest
+ * of the time. Tomorrow is a date, so it is calculated on the date.
+ */
+export function nextDayId(id: string): string {
+  const [y, m, d] = id.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
 /** `YYYY-MM-DD` in UTC. The primary key of `days`. */
+/**
+ * HER DAY, NOT UTC'S.
+ *
+ * This read the UTC date, so her day rolled over at 7pm Central — six hours early, every day.
+ * At 9pm on a Sunday the Run of Show was already showing Monday's plan: West Peek instead of the
+ * weekend build order, a fresh empty set of blocks, and the evening she was actually living in
+ * filed under tomorrow. Seen on the live page.
+ *
+ * EVERYTHING KEYS OFF THIS ONE FUNCTION, which is what makes the change safe: the day's id, the
+ * gates, the Run of Show, the coaching consent and the verdict all derive from it, so they move
+ * together. Rows written under the old boundary keep their ids and stay readable — a day is still
+ * a `YYYY-MM-DD` string, it is simply the right one now.
+ */
 export function dayId(ts: number): string {
-  return new Date(dayStart(ts)).toISOString().slice(0, 10);
+  return dayIdInZone(ts);
 }
 
 function parseDayId(value: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const ms = Date.parse(`${value}T00:00:00.000Z`);
-  return Number.isNaN(ms) ? null : ms;
+  // Local midnight, matching `dayStart`. Storing UTC midnight here while the id means a local date
+  // is the same half-moved boundary, one table down.
+  const ms = startOfDayId(value);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 export interface DayRow {
@@ -225,7 +267,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   const db = env.DB;
   const now = Date.now();
   const from = day.date_ts;
-  const to = day.date_ts + DAY_MS;
+  const to = startOfDayId(nextDayId(day.id));
 
   /*
    * Canon §40: an overdue follow-up is an open loop. This runs before the loops
@@ -1193,7 +1235,7 @@ today.post("/gates/night", async (c) => {
     friction: Array.isArray(b.evidence?.friction) ? b.evidence.friction.map(String) : [],
   };
 
-  const tomorrowId = dayId(day.date_ts + DAY_MS);
+  const tomorrowId = nextDayId(day.id);
   const tomorrow = await ensureDay(c.env.DB, tomorrowId);
 
   const seed = {

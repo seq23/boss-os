@@ -106,3 +106,13 @@ export function monthIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
   ) as Record<string, string>;
   return `${parts.year}-${parts.month}`;
 }
+
+/** `YYYY-MM-DD` for the day an instant falls in, in the owner's zone rather than UTC. */
+export function dayIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(new Date(ts))
+      .map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}

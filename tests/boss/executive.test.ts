@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { all, api, apiJson, inMaintenanceWindow, insertApproval, insertMemory, insertTask, row, uid } from "./helpers";
-import { TODAY_BLOCKS } from "../../src/worker/boss/routes/today";
+import { TODAY_BLOCKS, startOfDayId } from "../../src/worker/boss/routes/today";
 import { SNAPSHOT_TABLES } from "../../src/worker/boss/routes/vault";
 
 /**
@@ -24,7 +24,12 @@ describe("Phase 11 — Today renders the thirteen canon elements", () => {
 
     const day = await row(`SELECT * FROM days WHERE id = ?`, date);
     expect(day).toBeTruthy();
-    expect(day!.date_ts).toBe(Date.parse(`${date}T00:00:00.000Z`));
+    /*
+     * LOCAL MIDNIGHT, NOT UTC MIDNIGHT. The day's id is the date she is living, so its start is when
+     * that date begins for her. This asserted UTC midnight, which was correct while the whole
+     * boundary was UTC and became a six-hour lie the moment the label moved and the start did not.
+     */
+    expect(day!.date_ts).toBe(startOfDayId(date));
     expect(JSON.parse(day!.day_flow_json)).toHaveLength(13);
 
     const blocks = await all(`SELECT block_key, block_order FROM day_flow_blocks WHERE day_id = ? ORDER BY block_order`, date);

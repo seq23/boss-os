@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  OWNER_TIMEZONE, zoneOffsetMs, zonedTime, monthRange, monthIdInZone, inOwnerZone,
+  OWNER_TIMEZONE, zoneOffsetMs, zonedTime, monthRange, monthIdInZone, dayIdInZone, inOwnerZone,
 } from "../../src/shared/boss/timezone";
 
 /**
@@ -107,5 +107,31 @@ describe("rendering", () => {
 
   it("names the zone it uses, so it is never inferred from the number", () => {
     expect(OWNER_TIMEZONE).toBe("America/Chicago");
+  });
+});
+
+describe("the day boundary is hers", () => {
+  it("DOES NOT END HER DAY AT 7PM", () => {
+    /*
+     * `dayId` read the UTC date, so her day rolled over six hours early, every day. Seen live: at
+     * 9pm on a Sunday the Run of Show was already showing Monday — West Peek instead of the weekend
+     * build order, a fresh empty set of blocks, and the evening she was actually living filed under
+     * tomorrow.
+     */
+    const sundayEvening = Date.parse("2026-09-06T21:00:00-05:00"); // 9pm Central, Sunday
+    expect(dayIdInZone(sundayEvening)).toBe("2026-09-06");
+    // What it used to say, and why it mattered — a different day AND a different weekday.
+    expect(new Date(sundayEvening).toISOString().slice(0, 10)).toBe("2026-09-07");
+  });
+
+  it("rolls at local midnight, on both sides", () => {
+    expect(dayIdInZone(Date.parse("2026-09-06T23:59:00-05:00"))).toBe("2026-09-06");
+    expect(dayIdInZone(Date.parse("2026-09-07T00:01:00-05:00"))).toBe("2026-09-07");
+  });
+
+  it("still rolls at local midnight on the days the clocks move", () => {
+    // 8 March 2026 loses an hour and 1 November gains one; neither is allowed to move the date.
+    expect(dayIdInZone(Date.parse("2026-03-08T23:30:00-05:00"))).toBe("2026-03-08");
+    expect(dayIdInZone(Date.parse("2026-11-01T23:30:00-06:00"))).toBe("2026-11-01");
   });
 });

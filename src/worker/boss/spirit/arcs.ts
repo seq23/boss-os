@@ -51,11 +51,11 @@ export interface Vehicle {
 export const VEHICLES: Vehicle[] = [
   {
     key: "brokerage", name: "Late-stage secondaries brokerage", engine: true, when: "daily",
-    note: "Right of first refusal, every day. The first money move advances this unless it is blocked.",
+    note: "Right of first refusal, every day. Your first money move advances this unless it is blocked.",
   },
   {
     key: "west_peek", name: "West Peek Ventures", when: "weekday",
-    note: "A weekday strategic vehicle, not a casual side project. Wednesday is the meeting. It does not displace brokerage unless she says so.",
+    note: "A weekday strategic vehicle, not a casual side project. Wednesday is the meeting. It does not displace brokerage unless you say so.",
   },
   { key: "industry_guides", name: "Industry Guides", when: "weekend", order: 1 },
   { key: "a_player_mode", name: "A Player Mode", when: "weekend", order: 2 },

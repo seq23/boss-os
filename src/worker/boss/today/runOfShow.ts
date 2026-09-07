@@ -91,6 +91,8 @@ export async function readRunOfShow(
   env: Env, dayId: string, context: { dayMode?: string | null; anchor?: string | null } = {},
 ): Promise<RenderedBlock[]> {
   const derived = instructionsFor({
+    // Noon on the day's own date, so the weekday is the one she is living rather than one an
+    // hour of UTC drift could shift.
     weekday: new Date(`${dayId}T12:00:00Z`).getUTCDay(),
     dayMode: context.dayMode ?? null,
     anchor: context.anchor ?? null,
