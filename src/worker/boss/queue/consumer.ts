@@ -6,6 +6,7 @@ import { writeEvidence } from "../lib/evidence";
 import { getSetting } from "../lib/settings";
 import { loadEnvelope } from "../intake/envelope";
 import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure } from "../router";
+import { dispatchRunForTask } from "../backends/dispatch";
 
 /**
  * Workers cap CPU per request, so employee work never runs inside an HTTP
@@ -45,6 +46,61 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     await failTask(env, task, employee, envelope, costMode,
       `${employee.name} is ${employee.lifecycle} and cannot run work`,
       "Reassign the task to an active employee, or reinstate this one in Team.");
+    return;
+  }
+
+  /*
+   * WORK THAT MUST HAPPEN ON HER MACHINE LEAVES HERE, RATHER THAN BEING ASKED OF A CLOUD MODEL.
+   *
+   * The consumer's only move used to be `routeCompletion`. For a task like the Executive
+   * Intelligence Report that is not a slower answer, it is a WRONG one: a Cloudflare Worker cannot
+   * read this morning's news, and a model asked to recall it returns something shaped exactly like
+   * a report, citing sources it never opened. The duty's own success criterion — "every figure
+   * carries a named source and the time it was read" — can only be met by something that can open
+   * a page. That is Claude Code on her Mac, reached as `bk_claude_code`.
+   *
+   * THE BACKEND IS NAMED ON THE TASK, NOT INFERRED FROM ITS TITLE. `input.backend_id` is written by
+   * whoever created the work — for a standing duty, by the duty row itself. Guessing from the kind
+   * would mean a task silently changing where it runs because its wording changed, and "which
+   * machine runs it" is exactly the decision that must not drift.
+   *
+   * The task then stays 'running' with nothing more happening in the cloud: the run sits awaiting a
+   * claim, the sync agent takes it, and `POST /api/boss/backends/report` closes both.
+   */
+  const backendId = typeof input.backend_id === "string" ? input.backend_id : null;
+  if (backendId) {
+    const dispatched = await dispatchRunForTask(env, {
+      taskId: task.id,
+      lane: task.lane,
+      backendId,
+      title: task.title,
+      prompt: await buildPrompt(env, task, input),
+      kind: task.intake_kind ?? null,
+      envelopeId: task.envelope_id ?? null,
+      requested: typeof input.requested === "object" && input.requested ? (input.requested as Record<string, unknown>) : {},
+      sensitivity: task.sensitivity ?? null,
+      estimatedCostMicros: envelope?.budget_micros ?? 0,
+    });
+
+    if (dispatched.refused) {
+      /*
+       * A REFUSAL FAILS THE TASK WITH THE REFUSAL SENTENCE ON IT. The alternative — a run recorded
+       * as refused while the task sits 'running' for ever — is the shape where the report simply
+       * stops appearing and nothing anywhere says why.
+       */
+      await failTask(env, task, employee, envelope, costMode, dispatched.refused,
+        "The boundary declined this backend. Change the backend on the duty, or lift what blocked it.");
+      return;
+    }
+
+    await env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'dispatched',?)`)
+      .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ run_id: dispatched.run_id, backend_id: backendId }))
+      .run();
+    await logEvent(env.DB, {
+      level: "info", scope: "queue", event: "task_dispatched_to_backend", lane: task.lane, entityId: task.id,
+      detail: { run_id: dispatched.run_id, backend_id: backendId },
+    });
     return;
   }
 

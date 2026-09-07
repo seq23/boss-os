@@ -19,6 +19,7 @@ import { logEvent } from "../lib/log";
 import { newId } from "../lib/id";
 import { getSetting } from "../lib/settings";
 import { classify } from "../intake/classify";
+import { deliverExecutiveReport } from "../duties/deliverReport";
 import { buildEnvelope } from "../intake/envelope";
 import { setSpendLever, spendLeverState, SPEND_LEVER_POSITIONS, type SpendLeverPosition } from "../router/spend";
 import {
@@ -575,6 +576,28 @@ backends.post("/report", async (c) => {
           .bind(status === "refused" ? "cancelled" : "failed", now, error ?? optionalText(ev.refusal_reason), costMicros, task.id)
           .run();
       }
+
+      /*
+       * THE DELIVERY, WHICH IS SEPARATE FROM THE PROPOSAL. A run contracted to deliver a report
+       * writes it here — immediately, whatever the approval does — because the approval is about
+       * what the backend did on her machine and the report is a document she reads at 7am. See
+       * `duties/deliverReport.ts` for why collapsing the two breaks one of them.
+       */
+      await deliverExecutiveReport(c.env, {
+        taskId: task.id,
+        runId,
+        report: (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as any,
+        runStatus: status,
+        now,
+      }).catch(async (err) => {
+        // A delivery that throws must not lose the run's own evidence, which is the record of what
+        // touched her filesystem. Logged loudly and the report path ends there.
+        await logEvent(c.env.DB, {
+          level: "error", scope: "duties", event: "report_delivery_failed", entityId: task.id,
+          detail: { run_id: runId, error: err instanceof Error ? err.message : String(err) },
+        }).catch(() => {});
+        return null;
+      });
 
       await c.env.DB
         .prepare(

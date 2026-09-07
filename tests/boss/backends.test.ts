@@ -108,17 +108,29 @@ afterEach(restoreSeed);
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Stage 1 — the registry as seeded", () => {
-  it("holds five backends, every one at $0 and not one of them enabled", async () => {
+  it("holds five backends at $0, and the only enabled one is the one Stage 2 actually built", async () => {
     const rows = await listBackends(env.DB);
     expect(rows.map((b) => b.id).sort()).toEqual([
       "bk_claude_code", "bk_fireworks", "bk_local_runtime", "bk_openrouter", "bk_workers_ai",
     ]);
     for (const b of rows) {
       expect(b.monthly_ceiling_micros).toBe(0);
-      expect(b.status).not.toBe("enabled");
-      // Registering is not commissioning. Nothing may take work until Stage 2 proves one.
+      // The forbidden list is the invariant that never moves, enabled or not. No backend may commit,
+      // merge, push, deploy or read a secret, and enabling one does not buy it any of those.
       expect(b.forbidden_actions).toEqual(expect.arrayContaining(["commit", "merge", "push", "deploy", "secret_read"]));
     }
+
+    /*
+     * REGISTERING IS STILL NOT COMMISSIONING, and that is what this now asserts rather than "nothing
+     * is enabled". `bk_claude_code` is enabled because Stage 2 shipped — the sync agent claims runs
+     * and executes them — and 0180 updated the row, which had been sitting at `registered` with the
+     * reason "Awaiting Stage 2" long after Stage 2 existed. The other four have had nothing built
+     * for them and must stay shut.
+     */
+    const enabled = rows.filter((b) => b.status === "enabled").map((b) => b.id);
+    expect(enabled).toEqual(["bk_claude_code"]);
+    const claude = rows.find((b) => b.id === "bk_claude_code")!;
+    expect(claude.status_reason).toMatch(/Stage 2 shipped/);
   });
 
   it("says DEFERRED for the local runtime rather than anything that reads like readiness", async () => {
@@ -495,10 +507,18 @@ describe("Stage 1 — the lane budget is the dollar authority, the ceiling is a 
 
 describe("Stage 1 — a cheaper route never bypasses a rule above it", () => {
   it("refuses a backend that is registered rather than enabled", async () => {
-    const backend = (await getBackend(env.DB, "bk_claude_code"))!;
-    const refusal = asRefusal(evaluateBackend(env as any, backend, "repo_work", { laneBudget: lane() }));
+    /*
+     * This used to use `bk_claude_code`, which is now enabled — so it moved to one that is still
+     * registered rather than being deleted. The rule it protects is unchanged and is the one that
+     * caught a real dispatch this morning: a registered backend may not take work, and the refusal
+     * carries the row's own reason so the sentence a person reads is the truth about that backend
+     * rather than a generic denial.
+     */
+    const backend = (await getBackend(env.DB, "bk_fireworks"))!;
+    expect(backend.status).toBe("registered");
+    const refusal = asRefusal(evaluateBackend(env as any, backend, "research", { laneBudget: lane() }));
     expect(refusal.code).toBe("backend_not_enabled");
-    expect(refusal.sentence).toMatch(/Awaiting Stage 2/);
+    expect(refusal.sentence).toContain(backend.status_reason);
   });
 
   it("refuses a task kind outside the allowed list, and takes one inside it", async () => {
@@ -638,9 +658,11 @@ describe("Stage 1 — /api/backends", () => {
     expect(body.data.lever.position).toBe("FREE_ONLY");
     expect(body.data.route_order).toHaveLength(5);
     for (const b of body.data.backends) {
-      expect(b.readiness.ready).toBe(false);
+      // Every row explains itself whether it is ready or not — a blank readiness sentence is the
+      // thing this asserts against, not readiness itself.
       expect(b.readiness.sentence).toBeTruthy();
       expect(b.credential.ref === null || typeof b.credential.ref === "string").toBe(true);
+      if (b.id !== "bk_claude_code") expect(b.readiness.ready).toBe(false);
     }
   });
 
