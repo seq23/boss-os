@@ -61,7 +61,7 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
+    <string>cd $REPO && npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>

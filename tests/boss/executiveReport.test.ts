@@ -331,6 +331,54 @@ describe("delivering brokerage sourcing candidates", () => {
 });
 
 describe("the sourcing duty is scoped and honest about what it cannot do", () => {
+  it("reads correspondents from a file and never touches a mailbox itself", async () => {
+    /*
+     * The email half runs now, and the shape of HOW it runs is the whole safety property.
+     * `scripts/ops/gmail-metadata.mjs` reads the brokerage mailbox on her own machine with
+     * `format=metadata` and an explicit header allowlist — Gmail never returns a subject, a snippet
+     * or a body — and leaves CONTACTS.json in the workspace. The run reads that file.
+     *
+     * Claude's connector was the obvious route and the wrong one: it holds one account at a time,
+     * hers is her personal Gmail, and it would pull live mandates and counterparties into a cloud
+     * conversation.
+     */
+    const duty = await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
+    const input = JSON.parse(duty.task_input);
+    expect(input.prompt).toContain("CONTACTS.json");
+    expect(input.prompt).toMatch(/Do not read any mailbox yourself/i);
+    // An absent file is a gap, not a licence to go hunting for the inbox.
+    expect(input.prompt).toMatch(/do not go looking for a mailbox/i);
+  });
+
+  it("still refuses the half that would need her mail's contents", async () => {
+    /*
+     * Her third ask — clients who might want to buy something she recently discussed — needs subject
+     * lines at minimum, which is materially more than metadata and more than she has agreed to. Two
+     * of three honestly beats three of three where one was quietly invented.
+     */
+    const input = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`)).task_input);
+    expect(input.prompt).toMatch(/must not seek/i);
+    expect(input.prompt).toMatch(/Record it in gaps as not run/i);
+  });
+
+  it("may not add anyone to her network from an inbox", async () => {
+    // A mailbox is full of people who emailed once. Who she actually trusts is her judgement.
+    const input = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`)).task_input);
+    expect(input.prompt).toMatch(/Do not add anyone to her network/i);
+    expect(input.prompt).toMatch(/DO NOT infer what any relationship was about/i);
+  });
+
+  it("looks at who she stopped writing to, not just who stopped writing", async () => {
+    /*
+     * The decay this is built to catch is one-sided and silent. `days_since_she_wrote` is the signal;
+     * `days_since_last` alone would rank a stranger's recent cold email above a five-year referral
+     * source she has not contacted since June.
+     */
+    const input = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`)).task_input);
+    expect(input.prompt).toContain("days_since_she_wrote");
+    expect(input.prompt).toMatch(/long relationship gone cold/i);
+  });
+
   it("does not go near her email, and says so in its own instruction", async () => {
     /*
      * She asked for three things: web sourcing, contacts gone quiet in her brokerage inbox, and
@@ -342,9 +390,8 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
     const duty = await row<any>(`SELECT task_input, local_hour, local_minute FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
     expect(duty).not.toBeNull();
     const input = JSON.parse(duty.task_input);
-    expect(input.prompt).toContain("DO NOT ATTEMPT");
+    expect(input.prompt).toMatch(/WHAT YOU MAY NOT DO/);
     expect(input.prompt).toMatch(/do not read any mailbox/i);
-    expect(input.prompt).toMatch(/record in gaps that the email half did not run/i);
   });
 
   it("asks for the ticket size she actually wants", async () => {
