@@ -20,6 +20,7 @@ import { proposedPriorities, wealthContract, executionContract } from "../../src
 const DAY = "2026-09-07";
 
 async function clean() {
+  await env.DB.prepare(`DELETE FROM sourcing_candidates`).run();
   await env.DB.prepare(`DELETE FROM relationships`).run();
   await env.DB.prepare(`DELETE FROM people`).run();
   await env.DB.prepare(`DELETE FROM open_loops`).run();
@@ -77,6 +78,73 @@ describe("the project list is a decision, not a collection", () => {
 
 describe("the wealth contract — the most load-bearing line on the screen", () => {
   beforeEach(clean);
+
+  it("puts the analyst's work at the top of the day, ahead of everything else", async () => {
+    /*
+     * HER DIRECTION, AND IT REVERSES WHAT THIS CONTRACT USED TO HAND HER: "you are my analyst and u
+     * need to help me find business", "what flows down to my agenda should be to review the work an
+     * analyst has done for me", and "calls are a no."
+     *
+     * Every earlier version made the first money move HER research. The sourcing sweep runs at 06:45
+     * and leaves candidates on the desk, so the move is a DECISION on work already done — the one
+     * part that cannot be delegated, and the cheapest thing she does all day.
+     *
+     * REVIEW OUTRANKS AN OVERDUE TOUCH. An unreviewed pile is what a sourcing agent becomes when
+     * nobody looks at it, and a stale pile is worse than none: it teaches her the output does not
+     * matter.
+     */
+    const personId = uid("per");
+    await env.DB.prepare(`INSERT INTO people (id, lane, full_name, privacy_class, created_at, updated_at) VALUES (?,?,?,?,?,?)`)
+      .bind(personId, "ops", "OVERDUE_NAME", "restricted", Date.now(), Date.now()).run();
+    await env.DB.prepare(
+      `INSERT INTO relationships (id, person_id, lane, kind, relationship_health, next_touch_due_at, status, created_at, updated_at)
+       VALUES (?,?,?,?,?,?, 'active', ?, ?)`,
+    ).bind(uid("rel"), personId, "ops", "professional", 90, Date.now() - 86_400_000, Date.now(), Date.now()).run();
+
+    await env.DB.prepare(
+      `INSERT INTO sourcing_candidates (id, name, kind, ticket_floor_usd, thesis, source_url, source_name, origin, status, created_at, updated_at)
+       VALUES (?,?, 'buyer', ?, ?, ?, ?, 'public_research', 'new', ?, ?)`,
+    ).bind(uid("src"), "Example Secondaries Partners", 25_000_000, "Direct secondaries in late-stage software.",
+           "https://example.com/x", "Strategy page", Date.now(), Date.now()).run();
+
+    const c = await wealthContract(env as any, 1);
+    expect(c.action).toMatch(/^Review 1 candidate/);
+    expect(c.action).not.toMatch(/OVERDUE_NAME/);
+    expect(c.detail!.join(" ")).toContain("Example Secondaries Partners");
+    // The size she actually cares about is on the line, not buried.
+    expect(c.detail!.join(" ")).toContain("$25M+");
+  });
+
+  it("never asks her to make a call", async () => {
+    /*
+     * "calls are a no." A contract that says "call SANDPIPER" is one she will not do, and an agenda
+     * she does not do is worse than none — it trains her to skip the screen.
+     */
+    await env.DB.prepare(
+      `INSERT INTO sourcing_candidates (id, name, kind, source_url, origin, status, created_at, updated_at)
+       VALUES (?,?, 'buyer', ?, 'public_research', 'new', ?, ?)`,
+    ).bind(uid("src"), "Anything Capital", "https://example.com/y", Date.now(), Date.now()).run();
+    const c = await wealthContract(env as any, 1);
+    expect(`${c.action} ${c.why}`).not.toMatch(/call/i);
+  });
+
+  it("falls back to the overdue touch once the pile is reviewed", async () => {
+    const personId = uid("per");
+    await env.DB.prepare(`INSERT INTO people (id, lane, full_name, privacy_class, created_at, updated_at) VALUES (?,?,?,?,?,?)`)
+      .bind(personId, "ops", "SANDPIPER", "restricted", Date.now(), Date.now()).run();
+    await env.DB.prepare(
+      `INSERT INTO relationships (id, person_id, lane, kind, relationship_health, next_touch_due_at, status, created_at, updated_at)
+       VALUES (?,?,?,?,?,?, 'active', ?, ?)`,
+    ).bind(uid("rel"), personId, "ops", "professional", 90, Date.now() - 86_400_000, Date.now(), Date.now()).run();
+    // Reviewed, so it no longer competes for the top of the day.
+    await env.DB.prepare(
+      `INSERT INTO sourcing_candidates (id, name, kind, source_url, origin, status, created_at, updated_at)
+       VALUES (?,?, 'buyer', ?, 'public_research', 'reviewed', ?, ?)`,
+    ).bind(uid("src"), "Already Seen", "https://example.com/z", Date.now(), Date.now()).run();
+
+    const c = await wealthContract(env as any, 1);
+    expect(c.action).toContain("SANDPIPER");
+  });
 
   it("bootstraps itself when there are no names, instead of going blank", async () => {
     /*

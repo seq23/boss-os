@@ -64,6 +64,10 @@ const SNAPSHOT_TABLES = [
   // that generates them would leave a system that has yesterday's intelligence and no way to get
   // tomorrow's - and one that restored the duty without its next_due_at would fire it immediately.
   "standing_duties", "executive_reports",
+  // 0185 — the brokerage sourcing list. A restore that lost it would put her back to an empty
+  // funnel with no record of which firms had already been reviewed or rejected, so the next sweep
+  // would hand her names she has already decided against. The review status is the valuable part.
+  "sourcing_candidates",
   // Consent, not content. The coaching conversation itself has no table here and must never get
   // one — its residency is LOCAL_ONLY and this design honours that by not having a row to classify.
   "coaching_consent",

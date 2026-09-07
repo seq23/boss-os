@@ -75,8 +75,18 @@ describe("duty cadence — wall-clock time in a zone that changes twice a year",
 });
 
 describe("materialising due duties", () => {
+  /*
+   * ONE DUTY UNDER TEST AT A TIME, and the rest suspended rather than assumed absent.
+   *
+   * These assertions counted rows for `emp_research` and expected exactly one, which held while the
+   * report was the only duty that employee owned. Adding the Brokerage Sourcing Sweep made four of
+   * them fail — correctly: they were reading "how many tasks did this employee get" as a proxy for
+   * "did this duty fire once". Those are different questions, and the second is the one that
+   * matters. Suspending the others keeps the test measuring the thing it names.
+   */
   beforeEach(async () => {
     await env.DB.prepare(`DELETE FROM tasks WHERE employee_id = 'emp_research'`).run();
+    await env.DB.prepare(`UPDATE standing_duties SET suspended = 1 WHERE id != 'duty_exec_intel'`).run();
     await env.DB.prepare(`UPDATE standing_duties SET next_due_at = 0, suspended = 0, last_run_at = NULL WHERE id = 'duty_exec_intel'`).run();
   });
 
@@ -85,6 +95,8 @@ describe("materialising due duties", () => {
     const result = await materialiseDueDuties(env as any, now);
 
     expect(result.fired.map((f) => f.duty)).toContain("duty_exec_intel");
+    // Exactly once, which is the claim — not "this employee received exactly one task ever".
+    expect(result.fired.filter((f) => f.duty === "duty_exec_intel")).toHaveLength(1);
     const tasks = await all<{ id: string; status: string; employee_id: string }>(
       `SELECT id, status, employee_id FROM tasks WHERE employee_id = 'emp_research'`,
     );
@@ -155,7 +167,7 @@ describe("materialising due duties", () => {
     await materialiseDueDuties(env as any, now);
     const second = await materialiseDueDuties(env as any, now + 3_600_000);
 
-    expect(second.fired).toEqual([]);
+    expect(second.fired.filter((f) => f.duty === "duty_exec_intel")).toEqual([]);
     expect(second.skipped.find((s) => s.duty === "duty_exec_intel")?.reason).toBe("not_due");
     const tasks = await all(`SELECT id FROM tasks WHERE employee_id = 'emp_research'`);
     expect(tasks).toHaveLength(1);

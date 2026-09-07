@@ -83,6 +83,52 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
   const project = firstMoneyProject();
 
   /*
+   * THE ANALYST WORKS; SHE REVIEWS. THAT ORDER IS THE WHOLE POINT.
+   *
+   * Her instruction: "you are my analyst and u need to help me find business", and "what flows down
+   * to my agenda should be to review the work an analyst has done for me." Also, plainly: "calls
+   * are a no."
+   *
+   * That reverses what this contract used to hand her. Every earlier version made the first money
+   * move HER research — write a list, make touches, do the sourcing. She has an analyst for that
+   * now: the Brokerage Sourcing Sweep runs at 06:45 and leaves candidates on the desk. So the first
+   * money move is a DECISION on work already done, which is the only thing that cannot be
+   * delegated and is also the cheapest thing she does all day.
+   *
+   * REVIEW COMES BEFORE TOUCHES, not after. An unreviewed pile is what a sourcing agent turns into
+   * when nobody looks at it, and a stale pile is worse than none — it teaches her the agent's output
+   * does not matter. So new candidates outrank an overdue touch, and the touch is next.
+   */
+  const fresh = await env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM sourcing_candidates WHERE status = 'new'`)
+    .first<{ n: number }>();
+  const waiting = fresh?.n ?? 0;
+
+  if (waiting > 0) {
+    const top = await env.DB
+      .prepare(
+        `SELECT name, ticket_floor_usd, thesis, source_name
+           FROM sourcing_candidates
+          WHERE status = 'new'
+          ORDER BY COALESCE(ticket_floor_usd, 0) DESC, created_at DESC
+          LIMIT 3`,
+      )
+      .all<{ name: string; ticket_floor_usd: number | null; thesis: string | null; source_name: string | null }>();
+
+    return {
+      available: true,
+      action: `Review ${waiting} candidate${waiting === 1 ? "" : "s"} your analyst found. Keep, reject, or ask for more like one.`,
+      why:
+        "§5.3 — the brokerage has right of first refusal on the first money move, and the sourcing " +
+        "sweep already did the looking. Deciding is the part that cannot be delegated.",
+      detail: (top.results ?? []).map((c) => {
+        const size = c.ticket_floor_usd ? `$${Math.round(c.ticket_floor_usd / 1_000_000)}M+` : "size unstated";
+        return `${c.name} — ${size}${c.thesis ? ` · ${c.thesis}` : ""}${c.source_name ? ` (${c.source_name})` : ""}`;
+      }),
+    };
+  }
+
+  /*
    * TOUCHES DUE, FROM THE RANKED LIST — the instrument the system already has and has never had a
    * row in. `relationships` carries strategic importance, trust, opportunity value, cadence days and
    * last contact, with a scoring engine behind it. Built, never populated, invisible because empty.
@@ -130,11 +176,11 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
     if (empty) {
       return {
         available: true,
-        action: "Write down five people who have ever sent you a deal, or realistically could. Code names only.",
+        action: "Name five people who have ever sent you a deal, or realistically could. Code names only.",
         why:
-          "Your funnel is thin because a referral business decays silently — nobody tells you they " +
-          "stopped thinking of you. The system has the ranked-touch engine and no names in it, so " +
-          "this is the one move that turns every following morning into a specific person.",
+          "The one thing your analyst cannot find for you. New buyers it can source; who already " +
+          "trusts you is only in your head — and a referral business decays silently, because " +
+          "nobody ever tells you they stopped thinking of you. Ten minutes, once.",
         detail: [
           "Code name, side (buyer or seller), and roughly when you last spoke.",
           "A cadence each: 30, 60 or 90 days. Rough is fine — it is decided once.",
