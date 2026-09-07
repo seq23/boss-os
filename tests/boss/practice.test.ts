@@ -153,3 +153,28 @@ describe("the day payload — what the screen can actually render", () => {
     expect(body.data.sky.reason).toContain("birth data");
   });
 });
+
+describe("the novelty engine advances by being looked at", () => {
+  it("RECORDS TODAY'S ROTATION ON READ, so it rotates without a gate being run", async () => {
+    /*
+     * `logSomatic` was only called by the Morning Gate. On any day she read Spirit without running
+     * it, the same five movements came up — each labelled "Not done before" — because nothing had
+     * written down what was chosen. A novelty engine with no memory is the random number generator
+     * it was built to stop being, and this is the path most likely to be taken.
+     */
+    await env.DB.prepare(`DELETE FROM movement_log`).run();
+    await apiJson("/api/spirit/day");
+
+    const logged = await row<{ n: number }>(`SELECT COUNT(*) AS n FROM movement_log`);
+    expect(logged!.n).toBeGreaterThan(0);
+  });
+
+  it("does NOT rewrite history for a day being looked back at", async () => {
+    // Reading last week would otherwise write a rotation into last week and reshuffle every day
+    // after it, which is a novelty engine sabotaging itself through the history view.
+    await env.DB.prepare(`DELETE FROM movement_log`).run();
+    await apiJson("/api/spirit/day?date=2026-01-05");
+    const logged = await row<{ n: number }>(`SELECT COUNT(*) AS n FROM movement_log`);
+    expect(logged!.n).toBe(0);
+  });
+});

@@ -27,7 +27,7 @@ import { monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL } from "../../../share
 import {
   gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
 } from "../spirit/practice";
-import { buildBodyContract } from "../today/body";
+import { buildBodyContract, logSomatic } from "../today/body";
 import { TIME_ACCURACY, natalChart, transits, type BirthData, type TimeAccuracy } from "../spirit/natal";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
@@ -104,6 +104,20 @@ spirit.get("/day", async (c) => {
     gratitudeFor(c.env, id),
     buildBodyContract(c.env, id, mode),
   ]);
+
+  /*
+   * THE ROTATION HAS TO ADVANCE WHETHER OR NOT A GATE RUNS.
+   *
+   * `logSomatic` was only called by the Morning Gate, so the novelty engine's history only grew on
+   * days she ran it — and reading Spirit without running the gate showed the same five movements
+   * every morning, each labelled "Not done before", forever. A novelty engine that never records
+   * what it chose is the random number generator this was built to stop being.
+   *
+   * ONLY FOR TODAY, NEVER FOR A DAY BEING LOOKED BACK AT. Reading last Tuesday would otherwise
+   * write history for last Tuesday and reshuffle everything after it. `logSomatic` is idempotent
+   * per day, so re-reading today changes nothing.
+   */
+  if (id === dayId(Date.now())) await logSomatic(c.env, id, body.somatic);
 
   /*
    * TRANSITS, FILTERED TO THE ONES THAT ACTUALLY TOUCH HER.
