@@ -497,6 +497,84 @@ describe("Stage 2 — the Claude Code adapter", () => {
     expect(argv.join(" ")).not.toContain(secretish);
   });
 
+  /**
+   * THE DELIVERABLE, READ FROM A FILE RATHER THAN FISHED OUT OF PROSE.
+   *
+   * The Executive Intelligence Report is sections, gaps, sources and corrections — columns, not
+   * prose — so a run contracted to produce one writes `delivers.json` in its workspace and the
+   * adapter reads it. That distinction is the whole safety property: `summary` is the CLI's own
+   * account of itself, a claim kept as a claim, and a summary that merely QUOTED some JSON must
+   * never become a delivered report.
+   */
+  describe("structured delivery", () => {
+    // The read is injected for the same reason the spawn is: these run in workerd, which has no
+    // filesystem, and a delivery path testable only by writing real files gets checked by hand once
+    // and then never again.
+    const runWith = async (readDelivers: (cwd: string) => Promise<string | null>, stdout?: string) =>
+      claudeCodeExecutor(
+        { envelope: envelope(), prompt: "p", sentinel: "s", forbidden: REQUIRED_FORBIDDEN, cwd: "/work" },
+        {
+          spawnImpl: fakeSpawn({ stdout: stdout ?? JSON.stringify({ result: "done", total_cost_usd: 0 }), code: 0 }),
+          readDelivers,
+        },
+      ) as Promise<any>;
+
+    it("delivers the object the run wrote", async () => {
+      const out = await runWith(async () => JSON.stringify({ status: "complete", sections: [{ heading: "x" }] }));
+      expect(out.delivers.status).toBe("complete");
+      expect(out.delivers.sections).toHaveLength(1);
+    });
+
+    it("delivers nothing when the run wrote no file — the ordinary case for every other run", async () => {
+      const out = await runWith(async () => null);
+      expect(out.delivers).toBeNull();
+      // A missing file is normal and must not be reported as a risk, or every repo run would carry
+      // a line about a report it was never asked to write.
+      expect(out.remaining_risks.join(" ")).not.toContain("delivers.json");
+    });
+
+    it("refuses a malformed payload without losing the run's real evidence", async () => {
+      const out = await runWith(async () => "not json at all");
+      expect(out.delivers).toBeNull();
+      expect(out.remaining_risks.join(" ")).toContain("delivers.json");
+      // The run still reports everything it observed. A bad payload is a note, not a lost run.
+      expect(out.exit_code).toBe(0);
+      expect(out.summary).toBe("done");
+    });
+
+    it("refuses a JSON array, because a report is an object with named fields", async () => {
+      const out = await runWith(async () => JSON.stringify([1, 2, 3]));
+      expect(out.delivers).toBeNull();
+      expect(out.remaining_risks.join(" ")).toContain("JSON object");
+    });
+
+    it("refuses a payload past the size cap", async () => {
+      const out = await runWith(async () => JSON.stringify({ pad: "x".repeat(1_100_000) }));
+      expect(out.delivers).toBeNull();
+      expect(out.remaining_risks.join(" ")).toContain("1MB cap");
+    });
+
+    it("records an unreadable file as a risk rather than as an absent one", async () => {
+      const out = await runWith(async () => { throw Object.assign(new Error("nope"), { code: "EACCES" }); });
+      expect(out.delivers).toBeNull();
+      expect(out.remaining_risks.join(" ")).toContain("EACCES");
+    });
+
+    it("never reads a summary as a delivery, however much JSON it quotes", async () => {
+      /*
+       * THE POINT OF THE WHOLE FILE-BASED DESIGN. This summary IS a well-formed report object as
+       * text. Nothing may deliver it: `summary` is the CLI's account of itself, and a process that
+       * parsed its own subject's prose into stored data would be grading the homework it was given.
+       */
+      const out = await runWith(
+        async () => null,
+        JSON.stringify({ result: '{"status":"complete","sections":[{"heading":"fake"}]}', total_cost_usd: 0 }),
+      );
+      expect(out.delivers).toBeNull();
+      expect(out.summary).toContain("fake");
+    });
+  });
+
   it("passes the CLI an environment with no credentials in it", async () => {
     let passedEnv: Record<string, string> = {};
     await claudeCodeExecutor(

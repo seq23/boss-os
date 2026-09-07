@@ -266,6 +266,9 @@ function packet(envelope, over = {}) {
     backend_id: envelope?.backend_id ?? "bk_claude_code",
     envelope_id: envelope?.envelope_id ?? null,
     requested: typeof envelope?.instruction === "string" ? envelope.instruction : "",
+    // Structured output a run was contracted to produce, read from its workspace by the adapter.
+    // Null for every ordinary run, which is most of them.
+    delivers: null,
     status: "failed",
     summary: "",
     files_touched: [],
@@ -377,6 +380,9 @@ export async function executeRun(envelope, deps = {}) {
   const finishedAt = now();
   const base = packet(envelope, {
     summary: result.summary ?? "",
+    // A VIOLATION SUPPRESSES THE DELIVERY BELOW. Nothing produced by a run that did something it was
+    // forbidden to do gets stored as a report.
+    delivers: result.delivers ?? null,
     files_touched: result.files_touched ?? after.changed_files ?? [],
     commands,
     checks_run: checks,
@@ -395,6 +401,7 @@ export async function executeRun(envelope, deps = {}) {
     return {
       ...base,
       status: "failed",
+      delivers: null,
       error: `FORBIDDEN_ACTION_DETECTED: ${violations.map((v) => v.action).join(", ")}`,
       summary: `A forbidden action was detected during this run. ${base.summary}`.trim(),
       remaining_risks: [

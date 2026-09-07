@@ -106,7 +106,7 @@ export function parseCliJson(stdout) {
  * does that, from things it observed itself — because a backend grading its own homework is the
  * failure this whole design is arranged to avoid.
  */
-export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl, binary = "claude" } = {}) {
+export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl, binary = "claude", readDelivers = defaultReadDelivers } = {}) {
   const spawn = spawnImpl ?? (await import("node:child_process")).spawn;
   const args = buildArgs(envelope);
   const timeoutMs = Math.max(1, Number(envelope?.max_seconds ?? 900)) * 1000;
@@ -156,10 +156,48 @@ export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl,
   if (parsed.parse_error) risks.push("The backend's output could not be parsed, so its own summary is unavailable; the observed facts below still stand.");
   if (outcome.spawn_error) risks.push(`Claude Code could not be started: ${outcome.spawn_error}`);
 
+  /*
+   * THE DELIVERABLE IS READ FROM A FILE, NOT PARSED OUT OF THE SUMMARY.
+   *
+   * Some runs are contracted to produce structured output — the Executive Intelligence Report is
+   * sections, gaps, sources and corrections, which the cloud half stores as columns rather than
+   * prose. The instruction tells the run to write that as JSON to `delivers.json` in its own
+   * workspace, and this reads the file.
+   *
+   * WHY A FILE AND NOT THE SUMMARY. Everything in `summary` is the CLI's own account — a claim,
+   * kept as a claim, per this module's whole design. Fishing a JSON block out of prose would mean
+   * this process INTERPRETING that claim, and a summary that happened to quote some JSON would
+   * become a delivered report. A file the run wrote and this process read is the same class of
+   * evidence as an exit code: observed here, not asserted there.
+   *
+   * IT IS BOUNDED AND IT NEVER THROWS. A missing file is the ordinary case for every other kind of
+   * run. A malformed or enormous one is recorded as a risk and delivers nothing, because the
+   * alternative is losing the run's real evidence over a bad payload.
+   */
+  let delivers = null;
+  try {
+    const raw = await readDelivers(cwd);
+    if (raw === null) {
+      // The ordinary case for every other kind of run. Says nothing and reports nothing.
+    } else if (raw.length > 1_000_000) {
+      risks.push(`delivers.json is ${raw.length} bytes, past the 1MB cap; nothing was delivered from it.`);
+    } else {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        risks.push("delivers.json did not contain a JSON object; nothing was delivered from it.");
+      } else {
+        delivers = parsed;
+      }
+    }
+  } catch (err) {
+    risks.push(`delivers.json could not be read: ${err?.code ?? err?.message ?? "unreadable"}`);
+  }
+
   return {
     // The CLI's own account of what it did — a claim, kept as a claim. executeRun() supplies the
     // file list and the check results from what it observed.
     summary: parsed.summary || (stderr ? `No summary. stderr tail: ${stderr}` : "No summary was produced."),
+    delivers,
     exit_code: outcome.exit_code,
     commands: [{ cmd: `${binary} ${shown}`, exit_code: outcome.exit_code }],
     cost_micros: parsed.cost_micros,
@@ -167,6 +205,28 @@ export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl,
     error: parsed.is_error || outcome.exit_code !== 0 ? (stderr || parsed.parse_error || `exit ${outcome.exit_code}`) : null,
     session_id: parsed.session_id,
   };
+}
+
+/**
+ * Read the run's structured output, or null when it wrote none.
+ *
+ * INJECTABLE FOR THE SAME REASON `spawnImpl` IS. The adapter's tests run in workerd, which has no
+ * filesystem — and a delivery path that can only be exercised by writing real files is one that
+ * gets tested by hand once and then never again.
+ *
+ * A missing file returns null and is silent: most runs deliver nothing. Every other failure throws
+ * and is recorded as a risk, because "could not read it" and "there was nothing to read" are
+ * different facts.
+ */
+export async function defaultReadDelivers(cwd) {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    return await readFile(join(cwd, "delivers.json"), "utf8");
+  } catch (err) {
+    if (err?.code === "ENOENT") return null;
+    throw err;
+  }
 }
 
 /**

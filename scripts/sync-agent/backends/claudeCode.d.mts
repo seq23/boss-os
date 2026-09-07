@@ -13,8 +13,17 @@ export function parseCliJson(stdout: unknown): {
 };
 export function claudeCodeExecutor(
   input: ExecutorInput,
-  deps?: { spawnImpl?: unknown; binary?: string },
-): Promise<ExecutorResult & { session_id?: string | null }>;
+  deps?: {
+    spawnImpl?: unknown;
+    binary?: string;
+    /**
+     * Reads the run's structured output. Injected for the same reason `spawnImpl` is: the adapter's
+     * tests run in workerd, which has no filesystem. Resolves to null when the run wrote no file.
+     */
+    readDelivers?: (cwd: string) => Promise<string | null>;
+  },
+): Promise<ExecutorResult & { session_id?: string | null; delivers: Record<string, unknown> | null }>;
+export function defaultReadDelivers(cwd: string): Promise<string | null>;
 export function describeAuth(source?: Record<string, string | undefined>): {
   mode: "api_key" | "owner_session";
   ok: boolean;
