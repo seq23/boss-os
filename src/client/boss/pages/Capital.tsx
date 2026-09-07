@@ -23,7 +23,15 @@ const usd = (micros: number) =>
 const pct = (bps: number) => `${(bps / 100).toFixed(bps % 100 === 0 ? 0 : 1)}%`;
 const day = (ts: number | null) => (ts ? new Date(ts).toLocaleDateString() : "—");
 
-type View = "deals" | "decisions" | "wealth";
+type View = "deals" | "buyers" | "return" | "decisions" | "wealth";
+
+const VIEW_LABEL: Record<View, string> = {
+  deals: "Deal flow",
+  buyers: "Buyers",
+  return: "Return",
+  decisions: "Decisions",
+  wealth: "Wealth",
+};
 
 export function Capital() {
   const [view, setView] = useState<View>("deals");
@@ -31,14 +39,248 @@ export function Capital() {
   return (
     <>
       <div className="btn-row">
-        {(["deals", "decisions", "wealth"] as View[]).map((v) => (
+        {(Object.keys(VIEW_LABEL) as View[]).map((v) => (
           <button key={v} className="btn" aria-pressed={view === v} onClick={() => setView(v)}>
-            {v === "deals" ? "Deal flow" : v === "decisions" ? "Decisions" : "Wealth"}
+            {VIEW_LABEL[v]}
           </button>
         ))}
       </div>
-      {view === "deals" ? <Deals /> : view === "decisions" ? <Decisions /> : <Wealth />}
+      {view === "deals" ? <Deals />
+        : view === "buyers" ? <Buyers />
+        : view === "return" ? <ReturnLedger />
+        : view === "decisions" ? <Decisions />
+        : <Wealth />}
     </>
+  );
+}
+
+// ─── Buyers, and the overlaps with the LP list ────────────────────────────────
+
+/**
+ * The buyer candidates Camille's sweep produces, and her verdict on each.
+ *
+ * THIS SCREEN IS A FIX, NOT A FEATURE. The endpoints have existed since 0185 and no page called
+ * them, so eleven candidates sat at status `new` from the day they were found — visible on Today
+ * only as a number in the Wealth pillar, with no way to review one. The sweep ran three mornings a
+ * week into a list nobody could work.
+ *
+ * The cross-matches sit on this screen rather than their own because they are a fact ABOUT a buyer:
+ * "this firm is already in your LP sequence" is something to know while deciding whether to contact
+ * them, and a separate page would be read once.
+ */
+function Buyers() {
+  const [data, setData] = useState<any | null>(null);
+  const [matches, setMatches] = useState<any | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  function load() {
+    Promise.all([api.sourcing(), api.crossmatches()])
+      .then(([s, x]) => { setData(s); setMatches(x); })
+      .catch((e) => { setError(e); setData({ candidates: [] }); setMatches({ confirmed: [], near: [] }); });
+  }
+  useEffect(load, []);
+
+  async function mark(id: string, status: string) {
+    setError(null);
+    try { await api.setSourcingStatus(id, { status }); load(); } catch (e) { setError(e); }
+  }
+  async function markMatch(id: string, status: string) {
+    setError(null);
+    try { await api.setCrossmatchStatus(id, { status }); load(); } catch (e) { setError(e); }
+  }
+
+  if (!data) return <Loading />;
+  const confirmed = matches?.confirmed ?? [];
+  const near = matches?.near ?? [];
+  const byCandidate = new Map<string, any[]>();
+  for (const m of confirmed) byCandidate.set(m.candidate_id, [...(byCandidate.get(m.candidate_id) ?? []), m]);
+
+  return (
+    <>
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      <div className="stats">
+        <div className="stat"><div className="stat-n">{data.total ?? 0}</div><div className="stat-l">candidates</div></div>
+        <div className="stat"><div className="stat-n">{data.awaiting_review ?? 0}</div><div className="stat-l">awaiting you</div></div>
+        <div className="stat"><div className="stat-n">{confirmed.length}</div><div className="stat-l">also LPs</div></div>
+      </div>
+
+      {confirmed.length > 0 && (
+        <>
+          <p className="eyebrow">Already in the LP universe</p>
+          {confirmed.map((m: any) => (
+            <div className="row" key={m.id}>
+              <div className="row-main">
+                <div className="row-title">{m.candidate_name} · {m.lp_firm}</div>
+                <div className="row-sub">{m.why}</div>
+                <div className="row-sub">
+                  {m.lp_list === "sequence" ? "in the LP sequence" : "on the LP do-not-contact list"}
+                  {m.lp_type ? ` · ${m.lp_type}` : ""}
+                  {m.lp_contacts ? ` · ${m.lp_contacts} contact${m.lp_contacts === 1 ? "" : "s"}` : ""}
+                  {m.lp_last_sent ? ` · last ${m.lp_last_sent}` : ""}
+                </div>
+              </div>
+              <div className="row-actions">
+                {m.status === "new" ? (
+                  <>
+                    <button className="btn btn-small" onClick={() => markMatch(m.id, "reviewed")}>Seen</button>
+                    <button className="btn btn-small btn-defer" onClick={() => markMatch(m.id, "rejected")}>Not the same firm</button>
+                  </>
+                ) : <span className="row-val">{m.status}</span>}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {near.length > 0 && (
+        <details>
+          <summary className="docket-more" style={{ cursor: "pointer" }}>
+            {near.length} near-miss{near.length === 1 ? "" : "es"} — similar names, NOT treated as the same firm
+          </summary>
+          <div className="docket-full">
+            {near.map((m: any) => (
+              <div className="row" key={m.id}>
+                <div className="row-main">
+                  <div className="row-title">{m.candidate_name} ≈ {m.lp_firm}</div>
+                  <div className="row-sub">{m.why}</div>
+                </div>
+                <div className="row-val">check yourself</div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      <p className="eyebrow">Candidates</p>
+      {(data.candidates ?? []).length === 0 ? (
+        <Empty title="No buyer candidates" hint="Camille's sweep runs Monday, Wednesday and Friday at 06:45." />
+      ) : (
+        data.candidates.map((cand: any) => (
+          <div className="row" key={cand.id}>
+            <div className="row-main">
+              <div className="row-title">
+                {cand.name}
+                {byCandidate.has(cand.id) && <span className="row-val"> · also an LP prospect</span>}
+              </div>
+              <div className="row-sub">{cand.thesis}</div>
+              <div className="row-sub">
+                {cand.ticket_floor_usd ? `floor $${(cand.ticket_floor_usd / 1_000_000).toFixed(0)}M · ` : ""}
+                {cand.source_url ? <a href={cand.source_url} target="_blank" rel="noreferrer">source</a> : "no source"}
+              </div>
+            </div>
+            <div className="row-actions">
+              {cand.status === "new" ? (
+                <>
+                  <button className="btn btn-small" onClick={() => mark(cand.id, "reviewed")}>Reviewed</button>
+                  <button className="btn btn-small btn-approve" onClick={() => mark(cand.id, "contacted")}>Contacted</button>
+                  <button className="btn btn-small btn-defer" onClick={() => mark(cand.id, "rejected")}>Reject</button>
+                </>
+              ) : <span className="row-val">{cand.status}</span>}
+            </div>
+          </div>
+        ))
+      )}
+    </>
+  );
+}
+
+// ─── Return on effort ─────────────────────────────────────────────────────────
+
+/**
+ * Effort against outcome, per income line.
+ *
+ * THE LAYOUT CARRIES THE ARGUMENT. Ratios are the headline and totals are never shown alone;
+ * "unmeasured" is rendered as its own state with the sentence saying why, never as a zero; and the
+ * lines are in her own order with the reason for not ranking them printed on the screen rather than
+ * only enforced in the code that builds it.
+ */
+function ReturnLedger() {
+  const [period, setPeriod] = useState<string | undefined>(undefined);
+  const [data, setData] = useState<any | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => { setData(null); api.lineReturns(period).then(setData).catch(setError); }, [period]);
+  if (error && !data) return <ErrorNotice error={error} onDismiss={() => setError(null)} />;
+  if (!data) return <Loading />;
+
+  const shift = (months: number) => {
+    const [y, m] = data.period.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + months, 15));
+    setPeriod(d.toISOString().slice(0, 7));
+  };
+
+  return (
+    <>
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      <div className="btn-row">
+        <button className="btn btn-small" onClick={() => shift(-1)}>← earlier</button>
+        <span className="row-val">{data.period_label}</span>
+        <button className="btn btn-small" onClick={() => shift(1)}>later →</button>
+      </div>
+
+      <div className="stats">
+        <div className="stat"><div className="stat-n">{data.measured_lines}</div><div className="stat-l">measured</div></div>
+        <div className="stat"><div className="stat-n">{data.unmeasured_lines}</div><div className="stat-l">unmeasured</div></div>
+        <div className="stat"><div className="stat-n">{data.lines.length}</div><div className="stat-l">lines</div></div>
+      </div>
+
+      {data.lifetime.length > 0 && (
+        <>
+          <p className="eyebrow">All time — not part of the month, and never added to it</p>
+          {data.lifetime.map((r: any, i: number) => <PairRow key={`lt${i}`} pair={r} />)}
+        </>
+      )}
+
+      <p className="eyebrow">{data.period_label}</p>
+      {data.lines.map((line: any) => (
+        <div className="panel" key={line.line}>
+          <div className="row-title">{line.name}</div>
+          <div className="row-sub">{line.lane} · {line.status}{line.measured ? "" : " · unmeasured"}</div>
+          {line.pairs.map((p: any, i: number) => <PairRow key={i} pair={p} />)}
+        </div>
+      ))}
+
+      <p className="row-sub">{data.ordering_note}</p>
+    </>
+  );
+}
+
+/**
+ * One effort→outcome pair.
+ *
+ * A MEASURED ZERO AND AN UNMEASURED BLANK LOOK DIFFERENT ON PURPOSE. "0 of 11" is a result; "not
+ * measured" carries the sentence saying what is missing and how to fill it. Rendering the second as
+ * the first is the mistake that would make her abandon a line that is merely unobserved.
+ */
+function PairRow({ pair }: { pair: any }) {
+  const measured = pair.outcome_count !== null && pair.outcome_count !== undefined;
+  const blind = pair.kind === "blind_spot";
+  return (
+    <div className="row">
+      <div className="row-main">
+        <div className="row-title">
+          {blind
+            ? `Not visible anywhere in this system: ${pair.outcome_label}`
+            : measured
+              ? `${pair.outcome_count} ${pair.outcome_label} from ${pair.effort_count} ${pair.effort_label}`
+              : `${pair.effort_count} ${pair.effort_label} — ${pair.outcome_label} not measured`}
+        </div>
+        {!measured && <div className="row-sub">{pair.unmeasured_why}</div>}
+        {pair.note && <div className="row-sub">{pair.note}</div>}
+        <div className="row-sub">
+          {pair.source === "computed" ? "from this system" : pair.source === "none" ? "no source" : `contributed · ${pair.source}`}
+          {pair.window_days ? ` · ${pair.window_days} days` : ""}
+        </div>
+      </div>
+      <div className="row-val">
+        {blind ? "blind spot"
+          : pair.per_mille === null || pair.per_mille === undefined
+            ? measured ? "—" : "unmeasured"
+            : `${pair.per_mille} per 1,000`}
+      </div>
+    </div>
   );
 }
 

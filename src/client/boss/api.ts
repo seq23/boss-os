@@ -223,6 +223,22 @@ export const api = {
   allocations: () => call<any[]>("/wealth/allocations"),
   allocate: (body: unknown) => call<any>("/wealth/allocations", post("", body)),
 
+  /*
+   * THE BUYER LIST HAD NO WAY IN UNTIL NOW. `/wealth/sourcing` and its status endpoint were written
+   * with 0185, are filled three mornings a week by Camille's sweep, and no page called either — so
+   * every one of the eleven candidates sat at `new` for ever and the only trace of them on any
+   * screen was a count in the Wealth pillar. That is this repo's signature defect: a correct thing
+   * nothing invokes. It also broke the ledger below, whose brokerage outcome signal is candidates
+   * moving out of `new` — a number that could not change because nothing could change it.
+   */
+  sourcing: (status?: string) => call<any>(`/wealth/sourcing${status ? `?status=${status}` : ""}`),
+  setSourcingStatus: (id: string, body: unknown) => call<any>(`/wealth/sourcing/${id}/status`, post("", body)),
+
+  // The return-on-effort ledger, and the LP × buyer overlaps. Both are filled by jobs on her Mac.
+  lineReturns: (period?: string) => call<any>(`/wealth/returns${period ? `?period=${period}` : ""}`),
+  crossmatches: () => call<any>("/wealth/crossmatches"),
+  setCrossmatchStatus: (id: string, body: unknown) => call<any>(`/wealth/crossmatches/${id}/status`, post("", body)),
+
   // Phase 16 — Spirit OS
   spiritDay: (date?: string) => call<any>(`/spirit/day${date ? `?date=${date}` : ""}`),
   spiritMonth: (month?: string) => call<any>(`/spirit/month${month ? `?month=${month}` : ""}`),

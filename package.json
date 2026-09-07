@@ -52,7 +52,9 @@
     "local:pull": "node scripts/ops/pull-production.mjs",
     "local:restore": "node scripts/backup/restore.mjs",
     "contacts:extract": "node scripts/vault/vault.mjs run -- node scripts/ops/gmail-metadata.mjs",
-    "properties": "node scripts/vault/vault.mjs run -- node scripts/ops/property-performance.mjs"
+    "properties": "node scripts/vault/vault.mjs run -- node scripts/ops/property-performance.mjs",
+    "returns:contribute": "node scripts/vault/vault.mjs run -- node scripts/ops/line-returns.mjs",
+    "crossmatch": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-buyer-crossmatch.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

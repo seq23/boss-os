@@ -80,6 +80,14 @@ const SNAPSHOT_TABLES = [
   // 0194 — Kendra's tool suggestions. The status is the value: a restore that lost it would re-suggest
   // things she has already rejected, and paying for a tool twice is the failure this list prevents.
   "tool_suggestions",
+  // 0198 — the contributed half of the return-on-effort ledger. Everything else in that ledger
+  // recomputes from D1 on read; these rows cannot. They come from her LP tracker and Search Console
+  // via a job on her Mac, so a restore that lost them would lose every month of history that the
+  // cloud has no way to re-derive, and the ledger's whole value is the comparison across months.
+  "line_returns",
+  // 0199 — the LP × buyer overlaps. Same reason: derived on her Mac from a sheet the Worker cannot
+  // read, and carrying her review status, which is the part no re-run reproduces.
+  "counterparty_crossmatches",
   // Consent, not content. The coaching conversation itself has no table here and must never get
   // one — its residency is LOCAL_ONLY and this design honours that by not having a row to classify.
   "coaching_consent",
