@@ -18,7 +18,7 @@
     "test": "vitest run && vitest run --config vitest.boss.config.ts",
     "test:boss": "vitest run --config vitest.boss.config.ts",
     "typecheck": "tsc --noEmit",
-    "validate": "npm run validate:gmail && npm run typecheck && npm run test",
+    "validate": "npm run validate:gmail && npm run validate:reachable && npm run typecheck && npm run test",
     "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/seed/generate-ai-employee-seed.mjs --check",
     "validate:api-screens": "node scripts/validate/api-has-a-screen.mjs && node scripts/validate/api-has-a-screen.mjs --self-test",
     "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test && node scripts/seed/generate-machine-seed.mjs --check",
@@ -39,7 +39,11 @@
     "vault:set": "node scripts/vault/vault.mjs set",
     "vault:status": "node scripts/vault/vault.mjs status",
     "vault:sync:cloudflare": "node scripts/vault/vault.mjs sync:cloudflare",
-    "validate:gmail": "node scripts/validate/gmail-metadata-only.mjs"
+    "validate:gmail": "node scripts/validate/gmail-metadata-only.mjs",
+    "holdings": "vault:run -- node scripts/ops/holdings-lookup.mjs",
+    "lp:sync": "vault:run -- node scripts/ops/lp-tracker-sync.mjs",
+    "backend:provision": "vault:run -- node scripts/ops/provision-backend.mjs",
+    "validate:reachable": "node scripts/validate/reachable.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

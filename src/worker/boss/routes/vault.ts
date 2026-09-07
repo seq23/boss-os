@@ -100,6 +100,23 @@ const SNAPSHOT_VERSION = 2;
  */
 const MAX_RESTORE_STATEMENTS = 20_000;
 
+/**
+ * The document vault — and it is empty by design rather than by accident, which it now says.
+ *
+ * FOUND BY THE REACHABILITY SCAN. `vault_entries` is read here and written by nothing, anywhere, so
+ * this endpoint has returned `[]` since the table was created and would have gone on doing so. That
+ * is the same shape as the Executive Intelligence Report: a reader with no writer renders an empty
+ * state for ever, and an empty state is indistinguishable from "nothing here yet".
+ *
+ * The difference between those two is the whole point, so the response carries it. An empty list
+ * with a reason is a named stop she can act on; an empty list on its own is a bug that looks like a
+ * quiet day.
+ *
+ * WHAT IT IS FOR, when something does write it: her canon documents, exports and attachments, held
+ * in R2 with a sha256 apiece. That matters more than it sounds — the contract this entire system
+ * implements currently exists as text she pasted into a conversation, and a hash of it is what
+ * would let anyone check that what is running still matches what she agreed to.
+ */
 vault.get("/entries", async (c) => {
   const rows = await c.env.DB
     .prepare(
@@ -107,7 +124,20 @@ vault.get("/entries", async (c) => {
         ORDER BY created_at DESC LIMIT 100`,
     )
     .all();
-  return ok(c, rows.results ?? []);
+  const entries = rows.results ?? [];
+  return ok(c, {
+    entries,
+    total: entries.length,
+    ...(entries.length === 0
+      ? {
+          reason:
+            "Nothing writes document entries yet, so this is empty by design rather than because " +
+            "nothing was stored. It is meant to hold the canon documents, exports and attachments " +
+            "in R2 with a hash each — including the contract this system implements, which today " +
+            "exists only as text in a conversation.",
+        }
+      : {}),
+  });
 });
 
 vault.get("/snapshots", async (c) => {
