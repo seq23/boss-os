@@ -163,16 +163,24 @@ describe("Phase 11 — the three gates", () => {
     expect(day!.morning_completed_at).toBeTruthy();
     expect(JSON.parse(day!.morning_contract).approvals_waiting_at_gate).toBeGreaterThanOrEqual(1);
     /*
-     * The agenda is real now, and only where it is real. Body is fully specified by §6.9/§6.10, so
-     * it renders; Spirit, Wealth and Execution are not collected at this gate yet and each says so
-     * BY NAME rather than being filled with a plausible sentence.
+     * ALL FOUR PILLARS ARE REAL NOW, which is what this assertion used to say the opposite of.
+     *
+     * It required Spirit, Wealth and Execution to be `available: false` with a named reason — an
+     * accurate description of a gate that collected nothing to build them from. Each of those
+     * reasons has since stopped being true: Spirit was fully built in `spirit/practice.ts` and
+     * simply never called, and Wealth and Execution now derive from her projects, her relationships
+     * and her open loops.
+     *
+     * What the test protects is unchanged: §15.4 wants an exact ACT per pillar, never a topic and
+     * never a plausible sentence standing in for one. So every pillar must carry an action and the
+     * reason it is today's.
      */
     const agenda = JSON.parse(day!.morning_agenda);
     expect(agenda.pillars.body.launch_sequence[0]).toBe("10 in-bed leg raises per side");
     expect(agenda.pillars.body.somatic.length).toBeGreaterThan(0);
     for (const pillar of ["spirit", "wealth", "execution"] as const) {
-      expect(agenda.pillars[pillar].available).toBe(false);
-      expect(agenda.pillars[pillar].reason).toBeTruthy();
+      expect(agenda.pillars[pillar].action, `${pillar} has no act`).toBeTruthy();
+      expect(agenda.pillars[pillar].why, `${pillar} does not say why`).toBeTruthy();
     }
     expect(day!.gate_entries_count).toBe(1);
 

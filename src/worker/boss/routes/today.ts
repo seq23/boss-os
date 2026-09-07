@@ -18,6 +18,8 @@ import { spiritSignal } from "../spirit/day";
 import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from "../today/runOfShow";
 import { coachingFocus, lensFor } from "../today/faculty";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
+import { buildPillars } from "../today/pillars";
+import { adjustToday } from "../today/adjust";
 import { scoreDay, FLOORS } from "../today/verdict";
 
 export const today = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -1034,10 +1036,42 @@ function optionalTextList(value: unknown, max: number, what: string): { text: st
  * this phase can honestly produce: priorities, state, and the contract.
  */
 today.post("/gates/morning", async (c) => {
-  const b = await c.req.json<any>().catch(() => null);
-  if (!b) throw badRequest("The morning gate needs a body");
+  /*
+   * AN EMPTY BODY IS THE NORMAL CASE NOW. This used to reject a gate with no body, which made sense
+   * when the body WAS the agenda. It no longer is: POST nothing and the system tells her what the
+   * day is. Everything in the body is an override of something it would otherwise decide.
+   */
+  const b = (await c.req.json<any>().catch(() => null)) ?? {};
 
-  const priorities = textList(b.priorities, MAX_MORNING_PRIORITIES, "priority");
+  const day = await ensureDay(c.env.DB, b.day_id ? String(b.day_id) : dayId(Date.now()));
+  const weekday = new Date(`${day.id}T12:00:00Z`).getUTCDay();
+
+  /*
+   * THE GATE PROPOSES THE DAY. IT NO LONGER ASKS HER TO INVENT IT.
+   *
+   * This handler used to require `priorities` in the body — three blank fields at 6am. That is the
+   * cognitive load the whole system exists to remove: an empty box is a demand to hold every
+   * project in her head and rank them, which is precisely the work she asked to be relieved of.
+   *
+   * Her instruction, in her words: the system takes her inputs and decides her priorities each day,
+   * and lets her make last-minute or emergency adjustments if something comes up. So the derived
+   * day is the default and hers is an OVERRIDE — a normal event with a name, not an exception. What
+   * she sends wins; what she omits is filled in from her projects, her arcs and her real record.
+   */
+  const pillars = await buildPillars(c.env, day.id, day.day_mode, weekday);
+
+  /*
+   * `optionalTextList`, NOT `textList`. The strict one throws "the gate needs at least one
+   * priority" on an empty list — correct when the body WAS the agenda, and now exactly backwards:
+   * sending nothing is the normal case and means "tell me what the day is". The cap of three still
+   * applies to an override, because §17's cap is the point whoever wrote the list.
+   */
+  const sent = optionalTextList(b.priorities, MAX_MORNING_PRIORITIES, "priority");
+  const overrode = sent.length > 0;
+  const priorities = overrode
+    ? sent
+    : pillars.proposed.map((p) => ({ text: p.text, source: p.source }));
+
   const state = {
     identity_cue: b.identity_cue ? String(b.identity_cue) : null,
     state: b.state ? String(b.state) : null,
@@ -1045,31 +1079,36 @@ today.post("/gates/morning", async (c) => {
     revenue_reality: b.revenue_reality ? String(b.revenue_reality) : null,
   };
 
-  const day = await ensureDay(c.env.DB, b.day_id ? String(b.day_id) : dayId(Date.now()));
-
   // Step 6 of canon §17 is the approval inbox scan, so the contract records what
   // was actually waiting when the day was agreed to.
   const pending = await c.env.DB
     .prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending'`)
     .first<{ n: number }>();
 
+  /*
+   * THE ANCHOR IS DERIVED TOO, and it is the first money move — §15.4's Daily Anchor is meant to be
+   * the one thing the day is judged on, and §5.3 already decides what that is. Asking her for a
+   * commitment and then separately computing a first money move would be two answers to one
+   * question, which is how a screen starts disagreeing with itself.
+   */
   const contract = {
     priorities: priorities.map((p) => p.text),
-    commitment: b.commitment ? String(b.commitment) : null,
+    commitment: b.commitment ? String(b.commitment) : pillars.wealth.action,
+    anchor_source: b.commitment ? "owner" : "derived — the first money move",
+    priorities_source: overrode ? "owner override" : "derived from projects",
     approvals_waiting_at_gate: pending?.n ?? 0,
     agreed_at: Date.now(),
   };
 
   /*
-   * THE AGENDA IS NO LONGER "PHASE 12". This column stored `{available: false, reason: "The agenda
-   * engine lands in Phase 12"}` on every morning since the port. The engine it was waiting for is
-   * §15.4's Pillar Contracts, and the Body pillar is the one her documents specify exactly: §6.9's
-   * stored sequence verbatim, §6.10's somatic lane, and the Somatic brain's novelty rotation.
+   * ALL FOUR PILLARS ARE REAL NOW.
    *
-   * SPIRIT, WEALTH AND EXECUTION ARE NAMED AS ABSENT rather than invented. §15.4 requires an exact
-   * gratitude sentence, an exact first money move and an exact first completion action — none of
-   * which this gate collects yet. Writing a plausible one would be the fabrication the old comment
-   * was right to avoid; the difference now is that Body is real instead of everything being absent.
+   * This block stored `{available: false, reason: "The agenda engine lands in Phase 12"}` on every
+   * morning since the port, then three separate "not collected at this gate yet" reasons. Every one
+   * of those was honest and every one was a consequence of the same thing: the gate collected
+   * nothing to build them from, because the OS knew her pillars and her laws and did not know her
+   * WORK. Spirit was the starkest — `spirit/practice.ts` had been composing the sentence and
+   * holding the sequence the whole time, and nothing ever called it.
    */
   const bodyContract = await buildBodyContract(c.env, day.id, day.day_mode);
   await logSomatic(c.env, day.id, bodyContract.somatic);
@@ -1078,10 +1117,12 @@ today.post("/gates/morning", async (c) => {
     anchor: contract.commitment,
     pillars: {
       body: bodyContract,
-      spirit: { available: false, reason: "The Morning Gate does not collect the gratitude sentence or the manifestation sequence yet." },
-      wealth: { available: false, reason: "The first money move is not collected at this gate yet; the priorities stand in for it." },
-      execution: { available: false, reason: "The first completion action is not collected at this gate yet." },
+      spirit: pillars.spirit,
+      wealth: pillars.wealth,
+      execution: pillars.execution,
     },
+    proposed: pillars.proposed,
+    overridden: overrode,
   };
 
   const payload = { priorities, state, contract, agenda, inbox_scan: { pending: pending?.n ?? 0 } };
@@ -1100,6 +1141,53 @@ today.post("/gates/morning", async (c) => {
   const refreshed = await ensureDay(c.env.DB, day.id);
   const blocks = await assembleDayFlow(c.env, refreshed);
   return ok(c, { gate: entry, day: refreshed, blocks }, 201);
+});
+
+/**
+ * Something came up.
+ *
+ * NOT A GATE, ON PURPOSE. Gates are rituals with times; an emergency is at 3pm on a Thursday. This
+ * appends to today rather than recomputing it, so the morning contract still stands as the thing
+ * the Night Gate scores against and the interruption is visible instead of erased. See
+ * `today/adjust.ts` for why re-running the Morning Gate would have been the wrong shape.
+ */
+today.post("/adjust", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const what = b?.what ? String(b.what) : "";
+  if (!what) {
+    throw badRequest(
+      "An adjustment needs to say what changed",
+      'Send { what, kind } — kind is "emergency", "reprioritise", "added" or "dropped".',
+    );
+  }
+
+  const kindRaw = b?.kind ? String(b.kind) : "added";
+  const kinds = ["emergency", "reprioritise", "added", "dropped"] as const;
+  if (!kinds.includes(kindRaw as (typeof kinds)[number])) {
+    throw badRequest(`"${kindRaw}" is not an adjustment kind`, `One of: ${kinds.join(", ")}.`);
+  }
+
+  const day = await ensureDay(c.env.DB, b?.day_id ? String(b.day_id) : dayId(Date.now()));
+  const result = await adjustToday(c.env, day.id, {
+    kind: kindRaw as (typeof kinds)[number],
+    what,
+    instead_of: b?.instead_of ? String(b.instead_of) : null,
+  });
+
+  const refreshed = await ensureDay(c.env.DB, day.id);
+  return ok(c, {
+    ...result,
+    day: refreshed,
+    /*
+     * SAID OUT LOUD WHEN THE ENGINE GETS DISPLACED. §5.3 gives the brokerage right of first refusal
+     * on the first money move, so dropping it is a real decision rather than a scheduling detail —
+     * and a week of quietly displaced anchors is exactly the thing she would otherwise only notice
+     * in the revenue.
+     */
+    note: result.anchor_displaced
+      ? "This displaced today's first money move. That is allowed, and it is recorded — §5.3 gives the brokerage right of first refusal, so a run of these is worth seeing."
+      : "Recorded. The morning contract still stands as written; this sits beside it.",
+  }, 201);
 });
 
 /**
