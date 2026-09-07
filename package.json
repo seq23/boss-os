@@ -46,7 +46,8 @@
     "validate:reachable": "node scripts/validate/reachable.mjs",
     "contacts:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/contacts-sync.mjs",
     "spry:heartbeat": "node scripts/ops/spry-heartbeat.mjs",
-    "canon:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/canon-sync.mjs"
+    "canon:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/canon-sync.mjs",
+    "packet:remind": "node scripts/vault/vault.mjs run -- node scripts/ops/packet-remind.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

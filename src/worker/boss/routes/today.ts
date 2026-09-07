@@ -1180,6 +1180,22 @@ today.post("/gates/morning", async (c) => {
  * THE SYSTEM WRITES HERE TOO, which is the half a calendar note cannot do. A duty stalled on an
  * access grant only he can give belongs on this list the moment it is discovered.
  */
+/**
+ * The packet on its own, so something outside the browser can deliver it.
+ *
+ * IT LIVES INSIDE THE MEETINGS BLOCK TOO, and that was the whole problem: a finished thing whose
+ * only route to her is a page she has to remember to open is the same defect this system keeps
+ * producing. `scripts/ops/packet-remind.mjs` reads this and puts it in front of her.
+ *
+ * Available on any day, unlike the block. A reminder that could only fetch the packet on the two
+ * days it renders could not be tested on a Thursday, and a delivery path nobody can exercise is one
+ * that silently breaks.
+ */
+today.get("/packet/:counterpart", async (c) => {
+  const day = await ensureDay(c.env.DB, c.req.query("day_id") ?? dayId(Date.now()));
+  return ok(c, await weeklyPacket(c.env, day.id, c.req.param("counterpart")));
+});
+
 today.get("/agenda/:counterpart", async (c) => {
   const rows = await c.env.DB
     .prepare(

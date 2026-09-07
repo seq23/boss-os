@@ -82,14 +82,72 @@ PLISTEOF
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
+# ─── The Wednesday packet reminder ───────────────────────────────────────────
+#
+# A SEPARATE JOB, because it runs on two weekdays rather than five times a day, and merging two
+# schedules into one plist means the packet either fires five times a day or the agent runs twice a
+# week. StartCalendarInterval takes a Weekday, so each job says plainly when it runs.
+#
+# TUESDAY 17:00 IS THE ONE THAT MATTERS. A reminder at 6am on the day of the meeting arrives too
+# late to act on — the point of preparing a packet is the hours before it, when an access grant can
+# still be asked for. Wednesday 07:00 is the reread on the way in.
+PACKET_LABEL="com.seq.boss-packet"
+PACKET_PLIST="$HOME/Library/LaunchAgents/$PACKET_LABEL.plist"
+
+cat > "$PACKET_PLIST" <<PACKETEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$PACKET_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO && npm run --silent packet:remind</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/packet.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/packet.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+PACKETEOF
+
+launchctl unload "$PACKET_PLIST" 2>/dev/null || true
+launchctl load "$PACKET_PLIST"
+
 echo "Installed $LABEL — checks for queued work at 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
 # RULE 0: an installer that installed nothing must not exit 0 looking pleased. launchctl load is
-# silent on success AND on several kinds of failure, so the job is read back rather than assumed.
-if launchctl list | grep -q "$LABEL"; then
-  echo "Verified: launchd lists $LABEL."
+# silent on success AND on several kinds of failure, so the jobs are read back rather than assumed.
+#
+# RETRIED, BECAUSE THE FIRST VERSION LIED IN THE OTHER DIRECTION. `launchctl list` did not yet show
+# a job a fraction of a second after `launchctl load` returned, so the installer announced NOT
+# INSTALLED for an agent that was in fact loaded — and a false alarm from a verifier is worse than
+# no verifier, because it sends someone chasing a problem that does not exist and teaches them to
+# ignore the next one.
+# `launchctl print` asks about ONE service rather than scanning a list, and answers as soon as the
+# job is registered. `launchctl list | grep` lagged by more than five seconds when both jobs were
+# cycled in the same run — long enough for the installer to declare a correctly loaded agent missing.
+loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
+
+for _ in $(seq 1 20); do
+  if loaded "$LABEL" && loaded "$PACKET_LABEL"; then break; fi
+  sleep 1
+done
+
+missing=""
+loaded "$LABEL" || missing="$missing $LABEL"
+loaded "$PACKET_LABEL" || missing="$missing $PACKET_LABEL"
+
+if [ -z "$missing" ]; then
+  echo "Verified: launchd lists $LABEL and $PACKET_LABEL."
 else
-  echo "NOT INSTALLED: launchd does not list $LABEL after load. Nothing will claim runs."
+  echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1
 fi
