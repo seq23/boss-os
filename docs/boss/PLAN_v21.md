@@ -283,6 +283,78 @@ still needs the internet and a hosting provider.
 **Stages 1–4 are one continuous piece of work and should land in that order.** Stages 5 and 6 are
 independent and can run alongside once her materials arrive. Stage 8's first item can be done today.
 
+## Delivered — 7 September 2026
+
+_Added after the fact. The stages above are the plan as written; this is what actually happened when
+it met her, which is not the same document and should not be edited to look like it was._
+
+**Stage 5 (standing duties) and Stage 6 (the agenda engine) are discharged.** Both were waiting on
+"pending from the owner" — her materials, and what a good morning actually looks like to her. She
+supplied both by using the thing and telling us where it was wrong.
+
+**Six duties exist and run**: the executive report, buyer sourcing, backlink prospecting, tool
+scouting, the week's practice, and the network refresh. Stage 5 recommended reusing the chassis
+scheduler; that recommendation was not followed — `standing_duties` is Boss-native, and the decision
+was made by the work rather than debated, because duties dispatch to `agent_executed` backends and
+the chassis scheduler knows nothing about them.
+
+**The agenda derives itself.** The Morning Gate no longer asks her to type three priorities into
+blank fields; it proposes the day from her projects and she overrides it. All four Pillar Contracts
+are real, each says what it means in her language, and each names the employee who owns it. §20's
+"an absent input is recorded as absent" holds throughout: a thin day says it is thin.
+
+### What was actually wrong, which the plan could not have predicted
+
+Every one of these was a correct component that nothing invoked, and none of them was visible from
+inside the code:
+
+- `executive_reports` had a reader, a duty and **no writer anywhere**. The block showed its empty
+  state every morning, exactly as designed, for as long as the table had existed.
+- Duties materialised tasks with a bare INSERT and **never called `TASKS.send()`**. The clock
+  advanced, rows appeared as `queued`, and nothing ran.
+- The gratitude sentence was **fully built and never called** by the gate.
+- `scripts/sync-agent/runner.mjs` worked and **no launchd job, cron entry or login item ever started
+  it**.
+- `relationships` had a scoring engine wired into Today and **zero rows**.
+- `vault_entries` was read by an endpoint and **written by nothing**.
+- The transit engine compared every body **only to its own natal degree**, so the Spirit page could
+  structurally only ever show returns.
+
+`npm run validate:reachable` now asks the question none of the other validators did — is a built
+thing reachable from her day — and caught three more instances within minutes of being written.
+
+### The architectural fact the plan got right for the wrong reason
+
+Stage 2 says credentials live where they are used. In practice that is stronger than a preference:
+the runner strips every credential from its environment, so **an agent cannot read her mailbox, her
+Search Console or her `gh` login even if asked**. That splits the work permanently — agents research
+the open web, local scheduled jobs read her accounts — and it is why several duties are owned by an
+employee but executed by `launchd`.
+
+### Cost, which the plan never costed
+
+`bk_claude_code` is classified free because *this system* is billed nothing for it. She is not: one
+executive report measured **$3.88**, because every duty inherited the default model. Against a $100
+Claude Max plan shared with her own work, the schedule as first built was roughly $207 a month.
+
+Every duty now names its model and its cap. The schedule costs about **$11 a month against a $25
+ceiling**, and the ceiling stops scheduled work only — anything she asks for runs regardless.
+
+### Still outstanding
+
+- **Stage 7 (the model bench)** — still correctly deferred.
+- **The named stop (local runtime, Batch 2)** — untouched, still her decision.
+- **Simone, Zora and Toni** have charters and no duties.
+- **Mail contents.** The extraction takes metadata only; matching a past enquiry against present
+  supply needs subjects and bodies, which is a separate decision she has not made.
+- **`sequoia@westpeek.ventures`** is not connected, which blocks LP reply detection and an opt-out
+  compliance defect open since 19 August.
+
+See `OPERATIONS.md` for the running system: who owns what, what runs when, what it costs, and what is
+deliberately not built.
+
+---
+
 ## Rules this plan does not get to bend
 
 - **Nothing commits, merges, pushes or deploys.** Every backend run ends as a proposal with evidence.

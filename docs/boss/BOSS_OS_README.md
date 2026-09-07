@@ -1,5 +1,9 @@
 # Boss OS v20
 
+> **Running it day to day: [`OPERATIONS.md`](OPERATIONS.md).** Who owns what, what runs
+> when, what it costs, where your data lives, and what is deliberately not built.
+> The plan it was built against, and what actually landed, is [`PLAN_v21.md`](PLAN_v21.md).
+
 A private, single-user executive OS that installs to your phone's home screen.
 No app store, no second user, no shared state between lanes.
 
