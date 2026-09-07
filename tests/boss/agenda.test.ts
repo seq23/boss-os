@@ -176,11 +176,32 @@ describe("the execution contract closes before it starts", () => {
     expect(c.action).toContain("Urgent and new");
   });
 
-  it("says nothing is owed rather than inventing work, when the board is clear", async () => {
-    // §5.2 parks lines with no next action ON PURPOSE. An empty slot is the system working.
-    const c = await executionContract(env as any, 1); // Monday, not Wednesday
-    expect(c.available).toBe(true);
-    expect(c.action).toMatch(/Nothing is owed|LP list/);
+  it("keeps West Peek's LP list off every day that is not Wednesday", async () => {
+    /*
+     * THE OWNER CAUGHT THIS ON THE FIRST LIVE RUN: "the LP list is for west peek only not this."
+     *
+     * The contract used to fall through to "the active project in its lane", which on any day with
+     * no open loops reached the raise and put the LP list on a Monday. It is her own rule — §5.4
+     * names Wednesday as the West Peek cadence — and a generic fallthrough that grabs the nearest
+     * active project quietly promotes one lane's work into every lane's empty slot.
+     */
+    const monday = await executionContract(env as any, 1);
+    expect(monday.action).not.toMatch(/LP list/i);
+    expect(monday.action).toMatch(/Nothing is owed/);
+
+    const wednesday = await executionContract(env as any, 3);
+    expect(wednesday.action).toMatch(/LP list/i);
+  });
+
+  it("does not pad the priority list with West Peek to reach three", async () => {
+    // A short list is a real answer. Padding teaches her the third line never means anything.
+    const wealth = { available: true, action: "Touch SANDPIPER.", why: "x" };
+    const execution = { available: true, action: "Nothing is owed. Take the empty slot or bank it.", why: "y" };
+    const monday = proposedPriorities(1, wealth, execution);
+    expect(monday.some((p) => /LP list/i.test(p.text))).toBe(false);
+
+    const wednesday = proposedPriorities(3, wealth, execution);
+    expect(wednesday.some((p) => /LP list/i.test(p.text))).toBe(true);
   });
 
   it("makes Wednesday the West Peek meeting, with a consequence rather than a fact", async () => {

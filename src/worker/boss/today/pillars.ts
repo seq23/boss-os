@@ -207,15 +207,22 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
     };
   }
 
-  const active = activeProjects().filter((p) => p.pillar === "execution" || p.key !== "brokerage");
-  const pick = active.find((p) => p.next_action) ?? null;
-  if (pick) {
-    return { available: true, action: pick.next_action!, why: `${pick.name} — the active project in its lane.` };
-  }
-
   /*
-   * NO OPEN LOOP AND NOTHING ACTIVE IS A GOOD DAY, and it must not read as a broken screen. §5.2
-   * says parked lines have no next action ON PURPOSE, so "nothing is owed" is the system working.
+   * WEST PEEK'S WORK DOES NOT LEAK INTO OTHER DAYS.
+   *
+   * This used to fall through to "the active project in its lane", which on any day with no open
+   * loops reached the raise and put the LP list on a Monday. The owner caught it on the first live
+   * run: "the LP list is for west peek only not this."
+   *
+   * She is right, and it is her own rule. §5.4 names Wednesday as the West Peek cadence; §5.5 keeps
+   * a weekday vehicle in the background unless it is strategically justified. A generic fallthrough
+   * that reaches for the nearest active project quietly promotes one lane's work into every lane's
+   * empty slot — which is exactly how a system stops being trusted, because the day it hands you is
+   * no longer the day your own rules describe.
+   *
+   * So there is no fallthrough. Wednesday is handled above; otherwise nothing is owed — and that
+   * must not read as a broken screen. §5.2 parks lines with no next action ON PURPOSE, so an empty
+   * slot is the system working rather than failing to think of something.
    */
   return {
     available: true,
@@ -265,8 +272,13 @@ export function proposedPriorities(
   }
 
   add(execution.action, "execution — §5.7, one concrete asset-advancing action");
-  add(wp.next_action ?? "Advance the raise.", "west peek — the second active lane");
 
+  /*
+   * NO WEST PEEK FILLER. A third line was appended here from the raise whenever the list was short,
+   * which is the same leak as the one in `executionContract` and the owner named it in the same
+   * breath. A short list is a real answer: on a quiet Monday two priorities is two priorities, and
+   * padding it to three teaches her that the third line never means anything.
+   */
   // §17's cap is three. More than three priorities is no priorities.
   return out.slice(0, 3);
 }

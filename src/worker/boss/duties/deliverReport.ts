@@ -50,6 +50,84 @@ const asText = (v: unknown): string | null => (typeof v === "string" && v.trim()
  * Returns the row id, or null when this run delivers nothing — which is the ordinary case for every
  * other kind of backend work and must not be treated as an error.
  */
+/**
+ * The brokerage sourcing list, delivered the same way the report is.
+ *
+ * WHY IT SHARES THE PATH. One delivery contract, one place a run's structured output lands, one
+ * `input.delivers` key deciding which table it is for. A second endpoint or a second convention
+ * would be the drift that has already bitten this codebase twice in one day.
+ *
+ * NOTHING IS PROMOTED AUTOMATICALLY. Every row lands as `new` and stays there until she reviews it.
+ * A web-found firm silently becoming a "relationship" would put a stranger into the daily touch
+ * list and make the system lie about who she knows.
+ *
+ * A CANDIDATE WITHOUT A SOURCE IS DROPPED, and that is the load-bearing rule: the whole failure mode
+ * of automated sourcing is a plausible name nobody can check, and checking one costs her a phone
+ * call. The run is told this and it is enforced here as well, because being told is not a guarantee.
+ */
+export async function deliverSourcingCandidates(
+  env: Env,
+  args: { taskId: string; runId: string; payload: Record<string, unknown> | null; runStatus: string; now?: number },
+): Promise<{ inserted: number; skipped: number } | null> {
+  const now = args.now ?? Date.now();
+
+  const task = await env.DB
+    .prepare(`SELECT id, input FROM tasks WHERE id = ?`).bind(args.taskId)
+    .first<{ id: string; input: string | null }>();
+  if (!task) return null;
+
+  let input: Record<string, unknown> = {};
+  try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
+  if (input.delivers !== "sourcing_candidates") return null;
+  if (args.runStatus !== "succeeded") return { inserted: 0, skipped: 0 };
+
+  const rows = Array.isArray(args.payload?.candidates) ? (args.payload!.candidates as Record<string, unknown>[]) : [];
+  let inserted = 0;
+  let skipped = 0;
+
+  for (const c of rows) {
+    const name = typeof c?.name === "string" ? c.name.trim() : "";
+    const sourceUrl = typeof c?.source_url === "string" ? c.source_url.trim() : "";
+    // No name, or no source that can be checked, means it does not enter the list at all.
+    if (!name || !sourceUrl) { skipped++; continue; }
+
+    const readAt = typeof c?.read_at === "string" ? Date.parse(c.read_at) : NaN;
+    const floor = Number(c?.ticket_floor_usd);
+
+    await env.DB
+      .prepare(
+        `INSERT INTO sourcing_candidates
+           (id, name, kind, ticket_floor_usd, thesis, source_url, source_name, read_at, origin, status, run_id, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,'public_research','new',?,?,?)
+         ON CONFLICT(name, kind) DO UPDATE SET
+           thesis = excluded.thesis,
+           source_url = excluded.source_url,
+           source_name = excluded.source_name,
+           read_at = excluded.read_at,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(
+        newId("src"), name,
+        typeof c?.kind === "string" && ["buyer", "seller", "intermediary"].includes(c.kind) ? c.kind : "buyer",
+        Number.isFinite(floor) ? Math.floor(floor) : null,
+        typeof c?.thesis === "string" ? c.thesis : null,
+        sourceUrl,
+        typeof c?.source_name === "string" ? c.source_name : null,
+        Number.isFinite(readAt) ? readAt : null,
+        args.runId, now, now,
+      )
+      .run();
+    inserted++;
+  }
+
+  await logEvent(env.DB, {
+    level: "info", scope: "duties", event: "sourcing_delivered", entityId: args.taskId,
+    detail: { inserted, skipped, run_id: args.runId },
+  });
+
+  return { inserted, skipped };
+}
+
 export async function deliverExecutiveReport(
   env: Env,
   args: { taskId: string; runId: string; report: DeliveredReport | null; runStatus: string; now?: number },

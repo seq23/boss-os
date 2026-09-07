@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deliverExecutiveReport } from "../../src/worker/boss/duties/deliverReport";
-import { row, uid } from "./helpers";
+import { row, uid, all } from "./helpers";
 
 /**
  * THE REPORT NOBODY WROTE.
@@ -217,5 +217,156 @@ describe("a task that names a backend leaves the cloud", () => {
     } finally {
       restore();
     }
+  });
+});
+
+/**
+ * THE BROKERAGE SOURCING SWEEP — the motion this business has never had.
+ *
+ * Her account: no system at all, taking calls as they come. A business running purely on inbound
+ * has a funnel fed by nothing. West Peek already has an agent surfacing LPs daily; this is the same
+ * shape pointed at buyers, and her instruction was plain: "this area of my life is going poorly and
+ * it should help me."
+ */
+describe("delivering brokerage sourcing candidates", () => {
+  const TASK = "tsk_sourcing_test";
+
+  async function seed(input: Record<string, unknown>) {
+    await env.DB.prepare(`DELETE FROM sourcing_candidates`).run();
+    await env.DB.prepare(`DELETE FROM tasks WHERE id = ?`).bind(TASK).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, lane, title, input, status, created_at) VALUES (?, 'ops', 'Brokerage Sourcing Sweep', ?, 'running', ?)`,
+    ).bind(TASK, JSON.stringify(input), Date.now()).run();
+  }
+
+  const CONTRACT = { delivers: "sourcing_candidates", backend_id: "bk_claude_code" };
+
+  it("stores a well-sourced candidate", async () => {
+    const { deliverSourcingCandidates } = await import("../../src/worker/boss/duties/deliverReport");
+    await seed(CONTRACT);
+    const out = await deliverSourcingCandidates(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      payload: {
+        candidates: [{
+          name: "Example Secondaries Partners", kind: "buyer", ticket_floor_usd: 20_000_000,
+          thesis: "Direct secondaries programme in late-stage software.",
+          source_url: "https://example.com/strategy", source_name: "Strategy page",
+          read_at: "2026-09-07T12:00:00Z",
+        }],
+      },
+    });
+    expect(out).toEqual({ inserted: 1, skipped: 0 });
+
+    const c = await row<any>(`SELECT * FROM sourcing_candidates`);
+    expect(c.status).toBe("new");
+    expect(c.origin).toBe("public_research");
+    expect(c.ticket_floor_usd).toBe(20_000_000);
+    expect(c.read_at).toBe(Date.parse("2026-09-07T12:00:00Z"));
+  });
+
+  it("drops a candidate with no source, because checking one costs her a phone call", async () => {
+    /*
+     * THE LOAD-BEARING RULE. The whole failure mode of automated sourcing is a plausible name nobody
+     * can verify. The run is told this; being told is not a guarantee, so it is enforced here too.
+     */
+    const { deliverSourcingCandidates } = await import("../../src/worker/boss/duties/deliverReport");
+    await seed(CONTRACT);
+    const out = await deliverSourcingCandidates(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      payload: { candidates: [{ name: "Plausible Capital", thesis: "Sounds right." }] },
+    });
+    expect(out).toEqual({ inserted: 0, skipped: 1 });
+    expect(await row(`SELECT id FROM sourcing_candidates`)).toBeNull();
+  });
+
+  it("never promotes a web-found firm into her real network", async () => {
+    /*
+     * `people` and `relationships` drive the daily touch. A stranger silently becoming a
+     * "relationship" would make the system lie about who she knows, which is the one thing that
+     * would make the first money move worthless.
+     */
+    const { deliverSourcingCandidates } = await import("../../src/worker/boss/duties/deliverReport");
+    await seed(CONTRACT);
+    const before = await row<any>(`SELECT COUNT(*) AS n FROM people`);
+    await deliverSourcingCandidates(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      payload: { candidates: [{ name: "Example Two", source_url: "https://example.com/x" }] },
+    });
+    const after = await row<any>(`SELECT COUNT(*) AS n FROM people`);
+    expect(after.n).toBe(before.n);
+    expect((await row<any>(`SELECT status FROM sourcing_candidates`)).status).toBe("new");
+  });
+
+  it("re-runs without duplicating, and refreshes the source", async () => {
+    const { deliverSourcingCandidates } = await import("../../src/worker/boss/duties/deliverReport");
+    await seed(CONTRACT);
+    const one = { name: "Same Firm", kind: "buyer", source_url: "https://example.com/old", thesis: "Old." };
+    await deliverSourcingCandidates(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", payload: { candidates: [one] } });
+    await deliverSourcingCandidates(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      payload: { candidates: [{ ...one, source_url: "https://example.com/new", thesis: "New." }] },
+    });
+    const rows = await all(`SELECT thesis, source_url FROM sourcing_candidates`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].thesis).toBe("New.");
+  });
+
+  it("delivers nothing for a task not contracted to source", async () => {
+    const { deliverSourcingCandidates } = await import("../../src/worker/boss/duties/deliverReport");
+    await seed({ backend_id: "bk_claude_code" });
+    expect(await deliverSourcingCandidates(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded", payload: { candidates: [{ name: "X", source_url: "u" }] },
+    })).toBeNull();
+  });
+
+  it("writes nothing when the run failed", async () => {
+    const { deliverSourcingCandidates } = await import("../../src/worker/boss/duties/deliverReport");
+    await seed(CONTRACT);
+    const out = await deliverSourcingCandidates(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "failed", payload: { candidates: [{ name: "X", source_url: "u" }] },
+    });
+    expect(out).toEqual({ inserted: 0, skipped: 0 });
+    expect(await row(`SELECT id FROM sourcing_candidates`)).toBeNull();
+  });
+});
+
+describe("the sourcing duty is scoped and honest about what it cannot do", () => {
+  it("does not go near her email, and says so in its own instruction", async () => {
+    /*
+     * She asked for three things: web sourcing, contacts gone quiet in her brokerage inbox, and
+     * missed connections between clients. Only the first can run — the inbox is offered but not
+     * connected, and it is the most confidential material she owns. A duty that silently did two
+     * thirds of its job would be the worst of both, so the prompt forbids the email half by name and
+     * requires it to be reported as a gap.
+     */
+    const duty = await row<any>(`SELECT task_input, local_hour, local_minute FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
+    expect(duty).not.toBeNull();
+    const input = JSON.parse(duty.task_input);
+    expect(input.prompt).toContain("DO NOT ATTEMPT");
+    expect(input.prompt).toMatch(/do not read any mailbox/i);
+    expect(input.prompt).toMatch(/record in gaps that the email half did not run/i);
+  });
+
+  it("asks for the ticket size she actually wants", async () => {
+    const duty = await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
+    const input = JSON.parse(duty.task_input);
+    expect(input.prompt).toContain("$5M+");
+    expect(input.prompt).toMatch(/\$20M\+ is strongly preferred/);
+    // Ten sourced names beat fifty guesses — the instruction has to say so or it will pad.
+    expect(input.prompt).toMatch(/Ten well-sourced names beat fifty guesses/);
+  });
+
+  it("runs after the report so the two never contend for the single work slot", async () => {
+    const sourcing = await row<any>(`SELECT local_hour, local_minute FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
+    const report = await row<any>(`SELECT local_hour, local_minute FROM standing_duties WHERE id = 'duty_exec_intel'`);
+    const mins = (d: any) => d.local_hour * 60 + d.local_minute;
+    expect(mins(sourcing)).toBeGreaterThan(mins(report));
+  });
+
+  it("has its own workspace, separate from the report's", async () => {
+    // Two runs writing delivers.json into one directory would race and overwrite each other.
+    const s = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`)).task_input);
+    const r = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_exec_intel'`)).task_input);
+    expect(s.requested.repo_path).not.toBe(r.requested.repo_path);
   });
 });
