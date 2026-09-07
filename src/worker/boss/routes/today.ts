@@ -438,6 +438,38 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * had no day.
    */
   await ensureRunOfShow(env, day.id);
+  /*
+   * Duty health, read here rather than on a cron, so it is true at the moment she looks rather than
+   * at the moment something last checked.
+   */
+  const [staleDuties, stuckDuties, lastNetworkRefresh] = await Promise.all([
+    env.DB.prepare(
+      `SELECT id, name, last_run_at, created_at
+         FROM standing_duties
+        WHERE suspended = 0
+          AND COALESCE(last_run_at, 0) <
+              ? - (CASE cadence WHEN 'daily' THEN 2 WHEN 'weekly' THEN 14 ELSE 62 END) * 86400000`,
+    ).bind(Date.now()).all<{ id: string; name: string; last_run_at: number | null; created_at: number }>(),
+
+    /*
+     * A DUTY WHOSE LAST TASK NEVER FINISHED. `queued` means nothing sent it; `running` for a long
+     * time means nothing on her Mac claimed it. Both look identical from the duty's own record,
+     * which is exactly how the report duty stayed broken.
+     */
+    env.DB.prepare(
+      `SELECT d.id, d.name, t.status
+         FROM standing_duties d
+         JOIN tasks t ON t.id = d.last_task_id
+        WHERE d.suspended = 0
+          AND t.status IN ('queued', 'running')
+          AND t.created_at < ? - 86400000`,
+    ).bind(Date.now()).all<{ id: string; name: string; status: string }>(),
+
+    env.DB.prepare(
+      `SELECT ts FROM system_events WHERE event = 'network_refreshed' ORDER BY ts DESC LIMIT 1`,
+    ).first<{ ts: number }>(),
+  ]);
+
   const [runOfShow, focus] = await Promise.all([
     readRunOfShow(env, day.id, {
       dayMode: (day as { day_mode?: string | null }).day_mode ?? null,
@@ -466,6 +498,59 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       source_type: "tasks", source_id: null,
     });
   }
+  /*
+   * A DUTY THAT STOPPED WORKING SAYS SO, which nothing did until now.
+   *
+   * The Executive Intelligence Report duty fired on time for weeks and produced nothing, and the
+   * only reason it was ever caught is that she opened the page and said "I have no report". Every
+   * other duty can fail the same way: the clock advances, `last_run_at` updates, and the work
+   * silently never lands. That is the defect class this whole system keeps producing, and here it
+   * is in its most expensive form — a duty is the thing that runs when nobody is watching.
+   *
+   * TWO DIFFERENT FAILURES, NAMED SEPARATELY. A duty that has not fired at all is a broken clock. A
+   * duty firing normally whose last task never finished is a broken worker — most likely nothing on
+   * her Mac claimed it. Reporting both as "something is wrong with duties" would send her to the
+   * wrong place.
+   *
+   * THE THRESHOLD IS TWICE THE CADENCE, so a daily duty is quiet until it has missed two mornings.
+   * One missed run is a laptop that was closed; two is a fault.
+   */
+  for (const d of staleDuties.results ?? []) {
+    const days = Math.floor((now - (d.last_run_at ?? d.created_at ?? now)) / 86_400_000);
+    alerts.push({
+      severity: "high",
+      text: d.last_run_at
+        ? `"${d.name}" has not fired for ${days} days. Its clock says it should have.`
+        : `"${d.name}" has never fired since it was created.`,
+      source_type: "tasks", source_id: d.id,
+    });
+  }
+  /*
+   * MONIQUE'S NETWORK REFRESH IS WATCHED THE SAME WAY A DUTY IS, even though a scheduled local job
+   * executes it rather than an agent. The touch list is only as true as its last refresh: a
+   * relationship silent for 200 days stays at 200 in the record until something re-reads the
+   * mailbox, and the entire instrument exists to catch decay nobody can see. A decaying decay
+   * detector is the joke this alarm prevents.
+   */
+  if (lastNetworkRefresh) {
+    const refreshDays = Math.floor((now - lastNetworkRefresh.ts) / 86_400_000);
+    if (refreshDays > 10) {
+      alerts.push({
+        severity: "high",
+        text: `Monique has not refreshed the network in ${refreshDays} days, so who has gone quiet is ${refreshDays} days out of date.`,
+        source_type: "tasks", source_id: "emp_relationship",
+      });
+    }
+  }
+
+  for (const d of stuckDuties.results ?? []) {
+    alerts.push({
+      severity: "high",
+      text: `"${d.name}" fired, but its last task is still ${d.status} — nothing picked it up.`,
+      source_type: "tasks", source_id: d.id,
+    });
+  }
+
   if ((tasksAll.failed ?? 0) > 0) {
     alerts.push({ severity: "medium", text: `${tasksAll.failed} task${tasksAll.failed === 1 ? "" : "s"} failed and have not been requeued or cancelled.`, source_type: "tasks", source_id: null });
   }

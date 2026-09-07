@@ -1,12 +1,8 @@
 {
-  "_note": "Casting sheet for the Boss OS roster (7 seats, as of migration 0175). Owner direction, 6 Sep 2026: every employee is a Black woman, one direction for all seven, modelesque. APPEARANCE LIVES ONLY HERE. There is no race, appearance or demographic column in the employees table, in the registry, or anywhere in the worker — a face is a rendering concern and a charter is what the system reasons about. This file is the whole of the record, deliberately, and the chassis's own casting sheet states the same rule for the same reason.",
-
+  "_note": "Casting sheet for the Boss OS roster (8 seats, as of migration 0192). Owner direction, 6 Sep 2026: every employee is a Black woman, one direction for all seven, modelesque. APPEARANCE LIVES ONLY HERE. There is no race, appearance or demographic column in the employees table, in the registry, or anywhere in the worker \u2014 a face is a rendering concern and a charter is what the system reasons about. This file is the whole of the record, deliberately, and the chassis's own casting sheet states the same rule for the same reason.",
   "_honesty": "THESE ARE AI-GENERATED IMAGES OF PEOPLE WHO DO NOT EXIST. That sentence is not decoration: seven polished headshots on a Team screen are indistinguishable from photographs of real staff, and the one way this becomes a problem is if someone later mistakes one for a colleague. It is stated here, in the alt text every portrait renders with, and in the manifest committed beside the assets. None of these faces may ever be presented as a person.",
-
-  "_style": "Editorial fashion-portrait headshot of a Black woman. Strikingly attractive, model-like features: excellent bone structure, high cheekbones, symmetrical face, luminous clear complexion, expressive eyes, groomed and polished. Reads 30-42, poised and senior — the seniority is in the composure, not in ageing the face. Natural window light from the left, soft neutral grey-warm backdrop, shoulders-up framing, shallow depth of field, 85mm lens look, direct confident eye contact, subtle natural smile, impeccably styled modern business-casual. Photorealistic, high-end magazine quality, no text, no logos, no watermark.",
-
-  "_variation": "One direction, seven people — not one person seven times. Hair, styling and colour vary per seat so the roster reads as a team rather than a series. The variation lines below are the only per-seat difference; everything else comes from _style.",
-
+  "_style": "Editorial fashion-portrait headshot of a Black woman. Strikingly attractive, model-like features: excellent bone structure, high cheekbones, symmetrical face, luminous clear complexion, expressive eyes, groomed and polished. Reads 30-42, poised and senior \u2014 the seniority is in the composure, not in ageing the face. Natural window light from the left, soft neutral grey-warm backdrop, shoulders-up framing, shallow depth of field, 85mm lens look, direct confident eye contact, subtle natural smile, impeccably styled modern business-casual. Photorealistic, high-end magazine quality, no text, no logos, no watermark.",
+  "_variation": "One direction, seven people \u2014 not one person seven times. Hair, styling and colour vary per seat so the roster reads as a team rather than a series. The variation lines below are the only per-seat difference; everything else comes from _style.",
   "cast": [
     {
       "name": "Simone",
@@ -37,13 +33,18 @@
       "name": "Kendra",
       "role": "Systems Manager",
       "look": "sleek high ponytail, slate-blue button-down, minimal silver",
-      "_note": "Kendra carries two former seats — Model Router and Continuity — merged in 0175."
+      "_note": "Kendra carries two former seats \u2014 Model Router and Continuity \u2014 merged in 0175."
     },
     {
       "name": "Toni",
       "role": "Chief Risk Officer",
       "look": "close-cropped natural, structured black blazer over white, single gold cuff",
       "_note": "The only employee in the trading lane. Lane isolation is architectural, not cosmetic."
+    },
+    {
+      "name": "Imani",
+      "role": "Director of Practice",
+      "look": "long box braids gathered back, warm terracotta wrap top, thin gold chain"
     }
   ]
 }

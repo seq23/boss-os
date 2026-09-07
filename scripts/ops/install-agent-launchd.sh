@@ -120,6 +120,84 @@ PACKETEOF
 launchctl unload "$PACKET_PLIST" 2>/dev/null || true
 launchctl load "$PACKET_PLIST"
 
+# ─── The weekly network refresh ──────────────────────────────────────────────
+#
+# The contact extraction was a command she had to remember to type, which means someone silent for
+# 200 days stays at 200 in the record until she happens to re-run it. The whole instrument exists to
+# catch decay she cannot see, and it was itself decaying between runs.
+#
+# Sunday 18:00: after the week, before the Monday morning gate reads the touch list. It reads the
+# mailbox and syncs the code-named list — the mapping never leaves this machine, and nothing about
+# it is sent anywhere.
+NETWORK_LABEL="com.seq.boss-network"
+NETWORK_PLIST="$HOME/Library/LaunchAgents/$NETWORK_LABEL.plist"
+
+cat > "$NETWORK_PLIST" <<NETEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$NETWORK_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO && npm run --silent contacts:extract && npm run --silent contacts:sync -- --commit</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/network.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/network.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+NETEOF
+
+launchctl unload "$NETWORK_PLIST" 2>/dev/null || true
+launchctl load "$NETWORK_PLIST"
+echo "Installed $NETWORK_LABEL — Sunday 18:00 Central."
+
+# ─── The weekly property read ────────────────────────────────────────────────
+#
+# Camille's Search Console analysis and Danielle's shipping heartbeat, in one job because they answer
+# halves of the same question: are her assets shipping, and is anyone finding them.
+#
+# BOTH ARE LOCAL JOBS AND NEITHER CAN BE AN AGENT. The Claude Code runner strips every credential
+# from its environment on purpose, so it cannot reach Search Console and cannot use her `gh` auth.
+# Agents research the open web; local jobs read her accounts. That split is the architecture.
+#
+# Monday 07:00, before the week: a performance read on Friday is one she cannot act on until Monday
+# anyway, and by then it is stale.
+PROPS_LABEL="com.seq.boss-properties"
+PROPS_PLIST="$HOME/Library/LaunchAgents/$PROPS_LABEL.plist"
+
+cat > "$PROPS_PLIST" <<PROPSEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$PROPS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO && npm run --silent spry:heartbeat; npm run --silent properties</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/properties.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/properties.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+PROPSEOF
+
+launchctl unload "$PROPS_PLIST" 2>/dev/null || true
+launchctl load "$PROPS_PLIST"
+echo "Installed $PROPS_LABEL — Monday 07:00 Central."
+
 echo "Installed $LABEL — checks for queued work at 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
@@ -137,16 +215,18 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$PACKET_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL"; then break; fi
   sleep 1
 done
 
 missing=""
 loaded "$LABEL" || missing="$missing $LABEL"
 loaded "$PACKET_LABEL" || missing="$missing $PACKET_LABEL"
+loaded "$NETWORK_LABEL" || missing="$missing $NETWORK_LABEL"
+loaded "$PROPS_LABEL" || missing="$missing $PROPS_LABEL"
 
 if [ -z "$missing" ]; then
-  echo "Verified: launchd lists $LABEL and $PACKET_LABEL."
+  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL and $PROPS_LABEL."
 else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1

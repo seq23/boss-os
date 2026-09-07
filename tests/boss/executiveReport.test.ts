@@ -437,3 +437,86 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
     expect(s.requested.repo_path).not.toBe(r.requested.repo_path);
   });
 });
+
+/**
+ * KENDRA'S TOOL SUGGESTIONS — and the one rule that makes them worth anything.
+ *
+ * Her ask was to stop having to go looking for tools herself, and the example that defined the
+ * problem was "ex software lightreel.ai i dont know if its good or not." That question cannot be
+ * answered by the vendor: every landing page says the product is excellent.
+ */
+describe("tool suggestions refuse the vendor as its own evidence", () => {
+  const TASK = "tsk_tools_test";
+  const CONTRACT = { delivers: "tool_suggestions", backend_id: "bk_claude_code" };
+
+  async function seed(input: Record<string, unknown>) {
+    await env.DB.prepare(`DELETE FROM tool_suggestions`).run();
+    await env.DB.prepare(`DELETE FROM tasks WHERE id = ?`).bind(TASK).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, lane, title, input, status, created_at) VALUES (?, 'ops', 'Tools', ?, 'running', ?)`,
+    ).bind(TASK, JSON.stringify(input), Date.now()).run();
+  }
+
+  const deliver = async (tools: unknown[]) => {
+    const { deliverToolSuggestions } = await import("../../src/worker/boss/duties/deliverReport");
+    return deliverToolSuggestions(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded", payload: { tools },
+    });
+  };
+
+  it("marks a tool UNPROVEN when the only source is the vendor's own site", async () => {
+    await seed(CONTRACT);
+    const out = await deliver([{
+      name: "Lightreel", url: "https://lightreel.ai/pricing", what_it_does: "Short-form video",
+      verdict: "Looks excellent", evidence: "Their homepage says so", evidence_url: "https://www.lightreel.ai/",
+    }]);
+    expect(out!.unproven).toBe(1);
+
+    const row = await row2();
+    expect(row.verdict).toMatch(/^UNPROVEN/);
+    // The vendor link is removed rather than stored as if it were evidence.
+    expect(row.evidence_url).toBeNull();
+    expect(row.evidence).toMatch(/vendor's own site/i);
+  });
+
+  const row2 = async () => row<any>(`SELECT * FROM tool_suggestions LIMIT 1`);
+
+  it("keeps a verdict backed by an independent source", async () => {
+    await seed(CONTRACT);
+    const out = await deliver([{
+      name: "Lightreel", url: "https://lightreel.ai/", what_it_does: "Short-form video",
+      serves: "digital_products", price_note: "$29/mo", free_tier: true,
+      instead_of: "Editing by hand, or CapCut free",
+      verdict: "Fine for talking-head clips, weak for anything with b-roll",
+      evidence: "A creator's teardown after 3 months of use",
+      evidence_url: "https://someblog.example/lightreel-after-three-months",
+    }]);
+    expect(out!.unproven).toBe(0);
+    const r = await row2();
+    expect(r.verdict).not.toMatch(/UNPROVEN/);
+    expect(r.serves).toBe("digital_products");
+    expect(r.free_tier).toBe(1);
+    // What it replaces is the half that keeps costs down.
+    expect(r.instead_of).toContain("CapCut");
+  });
+
+  it("marks it unproven when no evidence is offered at all", async () => {
+    await seed(CONTRACT);
+    const out = await deliver([{ name: "X", url: "https://x.example/", what_it_does: "Does a thing" }]);
+    expect(out!.unproven).toBe(1);
+    expect((await row2()).verdict).toMatch(/^UNPROVEN/);
+  });
+
+  it("never invents a price", async () => {
+    // A guessed price is the one number that turns a suggestion into a bad decision.
+    await seed(CONTRACT);
+    await deliver([{ name: "Y", url: "https://y.example/", what_it_does: "Thing", evidence_url: "https://z.example/r" }]);
+    expect((await row2()).price_note).toBeNull();
+  });
+
+  it("everything lands as a suggestion, never adopted", async () => {
+    await seed(CONTRACT);
+    await deliver([{ name: "Z", url: "https://z.example/", what_it_does: "Thing", evidence_url: "https://q.example/r" }]);
+    expect((await row2()).status).toBe("new");
+  });
+});

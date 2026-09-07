@@ -190,10 +190,31 @@ relationships.post("/sync", async (c) => {
     created++;
   }
 
+  /*
+   * THIS IS MONIQUE'S WORK, AND THE RECORD SAYS SO.
+   *
+   * The owner's challenge was fair: "shouldn't an employee do this part." The Director of
+   * Relationships is exactly whose job a decaying network is, and a refresh that appeared nowhere
+   * in the OS made her a fictional employee with a department and no work.
+   *
+   * WHY AN AGENT CANNOT ACTUALLY RUN IT, which is the part worth writing down. The Claude Code
+   * runner strips every credential from its environment on purpose — `childEnv` removes anything
+   * matching KEY, TOKEN, SECRET, PASSCODE — so it cannot unlock the vault and cannot read the
+   * mailbox. That is a deliberate property of the sandbox, not a gap to route around. The launchd
+   * job runs as her and can.
+   *
+   * So the executor is a scheduled local job and the OWNER is Monique: her name on the record, the
+   * work visible, and the staleness alarm below firing under her name when it stops.
+   */
   await audit(c.env.DB, {
-    actor: "system", lane: "ops", entityType: "relationship", action: "synced_from_mailbox",
-    detail: { created, updated, total: contacts.length },
+    actor: "employee", lane: "ops", entityType: "relationship", entityId: "emp_relationship",
+    action: "synced_from_mailbox",
+    detail: { created, updated, total: contacts.length, executor: "launchd:com.seq.boss-network" },
   });
+  await logEvent(c.env.DB, {
+    level: "info", scope: "relationships", event: "network_refreshed", entityId: "emp_relationship",
+    detail: { created, updated, total: contacts.length },
+  }).catch(() => {});
 
   return ok(c, { created, updated, total: contacts.length }, 201);
 });

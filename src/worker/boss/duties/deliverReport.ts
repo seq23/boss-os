@@ -128,6 +128,146 @@ export async function deliverSourcingCandidates(
   return { inserted, skipped };
 }
 
+/**
+ * Prospects and practice, delivered the same way everything else is.
+ *
+ * ONE CONTRACT, NOT FOUR. `input.delivers` names the table; a run's `delivers.json` carries the
+ * payload; this decides where it lands. A second convention per duty is the drift that has already
+ * cost this codebase two separate days.
+ *
+ * A PROSPECT WITHOUT A URL IS DROPPED, for the identical reason a buyer without a source is: the
+ * failure mode of automated prospecting is a plausible-sounding page that costs her an hour to
+ * discover is dead. The run is told; being told is not a guarantee.
+ */
+export async function deliverLinkProspects(
+  env: Env,
+  args: { taskId: string; runId: string; payload: Record<string, unknown> | null; runStatus: string; now?: number },
+): Promise<{ inserted: number; skipped: number } | null> {
+  const now = args.now ?? Date.now();
+  const task = await env.DB.prepare(`SELECT id, input FROM tasks WHERE id = ?`).bind(args.taskId)
+    .first<{ id: string; input: string | null }>();
+  if (!task) return null;
+
+  let input: Record<string, unknown> = {};
+  try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
+  if (input.delivers !== "link_prospects") return null;
+  if (args.runStatus !== "succeeded") return { inserted: 0, skipped: 0 };
+
+  const rows = Array.isArray(args.payload?.prospects) ? (args.payload!.prospects as Record<string, unknown>[]) : [];
+  let inserted = 0;
+  let skipped = 0;
+  const KINDS = ["resource_page", "directory", "unlinked_mention", "guest_post", "profile", "other"];
+
+  for (const p of rows) {
+    const url = typeof p?.url === "string" ? p.url.trim() : "";
+    const property = typeof p?.property === "string" ? p.property.trim() : "";
+    if (!url || !property) { skipped++; continue; }
+
+    await env.DB.prepare(
+      `INSERT INTO link_prospects
+         (id, property, url, site_name, kind, rationale, approach, authority_note, status, run_id, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?, 'new', ?,?,?)
+       ON CONFLICT(property, url) DO UPDATE SET
+         rationale = excluded.rationale,
+         approach = excluded.approach,
+         authority_note = excluded.authority_note,
+         updated_at = excluded.updated_at`,
+    ).bind(
+      newId("lnk"), property, url,
+      typeof p?.site_name === "string" ? p.site_name : null,
+      typeof p?.kind === "string" && KINDS.includes(p.kind) ? p.kind : "other",
+      typeof p?.rationale === "string" ? p.rationale : null,
+      typeof p?.approach === "string" ? p.approach : null,
+      // Never estimated on this side either: absent stays absent.
+      typeof p?.authority_note === "string" ? p.authority_note : null,
+      args.runId, now, now,
+    ).run();
+    inserted++;
+  }
+
+  await logEvent(env.DB, {
+    level: "info", scope: "duties", event: "link_prospects_delivered", entityId: args.taskId,
+    detail: { inserted, skipped, run_id: args.runId },
+  });
+  return { inserted, skipped };
+}
+
+/**
+ * Kendra's tool suggestions.
+ *
+ * THE VENDOR CANNOT BE THE EVIDENCE, and that is enforced here rather than only requested. A row
+ * whose `evidence_url` shares a host with the product's own URL is stored with its evidence
+ * stripped and its verdict marked unproven — because a suggestion sourced from marketing copy is a
+ * repost, and the owner's whole question was "I don't know if it's good."
+ */
+export async function deliverToolSuggestions(
+  env: Env,
+  args: { taskId: string; runId: string; payload: Record<string, unknown> | null; runStatus: string; now?: number },
+): Promise<{ inserted: number; skipped: number; unproven: number } | null> {
+  const now = args.now ?? Date.now();
+  const task = await env.DB.prepare(`SELECT id, input FROM tasks WHERE id = ?`).bind(args.taskId)
+    .first<{ id: string; input: string | null }>();
+  if (!task) return null;
+
+  let input: Record<string, unknown> = {};
+  try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
+  if (input.delivers !== "tool_suggestions") return null;
+  if (args.runStatus !== "succeeded") return { inserted: 0, skipped: 0, unproven: 0 };
+
+  const rows = Array.isArray(args.payload?.tools) ? (args.payload!.tools as Record<string, unknown>[]) : [];
+  const SERVES = ["brokerage", "west_peek", "ads", "saas", "digital_products", "youtube", "practice", "ops"];
+  let inserted = 0;
+  let skipped = 0;
+  let unproven = 0;
+
+  const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return null; } };
+
+  for (const t of rows) {
+    const name = typeof t?.name === "string" ? t.name.trim() : "";
+    const url = typeof t?.url === "string" ? t.url.trim() : "";
+    const what = typeof t?.what_it_does === "string" ? t.what_it_does.trim() : "";
+    if (!name || !url || !what) { skipped++; continue; }
+
+    let evidence = typeof t?.evidence === "string" ? t.evidence : null;
+    let evidenceUrl = typeof t?.evidence_url === "string" ? t.evidence_url : null;
+    let verdict = typeof t?.verdict === "string" ? t.verdict : null;
+
+    // Same host as the product, or no evidence at all: the verdict is unproven and says so.
+    const selfSourced = Boolean(evidenceUrl && host(evidenceUrl) && host(evidenceUrl) === host(url));
+    if (selfSourced || !evidenceUrl) {
+      unproven++;
+      evidence = selfSourced ? "The only source found was the vendor's own site." : evidence ?? "No independent source found.";
+      evidenceUrl = null;
+      verdict = `UNPROVEN — ${verdict ?? "no independent evidence found"}.`;
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO tool_suggestions
+         (id, name, url, serves, what_it_does, price_note, free_tier, instead_of, verdict, evidence, evidence_url, status, run_id, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?, 'new', ?,?,?)
+       ON CONFLICT(url) DO UPDATE SET
+         verdict = excluded.verdict, evidence = excluded.evidence, evidence_url = excluded.evidence_url,
+         price_note = excluded.price_note, instead_of = excluded.instead_of, updated_at = excluded.updated_at`,
+    ).bind(
+      newId("tol"), name, url,
+      typeof t?.serves === "string" && SERVES.includes(t.serves) ? t.serves : "ops",
+      what,
+      // Never defaulted to a number: a hidden price stays hidden.
+      typeof t?.price_note === "string" ? t.price_note : null,
+      t?.free_tier === true ? 1 : 0,
+      typeof t?.instead_of === "string" ? t.instead_of : null,
+      verdict, evidence, evidenceUrl, args.runId, now, now,
+    ).run();
+    inserted++;
+  }
+
+  await logEvent(env.DB, {
+    level: "info", scope: "duties", event: "tools_delivered", entityId: args.taskId,
+    detail: { inserted, skipped, unproven, run_id: args.runId },
+  });
+  return { inserted, skipped, unproven };
+}
+
 export async function deliverExecutiveReport(
   env: Env,
   args: { taskId: string; runId: string; report: DeliveredReport | null; runStatus: string; now?: number },

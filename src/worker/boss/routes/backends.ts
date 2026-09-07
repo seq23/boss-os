@@ -19,7 +19,7 @@ import { logEvent } from "../lib/log";
 import { newId } from "../lib/id";
 import { getSetting } from "../lib/settings";
 import { classify } from "../intake/classify";
-import { deliverExecutiveReport, deliverSourcingCandidates } from "../duties/deliverReport";
+import { deliverExecutiveReport, deliverSourcingCandidates, deliverLinkProspects, deliverToolSuggestions } from "../duties/deliverReport";
 import { buildEnvelope } from "../intake/envelope";
 import { setSpendLever, spendLeverState, SPEND_LEVER_POSITIONS, type SpendLeverPosition } from "../router/spend";
 import {
@@ -608,6 +608,18 @@ backends.post("/report", async (c) => {
        * what the backend did on her machine and the report is a document she reads at 7am. See
        * `duties/deliverReport.ts` for why collapsing the two breaks one of them.
        */
+      await deliverToolSuggestions(c.env, {
+        taskId: task.id, runId,
+        payload: (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as any,
+        runStatus: status, now,
+      }).catch(() => null);
+
+      await deliverLinkProspects(c.env, {
+        taskId: task.id, runId,
+        payload: (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as any,
+        runStatus: status, now,
+      }).catch(() => null);
+
       await deliverSourcingCandidates(c.env, {
         taskId: task.id,
         runId,

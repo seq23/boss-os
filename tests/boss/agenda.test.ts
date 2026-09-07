@@ -279,6 +279,36 @@ describe("the execution contract closes before it starts", () => {
   });
 });
 
+describe("every pillar says what it means", () => {
+  beforeEach(clean);
+
+  it("names each pillar in her language, because she did not know what one of them was", async () => {
+    /*
+     * HER WORDS: "idk what Execution is - i know what Body is." A pillar she cannot name is a pillar
+     * she skips, and four of them are the entire agenda. §5.7's "at least one concrete
+     * asset-advancing action" is a definition only its author could love.
+     *
+     * So every contract carries `means`, and every one of them names the employee who owns it —
+     * which was the other half of her point: the employees should be helping with all the pillars,
+     * and eight of nine had no work at all.
+     */
+    const { body } = await apiJson("/api/today/gates/morning", { method: "POST", body: {} });
+    const agenda = JSON.parse(body.data.day.morning_agenda);
+
+    for (const pillar of ["spirit", "wealth", "execution"] as const) {
+      const means = agenda.pillars[pillar].means;
+      expect(means, `${pillar} does not say what it means`).toBeTruthy();
+      // A definition that just restates the canon section is the thing being replaced.
+      expect(means).not.toMatch(/§/);
+    }
+
+    expect(agenda.pillars.execution.means).toMatch(/built or shipped/i);
+    expect(agenda.pillars.execution.means).toMatch(/Danielle/);
+    expect(agenda.pillars.wealth.means).toMatch(/Camille|Monique/);
+    expect(agenda.pillars.spirit.means).toMatch(/Imani/);
+  });
+});
+
 describe("the gate proposes the day and she overrides it", () => {
   beforeEach(clean);
 

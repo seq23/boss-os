@@ -51,7 +51,10 @@ const JSON_OUT = process.argv.includes("--json");
 const PROPERTIES = [
   // Ads and leads — the Spry line closest to real revenue.
   { repo: "seq23/local-guides-generator", label: "Local Guides generator — the 5 verticals" },
-  { repo: "seq23/local-guides-citation-velocity", label: "Citation velocity site" },
+  // theindustryguides.com. It speeds up citations and LLM surfacing for the generator's sites, and
+  // it is where she experiments — so a red lane here is expected more often than elsewhere and a
+  // long silence matters more.
+  { repo: "seq23/local-guides-citation-velocity", label: "theindustryguides.com — citation velocity" },
   // SaaS, looking for partnership distribution.
   { repo: "seq23/heygetonmylevel", label: "heygetonmylevel" },
   // Digital products.

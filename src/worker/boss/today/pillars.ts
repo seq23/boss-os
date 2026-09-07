@@ -33,6 +33,13 @@ import { stalledDeals, anchorStreak } from "./close";
 
 export interface PillarContract {
   available: boolean;
+  /**
+   * What this pillar MEANS, in her language, carried on every contract.
+   *
+   * Added because she said plainly that she did not know what Execution was. A pillar name that
+   * needs a canon section to decode is a pillar she skips, and four of these are the whole agenda.
+   */
+  means?: string;
   /** The one exact act. §15.4 wants an act, not a topic. */
   action: string;
   why: string;
@@ -57,6 +64,7 @@ export async function spiritContract(env: Env, dayId: string, hardDay: boolean):
      * than none, because it teaches her the line means nothing.
      */
     available: gratitude.unavailable === null,
+    means: "Your practice — the sentence, the sequence, the ancestral hour. Imani's pillar.",
     action: gratitude.sentence,
     why: "§8.5 — one sentence, spoken out loud, drawn from your real life rather than a quote.",
     ...(gratitude.unavailable ? { gap: gratitude.unavailable } : {}),
@@ -80,6 +88,8 @@ export async function spiritContract(env: Env, dayId: string, hardDay: boolean):
  * Tuesday. A deal is an outcome and cannot be promised; a touch is an act and can. Continuity over
  * intensity is Law 2, and two touches every day beats ten on Monday and none until Friday.
  */
+const WEALTH_MEANS = "Money in. Buyers, LPs, and the people who send you both. Camille and Monique's pillar.";
+
 export async function wealthContract(env: Env, weekday: number): Promise<PillarContract> {
   const project = firstMoneyProject();
 
@@ -118,6 +128,7 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
 
     return {
       available: true,
+      means: WEALTH_MEANS,
       action: `Review ${waiting} candidate${waiting === 1 ? "" : "s"} your analyst found. Keep, reject, or ask for more like one.`,
       why:
         "§5.3 — the brokerage has right of first refusal on the first money move, and the sourcing " +
@@ -177,6 +188,7 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
     if (empty) {
       return {
         available: true,
+        means: WEALTH_MEANS,
         action: "Name five people who have ever sent you a deal, or realistically could. Code names only.",
         why:
           "The one thing your analyst cannot find for you. New buyers it can source; who already " +
@@ -194,6 +206,7 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
     // Names exist and none is due: that is a real answer and a good day, not a gap.
     return {
       available: true,
+      means: WEALTH_MEANS,
       action: `${project.next_action ?? "Advance the engine."} Nobody is overdue, so pick the highest-value name and get ahead.`,
       why: "§5.3 — the brokerage has right of first refusal on the first money move, every day.",
     };
@@ -206,6 +219,7 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
 
   return {
     available: true,
+    means: WEALTH_MEANS,
     action: `Touch ${rows[0]!.full_name}. ${names.length > 1 ? `Then ${rows[1]!.full_name}.` : ""}`.trim(),
     why: "§5.3 — the brokerage has right of first refusal, and these are the names that have gone quiet.",
     detail: names,
@@ -213,12 +227,19 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
 }
 
 /**
- * EXECUTION — the first completion action.
+ * EXECUTION — and the first job of this function is to say what that word means.
  *
- * COMPLETION, NOT PROGRESS, and the distinction is hers: §5.7 defines meaningful work as "at least
- * one concrete asset-advancing action". The oldest open loop comes first because an open loop is
- * something already started that is decaying — finishing it is worth more than beginning a fourth
- * thing, and it is the specific failure mode a person with six side projects has.
+ * HER WORDS: "idk what Execution is - i know what Body is." A pillar she cannot name is a pillar
+ * that is not working, and that is a defect in the system rather than in her: §5.7 defines it as
+ * "at least one concrete asset-advancing action", which is a definition only its author could love.
+ *
+ * IN HER TERMS IT IS THIS: did anything you own actually get built or shipped. Her assets are the
+ * properties and the repos behind them, and Execution is the pillar that asks whether they moved.
+ * That is why Danielle — Technical Program Manager, Engineering — owns it, and every contract
+ * returned here now carries `means` so the word is never bare on the screen again.
+ *
+ * COMPLETION, NOT PROGRESS. The oldest open loop comes before a fourth new thing, because a person
+ * with six side projects fails by starting rather than by finishing.
  */
 export async function executionContract(env: Env, weekday: number): Promise<PillarContract> {
   /*
@@ -231,11 +252,14 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
    * deal that has quietly aged past its stage threshold is the one she would otherwise discover at
    * the point it is already dead.
    */
+  const MEANS = "Did anything you own actually get built or shipped. Danielle's pillar.";
+
   const stalled = await stalledDeals(env);
   if (stalled.length > 0) {
     const d = stalled[0]!;
     return {
       available: true,
+      means: MEANS,
       action: d.next_step ? `${d.name} — ${d.next_step}` : `${d.name} — decide the next step, or mark it dead.`,
       why:
         `${d.days_in_stage} days in ${d.stage}, past the ${d.threshold}-day mark for that stage. ` +
@@ -259,6 +283,7 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
     const days = Math.floor((Date.now() - loop.created_at) / 86_400_000);
     return {
       available: true,
+      means: MEANS,
       action: `Close: ${loop.title}`,
       why: `§5.7 — the oldest open loop, ${days} day${days === 1 ? "" : "s"} old. Finishing beats starting a fourth thing.`,
     };
@@ -273,6 +298,7 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
     const wp = PROJECTS.find((p) => p.key === "west_peek_raise")!;
     return {
       available: true,
+      means: MEANS,
       action: wp.next_action ?? "Advance the raise.",
       why: "§5.4 — Wednesday is the West Peek cadence, and the meeting is the deadline.",
     };
@@ -297,6 +323,7 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
    */
   return {
     available: true,
+    means: MEANS,
     action: "Nothing is owed. Take the empty slot or bank it.",
     why: "No open loops, and every other line is parked or self-running. That is the system working, not a gap.",
   };

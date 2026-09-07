@@ -73,6 +73,13 @@ const SNAPSHOT_TABLES = [
   // grant that unblocks reading LP replies. Everything else in the packet recomputes from records;
   // this does not.
   "meeting_agenda_items",
+  // 0193 — Monique's backlink prospects. The review status is the valuable part: a restore that lost
+  // it would hand her back pages she had already rejected, which is how a working list becomes one
+  // she stops trusting.
+  "link_prospects",
+  // 0194 — Kendra's tool suggestions. The status is the value: a restore that lost it would re-suggest
+  // things she has already rejected, and paying for a tool twice is the failure this list prevents.
+  "tool_suggestions",
   // Consent, not content. The coaching conversation itself has no table here and must never get
   // one — its residency is LOCAL_ONLY and this design honours that by not having a row to classify.
   "coaching_consent",
