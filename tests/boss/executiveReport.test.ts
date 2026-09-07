@@ -363,6 +363,26 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
     expect(mins(sourcing)).toBeGreaterThan(mins(report));
   });
 
+  it("is told to write as it goes, because a timeout must degrade to partial", async () => {
+    /*
+     * THE FIRST LIVE RUN LOST FIFTEEN MINUTES OF WORK. It researched for the full 900s, was killed
+     * by the hard timeout, and produced nothing: `stdout was not JSON`, an empty workspace, zero
+     * candidates. The whole deliverable had been staked on reaching the last line.
+     *
+     * The kill is correct and stays — an unattended run that hangs holds the single work slot for
+     * ever. What was wrong was the instruction. Web research is a loop over an unknown number of
+     * slow lookups, so the file is rewritten after every verified candidate and a kill at minute 14
+     * leaves thirteen minutes of names on disk.
+     */
+    const duty = await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
+    const input = JSON.parse(duty.task_input);
+    expect(input.prompt).toMatch(/AFTER EVERY CANDIDATE YOU VERIFY — not at the end/);
+    expect(input.prompt).toMatch(/killed without warning/i);
+    expect(input.prompt).toMatch(/Do not batch the write/i);
+    // Fifteen minutes was simply too short for the work.
+    expect(input.requested.max_seconds).toBeGreaterThanOrEqual(1800);
+  });
+
   it("has its own workspace, separate from the report's", async () => {
     // Two runs writing delivers.json into one directory would race and overwrite each other.
     const s = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`)).task_input);
