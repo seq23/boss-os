@@ -28,7 +28,8 @@ import {
   gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
 } from "../spirit/practice";
 import { buildBodyContract, logSomatic } from "../today/body";
-import { TIME_ACCURACY, natalChart, transits, type BirthData, type TimeAccuracy } from "../spirit/natal";
+import { TIME_ACCURACY, natalChart, transits, transitAspects, type BirthData, type TimeAccuracy } from "../spirit/natal";
+import { TRANSIT_CAVEAT } from "../spirit/transitMeaning";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
   ANCESTOR_MINUTES_TARGET, CONTRIBUTION_IDEAL, CONTRIBUTION_MINIMUM,
@@ -142,15 +143,35 @@ spirit.get("/day", async (c) => {
   if (birthRow) {
     const birth = JSON.parse(birthRow.value) as BirthData;
     const chart = natalChart(birth);
-    const active = transits(chart, Date.now())
-      .filter((t) => t.aspect !== null)
-      .sort((a, b) => a.from_natal - b.from_natal);
+    /*
+     * EVERY BODY AGAINST EVERY NATAL POINT, which is what she asked for and what `transits()` could
+     * never produce: it compared each body only to its own natal degree, so the screen could only
+     * ever show returns — and on any given day that means two slow outer-planet aspects that were
+     * equally true last month. The Moon crossing her natal Jupiter, the thing anyone actually
+     * tracks day to day, was structurally invisible.
+     */
+    const all = transitAspects(chart, Date.now());
+
+    /*
+     * SPLIT BY SPEED, BECAUSE THEY ARE DIFFERENT KINDS OF INFORMATION and merging them is what made
+     * the old screen useless in the other direction. A Pluto square is a season and reading it
+     * every morning tells her nothing new; a Moon aspect is a few hours and is the only part of
+     * this that is actually about today. Shown as two lists, labelled, rather than one sorted pile
+     * where the slow ones crowd out the fast ones by sheer number.
+     */
+    const today = all.filter((t) => t.speed === "fast");
+    const season = all.filter((t) => t.speed === "slow");
+
     sky = {
       available: true,
-      active,
+      // Kept under the old name so nothing downstream silently loses its list.
+      active: today,
+      season,
+      counts: { today: today.length, season: season.length },
       // Said plainly, because an empty list is a real answer and a blank space is not.
-      quiet: active.length === 0,
+      quiet: today.length === 0,
       note: ADVISORY_NOTE,
+      caveat: TRANSIT_CAVEAT,
     };
   }
 
@@ -375,7 +396,10 @@ spirit.get("/astro/natal", async (c) => {
       chart: natalChart(birth),
       // The transits the endpoint promised would follow. `at` lets a specific moment be asked for
       // rather than only "now", which is what makes a past or future day inspectable.
+      // Returns, kept because a body against its own natal degree is a cycle worth naming on its own.
       transits: transits(natalChart(birth), Number(c.req.query("at")) || Date.now()),
+      // Every body against every natal point, which is the list the Spirit screen reads.
+      aspects: transitAspects(natalChart(birth), Number(c.req.query("at")) || Date.now()),
       advisory: true,
       note: ADVISORY_NOTE,
     });

@@ -1,4 +1,5 @@
 import { planetPosition, geocentricLongitude, ZODIAC_SIGNS, METHOD_PLANETS } from "./planets";
+import { ORB, meaningFor } from "./transitMeaning";
 import { moonPosition } from "./astro";
 
 /**
@@ -319,4 +320,129 @@ export function transits(chart: NatalChart, at: number): Transit[] {
         aspect: aspect ? aspect.name : null,
       };
     });
+}
+
+// ─── Cross-body transits ─────────────────────────────────────────────────────
+
+export interface TransitAspect {
+  /** The moving body. */
+  body: string;
+  body_name: string;
+  /** Where it is right now. */
+  sign: string;
+  degrees_in_sign: number;
+  retrograde: boolean;
+  /** The natal point it is touching. */
+  natal_point: string;
+  natal_point_name: string;
+  natal_sign: string;
+  natal_degrees_in_sign: number;
+  aspect: string;
+  /** Degrees from exact, 0 = perfect. */
+  orb: number;
+  /** Closing in, or moving off. A separating aspect has already done whatever it was going to do. */
+  applying: boolean;
+  /** Whether this is an hours-long event or a months-long one. */
+  speed: "fast" | "slow";
+  meaning: string;
+}
+
+/** Every body that actually moves against the chart. Node and Lilith are natal points only. */
+const TRANSITING = ["moon", "sun", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto", "chiron"];
+const FAST = new Set(["moon", "sun", "mercury", "venus", "mars"]);
+
+const NATAL_NAMES: Record<string, string> = {
+  ascendant: "Ascendant", midheaven: "Midheaven", fortune: "Lot of Fortune",
+};
+
+function positionAt(key: string, at: number): { longitude: number; retrograde: boolean } {
+  if (key === "moon") return { longitude: moonPosition(at).longitude, retrograde: false };
+  const p = planetPosition(key, at);
+  return { longitude: p.longitude, retrograde: key === "sun" ? false : p.retrograde };
+}
+
+/**
+ * EVERY TRANSITING BODY AGAINST EVERY NATAL POINT — which is what "my transits" means to everybody
+ * except the function that used to live above.
+ *
+ * WHAT WAS WRONG, IN ONE SENTENCE: `transits()` compared each body only to ITS OWN natal position,
+ * so the only things that could ever appear were returns and their fractions. Ten bodies, one
+ * comparison each. The Spirit screen showed two lines — both of them slow outer-planet aspects that
+ * had been true for a year and would still be true next month — and the owner's complaint was
+ * exactly right: "the spirit tab does not have all the transits happening only 2 long term ones."
+ *
+ * The Moon crossing her natal Jupiter is the single most common thing anyone tracks day to day, and
+ * it was structurally impossible for the old function to notice, because the Moon was only ever
+ * compared to the Moon. Fifteen natal points times eleven bodies is a hundred and sixty-five
+ * comparisons instead of ten, and that is where a day's actual texture lives.
+ *
+ * ORB IS PER MOVING BODY, NOT PER ASPECT, and that is the change that keeps the list readable. A
+ * single orb is wrong in both directions at once: three degrees of Moon is seven hours, three
+ * degrees of Pluto is two years. `ORB` in transitMeaning.ts sizes each body to its own speed so a
+ * fast line means "today" and a slow line means "this season", and the `speed` field says which.
+ *
+ * SORTED BY EXACTNESS, not by importance, because importance is a judgement this system does not
+ * get to make about her life — §5.2 again. What it can honestly report is which aspect is closest
+ * to perfect right now.
+ */
+export function transitAspects(chart: NatalChart, at: number): TransitAspect[] {
+  /*
+   * THE ANGLES ARE INCLUDED, and they are half the reason this is worth having. Transits to the
+   * Ascendant and Midheaven are how a chart says anything at all about work and how she lands in a
+   * room — and they exist only because the birth time is exact. They are simply absent, rather than
+   * approximated, when it is not.
+   */
+  const points: { key: string; name: string; longitude: number }[] = [
+    ...chart.placements.map((p) => ({ key: p.key, name: p.name, longitude: p.longitude })),
+  ];
+  for (const [key, angle] of [["ascendant", chart.ascendant], ["midheaven", chart.midheaven], ["fortune", chart.fortune]] as const) {
+    if (angle) points.push({ key, name: NATAL_NAMES[key]!, longitude: angle.longitude });
+  }
+
+  // Six hours ahead, to see whether the gap is closing. The Moon moves ~3° in that time and Pluto
+  // moves nothing measurable, which is correct — a Pluto aspect genuinely is not "applying today".
+  const AHEAD = 6 * 3_600_000;
+  const out: TransitAspect[] = [];
+
+  for (const body of TRANSITING) {
+    const now = positionAt(body, at);
+    const soon = positionAt(body, at + AHEAD);
+    const orbLimit = ORB[body] ?? 2;
+
+    for (const point of points) {
+      // A body against its own natal place is the return, and it belongs in this list too.
+      const gapNow = separation(now.longitude, point.longitude);
+      const gapSoon = separation(soon.longitude, point.longitude);
+
+      for (const aspect of ASPECTS) {
+        const orb = Math.abs(gapNow - aspect.angle);
+        if (orb > orbLimit) continue;
+        out.push({
+          body,
+          body_name: chart.placements.find((p) => p.key === body)?.name ?? body,
+          sign: ZODIAC_SIGNS[Math.floor(now.longitude / 30)]!,
+          degrees_in_sign: now.longitude % 30,
+          retrograde: now.retrograde,
+          natal_point: point.key,
+          natal_point_name: point.name,
+          natal_sign: ZODIAC_SIGNS[Math.floor(point.longitude / 30)]!,
+          natal_degrees_in_sign: point.longitude % 30,
+          aspect: aspect.name,
+          orb,
+          applying: Math.abs(gapSoon - aspect.angle) < orb,
+          speed: FAST.has(body) ? "fast" : "slow",
+          meaning: meaningFor(body, point.key, aspect.name),
+        });
+      }
+    }
+  }
+
+  return out.sort((a, b) => a.orb - b.orb);
+}
+
+/** Angular separation, 0–180. */
+function separation(a: number, b: number): number {
+  let gap = Math.abs(a - b) % 360;
+  if (gap > 180) gap = 360 - gap;
+  return gap;
 }

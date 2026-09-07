@@ -149,35 +149,78 @@ export function Spirit() {
       )}
 
       {/*
-        * WHAT IS OVERHEAD, AND ONLY WHAT TOUCHES HER CHART. Ten bodies with their degrees is a
-        * table to read; two or three aspects is something to know. On a quiet day it says so
-        * rather than padding the list to look busy.
+        * WHAT IS OVERHEAD, IN TWO LISTS, BECAUSE THEY ANSWER DIFFERENT QUESTIONS.
+        *
+        * The old panel rendered one list and it was always the same two outer-planet aspects — true
+        * last month, true next month, and therefore nothing to read at 6am. Today's fast aspects
+        * (Moon through Mars) are the part that is actually about today; the slow ones are the
+        * season, kept but put second and collapsed into a quieter block so they cannot crowd out
+        * the thing she opened the page for.
+        *
+        * Every line carries what it MEANS, composed in the Worker from what the moving body does
+        * and what the natal point is. §5.2 is restated at the bottom of the panel rather than only
+        * at the top of the page: a reader scrolling to "Mars square your natal Sun" should not have
+        * to remember a caveat from four sections earlier.
         */}
       {sky && (
         <>
-          <p className="eyebrow">What the sky is doing to your chart</p>
+          <p className="eyebrow">Today's sky, against your chart</p>
           <div className="panel">
             {!sky.available ? (
               <p className="row-sub">{sky.reason}</p>
             ) : sky.quiet ? (
-              <p className="row-sub">Nothing is close to your chart today. That is a real answer, not a gap.</p>
+              <p className="row-sub">
+                Nothing fast is touching your chart today. That is a real answer, not a gap — most days
+                are quiet, and a quiet day is the one where what you do is entirely yours.
+              </p>
             ) : (
               sky.active.map((t: any) => (
-                <div className="row" key={t.key}>
+                <div className="row" key={`${t.body}-${t.natal_point}-${t.aspect}`}>
                   <div className="row-main">
                     <div className="row-title">
-                      {t.name} {t.aspect} your natal {t.name}
-                      {t.retrograde ? " (retrograde)" : ""}
+                      {t.body_name} {t.aspect} your natal {t.natal_point_name}
+                      {t.retrograde ? " ℞" : ""}
+                      {t.applying ? "" : " · separating"}
                     </div>
+                    <div className="row-sub">{t.meaning}</div>
                     <div className="row-sub">
-                      Now in {t.sign} {t.degrees_in_sign.toFixed(1)}° · {t.from_natal.toFixed(1)}° from where it was when you were born
+                      {t.body_name} now in {t.sign} {t.degrees_in_sign.toFixed(1)}° · your natal{" "}
+                      {t.natal_point_name} at {t.natal_sign} {t.natal_degrees_in_sign.toFixed(1)}° ·{" "}
+                      {t.orb.toFixed(1)}° from exact
                     </div>
                   </div>
                 </div>
               ))
             )}
-            {sky.available && <p className="row-sub">{sky.note}</p>}
           </div>
+
+          {sky.available && sky.season && sky.season.length > 0 && (
+            <>
+              <p className="eyebrow">The longer weather ({sky.season.length})</p>
+              <div className="panel">
+                {/* Jupiter outward. Months, not hours — read once, not every morning. */}
+                {sky.season.map((t: any) => (
+                  <div className="row" key={`${t.body}-${t.natal_point}-${t.aspect}`}>
+                    <div className="row-main">
+                      <div className="row-title">
+                        {t.body_name} {t.aspect} your natal {t.natal_point_name}
+                        {t.retrograde ? " ℞" : ""}
+                      </div>
+                      <div className="row-sub">{t.meaning}</div>
+                      <div className="row-sub">{t.orb.toFixed(1)}° from exact</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {sky.available && (
+            <div className="panel">
+              <p className="row-sub">{sky.caveat}</p>
+              <p className="row-sub">{sky.note}</p>
+            </div>
+          )}
         </>
       )}
 
