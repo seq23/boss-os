@@ -21,6 +21,7 @@ import { getSetting } from "../lib/settings";
 import { classify } from "../intake/classify";
 import { deliverExecutiveReport, deliverSourcingCandidates, deliverLinkProspects, deliverToolSuggestions, deliverPracticeWeek } from "../duties/deliverReport";
 import { buildEnvelope } from "../intake/envelope";
+import { runNeedsHerDecision } from "../backends/needsDecision";
 import { setSpendLever, spendLeverState, SPEND_LEVER_POSITIONS, type SpendLeverPosition } from "../router/spend";
 import {
   BackendChangeRefused,
@@ -574,27 +575,54 @@ backends.post("/report", async (c) => {
   let approvalId: string | null = null;
   if (run.task_id) {
     const task = await c.env.DB
-      .prepare(`SELECT id, lane, title, cost_micros FROM tasks WHERE id = ?`).bind(run.task_id)
-      .first<{ id: string; lane: string; title: string; cost_micros: number }>();
+      .prepare(`SELECT id, lane, title, input, cost_micros FROM tasks WHERE id = ?`).bind(run.task_id)
+      .first<{ id: string; lane: string; title: string; input: string | null; cost_micros: number }>();
 
     if (task) {
       // EVERY RUN ENDS AS A PROPOSAL — but only a run that produced something to propose. A failure
       // and a refusal close the task with their reason instead of asking her to approve nothing.
       if (status === "succeeded") {
-        approvalId = newId("apr");
-        await c.env.DB.batch([
-          c.env.DB.prepare(
-            `INSERT INTO approvals (id, lane, title, summary, kind, origin_type, origin_id, risk, payload, status, requested_at, expires_at)
-             VALUES (?,?,?,?,'backend_run','backend_runs',?,'medium',?,'pending',?,?)`,
-          ).bind(
-            approvalId, task.lane, task.title,
-            optionalText(ev.summary) ?? "A backend finished this run and proposes the result.",
-            runId, JSON.stringify({ run_id: runId, backend_id: run.backend_id, task_id: task.id }),
-            now, now + 7 * 24 * 60 * 60 * 1000,
-          ),
-          c.env.DB.prepare(`UPDATE tasks SET status = 'awaiting_approval', approval_id = ?, cost_micros = cost_micros + ? WHERE id = ?`)
-            .bind(approvalId, costMicros, task.id),
-        ]);
+        const decision = runNeedsHerDecision(task.input, ev, violations);
+
+        if (!decision.needed) {
+          /*
+           * DELIVERED WORK IS ACCEPTED WHERE IT LANDS. See `runNeedsHerDecision` for the rule and
+           * the reason. The task closes as `done` with the acceptance recorded, and the reader's
+           * morning contains a report rather than a decision about a report.
+           */
+          await c.env.DB.batch([
+            c.env.DB.prepare(
+              `UPDATE tasks SET status = 'done', finished_at = COALESCE(finished_at, ?), cost_micros = cost_micros + ? WHERE id = ?`,
+            ).bind(now, costMicros, task.id),
+            c.env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'auto_accepted',?)`)
+              .bind(
+                newId("tev"), task.id, now,
+                JSON.stringify({ backend_run_id: runId, backend_id: run.backend_id, reason: decision.reason }),
+              ),
+          ]);
+          await audit(c.env.DB, {
+            actor: "system", lane: task.lane, entityType: "backend_run", entityId: runId,
+            action: "backend_run_auto_accepted",
+            detail: { backend_id: run.backend_id, task_id: task.id, reason: decision.reason, delivers: decision.delivers },
+          }).catch(() => {});
+        } else {
+          approvalId = newId("apr");
+          await c.env.DB.batch([
+            c.env.DB.prepare(
+              `INSERT INTO approvals (id, lane, title, summary, kind, origin_type, origin_id, risk, payload, status, requested_at, expires_at)
+               VALUES (?,?,?,?,'backend_run','backend_runs',?,'medium',?,'pending',?,?)`,
+            ).bind(
+              approvalId, task.lane, task.title,
+              // The reason it is HERE leads, because an inbox card that does not say why it needs
+              // her is a card she learns to clear without reading.
+              `${decision.reason} — ${optionalText(ev.summary) ?? "A backend finished this run and proposes the result."}`,
+              runId, JSON.stringify({ run_id: runId, backend_id: run.backend_id, task_id: task.id, why: decision.reason }),
+              now, now + 7 * 24 * 60 * 60 * 1000,
+            ),
+            c.env.DB.prepare(`UPDATE tasks SET status = 'awaiting_approval', approval_id = ?, cost_micros = cost_micros + ? WHERE id = ?`)
+              .bind(approvalId, costMicros, task.id),
+          ]);
+        }
       } else {
         await c.env.DB
           .prepare(`UPDATE tasks SET status = ?, finished_at = ?, error = ?, cost_micros = cost_micros + ? WHERE id = ?`)

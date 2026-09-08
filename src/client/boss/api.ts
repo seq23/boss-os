@@ -25,6 +25,31 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return json.data as T;
 }
 
+/**
+ * A GET whose answer MUST be a list, checked rather than asserted.
+ *
+ * `call<any[]>` is a claim about the server that TypeScript cannot verify — the value crosses the
+ * wire as `any` and the cast is believed. When a route answers `{entries: [...]}` instead, the
+ * mismatch surfaces later, inside a `.map()` during render, where React's only move is to unmount
+ * the tree. The reader gets a white page.
+ *
+ * So the check happens at the seam, where it is still an ordinary rejected promise every screen
+ * already handles with `<ErrorNotice>`: a wrong shape becomes a sentence naming the endpoint, and
+ * the rest of the app keeps working. `key` is the field to unwrap for routes that legitimately
+ * wrap their list in an envelope carrying a `total` or a `reason` alongside it.
+ */
+async function listOf<T = any>(path: string, key?: string): Promise<T[]> {
+  const data = await call<any>(path);
+  const value = key !== undefined && data && typeof data === "object" ? data[key] : data;
+  if (!Array.isArray(value)) {
+    throw new ApiError(
+      `${path} did not answer with a list`,
+      `It returned ${value === undefined ? "nothing" : typeof value}. The screen and the endpoint disagree about this response's shape; nothing was changed.`,
+    );
+  }
+  return value as T[];
+}
+
 const post = (path: string, body?: unknown) =>
   ({ method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }) as RequestInit;
 
@@ -331,7 +356,21 @@ export const api = {
   runbook: () => call<any>("/continuity/runbook"),
   restoreChecklist: () => call<any>("/continuity/checklist"),
 
-  vaultEntries: () => call<any[]>("/vault/entries"),
+  /*
+   * `/vault/entries` ANSWERS `{entries, total, reason?}`, NOT AN ARRAY — AND THIS LINE SAID `any[]`.
+   *
+   * That one word crashed the whole application. `Vault.tsx` stored the object in a state variable
+   * typed `any[]`, `entries.length === 0` read `undefined === 0` and was false, and the next line
+   * called `entries.map(...)` on an object. React unmounted the tree, and because nothing in this
+   * app was a boundary the reader got a WHITE PAGE with no navigation — not a broken panel, the
+   * entire product gone. Reproduced on 8 Sep 2026: `TypeError: n.map is not a function`.
+   *
+   * `any[]` is an assertion the compiler cannot check, because `call` returns whatever the server
+   * sent. So the unwrap happens here, once, where the endpoint's real shape is known — and
+   * `listOf` below turns any future disagreement of this kind into a sentence she can read rather
+   * than a blank screen.
+   */
+  vaultEntries: () => listOf("/vault/entries", "entries"),
   snapshots: () => call<any[]>("/vault/snapshots"),
   restores: () => call<any[]>("/vault/restores"),
   takeSnapshot: () => call<any>("/vault/snapshots", post("", { label: "manual" })),

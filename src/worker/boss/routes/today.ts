@@ -250,6 +250,70 @@ function parseJson<T>(raw: unknown, fallback: T): T {
   try { return JSON.parse(raw) as T; } catch { return fallback; }
 }
 
+/**
+ * WHY TODAY'S BRIEFING IS NOT HERE — a named reason, never a blank.
+ *
+ * The owner's complaint on 8 September 2026 was that Today showed her nothing. It was not showing
+ * nothing; it was showing "No report for today yet", which is the same thing wearing a sentence.
+ * The useful question at 7am is not *whether* the report arrived, it is **what to do about it**,
+ * and that depends entirely on which of these mornings it is:
+ *
+ *   · it is 06:12 and the run is not due for another eighteen minutes — do nothing
+ *   · the run fired and the task is still queued — the Mac agent is not running
+ *   · the run fired hours ago and is still `running` — something claimed it and did not finish
+ *   · the task failed — read the error
+ *   · the duty is suspended — she suspended it
+ *   · the duty has never fired at all — it was never wired
+ *
+ * Each is a different sentence and each names the next move. A blank screen names none of them,
+ * which is why it is the failure she actually described.
+ *
+ * COMPUTED ON READ. Nothing here is written by a cron, so a cron that did not run cannot make this
+ * wrong — it is true at the moment she looks, which is the only moment that matters.
+ */
+export function reportStaleness(
+  duty: {
+    suspended: number; last_run_at: number | null; next_due_at: number | null;
+    task_status: string | null; task_error: string | null;
+  } | null,
+  showingDay: string | null,
+  todayId: string,
+  now: number,
+): string {
+  const carried = showingDay !== null && showingDay !== todayId
+    ? `This is the briefing for ${showingDay}, carried over because today's has not arrived. `
+    : "";
+
+  if (!duty) {
+    return `${carried}There is no Executive Intelligence Report duty in the system at all, so nothing is scheduled to produce one.`;
+  }
+  if (duty.suspended) {
+    return `${carried}The 06:30 report duty is suspended, so no report will be produced until it is resumed.`;
+  }
+  if (duty.last_run_at === null) {
+    return `${carried}The 06:30 report duty has never fired.`;
+  }
+  if (duty.task_status === "failed") {
+    return `${carried}The 06:30 run failed: ${duty.task_error ?? "no error was recorded"}.`;
+  }
+  if (duty.task_status === "cancelled") {
+    return `${carried}The 06:30 run was cancelled: ${duty.task_error ?? "no reason was recorded"}.`;
+  }
+  if (duty.task_status === "queued") {
+    const hours = Math.floor((now - duty.last_run_at) / 3_600_000);
+    return `${carried}The 06:30 run fired ${hours}h ago and its task is still queued — nothing on your Mac has claimed it. The agent job is not running.`;
+  }
+  if (duty.task_status === "running") {
+    const hours = Math.floor((now - duty.last_run_at) / 3_600_000);
+    return `${carried}The 06:30 run has been running for ${hours}h without reporting back.`;
+  }
+  if (duty.next_due_at !== null && duty.next_due_at > now) {
+    const mins = Math.max(1, Math.round((duty.next_due_at - now) / 60_000));
+    return `${carried}Today's report is not due for another ${mins} minute${mins === 1 ? "" : "s"}.`;
+  }
+  return `${carried}The 06:30 run has not delivered today's report yet and its task is not waiting anywhere — dispatch it by hand if you need it now.`;
+}
+
 export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   /*
    * THE MEETING PACKET, on the two days it is worth having and null on the other five.
@@ -270,14 +334,39 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * keyed to the day it is FOR, not the day it was written, so a retry at 09:00 still fills the
    * 06:30 slot rather than creating a second Tuesday.
    */
-  const [report, lastReport] = await Promise.all([
+  const [report, lastReport, reportDuty] = await Promise.all([
     env.DB
-      .prepare(`SELECT * FROM executive_reports WHERE day_id = ? LIMIT 1`)
+      .prepare(`SELECT * FROM executive_reports WHERE day_id = ? AND archived_at IS NULL LIMIT 1`)
       .bind(day.id)
       .first<any>(),
+    /*
+     * THE WHOLE ROW, NOT JUST ITS TIMESTAMP — which is the fix.
+     *
+     * This used to select `generated_at` alone, because all the block did with the last report was
+     * print the date it arrived. So on any morning the 06:30 run had not landed, a briefing that
+     * EXISTED, in this database, with its sections and its sources, was replaced by the sentence
+     * "No report for today yet." She read that as an empty screen, and she was right to: a report
+     * she cannot read is not a report.
+     *
+     * A day-old briefing is worth more than a blank one every time. It is shown, labelled with the
+     * day it is for and how old it is, and Today never renders nothing where a report exists.
+     */
     env.DB
-      .prepare(`SELECT generated_at FROM executive_reports WHERE status != 'failed' ORDER BY generated_at DESC LIMIT 1`)
-      .first<{ generated_at: number }>(),
+      .prepare(`SELECT * FROM executive_reports WHERE status != 'failed' AND archived_at IS NULL ORDER BY generated_at DESC LIMIT 1`)
+      .first<any>(),
+    env.DB
+      .prepare(
+        `SELECT d.id, d.name, d.suspended, d.last_run_at, d.next_due_at, d.last_task_id,
+                t.status AS task_status, t.error AS task_error
+           FROM standing_duties d
+           LEFT JOIN tasks t ON t.id = d.last_task_id
+          WHERE d.id = 'duty_exec_intel'`,
+      )
+      .first<{
+        id: string; name: string; suspended: number; last_run_at: number | null;
+        next_due_at: number | null; last_task_id: string | null;
+        task_status: string | null; task_error: string | null;
+      }>(),
   ]);
 
   const db = env.DB;
@@ -482,10 +571,61 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   const monthStartUtc = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1);
   const warnPct = Number(warnSetting?.value ?? 70) || 70;
 
+  /*
+   * THE DAY, DERIVED, WHEN THE GATE HAS NOT RUN. See the `todays_contract` block below for why.
+   *
+   * Skipped entirely once the gate HAS run: her agreed contract wins, and computing a second answer
+   * beside it is exactly the "two things that must agree with no link between them" defect this
+   * repository is written against.
+   *
+   * IT DEGRADES INTO A REASON RATHER THAN A BLANK. A builder that throws — a missing project list,
+   * an empty movement lane — must not take the whole of Today down with it, so the failure becomes
+   * `null` here and a named fault on screen.
+   */
+  const dayWeekday = new Date(`${day.id}T12:00:00Z`).getUTCDay();
+  const derivedContract = contract
+    ? null
+    : await (async () => {
+        try {
+          const [pillars, bodyContract] = await Promise.all([
+            buildPillars(env, day.id, (day as { day_mode?: string | null }).day_mode ?? null, dayWeekday),
+            buildBodyContract(env, day.id, (day as { day_mode?: string | null }).day_mode ?? null),
+          ]);
+          return {
+            contract: {
+              priorities: pillars.proposed.map((p) => p.text),
+              commitment: pillars.wealth.action,
+              anchor_source: "derived — the first money move",
+              priorities_source: "derived from projects",
+            },
+            priorities: pillars.proposed.map((p) => ({ text: p.text, source: p.source })),
+            agenda: {
+              anchor: pillars.wealth.action,
+              pillars: {
+                body: bodyContract, spirit: pillars.spirit,
+                wealth: pillars.wealth, execution: pillars.execution,
+              },
+              proposed: pillars.proposed,
+              overridden: false,
+              warning: pillars.warning,
+            },
+          };
+        } catch (err) {
+          await logEvent(env.DB, {
+            level: "error", scope: "today", event: "agenda_derivation_failed", entityId: day.id,
+            detail: { error: err instanceof Error ? err.message : String(err) },
+          }).catch(() => {});
+          return null;
+        }
+      })();
+
   const [runOfShow, focus] = await Promise.all([
     readRunOfShow(env, day.id, {
       dayMode: (day as { day_mode?: string | null }).day_mode ?? null,
-      anchor: (contract as { commitment?: string } | null)?.commitment ?? null,
+      anchor:
+        (contract as { commitment?: string } | null)?.commitment ??
+        derivedContract?.contract.commitment ??
+        null,
     }),
     coachingFocus(env, day.id, (day as { day_mode?: string | null }).day_mode ?? null),
   ]);
@@ -657,11 +797,49 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   const unbriefed = meetingsToday.filter((m) => !m.briefed && !m.captured);
 
   const built: Record<BlockKey, { content: unknown; isEmpty: boolean; sourceId?: string | null }> = {
+    /*
+     * THE AGENDA IS THERE BEFORE SHE ASKS. IT NO LONGER WAITS FOR A BUTTON.
+     *
+     * Her words, 8 September 2026: "the today screen needs an overhaul. i should get an automated
+     * exec intelligence report and i should get a morning agenda each day without doing anything
+     * what the fuck?!"
+     *
+     * She was right, and the shape of the bug is one this repository has hit repeatedly: the work
+     * was BUILT AND NOTHING INVOKED IT. `buildPillars` and `buildBodyContract` already derive the
+     * whole day from her projects, her arcs, her practice and her real record — the Morning Gate
+     * stopped requiring her to type anything back in September. But they were only ever called
+     * INSIDE `POST /today/gates/morning`, so opening Today at 7am showed "The Morning Gate has not
+     * run. Today has no contract yet." A day plan that exists and is only computed if she presses
+     * something is not a day plan; it is a form.
+     *
+     * DERIVED ON READ, so a failed cron and an unclicked button cannot produce an empty screen.
+     * Both builders are pure reads — `logSomatic`, the one write in that path, stays in the gate,
+     * because recording which movement was chosen belongs to the moment she agrees to it.
+     *
+     * PROPOSED IS NOT AGREED, and the difference is kept. `agreed_at` stays null and `state` reads
+     * `proposed` until she runs the gate; what the gate then does is record her assent and let her
+     * override, which is a real act with a real record. What it no longer does is decide whether
+     * she gets to SEE her day.
+     */
     todays_contract: {
       content: contract
-        ? { contract, priorities, agreed_at: day.morning_completed_at }
-        : { reason: "The Morning Gate has not run. Today has no contract yet." },
-      isEmpty: !contract,
+        ? { contract, priorities, agreed_at: day.morning_completed_at, state: "agreed" }
+        : derivedContract
+          ? {
+              contract: derivedContract.contract,
+              priorities: derivedContract.priorities,
+              agenda: derivedContract.agenda,
+              agreed_at: null,
+              state: "proposed",
+              note: "Derived from your projects and your record. Run the Morning Gate to agree to it, or to override it.",
+            }
+          : {
+              reason:
+                "Today's agenda could not be derived. This is a fault, not an empty day — the " +
+                "pillar builders threw rather than returning a thin day, and the reason is in Systems → Diagnostics.",
+            },
+      // An empty day is now only ever a genuine failure to compute one.
+      isEmpty: !contract && !derivedContract,
     },
     /*
      * THE EXECUTIVE BRIEFING IS THE REPORT NOW, AND THAT REMOVED DUPLICATION RATHER THAN ADDING
@@ -682,25 +860,50 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * say so and name the gaps". A report that refuses to appear teaches her to stop looking at 7am.
      * A missing report says when the last good one was, so a blank is never unexplained.
      */
-    executive_briefing: {
-      content: report
-        ? {
-            status: report.status,
-            summary: report.summary,
-            sections: parseJson(report.sections, []),
-            gaps: parseJson(report.gaps, []),
-            corrections: parseJson(report.corrections, []),
-            sources: parseJson(report.sources, []),
-            generated_at: report.generated_at,
-          }
-        : {
-            reason: lastReport
-              ? `No report for today yet. The last one arrived ${new Date(lastReport.generated_at).toLocaleString()}.`
-              : "No Executive Intelligence Report has been produced yet. Camille delivers it at 06:30 America/Chicago.",
-            last_report_at: lastReport?.generated_at ?? null,
-          },
-      isEmpty: !report,
-    },
+    executive_briefing: (() => {
+      /*
+       * THE REPORT ARRIVES BY ITSELF, AND A BLANK IS NEVER THE ANSWER.
+       *
+       * Three things were wrong here and they compounded into the thing she saw:
+       *
+       *   1. The report was raised as an APPROVAL. See `backends/needsDecision.ts` — a briefing is
+       *      delivered work, not a decision, and it no longer reaches the Inbox at all.
+       *   2. Today rendered only TODAY'S report. If the 06:30 run had not landed, a briefing that
+       *      existed and was one day old was replaced by "No report for today yet."
+       *   3. When there was nothing to show, the block said so without saying WHY. "No report" and
+       *      "the run never fired" and "the run fired and nothing on your Mac claimed it" are three
+       *      different mornings with three different answers, and the screen gave one sentence.
+       *
+       * So: today's if there is one; otherwise the most recent one, shown in full and labelled as
+       * carried over; and in both cases a named `staleness` explaining the state of the 06:30 run.
+       * The block is `isEmpty` only when there has never been a report at all — which is the one
+       * time an empty state is the truth.
+       */
+      const shown = report ?? lastReport ?? null;
+      const carried = !report && Boolean(lastReport);
+
+      return {
+        content: shown
+          ? {
+              status: shown.status,
+              summary: shown.summary,
+              sections: parseJson(shown.sections, []),
+              gaps: parseJson(shown.gaps, []),
+              corrections: parseJson(shown.corrections, []),
+              sources: parseJson(shown.sources, []),
+              generated_at: shown.generated_at,
+              for_day: shown.day_id,
+              /* True when this is yesterday's briefing standing in for one that has not arrived. */
+              carried_over: carried,
+              staleness: carried ? reportStaleness(reportDuty, shown.day_id, day.id, now) : null,
+            }
+          : {
+              reason: reportStaleness(reportDuty, null, day.id, now),
+              last_report_at: null,
+            },
+        isEmpty: !shown,
+      };
+    })(),
     /*
      * THE RUN OF SHOW, WHICH IS WHAT THIS BLOCK WAS ALWAYS MEANT TO BE.
      *

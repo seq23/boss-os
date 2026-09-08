@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Shell, type TabId } from "./components/Shell";
+import { ScreenBoundary } from "./components/ScreenBoundary";
 import { Lock } from "./pages/Lock";
 import { Today } from "./pages/Today";
 import { Inbox } from "./pages/Inbox";
@@ -122,6 +123,12 @@ export default function App() {
       onSettings={() => { setSettingsOpen((v) => !v); setOpenApproval(null); }}
       settingsOpen={settingsOpen}
     >
+      {/*
+        * KEYED ON THE SCREEN, so navigating away clears a failure rather than carrying it. See
+        * ScreenBoundary for why this exists: without it, one screen's render error took the entire
+        * application down to a blank page, navigation included.
+        */}
+      <ScreenBoundary key={settingsOpen ? "settings" : tab} screen={settingsOpen ? "Settings" : TITLES[tab]}>
       {settingsOpen ? (
         <Settings onLock={async () => {
               await api.lock();
@@ -158,6 +165,7 @@ export default function App() {
       ) : (
         <Systems />
       )}
+      </ScreenBoundary>
     </Shell>
   );
 }

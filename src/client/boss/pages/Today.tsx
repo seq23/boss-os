@@ -170,18 +170,33 @@ function summarise(block: Block): string {
   if (c.available === false) return c.reason;
 
   switch (block.key) {
+    /*
+     * PROPOSED AND AGREED READ DIFFERENTLY, and both are a day rather than a demand.
+     *
+     * "The Morning Gate has not run. Today has no contract yet." was the first line on this screen
+     * every morning she had not pressed the button — an OS telling its owner it declines to say
+     * what the day is until she asks it twice. The day is derived on read now; this line says the
+     * day, and whether she has agreed to it.
+     */
     case "todays_contract":
-      return c.contract
-        ? `${c.contract.priorities.length} priorit${c.contract.priorities.length === 1 ? "y" : "ies"} agreed${c.contract.commitment ? ` — ${c.contract.commitment}` : ""}.`
-        : c.reason;
+      if (!c.contract) return c.reason;
+      return c.state === "proposed"
+        ? `${c.contract.commitment} — proposed. ${c.contract.priorities.length} priorit${c.contract.priorities.length === 1 ? "y" : "ies"} derived from your projects.`
+        : `${c.contract.priorities.length} priorit${c.contract.priorities.length === 1 ? "y" : "ies"} agreed${c.contract.commitment ? ` — ${c.contract.commitment}` : ""}.`;
     case "executive_briefing":
       // The report, or an honest account of why there is not one. "Nothing to report" was the old
       // block's line and it is now a lie in two directions: the world always has something, and a
       // missing report is a fact about this system rather than about the news.
       if (c.reason) return c.reason;
-      return c.status === "partial"
-        ? `${c.summary ?? "Report delivered"} — ${(c.gaps ?? []).length} gap${(c.gaps ?? []).length === 1 ? "" : "s"} named.`
-        : c.summary ?? "Report delivered.";
+      return [
+        // Yesterday's briefing shown in place of one that has not arrived says so FIRST. A stale
+        // report presented as current is worse than no report; a stale report that admits it is
+        // better than a blank.
+        c.carried_over ? `Yesterday's briefing (${c.for_day}).` : null,
+        c.status === "partial"
+          ? `${c.summary ?? "Report delivered"} — ${(c.gaps ?? []).length} gap${(c.gaps ?? []).length === 1 ? "" : "s"} named.`
+          : c.summary ?? "Report delivered.",
+      ].filter(Boolean).join(" ");
     case "day_flow":
       // Her blocks, and the word is "blocks" because that is what her contract calls them. "Stages"
       // was the machine's vocabulary for the machine's list.
@@ -237,24 +252,63 @@ function renderDetail(
   if (c.available === false) return null;
 
   switch (block.key) {
-    case "todays_contract":
-      return c.contract ? (
-        <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-          {c.contract.priorities.map((p: string, i: number) => <li key={i}>{p}</li>)}
-        </ol>
-      ) : null;
+    /*
+     * THE MORNING AGENDA, WHICH IS NOW ON THE SCREEN BEFORE SHE TOUCHES ANYTHING.
+     *
+     * Her words: "i should get a morning agenda each day without doing anything what the fuck?!"
+     * The four Pillar Contracts were being derived the whole time and only inside the gate handler,
+     * so they existed and nothing showed them. Each one names WHAT it means in her language and
+     * WHO owns it, because a pillar whose name needs a canon section to decode is one she skips.
+     */
+    case "todays_contract": {
+      if (!c.contract) return null;
+      const pillars = c.agenda?.pillars ?? null;
+      return (
+        <>
+          <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {c.contract.priorities.map((p: string, i: number) => <li key={i}>{p}</li>)}
+          </ol>
+          {pillars && (
+            <>
+              <p className="eyebrow" style={{ marginTop: 12 }}>The four pillars</p>
+              {(["body", "spirit", "wealth", "execution"] as const).map((k) => {
+                const p = pillars[k];
+                if (!p) return null;
+                return (
+                  <div className="row" key={k}>
+                    <div className="row-main">
+                      <div className="row-title">{p.action ?? p.launch_sequence?.[0] ?? k}</div>
+                      {p.means && <div className="row-sub">{p.means}</div>}
+                      {/* An absent input is recorded as absent, never defaulted to a guess. */}
+                      {p.gap && <div className="row-sub">Missing: {p.gap}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+          {c.agenda?.warning && <div className="row-sub" style={{ marginTop: 8 }}>{c.agenda.warning}</div>}
+          {c.note && <div className="row-sub" style={{ marginTop: 8 }}>{c.note}</div>}
+        </>
+      );
+    }
 
     case "executive_briefing":
       // No report is not an error state, so it renders as prose rather than a notice. Model spend
       // is gone from here deliberately: it moved to Settings beside the ledger reconciliation,
       // where a figure you audit rather than act on belongs.
-      if (!c.sections) {
-        return c.last_report_at ? (
-          <div className="row-sub">Camille delivers this at 06:30 America/Chicago.</div>
-        ) : null;
-      }
+      if (!c.sections) return null;
       return (
         <>
+          {/*
+            * WHY THIS IS YESTERDAY'S, said above the report rather than beneath it. The reader needs
+            * to know what she is looking at before she reads it, and the sentence names the state of
+            * the 06:30 run — suspended, unclaimed, failed, not yet due — so it also tells her what
+            * to do about it.
+            */}
+          {c.staleness && (
+            <div className="row-sub" style={{ marginBottom: 8 }}>{c.staleness}</div>
+          )}
           {(c.sections ?? []).map((sec: any, i: number) => (
             <div className="row" key={i}>
               <div className="row-main">

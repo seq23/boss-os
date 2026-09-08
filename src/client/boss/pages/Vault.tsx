@@ -347,8 +347,15 @@ function Continuity() {
                 })}>
                 Verify
               </button>
+              {/*
+                * `/api/boss`, NOT `/api`. Every other call on this screen goes through the api
+                * client, which adds the prefix; this one is a plain href and was written without
+                * it, so on production it hit the West Peek chassis and answered
+                * `{"error":"unauthenticated"}` — verified against the live site, 8 Sep 2026. The
+                * one control that gets a snapshot off the machine was the one that did not work.
+                */}
               {s.status === "complete" && (
-                <a className="btn btn-small" href={`/api/vault/snapshots/${s.id}/download`}>{size(s.bytes)} ↓</a>
+                <a className="btn btn-small" href={`/api/boss/vault/snapshots/${s.id}/download`}>{size(s.bytes)} ↓</a>
               )}
             </div>
           </div>

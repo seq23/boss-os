@@ -65,12 +65,18 @@ describe("Phase 11 — Today renders the thirteen canon elements", () => {
      * wearing a briefing's name.
      *
      * It now carries Camille's Executive Intelligence Report. With no report yet, the honest state
-     * is a named reason rather than a blank — and the reason says who delivers it and when, so a
-     * reader who has never seen one knows what is supposed to appear.
+     * is a named reason rather than a blank.
+     *
+     * THE REASON CHANGED IN 0204 AND THIS ASSERTION CHANGED WITH IT, DELIBERATELY. It used to say
+     * "Camille delivers it at 06:30 America/Chicago" — a description of the design, identical on
+     * every morning it was ever wrong. The owner's complaint was that Today showed her nothing, and
+     * a sentence that reads the same whether the duty is suspended, unclaimed, failed or simply not
+     * due yet IS nothing. The reason now names the STATE of the 06:30 run, so it tells her what to
+     * do. Here, with no duty row seeded at all, that state is "has never fired".
      */
     expect(by.executive_briefing.is_empty).toBe(true);
     expect(by.executive_briefing.content.reason).toContain("06:30");
-    expect(by.executive_briefing.content.reason).toContain("Camille");
+    expect(by.executive_briefing.content.reason).toContain("never fired");
     expect(by.executive_briefing.content).not.toHaveProperty("open_tasks");
     expect(by.employee_status.content.by_status.active).toBeGreaterThanOrEqual(1);
     expect(by.trading_status.content.live_enabled).toBe(false);

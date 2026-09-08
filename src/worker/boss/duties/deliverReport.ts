@@ -452,6 +452,28 @@ export async function deliverExecutiveReport(
     )
     .run();
 
+  /*
+   * YESTERDAY'S REPORT ARCHIVES ITSELF WHEN TODAY'S ARRIVES.
+   *
+   * The owner's instruction: "the old ones should auto archive". She prunes nothing, ever, and a
+   * system that needs her to is a system that accumulates until she stops opening it.
+   *
+   * ARCHIVED, NOT DELETED. `archived_at` is a timestamp rather than a `DELETE`, so the chain of
+   * corrections the report format depends on — "where today's reading contradicts yesterday's" —
+   * still has yesterday to point at. What archiving changes is only whether Today may fall back to
+   * it: the fallback exists so a missing 06:30 run shows a day-old briefing instead of a blank, and
+   * a briefing from LAST WEEK standing in for this morning would be the same failure with a longer
+   * fuse.
+   *
+   * A FAILED ROW ARCHIVES ITS PREDECESSORS TOO, and that is deliberate. A failed report is still
+   * today's answer, and the honest screen is "today's run failed, here is why" rather than a
+   * fortnight-old briefing quietly presented as current.
+   */
+  await env.DB
+    .prepare(`UPDATE executive_reports SET archived_at = ? WHERE day_id < ? AND archived_at IS NULL`)
+    .bind(now, forDay)
+    .run();
+
   await logEvent(env.DB, {
     level: honest === "failed" ? "warn" : "info",
     scope: "duties", event: "executive_report_delivered", entityId: args.taskId,

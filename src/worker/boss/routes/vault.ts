@@ -64,6 +64,12 @@ const SNAPSHOT_TABLES = [
   // that generates them would leave a system that has yesterday's intelligence and no way to get
   // tomorrow's - and one that restored the duty without its next_due_at would fire it immediately.
   "standing_duties", "executive_reports",
+  // 0204 — what Monique found in the mailbox. Irreplaceable in a way almost nothing else here is:
+  // a finding is the product of reading months of mail on her Mac, and a restore that lost them
+  // would need another full sweep to get them back. The `status` column is the valuable half —
+  // which findings she has already acted on or dismissed — and nothing outside this table records
+  // that. The rows themselves hold code names and composed prose, never a subject or an address.
+  "mailbox_findings",
   // 0185 — the brokerage sourcing list. A restore that lost it would put her back to an empty
   // funnel with no record of which firms had already been reviewed or rejected, so the next sweep
   // would hand her names she has already decided against. The review status is the valuable part.

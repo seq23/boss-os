@@ -164,7 +164,7 @@ export function Trading() {
         ))
       )}
 
-      <a className="btn" style={{ width: "100%", marginTop: 16 }} href="/api/trading/ledger.csv">
+      <a className="btn" style={{ width: "100%", marginTop: 16 }} href="/api/boss/trading/ledger.csv">
         Export the fill ledger
       </a>
     </>
