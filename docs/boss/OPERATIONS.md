@@ -285,6 +285,15 @@ Not gaps. Decisions, with reasons.
 - **A local model (Batch 2).** Deferred by you, indefinitely.
 - **A daily Search Console check.** It lags 2–3 days; a daily number with no decision attached is a
   habit, not a system. Weekly, compared to the previous week, is the shortest useful window.
+- **Making Monique's and Camille's local jobs into duty rows.** `standing_duties` can now express
+  locally-executed work — that is what Simone's row is — so it is tempting to give the network
+  refresh and the property read the same treatment and have their owners written somewhere
+  readable. Not done, and the reason is specific: a `local_job` duty's clock only advances when the
+  job REPORTS BACK, and neither of those jobs does. Adding the rows without adding a reporter to
+  each would put two permanent "has never fired" alerts on Today for two jobs that run perfectly
+  well every week — a false alarm, which is worse than the gap, because a screen that cries wolf is
+  one you stop reading. They stay launchd jobs until each has something to report.
+
 - **Reading your mail's contents.** The extraction takes metadata only. Matching "an old buyer asked
   about Company X" against "someone recently offered X" needs subjects and bodies, which is a
   materially bigger step and a separate decision.
