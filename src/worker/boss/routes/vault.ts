@@ -80,6 +80,22 @@ const SNAPSHOT_TABLES = [
   // 0194 — Kendra's tool suggestions. The status is the value: a restore that lost it would re-suggest
   // things she has already rejected, and paying for a tool twice is the failure this list prevents.
   "tool_suggestions",
+  // 0202 — the register of owned work. THE MOST IMPORTANT ADDITION TO THIS LIST IN A WHILE: these
+  // rows are the commitments she has personally handed people, and a restore that lost them would
+  // silently drop every one of them — which is the precise thing the mechanism exists to make
+  // impossible. `blocked_since` is not re-derivable either; losing it resets a two-week escalation
+  // to a first-day one.
+  "owned_deliverables",
+  // 0201 — the publishing block Simone owns. The title states are the part no re-run reproduces:
+  // "which of these seven are still stuck" is a fact about Amazon's records, and a restore that
+  // lost it would send her back to checking ten books by hand. The determinations are the case's
+  // whole history — how long support has been silent and how many nudges have gone unanswered —
+  // and the chase ladder is unusable without them.
+  "kdp_titles", "kdp_case_checks",
+  // 0200 — Imani's week of practice. It is not re-derivable: the run that produced it read the
+  // literature and this week's sky, and next Sunday's run answers a different week. A restore that
+  // lost these would lose every ritual and technique the practice has ever been given.
+  "practice_week",
   // 0198 — the contributed half of the return-on-effort ledger. Everything else in that ledger
   // recomputes from D1 on read; these rows cannot. They come from her LP tracker and Search Console
   // via a job on her Mac, so a restore that lost them would lose every month of history that the

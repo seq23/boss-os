@@ -23,7 +23,7 @@ import {
   moonPhase, moonPosition,
 } from "../spirit/astro";
 import { METHOD_PLANETS, STATION_UNCERTAINTY_HOURS, planetPosition, ZODIAC_SIGNS } from "../spirit/planets";
-import { monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL } from "../../../shared/boss/timezone";
+import { monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL, weekIdInZone } from "../../../shared/boss/timezone";
 import {
   gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
 } from "../spirit/practice";
@@ -920,4 +920,63 @@ spirit.post("/ancestors", async (c) => {
     .run();
 
   return ok(c, await c.env.DB.prepare(`SELECT * FROM ancestor_entries WHERE id = ?`).bind(id).first(), 201);
+});
+
+// ─── The week of practice ─────────────────────────────────────────────────────
+
+/**
+ * Imani's week, which had nowhere to be read.
+ *
+ * IT LIVES ON SPIRIT RATHER THAN ON A SCREEN OF ITS OWN because Spirit is the pillar it belongs to
+ * and the tab bar is full at ten — canon §5's Cognitive Load Budget. The duty prepares the week's
+ * rituals, one technique and one thing for the body; two of those three are Spirit and the third is
+ * Body, which this page already carries the morning half of.
+ *
+ * THE WEEK IS NAMED EVEN WHEN THERE IS NOTHING, and the reason is the one `deliverPracticeWeek`
+ * gives: an absent block and a quiet week look identical, and only one of them is a fault. So a
+ * missing row answers with `prepared: false` and who prepares it and when, rather than 404 or an
+ * empty object the client has to interpret.
+ */
+spirit.get("/practice-week", async (c) => {
+  const week = weekIdInZone(Date.now());
+  const row = await c.env.DB
+    .prepare(
+      `SELECT id, week_id, generated_at, status, rituals, practice, body, gaps
+         FROM practice_week ORDER BY generated_at DESC LIMIT 1`,
+    )
+    .first<{
+      id: string; week_id: string; generated_at: number; status: string;
+      rituals: string; practice: string | null; body: string | null; gaps: string;
+    }>();
+
+  const parse = (v: string | null, fallback: unknown) => {
+    if (!v) return fallback;
+    try { return JSON.parse(v); } catch { return fallback; }
+  };
+
+  if (!row) {
+    return ok(c, {
+      prepared: false,
+      current_week: week,
+      // Named rather than blank: "nothing has ever been prepared" is a different fact from
+      // "this week is quiet", and the block used to be unable to tell them apart.
+      reason: `Imani prepares this on Sunday at 17:00 ${OWNER_TIMEZONE_LABEL}. Nothing has been delivered yet.`,
+    });
+  }
+
+  return ok(c, {
+    prepared: true,
+    current_week: week,
+    // TRUE WHEN THE LATEST DELIVERY IS FOR AN EARLIER WEEK. A stale week rendered as this week's is
+    // the practice equivalent of a stale report, and it is the failure the duty exists to prevent.
+    stale: row.week_id !== week,
+    week_id: row.week_id,
+    generated_at: row.generated_at,
+    status: row.status,
+    rituals: parse(row.rituals, []),
+    practice: parse(row.practice, null),
+    body: parse(row.body, null),
+    gaps: parse(row.gaps, []),
+    sky_rule: ADVISORY_NOTE,
+  });
 });

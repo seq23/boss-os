@@ -116,3 +116,36 @@ export function dayIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
   ) as Record<string, string>;
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
+
+/**
+ * `YYYY-Www` — the ISO week an instant falls in, in the owner's zone rather than UTC.
+ *
+ * WHY THE ZONE MATTERS HERE MORE THAN ANYWHERE ELSE ON THIS FILE. Imani's practice duty fires on a
+ * SUNDAY, which is the last day of an ISO week. At the scheduled 17:00 Central it is 22:00 UTC and
+ * still Sunday, so the ordinary run is fine — and that is what makes this the kind of bug that
+ * ships. Any run past 19:00 Central is already Monday in UTC, hence the NEXT ISO week, so a retry
+ * after a failed Sunday would file the week-ahead brief under the week that had just ended, with a
+ * number that looks perfectly plausible. Retries are when this happens and are precisely when
+ * nobody is checking week numbers.
+ *
+ * ISO rather than "week starting Sunday": weeks are numbered from the Monday, and the week that
+ * owns 4 January owns the year. That is the only week numbering with one definition, which is what
+ * a stored identifier needs.
+ */
+export function weekIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+      .formatToParts(new Date(ts))
+      .map((p) => [p.type, p.value]),
+  ) as Record<string, string>;
+
+  // Anchored at noon UTC on the civil date, so the arithmetic below never straddles a day boundary.
+  const civil = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 12));
+  // ISO: Thursday of this week decides the year. Sunday is 0 from getUTCDay and must read as 7.
+  const dow = civil.getUTCDay() || 7;
+  civil.setUTCDate(civil.getUTCDate() + 4 - dow);
+  const isoYear = civil.getUTCFullYear();
+  const jan1 = Date.UTC(isoYear, 0, 1);
+  const week = Math.ceil(((civil.getTime() - jan1) / 86_400_000 + 1) / 7);
+  return `${isoYear}-W${String(week).padStart(2, "0")}`;
+}

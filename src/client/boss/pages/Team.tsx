@@ -5,16 +5,25 @@ import { ErrorNotice } from "../components/Notice";
 import { usd } from "../../../shared/boss/types";
 
 export function Team() {
-  const [view, setView] = useState<"team" | "prompts" | "capabilities">("team");
+  const [view, setView] = useState<"team" | "owns" | "prompts" | "capabilities">("team");
 
   return (
     <>
       <div className="btn-row">
         <button className="btn" aria-pressed={view === "team"} onClick={() => setView("team")}>Team</button>
+        {/*
+          * WHAT THEY OWN, BESIDE WHO THEY ARE. Handing someone a deliverable is a different act
+          * from giving them a duty — a duty fires, a deliverable is not finished until an outcome
+          * in the world is true — and the register belongs next to the roster because the first
+          * question about a stuck commitment is who is on the hook for it.
+          */}
+        <button className="btn" aria-pressed={view === "owns"} onClick={() => setView("owns")}>Owns</button>
         <button className="btn" aria-pressed={view === "prompts"} onClick={() => setView("prompts")}>Prompts</button>
         <button className="btn" aria-pressed={view === "capabilities"} onClick={() => setView("capabilities")}>Capabilities</button>
       </div>
-      {view === "team" ? <Roster /> : view === "prompts" ? <Prompts /> : <Capabilities />}
+      {view === "team" ? <Roster />
+        : view === "owns" ? <Owns />
+        : view === "prompts" ? <Prompts /> : <Capabilities />}
     </>
   );
 }
@@ -641,5 +650,124 @@ function EmployeeSheet({ id, onClose }: { id: string; onClose: () => void }) {
         </>
       ) : null}
     </div>
+  );
+}
+
+
+/**
+ * THE REGISTER OF OWNED WORK.
+ *
+ * Her rule: "she owns this deliverable so she needs to make sure its done and if there is any block
+ * she needs to tell me immediately and keep reminding me until its done. she canot drop it. that
+ * goes for all employees when i give them something to own."
+ *
+ * The reminding happens on Today, under Critical Alerts, getting louder the longer a block sits —
+ * an escalation she has to come here to find would not be one. THIS screen is the register and the
+ * one lever: stopping a commitment, which costs a reason and is the only way out that is not the
+ * work actually being finished.
+ *
+ * THERE IS NO "MARK DONE" BUTTON AND THERE MUST NEVER BE ONE. Completion is granted by counting
+ * real records — `TERMINAL_CHECKS` in the Worker — because the moment a person can declare a
+ * commitment finished, "done" means "somebody said so", which is what a duty already meant and is
+ * exactly how the practice duty spent eleven Sundays succeeding at nothing.
+ */
+function Owns() {
+  const [data, setData] = useState<any | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [stopping, setStopping] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+
+  function load() {
+    api.deliverables().then(setData).catch(setError);
+  }
+  useEffect(load, []);
+
+  async function stop(id: string) {
+    setError(null);
+    try {
+      await api.setDeliverableState(id, { state: "killed", killed_reason: reason });
+      setStopping(null);
+      setReason("");
+      load();
+    } catch (e) { setError(e); }
+  }
+
+  if (!data) return error ? <ErrorNotice error={error} /> : <Loading />;
+
+  const list: any[] = Array.isArray(data.deliverables) ? data.deliverables : [];
+
+  return (
+    <>
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      {/* An empty register reads as "nothing is stuck", which is why it is reported as a fault. */}
+      {data.empty_register && (
+        <div className="notice" style={{ borderColor: "var(--reject)" }}>
+          <strong>{data.empty_register}</strong>
+        </div>
+      )}
+
+      <p className="eyebrow">Owned work — {data.open} open</p>
+      <p className="row-sub">{data.rule}</p>
+
+      {list.length === 0 ? (
+        <Empty title="Nothing is owned yet" hint="A deliverable is something you hand a person, with a condition that says when it is finished." />
+      ) : (
+        list.map((d) => (
+          <div className="docket" key={d.id}>
+            <div className="docket-head">
+              <span className="docket-no">{d.state === "blocked" ? "!!" : d.state === "done" ? "✓" : "··"}</span>
+              <h3 style={{ margin: 0 }}>{d.name}</h3>
+            </div>
+            <p style={{ marginTop: 6 }}>
+              {d.employee_name ?? d.employee_id}
+              {d.employee_role ? ` — ${d.employee_role}` : ""} · {d.state}
+              {d.days_blocked !== null && d.days_blocked !== undefined ? ` for ${d.days_blocked} days` : ""}
+            </p>
+            {d.state === "blocked" && d.blocker && <p className="row-sub">{d.blocker}</p>}
+            {d.escalation && <p className="row-sub">{d.escalation.tone}</p>}
+            {d.stalled && (
+              <p className="row-sub">
+                Nothing has happened on this for {d.days_silent} days. Silence is the alarm here, not the calm.
+              </p>
+            )}
+            {!d.checkable && (
+              <p className="row-sub">
+                Its completion check ({d.terminal_check}) is not one this system has, so nothing can ever mark it done.
+              </p>
+            )}
+            <details>
+              <summary className="docket-more" style={{ cursor: "pointer" }}>Open</summary>
+              <div className="docket-full">
+                <p className="row-sub"><strong>Finished when:</strong> {d.terminal_condition}</p>
+                <p className="row-sub"><strong>How you find out:</strong> {d.escalation_path}</p>
+                {d.killed_reason && <p className="row-sub"><strong>Stopped because:</strong> {d.killed_reason}</p>}
+                {(d.state === "open" || d.state === "blocked") && (
+                  stopping === d.id ? (
+                    <>
+                      <input
+                        className="input"
+                        placeholder="Why are you stopping it?"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        aria-label={`Reason for stopping ${d.name}`}
+                      />
+                      <div className="btn-row">
+                        <button className="btn" disabled={!reason.trim()} onClick={() => stop(d.id)}>Stop it</button>
+                        <button className="btn" onClick={() => { setStopping(null); setReason(""); }}>Cancel</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="btn-row">
+                      <button className="btn" onClick={() => setStopping(d.id)}>Stop this</button>
+                    </div>
+                  )
+                )}
+              </div>
+            </details>
+          </div>
+        ))
+      )}
+    </>
   );
 }

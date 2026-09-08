@@ -1,7 +1,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
-import { dayIdInZone } from "@shared/boss/timezone";
+import { dayIdInZone, weekIdInZone } from "@shared/boss/timezone";
 
 /**
  * WRITING THE EXECUTIVE INTELLIGENCE REPORT, WHICH NOTHING ANYWHERE USED TO DO.
@@ -266,6 +266,107 @@ export async function deliverToolSuggestions(
     detail: { inserted, skipped, unproven, run_id: args.runId },
   });
   return { inserted, skipped, unproven };
+}
+
+/**
+ * Imani's week of practice — the fifth delivery, and the one that had nowhere to land.
+ *
+ * WHAT THIS FIXES. `duty_practice_week` has declared `delivers: 'practice_week'` since 0192 and
+ * nothing here handled that key. The duty fired every Sunday at 17:00 Central, spent its ~$0.15,
+ * wrote its `delivers.json`, and the payload was dropped on the floor with no error anywhere —
+ * `input.delivers` simply matched none of the four handlers and every one of them returned null,
+ * which is the ordinary and correct answer for a run that delivers something else. Succeeding at
+ * the wrong thing, again. `0202`'s validator is the guard that makes this class of gap loud.
+ *
+ * IT FOLLOWS THE REPORT, NOT THE LISTS. Sourcing, prospects and tools deliver MANY rows and each
+ * one is a candidate she reviews. The practice week is ONE document for one week, with a status and
+ * named gaps — structurally the executive report on a weekly clock — so it upserts a single row and
+ * borrows the report's honesty rules rather than inventing a third convention.
+ *
+ * A FAILED RUN STILL WRITES A ROW, for the reason the report gives: the difference between "the
+ * week's practice has not been prepared" and "nothing has ever run" is the whole value of the block,
+ * and it costs one row to say.
+ *
+ * "complete" WITH GAPS IS DOWNGRADED, identically to the report. 0192's prompt tells the run an
+ * honest short week is fine; a run that names what it could not source and then calls itself
+ * complete has redefined the word rather than done the work.
+ */
+export async function deliverPracticeWeek(
+  env: Env,
+  args: { taskId: string; runId: string; payload: Record<string, unknown> | null; runStatus: string; now?: number },
+): Promise<string | null> {
+  const now = args.now ?? Date.now();
+
+  const task = await env.DB.prepare(`SELECT id, input FROM tasks WHERE id = ?`).bind(args.taskId)
+    .first<{ id: string; input: string | null }>();
+  if (!task) return null;
+
+  let input: Record<string, unknown> = {};
+  try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
+  if (input.delivers !== "practice_week") return null;
+
+  /*
+   * THE WEEK IT IS FOR, IN HER ZONE. Sunday is the last day of an ISO week: the scheduled 17:00
+   * Central run is 22:00 UTC and still Sunday, but any retry past 19:00 Central is already Monday
+   * in UTC and therefore the NEXT week — so a re-run after a bad Sunday would file the week-ahead
+   * brief under the week that just ended, with a plausible-looking number. The runner may name the
+   * week explicitly; otherwise it is computed in Central.
+   */
+  const forWeek = asText(args.payload?.week_id) ?? weekIdInZone(now);
+
+  const reported = asText(args.payload?.status);
+  const status =
+    args.runStatus !== "succeeded" ? "failed"
+    : reported === "complete" || reported === "partial" || reported === "failed" ? reported
+    // Succeeded and named no status: it delivered SOMETHING, and calling that complete would be a
+    // claim the runner never made. Partial is the honest floor.
+    : "partial";
+
+  const gaps = asArray(args.payload?.gaps);
+  const honest = status === "complete" && gaps.length > 0 ? "partial" : status;
+
+  /*
+   * RITUALS ARE ALLOWED TO BE EMPTY AND THAT IS NOT A FAILURE. Most weeks hold no new or full moon.
+   * 0192's prompt is explicit that inventing an occasion is how this becomes noise, so an empty
+   * array is stored as an empty array and the screen says the sky offered nothing this week.
+   */
+  const rituals = asArray(args.payload?.rituals);
+  const practice = args.payload?.practice && typeof args.payload.practice === "object" ? args.payload.practice : null;
+  const body = args.payload?.body && typeof args.payload.body === "object" ? args.payload.body : null;
+
+  const id = newId("prw");
+
+  await env.DB
+    .prepare(
+      `INSERT INTO practice_week
+         (id, week_id, generated_at, task_id, backend_run_id, status, rituals, practice, body, gaps)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(week_id) DO UPDATE SET
+         generated_at = excluded.generated_at,
+         task_id = excluded.task_id,
+         backend_run_id = excluded.backend_run_id,
+         status = excluded.status,
+         rituals = excluded.rituals,
+         practice = excluded.practice,
+         body = excluded.body,
+         gaps = excluded.gaps`,
+    )
+    .bind(
+      id, forWeek, now, args.taskId, args.runId, honest,
+      JSON.stringify(rituals),
+      practice ? JSON.stringify(practice) : null,
+      body ? JSON.stringify(body) : null,
+      JSON.stringify(gaps),
+    )
+    .run();
+
+  await logEvent(env.DB, {
+    level: honest === "failed" ? "warn" : "info",
+    scope: "duties", event: "practice_week_delivered", entityId: args.taskId,
+    detail: { week_id: forWeek, status: honest, rituals: rituals.length, gaps: gaps.length, run_id: args.runId },
+  });
+
+  return id;
 }
 
 export async function deliverExecutiveReport(

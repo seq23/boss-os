@@ -28,6 +28,7 @@ const pct = (bps: number) => `${Math.round(bps / 100)}%`;
 export function Spirit() {
   const [signal, setSignal] = useState<any | null>(null);
   const [month, setMonth] = useState<any | null>(null);
+  const [week, setWeek] = useState<any | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [openManifestation, setOpenManifestation] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -37,6 +38,15 @@ export function Spirit() {
     Promise.all([api.spiritDay(), api.spiritMonth()])
       .then(([d, m]) => { setSignal(d); setMonth(m); })
       .catch(setError);
+    /*
+     * THE WEEK LOADS SEPARATELY AND MAY FAIL ALONE.
+     *
+     * It is joined into the Promise.all above only in the sense of arriving on the same screen. A
+     * practice delivery that has never happened, or an endpoint that errors, must not take the
+     * whole Spirit page down with it — the morning sentence and the movement contract are what she
+     * opens this screen for, and they do not depend on a weekly research run having succeeded.
+     */
+    api.practiceWeek().then(setWeek).catch(() => setWeek({ prepared: false, unavailable: true }));
   }
   useEffect(load, []);
 
@@ -147,6 +157,16 @@ export function Spirit() {
           </div>
         </>
       )}
+
+      {/*
+        * THE WEEK AHEAD — Imani's duty, which for eleven Sundays delivered into nothing.
+        *
+        * It sits after this morning and before the sky, which is the order §5.2 asks for: what she
+        * does, then what is overhead. The block is ALWAYS PRESENT once the endpoint answers, even
+        * with nothing in it, because an absent block and a quiet week look identical on a screen and
+        * only one of them is a fault — that confusion is the entire reason this was invisible.
+        */}
+      {week && <WeekAhead week={week} />}
 
       {/*
         * WHAT IS OVERHEAD, IN TWO LISTS, BECAUSE THEY ANSWER DIFFERENT QUESTIONS.
@@ -611,4 +631,123 @@ function RecordAncestorHour({ remaining, onDone, onError }: {
 function localInputValue(ts: number): string {
   const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60_000);
   return d.toISOString().slice(0, 16);
+}
+
+/**
+ * IMANI'S WEEK OF PRACTICE.
+ *
+ * Every state this can be in is NAMED, because the failure this block replaces was silence: the
+ * duty ran, cost its money, and produced nothing anyone could see — so "no delivery yet", "the
+ * latest delivery is for a week that has ended" and "this week is genuinely quiet" all rendered
+ * identically, which is to say not at all.
+ *
+ * NOTHING HERE IS A STREAK OR A SCORE. Canon §44's tone and 0192's charter: the job is to make the
+ * practice easier to do, not to grade whether she did it. There is no tick box on this block on
+ * purpose, and the sky rule is restated beside the rituals rather than assumed to be remembered
+ * from the top of the page.
+ */
+function WeekAhead({ week }: { week: any }) {
+  if (!week.prepared) {
+    return (
+      <>
+        <p className="eyebrow">The week ahead</p>
+        <div className="panel">
+          <p className="row-sub">
+            {week.unavailable
+              ? "The week's practice could not be read just now. Nothing about your morning depends on it."
+              : week.reason}
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  const rituals: any[] = Array.isArray(week.rituals) ? week.rituals : [];
+  const gaps: any[] = Array.isArray(week.gaps) ? week.gaps : [];
+
+  return (
+    <>
+      <p className="eyebrow">
+        The week ahead — {week.week_id}
+        {week.stale ? ` · prepared for a week that has ended` : ""}
+      </p>
+      <div className="panel">
+        {/*
+          * A STALE WEEK SAYS SO RATHER THAN PRETENDING. The duty fires Sunday at 17:00; if it did
+          * not, last week's rituals are still on the screen, and reading them as this week's is
+          * exactly the quiet wrongness this whole block exists to end.
+          */}
+        {week.stale && (
+          <p className="row-sub">
+            This is the most recent delivery and it is not for the current week. Imani's Sunday run
+            has not landed since.
+          </p>
+        )}
+        {week.status === "failed" && (
+          <p className="row-sub">The last run did not produce a usable week. Nothing below is a finding.</p>
+        )}
+
+        {rituals.length === 0 ? (
+          // NOT AN EMPTY STATE. Most weeks hold no new or full moon, and the duty is instructed
+          // never to invent an occasion. Saying so is the honest render.
+          <p className="row-sub">
+            No new or full moon this week, so no ritual is suggested. That is the answer, not a gap.
+          </p>
+        ) : (
+          rituals.map((r: any, i: number) => (
+            <div className="row" key={i}>
+              <div className="row-main">
+                <div className="row-title">{r.occasion ?? "Ritual"}</div>
+                <div className="row-sub">{r.ritual}</div>
+                <div className="row-sub">{r.what_it_is_for}</div>
+              </div>
+              <div className="row-val">{r.minutes ? `${r.minutes} min` : "—"}</div>
+            </div>
+          ))
+        )}
+
+        {week.practice && (
+          <div className="row">
+            <div className="row-main">
+              <div className="row-title">Practice — {week.practice.technique}</div>
+              <div className="row-sub">{week.practice.claim}</div>
+              <div className="row-sub">{week.practice.how_to_try_it}</div>
+              {/*
+                * THE SOURCE IS SHOWN, ALWAYS. The duty's success criterion is a real citation, and a
+                * technique rendered without one is indistinguishable from something invented.
+                */}
+              <div className="row-sub">
+                {week.practice.source_name ?? "No source named"}
+                {week.practice.source_url ? ` — ${week.practice.source_url}` : ""}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {week.body && (
+          <div className="row">
+            <div className="row-main">
+              <div className="row-title">For the body</div>
+              <div className="row-sub">{week.body.suggestion}</div>
+              <div className="row-sub">{week.body.why}</div>
+            </div>
+          </div>
+        )}
+
+        {gaps.length > 0 && (
+          <>
+            {/* Gaps are part of the week, not an error beside it. Same rule as the report. */}
+            <p className="eyebrow">Could not be sourced</p>
+            {gaps.map((g: any, i: number) => (
+              <div className="row-sub" key={i}>
+                {typeof g === "string" ? g : `${g.wanted ?? "?"} — ${g.why ?? ""}`}
+              </div>
+            ))}
+          </>
+        )}
+
+        {rituals.length > 0 && week.sky_rule && <p className="row-sub">{week.sky_rule}</p>}
+      </div>
+    </>
+  );
 }

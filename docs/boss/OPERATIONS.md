@@ -31,7 +31,7 @@ the work; the job is the only thing that can do it.
 | **Danielle** | Technical Program Manager | Execution | The shipping heartbeat |
 | **Imani** | Director of Practice | Body + Spirit | The week's practice, rituals, technique research |
 | **Kendra** | Systems Manager | — | Tool scouting |
-| Simone | Chief of Staff | — | No standing duty |
+| **Simone** | Chief of Staff | Execution | Getting your books published, and chasing Amazon until they are |
 | Zora | Archivist | — | No standing duty |
 | Toni | Chief Risk Officer | — | No standing duty |
 
@@ -39,7 +39,8 @@ Before 7 September, **Camille owned every duty in the system** and the other eig
 department, a charter and no work. That is the same defect this codebase produces everywhere else — a
 correct thing nothing invokes — at the level of an org chart.
 
-Simone, Zora and Toni still have none. That is honest rather than finished.
+Simone took the publishing block on 7 September. Zora and Toni still have none, which is honest
+rather than finished.
 
 ### What the four pillars mean
 
@@ -71,6 +72,7 @@ All times America/Chicago.
 | Time | What | Who |
 |---|---|---|
 | 06:45 | Brokerage sourcing — new buyers, and who has gone quiet | Camille |
+| 09:23 | Read the KDP support mail, decide what it means, chase the case | Simone |
 
 ### Weekly
 
@@ -90,9 +92,60 @@ com.seq.boss-agent       claims and runs agent work        5×/day
 com.seq.boss-packet      the Wednesday packet reminder     Wed 07:00
 com.seq.boss-network     mailbox → touch list              Sun 18:00
 com.seq.boss-properties  heartbeat + Search Console        Mon 07:00
+com.seq.kdp-watch        the KDP case, read and chased      Mon/Wed/Fri 09:23
 ```
 
 Reinstall or repair them all with `npm run app:install` and `bash scripts/ops/install-agent-launchd.sh`.
+
+---
+
+## When you hand someone something to own
+
+**Your rule, and it is now a mechanism rather than an instruction:**
+
+> "she owns this deliverable so she needs to make sure its done and if there is any block she needs
+> to tell me immediately and keep reminding me until its done. she canot drop it. that goes for all
+> employees when i give them something to own."
+
+A **duty** and a **deliverable** are different things, and the difference is the whole point.
+
+| | A duty | An owned deliverable |
+|---|---|---|
+| Finished when | It fired | The world is actually true |
+| Can it report success while achieving nothing? | Yes — and one did, for eleven weeks | No. Nothing it says closes it |
+| Who decides it is done | The duty | Records being counted |
+| If its executor breaks | It goes quiet | It gets louder |
+
+Imani's practice duty is the reason that table is written the way it is. It fired every Sunday at
+17:00 for eleven weeks, cost about $0.15 a time, and delivered into a handler that did not exist.
+Nothing failed. The clock advanced, the task closed, an approval was raised, every test passed. A
+duty cannot tell you it is achieving nothing, because its success criterion is that it ran.
+
+**How an owned deliverable behaves:**
+
+- **It names a person.** Escalations say "Simone is blocked on getting your books published", never
+  "the KDP thing is stuck".
+- **It is finished by counting, not by claiming.** "Every authored title is Live" is checked against
+  your records. A support agent saying a flag is cleared, a job reporting success, an employee
+  saying it is done — none of those closes anything.
+- **It escalates on Today, and gets louder.** Raised today is a note. Three days is high. A week is
+  critical. At a fortnight it stops describing the block and says the thing that is true: the route
+  being used is not working and needs a different one. Nothing is filed on a page you have to
+  remember to open.
+- **Silence is the alarm, not the calm.** If nothing happens for a week, that is itself surfaced —
+  which is why a launchd job that stops firing makes a commitment louder rather than letting it
+  quietly die alongside the job.
+- **Only you can stop one, and it costs a reason.** There is no code anywhere that lets an employee,
+  a run or a job decide your commitment is no longer worth keeping. There is no "mark done" button
+  either, for you or anyone: if you want it off the screen without it being finished, that is
+  *stopped*, with a reason, and it stays in the register saying so.
+
+**Where to look:** Team → Owns. But you should not have to — anything blocked is on Today.
+
+`npm run validate:owned-work` fails the build if a deliverable is ever created without an owner, a
+condition the records can decide, or a live path to your screen. It also fails if there are none at
+all, because an empty register renders as "nothing is stuck", which is indistinguishable from
+"everything is fine".
 
 ---
 
@@ -110,7 +163,8 @@ your own work because your staff spent it.
 | Backlinks | Haiku | 10 min | weekly | ~$0.20 | ~$0.90 |
 | Tools | Haiku | 10 min | weekly | ~$0.20 | ~$0.90 |
 | Practice | Haiku | 10 min | weekly | ~$0.15 | ~$0.65 |
-| | | | | | **≈ $11** |
+| KDP case watch | Haiku | 10 min | Mon/Wed/Fri | ~$0.05 | ~$0.65 |
+| | | | | | **≈ $11.65** |
 
 **Ceiling: $25/month. Warned at 70%.**
 
@@ -165,6 +219,18 @@ the first run, when a collision suffix was built from the first three characters
 returns a subject or a body for that request; the privacy claim is what the request asks for, not
 something applied to the answer afterwards. `npm run validate:gmail` fails the build if that changes.
 
+**Two things do read the contents of your mail, both on this machine, both named.** That sentence
+above used to be the whole story and it was not true of the repository — it was true of one file.
+The validator now scans every script that touches Gmail, and names the exceptions with their
+reasons rather than leaving them ungoverned:
+
+| What | Why it needs contents | What keeps it narrow |
+|---|---|---|
+| `npm run holdings` | "Do I have access to <company>?" is answered in prose — someone writing that they have shares available. No arrangement of From/To/Date produces it. | On demand only, never a scheduled job. One company at a time, the one you typed. Prints and exits: no index, no cache, no file. |
+| Simone's KDP watch | You cannot tell from a header whether support resolved a case. | It does not call Gmail at all — `claude -p` reads through the connector on this machine. What reaches Boss OS is a determination in the run's own words, and the endpoint **refuses** one containing an `@`. |
+
+Neither sends anything to a model, and neither writes mail contents anywhere.
+
 ---
 
 ## Commands worth knowing
@@ -180,6 +246,7 @@ npm run packet:remind -- --force  # build the Wednesday packet now
 npm run returns:contribute        # LP sends/replies + Search Console into the return ledger
 npm run crossmatch                # firms on both the LP list and the buyer list
 npm run canon:sync                # store the docs/boss/ documents in the vault, hashed
+npm run kdp:check                 # run Simone's KDP watch now, instead of waiting for Mon/Wed/Fri
 npm run local:pull                # read production into backups/
 npm run local:restore -- --force  # load that into the local database
 ```
@@ -196,7 +263,9 @@ These exist because each of them caught something real.
 |---|---|
 | `validate:reachable` | Is every built thing reachable from her day? |
 | `validate:classification` | Does every Boss table have a residency, and every policy row a table? |
-| `validate:gmail` | Does the extractor still request only metadata headers? |
+| `validate:gmail` | Does every Gmail caller still request only headers — and is the one content exception still narrow? |
+| `validate:duty-delivery` | Does every duty's output have a handler, a table, and a way to her? |
+| `validate:owned-work` | Does every owned deliverable have an owner, a terminal condition and a live escalation? |
 | `validate:sql` | Does every statement match the schema? |
 | `accessibility` | Do source files contain invisible characters? |
 
@@ -235,7 +304,8 @@ Real, and named rather than quietly absent.
 2. **`sequoia@westpeek.ventures` is not connected.** It is p1 on your Wednesday packet. It unblocks
    LP reply detection and the opt-out defect the outreach register has carried since 19 August.
 
-3. **Simone, Zora and Toni have no work.** Three seats with charters and nothing to do.
+3. **Zora and Toni have no work.** Two seats with charters and nothing to do. Simone was the third
+   until 7 September and now owns the publishing block.
 
 4. **The brokerage has no measure of a good week**, and you were right that it cannot have one — deals
    take two weeks or six months. What it has instead is buyer flow and touch counts, which is the
@@ -250,14 +320,6 @@ Real, and named rather than quietly absent.
 
 7. **The first-run seeding fires three weekly duties at once.** They settle onto their weekdays after
    the first run.
-
-8. **Imani's practice duty delivers nowhere.** `duty_practice_week` declares `delivers:
-   'practice_week'`, `deliverReport.ts` handles four keys and that is not one of them, and no table
-   of that name exists — only a `data_policy` row classifying one. So the duty runs every Sunday at
-   17:00, costs its ~$0.15, and its output lands in the run workspace and stops there. Found on
-   7 September by `validate:classification`, which fails on the orphan policy row and is the only
-   validator not wired into `npm run validate`. `validate:reachable` cannot see it: it asks whether
-   tables have writers, not whether a duty's delivery key has a handler.
 
 9. **Nineteen of the twenty-three Search Console properties belong to no income line.**
    `projects.ts` declares six domains; the account holds twenty-three. `npm run returns:contribute`

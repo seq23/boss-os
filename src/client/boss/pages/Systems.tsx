@@ -21,7 +21,7 @@ import { BackendRegistry, Launch, Watch } from "./Backends";
 type SectionId =
   | "launch" | "watch" | "backends"
   | "airlock" | "router" | "intake" | "governance" | "knowledge" | "prompt"
-  | "quant" | "bridge" | "capability" | "runtimes" | "sync";
+  | "quant" | "bridge" | "capability" | "runtimes" | "sync" | "publishing";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   /*
@@ -33,6 +33,13 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "launch", label: "Launch" },
   { id: "watch", label: "Watch" },
   { id: "backends", label: "Backends" },
+  /*
+   * PUBLISHING SITS WITH THE ACTION SECTIONS, not with the machinery, because it is the only place
+   * in Boss OS that can tell her the publishing block has lifted — and that is a thing she does,
+   * not a thing she inspects. It is fourth rather than first: Launch and Watch are used every day
+   * and this is used until seven books are Live and then never again.
+   */
+  { id: "publishing", label: "Publishing" },
   { id: "airlock", label: "Airlock" },
   // Phase 7's "screens for what already exists but is unreachable". The router decides where every
   // piece of work runs and logs why each candidate was refused; until now none of that was visible
@@ -69,6 +76,7 @@ export function Systems() {
       {section === "launch" && <Launch />}
       {section === "watch" && <Watch />}
       {section === "backends" && <BackendRegistry />}
+      {section === "publishing" && <Publishing />}
       {section === "airlock" && <Airlock />}
       {section === "router" && <Router />}
       {section === "intake" && <Intake />}
@@ -558,6 +566,170 @@ function Airlock() {
           ))
         )}
       </section>
+    </>
+  );
+}
+
+/**
+ * PUBLISHING — the seven books that cannot go out, and who is chasing it.
+ *
+ * ─── Why this screen exists at all ──────────────────────────────────────────
+ *
+ * The watcher has been running Mon/Wed/Fri since 2 September and it works. Its determinations went
+ * to `~/Library/Logs/kdp-watch/latest.log`, a file she has never opened and has no reason to. So a
+ * job was doing the work, an employee was going to own it, and there was no way for her to know
+ * anything about either. That is this codebase's defect in its purest form: a correct thing nothing
+ * reaches.
+ *
+ * ─── The one line that matters ──────────────────────────────────────────────
+ *
+ * The action banner, and it NAMES WHO ACTS. The owner asked whether the system could relaunch the
+ * browser tool and try again when the block clears. The honest answer is: sometimes. The watcher
+ * can drive Chrome and walk one title to Publish — but it runs at 09:23 and her laptop may be shut,
+ * in which case it emails her and stops. So the banner says "publish one title now" to HER, or says
+ * Simone handled it, rather than leaving her to work out which happened. A system that quietly did
+ * not try is worse than one that says it needs her.
+ *
+ * ─── What is not here ───────────────────────────────────────────────────────
+ *
+ * The mail. Subjects and bodies are read on her Mac and stay there; what crosses is a determination
+ * in the run's own words, and the endpoint refuses one containing an `@`. There is no button here
+ * that sends anything to Amazon either — the chase ladder lives in the prompt, where a rule about
+ * how often to nudge a support queue belongs.
+ */
+function Publishing() {
+  const state = usePanel(() => api.kdp());
+  const d: any = state.data ?? {};
+  const titles = asList(d.titles);
+  const blocked = titles.filter((t: any) => t.state === "blocked");
+  const live = titles.filter((t: any) => t.state === "live");
+
+  return (
+    <>
+      <Panel
+        title="Kindle publication"
+        hint="No publication state has been recorded. Migration 0201 seeds the ten known titles; if this is empty the migration has not been applied."
+        state={state}
+      >
+        {/*
+          * THE ACTION FIRST, ALWAYS, and phrased as a sentence rather than a status word. "cleared"
+          * as a badge would be read as good news and closed; "publish one title now" is the thing
+          * that actually has to happen.
+          */}
+        {d.action && (
+          <div
+            className="notice"
+            style={{ borderColor: d.action.who === "her" ? "var(--gold)" : undefined }}
+          >
+            <strong>{d.action.headline}</strong>
+            <div className="row-sub">{d.action.detail}</div>
+            <div className="row-sub">
+              {d.action.who === "her"
+                ? "This one is yours — nothing automated will do it for you."
+                : d.action.who === "simone"
+                  ? "Simone has it. Nothing is needed from you."
+                  : "Nothing is outstanding."}
+            </div>
+          </div>
+        )}
+
+        <Row
+          title={`${blocked.length} blocked · ${live.length} live`}
+          sub={`Amazon case #${text(d.case_number)} — the only route to the account-level flag.`}
+          val={d.duty?.overdue ? "watcher overdue" : text(d.latest?.sentinel, "no check yet")}
+        />
+
+        {/*
+          * A WATCHER THAT HAS STOPPED LOOKS EXACTLY LIKE GOOD NEWS. No determination arriving reads
+          * identically to nothing happening, which is the failure the whole instrument exists to
+          * prevent — so the age of the last check is stated rather than left to be inferred.
+          */}
+        <Row
+          title="Last determination"
+          sub={
+            d.days_since_last_check === null || d.days_since_last_check === undefined
+              ? "Simone's watcher has not reported yet."
+              : `${d.days_since_last_check} day${d.days_since_last_check === 1 ? "" : "s"} ago · ${text(d.latest?.source)}`
+          }
+          val={text(d.latest?.sentinel, "—")}
+        />
+        {d.latest?.determination && <div className="row-sub">{d.latest.determination}</div>}
+
+        <Row
+          title="Owned by Simone, executed on your Mac"
+          sub={text(
+            d.duty?.runs_where,
+            "Reading support mail needs your mailbox, and an agent's environment has no credentials in it. This runs from launchd.",
+          )}
+          val={d.duty?.suspended ? "suspended" : "active"}
+        />
+
+        <div className="row-sub">{text(d.known, "")}</div>
+      </Panel>
+
+      {/*
+        * SHE CAN MOVE A TITLE AND THE WATCHER ALMOST CANNOT.
+        *
+        * The job may only ever set `live`, and only for the one title it actually published. Every
+        * other move — a book she publishes herself, one she decides to withdraw — is hers, because
+        * a list she cannot correct is a list she stops trusting, and this one has to stay true for
+        * however long Amazon takes.
+        */}
+      <Panel
+        title="The titles"
+        hint="No titles are recorded."
+        state={state}
+      >
+        {titles.map((t: any) => (
+          <div className="row" key={t.title_ref}>
+            <div className="row-main">
+              <div className="row-title">{text(t.label, t.title_ref)}</div>
+              <div className="row-sub">{text(t.note, "")}</div>
+            </div>
+            <div className="row-val">
+              <select
+                aria-label={`Publication state for ${t.title_ref}`}
+                value={t.state}
+                onChange={async (e) => {
+                  try {
+                    await api.setKdpTitleState(t.title_ref, { state: e.target.value });
+                    state.reload();
+                  } catch (err) {
+                    state.setError(err);
+                  }
+                }}
+              >
+                {["blocked", "in_review", "live", "withdrawn"].map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ))}
+      </Panel>
+
+      <Panel
+        title="The case, check by check"
+        hint="No checks have been recorded. Each Mon/Wed/Fri run posts one."
+        state={state}
+      >
+        {asList(d.history).map((h: any) => (
+          <Row
+            key={h.id}
+            title={`${text(h.sentinel)}${h.needs_owner ? " — needs you" : ""}`}
+            sub={[
+              text(h.determination, ""),
+              h.days_since_support === null || h.days_since_support === undefined
+                ? ""
+                : `${h.days_since_support}d since support wrote`,
+              h.nudges_unanswered ? `${h.nudges_unanswered} unanswered nudge${h.nudges_unanswered === 1 ? "" : "s"}` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            val={new Date(h.checked_at).toLocaleDateString()}
+          />
+        ))}
+      </Panel>
     </>
   );
 }

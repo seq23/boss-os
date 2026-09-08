@@ -19,7 +19,7 @@ import { logEvent } from "../lib/log";
 import { newId } from "../lib/id";
 import { getSetting } from "../lib/settings";
 import { classify } from "../intake/classify";
-import { deliverExecutiveReport, deliverSourcingCandidates, deliverLinkProspects, deliverToolSuggestions } from "../duties/deliverReport";
+import { deliverExecutiveReport, deliverSourcingCandidates, deliverLinkProspects, deliverToolSuggestions, deliverPracticeWeek } from "../duties/deliverReport";
 import { buildEnvelope } from "../intake/envelope";
 import { setSpendLever, spendLeverState, SPEND_LEVER_POSITIONS, type SpendLeverPosition } from "../router/spend";
 import {
@@ -619,6 +619,20 @@ backends.post("/report", async (c) => {
         payload: (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as any,
         runStatus: status, now,
       }).catch(() => null);
+
+      // Imani's week of practice. Declared since 0192, handled since 0200 — for the eleven Sundays
+      // in between the payload arrived here and matched no handler at all.
+      await deliverPracticeWeek(c.env, {
+        taskId: task.id, runId,
+        payload: (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as any,
+        runStatus: status, now,
+      }).catch(async (err) => {
+        await logEvent(c.env.DB, {
+          level: "error", scope: "duties", event: "practice_delivery_failed", entityId: task.id,
+          detail: { run_id: runId, error: err instanceof Error ? err.message : String(err) },
+        }).catch(() => {});
+        return null;
+      });
 
       await deliverSourcingCandidates(c.env, {
         taskId: task.id,

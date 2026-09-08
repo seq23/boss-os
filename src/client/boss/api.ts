@@ -242,6 +242,8 @@ export const api = {
   // Phase 16 — Spirit OS
   spiritDay: (date?: string) => call<any>(`/spirit/day${date ? `?date=${date}` : ""}`),
   spiritMonth: (month?: string) => call<any>(`/spirit/month${month ? `?month=${month}` : ""}`),
+  // Imani's week. Delivered since 0200; before that the duty ran every Sunday into nothing.
+  practiceWeek: () => call<any>("/spirit/practice-week"),
   almanac: () => call<any>("/spirit/astro/almanac"),
   natal: () => call<any>("/spirit/astro/natal"),
   manifestations: (status?: string) => call<any>(`/spirit/manifestations${status ? `?status=${status}` : ""}`),
@@ -407,6 +409,25 @@ export const api = {
   dispatchToBackend: (body: unknown) => call<any>("/backends/dispatch", post("", body)),
   backendRuns: (status?: string) => call<any[]>(`/backends/runs${status ? `?status=${status}` : ""}`),
   backendRun: (id: string) => call<any>(`/backends/runs/${id}`),
+
+  /*
+   * ── Simone's publishing block. ──
+   *
+   * The state is READ here and WRITTEN by a job on her Mac, which is the shape of every piece of
+   * work an agent cannot do: no credential reaches a Claude Code run, so the mailbox half executes
+   * from launchd and posts a determination back. `setKdpTitleState` is the one thing the watcher
+   * may never do — withdrawing a book, or marking one she published herself, is hers.
+   */
+  /*
+   * The register of owned work — what each employee is on the hook for, and what is blocking it.
+   * `setDeliverableState` is the only lever that closes a commitment without completing it, and it
+   * refuses to be called with 'done': completion is granted by counting records, never declared.
+   */
+  deliverables: () => call<any>("/deliverables"),
+  setDeliverableState: (id: string, body: unknown) => call<any>(`/deliverables/${encodeURIComponent(id)}`, post("", body)),
+
+  kdp: () => call<any>("/kdp"),
+  setKdpTitleState: (ref: string, body: unknown) => call<any>(`/kdp/titles/${encodeURIComponent(ref)}`, post("", body)),
 
   // ── Governance watch list — the sentinel's eleven items. ──
   watchList: () => call<any[]>("/governance/watch-list"),

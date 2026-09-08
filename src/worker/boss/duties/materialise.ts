@@ -35,6 +35,8 @@ export interface DutyRow {
   task_title: string;
   task_input: string | null;
   suspended: number;
+  /** 'agent' | 'local_job'. Absent on rows written before 0201, which means agent. */
+  executor?: string | null;
 }
 
 export interface MaterialiseResult {
@@ -53,6 +55,27 @@ export async function materialiseDueDuties(env: Env, now = Date.now()): Promise<
   const skipped: MaterialiseResult["skipped"] = [];
 
   for (const duty of duties) {
+    /*
+     * A LOCALLY-EXECUTED DUTY IS NEVER MATERIALISED HERE, AND ITS CLOCK IS NOT TOUCHED.
+     *
+     * Some work has an employee's name on it and cannot be done by an agent, because the Claude
+     * Code runner strips every credential from its environment on purpose: reading her mailbox,
+     * Search Console, her `gh` login. That work runs from launchd on her Mac and REPORTS BACK,
+     * which is what advances `last_run_at` and `next_due_at`.
+     *
+     * Admitting a task for one of these would be worse than doing nothing. It would queue work the
+     * agent cannot perform, the agent would claim it, fail or invent an answer, and the duty would
+     * report a run it never had — the exact "runs but inert" shape, dressed as success.
+     *
+     * The clock is deliberately left alone rather than advanced past the missed slot: a local job
+     * that has not reported leaves `next_due_at` in the past, which is precisely the signal Today
+     * uses to say so out loud.
+     */
+    if (duty.executor === "local_job") {
+      skipped.push({ duty: duty.id, reason: "local_job" });
+      continue;
+    }
+
     if (!isDue(duty.next_due_at, duty.suspended === 1, now)) {
       skipped.push({ duty: duty.id, reason: duty.suspended === 1 ? "suspended" : "not_due" });
       continue;

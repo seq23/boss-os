@@ -198,6 +198,64 @@ launchctl unload "$PROPS_PLIST" 2>/dev/null || true
 launchctl load "$PROPS_PLIST"
 echo "Installed $PROPS_LABEL — Monday 07:00 Central."
 
+# ─── Simone's publication chase ──────────────────────────────────────────────
+#
+# Seven authored books cannot be published: a server-side flag on the KDP account, with Amazon case
+# #51496198 as the only route to it. `duty_kdp_publication` names Simone as the owner and this job
+# as the executor, because determining whether a support reply resolves a case needs the SUBJECTS
+# AND BODIES of her mail — and the Claude Code runner strips every credential from an agent's
+# environment on purpose. Agents research the open web; local jobs read her accounts.
+#
+# THE SCRIPT AND PROMPT LIVED ONLY IN ~/bin UNTIL 7 SEPTEMBER. They worked, and nothing installed
+# them, nothing repaired them, and nothing could tell if they had drifted from what the duty row
+# said. The repo copies are now canonical and ~/bin holds symlinks, so there is one of each.
+#
+# MON/WED/FRI 09:23, WHICH IS NOT ARBITRARY. KDP support replies on weekdays, so a weekend check
+# finds the same nothing twice; every-other-day as a 48-hour interval would drift against the clock
+# and re-fire on wake, and a day-of-month rule breaks across a month boundary.
+KDP_LABEL="com.seq.kdp-watch"
+KDP_PLIST="$HOME/Library/LaunchAgents/$KDP_LABEL.plist"
+KDP_LOGS="$HOME/Library/Logs/kdp-watch"
+
+mkdir -p "$KDP_LOGS" "$HOME/bin"
+chmod +x "$REPO/scripts/ops/kdp-watch.sh"
+
+# ONE COPY OF EACH, AND THE REPO HOLDS IT. `ln -sfn` replaces whatever is at these paths, including
+# the older real files — which is the point: two components each keeping their own copy of one
+# prompt is the drift this repository names by name.
+ln -sfn "$REPO/scripts/ops/kdp-watch.sh" "$HOME/bin/kdp-watch.sh"
+ln -sfn "$REPO/scripts/ops/kdp-watch-prompt.md" "$HOME/bin/kdp-watch-prompt.md"
+
+cat > "$KDP_PLIST" <<KDPEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$KDP_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>$REPO/scripts/ops/kdp-watch.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>23</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>23</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$KDP_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$KDP_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+KDPEOF
+
+launchctl unload "$KDP_PLIST" 2>/dev/null || true
+launchctl load "$KDP_PLIST"
+echo "Installed $KDP_LABEL — Mon/Wed/Fri 09:23 Central."
+
 echo "Installed $LABEL — checks for queued work at 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
@@ -215,7 +273,7 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL"; then break; fi
   sleep 1
 done
 
@@ -224,9 +282,15 @@ loaded "$LABEL" || missing="$missing $LABEL"
 loaded "$PACKET_LABEL" || missing="$missing $PACKET_LABEL"
 loaded "$NETWORK_LABEL" || missing="$missing $NETWORK_LABEL"
 loaded "$PROPS_LABEL" || missing="$missing $PROPS_LABEL"
+loaded "$KDP_LABEL" || missing="$missing $KDP_LABEL"
+
+# THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
+# there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
+[ -L "$HOME/bin/kdp-watch-prompt.md" ] || missing="$missing ~/bin/kdp-watch-prompt.md(symlink)"
+[ -f "$REPO/scripts/ops/kdp-watch-prompt.md" ] || missing="$missing scripts/ops/kdp-watch-prompt.md"
 
 if [ -z "$missing" ]; then
-  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL and $PROPS_LABEL."
+  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL and $KDP_LABEL."
 else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1

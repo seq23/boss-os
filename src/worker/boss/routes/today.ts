@@ -17,6 +17,7 @@ import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relations
 import { spiritSignal } from "../spirit/day";
 import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from "../today/runOfShow";
 import { coachingFocus, lensFor } from "../today/faculty";
+import { deliverableAlerts } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { adjustToday } from "../today/adjust";
@@ -494,6 +495,22 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
 
   // ── Critical alerts: real failures only, never volume for its own sake ──
   const alerts: { severity: string; text: string; source_type: string; source_id: string | null }[] = [];
+
+  /*
+   * OWNED WORK COMES FIRST, ABOVE EVERY OTHER ALERT.
+   *
+   * Her rule: "if there is any block she needs to tell me immediately and keep reminding me until
+   * its done. she canot drop it. that goes for all employees when i give them something to own."
+   *
+   * So it is on the surface she already opens rather than on a page she would have to remember, and
+   * it leads rather than sitting under a stale-duty notice — a block on something she personally
+   * handed someone outranks a nightly run that finished in a funny state.
+   *
+   * EVALUATED ON READ, WHICH IS THE POINT. Nothing schedules this. A cron that stopped firing would
+   * take the escalation with it, and the whole rule is that a commitment must outlive the machinery
+   * meant to be keeping it. See `today/deliverables.ts`.
+   */
+  alerts.push(...(await deliverableAlerts(env, now).catch(() => [])));
   if (tradingAuthority?.kill_switch) {
     alerts.push({ severity: "critical", text: "The trading kill switch is engaged. Nothing in that lane executes.", source_type: "trading", source_id: null });
   }
