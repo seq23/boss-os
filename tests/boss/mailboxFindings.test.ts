@@ -178,3 +178,38 @@ describe("the People screen can tell an empty mailbox from a broken job", () => 
     expect(body.data).toHaveProperty("sweep");
   });
 });
+
+describe("a missed deal becomes the first money move", () => {
+  /*
+   * FINDINGS MUST LAND WHERE SHE WILL SEE THEM. A screen she has to remember to open is where
+   * Simone's determinations sat for five days, and it is the reason this repository has a
+   * `validate:reachable` at all. Today's Wealth Pillar Contract already answers "what is the first
+   * money move", so a high-confidence pairing IS that answer rather than a fourteenth panel.
+   */
+  it("puts a high-confidence pairing above the sourcing pile on Today", async () => {
+    await env.DB.prepare(`DELETE FROM mailbox_findings`).run();
+    await postFindings([good]);
+
+    const day = new Date().toISOString().slice(0, 10);
+    await env.DB.prepare(`UPDATE days SET morning_contract = NULL, morning_completed_at = NULL WHERE id = ?`)
+      .bind(day).run();
+
+    const { body } = await apiJson(`/api/today?date=${day}`);
+    const block = (body.data.blocks as any[]).find((b) => b.key === "todays_contract");
+    expect(block.content.agenda.pillars.wealth.action).toContain("Introduce");
+    expect(block.content.agenda.pillars.wealth.why).toContain("your own mailbox");
+  });
+
+  it("does not promote a medium-confidence guess to the top of her morning", async () => {
+    await env.DB.prepare(`DELETE FROM mailbox_findings`).run();
+    await postFindings([{ ...good, confidence: "medium" }]);
+
+    const day = new Date().toISOString().slice(0, 10);
+    await env.DB.prepare(`UPDATE days SET morning_contract = NULL, morning_completed_at = NULL WHERE id = ?`)
+      .bind(day).run();
+
+    const { body } = await apiJson(`/api/today?date=${day}`);
+    const block = (body.data.blocks as any[]).find((b) => b.key === "todays_contract");
+    expect(block.content.agenda.pillars.wealth.action).not.toContain("Introduce");
+  });
+});

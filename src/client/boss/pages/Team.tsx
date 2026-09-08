@@ -745,13 +745,23 @@ function Owns() {
                 {(d.state === "open" || d.state === "blocked") && (
                   stopping === d.id ? (
                     <>
-                      <input
-                        className="input"
-                        placeholder="Why are you stopping it?"
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                        aria-label={`Reason for stopping ${d.name}`}
-                      />
+                      {/*
+                        * `.field`, not `.input`. There is no `.input` rule in Boss's stylesheet and
+                        * never was, so the one control that stops an owned deliverable — the thing
+                        * OPERATIONS says "costs a reason" — rendered as a raw browser input in the
+                        * middle of a designed page. `validate:css-classes` had been reporting it and
+                        * the scan is not in `npm run validate`, so nothing failed. A misspelt class
+                        * is the one front-end mistake with no symptom: it renders, unstyled, for ever.
+                        */}
+                      <label className="field">
+                        <span>Why are you stopping it?</span>
+                        <input
+                          placeholder="It costs a reason, and the reason stays in the register."
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          aria-label={`Reason for stopping ${d.name}`}
+                        />
+                      </label>
                       <div className="btn-row">
                         <button className="btn" disabled={!reason.trim()} onClick={() => stop(d.id)}>Stop it</button>
                         <button className="btn" onClick={() => { setStopping(null); setReason(""); }}>Cancel</button>

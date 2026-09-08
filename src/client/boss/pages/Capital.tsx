@@ -23,18 +23,52 @@ const usd = (micros: number) =>
 const pct = (bps: number) => `${(bps / 100).toFixed(bps % 100 === 0 ? 0 : 1)}%`;
 const day = (ts: number | null) => (ts ? new Date(ts).toLocaleDateString() : "—");
 
-type View = "deals" | "buyers" | "return" | "decisions" | "wealth";
+/**
+ * ─── WHAT THIS SCREEN IS FOR NOW, AND WHAT WAS REMOVED ───────────────────────
+ *
+ * Her verdict, 8 September 2026: **"the capital screen needs an overhaul. none of it is useful for
+ * me in current state."** She is right, and the reason is visible from the first frame: opening
+ * Capital showed **0 active · 0 on file · $0 committed · No deal has focus · Nothing in the
+ * pipeline**. Five zeros and two empty states, above a row of five tabs.
+ *
+ * THE DIAGNOSIS IS NOT "the data is missing". It is that the screen was built around the wrong
+ * object. `deals` is West Peek's fund-investment pipeline — a Deal Energy Protection layout from
+ * canon §41, where one deal holds focus and a thin pipeline behind it is a risk. Her primary income
+ * is a **brokerage**: she matches a holder of private shares with a buyer, the cycle is two weeks
+ * to six months, and she has never once typed a deal into this table. A screen whose first three
+ * numbers have been zero since the day it shipped is not under-populated; it is about somebody
+ * else's business.
+ *
+ * ORDERED BY DECISION, NOT BY SUBSYSTEM. The three things she can act on at 7am go first and lead
+ * with a count of what is waiting on her:
+ *
+ *   1. **Desk** — buyers her analyst found and the LP cross-matches, both awaiting a keep-or-reject.
+ *      Eleven real names with checkable sources, and the two firms that were sitting on both lists
+ *      with nothing to join them.
+ *   2. **Return** — the six income lines. Kept because it is the only place that says what is
+ *      measured and what is a blind spot, and every "unmeasured" on it names the command that
+ *      would fix it.
+ *   3. **Ledger** — the pipeline, the decision journal, calibration, predictions and the book,
+ *      folded into ONE tab behind the two she uses.
+ *
+ * WHAT WAS CUT, AND SAID PLAINLY RATHER THAN QUIETLY: three of the five top-level tabs. Deal flow,
+ * Decisions and Wealth are not deleted — every one of them has a real endpoint, a real table, and a
+ * use the day she has data in it — but none of them is a morning surface, and giving each its own
+ * tab made the empty ones as prominent as the full one. Wealth in particular reported a $10,000
+ * *paper trading* balance as the only non-zero figure on the whole screen, which reads as money and
+ * is not.
+ */
+type View = "desk" | "return" | "ledger";
 
 const VIEW_LABEL: Record<View, string> = {
-  deals: "Deal flow",
-  buyers: "Buyers",
+  desk: "The desk",
   return: "Return",
-  decisions: "Decisions",
-  wealth: "Wealth",
+  ledger: "Ledger",
 };
 
 export function Capital() {
-  const [view, setView] = useState<View>("deals");
+  // The desk is the default because it is the only view with a decision on it.
+  const [view, setView] = useState<View>("desk");
 
   return (
     <>
@@ -45,11 +79,32 @@ export function Capital() {
           </button>
         ))}
       </div>
-      {view === "deals" ? <Deals />
-        : view === "buyers" ? <Buyers />
+      {view === "desk" ? <Buyers />
         : view === "return" ? <ReturnLedger />
-        : view === "decisions" ? <Decisions />
-        : <Wealth />}
+        : <Ledger />}
+    </>
+  );
+}
+
+/**
+ * The audit surfaces, together, behind one tab.
+ *
+ * NOT DELETED — DEMOTED. Each of these answers a real question on the day it has data: what is in
+ * the pipeline, what did I decide and was I right, what do I own. None of them answers a question
+ * she has at 7am, and three empty tabs beside one full one is how a screen teaches its reader that
+ * there is nothing here.
+ */
+function Ledger() {
+  return (
+    <>
+      <p className="row-sub" style={{ marginBottom: 10 }}>
+        The things worth auditing rather than acting on. The pipeline below is West Peek's, not the
+        brokerage's — a brokerage deal is two weeks to six months and lives in your mail until it
+        closes, which is why nothing here has ever counted one.
+      </p>
+      <Deals />
+      <Decisions />
+      <Wealth />
     </>
   );
 }
@@ -71,11 +126,22 @@ export function Capital() {
 function Buyers() {
   const [data, setData] = useState<any | null>(null);
   const [matches, setMatches] = useState<any | null>(null);
+  const [cooling, setCooling] = useState<any[]>([]);
   const [error, setError] = useState<unknown>(null);
 
   function load() {
-    Promise.all([api.sourcing(), api.crossmatches()])
-      .then(([s, x]) => { setData(s); setMatches(x); })
+    Promise.all([api.sourcing(), api.crossmatches(), api.mailboxFindings("new")])
+      .then(([s, x, m]) => {
+        setData(s); setMatches(x);
+        /*
+         * A BUYER SHE ALREADY HAS BEATS ONE SHE HAS NOT MET, so the cooling list sits on the desk
+         * rather than only on People. Her words: "find people that could be buyers that i havent
+         * talked to in a while". A sourced candidate is a cold call; someone who has already
+         * transacted and gone quiet is a warm one, and this is the screen where she decides who to
+         * ring today.
+         */
+        setCooling((m?.findings ?? []).filter((f: any) => f.kind === "cooling_buyer"));
+      })
       .catch((e) => { setError(e); setData({ candidates: [] }); setMatches({ confirmed: [], near: [] }); });
   }
   useEffect(load, []);
@@ -99,11 +165,34 @@ function Buyers() {
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
 
+      {/*
+        * THREE NUMBERS, EACH ATTACHED TO A DECISION. What replaced "0 active · 0 on file · $0
+        * committed" — three figures that had been zero since the screen shipped and asked nothing
+        * of her. Every one of these is a count of things sitting on this page waiting for a
+        * keep-or-reject.
+        */}
       <div className="stats">
-        <div className="stat"><div className="stat-n">{data.total ?? 0}</div><div className="stat-l">candidates</div></div>
-        <div className="stat"><div className="stat-n">{data.awaiting_review ?? 0}</div><div className="stat-l">awaiting you</div></div>
-        <div className="stat"><div className="stat-n">{confirmed.length}</div><div className="stat-l">also LPs</div></div>
+        <div className="stat"><div className="stat-n">{data.awaiting_review ?? 0}</div><div className="stat-l">buyers to review</div></div>
+        <div className="stat"><div className="stat-n">{confirmed.length}</div><div className="stat-l">also on the LP list</div></div>
+        <div className="stat"><div className="stat-n">{cooling.length}</div><div className="stat-l">buyers gone quiet</div></div>
       </div>
+
+      {cooling.length > 0 && (
+        <>
+          <p className="eyebrow">Gone quiet — Monique found these in your mailbox</p>
+          {cooling.map((f: any) => (
+            <div className="row" key={f.id}>
+              <div className="row-main">
+                <div className="row-title">{f.headline}</div>
+                {/* Dates and counts, never a quotation. Their own rhythm, not a fixed threshold. */}
+                <div className="row-sub">{f.because}</div>
+                <div className="row-sub"><strong>Do this:</strong> {f.suggested_action}</div>
+              </div>
+              <div className="row-val">{f.subject_code}</div>
+            </div>
+          ))}
+        </>
+      )}
 
       {confirmed.length > 0 && (
         <>

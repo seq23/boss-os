@@ -110,6 +110,55 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
    * when nobody looks at it, and a stale pile is worse than none — it teaches her the agent's output
    * does not matter. So new candidates outrank an overdue touch, and the touch is next.
    */
+  /*
+   * A DEAL SHE ALREADY HAS OUTRANKS A BUYER SHE HAS NOT MET.
+   *
+   * 0204. Monique's mailbox sweep finds pairs: someone asked about a company, someone else later
+   * had access to it, and nothing connected them. That is not a lead — it is two people who have
+   * both already talked to her about the same asset, which is the shortest distance to a
+   * commission in this business and is therefore the first money move whenever one exists.
+   *
+   * HIGH CONFIDENCE ONLY, and that threshold is load-bearing. `high` means both sides were explicit
+   * and within six months. A `medium` at the top of her morning would be a maybe presented as a
+   * plan, and one wrong "these two should talk" costs her a phone call and some credibility — the
+   * same reason the sourcing sweep drops a candidate with no checkable source.
+   *
+   * WHY IT LANDS HERE RATHER THAN AS A FOURTEENTH BLOCK. Today has thirteen elements and the
+   * Wealth Pillar Contract already answers "what is the first money move". A finding that arrived
+   * as its own panel would be a second answer to the same question sitting next to the first, which
+   * is how a screen starts disagreeing with itself.
+   */
+  const pairing = await env.DB
+    .prepare(
+      `SELECT subject_code, counterpart_code, subject_matter, headline, because, suggested_action
+         FROM mailbox_findings
+        WHERE kind = 'missed_deal' AND confidence = 'high'
+          AND status = 'new' AND archived_at IS NULL
+        ORDER BY found_at DESC LIMIT 3`,
+    )
+    .all<{
+      subject_code: string; counterpart_code: string | null; subject_matter: string | null;
+      headline: string; because: string; suggested_action: string;
+    }>();
+
+  const pairs = pairing.results ?? [];
+  if (pairs.length > 0) {
+    const top = pairs[0]!;
+    return {
+      available: true,
+      means: WEALTH_MEANS,
+      action: top.suggested_action,
+      why:
+        "Monique found both sides of this in your own mailbox. Two people who have already talked " +
+        "to you about the same asset is the shortest route to a commission you have — shorter than " +
+        "any buyer a sweep can source, because the trust already exists.",
+      detail: pairs.map((p) =>
+        `${p.subject_code}${p.counterpart_code ? ` ↔ ${p.counterpart_code}` : ""}` +
+        `${p.subject_matter ? ` · ${p.subject_matter}` : ""} — ${p.because}`,
+      ),
+    };
+  }
+
   const fresh = await env.DB
     .prepare(`SELECT COUNT(*) AS n FROM sourcing_candidates WHERE status = 'new'`)
     .first<{ n: number }>();
