@@ -82,6 +82,12 @@ say("     clean");
 say("3/4  building and deploying…");
 try {
   run("npm run build");
+  /*
+   * THE BUILT ARTEFACT IS CHECKED, NOT JUST THE SOURCE. `wrangler deploy` bundles the Worker
+   * without running `vite build`, so a stale `dist/` ships silently — the exact trap this script
+   * exists to prevent. The identity scan checks `dist/client` when it is present, which is here.
+   */
+  run("node scripts/validate/boss-identity.mjs");
   const out = run("npx wrangler deploy --env production");
   const version = out.match(/Current Version ID:\s*([0-9a-f-]+)/)?.[1];
   say(`     deployed ${version ?? "(version id not reported)"}`);

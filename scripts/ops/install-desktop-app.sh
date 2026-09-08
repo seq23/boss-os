@@ -32,11 +32,28 @@ mkdir -p "$APPS"
 # clearing cookies in Chrome does not sign her out of her own operating system.
 PROFILE="$HOME/.boss-os/chrome-profile"
 
+# BOSS OS'S OWN MARK, IN THE DOCK.
+#
+# The three apps had no icon at all, so macOS drew the generic blank-document tile for her own
+# operating system — and the browser tab they open was showing West Peek's WP monogram, because
+# both marks in `src/client/public` were the fund's. Fixed on 8 September 2026: the app bundles
+# carry `boss-os.icns`, rendered from the same SVG the favicon uses, so there is one mark and one
+# source for it.
+ICNS="$REPO/scripts/ops/assets/boss-os.icns"
+
 make_app() {
   local name="$1" command="$2" emoji="$3"
   local dir="$APPS/$name.app/Contents"
   rm -rf "$APPS/$name.app"
   mkdir -p "$dir/MacOS" "$dir/Resources"
+
+  # An icon that is not there must not fail the install — three working apps with the generic tile
+  # beat no apps at all — but it says so, because a silently generic icon is what was there before.
+  if [ -f "$ICNS" ]; then
+    cp "$ICNS" "$dir/Resources/boss-os.icns"
+  else
+    echo "  ! $ICNS is missing — $name will use the generic macOS icon."
+  fi
 
   cat > "$dir/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -46,6 +63,7 @@ make_app() {
   <key>CFBundleDisplayName</key><string>$name</string>
   <key>CFBundleIdentifier</key><string>com.seq.$(echo "$name" | tr '[:upper:] ()' '[:lower:]--' )</string>
   <key>CFBundleExecutable</key><string>run</string>
+  <key>CFBundleIconFile</key><string>boss-os</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>LSUIElement</key><false/>

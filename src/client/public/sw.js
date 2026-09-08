@@ -16,7 +16,7 @@
 // v2: the app that answers at this host CHANGED. A browser that loaded the old bundle has the
 // chassis in its shell cache, and the activate handler deletes every cache but this one - so
 // bumping the name is what actually evicts it rather than leaving it to expire.
-const CACHE = "boss-shell-v2";
+const CACHE = "boss-shell-v3";
 /*
  * "/index.html" IS DELIBERATELY NOT HERE, AND THAT IS THE WHOLE OFFLINE FIX.
  *
@@ -28,7 +28,20 @@ const CACHE = "boss-shell-v2";
  *
  * "/" is the same document without the redirect, so it is the only navigation fallback.
  */
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/boss-mark.svg"];
+/*
+ * BUMPED TO v3 WITH THE MARK, AND THAT IS THE CACHE-BUST.
+ *
+ * The old shell precached /icon.svg and /boss-mark.svg — both of which were West Peek's WP
+ * monogram serving as this app's tab icon. Replacing the files without changing this constant
+ * would have left every installed copy serving the old mark from its own cache for ever, which is
+ * the normal way a favicon rename appears to fail. The activate handler deletes every cache whose
+ * name is not this one.
+ */
+const SHELL = [
+  "/", "/manifest.webmanifest",
+  "/boss-os-mark.svg?v=3", "/boss-os-32.png?v=3", "/boss-os-180.png?v=3",
+  "/boss-os-192.png?v=3", "/boss-os-512.png?v=3",
+];
 
 /**
  * Cache the shell AND the hashed bundles it needs, at install.

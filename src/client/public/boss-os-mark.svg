@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-labelledby="t d">
+  <title id="t">Boss OS</title>
+  <desc id="d">The lane rail: a gold bar on warm ink, with the reading gauge lit near its top.</desc>
+  <!--
+    BOSS OS'S OWN MARK, replacing the West Peek WP monogram that was serving as this app's favicon.
+
+    WHAT WAS THERE. `icon.svg` and `boss-mark.svg` were both `<title>WP mark</title>`, a black tile
+    with a white WP and West Peek's canonical orange #f05a1a. Boss OS is her personal operating
+    system; West Peek Ventures is a separate business. The fund's monogram was sitting in the browser
+    tab of her own OS, and had been since the repository was cloned.
+
+    WHY THIS SHAPE. It is the LANE RAIL — the stripe down the left edge of every Boss OS screen, gold
+    for operations and plum for trading, with a brighter travelling segment that doubles as a reading
+    gauge. It is the only ornament in the interface that earns its place by answering a question the
+    reader actually has, so it is the one thing in this product that already means something and is
+    already always on screen. A monogram would have been a second identity to maintain.
+
+    WHY IT SURVIVES 16 PIXELS. No letterform, no serif, no thin stroke: one bar of 30px on a 160px
+    canvas is roughly 3px at favicon size, which holds. The gauge segment is a full-width block
+    rather than a dot for the same reason — a 10px circle vanishes at 1/10 scale.
+
+    WHY IT WORKS ON A DARK TAB BAR. The tile is warm ink (#3d2f33, Boss OS's own ink token) rather than
+    transparent, so the mark carries its own ground and never dissolves into whatever is behind it.
+    Gold on ink holds contrast in both directions; a cream-on-cream mark would disappear in light
+    mode and a transparent one would disappear in dark.
+
+    COLOUR COMES FROM `src/client/boss/styles.css`, not from anywhere else: ink #3d2f33, ground #fdf8f4, lane-ops #c8a45c. Nothing here is West Peek's.
+  -->
+  <rect width="160" height="160" rx="36" fill="#3d2f33"/>
+  <!--
+    ONE BAR, CENTRED, AND NOTHING ELSE.
+
+    The first draft had a second bar at 18% opacity standing for the screen the rail runs beside.
+    Rendered at 16 pixels and composited onto a light and a dark tab strip, it was invisible — it
+    contributed nothing but a smudge, and the gold bar beside it was too narrow to hold its colour.
+    Checked by looking rather than by reasoning about it, which is the only way a 16-pixel decision
+    can be made.
+  -->
+  <rect x="60" y="28" width="40" height="104" rx="20" fill="#c8a45c"/>
+  <!-- The travelling segment, lit — the reading gauge, in the ground colour. -->
+  <rect x="60" y="28" width="40" height="40" rx="20" fill="#fdf8f4"/>
+</svg>
