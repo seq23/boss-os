@@ -301,6 +301,12 @@ your own work because your staff spent it.
 
 **Ceiling: $25/month. Warned at 70%.**
 
+**The per-run figures above are estimates and one of them is now measured.** A real brokerage
+sourcing run on 8 September — the first one the fixed claim path let through — cost **$1.99**
+against an estimate of $0.30. That is one data point on the most expensive duty in the schedule and
+it does not change the shape of the plan, but it is worth knowing that the estimates are estimates:
+the ledger has arithmetic it can prove and prices it cannot, and it says so.
+
 One briefing once cost **$3.88** because every duty inherited the default model — the most expensive
 one available, run agentically for ten minutes over thirty pages to produce twenty sections. The
 envelope had supported a `model` flag the whole time and nothing was setting it. Every duty now names
@@ -441,6 +447,38 @@ Not gaps. Decisions, with reasons.
 
 ---
 
+## The bird's-eye view, 8 September 2026
+
+_Every screen walked as you would walk it, in order, on the live site. What was found and what was
+done about it._
+
+| Screen | Was | Now |
+|---|---|---|
+| **Today** | Contract, briefing, meetings and loops all empty. Effectively a blank page. | The agenda by pillar with the actual movements and your sentence; yesterday's briefing when today's has not landed, with a named reason |
+| **Inbox** | Five dockets asking you to approve your own briefing, applying nothing | Zero. It holds decisions only |
+| **People** | 200 rows, every one reading `importance 100 · trust 100 · recency 0 · opportunity 0` | Monique's findings first, then who is genuinely overdue against their own rhythm |
+| **Capital** | Opened on `0 active · 0 on file · $0 committed · nothing in the pipeline` | Opens on the desk: buyers to review, LP cross-matches, buyers gone quiet |
+| **Spirit** | Working | Unchanged |
+| **Team** | Working; the control that stops an owned deliverable rendered as an unstyled browser input | Styled, and `validate:css-classes` is in the gate |
+| **Memory** | Working | Unchanged |
+| **Trading** | Working; its CSV export link hit the chassis and answered `unauthenticated` | Fixed prefix |
+| **Vault** | **Crashed the entire application to a blank page** | Renders. And no screen can do that again |
+| **Systems** | Working | Unchanged |
+
+**Three defects were of one kind, and it is the kind this repository keeps producing:** a correct
+thing nothing invoked. The Pillar Contracts were derived only inside a handler nothing on the screen
+called. The morning movements existed as content and appeared nowhere. The claim query could not
+match a row the dispatcher had just created.
+
+**One was a screen and an endpoint disagreeing about a payload** — `/vault/entries` answers an
+envelope and the client called it an array. There was no boundary anywhere, so it took the product
+down rather than the panel.
+
+**One was a guard that had been reporting a real defect into a terminal nobody reads:**
+`validate:css-classes` was not in `npm run validate`. It is now.
+
+---
+
 ## Outstanding
 
 Real, and named rather than quietly absent.
@@ -453,8 +491,10 @@ Real, and named rather than quietly absent.
    desk, and a high-confidence pairing becomes Today's first money move — because two people who have
    both already talked to you about the same asset is the shortest route to a commission you have.
 
-   **It has never run yet.** Install it with `bash scripts/ops/install-agent-launchd.sh`, and the
-   People screen says so in those words until it has.
+   **Installed 8 September**, so it fires on its own from the coming Sunday. Until it has run once,
+   the People screen says exactly that rather than showing a bare empty list — "no findings" is true
+   both when the sweep read your mail and found nothing and when it never ran, and those are
+   opposite facts.
 
 2. **`sequoia@westpeek.ventures` is not connected.** It is p1 on your Wednesday packet. It unblocks
    LP reply detection and the opt-out defect the outreach register has carried since 19 August.
