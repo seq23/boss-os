@@ -242,3 +242,35 @@ describe("the publishing block, as instance one", () => {
     await env.DB.prepare(`UPDATE kdp_titles SET state = 'blocked' WHERE state = 'in_review'`).run();
   });
 });
+
+describe("the ladder tells the truth about time", () => {
+  it("does not open at maximum volume on a block that started this month", async () => {
+    /*
+     * THIS SHIPPED AND WAS CAUGHT ON PRODUCTION, NOT HERE. `blocked_since` was seeded as
+     * 1756771200000 — 2 September 2025, not 2026 — so the first thing the escalation ladder ever
+     * said was that Simone had been blocked for 371 days, at the top rung, on a block five days old.
+     *
+     * A ladder that opens at maximum destroys the only thing it is for: telling a new problem from
+     * a rotting one at a glance. The second time it cries wolf she scrolls past it, which is the
+     * silence it was built to replace. 0203 repaired the row; this refuses the class of error.
+     */
+    const d = await row<{ blocked_since: number }>(
+      `SELECT blocked_since FROM owned_deliverables WHERE id = 'del_kdp_publication'`,
+    );
+    expect(d!.blocked_since).toBeGreaterThan(Date.parse("2026-01-01T00:00:00Z"));
+    expect(d!.blocked_since).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("keeps every seeded date inside the era the system is running in", async () => {
+    // The same off-by-a-year put a 2025 `went_live_at` on three books published last week.
+    const rows = await env.DB
+      .prepare(`SELECT title_ref, went_live_at FROM kdp_titles WHERE went_live_at IS NOT NULL`)
+      .all<{ title_ref: string; went_live_at: number }>();
+    expect(rows.results.length).toBeGreaterThan(0);
+    for (const t of rows.results) {
+      expect(t.went_live_at, `${t.title_ref} went live in a different year than it did`)
+        .toBeGreaterThan(Date.parse("2026-01-01T00:00:00Z"));
+    }
+  });
+
+});

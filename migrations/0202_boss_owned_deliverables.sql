@@ -117,8 +117,11 @@ ON CONFLICT(entity) DO NOTHING;
 
 -- ─── Instance one: the publishing block ──────────────────────────────────────
 --
--- BLOCKED FROM BIRTH, WITH THE REAL DATE. `blocked_since` is 2 September 2026, when Publish first
--- refused — not today. Starting the clock at deploy time would reset a block that is already five
+-- BLOCKED FROM BIRTH, WITH THE REAL DATE. `blocked_since` is 1788307200000, which is
+-- 2026-09-02T00:00:00Z — when Publish first refused — not today. The first version of this line
+-- carried 1756771200000, which is the same date in 2025, and the first thing the ladder ever said
+-- was that Simone had been blocked for 371 days. 0203 repaired the live row; the epoch here is
+-- correct so a rebuild from migrations does not reintroduce it. Starting the clock at deploy time would reset a block that is already five
 -- days old and hand her a fresh-looking medium alert for something that has been stuck since the
 -- start of the month. The escalation ladder is only honest if it counts from when the world stopped.
 --
@@ -132,6 +135,6 @@ VALUES
    'kdp_all_live', 'blocked', 'duty_kdp_publication',
    'Named on Today under Critical Alerts every time she opens it, louder the longer it sits, and it does not stop until every title is Live or she kills it with a reason.',
    'A server-side flag on the KDP account. Publish returns "fix the highlighted errors" with nothing highlighted and a hidden alert reading "Account Information Incomplete". All four account sections read complete and three titles published from the same account on 1-2 September. Amazon case #51496198 is the only route to it.',
-   1756771200000, 1757254982000, 7, unixepoch() * 1000, unixepoch() * 1000);
+   1788307200000, 1788790980000, 7, unixepoch() * 1000, unixepoch() * 1000);
 
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0202_boss_owned_deliverables');

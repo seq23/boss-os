@@ -93,6 +93,25 @@ describe("a check that arrives", () => {
     await env.DB.prepare(`UPDATE kdp_titles SET state = 'blocked', went_live_at = NULL WHERE title_ref = 'A2C99P6JESFOP0'`).run();
   });
 
+  it("does not let a determination rewrite why the commitment is stuck", async () => {
+    /*
+     * CAUGHT ON PRODUCTION, NOT HERE. The first determination this endpoint received overwrote the
+     * deliverable's `blocker`, so Today read "Simone is blocked on Every authored book published —
+     * <whatever the last run happened to find>". The blocker is WHY the work is stuck: the account
+     * flag, the case number, the three titles that published from this same account. It changes
+     * deliberately. What a run found changes every run and already has its own table and screen.
+     * Collapsing the two turns an escalation into a log line and loses the sentence she acts on.
+     */
+    const before = await row<any>(`SELECT blocker FROM owned_deliverables WHERE id = 'del_kdp_publication'`);
+    await apiJson<any>("/api/kdp/check", {
+      method: "POST",
+      body: { sentinel: "no-reply", determination: "Nothing new; four threads, none of them answering the account alert." },
+    });
+    const after = await row<any>(`SELECT blocker FROM owned_deliverables WHERE id = 'del_kdp_publication'`);
+    expect(after.blocker).toBe(before.blocker);
+    expect(after.blocker).toMatch(/51496198/);
+  });
+
   it("keeps the commitment blocked when one book of seven goes out", async () => {
     await apiJson<any>("/api/kdp/check", { method: "POST", body: { sentinel: "published", determination: "One went through." } });
     const d = await row<any>(`SELECT state FROM owned_deliverables WHERE id = 'del_kdp_publication'`);

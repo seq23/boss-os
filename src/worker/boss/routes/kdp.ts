@@ -330,7 +330,17 @@ kdp.post("/check", async (c) => {
   await recordDeliverableActivity(c.env, {
     id: "del_kdp_publication",
     blocked: stillBlocked,
-    blocker: stillBlocked ? optionalText(b?.determination) : null,
+    /*
+     * NO BLOCKER IS PASSED, AND THAT IS THE FIX FOR SOMETHING THAT SHIPPED.
+     *
+     * The first determination this endpoint received overwrote the deliverable's `blocker`, so the
+     * escalation on Today read "Simone is blocked on Every authored book published — <what the last
+     * run happened to find>". Those are two different facts. The blocker is WHY the work is stuck —
+     * the account flag, the case number, the three titles that published from the same account —
+     * and it changes rarely and deliberately. What one run found changes every run and already has
+     * its own table and its own screen. Letting the second overwrite the first turns an escalation
+     * into a log line and loses the sentence she has to act on.
+     */
     now,
   }).catch(() => {});
 
