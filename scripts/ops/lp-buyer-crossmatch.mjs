@@ -39,7 +39,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { crossMatch } from "../lib/firm-match.mjs";
 
-const ORIGIN = process.env.BOSS_ORIGIN ?? "https://boss.westpeek.ventures";
+const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const LP_SHEET = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
 const OUT_DIR = join(homedir(), ".boss-os", "crossmatch");
 const DRY = process.argv.includes("--dry-run");
@@ -152,7 +152,7 @@ function why(candidate, lp) {
   const reason = [...lp.notes][0] ?? "suppressed";
   return (
     `On your LP do-not-contact list (${reason.toLowerCase()}), so West Peek cannot approach them for the fund — ` +
-    `but they are on the buyer list because they ${buyerSide}, and the suppression is an LP decision that says ` +
+    `but it is on the buyer list because it ${buyerSide}, and the suppression is an LP decision that says ` +
     `nothing about a brokerage conversation. This is the warm-adjacent name the two lists were hiding from each other.`
   );
 }

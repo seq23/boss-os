@@ -26,7 +26,7 @@
 
 import { createSign } from "node:crypto";
 
-const ORIGIN = process.env.BOSS_ORIGIN ?? "https://boss.westpeek.ventures";
+const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const LP_SHEET = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
 const DRY = process.argv.includes("--dry-run");
 const monthArg = process.argv.indexOf("--month");
@@ -90,7 +90,20 @@ async function main() {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error(`"${month}" is not a month. Use YYYY-MM.`);
 
   const measurements = [];
+  /*
+   * TWO LISTS, NOT ONE, AND THE EXIT CODE ONLY WATCHES THE FIRST.
+   *
+   * A `failure` is something that went wrong in this run — a sheet that would not read, an API that
+   * refused — and it must exit non-zero, because a scheduled job that fails quietly leaves the
+   * ledger showing last month's numbers as if they were this month's.
+   *
+   * A `gap` is a standing fact about her estate that this run correctly observed: 19 Search Console
+   * properties belong to no declared income line. That is worth printing every time and it is not a
+   * failure of the run. Exiting 1 on it would make a healthy job look broken for ever, which is how
+   * a red status stops being read at all.
+   */
   const failures = [];
+  const gaps = [];
 
   // ─── West Peek: LP sends against LP replies ────────────────────────────────
   const sheetToken = await accessToken(creds, "https://www.googleapis.com/auth/spreadsheets");
@@ -187,11 +200,21 @@ async function main() {
       const totals = new Map();
       const sites = ((await sitesRes.json()).siteEntry ?? []).map((s) => s.siteUrl);
       let matched = 0;
+      const unattributed = [];
 
       for (const site of sites) {
         const host = site.replace(/^sc-domain:/, "").replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "");
         const line = lineByHost.get(host);
-        if (!line) continue; // A property that belongs to no declared line is not silently pooled.
+        /*
+         * A PROPERTY BELONGING TO NO DECLARED LINE IS NAMED, NOT SILENTLY POOLED.
+         *
+         * Pooling it would invent traffic for a line that did not earn it. Skipping it quietly
+         * would be worse in a different way, which is what the first version did: 19 of her 23
+         * Search Console properties are not listed against any income line in projects.ts, so most
+         * of the portfolio's traffic was being dropped on the floor with nothing saying so. That is
+         * a real gap in what the OS knows about her own estate, and it belongs in the output.
+         */
+        if (!line) { unattributed.push(host); continue; }
         matched++;
         const res = await fetch(
           `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site)}/searchAnalytics/query`,
@@ -208,6 +231,13 @@ async function main() {
         acc.impressions += row?.impressions ?? 0;
         acc.sites += 1;
         totals.set(line, acc);
+      }
+
+      if (unattributed.length) {
+        gaps.push(
+          `${unattributed.length} Search Console propert${unattributed.length === 1 ? "y belongs" : "ies belong"} to no income line ` +
+          `declared in projects.ts, so their traffic is attributed to nothing: ${unattributed.join(", ")}.`,
+        );
       }
 
       if (matched === 0) {
@@ -237,7 +267,8 @@ async function main() {
       : "";
     console.log(`${m.period}  ${m.line.padEnd(18)} ${m.outcome_count} ${m.outcome_label} from ${m.effort_count} ${m.effort_label}${ratio}`);
   }
-  for (const f of failures) console.error(`  gap: ${f}`);
+  for (const g of gaps) console.log(`  gap: ${g}`);
+  for (const f of failures) console.error(`  FAILED: ${f}`);
 
   /*
    * RULE 0: A RUN THAT MEASURED NOTHING MUST NOT EXIT 0. Both sources failing looks identical to a
