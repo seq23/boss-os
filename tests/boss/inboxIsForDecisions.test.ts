@@ -328,3 +328,155 @@ describe("the day plan is there before she presses anything", () => {
     expect(block.content).not.toHaveProperty("agenda");
   });
 });
+
+/**
+ * THE RUN HER MAC COULD NEVER CLAIM.
+ *
+ * Found by using the system: materialising the report duty on a copy of production, running the
+ * real Mac agent against it, and watching it answer `{"claimed": false}` with a dispatched run
+ * sitting right there. `queue/consumer.ts` sets the task to `running` (its event is named
+ * `started`) and THEN dispatches; the claim query required `t.status = 'queued'`, so the join could
+ * never match. Every duty routed to `bk_claude_code` produced a run nothing could take.
+ *
+ * It is why the 06:30 briefing did not arrive, and it reached Today as "fired, but its last task is
+ * still running — nothing picked it up", which reads as a broken launchd agent and is not.
+ */
+describe("a dispatched run can actually be claimed", () => {
+  async function dispatched(taskStatus: string) {
+    const taskId = uid("tsk");
+    const runId = uid("brn");
+    // The authorisation receipt a real dispatch writes. Without one the claim refuses the envelope,
+    // correctly — nothing here is allowed to hand over unapproved work.
+    const receipt = uid("aud");
+    await env.DB.prepare(
+      `INSERT INTO audit_log (id, ts, actor, lane, entity_type, entity_id, action, detail)
+       VALUES (?,?, 'boss', 'ops', 'task', ?, 'dispatched', '{}')`,
+    ).bind(receipt, Date.now(), taskId).run();
+    await env.DB.prepare(
+      `INSERT INTO tasks (id, lane, title, input, status, created_at) VALUES (?, 'ops', 'Executive Intelligence Report', ?, ?, ?)`,
+    ).bind(taskId, JSON.stringify({ delivers: "executive_reports" }), taskStatus, Date.now()).run();
+    await env.DB.prepare(
+      `INSERT INTO backend_runs (id, task_id, backend_id, envelope_id, requested, cost_micros, started_at, status)
+       VALUES (?,?,'bk_claude_code',NULL,?,0,?,'running')`,
+    ).bind(runId, taskId, JSON.stringify({ receipt, instruction: "brief" }), Date.now()).run();
+    return { taskId, runId };
+  }
+
+  beforeEach(async () => {
+    await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_claude_code'`).run();
+    await env.DB.prepare(`UPDATE backend_runs SET claimed_at = COALESCE(claimed_at, ?) WHERE claimed_at IS NULL`)
+      .bind(Date.now()).run();
+  });
+
+  it("claims a run whose task the queue consumer already marked running — the bug", async () => {
+    const { taskId, runId } = await dispatched("running");
+    await env.DB.prepare(`UPDATE backend_runs SET claimed_at = NULL WHERE id = ?`).bind(runId).run();
+
+    const { status, body } = await apiJson("/api/backends/claim", {
+      method: "POST",
+      body: { device_id: "dev_test_mac", backend_id: "bk_claude_code" },
+    });
+    expect(status).toBe(200);
+    expect(body.data.run?.run_id).toBe(runId);
+    expect(body.data.run?.task_id).toBe(taskId);
+  });
+
+  it("still claims one whose task is queued — a hand dispatch, the path that always worked", async () => {
+    const { runId } = await dispatched("queued");
+    await env.DB.prepare(`UPDATE backend_runs SET claimed_at = NULL WHERE id = ?`).bind(runId).run();
+    const { body } = await apiJson("/api/backends/claim", {
+      method: "POST", body: { device_id: "dev_test_mac", backend_id: "bk_claude_code" },
+    });
+    expect(body.data.run?.run_id).toBe(runId);
+  });
+
+  /*
+   * EXCLUSIVITY MOVED ONTO THE RUN, which is the object being claimed. The old lock was a
+   * conditional UPDATE on the TASK's status, which is why it could not survive the task legitimately
+   * being `running`. Two devices, or two ticks of one agent, must still never take the same run.
+   */
+  it("hands one run to exactly one device, however many ask", async () => {
+    const { runId } = await dispatched("running");
+    await env.DB.prepare(`UPDATE backend_runs SET claimed_at = NULL WHERE id = ?`).bind(runId).run();
+
+    const first = await apiJson("/api/backends/claim", {
+      method: "POST", body: { device_id: "dev_a", backend_id: "bk_claude_code" },
+    });
+    const second = await apiJson("/api/backends/claim", {
+      method: "POST", body: { device_id: "dev_b", backend_id: "bk_claude_code" },
+    });
+    expect(first.body.data.run?.run_id).toBe(runId);
+    expect(second.body.data.run ?? null).toBeNull();
+
+    const row_ = await row<any>(`SELECT claimed_by FROM backend_runs WHERE id = ?`, runId);
+    expect(row_.claimed_by).toBe("dev_a");
+  });
+});
+
+describe("the briefing is written for her eyes", () => {
+  const TASK = "tsk_format_test";
+
+  beforeEach(async () => {
+    await env.DB.prepare(`DELETE FROM executive_reports`).run();
+    await seedTask(TASK, { delivers: "executive_reports" });
+  });
+
+  it("stores the headline the run wrote, which is what the collapsed block shows", async () => {
+    await deliverExecutiveReport(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      report: {
+        status: "complete",
+        headline: "Oil and Fed rate-hike fears repriced equities lower.",
+        summary: "Markets fell on inflation fears.",
+        sections: [{ heading: "Rates", so_what: "Watch the Sept 16 FOMC.", bullets: ["**Three dissenters** now push a hike."] }],
+      },
+    });
+    const r = await row<any>(`SELECT headline, sections FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(r.headline).toContain("Oil and Fed");
+    expect(JSON.parse(r.sections)[0].bullets[0]).toContain("**Three dissenters**");
+    expect(JSON.parse(r.sections)[0].so_what).toContain("FOMC");
+  });
+
+  /*
+   * Reports written before 0205 have no headline, and a block reading "—" for every historical day
+   * would make the fix look like a regression. A sentence is a worse headline than a headline and a
+   * far better one than nothing.
+   */
+  it("falls back to the first sentence for a report written before the column existed", async () => {
+    await deliverExecutiveReport(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      report: { status: "complete", summary: "Two things moved. Then a lot of other detail followed." },
+    });
+    const r = await row<any>(`SELECT headline FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(r.headline).toBe("Two things moved.");
+  });
+
+  it("says so plainly when the run failed, rather than leaving the line blank", async () => {
+    await deliverExecutiveReport(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "failed", report: null,
+    });
+    const r = await row<any>(`SELECT headline, status FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(r.status).toBe("failed");
+    expect(r.headline).toContain("failed");
+  });
+
+  it("carries the headline through to Today, alongside the gaps it must not hide", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    await deliverExecutiveReport(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      report: {
+        status: "partial", day_id: today,
+        headline: "One thing changed.",
+        summary: "A short synthesis.",
+        sections: [{ heading: "A", so_what: "Do this.", bullets: ["**Bold** thing."] }],
+        gaps: [{ wanted: "a figure", why: "the page 403'd" }],
+        sources: [{ name: "somewhere", url: "https://example.com", read_at: "2026-09-08T12:00:00Z" }],
+      },
+    });
+    const { body } = await apiJson(`/api/today?date=${today}`);
+    const block = (body.data.blocks as any[]).find((b) => b.key === "executive_briefing");
+    expect(block.content.headline).toBe("One thing changed.");
+    expect(block.content.gaps).toHaveLength(1);
+    expect(block.content.sources).toHaveLength(1);
+  });
+});

@@ -188,14 +188,24 @@ function summarise(block: Block): string {
       // block's line and it is now a lie in two directions: the world always has something, and a
       // missing report is a fact about this system rather than about the news.
       if (c.reason) return c.reason;
+      /*
+       * ONE LINE, AND IT IS THE ANSWER. Her instruction: "the way it is formmated now is for a
+       * machine not for a human eyes." The collapsed block shows exactly this string, and it used
+       * to be a five-sentence summary of stacked figures. `headline` is one line by contract; the
+       * summary is the fallback for reports written before that column existed.
+       *
+       * THE GAP COUNT STAYS ON THE COLLAPSED LINE. It is the one caveat that must survive being
+       * shortened — a briefing that reads well because it hid what it could not verify is worse
+       * than the one it replaced.
+       */
+      const gapCount = (c.gaps ?? []).length;
       return [
         // Yesterday's briefing shown in place of one that has not arrived says so FIRST. A stale
         // report presented as current is worse than no report; a stale report that admits it is
         // better than a blank.
-        c.carried_over ? `Yesterday's briefing (${c.for_day}).` : null,
-        c.status === "partial"
-          ? `${c.summary ?? "Report delivered"} — ${(c.gaps ?? []).length} gap${(c.gaps ?? []).length === 1 ? "" : "s"} named.`
-          : c.summary ?? "Report delivered.",
+        c.carried_over ? `Yesterday (${c.for_day}) ·` : null,
+        c.headline ?? c.summary ?? "Report delivered.",
+        gapCount > 0 ? `· ${gapCount} unverified.` : null,
       ].filter(Boolean).join(" ");
     case "day_flow":
       // Her blocks, and the word is "blocks" because that is what her contract calls them. "Stages"
@@ -243,6 +253,49 @@ function summarise(block: Block): string {
   }
 }
 
+/**
+ * `**like this**` becomes bold, and nothing else is interpreted.
+ *
+ * The briefing prompt asks every bullet to bold its key phrase, because she scans and the bold is
+ * what she scans for. Rendering the asterisks literally would put punctuation noise in the one
+ * place the formatting was supposed to help.
+ *
+ * DELIBERATELY NOT A MARKDOWN PARSER. This text comes from a research run that reads the open web,
+ * so it is untrusted by construction. Splitting on a delimiter and emitting <strong> around
+ * alternate pieces cannot produce markup of any kind — a full renderer would be the place an
+ * injected link or image got in.
+ */
+function bold(text: string) {
+  const parts = String(text).split(/\*\*/);
+  return parts.map((piece, i) => (i % 2 === 1 ? <strong key={i}>{piece}</strong> : <span key={i}>{piece}</span>));
+}
+
+/**
+ * One briefing section: the heading, what it means for her, then the evidence.
+ *
+ * BOTH SHAPES RENDER. `{heading, so_what, bullets}` is 0205's contract; `{heading, body}` is what
+ * every report written before it carries. A format change that made historical days render empty
+ * would look exactly like a regression on the screen it was meant to fix.
+ */
+function renderSection(sec: any, i: number) {
+  return (
+    <div key={i} style={{ marginBottom: 12 }}>
+      <p className="eyebrow" style={{ marginBottom: 4 }}>{sec.heading ?? `Section ${i + 1}`}</p>
+      {/* What she should DO or watch because of it, before the evidence for it. */}
+      {sec.so_what && <div className="row-title" style={{ marginBottom: 4 }}>{sec.so_what}</div>}
+      {Array.isArray(sec.bullets) && sec.bullets.length > 0 ? (
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          {sec.bullets.map((b: string, j: number) => (
+            <li key={j} style={{ marginBottom: 3, lineHeight: 1.45 }}>{bold(b)}</li>
+          ))}
+        </ul>
+      ) : (
+        sec.body && <div className="row-sub" style={{ lineHeight: 1.5 }}>{bold(String(sec.body))}</div>
+      )}
+    </div>
+  );
+}
+
 function renderDetail(
   block: Block,
   onChanged: () => void | Promise<void>,
@@ -263,83 +316,257 @@ function renderDetail(
     case "todays_contract": {
       if (!c.contract) return null;
       const pillars = c.agenda?.pillars ?? null;
+      /*
+       * ─── THE AGENDA, DIVIDED BY PILLAR ─────────────────────────────────────
+       *
+       * Her specification, verbatim, 8 September 2026: "'today's contract' is supposed to be my
+       * fucking agenda for the day divided by pillar and with my gratitude sentence mirrored there
+       * and with my morning movement (either the actual movements or a link to them)".
+       *
+       * All three of those existed and none of them was on this screen.
+       *
+       *   · The four Pillar Contracts were derived inside the Morning Gate handler and nowhere else.
+       *   · `spirit.action` IS the gratitude sentence, composed from her own record by
+       *     `spirit/practice.ts`, and this block rendered it as an unlabelled row title.
+       *   · `body.launch_sequence` is §6.9's stored morning sequence — five NAMED movements,
+       *     "print this exactly, in order" — and `body.somatic` is five more, one per lane, each
+       *     chosen as the least recently used and each carrying why. Twenty lines of real content
+       *     that had never been on any screen.
+       *
+       * NOTHING HERE IS INVENTED. Every movement below is one she wrote down; the system chooses
+       * which somatic one comes up today from `movement_log`, deterministically, and says why.
+       */
+      const gratitudeMissing = pillars?.spirit && pillars.spirit.available === false;
       return (
         <>
-          <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-            {c.contract.priorities.map((p: string, i: number) => <li key={i}>{p}</li>)}
-          </ol>
-          {pillars && (
+          {c.agenda?.warning && <div className="notice" style={{ borderColor: "var(--gold)" }}>{c.agenda.warning}</div>}
+
+          {/*
+            * BODY — keto, movement, discipline. Imani.
+            * The movements themselves, because "morning movement" as a label with nothing under it
+            * is the exact failure she is describing everywhere else in this system.
+            */}
+          {pillars?.body && (
             <>
-              <p className="eyebrow" style={{ marginTop: 12 }}>The four pillars</p>
-              {(["body", "spirit", "wealth", "execution"] as const).map((k) => {
-                const p = pillars[k];
-                if (!p) return null;
-                return (
-                  <div className="row" key={k}>
-                    <div className="row-main">
-                      <div className="row-title">{p.action ?? p.launch_sequence?.[0] ?? k}</div>
-                      {p.means && <div className="row-sub">{p.means}</div>}
-                      {/* An absent input is recorded as absent, never defaulted to a guess. */}
-                      {p.gap && <div className="row-sub">Missing: {p.gap}</div>}
+              <p className="eyebrow" style={{ marginTop: 4 }}>Body — movement, food, discipline · Imani</p>
+              <div className="row-sub" style={{ marginBottom: 6 }}>{pillars.body.movement_floor}</div>
+              <ol style={{ margin: "0 0 8px", paddingLeft: 18 }}>
+                {(pillars.body.launch_sequence ?? []).map((m: string, i: number) => (
+                  <li key={i} style={{ marginBottom: 2 }}>{m}</li>
+                ))}
+              </ol>
+              {(pillars.body.somatic ?? []).length > 0 && (
+                <>
+                  <div className="row-sub" style={{ marginBottom: 4 }}>Then today's somatic rotation, one per lane:</div>
+                  {pillars.body.somatic.map((sm: any) => (
+                    <div className="row" key={sm.lane}>
+                      <div className="row-main">
+                        <div className="row-title">{sm.movement}</div>
+                        <div className="row-sub">{sm.title} · {sm.because}</div>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  ))}
+                </>
+              )}
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                <li className="row-sub"><strong>Water and medicine</strong> — {pillars.body.medication}</li>
+                <li className="row-sub"><strong>Hydration</strong> — {pillars.body.hydration}</li>
+                <li className="row-sub"><strong>Food</strong> — {pillars.body.food_rule}</li>
+              </ul>
+              <div className="row-sub" style={{ marginTop: 6 }}>{pillars.body.safety_stop}</div>
             </>
           )}
-          {c.agenda?.warning && <div className="row-sub" style={{ marginTop: 8 }}>{c.agenda.warning}</div>}
-          {c.note && <div className="row-sub" style={{ marginTop: 8 }}>{c.note}</div>}
+
+          {/*
+            * SPIRIT — the sentence, MIRRORED here rather than moved. Spirit remains its home and
+            * its source of truth; she should not have to navigate to read her own sentence.
+            */}
+          {pillars?.spirit && (
+            <>
+              <p className="eyebrow" style={{ marginTop: 14 }}>Spirit — the sentence and the sequence · Imani</p>
+              {gratitudeMissing ? (
+                <div className="row-sub">
+                  {pillars.spirit.gap ?? "Today's sentence could not be composed from your record."}
+                  {" "}It is written on Spirit — a generic mantra is worse than none, so nothing is filled in for you.
+                </div>
+              ) : (
+                <p style={{ margin: "0 0 6px", fontFamily: "var(--display)", fontSize: 17, lineHeight: 1.45 }}>
+                  {pillars.spirit.action}
+                </p>
+              )}
+              <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {(pillars.spirit.detail ?? []).map((step: string, i: number) => (
+                  <li key={i} className="row-sub" style={{ marginBottom: 2 }}>{step}</li>
+                ))}
+              </ol>
+            </>
+          )}
+
+          {/* WEALTH — money in: buyers, LPs, and the people who send you both. Camille and Monique. */}
+          {pillars?.wealth && (
+            <>
+              <p className="eyebrow" style={{ marginTop: 14 }}>Wealth — the first money move · Camille and Monique</p>
+              <div className="row">
+                <div className="row-main">
+                  <div className="row-title">{pillars.wealth.action}</div>
+                  <div className="row-sub">{pillars.wealth.why}</div>
+                  {pillars.wealth.gap && <div className="row-sub">Missing: {pillars.wealth.gap}</div>}
+                </div>
+              </div>
+              {(pillars.wealth.detail ?? []).length > 0 && (
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                  {pillars.wealth.detail.map((d: string, i: number) => (
+                    <li key={i} className="row-sub" style={{ marginBottom: 2 }}>{d}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          {/* EXECUTION — did anything you own actually get built or shipped. Danielle. */}
+          {pillars?.execution && (
+            <>
+              <p className="eyebrow" style={{ marginTop: 14 }}>Execution — did anything you own ship · Danielle</p>
+              <div className="row">
+                <div className="row-main">
+                  <div className="row-title">{pillars.execution.action}</div>
+                  <div className="row-sub">{pillars.execution.why}</div>
+                  {pillars.execution.gap && <div className="row-sub">Missing: {pillars.execution.gap}</div>}
+                </div>
+              </div>
+              {(pillars.execution.detail ?? []).length > 0 && (
+                <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                  {pillars.execution.detail.map((d: string, i: number) => (
+                    <li key={i} className="row-sub" style={{ marginBottom: 2 }}>{d}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          {/* The agreed contract has no derived pillars beside it — her answer, not a second one. */}
+          {!pillars && (
+            <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {c.contract.priorities.map((p: string, i: number) => <li key={i}>{p}</li>)}
+            </ol>
+          )}
+
+          {c.note && <div className="row-sub" style={{ marginTop: 12 }}>{c.note}</div>}
         </>
       );
     }
 
-    case "executive_briefing":
-      // No report is not an error state, so it renders as prose rather than a notice. Model spend
-      // is gone from here deliberately: it moved to Settings beside the ledger reconciliation,
-      // where a figure you audit rather than act on belongs.
-      if (!c.sections) return null;
+    case "executive_briefing": {
+      // No report is not an error state, so it renders as prose rather than a notice.
+      if (!c.sections && !c.summary) return null;
+      /*
+       * ─── THE BRIEFING, FOR HER EYES ────────────────────────────────────────
+       *
+       * "the way it is formmated now is for a machine not for a human eyes. it needs to be
+       * synthesized and summarized and formatted properly."
+       *
+       * It was rendering storage order: heading, paragraph, heading, paragraph, then a list of URLs
+       * with ISO timestamps at the same visual weight as the content. THE ORDER IS THE ANSWER, THEN
+       * WHAT IT MEANS, THEN THE EVIDENCE, and provenance goes behind a toggle.
+       *
+       * WHAT IS NOT COMPRESSED AWAY: gaps and corrections stay on the screen at full weight.
+       * "I could not verify this" and "yesterday I told you the opposite" are decision-bearing, and
+       * a briefing that reads beautifully because it dropped its caveats is worse than the one it
+       * replaced. Only `sources` collapse — a URL list is what she reaches for when she doubts a
+       * figure, not something she reads at 7am.
+       *
+       * BOTH SHAPES RENDER. Reports written before 0205 carry `{heading, body}` sections and no
+       * headline; reports after it carry `{heading, so_what, bullets}`. A format change that made
+       * every historical day render as empty would look exactly like a regression.
+       */
       return (
         <>
+          {c.staleness && <div className="row-sub" style={{ marginBottom: 10 }}>{c.staleness}</div>}
+
+          {c.headline && (
+            <p style={{ margin: "0 0 8px", fontFamily: "var(--display)", fontSize: 19, lineHeight: 1.35 }}>
+              {c.headline}
+            </p>
+          )}
+          {c.summary && c.summary !== c.headline && (
+            <p style={{ margin: "0 0 12px", lineHeight: 1.5 }}>{c.summary}</p>
+          )}
+
           {/*
-            * WHY THIS IS YESTERDAY'S, said above the report rather than beneath it. The reader needs
-            * to know what she is looking at before she reads it, and the sentence names the state of
-            * the 06:30 run — suspended, unclaimed, failed, not yet due — so it also tells her what
-            * to do about it.
+            * FOUR SECTIONS, AND THE REST BEHIND A TOGGLE.
+            *
+            * The prompt asks for four at most. A real run on 8 September, with the new prompt, filed
+            * FOURTEEN — down from twenty, so the instruction moved it and did not govern it. There
+            * are 28KB of specification sitting in the run's own working directory describing a
+            * twenty-section newspaper, and a model splitting the difference between two documents is
+            * what that produces.
+            *
+            * TRUNCATING ON THE WRITE SIDE WOULD DESTROY RESEARCH SHE PAID FOR, so the cap is applied
+            * HERE instead: the top four are the briefing, everything else stays one click away and
+            * says how much there is. She gets the short read; nothing is lost; and the count on the
+            * toggle is also the honest measure of how far the run overshot.
             */}
-          {c.staleness && (
-            <div className="row-sub" style={{ marginBottom: 8 }}>{c.staleness}</div>
-          )}
-          {(c.sections ?? []).map((sec: any, i: number) => (
-            <div className="row" key={i}>
-              <div className="row-main">
-                <div className="row-title">{sec.title ?? `Section ${i + 1}`}</div>
-                <div className="row-sub">{sec.body ?? ""}</div>
+          {(c.sections ?? []).slice(0, 4).map((sec: any, i: number) => renderSection(sec, i))}
+          {(c.sections ?? []).length > 4 && (
+            <details style={{ marginBottom: 12 }}>
+              <summary className="docket-more" style={{ cursor: "pointer" }}>
+                {(c.sections ?? []).length - 4} more section{(c.sections ?? []).length - 4 === 1 ? "" : "s"} the run filed
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                {(c.sections ?? []).slice(4).map((sec: any, i: number) => renderSection(sec, i + 4))}
               </div>
-            </div>
-          ))}
-          {(c.gaps ?? []).length > 0 && (
-            <>
-              {/*
-                * GAPS ARE PART OF THE REPORT, not an error beside it. Her spec: "if a required fact
-                * cannot be verified, say so". Rendering them quietly at the end would bury exactly
-                * the thing she asked to be told.
-                */}
-              <p className="eyebrow">Could not be verified</p>
-              {c.gaps.map((g: any, i: number) => (
-                <div className="row-sub" key={i}>{typeof g === "string" ? g : g.what ?? JSON.stringify(g)}</div>
-              ))}
-            </>
+            </details>
           )}
+
           {(c.corrections ?? []).length > 0 && (
             <>
-              <p className="eyebrow">Corrects yesterday</p>
-              {c.corrections.map((g: any, i: number) => (
-                <div className="row-sub" key={i}>{typeof g === "string" ? g : g.what ?? JSON.stringify(g)}</div>
-              ))}
+              {/*
+                * CORRECTIONS ARE CONTENT, NOT APPARATUS. "Yesterday I told you the opposite" is the
+                * single most decision-bearing thing a briefing can say — the 7 September run used it
+                * to correct a standing assumption that a company was still private.
+                */}
+              <p className="eyebrow" style={{ marginTop: 4 }}>Corrects an earlier report</p>
+              <ul style={{ margin: "0 0 12px", paddingLeft: 18 }}>
+                {c.corrections.map((g: any, i: number) => (
+                  <li key={i} style={{ marginBottom: 3, lineHeight: 1.45 }}>
+                    {typeof g === "string" ? g : `${g.was ?? ""} → ${g.now ?? ""}${g.why ? ` (${g.why})` : ""}`}
+                  </li>
+                ))}
+              </ul>
             </>
+          )}
+
+          {(c.gaps ?? []).length > 0 && (
+            <>
+              <p className="eyebrow">Could not be verified — {(c.gaps ?? []).length}</p>
+              <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>
+                {c.gaps.map((g: any, i: number) => (
+                  <li key={i} className="row-sub" style={{ marginBottom: 2 }}>
+                    {typeof g === "string" ? g : `${g.wanted ?? g.what ?? JSON.stringify(g)}${g.why ? ` — ${g.why}` : ""}`}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {/* Provenance, reachable and out of the way. */}
+          {(c.sources ?? []).length > 0 && (
+            <details>
+              <summary className="docket-more" style={{ cursor: "pointer" }}>
+                {c.sources.length} source{c.sources.length === 1 ? "" : "s"}, with when each was read
+              </summary>
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {c.sources.map((src: any, i: number) => (
+                  <li key={i} className="row-sub" style={{ marginBottom: 2 }}>
+                    {typeof src === "string" ? src : `${src.name ?? src.url ?? "unnamed"}${src.read_at ? ` · read ${src.read_at}` : ""}`}
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </>
       );
+    }
 
     /*
      * THE RUN OF SHOW.

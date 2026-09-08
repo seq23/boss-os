@@ -376,23 +376,45 @@ backends.post("/claim", async (c) => {
     return ok(c, { run: null, reason: `${backend.display_name} is ${backend.status}, so it may not take work.` });
   }
 
+  /*
+   * THE JOIN USED TO REQUIRE `t.status = 'queued'`, AND THAT IS WHY NOTHING WAS EVER CLAIMED.
+   *
+   * `queue/consumer.ts` sets the task to `running` — its event is literally named `started` — and
+   * THEN dispatches the run. So by the time a runner asks, the task is `running` and the old clause
+   * could never match. Every duty routed to `bk_claude_code` produced a run no machine could take,
+   * silently, for ever. See migration 0206 for the full account; the symptom reached Today as
+   * "fired, but its last task is still running — nothing picked it up", which reads as a broken
+   * launchd agent and is not.
+   *
+   * EXCLUSIVITY MOVED TO THE RUN, WHICH IS THE OBJECT BEING CLAIMED. The old conditional UPDATE on
+   * the task was doing double duty as both filter and lock; `claimed_at IS NULL` is a lock that
+   * does not also make a claim depend on an unrelated status.
+   */
   const waiting = await c.env.DB
     .prepare(
       `SELECT r.id, r.task_id, r.envelope_id, r.requested
          FROM backend_runs r
          JOIN tasks t ON t.id = r.task_id
-        WHERE r.backend_id = ? AND r.status = 'running' AND r.finished_at IS NULL AND t.status = 'queued'
+        WHERE r.backend_id = ? AND r.status = 'running' AND r.finished_at IS NULL
+          AND r.claimed_at IS NULL
+          AND t.status IN ('queued', 'running')
         ORDER BY r.started_at LIMIT 10`,
     )
     .bind(backendId)
     .all<{ id: string; task_id: string; envelope_id: string | null; requested: string }>();
 
   for (const run of waiting.results ?? []) {
+    // Exclusive by construction: exactly one UPDATE changes a row whose claimed_at is still null.
     const claimed = await c.env.DB
-      .prepare(`UPDATE tasks SET status = 'running', started_at = COALESCE(started_at, ?) WHERE id = ? AND status = 'queued'`)
-      .bind(Date.now(), run.task_id)
+      .prepare(`UPDATE backend_runs SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL`)
+      .bind(Date.now(), deviceId, run.id)
       .run();
     if ((claimed.meta.changes ?? 0) === 0) continue; // somebody else took it between the read and here
+
+    await c.env.DB
+      .prepare(`UPDATE tasks SET status = 'running', started_at = COALESCE(started_at, ?) WHERE id = ?`)
+      .bind(Date.now(), run.task_id)
+      .run();
 
     let requested: any = {};
     try { requested = JSON.parse(run.requested); } catch { requested = {}; }

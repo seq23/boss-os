@@ -886,6 +886,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         content: shown
           ? {
               status: shown.status,
+              /*
+               * 0205. The answer, then the evidence. `headline` is one line and it is what the
+               * collapsed block shows; before it existed that line was the first sentence of a
+               * five-sentence summary made of stacked figures, which is the "formatted for a
+               * machine not for human eyes" she described.
+               */
+              headline: shown.headline ?? null,
               summary: shown.summary,
               sections: parseJson(shown.sections, []),
               gaps: parseJson(shown.gaps, []),

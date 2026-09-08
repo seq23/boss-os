@@ -32,6 +32,8 @@ import { dayIdInZone, weekIdInZone } from "@shared/boss/timezone";
 
 export interface DeliveredReport {
   status?: unknown;
+  /** 0205. One line, twelve words, no figures. The single thing that changed. */
+  headline?: unknown;
   summary?: unknown;
   sections?: unknown;
   gaps?: unknown;
@@ -420,6 +422,27 @@ export async function deliverExecutiveReport(
       ? "The research run did not produce a usable report. Nothing here is a finding."
       : null);
 
+  /*
+   * THE HEADLINE — one line, and the whole point of 0205.
+   *
+   * Her instruction: "it needs to be synthesized and summarized and formatted properly ... the way
+   * it is formmated now is for a machine not for a human eyes." Today's block shows ONE line when
+   * collapsed, and until now that line was the first sentence of a five-sentence summary built out
+   * of stacked figures. The headline is the answer; everything below it is the evidence.
+   *
+   * FALLING BACK TO THE FIRST SENTENCE IS DELIBERATE AND NOT PRETTY. Reports written before this
+   * column existed have no headline, and a block that reads "—" for them would make the fix look
+   * like a regression on every historical day. A sentence is a worse headline than a headline and
+   * a much better one than nothing.
+   */
+  const headline =
+    asText(args.report?.headline) ??
+    (honest === "failed"
+      ? "Today's research run failed. Nothing below is a finding."
+      : summary
+        ? summary.split(/(?<=[.!?])\s+/)[0]!.slice(0, 160)
+        : null);
+
   const id = newId("xrp");
 
   /*
@@ -430,13 +453,14 @@ export async function deliverExecutiveReport(
   await env.DB
     .prepare(
       `INSERT INTO executive_reports
-         (id, day_id, generated_at, task_id, backend_run_id, status, summary, sections, gaps, sources, corrections)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+         (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(day_id) DO UPDATE SET
          generated_at = excluded.generated_at,
          task_id = excluded.task_id,
          backend_run_id = excluded.backend_run_id,
          status = excluded.status,
+         headline = excluded.headline,
          summary = excluded.summary,
          sections = excluded.sections,
          gaps = excluded.gaps,
@@ -444,7 +468,7 @@ export async function deliverExecutiveReport(
          corrections = excluded.corrections`,
     )
     .bind(
-      id, forDay, now, args.taskId, args.runId, honest, summary,
+      id, forDay, now, args.taskId, args.runId, honest, headline, summary,
       JSON.stringify(sections),
       JSON.stringify(gaps),
       JSON.stringify(asArray(args.report?.sources)),

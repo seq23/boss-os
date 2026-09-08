@@ -139,6 +139,28 @@ and shown on their screens *before* the approval was ever raised.
 **Acceptance is still recorded.** `backend_run_auto_accepted` in the audit log, naming the run, the
 backend and the reason. What went away is the click, not the trail.
 
+### The run your Mac could never claim — the reason it was not arriving at all
+
+Two things were stacked, and fixing only the first would have left a screen honestly reporting a
+permanent absence.
+
+**`queue/consumer.ts` sets a task to `running` and THEN dispatches its run.** The claim endpoint
+required the task to still be `queued`, so the join could never match: **every duty routed to
+Claude Code produced a run nothing on earth could take.** It reached Today as *"fired, but its last
+task is still running — nothing picked it up"*, which reads as a broken launchd agent and is not —
+the agent runs five times a day, asks correctly, and is told there is nothing for it.
+
+Every report you have ever seen came in through `POST /backends/dispatch`, the one path that
+bypasses the consumer and leaves the task `queued`. That is why this looked like it worked.
+
+Fixed in `0206`. Exclusivity moved onto the run itself (`claimed_at`), which is the object being
+claimed; the old lock was a conditional UPDATE on the task's status doing double duty as filter and
+lock. **Proven live**: with the fix in, the real Mac agent immediately claimed and completed a
+brokerage sourcing run that had been stranded since 7 September.
+
+**Runs stranded by the bug are left where they are.** They are claimable now, oldest first, one per
+agent tick — five ticks a day, so a small backlog drains within a day rather than being thrown away.
+
 ### What "the report arrives by itself" now means
 
 - **It lands on Today.** No approval, no gate.
@@ -153,6 +175,34 @@ backend and the reason. What went away is the click, not the trail.
   chains corrections to the previous day, so deleting the last link would break the one feature that
   depends on it.
 
+### The briefing, written for your eyes
+
+> "the way it is formmated now is for a machine not for a human eyes. it needs to be synthesized and
+>  summarized and formatted properly"
+
+Both halves were true and each needed its own fix.
+
+| | Was | Is |
+|---|---|---|
+| The one line on Today | The first sentence of a five-sentence summary of stacked figures | **`headline`** — one line, twelve words, no figures |
+| A section | A heading and a paragraph | A heading, **what it means for you**, then up to four bullets with the key phrase bolded |
+| Sections shown | All of them, in storage order | The **first four**; the rest one click away, with a count |
+| Sources | A list of URLs and ISO timestamps at full weight | Behind a toggle |
+| Gaps and corrections | Buried under the sources | **On the screen, at full weight** |
+
+**Gaps and corrections were deliberately not compressed.** "I could not verify this" and "yesterday
+I told you the opposite" are decision-bearing — the 7 September run used a correction to overturn a
+standing assumption that a company was still private. A briefing that reads beautifully because it
+dropped its caveats is worse than the one it replaced.
+
+**The four-section cap is applied on the screen, not on the way in.** A real run on 8 September,
+with the new prompt, filed fourteen sections — down from twenty, so the instruction moved it and did
+not govern it. Truncating on the write side would destroy research you paid for; folding it away
+gives you the short read and loses nothing.
+
+**Same duty, same cadence, same model, same cap.** Asking for a synthesis is not more work than
+asking for six sections.
+
 ### The morning agenda, without doing anything
 
 > "i should get a morning agenda each day without doing anything what the fuck?!"
@@ -165,6 +215,19 @@ only computed if you press something is not a day plan; it is a form.
 It is **derived on read** now, so a failed cron and an unpressed button cannot produce an empty
 screen. Proposed is not agreed: the plan is on the screen, and running the gate is you agreeing to it
 or overriding it.
+
+**Today's Contract is the agenda, divided by pillar** — your specification, and all three parts of
+it were built and unwired rather than missing:
+
+| Pillar | What is on the screen | Who owns it |
+|---|---|---|
+| **Body** | §6.9's five stored morning movements, printed exactly and in order, then today's somatic rotation — one movement per lane, chosen as the least recently used, each saying why. Then water, hydration, the food rule and the safety stop. | Imani |
+| **Spirit** | **Your gratitude sentence, mirrored here.** Spirit remains its home; you should not have to navigate to read your own sentence. Then the seven-step manifestation sequence with its minutes. | Imani |
+| **Wealth** | The first money move, with the named candidates and their sources under it. | Camille and Monique |
+| **Execution** | Whether anything you own shipped, and an honest line when nothing is owed. | Danielle |
+
+**Nothing there is invented.** Every movement is one you wrote down; the system only chooses which
+somatic one comes up today, deterministically from `movement_log`, and says why.
 
 ---
 
