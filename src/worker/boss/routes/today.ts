@@ -534,10 +534,24 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    */
   const [staleDuties, stuckDuties, lastNetworkRefresh, agentBudget, warnSetting] = await Promise.all([
     env.DB.prepare(
+      /*
+       * `COALESCE(last_run_at, created_at)`, NOT `COALESCE(last_run_at, 0)`.
+       *
+       * A duty that has never run was being measured against the epoch, so 0 < now − 14 days is
+       * true for every brand-new weekly duty and it raised a HIGH alert on Today from the moment it
+       * was created. Seen immediately: `duty_mailbox_sweep` deployed on 8 September and its first
+       * run is the following Sunday, and Today announced "has never fired since it was created" as
+       * a fault before it was even due.
+       *
+       * That is the exact failure OPERATIONS names as the reason two local jobs are NOT duty rows —
+       * "a false alarm, which is worse than the gap, because a screen that cries wolf is one you
+       * stop reading." Measured from creation, a new duty is given its own cadence to fire in and
+       * only then goes loud.
+       */
       `SELECT id, name, last_run_at, created_at
          FROM standing_duties
         WHERE suspended = 0
-          AND COALESCE(last_run_at, 0) <
+          AND COALESCE(last_run_at, created_at) <
               ? - (CASE cadence WHEN 'daily' THEN 2 WHEN 'weekly' THEN 14 ELSE 62 END) * 86400000`,
     ).bind(Date.now()).all<{ id: string; name: string; last_run_at: number | null; created_at: number }>(),
 
@@ -892,7 +906,18 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
                * five-sentence summary made of stacked figures, which is the "formatted for a
                * machine not for human eyes" she described.
                */
-              headline: shown.headline ?? null,
+              /*
+               * THE FALLBACK RUNS ON READ AS WELL AS ON WRITE. Reports written before 0205 have no
+               * headline, and there is no backfill that could invent one — but a block that showed
+               * a five-sentence paragraph on its one collapsed line for every historical day would
+               * make the fix look like it had not shipped. The first sentence is a worse headline
+               * than a headline and a far better one than a wall of text.
+               */
+              headline:
+                shown.headline ??
+                (typeof shown.summary === "string" && shown.summary.trim()
+                  ? shown.summary.trim().split(/(?<=[.!?])\s+/)[0]!.slice(0, 160)
+                  : null),
               summary: shown.summary,
               sections: parseJson(shown.sections, []),
               gaps: parseJson(shown.gaps, []),

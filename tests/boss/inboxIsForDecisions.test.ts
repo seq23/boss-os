@@ -480,3 +480,52 @@ describe("the briefing is written for her eyes", () => {
     expect(block.content.sources).toHaveLength(1);
   });
 });
+
+/**
+ * A NEW DUTY IS NOT A BROKEN ONE.
+ *
+ * The stale-duty query measured a duty that had never run against the EPOCH, so
+ * `0 < now − 14 days` was true for every brand-new weekly duty and Today raised a HIGH alert the
+ * moment one was created. Seen immediately on deploying `duty_mailbox_sweep`, whose first run is
+ * the following Sunday: the screen called it a fault before it was due.
+ *
+ * OPERATIONS names this exact failure as the reason two local jobs are deliberately NOT duty rows —
+ * "a false alarm, which is worse than the gap, because a screen that cries wolf is one you stop
+ * reading."
+ */
+describe("a duty that has not fired yet is measured from when it was created", () => {
+  const DUTY = "duty_alert_test";
+
+  beforeEach(async () => {
+    await env.DB.prepare(`DELETE FROM standing_duties WHERE id = ?`).bind(DUTY).run();
+  });
+
+  async function seedDuty(createdAt: number) {
+    await env.DB.prepare(
+      `INSERT INTO standing_duties
+         (id, name, employee_id, lane, local_hour, local_minute, timezone, cadence, weekday,
+          next_due_at, task_kind, task_title, task_input, success_criteria, created_at)
+       VALUES (?, 'A brand new weekly duty', 'emp_relationship', 'ops', 18, 30, 'America/Chicago',
+               'weekly', 0, ?, 'research', 'X', '{}', 'It ran.', ?)`,
+    ).bind(DUTY, Date.now() + 86_400_000, createdAt).run();
+  }
+
+  async function alertsMentioning(text: string) {
+    const day = new Date().toISOString().slice(0, 10);
+    const { body } = await apiJson(`/api/today?date=${day}`);
+    const block = (body.data.blocks as any[]).find((b) => b.key === "critical_alerts");
+    return (block.content.alerts ?? []).filter((a: any) => String(a.text).includes(text));
+  }
+
+  it("says nothing about a duty created today whose first run is this weekend", async () => {
+    await seedDuty(Date.now());
+    expect(await alertsMentioning("A brand new weekly duty")).toHaveLength(0);
+  });
+
+  it("still goes loud once a weekly duty has been silent for longer than its cadence allows", async () => {
+    await seedDuty(Date.now() - 30 * 86_400_000);
+    const alerts = await alertsMentioning("A brand new weekly duty");
+    expect(alerts.length).toBeGreaterThan(0);
+    expect(alerts[0].severity).toBe("high");
+  });
+});
