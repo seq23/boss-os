@@ -27,7 +27,7 @@ the work; the job is the only thing that can do it.
 | Employee | Role | Pillar | Owns |
 |---|---|---|---|
 | **Camille** | Director of Research | Wealth | Executive report, buyer sourcing, property performance |
-| **Monique** | Director of Relationships | Wealth | The network refresh, backlink prospecting |
+| **Monique** | Director of Relationships | Wealth | The network refresh, backlink prospecting, **the mailbox sweep** |
 | **Danielle** | Technical Program Manager | Execution | The shipping heartbeat |
 | **Imani** | Director of Practice | Body + Spirit | The week's practice, rituals, technique research |
 | **Kendra** | Systems Manager | — | Tool scouting |
@@ -84,6 +84,7 @@ All times America/Chicago.
 | Thursday | 08:00 | Tool scouting | Kendra |
 | Sunday | 17:00 | The week's practice | Imani |
 | Sunday | 18:00 | Network refresh — re-read the mailbox, update the touch list | Monique |
+| Sunday | 18:30 | Mailbox sweep — missed deals, cooling buyers, connectors | Monique |
 
 ### The launchd jobs
 
@@ -93,9 +94,77 @@ com.seq.boss-packet      the Wednesday packet reminder     Wed 07:00
 com.seq.boss-network     mailbox → touch list              Sun 18:00
 com.seq.boss-properties  heartbeat + Search Console        Mon 07:00
 com.seq.kdp-watch        the KDP case, read and chased      Mon/Wed/Fri 09:23
+com.seq.boss-mailbox     mailbox → findings                 Sun 18:30
 ```
 
 Reinstall or repair them all with `npm run app:install` and `bash scripts/ops/install-agent-launchd.sh`.
+
+---
+
+## What arrives by itself, and what the Inbox is for
+
+_Rewritten 8 September 2026, because you opened it and told us what was wrong._
+
+> "when i click on inbox i have all these executive intelligence reports to 'approve' then they
+>  disappear after hitting the button. then in the 'today' screen i dont see any hting WTF? they are
+>  to be delivered to the today screen automatically. i shouldnt have to fucking approve it."
+
+Every clause of that was a real defect. The most damning part is that the code agreed with you in
+writing: `approvals/execute.ts` carried the comment *"APPROVING APPLIES NOTHING, AND THAT IS THE
+DESIGN RATHER THAN AN OMISSION."* It was right that nothing is applied and wrong to conclude that
+this should therefore be an approval.
+
+### The rule
+
+> **An approval exists when your answer changes what happens next.**
+
+If approving and rejecting lead to the same world, there was no question — and putting it on a list
+teaches you to clear the list without reading it, which is how the one item that *did* need you gets
+cleared too. An inbox that cries wolf is worse than no inbox.
+
+**What the Inbox keeps**
+
+| | Because |
+|---|---|
+| A run that changed files outside its own workspace | That is a change to your machine, and accepting or discarding it is a real fork |
+| A run that tripped a forbidden action | A guard fired and you should see it |
+| A run that asked for your decision | §79.8's evidence packet has always carried `approval_needed`; nothing read it until now |
+| Work you dispatched by hand with no delivery contract | Its output has nowhere else to land, so the docket **is** the result |
+| Memory promotions, capability admissions, prompt library, trading, intake, model routing | Every one of these applies something real |
+
+**What it lost:** your own briefing, and the four other delivered outputs like it — the buyer list,
+the backlink prospects, the tool scan, the week's practice. All five were written to their tables
+and shown on their screens *before* the approval was ever raised.
+
+**Acceptance is still recorded.** `backend_run_auto_accepted` in the audit log, naming the run, the
+backend and the reason. What went away is the click, not the trail.
+
+### What "the report arrives by itself" now means
+
+- **It lands on Today.** No approval, no gate.
+- **If today's has not arrived, yesterday's is shown in full**, labelled with the day it is for.
+  Before this, a briefing that existed and was readable was replaced by "No report for today yet",
+  which is the blank screen you were describing.
+- **The reason is named, and the reasons differ.** Not due for another 18 minutes · the task is
+  still queued and nothing on your Mac has claimed it · the run failed, here is its error · the duty
+  is suspended · it has never fired. Each of those is a different morning with a different next move,
+  and the old sentence was identical for all of them.
+- **Yesterday's archives itself when today's arrives.** Archived, never deleted — the report format
+  chains corrections to the previous day, so deleting the last link would break the one feature that
+  depends on it.
+
+### The morning agenda, without doing anything
+
+> "i should get a morning agenda each day without doing anything what the fuck?!"
+
+The four Pillar Contracts were being derived the whole time — from your projects, your arcs, your
+practice and your real record — and only **inside** `POST /today/gates/morning`. So opening Today at
+7am showed "The Morning Gate has not run. Today has no contract yet." A day plan that exists and is
+only computed if you press something is not a day plan; it is a form.
+
+It is **derived on read** now, so a failed cron and an unpressed button cannot produce an empty
+screen. Proposed is not agreed: the plan is on the screen, and running the gate is you agreeing to it
+or overriding it.
 
 ---
 
@@ -164,7 +233,8 @@ your own work because your staff spent it.
 | Tools | Haiku | 10 min | weekly | ~$0.20 | ~$0.90 |
 | Practice | Haiku | 10 min | weekly | ~$0.15 | ~$0.65 |
 | KDP case watch | Haiku | 10 min | Mon/Wed/Fri | ~$0.05 | ~$0.65 |
-| | | | | | **≈ $11.65** |
+| Mailbox sweep | Sonnet | 80 turns | weekly | ~$0.60 | ~$2.60 |
+| | | | | | **≈ $14.25** |
 
 **Ceiling: $25/month. Warned at 70%.**
 
@@ -219,7 +289,7 @@ the first run, when a collision suffix was built from the first three characters
 returns a subject or a body for that request; the privacy claim is what the request asks for, not
 something applied to the answer afterwards. `npm run validate:gmail` fails the build if that changes.
 
-**Two things do read the contents of your mail, both on this machine, both named.** That sentence
+**Three things do read the contents of your mail, all on this machine, all named.** That sentence
 above used to be the whole story and it was not true of the repository — it was true of one file.
 The validator now scans every script that touches Gmail, and names the exceptions with their
 reasons rather than leaving them ungoverned:
@@ -228,6 +298,7 @@ reasons rather than leaving them ungoverned:
 |---|---|---|
 | `npm run holdings` | "Do I have access to <company>?" is answered in prose — someone writing that they have shares available. No arrangement of From/To/Date produces it. | On demand only, never a scheduled job. One company at a time, the one you typed. Prints and exits: no index, no cache, no file. |
 | Simone's KDP watch | You cannot tell from a header whether support resolved a case. | It does not call Gmail at all — `claude -p` reads through the connector on this machine. What reaches Boss OS is a determination in the run's own words, and the endpoint **refuses** one containing an `@`. |
+| Monique's mailbox sweep | "An old buyer asked about a company; someone else now has access to it" is a fact about what two people *said*. No arrangement of From/To/Date produces it. | Built the same way Simone's is, deliberately: it makes **no Gmail API call from this repository at all**, so `validate:gmail`'s rule for every other caller is unchanged rather than widened. Subjects and bodies stay under `~/.boss-os/`. Every person is named by their code name from `MAP.json`, an unmapped address is skipped rather than named, and both the reporter and the endpoint refuse the **whole batch** if any field carries an `@`. Six assertions in `validate:gmail` fail the build if any of that stops being true. |
 
 Neither sends anything to a model, and neither writes mail contents anywhere.
 
@@ -247,6 +318,7 @@ npm run returns:contribute        # LP sends/replies + Search Console into the r
 npm run crossmatch                # firms on both the LP list and the buyer list
 npm run canon:sync                # store the docs/boss/ documents in the vault, hashed
 npm run kdp:check                 # run Simone's KDP watch now, instead of waiting for Mon/Wed/Fri
+npm run mailbox:sweep             # run Monique's mailbox sweep now, instead of waiting for Sunday
 npm run local:pull                # read production into backups/
 npm run local:restore -- --force  # load that into the local database
 ```
@@ -264,9 +336,10 @@ These exist because each of them caught something real.
 | `validate:reachable` | Is every built thing reachable from her day? |
 | `validate:classification` | Does every Boss table have a residency, and every policy row a table? |
 | `validate:gmail` | Does every Gmail caller still request only headers — and is the one content exception still narrow? |
-| `validate:duty-delivery` | Does every duty's output have a handler, a table, and a way to her? |
+| `validate:duty-delivery` | Does every duty's output have a handler, a table, and a way to her? For a **local job**, does a route write the table and does a script actually POST to it? |
 | `validate:owned-work` | Does every owned deliverable have an owner, a terminal condition and a live escalation? |
 | `validate:sql` | Does every statement match the schema? |
+| `validate:css-classes` | Does every `className` have a rule? It had been reporting `.input` on Team.tsx — the control that stops an owned deliverable, rendering unstyled — and was in no gate. It is in `npm run validate` now. |
 | `accessibility` | Do source files contain invisible characters? |
 
 **`validate:reachable` is the important one.** The defect this system produces most is a correct
@@ -294,9 +367,12 @@ Not gaps. Decisions, with reasons.
   well every week — a false alarm, which is worse than the gap, because a screen that cries wolf is
   one you stop reading. They stay launchd jobs until each has something to report.
 
-- **Reading your mail's contents.** The extraction takes metadata only. Matching "an old buyer asked
-  about Company X" against "someone recently offered X" needs subjects and bodies, which is a
-  materially bigger step and a separate decision.
+- ~~**Reading your mail's contents.**~~ **Decided and built, 8 September 2026** — narrowly. The
+  scheduled *extraction* still takes metadata only and always will; `validate:gmail` fails the build
+  if it changes. What was added is a third local job that reads contents inside `claude -p` on this
+  machine, exactly as Simone's KDP watch does, so no script in this repository gained the ability to
+  read a body. The decision that made it safe was choosing that route over the obvious one: a
+  `format=full` extractor here would have meant widening the guard for everyone.
 - **Client repos.** Out of Boss OS entirely, permanently.
 - **Anything that commits, merges, pushes or deploys.** Every agent run ends as a proposal.
 
@@ -306,9 +382,16 @@ Not gaps. Decisions, with reasons.
 
 Real, and named rather than quietly absent.
 
-1. **The missed-connections feature.** The one you described: an old buyer asked about a company, and
-   recent mail shows you may now have access to it. Needs mail contents. Design is settled — it would
-   run on your Mac and emit only code-named structured output — but it is not built.
+1. ~~**The missed-connections feature.**~~ **BUILT, 8 September 2026.** Monique's mailbox sweep,
+   Sunday 18:30, half an hour after the network refresh so the code-name map it names people from is
+   current. It finds four things — a deal sitting between two people in your mailbox, a buyer who has
+   gone quiet against *their own* rhythm, an introduction nobody worked, and the connectors whose
+   value is invisible in any list. They land on People, the cooling buyers also land on the Capital
+   desk, and a high-confidence pairing becomes Today's first money move — because two people who have
+   both already talked to you about the same asset is the shortest route to a commission you have.
+
+   **It has never run yet.** Install it with `bash scripts/ops/install-agent-launchd.sh`, and the
+   People screen says so in those words until it has.
 
 2. **`sequoia@westpeek.ventures` is not connected.** It is p1 on your Wednesday packet. It unblocks
    LP reply detection and the opt-out defect the outreach register has carried since 19 August.

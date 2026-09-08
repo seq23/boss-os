@@ -52,14 +52,38 @@ describe("an approval exists when her answer changes what happens next", () => {
     expect(verdict.delivers).toBe("executive_reports");
   });
 
-  it("raises one when the run wrote files on her machine", () => {
+  it("raises one when the run wrote files outside its own workspace", () => {
     const verdict = runNeedsHerDecision(
       JSON.stringify({ delivers: "executive_reports" }),
-      { files_touched: ["src/worker/boss/index.ts"] },
+      { files_touched: ["/Users/x/GitHub/boss-os/src/worker/boss/index.ts"] },
       [],
     );
     expect(verdict.needed).toBe(true);
-    expect(verdict.reason).toContain("file");
+    expect(verdict.reason).toContain("outside its own workspace");
+  });
+
+  /*
+   * THE ONE THIS FIX ALMOST SHIPPED WITHOUT. A run delivers BY writing
+   * `~/.boss-os/reports/delivers.json`. Counting that as a proposal to change her machine put the
+   * briefing straight back in the Inbox — verified by opening it, not by reading the code.
+   */
+  it("does not raise one for the workspace file that IS the delivery", () => {
+    const verdict = runNeedsHerDecision(
+      JSON.stringify({ delivers: "executive_reports" }),
+      { files_touched: ["/Users/sequoiataylor/.boss-os/reports/delivers.json"] },
+      [],
+    );
+    expect(verdict.needed).toBe(false);
+  });
+
+  it("still raises one when a delivery run also touched something of hers", () => {
+    const verdict = runNeedsHerDecision(
+      JSON.stringify({ delivers: "executive_reports" }),
+      { files_touched: ["/Users/sequoiataylor/.boss-os/reports/delivers.json", "/Users/sequoiataylor/GitHub/boss-os/README.md"] },
+      [],
+    );
+    expect(verdict.needed).toBe(true);
+    expect(verdict.reason).toContain("README.md");
   });
 
   it("raises one when a forbidden action was detected", () => {
@@ -142,7 +166,7 @@ describe("the reporting endpoint applies that rule", () => {
         device_id: "dev_test",
         evidence: {
           run_id: runId, status: "succeeded", summary: "Edited a module.",
-          files_touched: ["src/worker/boss/index.ts"], cost_micros: 1000,
+          files_touched: ["/Users/x/GitHub/boss-os/src/worker/boss/index.ts"], cost_micros: 1000,
         },
       },
     });
@@ -152,7 +176,7 @@ describe("the reporting endpoint applies that rule", () => {
     const approval = await row<any>(`SELECT summary, status FROM approvals WHERE id = ?`, body.data.approval_id);
     expect(approval.status).toBe("pending");
     // The reason it needs her leads the card, so the docket is readable without opening it.
-    expect(approval.summary).toContain("file");
+    expect(approval.summary).toContain("outside its own workspace");
   });
 });
 

@@ -66,11 +66,28 @@ CREATE INDEX idx_report_live ON executive_reports(archived_at, generated_at DESC
 -- and her Inbox still opens on a stack of briefings to acknowledge — the defect outliving its own
 -- repair, which is the ordinary way a fix fails to be felt.
 --
--- ONLY THE ONES THE NEW RULE WOULD NOT HAVE RAISED. The condition is narrow on purpose: a pending
--- `backend_run` approval whose run touched no files, recorded no error, and whose task declared a
--- `delivers` key that the code has a handler for. Anything else — a run that wrote to her disk, a
--- refusal, a failure, an ad-hoc dispatch — is left exactly where it is, because those are decisions
--- and this migration has no business making them.
+-- WHAT IS RETIRED, AND WHY THE LINE IS DRAWN HERE RATHER THAN AT THE NEW RULE.
+--
+-- The first draft of this statement retired only approvals whose task declared a handled `delivers`
+-- key. Running it and then OPENING THE INBOX — which is the only way any of this was ever going to
+-- be checked — left two cards reading "Executive Intelligence Report", because both came from runs
+-- dispatched by hand before the duty carried that key. The defect would have outlived its own
+-- repair by exactly the amount she would notice.
+--
+-- So the backfill is drawn at the thing that is true of every one of them: **approving it applies
+-- nothing.** `approvals/execute.ts` marks the task done and changes nothing else, for every
+-- `backend_run` approval that has ever existed. A card whose two outcomes differ only in whether it
+-- is still on screen, for work that finished days ago, is not a decision she has been putting off.
+--
+-- The conditions are still real. A run that FAILED or was REFUSED keeps its card, because those
+-- close with a reason she may want. A run that touched a file under `/GitHub/` keeps its card,
+-- because that is a change to her machine — the one thing in this lane that genuinely is a
+-- proposal. Everything else is history being acknowledged.
+--
+-- GOING FORWARD IS DECIDED BY CODE, NOT BY THIS STATEMENT. `backends/needsDecision.ts` is narrower:
+-- it keeps ad-hoc dispatched work in the Inbox, because a task with no delivery contract has
+-- nowhere else for its output to land and the docket IS the result. This backfill is a one-time
+-- clearing of a list she has been hand-clearing every morning.
 --
 -- Resolved as `approved` with `decided_by = 'system'` and a reason, rather than deleted. The audit
 -- trail must be able to say that a decision was retired and why; a row that vanishes says nothing.
@@ -83,18 +100,24 @@ UPDATE approvals
    AND kind = 'backend_run'
    AND EXISTS (
      SELECT 1 FROM backend_runs r
-       JOIN tasks t ON t.id = r.task_id
       WHERE r.id = approvals.origin_id
         AND r.status = 'succeeded'
         AND r.error IS NULL
-        AND COALESCE(r.files_touched, '[]') IN ('[]', 'null', '')
-        AND t.input LIKE '%"delivers"%'
+        -- A DELIVERY RUN WRITES ITS OWN WORKSPACE, AND THAT IS NOT A PROPOSAL.
+        --
+        -- Found by opening the Inbox after the first version of this migration: a briefing approval
+        -- was still there, because the way a run delivers is by writing
+        -- `~/.boss-os/reports/delivers.json`. The delivery mechanism was being read as a change to
+        -- her machine, so the fix for "I should not have to approve my own briefing" would have
+        -- shipped and left the briefing in the Inbox.
+        --
+        -- `/GitHub/` is the conservative test for this one-time backfill: no run has ever touched a
+        -- file of hers outside her repositories and its own workspace, and a false negative here
+        -- costs one card she clears by hand. The precise per-file rule lives in
+        -- `src/worker/boss/backends/needsDecision.ts` and governs everything from now on.
         AND (
-          t.input LIKE '%"executive_reports"%' OR
-          t.input LIKE '%"sourcing_candidates"%' OR
-          t.input LIKE '%"link_prospects"%' OR
-          t.input LIKE '%"tool_suggestions"%' OR
-          t.input LIKE '%"practice_week"%'
+          COALESCE(r.files_touched, '[]') IN ('[]', 'null', '')
+          OR r.files_touched NOT LIKE '%/GitHub/%'
         )
    );
 

@@ -87,11 +87,29 @@ export function runNeedsHerDecision(
     return { needed: true, reason: "The run asked for your decision before this is used", delivers };
   }
 
-  const files = Array.isArray(evidence?.files_touched) ? evidence!.files_touched as unknown[] : [];
-  if (files.length > 0) {
+  /*
+   * A DELIVERY DUTY WRITES ITS OWN WORKSPACE, AND THAT IS NOT A PROPOSAL.
+   *
+   * FOUND BY USING IT. The first version of this rule raised an approval on any `files_touched`,
+   * and the very next morning's Executive Intelligence Report still appeared in the Inbox — because
+   * the way a run delivers is by writing `~/.boss-os/reports/delivers.json`. The mechanism by which
+   * the report reaches her was being counted as a proposal to change her machine, so the fix for
+   * "I should not have to approve my own briefing" would have shipped and changed nothing. Reading
+   * the code would not have caught it; opening the Inbox did.
+   *
+   * So the question is not "did it touch a file" but "did it touch a file OUTSIDE the workspace it
+   * was given". `~/.boss-os/` is the agent's own scratch directory — the sky snapshot, the sourcing
+   * output, the packets, the findings. Writing there is how delivery happens. Writing anywhere else
+   * — a repository, a document, anything of hers — is a change she should see before it stands.
+   */
+  const files = Array.isArray(evidence?.files_touched) ? (evidence!.files_touched as unknown[]) : [];
+  const outside = files.filter((f) => !String(f).includes("/.boss-os/"));
+  if (outside.length > 0) {
     return {
       needed: true,
-      reason: `This run changed ${files.length} file${files.length === 1 ? "" : ""} on your machine`,
+      reason:
+        `This run changed ${outside.length} file${outside.length === 1 ? "" : "s"} outside its own workspace ` +
+        `(${String(outside[0])})`,
       delivers,
     };
   }
