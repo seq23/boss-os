@@ -177,6 +177,8 @@ npm run contacts:extract          # re-read the mailbox
 npm run contacts:sync -- --commit # update the touch list (dry-run without --commit)
 npm run lp:sync -- --commit       # push new LP rows to Scooter's tracker (append-only)
 npm run packet:remind -- --force  # build the Wednesday packet now
+npm run returns:contribute        # LP sends/replies + Search Console into the return ledger
+npm run crossmatch                # firms on both the LP list and the buyer list
 npm run canon:sync                # store the docs/boss/ documents in the vault, hashed
 npm run local:pull                # read production into backups/
 npm run local:restore -- --force  # load that into the local database
@@ -193,6 +195,7 @@ These exist because each of them caught something real.
 | Validator | What it asks |
 |---|---|
 | `validate:reachable` | Is every built thing reachable from her day? |
+| `validate:classification` | Does every Boss table have a residency, and every policy row a table? |
 | `validate:gmail` | Does the extractor still request only metadata headers? |
 | `validate:sql` | Does every statement match the schema? |
 | `accessibility` | Do source files contain invisible characters? |
@@ -247,3 +250,18 @@ Real, and named rather than quietly absent.
 
 7. **The first-run seeding fires three weekly duties at once.** They settle onto their weekdays after
    the first run.
+
+8. **Imani's practice duty delivers nowhere.** `duty_practice_week` declares `delivers:
+   'practice_week'`, `deliverReport.ts` handles four keys and that is not one of them, and no table
+   of that name exists — only a `data_policy` row classifying one. So the duty runs every Sunday at
+   17:00, costs its ~$0.15, and its output lands in the run workspace and stops there. Found on
+   7 September by `validate:classification`, which fails on the orphan policy row and is the only
+   validator not wired into `npm run validate`. `validate:reachable` cannot see it: it asks whether
+   tables have writers, not whether a duty's delivery key has a handler.
+
+9. **Nineteen of the twenty-three Search Console properties belong to no income line.**
+   `projects.ts` declares six domains; the account holds twenty-three. `npm run returns:contribute`
+   names the other nineteen on every run rather than pooling their traffic into a line that did not
+   earn it. Either they are lines and should be declared, or they are not and the decision should be
+   written down. `time-2-read.com` and `heygetonmylevel.com` are a separate case: they are not in
+   Search Console at all, which is why the SaaS line reads as unmeasured rather than zero.
