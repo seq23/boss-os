@@ -25,6 +25,90 @@ function Score({ label, value }: { label: string; value: number | null }) {
   );
 }
 
+/**
+ * MONIQUE'S FINDINGS — what this screen is for now.
+ *
+ * Her words, 8 September 2026: "the people tab is stupid, i just want one of the employees to
+ * peruse the mailbox and find connections and find people that could be buyers that i havent talked
+ * to in a while etc.... and find deals im missing between a buyer and seller in my inbox"
+ *
+ * She was right, and the reason is worth writing down rather than just deleting the list. The old
+ * primary content was 200 rows reading `importance 100 · trust 100 · recency 0 · opportunity 0` —
+ * every single row identical, because `contacts-sync` seeds importance and health from one
+ * two-wayness score and nothing has ever computed trust, recency or opportunity at all. A scoreboard
+ * where everyone has the same score is not information about anyone; it is a directory wearing
+ * numbers. The scan that would have caught it does not exist, because `validate:reachable` asks
+ * whether a table is written, not whether what is written is worth reading.
+ *
+ * So the screen leads with findings — an assertion, a reason in dates and counts, and one suggested
+ * action — and the roster moves to the bottom as a lookup, with its scores removed rather than
+ * shown as though they meant something.
+ */
+const KIND_LABEL: Record<string, string> = {
+  missed_deal: "A deal between two people in your mailbox",
+  cooling_buyer: "A buyer going quiet",
+  unworked_intro: "An introduction nobody followed up",
+  connector: "Someone who keeps introducing people",
+};
+
+function Findings({ onError }: { onError: (e: unknown) => void }) {
+  const [data, setData] = useState<any | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  function load() { api.mailboxFindings("new").then(setData).catch(onError); }
+  useEffect(load, []);
+
+  async function decide(id: string, action: "acted" | "dismissed") {
+    setBusy(id);
+    try { await api.decideFinding(id, action); load(); }
+    catch (e) { onError(e); }
+    finally { setBusy(null); }
+  }
+
+  if (data === null) return <Loading />;
+  const findings: any[] = data.findings ?? [];
+
+  return (
+    <>
+      <p className="eyebrow">What Monique found in your mailbox</p>
+      {/*
+        * THE SWEEP'S OWN STATE IS ALWAYS ON SCREEN, above the list rather than instead of it.
+        * "No findings" is true both when the sweep ran and found nothing and when it has never run,
+        * and those are opposite facts — one is news about her mailbox, the other is a broken job.
+        * This is the same defect the Executive Briefing had and it is not repeated here.
+        */}
+      <div className="row-sub" style={{ marginBottom: 8 }}>{data.sweep?.state}</div>
+
+      {findings.length === 0 ? (
+        <Empty
+          title="Nothing found this week"
+          hint="Monique reads your mail on your own Mac on Sunday evenings. Subjects and bodies stay there; only code names and her reasoning reach Boss OS."
+        />
+      ) : (
+        findings.map((f) => (
+          <div className="row" key={f.id}>
+            <div className="row-main">
+              <div className="row-title">{f.headline}</div>
+              <div className="row-sub">
+                {KIND_LABEL[f.kind] ?? f.kind} · {f.subject_code}
+                {f.counterpart_code ? ` ↔ ${f.counterpart_code}` : ""}
+                {f.subject_matter ? ` · ${f.subject_matter}` : ""} · {f.confidence} confidence
+              </div>
+              {/* Why she should believe it, in dates and counts. Never a quotation from the mail. */}
+              <div className="row-sub">{f.because}</div>
+              <div className="row-sub"><strong>Do this:</strong> {f.suggested_action}</div>
+            </div>
+            <div className="row-actions">
+              <button className="btn btn-small btn-approve" disabled={busy === f.id} onClick={() => decide(f.id, "acted")}>Acted</button>
+              <button className="btn btn-small btn-defer" disabled={busy === f.id} onClick={() => decide(f.id, "dismissed")}>Not useful</button>
+            </div>
+          </div>
+        ))
+      )}
+    </>
+  );
+}
+
 export function People() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [due, setDue] = useState<any[]>([]);
@@ -56,22 +140,17 @@ export function People() {
   const now = Date.now();
   const overdue = due.filter((f) => f.due_at < now);
   const upcoming = due.filter((f) => f.due_at >= now);
+  const dueTouch = (rows ?? [])
+    .filter((r) => r.next_touch_due_at !== null && r.next_touch_due_at < now)
+    .sort((a, b) => a.next_touch_due_at - b.next_touch_due_at);
 
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
       {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
-      <div className="stats">
-        <Score label="relationships" value={rows?.length ?? null} />
-        <Score label="overdue" value={overdue.length} />
-        <Score label="open commitments" value={due.length} />
-      </div>
-
-      <div className="btn-row">
-        <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "Close" : "Add someone"}</button>
-      </div>
-      {adding && <AddPerson onDone={() => { setAdding(false); load(); }} />}
+      {/* The findings come first, because they are the only thing on this screen she can act on. */}
+      <Findings onError={setError} />
 
       <p className="eyebrow">Owed and late</p>
       {overdue.length === 0 ? (
@@ -109,13 +188,21 @@ export function People() {
         </>
       )}
 
-      <p className="eyebrow">Relationship capital</p>
+      {/*
+        * DUE A TOUCH — the one thing the roster genuinely knows, and the only part of it that names
+        * an action. Cadence is OBSERVED from how often these two actually exchange mail, so a
+        * fortnightly correspondent is late at three weeks and a twice-a-year one is not.
+        */}
+      <p className="eyebrow">Due a touch</p>
       {rows === null ? (
         <Loading />
-      ) : rows.length === 0 ? (
-        <Empty title="Nobody is on file" hint="Add a person, then score the tie. Meetings and follow-ups hang off it." />
+      ) : dueTouch.length === 0 ? (
+        <Empty
+          title="Nobody is overdue"
+          hint="Each person's rhythm is measured from your actual mail, so this is late against their pace rather than a single default."
+        />
       ) : (
-        rows.map((r) => (
+        dueTouch.slice(0, 25).map((r) => (
           <div className="row" key={r.id}>
             <div className="row-main">
               <button className="row-title" style={{ background: "none", border: 0, padding: 0, textAlign: "left", color: "inherit", font: "inherit", cursor: "pointer" }}
@@ -123,16 +210,56 @@ export function People() {
                 {r.full_name}
               </button>
               <div className="row-sub">
-                {[r.role, r.organization_name, r.kind].filter(Boolean).join(" · ")}
-              </div>
-              <div className="row-sub">
-                importance {r.strategic_importance} · trust {r.trust_level} · recency {r.recency_score} · opportunity {r.opportunity_value}
-                {r.overdue_follow_ups > 0 ? ` · ${r.overdue_follow_ups} late` : ""}
+                {r.last_contact_at
+                  ? `Last exchange ${day(r.last_contact_at)} · you normally speak about every ${r.cadence_days} days`
+                  : `No exchange on record · expected about every ${r.cadence_days} days`}
               </div>
             </div>
-            <div className="row-val">{r.relationship_health}</div>
+            <div className="row-val">{Math.floor((now - r.next_touch_due_at) / DAY)}d late</div>
           </div>
         ))
+      )}
+
+      {/*
+        * ─── THE ROSTER, DEMOTED, WITH ITS SCORES REMOVED ──────────────────────
+        *
+        * This list used to be the point of the screen and carried four numbers per row. Three of
+        * them — trust, recency, opportunity — are read from columns nothing has ever written, so
+        * every row showed `trust 100 · recency 0 · opportunity 0`, identically, 200 times. Printing
+        * a number that was never computed is worse than printing none: it reads as a measurement.
+        *
+        * They are gone rather than fixed, because fixing them means inventing a trust model for
+        * people the system knows only by hash. What remains is a lookup — who is on file, and a way
+        * into their page — and it says plainly that these are code names.
+        */}
+      <p className="eyebrow">Everyone on file</p>
+      {rows === null ? null : rows.length === 0 ? (
+        <Empty title="Nobody is on file" hint="Run `npm run contacts:sync -- --commit` on your Mac to build this from your mailbox." />
+      ) : (
+        <>
+          <div className="row-sub" style={{ marginBottom: 8 }}>
+            {rows.length} correspondents, by code name. Only your Mac can say who each one is.
+          </div>
+          <div className="btn-row">
+            <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "Close" : "Add someone"}</button>
+          </div>
+          {adding && <AddPerson onDone={() => { setAdding(false); load(); }} />}
+          {rows.slice(0, 60).map((r) => (
+            <div className="row" key={r.id}>
+              <div className="row-main">
+                <button className="row-title" style={{ background: "none", border: 0, padding: 0, textAlign: "left", color: "inherit", font: "inherit", cursor: "pointer" }}
+                        onClick={() => setOpenPerson(r.person_id)}>
+                  {r.full_name}
+                </button>
+                <div className="row-sub">
+                  {[r.role, r.organization_name, r.kind].filter(Boolean).join(" · ")}
+                  {r.overdue_follow_ups > 0 ? ` · ${r.overdue_follow_ups} late` : ""}
+                </div>
+              </div>
+              <div className="row-val">{r.last_contact_at ? day(r.last_contact_at) : "—"}</div>
+            </div>
+          ))}
+        </>
       )}
     </>
   );

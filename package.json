@@ -2,7 +2,7 @@
   "name": "boss-os",
   "private": true,
   "version": "21.0.0",
-  "description": "West Peek OS \u2014 governed institutional operating system (P0-P12 substrate, P13-P25 operating product).",
+  "description": "West Peek OS — governed institutional operating system (P0-P12 substrate, P13-P25 operating product).",
   "type": "module",
   "scripts": {
     "backup:local": "node scripts/backup/backup.mjs",
@@ -57,7 +57,9 @@
     "contacts:extract": "node scripts/vault/vault.mjs run -- node scripts/ops/gmail-metadata.mjs",
     "properties": "node scripts/vault/vault.mjs run -- node scripts/ops/property-performance.mjs",
     "returns:contribute": "node scripts/vault/vault.mjs run -- node scripts/ops/line-returns.mjs",
-    "crossmatch": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-buyer-crossmatch.mjs"
+    "crossmatch": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-buyer-crossmatch.mjs",
+    "mailbox:sweep": "bash scripts/ops/mailbox-sweep.sh",
+    "mailbox:report": "node scripts/vault/vault.mjs run -- node scripts/ops/mailbox-report.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

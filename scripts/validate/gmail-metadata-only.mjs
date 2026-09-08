@@ -195,6 +195,92 @@ if (existsSync(join(ROOT, KDP_REPORT))) {
   bad(`${KDP_REPORT} is missing — nothing carries the determination, so the watcher reports into a log file again.`);
 }
 
+// ─── 3. Monique's mailbox sweep, held narrow the same way ────────────────────
+//
+// 0204. The "missed connections" feature — an old buyer asked about a company, later mail shows
+// somebody has access to it, nothing connected the two. It genuinely needs subjects and bodies:
+// no arrangement of From/To/Date can tell you what two people were talking about.
+//
+// IT IS NOT A `CONTENT_EXCEPTIONS` ENTRY, AND THAT IS THE POINT OF HOW IT WAS BUILT. The obvious
+// implementation was a `format=full` extractor in scripts/ops, which would have meant adding a
+// second entry to the list above and widening the class of thing this repository is allowed to do.
+// Instead it runs the KDP way: `claude -p` on her Mac, through the Gmail connector she is already
+// signed into. THIS REPOSITORY ACQUIRES NO SECOND BODY-READING API CALLER, the rule for everyone
+// else is unchanged, and the guard below is what keeps that true.
+//
+// A narrow exception that is not held narrow is just a hole, so each of these is checked rather
+// than trusted.
+
+const MBX_PROMPT = "scripts/ops/mailbox-sweep-prompt.md";
+const MBX_REPORT = "scripts/ops/mailbox-report.mjs";
+const MBX_SWEEP = "scripts/ops/mailbox-sweep.sh";
+
+if (existsSync(join(ROOT, MBX_PROMPT))) {
+  const prompt = read(MBX_PROMPT);
+
+  // Bodies are read on her Mac and must not be posted back. This is the same instruction the KDP
+  // prompt carries and it is checked by the same literal string on purpose: one vocabulary.
+  if (!/NEVER QUOTE THE MAIL/.test(prompt)) {
+    bad(`${MBX_PROMPT}: the instruction never to quote the mail has been removed. Findings describe; they never reproduce.`);
+  }
+  // Identity is code names or nothing. A prompt that stopped saying so would produce a leak the
+  // reporter would then refuse — loudly, but only after the run had spent its money.
+  if (!/MAP\.json/.test(prompt) || !/code name/i.test(prompt)) {
+    bad(`${MBX_PROMPT}: no longer requires every person to be named by their code name from MAP.json.`);
+  }
+  if (!/not in the map, that person is not eligible/i.test(prompt)) {
+    bad(`${MBX_PROMPT}: the rule that an unmapped address is skipped rather than named has been removed.`);
+  }
+  if (!/refuses/i.test(prompt) || !/`@`/.test(prompt)) {
+    bad(`${MBX_PROMPT}: no longer states that Boss OS refuses a finding containing an address.`);
+  }
+  // ONE FILE, IN ONE PLACE. A sweep free to write anywhere is a body-derived corpus on her disk.
+  if (!/Write \*\*exactly one file\*\*/.test(prompt) || !/~\/\.boss-os\/mailbox\/findings\.json/.test(prompt)) {
+    bad(`${MBX_PROMPT}: the single-output-file rule is gone. A sweep that may write anywhere builds a corpus out of her mail.`);
+  }
+  // Read-only. The connector can send mail; this job must never be the thing that does.
+  if (!/read-only/i.test(prompt)) {
+    bad(`${MBX_PROMPT}: no longer states that the Gmail scope here is read-only.`);
+  }
+} else {
+  bad(`${MBX_PROMPT} is missing — the exception's narrowness cannot be checked, so it cannot be permitted.`);
+}
+
+if (existsSync(join(ROOT, MBX_REPORT))) {
+  const report = read(MBX_REPORT);
+  // THE REPORTER MUST STAY BLIND, exactly as the KDP one does. The day it acquires a Gmail call of
+  // its own, mail contents are one refactor away from the cloud.
+  if (/gmail\.googleapis\.com|gmail\.readonly/.test(report)) {
+    bad(`${MBX_REPORT}: the reporter now calls Gmail directly. It must only post the findings file the local run wrote.`);
+  }
+  if (!/includes\("@"\)/.test(report)) {
+    bad(`${MBX_REPORT}: the local refusal of an address in a finding has been removed.`);
+  }
+  // The whole batch, not the offending row. A partial send reports success on a leaking run.
+  if (!/THE WHOLE BATCH/.test(report)) {
+    bad(`${MBX_REPORT}: no longer refuses the WHOLE batch on one address. A partial send ships part of a leak and reports success.`);
+  }
+} else {
+  bad(`${MBX_REPORT} is missing — nothing carries the findings, so the sweep reports into a log file.`);
+}
+
+if (existsSync(join(ROOT, MBX_SWEEP))) {
+  const sweep = read(MBX_SWEEP);
+  if (/gmail\.googleapis\.com/.test(sweep)) {
+    bad(`${MBX_SWEEP}: the sweep now calls the Gmail API from this repository. It must read through the local connector only.`);
+  }
+  // Without the map there is no sweep. A degraded run would have to invent names or use addresses.
+  if (!/NO_CONTACT_MAP/.test(sweep)) {
+    bad(`${MBX_SWEEP}: the hard stop for a missing contact map is gone. Without it a run must either invent code names or use real addresses.`);
+  }
+  // A named model, matching the duty row. `claude -p` with no --model is what cost $3.88 once.
+  if (!/--model/.test(sweep)) {
+    bad(`${MBX_SWEEP}: no longer names a model, so it inherits the most expensive one available.`);
+  }
+} else {
+  bad(`${MBX_SWEEP} is missing — the duty names it as its executor and nothing would run.`);
+}
+
 if (fail) {
   console.error("\nGMAIL SCAN FAILED");
   console.error("The privacy claim is what the request ASKS FOR, not something applied to the answer");
@@ -207,5 +293,6 @@ console.log(
   `GMAIL SCAN PASSED: ${callers.length} Gmail caller(s) in scripts/ops. ` +
   `${metadataOnly.length} request headers only (${metadataOnly.join(", ")}); ` +
   `${callers.length - metadataOnly.length} named content exception(s) still narrow; ` +
-  "and the KDP case reads mail only inside the local run, never through this repository.",
+  "and the two local jobs that read mail contents — Simone's KDP case watch and Monique's mailbox " +
+  "sweep — do so only inside the local run, never through this repository.",
 );

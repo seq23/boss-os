@@ -46,6 +46,14 @@
  *   8. If the duty names a model, the script names the SAME model. A duty row saying Haiku while
  *      the shell script silently runs the default is how one briefing cost $3.88.
  *
+ * And for a local job that ALSO declares a `delivers` key — 0204's mailbox sweep, which reads her
+ * mail on her Mac and posts code-named findings — the chain runs through a route rather than
+ * `deliverReport.ts`, because a local job never produces a `/backends/report` evidence packet:
+ *
+ *   9. A route writes to the table, a route is registered at the matching path, and a script in
+ *      `scripts/ops` actually POSTS to it. That last one is the link that broke for Simone: the KDP
+ *      watcher ran correctly for five days and reported into a log file nobody opens.
+ *
  * RULE 0: examining zero duties is a failure, not a pass. A loop over an empty set is how a
  * validator ends up green for ever while the thing it guards rots.
  *
@@ -180,7 +188,53 @@ function scan() {
       continue;
     }
 
-    if (key) {
+    /*
+     * A LOCAL JOB'S DELIVERY IS AN ENDPOINT, NOT A `deliverReport.ts` HANDLER — and until 0204 this
+     * validator could not express that, so it demanded the wrong link in the chain.
+     *
+     * `deliverReport.ts` handles the payload of a `/backends/report` evidence packet. A `local_job`
+     * duty never produces one: it runs from launchd on her Mac and posts its own findings to its own
+     * route, because the thing it read (her mail) may not cross the machine boundary at all. So for
+     * these the chain is: the reporter posts → the route writes → the table exists → a screen reads.
+     *
+     * THE CHECK IS NOT WEAKENED, IT IS REDIRECTED. Every link is still required, and one more is
+     * added that the agent path does not have: the local reporter must actually name the endpoint.
+     * A job whose reporter posts nowhere is the same silence as a handler nobody calls, and this
+     * repository has shipped that shape twice.
+     */
+    if (key && job) {
+      const routeFiles = readdirSync(join(ROOT, "src/worker/boss/routes")).filter((f) => f.endsWith(".ts"));
+      const routeSrc = routeFiles.map((f) => read(`src/worker/boss/routes/${f}`)).join("\n");
+      const reporters = readdirSync(join(ROOT, "scripts/ops")).filter((f) => /\.(mjs|sh)$/.test(f));
+      const reporterSrc = reporters.map((f) => read(`scripts/ops/${f}`)).join("\n");
+
+      if (!new RegExp(`INSERT INTO\\s+${key}\\b`, "i").test(routeSrc)) {
+        problems.push(
+          `${duty.id} (${duty.file}): is a local job delivering '${key}' and no route in src/worker/boss/routes writes to that table.\n` +
+          `      The job runs on her Mac, posts its result, and the result lands nowhere.`,
+        );
+      }
+      // The endpoint's path, as the route file spells it. `mailbox_findings` → `mailbox-findings`.
+      const path = key.replace(/_/g, "-");
+      if (!new RegExp(`["'\`]/${path}["'\`]|/${path}\\b`).test(routeSrc)) {
+        problems.push(
+          `${duty.id} (${duty.file}): no route is registered at a path matching '${path}', so nothing can receive this job's output.`,
+        );
+      }
+      if (!new RegExp(`/${path}\\b`).test(reporterSrc)) {
+        problems.push(
+          `${duty.id} (${duty.file}): no script in scripts/ops posts to /${path}.\n` +
+          `      The job would read, decide, write a file, and tell Boss OS nothing — which is where\n` +
+          `      Simone's KDP determinations sat for five days.`,
+        );
+      }
+      if (!tables.has(key)) {
+        problems.push(
+          `${duty.id} (${duty.file}): delivers '${key}' and no migration creates a table called '${key}'.\n` +
+          `      Create it, and classify it — an unclassified table is refused at runtime.`,
+        );
+      }
+    } else if (key) {
       const handler = handlers.find((h) => h.body.includes(`input.delivers !== "${key}"`));
       if (!handler) {
         problems.push(

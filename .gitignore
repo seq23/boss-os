@@ -15,3 +15,4 @@ backups/
 # regenerated from a commit with `git archive`, so storing them here would be storing
 # the repo inside itself.
 ARTIFACTS/
+scripts/ops/_probe.mjs

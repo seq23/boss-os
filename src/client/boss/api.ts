@@ -194,6 +194,16 @@ export const api = {
   verifyKnowledgeExport: (id: string) => call<any>(`/knowledge/exports/${id}/verify`),
 
   // Phase 13 — Relationship Capital OS
+  /*
+   * WHAT THE PEOPLE SCREEN IS NOW. She asked for an employee who reads the mailbox and tells her
+   * things, not a directory of 200 code names carrying identical seeded scores. The envelope
+   * carries the sweep's own state alongside the list, because "no findings" is true both when the
+   * sweep ran and found nothing and when it has never run at all.
+   */
+  mailboxFindings: (status = "new") => call<any>(`/relationships/mailbox-findings?status=${status}`),
+  decideFinding: (id: string, action: "acted" | "dismissed") =>
+    call<any>(`/relationships/mailbox-findings/${id}/${action}`, post("")),
+
   relationships: () => call<any[]>("/relationships"),
   relationship: (id: string) => call<any>(`/relationships/${id}`),
   updateRelationship: (id: string, body: unknown) =>

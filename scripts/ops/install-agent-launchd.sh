@@ -256,6 +256,59 @@ launchctl unload "$KDP_PLIST" 2>/dev/null || true
 launchctl load "$KDP_PLIST"
 echo "Installed $KDP_LABEL — Mon/Wed/Fri 09:23 Central."
 
+# ─── Monique's mailbox sweep ─────────────────────────────────────────────────
+#
+# The "missed connections" feature that has been the first outstanding item in OPERATIONS.md since
+# it was written: an old buyer asked about a company, recent mail shows somebody has access to it,
+# and nothing ever connected the two. `duty_mailbox_sweep` names Monique as the owner and this job
+# as the executor, for the same reason Simone's does — matching a past enquiry against present
+# supply needs SUBJECTS AND BODIES, and the Claude Code runner strips every credential from an
+# agent's environment on purpose.
+#
+# SUNDAY 18:30, HALF AN HOUR AFTER THE NETWORK REFRESH AT 18:00, and the order is the whole reason
+# for the gap. The refresh rebuilds the touch list and the code-name map from mail metadata; the
+# sweep names every person by code name and reasons about who has gone quiet. Running the meaning
+# pass against a week-old map would produce findings about people who wrote on Friday and would have
+# no code name at all for anyone new.
+MAILBOX_LABEL="com.seq.boss-mailbox"
+MAILBOX_PLIST="$HOME/Library/LaunchAgents/$MAILBOX_LABEL.plist"
+MAILBOX_LOGS="$HOME/Library/Logs/mailbox-sweep"
+
+mkdir -p "$MAILBOX_LOGS" "$HOME/.boss-os/mailbox"
+chmod +x "$REPO/scripts/ops/mailbox-sweep.sh"
+
+# One copy of each, and the repo holds it.
+ln -sfn "$REPO/scripts/ops/mailbox-sweep.sh" "$HOME/bin/mailbox-sweep.sh"
+ln -sfn "$REPO/scripts/ops/mailbox-sweep-prompt.md" "$HOME/bin/mailbox-sweep-prompt.md"
+
+cat > "$MAILBOX_PLIST" <<MBXEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$MAILBOX_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>$REPO/scripts/ops/mailbox-sweep.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$MAILBOX_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$MAILBOX_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+MBXEOF
+
+launchctl unload "$MAILBOX_PLIST" 2>/dev/null || true
+launchctl load "$MAILBOX_PLIST"
+echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
+
 echo "Installed $LABEL — checks for queued work at 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
@@ -273,7 +326,7 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL" && loaded "$MAILBOX_LABEL"; then break; fi
   sleep 1
 done
 
@@ -283,14 +336,17 @@ loaded "$PACKET_LABEL" || missing="$missing $PACKET_LABEL"
 loaded "$NETWORK_LABEL" || missing="$missing $NETWORK_LABEL"
 loaded "$PROPS_LABEL" || missing="$missing $PROPS_LABEL"
 loaded "$KDP_LABEL" || missing="$missing $KDP_LABEL"
+loaded "$MAILBOX_LABEL" || missing="$missing $MAILBOX_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
 [ -L "$HOME/bin/kdp-watch-prompt.md" ] || missing="$missing ~/bin/kdp-watch-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/kdp-watch-prompt.md" ] || missing="$missing scripts/ops/kdp-watch-prompt.md"
+[ -L "$HOME/bin/mailbox-sweep-prompt.md" ] || missing="$missing ~/bin/mailbox-sweep-prompt.md(symlink)"
+[ -f "$REPO/scripts/ops/mailbox-sweep-prompt.md" ] || missing="$missing scripts/ops/mailbox-sweep-prompt.md"
 
 if [ -z "$missing" ]; then
-  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL and $KDP_LABEL."
+  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL, $KDP_LABEL and $MAILBOX_LABEL."
 else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1

@@ -24,6 +24,7 @@ import { generateBrief } from "../relationships/brief";
 import { captureMeeting } from "../relationships/capture";
 import { surfaceOverdueFollowUps } from "../relationships/follow_ups";
 import { dayId, ensureDay } from "./today";
+import { nextDueAt } from "../duties/cadence";
 
 export const relationships = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -217,6 +218,227 @@ relationships.post("/sync", async (c) => {
   }).catch(() => {});
 
   return ok(c, { created, updated, total: contacts.length }, 201);
+});
+
+/* ─── Monique's mailbox findings — 0204 ──────────────────────────────────────
+ *
+ * WHAT SHE ASKED FOR, verbatim, 8 September 2026:
+ *
+ *   "the people tab is stupid, i just want one of the employees to peruse the mailbox and find
+ *    connections and find people that could be buyers that i havent talked to in a while etc....
+ *    and find deals im missing between a buyer and seller in my inbox"
+ *
+ * She is right about the tab. `GET /relationships` returns 200 rows in which every single one reads
+ * `importance 100 · trust 100 · recency 0 · opportunity 0`, because those columns were seeded
+ * uniformly and nothing has ever computed them. Two hundred identical scores is not knowledge about
+ * anybody; it is a directory with a scoreboard drawn on it.
+ *
+ * A FINDING IS THE OPPOSITE OBJECT. It has a subject, a reason in dates and counts, one suggested
+ * action, and evidence she can open. All four are NOT NULL because a finding missing any of them is
+ * an observation, and she has enough of those.
+ *
+ * THESE ROUTES ARE REGISTERED BEFORE `GET /:id`, deliberately. Hono matches in registration order
+ * and `/:id` sits at the bottom of this file, so a path declared after it would be swallowed and
+ * answer "no relationship with that id" — a 404 that looks like an empty feature.
+ */
+
+/** Nothing with an '@' in it crosses this line. Same guard as `/sync` and the KDP determination. */
+const FINDING_TEXT_FIELDS = [
+  "subject_code", "counterpart_code", "headline", "because", "suggested_action", "subject_matter",
+] as const;
+
+relationships.get("/mailbox-findings", async (c) => {
+  const status = c.req.query("status") ?? "new";
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT * FROM mailbox_findings
+        WHERE archived_at IS NULL AND (?1 = 'all' OR status = ?1)
+        ORDER BY CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                 found_at DESC
+        LIMIT 100`,
+    )
+    .bind(status)
+    .all<Record<string, unknown>>();
+
+  const findings = (rows.results ?? []).map((r) => ({
+    ...r,
+    evidence: (() => { try { return JSON.parse(String(r.evidence ?? "[]")); } catch { return []; } })(),
+  }));
+
+  const duty = await c.env.DB
+    .prepare(`SELECT last_run_at, next_due_at, suspended FROM standing_duties WHERE id = 'duty_mailbox_sweep'`)
+    .first<{ last_run_at: number | null; next_due_at: number | null; suspended: number }>();
+
+  /*
+   * AN EMPTY LIST SAYS WHY IT IS EMPTY. "No findings" is true both when the sweep ran and found
+   * nothing and when the sweep has never run, and those are opposite facts — one is good news about
+   * her mailbox and the other is a broken job. This is the same defect the Executive Briefing had.
+   */
+  return ok(c, {
+    findings,
+    total: findings.length,
+    sweep: {
+      owner: "Monique",
+      last_run_at: duty?.last_run_at ?? null,
+      next_due_at: duty?.next_due_at ?? null,
+      suspended: Boolean(duty?.suspended),
+      state:
+        !duty ? "There is no mailbox sweep duty in the system."
+        : duty.suspended ? "Monique's mailbox sweep is suspended."
+        : duty.last_run_at === null
+          ? "Monique's mailbox sweep has never run. It reads your mail on your own Mac, from launchd, on Sunday evenings — install it with `bash scripts/ops/install-agent-launchd.sh`."
+          : `Monique last read the mailbox ${Math.floor((Date.now() - duty.last_run_at) / 86_400_000)} day(s) ago.`,
+    },
+  });
+});
+
+/**
+ * The sweep, reporting what it found.
+ *
+ * THE WHOLE BATCH IS REFUSED IF ANY FIELD CARRIES AN '@'. Not the offending row — the batch. A
+ * partial accept would put some of a leaking run's output into the cloud and report success, and
+ * the one time this guard fired for real it was because a collision suffix had been built from the
+ * first three characters of a real address. Fail closed, loudly, on the whole thing.
+ *
+ * IDEMPOTENT BY SUBJECT, COUNTERPART AND KIND. A weekly sweep re-derives the same missed deal every
+ * week; stacking a fourth copy of it on her screen is how a useful list becomes one she stops
+ * reading. The unique index does the work and the upsert refreshes the reason.
+ */
+relationships.post("/mailbox-findings", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const rows = Array.isArray(b?.findings) ? b.findings : null;
+  if (rows === null) {
+    throw badRequest("A sweep reports a findings array", "Send { findings: [...], run_id }. Zero findings is a valid report and is not the same as not reporting.");
+  }
+
+  for (const [i, f] of rows.entries()) {
+    for (const field of FINDING_TEXT_FIELDS) {
+      const v = f?.[field];
+      if (typeof v === "string" && v.includes("@")) {
+        throw badRequest(
+          `Finding ${i + 1} carries an address in ${field}, so the whole batch was refused`,
+          "Boss OS stores code names only. Nothing was written — fix the sweep and run it again.",
+        );
+      }
+    }
+  }
+
+  const KINDS = new Set(["missed_deal", "cooling_buyer", "unworked_intro", "connector"]);
+  const CONF = new Set(["high", "medium", "low"]);
+  const now = Date.now();
+  const runId = typeof b?.run_id === "string" ? b.run_id.slice(0, 64) : null;
+  const text = (v: unknown, max = 600): string | null => {
+    if (typeof v !== "string") return null;
+    const s = v.trim();
+    return s ? s.slice(0, max) : null;
+  };
+
+  let written = 0;
+  let skipped = 0;
+  for (const f of rows) {
+    const kind = String(f?.kind ?? "");
+    const subject = text(f?.subject_code, 64);
+    const headline = text(f?.headline, 300);
+    const because = text(f?.because);
+    const action = text(f?.suggested_action, 300);
+    /*
+     * A FINDING WITHOUT ALL FOUR IS DROPPED, and this is the load-bearing rule — the same one the
+     * sourcing list uses for a candidate with no source. The failure mode of an automated reader is
+     * a plausible sentence nobody can check, and checking one costs her a phone call.
+     */
+    if (!KINDS.has(kind) || !subject || !headline || !because || !action) { skipped++; continue; }
+
+    await c.env.DB
+      .prepare(
+        `INSERT INTO mailbox_findings
+           (id, kind, subject_code, counterpart_code, headline, because, suggested_action,
+            evidence, subject_matter, confidence, status, run_id, found_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,'new',?,?,?)
+         ON CONFLICT(kind, subject_code, COALESCE(counterpart_code, ''), COALESCE(subject_matter, ''))
+         DO UPDATE SET
+           headline = excluded.headline,
+           because = excluded.because,
+           suggested_action = excluded.suggested_action,
+           evidence = excluded.evidence,
+           confidence = excluded.confidence,
+           run_id = excluded.run_id,
+           updated_at = excluded.updated_at,
+           -- A finding she has already dismissed stays dismissed. Re-raising it every Sunday is how
+           -- a weekly job teaches her to stop opening the screen.
+           archived_at = NULL`,
+      )
+      .bind(
+        newId("fnd"), kind, subject, text(f?.counterpart_code, 64), headline, because, action,
+        JSON.stringify(Array.isArray(f?.evidence) ? f.evidence.slice(0, 20) : []),
+        text(f?.subject_matter, 120),
+        CONF.has(String(f?.confidence)) ? String(f?.confidence) : "low",
+        runId, now, now,
+      )
+      .run();
+    written++;
+  }
+
+  /*
+   * THE DUTY'S CLOCK ADVANCES HERE AND ONLY HERE. This is what makes a `local_job` duty honest: it
+   * is not "the launchd job fired", it is "the job reported back". OPERATIONS names this as the
+   * exact reason Monique's network refresh and Camille's property read are NOT duty rows — neither
+   * reports, so a row for either would put a permanent false alarm on Today.
+   */
+  const duty = await c.env.DB
+    .prepare(`SELECT local_hour, local_minute, timezone, cadence, weekday, weekdays FROM standing_duties WHERE id = 'duty_mailbox_sweep'`)
+    .first<{
+      local_hour: number; local_minute: number; timezone: string;
+      cadence: "daily" | "weekly" | "monthly"; weekday: number | null; weekdays: string | null;
+    }>();
+  if (duty) {
+    let weekdays: number[] | null = null;
+    try { weekdays = duty.weekdays ? (JSON.parse(duty.weekdays) as number[]) : null; } catch { weekdays = null; }
+    let advanced: number | null = null;
+    try {
+      advanced = nextDueAt({ ...duty, weekdays }, now);
+    } catch {
+      // An unschedulable duty keeps its old clock rather than an invented one, and reads as overdue.
+      advanced = null;
+    }
+    await c.env.DB
+      .prepare(
+        advanced === null
+          ? `UPDATE standing_duties SET last_run_at = ? WHERE id = 'duty_mailbox_sweep'`
+          : `UPDATE standing_duties SET last_run_at = ?, next_due_at = ? WHERE id = 'duty_mailbox_sweep'`,
+      )
+      .bind(...(advanced === null ? [now] : [now, advanced]))
+      .run();
+  }
+
+  await logEvent(c.env.DB, {
+    level: "info", scope: "relationships", event: "mailbox_swept", entityId: "emp_relationship",
+    detail: { written, skipped, run_id: runId },
+  }).catch(() => {});
+
+  return ok(c, { written, skipped, total: rows.length }, 201);
+});
+
+relationships.post("/mailbox-findings/:id/:action", async (c) => {
+  const id = c.req.param("id");
+  const action = c.req.param("action");
+  if (action !== "acted" && action !== "dismissed") {
+    throw badRequest(`"${action}" is not a decision on a finding`, "Use acted or dismissed.");
+  }
+  const found = await c.env.DB.prepare(`SELECT id FROM mailbox_findings WHERE id = ?`).bind(id).first();
+  if (!found) throw notFound("No finding with that id");
+
+  const now = Date.now();
+  await c.env.DB
+    .prepare(
+      // Dismissed leaves the screen; acted stays visible until the next sweep so she can see what
+      // she did this week. Neither is a delete — the whole point of the register is that it
+      // remembers what has already been decided.
+      `UPDATE mailbox_findings SET status = ?, updated_at = ?, archived_at = ? WHERE id = ?`,
+    )
+    .bind(action, now, action === "dismissed" ? now : null, id)
+    .run();
+
+  return ok(c, { id, status: action });
 });
 
 relationships.get("/people", async (c) => {
