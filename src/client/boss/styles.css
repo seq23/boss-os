@@ -1164,3 +1164,13 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
   resize: vertical;
 }
 .judgement-why:focus { outline: none; border-color: var(--gold); }
+
+/* ─── Coaching, led by its purpose rather than its apparatus ───────────────
+ *
+ * "AND THIS IS THE COACHING SECTION? IT DOESNT LOOK LIKE A COACHING SECTION AT FIRST GLANCE." The
+ * heading and the purpose line carry the weight; the privacy, cost and consent notes are true and
+ * secondary, and are sized to say so.
+ */
+.coach-heading { font-family: var(--display); font-size: 19px; font-weight: 600; letter-spacing:-.01em; margin: 0 0 6px; }
+.coach-purpose { margin: 0 0 8px; font-size: 15px; line-height: 1.5; }
+.coach-fineprint { margin-top: 6px; font-size: 12.5px; }

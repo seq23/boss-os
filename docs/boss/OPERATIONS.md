@@ -32,15 +32,20 @@ the work; the job is the only thing that can do it.
 | **Imani** | Director of Practice | Body + Spirit | The week's practice, rituals, technique research |
 | **Kendra** | Systems Manager | — | Tool scouting |
 | **Simone** | Chief of Staff | Execution | Getting your books published, and chasing Amazon until they are |
+| **Toni** | Chief Risk Officer | — | The credentials this whole system runs on, and the West Peek reply path |
 | Zora | Archivist | — | No standing duty |
-| Toni | Chief Risk Officer | — | No standing duty |
 
 Before 7 September, **Camille owned every duty in the system** and the other eight employees had a
 department, a charter and no work. That is the same defect this codebase produces everywhere else — a
 correct thing nothing invokes — at the level of an org chart.
 
-Simone took the publishing block on 7 September. Zora and Toni still have none, which is honest
-rather than finished.
+Simone took the publishing block on 7 September and Toni took the credentials on 9 September. Zora
+still has none, which is honest rather than finished.
+
+Monique also owns the LP reply digest as of 9 September — **dormant, not broken**. Nothing can read
+`sequoia@westpeek.ventures` until Scooter grants domain-wide delegation on that domain, so the duty
+is suspended with that reason on the row, and the credential prober wakes it the morning he does it.
+Nobody has to remember.
 
 ### What the four pillars mean
 
@@ -95,6 +100,8 @@ com.seq.boss-network     mailbox → touch list              Sun 18:00
 com.seq.boss-properties  heartbeat + Search Console        Mon 07:00
 com.seq.kdp-watch        the KDP case, read and chased      Mon/Wed/Fri 09:23
 com.seq.boss-mailbox     mailbox → findings                 Sun 18:30
+com.seq.boss-credentials are the logins still working?      daily 06:15
+com.seq.boss-lp          LP replies → Inbox digest          daily 07:45 (dormant)
 ```
 
 Reinstall or repair them all with `npm run app:install` and `bash scripts/ops/install-agent-launchd.sh`.
@@ -297,7 +304,16 @@ your own work because your staff spent it.
 | Practice | Haiku | 10 min | weekly | ~$0.15 | ~$0.65 |
 | KDP case watch | Haiku | 10 min | Mon/Wed/Fri | ~$0.05 | ~$0.65 |
 | Mailbox sweep | Sonnet | 80 turns | weekly | ~$0.60 | ~$2.60 |
-| | | | | | **≈ $14.25** |
+| Credential probe | Haiku | 3 min | daily | ~$0.01 | ~$0.30 |
+| LP replies (dormant) | Haiku | 10 min | daily | ~$0.03 | ~$0.90 |
+| | | | | | **≈ $15.45** |
+
+**Coaching is the deliberate exception and is not in that table**, because it is not scheduled work.
+Everything above was pushed DOWN to the cheapest model that could do the job. Coaching goes the other
+way, on your instruction — "it is imperative that i use the best models with the best thinking brains
+and the most integrity" — and the budget never touches it, because opening the screen and typing is
+you asking directly rather than a duty firing. Today it still runs free on Workers AI; a frontier key
+in the vault makes it roughly a cent a morning, about $0.30 a month at five mornings a week.
 
 **Ceiling: $25/month. Warned at 70%.**
 
@@ -373,6 +389,65 @@ Neither sends anything to a model, and neither writes mail contents anywhere.
 
 ---
 
+## What changed on 9 September
+
+_Read it in this order; each one is a defect she found by using the system._
+
+**The alert on Today was frozen and had started lying.** A fix in 0203 stopped any run writing the
+deliverable's blocker, so the escalation could never change again — it was still describing a
+week-old theory about an Amazon account flag after your Gmail connector had been revoked and after
+support had named cover image processing instead. There are two facts and there are now two fields:
+**the blocker** is the standing reason and no run may write it, **the current status** is what the
+last run learned and every run writes it, dated. The escalation clock is untouched by both, so a new
+sentence today does not make a nine-day block look fresh.
+
+**"I could not run" no longer looks like a quiet week.** They rendered identically — as silence —
+which is how the connector could be dead for days. Every named stop in the watcher now files a
+determination and posts it BEFORE exiting.
+
+**The notification shared its failure mode with the work.** The watcher was told to email you when
+something needed you, through the same connector it reads your mail with. When you changed your
+Google password, Google revoked the grant instantly and the one condition that most needed to reach
+you was the exact condition that could not send. **The Boss OS report is the channel of record now**;
+email is a nice-to-have that may fail silently, and the prompt says so.
+
+**Nothing watched the credentials.** A daily prober USES each one — the connector, the service
+account, the West Peek grant, and whether Amazon mail is reachable without the connector — and dead
+or stale both reach Today with the exact steps. It costs about a cent a day.
+
+**Approving something now makes it happen.** Work that needs your judgement lands in the Inbox with
+the work IN it — the seven covers render in the card — and **Approve is the trigger, not a filing
+action**. Try Again carries your sentence back. An item cannot be created unless it names something
+that actually happens when you say yes, and a resume that fails leaves the item on your screen
+rather than recording a decision over work that never restarted.
+
+**Every employee reports completion**, detected by counting records rather than claimed, once, into
+the same Inbox — and Try Again on a completion reopens it.
+
+**The Wednesday packet reached you never.** It was written correctly to your Mac every week while
+Today showed an empty Meetings section. A headless Claude has no Artifact tool — tested, not assumed
+— so the Worker serves the agenda page instead: **one link that never changes, every packet newest
+first, with downloads**. Today carries a compact pointer and says so plainly when none is filed.
+
+**The packet prepares you as well as him.** "Your week" is yours, labelled as yours, counted from
+your own records with the source named on every line, and empty when the week was empty.
+
+**An item stays on the packet until it is TRUE, not until it is mentioned.** The West Peek grant had
+appeared there worded identically every week since 19 August. It now says how long he has had it,
+and it closes itself the morning the impersonation actually succeeds.
+
+**The anchor streak had a hole in it.** `WHERE morning_completed_at IS NOT NULL` meant a day you
+never opened was not counted as unknown — it was dropped out of the window entirely and the query
+reached further back to fill the gap. Ten skipped days shrank the window rather than showing up in
+it, which flattered. The window is ten CALENDAR days now, and `untouched` separates "opened it and
+never closed the night" from "never opened it at all".
+
+**And the screens say what they are.** Today's Contract carries its date, yesterday's verdict and a
+line for each gate saying which block it closes; Coaching leads with what it is for rather than a
+privacy disclaimer, and its button names the action rather than a Cloudflare product.
+
+---
+
 ## Commands worth knowing
 
 ```bash
@@ -388,6 +463,10 @@ npm run crossmatch                # firms on both the LP list and the buyer list
 npm run canon:sync                # store the docs/boss/ documents in the vault, hashed
 npm run kdp:check                 # run Simone's KDP watch now, instead of waiting for Mon/Wed/Fri
 npm run mailbox:sweep             # run Monique's mailbox sweep now, instead of waiting for Sunday
+npm run credentials:check         # are the logins still working? four real calls, about a cent
+npm run kdp:covers                # put the covers in ~/.boss-os/kdp/covers/final/ in your Inbox
+npm run kdp:resume                # she approved; start Simone now rather than waiting for Friday
+npm run lp:replies                # Monique's LP digest; stops with a reason until the grant exists
 npm run local:pull                # read production into backups/
 npm run local:restore -- --force  # load that into the local database
 ```
@@ -407,6 +486,7 @@ These exist because each of them caught something real.
 | `validate:gmail` | Does every Gmail caller still request only headers — and is the one content exception still narrow? |
 | `validate:duty-delivery` | Does every duty's output have a handler, a table, and a way to her? For a **local job**, does a route write the table and does a script actually POST to it? |
 | `validate:owned-work` | Does every owned deliverable have an owner, a terminal condition and a live escalation? |
+| `validate:reachable` | *(strengthened 9 Sep)* Shell scripts now count as invokers. A bash local job calling a reporter was invisible to it, and the only reason that passed was that this document happened to name the file — a scan resting on prose is one wrong edit from a false alarm. |
 | `validate:sql` | Does every statement match the schema? |
 | `validate:css-classes` | Does every `className` have a rule? It had been reporting `.input` on Team.tsx — the control that stops an owned deliverable, rendering unstyled — and was in no gate. It is in `npm run validate` now. |
 | `accessibility` | Do source files contain invisible characters? |
@@ -496,11 +576,20 @@ Real, and named rather than quietly absent.
    both when the sweep read your mail and found nothing and when it never ran, and those are
    opposite facts.
 
-2. **`sequoia@westpeek.ventures` is not connected.** It is p1 on your Wednesday packet. It unblocks
-   LP reply detection and the opt-out defect the outreach register has carried since 19 August.
+2. **`sequoia@westpeek.ventures` is not connected — and SCOOTER is the one who can fix it, not you.**
+   Delegation is per-domain and your spry.vc admin does not reach westpeek.ventures. The exact steps
+   to hand him are inline on the Wednesday packet and on Today, the prober tests the grant every
+   morning, and the item closes itself the day it works.
 
-3. **Zora and Toni have no work.** Two seats with charters and nothing to do. Simone was the third
-   until 7 September and now owns the publishing block.
+   **Stated precisely, because the earlier wording overstated it.** CONFIRMED: 248 emails have gone
+   out from that address since 19 August and nothing can read what comes back — interest, questions,
+   requests for the deck and requests to be removed, all equally invisible. During a raise, an unread
+   reply is the loss. NOT CLAIMED: that any particular opt-out is sitting there, which is unknowable
+   until the grant exists. And the sending is Twin's, not Boss OS's: nothing here has ever emailed
+   an LP.
+
+3. **Zora has no work.** One seat with a charter and nothing to do. Simone was one of three until
+   7 September and Toni until 9 September; both now own something real.
 
 4. **The brokerage has no measure of a good week**, and you were right that it cannot have one — deals
    take two weeks or six months. What it has instead is buyer flow and touch counts, which is the

@@ -120,6 +120,25 @@ const PORTED_BOSS_ROUTER = new Set([
   // which is the whole reason a request body cannot move this system's egress. The scan is right to
   // see a hostname; a config table would have hidden it, which is worse.
   "src/worker/boss/router/backends.ts",
+  // ── 0211 · the two frontier providers, for coaching alone. ──
+  //
+  // SAME DEBT, SAME COUNT-NOT-KIND RULE. Both go through Boss OS's router, which applies the
+  // privacy class, the risk ceiling, the cost mode, the spend lever, the execution-backend guard
+  // and the hard budget stops before either file is reached, and both write to `usage_ledger` and
+  // `routing_decisions` like every other adapter here. Neither is a second door to a model.
+  //
+  // WHY THEY EXIST AT ALL, since everything else in this system was pushed DOWN to the cheapest
+  // model that could do the job: coaching is the one route carrying her interior life, and her
+  // instruction is explicit — "it is imperative that i use the best models with the best thinking
+  // brains and the most integrity". A verified turn on 9 September was answered by Llama 3.1 8B.
+  //
+  // AND WHY DIRECT RATHER THAN THROUGH THE OPENROUTER ADAPTER ALREADY EXEMPTED HERE: OpenRouter is
+  // a proxy, and coaching is the one route whose design is about minimising who sees her words. For
+  // utility work the proxy is the better trade and stays the default.
+  //
+  // Named individually, exactly as the others are, so nothing drifts in behind them.
+  "src/worker/boss/router/anthropic.ts",
+  "src/worker/boss/router/openai.ts",
   // Workers AI needs no entry at all — it is the env.AI BINDING, so it calls no fetch, holds no
   // bearer token and names no host. That absence is the argument for preferring it.
 ]);

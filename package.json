@@ -53,6 +53,7 @@
     "credentials:check": "node scripts/vault/vault.mjs run -- node scripts/ops/credential-check.mjs",
     "kdp:covers": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-covers-submit.mjs",
     "kdp:resume": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-resume.mjs",
+    "lp:replies": "bash scripts/ops/lp-replies.sh",
     "packet:remind": "node scripts/vault/vault.mjs run -- node scripts/ops/packet-remind.mjs",
     "app:install": "bash scripts/ops/install-desktop-app.sh",
     "local:pull": "node scripts/ops/pull-production.mjs",

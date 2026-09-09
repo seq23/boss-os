@@ -209,6 +209,47 @@ describe("the credential register", () => {
       .run();
   });
 
+  it("wakes the dormant duty the morning the grant actually works", async () => {
+    /*
+     * A DUTY THAT WAKES ITSELF, because the last thing waiting on this grant went unnoticed for
+     * three weeks. `duty_lp_replies` is created suspended — nothing can read the West Peek mailbox
+     * until Scooter grants delegation, and a duty erroring every morning while he gets round to it
+     * would be noise on the one surface she has to keep reading. The probe is the condition; nobody
+     * flips a switch.
+     */
+    const before = await row<any>(`SELECT suspended, suspended_reason FROM standing_duties WHERE id = 'duty_lp_replies'`);
+    expect(before.suspended).toBe(1);
+    expect(before.suspended_reason).toMatch(/Scooter/);
+
+    // `unknown` is not `live` and wakes nothing.
+    await apiJson<any>("/api/credentials/probe", {
+      method: "POST",
+      body: { probes: [{ id: "cred_westpeek_delegation", state: "unknown", detail: "Could not decide." }] },
+    });
+    expect((await row<any>(`SELECT suspended FROM standing_duties WHERE id = 'duty_lp_replies'`)).suspended).toBe(1);
+
+    const res = await apiJson<any>("/api/credentials/probe", {
+      method: "POST",
+      body: { probes: [{ id: "cred_westpeek_delegation", state: "live", detail: "The impersonation succeeded." }] },
+    });
+    expect(res.body.data.woken).toContain("duty_lp_replies");
+    const after = await row<any>(`SELECT suspended, suspended_reason FROM standing_duties WHERE id = 'duty_lp_replies'`);
+    expect(after.suspended).toBe(0);
+    expect(after.suspended_reason).toBeNull();
+
+    await env.DB
+      .prepare(`UPDATE standing_duties SET suspended = 1, suspended_reason = ? WHERE id = 'duty_lp_replies'`)
+      .bind(before.suspended_reason).run();
+    await env.DB
+      .prepare(`UPDATE credential_probes SET state = 'unknown', checked_at = NULL WHERE id = 'cred_westpeek_delegation'`)
+      .run();
+    await env.DB
+      .prepare(`UPDATE owned_deliverables SET state = 'blocked', done_at = NULL WHERE id = 'del_westpeek_reply_path'`)
+      .run();
+    await env.DB.prepare(`DELETE FROM judgement_calls WHERE deliverable_id = 'del_westpeek_reply_path'`).run();
+    await env.DB.prepare(`DELETE FROM approvals WHERE id LIKE 'apr_done_%'`).run();
+  });
+
   it("closes the West Peek deliverable only when the impersonation actually works", async () => {
     /*
      * An item she has to tick off by hand sits there wrongly for ever; one that never re-tests keeps

@@ -314,7 +314,15 @@ function renderDetail(
      * WHO owns it, because a pillar whose name needs a canon section to decode is one she skips.
      */
     case "todays_contract": {
-      if (!c.contract) return null;
+      /*
+       * ── THE HEADER, WHICH ANSWERS THE FOUR THINGS SHE HAD TO ASK ────────────
+       *
+       * Rendered even when the contract itself failed to derive, because a screen with no date
+       * cannot tell her whether she is looking at today, a stale render, or yesterday — and "what
+       * happens to yesterday, it just disappears?" needs an answer on a broken morning most of all.
+       */
+      const header = <ContractHeader content={c} />;
+      if (!c.contract) return header;
       const pillars = c.agenda?.pillars ?? null;
       /*
        * ─── THE AGENDA, DIVIDED BY PILLAR ─────────────────────────────────────
@@ -339,6 +347,7 @@ function renderDetail(
       const gratitudeMissing = pillars?.spirit && pillars.spirit.available === false;
       return (
         <>
+          {header}
           {c.agenda?.warning && <div className="notice" style={{ borderColor: "var(--gold)" }}>{c.agenda.warning}</div>}
 
           {/*
@@ -786,6 +795,83 @@ function renderDetail(
     default:
       return null;
   }
+}
+
+/**
+ * THE DATE, THE GATES, AND WHAT HAPPENED YESTERDAY.
+ *
+ * Her three questions, which were all defects in this screen:
+ *
+ *   "the 'today's contract' needs the date there and what happens to yesterday it just disappears?"
+ *   "if nothing is clicked does it track which days were skipped?"
+ *   "AND ARE U FIXING THE FACT THAT I HAD TO ASK WHAT MORNING MID DAY AND EVENING GATES WERE?"
+ *
+ * Every answer was already written down in the source, where only a developer would ever read it.
+ * The test this component is held to: could she work out what this is for, and what happens if she
+ * ignores it, without asking anyone? A one-line intent under a heading is usually enough — it does
+ * not need a help system.
+ *
+ * THE unknown / missed DISTINCTION IS SHOWN RATHER THAN TRUSTED. It is the most careful decision in
+ * the system — a night she was too tired to close the gate is not a day she skipped the work — and
+ * it is the thing that makes the streak worth believing, so it belongs on the screen.
+ */
+function ContractHeader({ content }: { content: any }) {
+  const y = content.yesterday;
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="row">
+        <div className="row-main">
+          <div className="row-title">{content.day_label ?? content.day_id}</div>
+          <div className="row-sub">
+            {content.state === "agreed"
+              ? "Agreed at the Morning Gate. This is what you signed up to."
+              : content.state === "proposed"
+                ? "Proposed, not agreed. Run the Morning Gate to agree to it or override it."
+                : "Today's agenda could not be derived — that is a fault, not an empty day."}
+          </div>
+        </div>
+        <div className="row-val">{content.day_id}</div>
+      </div>
+
+      {y && (
+        <div className="row">
+          <div className="row-main">
+            <div className="row-title">Yesterday · {y.day_id}</div>
+            <div className="row-sub">{y.verdict}</div>
+            <div className="row-sub">
+              Gates run: {y.gates_run?.length ? y.gates_run.join(", ") : "none"}
+            </div>
+          </div>
+          <div className={`risk risk-${y.anchor_outcome === "missed" ? "high" : y.anchor_outcome === "done" ? "low" : "medium"}`}>
+            {y.anchor_outcome}
+          </div>
+        </div>
+      )}
+
+      {content.gates?.length ? (
+        <>
+          <button className="docket-open" onClick={() => setOpen((v) => !v)}>
+            <span className="docket-more">{open ? "Hide what the gates are" : "What are the gates? →"}</span>
+          </button>
+          {open && (
+            <>
+              <div className="row-sub">{content.gates_note}</div>
+              {content.gates.map((g: any) => (
+                <div className="row" key={g.name}>
+                  <div className="row-main">
+                    <div className="row-title">{g.name}</div>
+                    <div className="row-sub">Closes: {g.closes}</div>
+                    <div className="row-sub">{g.what}</div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      ) : null}
+    </>
+  );
 }
 
 /**

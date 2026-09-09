@@ -33,35 +33,82 @@ export interface AnchorStreak {
   done: number;
   missed: number;
   unknown: number;
+  /**
+   * Days she never opened at all, counted inside `unknown`.
+   *
+   * A SEPARATE NUMBER BECAUSE THEY ARE A DIFFERENT FACT. "She opened the day and never closed the
+   * night gate" and "she never opened the day" are both unknown as to the anchor, and only one of
+   * them says anything about whether she was using the system at all.
+   */
+  untouched: number;
   /** Consecutive misses ending at the most recent ANSWERED day. */
   consecutive_missed: number;
   /** Said only when the run is long enough to be a pattern rather than a bad week. */
   warning: string | null;
+  /** Every day in the window, newest first, so a screen can show the pattern rather than a total. */
+  days: { id: string; outcome: AnchorOutcome; touched: boolean }[];
+}
+
+/** The `window` calendar days ending the day before `beforeDayId`, newest first. */
+function windowDays(beforeDayId: string, window: number): string[] {
+  const out: string[] = [];
+  const base = Date.parse(`${beforeDayId}T12:00:00Z`);
+  for (let i = 1; i <= window; i += 1) {
+    out.push(new Date(base - i * 86_400_000).toISOString().slice(0, 10));
+  }
+  return out;
 }
 
 /** Below this, a run of misses is a bad week and the system says nothing. */
 const PATTERN_FLOOR = 3;
 
 export async function anchorStreak(env: Env, beforeDayId: string, window = 10): Promise<AnchorStreak> {
+  /*
+   * ── THE WINDOW IS THE CALENDAR, NOT THE ROWS THAT HAPPEN TO EXIST ─────────
+   *
+   * THE BUG THIS FIXES, and she found it by asking the right question — "does it track which days
+   * were skipped?". The query was
+   *
+   *     WHERE id < ? AND morning_completed_at IS NOT NULL ORDER BY id DESC LIMIT ?
+   *
+   * so a day she never opened was not counted as `unknown`. IT WAS EXCLUDED FROM THE WINDOW
+   * ENTIRELY, and `LIMIT 10` then reached further back to fill the gap. The honest answer to her
+   * question was "partially": a day with a morning gate and no night gate was tracked as unknown,
+   * and a day she never touched was invisible.
+   *
+   * AND IT FLATTERED. Ten fully-skipped days shrank the window rather than appearing in it, so the
+   * one metric meant to show her a pattern was structurally incapable of showing the pattern that
+   * matters most. A metric that cannot report the bad case is not a metric.
+   *
+   * So the window is now ten CALENDAR days and rows are joined onto it. A missing row is not an
+   * absent day; it is a day nothing happened on, which is exactly what she wanted to see.
+   */
+  const ids = windowDays(beforeDayId, window);
   const rows = await env.DB
     .prepare(
-      `SELECT id, anchor_outcome
-         FROM days
-        WHERE id < ? AND morning_completed_at IS NOT NULL
-        ORDER BY id DESC
-        LIMIT ?`,
+      `SELECT id, anchor_outcome, morning_completed_at
+         FROM days WHERE id IN (${ids.map(() => "?").join(",")})`,
     )
-    .bind(beforeDayId, window)
-    .all<{ id: string; anchor_outcome: string | null }>();
+    .bind(...ids)
+    .all<{ id: string; anchor_outcome: string | null; morning_completed_at: number | null }>();
 
-  const days = rows.results ?? [];
+  const byId = new Map((rows.results ?? []).map((r) => [r.id, r]));
+  const days = ids.map((id) => {
+    const row = byId.get(id);
+    const outcome: AnchorOutcome =
+      row?.anchor_outcome === "done" ? "done" : row?.anchor_outcome === "missed" ? "missed" : "unknown";
+    return { id, outcome, anchor_outcome: row?.anchor_outcome ?? null, touched: Boolean(row?.morning_completed_at) };
+  });
+
   let done = 0;
   let missed = 0;
   let unknown = 0;
+  let untouched = 0;
   for (const d of days) {
-    if (d.anchor_outcome === "done") done++;
-    else if (d.anchor_outcome === "missed") missed++;
+    if (d.outcome === "done") done++;
+    else if (d.outcome === "missed") missed++;
     else unknown++;
+    if (!d.touched) untouched++;
   }
 
   /*
@@ -73,8 +120,8 @@ export async function anchorStreak(env: Env, beforeDayId: string, window = 10): 
    */
   let consecutive = 0;
   for (const d of days) {
-    if (d.anchor_outcome === "missed") consecutive++;
-    else if (d.anchor_outcome === "done") break;
+    if (d.outcome === "missed") consecutive++;
+    else if (d.outcome === "done") break;
   }
 
   const warning =
@@ -82,7 +129,13 @@ export async function anchorStreak(env: Env, beforeDayId: string, window = 10): 
       ? `The first money move has not happened ${consecutive} days running. That is the engine, and it is the one thing §5.3 protects — either the day is wrong or the move is.`
       : null;
 
-  return { examined: days.length, done, missed, unknown, consecutive_missed: consecutive, warning };
+  return {
+    examined: days.length,
+    done, missed, unknown, untouched,
+    consecutive_missed: consecutive,
+    warning,
+    days: days.map((d) => ({ id: d.id, outcome: d.outcome, touched: d.touched })),
+  };
 }
 
 /**

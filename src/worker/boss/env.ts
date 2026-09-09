@@ -14,6 +14,12 @@ export interface Env {
   SESSION_SECRET: string;
   FIREWORKS_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  /**
+   * The second frontier provider, for coaching. Optional for the same reason every other key here
+   * is: a required binding makes the local harness fail to CONSTRUCT rather than fail honestly at
+   * the point of use, and "the key is not set" is a better error than "the Worker would not start".
+   */
+  OPENAI_API_KEY?: string;
 
   /**
    * Workers AI. A BINDING, not an HTTP client — which is why it needs no key, no hostname, and no

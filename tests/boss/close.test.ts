@@ -65,9 +65,16 @@ describe("the anchor streak", () => {
     await seedDay(DAY(2), null);
     await seedDay(DAY(3), "missed");
     const s = await anchorStreak(env as any, DAY(4));
-    expect(s.unknown).toBe(1);
     // Silence neither breaks the run nor extends it: two known misses, not three, and not one.
     expect(s.consecutive_missed).toBe(2);
+    /*
+     * THE WINDOW IS TEN CALENDAR DAYS NOW, SO THE UNTOUCHED ONES ARE IN IT. That is the fix, not a
+     * side effect — see the next test. The unanswered day she opened is one of them; the rest are
+     * days that do not exist as rows at all.
+     */
+    expect(s.days.find((d) => d.id === DAY(2))?.outcome).toBe("unknown");
+    expect(s.days.find((d) => d.id === DAY(2))?.touched).toBe(true);
+    expect(s.unknown).toBe(s.untouched + 1);
   });
 
   it("stops the run at the last day she actually did it", async () => {
@@ -78,12 +85,37 @@ describe("the anchor streak", () => {
     expect(s.consecutive_missed).toBe(1);
   });
 
-  it("ignores days whose morning gate never ran", async () => {
-    // A day with no contract had no anchor to miss.
+  it("counts a day she never touched, instead of dropping it out of the window", async () => {
+    /*
+     * ── THE BUG SHE FOUND BY ASKING THE RIGHT QUESTION ────────────────────────
+     *
+     * "if nothing is clicked does it track which days were skipped?"
+     *
+     * It did not. The query was `WHERE id < ? AND morning_completed_at IS NOT NULL ... LIMIT 10`,
+     * so a day she never opened was NOT counted as unknown — it was excluded from the window
+     * entirely and `LIMIT 10` reached further back to fill the gap. This test used to assert that,
+     * approvingly, under the heading "ignores days whose morning gate never ran".
+     *
+     * AND IT FLATTERED. Ten fully-skipped days shrank the window rather than showing up in it, so
+     * the one number meant to show her a pattern was structurally unable to show the pattern that
+     * matters most. A metric that cannot report the bad case is not a metric.
+     *
+     * The window is the CALENDAR now. A missing row is a day nothing happened on, which is exactly
+     * what she was asking to see, and `untouched` separates "opened it and never closed the night"
+     * from "never opened it at all" — two different facts that were both called unknown.
+     */
     await env.DB.prepare(`INSERT INTO days (id, date_ts, created_at) VALUES (?,?,?)`)
       .bind(DAY(9), Date.parse(`${DAY(9)}T00:00:00Z`), Date.now()).run();
     const s = await anchorStreak(env as any, DAY(10));
-    expect(s.examined).toBe(0);
+
+    expect(s.examined).toBe(10);
+    expect(s.days).toHaveLength(10);
+    // Nine days with no row at all, plus DAY(9) whose row exists and whose morning gate never ran.
+    expect(s.untouched).toBe(10);
+    expect(s.unknown).toBe(10);
+    expect(s.done + s.missed).toBe(0);
+    // And the window really is the ten days before it, rather than whatever rows happened to exist.
+    expect(s.days[0]!.id).toBe(DAY(9));
   });
 });
 

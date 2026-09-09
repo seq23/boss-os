@@ -143,6 +143,43 @@ credentials.post("/probe", async (c) => {
     );
   }
 
+  /*
+   * ── A DUTY THAT WAKES ITSELF ──────────────────────────────────────────────
+   *
+   * `duty_lp_replies` is created suspended because nothing can read the West Peek mailbox until
+   * Scooter grants domain-wide delegation, and a duty that errored every morning for three weeks
+   * while he got round to it would be noise on the one surface she has to keep reading.
+   *
+   * THE PROBE IS THE CONDITION, NOT A PERSON REMEMBERING. The morning the impersonation succeeds,
+   * this unsuspends the duty and clears its reason. Nobody flips a switch, and nobody has to notice
+   * — which matters, because the last thing waiting on this grant went unnoticed for three weeks.
+   *
+   * ONE WAY ONLY, DELIBERATELY. A probe going back to dead does NOT re-suspend: the duty's own
+   * script checks the register before every run and stops with a named reason, so a lapsed grant
+   * produces one honest stop rather than a duty silently switching itself off — which would look
+   * exactly like a duty somebody turned off and forgot.
+   */
+  const WOKEN_BY: Record<string, string> = { cred_westpeek_delegation: "duty_lp_replies" };
+  const woken: string[] = [];
+  for (const p of applied) {
+    const dutyId = WOKEN_BY[p.id];
+    if (!dutyId || p.state !== "live") continue;
+    const res = await c.env.DB
+      .prepare(
+        `UPDATE standing_duties SET suspended = 0, suspended_reason = NULL
+          WHERE id = ? AND suspended = 1`,
+      )
+      .bind(dutyId)
+      .run();
+    if ((res.meta?.changes ?? 0) > 0) woken.push(dutyId);
+  }
+  if (woken.length > 0) {
+    await logEvent(c.env.DB, {
+      level: "info", scope: "duties", event: "duty_woken_by_credential", entityId: woken[0] ?? null,
+      detail: { woken, because: "the credential it waits on is live" },
+    }).catch(() => {});
+  }
+
   const dead = applied.filter((p) => p.state === "dead");
   await logEvent(c.env.DB, {
     level: dead.length > 0 ? "warn" : "info",
@@ -155,5 +192,5 @@ credentials.post("/probe", async (c) => {
     action: "probed", detail: { applied, unknown: unknownIds },
   });
 
-  return ok(c, { applied, unknown: unknownIds, checked_at: now }, 201);
+  return ok(c, { applied, unknown: unknownIds, woken, checked_at: now }, 201);
 });

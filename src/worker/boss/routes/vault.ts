@@ -84,6 +84,11 @@ const SNAPSHOT_TABLES = [
   // the Worker cannot see, so a rebuild would produce a thinner document than the one she took into
   // the meeting. What she read on the 9th has to still say the same thing on the 16th.
   "meeting_packets",
+  // 0212 — what came back from LP outreach, by category. The counts are cheap to lose and the
+  // HISTORY is not: "how many opt-outs since the raise started" is a question only a series can
+  // answer, and the mail it was derived from is deleted from nowhere but also readable only from
+  // her Mac. Holds no name and no address by construction.
+  "lp_reply_digests",
   // 0193 — Monique's backlink prospects. The review status is the valuable part: a restore that lost
   // it would hand her back pages she had already rejected, which is how a working list becomes one
   // she stops trusting.

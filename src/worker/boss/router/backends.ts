@@ -1,4 +1,6 @@
+import { anthropic } from "./anthropic";
 import { fireworks } from "./fireworks";
+import { openai } from "./openai";
 import { openrouter } from "./openrouter";
 import { workersAi } from "./workersAi";
 import type { ProviderAdapter, WorkersAiBinding } from "./types";
@@ -99,6 +101,63 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
         id: "mdl_or_gemma3_free", slug: "google/gemma-3-27b-it:free",
         displayName: "Gemma 3 27B (OpenRouter, free)", capabilityTier: "fast",
         inMicros1k: 0, outMicros1k: 0, contextTokens: 96000,
+      },
+    ],
+  },
+  /*
+   * ─── THE TWO FRONTIER BACKENDS, AND WHY THEY EXIST ────────────────────────
+   *
+   * Everything else in this system was pushed DOWN to the cheapest model that could do the job. One
+   * briefing cost $3.88 by inheriting the default, and the fix was to name a cheap model on every
+   * duty. Coaching is the deliberate exception, in her words:
+   *
+   *   "i think for coaching it is imperative that i use the best models with the best thinking
+   *    brains and the most integrity."
+   *
+   * It is the one route carrying her interior life and the quality of the reasoning IS the product.
+   * A verified turn on 9 September was answered by Llama 3.1 8B on Workers AI — free, working, and
+   * exactly the wrong instrument for the job.
+   *
+   * DIRECT, NOT THROUGH OPENROUTER, for this route only. OpenRouter stays wired and stays the right
+   * trade for utility work; it is the wrong one here because it puts an extra party in the one
+   * conversation whose design is about minimising who sees her words.
+   *
+   * BOTH, SO SHE CAN COMPARE. Picking on reputation is not testable. Running a week on each and
+   * keeping the one she trusts more when it disagrees with her is.
+   *
+   * PRICES ARE PER 1,000 TOKENS IN MICRODOLLARS, from the published list prices at the time of
+   * writing. They are estimates in exactly the way every other price in this file is: the ledger has
+   * arithmetic it can prove and prices it cannot, and it says so.
+   */
+  {
+    backendId: "bk_anthropic",
+    providerId: "prv_anthropic",
+    providerName: "Anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    credential: { kind: "env", name: "ANTHROPIC_API_KEY" },
+    adapter: anthropic,
+    note: "Direct, for coaching only. Nothing here is free, so it never runs while the spend lever is at FREE_ONLY — and coaching is her asking directly, which the budget never blocks.",
+    models: [
+      {
+        id: "mdl_anthropic_frontier", slug: "claude-sonnet-4-5-20250929",
+        displayName: "Claude Sonnet 4.5 (Anthropic)", capabilityTier: "frontier",
+        inMicros1k: 3000, outMicros1k: 15000, contextTokens: 200000,
+      },
+    ],
+  },
+  {
+    backendId: "bk_openai",
+    providerId: "prv_openai",
+    providerName: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    credential: { kind: "env", name: "OPENAI_API_KEY" },
+    adapter: openai,
+    note: "Direct, for coaching only. The second frontier provider, so no critical capability depends permanently on one vendor.",
+    models: [
+      {
+        id: "mdl_openai_frontier", slug: "gpt-4.1",
+        displayName: "GPT-4.1 (OpenAI)", capabilityTier: "frontier",
+        inMicros1k: 2000, outMicros1k: 8000, contextTokens: 1000000,
       },
     ],
   },

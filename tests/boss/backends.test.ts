@@ -108,10 +108,18 @@ afterEach(restoreSeed);
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Stage 1 — the registry as seeded", () => {
-  it("holds five backends at $0, and the only enabled one is the one Stage 2 actually built", async () => {
+  it("holds seven backends at $0, and the only enabled one is the one Stage 2 actually built", async () => {
     const rows = await listBackends(env.DB);
+    /*
+     * SEVEN SINCE 0211. The two frontier providers were added for coaching alone, on her
+     * instruction — "i think for coaching it is imperative that i use the best models with the best
+     * thinking brains and the most integrity" — and they arrive REGISTERED, not enabled, because
+     * neither key is in the vault yet. That is the rule this file has asserted from the beginning
+     * and the new rows obey it: registering is not commissioning.
+     */
     expect(rows.map((b) => b.id).sort()).toEqual([
-      "bk_claude_code", "bk_fireworks", "bk_local_runtime", "bk_openrouter", "bk_workers_ai",
+      "bk_anthropic", "bk_claude_code", "bk_fireworks", "bk_local_runtime",
+      "bk_openai", "bk_openrouter", "bk_workers_ai",
     ]);
     for (const b of rows) {
       /*
@@ -123,8 +131,15 @@ describe("Stage 1 — the registry as seeded", () => {
        * The invariant that survives is the one that mattered: no backend may spend without a
        * deliberate, reviewable number against its name.
        */
-      if (b.id === "bk_claude_code") expect(b.monthly_ceiling_micros).toBeGreaterThan(0);
-      else expect(b.monthly_ceiling_micros).toBe(0);
+      /*
+       * A REAL CEILING WHERE ZERO WOULD MEAN NEVER. Zero means free-tier-only, which for a paid
+       * provider is a backend that can never run — "exists but nothing invokes it" with a budget
+       * line. The two coaching backends carry $5/month each, which is a deliberate reviewable
+       * number against a name, which is the invariant this loop is actually about.
+       */
+      if (b.id === "bk_claude_code" || b.id === "bk_anthropic" || b.id === "bk_openai") {
+        expect(b.monthly_ceiling_micros).toBeGreaterThan(0);
+      } else expect(b.monthly_ceiling_micros).toBe(0);
       // The forbidden list is the invariant that never moves, enabled or not. No backend may commit,
       // merge, push, deploy or read a secret, and enabling one does not buy it any of those.
       expect(b.forbidden_actions).toEqual(expect.arrayContaining(["commit", "merge", "push", "deploy", "secret_read"]));
@@ -649,7 +664,8 @@ describe("Stage 1 — eligibleFor", () => {
   it("returns nothing permitted, and every reason, when nothing is enabled", async () => {
     const result = await eligibleFor(env as any, "research");
     expect(result.order).toHaveLength(0);
-    expect(result.refused).toHaveLength(5);
+    // Seven since 0211's two coaching backends, both registered and therefore both refused by name.
+    expect(result.refused).toHaveLength(7);
     expect(new Set(result.refused.map((r) => r.code))).toEqual(new Set(["backend_not_enabled"]));
   });
 });
@@ -664,8 +680,9 @@ describe("Stage 1 — /api/backends", () => {
     expect(text).not.toContain("test-key-not-a-real-credential");
 
     const body = JSON.parse(text);
-    expect(body.data.backends).toHaveLength(5);
+    expect(body.data.backends).toHaveLength(7);
     expect(body.data.lever.position).toBe("FREE_ONLY");
+    // Five route-order criteria, which is a different five and does not move.
     expect(body.data.route_order).toHaveLength(5);
     for (const b of body.data.backends) {
       // Every row explains itself whether it is ready or not — a blank readiness sentence is the
@@ -938,7 +955,9 @@ describe("Stage 1 — POST /candidates", () => {
     const permitted = body.data.candidates.filter((c: any) => c.refused === false);
     const refused = body.data.candidates.filter((c: any) => c.refused === true);
     expect(permitted.map((c: any) => c.backend_id)).toEqual(["bk_claude_code"]);
-    expect(refused.length).toBe(4);
+    // Six since 0211: the two coaching backends are registered and not enabled, so they appear here
+    // as refusals with a sentence rather than being silently absent from the list.
+    expect(refused.length).toBe(6);
 
     // The client renders these verbatim and invents nothing, so they must all be present.
     for (const c of body.data.candidates) {

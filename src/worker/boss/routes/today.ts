@@ -617,6 +617,94 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * `null` here and a named fault on screen.
    */
   const dayWeekday = new Date(`${day.id}T12:00:00Z`).getUTCDay();
+
+  /*
+   * ── WHAT SHE HAD TO ASK A PERSON TO FIND OUT ──────────────────────────────
+   *
+   *   "explain to me how the morning gate mid day and night gates work im confused. maybe a UX
+   *    issue and the 'today's contract' needs the date there and what happens to yesterday it just
+   *    disappears? if nothing is clicked does it track which days were skipped?"
+   *
+   * Every answer already existed — in `runOfShow.ts`, in `close.ts`, in comments only a developer
+   * reads. That she had to ask is the defect, not that she forgot. So all four answers are on the
+   * block: the date, what each gate closes, what happened yesterday, and the distinction between a
+   * day she skipped and a day she simply never closed.
+   */
+  const yesterdayId = new Date(Date.parse(`${day.id}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  const yesterday = await env.DB
+    .prepare(
+      `SELECT id, anchor_outcome, morning_completed_at, midday_completed_at, night_completed_at, morning_contract
+         FROM days WHERE id = ?`,
+    )
+    .bind(yesterdayId)
+    .first<any>()
+    .catch(() => null);
+
+  const contractContext = {
+    /** She asked for this directly. A screen with no date cannot say whether it is today's. */
+    day_id: day.id,
+    day_label: new Date(`${day.id}T12:00:00Z`).toLocaleDateString("en-GB", {
+      weekday: "long", day: "numeric", month: "long", timeZone: "UTC",
+    }),
+    /*
+     * ONE LINE PER GATE, NAMING WHAT IT CLOSES. Straight from the model in `runOfShow.ts`, which
+     * has always known this and never said it anywhere she could see.
+     */
+    gates: [
+      {
+        name: "Morning Gate",
+        closes: "Morning Launch",
+        what: "You agree today's contract — the anchor and the priorities — or override what was proposed. Until you run it, what you see is a proposal.",
+      },
+      {
+        name: "Midday Gate",
+        closes: "Midday Stabiliser",
+        what: "A check that the day still matches the contract, and a chance to change it while there is still a day left to change.",
+      },
+      {
+        name: "Night Gate",
+        closes: "Evening Close and Night Reset",
+        what: "You answer whether the anchor actually happened. That answer is the only thing that decides done or missed — nothing is inferred from database activity.",
+      },
+    ],
+    gates_note:
+      "The gates are evidence, not a second to-do list. Nothing else in this system may claim the anchor happened; only your answer at the Night Gate can.",
+    /*
+     * WHAT HAPPENS TO YESTERDAY — which had no answer on any screen while the row sat in the
+     * database the whole time.
+     */
+    yesterday: yesterday
+      ? {
+          day_id: yesterday.id,
+          anchor_outcome: yesterday.anchor_outcome ?? "unknown",
+          /*
+           * THE MOST CAREFUL DECISION IN THE SYSTEM, AND IT WAS INVISIBLE. `close.ts`: an unanswered
+           * day "is not quietly counted as a miss, because a night she was too tired to close the
+           * gate is not the same as a day she skipped the work." That distinction is what makes the
+           * streak trustworthy, so she should be able to see it rather than take it on faith.
+           */
+          verdict:
+            yesterday.anchor_outcome === "done"
+              ? "You did the first money move."
+              : yesterday.anchor_outcome === "missed"
+                ? "You said the first money move did not happen."
+                : yesterday.morning_completed_at
+                  ? "You opened the day and never closed the Night Gate, so nobody knows. That is recorded as unknown rather than as a miss — a night you were too tired to answer is not a day you skipped the work."
+                  : "You never opened the day. Recorded as unknown, and counted in the window rather than dropped out of it.",
+          gates_run: [
+            yesterday.morning_completed_at ? "Morning" : null,
+            yesterday.midday_completed_at ? "Midday" : null,
+            yesterday.night_completed_at ? "Night" : null,
+          ].filter(Boolean),
+        }
+      : {
+          day_id: yesterdayId,
+          anchor_outcome: "unknown",
+          verdict: "There is no record of yesterday at all — the day was never opened. Unknown, not missed.",
+          gates_run: [],
+        },
+  };
+
   const derivedContract = contract
     ? null
     : await (async () => {
@@ -865,8 +953,27 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * she gets to SEE her day.
      */
     todays_contract: {
+      /*
+       * ── THE DATE, AND WHAT A GATE ACTUALLY IS ────────────────────────────
+       *
+       * Two of her questions, and both were defects in the screen rather than gaps in her memory:
+       *
+       *   "the 'today's contract' needs the date there and what happens to yesterday it just
+       *    disappears?"
+       *   "AND ARE U FIXING THE FACT THAT I HAD TO ASK WHAT MORNING MID DAY AND EVENING GATES WERE?
+       *    AND HOW THEY WORK?"
+       *
+       * The model was already written down — `runOfShow.ts` says which block each gate closes, and
+       * `close.ts` explains exactly why an unanswered day stays unknown. ALL OF IT WAS IN COMMENTS,
+       * where only a developer would ever read it. Institutional memory that never reaches the
+       * person operating the system is the same defect as a table with no reader.
+       *
+       * So the block carries its own date, an explanation of each gate in one line, and yesterday's
+       * verdict — because "what happens to yesterday" had no answer on any screen and the data was
+       * there the whole time.
+       */
       content: contract
-        ? { contract, priorities, agreed_at: day.morning_completed_at, state: "agreed" }
+        ? { contract, priorities, agreed_at: day.morning_completed_at, state: "agreed", ...contractContext }
         : derivedContract
           ? {
               contract: derivedContract.contract,
@@ -875,11 +982,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
               agreed_at: null,
               state: "proposed",
               note: "Derived from your projects and your record. Run the Morning Gate to agree to it, or to override it.",
+              ...contractContext,
             }
           : {
               reason:
                 "Today's agenda could not be derived. This is a fault, not an empty day — the " +
                 "pillar builders threw rather than returning a thin day, and the reason is in Systems → Diagnostics.",
+              ...contractContext,
             },
       // An empty day is now only ever a genuine failure to compute one.
       isEmpty: !contract && !derivedContract,
@@ -2019,12 +2128,55 @@ today.get("/coaching", async (c) => {
     .filter((b): b is NonNullable<typeof b> => b !== null)
     .sort((a, b) => Number(b.free) - Number(a.free) || a.display_name.localeCompare(b.display_name));
 
+  /*
+   * ── WHAT THIS IS, BEFORE ANY OF THE APPARATUS ────────────────────────────
+   *
+   * She screenshotted this section and said: "AND THIS IS THE COACHING SECTION? IT DOESNT LOOK LIKE
+   * A COACHING SECTION AT FIRST GLANCE."
+   *
+   * She was right, and the defect is one of ORDER rather than content. The first thing on the screen
+   * was a privacy disclaimer, the button named a Cloudflare product, and nothing anywhere said what
+   * coaching would do for her. Every sentence was true and the section never stated its own point —
+   * reassurance is not an introduction, and she cannot weigh a promise about data handling before
+   * she knows what the thing is.
+   *
+   * So the payload now leads with purpose and the caveats follow. `LOCAL_ONLY` is gone from what she
+   * reads: it is an internal classification constant and she is not its audience.
+   */
+  const chosen = await c.env.DB
+    .prepare(`SELECT value FROM settings WHERE key = 'coaching_backend'`)
+    .first<{ value: string }>()
+    .catch(() => null);
+
   return ok(c, {
     day_id: day,
+    heading: "Coaching",
+    purpose:
+      "Five minutes before you start, to find the thing you are avoiding and settle what today is actually for. " +
+      "One question at a time, at most five, and you end it whenever you want by saying you are ready.",
+    if_ignored: "Nothing happens. The day runs without it and nothing is recorded either way.",
+    // The button says what pressing it causes, in her words. Not a vendor's product name.
+    action_label: "Start coaching",
+    /*
+     * WHY IT ASKS EVERY DAY, SAID OUT LOUD. A gate with no stated reason reads as an obstacle, and
+     * an obstacle is how a good feature ends up unused. It is daily rather than permanent because
+     * the thing being consented to is a model READING WHAT SHE TYPES THAT MORNING — a standing
+     * permission would be consent given once for words not yet written. She can also revoke it.
+     */
+    why_daily:
+      "It asks once a day because what you are agreeing to is a model reading what you type this morning. " +
+      "A permanent yes would be consent given in advance for words you have not written yet.",
     consent,
     max_turns: MAX_TURNS,
     exit_phrases: EXIT_PHRASES,
     backends,
+    /*
+     * WHICH BRAIN IS ANSWERING, NAMED ON THE SCREEN. A verified turn on 9 September was served by
+     * Llama 3.1 8B while the button said "Workers AI" — two true statements that together tell her
+     * nothing about what read her words. Her instruction is that this route gets the best model
+     * available, so the screen says which one it currently is and what it would take to change it.
+     */
+    coaching_backend: chosen?.value ?? "bk_workers_ai",
     day_mode: row?.day_mode ?? null,
     day_mode_source: row?.day_mode_source ?? null,
     /*
@@ -2032,6 +2184,10 @@ today.get("/coaching", async (c) => {
      * should be able to read the promise on the screen where she is deciding.
      */
     storage: "Nothing you type here is stored by Boss OS. The conversation lives only in this browser.",
+    cost_note:
+      (chosen?.value ?? "bk_workers_ai") === "bk_workers_ai"
+        ? "Free today: it runs on Cloudflare's included allowance. That also means a small model — a frontier one needs a key in the vault, and this is the one place worth paying for."
+        : "This route is the deliberate exception to the cheap-by-default rule, at roughly a cent a morning. The budget never skips it: it is you asking directly.",
   });
 });
 

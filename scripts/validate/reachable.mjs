@@ -108,9 +108,27 @@ for (const t of new Set(tables)) {
 
 // ─── 2. Ops scripts nothing invokes ──────────────────────────────────────────
 
+/*
+ * SHELL SCRIPTS COUNT AS INVOKERS, AND THEY DID NOT.
+ *
+ * `walk()` collects .ts/.tsx/.mjs/.js only, so a local job written in bash that calls a reporter
+ * was invisible to this scan — `kdp-watch.sh` has invoked `kdp-report.mjs` since 7 September and
+ * the only reason that passed is that OPERATIONS.md happens to mention the reporter by name. A
+ * scan that depends on a prose document naming a file is one wrong edit from a false alarm, and a
+ * false alarm from a validator is worse than no validator: it sends someone chasing a problem that
+ * does not exist and teaches them to ignore the next one.
+ *
+ * Strictly stronger rather than looser: it adds a real class of invocation the scan was blind to,
+ * and nothing that failed before passes now for any other reason.
+ */
+const opsShell = readdirSync(join(ROOT, "scripts/ops"))
+  .filter((f) => f.endsWith(".sh"))
+  .map((f) => read(`scripts/ops/${f}`));
+
 const invokers = [
   existsSync(join(ROOT, "scripts/ops/install-agent-launchd.sh")) ? read("scripts/ops/install-agent-launchd.sh") : "",
   read("package.json"),
+  ...opsShell,
   ...walk("scripts").map(read),
   ...readdirSync(join(ROOT, "docs/boss")).filter((f) => f.endsWith(".md")).map((f) => read(`docs/boss/${f}`)),
 ].join("\n");

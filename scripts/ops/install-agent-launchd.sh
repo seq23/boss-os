@@ -320,6 +320,55 @@ launchctl unload "$MAILBOX_PLIST" 2>/dev/null || true
 launchctl load "$MAILBOX_PLIST"
 echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
 
+# ─── Monique's LP reply digest ───────────────────────────────────────────────
+#
+# "an employee can keep track of all the opt outs and replies and send me an inbox daily summary to
+# deliver to the twin agent". Daily rather than weekly because an LP who asked for the deck on
+# Tuesday and hears nothing until Sunday is an LP you have lost.
+#
+# INSTALLED WHILE DORMANT, ON PURPOSE. Nothing can read sequoia@westpeek.ventures until Scooter
+# grants domain-wide delegation on that domain, and the script checks the credential register and
+# stops with a named reason rather than starting a run that would fail at its first tool call. It
+# begins working on its own the morning after he grants it — no reinstall, nobody remembering.
+#
+# 07:45: after the 07:10 agent tick, before the day starts.
+LP_LABEL="com.seq.boss-lp"
+LP_PLIST="$HOME/Library/LaunchAgents/$LP_LABEL.plist"
+LP_LOGS="$HOME/Library/Logs/lp-replies"
+
+mkdir -p "$LP_LOGS" "$HOME/.boss-os/lp"
+chmod +x "$REPO/scripts/ops/lp-replies.sh"
+ln -sfn "$REPO/scripts/ops/lp-replies.sh" "$HOME/bin/lp-replies.sh"
+ln -sfn "$REPO/scripts/ops/lp-replies-prompt.md" "$HOME/bin/lp-replies-prompt.md"
+
+cat > "$LP_PLIST" <<LPEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$LP_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>$REPO/scripts/ops/lp-replies.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$LP_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$LP_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+LPEOF
+
+launchctl unload "$LP_PLIST" 2>/dev/null || true
+launchctl load "$LP_PLIST"
+echo "Installed $LP_LABEL — daily 07:45 Central, dormant until the West Peek grant exists."
+
 # ─── Toni's credential prober ────────────────────────────────────────────────
 #
 # She changed her Google password. Google revokes every OAuth refresh token the instant that
@@ -383,7 +432,7 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL"; then break; fi
   sleep 1
 done
 
@@ -395,6 +444,7 @@ loaded "$PROPS_LABEL" || missing="$missing $PROPS_LABEL"
 loaded "$KDP_LABEL" || missing="$missing $KDP_LABEL"
 loaded "$MAILBOX_LABEL" || missing="$missing $MAILBOX_LABEL"
 loaded "$CRED_LABEL" || missing="$missing $CRED_LABEL"
+loaded "$LP_LABEL" || missing="$missing $LP_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
@@ -402,9 +452,11 @@ loaded "$CRED_LABEL" || missing="$missing $CRED_LABEL"
 [ -f "$REPO/scripts/ops/kdp-watch-prompt.md" ] || missing="$missing scripts/ops/kdp-watch-prompt.md"
 [ -L "$HOME/bin/mailbox-sweep-prompt.md" ] || missing="$missing ~/bin/mailbox-sweep-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/mailbox-sweep-prompt.md" ] || missing="$missing scripts/ops/mailbox-sweep-prompt.md"
+[ -L "$HOME/bin/lp-replies-prompt.md" ] || missing="$missing ~/bin/lp-replies-prompt.md(symlink)"
+[ -f "$REPO/scripts/ops/lp-replies-prompt.md" ] || missing="$missing scripts/ops/lp-replies-prompt.md"
 
 if [ -z "$missing" ]; then
-  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL, $KDP_LABEL, $MAILBOX_LABEL and $CRED_LABEL."
+  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL, $KDP_LABEL, $MAILBOX_LABEL, $CRED_LABEL and $LP_LABEL."
 else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1

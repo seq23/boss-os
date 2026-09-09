@@ -105,8 +105,25 @@ export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
         */}
       {!consented ? (
         <div className="coach-gate">
-          <p className="coach-promise">{state?.storage}</p>
-          <p className="row-sub">{state?.consent?.reason}</p>
+          {/*
+            * ── PURPOSE FIRST, APPARATUS LAST ──────────────────────────────────
+            *
+            * She screenshotted this and said: "AND THIS IS THE COACHING SECTION? IT DOESNT LOOK
+            * LIKE A COACHING SECTION AT FIRST GLANCE."
+            *
+            * Every sentence that was here was true. The order was the defect: a privacy disclaimer
+            * led, a Cloudflare product name was half the button, an internal classification constant
+            * was printed at her, and nothing anywhere said what coaching would DO for her.
+            * Reassurance is not an introduction — she cannot weigh a promise about her data before
+            * she knows what the thing is.
+            *
+            * So: a heading that says what this is, one line on what it is for, what happens if she
+            * ignores it, a button naming the ACTION — then the caveats, below, in smaller weight,
+            * where they reassure instead of leading.
+            */}
+          <h2 className="coach-heading">{state?.heading ?? "Coaching"}</h2>
+          <p className="coach-purpose">{state?.purpose}</p>
+          <p className="row-sub">{state?.if_ignored}</p>
           {backends.length === 0 ? (
             /*
              * NAMED, NOT A DISABLED BUTTON. An empty list means no cloud backend is both
@@ -120,11 +137,27 @@ export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
           ) : (
             <div className="btn-row">
               {backends.map((b) => (
-                <button key={b.id} className="btn" onClick={() => void approve(b.id)}>
-                  Approve {b.display_name}{b.free ? " — free" : ""}
+                <button key={b.id} className="btn btn-approve" onClick={() => void approve(b.id)}>
+                  {/*
+                    * THE LABEL SAYS WHAT PRESSING IT CAUSES. It used to read "APPROVE WORKERS AI —
+                    * FREE", which names a Cloudflare inference product — an implementation detail —
+                    * and made the vendor half the button. "Free" is kept because she cares about
+                    * cost, and demoted to where a note belongs.
+                    */}
+                  {state?.action_label ?? "Start coaching"}
                 </button>
               ))}
             </div>
+          )}
+
+          {/* ── The caveats, after the point, in smaller weight ── */}
+          <p className="row-sub coach-fineprint">{state?.storage}</p>
+          <p className="row-sub coach-fineprint">{state?.why_daily}</p>
+          <p className="row-sub coach-fineprint">{state?.cost_note}</p>
+          {backends.length === 1 && (
+            <p className="row-sub coach-fineprint">
+              Answering today: {backends[0]?.display_name}.
+            </p>
           )}
         </div>
       ) : (
