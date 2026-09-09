@@ -45,6 +45,65 @@ system.get("/status", async (c) => {
   const waiting = await pendingApprovals(c.env.DB);
   counts.pending_approvals = waiting.total;
 
+  /*
+   * ─── WHAT ACTUALLY HAPPENED TODAY, IN UNITS THAT MOVE ─────────────────────
+   *
+   * Her question, over and over: did my employees actually do anything, and did it work? The most
+   * prominent strip on the Inbox was answering a different one — "$0.00 of $2.00" — and answering it
+   * with a figure that is STRUCTURALLY ALWAYS ZERO, because nearly every run executes through Claude
+   * Code on her own subscription and records `cost_micros: 0` by design.
+   *
+   * On the morning this was written, two runs died at exit 124 and the screen said nothing, while a
+   * progress bar that cannot fill sat at the top of the page implying oversight. Worse: that ceiling
+   * was used as the reason to cut the daily briefing's leash to 300s, which is what killed it.
+   *
+   * So the strip now reports runs and their outcomes. `failed` is the number she needs; it is the one
+   * that would have shown her this morning's two dead runs the moment she opened the Inbox.
+   *
+   * TOKENS RATHER THAN DOLLARS FOR THE RESOURCE LINE. Tokens are measured and real. A dollar figure
+   * covering only the metered backends would read as "nothing ran" on a day when six things ran.
+   */
+  const dayStart = new Date().setHours(0, 0, 0, 0);
+  const [runRows, tokenRow, deliveredRow] = await Promise.all([
+    c.env.DB
+      .prepare(`SELECT status, COUNT(*) AS n FROM backend_runs WHERE started_at >= ? GROUP BY status`)
+      .bind(dayStart).all<{ status: string; n: number }>(),
+    c.env.DB
+      .prepare(
+        `SELECT COALESCE(SUM(in_tokens),0) AS in_tokens, COALESCE(SUM(out_tokens),0) AS out_tokens,
+                COALESCE(SUM(cost_micros),0) AS metered_micros, COUNT(*) AS calls
+           FROM usage_ledger WHERE ts >= ?`,
+      )
+      .bind(dayStart).first<{ in_tokens: number; out_tokens: number; metered_micros: number; calls: number }>(),
+    /*
+     * THINGS THAT EXIST, NOT ATTEMPTS. A run that started is not a report she can read; a row in
+     * executive_reports is. Counting attempts is how "6 runs" became a number that felt like progress
+     * on a day when two of them delivered nothing.
+     */
+    c.env.DB
+      .prepare(`SELECT COUNT(*) AS n FROM executive_reports WHERE generated_at >= ? AND status <> 'failed'`)
+      .bind(dayStart).first<{ n: number }>(),
+  ]);
+  const byRunStatus = Object.fromEntries((runRows.results ?? []).map((r) => [r.status, r.n]));
+  const work_today = {
+    since: dayStart,
+    runs: Object.values(byRunStatus).reduce((a, b) => a + Number(b || 0), 0),
+    succeeded: Number(byRunStatus.succeeded ?? 0),
+    failed: Number(byRunStatus.failed ?? 0),
+    running: Number(byRunStatus.running ?? 0),
+    refused: Number(byRunStatus.refused ?? 0),
+    delivered: deliveredRow?.n ?? 0,
+    in_tokens: tokenRow?.in_tokens ?? 0,
+    out_tokens: tokenRow?.out_tokens ?? 0,
+    /*
+     * NAMED SO THE SCREEN CANNOT PRESENT IT AS TOTAL SPEND. It covers the metered backends and
+     * nothing else, and the Inbox says which — so a zero reads as "nothing metered ran" rather than
+     * as "nothing ran", which is the misreading that cost the briefing its timeout.
+     */
+    metered_micros: tokenRow?.metered_micros ?? 0,
+    metered_calls: tokenRow?.calls ?? 0,
+  };
+
   const [lanes, budgets, lastCron, lastSnapshot] = await Promise.all([
     c.env.DB.prepare(`SELECT id, name, isolated FROM lanes ORDER BY id`).all(),
     c.env.DB.prepare(`SELECT * FROM budgets ORDER BY lane, period`).all(),
@@ -60,6 +119,7 @@ system.get("/status", async (c) => {
     now: Date.now(),
     lanes: lanes.results ?? [],
     counts,
+    work_today,
     budgets: budgets.results ?? [],
     cost_mode: costMode,
     cost_mode_policy: COST_MODE_POLICY[isCostMode(costMode) ? costMode : "NORMAL"],

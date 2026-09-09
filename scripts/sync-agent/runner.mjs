@@ -490,11 +490,43 @@ export async function executeRun(envelope, deps = {}) {
     return { ...base, status: "refused", refusal_reason: result.refusal_reason ?? REFUSAL.BACKEND_UNAVAILABLE };
   }
 
-  // A FAILING CHECK STILL PRODUCES A FULL PACKET. Same fields, same shape, failure carried in them.
-  const failed = checks.failed > 0 || result.exit_code !== 0;
+  /*
+   * A FAILING CHECK STILL PRODUCES A FULL PACKET. Same fields, same shape, failure carried in them.
+   *
+   * ── AND A NON-ZERO EXIT DOES NOT DELETE A FINISHED DELIVERABLE ────────────
+   *
+   * This line read `checks.failed > 0 || result.exit_code !== 0`, and on 9 September 2026 that
+   * discarded a complete Executive Intelligence Report: the run was killed on a 300s leash at 313.6s,
+   * exit 124, with a valid `delivers.json` on disk saying `"status": "complete"`. She was shown
+   * "Today's research run failed. Nothing below is a finding."
+   *
+   * The backend now grades the FILE (see `claudeCode.mjs` → `delivery`), and the runner honours that
+   * grade. A complete delivery is a succeeded run whatever the process did on the way out; the exit
+   * code, the kill and the reason all stay in the packet, so nothing is hidden — a crash is still
+   * fully visible, it just no longer erases the work it crashed after finishing.
+   *
+   * CHECKS ARE STILL ABSOLUTE. A run whose checks failed is failed regardless of what it delivered:
+   * a report is a claim about the world, and a repository that does not build is a fact about this
+   * one. The deliverable can never overrule that.
+   */
+  /*
+   * A DELIVERABLE THAT EXISTS OUTRANKS A NON-ZERO EXIT; ITS HONESTY FIELD DECIDES HOW IT IS FILED.
+   *
+   * complete → filed complete. partial or unnamed → filed partial and SHOWN, because three verified
+   * sections beat a blank screen reading "nothing below is a finding". Nothing at all → failed, and
+   * that message is then the correct one.
+   *
+   * The kill, the exit code and the reason all remain in the packet either way, so this hides
+   * nothing — `delivery_status` below is what stops a partial answer being presented as a whole one.
+   */
+  const delivered = result.delivery?.present === true;
+  const failed = checks.failed > 0 || (result.exit_code !== 0 && !delivered);
   return {
     ...base,
     status: failed ? "failed" : "succeeded",
+    // The honesty field travels to the cloud, so `deliverReport.ts` can file a partial report as
+    // partial rather than having to infer it from a run status that says only pass or fail.
+    delivery_status: result.delivery?.status ?? null,
     error: failed ? (result.error ?? `checks failed: ${checks.failed}/${checks.run}`) : null,
     remaining_risks: failed
       ? ["Checks did not pass. This is a proposal that does not build; it must not be merged.", ...base.remaining_risks]

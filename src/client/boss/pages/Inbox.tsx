@@ -4,7 +4,6 @@ import { Docket } from "../components/Docket";
 import { JudgementDocket } from "../components/JudgementDocket";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
-import { usd } from "../../../shared/boss/types";
 
 export function Inbox({ onCountChange, onOpen }: {
   onCountChange: (n: number) => void;
@@ -111,8 +110,7 @@ export function Inbox({ onCountChange, onOpen }: {
     }
   }
 
-  const dayBudget = status?.budgets?.find((b: any) => b.lane === "ops" && b.period === "day");
-  const pct = dayBudget ? Math.min(100, (dayBudget.spent_micros / dayBudget.limit_micros) * 100) : 0;
+  const work = status?.work_today ?? null;
   const costMode = status?.cost_mode;
 
   return (
@@ -142,13 +140,56 @@ export function Inbox({ onCountChange, onOpen }: {
         </div>
       </div>
 
-      {dayBudget && (
-        <div className="stat" style={{ marginTop: 10 }}>
-          <div className="stat-l" style={{ margin: 0 }}>
-            Today · {usd(dayBudget.spent_micros)} of {usd(dayBudget.limit_micros)}
+      {/*
+        * ─── WHAT HAPPENED TODAY, INSTEAD OF A BAR THAT CANNOT FILL ───────────
+        *
+        * This strip read "Today · $0.00 of $2.00" above an empty progress bar. The figure is not
+        * merely small — it is STRUCTURALLY ALWAYS ZERO: nearly every duty runs through Claude Code
+        * on her own subscription, which records `cost_micros: 0` by design, so no amount of activity
+        * can ever move it. A bar that cannot fill, in the most prominent strip on the page, implies
+        * an oversight that does not exist.
+        *
+        * IT HAD ALREADY DONE REAL DAMAGE. The daily briefing's leash was cut to 300s to fit that
+        * ceiling, and that cut is what kills the run at exit 124 with a finished report on disk.
+        *
+        * HER ACTUAL QUESTION IS "DID MY EMPLOYEES DO ANYTHING, AND DID IT WORK". On the morning this
+        * was written, two runs died silently and this screen said nothing. `failed` is now the second
+        * number on the strip.
+        *
+        * `runs` COUNTS ATTEMPTS AND `delivered` COUNTS THINGS THAT EXIST, and they are shown side by
+        * side on purpose: a day of six runs and no deliverables is precisely the day she needs to see.
+        */}
+      {work && (
+        <>
+          <div className="stats" style={{ marginTop: 10 }}>
+            <div className="stat">
+              <div className="stat-n">{work.runs}</div>
+              <div className="stat-l">runs today</div>
+            </div>
+            <div className="stat">
+              <div className="stat-n" style={work.failed > 0 ? { color: "var(--reject)" } : undefined}>{work.failed}</div>
+              <div className="stat-l">failed</div>
+            </div>
+            <div className="stat">
+              <div className="stat-n">{work.delivered}</div>
+              <div className="stat-l">delivered</div>
+            </div>
           </div>
-          <div className="meter"><span style={{ width: `${pct}%` }} /></div>
-        </div>
+          <div className="row-sub" style={{ marginTop: 6 }}>
+            {work.runs === 0
+              ? "Nothing has run yet today."
+              : `${work.succeeded} finished, ${work.failed} failed, ${work.running} still going${work.refused > 0 ? `, ${work.refused} refused` : ""}.`}
+            {" "}
+            {/*
+              * TOKENS, NOT DOLLARS. Tokens are measured and real. The dollar figure would cover only
+              * the metered backends, and on a day when six things ran it would read as zero — which
+              * is exactly the misreading that shortened the briefing's leash.
+              */}
+            {work.metered_calls > 0
+              ? `${work.in_tokens.toLocaleString()} in / ${work.out_tokens.toLocaleString()} out tokens on the metered models.`
+              : "Nothing ran on a metered model today, so there is no token figure — this is not a measure of how much ran."}
+          </div>
+        </>
       )}
 
       {(status?.counts?.open_dead_letters ?? 0) > 0 && (

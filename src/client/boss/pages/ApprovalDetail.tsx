@@ -144,7 +144,14 @@ function Origin({ origin, payload }: { origin: any; payload: any }) {
             <dl className="kv">
               <dt>Worker</dt><dd>{ev.worker_used}{ev.model_id ? ` · ${ev.model_id}` : ""}</dd>
               <dt>Cost mode</dt><dd>{ev.cost_mode ?? "—"}</dd>
-              <dt>Cost</dt><dd>{usd(ev.actual_cost_micros ?? 0)}</dd>
+              {/*
+                * LABELLED, BECAUSE A ZERO HERE IS NOT "IT WAS FREE".
+                * Work run through Claude Code goes on her own subscription and attributes no
+                * per-run charge, so this figure covers the metered models only. Unlabelled, a $0.00
+                * on an evidence packet reads as a claim about the whole run, and that misreading is
+                * what shortened the daily briefing's timeout.
+                */}
+              <dt>Cost (metered models)</dt><dd>{usd(ev.actual_cost_micros ?? 0)}</dd>
               <dt>Actions</dt><dd>{listOf(ev.actions_taken)}</dd>
               <dt>Checks</dt><dd>{listOf(ev.checks_run)}</dd>
               <dt>Risks</dt><dd>{listOf(ev.risks_remaining) || "None recorded"}</dd>
