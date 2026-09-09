@@ -435,11 +435,26 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
     expect(input.prompt).toMatch(/AFTER EVERY CANDIDATE YOU VERIFY, not at the end/);
     expect(input.prompt).toMatch(/hard timeout/i);
     /*
-     * THE CEILING WENT DOWN, NOT UP, AND THAT IS THE FIX WORKING. Thirty minutes was needed when the
-     * run re-scanned the whole universe. Hunting only what changed, five is enough — and her budget
-     * is $25 a month for everything, so a run that can wander for half an hour is the problem.
+     * ── THE FIVE-MINUTE CEILING WAS DISPROVEN BY THE RUN LOG, SO IT IS A FLOOR NOW ────────────
+     *
+     * This asserted `<= 600` on the reasoning that "hunting only what changed, five is enough — and
+     * her budget is $25 a month for everything, so a run that can wander for half an hour is the
+     * problem." Both halves turned out to be wrong, and they were checked rather than argued:
+     *
+     *   · ~/Library/Logs/boss-agent/agent.log records this duty starting at 1788957143326 and being
+     *     killed at 1788957443573 — 300.2s, exit 124. Five minutes is not enough. It has been dying
+     *     on that leash and the Capital tab has been running on results that stopped arriving.
+     *   · The budget argument does not hold either: measured spend over thirty days is $0 across
+     *     five calls, because this backend runs on her own subscription and records cost_micros 0 by
+     *     design. THE MODEL IS THE COST LEVER, NOT THE CLOCK — 0196's model fix produced all of the
+     *     saving, and the leash was belt-and-braces on a problem already solved.
+     *
+     * SO THE ASSERTION IS STRICTER THAN IT WAS, NOT LOOSER. It was one-sided and now it is a band:
+     * a floor so the next cost sweep cannot cut it back below what the run demonstrably needs, and a
+     * ceiling so it can never become unbounded. Either direction fails this test.
      */
-    expect(input.requested.max_seconds).toBeLessThanOrEqual(600);
+    expect(input.requested.max_seconds).toBeGreaterThanOrEqual(900);
+    expect(input.requested.max_seconds).toBeLessThanOrEqual(1200);
     // Every duty names its model now. Defaulting to the most expensive one is what cost $3.88.
     expect(input.requested.model).toBeTruthy();
   });

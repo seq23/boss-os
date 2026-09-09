@@ -273,7 +273,15 @@ function Roster() {
                 {t.error ? ` · ${t.error}` : ""}
               </div>
             </div>
-            <div className="row-val">{usd(t.cost_micros)}</div>
+            {/*
+              * VISIBLE, NOT A TOOLTIP. A subscription-backed run costs this column nothing, so an
+              * unlabelled $0.00 beside a task reads as "that was free" when it means "this figure
+              * cannot see what that cost". A label she has to hover for is a label she never reads.
+              */}
+            <div className="row-val">
+              {usd(t.cost_micros)}
+              <div className="stat-l" style={{ margin: 0 }}>metered</div>
+            </div>
           </div>
         ))
       )}

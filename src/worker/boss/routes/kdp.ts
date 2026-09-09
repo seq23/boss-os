@@ -83,6 +83,29 @@ const optionalCount = (v: unknown): number | null => {
 function actionFor(
   check: { sentinel: string; next_action: string | null; needs_owner: number; run_outcome?: string } | null,
   blocked: number,
+  /*
+   * ── THE STATE THE STORED SENTENCE MIGHT ALREADY BE WRONG ABOUT ─────────────
+   *
+   * Observed on production, 9 September 2026:
+   *
+   *   covers: { state: "approved", may_publish: true, decided_at: 09:30:38 }
+   *   action: { who: "simone", detail: "Approve the replacement covers in Boss OS (state: approved),
+   *             then Simone will upload and publish." }
+   *
+   * Simone's run finished at 09:24:24 and wrote that sentence into `next_action`. She approved at
+   * 09:30:38, six minutes later. Nothing recomputed it, so the screen spent the rest of the day
+   * asking her to repeat a step she had already taken — and she reported it twice.
+   *
+   * IT IS THE SAME DEFECT SHAPE AS THE APPROVAL BADGE THAT SAID 9 OVER AN EMPTY INBOX: a value
+   * derived once at write time and never reconciled with the state it describes. The function was
+   * already documented as "computed from the latest determination rather than stored, so it can
+   * never disagree with the check it describes" — and it was, but `check.next_action` is a STORED
+   * STRING from a moment that has passed, and every branch below preferred it.
+   *
+   * So the covers state is passed in and the stored sentence is refused whenever it asks for
+   * something already done. This is the general form, not a patch on one string.
+   */
+  covers: { state: string; may_publish: boolean } | null,
 ): { who: "her" | "simone" | "nobody"; headline: string; detail: string } {
   if (blocked === 0) {
     return {
@@ -106,6 +129,32 @@ function actionFor(
    * you can give" — a sentence about Amazon, produced by a run that never reached Amazon. Whatever
    * sentinel a broken run carries is a guess; the fact that it could not run is not.
    */
+  /*
+   * WHAT SHE HAS ALREADY DONE OUTRANKS ANY SENTENCE WRITTEN BEFORE SHE DID IT.
+   *
+   * Placed above every sentinel branch for the same reason `could-not-run` is: a stored sentence is
+   * a claim about a moment that has passed, and the covers row is the current fact. Approving them
+   * was the last thing this case needed from her, so the honest reading of the screen after that
+   * approval is "waiting on Simone", which is a calming true thing rather than a wrong instruction.
+   */
+  if (covers?.may_publish) {
+    return {
+      who: "simone",
+      headline: "You approved the covers. It is Simone's move now.",
+      detail:
+        "Nothing further is needed from you on this. She uploads them on her next run, publishes ONE title, " +
+        "checks it actually reaches Live on the bookshelf, and only then does the remaining six — and she " +
+        "reports back here when they are Live rather than when Publish was clicked.",
+    };
+  }
+  if (covers?.state === "awaiting") {
+    return {
+      who: "her",
+      headline: "Seven replacement covers are waiting on your verdict.",
+      detail: "They are in your Inbox with the covers themselves in the card: Approve, or Try Again with a sentence saying what is wrong.",
+    };
+  }
+
   if (check.run_outcome === "could-not-run") {
     return {
       who: "her",
@@ -247,7 +296,7 @@ kdp.get("/", async (c) => {
     latest,
     days_since_last_check: sinceLastCheck,
     history,
-    action: actionFor(latest, byState.blocked ?? 0),
+    action: actionFor(latest, byState.blocked ?? 0, covers ? { state: covers.state, may_publish: covers.state === "approved" } : null),
     /*
      * `null` MEANS NO COVER BATCH HAS EVER BEEN PUT TO HER, which is a different fact from one
      * waiting and a different fact again from one she sent back. The local run branches on all
@@ -265,6 +314,49 @@ kdp.get("/", async (c) => {
           may_publish: covers.state === "approved",
         }
       : null,
+    /*
+     * ─── WHAT SIMONE NEEDS FROM HER MACHINE, SAID ONCE AND ON SCREEN ──────────
+     *
+     * Her requirement: "yea id rather it work regardless if my tab is open and if my laptop is open
+     * or shut." Both halves are answered here, and the second one is answered HONESTLY rather than
+     * optimistically, because a promise that a shut laptop is fine would be the same class of lie
+     * as "her laptop is shut" was.
+     *
+     * THE TAB DEPENDENCY IS GONE. Proven on 9 September 2026: a scheduled `claude -p` run has no
+     * Chrome tools at all — an open tab was never going to help it. Simone now starts her own Chrome
+     * against her own profile, so nothing of hers has to be open. The one act left is a sign-in she
+     * does once, by hand, in that profile; no password passes through this system and none can.
+     *
+     * THE LID IS PARTLY SOLVABLE AND THE LIMIT IS NAMED. launchd does not fire while the Mac sleeps;
+     * it runs late on the next wake. A scheduled wake fixes that on power. On battery it will still
+     * often miss, and powered off nothing local runs at all — and moving this to a cloud runner is
+     * NOT the answer: it would put her Amazon publishing session on a datacentre IP that Amazon will
+     * challenge, on the one account that is already flagged.
+     */
+    machine: {
+      needs: [
+        {
+          key: "kdp_signin",
+          what: "Sign Simone into KDP once, in her own browser profile",
+          why: "She has her own Chrome profile now, so nothing of yours has to be open. It needs your sign-in once, and then every run reuses it.",
+          how: "cd ~/GitHub/boss-os && npm run kdp:signin",
+          how_kind: "terminal",
+          takes: "about a minute, once",
+        },
+        {
+          key: "scheduled_wake",
+          what: "Wake the Mac three minutes before each run",
+          why: "launchd cannot fire while the Mac is asleep — it runs late, on the next wake. This wakes it in time. It needs your password because it is a system setting.",
+          how: "sudo pmset repeat wake MWF 09:20:00",
+          how_kind: "terminal",
+          takes: "seconds, once",
+        },
+      ],
+      honest_limits: [
+        "On battery and unplugged, a scheduled wake often will not fire. Plugged in, it will.",
+        "Powered off, nothing on this Mac runs. There is no fix for that here, and moving the work to a server would put your Amazon publishing session on a datacentre IP — on an account that is already flagged.",
+      ],
+    },
     // Said on the screen rather than only in a migration, because it is the fact that stops her
     // re-testing a theory she has already disproved.
     known: "The 10-unpublished-title cap was tested on 7 September and is not the cause: draining the queue freed slots and the refusal did not change. It is a server-side flag on the account, and case #51496198 is the only route to it.",

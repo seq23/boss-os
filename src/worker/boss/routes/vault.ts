@@ -74,6 +74,12 @@ const SNAPSHOT_TABLES = [
   // funnel with no record of which firms had already been reviewed or rejected, so the next sweep
   // would hand her names she has already decided against. The review status is the valuable part.
   "sourcing_candidates",
+  // 0221 — the outreach letters and her verdict on each. NOT RE-DERIVABLE: a redraft is composed
+  // from the note she wrote on the previous attempt, so losing the attempts loses the only record
+  // of what was already tried and why it was sent back. Restoring the candidate without the letters
+  // would hand her a firm marked "reviewed" with nothing behind it, which is the dead end this
+  // table exists to remove.
+  "buyer_outreach_drafts",
   // 0189 — things to raise with a standing counterpart. Losing these in a restore loses the half
   // that was never derivable: items said in passing that exist nowhere else, including the access
   // grant that unblocks reading LP replies. Everything else in the packet recomputes from records;

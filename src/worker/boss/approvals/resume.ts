@@ -62,6 +62,91 @@ export type ResumeHandler = (
 
 export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
   /**
+   * The letter to a buyer she reviewed — and the hard line about what "approved" means here.
+   *
+   *   "i reviewed them ....now what? it doesn't suggest an email already crafted to send to them?"
+   *
+   * ─── APPROVE DOES NOT SEND. IT CANNOT, AND IT MUST NOT ────────────────────
+   *
+   * Boss OS has no path to a third party's inbox. `gmail.send` was deliberately never granted, the
+   * Worker cannot reach a mailbox, and this handler does not create the first exception — a system
+   * that could email a counterparty on a button press is a different product with a different risk
+   * profile, and she has not asked for it.
+   *
+   * So APPROVED means: the letter is finished, it is hers, and it is on the desk ready to send from
+   * her own address. `sent_at` is stamped by HER pressing "I sent it", never by anything here, and
+   * the candidate only reaches `contacted` at that same moment — so the buyer list and the letter
+   * can never disagree about whether an approach actually happened.
+   *
+   * TRY AGAIN IS THE HALF THAT DOES WORK. Her sentence is stored on the attempt and a NEW letter is
+   * composed with it attached, superseding this one. A second attempt that does not visibly answer
+   * the reason for the first is a second attempt she has no way to evaluate.
+   */
+  buyer_outreach_email: async (env, j, verdict, note, now) => {
+    const draft = await env.DB
+      .prepare(`SELECT id, candidate_id, attempt FROM buyer_outreach_drafts WHERE judgement_id = ?`)
+      .bind(j.id)
+      .first<{ id: string; candidate_id: string; attempt: number }>();
+    if (!draft) {
+      /*
+       * THROWS RATHER THAN SHRUGGING, which leaves the item awaiting on her screen. Recording an
+       * approval over a letter nothing can find would be the original defect — a decision with no
+       * work behind it — rebuilt inside the mechanism that exists to prevent it.
+       */
+      throw new Error(
+        "The letter this approval was for is missing, so there is nothing to approve. It stays on your screen rather than recording a verdict over work that is not there.",
+      );
+    }
+
+    const candidate = await env.DB
+      .prepare(`SELECT name FROM sourcing_candidates WHERE id = ?`)
+      .bind(draft.candidate_id)
+      .first<{ name: string }>();
+    const who = candidate?.name ?? "that firm";
+
+    if (verdict === "approved") {
+      await env.DB
+        .prepare(
+          `UPDATE buyer_outreach_drafts SET state = 'approved', approved_at = ?, her_note = COALESCE(?, her_note), updated_at = ?
+            WHERE id = ?`,
+        )
+        .bind(now, note, now, draft.id)
+        .run();
+      return {
+        detail:
+          `Approved. The letter to ${who} is on the desk under Capital, ready to send from your own address — ` +
+          "nothing here has sent it and nothing here can. Press \"I sent it\" when you have, and the candidate moves to contacted.",
+      };
+    }
+
+    await env.DB
+      .prepare(`UPDATE buyer_outreach_drafts SET state = 'try_again', her_note = ?, updated_at = ? WHERE id = ?`)
+      .bind(note, now, draft.id)
+      .run();
+
+    if (!note) {
+      return {
+        detail:
+          `Sent back with no reason, so the next letter to ${who} would be a guess. Say what was wrong and ` +
+          "mark them reviewed again; nothing was sent to anybody.",
+      };
+    }
+
+    /*
+     * THE REDRAFT IS ATTEMPTED HERE, so "try again" is a thing that happens rather than an
+     * instruction she has to remember to act on. If it cannot be composed, the reason is returned
+     * and her note is still recorded — the verdict is never lost to a drafting failure.
+     */
+    const { draftOutreachFor } = await import("../routes/wealth");
+    const again = await draftOutreachFor(env, draft.candidate_id, note, now);
+    return {
+      detail: again.drafted
+        ? `Sent back with your reason attached. Attempt ${draft.attempt + 1} to ${who} is already in your Inbox. Nothing was sent to anybody.`
+        : `Sent back and your reason is on the record. A new letter was not written: ${again.detail}`,
+    };
+  },
+
+  /**
    * The seven blocked Kindle titles, and the covers that unblock them.
    *
    * Amazon support's diagnosis is that Cover Creator images fail server-side processing and that

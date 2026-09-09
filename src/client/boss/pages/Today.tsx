@@ -290,12 +290,50 @@ function summarise(block: Block): string {
       const moon = c.moon
         ? `${c.moon.phase?.replace(/_/g, " ") ?? "moon"}${c.moon.sign ? ` in ${c.moon.sign}` : ""}${c.moon.cusp ? `, on the cusp of ${c.moon.next_sign}` : ""}`
         : null;
+      /*
+       * THE EVENT LEADS THE COLLAPSED LINE. "New Moon in Virgo — tomorrow" is the sentence she wants
+       * to see first on a day when one is coming; the phase and the windows are context under it.
+       */
+      const major = c.major_event ?? null;
+      const majorWhen = major
+        ? (() => {
+            const days = Math.round((major.at - Date.now()) / 86_400_000);
+            const time = new Date(major.at).toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
+            return days <= 0 ? `today at ${time}` : days === 1 ? `tomorrow at ${time}` : `in ${days} days`;
+          })()
+        : null;
       const parts: string[] = [];
       /*
        * REALITY FIRST, WHICH IS CANON RATHER THAN A PREFERENCE. §5.2: if something is actually
        * broken today, that leads and the sky is context underneath it.
+       *
+       * ── AND IT PRINTED `[object Object]` ON HER DAILY SCREEN ────────────────
+       *
+       * `reality_priority` is `{ warning, text, counts, rule }` — it has been an OBJECT since
+       * `spirit/day.ts` was written — and this pushed the whole thing into an array of strings.
+       * The card read "[object Object] Advisory only. The sky is context, never a cause…" every
+       * morning. It is the second defect in this one block in a day; the first fix gave it a
+       * sentence and reached straight past the shape of the value it was reading.
+       *
+       * NOTHING TYPED CAUGHT IT because `c` is `any` here, which is why the sentence is now built
+       * from a named field with an explicit string check rather than from whatever arrives. A value
+       * that is not a string is a NAMED absence, never a stringified one: printing a JavaScript
+       * artifact at her tells her nobody looks at this screen, which is worse than printing nothing.
+       *
+       * AND IT LEADS ONLY WHEN IT IS A WARNING. `text` is also written for the calm case ("Nothing
+       * operational is waiting"), and leading every quiet day with that is a sentence she learns to
+       * skip — which is how the real one stops being read on the day it matters.
        */
-      if (c.reality_priority) parts.push(c.reality_priority);
+      /*
+       * AND THE OPERATIONAL SCOLD IS GONE FROM HERE TOO. Her instruction was about the Spirit tab,
+       * and this block is the same content on Today — leaving it in one place and not the other is
+       * how two components come to disagree. The failed-task count it carried is already a Critical
+       * Alert on this very screen, checked rather than assumed, so nothing is lost by removing it.
+       *
+       * The line above it read `parts.push(c.reality_priority)` on an OBJECT and printed
+       * "[object Object]" on her daily screen every morning. Both defects leave together.
+       */
+      if (major) parts.push(`${major.label} — ${majorWhen}.`);
       if (c.note) parts.push(c.note);
       else if (moon) parts.push(`The sky today: ${moon}.`);
       if (c.windows?.length) {

@@ -294,6 +294,12 @@ export const api = {
 
   // The return-on-effort ledger, and the LP × buyer overlaps. Both are filled by jobs on her Mac.
   lineReturns: (period?: string) => call<any>(`/wealth/returns${period ? `?period=${period}` : ""}`),
+  /*
+   * The letters a reviewed buyer produced, and the one act only she can perform. `outreachSent` is
+   * how a draft becomes a sent approach: nothing else in this system may claim it.
+   */
+  outreach: () => call<{ approved: any[]; awaiting: any[] }>("/wealth/outreach"),
+  outreachSent: (id: string) => call<any>(`/wealth/outreach/${id}/sent`, post("")),
   crossmatches: () => call<any>("/wealth/crossmatches"),
   setCrossmatchStatus: (id: string, body: unknown) => call<any>(`/wealth/crossmatches/${id}/status`, post("", body)),
 

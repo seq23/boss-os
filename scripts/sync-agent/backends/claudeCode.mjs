@@ -209,16 +209,81 @@ export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl,
     risks.push(`delivers.json could not be read: ${err?.code ?? err?.message ?? "unreadable"}`);
   }
 
+  /*
+   * ── THE DELIVERABLE IS THE FILE. THE EXIT CODE IS NOT THE VERDICT. ─────────
+   *
+   * WHAT THIS COST HER, on 9 September 2026. The Executive Intelligence Report ran for 313.6s
+   * against a 300s leash, was killed (exit 124), and the CLI never got to print its closing JSON —
+   * so `parseCliJson` returned "stdout was not JSON". On that basis the run was recorded FAILED and
+   * the Today screen read "Today's research run failed. Nothing below is a finding."
+   *
+   * A COMPLETE REPORT WAS SITTING ON DISK. Sections, sources with read_at timestamps, three named
+   * gaps and a real correction — and `delivers.json` said `"status": "complete"` in its own words.
+   * The prompt asks every run to rewrite that file AS IT GOES precisely so a kill leaves content
+   * behind, and then an unparseable stdout outranked it.
+   *
+   * That is the two-lists defect exactly: the backend graded the run on stdout while the product it
+   * was contracted to produce is a file the grade never consulted.
+   *
+   * SO THE FILE IS ASKED FIRST, AND THE PROCESS SECOND.
+   *
+   *   file parses and says complete  → complete. The kill is noted in remaining_risks and is not
+   *                                    an error, because the work it was killed during was done.
+   *   file parses, says partial, or the process was killed → PARTIAL, and shown. Three verified
+   *                                    sections beat a blank screen saying nothing is a finding.
+   *   file missing or unparseable    → failed, and the existing message is the correct one.
+   *
+   * `delivery` is what the runner grades on. It never invents a status the file did not claim: an
+   * absent `status` on a killed run is partial, never complete, because "it wrote something" is not
+   * the same claim as "it finished".
+   */
+  const claimed = typeof delivers?.status === "string" ? delivers.status : null;
+  const delivery = delivers === null
+    ? { present: false, status: null }
+    : {
+        present: true,
+        status:
+          claimed === "complete" ? "complete"
+          : claimed === "partial" || claimed === "failed" ? claimed
+          // Unnamed: a killed run delivered part of something; an unkilled one delivered something
+          // whole enough to stop on its own. Neither is upgraded past what it can support.
+          : outcome.timed_out ? "partial" : "complete",
+      };
+
+  if (delivery.present && delivery.status === "complete" && outcome.timed_out) {
+    risks.push(
+      "The process was killed on its timeout AFTER the deliverable was complete. The report stands; " +
+      "the leash is short, not the work.",
+    );
+  }
+  if (delivery.present && delivery.status === "partial") {
+    risks.push("This deliverable reports itself as partial. Read it as an incomplete answer, not as a finished one.");
+  }
+
+  /*
+   * A COMPLETE DELIVERY IS NOT AN ERROR, WHATEVER THE PROCESS DID ON ITS WAY OUT. Everything else
+   * about the exit code is preserved and reported: `exit_code` is unchanged, the kill is in
+   * `remaining_risks`, and nothing here hides a crash. It only stops the crash from deleting a
+   * finished report.
+   */
+  const deliveredWhole = delivery.present && delivery.status === "complete";
+
   return {
     // The CLI's own account of what it did — a claim, kept as a claim. executeRun() supplies the
     // file list and the check results from what it observed.
     summary: parsed.summary || (stderr ? `No summary. stderr tail: ${stderr}` : "No summary was produced."),
     delivers,
+    delivery,
     exit_code: outcome.exit_code,
     commands: [{ cmd: `${binary} ${shown}`, exit_code: outcome.exit_code }],
     cost_micros: parsed.cost_micros,
     remaining_risks: risks,
-    error: parsed.is_error || outcome.exit_code !== 0 ? (stderr || parsed.parse_error || `exit ${outcome.exit_code}`) : null,
+    error:
+      deliveredWhole
+        ? null
+        : parsed.is_error || outcome.exit_code !== 0
+          ? (stderr || parsed.parse_error || `exit ${outcome.exit_code}`)
+          : null,
     session_id: parsed.session_id,
   };
 }

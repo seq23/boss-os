@@ -8,14 +8,31 @@ import { getNumber } from "../lib/settings";
 import { isLane } from "../../../shared/boss/lanes";
 import { executeDecision, type ApprovalRow } from "../approvals/execute";
 import { assertProtectedAction, decisionRight } from "../governance/gate";
+import { pendingApprovals } from "../approvals/pending";
 
 export const approvals = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const DECISIONS = ["approved", "rejected", "deferred"] as const;
 
+/**
+ * The dockets, and — for the pending case — the one number every surface reads.
+ *
+ * `X-Pending-Total` rather than a changed body shape: the response has been a bare array since it
+ * was written and three callers destructure it as one. The header carries the total the badge and
+ * the Today card need without a migration of every reader, and `approvals/pending.ts` guarantees it
+ * was counted over the same query the rows came from. See that file for what went wrong without it.
+ */
 approvals.get("/", async (c) => {
   const status = c.req.query("status") ?? "pending";
   const lane = c.req.query("lane");
+
+  if (status === "pending") {
+    const { rows, total, truncated } = await pendingApprovals(c.env.DB, lane && isLane(lane) ? lane : null);
+    c.header("X-Pending-Total", String(total));
+    c.header("X-Pending-Truncated", truncated ? "1" : "0");
+    return ok(c, rows);
+  }
+
   const params: unknown[] = [status];
   let sql = `SELECT * FROM approvals WHERE status = ?`;
   if (lane && isLane(lane)) { sql += ` AND lane = ?`; params.push(lane); }

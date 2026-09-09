@@ -4,7 +4,6 @@ import { Docket } from "../components/Docket";
 import { JudgementDocket } from "../components/JudgementDocket";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
-import { usd } from "../../../shared/boss/types";
 
 export function Inbox({ onCountChange, onOpen }: {
   onCountChange: (n: number) => void;
@@ -23,15 +22,31 @@ export function Inbox({ onCountChange, onOpen }: {
 
   const load = useCallback(async () => {
     try {
+      /*
+       * A JUDGEMENT FETCH THAT FAILS IS NOT A JUDGEMENT-FREE INBOX.
+       *
+       * This used to be `.catch(() => ({ items: [] }))`, so an outage on that one endpoint rendered
+       * every judgement docket as an ORDINARY docket - Approve and Try Again over a card with the
+       * covers missing and nothing saying they were missing. Approving work you cannot see is the
+       * exact failure `missing_reason` exists to prevent, arriving through the back door. It now
+       * fails with the rest of the load, and the list says so.
+       */
       const [approvals, sys, judged] = await Promise.all([
         api.approvals("pending"),
         api.status(),
-        api.judgementPending().catch(() => ({ items: [] as any[] })),
+        api.judgementPending(),
       ]);
       setItems(approvals);
       setJudgements(Object.fromEntries((judged.items ?? []).map((j: any) => [j.approval_id, j])));
       setStatus(sys);
-      onCountChange(approvals.length);
+      /*
+       * THE BADGE READS THE SAME NUMBER THE STAT DOES, AND BOTH COME FROM `approvals/pending.ts`.
+       *
+       * It used to be `approvals.length` - a fifth independent answer to "what is waiting on her",
+       * and the one that silently under-reports past the hundred-row page cap. Every surface now
+       * carries the total; only the list is capped, and the response says when it is.
+       */
+      onCountChange(sys?.counts?.pending_approvals ?? approvals.length);
       setError(null);
     } catch (e) {
       setError(e);
@@ -74,8 +89,16 @@ export function Inbox({ onCountChange, onOpen }: {
       } else {
         setFlash(null);
       }
-      // Counters and budgets move on a decision, so refresh them from the server.
-      api.status().then(setStatus).catch(() => {});
+      /*
+       * COUNTERS MOVE ON A DECISION, AND THE BADGE MOVES WITH THEM.
+       *
+       * The refresh used to swallow its own failure, so a stale "9 waiting" over an empty list
+       * survived a decision and looked exactly like a fresh one. If the server cannot be reached
+       * the numbers are set to a dash rather than left showing what was true before the decision.
+       */
+      api.status()
+        .then((s) => { setStatus(s); onCountChange(s?.counts?.pending_approvals ?? optimistic.length); })
+        .catch(() => setStatus(null));
       if (decision === "deferred") load();
     } catch (e) {
       // Roll back to exactly where the card was.
@@ -87,8 +110,7 @@ export function Inbox({ onCountChange, onOpen }: {
     }
   }
 
-  const dayBudget = status?.budgets?.find((b: any) => b.lane === "ops" && b.period === "day");
-  const pct = dayBudget ? Math.min(100, (dayBudget.spent_micros / dayBudget.limit_micros) * 100) : 0;
+  const work = status?.work_today ?? null;
   const costMode = status?.cost_mode;
 
   return (
@@ -118,13 +140,56 @@ export function Inbox({ onCountChange, onOpen }: {
         </div>
       </div>
 
-      {dayBudget && (
-        <div className="stat" style={{ marginTop: 10 }}>
-          <div className="stat-l" style={{ margin: 0 }}>
-            Today · {usd(dayBudget.spent_micros)} of {usd(dayBudget.limit_micros)}
+      {/*
+        * ─── WHAT HAPPENED TODAY, INSTEAD OF A BAR THAT CANNOT FILL ───────────
+        *
+        * This strip read "Today · $0.00 of $2.00" above an empty progress bar. The figure is not
+        * merely small — it is STRUCTURALLY ALWAYS ZERO: nearly every duty runs through Claude Code
+        * on her own subscription, which records `cost_micros: 0` by design, so no amount of activity
+        * can ever move it. A bar that cannot fill, in the most prominent strip on the page, implies
+        * an oversight that does not exist.
+        *
+        * IT HAD ALREADY DONE REAL DAMAGE. The daily briefing's leash was cut to 300s to fit that
+        * ceiling, and that cut is what kills the run at exit 124 with a finished report on disk.
+        *
+        * HER ACTUAL QUESTION IS "DID MY EMPLOYEES DO ANYTHING, AND DID IT WORK". On the morning this
+        * was written, two runs died silently and this screen said nothing. `failed` is now the second
+        * number on the strip.
+        *
+        * `runs` COUNTS ATTEMPTS AND `delivered` COUNTS THINGS THAT EXIST, and they are shown side by
+        * side on purpose: a day of six runs and no deliverables is precisely the day she needs to see.
+        */}
+      {work && (
+        <>
+          <div className="stats" style={{ marginTop: 10 }}>
+            <div className="stat">
+              <div className="stat-n">{work.runs}</div>
+              <div className="stat-l">runs today</div>
+            </div>
+            <div className="stat">
+              <div className="stat-n" style={work.failed > 0 ? { color: "var(--reject)" } : undefined}>{work.failed}</div>
+              <div className="stat-l">failed</div>
+            </div>
+            <div className="stat">
+              <div className="stat-n">{work.delivered}</div>
+              <div className="stat-l">delivered</div>
+            </div>
           </div>
-          <div className="meter"><span style={{ width: `${pct}%` }} /></div>
-        </div>
+          <div className="row-sub" style={{ marginTop: 6 }}>
+            {work.runs === 0
+              ? "Nothing has run yet today."
+              : `${work.succeeded} finished, ${work.failed} failed, ${work.running} still going${work.refused > 0 ? `, ${work.refused} refused` : ""}.`}
+            {" "}
+            {/*
+              * TOKENS, NOT DOLLARS. Tokens are measured and real. The dollar figure would cover only
+              * the metered backends, and on a day when six things ran it would read as zero — which
+              * is exactly the misreading that shortened the briefing's leash.
+              */}
+            {work.metered_calls > 0
+              ? `${work.in_tokens.toLocaleString()} in / ${work.out_tokens.toLocaleString()} out tokens on the metered models.`
+              : "Nothing ran on a metered model today, so there is no token figure — this is not a measure of how much ran."}
+          </div>
+        </>
       )}
 
       {(status?.counts?.open_dead_letters ?? 0) > 0 && (

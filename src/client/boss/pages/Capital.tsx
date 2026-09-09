@@ -127,12 +127,13 @@ function Buyers() {
   const [data, setData] = useState<any | null>(null);
   const [matches, setMatches] = useState<any | null>(null);
   const [cooling, setCooling] = useState<any[]>([]);
+  const [letters, setLetters] = useState<{ approved: any[]; awaiting: any[] } | null>(null);
   const [error, setError] = useState<unknown>(null);
 
   function load() {
-    Promise.all([api.sourcing(), api.crossmatches(), api.mailboxFindings("new")])
-      .then(([s, x, m]) => {
-        setData(s); setMatches(x);
+    Promise.all([api.sourcing(), api.crossmatches(), api.mailboxFindings("new"), api.outreach()])
+      .then(([s, x, m, o]) => {
+        setData(s); setMatches(x); setLetters(o);
         /*
          * A BUYER SHE ALREADY HAS BEATS ONE SHE HAS NOT MET, so the cooling list sits on the desk
          * rather than only on People. Her words: "find people that could be buyers that i havent
@@ -142,13 +143,26 @@ function Buyers() {
          */
         setCooling((m?.findings ?? []).filter((f: any) => f.kind === "cooling_buyer"));
       })
-      .catch((e) => { setError(e); setData({ candidates: [] }); setMatches({ confirmed: [], near: [] }); });
+      .catch((e) => { setError(e); setData({ candidates: [] }); setMatches({ confirmed: [], near: [] }); setLetters(null); });
   }
   useEffect(load, []);
 
+  const [copied, setCopied] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+
   async function mark(id: string, status: string) {
     setError(null);
-    try { await api.setSourcingStatus(id, { status }); load(); } catch (e) { setError(e); }
+    try {
+      const res: any = await api.setSourcingStatus(id, { status });
+      /*
+       * THE SCREEN SAYS WHAT HER CLICK PRODUCED. "Reviewed" used to change a word and redraw; it
+       * now writes a letter, and a letter written silently is indistinguishable from the dead end
+       * she complained about. A refusal — a firm on the LP do-not-contact list — says so here too,
+       * rather than being buried in a notes column nobody opens.
+       */
+      if (res?.letter?.detail) setFlash(res.letter.detail);
+      load();
+    } catch (e) { setError(e); }
   }
   async function markMatch(id: string, status: string) {
     setError(null);
@@ -164,6 +178,12 @@ function Buyers() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
+      {flash && (
+        <div className="notice" style={{ borderColor: "var(--gold)" }}>
+          {flash}
+          <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">×</button>
+        </div>
+      )}
 
       {/*
         * THREE NUMBERS, EACH ATTACHED TO A DECISION. What replaced "0 active · 0 on file · $0
@@ -175,7 +195,71 @@ function Buyers() {
         <div className="stat"><div className="stat-n">{data.awaiting_review ?? 0}</div><div className="stat-l">buyers to review</div></div>
         <div className="stat"><div className="stat-n">{confirmed.length}</div><div className="stat-l">also on the LP list</div></div>
         <div className="stat"><div className="stat-n">{cooling.length}</div><div className="stat-l">buyers gone quiet</div></div>
+        <div className="stat"><div className="stat-n">{letters?.approved.length ?? 0}</div><div className="stat-l">letters ready to send</div></div>
       </div>
+
+      {/*
+        * ─── WHAT "REVIEWED" NOW LEAVES BEHIND ─────────────────────────────────
+        *
+        * "i reviewed them ....now what?" — on the day she said it, all 28 candidates on this screen
+        * were already marked reviewed and the screen had nothing further to say. Reviewing one now
+        * writes an approach and puts it in her Inbox; what she approved lands here, finished.
+        *
+        * SHE SENDS IT. Boss OS has no path to anybody's inbox and this screen does not pretend
+        * otherwise: the letter is here to copy, and "I sent it" is the only thing that moves a
+        * candidate to contacted — so the buyer list and the letters can never disagree about
+        * whether an approach happened.
+        */}
+      {(letters?.approved.length ?? 0) > 0 && (
+        <>
+          <p className="eyebrow">Approved and ready to send — you send these, nothing here can</p>
+          {letters!.approved.map((l: any) => (
+            <div className="panel" key={l.id}>
+              <div className="row-title">{l.candidate_name}</div>
+              <div className="row-sub" style={{ marginTop: 6 }}><strong>Subject:</strong> {l.subject}</div>
+              <div className="row-sub" style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{l.body}</div>
+              <div className="row-sub" style={{ marginTop: 8 }}><strong>Where it goes:</strong> {l.to_hint}</div>
+              <div className="btn-row">
+                <button
+                  className="btn btn-small"
+                  onClick={() => {
+                    // A clipboard that is not there must not look like a button that did nothing.
+                    navigator.clipboard?.writeText(`${l.subject}\n\n${l.body}`)
+                      .then(() => setCopied(l.id))
+                      .catch(() => setError({ message: "This browser would not give the page the clipboard.", hint: "Select the text above and copy it by hand." }));
+                  }}
+                >
+                  {copied === l.id ? "Copied" : "Copy the letter"}
+                </button>
+                <button
+                  className="btn btn-small btn-approve"
+                  onClick={() => { api.outreachSent(l.id).then(load).catch(setError); }}
+                >
+                  I sent it
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/*
+        * AN AWAITING LETTER IS SAID HERE TOO, because she decides in the Inbox and looks here. A
+        * candidate marked reviewed with a letter she has not answered is not a dead end, and the
+        * screen should say which it is rather than leaving her to work it out.
+        */}
+      {(letters?.awaiting.length ?? 0) > 0 && (
+        <div className="notice" style={{ borderColor: "var(--gold)" }}>
+          {letters!.awaiting.length} letter{letters!.awaiting.length === 1 ? " is" : "s are"} waiting on your verdict in the Inbox.
+        </div>
+      )}
+      {/*
+        * THE FAILED-FETCH CASE, NAMED. `letters === null` after a load means the request did not
+        * come back — which is a different fact from "you have no letters" and must not render as it.
+        */}
+      {letters === null && !error && (
+        <div className="row-sub">The letters could not be read just now, so this section is not saying you have none.</div>
+      )}
 
       {cooling.length > 0 && (
         <>

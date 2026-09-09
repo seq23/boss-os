@@ -89,11 +89,33 @@ export default function App() {
       });
   }, []);
 
-  // Today is the default tab now, so the Inbox badge can no longer wait for the
-  // Inbox to mount before it knows what is waiting.
+  /*
+   * THE BADGE IS RE-READ ON EVERY NAVIGATION, NOT ONCE AT UNLOCK.
+   *
+   * ─── What she was shown on 9 September 2026 ──────────────────────────────
+   *
+   *   Today card: "Approval Inbox - 9 waiting".  Tab badge: 9.
+   *   Inbox tab:  "0 waiting on you - Nothing needs you".  The API: [].
+   *
+   * The number was not wrong when it was fetched; it was fetched once, at unlock, and then nothing
+   * in the application ever asked again. Approvals expire on the cron, judgement calls are raised by
+   * local jobs, and a decision taken on one screen changes the count for every other - so a
+   * once-only read is a number that is correct for a few minutes a day.
+   *
+   * She reported the identical thing in the other product ("still says 12 unread even tho i read it
+   * all"), so it is a pattern rather than an incident, and the two halves are fixed together:
+   * `approvals/pending.ts` makes the count and the list one query on the server, and this makes the
+   * client ask again every time she moves.
+   *
+   * A FAILED READ CLEARS THE BADGE RATHER THAN KEEPING THE OLD ONE. A stale number is
+   * indistinguishable from a fresh one, and this whole defect is what that costs.
+   */
   useEffect(() => {
-    if (unlocked) api.status().then((s) => setPending(s?.counts?.pending_approvals ?? 0)).catch(() => {});
-  }, [unlocked]);
+    if (!unlocked) return;
+    api.status()
+      .then((s) => setPending(s?.counts?.pending_approvals ?? 0))
+      .catch(() => setPending(0));
+  }, [unlocked, tab]);
 
   if (unlocked === null) return <div className="lock"><p>Waking up</p></div>;
   if (!unlocked)

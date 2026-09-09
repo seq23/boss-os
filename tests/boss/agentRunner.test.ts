@@ -747,3 +747,108 @@ function fakeSpawn({ stdout = "", stderr = "", code = 0 }: { stdout?: string; st
     return child;
   };
 }
+
+/**
+ * A KILLED PROCESS MUST NOT DELETE A FINISHED REPORT.
+ *
+ * ─── What she was shown on 9 September 2026 ────────────────────────────────
+ *
+ * "Executive Briefing — Today's research run failed. Nothing below is a finding."
+ *
+ * The run had NOT failed. `~/Library/Logs/boss-agent/agent.log` records it starting at
+ * 1788955318355 and finishing at 1788955631947 — 313.6 seconds against a 300-second leash — exit
+ * 124, which is a timeout kill, and `"error": "stdout was not JSON"`, which is the symptom of a
+ * process killed before it could print its closing envelope.
+ *
+ * AND THE SAME LOG ENTRY HOLDS A COMPLETE `delivers.json`: sections, sources with read_at stamps,
+ * three named gaps, a real correction, and its own honesty field reading `"status": "complete"`.
+ * The prompt tells every run to rewrite that file AS IT GOES precisely so that a kill leaves the
+ * work behind — and then an unparseable stdout outranked the finished file on disk.
+ *
+ * The second timed-out run on that same log is `duty_brokerage_sourcing`, killed at 300.2s. The
+ * Capital tab has been running on results that stopped arriving, which is a large part of why it
+ * reads as dead.
+ */
+describe("the deliverable is the file, and the exit code is not the verdict", () => {
+  /** A process that never closes, so the executor's own hard timeout fires and reports exit 124. */
+  const hangingSpawn = () => ({
+    stdout: { on() { return this; } },
+    stderr: { on() { return this; } },
+    stdin: { end(_v: string) { return true; } },
+    kill() { return true; },
+    on(_e: string, _cb: (...a: any[]) => void) { return this; },
+  });
+
+  const killedRun = (deliversJson: string | null) =>
+    claudeCodeExecutor(
+      // max_seconds is clamped to a one-second floor by the executor, which is what makes the real
+      // timeout path reachable in a test rather than simulated with a flag.
+      { envelope: envelope({ max_seconds: 0 }), prompt: "p", sentinel: "s", forbidden: REQUIRED_FORBIDDEN, cwd: "/work" },
+      { spawnImpl: hangingSpawn as any, readDelivers: async () => deliversJson },
+    ) as Promise<any>;
+
+  it("grades a killed run by its complete file, not by its truncated stdout", async () => {
+    const out = await killedRun(JSON.stringify({ status: "complete", sections: [{ heading: "Secondaries" }], gaps: [] }));
+
+    // The observed facts are all still there. Nothing is hidden; the crash simply stops erasing the work.
+    expect(out.exit_code).toBe(124);
+    expect(out.delivery).toEqual({ present: true, status: "complete" });
+    expect(out.remaining_risks.join(" ")).toContain("killed on its timeout AFTER the deliverable was complete");
+    // The half that cost her the briefing: this was `exit 124` and the run was recorded failed.
+    expect(out.error).toBeNull();
+
+    const packet = await executeRun(envelope(), {
+      execute: async () => out,
+      gitProbe: gitStub(CLEAN),
+      runCommand: passingChecks,
+    });
+    expect(packet.status).toBe("succeeded");
+    expect((packet as any).delivery_status).toBe("complete");
+  });
+
+  it("files a killed run with no honesty field as PARTIAL, and still shows it", async () => {
+    const out = await killedRun(JSON.stringify({ sections: [{ heading: "One verified thing" }] }));
+    // Never upgraded past what the file can support: "it wrote something" is not "it finished".
+    expect(out.delivery).toEqual({ present: true, status: "partial" });
+    expect(out.remaining_risks.join(" ")).toContain("reports itself as partial");
+    expect(out.delivers.sections).toHaveLength(1);
+
+    // AND IT REACHES HER. A partial answer she can read beats "nothing below is a finding"; the
+    // packet says which it is, so it is never presented as a whole report.
+    const packet = await executeRun(envelope(), {
+      execute: async () => out,
+      gitProbe: gitStub(CLEAN),
+      runCommand: passingChecks,
+    });
+    expect(packet.status).toBe("succeeded");
+    expect((packet as any).delivery_status).toBe("partial");
+  });
+
+  it("still fails a killed run that delivered nothing — the message she saw was right for that case", async () => {
+    const out = await killedRun(null);
+    expect(out.delivery).toEqual({ present: false, status: null });
+    expect(out.error).toBeTruthy();
+
+    const packet = await executeRun(envelope(), {
+      execute: async () => out,
+      gitProbe: gitStub(CLEAN),
+      runCommand: passingChecks,
+    });
+    expect(packet.status).toBe("failed");
+  });
+
+  it("never lets a complete deliverable overrule a failing check", async () => {
+    /*
+     * THE ASYMMETRY IS DELIBERATE. A report is a claim about the world; a repository that does not
+     * build is a fact about this one. Letting a delivered report mark a broken run as succeeded
+     * would be exactly the "employee announces success" defect this whole design refuses.
+     */
+    const out = await killedRun(JSON.stringify({ status: "complete", sections: [] }));
+    const packet = await executeRun(envelope(), {
+      execute: async () => out,
+      gitProbe: gitStub(CLEAN),
+      runCommand: async () => ({ exit_code: 1, tail: "1 failing" }),
+    });
+    expect(packet.status).toBe("failed");
+  });
+});

@@ -15,6 +15,7 @@ import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
 import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relationships/follow_ups";
 import { spiritSignal } from "../spirit/day";
+import { pendingApprovals } from "../approvals/pending";
 import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from "../today/runOfShow";
 import { coachingFocus, lensFor } from "../today/faculty";
 import { deliverableAlerts } from "../today/deliverables";
@@ -458,8 +459,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       .first<{ n: number }>(),
     db.prepare(`SELECT status, COUNT(*) AS n FROM tasks WHERE created_at >= ? AND created_at < ? GROUP BY status`)
       .bind(from, to).all<{ status: string; n: number }>(),
-    db.prepare(`SELECT risk, COUNT(*) AS n FROM approvals WHERE status = 'pending' GROUP BY risk`)
-      .all<{ risk: string; n: number }>(),
+    /*
+     * THE ONE SOURCE, NOT A FIFTH ANSWER. This block used to count pending approvals with its own
+     * GROUP BY and sum the buckets; `system.ts` counted them again; the list route selected them a
+     * third time with a cap the counts did not have. That is how "Approval Inbox - 9 waiting" ended
+     * up above an Inbox holding nothing. See `approvals/pending.ts`.
+     */
+    pendingApprovals(db),
     db.prepare(`SELECT id, title, risk, requested_at FROM approvals WHERE status = 'pending' ORDER BY requested_at ASC LIMIT 1`)
       .first<{ id: string; title: string; risk: string; requested_at: number }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`)
@@ -544,8 +550,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
 
   const tasksAll = byStatus(taskCounts.results);
   const tasksToday = byStatus(todaysTasks.results);
-  const pendingByRisk = Object.fromEntries((approvalsByRisk.results ?? []).map((r) => [r.risk, r.n]));
-  const pendingTotal = Object.values(pendingByRisk).reduce((a, b) => a + b, 0);
+  const pendingByRisk = approvalsByRisk.by_risk;
+  const pendingTotal = approvalsByRisk.total;
   const employeeStatus = byStatus(employeeCounts.results);
   const orderStatus = byStatus(liveOrders.results);
 
@@ -2478,15 +2484,17 @@ today.post("/coaching/turn", async (c) => {
     .prepare(`SELECT morning_contract, day_mode FROM days WHERE id = ?`)
     .bind(day)
     .first<{ morning_contract: string | null; day_mode: string | null }>();
+  // The coach is told the SAME number her badge shows. A model briefed on a count nobody else can
+  // see would talk to her about an inbox that does not exist.
   const [loops, approvals] = await Promise.all([
     c.env.DB.prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'open'`).first<{ n: number }>(),
-    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending'`).first<{ n: number }>(),
+    pendingApprovals(c.env.DB),
   ]);
 
   const system = buildCoachingPrompt({
     anchor: dayRow?.morning_contract ?? null,
     openLoops: loops?.n ?? 0,
-    approvalsWaiting: approvals?.n ?? 0,
+    approvalsWaiting: approvals.total,
     turn,
     dayMode: (dayRow?.day_mode as any) ?? null,
   });

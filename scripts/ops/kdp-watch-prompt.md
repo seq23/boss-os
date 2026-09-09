@@ -142,17 +142,57 @@ curl -s https://boss.sequoiataylor.com/api/boss/kdp -H "cookie: $COOKIE"
 
 Only when `covers.state` is `approved`, or a support reply says the block is cleared.
 
-1. Load the browser tools with ToolSearch, then call `tabs_context_mcp` FIRST. If the browser is not
-   reachable — no extension, no Chrome — **that is not a failure of the approval.** Report
-   `needs-her` with a determination saying the browser was unreachable, and stop. Her laptop may be
-   shut at 09:23.
-2. **Read the bookshelf and take the list from it.** Match each cover file to its title by the book,
-   not by a list in this file.
-3. **ONE TITLE FIRST.** Upload its cover, walk it to Publish, click Publish once.
-4. **Then go back to the bookshelf and look.** Publish clicked is not published. A cover uploaded is
-   not published. **Done means the title reads Live on the bookshelf**, and this case has already
-   produced one confident answer that changed nothing — apply the same scepticism to your own click
-   that you apply to a support agent's word.
+> ### PROVEN, 9 SEPTEMBER 2026: THIS RUN HAS NO BROWSER AT ALL.
+>
+> A `claude -p` process invoked the way this one is — non-interactive, detached, no controlling
+> terminal — was asked to `ToolSearch` for `mcp__claude-in-chrome__tabs_context_mcp` and reported:
+>
+>     CHROME-PROBE: TOOLS=no CALL=not-attempted DETAIL=no browser MCP available
+>
+> `TOOLS=no` means the tool does not exist in this process. Not "the browser did not answer" — there
+> is nothing to answer. The Chrome tools come from an extension that attaches to an INTERACTIVE
+> session, and a scheduled run is not one. The probe ran with more environment available to it than
+> launchd would give, so launchd has strictly less.
+>
+> **AN OPEN TAB DOES NOT CHANGE THIS.** The owner left the KDP bookshelf open in Chrome so this run
+> could reach it. It cannot. That is worth knowing rather than discovering again on a Friday.
+>
+> So: this run does not upload covers and does not click Publish, ever. It reports; she publishes,
+> from the packet Boss OS puts in front of her. Do not attempt the browser and do not report its
+> absence as though her laptop were shut.
+
+1. **Do not attempt the Chrome tools.** See the banner above: this process has none, proven rather
+   than assumed. Trying and failing would produce a determination that blames a shut laptop for a
+   permanent absence, which is how this stayed invisible.
+
+   **YOU HAVE A BROWSER ANYWAY, AND ITS STATE IS ALREADY ESTABLISHED FOR YOU.** Before you started,
+   the runner launched Simone's own Chrome against her own profile and wrote the result to
+   `~/.boss-os/kdp/browser-state.txt`. Read that file. It holds exactly one of these, and they are
+   FOUR DIFFERENT FINDINGS that must never share a message:
+
+   | Line | What it means | What you report |
+   |---|---|---|
+   | `BROWSER_OK` | Her own profile is signed into KDP. No tab of hers was used. | You may state the bookshelf as fact. |
+   | `KDP_SESSION_EXPIRED` | The browser works; the saved session is gone. | A NAMED STOP: sentinel `needs-her`, next_action "Sign in once in Simone's own Chrome profile: `npm run kdp:signin`. It takes a minute and it is the only thing standing between the approved covers and seven published titles." Never call this a shut laptop. |
+   | `BROWSER_UNAVAILABLE` | Chrome or Playwright is missing on this machine. | A BUG, and say so: this is not bad luck and not her fault. Report it plainly so somebody fixes it. |
+   | `KDP_UNREACHABLE` | Amazon did not answer. | Transient. Say so, and say the next run tries again. |
+
+   If the file is missing entirely, say THAT rather than inventing a reason: it means the runner did
+   not get as far as checking, which is its own finding.
+2. **Report `needs-her` with the honest determination**, in these words or close to them: the covers
+   are approved and ready, and publishing needs a browser this scheduled run does not have. Say what
+   would let it happen — an interactive session on her Mac, or her two minutes on the bookshelf —
+   rather than implying the next run will do it.
+3. **Say which title goes first.** ONE TITLE FIRST is still the rule and it is still yours to name:
+   read the bookshelf state you already have and put the chosen title in `next_action`, so her two
+   minutes are spent on the right book rather than deciding which one.
+4. **Publish clicked is not published.** When she tells you a title went out, go back to the record
+   and check it reads Live before reporting anything as done. This case has already produced one
+   confident answer that changed nothing.
+
+**IF YOU EVER FIND THE BROWSER TOOLS PRESENT**, that is a real change and it is good news: report it
+in the determination explicitly, because it means the run has gained a capability the banner above
+says it does not have, and this file needs correcting.
 5. If that one title reaches Live, do the remaining ones the same way and check each. If it does
    not, **stop**: report what the page actually said, and leave the rest alone.
 6. Before clicking Publish, check the Content tab. The AI questionnaire must read *Text: "Entire
