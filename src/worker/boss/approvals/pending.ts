@@ -41,12 +41,40 @@ import type { ApprovalRow } from "./execute";
 /** The one definition of "waiting on her". Everything else here is built from it. */
 export const PENDING = `status = 'pending'`;
 
+/**
+ * A NOTICE IS NOT AN APPROVAL, AND THE COUNT MUST NOT PRETEND IT IS.
+ *
+ * ─── Confirmed on production, 9 September 2026 ─────────────────────────────
+ *
+ *   SELECT kind, status, COUNT(*) FROM approvals GROUP BY kind, status
+ *     notice | approved | 8
+ *
+ * Eight times, an employee told her something — "Monique emailed you the LP outcomes" — and the
+ * Inbox rendered it with Approve / Reject / Later. There was nothing to approve. She pressed
+ * Approve eight times to make a sentence go away, and the system recorded eight approvals she never
+ * gave.
+ *
+ * THE DAMAGE IS TO THE REAL APPROVALS. A screen that asks for a verdict on things that have no
+ * verdict teaches her that the button is a dismiss button, and the next card is a letter to a firm
+ * or a cover going to Amazon.
+ *
+ * So `kind = 'notice'` is separated at the source rather than styled differently at the end: the
+ * badge, the Today card and the Inbox stat all read `total`, and `total` now counts only things her
+ * answer changes. The notices are returned beside them, never hidden.
+ */
+export const IS_NOTICE = `kind = 'notice'`;
+
 /** More than this on one screen is not a list she works; it is a wall. The total still tells the truth. */
 export const PENDING_PAGE = 100;
 
 export interface PendingApprovals {
-  /** The page she can see, risk-ordered. */
+  /** The page she can see, risk-ordered. Decisions only — a notice is not one. */
   rows: ApprovalRow[];
+  /**
+   * Things she has been TOLD, which are pending in the table and are not waiting on an answer.
+   * Returned from the same fetch so the two can never disagree about what is outstanding.
+   */
+  notices: ApprovalRow[];
   /**
    * EVERY pending approval, not just the page. The badge, the Today card and the Inbox stat all
    * read this, so a capped page can never turn into an under-count on a different screen.
@@ -84,7 +112,13 @@ export async function pendingApprovals(
     .all<ApprovalRow & { pending_total: number }>();
 
   const raw = res.results ?? [];
-  const total = raw.length > 0 ? Number(raw[0]!.pending_total) : 0;
+  /*
+   * `pending_total` still counts BOTH, because it is computed by the database over the whole
+   * filtered set. The split happens here, once, and `total` below is the decision count — which is
+   * the number every surface reads and the only one that should ever appear beside "waiting on you".
+   */
+  const noticeRows = raw.filter((r) => r.kind === "notice");
+  const decisionRows = raw.filter((r) => r.kind !== "notice");
 
   /*
    * BY-RISK IS COUNTED OVER THE WHOLE SET, NOT OVER THE PAGE.
@@ -95,7 +129,7 @@ export async function pendingApprovals(
    * INSIDE the one function every caller uses, which is the property that was missing before.
    */
   const risks = await db
-    .prepare(`SELECT risk, COUNT(*) AS n FROM approvals WHERE ${where} GROUP BY risk`)
+    .prepare(`SELECT risk, COUNT(*) AS n FROM approvals WHERE ${where} AND NOT (${IS_NOTICE}) GROUP BY risk`)
     .bind(...params)
     .all<{ risk: string; n: number }>();
   const by_risk = { high: 0, medium: 0, low: 0 };
@@ -103,6 +137,24 @@ export async function pendingApprovals(
     if (r.risk === "high" || r.risk === "medium" || r.risk === "low") by_risk[r.risk] = Number(r.n) || 0;
   }
 
-  const rows = raw.map(({ pending_total: _drop, ...rest }) => rest as ApprovalRow);
-  return { rows, total, truncated: total > rows.length, by_risk };
+  /*
+   * THE DECISION TOTAL IS COUNTED IN THE DATABASE, not taken from the page.
+   *
+   * Deriving it by subtracting the notices on this page would be wrong the moment the page is
+   * capped: past a hundred pending items the split on the page says nothing about the split in the
+   * table. It is a second statement inside the one function every caller uses, which is the property
+   * that made this file exist.
+   */
+  const counted = await db
+    .prepare(`SELECT COUNT(*) AS n FROM approvals WHERE ${where} AND NOT (${IS_NOTICE})`)
+    .bind(...params)
+    .first<{ n: number }>();
+  const total = Number(counted?.n ?? 0);
+
+  const strip = (r: ApprovalRow & { pending_total?: number }) => {
+    const { pending_total: _drop, ...rest } = r;
+    return rest as ApprovalRow;
+  };
+  const rows = decisionRows.map(strip);
+  return { rows, notices: noticeRows.map(strip), total, truncated: total > rows.length, by_risk };
 }

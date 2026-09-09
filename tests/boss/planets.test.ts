@@ -428,3 +428,61 @@ describe("the chart points that are not planets", () => {
     expect(c.fortune!.degrees_in_sign).toBeCloseTo(15 + 42 / 60, 1);
   });
 });
+
+/**
+ * ONE SKY, ONE ANSWER.
+ *
+ * ─── Observed live on the Spirit tab, 9 September 2026 ─────────────────────
+ *
+ *   Top of the page   "New Moon in Virgo — tomorrow, Thursday September 10 at 10:28 PM"
+ *   The almanac       lists that moon, marked computed
+ *   The week block    "No new or full moon this week, so no ritual is suggested"
+ *   Could not source  "Moon phase data — SKY.json not present in working directory."
+ *
+ * Three answers to one question on one screen, two of them wrong, neither for want of data:
+ * `buildAlmanac` computes new and full moons to the minute and `astro_calendar` holds them. The week
+ * block was making an astronomical claim on the strength of an empty rituals array.
+ */
+describe("the week block reads the sky rather than a delivery", () => {
+  it("returns the moons that actually fall in this week, from the almanac", async () => {
+    const { body } = await apiJson<any>("/api/spirit/practice-week");
+    expect(Array.isArray(body.data.moons_this_week)).toBe(true);
+
+    // Rule 0: an assertion over an empty array proves nothing, so this checks the answer against the
+    // almanac itself rather than against the shape of the response.
+    const week = body.data.moons_this_week;
+    const rows = await env.DB
+      .prepare(`SELECT COUNT(*) AS n FROM astro_calendar WHERE kind IN ('new_moon','full_moon')`)
+      .first<{ n: number }>();
+    expect(rows!.n).toBeGreaterThan(0);
+    for (const m of week) {
+      expect(["new_moon", "full_moon"]).toContain(m.kind);
+      const found = await env.DB
+        .prepare(`SELECT COUNT(*) AS n FROM astro_calendar WHERE kind = ? AND starts_at = ?`)
+        .bind(m.kind, m.starts_at)
+        .first<{ n: number }>();
+      expect(found!.n).toBe(1);
+    }
+  });
+
+  it("drops the duty's moon-phase gap, because the almanac answers it", async () => {
+    const now = Date.now();
+    await env.DB.prepare(`DELETE FROM practice_week`).run();
+    await env.DB
+      .prepare(
+        `INSERT INTO practice_week (id, week_id, generated_at, status, rituals, practice, body, gaps)
+         VALUES ('pw_test', '2026-W37', ?, 'complete', '[]', NULL, NULL, ?)`,
+      )
+      .bind(now, JSON.stringify([
+        "Moon phase data — SKY.json not present in working directory. Cannot determine whether new or full moon falls this week.",
+        "Somatic reference — no source found for the shoulder sequence.",
+      ]))
+      .run();
+
+    const { body } = await apiJson<any>("/api/spirit/practice-week");
+    expect(body.data.gaps).toHaveLength(1);
+    // THE REAL GAP SURVIVES. Dropping both would be a different defect: a screen that hides what it
+    // genuinely could not source.
+    expect(body.data.gaps[0]).toContain("Somatic reference");
+  });
+});

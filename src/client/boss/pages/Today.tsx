@@ -462,7 +462,7 @@ function renderDetail(
             */}
           {pillars?.body && (
             <>
-              <p className="eyebrow" style={{ marginTop: 4 }}>Body — movement, food, discipline · Imani</p>
+              <p className="pillar">Body — movement, food, discipline <span className="pillar-who">Imani</span></p>
               <div className="row-sub" style={{ marginBottom: 6 }}>{pillars.body.movement_floor}</div>
               <ol style={{ margin: "0 0 8px", paddingLeft: 18 }}>
                 {(pillars.body.launch_sequence ?? []).map((m: string, i: number) => (
@@ -497,16 +497,18 @@ function renderDetail(
             */}
           {pillars?.spirit && (
             <>
-              <p className="eyebrow" style={{ marginTop: 14 }}>Spirit — the sentence and the sequence · Imani</p>
+              <p className="pillar">Spirit — the sentence and the sequence <span className="pillar-who">Imani</span></p>
               {gratitudeMissing ? (
                 <div className="row-sub">
                   {pillars.spirit.gap ?? "Today's sentence could not be composed from your record."}
                   {" "}It is written on Spirit — a generic mantra is worse than none, so nothing is filled in for you.
                 </div>
               ) : (
-                <p style={{ margin: "0 0 6px", fontFamily: "var(--display)", fontSize: 17, lineHeight: 1.45 }}>
-                  {pillars.spirit.action}
-                </p>
+                /*
+                 * THE SENTENCE, AT THE WEIGHT OF A SENTENCE. It was 17px inline and read as another
+                 * paragraph; it is the one line of her day that is not an instruction.
+                 */
+                <p className="sentence">{pillars.spirit.action}</p>
               )}
               <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                 {(pillars.spirit.detail ?? []).map((step: string, i: number) => (
@@ -519,7 +521,7 @@ function renderDetail(
           {/* WEALTH — money in: buyers, LPs, and the people who send you both. Camille and Monique. */}
           {pillars?.wealth && (
             <>
-              <p className="eyebrow" style={{ marginTop: 14 }}>Wealth — the first money move · Camille and Monique</p>
+              <p className="pillar">Wealth — the first money move <span className="pillar-who">Camille and Monique</span></p>
               <div className="row">
                 <div className="row-main">
                   <div className="row-title">{pillars.wealth.action}</div>
@@ -540,7 +542,7 @@ function renderDetail(
           {/* EXECUTION — did anything you own actually get built or shipped. Danielle. */}
           {pillars?.execution && (
             <>
-              <p className="eyebrow" style={{ marginTop: 14 }}>Execution — did anything you own ship · Danielle</p>
+              <p className="pillar">Execution — did anything you own ship <span className="pillar-who">Danielle</span></p>
               <div className="row">
                 <div className="row-main">
                   <div className="row-title">{pillars.execution.action}</div>
@@ -907,13 +909,20 @@ function ContractHeader({ content }: { content: any }) {
                 : "Today's agenda could not be derived — that is a fault, not an empty day."}
           </div>
         </div>
-        <div className="row-val">{content.day_id}</div>
+        {/*
+          * `2026-09-09` USED TO SIT HERE, beside "Wednesday 9 September". The same fact twice, once
+          * in a format written for a database key. It told her nothing the line to its left had not
+          * already said, and it made the header look like a record rather than a day.
+          */}
       </div>
 
       {y && (
         <div className="row">
           <div className="row-main">
-            <div className="row-title">Yesterday · {y.day_id}</div>
+            {/* Human first here too: "Yesterday · 2026-09-08" is a key, not a day. */}
+            <div className="row-title">
+              Yesterday · {new Date(`${y.day_id}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+            </div>
             <div className="row-sub">{y.verdict}</div>
             <div className="row-sub">
               Gates run: {y.gates_run?.length ? y.gates_run.join(", ") : "none"}

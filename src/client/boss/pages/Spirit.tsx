@@ -730,6 +730,12 @@ function WeekAhead({ week }: { week: any }) {
 
   const rituals: any[] = Array.isArray(week.rituals) ? week.rituals : [];
   const gaps: any[] = Array.isArray(week.gaps) ? week.gaps : [];
+  /*
+   * The computed answer, from the endpoint, which reads `astro_calendar` — the same rows the top of
+   * this page renders. One source, so "there is a new moon tomorrow" and "no new or full moon this
+   * week" can never both be on screen again.
+   */
+  const moons: any[] = Array.isArray(week.moons_this_week) ? week.moons_this_week : [];
 
   return (
     <>
@@ -754,11 +760,29 @@ function WeekAhead({ week }: { week: any }) {
         )}
 
         {rituals.length === 0 ? (
-          // NOT AN EMPTY STATE. Most weeks hold no new or full moon, and the duty is instructed
-          // never to invent an occasion. Saying so is the honest render.
-          <p className="row-sub">
-            No new or full moon this week, so no ritual is suggested. That is the answer, not a gap.
-          </p>
+          /*
+           * ─── THIS LINE USED TO CONTRADICT THE TOP OF THE SAME PAGE ────────────
+           *
+           * On 9 September 2026 the screen led with "New Moon in Virgo — tomorrow, Thursday
+           * September 10 at 10:28 PM", the almanac listed it as computed, and this block said "No
+           * new or full moon this week". It was making an ASTRONOMICAL claim on the strength of an
+           * empty array — what it actually knew was that Imani's delivery contained no ritual, which
+           * is a completely different fact and, when a moon does fall, a real gap in her week.
+           *
+           * The moons now come from the almanac, which computes them to the minute, so the two
+           * halves of the page cannot disagree.
+           */
+          moons.length > 0 ? (
+            <p className="row-sub">
+              There <strong>is</strong> a {moons.map((m: any) => `${m.label ?? m.kind.replace("_", " ")} on ${new Date(m.starts_at).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`).join(", and a ")}
+              {" "}— and Imani's week did not include a ritual for it. That is a gap in the week, not a quiet sky.
+            </p>
+          ) : (
+            <p className="row-sub">
+              No new or full moon this week, so no ritual is suggested. That is the answer, not a gap —
+              and it is the almanac's answer, computed, not the absence of a delivery.
+            </p>
+          )
         ) : (
           rituals.map((r: any, i: number) => (
             <div className="row" key={i}>

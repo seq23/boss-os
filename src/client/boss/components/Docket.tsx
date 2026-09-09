@@ -8,6 +8,7 @@ const KIND_LABEL: Record<string, string> = {
   model_route: "routing",
   agent_creation: "new employee",
   manual: "decision",
+  notice: "she told you",
 };
 
 export function Docket({
@@ -50,17 +51,42 @@ export function Docket({
         <span className="docket-more">Open the full docket →</span>
       </button>
 
-      <div className="decide">
-        <button className="btn btn-approve" disabled={busy !== null} onClick={() => decide("approved")}>
-          {busy === "approved" ? "Approving…" : "Approve"}
-        </button>
-        <button className="btn btn-reject" disabled={busy !== null} onClick={() => decide("rejected")}>
-          {busy === "rejected" ? "Rejecting…" : "Reject"}
-        </button>
-        <button className="btn btn-defer" disabled={busy !== null} onClick={() => decide("deferred")}>
-          Later
-        </button>
-      </div>
+      {/*
+        * ─── A NOTICE IS NOT AN APPROVAL ───────────────────────────────────────
+        *
+        * Confirmed on production, 9 September 2026: `kind = 'notice'` had eight rows and every one
+        * was `approved`. An employee said "I emailed you the LP outcomes" and this component put
+        * Approve / Reject / Later underneath it. There was nothing to approve, so she pressed
+        * Approve eight times to make a sentence go away — and the system recorded eight approvals
+        * she never gave.
+        *
+        * THE COST IS TO THE REAL APPROVALS BESIDE IT. A screen that asks for a verdict on things
+        * that have no verdict teaches the reader that the green button is a dismiss button, and the
+        * next card is a letter going to a firm or a cover going to Amazon.
+        *
+        * One button, and it says what it does. `approved` is still the decision written to the
+        * table, because that is the only terminal state this row can reach — but she is never asked
+        * to approve, and "Reject" and "Later" are meaningless here and are gone.
+        */}
+      {approval.kind === "notice" ? (
+        <div className="decide">
+          <button className="btn" disabled={busy !== null} onClick={() => decide("approved")}>
+            {busy === "approved" ? "Clearing…" : "Got it"}
+          </button>
+        </div>
+      ) : (
+        <div className="decide">
+          <button className="btn btn-approve" disabled={busy !== null} onClick={() => decide("approved")}>
+            {busy === "approved" ? "Approving…" : "Approve"}
+          </button>
+          <button className="btn btn-reject" disabled={busy !== null} onClick={() => decide("rejected")}>
+            {busy === "rejected" ? "Rejecting…" : "Reject"}
+          </button>
+          <button className="btn btn-defer" disabled={busy !== null} onClick={() => decide("deferred")}>
+            Later
+          </button>
+        </div>
+      )}
     </article>
   );
 }

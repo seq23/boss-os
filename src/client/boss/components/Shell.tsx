@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
  * THE NAV MEASURES ITSELF, AND THE PAGE READS THE MEASUREMENT.
  *
  * THE DEFECT. `.shell` reserved `--tab-h` (64px) of bottom padding for a nav declared
- * `grid-template-columns: repeat(5, 1fr)` and handed TEN tabs. Ten items across five columns is
+ * `grid-template-columns: repeat(5, 1fr)` and handed TEN tabs (nine since the People tab was scrapped). Ten items across five columns is
  * two rows, so the nav was ~128px tall and the page reserved half of it: the last 64px of every
  * scrollable screen sat underneath it, permanently. Visible on Capital ("Nothing in the pipeline"
  * cut in half), on Vault (the seventh snapshot row), on Spirit and on Team.
@@ -101,12 +101,11 @@ function useReadingPosition() {
   return { progress, scrollable, atEnd };
 }
 
-export type TabId = "today" | "inbox" | "people" | "capital" | "spirit" | "team" | "memory" | "trading" | "vault" | "systems";
+export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "memory" | "trading" | "vault" | "systems";
 
 const ICONS: Record<TabId, ReactNode> = {
   today: <path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.5 2" />,
   inbox: <path d="M3 13h5l1.5 3h5L16 13h5M3 13l3-8h12l3 8v6H3z" />,
-  people: <path d="M12 12a4 4 0 100-8 4 4 0 000 8zM5 20a7 7 0 0114 0M18 4.5l1.2 2.4 2.6.4-1.9 1.8.4 2.6-2.3-1.2-2.3 1.2.4-2.6-1.9-1.8 2.6-.4z" />,
   capital: <path d="M4 20V10M10 20V5M16 20v-7M22 20V8M3 20h18" />,
   spirit: <path d="M17 3a9 9 0 11-9 15.9A9 9 0 0017 3zM19.5 14l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" />,
   team: <path d="M8 11a3 3 0 100-6 3 3 0 000 6zM3 20a5 5 0 0110 0M16 12a3 3 0 100-6M15 20a5 5 0 016-4" />,
@@ -118,7 +117,7 @@ const ICONS: Record<TabId, ReactNode> = {
 
 /** Canon §15: Today is the default operating screen, and so the first tab. */
 const LABELS: Record<TabId, string> = {
-  today: "Today", inbox: "Inbox", people: "People", capital: "Capital",
+  today: "Today", inbox: "Inbox", capital: "Capital",
   spirit: "Spirit", team: "Team", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };

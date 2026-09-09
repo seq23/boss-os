@@ -38,6 +38,14 @@
  * be worse than the empty list it replaces.
  */
 
+/*
+ * THE CADENCE RULE LIVES IN ONE FILE NOW, and this reads it rather than holding a second copy.
+ * `people-worth-a-call.mjs` needs the identical number to decide who has gone quiet; two components
+ * each keeping their own version of the same rule is the defect that produced the People roster's
+ * meaningless scores. The arithmetic is unchanged — see scripts/ops/lib/cadence.mjs.
+ */
+import { observedCadence } from "./lib/cadence.mjs";
+
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const IN_DIR = process.env.BOSS_OS_SOURCING_WORKSPACE ?? `${process.env.HOME}/.boss-os/sourcing`;
 const MAP_DIR = process.env.BOSS_OS_CONTACTS_DIR ?? `${process.env.HOME}/.boss-os/contacts`;
@@ -84,23 +92,6 @@ async function suffix(email) {
   const { createHash } = await import("node:crypto");
   const h = createHash("sha256").update(email.toLowerCase()).digest();
   return String(h.readUInt16BE(4) % 100).padStart(2, "0");
-}
-
-/**
- * How often these two actually talk, in days.
- *
- * OBSERVED, WITH A FLOOR AND A CEILING. Fewer than 14 days would put a daily correspondent on the
- * overdue list constantly, which is noise; more than 120 means a relationship can decay for four
- * months before anything says so, which is the failure being prevented. Between those, it is simply
- * the average gap between exchanges.
- */
-function observedCadence(c) {
-  const exchanges = c.sent + c.received;
-  const first = Date.parse(c.first_at);
-  const last = Date.parse(c.last_at);
-  const spanDays = Math.max(1, (last - first) / 86_400_000);
-  const avgGap = spanDays / Math.max(1, exchanges - 1);
-  return Math.round(Math.min(120, Math.max(14, avgGap * 1.5)));
 }
 
 /**

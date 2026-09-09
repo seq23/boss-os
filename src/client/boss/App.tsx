@@ -6,7 +6,6 @@ import { Lock } from "./pages/Lock";
 import { Today } from "./pages/Today";
 import { Inbox } from "./pages/Inbox";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
-import { People } from "./pages/People";
 import { Capital } from "./pages/Capital";
 import { Spirit } from "./pages/Spirit";
 import { Team } from "./pages/Team";
@@ -17,8 +16,25 @@ import { Settings } from "./pages/Settings";
 import { Systems } from "./pages/Systems";
 import { startAutoFlush, pendingCount } from "./offline/outbox";
 
+/*
+ * ─── THE PEOPLE TAB IS GONE, AND THE RECORD IS NOT ──────────────────────────
+ *
+ * Her verdict, 9 September 2026: "i dont like this people tab at all id rather just scrap it. id
+ * rather monique just send me deliverables she suggests about people to speak to (no codenames
+ * needed)".
+ *
+ * It was two hundred and sixty-seven rows of code names — SANDPIPER, HERON, ROOK — sorted by how
+ * late each one was, twenty-five of them reading "469d late". A directory, in a private language,
+ * in an order nobody asked for. The screen was not under-built; browsing was the wrong answer to
+ * the question.
+ *
+ * WHAT REPLACED IT IS A DELIVERABLE. `scripts/ops/people-worth-a-call.mjs` runs weekly on her Mac,
+ * reads the same correspondence, and emails her three to five people BY REAL NAME with why each one
+ * and what to say — plus a notice in the Inbox saying it ran. The contacts, the exchange counts and
+ * the local identity map are all untouched: what was scrapped is the tab, not the record.
+ */
 const TITLES: Record<TabId, string> = {
-  today: "Today", inbox: "Inbox", people: "People", capital: "Capital",
+  today: "Today", inbox: "Inbox", capital: "Capital",
   spirit: "Spirit", team: "Team", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
@@ -170,8 +186,6 @@ export default function App() {
         ) : (
           <Inbox key={inboxKey} onCountChange={setPending} onOpen={setOpenApproval} />
         )
-      ) : tab === "people" ? (
-        <People />
       ) : tab === "capital" ? (
         <Capital />
       ) : tab === "spirit" ? (

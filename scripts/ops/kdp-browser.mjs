@@ -22,6 +22,18 @@
  * is designed out rather than documented: this launches its OWN Chrome against its OWN profile
  * directory, which nothing else touches and no tab is needed for.
  *
+ * ─── IT IS NO LONGER SIMONE'S ALONE ────────────────────────────────────────
+ *
+ * "why cant all employees have the rights simone now has" — 9 September 2026. She is right, and
+ * nothing was ever stopping them: the launch logic simply happened to live inside this file, where
+ * only Simone could reach it. It now lives in `scripts/ops/browser.mjs`, one copy, and this file
+ * imports it. What remains here is the only genuinely KDP-specific part — what a signed-in bookshelf
+ * looks like — plus the `KDP-BROWSER:` line `kdp-watch.sh` already parses.
+ *
+ * DO NOT REINTRODUCE A SECOND `launchPersistentContext` HERE. Two components each keeping their own
+ * copy of the same rule is the defect this repository produces most, and
+ * `validate:shared-browser` fails the build if it comes back.
+ *
  * ─── The profile is the whole trick ────────────────────────────────────────
  *
  * `launchPersistentContext` keeps cookies and local storage in a directory on her Mac. She signs
@@ -52,7 +64,9 @@
  * session.
  */
 
-const PROFILE = process.env.BOSS_OS_KDP_PROFILE ?? `${process.env.HOME}/.boss-os/kdp-profile`;
+import { openProfile, profilePath } from "./browser.mjs";
+
+const PROFILE = process.env.BOSS_OS_KDP_PROFILE ?? profilePath("kdp");
 const BOOKSHELF = "https://kdp.amazon.com/en_US/bookshelf";
 const COMMAND = process.argv[2] ?? "doctor";
 /** Sign-in is the one mode a human is present for, so it is the one mode with a visible window. */
@@ -65,20 +79,17 @@ function say(outcome, detail, exitCode) {
   process.exitCode = exitCode;
 }
 
+/*
+ * ONE LAUNCHER, IMPORTED. `browser.mjs` guards its own CLI behind an is-this-the-entrypoint check
+ * precisely so this import cannot open a browser as a side effect.
+ *
+ * The profile name "kdp" resolves, inside that module, to the ORIGINAL ~/.boss-os/kdp-profile
+ * directory rather than to ~/.boss-os/browser/kdp — she signed into Amazon there by hand, and moving
+ * the path would silently sign Simone out with the failure arriving on a Friday.
+ */
 async function openBrowser() {
-  const { mkdir } = await import("node:fs/promises");
-  await mkdir(PROFILE, { recursive: true });
-  const { chromium } = await import("playwright");
-  /*
-   * `channel: "chrome"` uses HER installed Google Chrome rather than Playwright's bundled build.
-   * Amazon fingerprints browsers on a publishing account, and a session established in real Chrome
-   * that is then reused by a differently-fingerprinted binary is a challenge waiting to happen.
-   */
-  return chromium.launchPersistentContext(PROFILE, {
-    channel: "chrome",
-    headless: !HEADED,
-    viewport: { width: 1440, height: 900 },
-  });
+  const { context } = await openProfile("kdp", { headed: HEADED });
+  return context;
 }
 
 /**

@@ -11,6 +11,15 @@ export function Inbox({ onCountChange, onOpen }: {
 }) {
   const [items, setItems] = useState<any[] | null>(null);
   /*
+   * NOTICES, HELD SEPARATELY FROM DECISIONS, all the way from the query to the screen.
+   *
+   * Confirmed on production, 9 September 2026: eight `kind = 'notice'` rows, all `approved`. She had
+   * pressed Approve on eight sentences that had nothing to approve. Splitting them at the end — a
+   * different colour, a different label — would have left them in the same list and the same count;
+   * they are a different kind of thing and the screen now says so before she reads a word.
+   */
+  const [notices, setNotices] = useState<any[] | null>(null);
+  /*
    * The judgement calls, by their approval id. Fetched alongside the dockets so a judgement card
    * can render the actual work — the covers — rather than a sentence describing them. A judgement
    * whose detail fails to load still renders as an ordinary docket rather than disappearing.
@@ -31,12 +40,14 @@ export function Inbox({ onCountChange, onOpen }: {
        * exact failure `missing_reason` exists to prevent, arriving through the back door. It now
        * fails with the rest of the load, and the list says so.
        */
-      const [approvals, sys, judged] = await Promise.all([
+      const [approvals, sys, judged, told] = await Promise.all([
         api.approvals("pending"),
         api.status(),
         api.judgementPending(),
+        api.notices(),
       ]);
       setItems(approvals);
+      setNotices(told);
       setJudgements(Object.fromEntries((judged.items ?? []).map((j: any) => [j.approval_id, j])));
       setStatus(sys);
       /*
@@ -51,6 +62,9 @@ export function Inbox({ onCountChange, onOpen }: {
     } catch (e) {
       setError(e);
       setItems((prev) => prev ?? []);
+      // NOT `[]`. A failed fetch and an empty inbox are opposite facts, and the section below says
+      // which one it is looking at rather than rendering both as silence.
+      setNotices((prev) => prev ?? null);
     }
   }, [onCountChange]);
 
@@ -67,6 +81,8 @@ export function Inbox({ onCountChange, onOpen }: {
     if (index === -1) return;
 
     const optimistic = snapshot.filter((a) => a.id !== id);
+    // A notice cleared from its own section leaves that section, not this list.
+    setNotices((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
     setItems(optimistic);
     onCountChange(optimistic.length);
     setError(null);
@@ -131,6 +147,11 @@ export function Inbox({ onCountChange, onOpen }: {
 
       <div className="stats">
         <div className="stat">
+          {/*
+            * THIS NUMBER NOW COUNTS ONLY WHAT HER ANSWER CHANGES. `approvals/pending.ts` excludes
+            * notices from `total`, so the badge, the Today card and this stat all stopped counting
+            * eight sentences as eight decisions.
+            */}
           <div className="stat-n">{status?.counts?.pending_approvals ?? "—"}</div>
           <div className="stat-l">Waiting on you</div>
         </div>
@@ -196,6 +217,25 @@ export function Inbox({ onCountChange, onOpen }: {
         <div className="notice" style={{ borderColor: "var(--reject)" }}>
           {status.counts.open_dead_letters} task{status.counts.open_dead_letters === 1 ? "" : "s"} gave up after
           retrying. Triage them under Settings → Diagnostics.
+        </div>
+      )}
+
+      {/*
+        * ─── WHAT AN EMPLOYEE TOLD HER, WITH NOTHING TO ANSWER ────────────────
+        *
+        * Below the decisions, because a decision outranks a notification, and above nothing —
+        * these are the only two lists on this screen.
+        */}
+      {(notices?.length ?? 0) > 0 && (
+        <>
+          <p className="eyebrow">Just so you know — nothing here needs an answer</p>
+          {notices!.map((n) => <Docket key={n.id} approval={n} onDecide={decide} onOpen={onOpen} />)}
+        </>
+      )}
+      {notices === null && !error && (
+        <div className="row-sub">
+          What your employees have told you could not be read just now, so this is not saying they
+          have told you nothing.
         </div>
       )}
 

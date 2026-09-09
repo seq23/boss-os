@@ -937,6 +937,59 @@ spirit.post("/ancestors", async (c) => {
  * missing row answers with `prepared: false` and who prepares it and when, rather than 404 or an
  * empty object the client has to interpret.
  */
+/**
+ * The new and full moons that actually fall inside a given ISO week.
+ *
+ * ─── THREE COMPONENTS ON ONE SCREEN DISAGREEING ABOUT TOMORROW ─────────────
+ *
+ * Observed live on the Spirit tab, 9 September 2026. The page led with **"New Moon in Virgo —
+ * tomorrow, Thursday September 10 at 10:28 PM"**, the almanac listed that moon as *computed*, and
+ * eleven lines further down the week said **"No new or full moon this week, so no ritual is
+ * suggested"** — beside a COULD NOT BE SOURCED block claiming *"Moon phase data — SKY.json not
+ * present in working directory. Cannot determine whether new or full moon falls this week."*
+ *
+ * Three answers to one question, two of them wrong, on one screen.
+ *
+ * NEITHER OF THE WRONG TWO WAS A DATA PROBLEM. `buildAlmanac` computes new and full moons to the
+ * minute (Meeus ch. 49) and has since it was written; `astro_calendar` holds them. The week block
+ * was rendering "no new or full moon this week" whenever IMANI'S DELIVERY happened to contain no
+ * ritual — an astronomical claim standing in for "the duty produced nothing" — and the duty had
+ * written a gap about a file it could not find, for a question the database next to it can answer.
+ *
+ * ONE SOURCE. The almanac is the authority, the week block reads it, and a duty's claim that the
+ * moon could not be determined is dropped rather than printed beside the moon.
+ */
+async function moonsInWeek(db: D1Database, now: number): Promise<Array<{ kind: string; starts_at: number; label: string }>> {
+  // Monday 00:00 to Sunday 23:59 of the owner's current ISO week, anchored at UTC noon on the civil
+  // date so the arithmetic never straddles a day boundary — the same anchoring `weekIdInZone` uses.
+  const noon = new Date(now);
+  noon.setUTCHours(12, 0, 0, 0);
+  const dow = noon.getUTCDay() || 7;
+  const monday = noon.getTime() - (dow - 1) * 86_400_000 - 12 * 3_600_000;
+  const sunday = monday + 7 * 86_400_000;
+
+  await ensureAlmanacAround(db, now, now);
+  const rows = await db
+    .prepare(
+      `SELECT kind, starts_at, label FROM astro_calendar
+        WHERE kind IN ('new_moon','full_moon') AND starts_at >= ? AND starts_at < ?
+        ORDER BY starts_at`,
+    )
+    .bind(monday, sunday)
+    .all<{ kind: string; starts_at: number; label: string }>();
+  return rows.results ?? [];
+}
+
+/**
+ * A gap the system can answer is not a gap.
+ *
+ * The duty wrote "Moon phase data — SKY.json not present in working directory. Cannot determine
+ * whether new or full moon falls this week." It is computed, in the row above it, to the minute.
+ * Printing that sentence under COULD NOT BE SOURCED does not merely waste a line: it tells her the
+ * one number on that screen she is most likely to act on is unknown, while the same screen states it.
+ */
+const MOON_GAP = /moon phase|new or full moon|SKY\.json/i;
+
 spirit.get("/practice-week", async (c) => {
   const week = weekIdInZone(Date.now());
   const row = await c.env.DB
@@ -954,10 +1007,13 @@ spirit.get("/practice-week", async (c) => {
     try { return JSON.parse(v); } catch { return fallback; }
   };
 
+  const moons = await moonsInWeek(c.env.DB, Date.now());
+
   if (!row) {
     return ok(c, {
       prepared: false,
       current_week: week,
+      moons_this_week: moons,
       // Named rather than blank: "nothing has ever been prepared" is a different fact from
       // "this week is quiet", and the block used to be unable to tell them apart.
       reason: `Imani prepares this on Sunday at 17:00 ${OWNER_TIMEZONE_LABEL}. Nothing has been delivered yet.`,
@@ -976,7 +1032,13 @@ spirit.get("/practice-week", async (c) => {
     rituals: parse(row.rituals, []),
     practice: parse(row.practice, null),
     body: parse(row.body, null),
-    gaps: parse(row.gaps, []),
+    /*
+     * THE MOON GAP IS DROPPED, AND ITS REPLACEMENT IS THE ANSWER. Filtering here rather than in the
+     * page keeps every reader of this endpoint consistent, and the count of what was removed is
+     * returned so nothing is silently deleted from her week.
+     */
+    gaps: (parse(row.gaps, []) as unknown[]).filter((g) => !MOON_GAP.test(typeof g === "string" ? g : JSON.stringify(g))),
+    moons_this_week: moons,
     sky_rule: ADVISORY_NOTE,
   });
 });

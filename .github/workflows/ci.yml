@@ -100,6 +100,32 @@ jobs:
       - name: Every endpoint has a way in
         run: npm run validate:api-screens
 
+      # A row that cannot say why it is on her screen comes off the screen. Guards the Capital
+      # desk's ranking: every point awarded quotes the fact that earned it, every firm held back
+      # leaves with a reason, and all of it is actually bound in the page.
+      - name: A recommendation says why
+        run: npm run validate:says-why
+
+      # One browser launcher, shared by every employee — and no prompt telling an employee that
+      # anything behind a login is impossible while the capability exists.
+      - name: Every employee can open a browser
+        run: npm run validate:shared-browser
+
+      # Eight of the fifteen decisions in the production approvals table were not decisions. A
+      # screen that asks for a verdict on things with no verdict devalues the ones that have one.
+      - name: A notice is not an approval
+        run: npm run validate:notice-not-approval
+
+      # Three components on the Spirit tab disagreed about whether there was a new moon tomorrow.
+      # The almanac computes it; nothing on a screen may claim otherwise from an empty array.
+      - name: One sky, one answer
+        run: npm run validate:one-sky
+
+      # Today's Contract rendered its four pillar headers LIGHTER than their own content. An
+      # inverted hierarchy is invisible to every other test in this repository.
+      - name: A heading outranks its content
+        run: npm run validate:heading-rank
+
       - name: Build client
         run: npm run build
 

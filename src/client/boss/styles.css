@@ -175,6 +175,66 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 22px 0 10px;
 }
 
+/*
+ * ─── A PILLAR HEADING OUTRANKS ITS OWN CONTENT ─────────────────────────────
+ *
+ * Her verdict on Today's Contract, 9 September 2026: the pillar headers rendered LIGHTER than the
+ * text beneath them, the whole block was one flat beige, and her gratitude sentence sat at body
+ * weight in the middle of it.
+ *
+ * She was describing an inverted hierarchy, and it was real: the headers used `.eyebrow`, which is
+ * 11px `--muted` — quieter than `.row-title` at weight 500 in full `--ink` and quieter than body
+ * text. Four section headings, each less visible than the paragraph it governed.
+ *
+ * `.eyebrow` IS NOT CHANGED, because it is right everywhere else. It is a quiet label above a list,
+ * and forty other places rely on it staying quiet. What was wrong is using a label where a heading
+ * was needed. This is the heading: the serif, at full ink, on the rule that separates one pillar
+ * from the next — so the eye finds Body, Spirit, Wealth, Execution before it reads a word of them.
+ *
+ * The employee's name stays quiet, in the mono face, because whose pillar it is matters less than
+ * which pillar it is.
+ */
+.pillar {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 22px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pillar-who {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/*
+ * THE ONE SENTENCE OF HER DAY, AT THE WEIGHT OF ONE SENTENCE.
+ *
+ * `spirit.action` is composed from her own record — it is the gratitude sentence she asked to have
+ * mirrored onto Today, and it was rendering at the same weight as the hydration reminder above it.
+ * A line that is the point of a block cannot look like the block's smallest part.
+ *
+ * The gold rule on the left is the only ornament, and it is the same gold as the operations lane —
+ * so it reads as belonging to this system rather than as decoration.
+ */
+.sentence {
+  font-family: var(--display);
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink);
+  margin: 4px 0 10px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--gold);
+}
+
 /* ─── Docket: the signature card ─────────────────────────────────────────── */
 
 .docket {
