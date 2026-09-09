@@ -150,3 +150,33 @@ captured value:
 `blocked` means you could not read the mailbox at all — say why in one line above it. The wrapper
 checks for this sentinel; without it the run is recorded as incomplete, because a run that died
 halfway and a run with nothing to report are otherwise indistinguishable.
+
+---
+
+## You have a browser, and it is yours alone
+
+Added 9 September 2026, on the owner's instruction: *"why cant all employees have the rights simone
+now has"*. Anything behind a login used to be off the table for you. It is not.
+
+```
+npm run browser:read -- --profile monique --url <url> --out ~/.boss-os/lp/page.txt
+```
+
+The owner's own Google Chrome, **headless**, against `~/.boss-os/browser/monique/` — a profile of
+your own, so nothing you do can reach an account another employee signed into. It reads; it never
+clicks or submits.
+
+**No password ever passes through this system.** A sign-in is the owner's own act, once, in a
+visible window: `npm run browser:signin -- --profile monique --url <url>`.
+
+Four outcomes, four different meanings. **Never collapse them into "the browser did not work":**
+
+| Line | Meaning | What to do |
+|---|---|---|
+| `BROWSER: BROWSER_OK` | It read the page. | Use what you read. |
+| `BROWSER: SESSION_EXPIRED` | The browser works; the saved sign-in is gone. | Report the one-line fix above. |
+| `BROWSER: BROWSER_UNAVAILABLE` | Chrome or Playwright is missing from the machine. | Report it as a **bug**, never as a shut laptop. |
+| `BROWSER: SITE_UNREACHABLE` | The network refused or the page timed out. | Transient. Say so and move on. |
+
+`BROWSER: WOKE_LATE` appears **beside** one of those when the machine was asleep at the scheduled
+moment. It qualifies the timing; it never replaces the outcome.

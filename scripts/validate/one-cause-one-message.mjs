@@ -34,9 +34,28 @@ import { join } from "node:path";
 const ROOT = new URL("../..", import.meta.url).pathname;
 const SELF_TEST = process.argv.includes("--self-test");
 
-const HARNESS = "scripts/ops/kdp-browser.mjs";
-/** The four things that can be true, each of which needs its own sentence and its own exit code. */
-const OUTCOMES = ["BROWSER_OK", "KDP_SESSION_EXPIRED", "BROWSER_UNAVAILABLE", "KDP_UNREACHABLE"];
+/**
+ * BOTH HARNESSES, because there are two and they answer for different things.
+ *
+ * `browser.mjs` is the shared launcher every employee now uses; `kdp-browser.mjs` is the thin KDP
+ * caller that keeps its own `KDP-BROWSER:` line because `kdp-watch.sh` parses it. Checking only one
+ * of them would let the other collapse its outcomes silently — which is this validator's own defect
+ * class, applied to itself.
+ */
+const HARNESSES = [
+  {
+    path: "scripts/ops/browser.mjs",
+    /* Five facts, five sentences, five exit codes. WOKE_LATE is deliberately not in this list: it is
+     * printed BESIDE an outcome rather than instead of one, so it has no `say()` call to compare. */
+    outcomes: ["BROWSER_OK", "SESSION_EXPIRED", "BROWSER_UNAVAILABLE", "SITE_UNREACHABLE"],
+  },
+  {
+    path: "scripts/ops/kdp-browser.mjs",
+    outcomes: ["BROWSER_OK", "KDP_SESSION_EXPIRED", "BROWSER_UNAVAILABLE", "KDP_UNREACHABLE"],
+  },
+];
+const HARNESS = HARNESSES[0].path;
+const OUTCOMES = HARNESSES[0].outcomes;
 
 /** The benign explanation that must never stand alone. */
 const LAZY = /laptop (may be |is )?shut|laptop is closed/i;
@@ -57,9 +76,10 @@ function scanPrompts(files, read) {
   return { bad, examined };
 }
 
-function scanHarness(src) {
+function scanHarness(src, outcomes = OUTCOMES) {
   const bad = [];
   if (!src) return { bad: ["the browser harness is missing entirely"], messages: 0 };
+  const OUTCOMES = outcomes;
   const messages = new Set();
   /*
    * SPLIT ON THE REPORTING CALL RATHER THAN MATCHING AROUND IT. The messages are multi-line and
@@ -111,10 +131,14 @@ if (SELF_TEST) {
 const promptFiles = readdirSync(join(ROOT, "scripts/ops"))
   .filter((f) => f.endsWith(".md"))
   .map((f) => `scripts/ops/${f}`);
-const harnessSrc = existsSync(join(ROOT, HARNESS)) ? readFileSync(join(ROOT, HARNESS), "utf8") : "";
-
 const prompts = scanPrompts(promptFiles, (f) => readFileSync(join(ROOT, f), "utf8"));
-const harness = scanHarness(harnessSrc);
+const harness = { bad: [], messages: 0 };
+for (const h of HARNESSES) {
+  const src = existsSync(join(ROOT, h.path)) ? readFileSync(join(ROOT, h.path), "utf8") : "";
+  const r = scanHarness(src, h.outcomes);
+  harness.bad.push(...r.bad.map((x) => `${h.path}: ${x}`));
+  harness.messages += r.messages;
+}
 
 if (prompts.examined === 0) {
   console.error("ONE-CAUSE SCAN EXAMINED NOTHING: no prompt files under scripts/ops.");
@@ -131,6 +155,7 @@ if (bad.length) {
 }
 
 console.log(
-  `one cause, one message: ${prompts.examined} prompt(s) examined, ` +
-  `${OUTCOMES.length} browser outcomes with ${harness.messages} distinct messages.`,
+  `one cause, one message: ${prompts.examined} prompt(s) examined, ${HARNESSES.length} harnesses, ` +
+  `${HARNESSES.reduce((n, h) => n + h.outcomes.length, 0)} browser outcomes with ` +
+  `${harness.messages} distinct messages.`,
 );

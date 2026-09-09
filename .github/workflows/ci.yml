@@ -106,6 +106,11 @@ jobs:
       - name: A recommendation says why
         run: npm run validate:says-why
 
+      # One browser launcher, shared by every employee — and no prompt telling an employee that
+      # anything behind a login is impossible while the capability exists.
+      - name: Every employee can open a browser
+        run: npm run validate:shared-browser
+
       - name: Build client
         run: npm run build
 

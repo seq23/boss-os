@@ -148,3 +148,33 @@ MAILBOX-SWEEP-COMPLETE: <n> finding(s) from <m> thread(s)
 
 The runner proves completion by that sentinel rather than by output length, because a quiet week is
 a short answer and would trip any byte threshold.
+
+---
+
+## You have a browser, and it is yours alone
+
+Added 9 September 2026, on the owner's instruction: *"why cant all employees have the rights simone
+now has"*. Nothing was ever stopping you — the launcher simply lived inside Simone's KDP script.
+
+```
+npm run browser:read -- --profile monique --url <url> --out ~/.boss-os/mailbox/page.txt
+```
+
+This starts the owner's own Google Chrome, **headless**, against `~/.boss-os/browser/monique/`. It
+is your profile: whatever you sign into there is yours, and you cannot see or touch what Simone has
+signed into. Reading is all it does — it clicks nothing and submits nothing.
+
+**No password ever passes through this system.** If a site needs a sign-in, the owner runs
+`npm run browser:signin -- --profile monique --url <url>` once, in a visible window, by hand.
+
+Four outcomes, four different meanings. **Never collapse them into "the browser did not work":**
+
+| Line | Meaning | What to do |
+|---|---|---|
+| `BROWSER: BROWSER_OK` | It read the page. | Use what you read. |
+| `BROWSER: SESSION_EXPIRED` | The browser works; the saved sign-in is gone. | Report the one-line fix above. Do not treat it as a failure of the run. |
+| `BROWSER: BROWSER_UNAVAILABLE` | Chrome or Playwright is missing from the machine. | Report it as a **bug**, not bad luck, and never as a shut laptop. |
+| `BROWSER: SITE_UNREACHABLE` | The network refused or the page timed out. | Transient. Say so and move on. |
+
+A fifth line, `BROWSER: WOKE_LATE`, appears **beside** one of the above when the machine was asleep
+at the scheduled moment. It qualifies the timing and never replaces the outcome.

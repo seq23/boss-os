@@ -52,14 +52,29 @@ Do not wait to be asked. In order:
    version of this line said "if the browser is unreachable her laptop is shut", which turned a
    permanent absence into a benign explanation and guaranteed nobody would ever look.
 
-   The two cases are different findings and must never share a message:
+   **BUT YOU ARE NOT WITHOUT A BROWSER — THAT IS A DIFFERENT SENTENCE AND IT MATTERS.** The Chrome
+   *MCP tools* do not exist in this process. A real Chrome does, and every employee has one:
+
+   ```
+   npm run browser:read -- --profile simone --url <url> --out ~/.boss-os/kdp/page.txt
+   ```
+
+   It starts her own Google Chrome, headless, against `~/.boss-os/browser/<profile>/` — a directory
+   per employee, so nothing you do can touch another employee's signed-in account. Proven on
+   9 September 2026: a read as `camille`, headless, returned 1,815 characters from a live site while
+   the owner's own Chrome was running and untouched, and the spawned browser's parent process was the
+   node process that asked for it — it is not her window and does not need one.
+
+   The FOUR cases are different findings and must never share a message:
 
    | What you see | What it means | What to report |
    |---|---|---|
-   | `ToolSearch` returns no chrome tools | **This run has no browser, full stop.** Not a bad day. | Report it as a capability this run does not have, and say what would be needed. Never blame her laptop. |
-   | The tools exist but the call fails | A connection exists and something is wrong with it | Report the failure and what you tried. This one IS worth investigating. |
+   | `ToolSearch` returns no chrome tools | This run has no *MCP* browser. Not a bad day, and **not the end of it** — use `npm run browser:read`. | Only worth mentioning if you also could not use the harness. |
+   | `BROWSER: BROWSER_UNAVAILABLE` | Playwright or Chrome is missing from the machine. **A bug.** | Report it as a broken capability and name what is missing. Never blame her laptop. |
+   | `BROWSER: SESSION_EXPIRED` | The browser works; the saved sign-in is gone. | Report the ONE fix: `npm run browser:signin -- --profile <name> --url <url>`. One minute, once. |
+   | `BROWSER: SITE_UNREACHABLE` | The network refused or the page timed out. **Transient.** | Report it and move on; the next run tries again. |
 
-   If the tools ever turn out to be present, say so loudly — it means this file is out of date.
+   If the MCP tools ever turn out to be present, say so loudly — it means this file is out of date.
 2. **Do what is unambiguous and reversible yourself** — correcting metadata you can see is wrong,
    re-submitting something that failed for a stated reason you have fixed.
 3. **Assign help when the work is somebody else's speciality.** POST to

@@ -158,8 +158,23 @@ Only when `covers.state` is `approved`, or a support reply says the block is cle
 > could reach it. It cannot. That is worth knowing rather than discovering again on a Friday.
 >
 > So: this run does not upload covers and does not click Publish, ever. It reports; she publishes,
-> from the packet Boss OS puts in front of her. Do not attempt the browser and do not report its
-> absence as though her laptop were shut.
+> from the packet Boss OS puts in front of her. Do not attempt the *MCP* browser and do not report
+> its absence as though her laptop were shut.
+>
+> ### BUT YOU ARE NOT WITHOUT A BROWSER, AND SINCE 9 SEPTEMBER NEITHER IS ANYBODY ELSE.
+>
+> The Chrome MCP *tools* are absent from this process. A real Chrome is not:
+>
+>     npm run browser:read -- --profile simone --url <url> --out ~/.boss-os/kdp/page.txt
+>
+> One launcher, `scripts/ops/browser.mjs`, shared by every employee — the owner's instruction was
+> "why cant all employees have the rights simone now has" and the honest answer was that nothing was
+> ever stopping them. It runs her own Google Chrome, headless, against `~/.boss-os/browser/<name>/`:
+> a directory PER EMPLOYEE, so a research run cannot reach the account another employee signed into.
+> `--profile kdp` is the one exception and it points at the original `~/.boss-os/kdp-profile`, where
+> her Amazon session already lives.
+>
+> It reads. It does not click and it does not submit, so none of this changes the rule above.
 
 1. **Do not attempt the Chrome tools.** See the banner above: this process has none, proven rather
    than assumed. Trying and failing would produce a determination that blames a shut laptop for a
