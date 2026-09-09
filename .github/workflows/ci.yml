@@ -111,6 +111,11 @@ jobs:
       - name: Every employee can open a browser
         run: npm run validate:shared-browser
 
+      # Eight of the fifteen decisions in the production approvals table were not decisions. A
+      # screen that asks for a verdict on things with no verdict devalues the ones that have one.
+      - name: A notice is not an approval
+        run: npm run validate:notice-not-approval
+
       - name: Build client
         run: npm run build
 

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { runNeedsHerDecision } from "../../src/worker/boss/backends/needsDecision";
 import { deliverExecutiveReport } from "../../src/worker/boss/duties/deliverReport";
 import { reportStaleness } from "../../src/worker/boss/routes/today";
-import { apiJson, row, uid, all } from "./helpers";
+import { api, apiJson, row, uid, all } from "./helpers";
 
 /**
  * THE INBOX IS FOR DECISIONS. THE BRIEFING IS NOT ONE.
@@ -527,5 +527,61 @@ describe("a duty that has not fired yet is measured from when it was created", (
     const alerts = await alertsMentioning("A brand new weekly duty");
     expect(alerts.length).toBeGreaterThan(0);
     expect(alerts[0].severity).toBe("high");
+  });
+});
+
+/**
+ * A NOTICE IS NOT AN APPROVAL, AND THE COUNT MUST NOT PRETEND IT IS.
+ *
+ * ─── Confirmed on production, 9 September 2026 ─────────────────────────────
+ *
+ *   SELECT kind, status, COUNT(*) FROM approvals GROUP BY kind, status
+ *     notice | approved | 8
+ *
+ * Eight times, an employee told her something and the Inbox rendered it with Approve / Reject /
+ * Later. There was nothing to approve. She pressed Approve eight times to make a sentence go away,
+ * and the table recorded eight approvals she never gave.
+ *
+ * The damage is to the REAL approvals beside it: a screen that asks for a verdict on things with no
+ * verdict teaches the reader that the green button is a dismiss button, and the next card is a
+ * letter going to a firm.
+ */
+describe("a notice is told apart from a decision, at the source", () => {
+  beforeEach(async () => {
+    await env.DB.prepare(`DELETE FROM approvals`).run();
+  });
+
+  const raise = (kind: string, title: string) =>
+    apiJson<any>("/api/approvals", { method: "POST", body: { title, kind, lane: "ops", risk: "low" } });
+
+  it("keeps notices out of the number every surface reads, and returns them beside it", async () => {
+    await raise("notice", "Monique emailed you the LP outcomes");
+    await raise("notice", "Monique emailed you 5 people worth a conversation");
+    await raise("manual", "Send this to Saints Capital?");
+
+    const list = await apiJson<any>("/api/approvals?status=pending");
+    const raw = await api("/api/approvals?status=pending");
+    // Rule 0: the assertions below would all pass over an empty inbox.
+    expect(list.body.data).toHaveLength(1);
+    expect(list.body.data[0].kind).toBe("manual");
+    // THE HEADER THE BADGE READS. Two notices and one decision is ONE thing waiting on her.
+    expect(raw.headers.get("X-Pending-Total")).toBe("1");
+
+    const told = await apiJson<any>("/api/approvals/notices");
+    expect(told.body.data).toHaveLength(2);
+    expect(told.body.data.every((n: any) => n.kind === "notice")).toBe(true);
+
+    // AND THE SYSTEM COUNT AGREES, because it reads the same function rather than its own SQL.
+    const status = await apiJson<any>("/api/system/status");
+    expect(status.body.data.counts.pending_approvals).toBe(1);
+  });
+
+  it("still lets a notice be cleared, because it has to leave the screen somehow", async () => {
+    const { body } = await raise("notice", "Monique emailed you the LP outcomes");
+    await apiJson<any>(`/api/approvals/${body.data.id}/decide`, {
+      method: "POST", body: { decision: "approved" },
+    });
+    const told = await apiJson<any>("/api/approvals/notices");
+    expect(told.body.data).toHaveLength(0);
   });
 });

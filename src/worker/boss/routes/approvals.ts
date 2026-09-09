@@ -41,6 +41,25 @@ approvals.get("/", async (c) => {
   return ok(c, rows.results ?? []);
 });
 
+/**
+ * THINGS SHE HAS BEEN TOLD, WHICH ARE NOT THINGS SHE MUST ANSWER.
+ *
+ * Confirmed on production, 9 September 2026: `kind = 'notice'` had eight rows and every one of them
+ * was `approved`. An employee said "I emailed you the LP outcomes" and the Inbox put Approve /
+ * Reject / Later under it. She pressed Approve eight times to make a sentence go away.
+ *
+ * REGISTERED BEFORE `/:id` ON PURPOSE. Hono matches in order, so a parameterised route declared
+ * first would swallow this path and answer "no approval with that id" — a 404 that reads like a bug
+ * in the client.
+ *
+ * It reads `pendingApprovals` like everything else, so the notices here and the decisions on the
+ * list can never be two different readings of the table.
+ */
+approvals.get("/notices", async (c) => {
+  const { notices } = await pendingApprovals(c.env.DB);
+  return ok(c, notices);
+});
+
 /** Full docket: the approval, its event trail, and whatever it will act on. */
 approvals.get("/:id", async (c) => {
   const id = c.req.param("id");

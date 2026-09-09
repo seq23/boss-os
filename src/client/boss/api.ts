@@ -136,6 +136,14 @@ export const api = {
   requeueDeadLetter: (id: string) => call(`/system/dead-letters/${id}/requeue`, post("")),
   dismissDeadLetter: (id: string) => call(`/system/dead-letters/${id}/dismiss`, post("")),
 
+  /*
+   * NOTICES ARE FETCHED SEPARATELY BECAUSE THEY ARE A DIFFERENT KIND OF THING.
+   *
+   * `approvals("pending")` returns only what needs an answer — the badge, the Today card and the
+   * Inbox stat all count that and nothing else. A notice is something an employee told her; it goes
+   * in its own section with one button that says what it does.
+   */
+  notices: () => call<any[]>("/approvals/notices"),
   approvals: (status = "pending") => call<any[]>(`/approvals?status=${status}`),
   approval: (id: string) => call<any>(`/approvals/${id}`),
   decide: (id: string, decision: string, note?: string) =>
