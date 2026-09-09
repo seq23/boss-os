@@ -92,6 +92,19 @@ STOPEOF
     cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-report.mjs >> "$RUN_LOG" 2>&1 \
       && say "  reported to Boss OS: it will say on Today that this run could not happen and why." \
       || say "  AND COULD NOT REPORT IT EITHER. Nothing on any screen knows this run failed."
+
+    # AND A PUSH ON A TRANSPORT GOOGLE CANNOT REVOKE. Resend has its own key; a password change
+    # cannot touch it. Second, never first — Boss OS is the channel of record and this is the thing
+    # that tells her to go and look on a day she otherwise would not. `;` not `&&`: a refused send
+    # must not turn a reported stop into an unreported one.
+    cd "$REPO" && npm run --silent notify -- \
+      --subject "KDP watch could not run" \
+      --body "$reason
+
+What to do: $action
+
+This is on Today under Critical Alerts, which is the record. This email is only the nudge." >> "$RUN_LOG" 2>&1 \
+      || say "  (the email push also failed; Boss OS still has it)"
   else
     say "  AND COULD NOT REPORT IT EITHER: no repo at $REPO."
   fi

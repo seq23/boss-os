@@ -11,7 +11,7 @@
  *
  * A CREDENTIAL CAN ONLY BE PROVEN ALIVE BY USING IT. There is no status endpoint for "is this OAuth
  * grant still valid" that is cheaper or more honest than making the call the real job makes. So this
- * makes four small real calls, daily, and posts four words back.
+ * makes a handful of small real calls, daily, and posts a word back for each.
  *
  * ─── Rule 0 ────────────────────────────────────────────────────────────────
  *
@@ -40,17 +40,6 @@ const SUBJECT = process.env.BROKERAGE_MAILBOX ?? "staylor@spry.vc";
 const WESTPEEK_SUBJECT = process.env.WESTPEEK_MAILBOX ?? "sequoia@westpeek.ventures";
 const SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const MODEL = process.env.CREDENTIAL_CHECK_MODEL ?? "claude-haiku-4-5-20251001";
-
-/*
- * THE QUERY THAT DECIDES WHETHER THE FAILOVER IS REAL.
- *
- * `del_kdp_mail_failover` is closed by this search finding something. Not by the forwarding filter
- * existing, not by anyone saying they set it up — by an Amazon message actually being readable in
- * the Workspace mailbox with the service account she already owns. She could mistype the address,
- * forward to the wrong mailbox, or have Google stop honouring the rule, and in every one of those
- * cases the work would look done and Simone would go blind again on the next password change.
- */
-const KDP_QUERY = 'newer_than:30d (from:amazon.com OR "Kindle Direct" OR kdp)';
 
 const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -97,7 +86,6 @@ async function probeGoogle() {
   if (!raw) {
     return [
       { id: "cred_google_service_account", state: "dead", detail: "The service account key is not in the environment at all. Run this through the vault." },
-      { id: "cred_kdp_mail_via_workspace", state: "unknown", detail: "Cannot be checked while the service account is unavailable." },
       { id: "cred_westpeek_delegation", state: "unknown", detail: "Cannot be checked while the service account is unavailable." },
     ];
   }
@@ -110,64 +98,16 @@ async function probeGoogle() {
     const why = String(err?.message ?? err).replace(/[^\w .,:;()'-]/g, " ");
     return [
       { id: "cred_google_service_account", state: "dead", detail: `Could not authenticate: ${why}.` },
-      { id: "cred_kdp_mail_via_workspace", state: "unknown", detail: "Cannot be checked while the service account cannot authenticate." },
       { id: "cred_westpeek_delegation", state: "unknown", detail: "Cannot be checked while the service account cannot authenticate." },
     ];
   }
 
-  const auth = { authorization: `Bearer ${token}` };
   const out = [{
     id: "cred_google_service_account",
     state: "live",
     detail: "Authenticated and impersonated the Workspace mailbox successfully.",
   }];
-
-  /*
-   * A COUNT, AND THEN ONE HEADER READ TO CONFIRM IT IS REALLY AMAZON.
-   *
-   * A search query can match on a word in a subject, so a bare count would call the failover ready
-   * on a message from a colleague mentioning Kindle. The `From` header settles it. That header is
-   * read here and NEVER LEAVES THIS PROCESS — what is reported is the number.
-   */
-  try {
-    const list = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
-    list.searchParams.set("q", KDP_QUERY);
-    list.searchParams.set("maxResults", "5");
-    const res = await fetch(list, { headers: auth });
-    if (!res.ok) throw new Error(`Gmail list returned status ${res.status}`);
-    const ids = (await res.json()).messages ?? [];
-
-    let fromAmazon = 0;
-    for (const { id } of ids) {
-      const u = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
-      // METADATA ONLY, WITH THE SAME FOUR-HEADER ALLOWLIST AS EVERY OTHER CALLER IN THIS REPO.
-      // No subject, no snippet, no body: the API does not even return them for this request.
-      u.searchParams.set("format", "metadata");
-      for (const h of ["From", "To", "Date", "List-Unsubscribe"]) u.searchParams.append("metadataHeaders", h);
-      const m = await fetch(u, { headers: auth });
-      if (!m.ok) continue;
-      const msg = await m.json();
-      const from = msg?.payload?.headers?.find((h) => h.name.toLowerCase() === "from")?.value ?? "";
-      if (/amazon\.com|kdp/i.test(from)) fromAmazon += 1;
-    }
-
-    out.push(
-      fromAmazon > 0
-        ? {
-            id: "cred_kdp_mail_via_workspace",
-            state: "live",
-            detail: `${fromAmazon} Amazon message(s) from the last 30 days are readable in the Workspace mailbox with the service account, so the publishing chase has a path that does not depend on the claude.ai connector.`,
-          }
-        : {
-            id: "cred_kdp_mail_via_workspace",
-            state: "dead",
-            detail: "No Amazon mail from the last 30 days is readable in the Workspace mailbox, so the claude.ai connector is still the only path to the KDP correspondence.",
-          },
-    );
-  } catch (err) {
-    const why = String(err?.message ?? err).replace(/[^\w .,:;()'-]/g, " ");
-    out.push({ id: "cred_kdp_mail_via_workspace", state: "unknown", detail: `The Workspace search could not be completed: ${why}.` });
-  }
+  void token;
 
   /*
    * ── THE GRANT ONLY SCOOTER CAN GIVE, TESTED RATHER THAN REMEMBERED ────────
@@ -204,6 +144,72 @@ async function probeGoogle() {
     });
   }
 
+  return out;
+}
+
+// ─── The calendar feeds ─────────────────────────────────────────────────────
+
+/*
+ * FOUR SECRET iCal ADDRESSES, PROVEN BY FETCHING THEM.
+ *
+ * Not domain-wide delegation, which cannot read a consumer calendar at all — two of the four
+ * accounts are @gmail.com, so half the diary would have been permanently missing. And not OAuth:
+ * she changed her Google password this morning and it killed the connector instantly, while an iCal
+ * secret URL has no token to revoke. That durability is the whole reason this mechanism was chosen.
+ *
+ * THE URL NEVER LEAVES THIS PROCESS. It is a password in URL form — anyone holding it can read the
+ * calendar in full — so it is read from the vault, used, and never logged, never posted, and never
+ * put in an error message. What crosses is a state word and a count.
+ */
+const ICAL_FEEDS = [
+  { id: "cred_cal_seq_taylor", env: "CAL_ICS_SEQ_TAYLOR" },
+  { id: "cred_cal_staylor_spry", env: "CAL_ICS_STAYLOR_SPRY" },
+  { id: "cred_cal_westpeek", env: "CAL_ICS_WESTPEEK" },
+  { id: "cred_cal_cryptoclearr", env: "CAL_ICS_CRYPTOCLEARR" },
+];
+
+async function probeCalendars() {
+  const out = [];
+  for (const feed of ICAL_FEEDS) {
+    const url = process.env[feed.env];
+    if (!url) {
+      out.push({
+        id: feed.id,
+        state: "dead",
+        detail: "No secret calendar address is in the vault for this account yet, so nothing from it is in the diary.",
+      });
+      continue;
+    }
+    try {
+      const res = await fetch(url, { headers: { accept: "text/calendar" } });
+      if (!res.ok) {
+        /*
+         * THE STATUS, NEVER THE URL. A 404 here almost always means the address was reset — which
+         * is the recovery path working, not a fault — and saying which is more useful than a stack
+         * trace that would have carried the secret in it.
+         */
+        out.push({
+          id: feed.id,
+          state: "dead",
+          detail: `The feed answered ${res.status}. A 404 usually means the secret address was reset; copy the new one and set it again.`,
+        });
+        continue;
+      }
+      const text = await res.text();
+      const events = (text.match(/BEGIN:VEVENT/g) ?? []).length;
+      out.push({
+        id: feed.id,
+        state: text.includes("BEGIN:VCALENDAR") ? "live" : "dead",
+        detail: text.includes("BEGIN:VCALENDAR")
+          ? `The feed is readable and currently holds ${events} event(s).`
+          : "The address answered but did not return a calendar, so it is probably not the iCal address.",
+      });
+    } catch {
+      // The message is deliberately not included: a fetch error can carry the URL, and the URL is
+      // the secret.
+      out.push({ id: feed.id, state: "unknown", detail: "The feed could not be reached from this machine." });
+    }
+  }
   return out;
 }
 
@@ -281,7 +287,7 @@ function probeConnector() {
 // ─── Report ─────────────────────────────────────────────────────────────────
 
 async function main() {
-  const probes = [...(await probeGoogle()), probeConnector()];
+  const probes = [...(await probeGoogle()), ...(await probeCalendars()), probeConnector()];
 
   /*
    * RULE 0. A prober that examined nothing must not exit 0 looking pleased — it would leave every

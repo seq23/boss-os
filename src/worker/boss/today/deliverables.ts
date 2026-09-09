@@ -219,6 +219,14 @@ export const TERMINAL_CHECKS: Record<
    * `unknown` is not `live` and never closes this. A probe that could not decide has decided
    * nothing.
    */
+  /**
+   * A second path to the KDP mail.
+   *
+   * SHE KILLED THIS ON 9 SEPTEMBER — "im not forwarding emails that is fucking stupid" — and 0214
+   * removed the probe it read. The check stays because `validate:owned-work` scans every migration
+   * ever written and 0207 still names it; a killed deliverable is never evaluated, so this is
+   * unreachable in practice and reports the honest thing if anything ever reaches it.
+   */
   kdp_mail_reachable_without_connector: (env: Env) => probeIsLive(env, "cred_kdp_mail_via_workspace"),
 
   /**
@@ -511,6 +519,46 @@ export async function deliverableAlerts(env: Env, now = Date.now()): Promise<Del
         source_id: j.approval_id,
       });
     }
+  }
+
+  /*
+   * ── A COLLEAGUE SITTING ON SOMEBODY ELSE'S COMMITMENT ─────────────────────
+   *
+   * "she can assign help from another employee as needed" — and the way that goes wrong is
+   * delegation becoming a place work disappears into. So an unfinished assignment surfaces under
+   * THE OWNER'S NAME, not the helper's: Simone handed it over, Simone is still accountable, and a
+   * stalled helper makes Simone louder rather than quieter.
+   *
+   * Three days rather than the deliverable's seven. A piece handed to a colleague is a small,
+   * specific thing; a week of silence on one is a week nobody was working it.
+   */
+  const assignments = await env.DB
+    .prepare(
+      `SELECT a.id, a.what, a.why, a.assigned_at, a.stale_after_days, a.deliverable_id,
+              o.name AS owner_name, a.owner_employee_id,
+              h.name AS helper_name, a.helper_employee_id
+         FROM work_assignments a
+         LEFT JOIN employees o ON o.id = a.owner_employee_id
+         LEFT JOIN employees h ON h.id = a.helper_employee_id
+        WHERE a.state = 'open'
+        ORDER BY a.assigned_at`,
+    )
+    .all<any>()
+    .catch(() => ({ results: [] as any[] }));
+
+  for (const a of (assignments as { results?: any[] }).results ?? []) {
+    const days = Math.floor((now - a.assigned_at) / 86_400_000);
+    if (days < a.stale_after_days) continue;
+    const { severity, tone } = escalationFor(days);
+    alerts.push({
+      severity,
+      text:
+        `${a.owner_name ?? a.owner_employee_id} handed "${a.what}" to ${a.helper_name ?? a.helper_employee_id} ` +
+        `${days} day${days === 1 ? "" : "s"} ago and it is not done. ${a.why} ` +
+        `${a.owner_name ?? a.owner_employee_id} still owns the outcome — handing it over was not handing it off. ${tone}`,
+      source_type: "tasks",
+      source_id: a.deliverable_id ?? a.id,
+    });
   }
 
   return alerts;

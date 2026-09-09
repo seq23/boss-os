@@ -1148,7 +1148,9 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
   font-size: 12px;
   line-height: 1.4;
 }
+/* Shared with the diary's add-a-meeting form: one input treatment, not two that drift. */
 .judgement-note { margin-top: 12px; }
+.judgement-note .judgement-why + .judgement-why { margin-top: 6px; }
 .judgement-why {
   width: 100%;
   box-sizing: border-box;

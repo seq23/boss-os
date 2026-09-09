@@ -57,6 +57,11 @@ mkdir -p "$LOGS"
 # approval given on Wednesday afternoon would sit until Friday — and approving something and
 # watching nothing happen for two days is, from her side, the inbox that applied nothing.
 #
+# THE CALENDAR SYNC RIDES ON IT TOO, five times a day, which is the right cadence for a diary: a
+# meeting moved at 10am should not still read as 9am at 4pm. It is one fetch per configured feed and
+# exits in about a second when none is configured, which is the state until she copies the secret
+# addresses in.
+#
 # `kdp-resume.mjs` asks Boss OS whether she has approved a cover batch that has not been acted on
 # yet, and starts the watch if so. On a normal day it makes one request, finds nothing, and exits in
 # about a second. `;` between the steps, not `&&`: a failing sky snapshot must not stop the resume,
@@ -72,7 +77,7 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
+    <string>cd $REPO && npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -267,6 +272,54 @@ launchctl unload "$KDP_PLIST" 2>/dev/null || true
 launchctl load "$KDP_PLIST"
 echo "Installed $KDP_LABEL — Mon/Wed/Fri 09:23 Central."
 
+# ─── Simone's standing KDP triage ────────────────────────────────────────────
+#
+# "u need to make sure simone has a dedicated task for handling anything related to KDP so she needs
+# to check for any KDP emails and read them and determine if she needs to take action."
+#
+# SEPARATE FROM THE CASE WATCH ABOVE, AND DAILY RATHER THAN MON/WED/FRI. The case watch chases one
+# support thread to resolution and ends the day the seven books are Live; this is permanent, and a
+# title taken down on a Saturday should not wait until Monday to be noticed.
+#
+# 09:30 — seven minutes after the case watch, so on Mon/Wed/Fri the two never race for the same Gmail
+# session and the case run's determination is already filed when this looks at the wider surface.
+SURFACE_LABEL="com.seq.kdp-surface"
+SURFACE_PLIST="$HOME/Library/LaunchAgents/$SURFACE_LABEL.plist"
+SURFACE_LOGS="$HOME/Library/Logs/kdp-surface"
+
+mkdir -p "$SURFACE_LOGS"
+chmod +x "$REPO/scripts/ops/kdp-surface.sh"
+ln -sfn "$REPO/scripts/ops/kdp-surface.sh" "$HOME/bin/kdp-surface.sh"
+ln -sfn "$REPO/scripts/ops/kdp-surface-prompt.md" "$HOME/bin/kdp-surface-prompt.md"
+
+cat > "$SURFACE_PLIST" <<SURFEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SURFACE_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>$REPO/scripts/ops/kdp-surface.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$SURFACE_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$SURFACE_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+SURFEOF
+
+launchctl unload "$SURFACE_PLIST" 2>/dev/null || true
+launchctl load "$SURFACE_PLIST"
+echo "Installed $SURFACE_LABEL — daily 09:30 Central."
+
 # ─── Monique's mailbox sweep ─────────────────────────────────────────────────
 #
 # The "missed connections" feature that has been the first outstanding item in OPERATIONS.md since
@@ -432,7 +485,7 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL" && loaded "$SURFACE_LABEL"; then break; fi
   sleep 1
 done
 
@@ -445,6 +498,7 @@ loaded "$KDP_LABEL" || missing="$missing $KDP_LABEL"
 loaded "$MAILBOX_LABEL" || missing="$missing $MAILBOX_LABEL"
 loaded "$CRED_LABEL" || missing="$missing $CRED_LABEL"
 loaded "$LP_LABEL" || missing="$missing $LP_LABEL"
+loaded "$SURFACE_LABEL" || missing="$missing $SURFACE_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
@@ -454,9 +508,11 @@ loaded "$LP_LABEL" || missing="$missing $LP_LABEL"
 [ -f "$REPO/scripts/ops/mailbox-sweep-prompt.md" ] || missing="$missing scripts/ops/mailbox-sweep-prompt.md"
 [ -L "$HOME/bin/lp-replies-prompt.md" ] || missing="$missing ~/bin/lp-replies-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/lp-replies-prompt.md" ] || missing="$missing scripts/ops/lp-replies-prompt.md"
+[ -L "$HOME/bin/kdp-surface-prompt.md" ] || missing="$missing ~/bin/kdp-surface-prompt.md(symlink)"
+[ -f "$REPO/scripts/ops/kdp-surface-prompt.md" ] || missing="$missing scripts/ops/kdp-surface-prompt.md"
 
 if [ -z "$missing" ]; then
-  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL, $KDP_LABEL, $MAILBOX_LABEL, $CRED_LABEL and $LP_LABEL."
+  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL, $KDP_LABEL, $MAILBOX_LABEL, $CRED_LABEL, $LP_LABEL and $SURFACE_LABEL."
 else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1

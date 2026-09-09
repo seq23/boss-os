@@ -84,6 +84,10 @@ const SNAPSHOT_TABLES = [
   // the Worker cannot see, so a rebuild would produce a thinner document than the one she took into
   // the meeting. What she read on the 9th has to still say the same thing on the 16th.
   "meeting_packets",
+  // 0213 — the diary. NOT RE-DERIVABLE AND NOT BACKED BY ANYTHING: her forward schedule is not in
+  // Google — three connected feeds hold 5,362 events between them and one dated today or later —
+  // so what she typed exists here and nowhere else. Losing it loses her calendar.
+  "diary_entries",
   // 0212 — what came back from LP outreach, by category. The counts are cheap to lose and the
   // HISTORY is not: "how many opt-outs since the raise started" is a question only a series can
   // answer, and the mail it was derived from is deleted from nowhere but also readable only from
@@ -108,6 +112,12 @@ const SNAPSHOT_TABLES = [
   // whole history — how long support has been silent and how many nudges have gone unanswered —
   // and the chase ladder is unusable without them.
   "kdp_titles", "kdp_case_checks",
+  // 0215 — everything Amazon sent and what Simone decided about it. The `update` rows are the
+  // valuable half: "notate them" was her word, and the point of a notation is reading it back in
+  // three months. The promo rows are cheap to lose and kept because a count is how she would ever
+  // check the triage is working. `work_assignments` is here for the same reason `owned_deliverables`
+  // is: a restore that lost them would silently drop work one employee handed another.
+  "kdp_mail_log", "work_assignments",
   // 0207 — the credential liveness register. It holds no credential and no secret, which is exactly
   // why it belongs in a backup: what is not re-derivable is the FIX STEPS on each row, written once
   // and read at the worst possible moment. A restore that lost them would leave an alert saying a

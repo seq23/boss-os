@@ -492,3 +492,192 @@ kdp.post("/titles/:ref", async (c) => {
 
   return ok(c, await c.env.DB.prepare(`SELECT * FROM kdp_titles WHERE title_ref = ?`).bind(ref).first());
 });
+
+
+// ─── The standing surface: everything Amazon sends, triaged ──────────────────
+
+const DISPOSITIONS = new Set(["promo", "update", "problem"]);
+const SURFACE_DUTY = "duty_kdp_surface";
+
+/**
+ * What Amazon sent, and what Simone decided about it.
+ *
+ * ─── Her instruction ───────────────────────────────────────────────────────
+ *
+ *   "if the company sends marketing and promo emails she just notes it and moves on. if there are
+ *    updates she needs to know about she needs to notate them. if something is wrong w/one of my
+ *    titles she needs to spring into action... i prefer to be handsoff"
+ *
+ * ─── HANDS-OFF IS ENFORCED HERE, NOT ASKED FOR IN A PROMPT ─────────────────
+ *
+ * `promo` may not set `needs_owner`, and the endpoint overrides it rather than trusting the run.
+ * That is the difference between a rule and a request: a model having a generous day cannot decide
+ * that a Kindle newsletter is worth waking her for. Getting this wrong in the noisy direction is how
+ * she stops reading the useful ones.
+ *
+ * A RUN OF ONLY PROMOTIONAL MAIL THEREFORE PRODUCES SILENCE — no alert, no Inbox item, no summary
+ * line — and the rows are still there if she ever wants to look.
+ */
+kdp.post("/mail", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const items = Array.isArray(b?.items) ? b.items : null;
+  if (!items) {
+    throw badRequest(
+      "Send an items array, even an empty one",
+      "An empty array is a real answer — nothing arrived — and it advances the duty's clock. A missing array is a malformed report.",
+    );
+  }
+
+  const now = Date.now();
+  const recorded: { id: string; disposition: string }[] = [];
+
+  for (const raw of items) {
+    const disposition = String(raw?.disposition ?? "").trim();
+    if (!DISPOSITIONS.has(disposition)) {
+      throw badRequest(`"${disposition}" is not a disposition`, `One of: ${[...DISPOSITIONS].join(", ")}.`);
+    }
+    const note = optionalText(raw?.note, 400);
+    const action = optionalText(raw?.action_taken, 400);
+    if (!note) throw badRequest("Every logged message needs a note", "A row that cannot say what the message was is one she cannot read back.");
+
+    for (const [field, value] of [["note", note], ["action_taken", action]] as const) {
+      if (value && value.includes("@")) {
+        throw badRequest(
+          `The ${field} contains an '@' and was refused`,
+          "The log describes what Amazon said; it never quotes it and never carries an address.",
+        );
+      }
+    }
+
+    const id = newId("kml");
+    await c.env.DB
+      .prepare(
+        `INSERT INTO kdp_mail_log
+           (id, seen_at, disposition, note, title_ref, action_taken, needs_owner, source, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        id, now, disposition, note,
+        optionalText(raw?.title_ref, 32),
+        action,
+        // ONLY A PROBLEM MAY NEED HER. Enforced rather than trusted — see the header.
+        disposition === "problem" && raw?.needs_owner === true ? 1 : 0,
+        b?.source === "manual" ? "manual" : "launchd",
+        now,
+      )
+      .run();
+    recorded.push({ id, disposition });
+  }
+
+  /*
+   * THE DUTY'S CLOCK ADVANCES EVEN ON A QUIET DAY. A `local_job` duty is never materialised by the
+   * cron, so this is the only thing that can say it ran — and a day with no mail is a day the job
+   * did its work. Without this, silence would read as a duty that had stopped firing, which is the
+   * exact confusion the whole morning was spent removing.
+   */
+  const duty = await c.env.DB
+    .prepare(`SELECT local_hour, local_minute, timezone, cadence, weekday, weekdays FROM standing_duties WHERE id = ?`)
+    .bind(SURFACE_DUTY)
+    .first<any>();
+  if (duty) {
+    let advanced: number | null = null;
+    try {
+      advanced = nextDueAt(
+        {
+          local_hour: duty.local_hour, local_minute: duty.local_minute, timezone: duty.timezone,
+          cadence: duty.cadence, weekday: duty.weekday,
+          weekdays: duty.weekdays ? JSON.parse(duty.weekdays) : null,
+        },
+        now,
+      );
+    } catch { advanced = null; }
+    await c.env.DB
+      .prepare(
+        advanced === null
+          ? `UPDATE standing_duties SET last_run_at = ? WHERE id = ?`
+          : `UPDATE standing_duties SET last_run_at = ?, next_due_at = ? WHERE id = ?`,
+      )
+      .bind(...(advanced === null ? [now, SURFACE_DUTY] : [now, advanced, SURFACE_DUTY]))
+      .run();
+  }
+
+  const problems = recorded.filter((r) => r.disposition === "problem").length;
+  await logEvent(c.env.DB, {
+    level: problems > 0 ? "warn" : "info",
+    scope: "duties", event: "kdp_mail_triaged", entityId: SURFACE_DUTY,
+    detail: { total: recorded.length, problems },
+  }).catch(() => {});
+
+  return ok(c, { recorded: recorded.length, problems }, 201);
+});
+
+/** What she can read back: the updates and the problems, newest first. Promo is not returned. */
+kdp.get("/mail", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT id, seen_at, disposition, note, title_ref, action_taken, needs_owner
+         FROM kdp_mail_log WHERE disposition != 'promo' ORDER BY seen_at DESC LIMIT 40`,
+    )
+    .all<any>();
+  const promo = await c.env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM kdp_mail_log WHERE disposition = 'promo'`)
+    .first<{ n: number }>();
+  return ok(c, {
+    notated: rows.results ?? [],
+    /*
+     * THE PROMO COUNT AND NOTHING ELSE. "she just notes it and moves on" — so it is countable if she
+     * ever wonders whether the triage is working, and invisible otherwise.
+     */
+    promo_noted: promo?.n ?? 0,
+  });
+});
+
+/**
+ * Simone handing a piece of work to a colleague.
+ *
+ * "she can assign help from another employee as needed."
+ *
+ * THE OWNER IS NOT REASSIGNED, and that is the whole guard. Delegation is easy to get wrong in one
+ * specific way — work disappearing into somebody else's queue — so the owner stays on the row, the
+ * assignment escalates under the owner's name if the helper stalls, and only the owner's report can
+ * close it.
+ */
+kdp.post("/assign", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const owner = String(b?.owner_employee_id ?? "emp_chief");
+  const helper = String(b?.helper_employee_id ?? "").trim();
+  const what = optionalText(b?.what, 300);
+  const why = optionalText(b?.why, 400);
+
+  if (!what || !why) {
+    throw badRequest(
+      "An assignment needs what and why",
+      "A colleague handed a task with no reason has to guess at the outcome, which is how a delegated piece comes back wrong.",
+    );
+  }
+  const seat = await c.env.DB.prepare(`SELECT id, name FROM employees WHERE id = ?`).bind(helper).first<any>();
+  if (!seat) {
+    throw badRequest("That is not an employee", "Work can only be handed to a seat that exists, or nobody is accountable for it.");
+  }
+  if (helper === owner) {
+    throw badRequest("An employee cannot assign work to themselves", "That is not delegation; it is the work they already own.");
+  }
+
+  const now = Date.now();
+  const id = newId("asg");
+  await c.env.DB
+    .prepare(
+      `INSERT INTO work_assignments
+         (id, owner_employee_id, helper_employee_id, deliverable_id, what, why, state,
+          assigned_at, created_at, updated_at)
+       VALUES (?,?,?,?,?,?, 'open', ?,?,?)`,
+    )
+    .bind(id, owner, helper, b?.deliverable_id ?? null, what, why, now, now, now)
+    .run();
+
+  await audit(c.env.DB, {
+    actor: "system", lane: "ops", entityType: "work_assignment", entityId: id,
+    action: "assigned", detail: { owner, helper, what },
+  });
+  return ok(c, { id, helper: seat.name }, 201);
+});

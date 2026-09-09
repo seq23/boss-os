@@ -37,6 +37,7 @@ import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { ok, badRequest, notFound } from "../lib/http";
+import { readSession } from "../auth";
 
 export const packets = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -129,8 +130,57 @@ code { font: .9em ui-monospace, SFMono-Regular, Menlo, monospace; background:var
 .absent { border-style:dashed; color:var(--muted); }
 `;
 
+/**
+ * IS THIS BROWSER ALLOWED TO SEE IT, AND IF NOT, ASK PROPERLY.
+ *
+ * ─── The bug this fixes ────────────────────────────────────────────────────
+ *
+ * "this artifact is NOTHING it routes back to the today page and the download is nothing either."
+ *
+ * The page rendered correctly with a session and answered a bare JSON 401 without one. A cold click
+ * on a bookmark — or opening the link out of the desktop app into the system browser — carries no
+ * session, and a browser cannot do anything with a JSON 401 except let the shell bounce it to Today.
+ * The one permanent link the whole design rests on was unusable from exactly the place it was meant
+ * to be used from.
+ *
+ * NOTHING IS WEAKENED. The same passcode, the same session, the same KV lookup. What changes is the
+ * SHAPE OF THE REFUSAL: an HTML unlock form for a navigation, where the JSON 401 stays right for a
+ * fetch. The form posts to the ordinary unlock endpoint and reloads, so there is one credential path
+ * and no second door.
+ */
+async function unlocked(c: any): Promise<boolean> {
+  const match = /boss_session=([^;]+)/.exec(c.req.header("cookie") ?? "");
+  return Boolean(await readSession(c.env, match?.[1]));
+}
+
+function unlockPage(back: string): Response {
+  return new Response(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+      `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<title>Meeting agendas — Boss OS</title><style>${PAGE_CSS}` +
+      `form{max-width:22rem;margin:12vh auto;display:flex;flex-direction:column;gap:10px}` +
+      `input,button{font:16px/1.4 inherit;padding:11px 12px;border:1px solid var(--line);border-radius:3px;background:var(--card);color:var(--ink)}` +
+      `button{background:var(--gold);color:#111;border-color:var(--gold);font-weight:600}` +
+      `</style></head><body><main><form method="dialog" id="f">` +
+      `<h1>Meeting agendas</h1>` +
+      `<p class="sub">This link is yours and it needs your passcode, the same one the app uses. ` +
+      `Unlock once here and the bookmark works from then on.</p>` +
+      `<input id="p" type="password" autocomplete="current-password" placeholder="Passcode" autofocus>` +
+      `<button type="submit">Unlock</button><p class="sub" id="e"></p></form>` +
+      `<script>document.getElementById('f').addEventListener('submit',async function(ev){` +
+      `ev.preventDefault();var r=await fetch('/api/boss/auth/unlock',{method:'POST',` +
+      `headers:{'content-type':'application/json'},credentials:'same-origin',` +
+      `body:JSON.stringify({passcode:document.getElementById('p').value})});` +
+      `if(r.ok){location.href=${JSON.stringify(back)};}else{` +
+      `document.getElementById('e').textContent='That passcode was refused.';}});<\/script>` +
+      `</main></body></html>`,
+    { status: 401, headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
 /** The page. One URL, every agenda, newest first. */
 packets.get("/page", async (c) => {
+  if (!(await unlocked(c))) return unlockPage("/api/boss/packets/page");
   const rows = await c.env.DB
     .prepare(
       `SELECT id, counterpart, day_id, markdown, headline, blocking, published_at, source
@@ -174,6 +224,7 @@ packets.get("/page", async (c) => {
 /** The raw document, for keeping or forwarding. */
 packets.get("/:id/download", async (c) => {
   const id = c.req.param("id");
+  if (!(await unlocked(c))) return unlockPage(`/api/boss/packets/${id}/download`);
   const row = await c.env.DB
     .prepare(`SELECT counterpart, day_id, markdown FROM meeting_packets WHERE id = ?`)
     .bind(id).first<{ counterpart: string; day_id: string; markdown: string }>();

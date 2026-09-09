@@ -150,6 +150,12 @@ export const api = {
    */
   judgementPending: () => call<{ items: any[] }>("/judgement/pending"),
 
+  /* The diary. Manual entry is the primary route: a service account can never read a personal
+   * Google calendar, so some of her meetings will always be ones she typed. */
+  diary: () => call<any>("/diary"),
+  addMeeting: (body: Record<string, unknown>) => call<any>("/diary", post("", body)),
+  cancelMeeting: (id: string) => call<any>(`/diary/${id}/cancel`, post("")),
+
   employees: () => call<any[]>("/employees"),
   employee: (id: string) => call<any>(`/employees/${id}`),
   sprawl: () => call<any>("/employees/review/sprawl"),

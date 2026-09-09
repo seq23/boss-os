@@ -19,6 +19,7 @@ import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from 
 import { coachingFocus, lensFor } from "../today/faculty";
 import { deliverableAlerts } from "../today/deliverables";
 import { credentialAlerts } from "../today/credentials";
+import { diary } from "../today/diary";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { adjustToday } from "../today/adjust";
@@ -324,8 +325,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * and minutes to fetch what a query returns instantly, and could be wrong about facts the
    * database holds exactly.
    */
-  const packetWeekday = new Date(`${day.id}T12:00:00Z`).getUTCDay();
-  const packet = packetIsDue(packetWeekday) ? await weeklyPacket(env, day.id) : null;
+  /*
+   * THE PACKET IS NO LONGER ASSEMBLED FOR THIS SCREEN. It is served whole at
+   * `/api/boss/packets/page` and fetched by the reminder at `/today/packet/:counterpart`; rendering
+   * it into the Meetings section was the thing she objected to. `packetIsDue` still governs the
+   * reminder's own day, and `weeklyPacket` still answers that route — this assembler just stopped
+   * doing work whose only consumer has been deleted.
+   */
   /*
    * THE COMPACT POINTER, WHICH IS WHAT SHE ASKED FOR.
    *
@@ -338,6 +344,17 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * Wednesday where the job did not run — her rule from this morning is that the screen never shows
    * an empty section for something that exists.
    */
+  /*
+   * ── THE DIARY, WHICH IS WHAT THIS SECTION IS FOR ──────────────────────────
+   *
+   * "this tab is suppose to show what meetings i have upcoming."
+   *
+   * Its summary line comes back WITH the rows and is computed from them, because the defect she
+   * screenshotted was a collapsed line reading "Nothing in the diary" over a full agenda — one
+   * sentence counting the CRM table while the body rendered the packet. They cannot disagree now.
+   */
+  const theDiary = await diary(env, Date.now()).catch(() => null);
+
   const filedPacket = await env.DB
     .prepare(
       `SELECT id, counterpart, day_id, headline, blocking, published_at
@@ -1113,15 +1130,23 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
          * Present on Tuesday as well as Wednesday. Seeing "ask him for the Google grant" at 6am on
          * the day is seeing it as the meeting starts; seeing it on Tuesday is time to act first.
          */
-        packet,
+        /*
+         * THE PACKET IS NO LONGER RENDERED HERE. It was dumped inline — "Your week", the grant
+         * steps, the whole document — into a section she opens to see what is on today. Her words:
+         * "this stuff is unnecessary... if there is a packet or deliverable for a meeting i should
+         * see that in a link". The document lives at one permanent URL and the row carries the link.
+         */
+        diary: theDiary?.rows ?? [],
+        diary_summary: theDiary?.summary ?? "The diary could not be read, which is a fault rather than an empty week.",
+        calendar: theDiary?.calendar ?? null,
         /*
          * WHAT THIS SECTION IS FOR, ON THE SECTION. She had to ask what her own gates were, and the
          * answer was in a source comment. The same defect was one step away here: a packet is
          * obvious to whoever built it and not to whoever opens it at 6am.
          */
         intent:
-          "What you are walking into, and the one thing you have to say out loud. The packet is the record " +
-          "of the week you show him; anything on it stays until it is actually done, not until it has been mentioned.",
+          "What you have coming up. Add anything that is not here — a diary you cannot write in is not a diary — " +
+          "and where a meeting has a packet, the link opens it rather than the whole document landing on this screen.",
         agenda_page: "/api/boss/packets/page",
         filed_packet: filedPacket
           ? {
@@ -1141,8 +1166,14 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         follow_ups_overdue: overdueFollowUps?.n ?? 0,
         touches_due: dueTouches.results ?? [],
       },
+      /*
+       * DERIVED FROM WHAT IS ACTUALLY INSIDE, which is the defect she caught. A section whose
+       * collapsed state is computed from a different source than its body will eventually
+       * contradict itself, and this one did: "Nothing in the diary", opening onto a full agenda.
+       */
       isEmpty:
-        packet === null &&
+        (theDiary?.rows.length ?? 0) === 0 &&
+        filedPacket === null &&
         meetingsToday.length === 0 &&
         (heldNotCaptured.results?.length ?? 0) === 0 &&
         (overdueFollowUps?.n ?? 0) === 0 &&

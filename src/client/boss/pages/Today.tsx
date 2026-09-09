@@ -216,12 +216,15 @@ function summarise(block: Block): string {
     case "daily_thinking_lens":
       return `${c.track}.`;
     case "meetings": {
-      const parts: string[] = [];
-      parts.push(
-        c.total === 0
-          ? "Nothing in the diary."
-          : `${c.total} meeting${c.total === 1 ? "" : "s"}${c.unbriefed ? `, ${c.unbriefed} unbriefed` : ", all briefed"}.`,
-      );
+      /*
+       * THE COLLAPSED LINE COMES FROM THE SERVER, COMPUTED FROM THE ROWS THE BODY RENDERS.
+       *
+       * It used to count `c.total` — the CRM meetings table, always empty — and say "Nothing in the
+       * diary" over a section that opened onto a full agenda. A summary derived from a different
+       * source than the body will eventually contradict it, and this one did. `diary_summary` is
+       * built in `today/diary.ts` from the same array, so they cannot disagree.
+       */
+      const parts: string[] = [c.diary_summary ?? "The diary could not be read."];
       if (c.held_not_captured?.length) {
         parts.push(`${c.held_not_captured.length} held and not captured.`);
       }
@@ -670,45 +673,27 @@ function renderDetail(
 
     case "meetings":
       /*
-       * ── THE PACKET IS RENDERED HERE, WHICH IT WAS NOT ─────────────────────
+       * ── A DIARY, NOT A PACKET READER ──────────────────────────────────────
        *
-       * "i also noticed i did not see anything in the meetings section of my today screen and today
-       * is wednesday and there is always the meeting with scooter."
+       * "this meetings tab needs work. it says Nothing in the diary when the meeting tab is closed
+       * then u open to all this stuff. this stuff is unnecessary. this tab is suppose to show what
+       * meetings i have upcoming."
        *
-       * She was looking at a real defect of the exact kind this system keeps producing. The launchd
-       * job wrote a good packet at 07:01. `routes/today.ts` computed the same packet and put it in
-       * this block. AND THIS SWITCH READ ONLY `c.meetings`, `c.held_not_captured` and
-       * `c.touches_due` — all three always empty, because a standing partner meeting has no calendar
-       * row — so it returned null and the section was blank on the one morning it mattered.
+       * Two defects and the first is the one this repository keeps producing. The collapsed line
+       * counted `c.meetings` — the CRM table, always empty — while the body rendered the whole
+       * Wednesday packet, so the section said "Nothing in the diary" and opened onto a full agenda.
+       * Both sentences were true about the thing each was looking at. Together they were a lie.
        *
-       * TODAY MIRRORS, THE INBOX DECIDES. Her instruction was "it should be in my inbox and my
-       * screen should either mirror it or say to check inbox", and mirroring is the better half of
-       * that choice here: the packet is short, the Worker already computes it, and making her click
-       * through to read four lines would be a worse screen than the one being fixed. The Inbox holds
-       * the part that is actually a decision — whether she raised it with him.
+       * The packet is not rendered here at all now. It lives at one permanent URL and the row that
+       * has one carries the link: "if there is a packet or deliverable for a meeting i should see
+       * that in a link". The CRM meetings, the held-and-uncaptured ones and the overdue touches
+       * still render below, because they are also things she has coming up and a second screen for
+       * them would be the two-lists defect.
        */
-      return (c.packet || c.filed_packet || c.packet_absent_reason || (c.meetings ?? []).length || (c.held_not_captured ?? []).length || (c.touches_due ?? []).length) ? (
+      return (
         <>
           {c.intent && <div className="row-sub"><em>{c.intent}</em></div>}
-          <PacketPointer content={c} />
-          {c.packet && <PacketBlock packet={c.packet} />}
-          {(c.meetings ?? []).map((m: any) => (
-            <div className="row" key={m.id}>
-              <div className="row-main">
-                <div className="row-title">{m.title}</div>
-                <div className="row-sub">
-                  {m.full_name}{m.organization_name ? ` · ${m.organization_name}` : ""} · {time(m.scheduled_at)}
-                </div>
-                <div className="row-sub">
-                  {m.briefed ? "briefed" : "no brief yet"}{m.captured ? " · captured" : ""}
-                  {m.relationship_health !== null && m.relationship_health !== undefined
-                    ? ` · health ${m.relationship_health}`
-                    : ""}
-                </div>
-              </div>
-              <div className="row-val">{m.captured ? "done" : m.briefed ? "ready" : "cold"}</div>
-            </div>
-          ))}
+          <Diary content={c} onChanged={onChanged} onError={onError} />
           {(c.held_not_captured ?? []).map((m: any) => (
             <div className="row" key={m.id}>
               <div className="row-main">
@@ -724,7 +709,7 @@ function renderDetail(
             </div>
           ))}
         </>
-      ) : null;
+      );
 
     case "open_loops":
       return <Loops loops={c.loops ?? []} onChanged={onChanged} onError={onError} />;
@@ -875,114 +860,135 @@ function ContractHeader({ content }: { content: any }) {
 }
 
 /**
- * THE COMPACT POINTER — the line she actually opens.
+ * THE DIARY. What she has coming up, and a link where a packet exists.
  *
- * "or at least an artifact in the web page that seems to be more space efficient" and "u can have
- * several meetings in one scrollable page". So Today carries the meeting, the date and the one
- * blocking sentence; the agenda page carries every packet, newest first, with a download for each.
- * One link, bookmarked once.
+ * ─── Her correction, with a screenshot ─────────────────────────────────────
  *
- * A MISSING PACKET IS RENDERED AS A MISSING PACKET. Her rule from this morning: the screen never
- * shows an empty section for something that exists. A Wednesday where the job did not run must not
- * look like a Wednesday with nothing on.
+ *   "this tab is suppose to show what meetings i have upcoming. i should be able to input what
+ *    meetings i have and it should check my calendars for meetings and if there is a packet or
+ *    deliverable for a meeting i should see that in a link"
+ *
+ * FOUR THINGS ON A ROW AND NO MORE: what it is, when, who with, and the link if there is one. The
+ * packet used to be expanded in place — "Your week", the grant steps, the entire document — into a
+ * section she opens to see what is on today.
+ *
+ * ─── A diary you cannot write in is not a diary ────────────────────────────
+ *
+ * The form is the PRIMARY route rather than a fallback while calendar sync is built, and that is a
+ * fact about Google rather than a staging decision: a service account can never read a personal
+ * @gmail.com calendar, so some of her meetings will always be ones she typed.
+ *
+ * ─── And it says which calendars are actually in here ──────────────────────
+ *
+ * A partial calendar presented as complete is worse than manual entry, because she would trust it
+ * and stop typing the ones it cannot see. So the connected feeds are named, and so are the ones
+ * that are not.
  */
-function PacketPointer({ content }: { content: any }) {
-  const f = content.filed_packet;
-  return (
-    <div className="row">
-      <div className="row-main">
-        <div className="row-title">
-          <a href={content.agenda_page ?? "/api/boss/packets/page"} target="_blank" rel="noreferrer">
-            Meeting agendas — every packet, newest first
-          </a>
-        </div>
-        {f ? (
-          <>
-            <div className="row-sub">
-              Latest filed: {f.day_id} · {f.counterpart}
-              {f.stale ? " — that is not today's. This week's packet has not been filed yet." : ""}
-            </div>
-            {f.blocking ? <div className="row-sub"><strong>BLOCKING — {f.headline}</strong></div> : null}
-            <div className="row-sub"><a href={f.download} download>Download it</a></div>
-          </>
-        ) : (
-          <div className="row-sub">{content.packet_absent_reason}</div>
-        )}
-      </div>
-      <div className={`risk risk-${f?.blocking ? "high" : "medium"}`}>{f ? "packet" : "none filed"}</div>
-    </div>
-  );
-}
+function Diary({ content, onChanged, onError }: {
+  content: any;
+  onChanged: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
+  const [withWho, setWithWho] = useState("");
+  const [when, setWhen] = useState("");
+  const [busy, setBusy] = useState(false);
+  const rows: any[] = content.diary ?? [];
 
-/**
- * THE WEDNESDAY PACKET, ON THE SCREEN.
- *
- * Four parts, in this order, because the order is the argument:
- *
- *  1. THE FIXTURE ITSELF. There is no calendar row for a standing partner meeting and inventing one
- *     would be a second source of truth for a thing that never changes. The block says it instead,
- *     so the section is never blank on the day the meeting happens.
- *  2. YOUR WEEK. Her ask — "it needs to show what ive accomplished in the week prior" — and it is
- *     labelled as HERS. The rest of the packet is written for a partner to read and her week spans
- *     two businesses, only one of which is his. She also said "even if its empty this time", which
- *     is why nothing here is padded.
- *  3. WHAT TO RAISE, with the age of anything already raised. An item that has looked identical for
- *     three weeks is the reason this feature exists.
- *  4. WHAT THE PACKET CANNOT SEE. Never silent about it.
- */
-function PacketBlock({ packet }: { packet: any }) {
-  const items: any[] = packet.to_raise ?? [];
-  const misc: any[] = packet.misc ?? [];
-  const week: any[] = packet.accomplished ?? [];
-  const ago = (ts: number) => Math.max(0, Math.floor((Date.now() - ts) / 86_400_000));
+  async function add() {
+    const at = Date.parse(when);
+    if (!title.trim() || !Number.isFinite(at)) return;
+    setBusy(true);
+    try {
+      await api.addMeeting({ title: title.trim(), counterpart: withWho.trim() || null, scheduled_at: at });
+      setTitle(""); setWithWho(""); setWhen(""); setAdding(false);
+      onChanged();
+    } catch (e) {
+      onError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <>
-      <div className="row">
-        <div className="row-main">
-          <div className="row-title">Wednesday with {packet.counterpart === "scooter" ? "Scooter" : packet.counterpart}</div>
-          <div className="row-sub">
-            Standing partner meeting · packet covers {packet.window?.from} to {packet.window?.to}
-          </div>
-          <div className="row-sub">{packet.headline}</div>
-        </div>
-        <div className="row-val">{items.length + misc.length} to raise</div>
-      </div>
-
-      <div className="row-sub"><strong>Your week — your prep, not in his packet.</strong></div>
-      {week.length === 0 ? (
-        <div className="row-sub">Nothing finished was recorded in the window. That is the honest answer, not an error.</div>
+      {rows.length === 0 ? (
+        <div className="row-sub">Nothing in the next three weeks. Add one below.</div>
       ) : (
-        week.map((a: any, i: number) => (
-          <div className="row-sub" key={i}>
-            <strong>{a.business}</strong> · {a.line} <em>({a.source})</em>
+        rows.map((r) => (
+          <div className="row" key={r.id}>
+            <div className="row-main">
+              <div className="row-title">{r.title}</div>
+              <div className="row-sub">
+                {new Date(r.scheduled_at).toLocaleString(undefined, {
+                  weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+                })}
+                {r.with ? ` · with ${r.with}` : ""}
+                {r.location ? ` · ${r.location}` : ""}
+              </div>
+              <div className="row-sub">
+                {r.packet_url ? (
+                  <a href={r.packet_url} target="_blank" rel="noreferrer">Packet →</a>
+                ) : (
+                  "No packet"
+                )}
+                {" · "}
+                {r.source === "recurring" ? "standing" : r.source === "calendar" ? "from your calendar" : r.source === "crm" ? "from your people" : "you added this"}
+              </div>
+            </div>
+            {/* Cancelled, not deleted — and the standing fixture has no row to cancel. */}
+            {r.standing || r.source === "crm" ? (
+              <div className="row-val">{r.standing ? "weekly" : ""}</div>
+            ) : (
+              <button
+                className="btn btn-defer"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try { await api.cancelMeeting(r.id); onChanged(); } catch (e) { onError(e); } finally { setBusy(false); }
+                }}
+              >
+                Cancel
+              </button>
+            )}
           </div>
         ))
       )}
-      {(packet.accomplished_gaps ?? []).map((g: string, i: number) => (
-        <div className="row-sub" key={`ag-${i}`}>Not counted: {g}</div>
-      ))}
 
-      {[...items, ...misc].map((it: any) => (
-        <div className="row" key={it.id}>
-          <div className="row-main">
-            <div className="row-title">{it.title}</div>
-            {it.detail && <div className="row-sub">{it.detail}</div>}
-            <div className="row-sub">
-              {it.status === "raised" && it.raised_at
-                ? `You raised this ${ago(it.raised_at)} day${ago(it.raised_at) === 1 ? "" : "s"} ago and it is still not done.`
-                : "Not raised yet."}
-            </div>
-          </div>
-          <div className={`risk risk-${it.priority === 1 ? "high" : "medium"}`}>
-            {it.priority === 1 ? "blocking" : "raise"}
+      {adding ? (
+        <div className="judgement-note">
+          {/* Every control is named for a screen reader; a placeholder is not a label. */}
+          <label className="stat-l" htmlFor="diary-title">What is it?</label>
+          <input id="diary-title" className="judgement-why" placeholder="Coffee with the Hartley people" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <label className="stat-l" htmlFor="diary-with">Who with? (optional)</label>
+          <input id="diary-with" className="judgement-why" placeholder="Scooter" value={withWho} onChange={(e) => setWithWho(e.target.value)} />
+          <label className="stat-l" htmlFor="diary-when">When</label>
+          <input id="diary-when" className="judgement-why" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+          <div className="decide">
+            <button className="btn btn-approve" disabled={busy || !title.trim() || !when} onClick={() => void add()}>
+              {busy ? "Adding…" : "Add it"}
+            </button>
+            <button className="btn btn-defer" disabled={busy} onClick={() => setAdding(false)}>Cancel</button>
           </div>
         </div>
-      ))}
+      ) : (
+        <div className="decide">
+          <button className="btn" onClick={() => setAdding(true)}>Add a meeting</button>
+          <a className="btn" href={content.agenda_page ?? "/api/boss/packets/page"} target="_blank" rel="noreferrer">
+            All agendas
+          </a>
+        </div>
+      )}
 
-      {(packet.gaps ?? []).map((g: string, i: number) => (
-        <div className="row-sub" key={`g-${i}`}>Not in here: {g}</div>
-      ))}
+      {content.calendar && (
+        <>
+          <div className="row-sub">{content.calendar.note}</div>
+          {(content.calendar.unreadable ?? []).map((u: string, i: number) => (
+            <div className="row-sub" key={i}>Not in here: {u}</div>
+          ))}
+        </>
+      )}
     </>
   );
 }
