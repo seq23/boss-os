@@ -23,6 +23,9 @@ import { relationships } from "./routes/relationships";
 import { knowledge } from "./routes/knowledge";
 import { spirit } from "./routes/spirit";
 import { kdp } from "./routes/kdp";
+import { credentials } from "./routes/credentials";
+import { judgement } from "./routes/judgement";
+import { packets } from "./routes/packets";
 import { deliverables } from "./routes/deliverables";
 import { prompt } from "./routes/prompt";
 import { capability, runCapabilityCadence } from "./routes/capability";
@@ -112,6 +115,12 @@ app.route("/api/knowledge", knowledge);
 app.route("/api/spirit", spirit);
 // Simone's publishing block. Written to by a launchd job on her Mac, read by the Publishing screen.
 app.route("/api/kdp", kdp);
+app.route("/api/credentials", credentials);
+// Work that needs her judgement, with the work itself in the item. Approving is what resumes it.
+app.route("/api/judgement", judgement);
+// One link, every meeting agenda, newest first. A page rather than a client screen — her call:
+// "i dont need a real page in boss OS that is stupid".
+app.route("/api/packets", packets);
 // The register of owned work. The escalating half of it lands on Today; this is the list itself.
 app.route("/api/deliverables", deliverables);
 app.route("/api/prompt", prompt);

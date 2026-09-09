@@ -79,6 +79,11 @@ const SNAPSHOT_TABLES = [
   // grant that unblocks reading LP replies. Everything else in the packet recomputes from records;
   // this does not.
   "meeting_agenda_items",
+  // 0210 — the packets as she read them. NOT RE-DERIVABLE, and that is the whole reason they are
+  // stored rather than recomputed: each one was assembled on her Mac from the outreach sheets, which
+  // the Worker cannot see, so a rebuild would produce a thinner document than the one she took into
+  // the meeting. What she read on the 9th has to still say the same thing on the 16th.
+  "meeting_packets",
   // 0193 — Monique's backlink prospects. The review status is the valuable part: a restore that lost
   // it would hand her back pages she had already rejected, which is how a working list becomes one
   // she stops trusting.
@@ -98,6 +103,19 @@ const SNAPSHOT_TABLES = [
   // whole history — how long support has been silent and how many nudges have gone unanswered —
   // and the chase ladder is unusable without them.
   "kdp_titles", "kdp_case_checks",
+  // 0207 — the credential liveness register. It holds no credential and no secret, which is exactly
+  // why it belongs in a backup: what is not re-derivable is the FIX STEPS on each row, written once
+  // and read at the worst possible moment. A restore that lost them would leave an alert saying a
+  // login is dead and unable to say what to do about it. `last_live_at` is the other irreplaceable
+  // part — "this worked as recently as Tuesday" is what separates a password change from a
+  // configuration that was never right.
+  "credential_probes",
+  // 0208 — work put to her for a verdict, and the verdict. NOT RE-DERIVABLE IN EITHER DIRECTION:
+  // nothing can reconstruct which covers were shown or what she said about them, and `resumed_at` is
+  // the record that her yes actually restarted the work rather than only being filed. The asset rows
+  // are pointers into R2 and are useless without their table — losing them would leave the bucket
+  // holding seven images nothing can name.
+  "judgement_calls", "judgement_assets",
   // 0200 — Imani's week of practice. It is not re-derivable: the run that produced it read the
   // literature and this week's sky, and next Sunday's run answers a different week. A restore that
   // lost these would lose every ritual and technique the practice has ever been given.

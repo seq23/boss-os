@@ -51,29 +51,92 @@ fi
 echo $$ > "$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
-CLAUDE="$(command -v claude || echo /opt/homebrew/bin/claude)"
-[ -x "$CLAUDE" ] || { say "NAMED STOP [NO_CLAUDE_CLI] $CLAUDE"; exit 4; }
-[ -f "$PROMPT_FILE" ] || { say "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE"; exit 5; }
+# ─── A RUN THAT CANNOT RUN MUST STILL REACH HER SCREEN ───────────────────────
+#
+# THE FAILURE THIS CLOSES, IN ONE SENTENCE: the notification shared its failure mode with the work.
+#
+# `kdp-watch-prompt.md` told the run to email her whenever something needed her, and that email goes
+# through the SAME claude.ai Gmail connector it reads the mailbox with. She changed her Google
+# password, Google revoked the grant instantly, and the one condition that most needed to reach her
+# — "I cannot read your mail at all" — was the exact condition that could not send. Meanwhile every
+# named stop below simply exited, so Boss OS was told nothing either, and Today went on showing a
+# week-old sentence.
+#
+# The Boss OS report is the channel that survived. It survived by luck. This makes it structural:
+# every stop reports first and exits second, over HTTPS with a passcode from the vault, sharing
+# nothing with the mailbox it could not read.
+#
+# WHAT IT POSTS. `needs-her`, because a revoked credential or a missing installation is hers and
+# only hers to repair; `run_outcome: could-not-run`, so the screen says nothing was learned rather
+# than showing the same silence a quiet week at Amazon produces; and a named reason. NO '@' MAY
+# APPEAR IN ANY OF THESE STRINGS — the endpoint refuses one, and refusing here is the difference
+# between a legible failure and a 400 in a log nobody reads.
+report_stop() {
+  local code="$1" reason="$2" action="$3"
+  say "NAMED STOP [$code] $reason"
+  mkdir -p "$HOME/.boss-os/kdp"
+  cat > "$HOME/.boss-os/kdp/determination.json" <<STOPEOF
+{
+  "sentinel": "needs-her",
+  "run_outcome": "could-not-run",
+  "determination": "The watcher could not run: $reason",
+  "next_action": "$action",
+  "needs_owner": true,
+  "days_since_support": null,
+  "nudges_unanswered": null,
+  "threads_seen": 0,
+  "published_title_ref": null
+}
+STOPEOF
+  if [ -d "$REPO" ]; then
+    cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-report.mjs >> "$RUN_LOG" 2>&1 \
+      && say "  reported to Boss OS: it will say on Today that this run could not happen and why." \
+      || say "  AND COULD NOT REPORT IT EITHER. Nothing on any screen knows this run failed."
+  else
+    say "  AND COULD NOT REPORT IT EITHER: no repo at $REPO."
+  fi
+}
 
-# Gmail here is a claude.ai connector, not a local MCP server. It was confirmed
-# reachable from a headless run on 2026-09-02, but a lapsed login would make this
-# job silently find "no reply" forever — which is indistinguishable from good news
-# and is exactly the failure this watcher exists to avoid.
+CLAUDE="$(command -v claude || echo /opt/homebrew/bin/claude)"
+if [ ! -x "$CLAUDE" ]; then
+  report_stop "NO_CLAUDE_CLI" "the Claude CLI is not installed or not executable on this machine." \
+    "Reinstall the Claude CLI on her Mac, then run npm run kdp:check to catch up."
+  exit 4
+fi
+if [ ! -f "$PROMPT_FILE" ]; then
+  report_stop "NO_PROMPT_FILE" "the watcher prompt file is missing, so there is nothing to run." \
+    "Run bash scripts/ops/install-agent-launchd.sh to restore the symlink, then npm run kdp:check."
+  exit 5
+fi
+
+# Gmail here is a claude.ai connector, not a local MCP server. A lapsed login would make this job
+# silently find "no reply" forever — indistinguishable from good news, and exactly the failure this
+# watcher exists to avoid.
+#
+# THIS KEYCHAIN TEST IS NOT A LIVENESS TEST AND NEVER WAS. It proves the CLI has credentials stored,
+# not that the Gmail grant behind them is still valid — and the grant is what actually died: Google
+# revokes every OAuth refresh token the moment the account password changes, which is what happened.
+# The keychain entry sat there looking healthy throughout. `npm run credentials:check` is the probe
+# that answers the real question, daily, by making the call.
 if ! security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; then
-  say "NAMED STOP [CLAUDE_NOT_AUTHENTICATED] cannot read credentials from the login keychain."
-  say "  Mac may be at the login window with the keychain locked, or the session signed out."
+  report_stop "CLAUDE_NOT_AUTHENTICATED" "the Claude CLI has no credentials in the login keychain." \
+    "Sign in to the Claude CLI on her Mac. If the Mac is at the login window the keychain is locked; unlock it and the next run recovers on its own."
   exit 10
 fi
 
 say "=== KDP case watch starting ==="
-cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
+cd "$HOME" || { report_stop "NO_HOME" "the home directory is not reachable, so the run cannot start." "This is a machine fault rather than anything to do with Amazon. Check the Mac."; exit 8; }
 
 "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="
 
 if ! grep -q "KDP-WATCH-COMPLETE:" "$RUN_LOG"; then
-  say "NAMED STOP [WATCH_DID_NOT_COMPLETE] no sentinel in the log — the run started but never reached its end, so its silence is not evidence that no reply arrived."
+  # A revoked Gmail connector lands here: the run starts, the first tool call is refused, and it
+  # stops without a sentinel. Reported rather than exited, because "the run died" and "nothing has
+  # happened at Amazon" are opposite facts that used to render identically.
+  report_stop "WATCH_DID_NOT_COMPLETE" "the run started and never reached its sentinel, so its silence is not evidence that no reply arrived. The usual cause is the claude.ai Gmail connector no longer being authorised, which Google revokes whenever the account password changes." \
+    "Open claude.ai, then Settings, then Connectors, and reconnect Google Gmail. Then run npm run kdp:check."
   exit 9
 fi
 

@@ -18,6 +18,7 @@ import { spiritSignal } from "../spirit/day";
 import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from "../today/runOfShow";
 import { coachingFocus, lensFor } from "../today/faculty";
 import { deliverableAlerts } from "../today/deliverables";
+import { credentialAlerts } from "../today/credentials";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { adjustToday } from "../today/adjust";
@@ -325,6 +326,25 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    */
   const packetWeekday = new Date(`${day.id}T12:00:00Z`).getUTCDay();
   const packet = packetIsDue(packetWeekday) ? await weeklyPacket(env, day.id) : null;
+  /*
+   * THE COMPACT POINTER, WHICH IS WHAT SHE ASKED FOR.
+   *
+   * "or at least an artifact in the web page that seems to be more space efficient" — she does not
+   * want the whole packet dumped into Today, she wants a short line that opens the document. So the
+   * block carries the meeting, the date, the one blocking headline and a link; the page carries
+   * every agenda newest-first.
+   *
+   * `filed` NULL IS RENDERED, NOT HIDDEN. A Wednesday where the job did not run must look like a
+   * Wednesday where the job did not run — her rule from this morning is that the screen never shows
+   * an empty section for something that exists.
+   */
+  const filedPacket = await env.DB
+    .prepare(
+      `SELECT id, counterpart, day_id, headline, blocking, published_at
+         FROM meeting_packets ORDER BY day_id DESC, published_at DESC LIMIT 1`,
+    )
+    .first<any>()
+    .catch(() => null);
 
   /*
    * Today's report, and the last good one.
@@ -665,6 +685,15 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * meant to be keeping it. See `today/deliverables.ts`.
    */
   alerts.push(...(await deliverableAlerts(env, now).catch(() => [])));
+  /*
+   * A DEAD LOGIN IS A CRITICAL ALERT, NOT A LOG LINE.
+   *
+   * She changed her Google password, which revoked the claude.ai Gmail connector instantly, and
+   * nothing said so for days. Simone's watch and Monique's sweep both went blind, and the only
+   * reason it surfaced at all is that a human ran a script by hand. This is the channel that does
+   * not share a failure mode with the work: the report reaches her whether or not the mailbox does.
+   */
+  alerts.push(...(await credentialAlerts(env, now).catch(() => [])));
   if (tradingAuthority?.kill_switch) {
     alerts.push({ severity: "critical", text: "The trading kill switch is engaged. Nothing in that lane executes.", source_type: "trading", source_id: null });
   }
@@ -976,6 +1005,25 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
          * the day is seeing it as the meeting starts; seeing it on Tuesday is time to act first.
          */
         packet,
+        /*
+         * WHAT THIS SECTION IS FOR, ON THE SECTION. She had to ask what her own gates were, and the
+         * answer was in a source comment. The same defect was one step away here: a packet is
+         * obvious to whoever built it and not to whoever opens it at 6am.
+         */
+        intent:
+          "What you are walking into, and the one thing you have to say out loud. The packet is the record " +
+          "of the week you show him; anything on it stays until it is actually done, not until it has been mentioned.",
+        agenda_page: "/api/boss/packets/page",
+        filed_packet: filedPacket
+          ? {
+              ...filedPacket,
+              download: `/api/boss/packets/${filedPacket.id}/download`,
+              stale: filedPacket.day_id !== day.id,
+            }
+          : null,
+        packet_absent_reason: filedPacket
+          ? null
+          : "No packet has been filed to the agenda page yet. The Wednesday job writes one at 07:00 and posts it — an empty page on a Wednesday afternoon is a job that did not run, not a quiet week.",
         meetings: meetingsToday,
         total: meetingsToday.length,
         unbriefed: unbriefed.length,

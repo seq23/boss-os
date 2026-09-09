@@ -51,6 +51,17 @@ mkdir -p "$LOGS"
 # midday and evening slots catch anything dispatched by hand during the day. A run dispatched at
 # 15:00 waits until 18:35 rather than for ever, and `npm run vault:run -- node
 # scripts/sync-agent/agent.mjs work-once` claims it immediately if she does not want to wait.
+# KDP-RESUME RIDES ON THIS JOB RATHER THAN GETTING ITS OWN.
+#
+# "if i say apprpved she should continue to finish". Simone's watch runs Mon/Wed/Fri at 09:23, so an
+# approval given on Wednesday afternoon would sit until Friday — and approving something and
+# watching nothing happen for two days is, from her side, the inbox that applied nothing.
+#
+# `kdp-resume.mjs` asks Boss OS whether she has approved a cover batch that has not been acted on
+# yet, and starts the watch if so. On a normal day it makes one request, finds nothing, and exits in
+# about a second. `;` between the steps, not `&&`: a failing sky snapshot must not stop the resume,
+# and a failing resume must not stop the agent claiming work.
+
 cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -61,7 +72,7 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
+    <string>cd $REPO && npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -309,6 +320,52 @@ launchctl unload "$MAILBOX_PLIST" 2>/dev/null || true
 launchctl load "$MAILBOX_PLIST"
 echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
 
+# ─── Toni's credential prober ────────────────────────────────────────────────
+#
+# She changed her Google password. Google revokes every OAuth refresh token the instant that
+# happens, so the claude.ai Gmail connector died silently and Simone's KDP watch ran blind for days
+# before a human noticed. There is no gradual signal to watch for and no renewal window to
+# anticipate — the only thing that catches it is something that USES each credential on a schedule
+# and says what it found.
+#
+# 06:15, TWENTY MINUTES BEFORE THE FIRST AGENT TICK AND THREE HOURS BEFORE THE KDP WATCH. The point
+# is that a dead login is on her screen BEFORE the duty that needs it fails, rather than being
+# inferred afterwards from a job that produced nothing.
+#
+# It costs about a cent a day: the connector cannot be checked from Node at all — it is an OAuth
+# grant held by claude.ai, not a secret on this machine — so one very short Haiku run makes one
+# Gmail call and prints one word. Named rather than hidden, and cheap against days of blind running.
+CRED_LABEL="com.seq.boss-credentials"
+CRED_PLIST="$HOME/Library/LaunchAgents/$CRED_LABEL.plist"
+
+cat > "$CRED_PLIST" <<CREDEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$CRED_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO && npm run --silent credentials:check</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>15</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$LOGS/credentials.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/credentials.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+CREDEOF
+
+launchctl unload "$CRED_PLIST" 2>/dev/null || true
+launchctl load "$CRED_PLIST"
+echo "Installed $CRED_LABEL — daily 06:15 Central."
+
 echo "Installed $LABEL — checks for queued work at 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
@@ -326,7 +383,7 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL" && loaded "$MAILBOX_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL"; then break; fi
   sleep 1
 done
 
@@ -337,6 +394,7 @@ loaded "$NETWORK_LABEL" || missing="$missing $NETWORK_LABEL"
 loaded "$PROPS_LABEL" || missing="$missing $PROPS_LABEL"
 loaded "$KDP_LABEL" || missing="$missing $KDP_LABEL"
 loaded "$MAILBOX_LABEL" || missing="$missing $MAILBOX_LABEL"
+loaded "$CRED_LABEL" || missing="$missing $CRED_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
@@ -346,7 +404,7 @@ loaded "$MAILBOX_LABEL" || missing="$missing $MAILBOX_LABEL"
 [ -f "$REPO/scripts/ops/mailbox-sweep-prompt.md" ] || missing="$missing scripts/ops/mailbox-sweep-prompt.md"
 
 if [ -z "$missing" ]; then
-  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL, $KDP_LABEL and $MAILBOX_LABEL."
+  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL, $KDP_LABEL, $MAILBOX_LABEL and $CRED_LABEL."
 else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1

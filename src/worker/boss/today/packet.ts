@@ -65,6 +65,29 @@ export interface PacketItem {
   detail: string | null;
   priority: number;
   source: string;
+  /** open | raised. `raised` means she said it; it stays until the thing is actually true. */
+  status?: string;
+  /** When she last carried it into the meeting, so the packet can say how long he has had it. */
+  raised_at?: number | null;
+}
+
+/**
+ * One line of what she actually did, and where that line came from.
+ *
+ * HER PREP, NOT HIS PACKET. "there is no packet to prepare me for the meeting with scooter (even if
+ * its empty this time) it needs to show what ive accomplished in the week prior". The rest of this
+ * document is written for a partner to read; this section is written for her to read before she
+ * walks in, and it is labelled that way on the screen and in the file. Keeping the two apart is the
+ * same separation rule that keeps brokerage numbers out of a West Peek document — her week spans
+ * both businesses and his packet may only report one of them.
+ *
+ * `source` IS NOT DECORATION. She asks for the method behind a claim, so every line names the table
+ * it was counted from. A number with no provenance is one she cannot check and should not repeat.
+ */
+export interface Accomplishment {
+  business: "West Peek" | "Brokerage" | "Publishing" | "Everything";
+  line: string;
+  source: string;
 }
 
 export interface WeeklyPacket {
@@ -76,6 +99,10 @@ export interface WeeklyPacket {
   to_raise: PacketItem[];
   /** One-offs she added by hand. Nothing derives these and nothing ever will. */
   misc: PacketItem[];
+  /** What she did in the window. Hers, not his — see `Accomplishment`. */
+  accomplished: Accomplishment[];
+  /** Named plainly when a source could not be counted, rather than the line being dropped. */
+  accomplished_gaps: string[];
   /** What this packet could not see. Never silent about it. */
   gaps: string[];
 }
@@ -106,10 +133,23 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
   const fromTs = Date.parse(`${from}T00:00:00Z`);
 
   const [items, misc] = await Promise.all([
+    /*
+     * `raised` STAYS ON THE PACKET, AND THAT IS THE FIX FOR THE ITEM NOBODY NOTICED.
+     *
+     * `mai_wp_gmail_grant` has appeared here every week since 19 August, worded identically, and
+     * three weeks passed with nothing happening. Two different failures were hiding in that: nothing
+     * recorded whether she had ever actually said it out loud, and if the query had dropped items
+     * once raised, saying it once would have removed it while the grant still did not exist.
+     *
+     * HANDING SOMEONE THE STEPS IS NOT THE OUTCOME. So an item leaves this list when its condition
+     * is TRUE — the prober authenticating, in the grant's case — and never when someone reports
+     * having mentioned it. `raised_at` is carried so the packet can say how long he has had it
+     * instead of presenting it as new.
+     */
     env.DB.prepare(
-      `SELECT id, title, detail, priority, source
+      `SELECT id, title, detail, priority, source, status, raised_at
          FROM meeting_agenda_items
-        WHERE counterpart = ? AND status = 'open' AND section = 'raise'
+        WHERE counterpart = ? AND status IN ('open','raised') AND section = 'raise'
         ORDER BY priority ASC, created_at ASC`,
     ).bind(counterpart).all<PacketItem>(),
 
@@ -121,7 +161,7 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
     env.DB.prepare(
       `SELECT id, title, detail, priority, source
          FROM meeting_agenda_items
-        WHERE counterpart = ? AND status = 'open' AND section = 'misc'
+        WHERE counterpart = ? AND status IN ('open','raised') AND section = 'misc'
         ORDER BY created_at ASC`,
     ).bind(counterpart).all<PacketItem>(),
   ]);
@@ -161,14 +201,140 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
     "Brokerage activity is deliberately absent: it is a different business and not his to review.",
   ];
 
+  /*
+   * ── AN ITEM THAT CAN CLEAR ITSELF, CLEARS ITSELF ─────────────────────────
+   *
+   * The grant item is closed by the credential prober authenticating as the West Peek address, never
+   * by anyone saying it was granted. Done on read for the same reason the deliverable engine closes
+   * a deliverable on read: making it depend on a separate job is one more thing that can fail
+   * silently, and the failure mode here is a packet still asking for something that already exists —
+   * which is how a weekly document teaches its reader to skim it.
+   */
+  await closeIfGranted(env);
+
+  const { accomplished, accomplished_gaps } = await herWeek(env, fromTs);
+
   return {
     counterpart,
     window: { from, to: shiftDay(dayId, -1) },
     headline,
     to_raise: items.results ?? [],
     misc: misc.results ?? [],
+    accomplished,
+    accomplished_gaps,
     gaps,
   };
+}
+
+/**
+ * The grant item, retired the morning it stops being true.
+ *
+ * `dropped` rather than deleted: the history of an item that took three weeks is worth more than the
+ * row it occupies, and the packet only lists `open` and `raised`.
+ */
+async function closeIfGranted(env: Env): Promise<void> {
+  const probe = await env.DB
+    .prepare(`SELECT state FROM credential_probes WHERE id = 'cred_westpeek_delegation'`)
+    .first<{ state: string }>()
+    .catch(() => null);
+  // `unknown` is not `live`. A probe that could not decide has decided nothing.
+  if (probe?.state !== "live") return;
+  await env.DB
+    .prepare(
+      `UPDATE meeting_agenda_items SET status = 'dropped', updated_at = ?
+        WHERE id = 'mai_wp_gmail_grant' AND status IN ('open','raised')`,
+    )
+    .bind(Date.now())
+    .run();
+}
+
+/**
+ * WHAT SHE ACTUALLY DID, COUNTED FROM HER OWN RECORDS.
+ *
+ * "it needs to show what ive accomplished in the week prior... even if its empty this time."
+ *
+ * THAT LAST CLAUSE IS AN INSTRUCTION, NOT A DISCLAIMER. She has said in advance that a truthful
+ * empty answer is acceptable, which removes the only reason anything here would ever be padded. A
+ * week with two things in it lists two things. The temptation in a "what I did" section is to list
+ * intentions, because those are easy to query and always look complete; every count below is of
+ * something that FINISHED — a loop closed, a title Live, a candidate reviewed, a deliverable met.
+ *
+ * A SOURCE THAT CANNOT BE READ IS NAMED RATHER THAN OMITTED. An empty section and an unreadable
+ * one look identical, and only one of them means she had a quiet week.
+ */
+export async function herWeek(
+  env: Env,
+  fromTs: number,
+): Promise<{ accomplished: Accomplishment[]; accomplished_gaps: string[] }> {
+  const accomplished: Accomplishment[] = [];
+  const accomplished_gaps: string[] = [];
+
+  const count = async (label: string, sql: string, bind: unknown[] = [fromTs]): Promise<number | null> => {
+    try {
+      const row = await env.DB.prepare(sql).bind(...bind).first<{ n: number }>();
+      return row?.n ?? 0;
+    } catch {
+      accomplished_gaps.push(`${label} could not be counted — the query failed, so this week's figure is missing rather than zero.`);
+      return null;
+    }
+  };
+
+  const loops = await count("Closed loops", `SELECT COUNT(*) AS n FROM open_loops WHERE status IN ('resolved','dismissed') AND resolved_at >= ?`);
+  if (loops !== null) {
+    accomplished.push({
+      business: "Everything",
+      line: loops === 0 ? "No open loops were closed." : `${loops} open loop${loops === 1 ? "" : "s"} closed.`,
+      source: "open_loops.resolved_at",
+    });
+  }
+
+  const live = await count("Titles published", `SELECT COUNT(*) AS n FROM kdp_titles WHERE went_live_at >= ?`);
+  if (live !== null) {
+    accomplished.push({
+      business: "Publishing",
+      line: live === 0 ? "No Kindle title reached Live." : `${live} Kindle title${live === 1 ? "" : "s"} reached Live on Amazon.`,
+      source: "kdp_titles.went_live_at",
+    });
+  }
+
+  const candidates = await count("Buyer candidates", `SELECT COUNT(*) AS n FROM sourcing_candidates WHERE status != 'new' AND updated_at >= ?`);
+  if (candidates !== null) {
+    accomplished.push({
+      business: "Brokerage",
+      line: candidates === 0 ? "No buyer candidates were reviewed." : `${candidates} buyer candidate${candidates === 1 ? "" : "s"} reviewed.`,
+      source: "sourcing_candidates.updated_at, anything past new",
+    });
+  }
+
+  const reports = await count("Briefings", `SELECT COUNT(*) AS n FROM executive_reports WHERE generated_at >= ?`);
+  if (reports !== null) {
+    accomplished.push({
+      business: "Everything",
+      line: reports === 0 ? "No executive briefing was delivered." : `${reports} executive briefing${reports === 1 ? "" : "s"} delivered.`,
+      source: "executive_reports.generated_at",
+    });
+  }
+
+  const finished = await count("Owned work", `SELECT COUNT(*) AS n FROM owned_deliverables WHERE done_at >= ?`);
+  if (finished !== null && finished > 0) {
+    accomplished.push({
+      business: "Everything",
+      line: `${finished} owned deliverable${finished === 1 ? "" : "s"} finished.`,
+      source: "owned_deliverables.done_at",
+    });
+  }
+
+  /*
+   * THE ONE SHE ASKED ABOUT AND THIS SIDE CANNOT ANSWER. LP outreach is the West Peek number, it
+   * lives in the two spreadsheets, and Boss OS deliberately holds no LP row. Said here rather than
+   * silently absent, because "no LP outreach this week" and "this system cannot see LP outreach"
+   * are opposite facts and the second one is true.
+   */
+  accomplished_gaps.push(
+    "LP outreach is not counted here. It lives in the outreach sheets, which only the local reminder can read, and Boss OS holds no LP data by design.",
+  );
+
+  return { accomplished, accomplished_gaps };
 }
 
 /**

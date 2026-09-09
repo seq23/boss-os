@@ -88,9 +88,45 @@ function markdown(p, day, lp) {
       "that is a failure to fetch, not a quiet week.");
   }
 
+  /*
+   * ── YOUR WEEK, AND IT IS LABELLED AS YOURS ────────────────────────────────
+   *
+   * "there is no packet to prepare me for the meeting with scooter (even if its empty this time) it
+   * needs to show what ive accomplished in the week prior."
+   *
+   * Everything else in this file is written for a partner to read. Her week spans two businesses and
+   * only one of them is his, so this section says whose it is rather than quietly putting brokerage
+   * activity in front of a fund partner — the same separation rule that keeps the counters out of
+   * "what changed".
+   *
+   * NOT PADDED. She said in advance that an empty answer is fine, which removes the only reason it
+   * ever would be.
+   */
+  lines.push("", "## Your week (for you, not for him)", "");
+  if ((p.accomplished ?? []).length === 0) {
+    lines.push("_Nothing finished was recorded in the window. That is the honest answer, not a broken query._", "");
+  } else {
+    for (const a of p.accomplished) lines.push(`- **${a.business}** — ${a.line} _(${a.source})_`);
+    lines.push("");
+  }
+  for (const g of p.accomplished_gaps ?? []) lines.push(`- _Not counted: ${g}_`);
+  lines.push("");
+
   lines.push("", `## To raise (${p.to_raise.length})`, "");
   for (const i of p.to_raise) {
     lines.push(`### ${i.priority === 1 ? "**BLOCKING** — " : ""}${i.title}`);
+    /*
+     * HOW LONG HE HAS HAD IT, PRINTED. This item has appeared here worded identically every week
+     * since 19 August and three weeks passed with nothing happening. An item that reads the same on
+     * week one and week four is one the reader stops seeing; an item that says "you raised this 7
+     * days ago and it is still not done" is a different sentence every week.
+     */
+    if (i.status === "raised" && i.raised_at) {
+      const days = Math.max(0, Math.floor((Date.now() - i.raised_at) / 86400000));
+      lines.push("", `_You raised this ${days} day${days === 1 ? "" : "s"} ago and it is still not done._`);
+    }
+    // The detail carries the handable click path and exact values, so the steps are IN the document
+    // she takes into the meeting rather than somewhere she has to go and find them.
     if (i.detail) lines.push("", i.detail);
     lines.push("");
   }
@@ -202,10 +238,41 @@ async function main() {
   await mkdir(OUT_DIR, { recursive: true });
   const lp = await lpNumbers(p.window.from).catch(() => null);
   const path = join(OUT_DIR, `${day}-${COUNTERPART}.md`);
-  await writeFile(path, markdown(p, day, lp));
+  const doc = markdown(p, day, lp);
+  await writeFile(path, doc);
 
   const blocking = p.to_raise.filter((i) => i.priority === 1);
   const top = blocking[0] ?? p.to_raise[0] ?? null;
+
+  /*
+   * ── AND IT GOES SOMEWHERE SHE CAN OPEN ────────────────────────────────────
+   *
+   * "id rather have a download link to the packet" · "u can have several meetings in one scrollable
+   * page" · "i dont need a real page in boss OS that is stupid".
+   *
+   * For six weeks this file was written correctly and read by nobody: it lived on her Mac, Today
+   * showed an empty Meetings section, and the one blocking item on it went unseen from 19 August to
+   * 9 September. Filing it here is the fix — one URL that never changes, holding every agenda
+   * newest-first, with a download for each.
+   *
+   * FILED BEFORE THE NOTIFICATION, ON PURPOSE. The notification is gone the moment it is dismissed;
+   * the page is the durable half, so it goes first and its failure is named rather than swallowed.
+   */
+  const filed = await fetch(`${ORIGIN}/api/boss/packets`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      counterpart: COUNTERPART,
+      day_id: day,
+      markdown: doc,
+      headline: top?.title ?? null,
+      blocking: blocking.length > 0,
+      source: FORCE ? "manual" : "launchd",
+    }),
+  });
+  console.log(filed.ok
+    ? `Filed to the agenda page: ${ORIGIN}/api/boss/packets/page`
+    : `NAMED STOP [PACKET_NOT_FILED] the agenda page rejected it (${filed.status}): ${(await filed.text()).slice(0, 200)}`);
 
   console.log(`Packet written to ${path}`);
   // The log echoes the WEST PEEK line, not the Worker's headline — that one only says where the
@@ -227,6 +294,44 @@ async function main() {
     top.title,
   );
   console.log(`Notified: ${top.title}`);
+
+  /*
+   * ── AND IT GOES IN HER INBOX, WHICH IS WHERE SHE ASKED FOR IT ─────────────
+   *
+   * "it should be in my inbox and my screen should either mirror it or say to check inbox."
+   *
+   * A notification is gone the moment it is dismissed and a markdown file on her laptop reached her
+   * exactly never — this document has been generated correctly every Wednesday and consumed by
+   * nothing. Today now mirrors the substance; the Inbox holds the part that is genuinely a decision.
+   *
+   * IT IS A DECISION AND NOT A FILING ACTION. "Did you raise these with him" changes what happens
+   * next: approving stamps every open item as raised, so next Wednesday the grant item says how long
+   * he has had it instead of arriving as though it were new. That is the whole reason three weeks
+   * passed unnoticed. Raising something is still not the same as it being done — the grant item is
+   * closed by the credential prober authenticating, never by her ticking a box.
+   */
+  const raise = await fetch(`${ORIGIN}/api/boss/judgement`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      employee_id: "emp_relationship",
+      lane: "ops",
+      risk: blocking.length ? "high" : "medium",
+      title: `Wednesday packet — ${p.to_raise.length} to raise with Scooter`,
+      question:
+        `${top.title}. The full packet is at ${ORIGIN}/api/boss/packets/page — one link, every agenda, ` +
+        "with the steps to hand him inline. " +
+        "Approve once you have raised these with him and it records the date, so anything still not done " +
+        "comes back next week saying how long he has had it. Try Again if you did not get to them, with a sentence saying why.",
+      resume_kind: "meeting_packet_raised",
+      // One packet docket at a time. Last week's unanswered one is replaced rather than stacked,
+      // because two packets on the screen is a way to record the wrong week as raised.
+      supersedes_key: "meeting_packet_raised",
+    }),
+  });
+  console.log(raise.ok
+    ? "Raised in her Inbox: approving it records that these were said out loud."
+    : `NAMED STOP [PACKET_NOT_IN_INBOX] the docket could not be raised (${raise.status}). The file and the notification still went; the Inbox did not.`);
 }
 
 main().catch((err) => {

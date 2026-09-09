@@ -46,6 +46,18 @@ const SENTINELS = new Set([
   "no-reply", "replied", "needs-her", "cleared", "published", "nudged", "stalled",
 ]);
 
+/*
+ * DID THE RUN ACTUALLY RUN?
+ *
+ * `determined` — a run happened and this is what it found.
+ * `could-not-run` — it was attempted and could not proceed. A revoked connector, a missing prompt,
+ * a session that never reached its sentinel.
+ *
+ * On 7 September both rendered identically on her screen: silence. They are opposite facts, and the
+ * difference is whether the quiet is evidence about Amazon or evidence about this machine.
+ */
+const RUN_OUTCOMES = new Set(["determined", "could-not-run"]);
+
 async function main() {
   let info;
   try {
@@ -74,6 +86,8 @@ async function main() {
     console.error(`NAMED STOP [UNREADABLE_DETERMINATION] ${err?.message ?? err}`);
     process.exit(8);
   }
+
+  const runOutcome = RUN_OUTCOMES.has(String(payload?.run_outcome ?? "")) ? payload.run_outcome : "determined";
 
   if (!SENTINELS.has(String(payload?.sentinel ?? ""))) {
     console.error(`NAMED STOP [BAD_SENTINEL] "${payload?.sentinel}" is not one of: ${[...SENTINELS].join(", ")}`);
@@ -120,12 +134,17 @@ async function main() {
       nudges_unanswered: payload.nudges_unanswered ?? null,
       threads_seen: payload.threads_seen ?? null,
       published_title_ref: payload.published_title_ref ?? null,
+      run_outcome: runOutcome,
       source: SOURCE,
     }),
   });
   if (!res.ok) throw new Error(`kdp check failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
 
-  console.log(`Reported to Boss OS: ${payload.sentinel}${payload.needs_owner ? " — needs her" : ""}.`);
+  console.log(
+    `Reported to Boss OS: ${payload.sentinel}` +
+    `${runOutcome === "could-not-run" ? " (the run could not complete)" : ""}` +
+    `${payload.needs_owner ? " — needs her" : ""}.`,
+  );
 }
 
 main().catch((err) => {

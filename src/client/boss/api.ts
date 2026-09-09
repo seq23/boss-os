@@ -143,6 +143,13 @@ export const api = {
       `/approvals/${id}/decide`, post("", { decision, note }),
     ),
 
+  /*
+   * Work that needs her judgement, with the work itself attached. The Inbox asks for these
+   * alongside the pending dockets so a judgement docket can render the covers rather than a
+   * sentence about the covers.
+   */
+  judgementPending: () => call<{ items: any[] }>("/judgement/pending"),
+
   employees: () => call<any[]>("/employees"),
   employee: (id: string) => call<any>(`/employees/${id}`),
   sprawl: () => call<any>("/employees/review/sprawl"),

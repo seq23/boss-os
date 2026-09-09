@@ -46,6 +46,19 @@ const SENTINELS = new Set([
 
 const STATES = new Set(["blocked", "in_review", "live", "withdrawn"]);
 
+/**
+ * DID THE RUN ACTUALLY RUN?
+ *
+ * On 7 September the Gmail connector's token had expired, so the watcher could not read a single
+ * message. It reported and the screen showed silence — which is exactly what a quiet week at Amazon
+ * also looks like. Two opposite facts rendering identically is the failure this column exists to
+ * end: `could-not-run` means nothing was learned, so the absence of news is not news.
+ *
+ * The wrapper posts it too. `kdp-watch.sh` used to exit at a named stop without telling anyone, so
+ * the runs that most needed to reach her were the only ones that never did.
+ */
+const RUN_OUTCOMES = new Set(["determined", "could-not-run"]);
+
 /** The longest a determination may be. Two sentences; a paragraph is where a quotation hides. */
 const MAX_DETERMINATION = 600;
 
@@ -68,7 +81,7 @@ const optionalCount = (v: unknown): number | null => {
  * latest determination rather than stored, so it can never disagree with the check it describes.
  */
 function actionFor(
-  check: { sentinel: string; next_action: string | null; needs_owner: number } | null,
+  check: { sentinel: string; next_action: string | null; needs_owner: number; run_outcome?: string } | null,
   blocked: number,
 ): { who: "her" | "simone" | "nobody"; headline: string; detail: string } {
   if (blocked === 0) {
@@ -83,6 +96,23 @@ function actionFor(
       who: "simone",
       headline: "No determination yet.",
       detail: "Simone's watcher has not reported since this was wired up. The next run is Monday, Wednesday or Friday at 09:23 Central.",
+    };
+  }
+
+  /*
+   * A RUN THAT COULD NOT RUN IS ANSWERED FIRST, BEFORE ANY SENTINEL.
+   *
+   * It reported `needs-her` on 7 September and the screen said "Support asked for something only
+   * you can give" — a sentence about Amazon, produced by a run that never reached Amazon. Whatever
+   * sentinel a broken run carries is a guess; the fact that it could not run is not.
+   */
+  if (check.run_outcome === "could-not-run") {
+    return {
+      who: "her",
+      headline: "The last check could not run.",
+      detail:
+        check.next_action ??
+        "Something the watcher depends on was unavailable, so nothing was learned about the case and the quiet is not good news. See Critical Alerts on Today for which credential, and the exact steps to restore it.",
     };
   }
 
@@ -147,7 +177,7 @@ kdp.get("/", async (c) => {
     ).all(),
     c.env.DB.prepare(
       `SELECT id, checked_at, sentinel, determination, next_action, needs_owner,
-              days_since_support, nudges_unanswered, threads_seen, source
+              days_since_support, nudges_unanswered, threads_seen, source, run_outcome
          FROM kdp_case_checks ORDER BY checked_at DESC LIMIT 12`,
     ).all(),
     c.env.DB.prepare(
@@ -162,6 +192,29 @@ kdp.get("/", async (c) => {
   const rows = (titles.results ?? []) as any[];
   const history = (checks.results ?? []) as any[];
   const latest = history[0] ?? null;
+
+  /*
+   * ── HER VERDICT ON THE COVERS, WHERE THE LOCAL RUN CAN READ IT ─────────────
+   *
+   * Amazon support's diagnosis is that Cover Creator images fail server-side processing, and that
+   * uploading finished covers directly is the fix. She chose to approve them through the Inbox
+   * rather than have anyone publish by hand — "i dont care about this happening right away id
+   * rather see them in my inbox for approval and then approve them and have simone publish them" —
+   * so this field is the gate the publish path actually waits on.
+   *
+   * READ BY TWO THINGS, WHICH IS WHY IT IS ON THIS ENDPOINT RATHER THAN ONLY IN THE INBOX.
+   * `scripts/ops/kdp-resume.mjs` polls it from her Mac so an approval starts the work within hours
+   * instead of waiting for the next Mon/Wed/Fri slot, and `kdp-watch-prompt.md` reads it to decide
+   * whether it is allowed to upload and publish at all.
+   */
+  const covers = await c.env.DB
+    .prepare(
+      `SELECT id, state, attempt, her_note, decided_at, resumed_at, resume_detail, created_at
+         FROM judgement_calls
+        WHERE resume_kind = 'kdp_cover_upload' AND state != 'superseded'
+        ORDER BY created_at DESC LIMIT 1`,
+    )
+    .first<any>();
 
   const byState = { blocked: 0, in_review: 0, live: 0, withdrawn: 0 } as Record<string, number>;
   for (const t of rows) byState[t.state] = (byState[t.state] ?? 0) + 1;
@@ -195,6 +248,23 @@ kdp.get("/", async (c) => {
     days_since_last_check: sinceLastCheck,
     history,
     action: actionFor(latest, byState.blocked ?? 0),
+    /*
+     * `null` MEANS NO COVER BATCH HAS EVER BEEN PUT TO HER, which is a different fact from one
+     * waiting and a different fact again from one she sent back. The local run branches on all
+     * three, and a single boolean would have collapsed them.
+     */
+    covers: covers
+      ? {
+          judgement_id: covers.id,
+          state: covers.state,
+          attempt: covers.attempt,
+          her_note: covers.her_note,
+          decided_at: covers.decided_at,
+          resumed_at: covers.resumed_at,
+          // May Simone upload and publish? Only her approval opens that door.
+          may_publish: covers.state === "approved",
+        }
+      : null,
     // Said on the screen rather than only in a migration, because it is the fact that stops her
     // re-testing a theory she has already disproved.
     known: "The 10-unpublished-title cap was tested on 7 September and is not the cause: draining the queue freed slots and the refusal did not change. It is a server-side flag on the account, and case #51496198 is the only route to it.",
@@ -220,6 +290,7 @@ kdp.post("/check", async (c) => {
 
   const determination = optionalText(b?.determination);
   const nextAction = optionalText(b?.next_action);
+  const runOutcome = RUN_OUTCOMES.has(String(b?.run_outcome ?? "")) ? String(b.run_outcome) : "determined";
 
   /*
    * NOTHING WITH AN '@' IN IT CROSSES THIS LINE.
@@ -246,16 +317,20 @@ kdp.post("/check", async (c) => {
     .prepare(
       `INSERT INTO kdp_case_checks
          (id, checked_at, sentinel, determination, next_action, needs_owner,
-          days_since_support, nudges_unanswered, threads_seen, source, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          days_since_support, nudges_unanswered, threads_seen, source, run_outcome, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       id, now, sentinel, determination, nextAction,
-      b?.needs_owner === true || sentinel === "needs-her" || sentinel === "stalled" ? 1 : 0,
+      // A run that could not run always needs her: nothing else can renew a credential or repair
+      // an installation, and a blocked run that does not ask for help is a run that stays blocked.
+      b?.needs_owner === true || runOutcome === "could-not-run"
+        || sentinel === "needs-her" || sentinel === "stalled" ? 1 : 0,
       optionalCount(b?.days_since_support),
       optionalCount(b?.nudges_unanswered),
       optionalCount(b?.threads_seen),
       b?.source === "manual" ? "manual" : "launchd",
+      runOutcome,
       now,
     )
     .run();
@@ -327,20 +402,39 @@ kdp.post("/check", async (c) => {
    * the terminal condition. The check will close it on the run that clears the last one.
    */
   const stillBlocked = sentinel !== "published" && sentinel !== "cleared";
+
+  /*
+   * ── THE ALERT IS UPDATED, EVERY RUN, WITHOUT TOUCHING THE STANDING REASON ──
+   *
+   * Both halves of that sentence are fixes for defects that reached production.
+   *
+   * The first determination this endpoint ever received OVERWROTE the deliverable's `blocker`, so
+   * Today read "Simone is blocked on Every authored book published — <whatever the last run
+   * happened to find>", and the one sentence she acts on became a log line. 0203 fixed that by
+   * making this call pass nothing at all — which meant the alert could never change again, and on
+   * 9 September it was still describing a week-old theory about a hidden account flag while the
+   * connector had expired and support had named cover image processing instead. Her words: "the
+   * critical alerts for simone did not say anything about my oauth being disconnected and that is a
+   * problem. it says something else".
+   *
+   * TWO FACTS, TWO FIELDS. `blocker` is deliberately still not passed — the standing reason is not
+   * a run's to rewrite. `status` is passed on EVERY run, because an alert nothing may update is one
+   * that will eventually be wrong in the loudest place on her screen.
+   *
+   * `blocked_since` is untouched either way, so the ladder keeps counting from when the books
+   * stopped rather than from the last time somebody rephrased why.
+   */
+  const status =
+    determination ??
+    (runOutcome === "could-not-run"
+      ? `The run reported "${sentinel}" and could not complete, without saying why.`
+      : `The run reported "${sentinel}" and filed no determination.`);
+
   await recordDeliverableActivity(c.env, {
     id: "del_kdp_publication",
     blocked: stillBlocked,
-    /*
-     * NO BLOCKER IS PASSED, AND THAT IS THE FIX FOR SOMETHING THAT SHIPPED.
-     *
-     * The first determination this endpoint received overwrote the deliverable's `blocker`, so the
-     * escalation on Today read "Simone is blocked on Every authored book published — <what the last
-     * run happened to find>". Those are two different facts. The blocker is WHY the work is stuck —
-     * the account flag, the case number, the three titles that published from the same account —
-     * and it changes rarely and deliberately. What one run found changes every run and already has
-     * its own table and its own screen. Letting the second overwrite the first turns an escalation
-     * into a log line and loses the sentence she has to act on.
-     */
+    status,
+    statusKind: runOutcome === "could-not-run" ? "could-not-run" : "determined",
     now,
   }).catch(() => {});
 

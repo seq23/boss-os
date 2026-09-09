@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { Docket } from "../components/Docket";
+import { JudgementDocket } from "../components/JudgementDocket";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { usd } from "../../../shared/boss/types";
@@ -10,14 +11,25 @@ export function Inbox({ onCountChange, onOpen }: {
   onOpen: (id: string) => void;
 }) {
   const [items, setItems] = useState<any[] | null>(null);
+  /*
+   * The judgement calls, by their approval id. Fetched alongside the dockets so a judgement card
+   * can render the actual work — the covers — rather than a sentence describing them. A judgement
+   * whose detail fails to load still renders as an ordinary docket rather than disappearing.
+   */
+  const [judgements, setJudgements] = useState<Record<string, any>>({});
   const [status, setStatus] = useState<any>(null);
   const [error, setError] = useState<unknown>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [approvals, sys] = await Promise.all([api.approvals("pending"), api.status()]);
+      const [approvals, sys, judged] = await Promise.all([
+        api.approvals("pending"),
+        api.status(),
+        api.judgementPending().catch(() => ({ items: [] as any[] })),
+      ]);
       setItems(approvals);
+      setJudgements(Object.fromEntries((judged.items ?? []).map((j: any) => [j.approval_id, j])));
       setStatus(sys);
       onCountChange(approvals.length);
       setError(null);
@@ -34,7 +46,7 @@ export function Inbox({ onCountChange, onOpen }: {
    * fails the card comes straight back with the reason, rather than the list
    * silently disagreeing with the server after an arbitrary delay.
    */
-  async function decide(id: string, decision: string) {
+  async function decide(id: string, decision: string, note?: string) {
     const snapshot = items ?? [];
     const index = snapshot.findIndex((a) => a.id === id);
     if (index === -1) return;
@@ -45,10 +57,18 @@ export function Inbox({ onCountChange, onOpen }: {
     setError(null);
 
     try {
-      const result = await api.decide(id, decision);
+      const result = await api.decide(id, decision, note);
       const exec = result.execution;
       if (exec?.status === "failed") {
         setFlash(`Recorded as ${decision}, but the action failed: ${exec.detail?.error ?? "unknown reason"}`);
+        /*
+         * A JUDGEMENT WHOSE RESUME FAILED IS STILL AWAITING, so it has to come back onto the list.
+         * The optimistic removal above is right for an ordinary docket and wrong here: her answer
+         * did not take, and the worst possible response is the item quietly vanishing.
+         */
+        if (exec.detail?.still_awaiting) load();
+      } else if (exec?.status === "executed" && exec.detail?.resumed) {
+        setFlash(exec.detail.resumed as string);
       } else if (decision === "deferred") {
         setFlash("Deferred. It stays on the list until it expires.");
       } else {
@@ -120,7 +140,13 @@ export function Inbox({ onCountChange, onOpen }: {
       ) : items.length === 0 ? (
         <Empty title="Nothing needs you" hint="Approvals raised by your employees land here." />
       ) : (
-        items.map((a) => <Docket key={a.id} approval={a} onDecide={decide} onOpen={onOpen} />)
+        items.map((a) =>
+          judgements[a.id] ? (
+            <JudgementDocket key={a.id} approval={a} judgement={judgements[a.id]} onDecide={decide} />
+          ) : (
+            <Docket key={a.id} approval={a} onDecide={decide} onOpen={onOpen} />
+          ),
+        )
       )}
     </>
   );

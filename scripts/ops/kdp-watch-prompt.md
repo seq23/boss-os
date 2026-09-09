@@ -21,17 +21,30 @@ Every account section reads complete: identity (Amazon confirmed verification by
 withholding. Three titles published from this same account on 1–2 September 2026
 (B0HHFK6W76, B0HHHR33NQ, B0HHHLKDD4), so it worked days ago.
 
-Seven titles are blocked, all Draft:
+**READ THE BOOKSHELF YOURSELF. DO NOT WAIT TO BE HANDED A LIST.** Her standing instruction: "i
+shouldnt have to tell her this in the future about the next thing; i want to be hands off." The
+titles, their states and their bylines are on the KDP bookshelf, which is the only place that is
+ever current — a list pasted into this file goes stale the first time a book moves, and then you are
+working from a fact she has to maintain by hand. When you need the list, open the bookshelf and read
+it. `GET /api/boss/kdp` also holds Boss OS's own record of the same references and is what you
+report progress against.
+
+At the time this was written seven were blocked, all Draft:
 A12Z8RECXCYT3S, A746KSQA6VXQ8, A2C99P6JESFOP0, A14601U7XU2FCM, A3O8BGWQ63OSF0,
-A1EYXUFGFV7CN6, AZUTRW0LN8GDM
+A1EYXUFGFV7CN6, AZUTRW0LN8GDM — treat that as a starting hint, never as the truth.
 
 A reply was sent to support on 2026-09-02 at 17:33 UTC asking them to check server-side which
 account attribute is flagged, since the customer-facing pages give no way to identify it.
 
 **Tested and disproven, 7 September 2026:** the 10-unpublished-title cap is NOT the cause. She
 drained the queue — the first three In-review titles went Live, freeing slots — and the refusal did
-not change. Do not raise the cap as a theory and do not suggest publishing more titles to free
-slots. The account-level alert above is the live explanation and support is the only route to it.
+not change. Do not raise the cap as a theory and do not suggest publishing more titles to free slots.
+
+**Support's diagnosis, 9 September 2026: COVER CREATOR IMAGES ARE FAILING SERVER-SIDE PROCESSING.**
+Their prescribed fix is uploading finished cover files directly instead of using Cover Creator.
+Replacement covers have been made at 1600x2560 and are in `~/.boss-os/kdp/covers/final/`. This is
+now the leading explanation and the account-level alert above is the older theory — say which one
+the evidence supports rather than repeating either.
 
 ## What to do
 
@@ -96,43 +109,89 @@ Read it carefully and classify it:
 - **At most ONE reply per inbound support message.** Before sending, check the thread: if a reply
   from her address already follows the latest support message, send nothing.
 - **Do not open a new case.** Reply in the existing thread only.
-- **Publish AT MOST ONE title per run, and only after support says the block is cleared.** Never all
-  seven. One title proves whether the account-level flag is actually gone, and if something is still
-  wrong it is wrong on one book rather than on her whole shelf. She decides about the rest.
+- **Publish AT MOST ONE title per run, and only when the publish gate below is open.** Never all
+  seven. One title proves whether the block is actually gone, and if something is still wrong it is
+  wrong on one book rather than on her whole shelf. She decides about the rest.
+- **Never upload a cover she has not approved.** See "The covers, and her verdict" below.
 - If anything is ambiguous, do not guess — email her and stop.
 
-## Verifying a clearance
+## The covers, and her verdict
 
-Only when a support reply says the block is lifted.
+Support says the block is Cover Creator images failing server-side processing, and replacement
+covers exist. **They are hers to approve and nobody else's.** Her instruction: "i dont care about
+this happening right away id rather see them in my inbox for approval and then approve them and have
+simone publish them."
 
-1. Load the browser tools with ToolSearch, then call `tabs_context_mcp` FIRST.
-2. If the browser is not reachable — no extension, no Chrome running — **do not treat that as a
-   failure of the clearance.** This job runs unattended at 09:23 and her laptop may be shut. Email
-   her that support says it is cleared and it needs a browser check, end with `needs-her`, and stop.
-3. If the browser IS reachable: open KDP, take ONE Draft title — start with `A2C99P6JESFOP0`, which
-   is the known-valid book that produced the empty-payload refusal — and walk it to Publish.
-4. **Before clicking Publish, check the Content tab.** The AI questionnaire must read *Text: "Entire
+**Every run, before anything else, read `GET /api/boss/kdp` and look at `covers`.**
+
+```bash
+COOKIE=$(curl -s -D- -o/dev/null -X POST https://boss.sequoiataylor.com/api/boss/auth/unlock \
+  -H 'content-type: application/json' -d "{\"passcode\":\"$BOSS_PASSCODE\"}" \
+  | grep -i '^set-cookie' | cut -d' ' -f2 | cut -d';' -f1)
+curl -s https://boss.sequoiataylor.com/api/boss/kdp -H "cookie: $COOKIE"
+```
+
+| `covers` | What you may do |
+|---|---|
+| `null` | No batch has been put to her. Do not upload anything. Chase the case as usual. |
+| `state: "awaiting"` | She has not answered yet. **Do not upload, do not publish.** Say so in the determination and chase the case as usual — an unanswered approval is not a reason to stop the rest of your work. |
+| `state: "try_again"` | She sent them back. Read `her_note`, say what she asked for in the determination, and upload nothing. |
+| `state: "approved"` | The gate is open. Upload the covers from `~/.boss-os/kdp/covers/final/` and follow "Publishing" below. |
+
+## Publishing
+
+Only when `covers.state` is `approved`, or a support reply says the block is cleared.
+
+1. Load the browser tools with ToolSearch, then call `tabs_context_mcp` FIRST. If the browser is not
+   reachable — no extension, no Chrome — **that is not a failure of the approval.** Report
+   `needs-her` with a determination saying the browser was unreachable, and stop. Her laptop may be
+   shut at 09:23.
+2. **Read the bookshelf and take the list from it.** Match each cover file to its title by the book,
+   not by a list in this file.
+3. **ONE TITLE FIRST.** Upload its cover, walk it to Publish, click Publish once.
+4. **Then go back to the bookshelf and look.** Publish clicked is not published. A cover uploaded is
+   not published. **Done means the title reads Live on the bookshelf**, and this case has already
+   produced one confident answer that changed nothing — apply the same scepticism to your own click
+   that you apply to a support agent's word.
+5. If that one title reaches Live, do the remaining ones the same way and check each. If it does
+   not, **stop**: report what the page actually said, and leave the rest alone.
+6. Before clicking Publish, check the Content tab. The AI questionnaire must read *Text: "Entire
    work, with extensive editing" / Images: "None" / Translations: "None"* with the accuracy box
-   ticked, and it must be committed with **Save and Continue**, never Save as Draft — Save as Draft
-   silently drops it and the Content tab's "Complete" badge lies about this.
-5. Click Publish once. If it fails, **capture the real error**: `read_network_requests` returns no
-   bodies, so install a fetch/XHR interceptor before clicking and read the `save-and-publish`
-   payload. The server names the actual fields there even when the page highlights nothing.
-6. Report what happened, either way, and email her.
+   ticked, committed with **Save and Continue**, never Save as Draft — Save as Draft silently drops
+   it and the Content tab's "Complete" badge lies about this.
+7. If Publish fails, **capture the real error**: `read_network_requests` returns no bodies, so
+   install a fetch/XHR interceptor before clicking and read the `save-and-publish` payload. The
+   server names the actual fields there even when the page highlights nothing.
 
 **Do not enter any credential, payment detail or government ID in the browser.** If a page asks for
 one, stop and email her.
 
-## Notify
+## Reporting that it is DONE
 
-Whenever there is something she needs to know — a new reply of any kind, an action required of
-her, or the block clearing — send her an email at `seq.taylor@gmail.com` with subject
-`KDP case update` and a short plain-text summary: what support said, what you did, and what she
-needs to do. Keep it under 200 words. If there is no new reply, send nothing.
+Her ask: "simone should report back to me when she has uploaded the new covers AND successfully
+published the books."
 
-## Reporting back to Boss OS — do this on EVERY run, before your final line
+**Report completion only when titles have actually reached Live on the bookshelf.** Covers uploaded
+is not done. Publish clicked is not done. A success message that fires on a partial result is worse
+than none, because she stops reading them.
 
-Everything above stays on this machine. This step is the only thing that leaves it, and what it
+When at least one title has gone Live in this run, your determination must say **which references
+went Live, which are still Draft, and what happens next** — in that order and in one or two
+sentences. Report each Live title to Boss OS with `published_title_ref` so the register counts it;
+Boss OS closes the commitment by counting Live titles, and when the last one goes out it says so on
+her Today screen by itself.
+
+## Reporting back to Boss OS — the FIRST thing you do at the end, and the channel of record
+
+**THIS IS THE PRIMARY CHANNEL. DO IT BEFORE THE EMAIL, ALWAYS, EVEN IF EVERYTHING ELSE FAILED.**
+
+The reason is a failure that actually happened. The email below goes through the SAME claude.ai
+Gmail connector you read the mailbox with. She changed her Google password, Google revoked the grant
+instantly, and the one condition that most needed to reach her — "I cannot read your mail at all" —
+was the exact condition that could not send. The Boss OS report is what saved it, over a different
+transport with a different credential, and it is the channel of record for that reason.
+
+Everything you read stays on this machine. This step is the only thing that leaves it, and what it
 carries is a determination rather than any of the mail you read.
 
 Write `~/.boss-os/kdp/determination.json`, creating the directory if it does not exist:
@@ -140,6 +199,7 @@ Write `~/.boss-os/kdp/determination.json`, creating the directory if it does not
 ```json
 {
   "sentinel": "no-reply",
+  "run_outcome": "determined",
   "determination": "One or two sentences, in your own words, about what you found and decided.",
   "next_action": "What happens next and who does it. One sentence.",
   "needs_owner": false,
@@ -156,8 +216,29 @@ pasted through. Boss OS **refuses** any determination containing an `@` — the 
 rejected, and a rejected report reads on the screen as a missing report. Write it clean the first
 time.
 
-`published_title_ref` is null unless you actually published a title this run, in which case it is
-that one title's reference and nothing else.
+`published_title_ref` is null unless a title actually REACHED LIVE this run, in which case it is that
+one title's reference and nothing else. Not "Publish was clicked" — Live on the bookshelf.
+
+`run_outcome` is `"determined"` when you actually ran and this is what you found, and
+`"could-not-run"` when you were stopped before you could learn anything — the connector refusing,
+a tool unavailable. **They are opposite facts and they used to look identical on her screen: silence.**
+Silence is only evidence when something was listening, so say which.
+
+**THE DETERMINATION IS WHAT HER CRITICAL ALERT SAYS.** It is not a log line. Boss OS prints it,
+dated, on Today under Simone's escalation, and it replaces whatever the last run said. If you write
+nothing useful here, the loudest place on her screen says nothing useful. Write the sentence you
+would want her to read first thing tomorrow.
+
+## Then, and only then, the email
+
+Whenever there is something she needs to know — a new reply of any kind, an action required of her,
+titles going Live, or the block clearing — send her an email at `seq.taylor@gmail.com` with subject
+`KDP case update` and a short plain-text summary: what support said, what you did, and what she
+needs to do. Keep it under 200 words. If there is nothing new, send nothing.
+
+**This is a nice-to-have and it may fail silently.** It shares its credential with the mailbox you
+just read, so the day it matters most is the day it cannot send. Never treat a sent email as having
+told her anything; the Boss OS report above is what told her.
 
 Then say, in your log output, that you wrote it. `scripts/ops/kdp-report.mjs` posts the file to
 Boss OS immediately after you exit; it is what makes Simone's duty show a determination on the

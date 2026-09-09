@@ -128,17 +128,34 @@ describe("what she needs to say to him", () => {
     expect(p.to_raise[0]!.source).toBe("owner");
   });
 
-  it("marks an item raised rather than deleting it", async () => {
+  it("keeps a raised item on the packet, carrying how long he has had it", async () => {
     /*
-     * The same request made three Wednesdays running is a different conversation from a fresh idea,
-     * and a deleted row cannot tell her that.
+     * ── BEHAVIOUR DELIBERATELY CHANGED, 9 SEPTEMBER, AND THIS TEST CHANGED WITH IT ──
+     *
+     * It used to assert that a raised item LEFT the packet. That was wrong in a way only visible
+     * over weeks: `mai_wp_gmail_grant` sat on this document, worded identically, every Wednesday
+     * since 19 August, and three weeks passed with nothing happening. Dropping it on the first
+     * mention would have been worse still — saying something out loud once would have removed it
+     * from the packet while the grant it asks for still did not exist.
+     *
+     * HANDING SOMEONE THE STEPS IS NOT THE OUTCOME. An item leaves this list when its condition
+     * becomes true — the credential prober authenticating, for the grant — and never when somebody
+     * reports having mentioned it. What `raised` buys is the ageing line: "you raised this 7 days
+     * ago and it is still not done" is a different sentence every week, which is the whole point.
+     *
+     * The row-level assertions below are unchanged, because that half was always right: raised is
+     * recorded rather than deleted.
      */
     const { body } = await apiJson("/api/today/agenda/testpartner", { method: "POST", body: { title: "Ask again" } });
     const { status } = await apiJson(`/api/today/agenda/testpartner/${body.data.id}/raised`, { method: "POST", body: {} });
     expect(status).toBe(200);
 
     const p = await weeklyPacket(env as any, WED, "testpartner");
-    expect(p.to_raise.map((i) => i.title)).not.toContain("Ask again");
+    const item = p.to_raise.find((i) => i.title === "Ask again");
+    expect(item).toBeTruthy();
+    expect(item!.status).toBe("raised");
+    expect(item!.raised_at).toBeTruthy();
+
     const kept = await row<any>(`SELECT status, raised_at FROM meeting_agenda_items WHERE id = ?`, body.data.id);
     expect(kept.status).toBe("raised");
     expect(kept.raised_at).toBeTruthy();

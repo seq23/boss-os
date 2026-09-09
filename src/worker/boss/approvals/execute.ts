@@ -5,6 +5,7 @@ import { logEvent } from "../lib/log";
 import { executeOrder, cancelOrder, type OrderRow } from "../trading/execute";
 import { applyPatchChanges } from "../routes/capability";
 import { checkCategory } from "../bridge/categories";
+import { runResume, type JudgementRow } from "./resume";
 
 /**
  * Approval execution.
@@ -89,6 +90,9 @@ export async function executeDecision(
         break;
       case "backend_run":
         result = await handleBackendRun(env, approval, disposition, note);
+        break;
+      case "judgement_call":
+        result = await handleJudgementCall(env, approval, disposition, note);
         break;
       default:
         result = {
@@ -720,5 +724,92 @@ async function handleAgentCreation(
   return {
     status: "executed",
     detail: { proposal_id: proposalId, employee_id: employeeId, lifecycle: "provisional", review_in_days: 30 },
+  };
+}
+
+
+// ─── judgement_call ──────────────────────────────────────────────────────────
+
+/**
+ * HER VERDICT, AND THE WORK IT RESTARTS.
+ *
+ * "everything should be delivered like this for my approval? and i should have an easy way to say
+ * approved or try again and if i say apprpved she should continue to finish"
+ *
+ * The last clause is the whole feature. An approval that files a decision and starts nothing is the
+ * defect the inbox was emptied over on 8 September, and this is the one kind of docket whose entire
+ * purpose is to be the trigger.
+ *
+ * ─── The order of operations is the guarantee ──────────────────────────────
+ *
+ * THE RESUME RUNS FIRST, AND THE JUDGEMENT IS ONLY MARKED DECIDED IF IT SUCCEEDED. If the resume
+ * throws — an unknown kind, a database failure, a handler that cannot reach what it needs — the row
+ * stays `awaiting`, so it stays on her screen and keeps escalating. She said yes; if the yes did not
+ * take, the last thing she should see is the item disappearing.
+ *
+ * `expired` is deliberately not a disposition that resumes anything. A judgement call is created
+ * with no expiry for exactly that reason: taste does not go stale, and an item that times out is an
+ * item that quietly decides itself.
+ */
+async function handleJudgementCall(
+  env: Env,
+  approval: ApprovalRow,
+  disposition: Disposition,
+  note?: string | null,
+): Promise<ExecutionResult> {
+  const payload = payloadOf(approval);
+  const judgementId = payload.judgement_id ?? approval.origin_id;
+  if (!judgementId) {
+    return { status: "failed", detail: { error: "This docket names no judgement call, so there is nothing to resume." } };
+  }
+
+  const j = await env.DB
+    .prepare(
+      `SELECT id, approval_id, employee_id, deliverable_id, title, question, resume_kind, state, attempt
+         FROM judgement_calls WHERE id = ?`,
+    )
+    .bind(judgementId)
+    .first<JudgementRow>();
+  if (!j) {
+    return { status: "failed", detail: { error: `No judgement call ${judgementId}; nothing was resumed.` } };
+  }
+  if (j.state !== "awaiting") {
+    return { status: "not_applicable", detail: { reason: `Already ${j.state}.` } };
+  }
+
+  if (disposition === "expired") {
+    /*
+     * A JUDGEMENT CALL MUST NOT BE ABLE TO TIME ITSELF OUT. It is raised with no expiry, so this is
+     * unreachable by ordinary means; if something ever expires one anyway, the honest outcome is to
+     * leave it awaiting rather than to let a clock make her decision for her.
+     */
+    return { status: "not_applicable", detail: { reason: "A judgement call does not expire. It stays on your screen until you answer it." } };
+  }
+
+  const verdict = disposition === "approved" ? "approved" : "try_again";
+  const now = Date.now();
+
+  let resumed;
+  try {
+    resumed = await runResume(env, j, verdict, note ?? null, now);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // LEFT AWAITING ON PURPOSE. See the header: an item that vanished having started nothing is the
+    // exact failure this whole mechanism exists to end.
+    return { status: "failed", detail: { error: message, judgement_id: j.id, still_awaiting: true } };
+  }
+
+  await env.DB
+    .prepare(
+      `UPDATE judgement_calls
+          SET state = ?, her_note = ?, decided_at = ?, resumed_at = ?, resume_detail = ?, updated_at = ?
+        WHERE id = ? AND state = 'awaiting'`,
+    )
+    .bind(verdict, note ?? null, now, now, resumed.detail, now, j.id)
+    .run();
+
+  return {
+    status: "executed",
+    detail: { judgement_id: j.id, verdict, resume_kind: j.resume_kind, resumed: resumed.detail },
   };
 }

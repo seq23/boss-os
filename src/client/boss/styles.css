@@ -1107,3 +1107,60 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 }
 .spendfig-open { border-left: 2px solid var(--rose); }
 .spendfig-open .spendfig-n { color: var(--rose); }
+
+/* ─── A docket with the work in it ─────────────────────────────────────────
+ *
+ * Judging seven book covers from a sentence describing them is not judging them. These rules exist
+ * so the thing she is approving is on the card at a size she can actually read, and so an asset
+ * that failed to upload prints its reason instead of an empty frame — a blank space in an approval
+ * is a lie about what she is being asked to approve.
+ */
+.judgement-assets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.judgement-asset { margin: 0; }
+.judgement-asset img {
+  width: 100%;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--card-2);
+}
+.judgement-asset figcaption {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-top: 5px;
+}
+/* The named absence. Sized like the image it replaces so the grid does not lurch. */
+.judgement-asset-missing {
+  aspect-ratio: 1600 / 2560;
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  border: 1px dashed var(--reject);
+  border-radius: 2px;
+  color: var(--reject);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.judgement-note { margin-top: 12px; }
+.judgement-why {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  background: var(--card-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 9px 10px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.judgement-why:focus { outline: none; border-color: var(--gold); }

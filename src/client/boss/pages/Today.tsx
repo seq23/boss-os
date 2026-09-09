@@ -660,8 +660,29 @@ function renderDetail(
       );
 
     case "meetings":
-      return (c.meetings ?? []).length || (c.held_not_captured ?? []).length || (c.touches_due ?? []).length ? (
+      /*
+       * ── THE PACKET IS RENDERED HERE, WHICH IT WAS NOT ─────────────────────
+       *
+       * "i also noticed i did not see anything in the meetings section of my today screen and today
+       * is wednesday and there is always the meeting with scooter."
+       *
+       * She was looking at a real defect of the exact kind this system keeps producing. The launchd
+       * job wrote a good packet at 07:01. `routes/today.ts` computed the same packet and put it in
+       * this block. AND THIS SWITCH READ ONLY `c.meetings`, `c.held_not_captured` and
+       * `c.touches_due` — all three always empty, because a standing partner meeting has no calendar
+       * row — so it returned null and the section was blank on the one morning it mattered.
+       *
+       * TODAY MIRRORS, THE INBOX DECIDES. Her instruction was "it should be in my inbox and my
+       * screen should either mirror it or say to check inbox", and mirroring is the better half of
+       * that choice here: the packet is short, the Worker already computes it, and making her click
+       * through to read four lines would be a worse screen than the one being fixed. The Inbox holds
+       * the part that is actually a decision — whether she raised it with him.
+       */
+      return (c.packet || c.filed_packet || c.packet_absent_reason || (c.meetings ?? []).length || (c.held_not_captured ?? []).length || (c.touches_due ?? []).length) ? (
         <>
+          {c.intent && <div className="row-sub"><em>{c.intent}</em></div>}
+          <PacketPointer content={c} />
+          {c.packet && <PacketBlock packet={c.packet} />}
           {(c.meetings ?? []).map((m: any) => (
             <div className="row" key={m.id}>
               <div className="row-main">
@@ -765,6 +786,119 @@ function renderDetail(
     default:
       return null;
   }
+}
+
+/**
+ * THE COMPACT POINTER — the line she actually opens.
+ *
+ * "or at least an artifact in the web page that seems to be more space efficient" and "u can have
+ * several meetings in one scrollable page". So Today carries the meeting, the date and the one
+ * blocking sentence; the agenda page carries every packet, newest first, with a download for each.
+ * One link, bookmarked once.
+ *
+ * A MISSING PACKET IS RENDERED AS A MISSING PACKET. Her rule from this morning: the screen never
+ * shows an empty section for something that exists. A Wednesday where the job did not run must not
+ * look like a Wednesday with nothing on.
+ */
+function PacketPointer({ content }: { content: any }) {
+  const f = content.filed_packet;
+  return (
+    <div className="row">
+      <div className="row-main">
+        <div className="row-title">
+          <a href={content.agenda_page ?? "/api/boss/packets/page"} target="_blank" rel="noreferrer">
+            Meeting agendas — every packet, newest first
+          </a>
+        </div>
+        {f ? (
+          <>
+            <div className="row-sub">
+              Latest filed: {f.day_id} · {f.counterpart}
+              {f.stale ? " — that is not today's. This week's packet has not been filed yet." : ""}
+            </div>
+            {f.blocking ? <div className="row-sub"><strong>BLOCKING — {f.headline}</strong></div> : null}
+            <div className="row-sub"><a href={f.download} download>Download it</a></div>
+          </>
+        ) : (
+          <div className="row-sub">{content.packet_absent_reason}</div>
+        )}
+      </div>
+      <div className={`risk risk-${f?.blocking ? "high" : "medium"}`}>{f ? "packet" : "none filed"}</div>
+    </div>
+  );
+}
+
+/**
+ * THE WEDNESDAY PACKET, ON THE SCREEN.
+ *
+ * Four parts, in this order, because the order is the argument:
+ *
+ *  1. THE FIXTURE ITSELF. There is no calendar row for a standing partner meeting and inventing one
+ *     would be a second source of truth for a thing that never changes. The block says it instead,
+ *     so the section is never blank on the day the meeting happens.
+ *  2. YOUR WEEK. Her ask — "it needs to show what ive accomplished in the week prior" — and it is
+ *     labelled as HERS. The rest of the packet is written for a partner to read and her week spans
+ *     two businesses, only one of which is his. She also said "even if its empty this time", which
+ *     is why nothing here is padded.
+ *  3. WHAT TO RAISE, with the age of anything already raised. An item that has looked identical for
+ *     three weeks is the reason this feature exists.
+ *  4. WHAT THE PACKET CANNOT SEE. Never silent about it.
+ */
+function PacketBlock({ packet }: { packet: any }) {
+  const items: any[] = packet.to_raise ?? [];
+  const misc: any[] = packet.misc ?? [];
+  const week: any[] = packet.accomplished ?? [];
+  const ago = (ts: number) => Math.max(0, Math.floor((Date.now() - ts) / 86_400_000));
+
+  return (
+    <>
+      <div className="row">
+        <div className="row-main">
+          <div className="row-title">Wednesday with {packet.counterpart === "scooter" ? "Scooter" : packet.counterpart}</div>
+          <div className="row-sub">
+            Standing partner meeting · packet covers {packet.window?.from} to {packet.window?.to}
+          </div>
+          <div className="row-sub">{packet.headline}</div>
+        </div>
+        <div className="row-val">{items.length + misc.length} to raise</div>
+      </div>
+
+      <div className="row-sub"><strong>Your week — your prep, not in his packet.</strong></div>
+      {week.length === 0 ? (
+        <div className="row-sub">Nothing finished was recorded in the window. That is the honest answer, not an error.</div>
+      ) : (
+        week.map((a: any, i: number) => (
+          <div className="row-sub" key={i}>
+            <strong>{a.business}</strong> · {a.line} <em>({a.source})</em>
+          </div>
+        ))
+      )}
+      {(packet.accomplished_gaps ?? []).map((g: string, i: number) => (
+        <div className="row-sub" key={`ag-${i}`}>Not counted: {g}</div>
+      ))}
+
+      {[...items, ...misc].map((it: any) => (
+        <div className="row" key={it.id}>
+          <div className="row-main">
+            <div className="row-title">{it.title}</div>
+            {it.detail && <div className="row-sub">{it.detail}</div>}
+            <div className="row-sub">
+              {it.status === "raised" && it.raised_at
+                ? `You raised this ${ago(it.raised_at)} day${ago(it.raised_at) === 1 ? "" : "s"} ago and it is still not done.`
+                : "Not raised yet."}
+            </div>
+          </div>
+          <div className={`risk risk-${it.priority === 1 ? "high" : "medium"}`}>
+            {it.priority === 1 ? "blocking" : "raise"}
+          </div>
+        </div>
+      ))}
+
+      {(packet.gaps ?? []).map((g: string, i: number) => (
+        <div className="row-sub" key={`g-${i}`}>Not in here: {g}</div>
+      ))}
+    </>
+  );
 }
 
 function Loops({ loops, onChanged, onError }: {
