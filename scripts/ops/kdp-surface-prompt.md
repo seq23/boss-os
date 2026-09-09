@@ -43,10 +43,23 @@ one of her titles is a `problem`.
 
 Do not wait to be asked. In order:
 
-1. **Establish what is actually true** — open the KDP bookshelf and look at the title rather than
-   taking the email's word for it, exactly as you do with a support agent claiming a block is
-   cleared. Load the browser tools with ToolSearch and call `tabs_context_mcp` first; if the browser
-   is unreachable her laptop is shut, and that is reported rather than treated as a finding.
+1. **Establish what is actually true** — read the title's state rather than taking the email's word
+   for it, exactly as you do with a support agent claiming a block is cleared.
+
+   **THE BROWSER IS NOT AVAILABLE TO THIS RUN, AND THAT IS STRUCTURAL RATHER THAN BAD LUCK.** Proven
+   on 9 September 2026: a `claude -p` process invoked the way this one is has no Chrome tools at all
+   — `ToolSearch` returns nothing for them, so there is no connection to be unreachable. The previous
+   version of this line said "if the browser is unreachable her laptop is shut", which turned a
+   permanent absence into a benign explanation and guaranteed nobody would ever look.
+
+   The two cases are different findings and must never share a message:
+
+   | What you see | What it means | What to report |
+   |---|---|---|
+   | `ToolSearch` returns no chrome tools | **This run has no browser, full stop.** Not a bad day. | Report it as a capability this run does not have, and say what would be needed. Never blame her laptop. |
+   | The tools exist but the call fails | A connection exists and something is wrong with it | Report the failure and what you tried. This one IS worth investigating. |
+
+   If the tools ever turn out to be present, say so loudly — it means this file is out of date.
 2. **Do what is unambiguous and reversible yourself** — correcting metadata you can see is wrong,
    re-submitting something that failed for a stated reason you have fixed.
 3. **Assign help when the work is somebody else's speciality.** POST to

@@ -138,6 +138,32 @@ if ! security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2
   exit 10
 fi
 
+# ─── SIMONE'S OWN BROWSER, CHECKED BEFORE THE RUN RATHER THAN GUESSED AT INSIDE IT ───────────────
+#
+# PROVEN 9 September 2026: a `claude -p` process invoked the way this one is has NO Chrome tools at
+# all. A detached probe asking ToolSearch for mcp__claude-in-chrome__tabs_context_mcp answered
+# "TOOLS=no" — the tools do not exist in the process, because they come from an extension that
+# attaches to an INTERACTIVE session. So the watcher could never have uploaded a cover, on any
+# Friday, with any tab open. It reported that absence as "her laptop is shut" and nobody looked.
+#
+# HER REQUIREMENT: "yea id rather it work regardless if my tab is open and if my laptop is open or
+# shut." So the run no longer borrows her browser. `kdp-browser.mjs` starts its own Chrome against a
+# dedicated persistent profile and says, in one line, which of four things is true. The outcome is
+# written where the prompt can read it, so the determination is built on an established fact rather
+# than on the run's guess about why something did not work.
+#
+# IT DOES NOT ABORT THE RUN. Chasing the support case needs no browser at all, and a mail-only run
+# is still a useful run. What the outcome changes is what the run is allowed to CLAIM.
+BROWSER_STATE_FILE="$HOME/.boss-os/kdp/browser-state.txt"
+mkdir -p "$HOME/.boss-os/kdp"
+if BROWSER_LINE="$(node "$REPO/scripts/ops/kdp-browser.mjs" doctor 2>&1 | tail -1)"; then
+  BROWSER_RC=0
+else
+  BROWSER_RC=$?
+fi
+printf '%s\nrc=%s\nchecked_at=%s\n' "$BROWSER_LINE" "$BROWSER_RC" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$BROWSER_STATE_FILE"
+say "browser: $BROWSER_LINE (rc=$BROWSER_RC)"
+
 say "=== KDP case watch starting ==="
 cd "$HOME" || { report_stop "NO_HOME" "the home directory is not reachable, so the run cannot start." "This is a machine fault rather than anything to do with Amazon. Check the Mac."; exit 8; }
 

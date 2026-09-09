@@ -18,7 +18,7 @@
     "test": "vitest run && vitest run --config vitest.boss.config.ts",
     "test:boss": "vitest run --config vitest.boss.config.ts",
     "typecheck": "tsc --noEmit",
-    "validate": "npm run validate:identity && npm run validate:one-source && npm run validate:no-dead-meter && npm run validate:gmail && npm run validate:css-classes && npm run validate:reachable && npm run validate:classification && npm run validate:duty-delivery && npm run validate:owned-work && npm run typecheck && npm run test",
+    "validate": "npm run validate:identity && npm run validate:one-source && npm run validate:no-dead-meter && npm run validate:one-cause && npm run validate:gmail && npm run validate:css-classes && npm run validate:reachable && npm run validate:classification && npm run validate:duty-delivery && npm run validate:owned-work && npm run typecheck && npm run test",
     "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/seed/generate-ai-employee-seed.mjs --check",
     "validate:api-screens": "node scripts/validate/api-has-a-screen.mjs && node scripts/validate/api-has-a-screen.mjs --self-test",
     "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test && node scripts/seed/generate-machine-seed.mjs --check",
@@ -50,6 +50,8 @@
     "spry:heartbeat": "node scripts/ops/spry-heartbeat.mjs",
     "canon:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/canon-sync.mjs",
     "kdp:check": "bash scripts/ops/kdp-watch.sh",
+    "kdp:browser": "node scripts/ops/kdp-browser.mjs",
+    "kdp:signin": "node scripts/ops/kdp-browser.mjs signin",
     "kdp:surface": "bash scripts/ops/kdp-surface.sh",
     "credentials:check": "node scripts/vault/vault.mjs run -- node scripts/ops/credential-check.mjs",
     "kdp:covers": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-covers-submit.mjs",
@@ -70,7 +72,8 @@
     "mailbox:report": "node scripts/vault/vault.mjs run -- node scripts/ops/mailbox-report.mjs",
     "validate:identity": "node scripts/validate/boss-identity.mjs && node scripts/validate/boss-identity.mjs --self-test",
     "validate:one-source": "node scripts/validate/one-source-for-a-count.mjs && node scripts/validate/one-source-for-a-count.mjs --self-test",
-    "validate:no-dead-meter": "node scripts/validate/no-meter-that-cannot-move.mjs && node scripts/validate/no-meter-that-cannot-move.mjs --self-test"
+    "validate:no-dead-meter": "node scripts/validate/no-meter-that-cannot-move.mjs && node scripts/validate/no-meter-that-cannot-move.mjs --self-test",
+    "validate:one-cause": "node scripts/validate/one-cause-one-message.mjs && node scripts/validate/one-cause-one-message.mjs --self-test"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",
