@@ -88,6 +88,44 @@ const ALLOWED_LITERALS = new Set([
 /** The two approved brand assets. Their colours come from the parent brand, not from this repo. */
 const BRAND_ASSETS = new Set(["boss-mark.svg", "icon.svg"]);
 
+/**
+ * Every colour VALUE the app's own token block declares.
+ *
+ * ─── The failure this replaces ─────────────────────────────────────────────
+ *
+ * `BRAND_ASSETS` is a hand-kept list of filenames, and on 9 September 2026 it was failing the build
+ * on `src/client/public/boss-os-mark.svg: #c8a45c`. That hex is `--lane-ops`, declared in Boss OS's
+ * own token block, painted on Boss OS's own mark. The file had simply been renamed from
+ * `boss-mark.svg` and the allow-list had not — two components each keeping their own copy of the
+ * same list, which is this repository's named defect class, sitting inside a validator.
+ *
+ * DERIVED RATHER THAN LISTED. An SVG cannot reference a CSS custom property from a stylesheet it is
+ * not inside, so a mark must carry literal hexes; the honest rule is that those hexes must be the
+ * app's OWN tokens. That is strictly narrower than a filename exemption — the old rule let an
+ * approved file carry any colour at all — and it cannot rot when somebody renames a file.
+ */
+function tokenValues(tokenBlock) {
+  return new Set((tokenBlock.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).map((h) => h.toLowerCase()));
+}
+
+/**
+ * Every colour either app declares, because a mark does not live in the folder it belongs to.
+ *
+ * `boss-os-mark.svg` is Boss OS's own mark and it sits in `src/client/public/` — the chassis's tree,
+ * because that is where a favicon has to be served from. Checking it against the chassis's palette
+ * asks the wrong question and fails a correct file; checking it against Boss OS's palette by
+ * filename would be a third hand-kept list.
+ *
+ * So the rule is: an SVG is checked against the palette of the app it BELONGS to, and a file whose
+ * name begins `boss` belongs to Boss OS wherever it is served from.
+ *
+ * THE LOOSER VERSION OF THIS WAS TRIED AND REJECTED. Allowing any token from either app made the
+ * scan pass with West Peek's canonical orange #f05a1a painted on the Boss OS mark — which is the one
+ * thing this validator exists to prevent, since the fund's monogram sitting in her personal OS's tab
+ * is what prompted the mark in the first place. Two businesses, never blended.
+ */
+const TOKENS_BY_APP = new Map();
+
 const COLOUR = /#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|hsla?\([^)]*\)|oklch\([^)]*\)/g;
 const SCANNED = new Set([".css", ".ts", ".tsx", ".html", ".svg", ".webmanifest", ".json"]);
 
@@ -189,6 +227,9 @@ export function scan(root) {
       }
     }
 
+    const ownTokens = tokenValues(tokenBlock);
+    TOKENS_BY_APP.set(app.name, ownTokens);
+
     const files = walk(appDir).filter(
       (f) => !(app.excludes ?? []).some((ex) => f.startsWith(join(root, ...ex.split("/")))) && f !== stylesPath,
     );
@@ -200,6 +241,18 @@ export function scan(root) {
       const ext = extname(file);
       const raw = readFileSync(file, "utf8");
       const text = ext === ".css" ? stripCssComments(raw) : ext === ".svg" ? raw : stripJsComments(raw);
+      /*
+       * WHAT THE FILE ACTUALLY PAINTS, with its comments removed.
+       *
+       * The Boss OS mark's own comment explains, in words, that it does NOT use West Peek's
+       * #f05a1a — and the first version of the rule below read that sentence and failed the build
+       * for containing the colour it exists to refuse. A comment cannot paint a pixel; the scan for
+       * a forbidden FILL must look at fills.
+       *
+       * The broader literal scan still reads the raw text on purpose: a stale orange sitting in a
+       * comment is a documentation rot worth catching, and it is caught above.
+       */
+      const painted = ext === ".svg" ? raw.replace(/<!--[\s\S]*?-->/g, "").toLowerCase() : text.toLowerCase();
 
       for (const stale of app.staleOranges ?? []) {
         if (text.toLowerCase().includes(stale)) failures.push(`stale West Peek orange ${stale} in ${rel(file)}`);
@@ -212,6 +265,32 @@ export function scan(root) {
           continue;
         }
         if (BRAND_ASSETS.has(name)) continue; // the approved marks carry their own colours
+        /*
+         * AN SVG PAINTED IN THE APP'S OWN TOKENS IS THE APP'S OWN MARK. It cannot use var(--gold)
+         * from a stylesheet it is not inside, so it carries the hex; requiring that hex to be one
+         * the token block declares keeps the boundary exactly where it belongs.
+         */
+        if (ext === ".svg") {
+          // A `boss*` mark answers to Boss OS's palette even when it is served from the chassis's
+          // public folder, which is where a favicon has to live.
+          const palette = /^boss/i.test(name) ? (TOKENS_BY_APP.get("Boss OS") ?? ownTokens) : ownTokens;
+          if (palette.has(lower)) continue;
+        }
+        /*
+         * WEST PEEK'S ORANGE IS ALLOWED EVERYWHERE EXCEPT ON BOSS OS'S OWN MARK.
+         *
+         * `ALLOWED_LITERALS` carries #f05a1a because the chassis is West Peek and its files are
+         * entitled to it. Without this line that entitlement reaches the Boss OS mark, which sits in
+         * the chassis's public folder — and the fund's colour in her personal OS's browser tab is
+         * the exact thing that mark was drawn to end. Two businesses, never blended.
+         */
+        if (/^boss/i.test(name) && lower === "#f05a1a" && painted.includes(lower)) {
+          failures.push(
+            `West Peek's canonical orange ${literal} in ${rel(file)} — that is the fund's colour on Boss OS's own mark. ` +
+              "Boss OS is her personal operating system; West Peek is a separate business.",
+          );
+          continue;
+        }
         if (!ALLOWED_LITERALS.has(lower)) failures.push(`unapproved colour literal in ${rel(file)}: ${literal}`);
       }
     }

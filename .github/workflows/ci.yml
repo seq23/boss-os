@@ -121,6 +121,11 @@ jobs:
       - name: One sky, one answer
         run: npm run validate:one-sky
 
+      # Today's Contract rendered its four pillar headers LIGHTER than their own content. An
+      # inverted hierarchy is invisible to every other test in this repository.
+      - name: A heading outranks its content
+        run: npm run validate:heading-rank
+
       - name: Build client
         run: npm run build
 
