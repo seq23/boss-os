@@ -274,6 +274,14 @@ export async function realityPriority(db: D1Database, now = Date.now()): Promise
 export interface SpiritSignal {
   advisory: true;
   note: string;
+  /** The nearest new moon, full moon or eclipse inside 48 hours. Null means there is not one. */
+  major_event: {
+    kind: string;
+    label: string;
+    at: number;
+    hours_away: number;
+    detail: unknown;
+  } | null;
   astro: {
     day: string;
     phase: string;
@@ -396,9 +404,56 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
   const contributionCount = contributions?.n ?? 0;
   const ancestorMinutes = ancestors?.minutes ?? 0;
 
+  /*
+   * ─── THE THING SHE ASKED FOR IN CAPITALS ──────────────────────────────────
+   *
+   *   "if i log in and push the spirit tab on 9/9 and there is a HUGE ASTROLOGICAL EVENT ON 9/10
+   *    THE NEW MOON IN VIRGO AT 11:27PM EDT --- IT SHOULD BE FUCKING PROMINENT"
+   *
+   * She is right, and it was never a data problem: `buildAlmanac` has been computing new moons and
+   * full moons to the minute, with the sign, for as long as it has existed. Every one of them was
+   * flattened into a `windows` array the screen rendered as "1 window open" underneath three
+   * sentences of disclaimer. The event was in the payload and nowhere in the reading.
+   *
+   * A DEFINED HORIZON RATHER THAN "SOON". Forty-eight hours: long enough that tomorrow night's new
+   * moon is on today's screen, short enough that the top of the tab is not permanently occupied.
+   * Outside it, `major_event` is null and the screen says so in words — "no major event in the next
+   * two days" is a real answer and must not look like a failed fetch.
+   *
+   * MAJOR IS A CLOSED LIST, not a score. New moons, full moons and eclipses; a routine daily aspect
+   * is not an event, and letting one in would put something at display size every single day, which
+   * is the same as putting nothing there.
+   */
+  const MAJOR_KINDS = new Set(["new_moon", "full_moon", "eclipse"]);
+  const HORIZON_MS = 48 * 60 * 60 * 1000;
+  const upcoming = await db
+    .prepare(
+      `SELECT kind, label, starts_at, detail FROM astro_calendar
+        WHERE starts_at >= ? AND starts_at <= ?
+        ORDER BY starts_at LIMIT 20`,
+    )
+    .bind(now - 6 * 60 * 60 * 1000, now + HORIZON_MS)
+    .all<{ kind: string; label: string; starts_at: number; detail: string | null }>()
+    .catch(() => ({ results: [] as any[] }));
+  const majorRow = (upcoming.results ?? []).find((e) => MAJOR_KINDS.has(e.kind)) ?? null;
+  const majorEvent = majorRow
+    ? {
+        kind: majorRow.kind,
+        label: majorRow.label,
+        at: majorRow.starts_at,
+        hours_away: Math.round((majorRow.starts_at - now) / 3_600_000),
+        detail: safeParse(majorRow.detail ?? "null"),
+      }
+    : null;
+
   return {
     advisory: true,
     note: ADVISORY_NOTE,
+    /*
+     * THE EVENT, AT THE TOP OF THE PAYLOAD, so the screen cannot bury it without doing so
+     * deliberately. `null` means "nothing major within two days" and is rendered as that sentence.
+     */
+    major_event: majorEvent,
     astro: {
       day: astro.id,
       phase: astro.phase,

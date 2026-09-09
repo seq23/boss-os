@@ -142,6 +142,45 @@ relationships.post("/sync", async (c) => {
     const importance = Math.min(100, Math.max(0, Math.round(Number(row.strategic_importance) || 50)));
     const lastContact = Number(row.last_contact_at) || null;
     /*
+     * ── THE THREE FACTS THAT WERE SENT AND THROWN AWAY ────────────────────────
+     *
+     * `contacts-sync.mjs` has posted `exchanges`, `days_since` and `days_since_she_wrote` for every
+     * correspondent since the day it was written, and this endpoint dropped all three on the floor.
+     * That is half of why the People tab reads as a directory: the numbers that would answer "why is
+     * this person on my screen" were computed on her Mac, sent over the wire, and discarded on
+     * arrival, leaving a list of names with a date beside them.
+     *
+     * NEITHER IDENTIFIES ANYBODY. A count of exchanges and the last time SHE wrote are facts about
+     * her own behaviour, and "they wrote in June and you never answered" is a different and far more
+     * actionable fact than "you spoke in June".
+     */
+    const exchanges = Number(row.exchanges) > 0 ? Math.round(Number(row.exchanges)) : null;
+    const sinceSheWrote = Number(row.days_since_she_wrote);
+    const herLastWrite = Number.isFinite(sinceSheWrote) && sinceSheWrote >= 0
+      ? now - sinceSheWrote * 86_400_000
+      : null;
+
+    /*
+     * ── COLD IS NOT LATE, AND CALLING IT LATE MADE THE WHOLE SECTION IGNORABLE ─
+     *
+     * The screen was showing twenty-five people at "469d late", "467d late", "459d late" against an
+     * asserted cadence of "you normally speak about every 14 days". Both halves are individually
+     * defensible and together they are nonsense: a fortnightly rhythm measured over a burst of mail
+     * fifteen months ago does not make somebody 469 days overdue. It makes them GONE.
+     *
+     * The distinction is the whole of the fix, because the two states name different actions. Late
+     * is a task — write to them, you are behind. Cold is a DECISION — this relationship has lapsed
+     * and reviving it is a choice, not an errand. Rendering the second as the first buried the
+     * handful of people genuinely a fortnight overdue under two hundred who are not, which is how a
+     * list stops being read.
+     *
+     * Six months, because a brokerage referral cycle runs two weeks to six months: inside that
+     * window silence is a gap, and beyond it the relationship has to be restarted rather than
+     * continued.
+     */
+    const COLD_AFTER_MS = 180 * 86_400_000;
+    const cold = lastContact !== null && now - lastContact > COLD_AFTER_MS;
+    /*
      * DUE AGAINST THEIR OWN RHYTHM. Someone she exchanges mail with fortnightly is overdue at three
      * weeks; someone she speaks to twice a year is not. A single default would make one of those
      * two groups permanently wrong, and the noisy one is the group she would learn to ignore.
@@ -158,10 +197,18 @@ relationships.post("/sync", async (c) => {
         .prepare(
           `UPDATE relationships
               SET cadence_days = ?, strategic_importance = ?, relationship_health = ?,
-                  last_contact_at = ?, next_touch_due_at = ?, scored_at = ?, updated_at = ?
+                  last_contact_at = ?, next_touch_due_at = ?, scored_at = ?, updated_at = ?,
+                  exchanges = ?, her_last_write_at = ?, status = ?
             WHERE id = ?`,
         )
-        .bind(cadence, importance, importance, lastContact, nextDue, now, now, existing.rel_id)
+        .bind(
+          cadence, importance, importance, lastContact, nextDue, now, now,
+          exchanges, herLastWrite,
+          // `dormant` already exists in this column's vocabulary and has never been used. It is the
+          // right word for a tie that lapsed, and it is what keeps the overdue list workable.
+          cold ? "dormant" : "active",
+          existing.rel_id,
+        )
         .run();
       updated++;
       continue;
@@ -183,10 +230,14 @@ relationships.post("/sync", async (c) => {
       .prepare(
         `INSERT INTO relationships
            (id, person_id, lane, kind, strategic_importance, trust_level, relationship_health,
-            cadence_days, last_contact_at, next_touch_due_at, scored_at, status, created_at, updated_at)
-         VALUES (?,?, 'ops', 'professional', ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+            cadence_days, last_contact_at, next_touch_due_at, scored_at, status,
+            exchanges, her_last_write_at, created_at, updated_at)
+         VALUES (?,?, 'ops', 'professional', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(newId("rel"), personId, importance, importance, importance, cadence, lastContact, nextDue, now, now, now)
+      .bind(
+        newId("rel"), personId, importance, importance, importance, cadence, lastContact, nextDue, now,
+        cold ? "dormant" : "active", exchanges, herLastWrite, now, now,
+      )
       .run();
     created++;
   }

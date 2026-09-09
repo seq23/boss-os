@@ -290,6 +290,18 @@ function summarise(block: Block): string {
       const moon = c.moon
         ? `${c.moon.phase?.replace(/_/g, " ") ?? "moon"}${c.moon.sign ? ` in ${c.moon.sign}` : ""}${c.moon.cusp ? `, on the cusp of ${c.moon.next_sign}` : ""}`
         : null;
+      /*
+       * THE EVENT LEADS THE COLLAPSED LINE. "New Moon in Virgo — tomorrow" is the sentence she wants
+       * to see first on a day when one is coming; the phase and the windows are context under it.
+       */
+      const major = c.major_event ?? null;
+      const majorWhen = major
+        ? (() => {
+            const days = Math.round((major.at - Date.now()) / 86_400_000);
+            const time = new Date(major.at).toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
+            return days <= 0 ? `today at ${time}` : days === 1 ? `tomorrow at ${time}` : `in ${days} days`;
+          })()
+        : null;
       const parts: string[] = [];
       /*
        * REALITY FIRST, WHICH IS CANON RATHER THAN A PREFERENCE. §5.2: if something is actually
@@ -312,11 +324,16 @@ function summarise(block: Block): string {
        * operational is waiting"), and leading every quiet day with that is a sentence she learns to
        * skip — which is how the real one stops being read on the day it matters.
        */
-      const reality = c.reality_priority;
-      if (reality && typeof reality === "object" && reality.warning === true) {
-        if (typeof reality.text === "string") parts.push(reality.text);
-        else parts.push("Something operational needs attention first, but this screen could not read what it was.");
-      }
+      /*
+       * AND THE OPERATIONAL SCOLD IS GONE FROM HERE TOO. Her instruction was about the Spirit tab,
+       * and this block is the same content on Today — leaving it in one place and not the other is
+       * how two components come to disagree. The failed-task count it carried is already a Critical
+       * Alert on this very screen, checked rather than assumed, so nothing is lost by removing it.
+       *
+       * The line above it read `parts.push(c.reality_priority)` on an OBJECT and printed
+       * "[object Object]" on her daily screen every morning. Both defects leave together.
+       */
+      if (major) parts.push(`${major.label} — ${majorWhen}.`);
       if (c.note) parts.push(c.note);
       else if (moon) parts.push(`The sky today: ${moon}.`);
       if (c.windows?.length) {

@@ -168,11 +168,34 @@ async function main() {
 
   rows.sort((a, b) => b.strategic_importance - a.strategic_importance);
 
+  /*
+   * THE MAP CARRIES THE NAME NOW, NOT ONLY THE ADDRESS.
+   *
+   * Her verdict on the People tab, 9 September 2026: "all these code names i dont know who these
+   * people are and it doesnt help its not useful." The screen resolves code names on her own Mac
+   * from this file — see `src/client/boss/identity.ts` — and an address alone makes a row legible
+   * rather than readable. The display name off their own mail is what she actually calls them.
+   *
+   * STILL LOCAL, STILL THE SAME FILE, STILL NEVER SENT. Adding a field to a file that never leaves
+   * the machine changes nothing about the boundary: the sync payload above is untouched and the
+   * endpoint still refuses an '@'.
+   *
+   * THE OLD SHAPE IS STILL VALID and the reader accepts both, so a map she exported before today
+   * keeps working — making her re-run a script before her own contacts become readable would be the
+   * same defect in a smaller hat.
+   */
+  const named = {};
+  for (const [code, email] of Object.entries(map)) {
+    const found = (extract.contacts ?? []).find((c) => c.email?.toLowerCase() === String(email).toLowerCase());
+    named[code] = { email, name: found?.name ?? null };
+  }
+
   await mkdir(MAP_DIR, { recursive: true });
   await writeFile(join(MAP_DIR, "MAP.json"), JSON.stringify({
     computed_at: new Date().toISOString(),
-    note: "Code name to real address. THIS FILE NEVER LEAVES THIS MACHINE — Boss OS stores only the code names.",
-    map,
+    note: "Code name to real identity. THIS FILE NEVER LEAVES THIS MACHINE — Boss OS stores only the code names. " +
+          "The People tab reads it through a file picker so her own screen can say who each bird is.",
+    map: named,
   }, null, 2));
 
   console.log(`${rows.length} contacts with ${MIN_EXCHANGES}+ exchanges (of ${extract.contacts?.length ?? 0} found)`);

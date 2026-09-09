@@ -55,20 +55,86 @@ export function Spirit() {
   }
   if (!signal || !month) return <Loading />;
 
-  const { astro, reality_priority, rituals_due, contribution, ancestors, manifestations } = signal;
+  const { astro, rituals_due, contribution, ancestors, manifestations } = signal;
   const practice = signal.practice;
   const sky = signal.sky;
+  const major = signal.major_event ?? null;
+
+  /*
+   * HER LOCAL CLOCK, NAMED, AND THE ZONE SHE QUOTED IT IN BESIDE IT.
+   *
+   * She said "11:27PM EDT". She lives in America/Chicago. Silently converting would leave her
+   * wondering which clock a time is on — so both are printed and both are labelled, which costs one
+   * short line and removes the only real ambiguity in the whole block.
+   */
+  const at = (ts: number) => {
+    const opts: Intl.DateTimeFormatOptions = { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" };
+    const local = new Date(ts).toLocaleString(undefined, opts);
+    const eastern = new Date(ts).toLocaleString("en-US", { ...opts, timeZone: "America/New_York" });
+    return { local, eastern };
+  };
+  const when = (ts: number) => {
+    const days = Math.round((ts - Date.now()) / 86_400_000);
+    return days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+  };
 
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
 
-      {/* Canon §5.2: reality first, before anything about the sky. */}
-      <div className="notice" style={{ borderColor: reality_priority.warning ? "var(--reject)" : undefined }}>
-        <strong>{reality_priority.warning ? "Reality first" : "Nothing operational is waiting"}</strong>
-        <div className="row-sub">{reality_priority.text}</div>
-        <div className="row-sub">{reality_priority.rule}</div>
-      </div>
+      {/*
+        * ─── THE EVENT, FIRST AND LARGEST ──────────────────────────────────────
+        *
+        *   "if i log in and push the spirit tab on 9/9 and there is a HUGE ASTROLOGICAL EVENT ON
+        *    9/10 THE NEW MOON IN VIRGO AT 11:27PM EDT --- IT SHOULD BE FUCKING PROMINENT"
+        *
+        * It always was in the data — `buildAlmanac` computes new and full moons to the minute with
+        * the sign — and it was flattened into "1 window open" beneath three sentences of caveat.
+        * This is a salience fix, not a data one.
+        *
+        * ─── AND THE "REALITY FIRST" BLOCK IS GONE ─────────────────────────────
+        *
+        * Her instruction, plainly: "ALSO GET RID OF THIS ON THE SPIRIT TAB: Reality first / 2 things
+        * need attention before anything here — 2 failed tasks. / Canon §5.2..."
+        *
+        * She is right, and it was doing three unrelated jobs badly in one box: scolding her before
+        * she had read anything, putting an OPERATIONAL alert on the one tab that is explicitly not
+        * operational, and repeating a canon citation she wrote herself.
+        *
+        * THE SIGNAL IS NOT LOST, AND THAT WAS CHECKED RATHER THAN ASSUMED. `routes/today.ts` pushes
+        * a Critical Alert reading "N tasks failed and have not been requeued or cancelled" — so the
+        * failed-task count she saw here is already on Today, where she can act on it. Removing it
+        * from Spirit removes a duplicate, not the only sighting.
+        *
+        * THE DISCLAIMER STAYS AND SHRINKS. "Advisory only, never a cause and never a permission" is
+        * a real editorial position; three sentences of it above the content was the tail wagging the
+        * dog. One line, small, underneath.
+        */}
+      {major ? (
+        <div className="panel" style={{ borderColor: "var(--gold)" }}>
+          <div style={{ fontSize: "1.5rem", fontWeight: 600, lineHeight: 1.2 }}>{major.label}</div>
+          <div style={{ fontSize: "1.05rem", marginTop: 4 }}>
+            {when(major.at)} — {at(major.at).local}
+          </div>
+          <div className="row-sub">{at(major.at).eastern} Eastern · your clock is shown above</div>
+          <div className="row-sub" style={{ marginTop: 8 }}>
+            Advisory only — context, never a cause and never a permission.
+          </div>
+        </div>
+      ) : (
+        /*
+         * AN HONEST EMPTY STATE, DISTINCT FROM A FAILED ONE. `signal` loaded — we are past the
+         * Loading guard and past ErrorNotice — so "nothing major" is a finding about the sky rather
+         * than a fetch that did not come back, and it says which.
+         */
+        <div className="panel">
+          <div className="row-title">No major event in the next two days</div>
+          <div className="row-sub">
+            New moons, full moons and eclipses appear here at full size when one is within
+            forty-eight hours. This is the sky being quiet, not a reading that failed.
+          </div>
+        </div>
+      )}
 
       {/*
         * THIS MORNING COMES FIRST, and everything about the sky comes after it.

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import {
+  loadIdentityMap, parseIdentityFile, storeIdentityMap, clearIdentityMap, resolve,
+  type IdentityMap,
+} from "../identity";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 
@@ -51,7 +55,7 @@ const KIND_LABEL: Record<string, string> = {
   connector: "Someone who keeps introducing people",
 };
 
-function Findings({ onError }: { onError: (e: unknown) => void }) {
+function Findings({ onError, map }: { onError: (e: unknown) => void; map: IdentityMap | null }) {
   const [data, setData] = useState<any | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -90,8 +94,9 @@ function Findings({ onError }: { onError: (e: unknown) => void }) {
             <div className="row-main">
               <div className="row-title">{f.headline}</div>
               <div className="row-sub">
-                {KIND_LABEL[f.kind] ?? f.kind} · {f.subject_code}
-                {f.counterpart_code ? ` ↔ ${f.counterpart_code}` : ""}
+                {/* NAMED HERE TOO. A finding about ROOK is unactionable if she cannot tell who ROOK is. */}
+                {KIND_LABEL[f.kind] ?? f.kind} · <Named map={map} code={f.subject_code} />
+                {f.counterpart_code ? <> ↔ <Named map={map} code={f.counterpart_code} /></> : null}
                 {f.subject_matter ? ` · ${f.subject_matter}` : ""} · {f.confidence} confidence
               </div>
               {/* Why she should believe it, in dates and counts. Never a quotation from the mail. */}
@@ -109,6 +114,105 @@ function Findings({ onError }: { onError: (e: unknown) => void }) {
   );
 }
 
+/**
+ * ─── THE DOOR, OPENED ────────────────────────────────────────────────────────
+ *
+ * This screen used to say "Only your Mac can say who each one is" — documenting the locked door
+ * instead of opening it. Her Mac still is the only thing that can say; this is how she asks it.
+ *
+ * ONE FILE PICKER, NOT A SETUP FLOW. The map is the file `contacts-sync.mjs` already writes. She
+ * picks it once and this browser remembers it. Nothing is uploaded, nothing is sent, and
+ * `validate:identity-local` fails the build if a resolved name ever reaches an API call.
+ */
+function Identities({ map, onChange }: { map: IdentityMap | null; onChange: (m: IdentityMap | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function take(file: File | null | undefined) {
+    if (!file) return;
+    setProblem(null);
+    try {
+      const parsed = parseIdentityFile(await file.text());
+      storeIdentityMap(parsed);
+      onChange(parsed);
+      setOpen(false);
+    } catch (e) {
+      // A NAMED FAILURE. "Nothing happened" after picking a file is how she concludes the feature is
+      // broken rather than that she picked the wrong file.
+      setProblem((e as Error)?.message ?? "That file could not be read.");
+    }
+  }
+
+  return (
+    <div className="panel" style={{ marginBottom: 10 }}>
+      {map ? (
+        <>
+          <div className="row-title">Names are on, for {map.size} people</div>
+          <div className="row-sub">
+            Read from your own Mac and kept in this browser only. Boss OS still stores nothing but code
+            names — the two facts never meet.
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="row-title">These are code names. Turn the real ones on.</div>
+          <div className="row-sub">
+            Boss OS deliberately never learns who anyone is, and that does not have to mean YOU cannot see it.
+            Point this at <code>~/.boss-os/contacts/MAP.json</code> — the file your own contacts sync writes —
+            and this browser will read the names in. Nothing is uploaded.
+          </div>
+        </>
+      )}
+      {problem && <div className="row-sub" style={{ color: "var(--reject)" }}>{problem}</div>}
+      <div className="btn-row">
+        <button className="btn btn-small" onClick={() => setOpen((v) => !v)}>
+          {open ? "Cancel" : map ? "Load a newer map" : "Load the names"}
+        </button>
+        {map && (
+          <button className="btn btn-small btn-defer" onClick={() => { clearIdentityMap(); onChange(null); }}>
+            Turn names off
+          </button>
+        )}
+      </div>
+      {open && (
+        <>
+          {/*
+            * A LABEL, NOT A BARE PICKER. `tests/accessibility.test.ts` caught this and it was right:
+            * an input with no accessible name is announced as "file upload button" with no idea what
+            * it wants, and this one wants a specific file in a specific place.
+            */}
+          <label className="stat-l" htmlFor="identity-map-file" style={{ display: "block", marginTop: 8 }}>
+            Choose ~/.boss-os/contacts/MAP.json
+          </label>
+          <input
+            id="identity-map-file"
+            type="file"
+            aria-label="Choose your local contacts map file"
+            accept="application/json,.json"
+            onChange={(e) => take(e.target.files?.[0])}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A person, named if she has said they may be.
+ *
+ * THE CODE NAME NEVER DISAPPEARS. It is the key every finding, every alert and every log line uses,
+ * so hiding it would make "ROOK has gone quiet" impossible to tie back to a human being.
+ */
+function Named({ map, code }: { map: IdentityMap | null; code: string }) {
+  const r = resolve(map, code);
+  return (
+    <>
+      {r.label}
+      {r.detail && <span className="row-val" style={{ fontWeight: 400 }}> · {r.detail}</span>}
+    </>
+  );
+}
+
 export function People() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [due, setDue] = useState<any[]>([]);
@@ -116,6 +220,7 @@ export function People() {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [idMap, setIdMap] = useState<IdentityMap | null>(() => loadIdentityMap());
 
   function load() {
     Promise.all([api.relationships(), api.followUps("open")])
@@ -140,17 +245,54 @@ export function People() {
   const now = Date.now();
   const overdue = due.filter((f) => f.due_at < now);
   const upcoming = due.filter((f) => f.due_at >= now);
-  const dueTouch = (rows ?? [])
+  /*
+   * ─── COLD IS NOT LATE ────────────────────────────────────────────────────
+   *
+   * This list showed twenty-five people at "469d late", "467d late", "459d late" against "you
+   * normally speak about every 14 days". A fortnightly rhythm measured over a burst of mail fifteen
+   * months ago does not make somebody 469 days overdue — it makes them gone, and rendering the two
+   * identically buried the handful genuinely a fortnight behind under two hundred who are not.
+   *
+   * The sync now marks a tie dormant past six months, and the two states name different things:
+   * late is a task, cold is a decision.
+   */
+  const active = (rows ?? []).filter((r) => r.status !== "dormant");
+  const dueTouch = active
     .filter((r) => r.next_touch_due_at !== null && r.next_touch_due_at < now)
     .sort((a, b) => a.next_touch_due_at - b.next_touch_due_at);
+  const cold = (rows ?? [])
+    .filter((r) => r.status === "dormant")
+    .sort((a, b) => (b.exchanges ?? 0) - (a.exchanges ?? 0));
+
+  /**
+   * WHY THIS PERSON IS ON THE SCREEN, in the facts that exist rather than in scores that do not.
+   *
+   * Every clause here comes from a column `contacts-sync.mjs` computes on her Mac and this endpoint
+   * used to discard. Where a fact is missing the clause is absent rather than rendered as a zero —
+   * printing "0 exchanges" about somebody would be a measurement nobody made.
+   */
+  function why(r: any): string {
+    const bits: string[] = [];
+    if (r.exchanges) bits.push(`${r.exchanges} exchanges`);
+    if (r.last_contact_at) bits.push(`last ${day(r.last_contact_at)}`);
+    if (r.her_last_write_at && r.last_contact_at && r.her_last_write_at < r.last_contact_at - DAY) {
+      // THE ONE THAT NAMES AN ACTION. They wrote and she did not answer, which is a different and
+      // far more urgent fact than "you spoke in June".
+      bits.push(`they wrote after you did — you last wrote ${day(r.her_last_write_at)}`);
+    }
+    if (r.overdue_follow_ups > 0) bits.push(`${r.overdue_follow_ups} promise${r.overdue_follow_ups === 1 ? "" : "s"} outstanding`);
+    return bits.length ? bits.join(" · ") : "Nothing is on file about this tie beyond the fact of it.";
+  }
 
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
       {msg && <div className="notice" style={{ borderColor: "var(--gold)" }}>{msg}</div>}
 
+      <Identities map={idMap} onChange={setIdMap} />
+
       {/* The findings come first, because they are the only thing on this screen she can act on. */}
-      <Findings onError={setError} />
+      <Findings onError={setError} map={idMap} />
 
       <p className="eyebrow">Owed and late</p>
       {overdue.length === 0 ? (
@@ -207,11 +349,11 @@ export function People() {
             <div className="row-main">
               <button className="row-title" style={{ background: "none", border: 0, padding: 0, textAlign: "left", color: "inherit", font: "inherit", cursor: "pointer" }}
                       onClick={() => setOpenPerson(r.person_id)}>
-                {r.full_name}
+                <Named map={idMap} code={r.full_name} />
               </button>
               <div className="row-sub">
                 {r.last_contact_at
-                  ? `Last exchange ${day(r.last_contact_at)} · you normally speak about every ${r.cadence_days} days`
+                  ? `You normally speak about every ${r.cadence_days} days · ${why(r)}`
                   : `No exchange on record · expected about every ${r.cadence_days} days`}
               </div>
             </div>
@@ -232,13 +374,36 @@ export function People() {
         * people the system knows only by hash. What remains is a lookup — who is on file, and a way
         * into their page — and it says plainly that these are code names.
         */}
+      {cold.length > 0 && (
+        <>
+          <p className="eyebrow">Gone cold — a decision, not a task</p>
+          <div className="row-sub" style={{ marginBottom: 8 }}>
+            {cold.length} {cold.length === 1 ? "person has" : "people have"} not exchanged mail with you in
+            over six months. These are not overdue touches; the relationship lapsed, and picking one back
+            up is a choice worth making deliberately rather than an errand to clear.
+          </div>
+          {cold.slice(0, 12).map((r) => (
+            <div className="row" key={r.id}>
+              <div className="row-main">
+                <button className="row-title" style={{ background: "none", border: 0, padding: 0, textAlign: "left", color: "inherit", font: "inherit", cursor: "pointer" }}
+                        onClick={() => setOpenPerson(r.person_id)}>
+                  <Named map={idMap} code={r.full_name} />
+                </button>
+                <div className="row-sub">{why(r)}</div>
+              </div>
+              <div className="row-val">{Math.floor((now - r.last_contact_at) / DAY)}d</div>
+            </div>
+          ))}
+        </>
+      )}
+
       <p className="eyebrow">Everyone on file</p>
       {rows === null ? null : rows.length === 0 ? (
         <Empty title="Nobody is on file" hint="Run `npm run contacts:sync -- --commit` on your Mac to build this from your mailbox." />
       ) : (
         <>
           <div className="row-sub" style={{ marginBottom: 8 }}>
-            {rows.length} correspondents, by code name. Only your Mac can say who each one is.
+            {rows.length} correspondents{idMap ? ` — ${rows.filter((r: any) => resolve(idMap, r.full_name).resolved).length} of them named from your own map` : ", by code name until you load your map above"}.
           </div>
           <div className="btn-row">
             <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "Close" : "Add someone"}</button>
@@ -249,11 +414,18 @@ export function People() {
               <div className="row-main">
                 <button className="row-title" style={{ background: "none", border: 0, padding: 0, textAlign: "left", color: "inherit", font: "inherit", cursor: "pointer" }}
                         onClick={() => setOpenPerson(r.person_id)}>
-                  {r.full_name}
+                  <Named map={idMap} code={r.full_name} />
                 </button>
+                {/*
+                  * `r.kind` IS GONE FROM THIS LINE. Every single row read "professional" — it is the
+                  * default the sync writes and nothing has ever changed it — so the column carried
+                  * exactly zero information across two hundred rows while looking like a
+                  * classification. What replaces it is why the person is here.
+                  */}
                 <div className="row-sub">
-                  {[r.role, r.organization_name, r.kind].filter(Boolean).join(" · ")}
-                  {r.overdue_follow_ups > 0 ? ` · ${r.overdue_follow_ups} late` : ""}
+                  {[r.role, r.organization_name].filter(Boolean).join(" · ")}
+                  {[r.role, r.organization_name].filter(Boolean).length ? " · " : ""}
+                  {why(r)}
                 </div>
               </div>
               <div className="row-val">{r.last_contact_at ? day(r.last_contact_at) : "—"}</div>
