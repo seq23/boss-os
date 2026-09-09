@@ -374,13 +374,13 @@ async function main() {
 
   // ─── Stage 2: the shape of a trade, over the decoded body ───
   const kept = [];
-  let bodyFailures = 0;
+  const missed = [];
   let done = 0;
-  await pooled(survivors, CONCURRENCY, async (s) => {
+  const readOne = async (s) => {
     const msg = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${s.id}?format=full`, token);
     done += 1;
     if (done % 1000 === 0) process.stdout.write(`  bodies ${done}/${survivors.length}\r`);
-    if (!msg) { bodyFailures += 1; return; }
+    if (!msg) { missed.push(s); return; }
     const body = withoutQuoted(textOf(msg.payload));
     const subject = s.h.subject ?? "";
     const reason = shapeReason(`${subject}\n${body}`);
@@ -399,8 +399,37 @@ async function main() {
       subject: subject.slice(0, 200),
       excerpt: body.slice(0, EXCERPT_BOUND),
     });
-  });
-  if (bodyFailures) unread.body_fetch_failed = bodyFailures;
+  };
+  await pooled(survivors, CONCURRENCY, readOne);
+
+  /*
+   * ─── THE RECLAIM PASS, AND WHY IT IS NOT JUST A LONGER RETRY ────────────
+   *
+   * The first honest full run read 59,079 of 64,503 bodies and refused to finish, because 5.2% of
+   * the mailbox had never been read and that is not a filter result. The failures were not permanent
+   * — they were a per-user rate limit during the busiest stretch of the run, and Gmail signals that
+   * as a 403.
+   *
+   * Telling her to lower the concurrency and re-scan 104,241 messages to recover 5% of them is the
+   * wrong answer: it costs fifty minutes to fix five. So the misses are collected and read again at
+   * a crawl once the burst is over, and only what fails THAT is counted as never read. The 1% stop
+   * below still stands and is what makes this a repair rather than a way of hiding the problem.
+   */
+  if (missed.length) {
+    console.log(`\nreclaiming ${missed.length} message(s) that hit a rate limit, slowly`);
+    const stillMissed = [];
+    const retry = missed.splice(0, missed.length);
+    let n = 0;
+    await pooled(retry, 2, async (s) => {
+      const before = missed.length;
+      await readOne(s);
+      n += 1;
+      if (n % 500 === 0) process.stdout.write(`  reclaim ${n}/${retry.length}\r`);
+      if (missed.length > before) stillMissed.push(...missed.splice(before));
+    });
+    console.log(`  reclaimed ${retry.length - stillMissed.length} of ${retry.length}`);
+    if (stillMissed.length) unread.body_fetch_failed = stillMissed.length;
+  }
 
   // ─── The accounting. Every message ends in exactly one named bucket. ───
   const dropped = Object.values(drops).reduce((a, b) => a + b, 0);
