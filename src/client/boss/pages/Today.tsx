@@ -294,8 +294,29 @@ function summarise(block: Block): string {
       /*
        * REALITY FIRST, WHICH IS CANON RATHER THAN A PREFERENCE. §5.2: if something is actually
        * broken today, that leads and the sky is context underneath it.
+       *
+       * ── AND IT PRINTED `[object Object]` ON HER DAILY SCREEN ────────────────
+       *
+       * `reality_priority` is `{ warning, text, counts, rule }` — it has been an OBJECT since
+       * `spirit/day.ts` was written — and this pushed the whole thing into an array of strings.
+       * The card read "[object Object] Advisory only. The sky is context, never a cause…" every
+       * morning. It is the second defect in this one block in a day; the first fix gave it a
+       * sentence and reached straight past the shape of the value it was reading.
+       *
+       * NOTHING TYPED CAUGHT IT because `c` is `any` here, which is why the sentence is now built
+       * from a named field with an explicit string check rather than from whatever arrives. A value
+       * that is not a string is a NAMED absence, never a stringified one: printing a JavaScript
+       * artifact at her tells her nobody looks at this screen, which is worse than printing nothing.
+       *
+       * AND IT LEADS ONLY WHEN IT IS A WARNING. `text` is also written for the calm case ("Nothing
+       * operational is waiting"), and leading every quiet day with that is a sentence she learns to
+       * skip — which is how the real one stops being read on the day it matters.
        */
-      if (c.reality_priority) parts.push(c.reality_priority);
+      const reality = c.reality_priority;
+      if (reality && typeof reality === "object" && reality.warning === true) {
+        if (typeof reality.text === "string") parts.push(reality.text);
+        else parts.push("Something operational needs attention first, but this screen could not read what it was.");
+      }
       if (c.note) parts.push(c.note);
       else if (moon) parts.push(`The sky today: ${moon}.`);
       if (c.windows?.length) {

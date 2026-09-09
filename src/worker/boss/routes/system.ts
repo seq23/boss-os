@@ -8,11 +8,19 @@ import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { getSetting, setSetting } from "../lib/settings";
 import { rollBudgetWindows } from "../router/budget";
 import { COST_MODES, COST_MODE_POLICY, isCostMode } from "../../../shared/boss/governance";
+import { pendingApprovals } from "../approvals/pending";
 
 export const system = new Hono<{ Bindings: Env; Variables: Vars }>();
 
+/*
+ * `pending_approvals` IS DELIBERATELY NOT IN THIS MAP.
+ *
+ * It was, and it was its own `SELECT COUNT(*)` — one of four separate answers to "what is waiting
+ * on her", which is how the tab badge came to say 9 over an empty Inbox. It now comes from
+ * `approvals/pending.ts`, the same call that produces the list, so the number and the list are two
+ * readings of one query. `validate:one-source` fails the build if it comes back here.
+ */
 const COUNTED = {
-  pending_approvals: `SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending'`,
   open_tasks: `SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','running','awaiting_approval')`,
   failed_tasks: `SELECT COUNT(*) AS n FROM tasks WHERE status = 'failed'`,
   employees: `SELECT COUNT(*) AS n FROM employees WHERE lifecycle IN ('active','provisional')`,
@@ -33,6 +41,9 @@ system.get("/status", async (c) => {
     const row = await c.env.DB.prepare(sql).first<{ n: number }>();
     counts[key] = row?.n ?? 0;
   }
+  // The badge's number, from the query that produces the badge's list.
+  const waiting = await pendingApprovals(c.env.DB);
+  counts.pending_approvals = waiting.total;
 
   const [lanes, budgets, lastCron, lastSnapshot] = await Promise.all([
     c.env.DB.prepare(`SELECT id, name, isolated FROM lanes ORDER BY id`).all(),

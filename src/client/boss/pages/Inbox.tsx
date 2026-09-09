@@ -23,15 +23,31 @@ export function Inbox({ onCountChange, onOpen }: {
 
   const load = useCallback(async () => {
     try {
+      /*
+       * A JUDGEMENT FETCH THAT FAILS IS NOT A JUDGEMENT-FREE INBOX.
+       *
+       * This used to be `.catch(() => ({ items: [] }))`, so an outage on that one endpoint rendered
+       * every judgement docket as an ORDINARY docket - Approve and Try Again over a card with the
+       * covers missing and nothing saying they were missing. Approving work you cannot see is the
+       * exact failure `missing_reason` exists to prevent, arriving through the back door. It now
+       * fails with the rest of the load, and the list says so.
+       */
       const [approvals, sys, judged] = await Promise.all([
         api.approvals("pending"),
         api.status(),
-        api.judgementPending().catch(() => ({ items: [] as any[] })),
+        api.judgementPending(),
       ]);
       setItems(approvals);
       setJudgements(Object.fromEntries((judged.items ?? []).map((j: any) => [j.approval_id, j])));
       setStatus(sys);
-      onCountChange(approvals.length);
+      /*
+       * THE BADGE READS THE SAME NUMBER THE STAT DOES, AND BOTH COME FROM `approvals/pending.ts`.
+       *
+       * It used to be `approvals.length` - a fifth independent answer to "what is waiting on her",
+       * and the one that silently under-reports past the hundred-row page cap. Every surface now
+       * carries the total; only the list is capped, and the response says when it is.
+       */
+      onCountChange(sys?.counts?.pending_approvals ?? approvals.length);
       setError(null);
     } catch (e) {
       setError(e);
@@ -74,8 +90,16 @@ export function Inbox({ onCountChange, onOpen }: {
       } else {
         setFlash(null);
       }
-      // Counters and budgets move on a decision, so refresh them from the server.
-      api.status().then(setStatus).catch(() => {});
+      /*
+       * COUNTERS MOVE ON A DECISION, AND THE BADGE MOVES WITH THEM.
+       *
+       * The refresh used to swallow its own failure, so a stale "9 waiting" over an empty list
+       * survived a decision and looked exactly like a fresh one. If the server cannot be reached
+       * the numbers are set to a dash rather than left showing what was true before the decision.
+       */
+      api.status()
+        .then((s) => { setStatus(s); onCountChange(s?.counts?.pending_approvals ?? optimistic.length); })
+        .catch(() => setStatus(null));
       if (decision === "deferred") load();
     } catch (e) {
       // Roll back to exactly where the card was.
