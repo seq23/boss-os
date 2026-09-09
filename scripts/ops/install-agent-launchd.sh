@@ -536,6 +536,10 @@ loaded "$LABEL" || missing="$missing $LABEL"
 loaded "$PACKET_LABEL" || missing="$missing $PACKET_LABEL"
 loaded "$NETWORK_LABEL" || missing="$missing $NETWORK_LABEL"
 loaded "$PROPS_LABEL" || missing="$missing $PROPS_LABEL"
+# ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a
+# "Verified" line that did not mention it — the installer and its own verifier each keeping their own
+# list of jobs, which is the defect this file's comments warn about, inside this file.
+loaded "$PEOPLE_LABEL" || missing="$missing $PEOPLE_LABEL"
 loaded "$KDP_LABEL" || missing="$missing $KDP_LABEL"
 loaded "$MAILBOX_LABEL" || missing="$missing $MAILBOX_LABEL"
 loaded "$CRED_LABEL" || missing="$missing $CRED_LABEL"
@@ -554,7 +558,7 @@ loaded "$SURFACE_LABEL" || missing="$missing $SURFACE_LABEL"
 [ -f "$REPO/scripts/ops/kdp-surface-prompt.md" ] || missing="$missing scripts/ops/kdp-surface-prompt.md"
 
 if [ -z "$missing" ]; then
-  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PROPS_LABEL, $KDP_LABEL, $MAILBOX_LABEL, $CRED_LABEL, $LP_LABEL and $SURFACE_LABEL."
+  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PEOPLE_LABEL, $PROPS_LABEL, $KDP_LABEL, $MAILBOX_LABEL, $CRED_LABEL, $LP_LABEL and $SURFACE_LABEL."
 else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1

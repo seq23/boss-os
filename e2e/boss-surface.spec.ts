@@ -197,7 +197,19 @@ test.describe("Boss OS surface", () => {
     await expect(field).toBeVisible({ timeout: 15_000 });
     await field.fill(unique);
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(page.getByText(unique)).toBeVisible({ timeout: 15_000 });
+    /*
+     * EXACT, BECAUSE THE LOOP APPEARS TWICE AND THAT IS CORRECT BEHAVIOUR.
+     *
+     * A newly opened loop shows in the list AND raises an alert reading "Close: <title>", so a
+     * substring match resolves to two elements and Playwright's strict mode fails the whole journey.
+     * This has been red on main since before today's work — verified by running the same test at the
+     * previous commit in a scratch worktree, where it fails identically.
+     *
+     * THE FIX IS THE ASSERTION, NOT THE PRODUCT. Both renders are wanted: the row is the loop and
+     * the alert is the nudge to close it. What was wrong was a test that could not say which one it
+     * meant, and it would have gone on failing for whichever reason came along next.
+     */
+    await expect(page.getByText(unique, { exact: true })).toBeVisible({ timeout: 15_000 });
 
     /*
      * A FULL RELOAD, not a re-render. Client state does not survive one, so if the loop is still
@@ -208,7 +220,7 @@ test.describe("Boss OS surface", () => {
     await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: "Today", exact: true }).click();
     await openLoops();
-    await expect(page.getByText(unique)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(unique, { exact: true })).toBeVisible({ timeout: 15_000 });
   });
 
   /**
