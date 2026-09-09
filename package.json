@@ -71,6 +71,7 @@
     "returns:contribute": "node scripts/vault/vault.mjs run -- node scripts/ops/line-returns.mjs",
     "crossmatch": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-buyer-crossmatch.mjs",
     "mailbox:sweep": "bash scripts/ops/mailbox-sweep.sh",
+    "people:recommend": "node scripts/vault/vault.mjs run -- node scripts/ops/people-worth-a-call.mjs",
     "mailbox:report": "node scripts/vault/vault.mjs run -- node scripts/ops/mailbox-report.mjs",
     "validate:identity": "node scripts/validate/boss-identity.mjs && node scripts/validate/boss-identity.mjs --self-test",
     "validate:one-source": "node scripts/validate/one-source-for-a-count.mjs && node scripts/validate/one-source-for-a-count.mjs --self-test",

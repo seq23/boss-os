@@ -216,37 +216,26 @@ export const api = {
   exportKnowledge: (body: unknown) => call<any>("/knowledge/exports", post("", body)),
   verifyKnowledgeExport: (id: string) => call<any>(`/knowledge/exports/${id}/verify`),
 
-  // Phase 13 — Relationship Capital OS
   /*
-   * WHAT THE PEOPLE SCREEN IS NOW. She asked for an employee who reads the mailbox and tells her
-   * things, not a directory of 200 code names carrying identical seeded scores. The envelope
-   * carries the sweep's own state alongside the list, because "no findings" is true both when the
-   * sweep ran and found nothing and when it has never run at all.
+   * ─── PHASE 13, RELATIONSHIP CAPITAL: NO CLIENT SURFACE, ON PURPOSE ─────────
+   *
+   * Every method that reached `/relationships/*` from this file is gone, because the screen that
+   * called them is gone. Her verdict, 9 September 2026: "i dont like this people tab at all id
+   * rather just scrap it. id rather monique just send me deliverables she suggests about people to
+   * speak to (no codenames needed)".
+   *
+   * THE ENDPOINTS AND THE DATA BOTH REMAIN, and the subsystem is more used than it was, not less:
+   *
+   *   - `contacts-sync.mjs` still POSTs to `/relationships/sync` from her Mac, and that endpoint's
+   *     refusal of an '@' or a '.' in a code name is untouched.
+   *   - `people-worth-a-call.mjs` reads the same correspondence locally, where the real names are,
+   *     and mails her a handful of recommendations every Monday.
+   *   - Commitments still surface on Today as open loops, which is where she actually reads them.
+   *
+   * Leaving dead methods here would have been worse than deleting them: a client method nothing
+   * calls is exactly the "exists but nothing invokes it" shape the reachability validator exists to
+   * catch, and keeping them would have hidden a real ten-method regression behind a comment.
    */
-  mailboxFindings: (status = "new") => call<any>(`/relationships/mailbox-findings?status=${status}`),
-  decideFinding: (id: string, action: "acted" | "dismissed") =>
-    call<any>(`/relationships/mailbox-findings/${id}/${action}`, post("")),
-
-  relationships: () => call<any[]>("/relationships"),
-  relationship: (id: string) => call<any>(`/relationships/${id}`),
-  updateRelationship: (id: string, body: unknown) =>
-    call<any>(`/relationships/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  createRelationship: (body: unknown) => call<any>("/relationships", post("", body)),
-  organizations: () => call<any[]>("/relationships/organizations"),
-  createOrganization: (body: unknown) => call<any>("/relationships/organizations", post("", body)),
-  people: () => call<any[]>("/relationships/people"),
-  person: (id: string) => call<any>(`/relationships/people/${id}`),
-  createPerson: (body: unknown) => call<any>("/relationships/people", post("", body)),
-  meetings: (from?: number, to?: number) =>
-    call<any[]>(`/relationships/meetings${from !== undefined && to !== undefined ? `?from=${from}&to=${to}` : ""}`),
-  meeting: (id: string) => call<any>(`/relationships/meetings/${id}`),
-  createMeeting: (body: unknown) => call<any>("/relationships/meetings", post("", body)),
-  briefMeeting: (id: string) => call<any>(`/relationships/meetings/${id}/brief`, post("")),
-  captureMeeting: (id: string, body: unknown) => call<any>(`/relationships/meetings/${id}/capture`, post("", body)),
-  followUps: (status = "open") => call<any[]>(`/relationships/follow-ups?status=${status}`),
-  createFollowUp: (body: unknown) => call<any>("/relationships/follow-ups", post("", body)),
-  closeFollowUp: (id: string, action: "complete" | "drop") =>
-    call<any>(`/relationships/follow-ups/${id}/${action}`, post("")),
 
   // Phase 14 — Investor OS and Wealth Command Center
   deals: () => call<any>("/investor/deals"),

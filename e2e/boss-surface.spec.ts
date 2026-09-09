@@ -46,7 +46,16 @@ test.describe("Boss OS surface", () => {
 
   test("every tab mounts and renders something a reader can act on", async ({ page }) => {
     await unlock(page);
-    const tabs = ["Today", "Inbox", "People", "Capital", "Spirit", "Team", "Memory", "Trading", "Vault", "Systems"];
+    // AND THE SCRAPPED ONE IS ACTUALLY GONE, not merely empty. Hiding a tab and deleting it look
+    // identical from a list of the tabs that remain.
+    await expect(page.getByRole("button", { name: "People", exact: true })).toHaveCount(0);
+    /*
+     * NINE, NOT TEN. The People tab was scrapped on 9 September 2026 — "i dont like this people tab
+     * at all id rather just scrap it" — and replaced by a weekly email from Monique. The list is
+     * spelled out rather than derived from LABELS on purpose: a test that reads the same constant
+     * the nav reads would still pass if every tab vanished.
+     */
+    const tabs = ["Today", "Inbox", "Capital", "Spirit", "Team", "Memory", "Trading", "Vault", "Systems"];
     for (const label of tabs) {
       await page.getByRole("button", { name: label, exact: true }).click();
       const main = page.locator("main.page");

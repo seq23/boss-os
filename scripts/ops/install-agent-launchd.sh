@@ -174,6 +174,48 @@ launchctl unload "$NETWORK_PLIST" 2>/dev/null || true
 launchctl load "$NETWORK_PLIST"
 echo "Installed $NETWORK_LABEL — Sunday 18:00 Central."
 
+# ─── Monique's weekly people note ────────────────────────────────────────────
+#
+# "id rather monique just send me deliverables she suggests about people to speak to (no codenames
+#  needed)" — 9 September 2026, on scrapping the People tab.
+#
+# Monday 07:15, fifteen minutes after the property read and thirteen hours after Sunday's contact
+# extraction refreshed the file it reads. Monday because a conversation recommended on a Monday can
+# still happen inside the same week, and WEEKLY rather than daily because a daily list of people to
+# ring is precisely the artefact she deleted.
+#
+# LOCAL BECAUSE THE NAMES ARE LOCAL. It reads ~/.boss-os/sourcing/CONTACTS.json, which holds real
+# names and addresses and never leaves this machine; the email carries the names, and Boss OS gets a
+# notice with counts in it and nothing else.
+PEOPLE_LABEL="com.seq.boss-people"
+PEOPLE_PLIST="$HOME/Library/LaunchAgents/$PEOPLE_LABEL.plist"
+
+cat > "$PEOPLE_PLIST" <<PEOPLEEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$PEOPLE_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO && npm run --silent people:recommend -- --send</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>15</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/people.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/people.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+PEOPLEEOF
+
+launchctl unload "$PEOPLE_PLIST" 2>/dev/null || true
+launchctl load "$PEOPLE_PLIST"
+echo "Installed $PEOPLE_LABEL — Monday 07:15 Central (people-worth-a-call.mjs)."
+
 # ─── The weekly property read ────────────────────────────────────────────────
 #
 # Camille's Search Console analysis and Danielle's shipping heartbeat, in one job because they answer

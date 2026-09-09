@@ -40,11 +40,21 @@ const CONSUMER_DIR = "src/client/boss";
  * whose Watch screen reads a task's live state and offers cancel and requeue — so `task`,
  * `cancelTask` and `requeueTask` have a way in for the first time. Stage 3's own five methods and
  * the spend lever's two were wired the day they were written and never counted here at all.
+ *
+ * 79 on 9 Sep 2026, after the People tab was scrapped. The count fell by SEVEN rather than rising by
+ * ten: deleting the screen orphaned sixteen `/relationships/*` methods, and every one of them was
+ * deleted with it rather than left behind as a comment. The endpoints and the data are untouched —
+ * `contacts-sync.mjs` still posts to the sync route and `people-worth-a-call.mjs` reads the same
+ * correspondence locally — but nothing in the interface pretends to reach them any more.
+ *
+ * A note for the next person who removes a screen: the honest move is this one. Keeping the client
+ * methods would have left the ceiling where it was and the interface a liar.
+ *
  * If you are reading this
  * because the build failed and you are tempted to raise the number: the failure is telling you that
  * an endpoint has no way in, which is the whole point.
  */
-const CEILING = 85;
+const CEILING = 79;
 
 /**
  * Names that appear at the same indentation as an API method but are not one.

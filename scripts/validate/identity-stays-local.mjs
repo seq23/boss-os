@@ -2,26 +2,31 @@
 /**
  * SHE MAY SEE WHO THESE PEOPLE ARE. THE CLOUD MAY NOT.
  *
- * ─── What changed, and what must not ───────────────────────────────────────
+ * ─── What changed on 9 September 2026, and what must not ───────────────────
  *
- * The People tab now resolves code names to real identities in the browser on her Mac, from the file
- * `contacts-sync.mjs` writes. That is a deliberate reading of the privacy boundary: it governs WHAT
- * LEAVES HER MACHINE, not what she is allowed to see on her own screen. She is the one person who
- * already knows every one of these identities, and a screen showing her pseudonyms of her own
- * contacts protected nothing — it was simply unreadable.
+ * The browser-side resolver is gone, because the People tab it served is gone: "i dont like this
+ * people tab at all id rather just scrap it. id rather monique just send me deliverables she
+ * suggests about people to speak to (no codenames needed)".
  *
- * The rule that must survive that change, exactly as strong as before:
+ * THE IDENTITY BOUNDARY DID NOT MOVE — the place identities are resolved did. It is now
+ * `scripts/ops/people-worth-a-call.mjs`, which reads her own extraction on her own Mac, writes real
+ * names into an email to herself, and posts nothing but counts back to the Worker. That is a
+ * STRONGER position than a browser resolver, not a weaker one: the names never enter a page that
+ * also holds an api client.
+ *
+ * The three rules, restated for where the work actually happens now:
  *
  *   1. `POST /relationships/sync` STILL REFUSES an '@' or a '.' in a code name. That guard caught a
- *      real leak on its first run and is not to be weakened by a character.
- *   2. THE RESOLVER NEVER TALKS TO THE NETWORK. `identity.ts` holds no fetch, no api import, and no
- *      POST. Resolution is a rendering step.
- *   3. NOTHING RESOLVED IS SENT ANYWHERE. No client file may pass a resolved identity into an api
- *      call — the one shape that would turn a rendering convenience into the leak the whole design
- *      exists to prevent.
+ *      real leak on its first run and nothing here is a reason to relax it by a character.
+ *   2. THE RECOMMENDER NEVER POSTS A NAME. `people-worth-a-call.mjs` may talk to the Worker — it
+ *      posts the notice — so "no fetch" is the wrong test for it. The right test is that no name,
+ *      address or pick reaches a Boss OS URL: the notice payload is counts and prose it composes
+ *      itself, and the picks go only to Resend.
+ *   3. NOTHING RESOLVED IS SENT ANYWHERE FROM THE CLIENT. No file under `src/client` may pass a
+ *      resolved identity into an api call.
  *
- * RULE 0: it exits non-zero if the resolver or the sync guard is missing, because a scan that cannot
- * find the thing it governs is broken rather than satisfied.
+ * RULE 0: it exits non-zero if the recommender or the sync guard is missing, because a scan that
+ * cannot find the thing it governs is broken rather than satisfied.
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -29,14 +34,21 @@ import { join } from "node:path";
 const ROOT = new URL("../..", import.meta.url).pathname;
 const SELF_TEST = process.argv.includes("--self-test");
 
-const RESOLVER = "src/client/boss/identity.ts";
+const RESOLVER = "scripts/ops/people-worth-a-call.mjs";
 const SYNC = "src/worker/boss/routes/relationships.ts";
 
 /** The guard on the wire, in the exact shape it has to keep. */
 const SYNC_GUARD = /name\.includes\("@"\)\s*\|\|\s*name\.includes\("\."\)/;
 
-/** Anything that would carry a value out of the browser. */
-const NETWORKY = /\bfetch\s*\(|XMLHttpRequest|navigator\.sendBeacon|from "\.\.?\/api"|from "\.\/api"/;
+/**
+ * A name or an address handed to a Boss OS URL.
+ *
+ * NOT "does it call fetch" — the recommender legitimately posts a notice to the Worker, so a blanket
+ * network ban would have to be switched off, and a validator that has to be switched off is a
+ * validator nobody trusts. What matters is the SHAPE of what goes: any request whose body reaches
+ * for a pick, a name or an email address is the leak, and everything else is counts.
+ */
+const POSTS_A_NAME = /body:\s*JSON\.stringify\((?:(?!\)\s*,)[\s\S]){0,600}?\b(p\.name|p\.email|picks|contacts|\bnames\b)\b/;
 
 /** A resolved identity handed to an api call — the one shape that turns rendering into leaking. */
 const SENDS_RESOLVED = /api\.[a-zA-Z]+\([^)]*\b(resolve\(|\.by_code|identityMap|idMap)\b/;
@@ -50,8 +62,22 @@ function scan(files, read) {
     bad.push(`${RESOLVER} is missing — the resolver this scan governs does not exist.`);
   } else {
     examined += 1;
-    if (NETWORKY.test(resolverSrc)) {
-      bad.push(`${RESOLVER} can reach the network. Resolution is a rendering step and must never send anything.`);
+    /*
+     * ONLY THE REQUESTS AIMED AT BOSS OS ARE JUDGED. The Resend call in this file carries every real
+     * name deliberately: it is her own mailbox, on her own machine, and that is the entire point of
+     * the deliverable. Scanning it as one undifferentiated file would either pass everything or fail
+     * the feature, so the scan splits on where the request is going.
+     */
+    for (const block of resolverSrc.split(/await fetch\(/).slice(1)) {
+      const target = block.slice(0, 200);
+      const isBossOs = /ORIGIN|boss\.sequoiataylor|\/api\/boss/.test(target);
+      if (!isBossOs) continue;
+      if (POSTS_A_NAME.test(block.slice(0, 1200))) {
+        bad.push(
+          `${RESOLVER} puts a name, an address or a pick into a request to Boss OS. ` +
+          "The Worker learns counts and the prose it is handed; the names go to her mailbox and nowhere else.",
+        );
+      }
     }
   }
 
@@ -82,9 +108,11 @@ function scan(files, read) {
 
 if (SELF_TEST) {
   const fixtures = {
-    [RESOLVER]: "export function resolve(map, code) { return map.by_code[code]; }",
+    [RESOLVER]: 'await fetch(`${ORIGIN}/api/boss/approvals`, { body: JSON.stringify({ title: "3 people", summary }) });\n'
+      + 'await fetch("https://api.resend.com/emails", { body: JSON.stringify({ to, text: picks.map((p) => p.email).join("") }) });',
     [SYNC]: 'if (name.includes("@") || name.includes(".")) { throw badRequest("no"); }',
     "src/client/boss/pages/Leaky.tsx": "api.createPerson({ full_name: resolve(idMap, code).label })",
+    LEAKY_RECOMMENDER: 'await fetch(`${ORIGIN}/api/boss/approvals`, { body: JSON.stringify({ title: t, picks }) });',
     "src/client/boss/pages/Fine.tsx": "<Named map={idMap} code={r.full_name} />",
   };
   const r = scan(["src/client/boss/pages/Leaky.tsx", "src/client/boss/pages/Fine.tsx"], (f) => fixtures[f] ?? "");
@@ -96,14 +124,20 @@ if (SELF_TEST) {
   if (!weakened.bad.some((x) => x.includes("no longer refuses"))) fail.push("a weakened sync guard passed");
 
   const gone = scan([], () => "");
-  if (!gone.bad.some((x) => x.includes("is missing"))) fail.push("a missing resolver passed");
+  if (!gone.bad.some((x) => x.includes("is missing"))) fail.push("a missing recommender passed");
+
+  // THE ONE THAT MATTERS: names to Resend are fine, the same names to the Worker are not.
+  if (r.bad.some((x) => x.includes(RESOLVER))) fail.push("names sent to her own mailbox were flagged");
+  const leaks = scan([], (f) => (f === RESOLVER ? fixtures.LEAKY_RECOMMENDER : fixtures[f] ?? ""));
+  if (!leaks.bad.some((x) => x.includes("into a request to Boss OS"))) fail.push("picks posted to the Worker passed");
 
   if (fail.length) {
     console.error("IDENTITY SELF-TEST FAILED:");
     for (const x of fail) console.error("  ✗", x);
     process.exit(1);
   }
-  console.log("identity self-test: 4 fixtures, the scan catches a leaked name, a weakened guard and a missing resolver.");
+  console.log("identity self-test: 6 fixtures — a leaked name, a weakened guard, a missing recommender, "
+    + "picks posted to the Worker, and the legitimate Resend send left alone.");
   process.exit(0);
 }
 
@@ -117,7 +151,7 @@ const walk = (dir, out = []) => {
 };
 
 const read = (f) => (existsSync(join(ROOT, f)) ? readFileSync(join(ROOT, f), "utf8") : null);
-const clientFiles = walk("src/client").filter((f) => f !== RESOLVER);
+const clientFiles = walk("src/client");
 const { bad, examined } = scan(clientFiles, read);
 
 if (examined === 0) {

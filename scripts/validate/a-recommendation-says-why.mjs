@@ -50,6 +50,15 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const MODULE = "src/shared/wealth/recommend.ts";
 const SCREEN = "src/client/boss/pages/Capital.tsx";
+/**
+ * THE SECOND RECOMMENDATION SURFACE, HELD TO THE SAME RULE.
+ *
+ * Monique's weekly note is the deliverable that replaced the People tab, and it is a recommendation
+ * in exactly the sense the Capital desk is: a handful of names with a reason each. One guard covers
+ * both, because a second validator for the same principle is the two-lists-with-no-link defect the
+ * repository keeps producing — the day the rule is tightened, one copy gets tightened.
+ */
+const NOTE = "scripts/ops/people-worth-a-call.mjs";
 
 /**
  * Every `signals.push({ ... })` in the module, as `{ code, weight, says }`.
@@ -135,6 +144,82 @@ export function unboundIn(screen) {
   return SCREEN_BINDINGS.filter((b) => !screen.includes(b.needle));
 }
 
+/**
+ * Every reason `people-worth-a-call.mjs` can give for putting someone in front of her.
+ *
+ * The shape is a `return { rank, why, say }` from the classifier. Brace-counted for the same reason
+ * the signal scan is: the `why` sentences are templates full of `${...}`.
+ */
+export function reasonsIn(source) {
+  const out = [];
+  const marker = "return {\n      rank:";
+  let at = source.indexOf(marker);
+  while (at !== -1) {
+    let depth = 0;
+    let i = at + "return ".length;
+    for (; i < source.length; i += 1) {
+      if (source[i] === "{") depth += 1;
+      else if (source[i] === "}") { depth -= 1; if (depth === 0) break; }
+    }
+    const text = source.slice(at, i + 1);
+    out.push({
+      text,
+      rank: (text.match(/rank:\s*(\d+)/) ?? [])[1],
+      why: /why:/.test(text) ? text.slice(text.indexOf("why:"), text.indexOf("say:") === -1 ? undefined : text.indexOf("say:")) : null,
+      say: /say:/.test(text) ? text.slice(text.indexOf("say:")) : null,
+    });
+    at = source.indexOf(marker, i);
+  }
+  return out;
+}
+
+/** A reason that quotes no fact reads the same for everybody, which is a category, not a reason. */
+export function genericReasonsIn(reasons) {
+  return reasons
+    .filter((r) => !r.why || !r.why.includes("${") || !r.say)
+    .map((r) => `rank ${r.rank ?? "?"}`);
+}
+
+/**
+ * What must actually be carried, and BY WHICH DELIVERY.
+ *
+ * Two destinations, checked separately, because they carry different things on purpose: the email
+ * holds the names and the reasoning, the Inbox notice holds counts and never a name. Checking them
+ * as one file passed on a `console.log` — a debug line in a terminal nobody opens satisfying a
+ * delivery check, which is precisely the defect that let Simone's watcher report into a log for five
+ * days.
+ */
+const NOTE_BINDINGS = [
+  { what: "why this person, this week", needle: "p.why", inside: "async function emailHer" },
+  { what: "what to say to them", needle: "p.say", inside: "async function emailHer" },
+  { what: "the person's real name", needle: "p.name", inside: "async function emailHer" },
+  {
+    what: "a week with nobody in it, told apart from a week that never ran",
+    needle: "count === 0",
+    inside: "async function noteInInbox",
+  },
+];
+
+/**
+ * Scoped to the EMAIL and the NOTICE, not to the whole file.
+ *
+ * The first version scanned the file, and a `console.log` of the same value satisfied it — so
+ * deleting `${p.why}` from the letter she actually receives passed, because a debug line in a
+ * terminal nobody opens still mentioned it. That is the Simone defect in a validator: reporting into
+ * a log and calling it delivery. The scan now starts at `async function emailHer` and asks only
+ * about what is sent.
+ */
+export function noteUnboundIn(src) {
+  return NOTE_BINDINGS.filter((b) => {
+    const from = src.indexOf(b.inside);
+    if (from === -1) return true;
+    // Bounded at the END of that function too. Scanning to end-of-file swept up `main()`, whose
+    // console.log mentions the same values.
+    const end = src.indexOf("\nasync function", from + 1);
+    return !src.slice(from, end === -1 ? undefined : end).includes(b.needle);
+  });
+}
+
 // ─── Self-test ────────────────────────────────────────────────────────────────
 
 const FIXTURES = [
@@ -194,7 +279,18 @@ function selfTest() {
   say("an unbound screen is caught", ["r.headline"],
     unboundIn("s.says w.because basis.limitation r.letter.body").map((b) => b.needle));
 
-  const total = FIXTURES.length + WITHHOLD_FIXTURES.length + 1;
+  // The note's own two cases, in the same shape.
+  say("a reason that quotes a fact passes", [],
+    genericReasonsIn(reasonsIn('return {\n      rank: 0,\n      why: `They wrote on ${d}.`,\n      say: `Answer it.`,\n    };')));
+  say("a reason that quotes nothing is caught", ["rank 1"],
+    genericReasonsIn(reasonsIn('return {\n      rank: 1,\n      why: "They have gone quiet.",\n      say: `Say hello.`,\n    };')));
+  say("a note that cannot tell a quiet week from a dead job is caught", ["count === 0"],
+    noteUnboundIn("async function emailHer p.why p.say p.name").map((b) => b.needle));
+  say("a debug log does not count as delivery", ["p.why"],
+    noteUnboundIn("async function emailHer p.say p.name\nasync function noteInInbox count === 0 p.why")
+      .map((b) => b.needle));
+
+  const total = FIXTURES.length + WITHHOLD_FIXTURES.length + 5;
   if (failures) {
     console.error(`\nSELF-TEST FAILED: ${failures}/${total}`);
     process.exit(1);
@@ -211,9 +307,11 @@ if (process.argv.includes("--self-test")) {
 
 const module = readFileSync(join(ROOT, MODULE), "utf8");
 const screen = readFileSync(join(ROOT, SCREEN), "utf8");
+const note = readFileSync(join(ROOT, NOTE), "utf8");
 
 const signals = signalsIn(module);
 const withholdings = withholdingsIn(module);
+const reasons = reasonsIn(note);
 const problems = [];
 
 // RULE 0, THREE TIMES. Each of these loops is over a set that could become empty, and an empty set
@@ -223,6 +321,9 @@ if (signals.length === 0) {
 }
 if (withholdings.length === 0) {
   problems.push(`${MODULE} withholds nothing from anybody. Suppression and reach are what make it a recommendation.`);
+}
+if (reasons.length === 0) {
+  problems.push(`${NOTE} can give no reason for recommending anybody. That is a roster with a smaller page size.`);
 }
 
 for (const code of incompleteIn(signals)) {
@@ -240,6 +341,15 @@ for (const list of silentWithholdingsIn(withholdings)) {
 for (const b of unboundIn(screen)) {
   problems.push(`${SCREEN} never renders ${b.needle} — ${b.what} is computed and never reaches her.`);
 }
+for (const r of genericReasonsIn(reasons)) {
+  problems.push(
+    `${NOTE}: the ${r} reason quotes no fact from the correspondence, or offers nothing to say. ` +
+      "It would read identically for every person, which is a category rather than a reason.",
+  );
+}
+for (const b of noteUnboundIn(note)) {
+  problems.push(`${NOTE} never carries ${b.needle} — ${b.what} never reaches her.`);
+}
 
 if (problems.length) {
   console.error("RECOMMENDATION REASONING FAILED:\n");
@@ -252,7 +362,8 @@ if (problems.length) {
 }
 
 console.log(
-  `RECOMMENDATION REASONING PASSED: ${signals.length} signals each carry a fact, ` +
-    `${withholdings.length} withholding paths each carry a reason, and ` +
-    `${SCREEN_BINDINGS.length} of them are bound on the screen.`,
+  `RECOMMENDATION REASONING PASSED: ${signals.length} buyer signals each carry a fact, ` +
+    `${withholdings.length} withholding paths each carry a reason, ${reasons.length} people-note reasons ` +
+    `each quote the correspondence, and all ${SCREEN_BINDINGS.length + NOTE_BINDINGS.length} of those ` +
+    "are bound where she reads them.",
 );

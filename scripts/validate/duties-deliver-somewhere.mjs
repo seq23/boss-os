@@ -222,11 +222,36 @@ function scan() {
      * roster rendered "NO MODEL NAMED" the first time anyone looked at all nine duties together, and
      * until that screen existed nothing in the system would ever have said so.
      */
-    if (!namesAModel(duty.id, duty.text)) {
+    /*
+     * ── AND A DUTY WITH NO MODEL IN IT MUST NOT NAME ONE ──────────────────
+     *
+     * The rule above assumed every duty reaches a model, which was true of all nine when it was
+     * written. `duty_people_worth_a_call` (0223) does not: it runs `people-worth-a-call.mjs`, plain
+     * node, arithmetic over her own mailbox — who wrote last, how often two people exchange mail,
+     * how long it has been. There is no `claude` in it and no provider call anywhere.
+     *
+     * NAMING A MODEL FOR SUCH A DUTY WOULD BE A LIE ON THE ROW, and a lie the roster screen would
+     * repeat: it would read "Haiku" beside a job that never spends a token, which is the same class
+     * of defect as a meter that cannot move. So the test is not "does it name a model" but "does the
+     * row agree with the script" — and it is checked in BOTH directions, which is strictly more than
+     * the original asked.
+     */
+    const jobScript = localJobScript(duty.text);
+    const jobSrc = jobScript ? read(`scripts/ops/${jobScript}`) : null;
+    const reachesAModel = jobScript === null || /\bclaude\b|run_ai|api\.anthropic|CLAUDE_/.test(jobSrc ?? "");
+
+    if (reachesAModel && !namesAModel(duty.id, duty.text)) {
       problems.push(
         `${duty.id} (${duty.file}): names no model in $.requested.model, so it inherits the default —\n` +
         `      which is the most expensive one available. That is the $3.88 briefing, and it is\n` +
         `      invisible until a bill or a screen says so.`,
+      );
+    }
+    if (!reachesAModel && namesAModel(duty.id, duty.text)) {
+      problems.push(
+        `${duty.id} (${duty.file}): names a model, but scripts/ops/${jobScript} never reaches one.\n` +
+        `      The roster would print a model beside a job that cannot spend a token — a number\n` +
+        `      nobody computed, shown as though measured.`,
       );
     }
 
