@@ -114,17 +114,33 @@ export function checkSeparation(filterSrc, extractSrc) {
     bad.push(`${EXTRACTOR}: a run where every batch failed must be a named stop. "The market is empty" and "the model was unreachable" are opposite facts.`);
   }
   /*
-   * THE RECALL TEST IS THE ONLY HONEST CHECK, so it is asserted rather than hoped for. The same
-   * invariant lp-positive.mjs carries, for the same reason: a scan that quietly loses a
-   * counterparty is worse than no scan, and every other check is marking its own homework.
+   * ─── THE ACCEPTANCE TEST, AND WHY IT IS PRECISION RATHER THAN RECALL ─────
    *
-   * NOTE WHAT IS ASSERTED: that the MECHANISM exists and fails loudly — not that the list is
-   * populated. The list is hers to supply and an empty one is a named stop she can see, which is a
-   * different and correct state.
+   * This first asserted a RECALL test — five deals she knows she did, recovered out of her own mail,
+   * the same check that caught a 10-of-12 failure in the LP scan. It was built on an assumption
+   * nobody checked, and she corrected it: "i havent done any deals in a while thats the whole point
+   * of having this agent help me drum up business." There is no book of closed trades to reconcile
+   * against, so recall is not a test that exists here.
+   *
+   * PRECISION IS, and it matters more anyway: a wrong row becomes a phone call to somebody about
+   * stock they never wanted, and one bad call outweighs ten missed matches.
+   *
+   * WHAT MAKES IT A TEST RATHER THAN A MATTER OF TRUST IS THE QUOTE. She reads twenty-five rows
+   * against the twenty-five real sentences that produced them and says which are wrong. So a row
+   * without its sentence is refused, and a ledger where nothing carries a sentence is a named stop
+   * rather than a screen reporting nothing to review.
    */
-  if (!/KNOWN_DEALS/.test(extractSrc) || !/RECALL_FAILED/.test(extractSrc) || !/NO_GROUND_TRUTH/.test(extractSrc)) {
-    bad.push(`${EXTRACTOR}: the recall test against deals she knows she did is gone. `
-      + "Without it, plausible output is the only evidence the extraction has — which is none.");
+  if (!/no quote from the message/.test(extractSrc)) {
+    bad.push(`${EXTRACTOR}: a row is admitted without the sentence that produced it. `
+      + "An unquoted row cannot be checked, and precision judged on real sentences is the only "
+      + "acceptance test this ledger has — she has no book of closed deals to reconcile against.");
+  }
+  if (!/NAMED STOP \[NOTHING_CHECKABLE\]/.test(extractSrc) || !/reviewSet/.test(extractSrc)) {
+    bad.push(`${EXTRACTOR}: the review surface is gone. Without it the ledger's correctness is `
+      + "asserted by the thing that produced it, which is no evidence at all.");
+  }
+  if (!/wrong\.json|WRONG_FILE/.test(extractSrc)) {
+    bad.push(`${EXTRACTOR}: there is no way to mark a row wrong. A review she cannot answer is a report.`);
   }
   return bad;
 }
@@ -158,8 +174,16 @@ if (process.argv.includes("--self-test")) {
     checkFilter(`${real}\n// SpaceX and ByteDance are deliberately absent from the code below.`).length === 0);
   expect("a reader that acquires a model call is caught",
     checkSeparation(`${real}\nspawn("claude", []);`, readFileSync(join(ROOT, EXTRACTOR), "utf8")).length > 0);
+  const extract = readFileSync(join(ROOT, EXTRACTOR), "utf8");
   expect("an extractor that acquires a Gmail call is caught",
     checkSeparation(real, 'fetch("https://gmail.googleapis.com/x"); "--model"; "NAMED STOP [EXTRACTION_NEVER_RAN]"').length > 0);
+  expect("the real extractor passes", checkSeparation(real, extract).length === 0);
+  expect("an extractor that admits a row with no quote is caught",
+    checkSeparation(real, extract.replace(/no quote from the message/g, "ok")).length > 0);
+  expect("an extractor that loses the review surface is caught",
+    checkSeparation(real, extract.replace(/NAMED STOP \[NOTHING_CHECKABLE\]/g, "note")).length > 0);
+  expect("an extractor with no way to mark a row wrong is caught",
+    checkSeparation(real, extract.replace(/wrong\.json/g, "x").replace(/WRONG_FILE/g, "X")).length > 0);
 
   if (failed) { console.error(`FILTER ACCOUNTING SELF-TEST FAILED (${failed})`); process.exit(1); }
   console.log("FILTER ACCOUNTING SELF-TEST PASSED");

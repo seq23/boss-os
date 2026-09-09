@@ -562,11 +562,32 @@ sequoiataylor.com — and none of the three was written down anywhere. `validate
 fails the build on an outbound identity, a sender envelope, or any impersonating script that
 acquires a Gmail write scope.
 
-**It cannot be verified yet, and that is the honest state.** `npm run capital:extract -- --verify` is
-a **NAMED STOP** until you name **five transactions you know you did** — the counterparty, the
-company, roughly when. Every other check the extraction could run on itself is marking its own
-homework: the LP scan proved that three weeks ago by reporting a 10-of-12 recall failure as a clean
-result. Five deals, and the extraction has to find them in your own mail or it is not ready.
+**It is a revival engine, not a reconciliation, and that was a correction.** It was built the wrong
+way round first: leaning on "has transacted in X" as the durable signal and treating a live
+expression of interest as the perishable half. Your words fixed it — *"i havent done any deals in a
+while thats the whole point of having this agent help me drum up business."* So the durable half is
+thin, and **the value moves entirely to the conversations**: the buyer who wanted SpaceX in March
+and heard nothing since, the seller who never found a counterparty, the firm that asked what you had
+and got a vague answer. **An interest that never closed is more actionable than one that did** — the
+closed one is done, the open one is a phone call. The daily email is two sections for that reason:
+the crosses, then *worth going back to*.
+
+**How it is verified: precision, judged by you, on twenty-five rows.** Recall against a book of
+closed deals is impossible here, and precision matters more anyway — a wrong row becomes a phone
+call about stock somebody never wanted.
+
+```bash
+npm run capital:review                    # 25 rows, highest confidence first
+npm run capital:review -- --wrong <id>    # that one is wrong: struck everywhere, and counted
+```
+
+**Each row carries the sentence out of the message that produced it**, which is the whole point: you
+are checking a row against a real sentence rather than agreeing with a summary of a message you
+cannot see. A row with no quote is refused outright, and a ledger where nothing carries one is a
+named stop rather than a screen reporting nothing to review. **If most are right it works. If a
+third are wrong it does not** — and the errors show their own pattern: over-reading vague language,
+mistaking a co-broker for a principal, catching a discussion about a company rather than an interest
+in its stock.
 
 ---
 
@@ -588,9 +609,11 @@ npm run mailbox:sweep             # run Monique's mailbox sweep now, instead of 
 npm run capital:scan -- --backfill    # read the whole spry.vc history into candidate messages
 npm run capital:scan                  # ...or only what has arrived since the last scan
 npm run capital:extract               # candidates into the interest ledger (Haiku, on this Mac)
-npm run capital:extract -- --verify   # recall against deals you know you did — needs your five
+npm run capital:review                # 25 rows with the sentence behind each — the acceptance test
+npm run capital:review -- --wrong <id>   # that row was wrong: struck everywhere, and counted
 npm run capital:match                 # who fits whom right now, at most five, each with its reason
 npm run capital:match -- --find SpaceX --side buy --size 250000000
+npm run capital:match -- --revive     # only the leads: interests expressed and never filled
 npm run capital:match -- --nudge      # the monthly note: three people, anchored on the company
 npm run capital:match -- --not "someone@example.com"   # never recommend this person again
 npm run credentials:check         # are the logins still working? four real calls, about a cent

@@ -19,16 +19,30 @@
  * A list of 340 possible buyers is the People tab she deleted. Five with reasons beats three
  * hundred sorted, and the cap is enforced here rather than left to whoever reads the output.
  *
+ * ─── IT IS A REVIVAL ENGINE, NOT A RECONCILIATION ──────────────────────────
+ *
+ * This was built the wrong way round first. The original design leant on a DURABLE half of the
+ * ledger — "has transacted in X", a fact about who somebody is that never expires — and treated a
+ * live expression of interest as the perishable, second-class half. She corrected it:
+ *
+ *   "i havent done any deals in a while thats the whole point of having this agent help me drum up
+ *    business"
+ *
+ * SO THE DURABLE HALF IS THIN, AND THE VALUE MOVES ENTIRELY TO THE CONVERSATIONS. The asset is not
+ * completed transactions. It is PEOPLE WHO EXPRESSED INTEREST AND NEVER GOT FILLED — the buyer who
+ * wanted SpaceX in March and heard nothing since, the seller who never found a counterparty, the
+ * firm that asked what she had and got a vague answer. Every one of those is a live lead sitting in
+ * 104,241 messages, not a historical record.
+ *
+ * AN INTEREST THAT NEVER CLOSED IS MORE ACTIONABLE THAN ONE THAT DID. The closed one is done; the
+ * open one is a phone call. So the ranking inverts what a reconciliation would do: unfilled outranks
+ * filled, and a specific unanswered ask outranks a general expression of appetite.
+ *
  * ─── NO MATCHING WINDOW, BECAUSE A CLIFF LOSES REAL DEALS ──────────────────
  *
  * Asked how far back a match should reach she said "like up to 12 months? i dont know" — and she
- * should not have to pick, because a cutoff means a genuine match silently vanishes on day 366.
- * The ledger holds two things that behave differently and the age is carried on the face of every
- * match rather than used to delete one:
- *
- *   · HAS TRANSACTED IN X — a durable fact about who somebody is. It never expires. This is what
- *     answers "find me someone for $250M of SpaceX".
- *   · WANTS X RIGHT NOW — perishable. They fill, the mark moves, the mandate closes.
+ * should not have to pick, because a cutoff means a genuine match silently vanishes on day 366. Age
+ * is carried on the face of every match rather than used to delete one.
  *
  * Decay is a curve, never a cliff. A SELLER'S interest decays fastest — inventory moves. A BUYER'S
  * MANDATE PERSISTS. And SIZE PREDICTS DURABILITY: a $2B ByteDance buyer is an institution with a
@@ -44,6 +58,7 @@
  *   npm run capital:match                          # the standing cross — who fits whom, right now
  *   npm run capital:match -- --send                # ...and email it to her
  *   npm run capital:match -- --find SpaceX --side buy --size 250000000
+ *   npm run capital:match -- --revive              # only the leads: interests that never got filled
  *   npm run capital:match -- --nudge               # the monthly, asset-anchored note — at most three
  *   npm run capital:match -- --not "someone@example.com"      # never recommend this person again
  */
@@ -56,6 +71,7 @@ import { sendersFor } from "./notify.mjs";
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
 const SUPPRESS = path.join(DIR, "not-this-person.json");
+const WRONG_FILE = path.join(DIR, "wrong.json");
 
 const ARGS = process.argv.slice(2);
 const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null : ARGS[i + 1] ?? null; };
@@ -65,6 +81,7 @@ const WANT_SIDE = argOf("side");
 const WANT_SIZE = Number(argOf("size") ?? 0);
 const NOT = argOf("not");
 const NUDGE = ARGS.includes("--nudge");
+const REVIVE = ARGS.includes("--revive");
 
 /** Five, with reasons. Never a directory. */
 const CAP = Number(process.env.CAPITAL_MATCH_CAP ?? 5);
@@ -128,6 +145,16 @@ export function sizeFit(a, b) {
 }
 
 // ─── The "not this person" control ───────────────────────────────────────────
+
+/**
+ * Rows she has read against their own sentence and called wrong, in `npm run capital:review`.
+ *
+ * A STRUCK ROW LEAVES EVERY RECOMMENDATION, not just the review set. Showing her a match built on a
+ * row she has already told us is wrong is the fastest way to lose the whole surface.
+ */
+const loadWrongRows = () => {
+  try { return new Set(JSON.parse(fs.readFileSync(WRONG_FILE, "utf8")).rows ?? []); } catch { return new Set(); }
+};
 
 const loadSuppressed = () => {
   try { return new Set(JSON.parse(fs.readFileSync(SUPPRESS, "utf8")).people ?? []); } catch { return new Set(); }
@@ -214,7 +241,14 @@ export function assignedSearch(interests, asset, side, size, suppressed, now = D
     const who = whoKey(r) || r.principal;
     const f = freshness(r, now);
     const capacity = size > 0 ? Math.min(1, (Number(r.size_usd) || 0) / size) : 1;
-    const score = (r.durability === "transacted" ? 1 : 0.7) * CONF[r.confidence ?? "low"]
+    /*
+     * UNFILLED OUTRANKS FILLED, and this weight is the inversion in one line. The question is "who
+     * do I call", not "who has a track record": somebody who wanted this name and never got filled
+     * is a conversation waiting to be resumed, while somebody who transacted has what they came for.
+     * The transacted row still counts — it is evidence they are real at this size — it simply does
+     * not outrank the open one.
+     */
+    const score = (r.durability === "transacted" ? 0.75 : 1) * CONF[r.confidence ?? "low"]
       * (0.4 + 0.6 * f.score) * (0.4 + 0.6 * capacity);
     const prior = byWho.get(who);
     if (!prior || score > prior.score) byWho.set(who, { row: r, score, ageDays: f.ageDays, times: 0 });
@@ -224,6 +258,80 @@ export function assignedSearch(interests, asset, side, size, suppressed, now = D
     if (byWho.has(who)) byWho.get(who).times += 1;
   }
   return [...byWho.values()].sort((a, b) => b.score - a.score).slice(0, CAP);
+}
+
+// ─── The revival list: interests that were expressed and never filled ────────
+
+/**
+ * THE LEADS. Not a record of what happened — a list of conversations that stopped mid-sentence.
+ *
+ * Every row here is somebody who said what they wanted, at a size, and as far as this mailbox shows
+ * never got it. That is a phone call with an opening line already written, which is exactly what
+ * "help me drum up business" asks for.
+ *
+ * THREE THINGS RANK IT, and none of them is how long ago it was:
+ *
+ *   1. UNFILLED. A `transacted` row is somebody who got what they came for; it is excluded here on
+ *      purpose. This list is the open half of the ledger and nothing else.
+ *   2. SPECIFIC. "I want $50m of OpenAI" outranks "we look at secondaries" — a named principal and
+ *      an explicit size are what make the call easy to open and hard to get wrong.
+ *   3. UNANSWERED. When the correspondence record shows she has not written to them since, the ask
+ *      is still hanging. That is the single strongest reason to go back, and it is read from her own
+ *      mailbox rather than assumed — where the record cannot say, the row still stands, ranked
+ *      lower, rather than being invented into a grievance.
+ *
+ * Age is shown and never used as a cutoff, for the same reason as everywhere else: a cliff means a
+ * real lead silently vanishes on day 366.
+ */
+export function revivals(interests, contacts, suppressed, now = Date.now(), cap = 5) {
+  const byEmail = new Map((contacts ?? []).map((c) => [String(c.email ?? "").toLowerCase(), c]));
+  const scored = [];
+  for (const r of interests) {
+    if (r.durability === "transacted") continue;
+    const who = whoKey(r);
+    if (!who || suppressed.has(who)) continue;
+    const f = freshness(r, now);
+    const named = r.principal_email ? 1 : 0.7;
+    const sized = (Number(r.size_usd) || Number(r.size_shares)) ? 1 : 0.6;
+    const c = byEmail.get(String(r.principal_email ?? "").toLowerCase());
+    const sinceSheWrote = c && c.days_since_she_wrote != null ? Number(c.days_since_she_wrote) : null;
+    // Hanging: she has not written since they asked. Unknown is neither rewarded nor punished hard.
+    const hanging = sinceSheWrote === null ? 0.8 : Math.min(1, 0.6 + sinceSheWrote / 365);
+    scored.push({
+      row: r, ageDays: f.ageDays, sinceSheWrote,
+      score: CONF[r.confidence ?? "low"] * named * sized * hanging * (0.35 + 0.65 * f.score),
+    });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  // One per person: five rows about the same buyer is one lead printed five times.
+  const seen = new Set();
+  const picked = [];
+  for (const x of scored) {
+    const k = `${whoKey(x.row)}|${assetKey(x.row.asset)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    picked.push(x);
+    if (picked.length >= cap) break;
+  }
+  return { picked, considered: scored.length };
+}
+
+function renderRevivals({ picked, considered }) {
+  if (picked.length === 0) {
+    return `No open interest worth reviving out of ${considered} considered.`;
+  }
+  const lines = [`${picked.length} conversation${picked.length === 1 ? "" : "s"} that stopped, out of ${considered} still open.`, ""];
+  for (const x of picked) {
+    const r = x.row;
+    lines.push(`  ${r.asset.toUpperCase()}  —  ${r.principal}${r.principal_email ? ` <${r.principal_email}>` : ""}`);
+    lines.push(`     Wanted to ${r.side} ${r.size_text ?? ""}, ${ageWords(x.ageDays)}. Never filled.`);
+    lines.push(`     "${r.quote ?? r.evidence}"`);
+    if (x.sinceSheWrote !== null) lines.push(`     You have not written to them in ${x.sinceSheWrote} days.`);
+    if (r.intermediated_by) lines.push(`     Came through ${r.intermediated_by}.`);
+    lines.push(`     ${r.source_message}`);
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
 // ─── The monthly nudge ───────────────────────────────────────────────────────
@@ -340,9 +448,9 @@ function renderStanding(picked, considered) {
   for (const m of picked) {
     lines.push(`${m.asset.toUpperCase()}`);
     lines.push(`  BUY   ${money(m.buy)}   ${who(m.buy)}   ${ageWords(m.buyAge)}${m.buy.durability === "transacted" ? " · has transacted" : ""}`);
-    lines.push(`        ${m.buy.evidence}${m.buy.intermediated_by ? `  — via ${m.buy.intermediated_by}` : ""}`);
+    lines.push(`        "${m.buy.quote ?? m.buy.evidence}"${m.buy.intermediated_by ? `  — via ${m.buy.intermediated_by}` : ""}`);
     lines.push(`  SELL  ${money(m.sell)}   ${who(m.sell)}   ${ageWords(m.sellAge)}${m.sell.durability === "transacted" ? " · has transacted" : ""}`);
-    lines.push(`        ${m.sell.evidence}${m.sell.intermediated_by ? `  — via ${m.sell.intermediated_by}` : ""}`);
+    lines.push(`        "${m.sell.quote ?? m.sell.evidence}"${m.sell.intermediated_by ? `  — via ${m.sell.intermediated_by}` : ""}`);
     lines.push(`  open  ${m.buy.source_message} and ${m.sell.source_message} in Gmail to read both.`);
     lines.push("");
   }
@@ -361,8 +469,8 @@ function renderAssigned(hits, asset, side, size) {
   const lines = [`${hits.length} name(s) for ${ask}, ${side === "buy" ? "buy" : "sell"} side, best first.`, ""];
   for (const h of hits) {
     lines.push(`  ${who(h.row)}`);
-    lines.push(`     ${money(h.row)} ${h.row.side}  ·  ${ageWords(h.ageDays)}  ·  ${h.row.durability === "transacted" ? "has transacted in it" : "wanted it then"}  ·  seen ${h.times}x`);
-    lines.push(`     ${h.row.evidence}${h.row.intermediated_by ? `  — via ${h.row.intermediated_by}` : ""}`);
+    lines.push(`     ${money(h.row)} ${h.row.side}  ·  ${ageWords(h.ageDays)}  ·  ${h.row.durability === "transacted" ? "has transacted in it" : "wanted it and was never filled"}  ·  seen ${h.times}x`);
+    lines.push(`     "${h.row.quote ?? h.row.evidence}"${h.row.intermediated_by ? `  — via ${h.row.intermediated_by}` : ""}`);
     lines.push(`     ${h.row.source_message}`);
     lines.push("");
   }
@@ -386,6 +494,8 @@ async function main() {
     process.exit(6);
   }
   const suppressed = loadSuppressed();
+  const wrongRows = loadWrongRows();
+  const usable = interests.filter((r) => !wrongRows.has(r.source_message));
 
   let body, subject;
   if (NUDGE) {
@@ -404,26 +514,50 @@ async function main() {
       process.exit(7);
     }
     const contacts = JSON.parse(fs.readFileSync(CONTACTS, "utf8")).contacts ?? [];
-    const result = nudges(interests, contacts, suppressed);
+    const result = nudges(usable, contacts, suppressed);
     body = renderNudge(result);
     subject = result.picked.length
       ? `${result.picked.length} worth a note — ${[...new Set(result.picked.map((n) => n.asset))].join(", ")}`
       : "Nobody worth a note this month";
   } else if (FIND) {
     const side = WANT_SIDE === "sell" ? "sell" : "buy";
-    const hits = assignedSearch(interests, FIND, side, WANT_SIZE, suppressed);
+    const hits = assignedSearch(usable, FIND, side, WANT_SIZE, suppressed);
     body = renderAssigned(hits, FIND, side, WANT_SIZE);
     subject = `${FIND} — ${hits.length} ${side === "buy" ? "buyer" : "seller"}(s) from your own mail`;
   } else {
-    const { picked, considered } = standingMatches(interests, suppressed);
-    body = renderStanding(picked, considered);
-    subject = picked.length
-      ? `${picked.length} cross${picked.length === 1 ? "" : "es"} in your inbox — ${picked.map((m) => m.asset).join(", ")}`
-      : "No cross worth a call today";
+    /*
+     * ONE EMAIL, TWO SECTIONS, AND THE LEADS COME SECOND ONLY BECAUSE A CROSS IS RARER.
+     *
+     * A cross is two people who can trade with each other today and is the highest-value thing this
+     * ledger can find. Most days there is not one. The revival list is what makes the other days
+     * worth opening — open interest that never got filled, which is the business she is trying to
+     * drum up. Sending them as two emails would train her to ignore whichever arrived first.
+     */
+    const contactsPath = process.env.BOSS_OS_CONTACTS_FILE
+      ?? path.join(os.homedir(), ".boss-os", "sourcing", "CONTACTS.json");
+    const contacts = fs.existsSync(contactsPath)
+      ? JSON.parse(fs.readFileSync(contactsPath, "utf8")).contacts ?? [] : [];
+    const rev = revivals(usable, contacts, suppressed);
+    if (REVIVE) {
+      body = renderRevivals(rev);
+      subject = rev.picked.length
+        ? `${rev.picked.length} unfilled — ${[...new Set(rev.picked.map((x) => x.row.asset))].join(", ")}`
+        : "No open interest worth reviving";
+    } else {
+      const { picked, considered } = standingMatches(usable, suppressed);
+      body = [renderStanding(picked, considered), "",
+        "─────────────────────────────────────────────────────────────",
+        "", "WORTH GOING BACK TO — they said what they wanted and never got it", "",
+        renderRevivals(rev)].join("\n");
+      subject = picked.length
+        ? `${picked.length} cross${picked.length === 1 ? "" : "es"} in your inbox — ${picked.map((m) => m.asset).join(", ")}`
+        : (rev.picked.length ? `${rev.picked.length} conversation(s) worth restarting` : "No cross and no lead worth a call today");
+    }
   }
 
-  console.log(`Ledger: ${interests.length} interest(s), ${new Set(interests.map(whoKey)).size} principal(s), `
-    + `${new Set(interests.map((r) => assetKey(r.asset))).size} asset(s). ${suppressed.size} name(s) suppressed.\n`);
+  console.log(`Ledger: ${usable.length} usable interest(s) of ${interests.length}, `
+    + `${new Set(usable.map(whoKey)).size} principal(s), ${new Set(usable.map((r) => assetKey(r.asset))).size} asset(s). `
+    + `${suppressed.size} name(s) suppressed, ${wrongRows.size} row(s) struck as wrong.\n`);
   console.log(body);
 
   if (!SEND) { console.log("\nRe-run with --send to email it."); return; }

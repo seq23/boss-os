@@ -90,7 +90,8 @@
     "capital:extract": "node scripts/ops/interest-extract.mjs",
     "capital:match": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-match.mjs",
     "validate:no-spry-sender": "node scripts/validate/spry-vc-never-sends.mjs && node scripts/validate/spry-vc-never-sends.mjs --self-test",
-    "validate:filter-accounts": "node scripts/validate/the-filter-says-what-it-dropped.mjs && node scripts/validate/the-filter-says-what-it-dropped.mjs --self-test"
+    "validate:filter-accounts": "node scripts/validate/the-filter-says-what-it-dropped.mjs && node scripts/validate/the-filter-says-what-it-dropped.mjs --self-test",
+    "capital:review": "node scripts/ops/interest-extract.mjs --review"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

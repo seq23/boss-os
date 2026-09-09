@@ -65,35 +65,37 @@ const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null 
 const LIMIT = Number(argOf("limit") ?? 0);
 
 const FIRM = "rainmakersecurities.com";
-const VERIFY = ARGS.includes("--verify");
 
 /**
- * ─── THE ONLY HONEST CHECK: DEALS SHE ACTUALLY DID ─────────────────────────
+ * ─── HOW THIS IS ACTUALLY VERIFIED, AND WHY IT IS NOT RECALL ───────────────
  *
- * EVERY OTHER CHECK THIS SYSTEM COULD RUN IS MARKING ITS OWN HOMEWORK. The extraction can report a
- * confident count of interests, a plausible spread of assets and a tidy discard rate, and be
- * silently missing half the market — and nothing in the output would look different. Plausible
- * output is not evidence.
+ * The first version of this file carried a list of five past transactions and refused to run until
+ * she supplied them — recall against her own book, the same check that caught a 10-of-12 failure in
+ * the LP scan. IT WAS BUILT ON AN ASSUMPTION NOBODY CHECKED, and she corrected it:
  *
- * The precedent is three weeks old and it caught a real failure. `lp-positive.mjs` carries twelve
- * replies the owner listed from her own records; the first version of the search found two of them,
- * and reported the other ten as a clean result rather than as a loss. A 10-of-12 recall failure that
- * looked exactly like success.
+ *   "i havent done any deals in a while thats the whole point of having this agent help me drum up
+ *    business"
  *
- * SO: FIVE PAST TRANSACTIONS SHE KNOWS HAPPENED — the counterparty, the company, roughly when. The
- * extraction has to recover them out of her own mailbox. If it cannot find a deal she knows she did,
- * it is not ready, and no amount of good-looking output changes that.
+ * There is no book of closed trades to reconcile against, so recall is not a test that exists here.
  *
- * THIS LIST IS EMPTY, AND THAT IS A NAMED STOP RATHER THAN A GAP. It is the one thing in this
- * feature that only she can supply, so `--verify` refuses loudly instead of inventing a ground truth
- * for itself. When the list ever goes stale, that is a reason to update it from her records — never
- * a reason to soften the check.
+ * PRECISION IS, AND IT IS THE ONE THAT MATTERS MORE ANYWAY. A wrong row eventually becomes a phone
+ * call to somebody about stock they never wanted, which costs credibility in a market where
+ * everybody knows everybody — one bad call outweighs ten missed matches. So the acceptance test is:
+ * twenty-five rows, highest confidence first, each with THE SENTENCE OUT OF THE MESSAGE that
+ * produced it, and she says which are wrong.
  *
- * Each entry: [counterparty name or address, company, roughly when, one line of what it was]
+ * THE QUOTE IS WHAT MAKES IT A TEST RATHER THAN A MATTER OF TRUST. Without it she is being asked to
+ * agree with a summary of a message she cannot see. With it, twenty rows take a few minutes and the
+ * errors show their own pattern — over-reading vague language, mistaking a co-broker for a
+ * principal, catching a discussion about a company rather than an interest in its stock.
+ *
+ *   npm run capital:review                       # the review set
+ *   npm run capital:review -- --wrong <id>       # that row was wrong: struck, and counted
  */
-const KNOWN_DEALS = [
-  // e.g. ["daniel@kellscapital.com", "OpenAI", "2026-08", "his buyer took part of the block"],
-];
+const REVIEW = ARGS.includes("--review");
+const WRONG = argOf("wrong");
+const REVIEW_SIZE = Number(process.env.CAPITAL_REVIEW_SIZE ?? 25);
+const WRONG_FILE = path.join(DIR, "wrong.json");
 
 // ─── The structured-order fast path ──────────────────────────────────────────
 
@@ -120,6 +122,7 @@ export function structuredOrder(msg) {
     size_shares: null,
     size_text: `$${amount}${unit ? unit.toUpperCase() : ""}`,
     price_text: price ? price.trim().slice(0, 60) : null,
+    quote: String(msg.subject ?? "").slice(0, 220),
     /*
      * A LIVE ORDER IS PERISHABLE BY DEFINITION. It fills, or the mark moves, or the mandate closes.
      * Calling it durable would put a filled block in front of her a year later as if it were still
@@ -194,6 +197,13 @@ export function admissible(row, msg) {
   if (/@|^https?:/i.test(String(row.asset))) return "asset is an address or a link";
   if (row.confidence && !["high", "medium", "low"].includes(row.confidence)) return "bad confidence";
   if (row.source_message && msg && row.source_message !== msg.source_message) return "source id does not match";
+  /*
+   * A ROW WITHOUT THE SENTENCE THAT PRODUCED IT IS AN UNCHECKABLE ROW, and an uncheckable ledger is
+   * one she has to take on trust. Recall against her own book is not available here — she has not
+   * closed a deal in a while, which is the whole reason this exists — so PRECISION judged on real
+   * sentences is the only acceptance test there is. No quote, no row.
+   */
+  if (!row.quote || String(row.quote).trim().length < 8) return "no quote from the message";
   return null;
 }
 
@@ -210,67 +220,85 @@ const normalise = (row, msg) => ({
   confidence: row.confidence ?? "low",
   intermediated_by: row.intermediated_by ? String(row.intermediated_by).toLowerCase().slice(0, 160) : null,
   evidence: String(row.evidence ?? "").slice(0, 160),
+  // BOUNDED, like every other quote this repository persists. A sentence is a reason; a paragraph
+  // is a mail archive assembling itself one row at a time.
+  quote: String(row.quote ?? "").replace(/\s+/g, " ").trim().slice(0, 220),
   source_message: msg.source_message,
   date: msg.date,
   via: "model",
 });
 
+const CONF_ORDER = { high: 0, medium: 1, low: 2 };
+
+/** The rows she has struck. A struck row is wrong, so it leaves the ledger's recommendations for good. */
+export const loadWrong = () => {
+  try { return new Set(JSON.parse(fs.readFileSync(WRONG_FILE, "utf8")).rows ?? []); } catch { return new Set(); }
+};
+
 /**
- * Recall against her own records. Returns the deals the ledger cannot account for.
+ * The review set: the rows most likely to be acted on, so the ones whose correctness matters most.
  *
- * A hit is: the counterparty appears in the ledger, on that company, within four months of when she
- * says it happened. Four months rather than a date match because she is recalling a transaction, not
- * reading a confirm, and a window that demands the day would fail on her memory rather than on the
- * extraction.
+ * HIGHEST CONFIDENCE FIRST, NOT A RANDOM SAMPLE. A random sample measures the ledger; this measures
+ * the part of it that will reach her. A `low` row she will never see being wrong costs nothing; a
+ * `high` row being wrong is the phone call.
  */
-export function recall(interests, deals) {
-  const missed = [];
-  const found = [];
-  for (const [whoRaw, company, when, note] of deals) {
-    const who = String(whoRaw).toLowerCase();
-    const asset = String(company).toLowerCase().replace(/[^a-z0-9]+/g, "");
-    const target = Date.parse(`${when.length === 7 ? `${when}-15` : when}T12:00:00Z`);
-    const hit = interests.find((r) =>
-      String(r.asset ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "") === asset
-      && (`${r.principal ?? ""} ${r.principal_email ?? ""} ${r.intermediated_by ?? ""}`).toLowerCase().includes(who)
-      && Math.abs(Date.parse(`${r.date}T12:00:00Z`) - target) < 124 * 86_400_000);
-    if (hit) found.push([whoRaw, company, when, hit]); else missed.push([whoRaw, company, when, note]);
-  }
-  return { found, missed };
+export function reviewSet(interests, wrong, n) {
+  return interests
+    .filter((r) => !wrong.has(r.source_message) && r.quote)
+    .sort((a, b) => (CONF_ORDER[a.confidence] - CONF_ORDER[b.confidence])
+      || String(b.date).localeCompare(String(a.date)))
+    .slice(0, n);
+}
+
+function strike(id) {
+  const set = loadWrong();
+  set.add(String(id).trim());
+  fs.mkdirSync(DIR, { recursive: true });
+  fs.writeFileSync(WRONG_FILE, JSON.stringify({ updated_at: new Date().toISOString(), rows: [...set] }, null, 2), "utf8");
+  console.log(`Row ${id} struck. ${set.size} row(s) marked wrong.`);
+  console.log("  It will not appear in any match or recommendation again.");
+  console.log(`  The list is ${WRONG_FILE}; delete a line to undo it.`);
 }
 
 async function main() {
-  if (VERIFY) {
-    const ledger = fs.existsSync(LEDGER) ? JSON.parse(fs.readFileSync(LEDGER, "utf8")).interests ?? [] : [];
-    if (KNOWN_DEALS.length === 0) {
-      console.error("NAMED STOP [NO_GROUND_TRUTH] the extraction cannot be verified, and nothing else can verify it.");
-      console.error("");
-      console.error(`  The ledger holds ${ledger.length} interest(s). That number is plausible and it is not evidence.`);
-      console.error("  Every check this system could run on itself is marking its own homework: a scan that");
-      console.error("  silently lost half the market would print exactly the same kind of number.");
-      console.error("");
-      console.error("  WHAT IS NEEDED, AND ONLY SHE HAS IT: five transactions she knows she did.");
-      console.error("  For each one — the counterparty, the company, and roughly when. Nothing else.");
-      console.error("  They go in KNOWN_DEALS at the top of this file, and `--verify` then fails loudly");
-      console.error("  on any the extraction cannot recover out of her own mailbox.");
-      console.error("");
-      console.error("  This is the same check that caught a 10-of-12 recall failure in the LP scan — a");
-      console.error("  failure that looked identical to success until her own list was put against it.");
-      process.exit(11);
+  if (WRONG) { strike(WRONG); return; }
+
+  if (REVIEW) {
+    if (!fs.existsSync(LEDGER)) {
+      console.error(`NAMED STOP [NO_LEDGER] ${LEDGER} does not exist. Build it first: npm run capital:extract`);
+      process.exit(5);
     }
-    const { found, missed } = recall(ledger, KNOWN_DEALS);
-    console.log(`=== RECALL AGAINST ${KNOWN_DEALS.length} DEAL(S) SHE KNOWS SHE DID ===`);
-    for (const [who, company, when, hit] of found) console.log(`  FOUND    ${String(who).padEnd(34)} ${company} ~${when}  (ledger row ${hit.source_message})`);
-    for (const [who, company, when, note] of missed) console.log(`  MISSING  ${String(who).padEnd(34)} ${company} ~${when}  ${note ?? ""}`);
-    console.log(`\n  ${found.length} of ${KNOWN_DEALS.length} recovered.`);
-    if (missed.length) {
-      console.error(`\nNAMED STOP [RECALL_FAILED] the extraction did not recover ${missed.length} deal(s) she knows happened.`);
-      console.error("  The filter is too narrow or the extraction is dropping rows. A ledger that");
-      console.error("  silently loses a counterparty is worse than no ledger, because she has no way");
-      console.error("  to know it happened. Do not soften this check — widen the thing that lost them.");
-      process.exit(12);
+    const all = JSON.parse(fs.readFileSync(LEDGER, "utf8")).interests ?? [];
+    const wrong = loadWrong();
+    const set = reviewSet(all, wrong, REVIEW_SIZE);
+    /*
+     * RULE 0. An empty review set from a non-empty ledger means every row lost its quote, which is
+     * the one thing that makes a row checkable. Printing "nothing to review" would report a clean
+     * bill of health on an unverifiable ledger.
+     */
+    if (all.length > 0 && set.length === 0) {
+      console.error(`NAMED STOP [NOTHING_CHECKABLE] the ledger holds ${all.length} row(s) and none carries a quote.`);
+      console.error("  Without the sentence out of the message there is nothing to check a row against,");
+      console.error("  and the ledger's correctness becomes a matter of trust. Re-run the extraction.");
+      process.exit(13);
     }
-    console.log("RECALL PASSED");
+    console.log(`=== REVIEW SET — ${set.length} row(s), highest confidence first ===`);
+    console.log(`Ledger: ${all.length} interest(s). ${wrong.size} already struck as wrong.\n`);
+    console.log("Read the sentence. If it does not say what the row says, the row is wrong:");
+    console.log("  npm run capital:review -- --wrong <id>\n");
+    for (const r of set) {
+      console.log(`[${r.source_message}]  ${r.date}  ${r.side.toUpperCase()}  ${r.asset}  ${r.size_text ?? ""}  (${r.confidence})`);
+      console.log(`   principal:  ${r.principal}${r.principal_email ? ` <${r.principal_email}>` : ""}`);
+      if (r.intermediated_by) console.log(`   via:        ${r.intermediated_by}`);
+      console.log(`   said:       "${r.quote}"`);
+      console.log("");
+    }
+    const struck = wrong.size;
+    if (struck) {
+      const judged = struck + set.length;
+      console.log(`So far: ${struck} of ${judged} judged rows were wrong — ${((1 - struck / judged) * 100).toFixed(0)}% precision on what you have read.`);
+      console.log("  A third wrong is a failing extraction, and the errors will show their own pattern.");
+    }
     return;
   }
 

@@ -13,6 +13,20 @@
 --
 -- ─── Two duties, and why they are two ───────────────────────────────────────
 --
+-- IT IS A REVIVAL ENGINE, AND THAT WAS A CORRECTION. The first design leant on a durable half of
+-- the ledger — "has transacted in X" — and treated a live expression of interest as the perishable
+-- second-class half. She corrected it: "i havent done any deals in a while thats the whole point of
+-- having this agent help me drum up business." The durable half is thin, so the value is entirely in
+-- the conversations: people who expressed interest and NEVER GOT FILLED. An interest that never
+-- closed is more actionable than one that did — the closed one is done, the open one is a phone
+-- call — so the daily mail is two sections, the crosses and then what is worth going back to.
+--
+-- AND IT IS VERIFIED BY PRECISION, NOT RECALL. There is no book of closed trades to reconcile
+-- against. `npm run capital:review` puts twenty-five rows in front of her, highest confidence
+-- first, each with THE SENTENCE OUT OF THE MESSAGE that produced it, and `--wrong <id>` strikes one
+-- everywhere. A row with no quote is refused: an unquoted row cannot be checked, and a ledger that
+-- cannot be checked is one she has to take on trust.
+--
 -- DAILY, INBOUND SUPPLY. New supply is perishable in a way nothing else here is: a block offered on
 -- Tuesday is often gone by Friday, and a weekly sweep would meet half of it after it filled. The
 -- daily run scans only since the last scan, so it costs a few cents, and it matches whatever it

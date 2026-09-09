@@ -48,7 +48,8 @@ once have been a counterparty. Anchor only on asset, side and size.
   "durability": "transacted" | "wants_now",
   "confidence": "high" | "medium" | "low",
   "intermediated_by": "co-broker address, or null",
-  "evidence": "one short clause, under 20 words, in your own words — never a sentence lifted whole"
+  "evidence": "one short clause, under 20 words, in your own words",
+  "quote": "the sentence from the message that states this interest, copied exactly, under 220 characters"
 }
 ```
 
@@ -63,8 +64,14 @@ once have been a counterparty. Anchor only on asset, side and size.
   `medium` when one is inferred from immediate context. `low` otherwise. **A wrong match costs her a
   phone call and her credibility in a small market — one bad call outweighs ten missed matches — so
   a `low` is honest and a padded `high` is not.**
-- **`evidence`** is your own short clause, never a quotation. It is what a match will show her so she
-  can judge it in two seconds.
+- **`evidence`** is your own short clause. It is what a match line shows her so she can judge it in
+  two seconds.
+- **`quote` is the sentence that made you write the row, copied out of the message exactly.** Not
+  paraphrased, not tidied, not assembled from two places. **This is what makes the row checkable
+  rather than a matter of trust**: she reads twenty rows against twenty real sentences and tells you
+  which are wrong, and that is the only acceptance test this system can honestly run. If you cannot
+  point at one sentence that says it, **you do not have a row** — emit nothing rather than a quote
+  you had to construct. Keep it under 220 characters; a clause is better than a paragraph.
 
 ## WHAT IS NOT AN INTEREST
 
