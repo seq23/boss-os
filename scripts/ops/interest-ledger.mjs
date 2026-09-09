@@ -96,7 +96,7 @@ const ARGS = process.argv.slice(2);
 const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null : (ARGS[i + 1] ?? null); };
 const BACKFILL = ARGS.includes("--backfill");
 const SINCE = argOf("since");
-const CONCURRENCY = Number(process.env.CAPITAL_CONCURRENCY ?? 12);
+const CONCURRENCY = Number(process.env.CAPITAL_CONCURRENCY ?? 8);
 const MAX_FETCH = Number(process.env.CAPITAL_MAX_FETCH ?? 200_000);
 const BATCH_SIZE = Number(process.env.CAPITAL_BATCH_SIZE ?? 12);
 
@@ -253,12 +253,28 @@ async function pooled(items, limit, worker) {
   await Promise.all(runners);
 }
 
-async function api(url, token, tries = 4) {
+/**
+ * ─── 403 IS A RATE LIMIT HERE, AND TREATING IT AS A REFUSAL LOST 57% OF THE MAILBOX ────
+ *
+ * The first full backfill reported 4,432 candidates out of 104,240 and a tidy 95.75% discard. It was
+ * not a filter result. `header_fetch_failed: 43,323` and `body_fetch_failed: 16,128` — FIFTY-NINE
+ * THOUSAND MESSAGES WERE NEVER READ AT ALL, because Gmail signals a per-user rate limit as **403
+ * `userRateLimitExceeded`**, not 429, and this gave up on any 403 immediately.
+ *
+ * Nothing crashed and nothing looked wrong. The only reason it was visible is that every message had
+ * to end in a NAMED bucket, so "we could not read it" could not hide inside "we decided against it".
+ * That is the entire argument for the itemised discard.
+ *
+ * So: 403 and 429 both back off, the backoff is long enough for a real rate limit rather than a
+ * blip, and the two failure kinds are counted apart from the decisions — a message that was never
+ * read is not a message that was filtered, and the run refuses to finish if too many were lost.
+ */
+async function api(url, token, tries = 8) {
   for (let i = 0; i < tries; i += 1) {
     const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
     if (r.ok) return r.json();
-    if (r.status === 429 || r.status >= 500) {
-      await new Promise((res) => setTimeout(res, 400 * 2 ** i + Math.random() * 300));
+    if (r.status === 403 || r.status === 429 || r.status >= 500) {
+      await new Promise((res) => setTimeout(res, Math.min(30_000, 800 * 2 ** i) + Math.random() * 500));
       continue;
     }
     return null;
@@ -325,6 +341,12 @@ async function main() {
   // ─── Stage A: side vocabulary, in Gmail's index ───
   const candidateIds = await listIds(token, `${scope} ${GMAIL_SHAPE}`, MAX_FETCH);
   const drops = { gmail_no_trade_vocabulary: census - candidateIds.length };
+  /*
+   * COUNTED APART FROM THE DECISIONS, because they are a different fact. A drop is "this message was
+   * read and it is not a trade". An unread is "this message was never seen", and folding the second
+   * into the first is how 59,451 lost messages once looked like an efficient filter.
+   */
+  const unread = {};
   console.log(`census ${census}  →  ${candidateIds.length} carry secondary-market vocabulary`);
 
   // ─── Stage 1: structural bulk, from HEADERS ONLY. This pass never asks for a body. ───
@@ -347,7 +369,7 @@ async function main() {
     if (reason) { drops[reason] = (drops[reason] ?? 0) + 1; return; }
     survivors.push({ id, h, ts: Number(msg.internalDate ?? 0) });
   });
-  if (headerFailures) drops.header_fetch_failed = headerFailures;
+  if (headerFailures) unread.header_fetch_failed = headerFailures;
   console.log(`\nstage 1 (headers only, structural): ${survivors.length} of ${candidateIds.length} are not bulk`);
 
   // ─── Stage 2: the shape of a trade, over the decoded body ───
@@ -378,10 +400,11 @@ async function main() {
       excerpt: body.slice(0, EXCERPT_BOUND),
     });
   });
-  if (bodyFailures) drops.body_fetch_failed = bodyFailures;
+  if (bodyFailures) unread.body_fetch_failed = bodyFailures;
 
   // ─── The accounting. Every message ends in exactly one named bucket. ───
   const dropped = Object.values(drops).reduce((a, b) => a + b, 0);
+  const neverRead = Object.values(unread).reduce((a, b) => a + b, 0);
   const pct = ((dropped / census) * 100).toFixed(2);
   console.log(`\nstage 2 (size AND side, over the body): ${kept.length} candidate interest(s)\n`);
   console.log(`WHAT THE FILTER DISCARDED — ${dropped} of ${census} (${pct}%)`);
@@ -389,11 +412,31 @@ async function main() {
     console.log(`  ${String(n).padStart(7)}  ${reason}`);
   }
   console.log(`  ${String(kept.length).padStart(7)}  KEPT — passed to extraction`);
-  if (dropped + kept.length !== census) {
-    console.error(`\nNAMED STOP [UNACCOUNTED] ${census - dropped - kept.length} message(s) are in no bucket.`);
+  if (neverRead) {
+    console.log("\nNEVER READ AT ALL — not a filter decision:");
+    for (const [reason, n] of Object.entries(unread)) console.log(`  ${String(n).padStart(7)}  ${reason}`);
+  }
+  if (dropped + neverRead + kept.length !== census) {
+    console.error(`\nNAMED STOP [UNACCOUNTED] ${census - dropped - neverRead - kept.length} message(s) are in no bucket.`);
     console.error("  A filter that cannot say where every message went cannot be audited, and an");
     console.error("  unaudited filter is how a real deal disappears without anyone noticing.");
     process.exit(7);
+  }
+
+  /*
+   * A MESSAGE THAT WAS NEVER READ IS NOT A MESSAGE THAT WAS FILTERED, and a run that lost a
+   * meaningful share of the mailbox to rate limits has not scanned the mailbox. One per cent is the
+   * line: below it the ledger is materially complete, above it the answer is a guess wearing a
+   * count. This is a hard stop rather than a warning because the run that produced 59,451 unread
+   * messages printed a perfectly confident summary and exited 0.
+   */
+  const unreadPct = (neverRead / census) * 100;
+  if (unreadPct > 1) {
+    console.error(`\nNAMED STOP [MAILBOX_NOT_FULLY_READ] ${neverRead} message(s) — ${unreadPct.toFixed(2)}% — were never read.`);
+    console.error("  Gmail signals a per-user rate limit as 403, and a fetch that gave up is not a filter");
+    console.error("  decision. Lower CAPITAL_CONCURRENCY and re-run; the candidates already written are");
+    console.error("  a partial read and must not be mistaken for the market.");
+    process.exit(10);
   }
 
   /*
@@ -424,7 +467,7 @@ async function main() {
     scanned_at: new Date().toISOString(),
     mailbox: MAILBOX,
     window: since ? `after:${since}` : "the whole history",
-    census, kept: kept.length, dropped, discard_pct: Number(pct), drops, batches,
+    census, kept: kept.length, dropped, never_read: neverRead, discard_pct: Number(pct), drops, unread, batches,
   }, null, 2), "utf8");
   fs.writeFileSync(STATE_FILE, JSON.stringify({
     last_scanned_date: today, last_census: census, last_kept: kept.length,

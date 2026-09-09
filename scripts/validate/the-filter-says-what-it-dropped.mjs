@@ -58,8 +58,12 @@ const NAME_TRIPWIRE = /\b(spacex|bytedance|stripe|anthropic|openai|databricks|ne
 export function checkFilter(src) {
   const bad = [];
   const must = [
-    [/dropped \+ kept\.length !== census|census - dropped - kept\.length/,
-     "it must reconcile dropped + kept against the census and stop when they disagree"],
+    [/dropped \+ neverRead \+ kept\.length !== census/,
+     "it must reconcile dropped + never-read + kept against the census and stop when they disagree"],
+    [/NAMED STOP \[MAILBOX_NOT_FULLY_READ\]/,
+     "a message that was never read is not a message that was filtered — losing a meaningful share of the mailbox to rate limits must be a hard stop, not a drop reason"],
+    [/r\.status === 403/,
+     "403 must be retried: Gmail signals a per-user rate limit as 403, and treating it as a refusal once lost 59,451 messages behind a confident summary"],
     [/NAMED STOP \[UNACCOUNTED\]/,
      "a message in no bucket must be a named stop, not a rounding difference"],
     [/drops\[[a-zA-Z_]+\] = \(drops\[[a-zA-Z_]+\] \?\? 0\) \+ 1/,
@@ -139,8 +143,11 @@ if (process.argv.includes("--self-test")) {
    * validator works when it does not is worse than none at all.
    */
   expect("a filter that stops reconciling is caught",
-    checkFilter(real.replace(/dropped \+ kept\.length !== census/g, "false")
-      .replace(/census - dropped - kept\.length/g, "0")).length > 0);
+    checkFilter(real.replace(/dropped \+ neverRead \+ kept\.length !== census/g, "false")).length > 0);
+  expect("a filter that folds unread messages back into its drop counts is caught",
+    checkFilter(real.replace(/NAMED STOP \[MAILBOX_NOT_FULLY_READ\]/g, "note")).length > 0);
+  expect("a filter that stops retrying Gmail's 403 rate limit is caught",
+    checkFilter(real.replace(/r\.status === 403 \|\| /g, "")).length > 0);
   expect("a filter that stops naming its drops is caught",
     checkFilter(real.replace(/WHAT THE FILTER DISCARDED/g, "done")).length > 0);
   expect("a filter that would pass on a 100% discard is caught",
@@ -185,10 +192,14 @@ if (existsSync(SCAN)) {
   try {
     const s = JSON.parse(readFileSync(SCAN, "utf8"));
     const summed = Object.values(s.drops ?? {}).reduce((a, b) => a + b, 0);
-    if (summed + s.kept !== s.census) {
-      bad.push(`${SCAN}: the last real run does not balance — ${summed} dropped + ${s.kept} kept ≠ ${s.census} census.`);
+    const nr = Object.values(s.unread ?? {}).reduce((a, b) => a + b, 0);
+    if (summed + nr + s.kept !== s.census) {
+      bad.push(`${SCAN}: the last real run does not balance — ${summed} dropped + ${nr} unread + ${s.kept} kept ≠ ${s.census} census.`);
     }
     if (s.kept === 0) bad.push(`${SCAN}: the last real run kept nothing out of ${s.census} message(s).`);
+    if ((s.never_read ?? 0) / s.census > 0.01) {
+      bad.push(`${SCAN}: the last real run never read ${s.never_read} of ${s.census} message(s). That is not a scan of the mailbox.`);
+    }
     if (s.discard_pct >= 99.9) {
       bad.push(`${SCAN}: the last real run discarded ${s.discard_pct}%. That is a broken stage, not an efficient filter.`);
     }
