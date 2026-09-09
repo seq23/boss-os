@@ -29,20 +29,58 @@ function unfold(text) {
   return text.replace(/\r\n/g, "\n").replace(/\n[ \t]/g, "");
 }
 
-/** `20260909T140000Z`, `20260909T090000` or `20260909` → epoch ms. */
+/**
+ * The UTC offset a zone was at on a given instant, in minutes.
+ *
+ * Intl already knows every rule, so this asks it rather than shipping a timezone database — and it
+ * asks it FOR THAT DATE, which is the part a fixed offset gets wrong twice a year.
+ */
+function offsetMinutes(zone, utcGuess) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone, hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(new Date(utcGuess));
+    const get = (t) => Number(parts.find((p) => p.type === t)?.value);
+    const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+    return (asUtc - utcGuess) / 60000;
+  } catch {
+    // An unknown zone is treated as UTC and said so by the caller, rather than throwing away the event.
+    return 0;
+  }
+}
+
+/**
+ * `20260909T140000Z`, `20260909T110000` with a TZID, or `20260909` → epoch ms.
+ *
+ * ─── THE APPROXIMATION THAT WAS HERE, AND WHY IT HAD TO GO ─────────────────
+ *
+ * This used to treat a floating or TZID-qualified time as UTC, with a comment saying so. It looked
+ * harmless and it was not: her standing Wednesday is `DTSTART;TZID=America/New_York:20260909T110000`,
+ * and reading that as UTC put it in the diary at the wrong hour — beside the SAME meeting read
+ * correctly from the Calendar API, so the screen showed one meeting twice, hours apart. A documented
+ * approximation is still a wrong answer on a screen.
+ *
+ * Two passes because an offset depends on the instant it is asked about: guess UTC, ask the zone
+ * what it was doing then, then re-ask at the corrected instant. That second pass is what makes the
+ * hour before a DST change come out right.
+ */
 function icsTime(value, params) {
   const v = value.trim();
   const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(v);
   if (!m) return null;
   const [, y, mo, d, hh = "09", mi = "00", ss = "00", z] = m;
-  /*
-   * A FLOATING OR TZID TIME IS TREATED AS UTC, AND THAT IS A KNOWN APPROXIMATION RATHER THAN A BUG
-   * NOBODY NOTICED. Carrying real timezone rules would mean shipping a tz database to shift a
-   * diary row by an hour; the row still says the right day and the right meeting, which is what the
-   * screen is for. Named here so the next person does not have to work out whether it was intended.
-   */
-  void params; void z;
-  return Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(hh), Number(mi), Number(ss));
+  const naive = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(hh), Number(mi), Number(ss));
+  if (z) return naive;
+
+  const tzid = /TZID=([^;:]+)/.exec(params ?? "")?.[1];
+  // A date with no time and no zone is an all-day event; 09:00 UTC keeps it on the right day
+  // everywhere she is likely to be, and an all-day event has no hour to be wrong about.
+  if (!tzid) return naive;
+
+  const first = naive - offsetMinutes(tzid, naive) * 60000;
+  return naive - offsetMinutes(tzid, first) * 60000;
 }
 
 /**

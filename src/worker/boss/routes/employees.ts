@@ -3,12 +3,185 @@ import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
+import { draftDuty } from "../duties/author";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { overlappingCharters, type RosterMember } from "@shared/boss/rosterOverlap";
 
 export const employees = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const LIFECYCLE = ["proposed", "provisional", "active", "under_review", "merged", "retired", "suspended"];
+
+/**
+ * ── THE ROSTER, WITH WHAT EACH SEAT ACTUALLY OWNS ─────────────────────────
+ *
+ *   "is there an area where i can see all employees pre-set duties?"
+ *
+ * The detail screen has shown one employee's duties for a while; there was nowhere to see all of
+ * them at once, which is the question she was asking. Two things this is honest about that were
+ * previously invisible:
+ *
+ *   · A SEAT WITH NO DUTY IS SHOWN AS AN EMPTY SEAT rather than omitted. Zora has a charter and no
+ *     work, and she may want to give her some — this morning she said Simone can hand design work to
+ *     a colleague, and Zora is the obvious candidate.
+ *   · A DUTY THAT HAS NEVER SUCCEEDED SAYS SO. `duty_practice_week` fired every Sunday for eleven
+ *     weeks into a handler that did not exist, and every signal read as success because a duty's
+ *     success criterion is that it ran.
+ */
+employees.get("/roster", async (c) => {
+  const now = Date.now();
+  const [people, duties] = await Promise.all([
+    c.env.DB
+      .prepare(
+        `SELECT id, name, role, department, lane, charter FROM employees
+          WHERE lifecycle NOT IN ('retired','merged') ORDER BY department, name`,
+      )
+      .all<any>(),
+    c.env.DB
+      .prepare(
+        `SELECT id, name, employee_id, cadence, weekday, weekdays, local_hour, local_minute,
+                timezone, executor, next_due_at, last_run_at, suspended, suspended_reason,
+                success_criteria, task_input
+           FROM standing_duties ORDER BY employee_id, next_due_at`,
+      )
+      .all<any>(),
+  ]);
+
+  const byEmployee = new Map<string, any[]>();
+  for (const d of duties.results ?? []) {
+    let model: string | null = null;
+    let localJob: string | null = null;
+    let delivers: string | null = null;
+    try {
+      const input = JSON.parse(d.task_input ?? "{}");
+      model = input?.requested?.model ?? null;
+      localJob = input?.local_job ?? null;
+      delivers = input?.delivers ?? null;
+    } catch {
+      // A malformed input is that duty's problem; one bad row must not make the roster unreadable.
+    }
+    const perRun = model?.includes("sonnet") ? 0.3 : 0.05;
+    /*
+     * `weekdays` IS PART OF THE CADENCE AND WAS BEING IGNORED. Brokerage sourcing is `daily` with
+     * weekdays [1,3,5] — Mon/Wed/Fri — and pricing it as thirty runs a month reported $9 against a
+     * real ~$3.90. An over-estimate is not harmless here: it is the number she checks the $25
+     * ceiling against, and one that cries wolf gets discounted along with the real ones.
+     */
+    let days = 0;
+    try { days = (JSON.parse(d.weekdays ?? "null") ?? []).length; } catch { days = 0; }
+    const runsPerMonth = d.cadence === "daily" ? (days > 0 ? days * 4.3 : 30) : 4.3;
+    const perMonth = Math.round(perRun * runsPerMonth * 100) / 100;
+    const list = byEmployee.get(d.employee_id) ?? [];
+    list.push({
+      ...d,
+      model,
+      /*
+       * A DUTY WITH NO MODEL NAMED INHERITS THE MOST EXPENSIVE ONE AVAILABLE. That is what made a
+       * single briefing cost $3.88, and it is invisible unless something says it out loud.
+       */
+      model_warning: model ? null : "This duty names no model, so it runs the most expensive one available.",
+      local_job: localJob,
+      delivers,
+      estimated_per_run_usd: perRun,
+      estimated_per_month_usd: perMonth,
+      /*
+       * NEVER HAVING RUN IS A DIFFERENT FACT FROM RUNNING BADLY, and both are different from being
+       * switched off with a reason. All three used to render the same way: as a row.
+       */
+      state: d.suspended === 1 ? "suspended" : d.last_run_at ? "running" : "never fired",
+      overdue: d.suspended !== 1 && d.next_due_at < now - 86_400_000,
+    });
+    byEmployee.set(d.employee_id, list);
+  }
+
+  const roster = (people.results ?? []).map((e: any) => ({
+    ...e,
+    duties: byEmployee.get(e.id) ?? [],
+    /*
+     * SAID, NOT IMPLIED BY AN EMPTY LIST. An employee with a charter and no work is a real state and
+     * the screen should name it — it is how she decides who to give something to.
+     */
+    empty_seat: (byEmployee.get(e.id) ?? []).length === 0,
+  }));
+
+  const monthly = roster
+    .flatMap((e: any) => e.duties)
+    .filter((d: any) => d.suspended !== 1)
+    .reduce((sum: number, d: any) => sum + d.estimated_per_month_usd, 0);
+
+  return ok(c, {
+    intent:
+      "Who acts without being asked, when, and what it costs. An empty seat is a person you could " +
+      "give something to; a duty that has never fired is one to look at rather than trust.",
+    roster,
+    monthly_estimate_usd: Math.round(monthly * 100) / 100,
+    ceiling_usd: 25,
+    empty_seats: roster.filter((e: any) => e.empty_seat).map((e: any) => e.name),
+  });
+});
+
+/**
+ * ── SHE DESCRIBES A DUTY; THIS DRAFTS IT AND PUTS IT TO HER ───────────────
+ *
+ *   "and i can add duties? and maybe the system can help me prompt that. like for instance if i say
+ *    'simone - handle all KDP and ebook publishing stuff' then a proper prompt builds"
+ *
+ * NOTHING IS CREATED HERE. The draft goes into the Inbox as a judgement call, so she sees the
+ * cadence, the model, the cost against the ceiling and the actual prompt before anything exists —
+ * and Approve is what creates it, through the same loop as the covers.
+ *
+ * A DRAFT THAT CANNOT WORK IS REFUSED RATHER THAN RAISED. Every refusal in the draft is an invariant
+ * a validator would otherwise catch after the fact, and after the fact means on its first run, at
+ * 6am, in front of her.
+ */
+employees.post("/duties/draft", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const employeeId = String(b?.employee_id ?? "").trim();
+  const phrase = String(b?.phrase ?? "").trim();
+
+  const draft = await draftDuty(c.env, employeeId, phrase, b?.overrides ?? {});
+  if (b?.preview === true) return ok(c, { draft });
+
+  if (draft.refusals.length > 0) {
+    throw badRequest(
+      "This duty would not work, so it was not raised",
+      draft.refusals.join(" "),
+    );
+  }
+
+  const res = await fetch(new URL("/api/judgement", c.req.url), {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: c.req.header("cookie") ?? "" },
+    body: JSON.stringify({
+      employee_id: employeeId,
+      lane: "ops",
+      risk: draft.over_ceiling ? "high" : "medium",
+      title: `New duty for ${draft.employee_name} — ${draft.name}`,
+      question:
+        `${draft.cadence === "daily" ? "Daily" : "Weekly"} at ${String(draft.local_hour).padStart(2, "0")}:${String(draft.local_minute).padStart(2, "0")}, ` +
+        `on ${draft.model.includes("sonnet") ? "the better model" : "Haiku"}, about $${draft.estimated_per_month_usd} a month — ` +
+        `taking the schedule to $${draft.monthly_total_after_usd} of $${draft.ceiling_usd}. ` +
+        (draft.over_ceiling ? "THAT IS OVER THE CEILING. " : "") +
+        `${draft.cadence_reason} ${draft.model_reason} ${draft.executor_reason} ${draft.delivers_reason} ` +
+        "Approve and it goes on the schedule as drafted, or send it back with what to change.",
+      resume_kind: "duty_created",
+      supersedes_key: "duty_created",
+    }),
+  });
+  if (!res.ok) throw badRequest("The draft could not be raised", (await res.text()).slice(0, 300));
+  const raised = (await res.json()) as any;
+
+  /*
+   * THE DRAFT ITSELF IS STORED ON THE JUDGEMENT so approving can create exactly what she saw. A
+   * resume that re-derived the draft could produce something different from what she approved,
+   * which is the one thing an approval must never do.
+   */
+  await c.env.DB
+    .prepare(`UPDATE judgement_calls SET resume_detail = ? WHERE id = ?`)
+    .bind(JSON.stringify(draft), raised.data.id)
+    .run();
+
+  return ok(c, { draft, judgement_id: raised.data.id }, 201);
+});
 
 employees.get("/", async (c) => {
   const rows = await c.env.DB

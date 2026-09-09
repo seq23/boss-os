@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { recordDeliverableActivity } from "../today/deliverables";
+import { DELIVERABLE_KEYS } from "../duties/author";
 
 /**
  * WHAT HER "APPROVED" ACTUALLY SETS IN MOTION.
@@ -238,6 +239,95 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
       .run();
     return {
       detail: "Reopened. It is blocked again, with your reason on it, and it escalates from here like any other owned work.",
+    };
+  },
+
+  /**
+   * A duty she drafted, created exactly as she saw it.
+   *
+   *   "i can add duties? and maybe the system can help me prompt that."
+   *
+   * ─── IT CREATES WHAT SHE APPROVED, NOT WHAT IT WOULD DRAFT NOW ────────────
+   *
+   * The draft is stored on the judgement row when it is raised, and this reads it back rather than
+   * re-deriving. Re-deriving would be shorter and would let an approval produce something different
+   * from what was on the screen when she pressed it — which is the one thing an approval must never
+   * do, and it would be undetectable.
+   *
+   * ─── AND THE INVARIANTS ARE CHECKED AGAIN AT THE MOMENT OF CREATION ───────
+   *
+   * They were checked when the draft was raised. Between then and now, a handler could have been
+   * removed or the schedule could have grown. Checking once is how a validator becomes a formality.
+   */
+  duty_created: async (env, j, verdict, note, now) => {
+    if (verdict === "try_again") {
+      return {
+        detail: note
+          ? "Sent back. Nothing was added to the schedule, and your note is on the draft for the next attempt."
+          : "Sent back. Nothing was added to the schedule.",
+      };
+    }
+
+    const row = await env.DB
+      .prepare(`SELECT resume_detail FROM judgement_calls WHERE id = ?`)
+      .bind(j.id)
+      .first<{ resume_detail: string | null }>();
+
+    let draft: any = null;
+    try { draft = row?.resume_detail ? JSON.parse(row.resume_detail) : null; } catch { draft = null; }
+    if (!draft?.employee_id) {
+      throw new Error(
+        "The draft this approval was for is missing, so there is nothing to create. It stays on your screen rather than recording a decision over a duty that was never written.",
+      );
+    }
+    if (Array.isArray(draft.refusals) && draft.refusals.length > 0) {
+      throw new Error(`This draft cannot be created: ${draft.refusals.join(" ")}`);
+    }
+    if (draft.executor === "agent" && !(DELIVERABLE_KEYS as readonly string[]).includes(draft.delivers)) {
+      /*
+       * RE-CHECKED AT CREATION. A `delivers` key with no handler is the defect that had
+       * `duty_practice_week` running every Sunday for eleven weeks into the floor while every signal
+       * said it worked. Checking only at draft time would let a handler removed in between produce
+       * exactly that.
+       */
+      throw new Error(
+        `"${draft.delivers}" is not a delivery route this system has, so the duty would run and its output would land nowhere. Nothing was created.`,
+      );
+    }
+
+    const id = `duty_${String(draft.name ?? "new").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40)}_${now.toString(36).slice(-4)}`;
+    await env.DB
+      .prepare(
+        `INSERT INTO standing_duties
+           (id, name, employee_id, lane, local_hour, local_minute, timezone, cadence, weekday,
+            next_due_at, executor, task_kind, task_title, task_input, success_criteria)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        id, draft.name, draft.employee_id, "ops",
+        draft.local_hour, draft.local_minute, draft.timezone,
+        draft.cadence, draft.weekday,
+        // Tomorrow rather than 0: seeding 0 reads as permanently overdue from the moment it exists,
+        // which is a false alarm on day one.
+        now + 86_400_000,
+        draft.executor, "ops", draft.name,
+        JSON.stringify({
+          // NAMED, ALWAYS. A duty with no model runs the dearest one available.
+          requested: { model: draft.model, max_seconds: 600 },
+          ...(draft.delivers ? { delivers: draft.delivers } : {}),
+          ...(draft.local_job ? { local_job: draft.local_job } : {}),
+          prompt: draft.task_prompt,
+          authored_from: "her own words, drafted and approved in the Inbox",
+        }),
+        draft.success_criteria,
+      )
+      .run();
+
+    return {
+      detail:
+        `Created. ${draft.employee_name} runs it ${draft.cadence} at ` +
+        `${String(draft.local_hour).padStart(2, "0")}:${String(draft.local_minute).padStart(2, "0")}, first time tomorrow. ` +
+        `About $${draft.estimated_per_month_usd} a month, taking the schedule to $${draft.monthly_total_after_usd} of $${draft.ceiling_usd}.`,
     };
   },
 };

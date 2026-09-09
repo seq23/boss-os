@@ -132,6 +132,21 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
   const from = lastMeeting(dayId);
   const fromTs = Date.parse(`${from}T00:00:00Z`);
 
+  /*
+   * ── CLOSED BEFORE THE ITEMS ARE READ, NOT AFTER ───────────────────────────
+   *
+   * THE BUG THIS FIXES, CAUGHT BY CHECKING RATHER THAN BY ASSUMING. `closeIfGranted` ran after the
+   * SELECT, so the read that first saw the grant go live still returned the item — it cleared on the
+   * NEXT read. Verified live at 10:47 on 9 September: `cred_westpeek_delegation` was `live` and
+   * `mai_wp_gmail_grant` was still in `to_raise`.
+   *
+   * "Clears itself, but only the second time you look" is worse than not clearing at all, because
+   * the first look is the one where she decides whether to raise it with him. The whole design claim
+   * of that item was that it tests itself and disappears the morning it becomes true, and it was
+   * half true in the way that is hardest to notice.
+   */
+  await closeIfGranted(env);
+
   const [items, misc] = await Promise.all([
     /*
      * `raised` STAYS ON THE PACKET, AND THAT IS THE FIX FOR THE ITEM NOBODY NOTICED.
@@ -200,17 +215,6 @@ export async function weeklyPacket(env: Env, dayId: string, counterpart = "scoot
     "West Peek numbers are added by the local reminder, which reads the outreach sheets. Boss OS holds no LP data and is not meant to.",
     "Brokerage activity is deliberately absent: it is a different business and not his to review.",
   ];
-
-  /*
-   * ── AN ITEM THAT CAN CLEAR ITSELF, CLEARS ITSELF ─────────────────────────
-   *
-   * The grant item is closed by the credential prober authenticating as the West Peek address, never
-   * by anyone saying it was granted. Done on read for the same reason the deliverable engine closes
-   * a deliverable on read: making it depend on a separate job is one more thing that can fail
-   * silently, and the failure mode here is a packet still asking for something that already exists —
-   * which is how a weekly document teaches its reader to skim it.
-   */
-  await closeIfGranted(env);
 
   const { accomplished, accomplished_gaps } = await herWeek(env, fromTs);
 

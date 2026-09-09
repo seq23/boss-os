@@ -20,6 +20,8 @@ import { coachingFocus, lensFor } from "../today/faculty";
 import { deliverableAlerts } from "../today/deliverables";
 import { credentialAlerts } from "../today/credentials";
 import { diary } from "../today/diary";
+import { alertKey, applyDismissals } from "../today/alerts";
+import { TERMINAL_CHECKS } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { adjustToday } from "../today/adjust";
@@ -773,6 +775,10 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   const tomorrowSeed = json<Record<string, unknown> | null>(day.night_tomorrow_seed, null);
 
   // ── Critical alerts: real failures only, never volume for its own sake ──
+  //
+  // Dismissals are applied at the very end, after every producer has contributed, so nothing can be
+  // silenced by a producer accidentally omitting it — the list she does not see is derived from the
+  // list she would have seen, and both are returned.
   const alerts: { severity: string; text: string; source_type: string; source_id: string | null }[] = [];
 
   /*
@@ -919,6 +925,22 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   }
   for (const ev of errorEvents.results ?? []) {
     alerts.push({ severity: "medium", text: `${ev.scope}: ${ev.event}`, source_type: "tasks", source_id: ev.id });
+  }
+
+  /*
+   * ── APPLIED LAST, OVER THE COMPLETE LIST ──────────────────────────────────
+   *
+   * A dismissal removes an alert she has chosen not to look at for a while, and it is deliberately
+   * NOT a filter each producer applies to itself: the list she does not see is derived from the list
+   * she would have seen, and both are returned. An alert that has become LOUDER than it was when she
+   * put it aside comes back anyway — deciding not to look at a medium is not deciding not to look at
+   * the critical it turns into.
+   */
+  const { shown: shownAlerts, dismissed: dismissedAlerts } = await applyDismissals(env, alerts, now).catch(() => ({
+    shown: alerts,
+    dismissed: [] as { key: string; text: string; reason: string; until: number }[],
+  }));
+  {
   }
 
   // ── Continuity: relevant when the vault is missing, stale or broken ──
@@ -1188,7 +1210,29 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       },
       isEmpty: loops.length === 0,
     },
-    critical_alerts: { content: { alerts }, isEmpty: alerts.length === 0 },
+    critical_alerts: {
+      content: {
+        alerts: shownAlerts,
+        /*
+         * ── WHAT SHE CAN DO WITH ONE ──────────────────────────────────────
+         *
+         * "i also need to be able to refresh critical alerts and / or dismiss / mark resolved?"
+         * Until today the answer was: read it. That is why the KDP alert sat for a week saying
+         * something untrue.
+         *
+         * The keys travel with the alerts so the screen can act on one without re-deriving its
+         * identity — two places computing a key separately is how a dismissal silently misses.
+         */
+        keys: shownAlerts.map((a) => alertKey(a)),
+        intent:
+          "What is actually wrong, loudest first. Refresh re-runs the checks rather than re-reading " +
+          "the answer; Resolved re-verifies and tells you if the records disagree; Dismiss is a snooze " +
+          "with a reason, and it comes back if it gets worse.",
+        checked_at: now,
+        dismissed: dismissedAlerts,
+      },
+      isEmpty: shownAlerts.length === 0,
+    },
     spirit_signal: {
       content: {
         advisory: true,
@@ -1750,6 +1794,160 @@ today.post("/gates/morning", async (c) => {
  * THE SYSTEM WRITES HERE TOO, which is the half a calendar note cannot do. A duty stalled on an
  * access grant only he can give belongs on this list the moment it is discovered.
  */
+/**
+ * ── REFRESH: RE-RUN THE CHECKS, DO NOT RE-READ THE ANSWER ──────────────────
+ *
+ * Today is computed on read, so a plain reload already re-reads the database and would tell her
+ * exactly what it told her a minute ago. What makes an answer current is something going and
+ * looking, so this re-evaluates every terminal check — closing anything the world has made true
+ * since — and reports when each credential probe last actually ran.
+ *
+ * IT DOES NOT PRETEND TO RE-RUN THE PROBER. That lives on her Mac and uses credentials the Worker
+ * does not hold; claiming a check happened is the defect, not a missing feature. So the answer says
+ * how old each probe's evidence is and names the command that refreshes it.
+ */
+today.post("/alerts/refresh", async (c) => {
+  const now = Date.now();
+  const open = await c.env.DB
+    .prepare(`SELECT id, name, terminal_check FROM owned_deliverables WHERE state IN ('open','blocked')`)
+    .all<{ id: string; name: string; terminal_check: string }>();
+
+  const rechecked: { id: string; name: string; met: boolean; progress: string }[] = [];
+  for (const d of open.results ?? []) {
+    const check = TERMINAL_CHECKS[d.terminal_check];
+    if (!check) continue;
+    const outcome = await check(c.env).catch(() => null);
+    if (!outcome) continue;
+    rechecked.push({ id: d.id, name: d.name, met: outcome.met, progress: outcome.progress });
+  }
+
+  const probes = await c.env.DB
+    .prepare(`SELECT id, label, state, checked_at FROM credential_probes ORDER BY id`)
+    .all<any>()
+    .catch(() => ({ results: [] as any[] }));
+
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "today", entityId: dayId(now),
+    action: "alerts_refreshed", detail: { rechecked: rechecked.length },
+  });
+
+  return ok(c, {
+    refreshed_at: now,
+    rechecked,
+    /*
+     * NAMED HONESTLY. These are the only facts on the screen this endpoint cannot make current, and
+     * saying so beats a refresh button that silently leaves half the answer as old as it was.
+     */
+    credentials: (probes as { results?: any[] }).results ?? [],
+    credentials_note:
+      "Credential answers come from the daily prober on your Mac, which this cannot run — it holds no Google keys. " +
+      "Run npm run credentials:check to make those current.",
+  });
+});
+
+/**
+ * ── RESOLVED RE-VERIFIES. IT DOES NOT TAKE HER WORD ───────────────────────
+ *
+ * `TERMINAL_CHECKS` exists so that nothing can close a commitment by claiming it — an employee, a
+ * run and a job are all refused. A HUMAN MARKING SOMETHING RESOLVED IS THE SAME CLAIM WEARING
+ * DIFFERENT CLOTHES: if she marks the West Peek grant resolved and Scooter has not granted it, the
+ * system believes a false thing and stops telling her, which is exactly the blindness this system
+ * spent the day removing.
+ *
+ * So this runs the check. If the world agrees, it closes and says what it counted. IF THE CHECK
+ * CONTRADICTS HER IT SAYS SO AND STAYS OPEN — she is not overruled, she is told what the records
+ * say, and offered the dismissal, which is honest about not being a resolution.
+ */
+today.post("/alerts/resolve", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const id = String(b?.deliverable_id ?? "").trim();
+  const row = await c.env.DB
+    .prepare(`SELECT id, name, terminal_check, state FROM owned_deliverables WHERE id = ?`)
+    .bind(id)
+    .first<{ id: string; name: string; terminal_check: string; state: string }>();
+  if (!row) throw notFound("No owned deliverable with that id");
+
+  const check = TERMINAL_CHECKS[row.terminal_check];
+  if (!check) {
+    return ok(c, {
+      closed: false,
+      verdict: `"${row.name}" names a completion check this system does not have, so nothing can verify it either way. That is a fault to fix rather than something to close.`,
+    });
+  }
+
+  const outcome = await check(c.env).catch(() => null);
+  if (!outcome) {
+    return ok(c, { closed: false, verdict: "The check could not be evaluated, so nothing was closed on the strength of it." });
+  }
+
+  if (!outcome.met) {
+    return ok(c, {
+      closed: false,
+      /*
+       * THE SENTENCE THAT MATTERS. She asked to close it; the records say otherwise, and saying so
+       * plainly is the only outcome that leaves her better informed than before she pressed it.
+       */
+      verdict:
+        `Not closed — the records disagree. ${outcome.progress} ` +
+        "Nothing here can be marked done by saying it is; that is what stops an employee or a job closing your work. " +
+        "If you want it off the screen without it being finished, dismiss it with a reason.",
+    });
+  }
+
+  const now = Date.now();
+  await c.env.DB
+    .prepare(`UPDATE owned_deliverables SET state = 'done', done_at = ?, updated_at = ? WHERE id = ?`)
+    .bind(now, now, id)
+    .run();
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "owned_deliverable", entityId: id,
+    action: "verified_and_closed", detail: { progress: outcome.progress },
+  });
+  return ok(c, { closed: true, verdict: `Verified and closed. ${outcome.progress}` });
+});
+
+/**
+ * ── DISMISS: A SNOOZE WITH A REASON, NEVER A MUTE ─────────────────────────
+ *
+ * "Stop showing me this, it is not resolved" is a real state and needs to exist. Three things stop
+ * it becoming the silence it resembles: it EXPIRES (there is no way to express "never"), it BREAKS
+ * IF THE ALERT GETS LOUDER, and it COSTS A REASON — so next week the same alert can say "you
+ * dismissed this on the 9th because X" instead of arriving as though it were new, which is how the
+ * grant item went unnoticed for three weeks.
+ */
+today.post("/alerts/dismiss", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const key = String(b?.key ?? "").trim();
+  const text = String(b?.text ?? "").trim();
+  const reason = String(b?.reason ?? "").trim();
+  const severity = String(b?.severity ?? "medium").trim();
+
+  if (!key || !text) throw badRequest("Name the alert being dismissed", "Without its key the dismissal cannot be matched on the next render.");
+  if (reason.length < 3) {
+    throw badRequest(
+      "A dismissal needs a reason",
+      "Not to make this tedious — so that when it comes back it can say why you put it aside, instead of arriving as if it were new.",
+    );
+  }
+
+  const now = Date.now();
+  const days = Math.min(30, Math.max(1, Number(b?.days ?? 7) || 7));
+  await c.env.DB
+    .prepare(
+      `INSERT INTO alert_dismissals
+         (id, alert_key, alert_text, reason, severity_at_dismissal, dismissed_at, until, created_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+    )
+    .bind(newId("dsm"), key, text.slice(0, 600), reason.slice(0, 300), severity, now, now + days * 86_400_000, now)
+    .run();
+
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "alert", entityId: key,
+    action: "dismissed", detail: { reason: reason.slice(0, 120), days },
+  });
+  return ok(c, { dismissed_until: now + days * 86_400_000, days }, 201);
+});
+
 /**
  * The packet on its own, so something outside the browser can deliver it.
  *

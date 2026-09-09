@@ -106,6 +106,11 @@ const SNAPSHOT_TABLES = [
   // impossible. `blocked_since` is not re-derivable either; losing it resets a two-week escalation
   // to a first-day one.
   "owned_deliverables",
+  // 0216 — which alerts she has put aside, why, and until when. Losing these in a restore would
+  // resurrect everything she deliberately snoozed, all at once, with no reasons attached — and the
+  // reason is the whole value: it is what lets next week's alert say "you put this aside on the 9th
+  // because X" instead of arriving as though it were new.
+  "alert_dismissals",
   // 0201 — the publishing block Simone owns. The title states are the part no re-run reproduces:
   // "which of these seven are still stuck" is a fact about Amazon's records, and a restore that
   // lost it would send her back to checking ten books by hand. The determinations are the case's

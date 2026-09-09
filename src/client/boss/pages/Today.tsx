@@ -150,10 +150,22 @@ function BlockCard({ block, onChanged, onError }: {
 
   return (
     <div className="docket" style={{ paddingBottom: detail ? 14 : 12 }}>
+      {/*
+        * ── THE NUMBER IS GONE ────────────────────────────────────────────────
+        *
+        * She pasted what this card actually showed her: "medium / 07 / Spirit Signal / 08". Two of
+        * those four lines were `block.order` — an index into a list she never asked to have ordered,
+        * printed at her because it was convenient for the system. She is not the audience for it.
+        */}
       <div className="docket-head">
-        <span className="docket-no">{String(block.order).padStart(2, "0")}</span>
         <h3 style={{ margin: 0 }}>{block.title}</h3>
       </div>
+      {/*
+        * AND A SECTION THAT SAYS NOTHING IS THE DEFECT. `summarise()` fell through to "" for any
+        * block with no case, which is how Spirit Signal came to be a label between two numbers. It
+        * has no empty return any more, and `tests/boss/everySectionSpeaks.test.ts` fails the build
+        * if a block is ever added without one.
+        */}
       <p style={{ marginTop: 6 }}>{summary}</p>
       {detail && (
         <details>
@@ -251,8 +263,60 @@ function summarise(block: Block): string {
       return c.kill_switch
         ? "Kill switch engaged. Nothing in that lane executes."
         : `${c.open_positions} open position${c.open_positions === 1 ? "" : "s"}${c.open_incidents?.length ? `, ${c.open_incidents.length} open incident${c.open_incidents.length === 1 ? "" : "s"}` : ""}.`;
+
+    /*
+     * ── SPIRIT SIGNAL, AS A SENTENCE RATHER THAN A LABEL ─────────────────────
+     *
+     * She pasted the whole of what this card showed her:
+     *
+     *     medium
+     *     07
+     *     Spirit Signal
+     *     08
+     *
+     * and said "this is not helpful and needs to be explicit in that area". She was right about all
+     * of it. There was no `case` here, so `summarise` returned "" and the card rendered a category
+     * name between two list indices — a label, not a statement, with nothing saying what it is or
+     * what she should do with it.
+     *
+     * THE MATERIAL EXISTED THE WHOLE TIME. `spirit/day.ts` composes `note` from the computed sky and
+     * her real records and hands back `reality_priority` — canon §5.2's rule that a day where
+     * something is actually broken says so FIRST and the sky is context. None of it reached this
+     * surface.
+     *
+     * So: what it is, then what it means for today, then the classification last.
+     */
+    case "spirit_signal": {
+      const moon = c.moon
+        ? `${c.moon.phase?.replace(/_/g, " ") ?? "moon"}${c.moon.sign ? ` in ${c.moon.sign}` : ""}${c.moon.cusp ? `, on the cusp of ${c.moon.next_sign}` : ""}`
+        : null;
+      const parts: string[] = [];
+      /*
+       * REALITY FIRST, WHICH IS CANON RATHER THAN A PREFERENCE. §5.2: if something is actually
+       * broken today, that leads and the sky is context underneath it.
+       */
+      if (c.reality_priority) parts.push(c.reality_priority);
+      if (c.note) parts.push(c.note);
+      else if (moon) parts.push(`The sky today: ${moon}.`);
+      if (c.windows?.length) {
+        parts.push(`${c.windows.length} window${c.windows.length === 1 ? "" : "s"} open — timing worth using rather than fighting.`);
+      }
+      if (c.rituals_due?.length) parts.push(`${c.rituals_due.length} ritual${c.rituals_due.length === 1 ? "" : "s"} due.`);
+      /*
+       * ADVISORY, SAID OUT LOUD. The block has carried `advisory: true` since it was built and
+       * never showed it. It is context for a decision she makes, never an instruction, and a
+       * screen that does not say so invites the opposite reading.
+       */
+      parts.push("Context for the day, never an instruction. Ignoring it costs nothing and nothing is scored on it.");
+      return parts.join(" ");
+    }
+
+    /*
+     * NO EMPTY DEFAULT. Returning "" is what produced a section that said nothing at all, and a
+     * block added later would inherit the same silence. A named absence is the floor.
+     */
     default:
-      return "";
+      return `${block.title} has no summary written for it yet, which is a gap in this screen rather than a quiet day.`;
   }
 }
 
@@ -715,18 +779,7 @@ function renderDetail(
       return <Loops loops={c.loops ?? []} onChanged={onChanged} onError={onError} />;
 
     case "critical_alerts":
-      return (c.alerts ?? []).length ? (
-        <>
-          {c.alerts.map((a: any, i: number) => (
-            <div className="row" key={i}>
-              <div className="row-main"><div className="row-title">{a.text}</div></div>
-              <div className={`risk risk-${a.severity === "critical" || a.severity === "high" ? "high" : "medium"}`}>
-                {a.severity}
-              </div>
-            </div>
-          ))}
-        </>
-      ) : null;
+      return <Alerts content={c} onChanged={onChanged} onError={onError} />;
 
     case "approval_inbox":
       return c.oldest ? (
@@ -855,6 +908,144 @@ function ContractHeader({ content }: { content: any }) {
           )}
         </>
       ) : null}
+    </>
+  );
+}
+
+/**
+ * WHAT SHE CAN DO WITH AN ALERT — which until today was read it.
+ *
+ *   "i also need to be able to refresh critical alerts and / or dismiss / mark resolved? i dont know
+ *    u need to figure it out and add it"
+ *
+ * ─── Three verbs, and each is built against its own failure mode ───────────
+ *
+ * REFRESH re-runs the checks rather than re-fetching the answer. Today is computed on read, so a
+ * reload would say exactly what it said a minute ago; what makes an answer current is something
+ * going and looking.
+ *
+ * RESOLVED RE-VERIFIES AND CAN DISAGREE WITH HER. `TERMINAL_CHECKS` refuses an employee, a run and a
+ * job that claim work is done, and a person asserting it is the same claim in different clothes — if
+ * she closes the West Peek grant and Scooter has not granted it, the system believes a false thing
+ * and stops telling her. So the verdict comes back and is shown verbatim, including when it says no.
+ *
+ * DISMISS IS A SNOOZE WITH A REASON. It expires, it breaks if the alert gets louder, and the reason
+ * is required — so next week it can say why she put it aside instead of arriving as if it were new.
+ */
+function Alerts({ content, onChanged, onError }: {
+  content: any;
+  onChanged: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [verdict, setVerdict] = useState<string | null>(null);
+  const [dismissing, setDismissing] = useState<number | null>(null);
+  const [reason, setReason] = useState("");
+  const alerts: any[] = content.alerts ?? [];
+  const keys: string[] = content.keys ?? [];
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try { await fn(); } catch (e) { onError(e); } finally { setBusy(false); }
+  };
+
+  if (alerts.length === 0 && (content.dismissed ?? []).length === 0) return null;
+
+  return (
+    <>
+      {content.intent && <div className="row-sub"><em>{content.intent}</em></div>}
+      {verdict && <div className="notice" style={{ borderColor: "var(--gold)" }}>{verdict}</div>}
+
+      {alerts.map((a: any, i: number) => (
+        <div className="row" key={keys[i] ?? i}>
+          <div className="row-main">
+            <div className="row-title">{a.text}</div>
+            {dismissing === i ? (
+              <div className="judgement-note">
+                <label className="stat-l" htmlFor={`why-dismiss-${i}`}>
+                  Why are you putting this aside? It comes back in a week, or sooner if it gets worse.
+                </label>
+                <textarea
+                  id={`why-dismiss-${i}`}
+                  className="judgement-why"
+                  rows={2}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+                <div className="decide">
+                  <button
+                    className="btn btn-reject"
+                    disabled={busy || reason.trim().length < 3}
+                    onClick={() => run(async () => {
+                      await api.dismissAlert({ key: keys[i], text: a.text, severity: a.severity, reason: reason.trim() });
+                      setReason(""); setDismissing(null); onChanged();
+                    })}
+                  >
+                    Put it aside
+                  </button>
+                  <button className="btn btn-defer" disabled={busy} onClick={() => setDismissing(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="decide">
+                {/* Only an owned deliverable can be verified, so only those offer it. */}
+                {a.source_type === "tasks" && a.source_id?.startsWith("del_") && (
+                  <button
+                    className="btn"
+                    disabled={busy}
+                    onClick={() => run(async () => {
+                      const r = await api.resolveAlert(a.source_id);
+                      setVerdict(r.verdict);
+                      if (r.closed) onChanged();
+                    })}
+                  >
+                    Mark resolved
+                  </button>
+                )}
+                <button className="btn btn-defer" disabled={busy} onClick={() => { setDismissing(i); setReason(""); }}>
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </div>
+          <div className={`risk risk-${a.severity === "critical" || a.severity === "high" ? "high" : "medium"}`}>
+            {a.severity}
+          </div>
+        </div>
+      ))}
+
+      <div className="decide">
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={() => run(async () => {
+            const r = await api.refreshAlerts();
+            const closed = (r.rechecked ?? []).filter((x: any) => x.met);
+            setVerdict(
+              `${(r.rechecked ?? []).length} check(s) re-run. ` +
+              (closed.length ? `${closed.length} finished and closed. ` : "Nothing has become true since. ") +
+              r.credentials_note,
+            );
+            onChanged();
+          })}
+        >
+          {busy ? "Re-running the checks…" : "Refresh — re-run the checks"}
+        </button>
+      </div>
+
+      {/* Dismissed is not hidden. The count is here and the reasons with it. */}
+      {(content.dismissed ?? []).length > 0 && (
+        <>
+          <div className="row-sub">
+            <strong>{content.dismissed.length} put aside.</strong> They come back on their own, and sooner if they get worse.
+          </div>
+          {content.dismissed.map((d: any) => (
+            <div className="row-sub" key={d.key}>
+              {d.text} — you said: {d.reason} (back on {new Date(d.until).toISOString().slice(0, 10)})
+            </div>
+          ))}
+        </>
+      )}
     </>
   );
 }

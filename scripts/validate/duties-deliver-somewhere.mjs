@@ -98,6 +98,36 @@ export function dutiesIn(sql) {
   return out;
 }
 
+/**
+ * Does anything in the migration history name a model for this duty?
+ *
+ * ─── WHY THIS CANNOT JUST READ THE CREATING INSERT ─────────────────────────
+ *
+ * The first version of this check did, and it reported five false positives immediately —
+ * `duty_exec_intel`, `duty_brokerage_sourcing` and three others were all created BEFORE 0196 and
+ * given their models by an UPDATE in it. Their creating statements are silent and their live rows
+ * are correct.
+ *
+ * A FALSE ALARM FROM A VALIDATOR IS WORSE THAN NO VALIDATOR: it sends someone chasing a problem that
+ * does not exist and teaches them to ignore the next one, which is the same lesson the launchd
+ * installer's verifier learned. So this asks the question the live database would answer — does any
+ * statement anywhere both name this duty and set a model — rather than the question that happened to
+ * be easy.
+ */
+let ALL_MIGRATION_STATEMENTS = [];
+
+function namesAModel(dutyId, ownText) {
+  /*
+   * THREE SHAPES, BECAUSE THIS REPOSITORY WRITES ALL THREE. `json_object('model', '…')` in a
+   * creating INSERT, `json_set(…, '$.requested.model', '…')` in a later UPDATE — which is how 0196
+   * fixed five duties at once — and the raw JSON form. A pattern that knew only the first reported
+   * those five as silent while their live rows were correct.
+   */
+  const MODEL = /('model'\s*,\s*'[a-z0-9.\-]+'|'\$\.requested\.model'\s*,\s*'[a-z0-9.\-]+'|"model"\s*:\s*"[a-z0-9.\-]+")/i;
+  if (MODEL.test(ownText)) return true;
+  return ALL_MIGRATION_STATEMENTS.some((st) => st.includes(dutyId) && MODEL.test(st));
+}
+
 /** The `delivers` key a duty's text declares, in either shape this repo writes. */
 export function deliversKey(text) {
   // json_object('delivers', 'practice_week', …)
@@ -162,6 +192,9 @@ function createdTables(allSql) {
 function scan() {
   const files = readdirSync(join(ROOT, "migrations")).filter((f) => f.endsWith(".sql")).sort();
   const allSql = files.map((f) => read(`migrations/${f}`)).join("\n");
+  // Statement-by-statement, so "this duty" and "a model" have to appear in the SAME statement — a
+  // whole-file search would let an unrelated UPDATE three hundred lines away vouch for a silent row.
+  ALL_MIGRATION_STATEMENTS = allSql.split(";");
 
   const duties = [];
   for (const f of files) {
@@ -177,6 +210,26 @@ function scan() {
   const problems = [];
 
   for (const duty of duties) {
+    /*
+     * ── EVERY DUTY NAMES ITS MODEL ────────────────────────────────────────
+     *
+     * `claude -p` and the agent envelope both fall back to the DEFAULT model when none is named, and
+     * the default is the most expensive one available. That is what made a single executive briefing
+     * cost $3.88; 0196 fixed every duty that existed at the time and `duty_mailbox_sweep` was
+     * written afterwards, in 0204, without one — a fixed defect coming back through a new row.
+     *
+     * IT WAS FOUND BY A SCREEN, NOT BY THIS SCAN, which is the argument for adding it here: the
+     * roster rendered "NO MODEL NAMED" the first time anyone looked at all nine duties together, and
+     * until that screen existed nothing in the system would ever have said so.
+     */
+    if (!namesAModel(duty.id, duty.text)) {
+      problems.push(
+        `${duty.id} (${duty.file}): names no model in $.requested.model, so it inherits the default —\n` +
+        `      which is the most expensive one available. That is the $3.88 briefing, and it is\n` +
+        `      invisible until a bill or a screen says so.`,
+      );
+    }
+
     const key = deliversKey(duty.text);
     const job = localJobScript(duty.text);
 

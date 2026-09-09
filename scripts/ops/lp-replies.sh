@@ -83,9 +83,27 @@ if [ "$STATE" != "live" ]; then
 fi
 
 say "=== LP reply digest starting ==="
+
+# ─── The window, which is 2d every day and wider exactly once ────────────────
+#
+# The daily run looks back two days: enough to survive a missed morning, small enough that a day of
+# replies is a cheap read. But the grant landed three weeks after Twin started sending, so the FIRST
+# run has three weeks of never-read replies behind it — and a 2d window on that day would file a
+# digest saying "nothing came in" over an unread backlog, which is worse than not running at all.
+#
+# LP_REPLIES_WINDOW widens it for that one run. It is substituted into the prompt text rather than
+# templated into the file, so the prompt on disk stays literally correct and nothing can leak an
+# unsubstituted placeholder into a real search.
+WINDOW="${LP_REPLIES_WINDOW:-2d}"
+PROMPT_TEXT="$(cat "$PROMPT_FILE")"
+if [ "$WINDOW" != "2d" ]; then
+  PROMPT_TEXT="${PROMPT_TEXT//newer_than:2d/newer_than:$WINDOW}"
+  say "backfill window: $WINDOW (not the daily 2d)"
+fi
+
 cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 
-"$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
+"$CLAUDE" -p "$PROMPT_TEXT" --model "$MODEL" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="
 

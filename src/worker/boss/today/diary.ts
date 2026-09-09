@@ -183,6 +183,76 @@ export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promi
   rows.sort((a, b) => a.scheduled_at - b.scheduled_at);
 
   /*
+   * ── ONE MEETING, ONE ROW, WHICHEVER SOURCE FOUND IT ───────────────────────
+   *
+   * The standing Wednesday is BOTH a manual entry she typed and "Sequoia // Scooter Sync" recurring
+   * at 11:00 on the West Peek calendar — which nothing could read until the Calendar API was enabled
+   * in the GCP project. Now that both sources see it, showing it twice would make the diary look
+   * broken in the one place it was most obviously broken this morning.
+   *
+   * MATCHED ON DAY AND HOUR, AND WHAT SHE TYPED WINS. Two meetings genuinely an hour apart are
+   * different meetings; the same meeting recorded twice differs by minutes and by wording, and the
+   * hour is the coarsest key that separates those. Hers wins because she chose the title, and
+   * because a calendar entry silently replacing the row she typed is the screen overruling her.
+   */
+  const merged: DiaryRow[] = [];
+  const day = (at: number) => new Date(at).toISOString().slice(0, 10);
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+  for (const r of rows) {
+    /*
+     * ── ONE MEETING CAN ARRIVE THREE TIMES, AT THREE DIFFERENT HOURS ─────────
+     *
+     * Her standing Wednesday exists as a row she typed, as an event on the Calendar API, and as the
+     * same event in the iCal feed. Matching on the exact hour caught none of them, and the reason is
+     * worth writing down because it is not a bug anyone would guess at:
+     *
+     *     "start": { "dateTime": "2026-09-09T11:00:00-05:00", "timeZone": "America/New_York" }
+     *
+     * THE OFFSET AND THE LABEL DISAGREE. New York is at -04:00 in September; the stored offset is
+     * -05:00. RFC 3339 makes the offset authoritative, so the API's instant is right — and the iCal
+     * feed carries only `TZID=America/New_York`, so honouring the label faithfully lands an hour
+     * away from the same meeting. Both readings are defensible and they differ.
+     *
+     * So the merge is tolerant on TIME and strict on IDENTITY: same calendar day, and either a
+     * recognisably similar title or compatible counterparts within two hours. Two genuinely
+     * different meetings do not share a day AND a title.
+     */
+    const existing = merged.find((m) => {
+      if (day(m.scheduled_at) !== day(r.scheduled_at)) return false;
+      const [ta, tb] = [norm(m.title), norm(r.title)];
+      if (ta && tb && (ta === tb || ta.includes(tb) || tb.includes(ta))) return true;
+      const [a, b] = [(m.with ?? "").toLowerCase(), (r.with ?? "").toLowerCase()];
+      const compatible = a === b || a === "" || b === "";
+      return compatible && Math.abs(m.scheduled_at - r.scheduled_at) <= 2 * 3_600_000;
+    });
+    if (!existing) { merged.push(r); continue; }
+    // Keep the one she typed; fold in anything only the calendar knew.
+    /*
+     * WHAT SHE TYPED WINS ON WORDING; THE CALENDAR WINS ON TIME. She chose the title and a feed
+     * silently replacing it is the screen overruling her — but she typed "Wednesday" and the
+     * calendar knows it is 11:00, and of the two sources the API is the one with an unambiguous
+     * instant. Everything only one of them knew is folded in rather than dropped.
+     */
+    if (existing.source === "calendar" && r.source !== "calendar") {
+      const when = existing.scheduled_at;
+      Object.assign(existing, r, {
+        scheduled_at: when,
+        location: r.location ?? existing.location,
+        duration_min: r.duration_min ?? existing.duration_min,
+      });
+    } else if (r.source === "calendar") {
+      existing.scheduled_at = r.scheduled_at;
+      existing.location = existing.location ?? r.location;
+      existing.duration_min = existing.duration_min ?? r.duration_min;
+    }
+  }
+  // Sorted again: the merge can move a row's time to the calendar's, which can reorder the day.
+  merged.sort((a, b) => a.scheduled_at - b.scheduled_at);
+  rows.length = 0;
+  rows.push(...merged);
+
+  /*
    * ── THE SUMMARY, COMPUTED FROM THE ROWS ABOVE AND NOTHING ELSE ────────────
    *
    * The line that read "Nothing in the diary" over a full agenda was counting a different table

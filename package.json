@@ -55,6 +55,7 @@
     "kdp:covers": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-covers-submit.mjs",
     "kdp:resume": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-resume.mjs",
     "lp:replies": "bash scripts/ops/lp-replies.sh",
+    "lp:outcomes": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-outcomes.mjs",
     "calendar:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/calendar-sync.mjs",
     "notify": "node scripts/vault/vault.mjs run -- node scripts/ops/notify.mjs",
     "packet:remind": "node scripts/vault/vault.mjs run -- node scripts/ops/packet-remind.mjs",

@@ -448,6 +448,54 @@ privacy disclaimer, and its button names the action rather than a Cloudflare pro
 
 ---
 
+## Later on 9 September
+
+**The Meetings tab was a packet reader that lied about itself.** It said "Nothing in the diary" and
+opened onto a full agenda, because the collapsed line counted one table while the body rendered
+another. It is a diary now: what you have coming up, one row each, with a link where a meeting has a
+packet. The packet lives at one permanent URL and is not dumped into the section.
+
+**And the Wednesday meeting was in Google the whole time.** Two things were in the way, neither of
+them the one first diagnosed: domain-wide delegation was not granted on either domain, and the
+Google Calendar API was disabled in the project — which returns 403 and looks exactly like a missing
+scope. Both are fixed. "Sequoia // Scooter Sync", weekly, 11:00, is now read directly.
+
+**Two calendar sources, deliberately.** The API is preferred because Google expands recurrence
+itself. The secret iCal feeds stay as the resilience layer: a service-account grant is an
+OAuth-shaped thing, and this morning showed what a password change does to those. An iCal address
+has no token to revoke. A meeting in both is shown once.
+
+**The agenda link 401'd on a cold click** and the shell bounced you to Today. The cookie was fine —
+the shape of the refusal was not. Those two pages answer a browser with an unlock form now, and the
+download is real markdown with the right filename.
+
+**You can act on an alert.** Refresh re-runs the checks rather than re-reading the answer. Mark
+resolved RE-VERIFIES and tells you when the records disagree — nothing here can be closed by anyone
+saying it is done, and that includes you, which is what stops an employee or a job closing your work.
+Dismiss is a snooze with a reason: it expires, it comes back if the thing gets worse, and next time
+it says why you put it aside.
+
+**Every section says what it is.** You should not have been the mechanism that found the ones that
+did not — the gates, the coaching screen, and a Spirit Signal card that rendered as "medium / 07 /
+Spirit Signal / 08". The block indices are gone, every section has a sentence, and a test fails the
+build if one is ever added without one.
+
+**Simone owns Kindle itself**, not one case inside it. Promotional mail is noted and produces
+silence — enforced at the endpoint rather than asked for in a prompt. Updates are notated where you
+can read them back. A problem with a title gets acted on, and she can hand a piece to a colleague
+without handing over accountability: a stalled assignment escalates under her name.
+
+**You can see what every employee owns, and add to it.** Team → the roster shows each seat's duties
+with the model, the cost per month and whether it has ever fired — an empty seat is shown as an empty
+seat. Describing a duty in your own words drafts the proper version, and it goes to your Inbox with
+the cadence, the model and the new monthly total against the ceiling before anything is created.
+
+**The first thing that screen showed was a real defect.** `duty_mailbox_sweep` named no model, so it
+inherited the most expensive one available — the $3.88 briefing, coming back through a row written
+after that was fixed. Named now, and `validate:duty-delivery` fails the build on the next one.
+
+---
+
 ## Commands worth knowing
 
 ```bash
@@ -466,7 +514,10 @@ npm run mailbox:sweep             # run Monique's mailbox sweep now, instead of 
 npm run credentials:check         # are the logins still working? four real calls, about a cent
 npm run kdp:covers                # put the covers in ~/.boss-os/kdp/covers/final/ in your Inbox
 npm run kdp:resume                # she approved; start Simone now rather than waiting for Friday
-npm run lp:replies                # Monique's LP digest; stops with a reason until the grant exists
+npm run lp:replies                # Monique's LP digest — the grant landed, so it runs
+npm run calendar:sync             # your calendars into the diary; API first, iCal as the backstop
+npm run kdp:surface               # Simone's daily Kindle triage, now instead of at 09:30
+npm run notify -- --from Simone --subject "..." --body "..."   # a push Google cannot revoke
 npm run local:pull                # read production into backups/
 npm run local:restore -- --force  # load that into the local database
 ```

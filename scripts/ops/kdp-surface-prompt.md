@@ -96,7 +96,13 @@ Then run `scripts/ops/kdp-surface-report.mjs`, which posts the file.
 ## Telling her
 
 **Only for a `problem` that needs her, or for something that completed.** Use
-`npm run notify -- --subject "..." --body "..."`, which sends through Resend rather than the Gmail
+`npm run notify -- --from Simone --subject "..." --body "..."`, which sends through Resend rather than the Gmail
+
+
+**`--from Simone` is not optional.** Without it the mail goes out as a generic Boss OS
+address, and she cannot tell who is writing before she opens it — she names an owner for a
+reason, and the owner belongs on the envelope. A name not on the roster is refused rather
+than turned into an address.
 connector — the connector shares its credential with the mailbox you just read, so the day it matters
 most is the day it cannot send. Boss OS is the record; the email is only the nudge.
 

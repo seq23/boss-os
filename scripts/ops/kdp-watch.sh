@@ -98,6 +98,7 @@ STOPEOF
     # that tells her to go and look on a day she otherwise would not. `;` not `&&`: a refused send
     # must not turn a reported stop into an unreported one.
     cd "$REPO" && npm run --silent notify -- \
+      --from Simone \
       --subject "KDP watch could not run" \
       --body "$reason
 

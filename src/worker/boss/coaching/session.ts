@@ -70,9 +70,14 @@ export async function consentFor(env: Env, day: string): Promise<ConsentState> {
     return {
       granted: false, backend_id: null, granted_at: null,
       reason:
-        "Morning coaching has not been approved for today. What you type is classified LOCAL_ONLY " +
-        "and is never stored by this system — but a model has to read it to answer, and that is a " +
-        "decision only you can make, once a day.",
+        /*
+         * WRITTEN FOR HER, NOT FOR THE AIRLOCK. This sentence used to open with "What you type is
+         * classified LOCAL_ONLY" — a residency enum from `data_policy`, printed at the person least
+         * equipped to interpret it, in the first thing she reads on the screen. The classification
+         * is still true and still enforced; she is simply not its audience.
+         */
+        "Not started for today. What you type here is never stored by Boss OS — but a model has to " +
+        "read it in order to answer, and that is a decision only you can make, once a day.",
     };
   }
   if (row.revoked_at) {

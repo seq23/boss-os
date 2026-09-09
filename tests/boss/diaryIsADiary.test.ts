@@ -92,7 +92,15 @@ describe("a row", () => {
      */
     const rows = (await diary(env as any)).rows;
     const standing = rows.find((r) => r.standing)!;
-    expect(new Date(standing.scheduled_at).getUTCDay()).toBe(3);
+    /*
+     * ASSERTED IN HER ZONE, NOT IN UTC. The meeting is 11:00 America/Chicago, which is 16:00 UTC —
+     * still a Wednesday, but the first version of this test asked `getUTCDay()` of a row whose UTC
+     * hour had moved and would have gone wrong the moment the time was corrected. A diary row is a
+     * wall-clock fact about her week; checking it in UTC is checking a different question.
+     */
+    const weekday = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "long" })
+      .format(new Date(standing.scheduled_at));
+    expect(weekday).toBe("Wednesday");
     expect(standing.source).toBe("recurring");
   });
 });
@@ -135,6 +143,41 @@ describe("the calendar feeds", () => {
     await apiJson<any>("/api/diary/sync", { method: "POST", body });
     const n = await env.DB.prepare(`SELECT COUNT(*) AS n FROM diary_entries WHERE calendar_uid = 'abc123@google.com'`).first<any>();
     expect(n.n).toBe(1);
+  });
+
+  it("does not show a meeting twice when she typed it and the calendar also has it", async () => {
+    /*
+     * THE STANDING WEDNESDAY IS IN BOTH SOURCES. She typed it — "im telling u its a standing meeting
+     * so this is a manual meeting addition" — and it is also "Sequoia // Scooter Sync" recurring at
+     * 11:00 on the West Peek calendar, which nothing could read until the Calendar API was enabled
+     * in the GCP project. Showing it twice would make the diary look broken in exactly the place it
+     * was most obviously broken this morning.
+     *
+     * HERS WINS. A calendar entry silently replacing the row she typed is the screen overruling her.
+     */
+    const before = (await diary(env as any)).rows;
+    const standing = before.find((r) => r.standing)!;
+
+    await apiJson<any>("/api/diary/sync", {
+      method: "POST",
+      body: {
+        events: [{
+          calendar_uid: "scootersync_abc@google.com",
+          title: "Sequoia // Scooter Sync",
+          scheduled_at: standing.scheduled_at,
+          location: "Google Meet",
+        }],
+      },
+    });
+
+    const after = (await diary(env as any)).rows;
+    const atThatHour = after.filter(
+      (r) => new Date(r.scheduled_at).toISOString().slice(0, 13) === new Date(standing.scheduled_at).toISOString().slice(0, 13),
+    );
+    expect(atThatHour).toHaveLength(1);
+    // Her title survives; what only the calendar knew is folded in.
+    expect(atThatHour[0]!.title).toBe(standing.title);
+    expect(atThatHour[0]!.location).toBe("Google Meet");
   });
 
   it("names which calendars are in here and which are not", async () => {

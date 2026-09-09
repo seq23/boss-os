@@ -96,6 +96,62 @@ const MUST_NOT = [
  */
 const CONTENT_EXCEPTIONS = new Map([
   [
+    /*
+     * ── lp-outcomes.mjs · WHAT ACTUALLY HAPPENED TO EVERY EMAIL TWIN SENT ────
+     *
+     * ADDED AS A NAMED EXCEPTION RATHER THAN BY LOOSENING THE RULE, which is the whole point of this
+     * list existing: the general prohibition is untouched and this one file's narrowness is checked
+     * on every build.
+     *
+     * WHY IT NEEDS RAW. It answers "did this address bounce, reply, or ask to be removed" for 571
+     * sent addresses. A delivery-status notification is formatted differently by every provider, and
+     * a parser for them is a parser you maintain forever — so it does not parse them. It takes the
+     * addresses the Sent Log ALREADY HOLDS and asks whether a message contains any of them. That
+     * membership test needs the message, and no arrangement of From/To/Date answers it: a bounce for
+     * an address arrives from a postmaster, not from the person.
+     *
+     * WHY THE ANSWER MATTERS ENOUGH TO GRANT IT. The Sent Log's Status column has said "sent" on all
+     * 571 rows since July — a tracker where every row carries the same value is not tracking
+     * anything. Her own Open Items tab flagged it: "Zero hard bounces across 217 pattern-guessed
+     * addresses is not plausible." There are 72.
+     *
+     * WHAT KEEPS IT NARROW, and each of these is asserted below rather than promised.
+     */
+    "lp-outcomes.mjs",
+    {
+      why:
+        "Reconciles what happened to 571 sent addresses — bounced, replied, asked to be removed — " +
+        "against the Sent Log that has recorded 'sent' for every one of them since July. The answer " +
+        "lives in bounce reports and reply bodies, which no arrangement of From/To/Date produces, and " +
+        "the addresses it matches against come from the spreadsheet rather than from the mail.",
+      invariants: [
+        // DRY RUN BY DEFAULT. The first thing this does to her spreadsheet should be printable, and
+        // a body-reading job that writes on its first run is one nobody reviewed before it ran.
+        [(src) => /--commit/.test(src) && /const COMMIT = process\.argv\.includes\("--commit"\)/.test(src),
+         "it must require --commit to write anything; without it, it prints what would change and stops"],
+        // THE MAILBOX IS NAMED IN THE JWT, so it cannot silently become a different one. The previous
+        // attempt routed through the claude.ai connector, which is bound to her PERSONAL account —
+        // it searched the wrong mailbox and filed a confident, quiet, wrong answer.
+        [(src) => /sub:\s*MAILBOX|sub: *mailbox|"sub":\s*MAILBOX|sub: MAILBOX/.test(src) || /const MAILBOX = /.test(src),
+         "the mailbox it impersonates must be a named constant, not inferred from whatever session it finds"],
+        // NOTHING DERIVED FROM A BODY IS WRITTEN TO DISK. The one file it appends to is a suppression
+        // list, and every line of it is an address that was already on the Sent Log — so the file
+        // contains nothing the spreadsheet did not already hold.
+        [(src) => !/writeFileSync\([^)]*(body|raw|msg|message)/i.test(src),
+         "it must never write a message body or a raw message to disk — the only file it appends is a list of addresses the Sent Log already holds"],
+        // Bounded. A mailbox with a multi-megabyte deck in it must not be read whole into memory,
+        // and a bounce report ends long before this.
+        [(src) => /slice\(0, ?200_000\)|slice\(0, ?200000\)/.test(src),
+         "it must bound how much of a message it reads"],
+        // Nothing content-derived may reach a model. Matched on PROVIDER HOSTS rather than brand
+        // names, for the reason the holdings entry records: a validator that fires on a doc comment
+        // is one that gets switched off.
+        [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src),
+         "it must send nothing to any model — the matching is a fixed set of addresses from the spreadsheet"],
+      ],
+    },
+  ],
+  [
     "holdings-lookup.mjs",
     {
       why:

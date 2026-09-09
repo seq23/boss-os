@@ -152,6 +152,16 @@ export const api = {
 
   /* The diary. Manual entry is the primary route: a service account can never read a personal
    * Google calendar, so some of her meetings will always be ones she typed. */
+  /*
+   * The three things she can do with an alert. `resolveAlert` deliberately RE-VERIFIES rather than
+   * closing on her say-so, and answers with a verdict either way — a human asserting something is
+   * done is the same claim TERMINAL_CHECKS exists to refuse, wearing different clothes.
+   */
+  refreshAlerts: () => call<any>("/today/alerts/refresh", post("")),
+  resolveAlert: (deliverableId: string) =>
+    call<{ closed: boolean; verdict: string }>("/today/alerts/resolve", post("", { deliverable_id: deliverableId })),
+  dismissAlert: (body: Record<string, unknown>) => call<any>("/today/alerts/dismiss", post("", body)),
+
   diary: () => call<any>("/diary"),
   addMeeting: (body: Record<string, unknown>) => call<any>("/diary", post("", body)),
   cancelMeeting: (id: string) => call<any>(`/diary/${id}/cancel`, post("")),
