@@ -44,6 +44,7 @@
  *   npm run capital:match                          # the standing cross — who fits whom, right now
  *   npm run capital:match -- --send                # ...and email it to her
  *   npm run capital:match -- --find SpaceX --side buy --size 250000000
+ *   npm run capital:match -- --nudge               # the monthly, asset-anchored note — at most three
  *   npm run capital:match -- --not "someone@example.com"      # never recommend this person again
  */
 
@@ -63,6 +64,7 @@ const FIND = argOf("find");
 const WANT_SIDE = argOf("side");
 const WANT_SIZE = Number(argOf("size") ?? 0);
 const NOT = argOf("not");
+const NUDGE = ARGS.includes("--nudge");
 
 /** Five, with reasons. Never a directory. */
 const CAP = Number(process.env.CAPITAL_MATCH_CAP ?? 5);
@@ -224,6 +226,103 @@ export function assignedSearch(interests, asset, side, size, suppressed, now = D
   return [...byWho.values()].sort((a, b) => b.score - a.score).slice(0, CAP);
 }
 
+// ─── The monthly nudge ───────────────────────────────────────────────────────
+
+/**
+ * ─── CADENCE IS ALLOWED, AND SHE SAID EXACTLY HOW ──────────────────────────
+ *
+ *   "cadence is fine - if its few and far between and not intrusive and its someone meaningful.
+ *    not everyone."
+ *
+ * Four constraints, and every one of them is enforced here rather than intended:
+ *
+ *   1. ONLY WHERE A RHYTHM ACTUALLY EXISTS. Never inferred from two emails — that is precisely what
+ *      produced "469 days late" against a fourteen-day cadence nobody had ever kept. A rhythm needs
+ *      BOTH SIDES writing, enough messages to be a pattern, and enough span to be a habit.
+ *   2. ONLY MEANINGFUL PEOPLE. Someone who has TRANSACTED outranks someone with a long thread, and
+ *      somebody who appears nowhere in the ledger is not raised at all however chatty the thread.
+ *   3. A HARD VOLUME CAP. Three a month. A monthly list of twenty is the People tab again.
+ *   4. IT SAYS WHY, NOT HOW LONG. "You and X exchanged 129 messages through last November, then it
+ *      stopped" is an observation she can act on. "61 days since contact" is a timer she ignores.
+ *
+ * ASSET-ANCHORED, because that is the form she asked for: "three people who wanted SpaceX haven't
+ * heard from you since the mark moved." The company is the reason to write, not the calendar.
+ */
+export function nudges(interests, contacts, suppressed, now = Date.now(), cap = 3) {
+  const byEmail = new Map((contacts ?? []).map((c) => [String(c.email ?? "").toLowerCase(), c]));
+  const seen = new Map();
+
+  for (const r of interests) {
+    const email = String(r.principal_email ?? "").toLowerCase();
+    if (!email || suppressed.has(email)) continue;
+    const c = byEmail.get(email);
+    if (!c) continue;
+
+    /*
+     * A RHYTHM, NOT A COINCIDENCE. Both sides must have written, at least eight times between them,
+     * across at least ninety days. Anything less is two emails and an invented cadence.
+     */
+    const sent = Number(c.sent) || 0, received = Number(c.received) || 0;
+    const total = sent + received;
+    if (sent < 3 || received < 3 || total < 8) continue;
+    const spanDays = (Date.parse(c.last_at) - Date.parse(c.first_at)) / DAY;
+    if (!(spanDays >= 90)) continue;
+
+    // Their own normal gap, never a fixed threshold. A twice-a-year correspondent is not cold at
+    // four months, and treating them as if they were is how a nudge becomes noise.
+    const normalGap = spanDays / total;
+    const quiet = (now - Date.parse(c.last_at)) / DAY;
+    if (quiet < Math.max(45, normalGap * 3)) continue;
+
+    const prior = seen.get(email);
+    const rank = (r.durability === "transacted" ? 2 : 1) * CONF[r.confidence ?? "low"];
+    if (!prior || rank > prior.rank) {
+      seen.set(email, {
+        email, name: c.name || r.principal, asset: r.asset, row: r, rank,
+        total, sent, received, quietDays: Math.round(quiet), normalGap: Math.round(normalGap),
+        lastAt: String(c.last_at).slice(0, 10),
+      });
+    }
+  }
+
+  // Transacted first, then the strongest rhythm. Three, and the asset is the headline.
+  const picked = [...seen.values()].sort((a, b) => (b.rank - a.rank) || (b.total - a.total)).slice(0, cap);
+  const byAsset = new Map();
+  for (const n of picked) {
+    const k = assetKey(n.asset);
+    if (!byAsset.has(k)) byAsset.set(k, []);
+    byAsset.get(k).push(n);
+  }
+  return { picked, byAsset };
+}
+
+function renderNudge({ picked, byAsset }) {
+  if (picked.length === 0) {
+    return ["Nobody this month.",
+      "",
+      "That is a real answer, not an empty run. A nudge is only raised where a rhythm actually",
+      "existed — both of you writing, at least eight messages, across at least three months — and",
+      "where the person appears in the ledger on a name. Nobody currently clears both.",
+    ].join("\n");
+  }
+  const lines = [];
+  for (const [, group] of byAsset) {
+    const asset = group[0].asset;
+    lines.push(`${group.length === 1 ? "One person" : `${group.length} people`} on ${asset}:`);
+    for (const n of group) {
+      const month = new Date(`${n.lastAt}T12:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+      lines.push(`  ${n.name} <${n.email}>`);
+      lines.push(`     You exchanged ${n.total} messages — ${n.sent} from you, ${n.received} from them — through ${month}, then it stopped.`);
+      lines.push(`     ${n.row.side === "buy" ? "Wanted" : "Was selling"} ${n.row.size_text ?? ""} ${n.row.asset}${n.row.durability === "transacted" ? ", and has transacted in it" : ""}.`);
+      lines.push(`     ${n.row.evidence}`);
+      lines.push(`     ${n.row.source_message}`);
+      lines.push("");
+    }
+  }
+  lines.push('Not this person? npm run capital:match -- --not "<their address>".');
+  return lines.join("\n");
+}
+
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
 const money = (r) => r.size_text || (r.size_usd ? `$${(r.size_usd / 1e6).toFixed(1)}M` : `${r.size_shares} shares`);
@@ -289,7 +388,28 @@ async function main() {
   const suppressed = loadSuppressed();
 
   let body, subject;
-  if (FIND) {
+  if (NUDGE) {
+    const CONTACTS = process.env.BOSS_OS_CONTACTS_FILE
+      ?? path.join(os.homedir(), ".boss-os", "sourcing", "CONTACTS.json");
+    if (!fs.existsSync(CONTACTS)) {
+      /*
+       * WITHOUT THE CORRESPONDENCE RECORD THERE IS NO RHYTHM, AND WITHOUT A RHYTHM THERE IS NO
+       * NUDGE. Running anyway would mean inventing a cadence out of the ledger dates alone, which
+       * is exactly the defect that produced "469 days late" against a fourteen-day habit nobody had.
+       */
+      console.error(`NAMED STOP [NO_CORRESPONDENCE_RECORD] ${CONTACTS} is missing.`);
+      console.error("  A nudge is only honest where a rhythm actually existed, and that file is the");
+      console.error("  only thing that knows how often two people wrote to each other.");
+      console.error("  Run: npm run contacts:extract");
+      process.exit(7);
+    }
+    const contacts = JSON.parse(fs.readFileSync(CONTACTS, "utf8")).contacts ?? [];
+    const result = nudges(interests, contacts, suppressed);
+    body = renderNudge(result);
+    subject = result.picked.length
+      ? `${result.picked.length} worth a note — ${[...new Set(result.picked.map((n) => n.asset))].join(", ")}`
+      : "Nobody worth a note this month";
+  } else if (FIND) {
     const side = WANT_SIDE === "sell" ? "sell" : "buy";
     const hits = assignedSearch(interests, FIND, side, WANT_SIZE, suppressed);
     body = renderAssigned(hits, FIND, side, WANT_SIZE);

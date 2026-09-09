@@ -126,6 +126,19 @@ jobs:
       - name: A heading outranks its content
         run: npm run validate:heading-rank
 
+      # She can read staylor@spry.vc and can never send from it. Her mailbox at a FINRA-registered
+      # broker-dealer: reading it is a private convenience, writing from it would be an unsupervised
+      # communication from a regulated person. Three separate things already make it impossible and
+      # none of them was written down, which is a rule with a six-month expiry.
+      - name: Monique reads spry.vc and never sends from it
+        run: npm run validate:no-spry-sender
+
+      # A filter over 104,241 messages whose discard is one number is a filter nobody can audit, and
+      # an unauditable filter loses deals silently. Every message ends in a named bucket, a 100%
+      # discard is a named stop, and a company name entering the filter fails the build.
+      - name: The filter says what it dropped
+        run: npm run validate:filter-accounts
+
       - name: Build client
         run: npm run build
 

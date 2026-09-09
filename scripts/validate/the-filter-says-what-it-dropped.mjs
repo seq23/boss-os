@@ -109,6 +109,19 @@ export function checkSeparation(filterSrc, extractSrc) {
   if (!/NAMED STOP \[EXTRACTION_NEVER_RAN\]/.test(extractSrc)) {
     bad.push(`${EXTRACTOR}: a run where every batch failed must be a named stop. "The market is empty" and "the model was unreachable" are opposite facts.`);
   }
+  /*
+   * THE RECALL TEST IS THE ONLY HONEST CHECK, so it is asserted rather than hoped for. The same
+   * invariant lp-positive.mjs carries, for the same reason: a scan that quietly loses a
+   * counterparty is worse than no scan, and every other check is marking its own homework.
+   *
+   * NOTE WHAT IS ASSERTED: that the MECHANISM exists and fails loudly — not that the list is
+   * populated. The list is hers to supply and an empty one is a named stop she can see, which is a
+   * different and correct state.
+   */
+  if (!/KNOWN_DEALS/.test(extractSrc) || !/RECALL_FAILED/.test(extractSrc) || !/NO_GROUND_TRUTH/.test(extractSrc)) {
+    bad.push(`${EXTRACTOR}: the recall test against deals she knows she did is gone. `
+      + "Without it, plausible output is the only evidence the extraction has — which is none.");
+  }
   return bad;
 }
 

@@ -216,6 +216,85 @@ launchctl unload "$PEOPLE_PLIST" 2>/dev/null || true
 launchctl load "$PEOPLE_PLIST"
 echo "Installed $PEOPLE_LABEL — Monday 07:15 Central (people-worth-a-call.mjs)."
 
+# ─── Monique's brokerage desk: the daily supply watch and the monthly note ───
+#
+# `duty_inbound_supply` and `duty_interest_nudge`. Both are `local_job` for the same reason, and it
+# is the strongest reason in this file: the interest ledger holds NAMED COUNTERPARTIES, the companies
+# they trade and the sizes they trade them in, at a FINRA-registered broker-dealer. None of it may
+# reach the cloud database — not code-named, not counted — so the reading, the extraction and the
+# matching all happen here and only an email leaves the machine.
+#
+# DAILY AT 07:45, and daily rather than weekly because new supply is perishable in a way nothing else
+# in this system is: a block offered on Tuesday is often gone by Friday, and a weekly sweep meets
+# half of it after it has filled. It scans only since the last scan, so a normal morning is a few
+# hundred messages and a few cents.
+#
+# `;` NOT `&&` BETWEEN THE THREE STEPS. The scan reads the mailbox, the extract turns candidates into
+# ledger rows, the match crosses them. A failing match must not make a completed scan look like a
+# failed one — the mail was read either way, and each step says its own named stop in this log.
+#
+# THE MONTHLY NOTE RIDES ON THE FIRST OF THE MONTH AT 07:30, fifteen minutes before the daily scan,
+# so it reasons over yesterday's settled ledger rather than racing a scan that is mid-write.
+CAPITAL_LABEL="com.seq.boss-capital"
+CAPITAL_PLIST="$HOME/Library/LaunchAgents/$CAPITAL_LABEL.plist"
+
+mkdir -p "$HOME/.boss-os/capital"
+
+cat > "$CAPITAL_PLIST" <<CAPEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$CAPITAL_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO && npm run --silent capital:scan; cd $REPO && npm run --silent capital:extract; cd $REPO && npm run --silent capital:match -- --send</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/capital.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/capital.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+CAPEOF
+
+launchctl unload "$CAPITAL_PLIST" 2>/dev/null || true
+launchctl load "$CAPITAL_PLIST"
+echo "Installed $CAPITAL_LABEL — daily 07:45 Central (interest-ledger.mjs, interest-extract.mjs, interest-match.mjs)."
+
+NUDGE_LABEL="com.seq.boss-capital-nudge"
+NUDGE_PLIST="$HOME/Library/LaunchAgents/$NUDGE_LABEL.plist"
+
+cat > "$NUDGE_PLIST" <<NUDGEEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$NUDGE_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO && npm run --silent capital:match -- --nudge --send</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/capital-nudge.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/capital-nudge.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+NUDGEEOF
+
+launchctl unload "$NUDGE_PLIST" 2>/dev/null || true
+launchctl load "$NUDGE_PLIST"
+echo "Installed $NUDGE_LABEL — the 1st at 07:30 Central (interest-match.mjs --nudge)."
+
 # ─── The weekly property read ────────────────────────────────────────────────
 #
 # Camille's Search Console analysis and Danielle's shipping heartbeat, in one job because they answer

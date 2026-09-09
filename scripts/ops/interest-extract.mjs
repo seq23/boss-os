@@ -65,6 +65,35 @@ const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null 
 const LIMIT = Number(argOf("limit") ?? 0);
 
 const FIRM = "rainmakersecurities.com";
+const VERIFY = ARGS.includes("--verify");
+
+/**
+ * ─── THE ONLY HONEST CHECK: DEALS SHE ACTUALLY DID ─────────────────────────
+ *
+ * EVERY OTHER CHECK THIS SYSTEM COULD RUN IS MARKING ITS OWN HOMEWORK. The extraction can report a
+ * confident count of interests, a plausible spread of assets and a tidy discard rate, and be
+ * silently missing half the market — and nothing in the output would look different. Plausible
+ * output is not evidence.
+ *
+ * The precedent is three weeks old and it caught a real failure. `lp-positive.mjs` carries twelve
+ * replies the owner listed from her own records; the first version of the search found two of them,
+ * and reported the other ten as a clean result rather than as a loss. A 10-of-12 recall failure that
+ * looked exactly like success.
+ *
+ * SO: FIVE PAST TRANSACTIONS SHE KNOWS HAPPENED — the counterparty, the company, roughly when. The
+ * extraction has to recover them out of her own mailbox. If it cannot find a deal she knows she did,
+ * it is not ready, and no amount of good-looking output changes that.
+ *
+ * THIS LIST IS EMPTY, AND THAT IS A NAMED STOP RATHER THAN A GAP. It is the one thing in this
+ * feature that only she can supply, so `--verify` refuses loudly instead of inventing a ground truth
+ * for itself. When the list ever goes stale, that is a reason to update it from her records — never
+ * a reason to soften the check.
+ *
+ * Each entry: [counterparty name or address, company, roughly when, one line of what it was]
+ */
+const KNOWN_DEALS = [
+  // e.g. ["daniel@kellscapital.com", "OpenAI", "2026-08", "his buyer took part of the block"],
+];
 
 // ─── The structured-order fast path ──────────────────────────────────────────
 
@@ -186,7 +215,65 @@ const normalise = (row, msg) => ({
   via: "model",
 });
 
+/**
+ * Recall against her own records. Returns the deals the ledger cannot account for.
+ *
+ * A hit is: the counterparty appears in the ledger, on that company, within four months of when she
+ * says it happened. Four months rather than a date match because she is recalling a transaction, not
+ * reading a confirm, and a window that demands the day would fail on her memory rather than on the
+ * extraction.
+ */
+export function recall(interests, deals) {
+  const missed = [];
+  const found = [];
+  for (const [whoRaw, company, when, note] of deals) {
+    const who = String(whoRaw).toLowerCase();
+    const asset = String(company).toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const target = Date.parse(`${when.length === 7 ? `${when}-15` : when}T12:00:00Z`);
+    const hit = interests.find((r) =>
+      String(r.asset ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "") === asset
+      && (`${r.principal ?? ""} ${r.principal_email ?? ""} ${r.intermediated_by ?? ""}`).toLowerCase().includes(who)
+      && Math.abs(Date.parse(`${r.date}T12:00:00Z`) - target) < 124 * 86_400_000);
+    if (hit) found.push([whoRaw, company, when, hit]); else missed.push([whoRaw, company, when, note]);
+  }
+  return { found, missed };
+}
+
 async function main() {
+  if (VERIFY) {
+    const ledger = fs.existsSync(LEDGER) ? JSON.parse(fs.readFileSync(LEDGER, "utf8")).interests ?? [] : [];
+    if (KNOWN_DEALS.length === 0) {
+      console.error("NAMED STOP [NO_GROUND_TRUTH] the extraction cannot be verified, and nothing else can verify it.");
+      console.error("");
+      console.error(`  The ledger holds ${ledger.length} interest(s). That number is plausible and it is not evidence.`);
+      console.error("  Every check this system could run on itself is marking its own homework: a scan that");
+      console.error("  silently lost half the market would print exactly the same kind of number.");
+      console.error("");
+      console.error("  WHAT IS NEEDED, AND ONLY SHE HAS IT: five transactions she knows she did.");
+      console.error("  For each one — the counterparty, the company, and roughly when. Nothing else.");
+      console.error("  They go in KNOWN_DEALS at the top of this file, and `--verify` then fails loudly");
+      console.error("  on any the extraction cannot recover out of her own mailbox.");
+      console.error("");
+      console.error("  This is the same check that caught a 10-of-12 recall failure in the LP scan — a");
+      console.error("  failure that looked identical to success until her own list was put against it.");
+      process.exit(11);
+    }
+    const { found, missed } = recall(ledger, KNOWN_DEALS);
+    console.log(`=== RECALL AGAINST ${KNOWN_DEALS.length} DEAL(S) SHE KNOWS SHE DID ===`);
+    for (const [who, company, when, hit] of found) console.log(`  FOUND    ${String(who).padEnd(34)} ${company} ~${when}  (ledger row ${hit.source_message})`);
+    for (const [who, company, when, note] of missed) console.log(`  MISSING  ${String(who).padEnd(34)} ${company} ~${when}  ${note ?? ""}`);
+    console.log(`\n  ${found.length} of ${KNOWN_DEALS.length} recovered.`);
+    if (missed.length) {
+      console.error(`\nNAMED STOP [RECALL_FAILED] the extraction did not recover ${missed.length} deal(s) she knows happened.`);
+      console.error("  The filter is too narrow or the extraction is dropping rows. A ledger that");
+      console.error("  silently loses a counterparty is worse than no ledger, because she has no way");
+      console.error("  to know it happened. Do not soften this check — widen the thing that lost them.");
+      process.exit(12);
+    }
+    console.log("RECALL PASSED");
+    return;
+  }
+
   if (!fs.existsSync(BATCH_DIR)) {
     console.error(`NAMED STOP [NO_CANDIDATES] ${BATCH_DIR} does not exist.`);
     console.error("  Run the scan first: npm run capital:scan -- --backfill");
