@@ -15,6 +15,10 @@ import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { composeOutreach, isRefusal, type CandidateRow, type CrossmatchFact } from "../wealth/outreach";
+import {
+  recommendBuyers, type CandidateFacts, type CrossmatchFacts,
+} from "../../../shared/wealth/recommend";
+import { getSetting } from "../lib/settings";
 import { raiseJudgementCall } from "../approvals/raise";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { LANE_BREACH_REFUSAL, readTradingCapital } from "../investor/bridge";
@@ -24,6 +28,17 @@ import { buildLedger, isMonth, monthKey, lineDefinitions, LINE_KEYS } from "../t
 export const wealth = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const BPS = 10_000;
+
+/**
+ * The one figure that turns a published cheque floor into a reachability test.
+ *
+ * IT IS A SETTING RATHER THAN A TABLE BECAUSE THE TABLE IS EMPTY AND ALWAYS HAS BEEN. `position`,
+ * `position_mark`, `portfolio_vehicles` and `deals` all hold zero rows on production; her brokerage
+ * supply lives in her mail until it closes and has never been typed in here. Asking her to build a
+ * positions register before a ranking can work is how the ranking never works. One number, stated
+ * once, changes "floor $50M" from decoration into "they cannot buy what you have".
+ */
+const WORKING_POSITION_KEY = "brokerage_working_position_usd";
 
 const ENTITY_KINDS = new Set(["person", "llc", "corp", "trust", "fund", "foundation", "other"]);
 const VEHICLE_KINDS = new Set([
@@ -242,6 +257,81 @@ export async function draftOutreachFor(
     };
   }
 }
+
+/**
+ * ─── THE RECOMMENDATION, WHICH IS WHAT THE DESK IS NOW ─────────────────────
+ *
+ *   "id rather the capital tab just not list buyers like this. just have a recommendation section
+ *    with a list of names to send an email to and a sample of the emails that should be sent"
+ *
+ * A handful of firms, ranked, each carrying the reason it is on the list and the letter she would
+ * send, composed in full. `/sourcing` still exists and still returns all twenty-eight — that list is
+ * the JUSTIFICATION behind a click, not the screen.
+ *
+ * THE LETTER IS COMPOSED HERE AND NOT STORED. `composeOutreach` is deterministic from the row, so
+ * what she reads on the screen is character-for-character what `draftOutreachFor` will put in her
+ * Inbox if she asks for it. A preview that can differ from the thing it previews is worse than no
+ * preview.
+ *
+ * A SUPPRESSED FIRM APPEARS WITH ITS REFUSAL AND NO LETTER, which is `composeOutreach`'s own rule
+ * enforced one step earlier so a banned firm never reaches the ranked list at all.
+ */
+wealth.get("/recommendations", async (c) => {
+  const now = Date.now();
+  const [cands, matches, live] = await Promise.all([
+    c.env.DB.prepare(`SELECT * FROM sourcing_candidates ORDER BY created_at DESC LIMIT 200`).all<CandidateRow & CandidateFacts>(),
+    c.env.DB.prepare(`SELECT id, candidate_id, lp_firm, lp_list, confidence, why FROM counterparty_crossmatches WHERE status <> 'rejected'`)
+      .all<CrossmatchFacts>(),
+    c.env.DB.prepare(`SELECT DISTINCT candidate_id FROM buyer_outreach_drafts WHERE state IN ('awaiting','approved','sent')`)
+      .all<{ candidate_id: string }>(),
+  ]);
+
+  const candidates = cands.results ?? [];
+  const rawPosition = await getSetting(c.env.DB, WORKING_POSITION_KEY);
+  const position = rawPosition !== null && Number.isFinite(Number(rawPosition)) && Number(rawPosition) > 0
+    ? Number(rawPosition)
+    : null;
+
+  const ranked = recommendBuyers(
+    candidates,
+    matches.results ?? [],
+    new Set((live.results ?? []).map((r) => r.candidate_id)),
+    position,
+    now,
+  );
+
+  const byId = new Map(candidates.map((r) => [r.id, r]));
+  const withLetters = ranked.recommendations.map((r) => {
+    const row = byId.get(r.candidate_id)!;
+    const composed = composeOutreach(row, [], null, now);
+    return {
+      ...r,
+      /*
+       * A REFUSAL HERE WOULD BE A BUG, NOT A STATE. Suppression is handled before ranking, so the
+       * only way `composeOutreach` refuses a ranked firm is if the two disagreed — and if they ever
+       * do, the screen says so rather than rendering an empty letter.
+       */
+      letter: isRefusal(composed) ? null : composed,
+      letter_withheld: isRefusal(composed) ? `${composed.refused} ${composed.because}` : null,
+    };
+  });
+
+  return ok(c, { ...ranked, recommendations: withLetters });
+});
+
+/**
+ * Put one recommended letter in her Inbox for approval.
+ *
+ * A SEPARATE VERB FROM `reviewed`, deliberately. All twenty-eight rows were already `reviewed` on
+ * the day she asked what came next, so re-posting a status she had already given would have been a
+ * button that changes a word she has already said. This one names what it does.
+ */
+wealth.post("/recommendations/:id/draft", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const note = b?.note ? String(b.note) : null;
+  const result = await draftOutreachFor(c.env, c.req.param("id"), note);
+  return ok(c, result);
+});
 
 /** Every letter and its state, so the desk can show what is approved and ready to go. */
 wealth.get("/outreach", async (c) => {

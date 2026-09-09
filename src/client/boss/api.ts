@@ -291,6 +291,14 @@ export const api = {
    */
   sourcing: (status?: string) => call<any>(`/wealth/sourcing${status ? `?status=${status}` : ""}`),
   setSourcingStatus: (id: string, body: unknown) => call<any>(`/wealth/sourcing/${id}/status`, post("", body)),
+  /*
+   * THE RECOMMENDATION, WHICH IS WHAT SHE ASKED THE DESK TO BE. A handful of firms with the reason
+   * each is on the list and the letter composed in full — not the catalogue, which is still behind
+   * `sourcing` and is now the justification rather than the screen.
+   */
+  buyerRecommendations: () => call<any>("/wealth/recommendations"),
+  draftRecommendation: (id: string, note?: string) =>
+    call<any>(`/wealth/recommendations/${id}/draft`, post("", { note: note ?? null })),
 
   // The return-on-effort ledger, and the LP × buyer overlaps. Both are filled by jobs on her Mac.
   lineReturns: (period?: string) => call<any>(`/wealth/returns${period ? `?period=${period}` : ""}`),

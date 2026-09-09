@@ -42,9 +42,12 @@ const day = (ts: number | null) => (ts ? new Date(ts).toLocaleDateString() : "�
  * ORDERED BY DECISION, NOT BY SUBSYSTEM. The three things she can act on at 7am go first and lead
  * with a count of what is waiting on her:
  *
- *   1. **Desk** — buyers her analyst found and the LP cross-matches, both awaiting a keep-or-reject.
- *      Eleven real names with checkable sources, and the two firms that were sitting on both lists
- *      with nothing to join them.
+ *   1. **Desk** — a recommendation. Five firms worth an email this week, each with the reason it is
+ *      on the list and the letter composed in full, plus the firms deliberately NOT written to and
+ *      why. Rewritten on 9 September after her verdict on the version that came before it:
+ *      *"id rather the capital tab just not list buyers like this. just have a recommendation
+ *      section with a list of names to send an email to and a sample of the emails that should be
+ *      sent"* — a catalogue with a compose button was the wrong answer, not an under-decorated one.
  *   2. **Return** — the six income lines. Kept because it is the only place that says what is
  *      measured and what is a blind spot, and every "unmeasured" on it names the command that
  *      would fix it.
@@ -109,71 +112,96 @@ function Ledger() {
   );
 }
 
-// ─── Buyers, and the overlaps with the LP list ────────────────────────────────
+// ─── The recommendation, which is the whole desk now ──────────────────────────
 
 /**
- * The buyer candidates Camille's sweep produces, and her verdict on each.
+ * A HANDFUL OF FIRMS TO WRITE TO, WITH THE LETTERS.
  *
- * THIS SCREEN IS A FIX, NOT A FEATURE. The endpoints have existed since 0185 and no page called
- * them, so eleven candidates sat at status `new` from the day they were found — visible on Today
- * only as a number in the Wealth pillar, with no way to review one. The sweep ran three mornings a
- * week into a list nobody could work.
+ * ─── Her words, 9 September 2026 ───────────────────────────────────────────
  *
- * The cross-matches sit on this screen rather than their own because they are a fact ABOUT a buyer:
- * "this firm is already in your LP sequence" is something to know while deciding whether to contact
- * them, and a separate page would be read once.
+ *   "id rather the capital tab just not list buyers like this. just have a recommendation section
+ *    with a list of names to send an email to and a sample of the emails that should be sent"
+ *
+ * And, minutes earlier: *"the capital tab - i need it to do more. it should suggest an email to the
+ * firms i have reviewed or something? what is next? ok i've reviewed them....then what?"*
+ *
+ * ─── What she was looking at ───────────────────────────────────────────────
+ *
+ * Twenty-eight firms, every one already `reviewed` — confirmed against production D1, which returns
+ * exactly one status row: `reviewed 28`. Three counters reading 0 / 2 / 0. A paragraph of research
+ * under each name. She had finished every job the screen asked of her and it had nothing left to say.
+ *
+ * THE PREVIOUS FIX WAS A COMPOSE BUTTON BOLTED TO A CATALOGUE, and she rejected the shape rather
+ * than the detail. So the catalogue is gone from the lead: the recommendation and the letter ARE the
+ * content, and the twenty-eight rows survive at the bottom, behind a click, as the justification.
+ *
+ * NOTHING SENDS ITSELF, and this screen does not create a path that could. She reads the letter,
+ * asks for it to be drafted, approves it in the Inbox, copies it, and presses "I sent it" — which is
+ * the only thing in this system that may claim an approach happened.
  */
 function Buyers() {
-  const [data, setData] = useState<any | null>(null);
-  const [matches, setMatches] = useState<any | null>(null);
-  const [cooling, setCooling] = useState<any[]>([]);
+  const [rec, setRec] = useState<any | null>(null);
   const [letters, setLetters] = useState<{ approved: any[]; awaiting: any[] } | null>(null);
+  /*
+   * `null` MEANS "NOT READ", NOT "NONE". Every one of these three starts null and is only ever set
+   * to a value by a request that came back. An empty state rendered over a failed fetch is the
+   * defect she has been served most often by this application, and the sections below all say which
+   * of the two they are looking at.
+   */
+  const [recFailed, setRecFailed] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
   function load() {
-    Promise.all([api.sourcing(), api.crossmatches(), api.mailboxFindings("new"), api.outreach()])
-      .then(([s, x, m, o]) => {
-        setData(s); setMatches(x); setLetters(o);
-        /*
-         * A BUYER SHE ALREADY HAS BEATS ONE SHE HAS NOT MET, so the cooling list sits on the desk
-         * rather than only on People. Her words: "find people that could be buyers that i havent
-         * talked to in a while". A sourced candidate is a cold call; someone who has already
-         * transacted and gone quiet is a warm one, and this is the screen where she decides who to
-         * ring today.
-         */
-        setCooling((m?.findings ?? []).filter((f: any) => f.kind === "cooling_buyer"));
-      })
-      .catch((e) => { setError(e); setData({ candidates: [] }); setMatches({ confirmed: [], near: [] }); setLetters(null); });
+    api.buyerRecommendations()
+      .then((r) => { setRec(r); setRecFailed(false); })
+      .catch((e) => { setError(e); setRecFailed(true); });
+    api.outreach().then(setLetters).catch((e) => { setError(e); setLetters(null); });
   }
   useEffect(load, []);
 
-  const [copied, setCopied] = useState<string | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
-
-  async function mark(id: string, status: string) {
-    setError(null);
+  async function draft(id: string) {
+    setBusy(id); setError(null);
     try {
-      const res: any = await api.setSourcingStatus(id, { status });
-      /*
-       * THE SCREEN SAYS WHAT HER CLICK PRODUCED. "Reviewed" used to change a word and redraw; it
-       * now writes a letter, and a letter written silently is indistinguishable from the dead end
-       * she complained about. A refusal — a firm on the LP do-not-contact list — says so here too,
-       * rather than being buried in a notes column nobody opens.
-       */
-      if (res?.letter?.detail) setFlash(res.letter.detail);
+      const res: any = await api.draftRecommendation(id);
+      setFlash(res?.detail ?? "Drafted.");
       load();
-    } catch (e) { setError(e); }
-  }
-  async function markMatch(id: string, status: string) {
-    setError(null);
-    try { await api.setCrossmatchStatus(id, { status }); load(); } catch (e) { setError(e); }
+    } catch (e) { setError(e); } finally { setBusy(null); }
   }
 
-  if (!data) return <Loading />;
-  const confirmed = matches?.confirmed ?? [];
-  const near = matches?.near ?? [];
-  const byCandidate = new Map<string, any[]>();
-  for (const m of confirmed) byCandidate.set(m.candidate_id, [...(byCandidate.get(m.candidate_id) ?? []), m]);
+  /**
+   * She says the cross-match was wrong, and the firm comes back onto the list.
+   *
+   * REJECTING THE MATCH, NOT THE FIRM. The candidate is untouched; only the claim that it is the
+   * same house as a suppressed LP is withdrawn, which is exactly the fact she is qualified to
+   * settle and the algorithm is not.
+   */
+  async function notTheSameFirm(id: string) {
+    setBusy(id); setError(null);
+    try {
+      await api.setCrossmatchStatus(id, { status: "rejected" });
+      setFlash("Match withdrawn. They are back in the running for a letter.");
+      load();
+    } catch (e) { setError(e); } finally { setBusy(null); }
+  }
+
+  async function reject(id: string) {
+    setBusy(id); setError(null);
+    try {
+      await api.setSourcingStatus(id, { status: "rejected" });
+      setFlash("Dropped. They will not come back onto this list.");
+      load();
+    } catch (e) { setError(e); } finally { setBusy(null); }
+  }
+
+  const recommendations: any[] = rec?.recommendations ?? [];
+  const withheld: any[] = [
+    ...(rec?.suppressed ?? []).map((w: any) => ({ ...w, why_class: "on the LP do-not-contact list" })),
+    ...(rec?.out_of_reach ?? []).map((w: any) => ({ ...w, why_class: "too big for the position you are working" })),
+    ...(rec?.already_moving ?? []).map((w: any) => ({ ...w, why_class: "already in flight" })),
+  ];
 
   return (
     <>
@@ -186,33 +214,14 @@ function Buyers() {
       )}
 
       {/*
-        * THREE NUMBERS, EACH ATTACHED TO A DECISION. What replaced "0 active · 0 on file · $0
-        * committed" — three figures that had been zero since the screen shipped and asked nothing
-        * of her. Every one of these is a count of things sitting on this page waiting for a
-        * keep-or-reject.
-        */}
-      <div className="stats">
-        <div className="stat"><div className="stat-n">{data.awaiting_review ?? 0}</div><div className="stat-l">buyers to review</div></div>
-        <div className="stat"><div className="stat-n">{confirmed.length}</div><div className="stat-l">also on the LP list</div></div>
-        <div className="stat"><div className="stat-n">{cooling.length}</div><div className="stat-l">buyers gone quiet</div></div>
-        <div className="stat"><div className="stat-n">{letters?.approved.length ?? 0}</div><div className="stat-l">letters ready to send</div></div>
-      </div>
-
-      {/*
-        * ─── WHAT "REVIEWED" NOW LEAVES BEHIND ─────────────────────────────────
+        * ─── ALREADY APPROVED, WAITING ON YOU TO SEND ──────────────────────────
         *
-        * "i reviewed them ....now what?" — on the day she said it, all 28 candidates on this screen
-        * were already marked reviewed and the screen had nothing further to say. Reviewing one now
-        * writes an approach and puts it in her Inbox; what she approved lands here, finished.
-        *
-        * SHE SENDS IT. Boss OS has no path to anybody's inbox and this screen does not pretend
-        * otherwise: the letter is here to copy, and "I sent it" is the only thing that moves a
-        * candidate to contacted — so the buyer list and the letters can never disagree about
-        * whether an approach happened.
+        * First, because it is the only thing on this screen with nothing left to decide. A letter she
+        * approved and never sent is the one way this whole mechanism quietly wastes her time.
         */}
       {(letters?.approved.length ?? 0) > 0 && (
         <>
-          <p className="eyebrow">Approved and ready to send — you send these, nothing here can</p>
+          <p className="eyebrow">Approved — you send these, nothing here can</p>
           {letters!.approved.map((l: any) => (
             <div className="panel" key={l.id}>
               <div className="row-title">{l.candidate_name}</div>
@@ -223,7 +232,6 @@ function Buyers() {
                 <button
                   className="btn btn-small"
                   onClick={() => {
-                    // A clipboard that is not there must not look like a button that did nothing.
                     navigator.clipboard?.writeText(`${l.subject}\n\n${l.body}`)
                       .then(() => setCopied(l.id))
                       .catch(() => setError({ message: "This browser would not give the page the clipboard.", hint: "Select the text above and copy it by hand." }));
@@ -231,10 +239,7 @@ function Buyers() {
                 >
                   {copied === l.id ? "Copied" : "Copy the letter"}
                 </button>
-                <button
-                  className="btn btn-small btn-approve"
-                  onClick={() => { api.outreachSent(l.id).then(load).catch(setError); }}
-                >
+                <button className="btn btn-small btn-approve" onClick={() => { api.outreachSent(l.id).then(load).catch(setError); }}>
                   I sent it
                 </button>
               </div>
@@ -243,75 +248,269 @@ function Buyers() {
         </>
       )}
 
-      {/*
-        * AN AWAITING LETTER IS SAID HERE TOO, because she decides in the Inbox and looks here. A
-        * candidate marked reviewed with a letter she has not answered is not a dead end, and the
-        * screen should say which it is rather than leaving her to work it out.
-        */}
       {(letters?.awaiting.length ?? 0) > 0 && (
         <div className="notice" style={{ borderColor: "var(--gold)" }}>
           {letters!.awaiting.length} letter{letters!.awaiting.length === 1 ? " is" : "s are"} waiting on your verdict in the Inbox.
         </div>
       )}
-      {/*
-        * THE FAILED-FETCH CASE, NAMED. `letters === null` after a load means the request did not
-        * come back — which is a different fact from "you have no letters" and must not render as it.
-        */}
       {letters === null && !error && (
         <div className="row-sub">The letters could not be read just now, so this section is not saying you have none.</div>
       )}
 
-      {cooling.length > 0 && (
-        <>
-          <p className="eyebrow">Gone quiet — Monique found these in your mailbox</p>
-          {cooling.map((f: any) => (
-            <div className="row" key={f.id}>
-              <div className="row-main">
-                <div className="row-title">{f.headline}</div>
-                {/* Dates and counts, never a quotation. Their own rhythm, not a fixed threshold. */}
-                <div className="row-sub">{f.because}</div>
-                <div className="row-sub"><strong>Do this:</strong> {f.suggested_action}</div>
-              </div>
-              <div className="row-val">{f.subject_code}</div>
-            </div>
-          ))}
-        </>
-      )}
+      {/* ─── The recommendation ──────────────────────────────────────────── */}
+      <p className="eyebrow">Write to these this week</p>
 
-      {confirmed.length > 0 && (
-        <>
-          <p className="eyebrow">Already in the LP universe</p>
-          {confirmed.map((m: any) => (
-            <div className="row" key={m.id}>
-              <div className="row-main">
-                <div className="row-title">{m.candidate_name} · {m.lp_firm}</div>
-                <div className="row-sub">{m.why}</div>
+      {rec === null && !recFailed ? (
+        <Loading />
+      ) : recFailed ? (
+        // NOT AN EMPTY STATE. "Nothing to recommend" and "the request failed" are opposite facts.
+        <div className="row-sub">
+          The recommendation could not be read just now, so this is <strong>not</strong> saying there is
+          nobody worth writing to. Reload the screen.
+        </div>
+      ) : recommendations.length === 0 ? (
+        <Empty
+          title="Nobody to write to this week"
+          hint={
+            (rec?.already_moving ?? []).length > 0
+              ? "Every firm on file is either approached, drafted, or held back for a reason listed below."
+              : "Camille's sweep runs Monday, Wednesday and Friday at 06:45 and adds new firms to consider."
+          }
+        />
+      ) : (
+        recommendations.map((r: any, i: number) => (
+          <div className="panel" key={r.candidate_id}>
+            <div className="row-title">{i + 1}. {r.name}</div>
+
+            {/*
+              * WHY THIS FIRM, IN FACTS FROM ITS OWN ROW. Every clause here is a signal that actually
+              * fired, quoting the firm's own words where the claim is about what they buy. A ranking
+              * whose reason reads the same for every row is the twenty-eight identical rows again.
+              */}
+            <div className="row-sub" style={{ marginTop: 6 }}>{r.headline}</div>
+
+            {r.letter ? (
+              <>
+                <p className="eyebrow" style={{ marginTop: 12 }}>The letter</p>
+                <div className="row-sub"><strong>Subject:</strong> {r.letter.subject}</div>
+                <div className="row-sub" style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{r.letter.body}</div>
+                <div className="row-sub" style={{ marginTop: 8 }}><strong>Where it goes:</strong> {r.letter.to_hint}</div>
+              </>
+            ) : (
+              <div className="row-sub" style={{ marginTop: 10 }}>{r.letter_withheld}</div>
+            )}
+
+            <div className="btn-row">
+              <button
+                className="btn btn-small btn-approve"
+                disabled={busy === r.candidate_id || !r.letter}
+                onClick={() => draft(r.candidate_id)}
+              >
+                {busy === r.candidate_id ? "Drafting…" : "Send it to my Inbox to approve"}
+              </button>
+              <button
+                className="btn btn-small btn-defer"
+                disabled={busy === r.candidate_id}
+                onClick={() => reject(r.candidate_id)}
+              >
+                Not this one
+              </button>
+            </div>
+
+            {/*
+              * THE RESEARCH, KEPT AND DEMOTED. It is good, it was expensive, and it is the reason
+              * the headline above is believable — but leading with it is what turned this screen
+              * into a catalogue. One click away, with the weights that produced the ranking, so the
+              * ranking can be argued with rather than merely read.
+              */}
+            <details>
+              <summary className="docket-more" style={{ cursor: "pointer" }}>Why they are ranked here, and what we know about them</summary>
+              <div className="docket-full">
+                {r.signals.map((s: any, n: number) => (
+                  <div className="row" key={n}>
+                    <div className="row-main"><div className="row-sub">{s.says}</div></div>
+                    <div className="row-val">{s.weight > 0 ? `+${s.weight}` : s.weight}</div>
+                  </div>
+                ))}
+                {r.research && <p className="row-sub" style={{ marginTop: 10 }}>{r.research}</p>}
                 <div className="row-sub">
-                  {m.lp_list === "sequence" ? "in the LP sequence" : "on the LP do-not-contact list"}
-                  {m.lp_type ? ` · ${m.lp_type}` : ""}
-                  {m.lp_contacts ? ` · ${m.lp_contacts} contact${m.lp_contacts === 1 ? "" : "s"}` : ""}
-                  {m.lp_last_sent ? ` · last ${m.lp_last_sent}` : ""}
+                  {r.source_url
+                    ? <a href={r.source_url} target="_blank" rel="noreferrer">{r.source_name ?? "source"}</a>
+                    : "No source page was recorded."}
                 </div>
               </div>
-              <div className="row-actions">
-                {m.status === "new" ? (
-                  <>
-                    <button className="btn btn-small" onClick={() => markMatch(m.id, "reviewed")}>Seen</button>
-                    <button className="btn btn-small btn-defer" onClick={() => markMatch(m.id, "rejected")}>Not the same firm</button>
-                  </>
-                ) : <span className="row-val">{m.status}</span>}
+            </details>
+          </div>
+        ))
+      )}
+
+      {/*
+        * ─── THE ONE FIGURE THAT MAKES THE RANKING A RANKING ───────────────────
+        *
+        * Buyers publish a minimum cheque. Comparing it to nothing ranks nothing, and Boss OS holds no
+        * positions — `position`, `position_mark`, `portfolio_vehicles` and `deals` are all empty on
+        * production, because the brokerage supply lives in her mail until it closes. Rather than
+        * invent a number or ask her to build a register, one field states the size she is working.
+        * Until it is set, the limitation is printed here in plain words and nobody is ranked on size.
+        */}
+      {rec && <WorkingPosition basis={rec.basis} onSaved={load} onError={setError} />}
+
+      {withheld.length > 0 && (
+        <>
+          <p className="eyebrow">Deliberately not written to</p>
+          {withheld.map((w: any) => (
+            <div className="row" key={w.candidate_id}>
+              <div className="row-main">
+                <div className="row-title">{w.name}</div>
+                <div className="row-sub">{w.because}</div>
               </div>
+              {/*
+                * A SUPPRESSION IS A NAME MATCH, AND A NAME MATCH IS A GUESS SHE CAN OVERTURN.
+                * "StepStone Group (VC Secondaries Fund VI)" and the LP row "StepStone" are almost
+                * certainly one house — but on the day they are not, an unchallengeable match costs
+                * her a buyer silently. The verdict lives beside the reason rather than on a screen
+                * of its own, because it is a fact ABOUT this refusal.
+                */}
+              {w.crossmatch_id ? (
+                <div className="row-actions">
+                  <button
+                    className="btn btn-small btn-defer"
+                    disabled={busy === w.crossmatch_id}
+                    onClick={() => notTheSameFirm(w.crossmatch_id)}
+                  >
+                    Not the same firm
+                  </button>
+                </div>
+              ) : (
+                <div className="row-val">{w.why_class}</div>
+              )}
             </div>
           ))}
         </>
       )}
 
-      {near.length > 0 && (
-        <details>
-          <summary className="docket-more" style={{ cursor: "pointer" }}>
-            {near.length} near-miss{near.length === 1 ? "" : "es"} — similar names, NOT treated as the same firm
-          </summary>
-          <div className="docket-full">
+      {rec && <TheWholeList considered={rec.basis.candidates_considered} />}
+    </>
+  );
+}
+
+/**
+ * The size of the position she is working, and the sentence that says what happens without it.
+ *
+ * SAVED AS A SETTING BECAUSE THE ALTERNATIVE IS A REGISTER SHE WILL NEVER FILL. The honest version
+ * of this feature is a positions table; the honest version of THIS WEEK is one number, and a number
+ * she can state in five seconds is a ranking that works today.
+ */
+function WorkingPosition({ basis, onSaved, onError }: {
+  basis: any; onSaved: () => void; onError: (e: unknown) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(
+    basis.working_position_usd ? String(Math.round(basis.working_position_usd / 1_000_000)) : "",
+  );
+  const [busy, setBusy] = useState(false);
+
+  const stated = basis.working_position_usd
+    ? `$${(basis.working_position_usd / 1_000_000).toFixed(basis.working_position_usd % 1_000_000 === 0 ? 0 : 1)}M`
+    : null;
+
+  async function save() {
+    setBusy(true);
+    try {
+      const millions = Number(value);
+      if (!Number.isFinite(millions) || millions <= 0) {
+        throw { message: "That is not a size.", hint: "Give the position in millions of dollars — 5 means $5M." };
+      }
+      await api.setSetting("brokerage_working_position_usd", String(Math.round(millions * 1_000_000)));
+      setOpen(false);
+      onSaved();
+    } catch (e) { onError(e); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="panel">
+      <div className="row-title">
+        {stated ? `You are working a ${stated} position` : "Nothing here knows the size you are working"}
+      </div>
+      {basis.limitation && <div className="row-sub" style={{ marginTop: 6 }}>{basis.limitation}</div>}
+      <div className="row-sub" style={{ marginTop: 6 }}>
+        {basis.with_a_published_floor} of {basis.candidates_considered} firms publish a minimum cheque.
+      </div>
+      <div className="btn-row">
+        <button className="btn btn-small" onClick={() => setOpen((v) => !v)}>
+          {open ? "Cancel" : stated ? "Change the size" : "State the size"}
+        </button>
+      </div>
+      {open && (
+        <>
+          <label className="field">
+            <span>The position you are working, in millions of dollars</span>
+            <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" />
+          </label>
+          <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy} onClick={save}>
+            {busy ? "Saving…" : "Use this for the ranking"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Every firm on file, behind a click.
+ *
+ * NOT DELETED — DEMOTED, and demoted is the whole point of the change. Twenty-eight rows are a real
+ * asset the day she wants to look something up, and they are the reason the five above are
+ * believable. They are simply not what the screen should open with.
+ */
+function TheWholeList({ considered }: { considered: number }) {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [near, setNear] = useState<any[]>([]);
+  const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open || rows !== null) return;
+    api.sourcing().then((d) => setRows(d.candidates ?? [])).catch(() => setFailed(true));
+    /*
+     * THE NEAR-MISSES BELONG NEXT TO THE CATALOGUE, NOT NEXT TO THE RECOMMENDATION. They are firms
+     * whose names merely RESEMBLE an LP on the do-not-contact list and are deliberately NOT treated
+     * as the same house. That is a caution to read while looking something up, and putting it on
+     * the morning surface would make a non-event look like a decision.
+     */
+    api.crossmatches().then((x) => setNear(x?.near ?? [])).catch(() => setNear([]));
+  }, [open, rows]);
+
+  return (
+    <details onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="docket-more" style={{ cursor: "pointer" }}>
+        All {considered} firms on file — the research behind the five above
+      </summary>
+      <div className="docket-full">
+        {failed ? (
+          <div className="row-sub">The list could not be read just now.</div>
+        ) : rows === null ? (
+          <Loading />
+        ) : (
+          rows.map((cand: any) => (
+            <div className="row" key={cand.id}>
+              <div className="row-main">
+                <div className="row-title">{cand.name}</div>
+                <div className="row-sub">{cand.thesis}</div>
+                <div className="row-sub">
+                  {cand.ticket_floor_usd ? `starts at $${(cand.ticket_floor_usd / 1_000_000).toFixed(0)}M · ` : ""}
+                  {cand.source_url ? <a href={cand.source_url} target="_blank" rel="noreferrer">source</a> : "no source"}
+                </div>
+              </div>
+              <div className="row-val">{cand.status}</div>
+            </div>
+          ))
+        )}
+        {near.length > 0 && (
+          <>
+            <p className="eyebrow">
+              {near.length} near-miss{near.length === 1 ? "" : "es"} — similar names, NOT treated as the same firm
+            </p>
             {near.map((m: any) => (
               <div className="row" key={m.id}>
                 <div className="row-main">
@@ -321,40 +520,10 @@ function Buyers() {
                 <div className="row-val">check yourself</div>
               </div>
             ))}
-          </div>
-        </details>
-      )}
-
-      <p className="eyebrow">Candidates</p>
-      {(data.candidates ?? []).length === 0 ? (
-        <Empty title="No buyer candidates" hint="Camille's sweep runs Monday, Wednesday and Friday at 06:45." />
-      ) : (
-        data.candidates.map((cand: any) => (
-          <div className="row" key={cand.id}>
-            <div className="row-main">
-              <div className="row-title">
-                {cand.name}
-                {byCandidate.has(cand.id) && <span className="row-val"> · also an LP prospect</span>}
-              </div>
-              <div className="row-sub">{cand.thesis}</div>
-              <div className="row-sub">
-                {cand.ticket_floor_usd ? `floor $${(cand.ticket_floor_usd / 1_000_000).toFixed(0)}M · ` : ""}
-                {cand.source_url ? <a href={cand.source_url} target="_blank" rel="noreferrer">source</a> : "no source"}
-              </div>
-            </div>
-            <div className="row-actions">
-              {cand.status === "new" ? (
-                <>
-                  <button className="btn btn-small" onClick={() => mark(cand.id, "reviewed")}>Reviewed</button>
-                  <button className="btn btn-small btn-approve" onClick={() => mark(cand.id, "contacted")}>Contacted</button>
-                  <button className="btn btn-small btn-defer" onClick={() => mark(cand.id, "rejected")}>Reject</button>
-                </>
-              ) : <span className="row-val">{cand.status}</span>}
-            </div>
-          </div>
-        ))
-      )}
-    </>
+          </>
+        )}
+      </div>
+    </details>
   );
 }
 

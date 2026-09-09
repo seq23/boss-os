@@ -100,6 +100,12 @@ jobs:
       - name: Every endpoint has a way in
         run: npm run validate:api-screens
 
+      # A row that cannot say why it is on her screen comes off the screen. Guards the Capital
+      # desk's ranking: every point awarded quotes the fact that earned it, every firm held back
+      # leaves with a reason, and all of it is actually bound in the page.
+      - name: A recommendation says why
+        run: npm run validate:says-why
+
       - name: Build client
         run: npm run build
 
