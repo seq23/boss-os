@@ -14,6 +14,8 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
+import { composeOutreach, isRefusal, type CandidateRow, type CrossmatchFact } from "../wealth/outreach";
+import { raiseJudgementCall } from "../approvals/raise";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { LANE_BREACH_REFUSAL, readTradingCapital } from "../investor/bridge";
 import { assertProtectedAction } from "../governance/gate";
@@ -95,19 +97,196 @@ wealth.get("/sourcing", async (c) => {
   return ok(c, { candidates, total: candidates.length, awaiting_review: fresh });
 });
 
-/** Her verdict on one candidate. Nothing else in the system may move a row out of `new`. */
+/**
+ * Her verdict on one candidate. Nothing else in the system may move a row out of `new`.
+ *
+ * ─── AND `reviewed` NOW PRODUCES SOMETHING ─────────────────────────────────
+ *
+ *   "the capital tab has all these prospective buyers and i reviewed them ....now what? it doesn't
+ *    suggest an email already crafted to send to them?"
+ *
+ * On the day she said that, all 28 candidates on the screen were already marked `reviewed`. She had
+ * done the entire job the screen asked of her and the screen had nothing further to say — a chore
+ * that produced nothing, which is the defect class this repository produces most often, landing on
+ * the one surface whose whole purpose is to start a conversation.
+ *
+ * So reviewing composes an outreach letter from what is known about that buyer and puts it in her
+ * Inbox with Approve / Try Again, on the same mechanism as the covers. DRAFTED, NEVER SENT: Boss OS
+ * has no send path to a third party and this does not create one — see `approvals/resume.ts`.
+ *
+ * A FAILURE TO DRAFT DOES NOT LOSE HER VERDICT. The status write is committed first and the letter
+ * is attempted after; if composing throws, she has still reviewed the candidate and the response
+ * says the letter did not get written. The reverse order would make a drafting bug look like a
+ * screen that ignores her clicks.
+ */
 wealth.post("/sourcing/:id/status", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const status = b?.status ? String(b.status) : "";
   const allowed = ["new", "reviewed", "contacted", "rejected", "promoted"];
   if (!allowed.includes(status)) throw badRequest(`"${status}" is not a candidate status`, `One of: ${allowed.join(", ")}.`);
 
+  const id = c.req.param("id");
   const res = await c.env.DB
     .prepare(`UPDATE sourcing_candidates SET status = ?, notes = COALESCE(?, notes), updated_at = ? WHERE id = ?`)
-    .bind(status, b?.notes ? String(b.notes) : null, Date.now(), c.req.param("id"))
+    .bind(status, b?.notes ? String(b.notes) : null, Date.now(), id)
     .run();
   if (!res.meta.changes) throw notFound("No candidate with that id");
-  return ok(c, { id: c.req.param("id"), status });
+
+  let letter: { drafted: boolean; detail: string } = { drafted: false, detail: "" };
+  if (status === "reviewed") letter = await draftOutreachFor(c.env, id, null);
+
+  return ok(c, { id, status, letter });
+});
+
+/**
+ * Compose the letter for one candidate and put it in her Inbox.
+ *
+ * Exported so the resume handler can call it for a second attempt with her note attached, and so
+ * the tests can drive it without going through the screen. It NEVER throws: a refusal is an answer
+ * she needs on the screen, and an exception here would surface as "something failed", which is the
+ * least useful sentence this system can print about a decision it made deliberately.
+ */
+export async function draftOutreachFor(
+  env: Env,
+  candidateId: string,
+  note: string | null,
+  now = Date.now(),
+): Promise<{ drafted: boolean; detail: string; judgement_id?: string }> {
+  const candidate = await env.DB
+    .prepare(`SELECT * FROM sourcing_candidates WHERE id = ?`)
+    .bind(candidateId)
+    .first<CandidateRow>();
+  if (!candidate) return { drafted: false, detail: "That candidate is gone, so nothing was drafted." };
+
+  const matches = await env.DB
+    .prepare(`SELECT lp_firm, lp_list, confidence FROM counterparty_crossmatches WHERE candidate_id = ? AND status <> 'rejected'`)
+    .bind(candidateId)
+    .all<CrossmatchFact>();
+
+  const composed = composeOutreach(candidate, matches.results ?? [], note, now);
+  if (isRefusal(composed)) {
+    await env.DB
+      .prepare(`UPDATE sourcing_candidates SET notes = ?, updated_at = ? WHERE id = ?`)
+      .bind(`${composed.refused} ${composed.because}`, now, candidateId)
+      .run();
+    return { drafted: false, detail: `${composed.refused} ${composed.because}` };
+  }
+
+  /*
+   * NO ADDRESS MAY REACH THIS TABLE, and the check is here rather than trusted upstream for the
+   * same reason the relationship sync refuses one: the composer works from public institution rows
+   * today, and the day somebody points it at a real counterparty this is the thing that stops it.
+   */
+  const wholeLetter = `${composed.subject}\n${composed.body}\n${composed.to_hint}`;
+  if (wholeLetter.includes("@")) {
+    return {
+      drafted: false,
+      detail:
+        "The composed letter contained an at-sign, which means an address reached it. Nothing was stored. " +
+        "Counterparty addresses live on your Mac and never in Boss OS.",
+    };
+  }
+
+  try {
+    const raised = await raiseJudgementCall(
+      env,
+      {
+        title: `Send this to ${candidate.name}?`,
+        question:
+          `You reviewed ${candidate.name}. Camille wrote the approach below from what is on their row — ` +
+          `${(composed.built_from as any).history_label}. Approve it and it is ready for you to send, ` +
+          "or send it back with a sentence and she writes another. Nothing goes anywhere without you.",
+        resumeKind: "buyer_outreach_email",
+        employeeId: "emp_research",
+        lane: "ops",
+        risk: "medium",
+        // A second attempt at THIS candidate replaces the first on her screen. Two live letters to
+        // one firm is a way to approve the wrong one.
+        supersedeKind: null,
+        resumeDetail: { ...composed, candidate_id: candidateId },
+      },
+      now,
+    );
+
+    const prior = await env.DB
+      .prepare(`SELECT MAX(attempt) AS n FROM buyer_outreach_drafts WHERE candidate_id = ?`)
+      .bind(candidateId)
+      .first<{ n: number | null }>();
+    const attempt = (prior?.n ?? 0) + 1;
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE buyer_outreach_drafts SET state = 'superseded', updated_at = ?
+          WHERE candidate_id = ? AND state = 'awaiting'`,
+      ).bind(now, candidateId),
+      env.DB.prepare(
+        `INSERT INTO buyer_outreach_drafts
+           (id, candidate_id, judgement_id, attempt, subject, body, to_hint, built_from, state, her_note, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?, 'awaiting', ?, ?, ?)`,
+      ).bind(
+        newId("bod"), candidateId, raised.id, attempt,
+        composed.subject, composed.body, composed.to_hint,
+        JSON.stringify(composed.built_from), note, now, now,
+      ),
+    ]);
+
+    return {
+      drafted: true,
+      judgement_id: raised.id,
+      detail: `Camille drafted an approach to ${candidate.name}. It is in your Inbox for approval — nothing has been sent.`,
+    };
+  } catch (err) {
+    return {
+      drafted: false,
+      detail: `Your verdict is recorded. The letter could not be drafted: ${(err as Error)?.message ?? "unknown reason"}`,
+    };
+  }
+}
+
+/** Every letter and its state, so the desk can show what is approved and ready to go. */
+wealth.get("/outreach", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT d.*, s.name AS candidate_name, s.source_url, s.status AS candidate_status
+         FROM buyer_outreach_drafts d
+         JOIN sourcing_candidates s ON s.id = d.candidate_id
+        WHERE d.state IN ('awaiting','approved')
+        ORDER BY d.state, d.updated_at DESC LIMIT 100`,
+    )
+    .all<any>();
+  const all = rows.results ?? [];
+  return ok(c, {
+    approved: all.filter((r) => r.state === "approved"),
+    awaiting: all.filter((r) => r.state === "awaiting"),
+  });
+});
+
+/**
+ * SHE says she sent it. Nothing in this system can say it for her.
+ *
+ * The candidate moves to `contacted` at the same moment and by the same act, so the buyer list and
+ * the letter can never disagree about whether an approach happened.
+ */
+wealth.post("/outreach/:id/sent", async (c) => {
+  const now = Date.now();
+  const row = await c.env.DB
+    .prepare(`SELECT candidate_id, state FROM buyer_outreach_drafts WHERE id = ?`)
+    .bind(c.req.param("id"))
+    .first<{ candidate_id: string; state: string }>();
+  if (!row) throw notFound("No draft with that id");
+  if (row.state !== "approved") {
+    throw badRequest(
+      "Only an approved letter can be marked as sent",
+      "This one is still awaiting your verdict in the Inbox, so marking it sent would record an approach you never approved.",
+    );
+  }
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE buyer_outreach_drafts SET state = 'sent', sent_at = ?, updated_at = ? WHERE id = ?`)
+      .bind(now, now, c.req.param("id")),
+    c.env.DB.prepare(`UPDATE sourcing_candidates SET status = 'contacted', updated_at = ? WHERE id = ?`)
+      .bind(now, row.candidate_id),
+  ]);
+  return ok(c, { id: c.req.param("id"), state: "sent" });
 });
 
 // ─── The return-on-effort ledger ──────────────────────────────────────────────

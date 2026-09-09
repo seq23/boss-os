@@ -78,6 +78,36 @@ export function JudgementDocket({
         </div>
       )}
 
+      {/*
+        * ─── WHEN THE WORK IS WORDS ────────────────────────────────────────────
+        *
+        * Same rule the covers follow: THE WORK IS VISIBLE HERE. Judging a letter from a sentence
+        * describing it is not judging it, and sending her somewhere else to read it is the
+        * hands-off failure the whole mechanism exists to remove.
+        *
+        * `white-space: pre-wrap` because the paragraphs are the letter's own. Reflowing them would
+        * show her something other than what an approval approves.
+        */}
+      {judgement?.letter && (
+        <div className="panel" style={{ marginTop: 8 }}>
+          <div className="stat-l" style={{ margin: 0 }}>Subject</div>
+          <div className="row-title">{judgement.letter.subject}</div>
+          <div className="row-sub" style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{judgement.letter.body}</div>
+          {judgement.letter.to_hint && (
+            <div className="row-sub" style={{ marginTop: 8 }}><strong>Where it goes:</strong> {judgement.letter.to_hint}</div>
+          )}
+          {/*
+            * SAID ON THE CARD, NOT ONLY IN THE HANDLER. Approve is the most consequential-looking
+            * button in the product and she should never have to wonder whether pressing it emailed
+            * a stranger. It does not, and it cannot.
+            */}
+          <div className="row-sub" style={{ marginTop: 8 }}>
+            Approving does not send this. Boss OS has no way to reach anybody's inbox; approving
+            finishes the letter and puts it on the Capital desk for you to send yourself.
+          </div>
+        </div>
+      )}
+
       {missing > 0 && (
         <p className="row-sub">
           {missing} of {assets.length} could not be shown. Approving would approve work you have not
@@ -114,7 +144,7 @@ export function JudgementDocket({
       ) : (
         <div className="decide">
           <button className="btn btn-approve" disabled={busy !== null} onClick={() => decide("approved")}>
-            {busy === "approved" ? "Approving…" : "Approve — carry on and finish"}
+            {busy === "approved" ? "Approving…" : judgement?.letter ? "Approve — it is ready to send" : "Approve — carry on and finish"}
           </button>
           <button className="btn btn-reject" disabled={busy !== null} onClick={() => setAsking(true)}>
             Try again

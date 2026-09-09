@@ -36,6 +36,7 @@ import { audit } from "../lib/audit";
 import { ok, badRequest, notFound } from "../lib/http";
 import { isLane } from "../../../shared/boss/lanes";
 import { RESUME_HANDLERS } from "../approvals/resume";
+import { raiseJudgementCall } from "../approvals/raise";
 
 export const judgement = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -70,6 +71,32 @@ async function assetsFor(env: Env, judgementId: string) {
   }));
 }
 
+/**
+ * THE WORK, WHEN THE WORK IS WORDS.
+ *
+ * `judgement_assets` carries images and only images, which is right for covers and useless for the
+ * thing this mechanism was next asked to carry: a letter. The alternative to this function was a
+ * second asset type with a media allowlist, an R2 object and a streaming route for a few hundred
+ * bytes of text — machinery whose entire purpose would be to avoid putting the text on the row it
+ * already sits on.
+ *
+ * So a judgement whose `resume_detail` parses to something with a subject and a body renders as a
+ * letter she can read in the card, on the same rule the images follow: THE WORK IS VISIBLE HERE.
+ * Anything else parses to null and the card is unchanged, so this can never turn an ordinary
+ * judgement into a broken one.
+ */
+function letterOn(resumeDetail: string | null): { subject: string; body: string; to_hint: string | null } | null {
+  if (!resumeDetail) return null;
+  let parsed: any;
+  try { parsed = JSON.parse(resumeDetail); } catch { return null; }
+  if (!parsed || typeof parsed.subject !== "string" || typeof parsed.body !== "string") return null;
+  return {
+    subject: parsed.subject,
+    body: parsed.body,
+    to_hint: typeof parsed.to_hint === "string" ? parsed.to_hint : null,
+  };
+}
+
 /** Everything waiting on her, with the work attached. */
 judgement.get("/pending", async (c) => {
   const rows = await c.env.DB
@@ -83,7 +110,9 @@ judgement.get("/pending", async (c) => {
     .all<any>();
 
   const items = [];
-  for (const j of rows.results ?? []) items.push({ ...j, assets: await assetsFor(c.env, j.id) });
+  for (const j of rows.results ?? []) {
+    items.push({ ...j, assets: await assetsFor(c.env, j.id), letter: letterOn(j.resume_detail ?? null) });
+  }
   return ok(c, { items });
 });
 
@@ -97,7 +126,7 @@ judgement.get("/:id", async (c) => {
     )
     .bind(id).first<any>();
   if (!j) throw notFound("No judgement call with that id");
-  return ok(c, { ...j, assets: await assetsFor(c.env, id) });
+  return ok(c, { ...j, assets: await assetsFor(c.env, id), letter: letterOn(j.resume_detail ?? null) });
 });
 
 /**
@@ -167,54 +196,26 @@ judgement.post("/", async (c) => {
   }
 
   const lane = isLane(b?.lane) ? b.lane : "ops";
-  const id = newId("jdg");
-  const approvalId = newId("apr");
   const now = Date.now();
 
   /*
-   * SUPERSEDING, NOT STACKING. A second attempt at the same work replaces the first on her screen
-   * rather than sitting beside it: two dockets showing different covers for the same seven books is
-   * a way to approve the wrong set. The superseded docket's approval is closed with a reason.
+   * THE THREE ROWS ARE WRITTEN BY `approvals/raise.ts`, NOT HERE.
+   *
+   * It moved there the moment a second caller appeared — the Capital desk, which composes an
+   * outreach letter inside the Worker in response to her own click and has no way to reach this
+   * route without the Worker calling itself over the network. Superseding, the resume-kind refusal
+   * and the audit line all travel with the mechanism, so the two callers cannot drift.
    */
-  const priorKey = String(b?.supersedes_key ?? "").trim();
-  let attempt = 1;
-  if (priorKey) {
-    const prior = await c.env.DB
-      .prepare(`SELECT id, approval_id, attempt FROM judgement_calls WHERE resume_kind = ? AND state = 'awaiting' ORDER BY created_at DESC`)
-      .bind(priorKey).all<any>();
-    for (const p of prior.results ?? []) {
-      attempt = Math.max(attempt, (p.attempt ?? 1) + 1);
-      await c.env.DB.batch([
-        c.env.DB.prepare(`UPDATE judgement_calls SET state = 'superseded', updated_at = ? WHERE id = ?`).bind(now, p.id),
-        c.env.DB.prepare(
-          `UPDATE approvals SET status = 'rejected', decided_at = ?, decided_by = 'system',
-                                decision_note = 'Superseded by a newer attempt' WHERE id = ? AND status = 'pending'`,
-        ).bind(now, p.approval_id),
-      ]);
-    }
-  }
-
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      `INSERT INTO approvals (id, lane, title, summary, kind, origin_type, origin_id, risk,
-                              payload, status, requested_at, expires_at)
-       VALUES (?,?,?,?,'judgement_call','judgement_calls',?,?,?,'pending',?,NULL)`,
-    ).bind(
-      approvalId, lane, title, question, id,
-      b?.risk === "high" || b?.risk === "low" ? b.risk : "medium",
-      JSON.stringify({ judgement_id: id, resume_kind: resumeKind }),
-      now,
-    ),
-    c.env.DB.prepare(
-      `INSERT INTO judgement_calls
-         (id, approval_id, employee_id, deliverable_id, title, question, resume_kind, state,
-          attempt, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,'awaiting',?,?,?)`,
-    ).bind(id, approvalId, employeeId, b?.deliverable_id ?? null, title, question, resumeKind, attempt, now, now),
-    c.env.DB.prepare(
-      `INSERT INTO approval_events (id, approval_id, ts, event, detail) VALUES (?,?,?,'raised',?)`,
-    ).bind(newId("ape"), approvalId, now, JSON.stringify({ judgement_id: id, attempt })),
-  ]);
+  const { id, approvalId, attempt } = await raiseJudgementCall(
+    c.env,
+    {
+      title, question, resumeKind, employeeId, lane,
+      risk: b?.risk === "high" || b?.risk === "low" ? b.risk : "medium",
+      deliverableId: b?.deliverable_id ?? null,
+      supersedeKind: String(b?.supersedes_key ?? "").trim() || null,
+    },
+    now,
+  );
 
   /*
    * ASSET ROWS ARE CREATED EMPTY AND FILLED BY UPLOAD. Declaring them up front is what lets the
@@ -235,10 +236,18 @@ judgement.post("/", async (c) => {
       .run();
   }
 
-  await audit(c.env.DB, {
-    actor: "system", lane, entityType: "judgement_call", entityId: id,
-    action: "raised", detail: { resume_kind: resumeKind, assets: declared.length, attempt },
-  });
+  /*
+   * The raise itself is audited by `raiseJudgementCall`. This second line records the thing only
+   * this caller knows: how many pieces of work were declared for upload. A docket that declared
+   * seven covers and was audited as declaring none is how "six of seven arrived" stops being
+   * traceable after the fact.
+   */
+  if (declared.length > 0) {
+    await audit(c.env.DB, {
+      actor: "system", lane, entityType: "judgement_call", entityId: id,
+      action: "assets_declared", detail: { assets: declared.length, attempt },
+    });
+  }
 
   return ok(c, { id, approval_id: approvalId, attempt, assets: declared.length }, 201);
 });
