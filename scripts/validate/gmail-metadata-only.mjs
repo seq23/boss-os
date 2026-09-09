@@ -215,6 +215,69 @@ const CONTENT_EXCEPTIONS = new Map([
       ],
     },
   ],
+  /*
+   * ── interest-ledger.mjs · THE INTEREST LEDGER ────────────────────────────
+   *
+   * ADDED AS A NAMED EXCEPTION RATHER THAN BY LOOSENING THE RULE, same as its neighbours. The
+   * general prohibition is untouched and this one file's narrowness is asserted on every build.
+   *
+   * WHY IT NEEDS THE BODY. She brokers late-stage private secondaries, and both sides of a market
+   * already sit in `staylor@spry.vc`: somebody wanted SpaceX in March, somebody is selling it this
+   * week, and nothing has ever connected the two. A trade is an ASSET, a SIDE and a SIZE, and all
+   * three live in prose. From/To/Date cannot tell you that a message says "I have 40k shares of X
+   * available", and a subject line reads identically for a buyer and a seller.
+   *
+   * WHY THE SPLIT WITH interest-extract.mjs IS WHAT MAKES THIS GRANTABLE. This file reads the
+   * mailbox and SENDS NOTHING TO ANY MODEL — it filters, counts what it discarded by reason, and
+   * writes candidates to her Mac. A second process reads those files and never touches Gmail. So
+   * this file keeps the same "nothing content-derived reaches a model" invariant every other
+   * exception here carries, and the model half holds no Gmail credential at all. Neither can
+   * become the other, and `validate:filter-accounts` asserts that separation from the other side.
+   *
+   * WHAT KEEPS IT NARROW, each asserted below rather than promised.
+   */
+  [
+    "interest-ledger.mjs",
+    {
+      why:
+        "Turns her brokerage mailbox into a structured ledger of who wants to buy or sell what, at " +
+        "what size — the thing matching is impossible without. An asset, a side and a size all live " +
+        "in prose; no arrangement of From/To/Date produces any of the three.",
+      invariants: [
+        // THE MAILBOX IS NAMED IN THE JWT so it cannot silently become a different one. The earlier
+        // brokerage attempt routed through the claude.ai connector, bound to her PERSONAL account.
+        [(src) => /const MAILBOX = /.test(src) && /sub: MAILBOX/.test(src),
+         "the mailbox it impersonates must be a named constant put in the JWT's sub claim, not inferred from whatever session it finds"],
+        // Read-only, and no scope that could ever send. She can read spry.vc and never write from it.
+        [(src) => /gmail\.readonly/.test(src) && !/gmail\.send|gmail\.compose|gmail\.modify|mail\.google\.com/.test(src),
+         "it must hold gmail.readonly and no scope that can write — she reads spry.vc and never sends from it"],
+        // Bounded, same as its neighbours. A pitch deck must not be read whole into memory.
+        [(src) => /BODY_BOUND = 200_000|slice\(0, ?200_000\)/.test(src),
+         "it must bound how much of a message it reads"],
+        // WHAT IT WRITES IS BOUNDED TOO. This one persists an excerpt, which its neighbours do not,
+        // because the model pass downstream has to see enough of the message to find a size. Six
+        // thousand characters is a message, not a mailbox, and the bound is the difference.
+        [(src) => /EXCERPT_BOUND = 6_000/.test(src),
+         "the excerpt it writes for the model pass must be bounded — an unbounded one is a mail archive on her disk"],
+        /*
+         * NOTHING CONTENT-DERIVED REACHES A MODEL FROM HERE. Matched on PROVIDER HOSTS and on the
+         * CLI spawn, not on brand names, for the reason the holdings entry records: a validator that
+         * fires on a doc comment is one that gets switched off.
+         */
+        [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src)
+          && !/spawn\(\s*["']claude/.test(src),
+         "it must send nothing to any model — it reads and filters, and a separate process with no Gmail credential does the extraction"],
+        // NOTHING REACHES THE CLOUD. Named counterparties, assets and sizes at a FINRA-registered
+        // broker-dealer are the most sensitive data in this system; the Boss OS API is not in this path.
+        [(src) => !/boss\.sequoiataylor\.com|\/api\/boss\//.test(src),
+         "it must post nothing to Boss OS — counterparties, assets and sizes stay on her Mac, not code-named and not counted"],
+        // IT MUST SAY WHAT IT DISCARDED. A filter over 104,241 messages whose discard is one number
+        // is a filter nobody can audit, and an unauditable filter loses deals silently.
+        [(src) => /WHAT THE FILTER DISCARDED/.test(src) && /NAMED STOP \[FILTER_DISCARDED_EVERYTHING\]/.test(src),
+         "it must report its discards by named reason and hard-stop on a total discard"],
+      ],
+    },
+  ],
   [
     "holdings-lookup.mjs",
     {
