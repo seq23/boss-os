@@ -116,6 +116,11 @@ jobs:
       - name: A notice is not an approval
         run: npm run validate:notice-not-approval
 
+      # Three components on the Spirit tab disagreed about whether there was a new moon tomorrow.
+      # The almanac computes it; nothing on a screen may claim otherwise from an empty array.
+      - name: One sky, one answer
+        run: npm run validate:one-sky
+
       - name: Build client
         run: npm run build
 
