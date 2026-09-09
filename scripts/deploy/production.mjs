@@ -54,6 +54,32 @@ if (placeholders.length) {
   );
 }
 
+/**
+ * ─── THE 7403 THAT READS LIKE A PERMISSIONS WALL AND IS NOT ONE ────────────
+ *
+ * With an API token that can reach more than one Cloudflare account, wrangler cannot pick one and
+ * returns `Authentication error [code: 7403]`. It looks exactly like a token without the right
+ * permissions, and it was reported as a credential wall by an agent who then stopped — the deploy
+ * was fine and the environment was one variable short.
+ *
+ * `wrangler.toml` deliberately carries no `account_id`: the file is committed and the account is an
+ * identifier for her infrastructure. So the script supplies it, and the fallback is her account
+ * because this repository deploys to exactly one. An operator who sets it themselves still wins.
+ *
+ * A COMMENT SAYING "REMEMBER TO EXPORT THIS" WOULD HAVE BEEN THE SAME BUG, one file over. The thing
+ * that made this cost an hour is that nothing in the failing path said what was missing.
+ */
+const ACCOUNT = "8d147e242033699dd37c6f5a451f48d2";
+if (!process.env.CLOUDFLARE_ACCOUNT_ID) {
+  process.env.CLOUDFLARE_ACCOUNT_ID = ACCOUNT;
+  say(`0/4  CLOUDFLARE_ACCOUNT_ID was not set; using ${ACCOUNT}.`);
+  say("     Without it wrangler returns a 7403 that reads like a permissions error and is not one.");
+} else if (process.env.CLOUDFLARE_ACCOUNT_ID !== ACCOUNT) {
+  // Said, not overridden. Deploying Boss OS into a different account is a decision, not a typo to
+  // silently correct — but it should never happen by accident either.
+  say(`0/4  CLOUDFLARE_ACCOUNT_ID is set to ${process.env.CLOUDFLARE_ACCOUNT_ID}, which is not Boss OS's usual account.`);
+}
+
 say("1/4  applying migrations…");
 try {
   const out = run("npx wrangler d1 migrations apply WP_OS_DB --env production --remote");

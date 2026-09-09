@@ -118,6 +118,23 @@ export interface Basis {
   candidates_considered: number;
   /** Said on the screen, verbatim, whenever the join could not run. */
   limitation: string | null;
+  /**
+   * Set when the recommended firms all score the same.
+   *
+   * ─── CONFIRMED ON PRODUCTION THE HOUR THIS SHIPPED ────────────────────────
+   *
+   * The first live run returned five firms all on 40 points: 137 Ventures, BlackRock, G Squared,
+   * ICONIQ and Industry Ventures. Every one of them says in its own words that it buys shares
+   * directly, every one has a contact route, none has any mail history with her, and only three of
+   * the twenty-eight publish a cheque floor. On what is known they ARE indistinguishable, and the
+   * order between them is alphabetical.
+   *
+   * A NUMBERED LIST IMPLIES AN ORDER. Printing 1–5 over a five-way tie is a ranking that does not
+   * exist, which is the same offence as a score nobody computed. So the tie is stated, and the
+   * sentence names the one input that would break it — which is the input she can supply in five
+   * seconds.
+   */
+  tied: string | null;
 }
 
 export interface Recommended {
@@ -394,8 +411,11 @@ export function recommendBuyers(
   const considered = candidates.length;
   const withFloor = candidates.filter((c) => (c.ticket_floor_usd ?? 0) > 0).length;
 
+  const top = scored.slice(0, HOW_MANY);
+  const allTied = top.length > 1 && top.every((r) => r.score === top[0]!.score);
+
   return {
-    recommendations: scored.slice(0, HOW_MANY),
+    recommendations: top,
     suppressed,
     out_of_reach: outOfReach,
     already_moving: alreadyMoving,
@@ -415,6 +435,13 @@ export function recommendBuyers(
               ? `Only ${withFloor} of ${considered} firms publish a minimum cheque, so the size test ran on those and ` +
                 "was silent about the rest rather than guessing."
               : null,
+      tied: allTied
+        ? `These ${top.length} score identically on everything known about them, so the order is ` +
+          "alphabetical rather than a ranking — write to whichever you like first. " +
+          (workingPositionUsd === null
+            ? "Stating the size of the position you are working is what would separate them."
+            : "Mail history is what would separate them, and there is none with any of these yet.")
+        : null,
     },
   };
 }

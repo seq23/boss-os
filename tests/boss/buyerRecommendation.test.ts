@@ -196,3 +196,38 @@ describe("the desk recommends a handful and says why for each", () => {
     expect(row.body).toBe(shown.body);
   });
 });
+
+/**
+ * A NUMBERED LIST IMPLIES AN ORDER. WHEN THERE IS NONE, IT SAYS SO.
+ *
+ * Confirmed on production the hour this shipped: the first live run returned five firms all on 40
+ * points — 137 Ventures, BlackRock, G Squared, ICONIQ, Industry Ventures. Every one says in its own
+ * words that it buys shares directly, every one has a contact route, none has mail history, and only
+ * three of the twenty-eight publish a cheque floor. On what is known they ARE indistinguishable, and
+ * printing 1–5 over that is a ranking that does not exist — the same offence as a score nobody
+ * computed, which is what the People roster shipped.
+ */
+describe("a tie is stated rather than dressed as a ranking", () => {
+  it("says so when the recommended firms all score the same, and names what would break it", async () => {
+    await seed([
+      { id: "src_a", name: "Alpha Secondaries", thesis: "We buy shares directly from employees." },
+      { id: "src_b", name: "Beta Secondaries", thesis: "We buy shares directly from employees." },
+    ]);
+    const { body } = await get();
+    expect(body.data.recommendations).toHaveLength(2);
+    expect(body.data.recommendations[0].score).toBe(body.data.recommendations[1].score);
+    expect(body.data.basis.tied).toContain("alphabetical rather than a ranking");
+    expect(body.data.basis.tied).toContain("size of the position you are working");
+  });
+
+  it("says nothing about a tie when there is a real ordering", async () => {
+    await seed([
+      { id: "src_a", name: "Alpha Secondaries", thesis: "We buy shares directly from employees." },
+      { id: "src_b", name: "Beta Secondaries", thesis: "We buy shares directly from employees.", history_kind: "dealt", history_exchanges: 4 },
+    ]);
+    const { body } = await get();
+    expect(body.data.recommendations[0].name).toBe("Beta Secondaries");
+    // Rule 0: this would pass over an empty list, so the ordering above is asserted first.
+    expect(body.data.basis.tied).toBeNull();
+  });
+});

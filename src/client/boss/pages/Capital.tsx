@@ -278,7 +278,15 @@ function Buyers() {
           }
         />
       ) : (
-        recommendations.map((r: any, i: number) => (
+        <>
+        {/*
+          * A NUMBERED LIST IMPLIES AN ORDER, AND THE FIRST LIVE RUN HAD NONE. Five firms on 40
+          * points each: every one says in its own words that it buys shares directly, every one has
+          * a contact route, none has mail history, and only three of the twenty-eight publish a
+          * cheque floor. Printing 1–5 over that is a ranking that does not exist.
+          */}
+        {rec?.basis?.tied && <div className="row-sub" style={{ marginBottom: 8 }}>{rec.basis.tied}</div>}
+        {recommendations.map((r: any, i: number) => (
           <div className="panel" key={r.candidate_id}>
             <div className="row-title">{i + 1}. {r.name}</div>
 
@@ -341,7 +349,8 @@ function Buyers() {
               </div>
             </details>
           </div>
-        ))
+        ))}
+        </>
       )}
 
       {/*
