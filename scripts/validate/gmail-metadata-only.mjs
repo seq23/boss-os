@@ -151,6 +151,70 @@ const CONTENT_EXCEPTIONS = new Map([
       ],
     },
   ],
+  /*
+   * ── lp-positive.mjs · THE LPs WHO SAID YES ──────────────────────────────
+   *
+   * ADDED AS A NAMED EXCEPTION RATHER THAN BY LOOSENING THE RULE, same as its neighbours. The
+   * general prohibition is untouched; this one file's narrowness is asserted on every build.
+   *
+   * WHY IT NEEDS RAW. She asked for it in these words: "find the ones that either want to have a
+   * call with us or keep in touch. all the positive replies." Whether someone wants a call is a
+   * statement inside the message. From/To/Date cannot produce it, and neither can a subject line —
+   * "Re: Regina — your Swimming with Allocators episode" is identical whether the reply says
+   * "happy to connect" or "please remove me".
+   *
+   * AND IT NEEDS THE DECODED BODY SPECIFICALLY, which is the part the first attempt got wrong. A
+   * regex over the RAW message finds nothing when the body is base64 — which, in this mailbox, is
+   * a large share of them, because Outlook and several corporate gateways encode by default. That
+   * is how a mailbox containing "Happy to connect in the coming weeks" reported zero positive
+   * replies: not a crash, a confident wrong answer.
+   *
+   * THIS ONE PERSISTS A QUOTE, AND THAT IS THE DIFFERENCE FROM ITS NEIGHBOURS. lp-outcomes.mjs
+   * writes only addresses the Sent Log already holds. This writes one short sentence per POSITIVE
+   * reply, because a list of names without what they said sends her back to the mailbox — which is
+   * the work being removed. It is bounded to 220 characters, taken only from replies classified
+   * positive, and never from a decline, an autoresponder or an unrelated message. Everything else
+   * read is discarded when the process exits.
+   *
+   * WHAT REACHES THE WORKER: counts. The endpoint refuses any payload containing an `@`, and that
+   * guard is not bent — it is simply not in this path. Addresses and quotes live in a file on her
+   * Mac and in an email to her own inbox.
+   */
+  [
+    "lp-positive.mjs",
+    {
+      why:
+        "Finds the LPs who want a call or want to keep in touch, out of every reply to the outreach. " +
+        "Intent is a statement inside the message; no arrangement of From/To/Date produces it, and a " +
+        "subject line reads identically for a yes and a no. Persists one short quote per positive " +
+        "reply because a name without what they said sends her back to the mailbox.",
+      invariants: [
+        // THE MAILBOX IS NAMED IN THE JWT so it cannot silently become a different one. The earlier
+        // attempt routed through the claude.ai connector — bound to her PERSONAL account — and
+        // reported 3 inbound where the real mailbox held 123.
+        [(src) => /const MAILBOX = /.test(src) && /sub:\s*MAILBOX|sub, *$|accessToken\(.*MAILBOX/s.test(src),
+         "the mailbox it impersonates must be a named constant, not inferred from whatever session it finds"],
+        // Bounded, same as lp-outcomes.mjs.
+        [(src) => /slice\(0, ?200_000\)|slice\(0, ?200000\)/.test(src),
+         "it must bound how much of a message it reads"],
+        // THE QUOTE IS SHORT AND ONLY FROM A POSITIVE REPLY. This is the invariant that keeps a
+        // body-persisting job from becoming a mail archive.
+        [(src) => /slice\(0, ?220\)/.test(src),
+         "the quote it persists must be bounded to a short sentence"],
+        [(src) => /bucket !== "call" && bucket !== "warm"|bucket === "call" \|\| bucket === "warm"/.test(src),
+         "it must persist a quote only for replies classified positive, never for declines, autoresponders or unrelated mail"],
+        // Nothing content-derived may reach a model. Matched on PROVIDER HOSTS rather than brand
+        // names, for the reason the holdings entry records.
+        [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src),
+         "it must send nothing to any model — the classification is local pattern matching"],
+        // RECALL IS CHECKED AGAINST HER OWN RECORDS, not against itself. A scan that quietly loses a
+        // warm LP is worse than no scan, and every other check this file could run is marking its
+        // own homework.
+        [(src) => /KNOWN_REPLIES/.test(src) && /RECALL_FAILED/.test(src),
+         "it must carry the owner-supplied list of known replies and fail loudly when it cannot find one"],
+      ],
+    },
+  ],
   [
     "holdings-lookup.mjs",
     {
