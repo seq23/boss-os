@@ -64,6 +64,10 @@ export function checkFilter(src) {
      "a message that was never read is not a message that was filtered — losing a meaningful share of the mailbox to rate limits must be a hard stop, not a drop reason"],
     [/r\.status === 403/,
      "403 must be retried: Gmail signals a per-user rate limit as 403, and treating it as a refusal once lost 59,451 messages behind a confident summary"],
+    [/r\.status === 401/,
+     "401 must re-mint the credential: the JWT expires after an hour, this run takes longer, and a dead token once lost 10,483 messages that a slow retry then recovered zero of"],
+    [/TOKEN_MAX_AGE_MS/,
+     "the token must be re-minted before it can expire, not captured once at the start of a run that outlives it"],
     [/NAMED STOP \[UNACCOUNTED\]/,
      "a message in no bucket must be a named stop, not a rounding difference"],
     [/drops\[[a-zA-Z_]+\] = \(drops\[[a-zA-Z_]+\] \?\? 0\) \+ 1/,
@@ -164,6 +168,10 @@ if (process.argv.includes("--self-test")) {
     checkFilter(real.replace(/NAMED STOP \[MAILBOX_NOT_FULLY_READ\]/g, "note")).length > 0);
   expect("a filter that stops retrying Gmail's 403 rate limit is caught",
     checkFilter(real.replace(/r\.status === 403 \|\| /g, "")).length > 0);
+  expect("a filter that stops re-minting an expired credential is caught",
+    checkFilter(real.replace(/r\.status === 401/g, "false")).length > 0);
+  expect("a filter that captures its token once is caught",
+    checkFilter(real.replace(/TOKEN_MAX_AGE_MS/g, "X")).length > 0);
   expect("a filter that stops naming its drops is caught",
     checkFilter(real.replace(/WHAT THE FILTER DISCARDED/g, "done")).length > 0);
   expect("a filter that would pass on a 100% discard is caught",

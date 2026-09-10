@@ -269,10 +269,45 @@ async function pooled(items, limit, worker) {
  * blip, and the two failure kinds are counted apart from the decisions — a message that was never
  * read is not a message that was filtered, and the run refuses to finish if too many were lost.
  */
-async function api(url, token, tries = 8) {
+/**
+ * ─── THE TOKEN EXPIRES AFTER AN HOUR AND THIS RUN TAKES LONGER THAN THAT ────
+ *
+ * The second honest full run lost 10,483 bodies and RECLAIMED ZERO of them on a slow retry. A
+ * transient rate limit does not behave like that — a slow retry an hour later recovers nearly all of
+ * it. Something permanent had happened, and it had: the service-account JWT is minted with
+ * `exp: now + 3600`, the header pass alone takes about fifty minutes, and the body pass runs after
+ * it. THE CREDENTIAL DIED MID-RUN. Google answers 401, which this treated as a refusal and gave up
+ * on instantly, and the failures were then reported as if the messages had been considered.
+ *
+ * The 403 backoff added earlier was a real fix for a real problem and it was not this problem. Both
+ * are handled now, apart, because they are different facts: 403 is "slow down", 401 is "you are no
+ * longer who you were".
+ *
+ * So the token is a LIVING THING rather than a value captured at the start — re-minted before it can
+ * expire, and re-minted immediately on a 401 rather than after a wait, because waiting does not make
+ * a dead credential alive.
+ */
+let CREDS = null;
+let TOKEN = { value: null, mintedAt: 0 };
+/** Well inside Google's hour, so a long body pass never straddles the expiry. */
+const TOKEN_MAX_AGE_MS = 40 * 60 * 1000;
+
+async function liveToken(force = false) {
+  if (force || !TOKEN.value || Date.now() - TOKEN.mintedAt > TOKEN_MAX_AGE_MS) {
+    TOKEN = { value: await accessToken(CREDS), mintedAt: Date.now() };
+  }
+  return TOKEN.value;
+}
+
+async function api(url, _unused, tries = 8) {
   for (let i = 0; i < tries; i += 1) {
-    const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    const r = await fetch(url, { headers: { authorization: `Bearer ${await liveToken()}` } });
     if (r.ok) return r.json();
+    if (r.status === 401) {
+      // Dead credential, not a busy one. Mint a new one and try again at once.
+      await liveToken(true);
+      continue;
+    }
     if (r.status === 403 || r.status === 429 || r.status >= 500) {
       await new Promise((res) => setTimeout(res, Math.min(30_000, 800 * 2 ** i) + Math.random() * 500));
       continue;
@@ -320,7 +355,8 @@ async function main() {
     console.error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault: npm run capital:scan");
     process.exit(4);
   }
-  const token = await accessToken(JSON.parse(raw));
+  CREDS = JSON.parse(raw);
+  const token = await liveToken();
 
   const state = loadState();
   const since = SINCE ?? (BACKFILL ? null : state.last_scanned_date ?? null);
@@ -417,18 +453,20 @@ async function main() {
    */
   if (missed.length) {
     console.log(`\nreclaiming ${missed.length} message(s) that hit a rate limit, slowly`);
-    const stillMissed = [];
     const retry = missed.splice(0, missed.length);
     let n = 0;
     await pooled(retry, 2, async (s) => {
-      const before = missed.length;
       await readOne(s);
       n += 1;
       if (n % 500 === 0) process.stdout.write(`  reclaim ${n}/${retry.length}\r`);
-      if (missed.length > before) stillMissed.push(...missed.splice(before));
     });
-    console.log(`  reclaimed ${retry.length - stillMissed.length} of ${retry.length}`);
-    if (stillMissed.length) unread.body_fetch_failed = stillMissed.length;
+    /*
+     * COUNTED FROM WHAT `missed` HOLDS AFTERWARDS, not from arithmetic inside the loop. The first
+     * version compared the array length before and after each call while two workers pushed to it
+     * concurrently, which is a race that reports a number nobody computed.
+     */
+    console.log(`  reclaimed ${retry.length - missed.length} of ${retry.length}`);
+    if (missed.length) unread.body_fetch_failed = missed.length;
   }
 
   // ─── The accounting. Every message ends in exactly one named bucket. ───
