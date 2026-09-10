@@ -18,7 +18,7 @@
     "test": "vitest run && vitest run --config vitest.boss.config.ts",
     "test:boss": "vitest run --config vitest.boss.config.ts",
     "typecheck": "tsc --noEmit",
-    "validate": "npm run validate:identity && npm run validate:one-source && npm run validate:no-dead-meter && npm run validate:one-cause && npm run validate:identity-local && npm run validate:gmail && npm run validate:no-spry-sender && npm run validate:filter-accounts && npm run validate:capital-staleness && npm run validate:boss-intake && npm run validate:employee-tags && npm run validate:task-body && npm run validate:css-classes && npm run validate:reachable && npm run validate:classification && npm run validate:duty-delivery && npm run validate:owned-work && npm run validate:says-why && npm run validate:shared-browser && npm run validate:notice-not-approval && npm run validate:one-sky && npm run validate:heading-rank && npm run typecheck && npm run test",
+    "validate": "npm run validate:identity && npm run validate:one-source && npm run validate:no-dead-meter && npm run validate:one-cause && npm run validate:identity-local && npm run validate:gmail && npm run validate:no-spry-sender && npm run validate:filter-accounts && npm run validate:capital-staleness && npm run validate:boss-intake && npm run validate:employee-tags && npm run validate:task-body && npm run validate:audit-fixer && npm run validate:css-classes && npm run validate:reachable && npm run validate:classification && npm run validate:duty-delivery && npm run validate:owned-work && npm run validate:says-why && npm run validate:shared-browser && npm run validate:notice-not-approval && npm run validate:one-sky && npm run validate:heading-rank && npm run typecheck && npm run test",
     "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/seed/generate-ai-employee-seed.mjs --check",
     "validate:api-screens": "node scripts/validate/api-has-a-screen.mjs && node scripts/validate/api-has-a-screen.mjs --self-test",
     "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test && node scripts/seed/generate-machine-seed.mjs --check",
@@ -97,6 +97,7 @@
     "validate:boss-intake": "node scripts/validate/boss-intake-is-boss-only.mjs && node scripts/validate/boss-intake-is-boss-only.mjs --self-test",
     "validate:employee-tags": "node scripts/validate/every-employee-has-a-reachable-tag.mjs && node scripts/validate/every-employee-has-a-reachable-tag.mjs --self-test",
     "validate:task-body": "node scripts/validate/a-task-body-is-not-a-mime-message.mjs && node scripts/validate/a-task-body-is-not-a-mime-message.mjs --self-test",
+    "validate:audit-fixer": "node scripts/validate/the-audit-fixer-cannot-touch-velocity.mjs && node scripts/validate/the-audit-fixer-cannot-touch-velocity.mjs --self-test",
     "capital:book": "node scripts/vault/vault.mjs run -- node scripts/ops/capital-book.mjs"
   },
   "dependencies": {
