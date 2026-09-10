@@ -60,10 +60,17 @@ export const BOSS_INTAKE_DOMAIN = "sequoiataylor.com";
  * `staylor@spry.vc` is on it because she reads and forwards from her Rainmaker mailbox and it is
  * genuinely her. Being ALLOWED TO SEND HERE is not the same as this system being allowed to send
  * FROM there, which it never may — see `validate:no-spry-sender`.
+ *
+ * HER WEST PEEK ADDRESS IS DELIBERATELY NOT ON IT, and this was a change of mind rather than an
+ * oversight. `sequoia@westpeek.ventures` is on the equivalent list in `boss/routes/packets.ts` and
+ * copying it here felt obviously right — until `validate:boss-intake-is-boss-only` named it on its
+ * first run. The guard is correct and the instinct was wrong: Boss OS is her personal system, West
+ * Peek is a fund, and putting the fund's address on the list of things that can instruct her
+ * personal employees is the exact blend she has now corrected three times. It also costs nothing —
+ * she has two other addresses here, and adding a third is one line she can ask for.
  */
-export const BOSS_INTAKE_SENDERS: readonly string[] = [
+export const BOSS_INTAKE_SENDERS = [
   "seq.taylor@gmail.com",
-  "sequoia@westpeek.ventures",
   "staylor@spry.vc",
 ];
 
@@ -71,14 +78,6 @@ export const BOSS_INTAKE_SENDERS: readonly string[] = [
 export const BOSS_DEFAULT_ROUTE_ROLE = "Chief of Staff";
 
 /** One active employee, as this module needs them. */
-export interface BossSeat {
-  id: string;
-  name: string;
-  role: string;
-  lane: string;
-  department?: string | null;
-}
-
 /**
  * The tag that reaches a seat, derived from the seat's own name.
  *
@@ -87,36 +86,14 @@ export interface BossSeat {
  * client will happily turn `#Monique` into `#Monique's` or wrap it in punctuation, and a router that
  * only matched the exact spelling would drop mail that plainly said who it was for.
  */
-export function seatTag(name: string): string {
+export function seatTag(name) {
   return `#${String(name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "")}`;
 }
 
 /** Every `#word` in the text, lower-cased, in the order they appear, without duplicates. */
-export function hashtagsIn(text: string): string[] {
+export function hashtagsIn(text) {
   const found = String(text ?? "").toLowerCase().match(/#[a-z0-9][a-z0-9_-]*/g) ?? [];
   return [...new Set(found.map((t) => `#${t.slice(1).replace(/[^a-z0-9]+/g, "")}`))].filter((t) => t.length > 1);
-}
-
-export type BossRouteOutcome =
-  /** Exactly one active employee answers to the tag that was typed. */
-  | "ROUTED"
-  /** No tag at all, or a tag no seat answers to. Goes to the default seat AND says so in the reply. */
-  | "DEFAULTED"
-  /** Two active seats share a first name. Never guessed — she is asked which one. */
-  | "AMBIGUOUS";
-
-export interface BossRoute {
-  outcome: BossRouteOutcome;
-  /** The seat the work is going to. Never null: something always takes it. */
-  seat: BossSeat;
-  /** The tag that was typed and matched, when one was. */
-  tag: string | null;
-  /** Tags that were typed and matched no seat. Named back to her so a typo is visible. */
-  unknownTags: string[];
-  /** Every seat a tag matched, when more than one did. */
-  candidates: BossSeat[];
-  /** One sentence, for the reply and for the audit row. */
-  why: string;
 }
 
 /**
@@ -131,20 +108,20 @@ export interface BossRoute {
  * That is the seat whose charter already is "read what comes in and decide what the Boss actually
  * needs to see" — so an unrouted message is not a fallback, it is her actual job.
  */
-export function routeToSeat(text: string, roster: readonly BossSeat[]): BossRoute | null {
+export function routeToSeat(text, roster) {
   const active = roster.filter((s) => s && s.id && s.name);
   if (active.length === 0) return null;
 
   const fallback =
     active.find((s) => String(s.role ?? "").toLowerCase() === BOSS_DEFAULT_ROUTE_ROLE.toLowerCase())
-    ?? active[0]!;
+    ?? active[0];
 
   const typed = hashtagsIn(text);
-  const byTag = new Map<string, BossSeat[]>();
+  const byTag = new Map();
   for (const s of active) {
     const t = seatTag(s.name);
     if (!byTag.has(t)) byTag.set(t, []);
-    byTag.get(t)!.push(s);
+    byTag.get(t).push(s);
   }
 
   const unknownTags = typed.filter((t) => !byTag.has(t));
@@ -167,8 +144,8 @@ export function routeToSeat(text: string, roster: readonly BossSeat[]): BossRout
       };
     }
     return {
-      outcome: "ROUTED", seat: hit[0]!, tag: t, unknownTags, candidates: hit,
-      why: `${t} is ${hit[0]!.name}, ${hit[0]!.role}.`,
+      outcome: "ROUTED", seat: hit[0], tag: t, unknownTags, candidates: hit,
+      why: `${t} is ${hit[0].name}, ${hit[0].role}.`,
     };
   }
 
@@ -187,7 +164,7 @@ export function routeToSeat(text: string, roster: readonly BossSeat[]): BossRout
  * success, and silence is also what a broken handler produces — the two become indistinguishable at
  * the exact moment she needs them not to be.
  */
-export function replyBody(route: BossRoute, roster: readonly BossSeat[], subject: string): string {
+export function replyBody(route, roster, subject) {
   const tags = [...roster].sort((a, b) => a.name.localeCompare(b.name))
     .map((s) => `  ${seatTag(s.name).padEnd(12)} ${s.name} — ${s.role}`);
   const head = route.outcome === "ROUTED"
@@ -221,18 +198,18 @@ export function replyBody(route: BossRoute, roster: readonly BossSeat[], subject
  * Anybody putting `#monique` in the subject alone — the natural place — would be silently ignored
  * the moment their subject contained a dash, a curly quote or an accented name.
  */
-export function decodeMimeHeader(value: string): string {
+export function decodeMimeHeader(value) {
   if (!value.includes("=?")) return value;
   return value
     .replace(/\?=\s+=\?/g, "?==?")
-    .replace(/=\?([^?]+)\?([QqBb])\?([^?]*)\?=/g, (whole, _charset: string, enc: string, text: string) => {
+    .replace(/=\?([^?]+)\?([QqBb])\?([^?]*)\?=/g, (whole, _charset, enc, text) => {
       try {
         if (enc.toUpperCase() === "B") {
           const bin = atob(text);
           return new TextDecoder("utf-8").decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
         }
         const withSpaces = text.replace(/_/g, " ");
-        const bytes: number[] = [];
+        const bytes = [];
         for (let i = 0; i < withSpaces.length; i += 1) {
           if (withSpaces[i] === "=" && i + 2 < withSpaces.length) {
             const hex = withSpaces.slice(i + 1, i + 3);
@@ -246,10 +223,10 @@ export function decodeMimeHeader(value: string): string {
 }
 
 /** The bare address out of a `From:` header, which may be `Name <a@b.c>` or just `a@b.c`. */
-export function extractAddress(header: string | null | undefined): string | null {
+export function extractAddress(header) {
   if (!header) return null;
   const angled = /<([^>]+)>/.exec(header);
-  const candidate = (angled ? angled[1]! : header).trim();
+  const candidate = (angled ? angled[1] : header).trim();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate.toLowerCase() : null;
 }
 
@@ -257,7 +234,7 @@ export function extractAddress(header: string | null | undefined): string | null
  * A subject with the tags and every stacked forwarding prefix removed, so the title of the work she
  * sees reads like a subject and not like a mail client's audit trail.
  */
-export function strippedSubject(subject: string): string {
+export function strippedSubject(subject) {
   let out = String(subject ?? "").replace(/#[a-z0-9][a-z0-9_-]*/gi, "").trim();
   for (let i = 0; i < 6; i += 1) {
     const next = out.replace(/^\s*(re|fwd?|fw)\s*:\s*/i, "").trim();
@@ -282,12 +259,12 @@ export function strippedSubject(subject: string): string {
  * ABSENT IS A FAIL. A missing header means nothing checked it, which is exactly the state a
  * forgery arrives in.
  */
-export function dmarcPassed(authResults: string | null | undefined): boolean {
+export function dmarcPassed(authResults) {
   return /\bdmarc\s*=\s*pass\b/i.test(String(authResults ?? ""));
 }
 
 /** Is this address one of hers? Case-folded, because mail clients are not consistent about it. */
-export function isOwner(address: string | null | undefined): boolean {
+export function isOwner(address) {
   const a = String(address ?? "").trim().toLowerCase();
   return a.length > 0 && BOSS_INTAKE_SENDERS.includes(a);
 }

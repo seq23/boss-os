@@ -8,7 +8,7 @@ import {
   decodeMimeHeader, dmarcPassed, extractAddress, isOwner,
   replyBody, routeToSeat, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
-} from "../../../shared/boss/intake/mail";
+} from "../../../shared/boss/intake/mail.mjs";
 import { parseLiveBook, bookFingerprint, describeLot } from "../../../shared/boss/intake/liveBook.mjs";
 import { storeLiveBook } from "../capital/book";
 

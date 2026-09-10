@@ -7,7 +7,7 @@ import { INTAKE_MAILBOX } from "../shared/intake/emailTriggers";
  * from them and `validate:boss-intake-is-boss-only` fails the build if that ever changes.
  */
 import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
-import { BOSS_INTAKE_MAILBOX } from "../shared/boss/intake/mail";
+import { BOSS_INTAKE_MAILBOX } from "../shared/boss/intake/mail.mjs";
 import { handleReadCompanyDeck } from "./services/deckReader";
 import {
   handleDraftLpReport,
