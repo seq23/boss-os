@@ -1,0 +1,296 @@
+import type { Env } from "../env";
+import { newId } from "../lib/id";
+import { audit } from "../lib/audit";
+import { logEvent } from "../lib/log";
+import { admitTask } from "../tasks/admit";
+import {
+  BOSS_INTAKE_MAILBOX, BOSS_INTAKE_DOMAIN,
+  decodeMimeHeader, dmarcPassed, extractAddress, isOwner,
+  replyBody, routeToSeat, seatTag, strippedSubject,
+  type BossRoute, type BossSeat,
+} from "../../../shared/boss/intake/mail";
+import { parseLiveBook, bookFingerprint, describeLot } from "../../../shared/boss/intake/liveBook.mjs";
+import { storeLiveBook } from "../capital/book";
+
+/**
+ * MAIL TO `boss@sequoiataylor.com`.
+ *
+ * Boss OS's own inbox, written for Boss OS, importing nothing from `src/worker/effects/inboundEmail.ts`.
+ * That file serves `os@joinwestpeek.com`, which is West Peek's mailbox on West Peek's domain,
+ * delivered to a Worker called `west-peek-os` and not to this one. Owner, 10 Sep 2026: "why are u
+ * sharing anything with west peek's os? why? this is a separate repo and domain."
+ *
+ * The GOOD IDEAS from there are copied and are worth copying: decode the headers before matching,
+ * read the true sender out of a forward, store an oversized message rather than dropping it, and
+ * above all never let a message vanish. The ROUTING is not shared. `validate:boss-intake-is-boss-only`
+ * fails the build if an import ever appears.
+ *
+ * ─── THE ORDER OF OPERATIONS IS THE SECURITY MODEL ─────────────────────────
+ *
+ *   1. Is the domain ours? Anything else is not this system's mail.
+ *   2. Is the sender hers, AND did DMARC prove it? If not: recorded, refused, no work created.
+ *   3. Only then: which employee, from the D1 roster.
+ *
+ * Step 3 can never move above step 2. A tag is a public word and the roster is publishable; the
+ * whole design is safe precisely because knowing `#monique` buys an attacker nothing.
+ */
+
+/** Bigger than this and the body is not parsed — a Worker invocation has ~10ms of CPU. */
+export const MAX_BODY_BYTES = 512 * 1024;
+
+/** Every active seat, which is the whole tag table. There is no second list. */
+export async function activeRoster(env: Env): Promise<BossSeat[]> {
+  const { results } = await env.DB
+    .prepare(
+      `SELECT id, name, role, lane, department FROM employees
+        WHERE status = 'active' AND lifecycle IN ('active','provisional')
+        ORDER BY created_at`,
+    )
+    .all<BossSeat>();
+  return (results ?? []).filter((s) => s.name && s.id);
+}
+
+export interface BossMailMessage {
+  from: string;
+  to: string;
+  headers: Headers;
+  raw: ReadableStream;
+  rawSize: number;
+}
+
+export interface BossMailResult {
+  mailId: string;
+  outcome: string;
+  employeeId: string | null;
+  taskId: string | null;
+  reply: string | null;
+}
+
+/** Is this message for Boss OS at all? Checked on the domain, not the local part. */
+export function isBossMailbox(to: string): boolean {
+  return String(to ?? "").trim().toLowerCase().endsWith(`@${BOSS_INTAKE_DOMAIN}`);
+}
+
+/**
+ * The original sender inside a forwarded message. She forwards constantly — a counterparty's mail
+ * with `#monique` typed above it is the ordinary shape — and recording the forward as though she
+ * wrote it would throw away who it actually came from.
+ *
+ * NOTE THAT THIS DOES NOT AFFECT AUTHORISATION. The message is authorised because SHE sent it, and
+ * `senderOf` below reads the envelope and the `From:` header, never the forwarded block. Letting a
+ * quoted "From:" line inside a body decide who is trusted would put the authorisation back in
+ * attacker-controlled text, which is the one thing this design refuses to do.
+ */
+export function forwardedOrigin(raw: string): { from: string | null; subject: string | null } | null {
+  const bodyAt = raw.search(/\r?\n\r?\n/);
+  if (bodyAt === -1) return null;
+  const body = raw.slice(bodyAt);
+  const marker = /(-{2,}\s*forwarded message\s*-{2,}|begin forwarded message:)/i.exec(body);
+  const start = marker ? marker.index + marker[0].length : /^\s*from:\s*.+\r?\n\s*(sent|date):/im.exec(body)?.index;
+  if (start === undefined) return null;
+  const block = body.slice(start, start + 1200);
+  const fromLine = /^\s*from:\s*(.+)$/im.exec(block)?.[1]?.trim() ?? null;
+  const subjectLine = /^\s*subject:\s*(.+)$/im.exec(block)?.[1]?.trim() ?? null;
+  return { from: fromLine ? extractAddress(fromLine) : null, subject: subjectLine };
+}
+
+/** Who really sent this, from headers only — never from body text. */
+function senderOf(message: BossMailMessage): string {
+  return extractAddress(message.headers.get("from")) ?? String(message.from ?? "").toLowerCase();
+}
+
+/**
+ * Does this message carry her live book?
+ *
+ * ANCHORED ON THE TAG AND THE CONTENT TOGETHER. `#monique` alone is not enough — most of what she
+ * sends Monique is an ordinary instruction — and content alone is not enough either, or any mail
+ * quoting a price would rewrite her inventory. So: addressed to Monique, and it parses into at
+ * least two priced lines. Below that it is an instruction that happens to mention a number.
+ */
+export function looksLikeBook(route: BossRoute, text: string): boolean {
+  if (route.seat.department !== "Relationships") return false;
+  if (/\bdo not (?:file|store|update)\b|\bignore\b/i.test(text)) return false;
+  const parsed = parseLiveBook(text);
+  return parsed.positions.filter((p: { size_usd: number | null }) => p.size_usd !== null).length >= 2;
+}
+
+export async function handleBossInboundMail(message: BossMailMessage, env: Env): Promise<BossMailResult> {
+  const mailId = newId("iml");
+  const now = Date.now();
+  const to = String(message.to ?? "").toLowerCase();
+  const subject = decodeMimeHeader(message.headers.get("subject") ?? "");
+  const sender = senderOf(message);
+  const dmarc = dmarcPassed(message.headers.get("authentication-results"));
+  const authorised = isOwner(sender) && dmarc;
+
+  const record = async (row: {
+    outcome: string; why: string; tag?: string | null; employeeId?: string | null;
+    taskId?: string | null; objectKey?: string | null; replied?: boolean;
+  }) => {
+    await env.DB.prepare(
+      `INSERT INTO boss_inbound_mail
+         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, tag, employee_id,
+          outcome, why, task_id, object_key, bytes, replied_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).bind(
+      mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400),
+      row.tag ?? null, row.employeeId ?? null, row.outcome, row.why.slice(0, 1000),
+      row.taskId ?? null, row.objectKey ?? null, message.rawSize, row.replied ? now : null,
+    ).run();
+  };
+
+  /*
+   * REFUSED, AND RECORDED. Not bounced and not silently dropped.
+   *
+   * No reply is sent to an unauthorised sender, deliberately: replying would confirm the address is
+   * live and would turn this mailbox into a way to make Boss OS send mail to a stranger. The refusal
+   * is visible to HER instead, on the row and in the audit trail, which is the person who actually
+   * needs to know somebody is writing to her machine inbox.
+   */
+  if (!authorised) {
+    const why = isOwner(sender)
+      ? `From ${sender}, which is one of yours, but DMARC did not pass — so the address was not proven and nothing was run.`
+      : `From ${sender}, which is not one of your addresses. Recorded and refused.`;
+    await record({ outcome: "REFUSED_SENDER", why });
+    await audit(env.DB, {
+      actor: "system", lane: "ops", entityType: "inbound_mail", entityId: mailId,
+      action: "refused", detail: { from: sender, dmarc, to },
+    });
+    await logEvent(env.DB, {
+      level: "warn", scope: "intake", event: "boss_mail_refused", lane: "ops", entityId: mailId,
+      detail: { from: sender, dmarc_pass: dmarc },
+    });
+    return { mailId, outcome: "REFUSED_SENDER", employeeId: null, taskId: null, reply: null };
+  }
+
+  const roster = await activeRoster(env);
+  if (roster.length === 0) {
+    /*
+     * RULE 0, at runtime. A roster of nobody means the query is wrong or the seed never ran, and
+     * routing "to the default" out of an empty list would invent a destination. The message is kept
+     * and the failure is loud.
+     */
+    await record({ outcome: "NO_ROSTER", why: "No active employee could be read from D1, so nothing could take this. The message is recorded and unworked." });
+    await logEvent(env.DB, { level: "error", scope: "intake", event: "boss_mail_no_roster", lane: "ops", entityId: mailId, detail: { to } });
+    return { mailId, outcome: "NO_ROSTER", employeeId: null, taskId: null, reply: null };
+  }
+
+  /*
+   * OVERSIZE: STORED, ROUTED FROM ITS HEADERS, NEVER PARSED.
+   *
+   * Copied from the mailbox that came before this one, which learned it by dropping a real 7MB deck
+   * at 03:29 and telling nobody. Streaming bytes to R2 is I/O and costs a Worker almost nothing;
+   * DECODING seven megabytes would exhaust the CPU budget. The subject still carries the tag, which
+   * is the whole routing decision, so the arrival survives as real work.
+   */
+  let objectKey: string | null = null;
+  let body = "";
+  if (message.rawSize > MAX_BODY_BYTES) {
+    objectKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
+    try {
+      const sized = new FixedLengthStream(message.rawSize);
+      const pumped = message.raw.pipeTo(sized.writable);
+      await env.VAULT.put(objectKey, sized.readable, {
+        httpMetadata: { contentType: "message/rfc822" },
+        customMetadata: { from: sender.slice(0, 200), subject: subject.slice(0, 200) },
+      });
+      await pumped;
+    } catch {
+      // A failed store must not also lose the notification: the work card still opens and says so.
+      objectKey = null;
+    }
+  } else {
+    body = await new Response(message.raw).text();
+  }
+
+  const origin = body ? forwardedOrigin(body) : null;
+  const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
+  const haystack = `${subject}\n${body}`;
+  const route = routeToSeat(haystack, roster)!;
+
+  // Her live book is Monique's, and it is filed as itself rather than as a task about an email.
+  let bookNote: string | null = null;
+  if (body && route.outcome !== "AMBIGUOUS" && looksLikeBook(route, body)) {
+    const stored = await storeLiveBook(env, { text: body, mailId, now });
+    bookNote = stored.note;
+  }
+
+  /*
+   * THE MESSAGE BECOMES WORK THROUGH `admitTask`, THE ONE INTAKE PATH.
+   *
+   * Not a bespoke insert. `tasks/admit.ts` exists precisely because a second intake path was
+   * written once, skipped classification and the queue, and produced a duty that fired on time
+   * every morning and never once ran. A task created by this mailbox has to be indistinguishable
+   * from one she typed on the Tasks page, or it inherits that bug by construction.
+   */
+  let taskId: string | null = null;
+  let admitFailure: string | null = null;
+  if (route.outcome !== "AMBIGUOUS") {
+    try {
+      const admitted = await admitTask(env, {
+        title: strippedSubject(trueSubject) || `Mail from ${sender}`,
+        lane: route.seat.lane,
+        employee_id: route.seat.id,
+        input: {
+          source: "boss_inbound_mail",
+          mail_id: mailId,
+          from: sender,
+          ...(origin?.from ? { forwarded_from: origin.from } : {}),
+          subject: trueSubject,
+          tag: route.tag,
+          routing: route.why,
+          ...(bookNote ? { live_book: bookNote } : {}),
+          ...(objectKey
+            ? { body: `The message is ${(message.rawSize / 1024 / 1024).toFixed(1)}MB and was not read here. The whole of it is kept at ${objectKey}.` }
+            : { body: body.slice(0, 60_000) }),
+        },
+      });
+      taskId = admitted.task_id;
+      if (!admitted.created) admitFailure = admitted.reason ?? "intake refused it";
+    } catch (err) {
+      /*
+       * A THROW HERE MUST NOT EAT THE MESSAGE. `admitTask` legitimately throws on a lane mismatch or
+       * a retired seat, and any of those would otherwise turn into a silent loss of her mail. The
+       * row is written either way and the reply says what happened.
+       */
+      admitFailure = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  const outcome = admitFailure ? "NOT_ADMITTED" : route.outcome;
+  const why = [route.why,
+    ...(bookNote ? [bookNote] : []),
+    ...(admitFailure ? [`No task was opened: ${admitFailure}.`] : []),
+    ...(objectKey ? [`Too large to read here; the whole message is kept at ${objectKey}.`] : []),
+  ].join(" ");
+
+  /*
+   * SHE ALWAYS GETS AN ANSWER, INCLUDING WHEN IT WORKED.
+   *
+   * A reply only on failure teaches her to read silence as success — and silence is also what a
+   * crashed handler produces, so the two become indistinguishable at exactly the moment she needs
+   * them not to be.
+   */
+  const reply = [replyBody(route, roster, trueSubject),
+    ...(bookNote ? ["", bookNote] : []),
+    ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
+  ].join("\n");
+
+  await record({ outcome, why, tag: route.tag, employeeId: route.seat.id, taskId, objectKey, replied: false });
+  await audit(env.DB, {
+    actor: "boss", lane: route.seat.lane, entityType: "inbound_mail", entityId: mailId,
+    action: "routed", detail: { to, from: sender, tag: route.tag, employee: route.seat.id, outcome, task_id: taskId },
+  });
+  await logEvent(env.DB, {
+    level: admitFailure ? "warn" : "info", scope: "intake", event: "boss_mail_routed", lane: route.seat.lane,
+    entityId: mailId,
+    detail: {
+      mailbox: BOSS_INTAKE_MAILBOX, tag: route.tag, employee: route.seat.name, outcome,
+      unknown_tags: route.unknownTags,
+      // The tags that WERE available, so a mis-typed one is diagnosable from the log alone.
+      known_tags: roster.map((s) => seatTag(s.name)),
+    },
+  });
+
+  return { mailId, outcome, employeeId: route.seat.id, taskId, reply };
+}

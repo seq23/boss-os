@@ -1,5 +1,13 @@
 import type { Env } from "./env";
 import { handleInboundEmail } from "./effects/inboundEmail";
+import { INTAKE_MAILBOX } from "../shared/intake/emailTriggers";
+/*
+ * Boss OS's own mailbox. A SEPARATE module from the two lines above on purpose: those serve
+ * `os@joinwestpeek.com`, which is a different business on a different domain. Nothing below imports
+ * from them and `validate:boss-intake-is-boss-only` fails the build if that ever changes.
+ */
+import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
+import { BOSS_INTAKE_MAILBOX } from "../shared/boss/intake/mail";
 import { handleReadCompanyDeck } from "./services/deckReader";
 import {
   handleDraftLpReport,
@@ -1370,12 +1378,83 @@ export default {
    * alive for as long as the handler needs it. Nothing else changes: the `.catch` is still here, so
    * a throw is still logged rather than bounced back to the sender.
    */
+  /*
+   * ─── ROUTED BY RECIPIENT, AND BEFORE THIS IT WAS NOT ROUTED AT ALL ────────
+   *
+   * This handler used to pass EVERY delivered message to `handleInboundEmail`, which is West Peek's
+   * mailbox handler and reads West Peek's tag table. That was harmless only for as long as no mail
+   * could arrive: `os@joinwestpeek.com` routes to a Worker called `west-peek-os`, not to this one,
+   * so nothing ever reached it here (confirmed against the live Cloudflare zone, 10 Sep 2026).
+   *
+   * It stops being harmless the moment `boss@sequoiataylor.com` is pointed at this Worker. Her
+   * personal mail would have been read by West Peek's router, matched against `#wpdealflow`, and
+   * filed into a fund's deal funnel — the exact business blend the owner has corrected twice. So
+   * the recipient decides, explicitly, before either handler sees the message.
+   *
+   * Boss OS's handler is NOT the catch-all for anything unrecognised, deliberately. A mailbox this
+   * Worker was never told about is not hers by default, and quietly treating it as hers is how one
+   * business's mail ends up in the other's system — which is the whole thing being prevented here.
+   * An unknown recipient is logged loudly and left alone.
+   */
   async email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
-    await handleInboundEmail(message, env).catch((err) => {
-      // A handler that throws silently drops the message. Logged, because an inbox that loses
-      // mail without saying so is worse than one that does not exist.
-      console.error("inbound email failed", err);
-    });
+    if (isBossMailbox(message.to)) {
+      /*
+       * AWAITED, NOT `waitUntil`ed. `message.raw` is a stream tied to the delivery of THIS message;
+       * returning early and reading it afterwards fails with "ReadableStream received over RPC
+       * disconnected prematurely" and loses the mail with no record at all.
+       */
+      const result = await handleBossInboundMail(message, toBossEnvForCron(env)).catch((err) => {
+        console.error("boss inbound mail failed", err);
+        return null;
+      });
+
+      /*
+       * SHE ALWAYS GETS AN ANSWER — and `reply()` is the mechanism precisely because it needs
+       * nothing this account does not have. Replying to an inbound message is native to Email
+       * Routing: no `send_email` binding, no Workers Paid plan, no Resend key, and no outbound
+       * identity that could be pointed at a stranger. It can only ever answer the person who wrote,
+       * which is the correct blast radius for a mailbox whose whole job is talking to one person.
+       *
+       * A refused sender gets NO reply, and `handleBossInboundMail` returns a null reply for that
+       * case: answering would confirm the address is live and turn this into a way to make Boss OS
+       * mail somebody. The refusal is recorded for HER instead.
+       */
+      if (result?.reply) {
+        await message.reply({
+          from: BOSS_INTAKE_MAILBOX,
+          subject: `Re: ${message.headers.get("subject") ?? "your message"}`.slice(0, 200),
+          text: result.reply,
+        }).then(
+          () => env.WP_OS_DB.prepare(`UPDATE boss_inbound_mail SET replied_at = ? WHERE id = ?`)
+            .bind(Date.now(), result.mailId).run(),
+          // A failed reply must not also lose the work. The row and the task already exist; this
+          // records that she was not told, rather than pretending she was.
+          (err: unknown) => { console.error("boss inbound reply failed", err); },
+        );
+      }
+      return;
+    }
+
+    /*
+     * West Peek's mailbox. INERT IN THIS REPO as of 10 Sep 2026 — `os@joinwestpeek.com` is routed
+     * to the `west-peek-os` Worker and no Email Routing rule in any zone points at `boss-os`, so
+     * this branch cannot currently be reached. Kept rather than deleted because that is the owner's
+     * call to make, and gated on the recipient so that if it ever IS reached it is because somebody
+     * deliberately pointed West Peek's mailbox here.
+     */
+    if (String(message.to ?? "").toLowerCase() === INTAKE_MAILBOX) {
+      await handleInboundEmail(message, env).catch((err) => {
+        // A handler that throws silently drops the message. Logged, because an inbox that loses
+        // mail without saying so is worse than one that does not exist.
+        console.error("inbound email failed", err);
+      });
+      return;
+    }
+
+    console.error(
+      `inbound mail for an unrecognised recipient, not processed: ${message.to}. `
+      + `This Worker answers for ${BOSS_INTAKE_MAILBOX} only.`,
+    );
   },
 
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {

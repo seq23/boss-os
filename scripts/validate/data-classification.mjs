@@ -60,6 +60,13 @@ const SOVEREIGN_TABLES = new Set([
   "relationships", "meeting_briefs", "meeting_captures",
   "memory_items", "promotion_events",
   "learning_entries",
+  /*
+   * HER LIVE BOOK. What she has out to sell, in what name, at what size, and the floor she will not
+   * break below. Named here rather than left to the migration because that is the point of this
+   * set: residency is editable in SQL like any other row, and moving her inventory to CLOUD_SYNC
+   * should be a visible act in a reviewed file, not a word changed in a 200-line diff.
+   */
+  "capital_book", "capital_book_line",
 ]);
 /** Spirit's computed sky is arithmetic anyone can redo, and is deliberately not sovereign. */
 const SOVEREIGN_EXCEPTIONS = new Set(["astro_calendar", "astro_days"]);
