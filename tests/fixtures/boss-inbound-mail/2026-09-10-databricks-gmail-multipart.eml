@@ -1,0 +1,131 @@
+Received: from mail-pj1-x102e.google.com (2607:f8b0:4864:20::102e)
+        by cloudflare-email.net (cloudflare) id nMzrNc3vLtpQ
+        for <boss@sequoiataylor.com>; Thu, 10 Sep 2026 23:26:05 +0000
+ARC-Seal: i=2; a=rsa-sha256; s=cf2024-1; d=cloudflare-email.net; cv=pass;
+	b=agdlqdDkK/sry2eKF2TYQEYj87F5yCxCDRXlmzra0lr2feDSnYHYsMlGds+UkZOWXQ7lKYIhY
+	DOA021HbHZcrnYCxWSitrTxlB2X4kHiEjPAEsnP0ZHV73DvKoWLv3cmLHqhDaSy/eiEmbHzr/rt
+	7Ki/DcMep9R0g4WcTd2FSTXKURmse/MFYRJ0sqXcteYEorRwG7HdUK8Ut3eF+nZPjDzAOPFCm9G
+	YPTiKvAOzolpQdBuPgelCT06Y6BaUxK/S5mnkEgL+eXDkF5Lpn+JJmXuUsFB7/HNdBzU5OQlNEY
+	NTnBCFqn9rG7WYb1yS4NevlxNIy8kvgE3t7+tvu6TQDQ==;
+ARC-Message-Signature: i=2; a=rsa-sha256; s=cf2024-1; d=cloudflare-email.net; c=relaxed/relaxed;
+	h=To:Subject:Date:From:from:reply-to:cc:resent-date:resent-from:resent-to
+	:resent-cc:in-reply-to:references:list-id:list-help:list-subscribe
+	:list-post:list-owner:list-archive; t=1789082765; x=1789687565; bh=hAFgq1DI
+	wIaqBWoFEbo2Uc8Zv75R33uLd3YRPE6wgNQ=; b=hSdeVHHopYsOacTf0lUx0/OWnEOVmWHmFci
+	c9q6zrQkvE8KV3BtxK4WD4FWk85KzAWaU9VvJv0djO288UZWNxO+GJYGgMd6t4jwsUtxQjcJArq
+	3aQ4OBZuLTtuCpHYtPTnqkrbSjSe5usj41vvtOXddGPOrTIGZD1M0dd7F1uaOtOAmcnC1ljBxW2
+	FgPaHbF9NqVM7BCnlfToYI7othBCoaYWtBTwWEAJN96lRRkjoYHi60OQkcquN9dDdItLsFoWUsw
+	ay3thiiVAIiJkm6BJJoMPs0wVQ3p6IUz5FNgnWgvKwnOMpprAvVG6Dj2YL/YKJFBl7uK/mKwB0K
+	lDz8DrA==;
+ARC-Authentication-Results: i=2; mx.cloudflare.net;
+	dkim=pass header.d=gmail.com header.s=20251104 header.b=Ftysh0qq;
+	dmarc=pass header.from=gmail.com policy.dmarc=none;
+	spf=none (mx.cloudflare.net: no SPF records found for postmaster@mail-pj1-x102e.google.com) smtp.helo=mail-pj1-x102e.google.com;
+	spf=pass (mx.cloudflare.net: domain of seq.taylor@gmail.com designates 2607:f8b0:4864:20::102e as permitted sender) smtp.mailfrom=seq.taylor@gmail.com;
+	arc=pass smtp.remote-ip="2607:f8b0:4864:20::102e"
+Received-SPF: pass (mx.cloudflare.net: domain of seq.taylor@gmail.com designates 2607:f8b0:4864:20::102e as permitted sender)
+	receiver=mx.cloudflare.net; client-ip=2607:f8b0:4864:20::102e; envelope-from="seq.taylor@gmail.com"; helo=mail-pj1-x102e.google.com;
+Authentication-Results: mx.cloudflare.net;
+	dkim=pass header.d=gmail.com header.s=20251104 header.b=Ftysh0qq;
+	dmarc=pass header.from=gmail.com policy.dmarc=none;
+	spf=none (mx.cloudflare.net: no SPF records found for postmaster@mail-pj1-x102e.google.com) smtp.helo=mail-pj1-x102e.google.com;
+	spf=pass (mx.cloudflare.net: domain of seq.taylor@gmail.com designates 2607:f8b0:4864:20::102e as permitted sender) smtp.mailfrom=seq.taylor@gmail.com;
+	arc=pass smtp.remote-ip="2607:f8b0:4864:20::102e"
+X-CF-SpamH-Score: 0
+Received: by mail-pj1-x102e.google.com with SMTP id 98e67ed59e1d1-38e42560ebcso302233a91.1
+        for <boss@sequoiataylor.com>; Thu, 10 Sep 2026 16:26:05 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1789082765; cv=none;
+        d=google.com; s=arc-20260327;
+        b=l7/mKJ4QPiggkIemML5TKCAc5WeB2t0kgHPmH9MHLVtK8ejNqmqZQQYre3jui0cuWM
+         xH0KHRCk9ka0YBhGZBBmyEOUUr0JPZoc5fHr7/yMiEZfQ7V21ZzzmsQHWRyuMnmwTpaV
+         lRYFBpZkO/5pnJxsKwyrDOPvVsJ1yMUrpV03ZtUIbSJw/lN2sq9mgVtMsSmShKLwONhj
+         lnjyODiXGzDgwx2c9Ryh3FQqa9jH/yzWkOoDZ4sN7CZlN01LPeeQZB8wLyl+fO64Jen2
+         JNEcACGg1DwN6BP6I66+rcDgT54VQEAlb0Wr28ke6Kldz5Xg83uhIma47xaDsaAo0gmH
+         TjOA==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20260327;
+        h=to:subject:message-id:date:from:mime-version:dkim-signature;
+        bh=hAFgq1DIwIaqBWoFEbo2Uc8Zv75R33uLd3YRPE6wgNQ=;
+        fh=SFbZx+HzK/TnXCvrJq+PdvRwiFs4oCOOh4UAcLQkZYA=;
+        b=qTkXorho2nVifPZOvbbXz/jqisLcQIMx2VI5eMVsB6CUNnBhQ90tooL6rQP3N1OC/x
+         MNoNpInJ+Vt4EUqhBL3xrHBSp4pyOAF9lLvm+farECALLYStGjC9U2Xjc+F0iGc1hkvC
+         tVlSziKbPEr8ufPara4mB6aLFwYk2KrovhDAfmE1SZqE+VakM7MdpXMYOsi8mKoTeG0n
+         +JGabXoVt5ZZqebc5vfFZYr4fnnpopiGW6FJE1DyezaZRr3uQ79soJMKyZY6pTPMAMtt
+         yvONXFY3oNJOCpW9lhmfsE8EeW2vZNmgj3s45yvjp3btKx39q/RLZygRcq1gQBY1Y8Al
+         c59A==;
+        darn=sequoiataylor.com
+ARC-Authentication-Results: i=1; mx.google.com; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20251104; t=1789082765; x=1789687565; darn=sequoiataylor.com;
+        h=content-type:to:subject:message-id:date:from:mime-version:from:to
+         :cc:subject:date:message-id:reply-to:content-type;
+        bh=hAFgq1DIwIaqBWoFEbo2Uc8Zv75R33uLd3YRPE6wgNQ=;
+        b=Ftysh0qqfgRuowSZfK+FI57Hjx6jx56el6vdzxWaoplGgDIOYCIkI7UIVLiGHWAE3E
+         mu6T9yXarivgtKmKT57FiPhD+vjZk40DpsH6VnY/j17SgPD0Vg3/Kww6QAfx2WoAPI51
+         eEWjaZj5/qlq2jurRf1P3OVaEN4ecl42SmxrL229CEK4Z2g9tWmYCEijArjpecqLnKTu
+         x+AmB7KO0xK8gr8xyCGNiP0IEigltcN4suNXQ7jiElmina1FEt99GEvR+kGe0icQmImq
+         fLTmTw+bhgtDUSSe3A+K1MhCvoqi2iIrRaHShDpqPAmada2YfiQm+hujQ90mTfBSrf5C
+         7a+g==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20251104; t=1789082765; x=1789687565;
+        h=content-type:to:subject:message-id:date:from:mime-version:x-gm-gg
+         :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to
+         :content-type;
+        bh=hAFgq1DIwIaqBWoFEbo2Uc8Zv75R33uLd3YRPE6wgNQ=;
+        b=f/P+ayQ5QT4UJZbjhHP+YNLTTbhZn2c5LQrlAZr9Lnx8QdbHRxZBwfN7Du+sQF7xlx
+         K67puOe117Rexserh5vYRLcr9tVS5DMbiG5LNnUjk2qVwgGkfIJUce61I2XNj0Plv8Cs
+         OBiFFndAo0uXgdFMVPmqIABk6DPCdjEynq/mZOcWQlvQEuWm3XNlui+020Y6T/2TFwkb
+         BUa4x9IH1Sozwr33zpLv9gE1QuyMvsuceVmUE/eU/wfWJ94nsoc1nKqy0XWlZoc7tDGA
+         rPBnPqNA+hlCXME8boXCRmcC0B98skpIJLlOoU9i61+dX0GEVmqJWwMds5imX3MNvuBr
+         Ghkw==
+X-Gm-Message-State: AFuF++k4aNJ2By+gYblxcGWTRlkydpXia7e0T5s1d/uxZ8lXaTqZTf5R
+	UqxY1gWQ8vbLTEF1dXv3Kmu62bzahQSbeD/NDQby3MB6hzAPNdHg50osM6gfYTWzClBvfbthDYY
+	TXXVswtfylRHKEmiR+4Lg3AdHC/VVVxBPP8F3
+X-Gm-Gg: AYBFou32Ub8yjraep3oPQ8YyP8er2dLOK5PVZ8PE+WAYChsiZaI+lWlRx8lEGasw8//
+	jZjXHSuBBa5EQ7CKu5Vep7JErmoIp7tBrKPqdTSqMAkJX+4XdDL29oVTapb/i/gmnq5WUolXgvU
+	KdPAw6QymfTBrhJbSCivGotG2hs6qlJx++yf6Y96Pek627Yy5yg/fGZmc5fzpJD7HW37MlutOnU
+	3Mr1+aiT5i4YLOY6/Qy3dsngS4JTp1pPrbsyqsdLZEvmyRqLP6NzbrCAhDdJRRrOfjZ0v35vX1n
+	qkFo0l1l5pAR2y+VclsWLJJQ+riIIBECLBD1hAcnKVFaF5KHDAo1E0r/d3RVh5xkUhOS8VJPv/5
+	g/ySP1PnxdqJt1DJByPLZNgvq69XtmjpdCBa2lN+w0mlJJr09VSIR
+X-Received: by 2002:a17:90b:35d2:b0:396:41d1:cbc7 with SMTP id
+ 98e67ed59e1d1-39d9bc0dca0mr1835988a91.3.1789082764532; Thu, 10 Sep 2026
+ 16:26:04 -0700 (PDT)
+MIME-Version: 1.0
+From: "Spry | Sequoia Taylor" <seq.taylor@gmail.com>
+Date: Thu, 10 Sep 2026 18:25:53 -0500
+X-Gm-Features: AcwNN1X8g2CXaS--LMBnwPW2PLxjNTPne573o4WrGkMUTQFLLuRJDUQ-Rf9_szY
+Message-ID: <CAHuz4C51cCp84Oo_fKs99W2QCD8sf_D9kYd0B58Svh0yHEKMOA@mail.gmail.com>
+Subject: #Monique
+To: boss@sequoiataylor.com
+Content-Type: multipart/alternative; boundary="000000000000a75ffa065b294a04"
+
+--000000000000a75ffa065b294a04
+Content-Type: text/plain; charset="UTF-8"
+
+#Monique - Please add searching for buyers of Databricks to the weekly list
+
+*- Sequoia Taylor*
+*www.sequoiataylor.com* <http://www.sequoiataylor.com/>
+*901-355-1050 <901-355-1050> (mobile)*
+*415-355-4860 <415-355-4860> (office)*
+*alt email: staylor@spry.vc <staylor@spry.vc>*
+
+--000000000000a75ffa065b294a04
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr"><div>#Monique - Please add searching for buyers=C2=A0of Da=
+tabricks to the weekly list</div><div><div dir=3D"ltr" class=3D"gmail_signa=
+ture" data-smartmail=3D"gmail_signature"><div dir=3D"ltr"><div><div dir=3D"=
+ltr"><div style=3D"font-size:12.8px"><i><br>- Sequoia Taylor</i><div><div><=
+a href=3D"http://www.sequoiataylor.com/" style=3D"color:rgb(17,85,204)" tar=
+get=3D"_blank"><i>www.sequoiataylor.com</i></a></div><div><i><a href=3D"tel=
+:901-355-1050" value=3D"+19013551050" style=3D"color:rgb(17,85,204)" target=
+=3D"_blank">901-355-1050</a>=C2=A0(mobile)</i></div></div></div><div style=
+=3D"font-size:12.8px"><i><a href=3D"tel:415-355-4860" value=3D"+14153554860=
+" style=3D"color:rgb(17,85,204)" target=3D"_blank">415-355-4860</a>=C2=A0(o=
+ffice)</i></div><div style=3D"font-size:12.8px"><i>alt email:=C2=A0<a href=
+=3D"mailto:staylor@spry.vc" style=3D"color:rgb(17,85,204)" target=3D"_blank=
+">staylor@spry.vc</a></i></div><div><br></div></div></div></div></div></div=
+></div>
+
+--000000000000a75ffa065b294a04--

@@ -10,6 +10,7 @@ import {
   type BossRoute, type BossSeat,
 } from "../../../shared/boss/intake/mail.mjs";
 import { parseLiveBook, bookFingerprint, describeLot } from "../../../shared/boss/intake/liveBook.mjs";
+import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
 import { storeLiveBook } from "../capital/book";
 
 /**
@@ -214,10 +215,13 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * DECODING seven megabytes would exhaust the CPU budget. The subject still carries the tag, which
    * is the whole routing decision, so the arrival survives as real work.
    */
+  const objectKeyFor = () => `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
+  const oversize = message.rawSize > MAX_BODY_BYTES;
+
   let objectKey: string | null = null;
-  let body = "";
-  if (message.rawSize > MAX_BODY_BYTES) {
-    objectKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
+  let rawMessage = "";
+  if (oversize) {
+    objectKey = objectKeyFor();
     try {
       const sized = new FixedLengthStream(message.rawSize);
       const pumped = message.raw.pipeTo(sized.writable);
@@ -231,18 +235,56 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       objectKey = null;
     }
   } else {
-    body = await new Response(message.raw).text();
+    rawMessage = await new Response(message.raw).text();
+    /*
+     * ─── THE RAW MESSAGE IS KEPT, AND THE CARD GETS THE WORDS ────────────────
+     *
+     * Under the cap this used to be the end of it: the whole RFC 822 message went straight onto the
+     * task as `input.body` and the original was never stored anywhere. Both halves of that were
+     * wrong. The card got 8,378 bytes of `Received:`, ARC seals and a quoted-printable HTML
+     * alternative with her one-line instruction buried on line 104 — and the ONLY copy of the
+     * message was that mangled field, so there was nothing to re-extract from either.
+     *
+     * Now every authorised message goes to R2 exactly as it arrived, whatever its size, and the task
+     * carries the readable text. The store is best-effort on purpose: R2 being unavailable must
+     * degrade to "the card is still right and the archive is missing", never to a lost message.
+     */
+    try {
+      const key = objectKeyFor();
+      await env.VAULT.put(key, rawMessage, {
+        httpMetadata: { contentType: "message/rfc822" },
+        customMetadata: { from: sender.slice(0, 200), subject: subject.slice(0, 200) },
+      });
+      objectKey = key;
+    } catch {
+      objectKey = null;
+    }
   }
 
-  const origin = body ? forwardedOrigin(body) : null;
+  /*
+   * ─── WHAT SHE TYPED, NOT WHAT HER MAIL CLIENT WRAPPED IT IN ───────────────
+   *
+   * `taskBodyFrom` walks the MIME tree, prefers `text/plain`, falls back to HTML stripped to text,
+   * decodes base64 and quoted-printable, and takes off the signature and any quoted reply. It is the
+   * SAME function `validate:task-body` calls, so the guard cannot pass against a copy of the rule.
+   *
+   * ROUTING READS THE DECODED TEXT TOO, and that is a fix in its own right: `#monique` written only
+   * in an HTML-only message was previously matched against `=23monique`-shaped bytes and would have
+   * missed. The subject is still in the haystack, because that is where she usually puts it.
+   */
+  const read = rawMessage ? taskBodyFrom(rawMessage) : null;
+  const readable = read?.readable ?? "";
+  const taskBody = read?.body ?? "";
+
+  const origin = readable ? forwardedOrigin(readable) : null;
   const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
-  const haystack = `${subject}\n${body}`;
+  const haystack = `${subject}\n${readable}`;
   const route = routeToSeat(haystack, roster)!;
 
   // Her live book is Monique's, and it is filed as itself rather than as a task about an email.
   let bookNote: string | null = null;
-  if (body && route.outcome !== "AMBIGUOUS" && looksLikeBook(route, body)) {
-    const stored = await storeLiveBook(env, { text: body, mailId, now });
+  if (readable && route.outcome !== "AMBIGUOUS" && looksLikeBook(route, readable)) {
+    const stored = await storeLiveBook(env, { text: readable, mailId, now });
     bookNote = stored.note;
   }
 
@@ -271,9 +313,17 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           tag: route.tag,
           routing: route.why,
           ...(bookNote ? { live_book: bookNote } : {}),
-          ...(objectKey
-            ? { body: `The message is ${(message.rawSize / 1024 / 1024).toFixed(1)}MB and was not read here. The whole of it is kept at ${objectKey}.` }
-            : { body: body.slice(0, 60_000) }),
+          /*
+           * `body` IS THE INSTRUCTION. Not the message, not the headers, not the markup — the words.
+           * Guarded by `scripts/validate/a-task-body-is-not-a-mime-message.mjs`, which fails on a
+           * `Received:` line, a boundary, or a quoted-printable soft break in any captured body.
+           */
+          body: oversize
+            ? `The message is ${(message.rawSize / 1024 / 1024).toFixed(1)}MB and was not read here.${objectKey ? ` The whole of it is kept at ${objectKey}.` : " It could not be stored either — nothing but this card survives it."}`
+            : taskBody || `The message carried no readable text — ${read?.parts ?? 0} MIME part(s) and nothing in any of them.${objectKey ? ` It is kept exactly as it arrived at ${objectKey}.` : ""}`,
+          // The original, byte for byte. Re-extractable, and the reason a parser bug is repairable.
+          ...(objectKey ? { raw_message: objectKey } : {}),
+          ...(read ? { body_format: read.format, mime_parts: read.parts } : {}),
         },
       });
       taskId = admitted.task_id;
@@ -292,7 +342,11 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const why = [route.why,
     ...(bookNote ? [bookNote] : []),
     ...(admitFailure ? [`No task was opened: ${admitFailure}.`] : []),
-    ...(objectKey ? [`Too large to read here; the whole message is kept at ${objectKey}.`] : []),
+    ...(oversize
+      ? [objectKey
+        ? `Too large to read here; the whole message is kept at ${objectKey}.`
+        : "Too large to read here, and storing it failed — only this row records that it arrived."]
+      : objectKey ? [`The message is kept as it arrived at ${objectKey}.`] : []),
   ].join(" ");
 
   /*

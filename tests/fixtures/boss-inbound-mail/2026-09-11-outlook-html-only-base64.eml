@@ -1,0 +1,21 @@
+Received: from NAM10-DM6-obe.outbound.protection.outlook.com (40.107.93.71)
+	by mx.cloudflare.net with ESMTPS id b7a1c2d3 for <boss@sequoiataylor.com>;
+	Fri, 11 Sep 2026 09:14:02 +0000
+Authentication-Results: mx.cloudflare.net; dkim=pass header.d=spry.vc; spf=pass; dmarc=pass header.from=spry.vc
+ARC-Seal: i=1; a=rsa-sha256; s=cf2024-1; d=cloudflare-email.net; cv=none; b=Zm9vYmFy
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=spry.vc; s=selector1;
+	h=From:Date:Subject:MIME-Version:Content-Type; b=QUJDREVGRw==
+From: Sequoia Taylor <staylor@spry.vc>
+To: boss@sequoiataylor.com
+Subject: =?UTF-8?Q?#simone_=E2=80=94_board_dinner?=
+Date: Fri, 11 Sep 2026 09:14:00 +0000
+Message-ID: <SA1PR10MB1234ABCD@SA1PR10MB1234.namprd10.prod.outlook.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGJvZHk+PGRpdj4jc2ltb25lIC0gYm9vayB0aGUgUTQgYm9hcmQgZGlubmVyIGZvciB0
+aGUgd2VlayBvZiB0aGUgMTJ0aC48L2Rpdj48ZGl2PiZuYnNwOzwvZGl2PjxkaXY+QnVkZ2V0IGlz
+ICZsdDskMywwMDAuIE5vYm9keSBmcm9tIFNwcnkuPC9kaXY+PGRpdj4tLTxicj5TZXF1b2lhIFRh
+eWxvcjxicj53d3cuc2VxdW9pYXRheWxvci5jb208YnI+OTAxLTM1NS0xMDUwPC9kaXY+PC9ib2R5
+PjwvaHRtbD4=
