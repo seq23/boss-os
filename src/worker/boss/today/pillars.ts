@@ -290,6 +290,44 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
  * COMPLETION, NOT PROGRESS. The oldest open loop comes before a fourth new thing, because a person
  * with six side projects fails by starting rather than by finishing.
  */
+/** How long a weekly duty may be silent before the silence is itself the news. */
+const AUDIT_GAP_DAYS = 8;
+
+/**
+ * Danielle's weekly Ahrefs pass, when it has not reported.
+ *
+ * READ FROM THE FINDINGS, NOT FROM `last_run_at`. The duty row's clock is advanced by the ingest
+ * endpoint, so the two agree today — and reading the row would make this a check of a counter
+ * rather than of the thing the counter is about. The last time a finding was WRITTEN is the last
+ * time this employee actually delivered, and it stays true if somebody ever advances that clock
+ * from somewhere else. Guarded so a database without the table yet reads as "nothing to say".
+ */
+async function siteAuditGap(env: Env): Promise<{ action: string; why: string; detail?: string[] } | null> {
+  const duty = await env.DB
+    .prepare(`SELECT suspended FROM standing_duties WHERE id = 'duty_site_audit_repair'`)
+    .first<{ suspended: number }>()
+    .catch(() => null);
+  // Not installed, or she suspended it on purpose. A suspended duty is a decision, not a gap.
+  if (!duty || duty.suspended) return null;
+
+  const last = await env.DB
+    .prepare(`SELECT MAX(found_at) AS at FROM site_audit_findings`)
+    .first<{ at: number | null }>()
+    .catch(() => null);
+  if (!last) return null;
+
+  const days = last.at === null ? null : Math.floor((Date.now() - last.at) / 86_400_000);
+  if (days !== null && days < AUDIT_GAP_DAYS) return null;
+
+  return {
+    action: "Danielle's Ahrefs pass has not reported — run `ahrefs-audit-fix.sh` or find out why launchd did not.",
+    why: days === null
+      ? "It has never reported once. A duty that has never delivered is not a cadence yet, it is an install that did not finish."
+      : `${days} days since the last audit finding, and it is a weekly duty. Ahrefs has recrawled since then, so this is a missed pass rather than a quiet week — a quiet week writes a row saying so.`,
+    detail: ["Reports land at /api/boss/engineering/site-audit-findings.", "A week with no findings still writes one row; silence means the job did not run."],
+  };
+}
+
 export async function executionContract(env: Env, weekday: number): Promise<PillarContract> {
   /*
    * A STALLING DEAL OUTRANKS EVERYTHING HERE, because it is the symptom that costs the most and the
@@ -302,6 +340,25 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
    * the point it is already dead.
    */
   const MEANS = "Did anything you own actually get built or shipped. Danielle's pillar.";
+
+  /*
+   * ─── A DUTY WITH HER NAME ON IT THAT HAS NOT RUN OUTRANKS EVERYTHING HERE ──
+   *
+   * `duty_site_audit_repair` is Danielle's weekly Ahrefs pass. It runs from launchd on her Mac, and
+   * a laptop that was asleep on Thursday morning is not an unusual event — it is the ordinary one.
+   *
+   * WHY THIS IS AT THE TOP RATHER THAN A NOTE SOMEWHERE. A weekly job that silently stops running
+   * looks exactly like a weekly job finding nothing, and this codebase has shipped that precise
+   * shape: a duty that fired eleven Sundays, dropped its payload every time, and left `last_run_at`
+   * advancing cheerfully the whole while. Employees cannot drop owned work, so a missed week is a
+   * VISIBLE STATE on the day rather than an absence nobody can see.
+   *
+   * EIGHT DAYS, NOT SEVEN. A weekly duty is due once every seven, so seven would fire on the
+   * ordinary morning before the job's own slot came round and teach her to ignore it. Eight means
+   * the window has actually been missed.
+   */
+  const audit = await siteAuditGap(env);
+  if (audit) return { available: true, means: MEANS, ...audit };
 
   const stalled = await stalledDeals(env);
   if (stalled.length > 0) {

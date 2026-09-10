@@ -29,6 +29,7 @@ import { packets } from "./routes/packets";
 import { lp } from "./routes/lp";
 import { diaryRoutes } from "./routes/diary";
 import { deliverables } from "./routes/deliverables";
+import { siteAudit } from "./routes/siteAudit";
 import { capital } from "./routes/capital";
 import { prompt } from "./routes/prompt";
 import { capability, runCapabilityCadence } from "./routes/capability";
@@ -149,6 +150,9 @@ app.route("/api/lp", lp);
 app.route("/api/diary", diaryRoutes);
 // The register of owned work. The escalating half of it lands on Today; this is the list itself.
 app.route("/api/deliverables", deliverables);
+// Danielle's weekly Ahrefs run reports back here. A local job, because reading her mailbox and
+// opening a PR in a working copy are both things a Worker cannot do.
+app.route("/api/engineering", siteAudit);
 // Her live book, so Monique's local buyer hunt reads the same inventory the intake filed.
 app.route("/api/capital", capital);
 app.route("/api/prompt", prompt);
