@@ -20,6 +20,19 @@ const SNAPSHOT_TABLES = [
   // snapshot; as a table it is state like any other, and work accepted but not yet run must
   // survive a rebuild rather than be silently dropped by the restore that was meant to save it.
   "boss_task_queue",
+  /*
+   * HER LIVE BOOK AND THE MAIL THAT CARRIES IT.
+   *
+   * `capital_book` and `capital_book_line` are LOCAL_ONLY, which governs whether a CLOUD runtime may
+   * put them in a snapshot — not whether they belong in one. Losing her book to a rebuild would be
+   * losing the only record of what she had out to sell and at what floor, and the versions are the
+   * history behind every call she made. `boss_inbound_mail` comes with them because the book's rows
+   * point at it: a restore that brought the book back without the arrival it came from would restore
+   * a book with a dangling reference and no provenance.
+   */
+  "boss_inbound_mail",
+  "capital_book",
+  "capital_book_line",
   // The airlock's classification registry. A restore that brought the records back without the
   // policy that governs them would rebuild the system with its residency rules erased - every
   // entity unclassified, which the guard refuses, so the restored system would be inert rather

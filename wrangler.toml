@@ -109,6 +109,33 @@ BOSS_OS_VERSION = "21.0.0"
 BOSS_PASSCODE = "local-dev-passcode"
 BOSS_SESSION_SECRET = "local-dev-session-secret-not-a-real-credential"
 
+# ── INBOUND MAIL: boss@sequoiataylor.com (Email Routing) ──
+#
+# NOTHING IN THIS FILE ENABLES IT, and nothing can. Inbound mail is delivered by an Email Routing
+# RULE on the zone, which lives in the Cloudflare dashboard and not in a Worker's config — so the
+# code below can be deployed and correct while no message ever arrives. That gap is worth naming
+# here rather than discovering as silence.
+#
+# WHAT IS DONE IN CODE. `src/worker/index.ts` `email()` dispatches on the recipient:
+# anything `@sequoiataylor.com` goes to `src/worker/boss/intake/inboundMail.ts`, which authorises on
+# the verified sender and routes on `#firstname` read from the D1 `employees` table.
+#
+# WHAT SHE MUST DO HERSELF, once:
+#   1. Cloudflare dashboard → sequoiataylor.com → Email → Email Routing → Enable.
+#      This installs route1/2/3.mx.cloudflare.net at the APEX. Checked against the live zone on
+#      10 Sep 2026: sequoiataylor.com has NO apex MX today — only `send.sequoiataylor.com`, which is
+#      Resend's bounce path on a different name that Email Routing does not touch. So nothing is
+#      currently delivered to this domain and enabling it takes nothing away. Outbound mail from
+#      boss@ and monique@ through Resend is unaffected: sending needs no MX.
+#   2. Add a custom address `boss@sequoiataylor.com` with the action "Send to a Worker" → `boss-os`.
+#   3. `npx wrangler deploy --env production` so the `email()` handler exists before mail arrives.
+#
+# NO `[[send_email]]` BINDING IS NEEDED FOR THE REPLY, and that is why there is none. The handler
+# answers with `message.reply()`, which is native to an inbound Email Worker: no Workers Paid plan,
+# no Resend key, and no outbound identity that could be aimed at a stranger. It can only ever answer
+# the person who wrote, which is the correct blast radius for a mailbox whose job is talking to one
+# person. Outbound mail that Boss OS initiates still goes through Resend — see the block above.
+
 # Cron Trigger — the ONLY scheduling primitive this system uses (ADR-017).
 # It calls the Worker's scheduled() handler, which runs due jobs from D1. Queues and Durable
 # Objects are deliberately not used. A trigger cannot fire in local `wrangler dev`, so the same
