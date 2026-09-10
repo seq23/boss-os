@@ -139,6 +139,14 @@ jobs:
       - name: The filter says what it dropped
         run: npm run validate:filter-accounts
 
+      # A stale block is not live inventory. `transacted` is a durable fact about a PERSON - it is
+      # why a buyer's mandate never expires - and it once returned an infinite half-life on the sell
+      # side too, so eleven blocks sold in March 2026 crossed against fresh buyers as live supply.
+      # The other half of the rule is asserted here as well: outreach keeps reaching back with no
+      # cutoff, so decaying a cross can never be widened into a blanket age filter.
+      - name: A stale block is not live inventory
+        run: npm run validate:capital-staleness
+
       - name: Build client
         run: npm run build
 

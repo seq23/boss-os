@@ -115,12 +115,25 @@ export const whoKey = (r) => String(r.principal_email ?? r.principal ?? "").toLo
  * decays, and the three inputs are the ones the market actually has: side, size, and nothing else.
  */
 export function halfLifeDays(r) {
-  if (r.durability === "transacted") return Infinity;
   const size = Number(r.size_usd) || (Number(r.size_shares) || 0) * 50; // a rough share mark, only for ranking
+  /*
+   * A SELL ALWAYS DECAYS, INCLUDING A TRANSACTED ONE. `transacted` means "this is who they are" —
+   * a durable fact about a person, and the reason a buyer's mandate never expires. It does NOT mean
+   * the inventory is still there. Before this ordering, `transacted` was checked first and returned
+   * Infinity on either side, so eleven blocks sold in March 2026 scored freshness 1.0 forever and
+   * crossed against fresh buyers as live supply. Her rule, in her words: deals go stale, something
+   * over six months old is likely stale and the matchup will not work — but the same person is
+   * still someone worth calling about something new.
+   *
+   * That second half is why this is safe. `revivals` excludes transacted rows outright and
+   * `assignedSearch` floors freshness at 0.4 with no cutoff, so decaying a sell here dims a stale
+   * CROSS and takes nothing away from OUTREACH, which still reaches back as far as the ledger goes.
+   */
   if (r.side === "sell") {
     // Inventory moves. A block offered nine months ago is usually gone, and saying so is honest.
     return size >= 100e6 ? 90 : 45;
   }
+  if (r.durability === "transacted") return Infinity;
   // A BUYER'S MANDATE PERSISTS, and size is the best available proxy for whether it is institutional.
   if (size >= 1e9) return 540;
   if (size >= 100e6) return 365;
