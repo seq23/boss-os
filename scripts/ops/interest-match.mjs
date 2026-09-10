@@ -182,6 +182,56 @@ function suppress(who) {
   console.log(`  The list is ${SUPPRESS}; delete a line to undo it.`);
 }
 
+// ─── Her own firm, on both sides ─────────────────────────────────────────────
+
+/**
+ * SHE IS A REGISTERED PERSON AT RAINMAKER SECURITIES, SO A RAINMAKER-TO-RAINMAKER CROSS IS NOT A
+ * DEAL SHE BROKERS.
+ *
+ * Her words, 10 September 2026: "monique should not send me cross connections between 2 disparate
+ * emails @rainmakersecurities — those are 2 brokers at my brokerage firm who can cross trades on
+ * their own."
+ *
+ * That is not a taste preference, it is what the pairing IS. Two reps at the same broker-dealer
+ * with the opposite side of one name do not need an introduction — they are down the same hall, on
+ * the same blotter, under the same supervision. Printing it as a "cross worth a call" spends one of
+ * five slots telling her about a trade her own firm can do without her, and does it while looking
+ * exactly like the real thing.
+ *
+ * CONFIRMED ON THE LIVE LEDGER, not reasoned about: the run of 10 Sep returned five crosses and one
+ * of them — Kalshi, mgrosman@ against shamedanchi@ — was precisely this. It scored 0.710, third of
+ * five, so it was not a fringe case being tidied away; it was pushing a genuine pairing off the list.
+ *
+ * ─── ONE SIDE IS STILL A REAL RELATIONSHIP ─────────────────────────────────
+ *
+ * A Rainmaker rep on ONE side is the ordinary shape of her business: her firm holds the paper and
+ * somebody outside wants it, or the reverse. Suppressing those would delete the job. So this fires
+ * only when BOTH sides resolve to the firm, and the same run's other two Rainmaker pairings —
+ * OpenAI and Bytedance, each with an outside counterparty — are untouched.
+ *
+ * ─── WHERE THE ADDRESS ACTUALLY LIVES, AND WHY THIS IS NOT `principal_email` ─
+ *
+ * Not one of the 545 ledger rows carries a `@rainmakersecurities.com` PRINCIPAL address, and 242
+ * carry one as `intermediated_by`. That is correct and permanent: a rep never sends his client's
+ * address, so the ledger records "unnamed client of dknorowski@rainmakersecurities.com". The rep IS
+ * the reachable counterparty for this purpose, which is exactly why the pairing needs no
+ * introduction. Keying this on `principal_email` alone would have matched nothing, passed every
+ * test, and suppressed nothing — this repo's "runs but inert" defect, in one field name.
+ *
+ * `rainmakerapac.com` is deliberately NOT included. It is an affiliate, not the broker-dealer she is
+ * registered with, and she named one domain. Widening it is her call, not a guess made here.
+ */
+export const HER_BROKERAGE_DOMAIN = "rainmakersecurities.com";
+
+/** True when this side of a pairing is reachable through her own broker-dealer. */
+export function atHerBrokerage(r) {
+  const at = new RegExp(`@${HER_BROKERAGE_DOMAIN.replace(/\./g, "\\.")}\\b`, "i");
+  return at.test(String(r?.principal_email ?? "")) || at.test(String(r?.intermediated_by ?? ""));
+}
+
+/** Two brokers at her own firm, either side of one name. Not a cross she is needed for. */
+export const isInternalCoBrokerCross = (b, s) => atHerBrokerage(b) && atHerBrokerage(s);
+
 // ─── The standing cross ──────────────────────────────────────────────────────
 
 export function standingMatches(interests, suppressed, now = Date.now()) {
@@ -195,6 +245,7 @@ export function standingMatches(interests, suppressed, now = Date.now()) {
   }
 
   const out = [];
+  let coBroker = 0;
   for (const [, rows] of byAsset) {
     const buys = rows.filter((r) => r.side === "buy");
     const sells = rows.filter((r) => r.side === "sell");
@@ -207,6 +258,14 @@ export function standingMatches(interests, suppressed, now = Date.now()) {
           * CONF[b.confidence ?? "low"] * CONF[s.confidence ?? "low"]
           * sizeFit(b, s);
         if (score < FLOOR) continue;
+        /*
+         * COUNTED AFTER THE FLOOR, ON PURPOSE, because the honest number is "what was taken off
+         * your list" and not "how many internal pairs exist in the ledger". Those are 34 and 416
+         * respectively on the 10 Sep run — and reporting 416 beside "477 considered" would compare
+         * a pre-floor count against a post-floor one and read as though nine tenths of the market
+         * had been hidden from her. A control she cannot audit is a control she stops trusting.
+         */
+        if (isInternalCoBrokerCross(b, s)) { coBroker += 1; continue; }
         out.push({ asset: s.asset, buy: b, sell: s, score, buyAge: fb.ageDays, sellAge: fs_.ageDays });
       }
     }
@@ -233,7 +292,7 @@ export function standingMatches(interests, suppressed, now = Date.now()) {
     picked.push(m);
     if (picked.length >= CAP) break;
   }
-  return { picked, considered: out.length };
+  return { picked, considered: out.length, coBroker };
 }
 
 // ─── The assigned question ───────────────────────────────────────────────────
@@ -450,14 +509,26 @@ const money = (r) => r.size_text || (r.size_usd ? `$${(r.size_usd / 1e6).toFixed
 const ageWords = (d) => (d < 14 ? `${d}d ago` : d < 90 ? `${Math.round(d / 7)} weeks ago` : `${Math.round(d / 30)} months ago`);
 const who = (r) => `${r.principal}${r.principal_email && r.principal_email !== r.principal ? ` <${r.principal_email}>` : ""}`;
 
-function renderStanding(picked, considered) {
+/**
+ * THE FILTER SAYS WHAT IT DROPPED. `validate:filter-accounts` exists because a silent filter in this
+ * codebase has twice been indistinguishable from a broken one — and a suppression she cannot see is
+ * a suppression she cannot correct.
+ */
+const coBrokerLine = (n) => (n > 0
+  ? [`${n} pairing(s) were internal to ${HER_BROKERAGE_DOMAIN} on BOTH sides and are not shown — `
+     + "two brokers at your own firm can cross that themselves.", ""]
+  : []);
+
+function renderStanding(picked, considered, coBroker = 0) {
   if (picked.length === 0) {
     return ["No cross worth a call today.",
       `${considered} pairing(s) were considered and none cleared the bar. That is a real answer:`,
       "the ledger holds both sides of a market and today they do not meet on the same name.",
+      ...coBrokerLine(coBroker),
     ].join("\n");
   }
-  const lines = [`${picked.length} cross${picked.length === 1 ? "" : "es"} worth a call, out of ${considered} pairing(s) considered.`, ""];
+  const lines = [`${picked.length} cross${picked.length === 1 ? "" : "es"} worth a call, out of ${considered} pairing(s) considered.`,
+    "", ...coBrokerLine(coBroker)];
   for (const m of picked) {
     lines.push(`${m.asset.toUpperCase()}`);
     lines.push(`  BUY   ${money(m.buy)}   ${who(m.buy)}   ${ageWords(m.buyAge)}${m.buy.durability === "transacted" ? " · has transacted" : ""}`);
@@ -557,8 +628,8 @@ async function main() {
         ? `${rev.picked.length} unfilled — ${[...new Set(rev.picked.map((x) => x.row.asset))].join(", ")}`
         : "No open interest worth reviving";
     } else {
-      const { picked, considered } = standingMatches(usable, suppressed);
-      body = [renderStanding(picked, considered), "",
+      const { picked, considered, coBroker } = standingMatches(usable, suppressed);
+      body = [renderStanding(picked, considered, coBroker), "",
         "─────────────────────────────────────────────────────────────",
         "", "WORTH GOING BACK TO — they said what they wanted and never got it", "",
         renderRevivals(rev)].join("\n");
