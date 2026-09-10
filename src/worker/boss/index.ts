@@ -29,6 +29,7 @@ import { packets } from "./routes/packets";
 import { lp } from "./routes/lp";
 import { diaryRoutes } from "./routes/diary";
 import { deliverables } from "./routes/deliverables";
+import { capital } from "./routes/capital";
 import { prompt } from "./routes/prompt";
 import { capability, runCapabilityCadence } from "./routes/capability";
 import { governance } from "./routes/governance";
@@ -148,6 +149,8 @@ app.route("/api/lp", lp);
 app.route("/api/diary", diaryRoutes);
 // The register of owned work. The escalating half of it lands on Today; this is the list itself.
 app.route("/api/deliverables", deliverables);
+// Her live book, so Monique's local buyer hunt reads the same inventory the intake filed.
+app.route("/api/capital", capital);
 app.route("/api/prompt", prompt);
 app.route("/api/capability", capability);
 app.route("/api/governance", governance);

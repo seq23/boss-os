@@ -95,7 +95,8 @@
     "validate:capital-staleness": "node scripts/validate/capital-staleness.mjs",
     "capital:buyers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs",
     "validate:boss-intake": "node scripts/validate/boss-intake-is-boss-only.mjs && node scripts/validate/boss-intake-is-boss-only.mjs --self-test",
-    "validate:employee-tags": "node scripts/validate/every-employee-has-a-reachable-tag.mjs && node scripts/validate/every-employee-has-a-reachable-tag.mjs --self-test"
+    "validate:employee-tags": "node scripts/validate/every-employee-has-a-reachable-tag.mjs && node scripts/validate/every-employee-has-a-reachable-tag.mjs --self-test",
+    "capital:book": "node scripts/vault/vault.mjs run -- node scripts/ops/capital-book.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

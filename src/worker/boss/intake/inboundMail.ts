@@ -123,19 +123,43 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const dmarc = dmarcPassed(message.headers.get("authentication-results"));
   const authorised = isOwner(sender) && dmarc;
 
-  const record = async (row: {
-    outcome: string; why: string; tag?: string | null; employeeId?: string | null;
-    taskId?: string | null; objectKey?: string | null; replied?: boolean;
-  }) => {
+  /*
+   * ─── THE ARRIVAL IS RECORDED FIRST, AND THE OUTCOME IS FILLED IN AFTER ────
+   *
+   * This used to be a single INSERT at the END of the handler, and it was wrong twice over.
+   *
+   * IT BROKE HER BOOK. `capital_book.mail_id` references this row, and the book is filed before the
+   * end of the handler — so filing a book threw `FOREIGN KEY constraint failed` and the message was
+   * lost with nothing but a console line. Caught by the end-to-end test rather than by review; the
+   * unit-level parser tests all passed, because the parser was never the problem.
+   *
+   * AND IT MADE EVERY CRASH SILENT. A throw anywhere between the sender check and the last line
+   * meant no row at all — an arrival with no trace, which is the exact failure this mailbox is
+   * written to prevent. Recording on arrival means the worst case is a row that says the outcome is
+   * still RECEIVED, which is a visible loose end rather than a message that never existed.
+   */
+  const recordArrival = async (outcome: string, why: string) => {
     await env.DB.prepare(
       `INSERT INTO boss_inbound_mail
-         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, tag, employee_id,
-          outcome, why, task_id, object_key, bytes, replied_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400),
-      row.tag ?? null, row.employeeId ?? null, row.outcome, row.why.slice(0, 1000),
-      row.taskId ?? null, row.objectKey ?? null, message.rawSize, row.replied ? now : null,
+      outcome, why.slice(0, 1000), message.rawSize,
+    ).run();
+  };
+
+  const finish = async (row: {
+    outcome: string; why: string; tag?: string | null; employeeId?: string | null;
+    taskId?: string | null; objectKey?: string | null;
+  }) => {
+    await env.DB.prepare(
+      `UPDATE boss_inbound_mail
+          SET outcome = ?, why = ?, tag = ?, employee_id = ?, task_id = ?, object_key = ?
+        WHERE id = ?`,
+    ).bind(
+      row.outcome, row.why.slice(0, 1000), row.tag ?? null, row.employeeId ?? null,
+      row.taskId ?? null, row.objectKey ?? null, mailId,
     ).run();
   };
 
@@ -151,7 +175,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     const why = isOwner(sender)
       ? `From ${sender}, which is one of yours, but DMARC did not pass — so the address was not proven and nothing was run.`
       : `From ${sender}, which is not one of your addresses. Recorded and refused.`;
-    await record({ outcome: "REFUSED_SENDER", why });
+    await recordArrival("REFUSED_SENDER", why);
     await audit(env.DB, {
       actor: "system", lane: "ops", entityType: "inbound_mail", entityId: mailId,
       action: "refused", detail: { from: sender, dmarc, to },
@@ -163,6 +187,13 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     return { mailId, outcome: "REFUSED_SENDER", employeeId: null, taskId: null, reply: null };
   }
 
+  /*
+   * The arrival exists from here on, whatever happens next. `finish` fills in the outcome; a row
+   * left saying RECEIVED is a message this handler started and did not complete, which is a thing
+   * she can find rather than a message that silently never existed.
+   */
+  await recordArrival("RECEIVED", "Authorised and being routed.");
+
   const roster = await activeRoster(env);
   if (roster.length === 0) {
     /*
@@ -170,7 +201,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
      * routing "to the default" out of an empty list would invent a destination. The message is kept
      * and the failure is loud.
      */
-    await record({ outcome: "NO_ROSTER", why: "No active employee could be read from D1, so nothing could take this. The message is recorded and unworked." });
+    await finish({ outcome: "NO_ROSTER", why: "No active employee could be read from D1, so nothing could take this. The message is recorded and unworked." });
     await logEvent(env.DB, { level: "error", scope: "intake", event: "boss_mail_no_roster", lane: "ops", entityId: mailId, detail: { to } });
     return { mailId, outcome: "NO_ROSTER", employeeId: null, taskId: null, reply: null };
   }
@@ -276,7 +307,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
   ].join("\n");
 
-  await record({ outcome, why, tag: route.tag, employeeId: route.seat.id, taskId, objectKey, replied: false });
+  await finish({ outcome, why, tag: route.tag, employeeId: route.seat.id, taskId, objectKey });
   await audit(env.DB, {
     actor: "boss", lane: route.seat.lane, entityType: "inbound_mail", entityId: mailId,
     action: "routed", detail: { to, from: sender, tag: route.tag, employee: route.seat.id, outcome, task_id: taskId },
