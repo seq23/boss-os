@@ -65,6 +65,14 @@ const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null 
 const LIMIT = Number(argOf("limit") ?? 0);
 
 const FIRM = "rainmakersecurities.com";
+/**
+ * SHE IS NEVER THE PRINCIPAL IN HER OWN LEDGER, and the first live review set showed why this has to
+ * be enforced here rather than asked for in the prompt. One row read `principal: Sequoia Taylor
+ * <staylor@spry.vc>` on a sell of OpenAI — her own outbound mail relaying somebody else's block.
+ * Left in, the matcher would eventually recommend that she call herself, or count her as a
+ * counterparty at size she does not hold.
+ */
+const HERSELF = /staylor@spry\.vc|sequoia@westpeek\.ventures|seq\.taylor@gmail\.com/i;
 
 /**
  * ─── HOW THIS IS ACTUALLY VERIFIED, AND WHY IT IS NOT RECALL ───────────────
@@ -194,6 +202,7 @@ export function admissible(row, msg) {
    */
   const pe = String(row.principal_email ?? "").toLowerCase();
   if (pe.endsWith(`@${FIRM}`)) return "principal is at her own firm";
+  if (HERSELF.test(pe) || HERSELF.test(String(row.principal))) return "principal is the owner herself";
   if (/@|^https?:/i.test(String(row.asset))) return "asset is an address or a link";
   if (row.confidence && !["high", "medium", "low"].includes(row.confidence)) return "bad confidence";
   if (row.source_message && msg && row.source_message !== msg.source_message) return "source id does not match";
