@@ -21,7 +21,7 @@
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { halfLifeDays, freshness, standingMatches, assignedSearch, revivals } from "../ops/interest-match.mjs";
+import { halfLifeDays, freshness, standingMatches, assignedSearch, revivals, atHerBrokerage, HER_BROKERAGE_DOMAIN } from "../ops/interest-match.mjs";
 
 const NOW = Date.parse("2026-09-10T12:00:00Z");
 const row = (o) => ({ asset: "Polymarket", confidence: "high", ...o });
@@ -101,9 +101,68 @@ check("the live ledger offers no stale-sell cross", () => {
     `${stale.length} live cross(es) rest on a sell older than six months: ${stale.map((m) => `${m.asset} sell ${m.sellAge}d`).join(", ")}`);
 });
 
+/*
+ * ─── 8. TWO BROKERS AT HER OWN FIRM ARE NOT A CROSS SHE BROKERS ─────────────
+ *
+ * Her words, 10 September 2026: "monique should not send me cross connections between 2 disparate
+ * emails @rainmakersecurities — those are 2 brokers at my brokerage firm who can cross trades on
+ * their own."
+ *
+ * ONE SIDE IS STILL A REAL DEAL, and that half needs guarding at least as much as the suppression
+ * does: a well-meaning widening of this rule would delete the ordinary shape of her business, where
+ * her firm holds the paper and an outside buyer wants it.
+ *
+ * AND IT MUST KEY ON `intermediated_by`. Not one of the 545 rows in the live ledger carries a
+ * `@rainmakersecurities.com` PRINCIPAL address and 242 carry one as the intermediary, because a rep
+ * never sends his client's address. A version of this that only read `principal_email` would
+ * suppress nothing, examine nothing, and pass — this repo's "runs but inert" defect in one field
+ * name. The last assertion is the guard against exactly that.
+ */
+const rmBuy = { asset: "Kalshi", side: "buy", confidence: "high", durability: "wants_now",
+  date: "2026-09-01", size_usd: 20e6, principal: "unnamed client of A", intermediated_by: "mgrosman@rainmakersecurities.com" };
+const rmSell = { asset: "Kalshi", side: "sell", confidence: "high", durability: "wants_now",
+  date: "2026-09-01", size_usd: 20e6, principal: "unnamed client of B", intermediated_by: "shamedanchi@rainmakersecurities.com" };
+const outsideBuy = { ...rmBuy, principal: "Outside Buyer", intermediated_by: "colton@hiive.com" };
+
+check("both sides at her own firm is suppressed", () => {
+  const r = standingMatches([rmBuy, rmSell], new Set(), NOW);
+  assert.equal(r.picked.length, 0, "a Rainmaker-to-Rainmaker cross was recommended to her");
+  assert.equal(r.coBroker, 1, `the suppression was not counted (coBroker=${r.coBroker}); a filter she cannot see is one she cannot correct`);
+});
+
+check("one side at her own firm is a real co-broker deal and survives", () => {
+  const r = standingMatches([outsideBuy, rmSell], new Set(), NOW);
+  assert.equal(r.picked.length, 1, "an outside buyer against a Rainmaker seller was suppressed — that is the business, not a conflict");
+  assert.equal(r.coBroker, 0, "a legitimate one-sided pairing was counted as an internal cross");
+});
+
+check("the firm is detected on intermediated_by, not only principal_email", () => {
+  assert.ok(atHerBrokerage({ intermediated_by: "msutic@rainmakersecurities.com" }),
+    "a rep on intermediated_by was not recognised — this is how 242 of 545 live rows carry the firm, so the rule would be inert");
+  assert.ok(atHerBrokerage({ principal_email: "someone@rainmakersecurities.com" }), "a direct principal address was not recognised");
+  assert.ok(!atHerBrokerage({ intermediated_by: "colton@hiive.com" }), "an outside firm was treated as hers");
+  assert.ok(!atHerBrokerage({ principal_email: null, intermediated_by: null }), "an empty row was treated as hers");
+});
+
+// HARD-FAIL ON ZERO EXAMINED: the rule must be exercised against the real ledger, not only fixtures.
+check("the live ledger actually exercises the co-broker rule", () => {
+  const path = `${process.env.HOME}/.boss-os/capital/ledger.json`;
+  const all = JSON.parse(fs.readFileSync(path, "utf8")).interests ?? [];
+  assert.ok(all.length > 0, `${path} holds no interests — this check examined nothing`);
+  const atFirm = all.filter(atHerBrokerage).length;
+  assert.ok(atFirm > 0,
+    `0 of ${all.length} live rows resolve to ${HER_BROKERAGE_DOMAIN}. Either the ledger no longer records the `
+    + "intermediary or the domain has changed — either way this suppression is guarding nothing.");
+  const r = standingMatches(all, new Set(), Date.now());
+  for (const m of r.picked) {
+    assert.ok(!(atHerBrokerage(m.buy) && atHerBrokerage(m.sell)),
+      `${m.asset} was recommended with your own firm on both sides: ${m.buy.intermediated_by} <> ${m.sell.intermediated_by}`);
+  }
+});
+
 if (fails.length) {
   console.error(`CAPITAL STALENESS FAIL (${fails.length}):`);
   for (const f of fails) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log("CAPITAL STALENESS PASS: 8 behavioural assertions — a sell decays on either durability, six months reads as stale, a buyer's mandate stays durable, a stale sell cannot cross while a fresh one still does, and outreach reaches back with no cutoff. Live ledger offers 0 stale-sell crosses.");
+console.log("CAPITAL STALENESS PASS: 12 behavioural assertions — a sell decays on either durability, six months reads as stale, a buyer's mandate stays durable, a stale sell cannot cross while a fresh one still does, and outreach reaches back with no cutoff. Two brokers at her own firm never cross; one side still does. Live ledger offers 0 stale-sell crosses and 0 internal co-broker crosses.");
