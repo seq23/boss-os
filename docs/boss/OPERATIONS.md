@@ -496,6 +496,101 @@ after that was fixed. Named now, and `validate:duty-delivery` fails the build on
 
 ---
 
+## The interest ledger — the market that was already in your mailbox
+
+**Added 9 September 2026.** Both sides of a market have been sitting in `staylor@spry.vc` the whole
+time: somebody wanted SpaceX in March, somebody is selling it this week, and 104,241 messages sit
+between them. **The monitoring was never the point. The matching is the product** — and you cannot
+match on prose, so the work was turning the mailbox into a ledger with a shape:
+
+> **principal** · **side** · **asset** · **size** · **date** · **confidence** · **intermediated_by**
+> · **source_message**
+
+That produces no screen and no button, which is exactly why it was ninety per cent of the job.
+
+**Three scripts, and the split between them is the safety story.**
+
+| | |
+|---|---|
+| `interest-ledger.mjs` | Reads the mailbox. **Sends nothing to any model.** Two filter stages, and it reports what it discarded by named reason |
+| `interest-extract.mjs` | Turns candidates into ledger rows through **Haiku**. **Never touches Gmail** |
+| `interest-match.mjs` | Crosses the two sides. Reads only the ledger |
+
+**The filter throws away bulk structurally, not by guessing.** `List-Unsubscribe` is a header every
+legitimate marketing sender sets and no person writing to you ever does; the same for `Precedence`,
+`Auto-Submitted`, no-reply senders and out-of-office subjects. Those are facts about a message. Only
+then does it ask for the shape of a trade: a **size** — dollars **or a share count**, because "I
+have 40k shares of X available" is exactly the inbound supply you want and contains no dollars — and
+a **side**.
+
+**There is no list of company names anywhere in it, deliberately.** A fixed list of SpaceX,
+ByteDance and Stripe would raise precision this week and start missing next quarter's name for ever,
+silently. Money plus side vocabulary catches companies nobody typed into a config, and after one
+pass the ledger itself becomes the name source. `validate:filter-accounts` fails the build if a
+company name ever enters the filter's code.
+
+**Nobody at Rainmaker is ever the principal, and their name is kept anyway.** A co-broker writing
+"my client wants SpaceX at this mark" is genuine market interest that arrived through a route — so
+their client is the principal and the co-broker goes in `intermediated_by`. In a co-brokered deal
+the route *is* the deal.
+
+**Compliance mail is not classified at all.** The test is never "is this compliance" — it is "does
+this contain an asset, a side and a size". Compliance and internal chatter produce no interest, so
+nothing about them is stored or summarised. Read to decide, keep only what qualifies, discard the
+rest.
+
+**The matching inverts the filter's bias.** The filter is generous because a dropped message is a
+deal you never learn you missed. The matcher is strict because **one bad call outweighs ten missed
+matches** — calling somebody about stock they never wanted costs credibility in a small market. High
+threshold, every match shows its evidence and its age, at most five, and `--not "<address>"` removes
+somebody for good.
+
+**No matching window, because a cliff loses real deals.** The ledger holds two things that behave
+differently: **has transacted in X** is a durable fact about who somebody is and never expires,
+while **wants X right now** is perishable. Decay is a curve — a seller's interest fades fastest
+because inventory moves, a buyer's mandate persists, and size predicts durability: a $2B ByteDance
+buyer is an institution with a standing mandate, a $2M buyer is often opportunistic.
+
+**It never leaves this Mac.** Named counterparties, assets and sizes do not reach the Boss OS
+database — not code-named, not counted. This is live transaction data at a FINRA-registered
+broker-dealer. The ledger is `~/.boss-os/capital/ledger.json`, the matches come to your own inbox
+from `monique@sequoiataylor.com`, and Boss OS is told nothing at all.
+
+**Monique can read spry.vc and can never send from it.** Already true three ways — no send scope was
+granted, spry.vc is verified in neither Resend account, and every employee is addressed at
+sequoiataylor.com — and none of the three was written down anywhere. `validate:no-spry-sender` now
+fails the build on an outbound identity, a sender envelope, or any impersonating script that
+acquires a Gmail write scope.
+
+**It is a revival engine, not a reconciliation, and that was a correction.** It was built the wrong
+way round first: leaning on "has transacted in X" as the durable signal and treating a live
+expression of interest as the perishable half. Your words fixed it — *"i havent done any deals in a
+while thats the whole point of having this agent help me drum up business."* So the durable half is
+thin, and **the value moves entirely to the conversations**: the buyer who wanted SpaceX in March
+and heard nothing since, the seller who never found a counterparty, the firm that asked what you had
+and got a vague answer. **An interest that never closed is more actionable than one that did** — the
+closed one is done, the open one is a phone call. The daily email is two sections for that reason:
+the crosses, then *worth going back to*.
+
+**How it is verified: precision, judged by you, on twenty-five rows.** Recall against a book of
+closed deals is impossible here, and precision matters more anyway — a wrong row becomes a phone
+call about stock somebody never wanted.
+
+```bash
+npm run capital:review                    # 25 rows, highest confidence first
+npm run capital:review -- --wrong <id>    # that one is wrong: struck everywhere, and counted
+```
+
+**Each row carries the sentence out of the message that produced it**, which is the whole point: you
+are checking a row against a real sentence rather than agreeing with a summary of a message you
+cannot see. A row with no quote is refused outright, and a ledger where nothing carries one is a
+named stop rather than a screen reporting nothing to review. **If most are right it works. If a
+third are wrong it does not** — and the errors show their own pattern: over-reading vague language,
+mistaking a co-broker for a principal, catching a discussion about a company rather than an interest
+in its stock.
+
+---
+
 ## Commands worth knowing
 
 ```bash
@@ -511,6 +606,16 @@ npm run crossmatch                # firms on both the LP list and the buyer list
 npm run canon:sync                # store the docs/boss/ documents in the vault, hashed
 npm run kdp:check                 # run Simone's KDP watch now, instead of waiting for Mon/Wed/Fri
 npm run mailbox:sweep             # run Monique's mailbox sweep now, instead of waiting for Sunday
+npm run capital:scan -- --backfill    # read the whole spry.vc history into candidate messages
+npm run capital:scan                  # ...or only what has arrived since the last scan
+npm run capital:extract               # candidates into the interest ledger (Haiku, on this Mac)
+npm run capital:review                # 25 rows with the sentence behind each — the acceptance test
+npm run capital:review -- --wrong <id>   # that row was wrong: struck everywhere, and counted
+npm run capital:match                 # who fits whom right now, at most five, each with its reason
+npm run capital:match -- --find SpaceX --side buy --size 250000000
+npm run capital:match -- --revive     # only the leads: interests expressed and never filled
+npm run capital:match -- --nudge      # the monthly note: three people, anchored on the company
+npm run capital:match -- --not "someone@example.com"   # never recommend this person again
 npm run credentials:check         # are the logins still working? four real calls, about a cent
 npm run kdp:covers                # put the covers in ~/.boss-os/kdp/covers/final/ in your Inbox
 npm run kdp:resume                # she approved; start Simone now rather than waiting for Friday
@@ -533,6 +638,8 @@ These exist because each of them caught something real.
 | Validator | What it asks |
 |---|---|
 | `validate:reachable` | Is every built thing reachable from her day? |
+| `validate:no-spry-sender` | Can anything in here send mail *as* the brokerage mailbox? It must never be able to |
+| `validate:filter-accounts` | Does the mailbox filter say what it threw away, and has a company name crept into it? |
 | `validate:classification` | Does every Boss table have a residency, and every policy row a table? |
 | `validate:gmail` | Does every Gmail caller still request only headers — and is the one content exception still narrow? |
 | `validate:duty-delivery` | Does every duty's output have a handler, a table, and a way to her? For a **local job**, does a route write the table and does a script actually POST to it? |
