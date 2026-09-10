@@ -19,6 +19,7 @@ import { pendingApprovals } from "../approvals/pending";
 import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from "../today/runOfShow";
 import { coachingFocus, lensFor } from "../today/faculty";
 import { deliverableAlerts } from "../today/deliverables";
+import { bookNagAlerts } from "../capital/bookNag";
 import { credentialAlerts } from "../today/credentials";
 import { diary } from "../today/diary";
 import { alertKey, applyDismissals } from "../today/alerts";
@@ -811,6 +812,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * not share a failure mode with the work: the report reaches her whether or not the mailbox does.
    */
   alerts.push(...(await credentialAlerts(env, now).catch(() => [])));
+  /*
+   * MONIQUE ASKING FOR THE BOOK. Evaluated on read, beside the other two, for the same reason: a
+   * standing ask that depends on a cron dies with the cron and says nothing. See capital/bookNag.ts
+   * for why this is not an `owned_deliverables` row — that mechanism completes, and this condition
+   * comes back every week.
+   */
+  alerts.push(...(await bookNagAlerts(env, now).catch(() => [])));
   if (tradingAuthority?.kill_switch) {
     alerts.push({ severity: "critical", text: "The trading kill switch is engaged. Nothing in that lane executes.", source_type: "trading", source_id: null });
   }
