@@ -494,6 +494,56 @@ launchctl unload "$MAILBOX_PLIST" 2>/dev/null || true
 launchctl load "$MAILBOX_PLIST"
 echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
 
+# ─── Danielle's weekly Ahrefs audit pass ─────────────────────────────────────
+#
+# THURSDAY 06:00 CENTRAL, AND THE HOUR IS DERIVED. Every Site Audit mail from sa@ahrefs.com was
+# timed before this was chosen: Thu 27 Aug 02:20-02:31 UTC, Thu 3 Sep 01:07-03:58, Thu 10 Sep
+# 01:07-02:42. Ahrefs recrawls the account weekly and delivers overnight into Thursday UTC, which is
+# Wednesday evening here. 06:00 Central is 11:00 UTC - seven hours after the latest arrival ever
+# observed, and the start of her Thursday, so a PR she has to merge is waiting when she opens the
+# machine. Running BEFORE the batch lands would grade last week's crawl.
+#
+# A LOCAL JOB AND NOT AN AGENT, for three separate reasons: it reads the contents of her mailbox,
+# which the Claude Code runner cannot; it needs working copies, git and gh, which a Worker has none
+# of; and it proves each fix with that repository's own validators, which means running them.
+AHREFS_LABEL="com.seq.boss-ahrefs-audit"
+AHREFS_PLIST="$HOME/Library/LaunchAgents/$AHREFS_LABEL.plist"
+AHREFS_LOGS="$HOME/Library/Logs/ahrefs-audit-fix"
+
+mkdir -p "$AHREFS_LOGS" "$HOME/.boss-os/site-audit"
+chmod +x "$REPO/scripts/ops/ahrefs-audit-fix.sh"
+
+ln -sfn "$REPO/scripts/ops/ahrefs-audit-fix.sh" "$HOME/bin/ahrefs-audit-fix.sh"
+ln -sfn "$REPO/scripts/ops/ahrefs-audit-fix-prompt.md" "$HOME/bin/ahrefs-audit-fix-prompt.md"
+
+cat > "$AHREFS_PLIST" <<AHREOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$AHREFS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>$REPO/scripts/ops/ahrefs-audit-fix.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$AHREFS_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$AHREFS_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+AHREOF
+
+launchctl unload "$AHREFS_PLIST" 2>/dev/null || true
+launchctl load "$AHREFS_PLIST"
+echo "Installed $AHREFS_LABEL — Thursday 06:00 Central."
+
 # ─── Monique's LP reply digest ───────────────────────────────────────────────
 #
 # "an employee can keep track of all the opt outs and replies and send me an inbox daily summary to
@@ -717,6 +767,9 @@ loaded "$POSITIVE_LABEL" || missing="$missing $POSITIVE_LABEL"
 [ -f "$REPO/scripts/ops/kdp-watch-prompt.md" ] || missing="$missing scripts/ops/kdp-watch-prompt.md"
 [ -L "$HOME/bin/mailbox-sweep-prompt.md" ] || missing="$missing ~/bin/mailbox-sweep-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/mailbox-sweep-prompt.md" ] || missing="$missing scripts/ops/mailbox-sweep-prompt.md"
+[ -L "$HOME/bin/ahrefs-audit-fix.sh" ] || missing="$missing ~/bin/ahrefs-audit-fix.sh(symlink)"
+[ -L "$HOME/bin/ahrefs-audit-fix-prompt.md" ] || missing="$missing ~/bin/ahrefs-audit-fix-prompt.md"
+[ -f "$REPO/scripts/ops/ahrefs-audit-fix-prompt.md" ] || missing="$missing scripts/ops/ahrefs-audit-fix-prompt.md"
 [ -L "$HOME/bin/lp-replies-prompt.md" ] || missing="$missing ~/bin/lp-replies-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/lp-replies-prompt.md" ] || missing="$missing scripts/ops/lp-replies-prompt.md"
 [ -L "$HOME/bin/kdp-surface-prompt.md" ] || missing="$missing ~/bin/kdp-surface-prompt.md(symlink)"
