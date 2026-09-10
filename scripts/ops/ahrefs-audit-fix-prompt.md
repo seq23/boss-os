@@ -43,7 +43,37 @@ The subject line carries the Ahrefs project name in parentheses and the finding 
 (Spryexecutiveos) Site Audit crawl error
 ```
 
-The body carries the health score and the error/warning/notice counts with their week-on-week delta.
+The body carries the health score and the error/warning/notice counts with their week-on-week delta,
+then a "Top Issues" table of issue names and counts.
+
+### THE MAIL NEVER CONTAINS THE URLs, AND THAT IS THE WHOLE METHOD
+
+Read one and you will see: `Page has links to broken page | 11 | View →` — a class, a count, and a
+link into `app.ahrefs.com` that needs a login. **There is no list of the eleven pages anywhere in
+the message.** A run that treats the mail as the finding would read a number it cannot act on, file
+it, and change nothing: this system's most-shipped defect, which it calls "runs but inert".
+
+**So the mail tells you WHICH SITE and WHAT CLASS OF PROBLEM. You derive the URLs yourself.** That
+is how the hand-run that this duty is modelled on actually worked, and it needs no Ahrefs login:
+
+1. Fetch `https://<domain>/sitemap.xml` and take the page list from it.
+2. For the classes that are checkable from outside — `4XX page`, `404 page`,
+   `Page has links to broken page`, `3XX redirect`, `Orphan page` — fetch the pages and resolve
+   every internal `href` and `src` against the page's own URL. A `src="assets/…"` on a page served
+   at `/answers/x` resolves to `/answers/assets/…`; that is a relative-path bug and it is exactly
+   what produced 2,703 errors on one of these sites.
+3. Confirm each broken URL with a real request before you call it broken. A count from an email is
+   not evidence; a 404 you reproduced is.
+4. Then find the SOURCE that emits it — the template, the partial, the assembler's deny-list, the
+   generator — and fix it there.
+
+If a class cannot be checked from outside (`Slow page`, `Slow server response for AI crawlers`,
+`Changed pages not submitted to IndexNow`), do not guess at it. Report it `surfaced` with the count
+and say what a person would have to open to see the list.
+
+**Nothing is fixed that was not reproduced.** A finding you could not confirm is `surfaced`, never
+`fixed_pr`. Her bar is that empty-handed beats trash, and a speculative PR in one of her
+repositories is trash with a branch name.
 
 ---
 
