@@ -794,27 +794,42 @@ for _ in $(seq 1 20); do
   sleep 1
 done
 
+# ─── ONE LIST, BUILT AS IT IS CHECKED ────────────────────────────────────────
+#
+# This verifier used to keep THREE lists: the `loaded &&` wait above, these checks, and a hardcoded
+# sentence at the bottom naming the labels. Adding com.seq.kdp-publish exposed it immediately — the
+# job installed, the check passed, and the summary did not mention it, which is the "two components
+# each keeping their own list" defect inside the very script that installs the fix for it.
+#
+# `want` is now the single list. Every label checked is appended, and the summary prints what was
+# checked rather than what somebody remembered to type.
 missing=""
-loaded "$LABEL" || missing="$missing $LABEL"
-loaded "$PACKET_LABEL" || missing="$missing $PACKET_LABEL"
-loaded "$NETWORK_LABEL" || missing="$missing $NETWORK_LABEL"
-loaded "$PROPS_LABEL" || missing="$missing $PROPS_LABEL"
+checked=""
+require_loaded() { checked="$checked $1"; loaded "$1" || missing="$missing $1"; }
+require_loaded "$LABEL"
+require_loaded "$PACKET_LABEL"
+require_loaded "$NETWORK_LABEL"
+require_loaded "$PROPS_LABEL"
 # ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a
 # "Verified" line that did not mention it — the installer and its own verifier each keeping their own
 # list of jobs, which is the defect this file's comments warn about, inside this file.
-loaded "$PEOPLE_LABEL" || missing="$missing $PEOPLE_LABEL"
-loaded "$KDP_LABEL" || missing="$missing $KDP_LABEL"
-loaded "$MAILBOX_LABEL" || missing="$missing $MAILBOX_LABEL"
-loaded "$CRED_LABEL" || missing="$missing $CRED_LABEL"
-loaded "$LP_LABEL" || missing="$missing $LP_LABEL"
-loaded "$SURFACE_LABEL" || missing="$missing $SURFACE_LABEL"
+require_loaded "$PEOPLE_LABEL"
+require_loaded "$KDP_LABEL"
+require_loaded "$MAILBOX_LABEL"
+require_loaded "$CRED_LABEL"
+require_loaded "$LP_LABEL"
+require_loaded "$SURFACE_LABEL"
+# The acting KDP job. Added here at the same time as its stanza, because this verifier keeps its own
+# list and a job installed but unverified is the half-wired state that lets an absence go unnoticed —
+# which is how kdp-publish came not to exist for two days in the first place.
+require_loaded "$PUBLISH_LABEL"
 # ADDED WITH THE JOBS, NOT AFTERWARDS — for the second time, and the note above is why. Four jobs
 # were installed on 9 September and the "Verified" line named none of them: it loaded them, said
 # nothing about them, and would have kept reporting a clean install if any had failed to load.
-loaded "$CAPITAL_LABEL" || missing="$missing $CAPITAL_LABEL"
-loaded "$NUDGE_LABEL" || missing="$missing $NUDGE_LABEL"
-loaded "$SHEET_LABEL" || missing="$missing $SHEET_LABEL"
-loaded "$POSITIVE_LABEL" || missing="$missing $POSITIVE_LABEL"
+require_loaded "$CAPITAL_LABEL"
+require_loaded "$NUDGE_LABEL"
+require_loaded "$SHEET_LABEL"
+require_loaded "$POSITIVE_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
@@ -831,7 +846,7 @@ loaded "$POSITIVE_LABEL" || missing="$missing $POSITIVE_LABEL"
 [ -f "$REPO/scripts/ops/kdp-surface-prompt.md" ] || missing="$missing scripts/ops/kdp-surface-prompt.md"
 
 if [ -z "$missing" ]; then
-  echo "Verified: launchd lists $LABEL, $PACKET_LABEL, $NETWORK_LABEL, $PEOPLE_LABEL, $PROPS_LABEL, $KDP_LABEL, $MAILBOX_LABEL, $CRED_LABEL, $LP_LABEL, $SURFACE_LABEL, $CAPITAL_LABEL, $NUDGE_LABEL, $SHEET_LABEL and $POSITIVE_LABEL."
+  echo "Verified: launchd lists$checked."
 else
   echo "NOT INSTALLED:$missing — launchd does not list these after load."
   exit 1
