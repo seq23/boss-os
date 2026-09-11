@@ -200,7 +200,7 @@ cat > "$PEOPLE_PLIST" <<PEOPLEEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent people:recommend -- --send</string>
+    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh people-worth-a-call.mjs -- npm run --silent people:recommend -- --send</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -250,7 +250,7 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent capital:scan; cd $REPO && npm run --silent capital:extract; cd $REPO && npm run --silent capital:match -- --send</string>
+    <string>cd $REPO && npm run --silent capital:scan; cd $REPO && bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO && npm run --silent capital:match -- --send</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -279,7 +279,7 @@ cat > "$NUDGE_PLIST" <<NUDGEEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent capital:match -- --nudge --send</string>
+    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh interest-match.mjs -- npm run --silent capital:match -- --nudge --send</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -373,7 +373,7 @@ cat > "$KDP_PLIST" <<KDPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>$REPO/scripts/ops/kdp-watch.sh</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh kdp-watch.sh -- bash $REPO/scripts/ops/kdp-watch.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -423,7 +423,7 @@ cat > "$SURFACE_PLIST" <<SURFEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>$REPO/scripts/ops/kdp-surface.sh</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh kdp-surface.sh -- bash $REPO/scripts/ops/kdp-surface.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -440,6 +440,61 @@ SURFEOF
 launchctl unload "$SURFACE_PLIST" 2>/dev/null || true
 launchctl load "$SURFACE_PLIST"
 echo "Installed $SURFACE_LABEL — daily 09:30 Central."
+
+# ─── Simone ACTING: the covers she approved, put up, and Publish pressed ─────
+#
+# THE JOB THAT DID NOT EXIST, AND ITS ABSENCE COST TWO DAYS.
+#
+# On 9 September at 14:00 seven replacement covers were raised in her Inbox. At 14:30 she approved
+# them. `approvals/resume.ts` fired its `kdp_cover_upload` handler, stamped `executed_at`, wrote
+# `execution_status = 'executed'` — and its entire effect was a sentence on the deliverable saying
+# what Simone would do on her NEXT RUN. No run does it. The two KDP jobs above are `claude -p`
+# processes that read Amazon and report, and a scheduled `claude -p` has no browser tools at all.
+#
+# So this is not a missing approval or a missing consumer. It is a consumer that recorded an
+# intention, stamped a receipt, and handed off to a scheduled run THAT WAS NEVER SCHEDULED. This
+# stanza is that run, and `validate:approval-promise` now fails the build if a resume handler ever
+# again promises work to a job nothing installs.
+#
+# 09:45, after the case watch (09:23) and the triage (09:30), so the three never race for a session
+# and this one runs with the day's determination already filed.
+#
+# IT ASKS HER FOR NOTHING. Her approval is found and acted on; no judgement call is raised and
+# nothing she has not approved is ever published.
+PUBLISH_LABEL="com.seq.kdp-publish"
+PUBLISH_PLIST="$HOME/Library/LaunchAgents/$PUBLISH_LABEL.plist"
+PUBLISH_LOGS="$HOME/Library/Logs/kdp-publish"
+mkdir -p "$PUBLISH_LOGS" "$HOME/bin"
+chmod +x "$REPO/scripts/ops/kdp-publish.sh" 2>/dev/null || true
+ln -sfn "$REPO/scripts/ops/kdp-publish.sh" "$HOME/bin/kdp-publish.sh"
+
+cat > "$PUBLISH_PLIST" <<PUBEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$PUBLISH_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh kdp-publish.sh -- bash $REPO/scripts/ops/kdp-publish.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$PUBLISH_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$PUBLISH_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+PUBEOF
+
+launchctl unload "$PUBLISH_PLIST" 2>/dev/null || true
+launchctl load "$PUBLISH_PLIST"
+echo "Installed $PUBLISH_LABEL — daily 09:45 Central."
 
 # ─── Monique's mailbox sweep ─────────────────────────────────────────────────
 #
@@ -476,7 +531,7 @@ cat > "$MAILBOX_PLIST" <<MBXEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>$REPO/scripts/ops/mailbox-sweep.sh</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh mailbox-sweep.sh -- bash $REPO/scripts/ops/mailbox-sweep.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -526,7 +581,7 @@ cat > "$AHREFS_PLIST" <<AHREOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>$REPO/scripts/ops/ahrefs-audit-fix.sh</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh ahrefs-audit-fix.sh -- bash $REPO/scripts/ops/ahrefs-audit-fix.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -575,7 +630,7 @@ cat > "$LP_PLIST" <<LPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>$REPO/scripts/ops/lp-replies.sh</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh lp-replies.sh -- bash $REPO/scripts/ops/lp-replies.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -627,7 +682,7 @@ cat > "$SHEET_PLIST" <<SHEETEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent lp:sync -- --commit && npm run --silent lp:outcomes -- --commit</string>
+    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh lp-tracker-sync.mjs -- bash -c 'npm run --silent lp:sync -- --commit &amp;&amp; npm run --silent lp:outcomes -- --commit'</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -656,7 +711,7 @@ cat > "$POSITIVE_PLIST" <<POSEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent lp:positive -- --email</string>
+    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh lp-positive.mjs -- npm run --silent lp:positive -- --email</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
