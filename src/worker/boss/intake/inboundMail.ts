@@ -181,6 +181,13 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * still RECEIVED, which is a visible loose end rather than a message that never existed.
    */
   const messageId = (message.headers.get("message-id") ?? "").trim().slice(0, 400) || null;
+  /*
+   * DID THIS ARRIVE BY SMTP, OR DID SHE TYPE IT HERE? Recorded rather than blurred. `POST
+   * /api/intake/mail` runs this exact handler from her own authenticated session — see that route
+   * for why a replay door exists at all — and a row that claimed Cloudflare had DMARC-verified a
+   * message nobody posted would be a lie in the one table whose whole job is saying what was proven.
+   */
+  const viaConsole = (message.headers.get("x-boss-intake-origin") ?? "").toLowerCase() === "console";
   const recordArrival = async (outcome: string, why: string) => {
     await env.DB.prepare(
       `INSERT INTO boss_inbound_mail
@@ -456,6 +463,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     : question ? "NEEDS_CLARITY"
       : admitFailure ? "NOT_ADMITTED" : route.outcome;
   const why = [route.why,
+    ...(viaConsole ? ["Typed into Boss OS from her own authenticated session, not received over SMTP."] : []),
     ...(bookNote ? [bookNote] : []),
     ...(question ? [`${route.seat.name} asked you a question instead of starting work. ${question.why}`] : []),
     ...(bookFailure ? [`No work was opened: the book instruction could not be read. ${bookFailure.split("\n")[0]}`] : []),
@@ -497,7 +505,11 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   await finish({ outcome, why, tag: route.tag, employeeId: route.seat.id, taskId, objectKey });
   await audit(env.DB, {
     actor: "boss", lane: route.seat.lane, entityType: "inbound_mail", entityId: mailId,
-    action: "routed", detail: { to, from: sender, tag: route.tag, employee: route.seat.id, outcome, task_id: taskId },
+    action: "routed",
+    detail: {
+      to, from: sender, tag: route.tag, employee: route.seat.id, outcome, task_id: taskId,
+      origin: viaConsole ? "console" : "smtp",
+    },
   });
   await logEvent(env.DB, {
     level: admitFailure ? "warn" : "info", scope: "intake", event: "boss_mail_routed", lane: route.seat.lane,

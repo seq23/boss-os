@@ -133,12 +133,27 @@ describe("Phase 16 — the sky is computed, not fetched", () => {
       expect(w.ends_at).toBeGreaterThan(w.starts_at);
     }
 
-    // Five windows partition one lunation: they tile it, and they do not overlap.
-    const first = canonWindows
-      .filter((w: any) => w.detail.lunation === canonWindows[0].detail.lunation)
-      .sort((a: any, b: any) => a.starts_at - b.starts_at);
-    expect(first.length).toBe(5);
-    for (let i = 1; i < first.length; i++) expect(first[i].starts_at).toBe(first[i - 1].ends_at);
+    /*
+     * Five windows partition one lunation: they tile it, and they do not overlap.
+     *
+     * ASSERTED ON A LUNATION THE ALMANAC ACTUALLY CONTAINS WHOLE, which is the fix for a failure
+     * that had nothing to do with the code. The almanac begins at NOW, so the lunation in progress
+     * today is clipped — on 11 Sep 2026 it carried four of its five windows — and a test that always
+     * read the FIRST group was asserting the calendar rather than the tiling. It went red on a date
+     * rollover with no commit behind it, which is this repo's most-repeated false alarm.
+     */
+    const byLunation = new Map<string, any[]>();
+    for (const w of canonWindows) {
+      const key = String(w.detail.lunation);
+      if (!byLunation.has(key)) byLunation.set(key, []);
+      byLunation.get(key)!.push(w);
+    }
+    const groups = [...byLunation.values()].map((g) => g.sort((a: any, b: any) => a.starts_at - b.starts_at));
+    // Rule 0: a clipped-only almanac would pass an "every complete one tiles" loop over nothing.
+    expect(groups.filter((g) => g.length === 5).length).toBeGreaterThan(0);
+    for (const g of groups) {
+      for (let i = 1; i < g.length; i++) expect(g[i].starts_at).toBe(g[i - 1].ends_at);
+    }
   });
 
   it("NOTHING IS DEFERRED FOR WANT OF AN EPHEMERIS — the natal layer waits on the owner", async () => {

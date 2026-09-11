@@ -7,6 +7,8 @@ import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { isLane } from "../../../shared/boss/lanes";
 import { classify, KIND_TO_DEPARTMENT } from "../intake/classify";
 import { INTAKE_KINDS } from "../../../shared/boss/governance";
+import { handleBossInboundMail } from "../intake/inboundMail";
+import { BOSS_INTAKE_MAILBOX, BOSS_INTAKE_SENDERS } from "../../../shared/boss/intake/mail.mjs";
 
 export const intake = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -255,4 +257,64 @@ intake.post("/proposals", async (c) => {
 intake.get("/workloads", async (c) => {
   const rows = await c.env.DB.prepare(`SELECT * FROM workload_profiles ORDER BY name`).all();
   return ok(c, rows.results ?? []);
+});
+
+// ─── The mailbox, driven from her own session ────────────────────────────────
+
+/**
+ * `POST /api/intake/mail` — THE SAME DOOR, OPENED FROM THE INSIDE.
+ *
+ * ─── Why this exists, given that the book has exactly one way in ───────────
+ *
+ * `routes/capital.ts` states the rule and it still holds: THERE IS NO SECOND WAY INTO HER BOOK.
+ * This is not one. It does not write `capital_book`, does not parse a lot and does not know what a
+ * lot is — it hands a message to `handleBossInboundMail`, which is the one intake, and whatever that
+ * handler does with it is what it would have done with the same message from her mail client. The
+ * alternative, on the night her book had to be filed, was an `INSERT` — and a hand-inserted book
+ * proves nothing about whether the feature works, which is the only question worth answering.
+ *
+ * ─── IT ADDS NO AUTHORISATION SURFACE, AND THAT IS THE TEST IT HAD TO PASS ──
+ *
+ * The sender is NOT taken from the caller. It is fixed to her own address, and the caller cannot
+ * name a different one, so this can never be used to make Boss OS believe a message came from
+ * somebody else. What it needs instead is the session every other route on `/api/*` needs — the
+ * passcode, which is hers — and anybody holding that can already create tasks, decide approvals and
+ * read the book. There is nothing here they did not already have.
+ *
+ * ─── AND THE ROW SAYS WHICH IT WAS ──────────────────────────────────────────
+ *
+ * `x-boss-intake-origin: console` makes the handler record "typed into Boss OS from her own
+ * authenticated session, not received over SMTP" on the arrival row and in the audit trail. The one
+ * thing this must never do is leave a row that looks like a DMARC-verified delivery that never
+ * happened, in the table whose entire purpose is saying what was actually proven.
+ */
+intake.post("/mail", async (c) => {
+  const b = await c.req.json<{ subject?: string; body?: string }>().catch(() => null);
+  const subject = String(b?.subject ?? "").trim();
+  const body = String(b?.body ?? "");
+  if (!subject && !body.trim()) {
+    throw badRequest("An empty message has nothing to route", "Send a subject, a body, or both — exactly as you would email them.");
+  }
+
+  const from = BOSS_INTAKE_SENDERS[0]!;
+  const raw = `From: ${from}\r\nTo: ${BOSS_INTAKE_MAILBOX}\r\nSubject: ${subject}\r\n\r\n${body}`;
+  const result = await handleBossInboundMail({
+    from,
+    to: BOSS_INTAKE_MAILBOX,
+    headers: new Headers({
+      from,
+      subject,
+      "x-boss-intake-origin": "console",
+      /*
+       * The authentication that actually happened, named as what it is. The owner was verified by
+       * the session gate in front of this route, not by Cloudflare's DMARC evaluation, and the
+       * string says so rather than impersonating a delivery.
+       */
+      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
+    }),
+    raw: new Response(raw).body!,
+    rawSize: new TextEncoder().encode(raw).length,
+  }, c.env);
+
+  return ok(c, result, 201);
 });
