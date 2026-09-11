@@ -416,7 +416,18 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * with a superior" and lands in her approval queue as though it were a considered answer. She now
    * gets a reply that says what could not be read, and nothing is invented on top of it.
    */
-  if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question) {
+  /*
+   * A VERB THAT WORKED IS ALREADY THE WHOLE JOB. Filing the book IS the work; handing the same text
+   * to a language model afterwards produces an "output" about an inventory that is already stored,
+   * and that output lands in her approval queue asking her to bless a paragraph nobody needed.
+   * Confirmed the hard way while commissioning this: `#monique book` filed her seven lots correctly
+   * and left `apr_m296y5wq65e3s6va` sitting in her queue titled "book".
+   *
+   * The no-verb path still opens a task, deliberately — there she wrote a message that HAPPENED to
+   * be a book, and the message may well have been asking for something as well.
+   */
+  const filedByVerb = Boolean(directive && bookNote);
+  if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
     try {
       const admitted = await admitTask(env, {
         title: strippedSubject(trueSubject) || `Mail from ${sender}`,

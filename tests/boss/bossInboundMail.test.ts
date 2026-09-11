@@ -221,6 +221,25 @@ describe("she says what she means", () => {
     expect(String(dbx.size_text)).toMatch(/tbd/i);
   });
 
+  it("A FILED BOOK IS THE WHOLE JOB — no model task, nothing to approve", async () => {
+    const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
+    const res = await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    expect(res.taskId).toBeNull();
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>())?.n).toBe(before?.n);
+    // She is still told exactly what was filed.
+    expect(res.reply).toContain("Kalshi");
+    expect((await currentBookLines(env as never)).length).toBe(6);
+  });
+
+  it("a book with NO verb still opens work, exactly as it always did", async () => {
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique this week's book", body: HER_BOOK }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    expect(res.taskId).toBeTruthy();
+    expect((await currentBook(env as never))?.version).toBe(1);
+  });
+
   it("`add` amends and leaves everything else standing", async () => {
     await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
     const before = await currentBookLines(env as never);

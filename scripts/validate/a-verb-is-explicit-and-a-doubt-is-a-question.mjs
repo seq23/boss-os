@@ -175,9 +175,9 @@ export function nothingUnclearReachesAModel(source) {
   if (source === null) return [`${HANDLER} could not be read, so the order of the checks is unverified.`];
   const bad = [];
 
-  const guard = /if \(route\.outcome !== "AMBIGUOUS" && !bookFailure && !question\) \{/.exec(source);
+  const guard = /if \(route\.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb\) \{/.exec(source);
   if (!guard) {
-    bad.push("the `admitTask` branch is no longer guarded by BOTH `!bookFailure` and `!question` — an instruction that could not be read would be handed to a model, which is exactly what produced apr_m26zq5praheyw251.");
+    bad.push("the `admitTask` branch is no longer guarded by ALL of `!bookFailure`, `!question` and `!filedByVerb` — an instruction that could not be read, or one that was already carried out, would be handed to a model, which is exactly what produced apr_m26zq5praheyw251 and apr_m296y5wq65e3s6va.");
   }
 
   const admitAt = source.indexOf("await admitTask(");
@@ -239,13 +239,13 @@ if (process.argv.includes("--self-test")) {
    */
   expect("a handler where `#monique add` falls through to the model path", nothingUnclearReachesAModel(
     handlerSource?.replace(
-      'if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question) {',
+      'if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {',
       'if (route.outcome !== "AMBIGUOUS") {') ?? null,
   ), true);
   expect("a handler that asks for clarity only after generating", nothingUnclearReachesAModel(
     handlerSource?.replace(
-      'if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question) {',
-      'if (route.outcome !== "AMBIGUOUS" && !bookFailure) {') ?? null,
+      'if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {',
+      'if (route.outcome !== "AMBIGUOUS" && !bookFailure && !filedByVerb) {') ?? null,
   ), true);
   expect("a handler where `add` and `book` are the same operation", nothingUnclearReachesAModel(
     handlerSource?.replace("amendLiveBook(env, input)", "storeLiveBook(env, { ...input, explicit: true })") ?? null,
