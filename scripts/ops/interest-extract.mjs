@@ -116,6 +116,8 @@ const PROMPT = process.env.CAPITAL_PROMPT
 /** Haiku. Classification, not judgement. Named here and in the duty row, and reconciled by validate:duty-delivery. */
 const MODEL = process.env.CAPITAL_MODEL ?? "claude-haiku-4-5";
 const CONCURRENCY = Number(process.env.CAPITAL_EXTRACT_CONCURRENCY ?? 10);
+/** A batch that has not answered in this long is hung, not slow. Killed, unbanked, retried next run. */
+const TIMEOUT_MS = Number(process.env.CAPITAL_EXTRACT_TIMEOUT_MS ?? 240_000);
 const ARGS = process.argv.slice(2);
 const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null : ARGS[i + 1] ?? null; };
 const LIMIT = Number(argOf("limit") ?? 0);
@@ -205,19 +207,44 @@ export function structuredOrder(msg) {
 
 // ─── The model pass ──────────────────────────────────────────────────────────
 
+/*
+ * THE TIMEOUT FIRED AND NOTHING WAS LISTENING TO IT.
+ *
+ * This already killed the child after 240s, and the 24-month backfill still hung for
+ * SEVENTEEN HOURS AND FIFTY-SIX MINUTES at 0.0% CPU on 2026-09-11, blocked in exactly
+ * this function. The kill was not the problem; the resolve was.
+ *
+ * The promise settled only on `close`, and node fires `close` when the process has
+ * exited AND every stdio pipe is closed. `claude` spawns its own children, and they
+ * inherit these pipes. SIGKILL to the parent leaves a grandchild holding stdout open,
+ * so `close` never arrives, the promise never settles, and the worker waits forever -
+ * with the timer already discharged and nothing left to rescue it. A retry wrapper
+ * cannot help: the process never exits, so it never gets to retry.
+ *
+ * So the timeout now RESOLVES, rather than only killing, and `settle` makes the first
+ * outcome win whichever arrives. A hung batch is reported failed, goes unbanked, and is
+ * retried by the next run - which is what the checkpoint is for. The child is killed
+ * with a process-group kill first so grandchildren go with it, falling back to the
+ * direct kill if the group is unavailable.
+ */
 function runClaude(input) {
   return new Promise((resolve) => {
     const child = spawn("claude", ["-p", "--model", MODEL, "--max-turns", "1"], {
       cwd: os.homedir(),
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env },
+      detached: true, // its own process group, so the kill below reaches grandchildren
     });
-    let out = "", err = "";
-    const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* gone */ } }, 240_000);
+    let out = "", err = "", settled = false;
+    const settle = (v) => { if (settled) return; settled = true; clearTimeout(timer); resolve(v); };
+    const timer = setTimeout(() => {
+      try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* gone */ } }
+      settle({ ok: false, out: "", err: `timed out after ${TIMEOUT_MS / 1000}s and was killed` });
+    }, TIMEOUT_MS);
     child.stdout.on("data", (d) => { out += d; });
     child.stderr.on("data", (d) => { err += d; });
-    child.on("error", () => { clearTimeout(timer); resolve({ ok: false, out: "", err: "claude not on PATH" }); });
-    child.on("close", (code) => { clearTimeout(timer); resolve({ ok: code === 0, out, err }); });
+    child.on("error", () => settle({ ok: false, out: "", err: "claude not on PATH" }));
+    child.on("close", (code) => settle({ ok: code === 0, out, err }));
     child.stdin.end(input);
   });
 }
