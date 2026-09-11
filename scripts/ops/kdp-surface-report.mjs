@@ -58,6 +58,37 @@ async function main() {
     process.exit(9);
   }
 
+  /*
+   * ── EVERY MESSAGE ENDS SOMEWHERE NAMED, CHECKED BEFORE IT LEAVES THE MAC ──
+   *
+   * The endpoint refuses these too and that refusal is the guarantee; this one is the legible
+   * error. "EVERYTIME I GET A KDP EMAIL SHE SHOULD READ IT AND DETERMINE IF THERE IS A TASK FOR
+   * HER" — so a message read, classified, written down and left is the defect, and a row with no
+   * outcome on it would look complete.
+   *
+   * `noted` is a real outcome and needs its reason: deciding a message is promotional and
+   * forgetting to read it are indistinguishable without one.
+   */
+  const OUTCOMES = new Set(["acted", "assigned", "noted"]);
+  for (const it of items) {
+    if (!OUTCOMES.has(it?.outcome_kind)) {
+      console.error(`NAMED STOP [NO_OUTCOME] an item ends in "${it?.outcome_kind ?? "nothing"}". Nothing was sent.`);
+      console.error("  Every message ends in acted, assigned, or noted with a reason. A message read and");
+      console.error("  silently dropped is the one thing this log exists to make impossible.");
+      process.exit(12);
+    }
+    if (!it?.action_taken || !String(it.action_taken).trim()) {
+      console.error(`NAMED STOP [NO_ACTION_TAKEN] an item is "${it.outcome_kind}" and says nothing about itself. Nothing was sent.`);
+      console.error("  Even 'nothing to do' needs its reason written down.");
+      process.exit(13);
+    }
+    if (it.disposition === "problem" && it.outcome_kind === "noted") {
+      console.error("NAMED STOP [PROBLEM_NOTED] a problem with a title cannot end in 'nothing to do'. Nothing was sent.");
+      console.error("  A title in trouble gets acted on or assigned. That was her instruction, not a preference.");
+      process.exit(14);
+    }
+  }
+
   // Refused here as well as at the endpoint: the server's refusal is the guarantee, this one is the
   // legible error. A 400 in a launchd log at 09:30 is not something anyone reads.
   for (const it of items) {

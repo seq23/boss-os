@@ -99,15 +99,42 @@ Everything you read stays on this machine. Write `~/.boss-os/kdp/surface.json`:
 ```json
 {
   "items": [
-    { "disposition": "promo",   "note": "A KDP Select enrolment offer." },
-    { "disposition": "update",  "note": "Royalty reporting moves to a new dashboard on 1 October." },
+    { "disposition": "promo",   "note": "A KDP Select enrolment offer.",
+      "outcome_kind": "noted",
+      "action_taken": "Promotional. Nothing to do — it asks for an enrolment she has already made." },
+    { "disposition": "update",  "note": "Royalty reporting moves to a new dashboard on 1 October.",
+      "outcome_kind": "noted",
+      "action_taken": "Nothing to do now. Notated so it can be read back; it changes nothing before 1 October." },
     { "disposition": "problem", "note": "One title was flagged for a cover quality issue.",
       "title_ref": "A2C99P6JESFOP0",
+      "outcome_kind": "assigned",
       "action_taken": "Checked the bookshelf and confirmed it. Assigned the cover repair to Zora.",
       "needs_owner": false }
   ]
 }
 ```
+
+### EVERY ITEM ENDS IN A NAMED OUTCOME. THIS IS NOT OPTIONAL AND THE ENDPOINT REFUSES OTHERWISE.
+
+Her instruction: *"EVERYTIME I GET A KDP EMAIL SHE SHOULD READ IT AND DETERMINE IF THERE IS A TASK
+FOR HER"*. A message you read, classified, wrote down and left is a message that was dropped — and
+the row would look complete, which is what makes it the worst kind of miss.
+
+`outcome_kind` is one of exactly three, and `action_taken` is REQUIRED on all three:
+
+| `outcome_kind` | When | What `action_taken` must say |
+|---|---|---|
+| `acted` | You did something about it yourself | What you actually did |
+| `assigned` | You opened work — a colleague via `/assign`, or something in your own queue | Who has it and what for |
+| `noted` | Nothing to do | **WHY** nothing was needed |
+
+**`noted` is not a way to skip the question.** Promotional mail *should* end in nothing — that is
+what promotional mail is for. The difference between DECIDING that and FORGETTING is whether you
+wrote the reason down, so an item with no `action_taken` is refused exactly as a missing note is.
+
+**A `problem` may never be `noted`.** "if something is wrong w/one of my titles she needs to spring
+into action" — so the one disposition that means something is wrong is the one that cannot be
+noted and dropped. Act on it, or assign it. The endpoint enforces this rather than trusting it.
 
 **An empty `items` array is a real and correct report** — nothing arrived — and it tells Boss OS the
 duty ran. Write the file even on a silent day.
