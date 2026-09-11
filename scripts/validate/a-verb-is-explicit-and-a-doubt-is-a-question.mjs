@@ -207,8 +207,9 @@ export function nothingUnclearReachesAModel(source) {
   // A failure has to be a REPLY, and the row has to say so.
   if (!/"BOOK_NOT_READ"/.test(source)) bad.push("an unreadable book instruction is no longer recorded as its own outcome, so it hides inside ROUTED.");
   if (!/"NEEDS_CLARITY"/.test(source)) bad.push("a question is no longer recorded as its own outcome, so a week of unanswered questions is invisible.");
-  if (!/const reply = question \?/.test(source) || !source.includes("question.ask")) {
-    bad.push("the question is no longer what she is actually sent.");
+  if (!/const stopped = question \? question\.ask : bookFailure;/.test(source)
+    || !/const reply = stopped \?/.test(source)) {
+    bad.push("a message that STOPPED no longer leads with the reason — the one sentence that matters is buried under the reassurance that it worked.");
   }
   return bad;
 }
@@ -251,7 +252,7 @@ if (process.argv.includes("--self-test")) {
     handlerSource?.replace("amendLiveBook(env, input)", "storeLiveBook(env, { ...input, explicit: true })") ?? null,
   ), true);
   expect("a handler that no longer sends the question", nothingUnclearReachesAModel(
-    handlerSource?.replace("const reply = question ?", "const reply = null ?") ?? null,
+    handlerSource?.replace("const reply = stopped ?", "const reply = null ?") ?? null,
   ), true);
   expect("a handler that could not be read at all", nothingUnclearReachesAModel(null), true);
 

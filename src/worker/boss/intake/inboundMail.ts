@@ -499,8 +499,14 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * that line is a reason not to. The routing boilerplate is right for a message that became work
    * and wrong for one that is waiting on her.
    */
-  const reply = question ? [
-    question.ask,
+  /*
+   * WHEN THE MESSAGE STOPPED, THE REASON IS THE FIRST THING SHE READS. A question or an unreadable
+   * verb both mean "nothing was started"; leading with "Monique has it." and eight lines of tag
+   * directory buries the only sentence that matters under the reassurance that it worked.
+   */
+  const stopped = question ? question.ask : bookFailure;
+  const reply = stopped ? [
+    stopped,
     /*
      * A QUESTION DOES NOT REPLACE "I DID NOT KNOW WHO THIS WAS FOR". When the tag was unrecognised
      * she still has to be told which seats exist, or the question and the mis-routing become one
