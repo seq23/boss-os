@@ -52,7 +52,12 @@
  * harmless explanation, which is precisely why a permanent structural absence went unnoticed for as
  * long as it did. These do not share a message:
  *
- *   BROWSER_OK            — a browser started and KDP recognised the session.
+ *   BROWSER_OK            — a browser started, KDP recognised the session, AND a title's setup pages
+ *                           open. That last clause was added on 11 September and is the whole point:
+ *                           see the doctor branch below for the two days its absence cost.
+ *   KDP_REAUTH_REQUIRED   — the bookshelf opens and Amazon refuses to let anything EDIT a title
+ *                           without a fresh sign-in. Simone can read and cannot publish. ONE named
+ *                           act fixes it and only she can perform it.
  *   KDP_SESSION_EXPIRED   — the browser works and the saved session is gone. ONE named act fixes it.
  *   BROWSER_UNAVAILABLE   — Playwright or Chrome is not on this machine. A bug, not bad luck.
  *   KDP_UNREACHABLE       — the network refused. Transient, and says so.
@@ -166,6 +171,58 @@ async function main() {
   }
 
   const state = await classify(page);
+
+  /*
+   * ── READING THE SHELF IS NOT BEING ABLE TO CHANGE A BOOK ──────────────────
+   *
+   * THE FALSE GREEN THAT COST TWO DAYS. `doctor` answered BROWSER_OK the moment the bookshelf
+   * recognised the session, and every part of this system took that as "Simone can publish". She
+   * could not. PROVEN 11 September 2026: with a session this very check called BROWSER_OK, every
+   * route into `/title-setup/kindle/<ref>/...` — typed, or clicked from the bookshelf — redirects to
+   *
+   *     https://www.amazon.com/ap/signin?openid.pape.max_auth_age=0&...
+   *
+   * `max_auth_age=0` is Amazon demanding a FRESH authentication rather than a stored one. Reading
+   * and editing are two different permissions and only the first was ever saved.
+   *
+   * This is the same lesson the keychain test above already carries in a different costume: a check
+   * that proves a weaker fact than the one the caller needs is worse than no check, because it
+   * answers confidently. So `doctor` now asks the question that matters, and has a FOURTH outcome
+   * for the state that has no name until you have been caught by it.
+   */
+  if (COMMAND === "doctor" && state === "signed_in") {
+    const { readFile } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const { dirname, join } = await import("node:path");
+    let pilot = null;
+    try {
+      const map = JSON.parse(await readFile(join(dirname(fileURLToPath(import.meta.url)), "kdp-cover-map.json"), "utf8"));
+      pilot = (map.titles.find((t) => t.pilot) ?? map.titles[0])?.title_ref ?? null;
+    } catch { pilot = null; }
+
+    if (pilot) {
+      await page.goto(`https://kdp.amazon.com/en_US/title-setup/kindle/${pilot}/content`, {
+        waitUntil: "domcontentloaded",
+        timeout: TIMEOUT_MS,
+      }).catch(() => {});
+      await page.waitForTimeout(6000);
+      if (/\/ap\/signin|\/ap\/mfa/.test(page.url())) {
+        await context.close();
+        say(
+          "KDP_REAUTH_REQUIRED",
+          "the bookshelf opens and Amazon still refuses every title's setup pages, asking for a fresh sign-in " +
+            "rather than accepting the stored one. Simone can READ the shelf and cannot CHANGE a book, which is " +
+            "the state that looked healthy for two days. One act fixes it: `npm run kdp:publish -- --headed`, " +
+            "sign in once in the window that opens, and the same run goes on to upload the covers and publish.",
+          7,
+        );
+        return;
+      }
+    }
+    await context.close();
+    say("BROWSER_OK", "Simone's own Chrome profile is signed into KDP and can open a title's setup pages, which is what publishing needs.", 0);
+    return;
+  }
 
   if (COMMAND === "bookshelf" && state === "signed_in") {
     /*
