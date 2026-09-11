@@ -290,8 +290,14 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
  * COMPLETION, NOT PROGRESS. The oldest open loop comes before a fourth new thing, because a person
  * with six side projects fails by starting rather than by finishing.
  */
-/** How long a weekly duty may be silent before the silence is itself the news. */
-const AUDIT_GAP_DAYS = 8;
+/**
+ * How far past its due time the weekly pass may be before the silence is itself the news.
+ *
+ * ONE DAY, not seven. The duty's own `next_due_at` already carries "when it should have run", and
+ * that date only moves when the job reports — so being past it at all is the missed pass. The day
+ * of slack is for the ordinary case: launchd fires at 06:00 and she may open the screen at 06:30.
+ */
+const AUDIT_GRACE_MS = 86_400_000;
 
 /**
  * Danielle's weekly Ahrefs pass, when it has not reported.
@@ -304,26 +310,41 @@ const AUDIT_GAP_DAYS = 8;
  */
 async function siteAuditGap(env: Env): Promise<{ action: string; why: string; detail?: string[] } | null> {
   const duty = await env.DB
-    .prepare(`SELECT suspended FROM standing_duties WHERE id = 'duty_site_audit_repair'`)
-    .first<{ suspended: number }>()
+    .prepare(`SELECT suspended, next_due_at FROM standing_duties WHERE id = 'duty_site_audit_repair'`)
+    .first<{ suspended: number; next_due_at: number | null }>()
     .catch(() => null);
   // Not installed, or she suspended it on purpose. A suspended duty is a decision, not a gap.
   if (!duty || duty.suspended) return null;
+
+  /*
+   * ─── THE GATE IS "IT WAS DUE AND DID NOT REPORT", NOT "IT HAS BEEN QUIET" ─
+   *
+   * The first version measured only the age of the newest finding, and its own test suite caught
+   * what that meant: on a database where the duty had never yet been due — a fresh install, the
+   * morning after the migration lands, every test fixture in the repository — it fired immediately
+   * and pushed a stalling deal and the oldest open loop off the day. A nag that greets you on
+   * install is one you learn to scroll past, which costs more than the gap it was reporting.
+   *
+   * `next_due_at` is advanced by the ingest endpoint and by nothing else, so a due date still
+   * sitting in the past IS the missed report — the same fact, read from the clock the scheduler
+   * actually keeps. The findings table then supplies how long it has been, which is the part she
+   * can act on. One day of slack because launchd fires at 06:00 and she may open this at 06:30.
+   */
+  if (duty.next_due_at === null) return null;
+  const overdueBy = Date.now() - duty.next_due_at;
+  if (overdueBy < AUDIT_GRACE_MS) return null;
 
   const last = await env.DB
     .prepare(`SELECT MAX(found_at) AS at FROM site_audit_findings`)
     .first<{ at: number | null }>()
     .catch(() => null);
-  if (!last) return null;
-
-  const days = last.at === null ? null : Math.floor((Date.now() - last.at) / 86_400_000);
-  if (days !== null && days < AUDIT_GAP_DAYS) return null;
+  const days = last?.at ? Math.floor((Date.now() - last.at) / 86_400_000) : null;
 
   return {
     action: "Danielle's Ahrefs pass has not reported — run `ahrefs-audit-fix.sh` or find out why launchd did not.",
     why: days === null
-      ? "It has never reported once. A duty that has never delivered is not a cadence yet, it is an install that did not finish."
-      : `${days} days since the last audit finding, and it is a weekly duty. Ahrefs has recrawled since then, so this is a missed pass rather than a quiet week — a quiet week writes a row saying so.`,
+      ? `It was due ${Math.floor(overdueBy / 86_400_000)} day(s) ago and has never reported once. A duty that has never delivered is not a cadence yet, it is an install that did not finish.`
+      : `${days} days since the last audit finding, on a weekly duty that was due ${Math.floor(overdueBy / 86_400_000)} day(s) ago. Ahrefs has recrawled since then, so this is a missed pass rather than a quiet week — a quiet week writes a row saying so.`,
     detail: ["Reports land at /api/boss/engineering/site-audit-findings.", "A week with no findings still writes one row; silence means the job did not run."],
   };
 }

@@ -277,6 +277,50 @@ describe("the execution contract closes before it starts", () => {
     expect(c.action).toMatch(/LP list|raise/i);
     expect(c.why).toContain("§5.4");
   });
+
+  /*
+   * ─── DANIELLE'S WEEKLY AHREFS PASS, WHEN IT DOES NOT RUN ──────────────────
+   *
+   * A weekly job that silently stops is indistinguishable from a weekly job finding nothing, and
+   * this repository has shipped exactly that: a duty that fired eleven Sundays and dropped its
+   * payload every time with nothing red anywhere. So a missed pass is a VISIBLE STATE on the day.
+   *
+   * BOTH DIRECTIONS ARE THE TEST. The first version of this gate measured only how old the newest
+   * finding was, and fired on every fresh database in the suite — pushing a stalling deal and the
+   * oldest open loop off the day on install morning. A nag that greets you on install is one you
+   * learn to scroll past, so "stays quiet until it is actually overdue" is half of the behaviour.
+   */
+  it("says nothing while the audit pass is not yet due", async () => {
+    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ?, suspended = 0 WHERE id = 'duty_site_audit_repair'`)
+      .bind(Date.now() + 3 * 86_400_000).run();
+    const c = await executionContract(env as any, 1);
+    expect(c.action).not.toMatch(/Ahrefs/i);
+  });
+
+  it("puts a missed Ahrefs pass at the top of the day, ahead of the oldest open loop", async () => {
+    await env.DB.prepare(`INSERT INTO days (id, date_ts, created_at) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING`)
+      .bind(DAY, Date.parse(`${DAY}T00:00:00Z`), Date.now()).run();
+    const old = Date.now() - 30 * 86_400_000;
+    await env.DB.prepare(
+      `INSERT INTO open_loops (id, day_id, kind, title, priority, status, created_at, updated_at) VALUES (?,?,?,?,?, 'open', ?, ?)`,
+    ).bind(uid("loop"), DAY, "other", "Something older", 1, old, old).run();
+    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ?, suspended = 0 WHERE id = 'duty_site_audit_repair'`)
+      .bind(Date.now() - 4 * 86_400_000).run();
+
+    const c = await executionContract(env as any, 1);
+    expect(c.action).toMatch(/Ahrefs/i);
+    // It says WHY in the facts, not as a timer she can ignore.
+    expect(c.why).toMatch(/never reported once|days since the last audit finding/);
+    expect(c.why).toMatch(/due 4 day/);
+  });
+
+  it("treats a suspended pass as a decision rather than a gap", async () => {
+    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ?, suspended = 1 WHERE id = 'duty_site_audit_repair'`)
+      .bind(Date.now() - 30 * 86_400_000).run();
+    const c = await executionContract(env as any, 1);
+    expect(c.action).not.toMatch(/Ahrefs/i);
+    await env.DB.prepare(`UPDATE standing_duties SET suspended = 0 WHERE id = 'duty_site_audit_repair'`).run();
+  });
 });
 
 describe("every pillar says what it means", () => {

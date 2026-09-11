@@ -83,6 +83,12 @@ const SNAPSHOT_TABLES = [
   // which findings she has already acted on or dismissed — and nothing outside this table records
   // that. The rows themselves hold code names and composed prose, never a subject or an address.
   "mailbox_findings",
+  // 0227 — Danielle's weekly Ahrefs findings. The rows are cheap to re-derive from next Thursday's
+  // crawl; the `status` column is not. Which findings she has already acted on or dismissed exists
+  // nowhere else, and a restore that lost it would re-raise every one of them on the next pass —
+  // which is how a useful list becomes one she stops opening. The rows hold public domains,
+  // repository names and counts Ahrefs already emailed her, and never an address.
+  "site_audit_findings",
   // 0185 — the brokerage sourcing list. A restore that lost it would put her back to an empty
   // funnel with no record of which firms had already been reviewed or rejected, so the next sweep
   // would hand her names she has already decided against. The review status is the valuable part.
