@@ -34,6 +34,7 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound } from "../lib/http";
 import { nextDueAt } from "../duties/cadence";
+import { advance } from "./duties";
 import { recordDeliverableActivity } from "../today/deliverables";
 
 export const kdp = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -589,6 +590,18 @@ kdp.post("/titles/:ref", async (c) => {
 // ─── The standing surface: everything Amazon sends, triaged ──────────────────
 
 const DISPOSITIONS = new Set(["promo", "update", "problem"]);
+/**
+ * Where a message is allowed to end.
+ *
+ *   acted    — Simone did something about it, and `action_taken` says what.
+ *   assigned — she opened work: a colleague through /assign, or something in her own queue.
+ *   noted    — nothing to do, and `action_taken` says WHY not. The only outcome promo may carry,
+ *              and the only one a `problem` may not.
+ *
+ * There is deliberately no fourth value and no default. A message that ends in none of these was
+ * read and dropped, which is the defect.
+ */
+const OUTCOME_KINDS = new Set(["acted", "assigned", "noted"]);
 const SURFACE_DUTY = "duty_kdp_surface";
 
 /**
@@ -632,6 +645,51 @@ kdp.post("/mail", async (c) => {
     const action = optionalText(raw?.action_taken, 400);
     if (!note) throw badRequest("Every logged message needs a note", "A row that cannot say what the message was is one she cannot read back.");
 
+    /*
+     * ── EVERY MESSAGE ENDS SOMEWHERE NAMED ────────────────────────────────
+     *
+     *   "EVERYTIME I GET A KDP EMAIL SHE SHOULD READ IT AND DETERMINE IF THERE IS A TASK FOR HER"
+     *
+     * The defect this closes is the one this system produces most: a message read and silently
+     * dropped. Before now `action_taken` was nullable and a row with nothing in it was accepted —
+     * the same shape as the audit emails that carried counts and no URLs, and the same shape as the
+     * approval that was marked executed having done nothing.
+     *
+     * THREE OUTCOMES, AND "NOTHING" IS ONE OF THEM. That is not a loophole. Promotional mail SHOULD
+     * end in nothing; the difference between deciding that and forgetting is whether a reason was
+     * written down. So `noted` is accepted and `noted` with no reason is refused, exactly as a
+     * missing note is.
+     */
+    const outcome = String(raw?.outcome_kind ?? "").trim();
+    if (!OUTCOME_KINDS.has(outcome)) {
+      throw badRequest(
+        `"${outcome}" is not an outcome`,
+        `One of: ${[...OUTCOME_KINDS].join(", ")}. A message that ends in none of them was read and dropped, ` +
+          "which is the one thing this log exists to make impossible.",
+      );
+    }
+    if (!action) {
+      throw badRequest(
+        "Every message has to end in something said out loud",
+        outcome === "noted"
+          ? "Even 'nothing to do' needs its reason. Deciding a message is promotional and forgetting to read it look identical without one."
+          : "Say what was actually done about it. An outcome with no account of itself is not an outcome.",
+      );
+    }
+    /*
+     * A PROBLEM MAY NOT END IN 'NOTHING TO DO'. "if something is wrong w/one of my titles she needs
+     * to spring into action" — so the one disposition that means something is wrong is the one
+     * disposition that cannot be noted and dropped. Enforced rather than requested, on the same
+     * reasoning that stops `promo` waking her.
+     */
+    if (disposition === "problem" && outcome === "noted") {
+      throw badRequest(
+        "A problem with a title cannot end in 'nothing to do'",
+        "Her instruction is that a title in trouble gets acted on without her being asked first. " +
+          "Either act on it, or hand it to a colleague with POST /api/boss/kdp/assign and record that as the outcome.",
+      );
+    }
+
     for (const [field, value] of [["note", note], ["action_taken", action]] as const) {
       if (value && value.includes("@")) {
         throw badRequest(
@@ -645,13 +703,14 @@ kdp.post("/mail", async (c) => {
     await c.env.DB
       .prepare(
         `INSERT INTO kdp_mail_log
-           (id, seen_at, disposition, note, title_ref, action_taken, needs_owner, source, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
+           (id, seen_at, disposition, note, title_ref, action_taken, outcome_kind, needs_owner, source, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         id, now, disposition, note,
         optionalText(raw?.title_ref, 32),
         action,
+        outcome,
         // ONLY A PROBLEM MAY NEED HER. Enforced rather than trusted — see the header.
         disposition === "problem" && raw?.needs_owner === true ? 1 : 0,
         b?.source === "manual" ? "manual" : "launchd",
@@ -707,7 +766,7 @@ kdp.post("/mail", async (c) => {
 kdp.get("/mail", async (c) => {
   const rows = await c.env.DB
     .prepare(
-      `SELECT id, seen_at, disposition, note, title_ref, action_taken, needs_owner
+      `SELECT id, seen_at, disposition, note, title_ref, action_taken, outcome_kind, needs_owner
          FROM kdp_mail_log WHERE disposition != 'promo' ORDER BY seen_at DESC LIMIT 40`,
     )
     .all<any>();
@@ -772,4 +831,215 @@ kdp.post("/assign", async (c) => {
     action: "assigned", detail: { owner, helper, what },
   });
   return ok(c, { id, helper: seat.name }, 201);
+});
+
+
+// ─── Simone acting: the covers she approved, put up, and Publish pressed ─────
+
+const PUBLISH_DUTY = "duty_kdp_publish";
+const PUBLISH_OUTCOMES = new Set(["attempted", "could-not-run"]);
+/** What the BOOKSHELF may say. `live` is the only one that ends anything. */
+const RESULT_STATES = new Set(["blocked", "in_review", "live"]);
+
+/**
+ * What Simone did with the approved covers, per title.
+ *
+ * ─── The two-day defect this closes ────────────────────────────────────────
+ *
+ * The owner approved seven replacement covers on 9 September at 14:30. `approvals/resume.ts` fired
+ * its `kdp_cover_upload` handler, stamped `executed_at`, wrote `execution_status = 'executed'`, and
+ * its ENTIRE EFFECT was a sentence on the deliverable describing what Simone would do on her next
+ * run. No run does it: the two existing KDP jobs are `claude -p` processes that read Amazon and
+ * report, and a scheduled `claude -p` has no browser tools at all. So a real decision was recorded,
+ * receipted, and handed to a run that was never scheduled. Seven books stayed blocked.
+ *
+ * This endpoint is what that run reports to, and everything about it is shaped by the lesson:
+ *
+ * A TITLE GOES LIVE BECAUSE THE BOOKSHELF SAYS SO. `resulting_state` is read from Amazon's own
+ * shelf after the click, never from the click succeeding. "Publish was clicked" and "the book is
+ * published" are different facts, and this case has already produced one confident answer that
+ * changed nothing.
+ *
+ * A REFUSAL CARRIES AMAZON'S OWN WORDS. `amazon_message` is never a paraphrase — a paraphrased
+ * refusal is how a server-side flag spent a week being described as an account-information problem.
+ *
+ * NOTHING MAY BE PUBLISHED THAT SHE DID NOT APPROVE. An attempt claiming a cover was uploaded must
+ * name the judgement call that authorised it, and that call must actually be approved. A run
+ * reporting an upload against an unapproved batch is refused outright, which is the gate she chose
+ * — "have simone publish them" — enforced in the one place a script cannot route around.
+ */
+kdp.post("/publish", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const runOutcome = PUBLISH_OUTCOMES.has(String(b?.run_outcome ?? "")) ? String(b.run_outcome) : "attempted";
+  const results = Array.isArray(b?.results) ? b.results : [];
+  const judgementId = optionalText(b?.judgement_id, 64);
+  const stopCode = optionalText(b?.stop_code, 64);
+  const reason = optionalText(b?.reason);
+  const nextAction = optionalText(b?.next_action);
+  const source = b?.source === "manual" ? "manual" : "launchd";
+  const now = Date.now();
+
+  if (runOutcome === "could-not-run" && !reason) {
+    throw badRequest(
+      "A run that could not run has to say why",
+      "Silence from a broken run and silence from a quiet day render identically, which is the confusion this whole lane exists to remove.",
+    );
+  }
+
+  /*
+   * ── HER APPROVAL, CHECKED SERVER-SIDE, BEFORE ANY UPLOAD IS BELIEVED ──────
+   *
+   * The script checks this too, and that check is the legible error rather than the guarantee. This
+   * one is the guarantee: a run cannot report having put a cover on a book unless the batch it
+   * names is a judgement call she actually approved.
+   */
+  const claimsWork = results.some((r: any) => r?.cover_uploaded === true || r?.publish_attempted === true);
+  if (claimsWork) {
+    if (!judgementId) {
+      throw badRequest(
+        "A publish attempt must name the approval it acted on",
+        "An upload that cannot name her verdict is one nobody authorised. Her approval is the gate and it is not optional.",
+      );
+    }
+    const approved = await c.env.DB
+      .prepare(`SELECT id, state FROM judgement_calls WHERE id = ? AND resume_kind = 'kdp_cover_upload'`)
+      .bind(judgementId)
+      .first<{ id: string; state: string }>();
+    if (!approved) {
+      throw badRequest(
+        `${judgementId} is not a cover decision on this system`,
+        "Nothing was recorded. A publish attempt has to trace to a judgement call she was actually shown.",
+      );
+    }
+    if (approved.state !== "approved") {
+      throw badRequest(
+        `The covers on ${judgementId} are "${approved.state}", not approved`,
+        "Uploading a cover she has not approved, or has sent back, is refused here rather than trusted to the run. " +
+          "Her verdict is the gate — that was her own instruction and this is where it is kept.",
+      );
+    }
+  }
+
+  const recorded: { title_ref: string; state: string }[] = [];
+  for (const r of results) {
+    const ref = optionalText(r?.title_ref, 32);
+    if (!ref) throw badRequest("Every result needs a title reference", "A result that cannot say which book it is about is one nobody can act on.");
+    const resulting = RESULT_STATES.has(String(r?.state ?? "")) ? String(r.state) : "blocked";
+    const message = optionalText(r?.message, 500);
+    if (message && message.includes("@")) {
+      throw badRequest(
+        "An Amazon message contains an '@' and was refused",
+        "What Amazon said about a title never needs an address in it, and prose is where one would arrive unintended.",
+      );
+    }
+
+    await c.env.DB
+      .prepare(
+        `INSERT INTO kdp_publish_attempts
+           (id, attempted_at, judgement_id, title_ref, cover_uploaded, publish_attempted,
+            resulting_state, amazon_message, run_outcome, stop_code, source, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        newId("kpa"), now, judgementId, ref,
+        r?.cover_uploaded === true ? 1 : 0,
+        r?.publish_attempted === true ? 1 : 0,
+        resulting, message, runOutcome, stopCode, source, now,
+      )
+      .run();
+
+    /*
+     * THE TITLE MOVES ONLY ON WHAT THE SHELF SAID. `live` and `in_review` are both written from the
+     * bookshelf read the run performed afterwards; `blocked` never overwrites a title she has
+     * already taken live or withdrawn by hand.
+     */
+    if (resulting === "live") {
+      await c.env.DB
+        .prepare(
+          `UPDATE kdp_titles SET state = 'live', went_live_at = COALESCE(went_live_at, ?), state_changed_at = ?, updated_at = ?
+            WHERE title_ref = ? AND state != 'live'`,
+        )
+        .bind(now, now, now, ref)
+        .run();
+    } else if (resulting === "in_review") {
+      await c.env.DB
+        .prepare(
+          `UPDATE kdp_titles SET state = 'in_review', state_changed_at = ?, updated_at = ?
+            WHERE title_ref = ? AND state = 'blocked'`,
+        )
+        .bind(now, now, ref)
+        .run();
+    }
+    recorded.push({ title_ref: ref, state: resulting });
+  }
+
+  /*
+   * THE DUTY'S CLOCK, ON THE SAME RULE EVERY OTHER LOCAL JOB NOW FOLLOWS. A run that could not run
+   * does NOT advance it: the duty is still due, because the work did not happen.
+   */
+  const duty = await c.env.DB
+    .prepare(`SELECT id, local_hour, local_minute, timezone, cadence, weekday, weekdays FROM standing_duties WHERE id = ?`)
+    .bind(PUBLISH_DUTY)
+    .first<any>();
+  if (duty) {
+    if (runOutcome === "attempted") {
+      const next = advance(duty, now);
+      await c.env.DB
+        .prepare(
+          next === null
+            ? `UPDATE standing_duties SET last_run_at = ?, last_outcome = 'ok', last_outcome_at = ?, last_failure_reason = NULL WHERE id = ?`
+            : `UPDATE standing_duties SET last_run_at = ?, last_outcome = 'ok', last_outcome_at = ?, last_failure_reason = NULL, next_due_at = ? WHERE id = ?`,
+        )
+        .bind(...(next === null ? [now, now, PUBLISH_DUTY] : [now, now, next, PUBLISH_DUTY]))
+        .run();
+    } else {
+      await c.env.DB
+        .prepare(`UPDATE standing_duties SET last_outcome = 'failed', last_outcome_at = ?, last_failure_reason = ? WHERE id = ?`)
+        .bind(now, reason, PUBLISH_DUTY)
+        .run();
+    }
+  }
+
+  const live = recorded.filter((r) => r.state === "live").length;
+  const stillBlocked = await c.env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM kdp_titles WHERE state = 'blocked'`)
+    .first<{ n: number }>();
+
+  await recordDeliverableActivity(c.env, {
+    id: "del_kdp_publication",
+    blocked: (stillBlocked?.n ?? 0) > 0,
+    status:
+      runOutcome === "could-not-run"
+        ? `Simone tried to publish and could not: ${reason}${nextAction ? ` What to do: ${nextAction}` : ""}`
+        : live > 0
+          ? `${live} title(s) reached Live on the bookshelf. ${stillBlocked?.n ?? 0} still blocked.`
+          : `Covers went up and nothing reached Live. ${stillBlocked?.n ?? 0} still blocked; Amazon's own message is on each title.`,
+    statusKind: runOutcome === "could-not-run" ? "could-not-run" : "determined",
+    now,
+  }).catch(() => {});
+
+  await logEvent(c.env.DB, {
+    level: runOutcome === "could-not-run" || live === 0 ? "warn" : "info",
+    scope: "duties", event: "kdp_publish_attempted", entityId: PUBLISH_DUTY,
+    detail: { attempted: recorded.length, live, stop_code: stopCode },
+  }).catch(() => {});
+
+  await audit(c.env.DB, {
+    actor: "system", lane: "ops", entityType: "standing_duty", entityId: PUBLISH_DUTY,
+    action: "kdp_publish_reported", detail: { results: recorded.length, live, run_outcome: runOutcome },
+  });
+
+  return ok(c, { recorded: recorded.length, live, still_blocked: stillBlocked?.n ?? 0 }, 201);
+});
+
+/** What was tried on each book, newest first, with Amazon's own words for anything that refused. */
+kdp.get("/publish", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT id, attempted_at, judgement_id, title_ref, cover_uploaded, publish_attempted,
+              resulting_state, amazon_message, run_outcome, stop_code, source
+         FROM kdp_publish_attempts ORDER BY attempted_at DESC LIMIT 60`,
+    )
+    .all<any>();
+  return ok(c, { attempts: rows.results ?? [] });
 });

@@ -23,6 +23,7 @@ import { relationships } from "./routes/relationships";
 import { knowledge } from "./routes/knowledge";
 import { spirit } from "./routes/spirit";
 import { kdp } from "./routes/kdp";
+import { duties } from "./routes/duties";
 import { credentials } from "./routes/credentials";
 import { judgement } from "./routes/judgement";
 import { packets } from "./routes/packets";
@@ -137,6 +138,9 @@ app.route("/api/knowledge", knowledge);
 app.route("/api/spirit", spirit);
 // Simone's publishing block. Written to by a launchd job on her Mac, read by the Publishing screen.
 app.route("/api/kdp", kdp);
+// The link between launchd on her Mac and the duty rows here. A local job reports the SCRIPT it ran
+// and the duty is resolved from its own task_input.$.local_job, so there is no second list to drift.
+app.route("/api/duties", duties);
 app.route("/api/credentials", credentials);
 // Work that needs her judgement, with the work itself in the item. Approving is what resumes it.
 app.route("/api/judgement", judgement);
