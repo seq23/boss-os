@@ -1,0 +1,111 @@
+{
+  "_what": "Which approved cover belongs on which blocked Kindle title, and the evidence that says so.",
+  "_why": [
+    "Seven approved JPGs carry slugs (credit-dispute.jpg). Seven blocked kdp_titles rows carry opaque",
+    "Amazon references (A2C99P6JESFOP0) with a NULL label. Nothing joined them, so the only available",
+    "join was slug-similarity — a guess that would look perfectly clean in a log and could put the",
+    "landlord-reference cover on the credit-dispute book. Uploading the wrong cover onto the wrong",
+    "book is a worse outcome than publishing nothing, so the join is recorded here, from evidence,",
+    "once, and re-verified at run time rather than re-derived by guessing."
+  ],
+  "_method": [
+    "TWO INDEPENDENT FIELDS HAD TO AGREE, AND THEY DO, 7 FOR 7.",
+    "",
+    "1. Amazon's own bookshelf, read through Simone's headless Chrome profile on 2026-09-11. Each",
+    "   row's anchors carry the title id in the path (/title-setup/kindle/<id>/details), and the same",
+    "   row carries the book's title text and its contributor. That gives title_ref -> title + author",
+    "   from Amazon itself rather than from anything this repository believes.",
+    "",
+    "2. The approved cover images, read directly. Every one prints its book title and its author on",
+    "   the artwork. That gives cover file -> title + author with no inference at all.",
+    "",
+    "The author field is the second, independent check and it is what makes this safe rather than",
+    "merely plausible: two of the seven are by Lanae Taylor and five by S. Taylor, and the split on",
+    "the covers matches the split on the bookshelf exactly. A slug-similarity pairing would have had",
+    "no way to notice if it were wrong; this one would.",
+    "",
+    "3. Byte counts. judgement_assets for jdg_m237hjk7wwc68hyj declares seven labelled assets with",
+    "   byte counts, and each matches the file on disk exactly. So the artifact she looked at, her",
+    "   Inbox, R2 and ~/.boss-os/kdp/covers/final/ are all the same bytes. kdp-publish.mjs fetches",
+    "   from R2 — literally what her Inbox rendered — and refuses on any byte-count mismatch."
+  ],
+  "_re_verified_at_run_time": [
+    "kdp-publish.mjs does not trust this file on its own. Before it uploads anything it reads the",
+    "live bookshelf and checks that the title_ref below still carries the `title` and `author`",
+    "recorded here. A title renamed, retitled or replaced on Amazon's side produces a NAMED STOP for",
+    "that one book rather than an upload onto whatever now sits at that reference."
+  ],
+  "_approved": {
+    "approval_id": "apr_m237hjk726ky3ekn",
+    "judgement_id": "jdg_m237hjk7wwc68hyj",
+    "decided_at": 1788964238139,
+    "note": "Approved by the owner on 2026-09-09. These bytes are what she said yes to; nothing is re-rendered."
+  },
+  "titles": [
+    {
+      "title_ref": "A2C99P6JESFOP0",
+      "title": "The Credit Dispute Letter",
+      "author": "S. Taylor",
+      "cover_file": "credit-dispute.jpg",
+      "asset_label": "Credit dispute",
+      "asset_ord": 0,
+      "bytes": 674182,
+      "pilot": true,
+      "pilot_why": "The verification title — known valid, and the one that produced the empty-payload refusal. One title proves the flag is gone before the rest of the shelf follows."
+    },
+    {
+      "title_ref": "A1EYXUFGFV7CN6",
+      "title": "The Gift Letter (Down Payment)",
+      "author": "S. Taylor",
+      "cover_file": "gift-letter.jpg",
+      "asset_label": "Gift letter",
+      "asset_ord": 1,
+      "bytes": 615254
+    },
+    {
+      "title_ref": "A3O8BGWQ63OSF0",
+      "title": "The Landlord Reference Letter",
+      "author": "S. Taylor",
+      "cover_file": "landlord-reference.jpg",
+      "asset_label": "Landlord reference",
+      "asset_ord": 2,
+      "bytes": 818535
+    },
+    {
+      "title_ref": "A746KSQA6VXQ8",
+      "title": "Proof of Income When You're Self-Employed",
+      "author": "S. Taylor",
+      "cover_file": "proof-of-income.jpg",
+      "asset_label": "Proof of income",
+      "asset_ord": 3,
+      "bytes": 243611
+    },
+    {
+      "title_ref": "A14601U7XU2FCM",
+      "title": "The Rental Application Packet",
+      "author": "S. Taylor",
+      "cover_file": "rental-application.jpg",
+      "asset_label": "Rental application",
+      "asset_ord": 4,
+      "bytes": 563908
+    },
+    {
+      "title_ref": "AZUTRW0LN8GDM",
+      "title": "The Wedding Seating Chart",
+      "author": "Lanae Taylor",
+      "cover_file": "wedding-seating.jpg",
+      "asset_label": "Wedding seating",
+      "asset_ord": 5,
+      "bytes": 807395
+    },
+    {
+      "title_ref": "A12Z8RECXCYT3S",
+      "title": "Questions to Ask Every Wedding Vendor",
+      "author": "Lanae Taylor",
+      "cover_file": "wedding-vendor.jpg",
+      "asset_label": "Wedding vendor",
+      "asset_ord": 6,
+      "bytes": 592442
+    }
+  ]
+}
