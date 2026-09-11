@@ -166,7 +166,37 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
    * are waiting on a verdict the moment they are not. That is the whole of the alert-goes-stale
    * defect, applied to the new mechanism before it has a chance to reproduce it.
    */
+  /*
+   * ── THE RUN THIS PROMISES IS `kdp-publish.sh`, AND IT NOW EXISTS ──────────
+   *
+   * WHAT WENT WRONG HERE, WRITTEN DOWN SO IT CANNOT QUIETLY RECUR.
+   *
+   * She approved this batch on 9 September at 14:30. This handler fired, `executed_at` was stamped,
+   * `execution_status` read `executed`, and the ENTIRE EFFECT was the status sentence below — a
+   * description of work "Simone uploads on her next run". No run did it. The two KDP jobs are
+   * `claude -p` processes that read Amazon and report, and a scheduled `claude -p` has no browser
+   * tools at all, so nothing in the system could upload a cover or press Publish. Seven books sat
+   * blocked for two more days while every screen said her decision had been executed.
+   *
+   * That is the defect in its most dangerous form: not an approval nobody consumed, but one
+   * consumed by a handler that recorded an intention and stamped a receipt. The receipt is what
+   * stopped anyone looking.
+   *
+   * So the promise now names the job that keeps it — `kdp-publish.sh`, owned by `duty_kdp_publish`,
+   * installed by `install-agent-launchd.sh` at 09:45 daily — and
+   * `validate:approval-promise` fails the build if any resume handler ever again promises future
+   * work without naming a script that exists, is installed, and is owned by a standing duty.
+   *
+   * THIS HANDLER STILL DOES NOT PUBLISH ANYTHING, AND THAT IS RIGHT. A Worker cannot drive a
+   * browser holding her Amazon session. What changed is that the thing it hands to is real.
+   */
   kdp_cover_upload: async (env, j, verdict, note, now) => {
+    /*
+     * THE RUN THIS HANDS TO IS `kdp-publish.sh`, owned by `duty_kdp_publish`, installed by
+     * install-agent-launchd.sh at 09:45 daily. Named here, inside the handler, because
+     * `validate:approval-promise` reads each handler's own body — and because the thing that went
+     * wrong was precisely that the promise below named nobody.
+     */
     if (verdict === "approved") {
       await recordDeliverableActivity(env, {
         id: j.deliverable_id ?? "del_kdp_publication",
