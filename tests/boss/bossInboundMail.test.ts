@@ -5,6 +5,7 @@ import { routeToSeat, seatTag, replyBody } from "../../src/shared/boss/intake/ma
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { storeLiveBook, currentBook, currentBookLines } from "../../src/worker/boss/capital/book";
 import { bookNagAlerts } from "../../src/worker/boss/capital/bookNag";
+import { unansweredQuestionAlerts } from "../../src/worker/boss/intake/questions";
 
 /**
  * MAIL TO boss@sequoiataylor.com, END TO END, AGAINST REAL D1.
@@ -24,12 +25,18 @@ const HER_BOOK = [
   "Erebor Bank            $10M",
 ].join("\n");
 
-function mail(opts: { from?: string; to?: string; subject?: string; body?: string; dmarc?: string }) {
+function mail(opts: {
+  from?: string; to?: string; subject?: string; body?: string; dmarc?: string;
+  messageId?: string; inReplyTo?: string; references?: string;
+}) {
   const body = opts.body ?? "";
   const headers = new Headers({
     from: opts.from ?? "Sequoia <seq.taylor@gmail.com>",
     subject: opts.subject ?? "",
     "authentication-results": opts.dmarc ?? "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass header.from=gmail.com",
+    ...(opts.messageId ? { "message-id": opts.messageId } : {}),
+    ...(opts.inReplyTo ? { "in-reply-to": opts.inReplyTo } : {}),
+    ...(opts.references ? { references: opts.references } : {}),
   });
   const raw = `From: ${opts.from ?? "seq.taylor@gmail.com"}\r\nSubject: ${opts.subject ?? ""}\r\n\r\n${body}`;
   return {
@@ -102,7 +109,8 @@ describe("an unknown tag is never guessed and never dropped", () => {
   it("sends it to the Chief of Staff and says so", async () => {
     const roster = await activeRoster(env as never);
     const chief = roster.find((s) => s.role === "Chief of Staff")!;
-    const res = await handleBossInboundMail(mail({ subject: "#gertrude please" }), env as never);
+    const res = await handleBossInboundMail(
+      mail({ subject: "#gertrude", body: "please have a look at the Q3 numbers today" }), env as never);
     expect(res.outcome).toBe("DEFAULTED");
     expect(res.employeeId).toBe(chief.id);
     expect(res.taskId).toBeTruthy();
@@ -112,9 +120,20 @@ describe("an unknown tag is never guessed and never dropped", () => {
   });
 
   it("does the same for no tag at all", async () => {
-    const res = await handleBossInboundMail(mail({ subject: "a thought", body: "no tag" }), env as never);
+    const res = await handleBossInboundMail(
+      mail({ subject: "a thought", body: "have a look at the Q3 numbers" }), env as never);
     expect(res.outcome).toBe("DEFAULTED");
     expect(res.taskId).toBeTruthy();
+  });
+
+  it("still names the whole roster when it ALSO has to ask a question", async () => {
+    const roster = await activeRoster(env as never);
+    const res = await handleBossInboundMail(mail({ subject: "#gertrude please" }), env as never);
+    // Nothing to act on, so it asks — and the unrecognised tag is still explained in the same reply.
+    expect(res.outcome).toBe("NEEDS_CLARITY");
+    expect(res.taskId).toBeNull();
+    expect(res.reply).toContain("#gertrude");
+    for (const s of roster) expect(res.reply).toContain(seatTag(s.name));
   });
 });
 
@@ -178,6 +197,159 @@ describe("her live book", () => {
     // Addressed to somebody else, the same text is not her book.
     const toZora = routeToSeat("#zora", roster)!;
     expect(looksLikeBook(toZora, HER_BOOK)).toBe(false);
+  });
+});
+
+/**
+ * THE VERB, END TO END. The unit rules are asserted by `validate:book-verbs`; what can only be
+ * proven here is that the verb actually reaches D1 — that `add` leaves the rest of the book alone,
+ * that a sizeless lot survives the round trip, and that a verb nobody could read opens NO TASK.
+ */
+describe("she says what she means", () => {
+  const DATABRICKS = "Databricks — size TBD, looking for buyers this week";
+
+  it("`book` replaces, and carries a lot she has not sized yet", async () => {
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique book", body: `${HER_BOOK}\n${DATABRICKS}` }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    const lines = await currentBookLines(env as never);
+    expect(lines.length).toBe(7);
+    const dbx = lines.find((l) => l.asset === "Databricks")!;
+    expect(dbx).toBeTruthy();
+    // NOT a zero, and not dropped. "I do not know yet" is a state her book has to be able to hold.
+    expect(dbx.size_usd).toBeNull();
+    expect(String(dbx.size_text)).toMatch(/tbd/i);
+  });
+
+  it("`add` amends and leaves everything else standing", async () => {
+    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
+    const before = await currentBookLines(env as never);
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique", body: `#monique add\n${DATABRICKS}` }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    const after = await currentBookLines(env as never);
+    expect(after.length).toBe(before.length + 1);
+    expect((await currentBook(env as never))?.version).toBe(2);
+    expect(after.some((l) => l.asset === "Databricks" && l.size_usd === null)).toBe(true);
+    // The history survives: v1 is superseded, not overwritten.
+    expect((await env.DB.prepare(`SELECT superseded_at FROM capital_book WHERE version = 1`).first())?.superseded_at)
+      .toBeTruthy();
+  });
+
+  it("`add` of something already there at that size does not duplicate it", async () => {
+    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
+    const res = await handleBossInboundMail(mail({ subject: "#monique add Kalshi $20M" }), env as never);
+    expect((await currentBookLines(env as never)).filter((l) => l.asset === "Kalshi").length).toBe(1);
+    expect(res.reply).toMatch(/already/i);
+  });
+
+  it("`remove` drops the named lot and only that one", async () => {
+    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
+    await handleBossInboundMail(mail({ subject: "#monique remove Kalshi" }), env as never);
+    const lines = await currentBookLines(env as never);
+    expect(lines.some((l) => l.asset === "Kalshi")).toBe(false);
+    expect(lines.length).toBe(5);
+    // Two Anthropic lots, and a size names one of them.
+    await handleBossInboundMail(mail({ subject: "#monique remove Anthropic $500M" }), env as never);
+    const anthropic = (await currentBookLines(env as never)).filter((l) => l.asset === "Anthropic");
+    expect(anthropic.length).toBe(1);
+    expect(anthropic[0]!.size_usd).toBe(2e9);
+  });
+
+  it("A VERB IT CANNOT READ REPLIES, AND OPENS NO WORK", async () => {
+    const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique", body: "#monique add whatever you think is best" }), env as never);
+    expect(res.outcome).toBe("BOOK_NOT_READ");
+    // The whole point: no model task, therefore nothing to hallucinate into her approval queue.
+    expect(res.taskId).toBeNull();
+    const after = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
+    expect(after?.n).toBe(before?.n);
+    expect(res.reply).toMatch(/could not read a single lot/i);
+    expect(res.reply).toContain("size TBD");
+    expect((await currentBook(env as never))).toBeNull();
+  });
+
+  it("`remove` of a name that is not on the book changes nothing and says what is", async () => {
+    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
+    const res = await handleBossInboundMail(mail({ subject: "#monique remove Polymarket" }), env as never);
+    expect(res.outcome).toBe("BOOK_NOT_READ");
+    expect(res.taskId).toBeNull();
+    expect((await currentBookLines(env as never)).length).toBe(6);
+    expect(res.reply).toContain("Kalshi");
+  });
+
+  it("a message that merely CONTAINS a verb is an ordinary instruction", async () => {
+    // Her real message, 11 Sep 2026. "add" is in it, and it is not the word after the tag.
+    const res = await handleBossInboundMail(mail({
+      subject: "#Monique",
+      body: "#Monique - Please add searching for buyers of Databricks to the weekly list",
+    }), env as never);
+    expect(res.outcome).not.toBe("ROUTED");
+    expect((await currentBook(env as never))).toBeNull();
+  });
+});
+
+/**
+ * SHE IS ASKED, AND NOTHING IS INVENTED. The failure this is built from is `apr_m26zq5praheyw251`:
+ * a routed message, a model, and a confident paragraph about an imaginary meeting checklist.
+ */
+describe("an employee who does not understand asks", () => {
+  const DATABRICKS_MESSAGE = "#Monique - Please add searching for buyers of Databricks to the weekly list";
+
+  it("asks about HER message rather than generating from it, and opens no task", async () => {
+    const res = await handleBossInboundMail(
+      mail({ subject: "#Monique", body: DATABRICKS_MESSAGE }), env as never);
+    expect(res.outcome).toBe("NEEDS_CLARITY");
+    expect(res.taskId).toBeNull();
+    // SPECIFIC: it says what it understood, what it could not, and what to send back.
+    expect(res.reply).toContain("Databricks");
+    expect(res.reply).toContain(DATABRICKS_MESSAGE);
+    expect(res.reply).toMatch(/size TBD/);
+    const row = await env.DB.prepare(`SELECT outcome, answered_at FROM boss_inbound_mail WHERE id = ?`)
+      .bind(res.mailId).first<{ outcome: string; answered_at: number | null }>();
+    expect(row?.outcome).toBe("NEEDS_CLARITY");
+    expect(row?.answered_at).toBeNull();
+  });
+
+  it("an ordinary instruction is worked, and is never questioned", async () => {
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique", body: "can you follow up with the $50M guy tomorrow" }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    expect(res.taskId).toBeTruthy();
+  });
+
+  it("A REPLY NEVER TRIGGERS A SECOND QUESTION, and closes the first", async () => {
+    const asked = await handleBossInboundMail(mail({
+      subject: "#Monique", body: DATABRICKS_MESSAGE, messageId: "<q1@mail.gmail.com>",
+    }), env as never);
+    expect(asked.outcome).toBe("NEEDS_CLARITY");
+
+    // Her answer: short, and short is exactly what rule 2 would otherwise ask about again.
+    const answer = await handleBossInboundMail(mail({
+      subject: "Re: #Monique", body: "no size", inReplyTo: "<boss-reply@sequoiataylor.com>",
+      references: "<q1@mail.gmail.com> <boss-reply@sequoiataylor.com>",
+    }), env as never);
+    expect(answer.outcome).not.toBe("NEEDS_CLARITY");
+    expect(answer.taskId).toBeTruthy();
+
+    const row = await env.DB.prepare(`SELECT answered_at FROM boss_inbound_mail WHERE id = ?`)
+      .bind(asked.mailId).first<{ answered_at: number | null }>();
+    expect(row?.answered_at).toBeTruthy();
+
+    // And the alert stops nagging about a question she has answered.
+    expect(await unansweredQuestionAlerts(env as never, Date.now() + 5 * 86_400_000)).toEqual([]);
+  });
+
+  it("an unanswered question becomes visible on Today, and not before it is stale", async () => {
+    const asked = await handleBossInboundMail(
+      mail({ subject: "#Monique", body: DATABRICKS_MESSAGE }), env as never);
+    expect(asked.outcome).toBe("NEEDS_CLARITY");
+    expect(await unansweredQuestionAlerts(env as never, Date.now())).toEqual([]);
+    const stale = await unansweredQuestionAlerts(env as never, Date.now() + 4 * 86_400_000);
+    expect(stale.length).toBe(1);
+    expect(stale[0]!.severity).toBe("high");
+    expect(stale[0]!.text).toMatch(/waiting on you/i);
   });
 });
 

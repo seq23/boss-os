@@ -11,6 +11,7 @@ import {
 } from "../../../shared/boss/intake/mail.mjs";
 import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
+import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
 import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
 
@@ -179,14 +180,15 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * written to prevent. Recording on arrival means the worst case is a row that says the outcome is
    * still RECEIVED, which is a visible loose end rather than a message that never existed.
    */
+  const messageId = (message.headers.get("message-id") ?? "").trim().slice(0, 400) || null;
   const recordArrival = async (outcome: string, why: string) => {
     await env.DB.prepare(
       `INSERT INTO boss_inbound_mail
-         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400),
-      outcome, why.slice(0, 1000), message.rawSize,
+      outcome, why.slice(0, 1000), message.rawSize, messageId,
     ).run();
   };
 
@@ -359,6 +361,44 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * every morning and never once ran. A task created by this mailbox has to be indistinguishable
    * from one she typed on the Tasks page, or it inherits that bug by construction.
    */
+  /*
+   * ─── IF SHE CANNOT BE UNDERSTOOD, SHE IS ASKED — BEFORE ANYTHING IS MADE ──
+   *
+   * Owner, 11 September 2026: "can u make it so that if simone doesnt understand something she
+   * emails back for clarity". The rules live in `shared/boss/intake/clarify.mjs`, which says where
+   * the line is drawn and why it is drawn there; what matters HERE is the position of this block —
+   * above `admitTask`, so no model ever sees a message that could not be understood. A question
+   * asked after the fact, beside an invented answer, is worse than either on its own.
+   *
+   * A REPLY IS NEVER QUESTIONED, which is what makes this terminate. Her answer routes as ordinary
+   * work, and it also CLOSES the question it answers, a few lines further down.
+   */
+  const isReply = isReplyMessage({
+    subject, inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
+  });
+  const question = bookFailure ? null : clarificationFor({
+    subject: trueSubject, body: readable, department: route.seat.department ?? "",
+    seatName: route.seat.name, tag: route.tag, isReply, bookFiled: Boolean(bookNote),
+    hasVerb: Boolean(directive), forwarded: Boolean(origin?.from),
+  });
+
+  /*
+   * HER ANSWER CLOSES THE QUESTION. Matched on the Message-ID her own client put in `References`,
+   * so "she has been asked something and has not answered" is arithmetic over rows rather than a
+   * hope. Without this the Today alert would nag at questions she replied to the same hour.
+   */
+  if (isReply) {
+    const chain = `${message.headers.get("references") ?? ""} ${message.headers.get("in-reply-to") ?? ""}`;
+    const ids = (chain.match(/<[^>]+>/g) ?? []).slice(0, 20);
+    if (ids.length) {
+      const marks = ids.map(() => "?").join(",");
+      await env.DB.prepare(
+        `UPDATE boss_inbound_mail SET answered_at = ?
+          WHERE outcome = 'NEEDS_CLARITY' AND answered_at IS NULL AND message_id IN (${marks})`,
+      ).bind(now, ...ids).run().catch(() => undefined);
+    }
+  }
+
   let taskId: string | null = null;
   let admitFailure: string | null = null;
   /*
@@ -369,7 +409,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * with a superior" and lands in her approval queue as though it were a considered answer. She now
    * gets a reply that says what could not be read, and nothing is invented on top of it.
    */
-  if (route.outcome !== "AMBIGUOUS" && !bookFailure) {
+  if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question) {
     try {
       const admitted = await admitTask(env, {
         title: strippedSubject(trueSubject) || `Mail from ${sender}`,
@@ -412,9 +452,12 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   // BOOK_NOT_READ is a fourth outcome beside ROUTED / DEFAULTED / AMBIGUOUS: the message arrived,
   // was hers, named a book verb, and could not be carried out. Recorded as its own fact so it is
   // countable rather than hiding inside "routed".
-  const outcome = bookFailure ? "BOOK_NOT_READ" : admitFailure ? "NOT_ADMITTED" : route.outcome;
+  const outcome = bookFailure ? "BOOK_NOT_READ"
+    : question ? "NEEDS_CLARITY"
+      : admitFailure ? "NOT_ADMITTED" : route.outcome;
   const why = [route.why,
     ...(bookNote ? [bookNote] : []),
+    ...(question ? [`${route.seat.name} asked you a question instead of starting work. ${question.why}`] : []),
     ...(bookFailure ? [`No work was opened: the book instruction could not be read. ${bookFailure.split("\n")[0]}`] : []),
     ...(admitFailure ? [`No task was opened: ${admitFailure}.`] : []),
     ...(oversize
@@ -431,7 +474,21 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * crashed handler produces, so the two become indistinguishable at exactly the moment she needs
    * them not to be.
    */
-  const reply = [replyBody(route, roster, trueSubject),
+  /*
+   * A QUESTION IS THE WHOLE REPLY. Not a question appended to "Monique has it." and a list of every
+   * tag in the building: she has to be able to hit reply and type one line, and everything above
+   * that line is a reason not to. The routing boilerplate is right for a message that became work
+   * and wrong for one that is waiting on her.
+   */
+  const reply = question ? [
+    question.ask,
+    /*
+     * A QUESTION DOES NOT REPLACE "I DID NOT KNOW WHO THIS WAS FOR". When the tag was unrecognised
+     * she still has to be told which seats exist, or the question and the mis-routing become one
+     * confusing message and she fixes neither. On a clean ROUTED message the roster block is noise.
+     */
+    ...(route.outcome !== "ROUTED" ? ["", "—", "", replyBody(route, roster, trueSubject)] : []),
+  ].join("\n") : [replyBody(route, roster, trueSubject),
     ...(bookNote ? ["", bookNote] : []),
     ...(bookFailure ? ["", bookFailure] : []),
     ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
@@ -447,6 +504,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     entityId: mailId,
     detail: {
       mailbox: BOSS_INTAKE_MAILBOX, tag: route.tag, employee: route.seat.name, outcome,
+      ...(question ? { asked: question.reason } : {}),
       unknown_tags: route.unknownTags,
       // The tags that WERE available, so a mis-typed one is diagnosable from the log alone.
       known_tags: roster.map((s) => seatTag(s.name)),

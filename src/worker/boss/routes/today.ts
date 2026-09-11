@@ -20,6 +20,7 @@ import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from 
 import { coachingFocus, lensFor } from "../today/faculty";
 import { deliverableAlerts } from "../today/deliverables";
 import { bookNagAlerts } from "../capital/bookNag";
+import { unansweredQuestionAlerts } from "../intake/questions";
 import { credentialAlerts } from "../today/credentials";
 import { diary } from "../today/diary";
 import { alertKey, applyDismissals } from "../today/alerts";
@@ -819,6 +820,12 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * comes back every week.
    */
   alerts.push(...(await bookNagAlerts(env, now).catch(() => [])));
+  /*
+   * AN EMPLOYEE WAITING ON AN ANSWER. Same mechanism and the same reason: a question asked by mail
+   * and never answered is work that is not happening, and the polite reply that asked it is
+   * indistinguishable from a job well done until somebody looks. See intake/questions.ts.
+   */
+  alerts.push(...(await unansweredQuestionAlerts(env, now).catch(() => [])));
   if (tradingAuthority?.kill_switch) {
     alerts.push({ severity: "critical", text: "The trading kill switch is engaged. Nothing in that lane executes.", source_type: "trading", source_id: null });
   }
