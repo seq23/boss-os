@@ -50,10 +50,66 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { createHash } from "node:crypto";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const BATCH_DIR = path.join(DIR, "candidates");
 const LEDGER = path.join(DIR, "ledger.json");
+const CHECKPOINT = path.join(DIR, "extract-checkpoint.json");
+
+/*
+ * RESUMABLE, BECAUSE A CRASH AT 87% USED TO COST 87%.
+ *
+ * Every extracted row lived in memory until the very last statement of the run, and the
+ * ledger was written once at the end. So a crash threw away the whole run: on
+ * 2026-09-10 this failed twice on the same backfill - once on `fetch failed`, once on
+ * `spawn ENOEXEC` at batch 1,251 of 1,442 - and each retry started again at zero. The
+ * transient failures were survivable; losing five hours of work to them was not.
+ *
+ * A batch is identified by the MESSAGES IN IT, not by its index. Index is not stable:
+ * re-run the scan, or filter one message differently, and batch 900 is a different batch.
+ * Hashing the source ids means a completed batch stays completed across runs, and a
+ * batch whose contents changed is correctly treated as new work.
+ *
+ * Rows are flushed into the ledger as they are produced. That is safe without any new
+ * reconciliation because the merge below is already keyed and additive - "added to,
+ * never trimmed" - so writing the same row twice is a no-op, and a crash mid-flush
+ * leaves a ledger that is short, never wrong.
+ */
+const batchKey = (batch) => createHash("sha256")
+  .update(batch.map((m) => m.source_message).join("|"))
+  .digest("hex")
+  .slice(0, 16);
+
+function readCheckpoint() {
+  try {
+    const j = JSON.parse(fs.readFileSync(CHECKPOINT, "utf8"));
+    return new Set(Array.isArray(j.done) ? j.done : []);
+  } catch { return new Set(); }
+}
+
+/*
+ * One writer at a time. CONCURRENCY workers finish batches in parallel, and two
+ * simultaneous read-modify-write cycles over the same two files would lose one of them.
+ * The chain is the mutex: each flush waits on the previous one.
+ */
+let flushChain = Promise.resolve();
+function flush(rows, key, done) {
+  flushChain = flushChain.then(() => {
+    fs.mkdirSync(DIR, { recursive: true });
+    if (rows.length) {
+      const prior = fs.existsSync(LEDGER) ? JSON.parse(fs.readFileSync(LEDGER, "utf8")) : { interests: [] };
+      const k = (r) => `${r.source_message}|${r.side}|${r.asset.toLowerCase()}|${r.size_usd ?? r.size_shares}`;
+      const merged = new Map((prior.interests ?? []).map((r) => [k(r), r]));
+      for (const r of rows) if (!merged.has(k(r))) merged.set(k(r), r);
+      const interests = [...merged.values()].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      fs.writeFileSync(LEDGER, JSON.stringify({ ...prior, updated_at: new Date().toISOString(), interests }, null, 2), "utf8");
+    }
+    done.add(key);
+    fs.writeFileSync(CHECKPOINT, JSON.stringify({ updated_at: new Date().toISOString(), done: [...done] }, null, 2), "utf8");
+  }).catch((e) => { console.error("checkpoint flush failed:", e.message); });
+  return flushChain;
+}
 const PROMPT = process.env.CAPITAL_PROMPT
   ?? path.join(path.dirname(new URL(import.meta.url).pathname), "interest-extract-prompt.md");
 
@@ -344,9 +400,20 @@ async function main() {
   const batches = [];
   for (let i = 0; i < forModel.length; i += 20) batches.push(forModel.slice(i, i + 20));
 
+  // Resume: drop batches whose exact message set has already been extracted and banked.
+  const doneKeys = readCheckpoint();
+  const all = batches.length;
+  const pending = batches.filter((b) => !doneKeys.has(batchKey(b)));
+  const skipped = all - pending.length;
+  if (skipped) {
+    console.log(`resuming: ${skipped} of ${all} batch(es) already banked from an earlier run; ${pending.length} to go.`);
+  } else if (doneKeys.size) {
+    console.log(`checkpoint holds ${doneKeys.size} batch(es) from an earlier run, none matching this batching; starting fresh.`);
+  }
+
   let done = 0, failed = 0, rejected = 0;
   const rejectReasons = {};
-  const it = batches[Symbol.iterator]();
+  const it = pending[Symbol.iterator]();
   await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
     for (;;) {
       const next = it.next();
@@ -363,27 +430,45 @@ async function main() {
 
       const res = await runClaude(`${prompt}\n\n=== BATCH OF ${batch.length} MESSAGES ===\n\n${payload}`);
       done += 1;
-      process.stdout.write(`  batch ${done}/${batches.length}\r`);
+      process.stdout.write(`  batch ${done}/${pending.length}\r`);
+      /*
+       * A FAILED BATCH IS NOT CHECKPOINTED. It gets retried on the next run, which is
+       * the whole point - banking a failure as done would make a transient `fetch
+       * failed` permanently silent data loss.
+       */
       if (!res.ok) { failed += 1; continue; }
       const parsed = parseRows(res.out);
       if (!parsed) { failed += 1; continue; }
+      const banked = [];
       const byId = new Map(batch.map((m) => [m.source_message, m]));
       for (const r of parsed) {
         const msg = byId.get(r.source_message);
         if (!msg) { rejected += 1; rejectReasons["source id not in this batch"] = (rejectReasons["source id not in this batch"] ?? 0) + 1; continue; }
         const why = admissible(r, msg);
         if (why) { rejected += 1; rejectReasons[why] = (rejectReasons[why] ?? 0) + 1; continue; }
-        rows.push(normalise(r, msg));
+        const row = normalise(r, msg);
+        rows.push(row);
+        banked.push(row);
       }
+      // Banked before the next batch starts. A crash now costs this batch, not the run.
+      await flush(banked, batchKey(batch), doneKeys);
     }
   }));
+  await flushChain;
 
   /*
    * RULE 0. A run where every batch failed has extracted nothing and must not look like a market
    * with nothing in it. Those two facts are opposite and the screen shows them identically.
    */
-  if (batches.length > 0 && failed === batches.length) {
-    console.error(`\nNAMED STOP [EXTRACTION_NEVER_RAN] all ${batches.length} batch(es) failed.`);
+  /*
+   * Counted against PENDING, not against every batch ever. On a resumed run most batches
+   * are already banked and never execute; comparing failures to the full count would let
+   * a run where every executed batch failed slip past this stop, which is the exact
+   * "broken run that looks like an empty market" it exists to catch. A resumed run with
+   * nothing pending is not a failure - there was nothing to do.
+   */
+  if (pending.length > 0 && failed === pending.length) {
+    console.error(`\nNAMED STOP [EXTRACTION_NEVER_RAN] all ${pending.length} pending batch(es) failed.`);
     console.error(`  ${MODEL} was not reachable, or every reply was unparseable. This is a broken run,`);
     console.error("  not an empty market. Check that `claude` is on PATH and signed in.");
     process.exit(9);
