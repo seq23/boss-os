@@ -34,8 +34,27 @@ export interface ParsedBook {
   side: BookSide;
 }
 
+/** What she typed straight after the tag, and the text that verb operates on. */
+export type BookVerb = "book" | "add" | "remove";
+
+export interface BookDirective {
+  verb: BookVerb;
+  /** Where the verb was found, so a reply can quote the right half of the message back. */
+  where: "subject" | "body";
+  text: string;
+}
+
 export declare const DEFAULT_BOOK_SIDE: BookSide;
+export declare const BOOK_VERBS: BookVerb[];
+export declare const SIZE_NOT_STATED: string;
 export declare function usd(token: string): number | null;
-export declare function parseLiveBook(text: string, opts?: { side?: BookSide }): ParsedBook;
+export declare function isSizeless(lot: Partial<BookLot> | null | undefined): boolean;
+export declare function readBookDirective(
+  subject: string, body: string, tag: string | null,
+): BookDirective | null;
+export declare function parseLiveBook(
+  text: string,
+  opts?: { side?: BookSide; allowSizeless?: boolean },
+): ParsedBook;
 export declare function bookFingerprint(positions: readonly Partial<BookLot>[]): string;
 export declare function describeLot(lot: Partial<BookLot>): string;

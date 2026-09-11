@@ -9,9 +9,10 @@ import {
   replyBody, routeToSeat, seatTag, strippedSubject,
   type BossRoute, type BossSeat,
 } from "../../../shared/boss/intake/mail.mjs";
-import { parseLiveBook, bookFingerprint, describeLot } from "../../../shared/boss/intake/liveBook.mjs";
+import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/liveBook.mjs";
+import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
-import { storeLiveBook } from "../capital/book";
+import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -109,10 +110,49 @@ function senderOf(message: BossMailMessage): string {
  * least two priced lines. Below that it is an instruction that happens to mention a number.
  */
 export function looksLikeBook(route: BossRoute, text: string): boolean {
-  if (route.seat.department !== "Relationships") return false;
-  if (/\bdo not (?:file|store|update)\b|\bignore\b/i.test(text)) return false;
+  if (!booksAreThisSeats(route, text)) return false;
   const parsed = parseLiveBook(text);
   return parsed.positions.filter((p: { size_usd: number | null }) => p.size_usd !== null).length >= 2;
+}
+
+/**
+ * The two guards that sit in front of EVERY book operation, verb or no verb.
+ *
+ * THE SEAT: her inventory is Monique's, and the same words sent to somebody else are not her book.
+ * THE ESCAPE: "do not file" / "ignore" still means it, and now covers the verbs too — she has to be
+ * able to quote a book back at this machine without the quote becoming an instruction.
+ */
+function booksAreThisSeats(route: BossRoute, text: string): boolean {
+  if (route.outcome === "AMBIGUOUS") return false;
+  if (route.seat.department !== "Relationships") return false;
+  return !/\bdo not (?:file|store|update)\b|\bignore\b/i.test(text);
+}
+
+/**
+ * ─── THE VERB IS THE INSTRUCTION. THE PRICE COUNT NEVER WAS. ───────────────
+ *
+ * `#monique book` replaces, `#monique add` amends, `#monique remove` drops a named lot, and
+ * `#monique` followed by anything else is an ordinary instruction. Read `readBookDirective` for what
+ * this replaced and why; the short version is that intent was being inferred from how many dollar
+ * signs a message contained, and one unpriced line therefore became a hallucinated approval while
+ * two priced ones would silently have replaced her entire inventory.
+ *
+ * Returns null for a message with no verb, which is most of them, and null is the old path intact.
+ */
+export function bookDirectiveFor(route: BossRoute, subject: string, body: string): BookDirective | null {
+  if (!booksAreThisSeats(route, `${subject}\n${body}`)) return null;
+  if (!route.tag) return null;
+  return readBookDirective(subject, body, route.tag);
+}
+
+/** Run the verb she typed. One switch, so a verb can never quietly mean "and also the other thing". */
+async function applyBookDirective(
+  env: Env, directive: BookDirective, mailId: string, now: number,
+): Promise<StoredBook> {
+  const input = { text: directive.text, mailId, now };
+  if (directive.verb === "book") return storeLiveBook(env, { ...input, explicit: true });
+  if (directive.verb === "add") return amendLiveBook(env, input);
+  return removeFromLiveBook(env, input);
 }
 
 export async function handleBossInboundMail(message: BossMailMessage, env: Env): Promise<BossMailResult> {
@@ -281,9 +321,32 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const haystack = `${subject}\n${readable}`;
   const route = routeToSeat(haystack, roster)!;
 
-  // Her live book is Monique's, and it is filed as itself rather than as a task about an email.
+  /*
+   * ─── HER BOOK, BY THE VERB SHE TYPED ───────────────────────────────────────
+   *
+   * A verb is explicit and therefore BINDING BOTH WAYS: it files when it can, and when it cannot it
+   * says so and stops. What it must never do is fall through to the generic model path, which is
+   * exactly what happened to "#Monique - Please add searching for buyers of Databricks…" — a message
+   * that was not a book, was not recognised as anything else either, and came back as a paragraph of
+   * invention sitting in her approval queue.
+   *
+   * The no-verb path below is UNCHANGED, deliberately: she has been told a full priced book to
+   * `#monique` files, and a convention that breaks the thing somebody was just told to do is worse
+   * than the gap it closes.
+   */
   let bookNote: string | null = null;
-  if (readable && route.outcome !== "AMBIGUOUS" && looksLikeBook(route, readable)) {
+  let bookFailure: string | null = null;
+  const directive = readable || subject ? bookDirectiveFor(route, subject, readable) : null;
+  if (directive) {
+    const result = await applyBookDirective(env, directive, mailId, now);
+    if (result.failed) bookFailure = result.note;
+    else bookNote = result.note;
+  } else if (readable && route.outcome !== "AMBIGUOUS" && looksLikeBook(route, readable)) {
+    /*
+     * NOT A BLOCKER ON THIS PATH. She did not ask for a book operation here — this branch GUESSED
+     * that she meant one — so a refusal is something to tell her about while the message still
+     * becomes ordinary work. Only an explicit verb earns the right to stop the message.
+     */
     const stored = await storeLiveBook(env, { text: readable, mailId, now });
     bookNote = stored.note;
   }
@@ -298,7 +361,15 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   let taskId: string | null = null;
   let admitFailure: string | null = null;
-  if (route.outcome !== "AMBIGUOUS") {
+  /*
+   * A FAILED VERB OPENS NO WORK, AND THAT IS THE WHOLE POINT OF THE VERB.
+   *
+   * `apr_m26zq5praheyw251` is what the other branch produces: an unreadable book instruction handed
+   * to a language model, which obliges with a paragraph about "managing a meeting or interaction
+   * with a superior" and lands in her approval queue as though it were a considered answer. She now
+   * gets a reply that says what could not be read, and nothing is invented on top of it.
+   */
+  if (route.outcome !== "AMBIGUOUS" && !bookFailure) {
     try {
       const admitted = await admitTask(env, {
         title: strippedSubject(trueSubject) || `Mail from ${sender}`,
@@ -338,9 +409,13 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     }
   }
 
-  const outcome = admitFailure ? "NOT_ADMITTED" : route.outcome;
+  // BOOK_NOT_READ is a fourth outcome beside ROUTED / DEFAULTED / AMBIGUOUS: the message arrived,
+  // was hers, named a book verb, and could not be carried out. Recorded as its own fact so it is
+  // countable rather than hiding inside "routed".
+  const outcome = bookFailure ? "BOOK_NOT_READ" : admitFailure ? "NOT_ADMITTED" : route.outcome;
   const why = [route.why,
     ...(bookNote ? [bookNote] : []),
+    ...(bookFailure ? [`No work was opened: the book instruction could not be read. ${bookFailure.split("\n")[0]}`] : []),
     ...(admitFailure ? [`No task was opened: ${admitFailure}.`] : []),
     ...(oversize
       ? [objectKey
@@ -358,6 +433,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const reply = [replyBody(route, roster, trueSubject),
     ...(bookNote ? ["", bookNote] : []),
+    ...(bookFailure ? ["", bookFailure] : []),
     ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
   ].join("\n");
 

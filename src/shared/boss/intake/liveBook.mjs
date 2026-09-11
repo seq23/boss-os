@@ -147,6 +147,67 @@ function lotFrom(fragment) {
   return lot;
 }
 
+/**
+ * ─── A LINE WITH NO SIZE IS STILL A LOT, WHEN SHE SAID SO ──────────────────
+ *
+ * Owner, 11 September 2026: "#Monique - Please add searching for buyers of Databricks to the weekly
+ * list". Databricks is real inventory with NO SIZE YET — she is hunting the other side before she
+ * knows how big it is — and a book that cannot hold that state forces her to invent a number or to
+ * leave the name out, and she will leave it out.
+ *
+ * SIZELESS IS OPT-IN, AND NARROW, because the same permission that admits `Databricks — size TBD`
+ * would admit `please call Bob about the thing` as a lot called "please call Bob about the thing".
+ * So a sizeless line is inventory only when it is SHAPED like a name: one to four words, not opening
+ * on an instruction verb, and either standing alone or followed by an explicit "I do not know yet"
+ * marker. Everything else still goes to `unparsed` and is read back to her.
+ */
+const INSTRUCTION_OPENER =
+  /^(?:please|pls|can|could|would|will|lets?|let's|call|find|search(?:ing)?|look(?:ing)?|ask|send|email|forward|follow|chase|check|remind|update|make|get|tell|draft|set|schedule|add|remove|drop|file|keep|put|move|note|reply|book|about|also|and|but|so|for|to|of|the|an?|this|that|these|those|it|its|i|we|you|they|he|she|my|our|their|there|here|what|when|who|why|how|if|need|want|thinking|maybe)\b/i;
+
+/** How she says "I do not have a size for this yet". Never inferred — she has to write one. */
+const SIZE_UNKNOWN = /\b(?:t\.?b\.?d\.?|t\.?b\.?a\.?|unknown|unsized|no size|size\s+(?:tbd|tba|unknown|unclear)|n\/a|open)\b/i;
+
+/** The text a sizeless lot carries in place of a number, so the gap is visible and never a zero. */
+export const SIZE_NOT_STATED = "size TBD";
+
+/**
+ * A lot with a name and no number, or null when the line is not shaped like inventory.
+ * Deliberately strict: a false positive here writes prose into her book.
+ */
+function sizelessLot(line, side) {
+  const split = /^([^—–:,;]+?)\s*(?:[—–:;,]|\s-\s)\s*(.*)$/.exec(line);
+  const head = (split ? split[1] : line).trim().replace(/[\s.]+$/, "");
+  const rest = (split ? split[2] : "").trim();
+
+  if (!head || head.length > 48) return null;
+  if (!/^[A-Za-z0-9]/.test(head) || !/[A-Za-z]{2}/.test(head)) return null;
+  const words = head.split(/\s+/);
+  if (words.length > 4) return null;
+  if (INSTRUCTION_OPENER.test(head)) return null;
+  // Standing alone is a name. Anything trailing it has to SAY that the size is not known yet.
+  if (rest && !SIZE_UNKNOWN.test(rest)) return null;
+
+  const asset = head.replace(INSTRUMENT_SUFFIX, "").trim();
+  if (!asset) return null;
+
+  return {
+    asset,
+    side: /\b(?:buy|bid|wanted|looking\s+for)\b/i.test(head) ? "buy" : side,
+    size_usd: null, size_min_usd: null, size_max_usd: null, size_shares: null,
+    size_text: rest || SIZE_NOT_STATED,
+    source_line: line,
+  };
+}
+
+/** Is this lot one she has not sized yet? One rule, so every surface marks it the same way. */
+export function isSizeless(lot) {
+  return !lot
+    || (lot.size_usd === null || lot.size_usd === undefined)
+    && (lot.size_min_usd === null || lot.size_min_usd === undefined)
+    && (lot.size_max_usd === null || lot.size_max_usd === undefined)
+    && !lot.size_shares;
+}
+
 /** Lines that are a heading, a signature, a greeting or a quoted reply — not inventory. */
 const NOT_INVENTORY =
   /^(?:>|--\s*$|sent from|on .+ wrote:|hi\b|hey\b|here(?:'s| is)\b|this week|current book|live book|sell side|sell-side|book:|inventory:|thanks|best,|—|-{3,}|=|#)/i;
@@ -161,6 +222,14 @@ const NOT_INVENTORY =
  */
 export function parseLiveBook(text, opts = {}) {
   const defaultSide = opts.side ?? DEFAULT_BOOK_SIDE;
+  /*
+   * SIZELESS LOTS ARE ADMITTED ONLY WHEN THE CALLER SAYS SO, and the caller only says so when SHE
+   * did — an explicit `#monique book` / `#monique add`. The legacy path, where a bare `#monique`
+   * message is recognised as a book by its content, keeps the old behaviour exactly: it is a guess
+   * about her intent, and a guess may not be allowed to write a name into her book off a line that
+   * carries no number at all.
+   */
+  const allowSizeless = opts.allowSizeless === true;
   const lines = String(text ?? "").split(/\r?\n/);
   const positions = [];
   const unparsed = [];
@@ -178,6 +247,8 @@ export function parseLiveBook(text, opts = {}) {
     const tokens = moneyTokens(line);
     const shares = shareCount(line);
     if (tokens.length === 0 && shares === null) {
+      const sizeless = allowSizeless ? sizelessLot(line, side) : null;
+      if (sizeless) { positions.push(sizeless); continue; }
       // A line with a plausible issuer name and no size at all is a gap she should see.
       if (/[A-Za-z]{3}/.test(line) && line.length <= 120) unparsed.push({ line, why: "no size could be read" });
       continue;
@@ -240,6 +311,75 @@ export function bookFingerprint(positions) {
     .join("\n");
 }
 
+/**
+ * ─── THE VERB, NOT THE NUMBER OF PRICES ────────────────────────────────────
+ *
+ * WHAT THIS REPLACES, AND WHY IT HAD TO GO. `looksLikeBook` decided whether a message to Monique was
+ * her inventory by COUNTING PRICES: two or more priced lines and it filed a book; one and it did
+ * not. That is intent inferred from arithmetic, and it has a cliff edge running straight through the
+ * middle of her ordinary week. On 11 September 2026 she sent "#Monique - Please add searching for
+ * buyers of Databricks to the weekly list" — one unpriced line, therefore not a book, therefore
+ * routed to the generic model path, which answered with a paragraph about "a set of instructions or
+ * a to-do list related to managing a meeting or interaction with a superior" and parked it in her
+ * approval queue. The same sentence with two dollar figures in it would have silently REPLACED her
+ * entire book instead. Both outcomes are the same defect: the machine guessing at what she meant.
+ *
+ * So she says it. `#monique book` replaces, `#monique add` amends, `#monique remove` drops a lot,
+ * and `#monique` followed by anything else is an ordinary instruction exactly as before.
+ *
+ * THE VERB IS THE FIRST WORD AFTER THE TAG AND NOWHERE ELSE. Her Databricks message contains the
+ * word "add" — "Please add searching for buyers…" — and must NOT be an amendment: what follows the
+ * tag there is "Please". A verb found loose in a sentence would recreate the guessing this exists to
+ * remove, one layer further in.
+ */
+export const BOOK_VERBS = ["book", "add", "remove"];
+
+/** Only these separators may sit between the tag and the verb: punctuation she actually types. */
+const AFTER_TAG = /^[\s:,.\-–—>|]*([a-z]+)/i;
+
+/** Find `tag` in a piece of text and read the word after it. Null when the tag is not there. */
+function verbAfterTag(text, tag) {
+  const hay = String(text ?? "");
+  const needle = String(tag ?? "").toLowerCase();
+  if (!needle.startsWith("#")) return null;
+  const lower = hay.toLowerCase();
+  let from = 0;
+  for (;;) {
+    const at = lower.indexOf(needle, from);
+    if (at === -1) return null;
+    const after = at + needle.length;
+    // `#moniques` is not `#monique` — the tag has to end where the tag ends.
+    if (/[a-z0-9]/.test(lower[after] ?? "")) { from = after; continue; }
+    const m = AFTER_TAG.exec(hay.slice(after, after + 40));
+    const word = m?.[1]?.toLowerCase() ?? null;
+    if (word && BOOK_VERBS.includes(word)) {
+      return { verb: word, after: after + (m.index ?? 0) + m[0].length };
+    }
+    return null;
+  }
+}
+
+/**
+ * Which book operation this message is, and the text it operates on.
+ *
+ * The subject is read first because that is where she puts the tag; when the verb is there, the
+ * whole body is what it operates on. When the verb is in the body, only what follows it is — so the
+ * tag line itself never becomes a lot.
+ *
+ * Returns null for every message that does not begin with a verb, which is most of them, and that
+ * null is the "ordinary instruction" path unchanged.
+ */
+export function readBookDirective(subject, body, tag) {
+  const inSubject = verbAfterTag(subject, tag);
+  if (inSubject) {
+    const tail = String(subject ?? "").slice(inSubject.after).trim();
+    return { verb: inSubject.verb, where: "subject", text: [tail, String(body ?? "")].filter(Boolean).join("\n") };
+  }
+  const inBody = verbAfterTag(body, tag);
+  if (inBody) return { verb: inBody.verb, where: "body", text: String(body ?? "").slice(inBody.after) };
+  return null;
+}
+
 /** One line, the way she wrote it back to her. */
 export function describeLot(p) {
   const m = (n) => (n >= 1e9 ? `$${(n / 1e9).toFixed(n % 1e9 === 0 ? 0 : 1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1)}M` : `$${Math.round(n).toLocaleString("en-US")}`);
@@ -248,5 +388,7 @@ export function describeLot(p) {
   else if (p.size_usd !== null && p.size_usd !== undefined) parts.push(m(p.size_usd));
   if (p.size_min_usd !== null && p.size_min_usd !== undefined) parts.push(`${m(p.size_min_usd)} minimum`);
   if (p.size_shares) parts.push(`${Number(p.size_shares).toLocaleString("en-US")} shares`);
-  return `${p.asset} — ${p.side} — ${parts.join(", ") || p.size_text}`;
+  // A lot she has not sized SAYS SO. Never a blank and never a zero: "no size yet" is a real state
+  // of her book, and the buyer hunt has to be able to tell it from "nobody filled this in".
+  return `${p.asset} — ${p.side} — ${parts.join(", ") || p.size_text || SIZE_NOT_STATED}`;
 }
