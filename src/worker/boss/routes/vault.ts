@@ -148,6 +148,18 @@ const SNAPSHOT_TABLES = [
   // check the triage is working. `work_assignments` is here for the same reason `owned_deliverables`
   // is: a restore that lost them would silently drop work one employee handed another.
   "kdp_mail_log", "work_assignments",
+  // 0228 — what was actually tried on each blocked title, and when each launchd job on her Mac last
+  // did a duty's work.
+  //
+  // `kdp_publish_attempts` holds the one thing that is NOT re-derivable: AMAZON'S OWN WORDS for why
+  // a title refused. The bookshelf shows the current state and says nothing about the four attempts
+  // before it, and a paraphrase is how a server-side flag spent a week being described as an
+  // account-information problem.
+  //
+  // `duty_runs` is the link between launchd and D1 — the thing whose absence let seven duties run
+  // for days against a NULL last_run_at and produced a wrong report to her face. A restore that
+  // lost it would recreate that exact confusion: every local job reading as never having run.
+  "kdp_publish_attempts", "duty_runs",
   // 0207 — the credential liveness register. It holds no credential and no secret, which is exactly
   // why it belongs in a backup: what is not re-derivable is the FIX STEPS on each row, written once
   // and read at the worst possible moment. A restore that lost them would leave an alert saying a
