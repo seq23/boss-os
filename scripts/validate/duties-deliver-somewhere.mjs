@@ -238,7 +238,23 @@ function scan() {
      */
     const jobScript = localJobScript(duty.text);
     const jobSrc = jobScript ? read(`scripts/ops/${jobScript}`) : null;
-    const reachesAModel = jobScript === null || /\bclaude\b|run_ai|api\.anthropic|CLAUDE_/.test(jobSrc ?? "");
+    /*
+     * ── THE QUESTION IS WHAT THE SCRIPT RUNS, NOT WHAT IT TALKS ABOUT ────────
+     *
+     * This used to test the whole file, comments included, and `kdp-publish.sh` broke it: that job
+     * runs no model at all — it reads her recorded verdict, fetches approved bytes and drives a
+     * browser — and its header explains WHY, in a sentence containing the words "claude -p". So a
+     * comment saying "this deliberately uses no model" was read as evidence that it used one, and
+     * the validator demanded a model be named for a job that has nothing to spend.
+     *
+     * A validator that is confused by an explanation of itself teaches people to delete the
+     * explanation. So comment lines are stripped and the test runs against code.
+     */
+    const jobCode = (jobSrc ?? "")
+      .split("\n")
+      .filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line))
+      .join("\n");
+    const reachesAModel = jobScript === null || /\bclaude\b|run_ai|api\.anthropic|CLAUDE_/.test(jobCode);
 
     if (reachesAModel && !namesAModel(duty.id, duty.text)) {
       problems.push(
