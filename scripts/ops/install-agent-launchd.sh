@@ -295,6 +295,53 @@ launchctl unload "$NUDGE_PLIST" 2>/dev/null || true
 launchctl load "$NUDGE_PLIST"
 echo "Installed $NUDGE_LABEL — the 1st at 07:30 Central (interest-match.mjs --nudge)."
 
+# ─── The weekly buyer hunt, against her live book ────────────────────────────
+#
+# Nothing in this system had ever hunted buyers for what she is actually trying to SELL.
+# `buyer-hunt.mjs` is 369 lines of EDGAR N-PORT work and it was reachable from one place: someone
+# typing `npm run capital:buyers`. None of the 14 standing duties named it.
+#
+# Tuesday 07:00 Central, ahead of the 07:15 and 07:45 jobs, because this is the one whose output is a
+# list of people to call. It reads a book filed by email over the weekend against a ledger the Sunday
+# mailbox sweep refreshed.
+#
+# WRAPPED IN duty-run.sh SO THE RUN REACHES `duty_buyer_hunt` IN D1 — "I DONT CARE IF ITS LAUNCHD OR
+# D1 - THOSE SHOULD BE LINKED ANYWAY." The token below and `task_input.$.local_job` in migration 0230
+# are the same string, and validate:launchd-duty-link proves it in both directions.
+#
+# `--from-boss` FIRST, and its failure is not this job's failure. It runs whatever she asked for by
+# email ("#monique find me a seller of $1B+ OpenAI"); exit 7 is the NAMED STOP for "nothing queued",
+# which is the ordinary week and must not turn the scheduled hunt red. Then the book hunt runs, and
+# THAT is the one whose exit code the duty row is told about.
+BUYERS_LABEL="com.seq.boss-capital-buyers"
+BUYERS_PLIST="$HOME/Library/LaunchAgents/$BUYERS_LABEL.plist"
+
+cat > "$BUYERS_PLIST" <<BUYERSEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$BUYERS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO && npm run --silent capital:hunts -- --send; cd $REPO && bash $REPO/scripts/ops/duty-run.sh buyer-hunt.mjs -- npm run --silent capital:buyers -- --send</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/capital-buyers.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/capital-buyers.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+BUYERSEOF
+
+launchctl unload "$BUYERS_PLIST" 2>/dev/null || true
+launchctl load "$BUYERS_PLIST"
+echo "Installed $BUYERS_LABEL — Tuesdays 07:00 Central (buyer-hunt.mjs, duty_buyer_hunt)."
+
 # ─── The weekly property read ────────────────────────────────────────────────
 #
 # Camille's Search Console analysis and Danielle's shipping heartbeat, in one job because they answer

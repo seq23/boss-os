@@ -119,3 +119,95 @@ export function seatInDepartment(roster, department) {
   if (!want) return null;
   return (roster ?? []).find((s) => String(s?.department ?? "").trim().toLowerCase() === want) ?? null;
 }
+
+/**
+ * ─── "FIND ME A SELLER OF $1B+ OPENAI" — THE ASSET AND THE SIZE, OUT OF HER SENTENCE ─────────────
+ *
+ * A handoff moves the work to the right desk. This says what the work IS, so the desk does not have
+ * to guess and no model has to be asked. `scripts/ops/buyer-hunt.mjs` already takes `--asset`,
+ * `--size` and `--side`; all that was missing was the sentence-to-arguments step.
+ *
+ * DETERMINISTIC, AND IT REFUSES RATHER THAN GUESSES. A request with no readable asset, or no
+ * readable size, returns null and the task is ordinary work on the right desk — which is still
+ * strictly better than what happened before. Queueing a hunt for an asset nobody named is exactly
+ * the "runs but inert" outcome: a real search, run against nothing, reported as a quiet week.
+ *
+ * THE SIDE IS THE VERB SHE USED. "find me a SELLER" means she is buying and wants the sell side;
+ * "find BUYERS for" means the opposite. There is no default — a hunt whose direction was assumed
+ * would return the wrong half of the market and look exactly like it worked.
+ */
+const SIZE_UNITS = { k: 1e3, m: 1e6, mm: 1e6, million: 1e6, b: 1e9, bn: 1e9, billion: 1e9 };
+
+/** A dollar figure written the way she writes them: $1B+, $600M, up to $1B, $50 million. */
+export function sizeUsdIn(text) {
+  const m = /\$\s?(\d[\d,]*(?:\.\d+)?)\s*(k|mm|m|bn|b|million|billion)?\b/i.exec(String(text ?? ""));
+  if (!m) return null;
+  const n = Number(m[1].replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = String(m[2] ?? "").toLowerCase();
+  return unit ? n * (SIZE_UNITS[unit] ?? 1) : n;
+}
+
+/** The side of the market being hunted, from the noun she used. Null when she did not say. */
+export function huntSideIn(text) {
+  const t = String(text ?? "");
+  if (/\b(?:sellers?|sell[-\s]?side|someone\s+selling|who(?:'s| is)\s+selling)\b/i.test(t)) return "sell";
+  if (/\b(?:buyers?|buy[-\s]?side|someone\s+buying|bid|bidders?)\b/i.test(t)) return "buy";
+  return null;
+}
+
+/**
+ * The asset, which is the word between the size and the paper.
+ *
+ * "a seller of $1B+ of OpenAI shares" -> OpenAI. Matched on the SHAPE of the phrase rather than on a
+ * list of company names: a list would be a second copy of her book, and the next name she trades
+ * would silently not be on it.
+ */
+export function assetIn(text) {
+  const t = withoutTags(text);
+  /*
+   * THE UNITS ARE CASE-INSENSITIVE AND THE NAME IS NOT, so these are written as explicit character
+   * classes rather than with the `i` flag. An `i` flag here makes `[A-Z]` match lowercase too, and
+   * the first draft of this duly returned "the Databricks" as the name of a company.
+   */
+  const SIZE = "\\$\\s?\\d[\\d,.]*\\s*(?:[kK]|[mM][mM]?|[bB][nN]?|[mM]illion|[bB]illion|[tT]housand)?\\+?";
+  const NAME = "([A-Z][A-Za-z0-9.&'\u2019-]*(?:\\s+[A-Z][A-Za-z0-9.&'\u2019-]*)?)";
+  const patterns = [
+    // "$1B+ of OpenAI shares" / "$600M in Anthropic"
+    new RegExp(`${SIZE}\\s+(?:of|in)\\s+${NAME}`),
+    // "seller of OpenAI shares" / "buyers for Databricks"
+    new RegExp(`(?:[sS]ellers?|[bB]uyers?)\\s+(?:of|for|in)\\s+(?:the\\s+)?${NAME}`),
+    // "$1B+ OpenAI"
+    new RegExp(`${SIZE}\\s+${NAME}`),
+  ];
+  for (const re of patterns) {
+    const m = re.exec(t);
+    if (!m) continue;
+    const asset = m[1].replace(/\s+(?:shares?|stock|equity|paper|block|blocks|secondary|secondaries)$/i, "").trim();
+    if (asset && !NOT_A_NAME_HERE.test(asset)) return asset;
+  }
+  return null;
+}
+
+/** Words that are grammar rather than a company. */
+const NOT_A_NAME_HERE = /^(?:the|a|an|of|in|for|this|that|shares?|stock|equity|block|blocks|it|them|and|or|to)$/i;
+
+/** Text with the employee tags taken out — the same rule `clarify.mjs` uses. */
+function withoutTags(text) {
+  return String(text ?? "").replace(/#[a-z0-9][a-z0-9_-]*/gi, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The whole hunt request, or null.
+ *
+ * @returns `{ asset, size_usd, side }` — everything `buyer-hunt.mjs` needs on its command line.
+ */
+export function huntRequestIn(text) {
+  const side = huntSideIn(text);
+  if (!side) return null;
+  const asset = assetIn(text);
+  if (!asset) return null;
+  const sizeUsd = sizeUsdIn(text);
+  if (!sizeUsd) return null;
+  return { asset, size_usd: sizeUsd, side };
+}

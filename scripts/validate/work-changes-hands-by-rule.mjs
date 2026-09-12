@@ -40,7 +40,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { handoffFor, seatInDepartment, HOLDING_DEPARTMENT } from "../../src/shared/boss/intake/handoff.mjs";
+import { handoffFor, seatInDepartment, huntRequestIn, HOLDING_DEPARTMENT } from "../../src/shared/boss/intake/handoff.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const INTAKE = "src/worker/boss/intake/inboundMail.ts";
@@ -143,6 +143,47 @@ export function theSeatComesFromTheRoster(roster) {
   return bad;
 }
 
+/**
+ * `[what it is, her sentence, the hunt expected or null]`.
+ *
+ * A handoff moves the work to the right desk; this says what the work IS. `buyer-hunt.mjs` has taken
+ * `--asset`, `--size` and `--side` all along and was reachable from exactly one place: somebody
+ * typing `npm run capital:buyers`.
+ */
+const HUNT_CASES = [
+  ["HER REAL SENTENCE parses to an asset, a size and a side", HERS, { asset: "OpenAI", size_usd: 1e9, side: "sell" }],
+  ["the tagged short form she was told to use", "#monique find me a seller of $1B+ OpenAI",
+    { asset: "OpenAI", size_usd: 1e9, side: "sell" }],
+  ["the other direction", "can you find buyers for the Databricks block, $20M",
+    { asset: "Databricks", size_usd: 2e7, side: "buy" }],
+  ["a size written as words", "find me a seller of $600 million Anthropic",
+    { asset: "Anthropic", size_usd: 6e8, side: "sell" }],
+
+  // IT REFUSES RATHER THAN GUESSES. A hunt run against an asset nobody named is a real search over
+  // nothing, reported as a quiet week.
+  ["no size means no hunt", "find a seller of OpenAI shares", null],
+  ["no side means no hunt — the direction is never assumed", "what about the $1B of OpenAI", null],
+  ["no asset means no hunt", "find me a seller for $1B of it", null],
+  ["ordinary mail is not a hunt", "can you book me a flight to Chicago on Tuesday", null],
+];
+
+/** Rule: her sentence becomes the exact arguments the hunt script takes. */
+export function theRequestBecomesAHunt(parse = huntRequestIn) {
+  const bad = [];
+  for (const [label, text, expected] of HUNT_CASES) {
+    const got = parse(text);
+    if (expected === null) {
+      if (got) bad.push(`${label}: parsed to ${JSON.stringify(got)} — a hunt invented from a sentence that did not ask for one.`);
+      continue;
+    }
+    if (!got) { bad.push(`${label}: parsed to nothing, so the search never runs and the request sits as a paragraph on a card.`); continue; }
+    for (const k of ["asset", "size_usd", "side"]) {
+      if (got[k] !== expected[k]) bad.push(`${label}: ${k} was ${JSON.stringify(got[k])}, expected ${JSON.stringify(expected[k])}.`);
+    }
+  }
+  return bad;
+}
+
 /** Rule: the intake hands off BEFORE any model, and the API can do it on demand. */
 export function theCodeDoesIt(intake, api, merge) {
   const bad = [];
@@ -165,6 +206,18 @@ export function theCodeDoesIt(intake, api, merge) {
     bad.push(`${INTAKE} moves the message to another desk without an audit row, so a reassignment cannot be found later.`);
   }
 
+  /*
+   * ─── AND THE HUNT REACHES THE SCRIPT THAT DOES IT ────────────────────────
+   * `input.hunt` is the argument list; `buyer-hunt.mjs --from-boss` is what picks it up; and
+   * `POST /:id/hunt-result` is what stops the task sitting queued for ever once it has run.
+   */
+  if (!/huntRequestIn\(/.test(intake)) {
+    bad.push(`${INTAKE} never parses a hunt request, so "find me a seller of $1B+ OpenAI" is a paragraph on a card and nothing more.`);
+  }
+  if (!/\.\.\.\(hunt \? \{ hunt \} : \{\}\)/.test(intake)) {
+    bad.push(`${INTAKE} does not put the hunt on the task input, so the script has nothing to pick up.`);
+  }
+
   // ── The endpoint ──────────────────────────────────────────────────────────
   if (!/tasks\.post\("\/:id\/handoff"/.test(api)) {
     bad.push(`${API} has no handoff route, so the only way to move work is the one the intake does automatically.`);
@@ -180,6 +233,9 @@ export function theCodeDoesIt(intake, api, merge) {
   }
   if (!/A handoff needs a reason/.test(api)) {
     bad.push(`${API} allows a handoff with no reason, so a task can change hands with nothing on the record about why.`);
+  }
+  if (!/tasks\.post\("\/:id\/hunt-result"/.test(api)) {
+    bad.push(`${API} has nowhere for a finished hunt to land, so a hunt that RAN leaves its task queued for ever.`);
   }
 
   /*
@@ -239,6 +295,7 @@ if (process.argv.includes("--self-test")) {
   expect("the real rule moves her message and leaves ordinary mail alone", theRuleDecides(), false);
   expect("the destination resolves out of the replayed roster", theSeatComesFromTheRoster(roster), false);
   expect("the intake and the endpoint both do it", theCodeDoesIt(intakeSource, apiSource, mergeSource), false);
+  expect("her sentence becomes the hunt's arguments", theRequestBecomesAHunt(), false);
   expect("there is no third way to move work", noThirdWayToMoveWork(workerSources()), false);
 
   /*
@@ -250,6 +307,17 @@ if (process.argv.includes("--self-test")) {
   expect("a rule that overrules a desk she named",
     theRuleDecides((i) => (/seller|buyers|\$/.test(`${i.subject} ${i.text}`)
       ? { department: "Relationships", why: "w", matched: ["x"] } : null)), true);
+  expect("a parser that never produces a hunt — the state on 12 September", theRequestBecomesAHunt(() => null), true);
+  expect("a parser that invents a hunt from any sentence", theRequestBecomesAHunt(
+    () => ({ asset: "OpenAI", size_usd: 1e9, side: "sell" })), true);
+  expect("a parser that defaults the side instead of reading it", theRequestBecomesAHunt((t) => {
+    const r = huntRequestIn(t);
+    return r ?? (/\$/.test(t) ? { asset: "OpenAI", size_usd: 1e9, side: "buy" } : null);
+  }), true);
+  expect("an intake that parses the hunt and never attaches it", theCodeDoesIt(
+    intakeSource?.replace("...(hunt ? { hunt } : {}),", "") ?? null, apiSource, mergeSource), true);
+  expect("an api with nowhere for a finished hunt to land", theCodeDoesIt(
+    intakeSource, apiSource?.replace('tasks.post("/:id/hunt-result"', 'tasks.post("/:id/unused"') ?? null, mergeSource), true);
   expect("an empty roster", theSeatComesFromTheRoster([]), true);
   expect("a roster with nobody in Relationships", theSeatComesFromTheRoster(
     rosterFromMigrations().filter((s) => s.department !== "Relationships"),
@@ -284,14 +352,15 @@ if (process.argv.includes("--self-test")) {
 const roster = rosterFromMigrations();
 
 /* RULE 0. */
-if (CASES.length === 0 || roster.length === 0) {
+if (CASES.length === 0 || HUNT_CASES.length === 0 || roster.length === 0) {
   console.error("HANDOFF SCAN FAILED — nothing to examine:");
-  console.error(`  ${CASES.length} rule case(s), ${roster.length} active employee(s) from the replayed migrations.`);
+  console.error(`  ${CASES.length} rule case(s), ${HUNT_CASES.length} hunt case(s), ${roster.length} active employee(s) from the replayed migrations.`);
   process.exit(2);
 }
 
 const problems = [
   ...theRuleDecides(),
+  ...theRequestBecomesAHunt(),
   ...theSeatComesFromTheRoster(roster),
   ...theCodeDoesIt(intakeSource, apiSource, mergeSource),
   ...noThirdWayToMoveWork(workerSources()),
@@ -307,7 +376,7 @@ if (problems.length) {
 
 const seat = seatInDepartment(roster, handoffFor({ text: HERS, fromDepartment: HOLDING_DEPARTMENT }).department);
 console.log(
-  `HANDOFF OK — ${CASES.length} rule case(s) over ${roster.length} active seat(s); her "$1B+ of OpenAI `
+  `HANDOFF OK — ${CASES.length} rule case(s) and ${HUNT_CASES.length} hunt case(s) over ${roster.length} active seat(s); her "$1B+ of OpenAI `
   + `shares" message lands on ${seat.name} (${seat.id}, ${seat.role}) by rule, before any model runs, `
   + "and only two audited paths may reassign a task.",
 );

@@ -52,6 +52,7 @@
  * build by `validate:no-spry-sender`.
  *
  *   npm run capital:buyers                       # from the current book
+ *   npm run capital:sellers -- --asset OpenAI --size 1000000000   # the other direction
  *   npm run capital:buyers -- --book ./book.txt  # from a book in her own words
  *   npm run capital:buyers -- --asset Anthropic --size 2000000000
  *   npm run capital:buyers -- --send             # ...and email it to her
@@ -75,6 +76,28 @@ const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null 
 const SEND = ARGS.includes("--send");
 const ONE_ASSET = argOf("asset");
 const ONE_SIZE = Number(argOf("size") ?? 0);
+
+/**
+ * ─── WHICH SIDE IS BEING HUNTED ────────────────────────────────────────────
+ *
+ * `--side buy` (the default, and everything this file did before) hunts BUYERS for what she holds.
+ * `--side sell` hunts SELLERS for something she wants — "please help me find a seller of $1B+ of
+ * OpenAI shares", her own words on 12 September 2026.
+ *
+ * THE EDGAR HALF IS UNCHANGED AND THAT IS THE POINT. A fund that reports a position in OpenAI is
+ * evidence of the same three things either way: a mandate that permits private paper, an existing
+ * position in this specific issuer, and a balance sheet. A holder is a plausible seller exactly as
+ * it is a plausible buyer — what changes is the ARITHMETIC. Hunting a buyer asks "can they absorb
+ * this?" against total net assets; hunting a seller asks "do they HAVE this?" against the position
+ * they marked. Same filing, read the other way round.
+ *
+ * The ledger half flips with it: `assignedSearch` already takes a side, so the sellers in her own
+ * mail come out of the same ranking her buyers do rather than a second one.
+ */
+const SIDE = (argOf("side") ?? "buy").toLowerCase() === "sell" ? "sell" : "buy";
+/** The side SHE is on, which is the opposite of the one being hunted. */
+const HER_SIDE = SIDE === "sell" ? "buy" : "sell";
+const HUNTING = SIDE === "sell" ? "seller" : "buyer";
 const BOOK_FILE = argOf("book") ?? BOOK_TEXT;
 
 /** SEC Fair Access requires a descriptive agent with a contact address. It is a condition, not a nicety. */
@@ -102,7 +125,7 @@ const money = (n) => (n == null ? "unknown"
  */
 function loadBook() {
   if (ONE_ASSET) {
-    return { positions: [{ asset: ONE_ASSET, side: "sell", size_usd: ONE_SIZE || null, size_min_usd: null, size_max_usd: null, size_shares: null, size_text: ONE_SIZE ? money(ONE_SIZE) : "", source_line: `--asset ${ONE_ASSET}` }], unparsed: [], source: "the command line" };
+    return { positions: [{ asset: ONE_ASSET, side: HER_SIDE, size_usd: ONE_SIZE || null, size_min_usd: null, size_max_usd: null, size_shares: null, size_text: ONE_SIZE ? money(ONE_SIZE) : "", source_line: `--asset ${ONE_ASSET}` }], unparsed: [], source: "the command line" };
   }
   if (!fs.existsSync(BOOK_FILE)) return null;
   const parsed = parseLiveBook(fs.readFileSync(BOOK_FILE, "utf8"));
@@ -130,7 +153,7 @@ function fromHerInbox(asset, size) {
   const wrong = new Set(loadJson(WRONG_FILE, "rows"));
   const suppressed = new Set(loadJson(SUPPRESS, "people"));
   const usable = interests.filter((r) => !wrong.has(r.source_message) && !atHerBrokerage(r));
-  const hits = assignedSearch(usable, asset, "buy", size || 0, suppressed)
+  const hits = assignedSearch(usable, asset, SIDE, size || 0, suppressed)
     // Precision bar: a candidate with no sentence behind it is not a candidate.
     .filter((h) => h.row?.quote || h.row?.evidence);
   return { hits, considered: usable.filter((r) => assetKey(r.asset) === assetKey(asset)).length };
@@ -208,7 +231,8 @@ function positionFromXml(xml, asset) {
  * unverified and ranked below a verified one, because inventing it is exactly the failure mode this
  * whole file is written against.
  */
-export function capacity(position, size) {
+export function capacity(position, size, side = "buy") {
+  if (side === "sell") return supply(position, size);
   if (!position || !size) return { verdict: "UNVERIFIED", why: "no size to test against" };
   const { totAssets, valUSD } = position;
   if (!totAssets) return { verdict: "UNVERIFIED", why: "the filing did not state total net assets" };
@@ -222,6 +246,42 @@ export function capacity(position, size) {
   return {
     verdict: "NO",
     why: `${money(size)} is ${pct.toFixed(0)}% of ${money(totAssets)} in net assets${valUSD ? `, against ${money(valUSD)} they already hold` : ""} — not a check this fund writes`,
+  };
+}
+
+/**
+ * THE SAME FILING, READ THE OTHER WAY ROUND.
+ *
+ * Hunting a BUYER asks whether the block would be a sane position for them — size against total net
+ * assets. Hunting a SELLER asks a different and simpler question: do they actually HAVE it? The
+ * answer is the position they themselves marked in the filing, `valUSD`, and nothing else. Total net
+ * assets are irrelevant here: a $28B fund that marks $40M of OpenAI cannot sell her $1B of it.
+ *
+ * A PARTIAL FILL IS A REAL ANSWER AND IS SAID AS ONE. Somebody holding a quarter of what she wants
+ * is a conversation — three of them is the trade — so it is PLAUSIBLY with the arithmetic printed,
+ * never a silent pass and never dressed up as a full fill.
+ */
+export function supply(position, size) {
+  if (!position || !size) return { verdict: "UNVERIFIED", why: "no size to test against" };
+  const { valUSD } = position;
+  if (!valUSD) {
+    return { verdict: "UNVERIFIED", why: "the filing named the issuer and did not state a readable dollar mark for the position" };
+  }
+  if (valUSD >= size) {
+    return {
+      verdict: "COMFORTABLY",
+      why: `they mark ${money(valUSD)} of it, which is ${(valUSD / size).toFixed(1)}x the ${money(size)} you want`,
+    };
+  }
+  if (valUSD >= size * 0.25) {
+    return {
+      verdict: "PLAUSIBLY",
+      why: `they mark ${money(valUSD)}, which is ${((valUSD / size) * 100).toFixed(0)}% of the ${money(size)} you want — a partial fill, not the whole block`,
+    };
+  }
+  return {
+    verdict: "NO",
+    why: `they mark ${money(valUSD)} against the ${money(size)} you want — under a quarter of it, so not a seller for this size`,
   };
 }
 
@@ -241,8 +301,9 @@ async function fromFilings(asset, size) {
       position = positionFromXml(xml, asset);
     } catch { /* One unreadable filing must not end the hunt for the other seven. */ }
     if (!position) continue;
-    const cap = capacity(position, size);
-    // HER BAR: a holder who cannot write the cheque is not a candidate, it is a distraction.
+    const cap = capacity(position, size, SIDE);
+    // HER BAR: a holder who cannot write the cheque — or cannot supply the paper — is not a
+    // candidate, it is a distraction.
     if (cap.verdict === "NO") continue;
     holders.push({ ...f, ...position, capacity: cap });
   }
@@ -254,11 +315,15 @@ async function fromFilings(asset, size) {
 
 function renderAsset(lot, inbox, filings) {
   const size = lot.size_usd ?? 0;
-  const lines = [`${String(lot.asset).toUpperCase()}  —  you have ${describeLot(lot).split(" — ").slice(2).join(" — ") || lot.size_text}`, ""];
+  const want = describeLot(lot).split(" — ").slice(2).join(" — ") || lot.size_text;
+  const lines = [
+    `${String(lot.asset).toUpperCase()}  —  you ${SIDE === "sell" ? "want" : "have"} ${want}`,
+    "",
+  ];
 
   lines.push("  FROM YOUR OWN MAIL");
   if (inbox.hits.length === 0) {
-    lines.push(`    Nobody. ${inbox.considered ?? 0} row(s) in the ledger touch this name and none is a buy side`);
+    lines.push(`    Nobody. ${inbox.considered ?? 0} row(s) in the ledger touch this name and none is a ${SIDE} side`);
     lines.push("    with a sentence behind it. That is an answer, not an empty run.");
   } else {
     for (const h of inbox.hits) {
@@ -270,17 +335,23 @@ function renderAsset(lot, inbox, filings) {
   }
   lines.push("");
 
-  lines.push("  FROM FILINGS (N-PORT — funds that report this position)");
+  lines.push(SIDE === "sell"
+    ? "  FROM FILINGS (N-PORT — funds that report holding this, and could therefore sell it)"
+    : "  FROM FILINGS (N-PORT — funds that report this position)");
   if (filings.note) {
     lines.push(`    ${filings.note}`);
   } else if (filings.holders.length === 0) {
-    lines.push(`    Nobody who could write ${money(size)}. ${filings.total ?? 0} N-PORT filing(s) name this issuer;`);
-    lines.push(`    ${filings.scanned ?? 0} were read and none had both a readable position and the balance sheet for it.`);
+    lines.push(SIDE === "sell"
+      ? `    Nobody marking enough of it to supply ${money(size)}. ${filings.total ?? 0} N-PORT filing(s) name this issuer;`
+      : `    Nobody who could write ${money(size)}. ${filings.total ?? 0} N-PORT filing(s) name this issuer;`);
+    lines.push(SIDE === "sell"
+      ? `    ${filings.scanned ?? 0} were read and none marked a position large enough against what you want.`
+      : `    ${filings.scanned ?? 0} were read and none had both a readable position and the balance sheet for it.`);
   } else {
     for (const h of filings.holders) {
       lines.push(`    ${h.filer}`);
       lines.push(`      Holds ${money(h.valUSD)}${h.pctVal != null ? ` (${h.pctVal.toFixed(2)}% of the fund)` : ""} of "${h.holding}"`);
-      lines.push(`      Can write it: ${h.capacity.verdict} — ${h.capacity.why}`);
+      lines.push(`      ${SIDE === "sell" ? "Could supply it" : "Can write it"}: ${h.capacity.verdict} — ${h.capacity.why}`);
       lines.push(`      ${h.filed ?? ""} N-PORT ${h.accession}  ${h.url}`);
     }
   }
@@ -303,9 +374,9 @@ async function main() {
     console.error("  own words — one line per name, e.g. 'Anthropic IPO shares $2B, and separately $500M'.");
     process.exit(5);
   }
-  const priced = book.positions.filter((p) => p.side === "sell" && p.size_usd);
+  const priced = book.positions.filter((p) => p.side === HER_SIDE && p.size_usd);
   if (priced.length === 0) {
-    console.error("NAMED STOP [EMPTY_BOOK] the book was read and holds no priced sell-side line.");
+    console.error(`NAMED STOP [EMPTY_BOOK] the book was read and holds no priced ${HER_SIDE}-side line.`);
     process.exit(6);
   }
 
@@ -321,7 +392,8 @@ async function main() {
     // LOTS, NOT LINES. Her Anthropic line is two separate blocks and they get separate answers:
     // Fidelity can write $500M comfortably and $2B only as a real decision. Collapsing them would
     // hide the one distinction that decides who to call about which block.
-    `Buyer hunt against ${priced.length} lot(s) across ${new Set(priced.map((p) => assetKey(p.asset))).size} name(s), read from ${book.source}.`,
+    `${HUNTING === "seller" ? "Seller" : "Buyer"} hunt against ${priced.length} lot(s) across `
+      + `${new Set(priced.map((p) => assetKey(p.asset))).size} name(s), read from ${book.source}.`,
     `${total} candidate(s), every one with a filing or a sentence behind it.`,
     "",
     ...(book.unparsed.length
@@ -349,8 +421,8 @@ async function main() {
   const text = ["Sequoia,", "", "This is Monique. I worked outward from your book rather than across your mailbox.", "",
     body, "", "— Monique, Director of Relationships"].join("\n");
   const subject = total
-    ? `${total} possible buyer(s) — ${priced.map((p) => p.asset).join(", ")}`
-    : `No buyer clears the bar this week — ${priced.map((p) => p.asset).join(", ")}`;
+    ? `${total} possible ${HUNTING}(s) — ${priced.map((p) => p.asset).join(", ")}`
+    : `No ${HUNTING} clears the bar this week — ${priced.map((p) => p.asset).join(", ")}`;
   for (const { from, key } of SENDERS) {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -364,6 +436,83 @@ async function main() {
   process.exit(9);
 }
 
+/**
+ * ─── HER SENTENCE, RUN AS A HUNT ───────────────────────────────────────────
+ *
+ * `--from-boss` reads the open tasks Boss OS has admitted that carry `input.hunt` — the asset, the
+ * size and the side, parsed deterministically out of her own words by `shared/boss/intake/handoff.mjs`
+ * — and runs each one here, on her Mac, where EDGAR and `~/.boss-os/capital` actually are.
+ *
+ * WHY HERE AND NOT IN THE WORKER. The hunt is SEC full-text search plus eight XML filings per name
+ * plus her local ledger. None of that fits a Worker invocation and none of her ledger exists in one.
+ * A version of this that "ran" in the Worker would be the defect this repo names most: exists, runs,
+ * and does nothing.
+ *
+ * RULE 0: no open hunt request is a NAMED STOP, not a silent success. It exits 7 saying so, because
+ * "nothing was queued" and "the queue was never read" are opposite facts.
+ */
+async function fromBoss() {
+  const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
+  if (!process.env.BOSS_PASSCODE) {
+    console.error("NAMED STOP [NO_PASSCODE] --from-boss reads her task queue, which needs the vault: npm run vault:run -- node scripts/ops/buyer-hunt.mjs --from-boss");
+    process.exit(4);
+  }
+  const unlock = await fetch(`${ORIGIN}/api/boss/auth/unlock`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ passcode: process.env.BOSS_PASSCODE }),
+  });
+  if (!unlock.ok) {
+    console.error(`NAMED STOP [UNLOCK_FAILED] Boss OS refused the passcode (${unlock.status}).`);
+    process.exit(5);
+  }
+  const cookie = (unlock.headers.get("set-cookie") ?? "").split(";")[0];
+
+  const res = await fetch(`${ORIGIN}/api/boss/tasks?status=queued`, { headers: { cookie } });
+  if (!res.ok) {
+    console.error(`NAMED STOP [TASKS_UNREADABLE] ${res.status} reading the task queue.`);
+    process.exit(6);
+  }
+  const rows = (await res.json())?.data ?? [];
+  const queued = [];
+  for (const t of rows) {
+    let input = {};
+    try { input = typeof t.input === "string" ? JSON.parse(t.input) : (t.input ?? {}); } catch { /* a task with unreadable input is not a hunt */ }
+    if (input?.hunt?.asset && input.hunt.size_usd && input.hunt.side) queued.push({ task: t, hunt: input.hunt });
+  }
+  if (queued.length === 0) {
+    console.error("NAMED STOP [NO_HUNT_QUEUED] no open task carries a hunt request.");
+    console.error("  Email boss@sequoiataylor.com, e.g. \"#monique find me a seller of $1B+ OpenAI\".");
+    process.exit(7);
+  }
+
+  console.log(`${queued.length} queued hunt(s) from her own mail.\n`);
+  for (const { task, hunt } of queued) {
+    console.log(`── ${task.id}: ${hunt.side === "sell" ? "sellers" : "buyers"} of ${hunt.asset} at ${money(hunt.size_usd)}`);
+    const args = [process.argv[1], "--asset", hunt.asset, "--size", String(hunt.size_usd), "--side", hunt.side, ...(SEND ? ["--send"] : [])];
+    const { spawnSync } = await import("node:child_process");
+    const run = spawnSync(process.execPath, args, { encoding: "utf8", env: process.env });
+    process.stdout.write(run.stdout ?? "");
+    if (run.status !== 0) {
+      console.error(`  the hunt for ${hunt.asset} exited ${run.status}. ${((run.stderr ?? "").trim().split("\n").pop() ?? "")}`);
+      continue;
+    }
+    /*
+     * THE RESULT GOES BACK ONTO HER CARD. A hunt that ran and left no trace on the task that asked
+     * for it is the same lost work in a new place — and the task would sit queued for ever.
+     */
+    const note = (run.stdout ?? "").trim();
+    const back = await fetch(`${ORIGIN}/api/boss/tasks/${task.id}/hunt-result`, {
+      method: "POST", headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ asset: hunt.asset, side: hunt.side, size_usd: hunt.size_usd, result: note.slice(0, 60_000) }),
+    });
+    if (!back.ok) {
+      console.error(`NAMED STOP [RESULT_NOT_RECORDED] ${back.status} — the hunt ran and ${task.id} was not told.`);
+      process.exitCode = 8;
+    }
+  }
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => { console.error(`BUYER HUNT FAILED: ${err?.stack ?? err}`); process.exit(1); });
+  const run = ARGS.includes("--from-boss") ? fromBoss() : main();
+  run.catch((err) => { console.error(`BUYER HUNT FAILED: ${err?.stack ?? err}`); process.exit(1); });
 }

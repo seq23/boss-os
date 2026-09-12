@@ -160,6 +160,56 @@ tasks.post("/:id/handoff", async (c) => {
   return ok(c, { handed_off: true, task_id: id, employee_id: seat.id, employee_name: seat.name, reason });
 });
 
+/**
+ * THE HUNT CAME BACK — the other half of `input.hunt`.
+ *
+ * `buyer-hunt.mjs --from-boss` runs on her Mac, because the work is SEC full-text search plus eight
+ * XML filings per name plus her local ledger, none of which exists in a Worker. This is where the
+ * result lands, and it exists so that a hunt that RAN cannot leave the task that asked for it
+ * sitting `queued` for ever — "exists but nothing closes it" is the same lost work in a new place.
+ *
+ * The task is finished here rather than left open: the deliverable is the list, the list is on the
+ * card, and she was emailed it. A queued task nobody will ever pick up again is not a to-do, it is
+ * noise on a screen she reads every morning.
+ */
+tasks.post("/:id/hunt-result", async (c) => {
+  const id = c.req.param("id");
+  const b = await c.req.json<any>().catch(() => ({}));
+  const result = String(b?.result ?? "").trim();
+  if (!result) throw badRequest("A hunt result needs the list it produced", "An empty result is not an outcome.");
+
+  const task = await c.env.DB
+    .prepare(`SELECT id, lane, status, input FROM tasks WHERE id = ?`).bind(id)
+    .first<{ id: string; lane: string; status: string; input: string }>();
+  if (!task) throw notFound("No task with that id");
+
+  /*
+   * ONLY A TASK THAT ASKED FOR ONE. Without this, any task could be closed by posting a paragraph at
+   * it, and `input.hunt` is the whole record that this piece of work was a hunt in the first place.
+   */
+  let hunt: unknown = null;
+  try { hunt = JSON.parse(task.input ?? "{}")?.hunt ?? null; } catch { hunt = null; }
+  if (!hunt) throw conflict("That task did not ask for a hunt", "Only a task carrying input.hunt can take a hunt result.");
+
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB
+      .prepare(
+        `UPDATE tasks SET status = 'done', finished_at = COALESCE(finished_at, ?),
+                          output = ? WHERE id = ? AND status NOT IN ('cancelled')`,
+      )
+      .bind(now, JSON.stringify({ text: result, model: "buyer-hunt.mjs on her Mac — SEC N-PORT and her own ledger, no model" }), id),
+    c.env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'hunt_ran',?)`)
+      .bind(newId("tev"), id, now, JSON.stringify({ asset: b?.asset ?? null, side: b?.side ?? null, size_usd: b?.size_usd ?? null, bytes: result.length })),
+  ]);
+  await audit(c.env.DB, {
+    actor: "boss", lane: task.lane, entityType: "task", entityId: id, action: "hunt_ran",
+    detail: { asset: b?.asset ?? null, side: b?.side ?? null, size_usd: b?.size_usd ?? null },
+  });
+  return ok(c, { recorded: true, task_id: id });
+});
+
 tasks.post("/:id/cancel", async (c) => {
   const id = c.req.param("id");
   const now = Date.now();

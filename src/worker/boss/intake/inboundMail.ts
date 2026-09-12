@@ -12,7 +12,7 @@ import {
 import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
-import { handoffFor, seatInDepartment } from "../../../shared/boss/intake/handoff.mjs";
+import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
 import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
 
@@ -397,6 +397,27 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * `#monique` files, and a convention that breaks the thing somebody was just told to do is worse
    * than the gap it closes.
    */
+  /*
+   * ─── "FIND ME A SELLER OF $1B+ OPENAI" BECOMES A REAL HUNT ────────────────
+   *
+   * `scripts/ops/buyer-hunt.mjs` has taken `--asset`, `--size` and (now) `--side` all along, and was
+   * reachable from exactly one place: `npm run capital:buyers`, typed by hand. Nothing connected her
+   * sentence to it. So the request sat as a paragraph on a card and the search never ran.
+   *
+   * The asset, the size and the SIDE are parsed deterministically and written onto the task as
+   * `input.hunt`, which is the exact argument list the script takes. `buyer-hunt.mjs --from-boss`
+   * picks those up on her Mac, where the SEC calls and her own ledger actually live. A Worker cannot
+   * do this work — it is EDGAR full-text search plus ~/.boss-os/capital — and pretending otherwise
+   * is how a feature comes to exist and never run.
+   *
+   * IT REFUSES RATHER THAN GUESSES. No side, no asset or no size means no `hunt` key and the message
+   * is ordinary work on the right desk. A hunt queued against an asset nobody named would be a real
+   * search run over nothing, reported as a quiet week.
+   */
+  const hunt = route.seat.department === "Relationships"
+    ? huntRequestIn(`${trueSubject}\n${readable}`)
+    : null;
+
   let bookNote: string | null = null;
   let bookFailure: string | null = null;
   const directive = readable || subject ? bookDirectiveFor(route, subject, readable) : null;
@@ -509,6 +530,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           tag: route.tag,
           routing: route.why,
           ...(handoffNote ? { handed_off: handoffNote } : {}),
+          ...(hunt ? { hunt } : {}),
           ...(bookNote ? { live_book: bookNote } : {}),
           /*
            * `body` IS THE INSTRUCTION. Not the message, not the headers, not the markup — the words.

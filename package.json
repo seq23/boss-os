@@ -102,6 +102,8 @@
     "capital:review": "node scripts/ops/interest-extract.mjs --review",
     "validate:capital-staleness": "node scripts/validate/capital-staleness.mjs",
     "capital:buyers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs",
+    "capital:sellers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --side sell",
+    "capital:hunts": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --from-boss",
     "validate:book-verbs": "node scripts/validate/a-verb-is-explicit-and-a-doubt-is-a-question.mjs && node scripts/validate/a-verb-is-explicit-and-a-doubt-is-a-question.mjs --self-test",
     "validate:boss-intake": "node scripts/validate/boss-intake-is-boss-only.mjs && node scripts/validate/boss-intake-is-boss-only.mjs --self-test",
     "validate:employee-tags": "node scripts/validate/every-employee-has-a-reachable-tag.mjs && node scripts/validate/every-employee-has-a-reachable-tag.mjs --self-test",

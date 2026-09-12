@@ -432,6 +432,24 @@ describe("route this to whomever should handle this", () => {
     expect(res.employeeId).toBe(zora.id);
   });
 
+  it("TURNS HER SENTENCE INTO A HUNT the script can actually run", async () => {
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique", body: "find me a seller of $1B+ OpenAI" }), env as never);
+    expect(res.taskId).toBeTruthy();
+    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
+      .first<{ input: string }>();
+    // Exactly the argument list `buyer-hunt.mjs` takes. No model was asked what she meant.
+    expect(JSON.parse(task!.input).hunt).toEqual({ asset: "OpenAI", size_usd: 1_000_000_000, side: "sell" });
+  });
+
+  it("does NOT invent a hunt when she did not name a size", async () => {
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique", body: "find a seller of OpenAI shares sometime" }), env as never);
+    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
+      .first<{ input: string }>();
+    expect(JSON.parse(task!.input).hunt).toBeUndefined();
+  });
+
   it("leaves ordinary untagged mail on the Chief of Staff's desk", async () => {
     const roster = await activeRoster(env as never);
     const chief = roster.find((s) => s.role === "Chief of Staff")!;

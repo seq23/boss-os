@@ -34,3 +34,17 @@ export declare function seatInDepartment<T extends BossSeat>(
   roster: readonly T[],
   department: string,
 ): T | null;
+
+export interface HuntRequest {
+  /** The company, as she wrote it. */
+  asset: string;
+  /** The size in dollars, resolved from "$1B+" / "$600M" / "$50 million". */
+  size_usd: number;
+  /** Which side of the market to hunt. Never defaulted — she has to have said. */
+  side: "buy" | "sell";
+}
+
+export declare function sizeUsdIn(text: string): number | null;
+export declare function huntSideIn(text: string): "buy" | "sell" | null;
+export declare function assetIn(text: string): string | null;
+export declare function huntRequestIn(text: string): HuntRequest | null;
