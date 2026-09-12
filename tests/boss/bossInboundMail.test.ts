@@ -392,6 +392,55 @@ describe("an employee who does not understand asks", () => {
   });
 });
 
+describe("route this to whomever should handle this", () => {
+  /** `iml_m2az871dxk00t729`, verbatim. No tag, so it defaulted to the Chief of Staff and stopped. */
+  const HERS = "please help me find a seller of $1B+ of OpenAI shares. Route this to whomever should handle this.";
+
+  it("HANDS IT TO THE RELATIONSHIPS SEAT BY RULE, before any model runs", async () => {
+    const roster = await activeRoster(env as never);
+    const monique = roster.find((s) => s.department === "Relationships")!;
+    const chief = roster.find((s) => s.role === "Chief of Staff")!;
+
+    const res = await handleBossInboundMail(mail({ subject: "", body: HERS }), env as never);
+
+    // It still DEFAULTED — no tag was typed — and it did not stay on the default desk.
+    expect(res.outcome).toBe("DEFAULTED");
+    expect(res.employeeId).toBe(monique.id);
+    expect(res.employeeId).not.toBe(chief.id);
+    expect(res.taskId).toBeTruthy();
+
+    const task = await env.DB.prepare(`SELECT employee_id, input FROM tasks WHERE id = ?`)
+      .bind(res.taskId).first<{ employee_id: string; input: string }>();
+    expect(task!.employee_id).toBe(monique.id);
+    // The card says who moved it and what it matched on, rather than asking anyone to trust it.
+    expect(String(JSON.parse(task!.input).handed_off)).toContain(monique.name);
+
+    // And it is findable afterwards.
+    const aud = await env.DB
+      .prepare(`SELECT detail FROM audit_log WHERE entity_id = ? AND action = 'handed_off'`)
+      .bind(res.mailId).first<{ detail: string }>();
+    expect(JSON.parse(aud!.detail).to_employee).toBe(monique.id);
+    expect(JSON.parse(aud!.detail).by).toBe("rule");
+  });
+
+  it("NEVER overrules a desk she named herself", async () => {
+    const roster = await activeRoster(env as never);
+    const zora = roster.find((s) => s.department === "Records")!;
+    const res = await handleBossInboundMail(
+      mail({ subject: "#zora", body: HERS }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    expect(res.employeeId).toBe(zora.id);
+  });
+
+  it("leaves ordinary untagged mail on the Chief of Staff's desk", async () => {
+    const roster = await activeRoster(env as never);
+    const chief = roster.find((s) => s.role === "Chief of Staff")!;
+    const res = await handleBossInboundMail(
+      mail({ subject: "", body: "can you book me a flight to Chicago on Tuesday" }), env as never);
+    expect(res.employeeId).toBe(chief.id);
+  });
+});
+
 describe("a message too big for the old cap", () => {
   /**
    * 12 September 2026, 08:59. Her iPhone sent 538,189 bytes — a 32 KB instruction wrapped in a

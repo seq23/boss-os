@@ -256,3 +256,45 @@ describe("a declared kind is not outvoted by a keyword", () => {
     expect(c.matched).not.toContain("explicit_kind");
   });
 });
+
+/**
+ * HANDING WORK TO A COLLEAGUE — through the endpoint, on demand.
+ *
+ * Before this route existed, the only statement in the repository that changed `tasks.employee_id`
+ * was inside employee merge. "Route this to whomever should handle this" had no mechanism behind it.
+ */
+describe("a task can change hands, and the change is on the record", () => {
+  it("moves it to an active seat and writes the audit row", async () => {
+    const id = await insertTask({ employee_id: "emp_chief", lane: "ops", status: "queued" });
+    const { status, body } = await post(`/api/tasks/${id}/handoff`, {
+      employee_id: "emp_relationship",
+      reason: "it names a counterparty and a size — that is the Relationships desk",
+    });
+    expect(status).toBe(200);
+    expect(body.data.employee_id).toBe("emp_relationship");
+
+    const task = await row(`SELECT employee_id FROM tasks WHERE id = '${id}'`);
+    expect(task!.employee_id).toBe("emp_relationship");
+    const aud = await row(`SELECT detail FROM audit_log WHERE entity_id = '${id}' AND action = 'handed_off'`);
+    expect(JSON.parse(aud!.detail).from).toBe("emp_chief");
+    expect(JSON.parse(aud!.detail).reason).toContain("Relationships");
+    const ev = await row(`SELECT event FROM task_events WHERE task_id = '${id}' AND event = 'handed_off'`);
+    expect(ev!.event).toBe("handed_off");
+  });
+
+  it("REFUSES a handoff with no reason — an unexplained reassignment cannot be accounted for", async () => {
+    const id = await insertTask({ employee_id: "emp_chief", lane: "ops", status: "queued" });
+    const { status } = await post(`/api/tasks/${id}/handoff`, { employee_id: "emp_relationship" });
+    expect(status).toBe(400);
+    const task = await row(`SELECT employee_id FROM tasks WHERE id = '${id}'`);
+    expect(task!.employee_id).toBe("emp_chief");
+  });
+
+  it("REFUSES a retired seat — handing work to a desk nobody sits at looks exactly like it worked", async () => {
+    const id = await insertTask({ employee_id: "emp_chief", lane: "ops", status: "queued" });
+    const { status } = await post(`/api/tasks/${id}/handoff`, { employee_id: "emp_intake", reason: "why not" });
+    expect(status).toBe(400);
+    const task = await row(`SELECT employee_id FROM tasks WHERE id = '${id}'`);
+    expect(task!.employee_id).toBe("emp_chief");
+  });
+});

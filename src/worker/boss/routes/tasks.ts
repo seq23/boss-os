@@ -93,6 +93,73 @@ tasks.post("/:id/requeue", async (c) => {
   return ok(c, { requeued: true });
 });
 
+/**
+ * HAND A PIECE OF WORK TO A COLLEAGUE.
+ *
+ * ─── The capability that did not exist ─────────────────────────────────────
+ *
+ * Grep the repository for a statement that changes `tasks.employee_id` and, before this route, you
+ * find exactly one: inside employee MERGE, in `routes/employees.ts`. So when she wrote "Route this
+ * to whomever should handle this" on 12 September 2026, there was no mechanism behind the sentence.
+ * The task sat on the Chief of Staff's desk because that is where untagged mail lands, and nothing
+ * could move it.
+ *
+ * ─── The destination comes from the roster, and the reason is required ─────
+ *
+ * `employee_id` must name an ACTIVE seat read out of `employees` at the moment of the handoff, which
+ * is what keeps this from becoming a second list of who works here. And `reason` is not optional:
+ * a task that changed hands with no recorded why is a task nobody can account for later, and the
+ * `audit_log` row is the whole point of doing this through an endpoint rather than an UPDATE.
+ */
+tasks.post("/:id/handoff", async (c) => {
+  const id = c.req.param("id");
+  const b = await c.req.json<any>().catch(() => ({}));
+  const to = String(b?.employee_id ?? "").trim();
+  const reason = String(b?.reason ?? "").trim();
+  if (!to) throw badRequest("A handoff needs an employee_id", "Read the roster from GET /api/boss/employees.");
+  if (!reason) {
+    throw badRequest(
+      "A handoff needs a reason",
+      "One sentence. A task that changed hands with no recorded why cannot be accounted for later.",
+    );
+  }
+
+  const task = await c.env.DB
+    .prepare(`SELECT id, lane, status, employee_id FROM tasks WHERE id = ?`).bind(id)
+    .first<{ id: string; lane: string; status: string; employee_id: string | null }>();
+  if (!task) throw notFound("No task with that id");
+  if (task.status === "done" || task.status === "cancelled") {
+    throw conflict("That task is already finished", "Open a new task for the colleague instead.");
+  }
+
+  /*
+   * THE SEAT IS READ, NEVER ASSUMED. A retired or merged employee is not a destination: handing work
+   * to a desk nobody sits at is the same as losing it, and it would look exactly like it worked.
+   */
+  const seat = await c.env.DB
+    .prepare(
+      `SELECT id, name, role, lane FROM employees
+        WHERE id = ? AND status = 'active' AND lifecycle IN ('active','provisional')`,
+    )
+    .bind(to)
+    .first<{ id: string; name: string; role: string; lane: string }>();
+  if (!seat) throw badRequest(`${to} is not an active employee`, "Only an active seat can take work.");
+  if (seat.id === task.employee_id) throw conflict("That task is already on that desk");
+
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE tasks SET employee_id = ? WHERE id = ?`).bind(seat.id, id),
+    c.env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'handed_off',?)`)
+      .bind(newId("tev"), id, now, JSON.stringify({ from: task.employee_id, to: seat.id, reason })),
+  ]);
+  await audit(c.env.DB, {
+    actor: "boss", lane: task.lane, entityType: "task", entityId: id, action: "handed_off",
+    detail: { from: task.employee_id, to: seat.id, to_name: seat.name, reason },
+  });
+  return ok(c, { handed_off: true, task_id: id, employee_id: seat.id, employee_name: seat.name, reason });
+});
+
 tasks.post("/:id/cancel", async (c) => {
   const id = c.req.param("id");
   const now = Date.now();

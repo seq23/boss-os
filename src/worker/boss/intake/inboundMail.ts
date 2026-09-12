@@ -12,6 +12,7 @@ import {
 import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
+import { handoffFor, seatInDepartment } from "../../../shared/boss/intake/handoff.mjs";
 import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
 
@@ -347,6 +348,43 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const route = routeToSeat(haystack, roster)!;
 
   /*
+   * ─── "ROUTE THIS TO WHOMEVER SHOULD HANDLE THIS" ──────────────────────────
+   *
+   * Her words, 12 September 2026, on a message asking for a seller of $1B+ of OpenAI shares. It
+   * carried no tag, so it DEFAULTED to the Chief of Staff and stopped there — because nothing in
+   * this system had ever been able to hand work to a colleague. The only statement anywhere that
+   * changes `tasks.employee_id` lives inside employee merge.
+   *
+   * BY RULE, AND BEFORE ANY MODEL. The obvious implementation is to ask a model which desk should
+   * take it, and that is exactly what already failed: the same message produced "Routing: Route to
+   * Customer Service Team." A model picking the seat is the defect, not the fix.
+   *
+   * It only moves work OFF THE HOLDING DESK. A tag she typed is a decision she made and this may
+   * never overrule it; an untagged message is a routing decision nobody has made yet, and this
+   * completes it. The department is looked up in the roster that was just read from D1, so the
+   * seat list stays derived — an empty department leaves the message exactly where it was.
+   */
+  let handoffNote: string | null = null;
+  const handoff = handoffFor({
+    text: readable, subject: trueSubject, fromDepartment: route.seat.department ?? "",
+  });
+  if (handoff) {
+    const seat = seatInDepartment(roster, handoff.department);
+    if (seat && seat.id !== route.seat.id) {
+      handoffNote =
+        `${route.seat.name} handed this to ${seat.name} (${seat.role}) on arrival, because `
+        + `${handoff.why}. Matched on: ${handoff.matched.join(", ")}. No model was asked.`;
+      route.seat = seat;
+      route.why = `${route.why} ${handoffNote}`;
+      await audit(env.DB, {
+        actor: "boss", lane: seat.lane, entityType: "inbound_mail", entityId: mailId,
+        action: "handed_off",
+        detail: { to_employee: seat.id, department: handoff.department, matched: handoff.matched, by: "rule" },
+      });
+    }
+  }
+
+  /*
    * ─── HER BOOK, BY THE VERB SHE TYPED ───────────────────────────────────────
    *
    * A verb is explicit and therefore BINDING BOTH WAYS: it files when it can, and when it cannot it
@@ -470,6 +508,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           subject: trueSubject,
           tag: route.tag,
           routing: route.why,
+          ...(handoffNote ? { handed_off: handoffNote } : {}),
           ...(bookNote ? { live_book: bookNote } : {}),
           /*
            * `body` IS THE INSTRUCTION. Not the message, not the headers, not the markup — the words.
