@@ -525,3 +525,29 @@ describe("the seven-day nag", () => {
     expect((await bookNagAlerts(env as never, now + 22 * 86_400_000))[0]!.severity).toBe("critical");
   });
 });
+
+/**
+ * THE PRODUCTION BUG, CAUGHT ON THE FIRST REAL RE-ADMISSION.
+ *
+ * `iml_m2bk4htrq4gvnzem`, 12 September 2026: her "#simone — make sure the spirit page displays
+ * astrology" message was re-admitted, and the handoff moved it to Monique. The Chief of Staff is
+ * BOTH the named seat `#simone` AND the desk untagged mail defaults to, so a check on the
+ * department alone could not tell "she chose Simone" from "nobody chose". The words "source" and
+ * "capital", appearing somewhere in a 30 KB intelligence report, did the rest.
+ */
+describe("a tag she typed is a decision she made", () => {
+  it("#simone NAMED keeps it on Simone's desk, even when the text is full of trade words", async () => {
+    const roster = await activeRoster(env as never);
+    const chief = roster.find((s) => s.role === "Chief of Staff")!;
+    const res = await handleBossInboundMail(mail({
+      subject: "#simone",
+      body: "Please make sure the spirit page displays astrology. Below: sources of capital, "
+        + "buyers and sellers of $1B blocks, and the shares that moved this week.",
+    }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    expect(res.employeeId).toBe(chief.id);
+    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
+      .first<{ input: string }>();
+    expect(JSON.parse(task!.input).handed_off).toBeUndefined();
+  });
+});

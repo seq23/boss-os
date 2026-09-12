@@ -19,6 +19,12 @@ export interface HandoffInput {
   subject?: string;
   /** The department of the desk the message is on now. Only the holding desk may be moved off. */
   fromDepartment?: string;
+  /**
+   * `routeToSeat`'s outcome. Only DEFAULTED may be moved — a tag she typed is a decision she made,
+   * and the Chief of Staff is BOTH a named seat and the default holder, so the department alone
+   * cannot tell the two apart.
+   */
+  outcome?: "ROUTED" | "DEFAULTED" | "AMBIGUOUS";
 }
 
 export declare const HOLDING_DEPARTMENT: string;

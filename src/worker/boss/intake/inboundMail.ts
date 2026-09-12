@@ -367,6 +367,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   let handoffNote: string | null = null;
   const handoff = handoffFor({
     text: readable, subject: trueSubject, fromDepartment: route.seat.department ?? "",
+    outcome: route.outcome,
   });
   if (handoff) {
     const seat = seatInDepartment(roster, handoff.department);

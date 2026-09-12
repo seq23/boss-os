@@ -78,7 +78,16 @@ const CASES = [
 
   // THE OTHER DIRECTION, which is the half that keeps this honest.
   ["a desk SHE NAMED is never overruled",
-    { text: HERS, subject: "#simone", fromDepartment: "Records" }, null],
+    { text: HERS, subject: "#zora", fromDepartment: "Records", outcome: "ROUTED" }, null],
+  /*
+   * THE BUG THIS CAUGHT IN PRODUCTION, kept as a permanent case. The Chief of Staff is BOTH the
+   * named seat `#simone` and the desk untagged mail defaults to, so a department check alone moved a
+   * message she had explicitly addressed to Simone. Only the ROUTING OUTCOME can tell them apart.
+   */
+  ["#simone NAMED is not the same as #simone DEFAULTED",
+    { text: HERS, subject: "#simone", fromDepartment: HOLDING_DEPARTMENT, outcome: "ROUTED" }, null],
+  ["and an ambiguous tag is hers to resolve, not this rule's",
+    { text: HERS, subject: "#monique", fromDepartment: HOLDING_DEPARTMENT, outcome: "AMBIGUOUS" }, null],
   ["ordinary mail on the holding desk does not move",
     { text: "can you book me a flight to Chicago on Tuesday", subject: "", fromDepartment: HOLDING_DEPARTMENT }, null],
   ["a word from one group alone is not a signal",
@@ -194,6 +203,13 @@ export function theCodeDoesIt(intake, api, merge) {
   if (!/handoffFor\(/.test(intake)) {
     bad.push(`${INTAKE} never calls handoffFor(), so a message with no tag still stops at the first desk it lands on.`);
   }
+  if (!/outcome: route\.outcome/.test(intake)) {
+    bad.push(
+      `${INTAKE} does not pass the routing outcome to handoffFor. The Chief of Staff is both the `
+      + "named seat `#simone` AND the default holder, so without it a message she addressed by hand "
+      + "is moved off her desk — which is what happened to iml_m2bk4htrq4gvnzem in production.",
+    );
+  }
   if (!/seatInDepartment\(roster/.test(intake)) {
     bad.push(`${INTAKE} does not resolve the destination out of the roster it read from D1 — a hardcoded seat is a second list of who works here.`);
   }
@@ -304,6 +320,10 @@ if (process.argv.includes("--self-test")) {
   expect("a rule that never hands anything off — the state on 12 September", theRuleDecides(() => null), true);
   expect("a rule that hands off EVERYTHING, which is the hallucination with a regex",
     theRuleDecides(() => ({ department: "Relationships", why: "everything is relationships", matched: ["*"] })), true);
+  expect("a rule that reads the department and not the outcome — the production bug",
+    theRuleDecides((i) => handoffFor({ ...i, outcome: "DEFAULTED" })), true);
+  expect("an intake that stops passing the routing outcome", theCodeDoesIt(
+    intakeSource?.replace("outcome: route.outcome,", "") ?? null, apiSource, mergeSource), true);
   expect("a rule that overrules a desk she named",
     theRuleDecides((i) => (/seller|buyers|\$/.test(`${i.subject} ${i.text}`)
       ? { department: "Relationships", why: "w", matched: ["x"] } : null)), true);

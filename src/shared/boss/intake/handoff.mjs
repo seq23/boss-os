@@ -73,14 +73,29 @@ function said(text) {
 /**
  * Which department should take this instead, if any.
  *
+ * `outcome` is the routing outcome from `routeToSeat`: only a DEFAULTED message — one where she
+ * named nobody — may be moved.
+ *
  * @returns `{ department, why, matched }` or null. Null is the ordinary answer.
  */
-export function handoffFor({ text = "", subject = "", fromDepartment = "" } = {}) {
+export function handoffFor({ text = "", subject = "", fromDepartment = "", outcome = "DEFAULTED" } = {}) {
   /*
-   * ONLY OFF THE HOLDING DESK. If she typed `#simone`, she chose Simone; if she typed nothing, the
-   * message defaulted there and no one has chosen anything yet. Only the second is a routing
-   * decision still waiting to be made, and only the second may be completed by a rule.
+   * ─── A TAG SHE TYPED IS A DECISION SHE MADE ───────────────────────────────
+   *
+   * `outcome` is the FIRST gate and it is the one that matters. THE BUG IT FIXES, caught in
+   * production on the very first re-admission: the Chief of Staff is both the named seat `#simone`
+   * AND the desk untagged mail defaults to, so a department check alone moved a message she had
+   * explicitly addressed to Simone — "make sure the spirit page … displays astrology" — onto
+   * Monique's desk, on the words "source" and "capital" appearing somewhere in a 30 KB report.
+   *
+   * `DEFAULTED` means no tag matched anybody: nobody has chosen yet, and a rule may complete that.
+   * `ROUTED` means she named a seat. `AMBIGUOUS` means two seats share a first name and the Chief of
+   * Staff is holding it until she says which — also her decision to make, not this rule's.
+   *
+   * The department check stays as well, because the two say different things: `outcome` says nobody
+   * chose, and the department says the message is sitting on the desk this rule is allowed to clear.
    */
+  if (String(outcome ?? "") !== "DEFAULTED") return null;
   if (String(fromDepartment ?? "").trim() !== HOLDING_DEPARTMENT) return null;
 
   const haystack = said(`${subject}\n${text}`);
