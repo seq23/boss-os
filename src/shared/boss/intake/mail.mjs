@@ -67,11 +67,16 @@ export const BOSS_INTAKE_DOMAIN = "sequoiataylor.com";
  * first run. The guard is correct and the instinct was wrong: Boss OS is her personal system, West
  * Peek is a fund, and putting the fund's address on the list of things that can instruct her
  * personal employees is the exact blend she has now corrected three times. It also costs nothing —
- * she has two other addresses here, and adding a third is one line she can ask for.
+ * she has other personal addresses here, and adding one is a line she can ask for — which she did
+ * on 2026-09-12, for `sequoiataylor@icloud.com`, while saying in the same breath to KEEP WEST PEEK
+ * OFF. So the list grew and this exclusion survived the growth, which is the test of it.
  */
 export const BOSS_INTAKE_SENDERS = [
   "seq.taylor@gmail.com",
   "staylor@spry.vc",
+  // Added 2026-09-12 on her instruction, after a `#simone` mail from her iPhone was
+  // REFUSED_SENDER: she sends from Mail on the phone, which uses this address, not Gmail.
+  "sequoiataylor@icloud.com",
 ];
 
 /** The seat that takes mail nobody could place. Resolved from D1 by this role, never by name. */
