@@ -47,11 +47,11 @@ const NOW = Date.parse("2026-09-10T12:00:00Z");
  */
 const LEDGER_PATH = `${process.env.HOME}/.boss-os/capital/ledger.json`;
 const IN_CI = process.env.CI === "true";
-const skipped = [];
+const notHere = [];
 function liveLedger(label) {
   if (!fs.existsSync(LEDGER_PATH)) {
     if (!IN_CI) throw new Error(`${LEDGER_PATH} is absent on the machine that owns it — the ledger writer has stopped, or HOME is wrong`);
-    skipped.push(label);
+    notHere.push(label);
     return null;
   }
   const raw = JSON.parse(fs.readFileSync(LEDGER_PATH, "utf8"));
@@ -226,7 +226,7 @@ if (fails.length) {
   for (const f of fails) console.error(`  - ${f}`);
   process.exit(1);
 }
-const ran = 12 - skipped.length;
-for (const s of skipped) console.log(`NAMED STOP [LEDGER_NOT_HERE]: ${s} — ${LEDGER_PATH} does not exist on this runner (CI=true); it is checked where the ledger lives.`);
+const ran = 12 - notHere.length;
+for (const s of notHere) console.log(`NAMED STOP [LEDGER_NOT_HERE]: ${s} — ${LEDGER_PATH} does not exist on this runner (CI=true); it is checked where the ledger lives.`);
 console.log(`CAPITAL STALENESS PASS: ${ran} behavioural assertions ran — a sell decays on either durability, six months reads as stale, a buyer's mandate stays durable, a stale sell cannot cross while a fresh one still does, and outreach reaches back with no cutoff. Two brokers at her own firm never cross; one side still does.`
-  + (skipped.length ? "" : " Live ledger offers 0 stale-sell crosses and 0 internal co-broker crosses."));
+  + (notHere.length ? "" : " Live ledger offers 0 stale-sell crosses and 0 internal co-broker crosses."));
