@@ -127,11 +127,30 @@ export async function drainBossTasks(
 ): Promise<{ ran: number; failed: number; dead: number }> {
   const bossEnv = toBossEnv(env);
   const db = env.WP_OS_DB;
+  /*
+   * ─── A HUNT IS NOT A DRAFTING JOB, AND THE MODEL MUST NOT EAT IT ──────────
+   *
+   * A task carrying `input.hunt` is work for `scripts/ops/buyer-hunt.mjs --from-boss`, which runs on
+   * her Mac because the hunt is SEC full-text search plus eight XML filings per name plus a local
+   * ledger — none of which exists in a Worker.
+   *
+   * Without this exclusion the drain got there first. On 12 September her "find a seller of $1B+ of
+   * OpenAI shares" landed on Monique with the hunt parsed correctly onto it —
+   * {"asset":"OpenAI","size_usd":1000000000,"side":"sell"} — and the model drained it seconds later
+   * and wrote "I will initiate a search for potential sellers", moving the task to
+   * `awaiting_approval`. The local runner polls for `queued`, so by the time it looked, the work had
+   * been answered by a paragraph promising to do it. That is this repository's most-named defect
+   * wearing its politest face: it ran, it reported success, and nothing was hunted.
+   *
+   * The hunt stays queued until the thing that can actually perform it claims it.
+   */
   const due = await db
     .prepare(
-      `SELECT id, task_id, lane, attempt FROM boss_task_queue
-       WHERE state = 'pending' AND visible_at <= ?
-       ORDER BY enqueued_at LIMIT ?`,
+      `SELECT q.id, q.task_id, q.lane, q.attempt FROM boss_task_queue q
+       JOIN tasks t ON t.id = q.task_id
+       WHERE q.state = 'pending' AND q.visible_at <= ?
+         AND COALESCE(json_extract(t.input, '$.hunt'), '') = ''
+       ORDER BY q.enqueued_at LIMIT ?`,
     )
     .bind(now.getTime(), limit)
     .all<{ id: string; task_id: string; lane: string; attempt: number }>();
