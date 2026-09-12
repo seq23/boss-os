@@ -777,10 +777,44 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     );
   }
 
+  /*
+   * ─── A RED LIGHT CARRIES ITS REMEDY ───────────────────────────────────────
+   *
+   * "No model on this route satisfied policy", with "check the routing decision" as the hint, is a
+   * failure that makes her go and read a JSON column to find out what happened. `tsk_m2bk7zfffhjatvsf`
+   * is what that looks like on her desk: a `failed` task with a sentence that could mean privacy,
+   * capability, availability, budget or an outage.
+   *
+   * It was none of those individually — it was ONE fact, true of all four candidates at once:
+   *
+   *     mdl_kimi_k2        availability   Fireworks is registered, not enabled
+   *     mdl_qwen_fast      capability     model is cleared to low risk, task is medium
+   *     mdl_cf_llama33_70b capability     model is cleared to low risk, task is medium
+   *     mdl_cf_llama31_8b  capability     model is cleared to low risk, task is medium
+   *
+   * Every model in this system carries `max_risk = 'low'`, so nothing classified `medium` can route
+   * at all. That is a real ceiling and it is the OWNER'S to lift — raising a model's risk clearance
+   * is a promotion, and §3.1 says a promotion needs benchmark evidence and an approved card, not a
+   * quiet UPDATE by whoever hit the wall first. So this does not widen anything. It states the wall,
+   * in one sentence, with the decision that would move it.
+   */
+  const decisive = considered.filter((c) => c.verdict === "rejected");
+  const bySameReason = decisive.length > 0
+    && decisive.every((c) => c.stage === decisive[0]!.stage && c.reason === decisive[0]!.reason)
+    ? decisive[0]!
+    : null;
+
   throw new RoutingBlocked(
-    lastError ? `No model could run this: ${lastError.message}` : "No model on this route satisfied policy",
+    lastError ? `No model could run this: ${lastError.message}`
+      : bySameReason
+        ? `No model on this route satisfied policy: all ${decisive.length} were refused at ${bySameReason.stage} — ${bySameReason.reason}`
+        : "No model on this route satisfied policy",
     "blocked_no_model",
-    "Check the routing decision for why each model was refused.",
+    bySameReason?.stage === "capability"
+      ? "Every model here is cleared to low risk only. Either this task is not really that risky — "
+        + "reclassify it — or a model needs a risk promotion, which takes a benchmark and an approved "
+        + "card. Nothing widens a risk ceiling on its own."
+      : "Check the routing decision for why each model was refused.",
   );
 }
 

@@ -404,6 +404,33 @@ describe("Stage 4 — availability, and a degraded tier that says so", () => {
     expect(calls).not.toContain("@cf/meta/llama-3.1-8b-instruct-fp8");
   });
 
+  /**
+   * `tsk_m2bk7zfffhjatvsf`: a `failed` task on her desk reading "No model on this route satisfied
+   * policy", which could mean privacy, capability, availability, budget or an outage. It meant one
+   * thing, true of all four candidates at once — every model in this system is cleared to `low` risk
+   * and the task classified `medium`. A red light with no remedy is the thing this repo forbids.
+   */
+  it("SAYS WHAT THE WALL IS when every candidate hit the same one", async () => {
+    await commissionFireworks("MODERATE");
+    await provisionWorkersAi();
+    const { bound } = withAi("never reached");
+    restore = stubFetch(() => completionResponse("never reached"));
+    // Every model is cleared to low risk; ask for a high-risk run.
+    await env.DB.prepare(`UPDATE models SET max_risk = 'low'`).run();
+
+    const err = await routeCompletion(bound, { ...baseRequest, taskId: "tsk_wall", risk: "high" })
+      .then(() => null, (e) => e as RoutingBlocked);
+
+    expect(err).toBeInstanceOf(RoutingBlocked);
+    expect(err!.outcome).toBe("blocked_no_model");
+    // The sentence names the stage and the reason, rather than sending her to read a JSON column.
+    expect(err!.message).toMatch(/refused at capability/);
+    expect(err!.message).toMatch(/cleared to low risk/);
+    // AND THE REMEDY IS A DECISION SHE CAN MAKE, including the one this may never make for her.
+    expect(err!.hint).toMatch(/risk promotion/);
+    expect(err!.hint).toMatch(/benchmark/);
+  });
+
   it("carries the degraded label onto the task the screen actually reads", async () => {
     await commissionFireworks("MODERATE");
     await provisionWorkersAi();
