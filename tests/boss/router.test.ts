@@ -513,6 +513,16 @@ describe("Stage 4 — a cheaper route never bypasses a rule above it", () => {
     await provisionWorkersAi();
     await commissionFireworks("OPEN");
     await env.DB.prepare(`UPDATE models SET max_risk = 'high' WHERE 1 = 1`).run();
+    /*
+     * THE FIXTURE CHANGED, THE RULE DID NOT. Migration 0231 promotes `mdl_cf_llama33_70b` to
+     * `benchmarked` on six approved workload verdicts, so "every free model is unbenchmarked" is no
+     * longer true by default and the premise of this test has to be made rather than assumed. What
+     * is being pinned is untouched: a free model that has NOT earned it may not take high-risk work
+     * because it is cheap. The 70B is put back to unbenchmarked for this test; the 8B already is.
+     */
+    await env.DB
+      .prepare(`UPDATE models SET benchmark_status = 'unbenchmarked' WHERE 1 = 1`)
+      .run();
     const { bound, calls } = withAi("must not run");
     restore = stubFetch(() => completionResponse("must not run"));
 

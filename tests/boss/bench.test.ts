@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BENCH_VERDICT, BenchRefused, GOLDEN_TASKS, runBench } from "../../src/worker/boss/router/bench";
 import { setSpendLever } from "../../src/worker/boss/router/spend";
 import { all, api, apiJson, row, stubFetch, completionResponse } from "./helpers";
@@ -39,6 +39,23 @@ async function provisionWorkersAi() {
 async function benchmarkRows() {
   return all(`SELECT id, model_id, workload_id, verdict, quality_score, latency_ms, cost_micros, note FROM model_benchmarks`);
 }
+
+/**
+ * THE TABLE STARTS EMPTY FOR THESE TESTS, AND THAT IS A FIXTURE, NOT THE RULE.
+ *
+ * Every assertion in this file is about what THIS HARNESS RUN wrote — "no row", "exactly one row",
+ * "never an approved verdict". Migration 0231 seeds seven operator-scored rows as the evidence
+ * behind a §3.1 risk promotion, so the table is no longer empty on a freshly migrated database and
+ * counting all rows would measure the migration instead of the harness.
+ *
+ * They are cleared rather than filtered out by id, because a filter would silently stop counting
+ * any future seeded row too, and then a harness that DID write an approved verdict could hide
+ * behind the exclusion. What is preserved is exactly the thing being pinned: a run of `runBench`
+ * against an empty table can only add `needs_review`, and often adds nothing at all.
+ */
+beforeEach(async () => {
+  await env.DB.prepare(`DELETE FROM model_benchmarks`).run();
+});
 
 describe("Stage 7 — the bench refuses to spend rather than guessing", () => {
   it("records every paid pair as NOT RUN at FREE_ONLY, and writes no benchmark row", async () => {

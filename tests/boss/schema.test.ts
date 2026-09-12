@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { SNAPSHOT_TABLES } from "../../src/worker/boss/routes/vault";
 import { CHASSIS_TABLES, CHASSIS_TABLE_CEILING } from "./chassisTables";
+import { LOCAL_DEFAULT_MIN_BENCHMARKS } from "../../src/worker/boss/router/policy";
 
 describe("schema", () => {
   it("applies every migration and seeds both lanes", async () => {
@@ -74,10 +75,70 @@ describe("schema", () => {
     expect(row!.n).toBeGreaterThanOrEqual(7);
   });
 
-  it("registers no model as benchmarked, because none has been benchmarked", async () => {
-    const row = await env.DB
-      .prepare(`SELECT COUNT(*) AS n FROM models WHERE benchmark_status = 'benchmarked'`)
-      .first<{ n: number }>();
-    expect(row!.n).toBe(0);
+  /**
+   * WAS: "registers no model as benchmarked, because none has been benchmarked."
+   *
+   * That was true until 0231, and it was asserting the FACT rather than the RULE. Migration 0231
+   * promotes `mdl_cf_llama33_70b` on six operator-scored `approved` verdicts across six distinct
+   * workloads, with an approved card, because every model the router could reach was cleared to
+   * `low` risk and so every `medium` task — most of her mail-driven work — failed before it started.
+   *
+   * The rule is what mattered and it is pinned here instead: `benchmark_status = 'benchmarked'` is
+   * the column the router's high-risk gate trusts, so it may never be set on a model that has not
+   * earned it. A count of zero would go green again the day somebody deleted the evidence.
+   */
+  it("marks a model benchmarked only on enough approved benchmarks to earn it", async () => {
+    const marked = await env.DB
+      .prepare(`SELECT id, display_name FROM models WHERE benchmark_status = 'benchmarked'`)
+      .all<{ id: string; display_name: string }>();
+
+    for (const m of marked.results ?? []) {
+      const n = await env.DB
+        .prepare(
+          `SELECT COUNT(DISTINCT workload_id) AS n FROM model_benchmarks
+            WHERE model_id = ? AND verdict = 'approved'`,
+        )
+        .bind(m.id)
+        .first<{ n: number }>();
+      expect(
+        n!.n,
+        `${m.display_name} is marked benchmarked on ${n!.n} approved workload(s)`,
+      ).toBeGreaterThanOrEqual(LOCAL_DEFAULT_MIN_BENCHMARKS);
+    }
+  });
+
+  /**
+   * And the clearance the same migration raises: above `low` needs evidence AND an approved card.
+   * §3.1, as `router/index.ts` states it — "a promotion needs benchmark evidence and an approved
+   * card, not a quiet UPDATE by whoever hit the wall first."
+   */
+  it("clears no model above low risk without approved benchmarks and an approved card", async () => {
+    const promoted = await env.DB
+      .prepare(`SELECT id, display_name, max_risk FROM models WHERE max_risk <> 'low'`)
+      .all<{ id: string; display_name: string; max_risk: string }>();
+
+    for (const m of promoted.results ?? []) {
+      expect(m.max_risk, `${m.display_name} is cleared to high risk by a migration`).toBe("medium");
+
+      const n = await env.DB
+        .prepare(
+          `SELECT COUNT(DISTINCT workload_id) AS n FROM model_benchmarks
+            WHERE model_id = ? AND verdict = 'approved'`,
+        )
+        .bind(m.id)
+        .first<{ n: number }>();
+      expect(n!.n, `${m.display_name} is cleared to ${m.max_risk} on ${n!.n} approved workload(s)`)
+        .toBeGreaterThanOrEqual(LOCAL_DEFAULT_MIN_BENCHMARKS);
+
+      const card = await env.DB
+        .prepare(
+          `SELECT id FROM approvals
+            WHERE kind = 'model_promotion' AND status = 'approved'
+              AND payload LIKE ? AND payload LIKE ? AND payload LIKE ?`,
+        )
+        .bind(`%"model_id":"${m.id}"%`, `%"change":"max_risk"%`, `%"to":"${m.max_risk}"%`)
+        .first<{ id: string }>();
+      expect(card?.id, `${m.display_name} is cleared to ${m.max_risk} with no approved card`).toBeTruthy();
+    }
   });
 });
