@@ -728,7 +728,9 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
         ? budgetRefusal.message.slice(0, 300)
         : lastError
           ? lastError.message.slice(0, 300)
-          : "no model on this route satisfied policy",
+          // THE ROW SAYS THE SAME THING THE REFUSAL SAYS. A decision log that is vaguer than the
+          // error it explains is the thing the error was telling her to go and read.
+          : (theWall(considered)?.sentence ?? "no model on this route satisfied policy").slice(0, 300),
     candidates: considered,
   });
 
@@ -798,24 +800,68 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
    * quiet UPDATE by whoever hit the wall first. So this does not widen anything. It states the wall,
    * in one sentence, with the decision that would move it.
    */
-  const decisive = considered.filter((c) => c.verdict === "rejected");
-  const bySameReason = decisive.length > 0
-    && decisive.every((c) => c.stage === decisive[0]!.stage && c.reason === decisive[0]!.reason)
-    ? decisive[0]!
-    : null;
-
+  const wall = theWall(considered);
   throw new RoutingBlocked(
-    lastError ? `No model could run this: ${lastError.message}`
-      : bySameReason
-        ? `No model on this route satisfied policy: all ${decisive.length} were refused at ${bySameReason.stage} — ${bySameReason.reason}`
-        : "No model on this route satisfied policy",
+    lastError ? `No model could run this: ${lastError.message}` : wall?.sentence ?? "No model on this route satisfied policy",
     "blocked_no_model",
-    bySameReason?.stage === "capability"
-      ? "Every model here is cleared to low risk only. Either this task is not really that risky — "
-        + "reclassify it — or a model needs a risk promotion, which takes a benchmark and an approved "
-        + "card. Nothing widens a risk ceiling on its own."
-      : "Check the routing decision for why each model was refused.",
+    wall?.remedy ?? "Check the routing decision for why each model was refused.",
   );
+}
+
+/**
+ * ─── A RED LIGHT CARRIES ITS REMEDY ─────────────────────────────────────────
+ *
+ * "No model on this route satisfied policy", with "check the routing decision" as the hint, is a
+ * failure that makes her go and read a JSON column to find out what happened. `tsk_m2bk7zfffhjatvsf`
+ * is what that looks like on her desk: a `failed` task carrying a sentence that could mean privacy,
+ * capability, availability, budget or a provider outage.
+ *
+ * It meant ONE thing, true of three of the four candidates:
+ *
+ *     mdl_kimi_k2        availability   Fireworks is registered, not enabled
+ *     mdl_qwen_fast      capability     model is cleared to low risk, task is medium
+ *     mdl_cf_llama33_70b capability     model is cleared to low risk, task is medium
+ *     mdl_cf_llama31_8b  capability     model is cleared to low risk, task is medium
+ *
+ * THE LARGEST GROUP, NOT A UNANIMOUS ONE. The first version of this required every rejection to
+ * share a stage and a reason, and on the real decision it fired on nothing — one Fireworks model
+ * refused for a different reason was enough to silence it. A wall three candidates out of four hit
+ * is the wall, and saying "3 of 4" is more honest than saying nothing.
+ *
+ * IT WIDENS NOTHING. Raising a model's risk clearance is a PROMOTION, and §3.1 requires benchmark
+ * evidence and an approved card — not a quiet UPDATE by whoever hit the wall first. So this states
+ * the wall and names the decision that would move it; the decision stays the owner's.
+ */
+export function theWall(considered: CandidateNote[]): { sentence: string; remedy: string } | null {
+  const rejected = considered.filter((c) => c.verdict === "rejected");
+  if (rejected.length === 0) return null;
+
+  const groups = new Map<string, { stage: string; reason: string; n: number }>();
+  for (const c of rejected) {
+    const key = `${c.stage}|${c.reason}`;
+    const g = groups.get(key) ?? { stage: String(c.stage), reason: c.reason, n: 0 };
+    g.n += 1;
+    groups.set(key, g);
+  }
+  const biggest = [...groups.values()].sort((a, b) => b.n - a.n)[0]!;
+
+  const REMEDY: Record<string, string> = {
+    capability:
+      "The models here are not cleared for work at this risk. Either this task is not really that "
+      + "risky — reclassify it — or a model needs a risk promotion, which takes a benchmark and an "
+      + "approved card. Nothing widens a risk ceiling on its own.",
+    availability:
+      "The backends that could take this are not commissioned. Enable one in Systems -> Backends, or "
+      + "provision a model on one that is already enabled.",
+    budget: "Raise the ceiling for this lane, or wait for the window to roll.",
+    privacy: "Approve the routing card to let it run once, or register a model that may hold this.",
+  };
+
+  return {
+    sentence: `No model on this route satisfied policy: ${biggest.n} of ${rejected.length} `
+      + `refused at ${biggest.stage} — ${biggest.reason}`,
+    remedy: REMEDY[biggest.stage] ?? "Check the routing decision for why each model was refused.",
+  };
 }
 
 /** Why the primary did not run, in the words already recorded for it. */

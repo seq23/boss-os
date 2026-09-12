@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { afterEach, describe, expect, it } from "vitest";
-import { routeCompletion, BudgetExceeded, RoutingBlocked } from "../../src/worker/boss/router";
+import { routeCompletion, BudgetExceeded, RoutingBlocked, theWall } from "../../src/worker/boss/router";
 import { rollBudgetWindows, windowStart, laneBudgetState } from "../../src/worker/boss/router/budget";
 import { setSpendLever, spendLeverState } from "../../src/worker/boss/router/spend";
 import { BREAKER_THRESHOLD, breakerState } from "../../src/worker/boss/router/breaker";
@@ -423,12 +423,36 @@ describe("Stage 4 — availability, and a degraded tier that says so", () => {
 
     expect(err).toBeInstanceOf(RoutingBlocked);
     expect(err!.outcome).toBe("blocked_no_model");
-    // The sentence names the stage and the reason, rather than sending her to read a JSON column.
+    // The sentence names the stage, the reason and HOW MANY, rather than sending her to a JSON column.
     expect(err!.message).toMatch(/refused at capability/);
+    expect(err!.message).toMatch(/\d+ of \d+/);
     expect(err!.message).toMatch(/cleared to low risk/);
     // AND THE REMEDY IS A DECISION SHE CAN MAKE, including the one this may never make for her.
     expect(err!.hint).toMatch(/risk promotion/);
     expect(err!.hint).toMatch(/benchmark/);
+
+    // AND THE DECISION ROW SAYS THE SAME THING. A log vaguer than the error it explains is the
+    // log the error was telling her to go and read.
+    const decision = await row(`SELECT reason FROM routing_decisions WHERE task_id = 'tsk_wall'`);
+    expect(decision!.reason).toMatch(/refused at capability/);
+  });
+
+  /**
+   * THE FIRST VERSION OF THIS FIRED ON NOTHING. It required every rejection to share a stage and a
+   * reason, and the real decision had one Fireworks model refused at `availability` alongside three
+   * refused at `capability` — so it said nothing at all. The LARGEST group is the wall.
+   */
+  it("names the wall even when one candidate hit a different one", () => {
+    const wall = theWall([
+      { model_id: "a", backend_id: null, tier: "route", stage: "availability", verdict: "rejected", reason: "Fireworks is registered, not enabled" },
+      { model_id: "b", backend_id: null, tier: "route", stage: "capability", verdict: "rejected", reason: "model is cleared to low risk, task is medium" },
+      { model_id: "c", backend_id: null, tier: "continuity", stage: "capability", verdict: "rejected", reason: "model is cleared to low risk, task is medium" },
+      { model_id: "d", backend_id: null, tier: "continuity", stage: "capability", verdict: "rejected", reason: "model is cleared to low risk, task is medium" },
+    ] as never);
+    expect(wall!.sentence).toContain("3 of 4 refused at capability");
+    expect(wall!.remedy).toMatch(/risk promotion/);
+    // Nothing rejected is not a wall — it must not invent one.
+    expect(theWall([])).toBeNull();
   });
 
   it("carries the degraded label onto the task the screen actually reads", async () => {
