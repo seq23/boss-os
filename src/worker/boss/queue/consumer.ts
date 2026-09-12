@@ -306,10 +306,19 @@ export async function buildPrompt(env: Env, task: any, input: Record<string, any
     : body;
 
   const fence = `HER_WORDS_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  /*
+   * WHO WROTE IT AND WHO IS READING IT, STATED. The first version of these lines read
+   * "Why it reached you: #simone is Simone, Chief of Staff." and the 70B took that as the SENDER:
+   * it answered "two requests from Simone, Chief of Staff" about "her boss's OS system", when Simone
+   * is the seat being written TO and the Boss is the one writing. A correct answer addressed to the
+   * wrong person is not a correct answer, and the ambiguity was in the label, not the model.
+   */
   const context = [
     typeof input.subject === "string" && input.subject ? `Subject: ${input.subject}` : null,
-    typeof input.from === "string" && input.from ? `From: ${input.from}` : null,
-    typeof input.routing === "string" && input.routing ? `Why it reached you: ${input.routing}` : null,
+    typeof input.from === "string" && input.from
+      ? `THE BOSS wrote this to you, from ${input.from}. You are her employee; she is not yours. Everything below is hers.`
+      : null,
+    typeof input.routing === "string" && input.routing ? `It was routed to your desk because: ${input.routing}` : null,
     typeof input.handed_off === "string" && input.handed_off ? `Handed to you: ${input.handed_off}` : null,
   ].filter(Boolean).join("\n");
 
