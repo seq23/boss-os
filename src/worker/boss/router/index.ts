@@ -4,6 +4,7 @@ import { logEvent } from "../lib/log";
 import { getBool, getSetting } from "../lib/settings";
 import { AppError } from "../lib/http";
 import { costPolicy } from "../../../shared/boss/governance";
+import { orderCandidates } from "../../../shared/boss/router/candidateOrder.mjs";
 import { ProviderCallError, type ChatMessage } from "./types";
 import { evaluateModel, estimateCostMicros, type ModelRow, type RouteStage } from "./policy";
 import { rollBudgetWindows, laneBudgetState, employeeBudgetState } from "./budget";
@@ -26,6 +27,7 @@ import {
  */
 /** How many FREE routes one run may try after the paid ones. Bounded, not unlimited. */
 export const MAX_FREE_HOPS = 2;
+
 
 const BUDGET_REFUSAL_CODES = new Set([
   "lever_free_only",
@@ -421,12 +423,24 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   }
 
   // ── Stage 5 · COST PREFERENCE, applied to the continuity tier only. ─────────
-  const continuity = (await loadContinuityModels(db, declaredIds)).sort((a, b) => {
-    const ca = estimateCostMicros(a, promptChars, route.max_output_tokens);
-    const cb = estimateCostMicros(b, promptChars, route.max_output_tokens);
-    if (ca !== cb) return ca - cb;
-    return a.display_name.localeCompare(b.display_name);
-  });
+  //
+  // AND AT EQUAL COST, CAPABILITY — NOT THE ALPHABET.
+  //
+  // The tie-break used to be `display_name.localeCompare`, and Workers AI gives this system TWO
+  // models that both cost exactly 0: "Llama 3.1 8B" and "Llama 3.3 70B". Alphabetically the 8B wins
+  // every tie, the loop calls it, succeeds, and stops — so the 70B was never even SCREENED, let
+  // alone rejected. `rtd_m2b0p2mdcrt61m4g` is what that produced: three candidates, no mention of
+  // the 70B, and an 8-billion-parameter model answering a request to find a buyer for $1B of OpenAI
+  // stock with "Classification: General Inquiry. Routing: Route to Customer Service Team."
+  //
+  // A tie-break is a decision. An alphabetical one was silently overruling Stage 2 — capability —
+  // with a fact about spelling, for free. `general` outranks `fast` because that is what those words
+  // mean, and cost is genuinely unchanged, so nothing here promotes a candidate past an earlier
+  // stage: every model in this list has already survived screening on its own merits.
+  const continuity = orderCandidates(
+    await loadContinuityModels(db, declaredIds),
+    (m) => estimateCostMicros(m, promptChars, route.max_output_tokens),
+  );
 
   // THE TRADING LANE GETS NO CONTINUITY TIER. PLAN_v21 Stage 1's table says it in
   // one line — OpenRouter "may not touch the trading lane" — and the seeded row

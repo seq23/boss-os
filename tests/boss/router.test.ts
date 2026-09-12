@@ -369,6 +369,41 @@ describe("Stage 4 — availability, and a degraded tier that says so", () => {
     expect(logged!.event).toBe("degraded_route");
   });
 
+  /**
+   * 12 September 2026. `rtd_m2b0p2mdcrt61m4g` named three candidates for a request to find a buyer
+   * for $1B of OpenAI stock — two Fireworks models rejected, and `mdl_cf_llama31_8b` used. The free
+   * 70B was not rejected; it was ABSENT. Both Workers AI models cost exactly 0, the continuity tier
+   * broke the tie alphabetically, "Llama 3.1 8B" won, it answered, and the loop stopped.
+   */
+  it("REACHES THE FREE 70B BEFORE THE FREE 8B, and names it in the decision at zero", async () => {
+    await commissionFireworks("MODERATE");
+    await provisionWorkersAi();
+    const { bound, calls } = withAi("A considered answer.");
+    restore = stubFetch(() => new Response("service unavailable", { status: 500 }));
+
+    const result = await routeCompletion(bound, { ...baseRequest, taskId: "tsk_free70b" });
+
+    // The model that actually ran, and the slug that actually went to the binding.
+    expect(result.modelId).toBe("mdl_cf_llama33_70b");
+    expect(calls[0]).toBe("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+    expect(result.costMicros).toBe(0);
+    expect(result.freeTier).toBe(true);
+    // And the honesty label survives: it is still the continuity tier, so she is still told.
+    expect(result.degraded).toBe(true);
+    expect(result.modelName).toContain("DEGRADED TIER");
+
+    const decision = await row(`SELECT candidates FROM routing_decisions WHERE task_id = 'tsk_free70b'`);
+    const candidates = JSON.parse(decision!.candidates) as {
+      model_id: string; verdict: string; estimate_micros?: number;
+    }[];
+    const seventy = candidates.find((c) => c.model_id === "mdl_cf_llama33_70b");
+    expect(seventy).toBeTruthy();
+    expect(seventy!.verdict).toBe("used");
+    expect(seventy!.estimate_micros).toBe(0);
+    // The 8B was never called: the better free model got there first.
+    expect(calls).not.toContain("@cf/meta/llama-3.1-8b-instruct-fp8");
+  });
+
   it("carries the degraded label onto the task the screen actually reads", async () => {
     await commissionFireworks("MODERATE");
     await provisionWorkersAi();
