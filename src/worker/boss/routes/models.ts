@@ -76,6 +76,30 @@ models.post("/", async (c) => {
   return ok(c, await c.env.DB.prepare(`SELECT * FROM models WHERE id = ?`).bind(id).first(), 201);
 });
 
+/**
+ * Edit a model row — and RAISING `max_risk` is a PROMOTION, gated here.
+ *
+ * ─── The guard that could not reach what it governed ───────────────────────
+ *
+ * `max_risk` is the single column that decides whether her work may run: a task classified `medium`
+ * needs a model cleared to `medium`, and on 12 September 2026 none existed, so `tsk_m2bk7zfffhjatvsf`
+ * failed four times without ever reaching a model. `router/index.ts` states the rule twice —
+ * "raising a model's risk clearance is a PROMOTION, and §3.1 says a promotion needs benchmark
+ * evidence and an approved card, not a quiet UPDATE by whoever hit the wall first" — and that rule
+ * was enforced in exactly ONE place: `PATCH /routes/:id`, which governs ROUTE DEFAULTS and never
+ * reads `max_risk` at all.
+ *
+ * So the column the rule is about was in this handler's freely-updatable list, with no gate of any
+ * kind. The sentence existed; the enforcement did not reach it.
+ *
+ * ─── Raising is gated. LOWERING NEVER IS, and that is deliberate ───────────
+ *
+ * Tightening a clearance removes capability and can never widen anything, so it must stay available
+ * without ceremony — a gate that made it hard to REVOKE a clearance would be a gate that keeps a bad
+ * model in service. Only an increase asks for the card.
+ */
+const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
+
 models.patch("/:id", async (c) => {
   const id = c.req.param("id");
   const b = await c.req.json<any>();
@@ -85,6 +109,54 @@ models.patch("/:id", async (c) => {
   ];
   const fields = allowed.filter((f) => f in b);
   if (!fields.length) throw badRequest("Nothing to change", `Send one of: ${allowed.join(", ")}.`);
+
+  if ("max_risk" in b) {
+    const want = String(b.max_risk);
+    if (!(want in RISK_RANK)) throw badRequest("max_risk must be low, medium or high");
+    const current = await c.env.DB
+      .prepare(`SELECT id, display_name, max_risk FROM models WHERE id = ?`).bind(id)
+      .first<{ id: string; display_name: string; max_risk: string }>();
+    if (!current) throw notFound("No model with that id");
+
+    if (RISK_RANK[want]! > (RISK_RANK[current.max_risk] ?? 0)) {
+      /*
+       * BOTH HALVES, THE SAME WAY THE ROUTE-DEFAULT GATE ASKS FOR THEM. Evidence that a harness
+       * cannot forge — `router/bench.ts` writes `needs_review` and a test proves it can never write
+       * `approved` — and a human decision recorded as a card that names this model, this column and
+       * this level. Either alone is not enough, for the reasons `PATCH /routes/:id` sets out.
+       */
+      const distinct = await c.env.DB
+        .prepare(
+          `SELECT COUNT(DISTINCT workload_id) AS n FROM model_benchmarks
+            WHERE model_id = ? AND verdict = 'approved'`,
+        )
+        .bind(id)
+        .first<{ n: number }>();
+      if ((distinct?.n ?? 0) < LOCAL_DEFAULT_MIN_BENCHMARKS) {
+        throw conflict(
+          `${current.display_name} has ${distinct?.n ?? 0} approved workload benchmark(s) and cannot be cleared to ${want} risk`,
+          `A risk promotion needs ${LOCAL_DEFAULT_MIN_BENCHMARKS} approved results across distinct workloads. ` +
+            "Score real runs through POST /api/models/benchmarks; the bench harness records latency and cost and never scores quality.",
+        );
+      }
+      const card = await c.env.DB
+        .prepare(
+          `SELECT id FROM approvals
+            WHERE kind = 'model_promotion' AND status = 'approved'
+              AND payload LIKE ? AND payload LIKE ? AND payload LIKE ?`,
+        )
+        .bind(`%"model_id":"${id}"%`, `%"change":"max_risk"%`, `%"to":"${want}"%`)
+        .first<{ id: string }>();
+      if (!card) {
+        throw conflict(
+          `No approved promotion card clears ${current.display_name} to ${want} risk`,
+          "Raising a risk clearance is a promotion: it needs an approved card naming the model, " +
+            "the change `max_risk`, and the level. Raise one and approve it in the Approval Inbox.",
+        );
+      }
+    }
+  }
+
   const res = await c.env.DB
     .prepare(`UPDATE models SET ${fields.map((f) => `${f} = ?`).join(", ")} WHERE id = ?`)
     .bind(...fields.map((f) => b[f]), id)
