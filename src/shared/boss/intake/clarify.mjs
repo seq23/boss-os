@@ -98,7 +98,7 @@ export function isReplyMessage({ subject, inReplyTo, references }) {
 export function clarificationFor(input) {
   const {
     subject = "", body = "", department = "", seatName = "there", tag = null,
-    isReply = false, hasVerb = false, bookFiled = false, forwarded = false,
+    isReply = false, hasVerb = false, bookFiled = false, forwarded = false, unread = false,
   } = input ?? {};
 
   // She said exactly what she meant, or she is answering a question. Neither needs one asked.
@@ -152,8 +152,21 @@ export function clarificationFor(input) {
    * 2. A TAG AND NO INSTRUCTION. A forward is exempt: "here, deal with this" is a complete thought
    * and is her most common message.
    */
+  /*
+   * AN UNREAD MESSAGE IS NOT AN EMPTY ONE, AND THIS IS WHERE THE TWO GOT CONFUSED.
+   *
+   * `unread` says the intake CHOSE not to parse — the oversize path streams the message to R2 and
+   * never decodes it, so the body it hands over is `""` for a reason that has nothing to do with
+   * what she wrote. Reading that as "a tag and no instruction" produced the 12 September 2026
+   * failure: her 538,189-byte message was stored intact, asked back "what would you like me to do?",
+   * and opened no work, because `nothing_to_act_on` gated out the very branch that was supposed to
+   * open a card for an unread message.
+   *
+   * So this rule is about ABSENCE OF INSTRUCTION, and only the intake knows whether the absence is
+   * hers. When it says the text was never read, this rule has no opinion and yields.
+   */
   const words = said.split(/\s+/).filter((w) => /[a-z0-9]/i.test(w));
-  if (!forwarded && words.length < 3) {
+  if (!unread && !forwarded && words.length < 3) {
     return {
       reason: "nothing_to_act_on",
       why: `There was no instruction in it — ${words.length} word(s) — so ${seatName} asked instead of inventing one.`,

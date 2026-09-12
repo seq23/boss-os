@@ -38,8 +38,24 @@ import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } fro
  * whole design is safe precisely because knowing `#monique` buys an attacker nothing.
  */
 
-/** Bigger than this and the body is not parsed — a Worker invocation has ~10ms of CPU. */
-export const MAX_BODY_BYTES = 512 * 1024;
+/**
+ * THE ENVELOPE CAP IS NOT THE CPU GUARD, AND MEASURING THE WRONG ONE COST HER A MESSAGE.
+ *
+ * This used to be 512 KB and it is compared against `rawSize` — the whole RFC 822 envelope, ARC
+ * seals, base64 attachments and the `text/html` alternative every mail client sends alongside the
+ * text. On 12 September 2026 her iPhone Mail sent 538,189 bytes: one 32 KB instruction, wrapped in a
+ * 472 KB HTML alternative. Over by 2.6%. The parse was skipped entirely, the body became `""`, and
+ * the instruction — "make sure the spirit page … displays astrology …" — reached nobody.
+ *
+ * The real CPU guard is `MAX_READABLE_BYTES` (60,000) in `shared/boss/intake/messageBody.mjs`, which
+ * caps the DECODE OUTPUT — the only number that bounds the work. That stays exactly where it is.
+ * This one only has to be big enough that a normal mail client's envelope overhead cannot push a
+ * small instruction over it, and small enough that a 7 MB deck still streams to R2 unparsed.
+ *
+ * 4 MB: eight times her real message, and still refuses the 7 MB deck that taught the oversize path
+ * to exist. Guarded by `validate:unread-not-empty`, which measures her actual message.
+ */
+export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 /** Every active seat, which is the whole tag table. There is no second list. */
 export async function activeRoster(env: Env): Promise<BossSeat[]> {
@@ -383,10 +399,23 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const isReply = isReplyMessage({
     subject, inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
   });
+  /*
+   * ─── UNREAD IS NOT EMPTY ───────────────────────────────────────────────────
+   *
+   * The oversize path deliberately does not parse, so `readable` is `""` — and `clarificationFor`
+   * read that as "a tag and no instruction", returned `nothing_to_act_on`, and the `!question`
+   * guard below then gated out the whole `admitTask` block INCLUDING the oversize branch a few lines
+   * down that exists to open a card anyway. Two correct-looking rules cancelling each other out:
+   * the message was stored in R2, recorded in `boss_inbound_mail`, and produced no work at all.
+   *
+   * `unread` is the distinction. A message nobody could read has something to act on by definition
+   * — the R2 key is the handle — and asking "what would you like me to do?" about a message she
+   * plainly wrote is the most insulting question this system can send.
+   */
   const question = bookFailure ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
     seatName: route.seat.name, tag: route.tag, isReply, bookFiled: Boolean(bookNote),
-    hasVerb: Boolean(directive), forwarded: Boolean(origin?.from),
+    hasVerb: Boolean(directive), forwarded: Boolean(origin?.from), unread: oversize,
   });
 
   /*

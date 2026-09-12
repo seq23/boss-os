@@ -29,6 +29,11 @@ export interface ClarificationInput {
   bookFiled?: boolean;
   /** A forwarded message is a complete thought: "here, deal with this". */
   forwarded?: boolean;
+  /**
+   * The intake never decoded the text — the oversize path stores to R2 and does not parse. An empty
+   * `body` then says nothing about what she wrote, so `nothing_to_act_on` may not fire.
+   */
+  unread?: boolean;
 }
 
 export declare function withoutTags(text: string): string;

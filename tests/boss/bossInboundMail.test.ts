@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, beforeEach } from "vitest";
-import { handleBossInboundMail, isBossMailbox, activeRoster, looksLikeBook } from "../../src/worker/boss/intake/inboundMail";
+import { handleBossInboundMail, isBossMailbox, activeRoster, looksLikeBook, MAX_BODY_BYTES } from "../../src/worker/boss/intake/inboundMail";
 import { routeToSeat, seatTag, replyBody } from "../../src/shared/boss/intake/mail.mjs";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { storeLiveBook, currentBook, currentBookLines } from "../../src/worker/boss/capital/book";
@@ -389,6 +389,54 @@ describe("an employee who does not understand asks", () => {
     expect(stale.length).toBe(1);
     expect(stale[0]!.severity).toBe("high");
     expect(stale[0]!.text).toMatch(/waiting on you/i);
+  });
+});
+
+describe("a message too big for the old cap", () => {
+  /**
+   * 12 September 2026, 08:59. Her iPhone sent 538,189 bytes — a 32 KB instruction wrapped in a
+   * 472 KB `text/html` alternative — against a 512 KB cap measured on the ENVELOPE. The parse was
+   * skipped, the body became "", the clarification rules read that as "a tag and nothing in it",
+   * and the `!question` guard then gated out the whole `admitTask` block including the oversize
+   * branch that exists to open a card anyway. Stored perfectly in R2. No work. No employee.
+   */
+  const HER_INSTRUCTION = "Please make sure the spirit page of my boss OS system displays astrology";
+
+  it("HER SIZE now parses, and the card holds the instruction and not the envelope", async () => {
+    // Her real shape: a small instruction, then the bulk that pushed it over the old cap.
+    const bulk = "The report continues. ".repeat(30_000);   // ~630 KB, over 512 KB, under 4 MB
+    const m = mail({ subject: "#simone", body: `${HER_INSTRUCTION} in the way it is below.\n\n${bulk}` });
+    expect(m.rawSize).toBeGreaterThan(512 * 1024);
+    expect(m.rawSize).toBeLessThan(MAX_BODY_BYTES);
+
+    const res = await handleBossInboundMail(m, env as never);
+    expect(res.outcome).toBe("ROUTED");
+    expect(res.taskId).toBeTruthy();
+
+    const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId)
+      .first<{ input: string }>();
+    const body = String(JSON.parse(task!.input).body ?? "");
+    expect(body).toContain(HER_INSTRUCTION);
+    expect(body).not.toMatch(/was not read here/);
+  });
+
+  it("AND A GENUINELY OVERSIZE MESSAGE STILL OPENS A CARD — unread is not empty", async () => {
+    // Above the envelope cap, so it is streamed to R2 and never decoded. The body is therefore ""
+    // and that must not be mistaken for "she wrote nothing".
+    const m = mail({ subject: "#simone", body: "x".repeat(MAX_BODY_BYTES + 1024) });
+    expect(m.rawSize).toBeGreaterThan(MAX_BODY_BYTES);
+
+    const res = await handleBossInboundMail(m, env as never);
+    expect(res.outcome).not.toBe("NEEDS_CLARITY");
+    // THE ASSERTION THAT WOULD HAVE CAUGHT IT: a task_id, always.
+    expect(res.taskId).toBeTruthy();
+
+    const task = await env.DB.prepare(`SELECT input, employee_id FROM tasks WHERE id = ?`)
+      .bind(res.taskId).first<{ input: string; employee_id: string }>();
+    const input = JSON.parse(task!.input);
+    // The card says what happened and where the whole of it is, rather than asking her a question.
+    expect(String(input.body)).toMatch(/was not read here/);
+    expect(String(input.raw_message ?? "")).toMatch(/^boss-inbound-mail\//);
   });
 });
 
