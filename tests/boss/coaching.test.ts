@@ -132,6 +132,16 @@ describe("consent is a constraint, not a label", () => {
      * The invariant being pinned is untouched: a backend that CANNOT answer must not be offered as
      * one that can.
      */
+    /*
+     * AND 0231 PUTS BENCHMARK ROWS BEHIND ONE OF THEM, so the model rows can no longer simply be
+     * deleted — `model_benchmarks.model_id` is a foreign key and D1 refuses. That constraint is
+     * correct and stays: evidence must not be orphaned by deleting the model it is about. The
+     * fixture clears the dependent rows first, which is what an operator retiring a model would
+     * have to do too.
+     */
+    await env.DB
+      .prepare(`DELETE FROM model_benchmarks WHERE model_id IN (SELECT id FROM models WHERE provider_id = 'prv_workers_ai')`)
+      .run();
     await env.DB.prepare(`DELETE FROM models WHERE provider_id = 'prv_workers_ai'`).run();
 
     // Nothing provisioned yet: Workers AI is registered, not enabled, and has no model rows.
