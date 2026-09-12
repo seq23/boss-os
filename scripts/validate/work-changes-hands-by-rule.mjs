@@ -50,6 +50,15 @@ const MERGE = "src/worker/boss/routes/employees.ts";
 /** HER MESSAGE, verbatim — `iml_m2az871dxk00t729`. */
 const HERS = "please help me find a seller of $1B+ of OpenAI shares. Route this to whomever should handle this.";
 
+/*
+ * Her OTHER message of the same morning, also addressed to #simone, and the reason the outcome gate
+ * exists: it mentions "source" and "capital" inside a 30 KB report and must NOT move. It carries no
+ * instruction to pass anything on, which is exactly what separates it from HERS.
+ */
+const HERS_TO_SIMONE_ALONE =
+  "make sure the spirit page of my boss OS system displays astrology in the way it is in the below "
+  + "report and make sure the daily executive briefing is set up like the below report. source capital";
+
 /** The roster, replayed out of the shipped migrations and asked the intake's own question. */
 export function rosterFromMigrations(dir = join(ROOT, "migrations")) {
   const db = new DatabaseSync(":memory:");
@@ -85,7 +94,25 @@ const CASES = [
    * message she had explicitly addressed to Simone. Only the ROUTING OUTCOME can tell them apart.
    */
   ["#simone NAMED is not the same as #simone DEFAULTED",
-    { text: HERS, subject: "#simone", fromDepartment: HOLDING_DEPARTMENT, outcome: "ROUTED" }, null],
+    { text: HERS_TO_SIMONE_ALONE, subject: "#simone", fromDepartment: HOLDING_DEPARTMENT, outcome: "ROUTED" }, null],
+
+  /*
+   * ─── AND THE BLIND SPOT IN THAT GATE, CAUGHT IN PRODUCTION TOO ────────────
+   *
+   * HERS names #simone AND says "Route this to whomever should handle this." Refusing to move it is
+   * not respecting her decision — she made a decision to delegate the choice, and the gate ignored
+   * it. Re-admitted on 12 September with the body fix in, the model answered the instruction by
+   * INVENTING A COLLEAGUE: "route this task to our Financial Acquisitions team, specifically to
+   * Alex". There is no Alex. A deterministic rule that declines leaves the choice to something that
+   * will not decline.
+   */
+  ["an explicit instruction to pass it on is OBEYED, even on a desk she named",
+    { text: HERS, subject: "#simone", fromDepartment: HOLDING_DEPARTMENT, outcome: "ROUTED" }, "Relationships"],
+  ["but only off the holding desk — asking a specialist to route it is asking THEM",
+    { text: HERS, subject: "#monique", fromDepartment: "Relationships", outcome: "ROUTED" }, null],
+  ["and the instruction must be one she wrote, not a passing mention of routing",
+    { text: "the routing table looks wrong, and the $500M block is mispriced", subject: "#simone",
+      fromDepartment: HOLDING_DEPARTMENT, outcome: "ROUTED" }, null],
   ["and an ambiguous tag is hers to resolve, not this rule's",
     { text: HERS, subject: "#monique", fromDepartment: HOLDING_DEPARTMENT, outcome: "AMBIGUOUS" }, null],
   ["ordinary mail on the holding desk does not move",

@@ -65,6 +65,41 @@ export const HANDOFF_RULES = [
   },
 ];
 
+/**
+ * SHE ASKED FOR IT TO BE PASSED ON.
+ *
+ * The `DEFAULTED` gate below exists because a tag she typed is a decision she made, and it is
+ * right. It has one blind spot, and it is the exact sentence that started all of this:
+ *
+ *   "#simone please help me find a seller of $1B+ of OpenAI shares.
+ *    Route this to whomever should handle this."
+ *
+ * She named a seat AND asked that seat to pass it on. That is not a decision to overrule — it is an
+ * instruction to carry out, and the gate refused it because the outcome was `ROUTED`. Re-admitted in
+ * production on 12 September with the body fix in place, the model read the whole instruction and
+ * then INVENTED A COLLEAGUE to satisfy it: "I will route this task to our Financial Acquisitions
+ * team, specifically to Alex, who handles high-value transactions." There is no Alex. There is no
+ * Financial Acquisitions team. That is the routing hallucination coming back through the door this
+ * module was built to close, because the deterministic rule declined to answer and the model would
+ * not decline.
+ *
+ * So an EXPLICIT instruction to pass the work on lifts the outcome gate — and only that. It must be
+ * something she actually wrote, not an inference: "route this", "pass this to", "hand this to",
+ * "send this to", followed by whoever/whomever/the right person. Nothing here fires on a message
+ * that merely mentions routing.
+ */
+export const ROUTE_ONWARD = [
+  /\b(?:route|pass|hand|send|forward|give|assign)\s+(?:this|it|these|them)\b[^.]{0,40}?\b(?:who(?:m)?ever|who(?:m)?\s+should|the\s+right\s+(?:person|desk|seat|employee)|whoever\s+handles)\b/i,
+  /\bwho(?:m)?ever\s+should\s+(?:handle|take|own|run)\b/i,
+  /\b(?:route|assign|hand)\s+(?:this|it)\s+(?:on|onward|onwards|along)\b/i,
+];
+
+/** Did she explicitly ask for this to be passed to somebody else? */
+export function asksToBeRouted(text) {
+  const v = String(text ?? "");
+  return ROUTE_ONWARD.some((re) => re.test(v));
+}
+
 /** The text she actually wrote, with employee tags removed so a tag is never a keyword. */
 function said(text) {
   return String(text ?? "").replace(/#[a-z0-9][a-z0-9_-]*/gi, " ");
@@ -95,10 +130,34 @@ export function handoffFor({ text = "", subject = "", fromDepartment = "", outco
    * The department check stays as well, because the two say different things: `outcome` says nobody
    * chose, and the department says the message is sitting on the desk this rule is allowed to clear.
    */
-  if (String(outcome ?? "") !== "DEFAULTED") return null;
+  const haystack = said(`${subject}\n${text}`);
+
+  /*
+   * The outcome gate, with the one exception she wrote herself. `DEFAULTED` means nobody has chosen
+   * and a rule may complete that. An explicit "route this to whoever should handle it" means she
+   * chose to delegate the choice — see ROUTE_ONWARD above, and the invented "Alex" that came of
+   * refusing it. Everything else she addressed by name stays where she put it.
+   */
+  const decided = String(outcome ?? "");
+  const mayMove =
+    decided === "DEFAULTED"
+    // She named ONE seat and asked that seat to pass it on. Obeying her is not overruling her.
+    || (decided === "ROUTED" && asksToBeRouted(haystack));
+  /*
+   * `AMBIGUOUS` is deliberately NOT in that list, and the validator holds the line. It means two
+   * seats share a first name and nobody can tell which she meant — so "route this to whoever should
+   * handle this" cannot resolve it either, and a keyword rule picking one would be guessing at the
+   * very moment the system has already admitted it does not know. That one stays hers.
+   */
+  if (!mayMove) return null;
+
+  /*
+   * The desk check is NOT relaxed by that exception. Work may be moved off the Chief of Staff's
+   * desk and off no other, so an instruction to route something that is already on a specialist's
+   * desk still does nothing — she would be asking that specialist, not this rule.
+   */
   if (String(fromDepartment ?? "").trim() !== HOLDING_DEPARTMENT) return null;
 
-  const haystack = said(`${subject}\n${text}`);
   if (!haystack.trim()) return null;
 
   for (const rule of HANDOFF_RULES) {
