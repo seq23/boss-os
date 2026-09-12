@@ -383,6 +383,65 @@ describe("Phase 16 — the daily and monthly views", () => {
     expect((await apiJson("/api/spirit/day?date=not-a-day")).status).toBe(400);
     expect((await apiJson("/api/spirit/month?month=2026")).status).toBe(400);
   });
+
+  /*
+   * ─── WHAT HER 12 SEPTEMBER MAIL MOVED ONTO THIS ENDPOINT ────────────────────
+   *
+   * "They are not to be mixed in the way this report is but pull out the astrology for the spirit
+   * page and mimic this report for my daily briefing."
+   *
+   * The Executive Intelligence spec mandated an ephemeris dashboard and the Money / Career / Travel
+   * Map alongside eleven market sections. Both now arrive here instead. These assertions are about
+   * the ENDPOINT: `spirit/dashboard.ts` and `spirit/travelMap.ts` are pinned against her report in
+   * `tests/spiritDashboard.test.ts`, and a module that is right but never returned is the failure
+   * mode this repo keeps finding — built, stored, invisible.
+   */
+  it("returns the ephemeris dashboard, at the precision her report states", async () => {
+    const { body } = await apiJson("/api/spirit/day");
+    const d = body.data.dashboard;
+    expect(d.bodies).toHaveLength(10);
+    expect(d.bodies.map((b: any) => b.name)).toEqual([
+      "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto",
+    ]);
+    for (const b of d.bodies) {
+      // Degrees AND arcminutes AND motion. Any one of the three missing is a lost ephemeris.
+      expect(Number.isInteger(b.degrees)).toBe(true);
+      expect(Number.isInteger(b.arcminutes)).toBe(true);
+      expect(["Direct", "Retrograde"]).toContain(b.motion);
+    }
+    expect(d.moon.void_of_course.convention).toBe("final-major-Ptolemaic-aspect");
+    expect(d.moon.void_of_course.ends_at).toBeGreaterThan(0);
+    expect(d.moon.void_of_course.enters_sign).toBeTruthy();
+    expect(d.moon.theme.keywords.length).toBeGreaterThan(0);
+    for (const a of d.aspects) expect(a.orb_text).toMatch(/^\d+°\d{2}′$/);
+  });
+
+  it("carries the disclaimer with the content, because the briefing no longer can", async () => {
+    const { body } = await apiJson("/api/spirit/day");
+    expect(body.data.dashboard.disclaimer).toBe(
+      "Astrology here is symbolic planning language—not scientifically validated forecasting.",
+    );
+  });
+
+  it("returns the locked map and names the week today falls in", async () => {
+    const { body } = await apiJson("/api/spirit/day");
+    const map = body.data.map;
+    expect(map.covered).toBe(true);
+    expect(map.weeks.length).toBe(30);
+    expect(map.caveat).toBe("This is a planning framework, not a guaranteed prediction.");
+    // Either she gave today a band, or the page says today is outside the map. Never a blank.
+    expect(Boolean(map.current) || Boolean(map.uncovered_reason)).toBe(true);
+    // NOTHING COMES BACK WEARING A COLOUR IT WAS NOT GIVEN.
+    for (const w of map.weeks) {
+      if (w.band === "unset") {
+        expect(w.signal).toBe("not yet given");
+        expect(w.signal).not.toMatch(/🟢|🟡|🔴|✈️/);
+        expect(w.note).toBeNull();
+      } else {
+        expect(w.signal).toMatch(/🟢|🟡|🔴/);
+      }
+    }
+  });
 });
 
 describe("Phase 16 — canon §1.5, the anti-delusion rules", () => {

@@ -23,7 +23,9 @@ import {
   moonPhase, moonPosition,
 } from "../spirit/astro";
 import { METHOD_PLANETS, STATION_UNCERTAINTY_HOURS, planetPosition, ZODIAC_SIGNS } from "../spirit/planets";
-import { monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL, weekIdInZone } from "../../../shared/boss/timezone";
+import { astroDashboard } from "../spirit/dashboard";
+import { travelMap } from "../spirit/travelMap";
+import { dayIdInZone, monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL, weekIdInZone } from "../../../shared/boss/timezone";
 import {
   gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
 } from "../spirit/practice";
@@ -176,9 +178,31 @@ spirit.get("/day", async (c) => {
     };
   }
 
+  /*
+   * ─── THE DASHBOARD AND THE MAP, WHICH USED TO LIVE IN THE BRIEFING ────────────
+   *
+   * Her mail of 12 September 2026: "They are not to be mixed in the way this report is but pull out
+   * the astrology for the spirit page and mimic this report for my daily briefing."
+   *
+   * `docs/boss/EXECUTIVE_INTELLIGENCE.md` is the spec the `duty_exec_intel` standing duty hands a
+   * model as `task_input.spec`, and it mandated both an ephemeris dashboard and the Money / Career /
+   * Travel Map alongside eleven market sections. That is the mixing. The market sections are
+   * untouched; these two arrive HERE instead, at the precision her report states them, and the
+   * briefing spec now contains no astrologically-derived section at all — which is a rule a scan can
+   * enforce, where "keep the map but not the chart" would have been a judgement call on every edit.
+   *
+   * THE MAP READS HER LOCAL DATE, NOT THE UTC DAY ID. A band is a WEEK of her life; resolving it
+   * against a UTC date puts her in next week from 7pm Central onward, which is the same class of
+   * error as the almanac rendering a 10:28pm Moon as 5:28am the next day.
+   */
+  const dashboard = astroDashboard(Date.now());
+  const map = travelMap(dayIdInZone(Date.now()));
+
   return ok(c, {
     ...signal,
     sky,
+    dashboard,
+    map,
     practice: {
       day_mode: mode,
       gratitude,

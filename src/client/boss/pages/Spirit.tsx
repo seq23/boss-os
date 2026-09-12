@@ -23,7 +23,16 @@ import { inOwnerZone, dayInOwnerZone, OWNER_TIMEZONE_LABEL } from "../../../shar
  * should be local to HER.
  */
 const day = (ts: number | null) => dayInOwnerZone(ts);
-const pct = (bps: number) => `${Math.round(bps / 100)}%`;
+
+/**
+ * A void-of-course boundary, in HER zone and labelled with it.
+ *
+ * Same rule as everything else on this page, and it matters more here than anywhere: a VOC window
+ * running "9:27 AM to 1:45 AM" is a thing she plans a call around, and rendering it in the browser's
+ * zone would move both ends by hours without saying it had.
+ */
+const atLocal = (ts: number) =>
+  `${inOwnerZone(ts, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} ${OWNER_TIMEZONE_LABEL}`;
 
 export function Spirit() {
   const [signal, setSignal] = useState<any | null>(null);
@@ -59,6 +68,12 @@ export function Spirit() {
   const practice = signal.practice;
   const sky = signal.sky;
   const major = signal.major_event ?? null;
+  /*
+   * The two things her 12 September mail moved off the daily briefing and onto this page: the
+   * astronomical dashboard at her report's precision, and the locked Money / Career / Travel Map.
+   */
+  const dashboard = signal.dashboard ?? null;
+  const map = signal.map ?? null;
 
   /*
    * HER LOCAL CLOCK, NAMED, AND THE ZONE SHE QUOTED IT IN BESIDE IT.
@@ -310,29 +325,168 @@ export function Spirit() {
         </>
       )}
 
-      <p className="eyebrow">Sky — advisory</p>
-      <div className="panel">
-        <h3 style={{ margin: 0 }}>{astro.phase}</h3>
-        <p className="row-sub">
-          Moon in {astro.moon_sign} at {astro.degrees_in_sign.toFixed(1)}°
-          {astro.cusp ? ` — near the cusp, possibly ${astro.next_sign}` : ""} · {pct(astro.illumination_bps)} lit ·
-          {astro.waxing ? " waxing" : " waning"}
-        </p>
-        {/* Canon §42.2 names the window; the day says which one it is in. */}
-        {astro.canon_window && (
-          <p className="row-sub"><strong>{astro.canon_window}</strong> window</p>
-        )}
-        {astro.windows.length > 0 && (
-          <>
-            <p className="eyebrow">Windows</p>
-            {astro.windows.map((w: any, i: number) => (
-              <div className="row-sub" key={i}>{w.label}</div>
-            ))}
-          </>
-        )}
-        <p className="row-sub">{signal.note}</p>
-        <p className="row-sub">{astro.method}</p>
-      </div>
+      {/*
+        * ─── THE DASHBOARD, AT THE PRECISION OF HER OWN REPORT ─────────────────
+        *
+        * What stood here was four lines of prose: phase, Moon longitude to ONE DECIMAL PLACE,
+        * illumination, cusp. Her Executive Intelligence Report of 12 September 2026 carried a ten-body
+        * ephemeris table to the arcminute with a Direct/Retrograde column, a Moon dashboard naming the
+        * void-of-course convention and giving the next window's start, end and ingress sign, the sign
+        * theme with a planning translation, and major aspects with orbs to the arcminute.
+        *
+        * Her instruction was to pull that out of the briefing and put it HERE. So the block below is
+        * her report's structure, in her order, and none of it is transcribed — `spirit/dashboard.ts`
+        * computes every figure, which is why it will still be right tomorrow.
+        *
+        * `19.7°` AND `19°45′` ARE THE SAME NUMBER AND ONLY ONE IS AN EPHEMERIS. The arcminutes are not
+        * decoration: at one decimal place a 0°16′ orb and a 0°18′ orb are both "0.3°", and the
+        * tightness ordering — the only thing an orb is for — vanishes.
+        */}
+      {dashboard && (
+        <>
+          <p className="eyebrow">The sky today</p>
+
+          {/*
+            * ─── THE DISCLAIMER SITS ABOVE THE CONTENT, NOT UNDER IT ────────────
+            *
+            * The briefing spec used to carry this caveat because the briefing used to carry the
+            * astrology. Taking the astrology out and leaving the caveat behind would have been worse
+            * than either — a caveat with nothing to caveat implies content that is not there. So it
+            * moved WITH the content, and it is first on the block rather than a footnote, because a
+            * caveat underneath a table is read after the table has already been believed.
+            */}
+          <div className="panel">
+            <p className="row-sub"><strong>{dashboard.disclaimer}</strong></p>
+            <p className="row-sub">{dashboard.note}</p>
+          </div>
+
+          <div className="panel">
+            {dashboard.bodies.length === 0 ? (
+              /* Named, never a blank table. An empty ephemeris is a fault, not a quiet sky. */
+              <p className="row-sub">
+                No positions were computed. That is a fault in this page, not an empty sky — every one
+                of these is arithmetic that cannot return nothing.
+              </p>
+            ) : (
+              dashboard.bodies.map((b: any) => (
+                <div className="row" key={b.key}>
+                  <div className="row-main">
+                    <div className="row-title">{b.name}</div>
+                  </div>
+                  {/* Degrees AND arcminutes AND motion. All three, on every row. */}
+                  <div className="row-sub">{b.degrees}°{String(b.arcminutes).padStart(2, "0")}′ {b.sign}</div>
+                  <div className="row-val">{b.motion}</div>
+                </div>
+              ))
+            )}
+            <p className="row-sub">{dashboard.method}</p>
+          </div>
+
+          <p className="eyebrow">Moon</p>
+          <div className="panel">
+            <div className="row-title">
+              Moon — {dashboard.moon.position.degrees}°{String(dashboard.moon.position.arcminutes).padStart(2, "0")}′ {dashboard.moon.position.sign}
+            </div>
+            <p className="row-sub">
+              {dashboard.moon.phase} · approximately {dashboard.moon.illumination_percent}% illuminated ·
+              {dashboard.moon.waxing ? " waxing" : " waning"}
+            </p>
+            {/*
+              * THE CONVENTION IS NAMED EVERY TIME, because astrology sources genuinely disagree about
+              * void-of-course and different conventions move the start by hours. Her own spec said so
+              * before this was built: do not present one convention as universally authoritative.
+              */}
+            <p className="row-sub">
+              {dashboard.moon.void_of_course.now
+                ? `The Moon is void of course now, under the ${dashboard.moon.void_of_course.convention} convention.`
+                : `The Moon is not void of course today, under the ${dashboard.moon.void_of_course.convention} convention.`}
+            </p>
+            <p className="row-sub">
+              {dashboard.moon.void_of_course.now ? "This window ends" : "The next void-of-course period begins"}{" "}
+              {dashboard.moon.void_of_course.now ? "" : <>{atLocal(dashboard.moon.void_of_course.starts_at)} and ends </>}
+              {atLocal(dashboard.moon.void_of_course.ends_at)}, when the Moon enters {dashboard.moon.void_of_course.enters_sign}.
+            </p>
+            {dashboard.moon.void_of_course.last_aspect && (
+              <p className="row-sub">
+                It begins at the Moon's last major aspect in this sign — {dashboard.moon.void_of_course.last_aspect.aspect}{" "}
+                {dashboard.moon.void_of_course.last_aspect.name}.
+              </p>
+            )}
+          </div>
+
+          <p className="eyebrow">Symbolic {dashboard.moon.theme.sign} theme</p>
+          <div className="panel">
+            <p className="row-sub">
+              Traditional {dashboard.moon.theme.sign} symbolism emphasizes: {dashboard.moon.theme.keywords.join("; ")}.
+            </p>
+            <p className="row-sub"><strong>Useful planning translation:</strong> {dashboard.moon.theme.translation}</p>
+          </div>
+
+          <p className="eyebrow">Major active aspects</p>
+          <div className="panel">
+            {dashboard.aspects.length === 0 ? (
+              <p className="row-sub">
+                Nothing is inside orb today. That is a real answer — most days carry one or two, and a
+                day with none is a quiet sky rather than a computation that failed.
+              </p>
+            ) : (
+              dashboard.aspects.map((a: any) => (
+                <div className="row" key={`${a.a}-${a.aspect}-${a.b}`}>
+                  <div className="row-main">
+                    <div className="row-title">{a.a_name} {a.aspect} {a.b_name}</div>
+                    {/* Orb in arcminutes, with the tightness note her report puts beside it. */}
+                    <div className="row-sub">
+                      Orb: ~{a.orb_text} · {a.tightness} · {a.applying ? "applying" : "separating"}
+                    </div>
+                    <div className="row-sub">Traditional symbolism: {a.symbolism.join("; ")}.</div>
+                    <div className="row-sub"><strong>Useful translation:</strong> {a.translation}</div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {dashboard.retrogrades.length > 0 && (
+            <>
+              <p className="eyebrow">Currently retrograde</p>
+              <div className="panel">
+                {dashboard.retrogrades.map((r: any) => (
+                  <div className="row-sub" key={r.name}>{r.name} — {r.position}</div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Canon §42.2's windows stay: they are hers and they are not part of the report's table. */}
+          {(astro.canon_window || astro.windows.length > 0) && (
+            <>
+              <p className="eyebrow">Windows</p>
+              <div className="panel">
+                {astro.canon_window && <p className="row-sub"><strong>{astro.canon_window}</strong> window</p>}
+                {astro.windows.map((w: any, i: number) => (
+                  <div className="row-sub" key={i}>{w.label}</div>
+                ))}
+                <p className="row-sub">{signal.note}</p>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/*
+        * ─── THE MONEY / CAREER / TRAVEL MAP ───────────────────────────────────
+        *
+        * It arrived here from the briefing spec by her own choice, and the reason is the one that
+        * makes the separation checkable: the map is astrologically derived, so once it is out, the
+        * briefing contains NO astrologically-derived content and a scan can say so.
+        *
+        * A WEEK WITH NO BAND SAYS "not yet given". It does not render blank and it never borrows a
+        * colour from the weeks either side. On 12 September four weeks were briefly believed
+        * unlocked, and the tempting fix — infer them from her line about not unplugging until
+        * November 15 — would have painted a green week she had not given. She sent the real bands an
+        * hour later and they were green, which is exactly why the inference was still wrong.
+        */}
+      {map && <TravelMap map={map} />}
 
       <p className="eyebrow">Practice today</p>
       {rituals_due.length === 0 ? (
@@ -498,6 +652,100 @@ export function Spirit() {
           ))}
         </>
       )}
+    </>
+  );
+}
+
+/**
+ * THE LOCKED 2026 MONEY / CAREER / TRAVEL MAP.
+ *
+ * It lived in `docs/boss/EXECUTIVE_INTELLIGENCE.md` as twenty-six prose bullets inside the document
+ * the Executive Intelligence duty passes to a model, which meant nothing could answer "which week
+ * is today in?" — the model re-derived it every morning from a list it had to read correctly, and a
+ * misread was invisible. It is rows now, and the endpoint answers the question.
+ *
+ * ─── `not yet given` IS THE POINT OF THIS COMPONENT ───────────────────────────
+ *
+ * Every band on screen comes from `signalFor` in the Worker, which has NO glyph for `unset` and no
+ * `?? BAND.green` fallback anywhere. There is deliberately no colour lookup in this file at all — if
+ * there were, a week with a missing band would fall through it to whatever the default happened to
+ * be, and a green week she never gave is indistinguishable on screen from one she did.
+ *
+ * WHAT HER CURRENT WEEK IS FOR. It is not a tile with a colour on it. It is the sentence she reads
+ * at 6am: the band, her note for the week, and the transition that is coming — because "🟡" alone
+ * tells her nothing she can act on, and "Sep 14–20 is still yellow" tells her not to manufacture
+ * peak-October intensity in September.
+ */
+function TravelMap({ map }: { map: any }) {
+  /* RULE 0 ON THE SCREEN. An empty map is a fault with a name, never an empty section. */
+  if (!map.covered) {
+    return (
+      <>
+        <p className="eyebrow">Money / career / travel map</p>
+        <div className="panel"><p className="row-sub">{map.empty_reason}</p></div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <p className="eyebrow">Money / career / travel map</p>
+
+      <div className="panel">
+        {map.current ? (
+          <>
+            <div style={{ fontSize: "1.25rem", fontWeight: 600, lineHeight: 1.3 }}>
+              {map.current.signal} — {map.current.label}
+            </div>
+            {/* The note is hers, per week, and it is the part that says what to do with the colour. */}
+            <p className="row-sub" style={{ marginTop: 4 }}>
+              {map.current.note ?? map.current.meaning}
+            </p>
+            <p className="row-sub">{map.current.meaning}</p>
+          </>
+        ) : (
+          /*
+           * OUTSIDE THE MAP IS A REAL STATE AND IT SAYS SO. The alternative — returning the nearest
+           * week — would put her in a band on a day she was never given one, which is the same fault
+           * as painting an unset week, arriving through a different door.
+           */
+          <p className="row-sub">{map.uncovered_reason}</p>
+        )}
+        {map.next && (
+          <p className="row-sub">
+            Next: <strong>{map.next.signal}</strong> {map.next.label}
+            {map.next.note ? ` — ${map.next.note}` : ""}
+          </p>
+        )}
+        {/* Hers, and it travels with the map the way the disclaimer travels with the chart. */}
+        <p className="row-sub"><strong>{map.caveat}</strong></p>
+      </div>
+
+      <p className="eyebrow">The year as she locked it</p>
+      <div className="panel">
+        {map.weeks.map((w: any) => (
+          <div className="row" key={w.starts}>
+            <div className="row-main">
+              <div className={w.current ? "row-title" : "row-sub"}>
+                {w.label}{w.current ? " — this week" : ""}
+              </div>
+              {/*
+                * An ungiven week prints its reason where a note would go, so the row is visibly
+                * incomplete rather than merely short.
+                */}
+              {w.note ? <div className="row-sub">{w.note}</div> : <div className="row-sub">{w.meaning}</div>}
+            </div>
+            <div className="row-val">{w.signal}</div>
+          </div>
+        ))}
+      </div>
+
+      <p className="eyebrow">Legend</p>
+      <div className="panel">
+        {map.legend.map((l: any) => (
+          <div className="row-sub" key={l.glyph}>{l.glyph} = {l.meaning}</div>
+        ))}
+      </div>
     </>
   );
 }
