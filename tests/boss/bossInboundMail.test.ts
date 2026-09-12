@@ -289,6 +289,26 @@ describe("she says what she means", () => {
     expect((await currentBook(env as never))).toBeNull();
   });
 
+  it("THE ARRIVAL ROW CARRIES THE WHOLE REFUSAL, NOT ITS FIRST LINE", async () => {
+    /*
+     * On 2026-09-11 three rows recorded "... so your book is" and stopped, because `why` took
+     * `bookFailure.split("\n")[0]` and the refusal is wrapped prose. The dropped line was the one
+     * carrying UNCHANGED. The reply was fine; the audit trail was the thing that lied by omission.
+     */
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique", body: "#monique add whatever you think is best" }), env as never);
+    expect(res.outcome).toBe("BOOK_NOT_READ");
+    const row = await env.DB
+      .prepare(`SELECT why FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<{ why: string }>();
+    const why = String(row?.why ?? "");
+    expect(why).not.toBe("");
+    // The sentence completes, and the word that says what happened to her book survives.
+    expect(why).toContain("so your book is UNCHANGED");
+    expect(why).not.toMatch(/so your book is\s*(No task|The message|Typed|$)/);
+    // Still a HEADLINE: the six quoted lines and the worked example stay out of the audit column.
+    expect(why).not.toContain("size TBD");
+  });
+
   it("`remove` of a name that is not on the book changes nothing and says what is", async () => {
     await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
     const res = await handleBossInboundMail(mail({ subject: "#monique remove Polymarket" }), env as never);
