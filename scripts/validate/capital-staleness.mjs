@@ -24,6 +24,42 @@ import fs from "node:fs";
 import { halfLifeDays, freshness, standingMatches, assignedSearch, revivals, atHerBrokerage, HER_BROKERAGE_DOMAIN } from "../ops/interest-match.mjs";
 
 const NOW = Date.parse("2026-09-10T12:00:00Z");
+
+/*
+ * ─── THE LIVE LEDGER LIVES ON ONE MACHINE ────────────────────────────────────
+ *
+ * `~/.boss-os/capital/ledger.json` is her deal ledger: 545 rows of who wants what, correctly never
+ * committed. Two checks below run the rules against it because fixtures alone cannot prove the
+ * suppression is exercised by real data. That makes those two checks machine-bound, and on
+ * 2026-09-12 the first CI run that ever got past `npm ci` failed on exactly that: ENOENT on a file
+ * that cannot exist on a GitHub runner, read as a validation failure. The fixed rule:
+ *
+ *   - ledger present            → run the live checks; a present-but-EMPTY ledger is a hard fail,
+ *                                 here and in CI, because that is "examined 0" wearing a file name.
+ *   - ledger absent, in CI      → NAMED STOP [LEDGER_NOT_HERE]: say so on stdout and count what
+ *                                 DID run. The ten behavioural assertions still ran; the stop is
+ *                                 green because it is a fact about the runner, not about the code.
+ *   - ledger absent, not in CI  → hard fail. On the machine that owns the ledger an absent file
+ *                                 means the writer stopped, and that is precisely the silent break
+ *                                 this half of the validator exists to notice.
+ *
+ * CI is detected by the `CI` variable GitHub Actions always sets. Nothing else may widen this.
+ */
+const LEDGER_PATH = `${process.env.HOME}/.boss-os/capital/ledger.json`;
+const IN_CI = process.env.CI === "true";
+const skipped = [];
+function liveLedger(label) {
+  if (!fs.existsSync(LEDGER_PATH)) {
+    if (!IN_CI) throw new Error(`${LEDGER_PATH} is absent on the machine that owns it — the ledger writer has stopped, or HOME is wrong`);
+    skipped.push(label);
+    return null;
+  }
+  const raw = JSON.parse(fs.readFileSync(LEDGER_PATH, "utf8"));
+  const rows = raw.interests ?? raw.rows ?? raw;
+  const all = Array.isArray(rows) ? rows : Object.values(rows);
+  assert.ok(all.length > 0, `${LEDGER_PATH} holds no interests — this check examined nothing`);
+  return all;
+}
 const row = (o) => ({ asset: "Polymarket", confidence: "high", ...o });
 const fails = [];
 const check = (label, fn) => { try { fn(); } catch (e) { fails.push(`${label}: ${e.message}`); } };
@@ -90,11 +126,8 @@ check("an ancient unfilled interest is still revivable", () => {
 
 // 7. HARD-FAIL ON AN EMPTY LEDGER rather than passing an empty loop.
 check("the live ledger offers no stale-sell cross", () => {
-  const path = `${process.env.HOME}/.boss-os/capital/ledger.json`;
-  const raw = JSON.parse(fs.readFileSync(path, "utf8"));
-  const rows = raw.interests ?? raw.rows ?? raw;
-  const all = Array.isArray(rows) ? rows : Object.values(rows);
-  assert.ok(all.length > 0, `${path} holds no interests — this check examined nothing`);
+  const all = liveLedger("stale-sell cross against the live ledger");
+  if (!all) return;
   const { picked } = standingMatches(all, new Set(), Date.now());
   const stale = picked.filter((m) => m.sellAge > 180);
   assert.equal(stale.length, 0,
@@ -146,9 +179,8 @@ check("the firm is detected on intermediated_by, not only principal_email", () =
 
 // HARD-FAIL ON ZERO EXAMINED: the rule must be exercised against the real ledger, not only fixtures.
 check("the live ledger actually exercises the co-broker rule", () => {
-  const path = `${process.env.HOME}/.boss-os/capital/ledger.json`;
-  const all = JSON.parse(fs.readFileSync(path, "utf8")).interests ?? [];
-  assert.ok(all.length > 0, `${path} holds no interests — this check examined nothing`);
+  const all = liveLedger("co-broker rule against the live ledger");
+  if (!all) return;
   const atFirm = all.filter(atHerBrokerage).length;
   assert.ok(atFirm > 0,
     `0 of ${all.length} live rows resolve to ${HER_BROKERAGE_DOMAIN}. Either the ledger no longer records the `
@@ -160,9 +192,41 @@ check("the live ledger actually exercises the co-broker rule", () => {
   }
 });
 
+// ─── Self-test: the three ledger states, driven through this same file with a controlled HOME ──
+if (process.argv.includes("--self-test")) {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync, mkdirSync } = fs;
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const run = (home, ci) => spawnSync(process.execPath, [new URL(import.meta.url).pathname],
+    { encoding: "utf8", env: { ...process.env, HOME: home, CI: ci ? "true" : "", GITHUB_ACTIONS: "" } });
+  let failed = 0;
+  const expect = (name, cond) => { if (cond) console.log(`  ✓ ${name}`); else { console.error(`  ✗ self-test: ${name}`); failed += 1; } };
+
+  const empty = mkdtempSync(join(tmpdir(), "capital-staleness-nohome-"));
+  const inCi = run(empty, true);
+  expect("absent ledger in CI is a NAMED STOP and exits 0", inCi.status === 0 && /NAMED STOP \[LEDGER_NOT_HERE\]/.test(inCi.stdout));
+  expect("absent ledger in CI still reports the assertions that DID run", /\d+ behavioural assertions ran/.test(inCi.stdout));
+  const local = run(empty, false);
+  expect("absent ledger on the owning machine is a hard fail", local.status === 1 && /ledger writer has stopped/.test(local.stderr));
+
+  const hollow = mkdtempSync(join(tmpdir(), "capital-staleness-empty-"));
+  mkdirSync(join(hollow, ".boss-os", "capital"), { recursive: true });
+  writeFileSync(join(hollow, ".boss-os", "capital", "ledger.json"), JSON.stringify({ interests: [] }));
+  const emptyCi = run(hollow, true);
+  expect("a present but EMPTY ledger is a hard fail even in CI", emptyCi.status === 1 && /examined nothing/.test(emptyCi.stderr));
+
+  if (failed) { console.error(`CAPITAL STALENESS SELF-TEST FAILED (${failed})`); process.exit(1); }
+  console.log("CAPITAL STALENESS SELF-TEST PASSED");
+  process.exit(0);
+}
+
 if (fails.length) {
   console.error(`CAPITAL STALENESS FAIL (${fails.length}):`);
   for (const f of fails) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log("CAPITAL STALENESS PASS: 12 behavioural assertions — a sell decays on either durability, six months reads as stale, a buyer's mandate stays durable, a stale sell cannot cross while a fresh one still does, and outreach reaches back with no cutoff. Two brokers at her own firm never cross; one side still does. Live ledger offers 0 stale-sell crosses and 0 internal co-broker crosses.");
+const ran = 12 - skipped.length;
+for (const s of skipped) console.log(`NAMED STOP [LEDGER_NOT_HERE]: ${s} — ${LEDGER_PATH} does not exist on this runner (CI=true); it is checked where the ledger lives.`);
+console.log(`CAPITAL STALENESS PASS: ${ran} behavioural assertions ran — a sell decays on either durability, six months reads as stale, a buyer's mandate stays durable, a stale sell cannot cross while a fresh one still does, and outreach reaches back with no cutoff. Two brokers at her own firm never cross; one side still does.`
+  + (skipped.length ? "" : " Live ledger offers 0 stale-sell crosses and 0 internal co-broker crosses."));

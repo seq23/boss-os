@@ -106,7 +106,7 @@
     "validate:no-spry-sender": "node scripts/validate/spry-vc-never-sends.mjs && node scripts/validate/spry-vc-never-sends.mjs --self-test",
     "validate:filter-accounts": "node scripts/validate/the-filter-says-what-it-dropped.mjs && node scripts/validate/the-filter-says-what-it-dropped.mjs --self-test",
     "capital:review": "node scripts/ops/interest-extract.mjs --review",
-    "validate:capital-staleness": "node scripts/validate/capital-staleness.mjs",
+    "validate:capital-staleness": "node scripts/validate/capital-staleness.mjs && node scripts/validate/capital-staleness.mjs --self-test",
     "capital:buyers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs",
     "capital:sellers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --side sell",
     "capital:hunts": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --from-boss",
