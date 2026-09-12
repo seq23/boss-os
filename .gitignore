@@ -14,5 +14,13 @@ backups/
 # Baseline snapshot ZIPs. Build outputs of a released state, not source: they are
 # regenerated from a commit with `git archive`, so storing them here would be storing
 # the repo inside itself.
-ARTIFACTS/
+#
+# ARTIFACTS/benchmarks/ IS THE EXCEPTION, and it has to be. An approved promotion card cites the
+# benchmark artifact as the evidence behind a risk clearance, and
+# `scripts/validate/a-risk-clearance-has-evidence.mjs` fails the build when a cited file is not in
+# the repository — because a card citing an artifact nobody can open is approval made on nothing.
+# Evidence that is gitignored is not evidence.
+ARTIFACTS/*
+!ARTIFACTS/benchmarks/
+ARTIFACTS/benchmarks/*.zip
 scripts/ops/_probe.mjs
