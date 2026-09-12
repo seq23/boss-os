@@ -123,6 +123,17 @@ describe("consent is a constraint, not a label", () => {
   });
 
   it("offers only backends that are commissioned AND carrying models", async () => {
+    /*
+     * THE "NO MODELS" STATE IS NOW CONSTRUCTED, AND THAT IS A CHANGE IN THE FIXTURE, NOT THE RULE.
+     *
+     * Migration 0229 seeds the two Workers AI model rows, because a freshly migrated database
+     * otherwise had no free continuity tier at all and every task in it failed the moment Fireworks
+     * refused. So "enabled and carrying no models" no longer happens by default and has to be made.
+     * The invariant being pinned is untouched: a backend that CANNOT answer must not be offered as
+     * one that can.
+     */
+    await env.DB.prepare(`DELETE FROM models WHERE provider_id = 'prv_workers_ai'`).run();
+
     // Nothing provisioned yet: Workers AI is registered, not enabled, and has no model rows.
     const before = await apiJson("/api/today/coaching");
     expect(before.body.data.backends).toEqual([]);
