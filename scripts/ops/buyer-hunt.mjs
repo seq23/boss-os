@@ -531,6 +531,26 @@ async function fromBoss() {
       continue;
     }
     /*
+     * ─── A DRY RUN MUST NOT CONSUME HER REQUEST ───────────────────────────────
+     *
+     * Recording the result CLOSES the task. Without `--send` nothing was emailed, so closing it
+     * would mean her request is gone and she never received the answer — the hunt printed to a
+     * terminal she is not watching, and the on-demand poller (which always sends) would then find
+     * nothing queued and correctly report NO_HUNT_QUEUED for a request that was never delivered.
+     *
+     * Caught on 12 September by running this by hand to check the output; it silently ate a live
+     * request. The task is complete when SHE HAS THE RESULT, not when the hunt has been performed,
+     * and those are the same thing only when the mail actually goes.
+     *
+     * So a dry run prints and leaves the task exactly where it was, and says so.
+     */
+    if (!SEND) {
+      console.log(`  ${task.id} LEFT QUEUED — nothing was emailed, so this request is not finished.`);
+      console.log("  Re-run with --send to deliver it and close the task.");
+      continue;
+    }
+
+    /*
      * THE RESULT GOES BACK ONTO HER CARD. A hunt that ran and left no trace on the task that asked
      * for it is the same lost work in a new place — and the task would sit queued for ever.
      */

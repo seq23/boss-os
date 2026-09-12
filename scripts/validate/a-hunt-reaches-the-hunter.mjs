@@ -70,6 +70,26 @@ if (!fs.existsSync(path.join(ROOT, hunter))) {
   if (!/status=queued/.test(src)) errors.push(`${hunter} does not read the QUEUED tasks; a hunt admitted by mail would never be claimed.`);
 }
 
+/* ── 3b. A DRY RUN MUST NOT CONSUME HER REQUEST ───────────────────────────── */
+checks += 1;
+if (fs.existsSync(path.join(ROOT, hunter))) {
+  const src = read(hunter);
+  /*
+   * Recording a hunt-result CLOSES the task. Without --send nothing was emailed, so closing it
+   * loses her request: the hunt printed to a terminal nobody is watching, and the poller then
+   * reports NO_HUNT_QUEUED for something she never received. The completion must be gated on the
+   * delivery, not on the hunt having run.
+   */
+  const gated = /if\s*\(!\s*SEND\s*\)[\s\S]{0,400}?continue\s*;/.test(src);
+  const posts = /hunt-result/.test(src);
+  if (posts && !gated) {
+    errors.push(
+      `dry_run_eats_the_request: ${hunter} posts a hunt-result without a \`if (!SEND) … continue\` `
+      + 'guard ahead of it. A run without --send would close her task having emailed nothing, and the '
+      + 'poller would then find nothing queued for a request she never received.');
+  }
+}
+
 /* ── 4. A launchd job runs it promptly, not weekly ────────────────────────── */
 const ONDEMAND = 'com.seq.boss-hunt-ondemand';
 const plist = path.join(process.env.HOME ?? '', 'Library/LaunchAgents', `${ONDEMAND}.plist`);
