@@ -64,6 +64,7 @@ import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
 import { sendersFor } from "./notify.mjs";
+import { loadContacts, reachFor } from "./lib/reach.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -313,7 +314,24 @@ async function fromFilings(asset, size) {
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
-function renderAsset(lot, inbox, filings) {
+/**
+ * ─── HOW TO REACH THEM ─────────────────────────────────────────────────────
+ *
+ * Printed only from a row in a file. `reachFor` returns a `source` on every line — the file and the
+ * row inside it — and a line with no source is never rendered. Where nothing resolves, the honest
+ * sentence goes in instead, because "coming up empty handed is fine; returning noise is not".
+ */
+function renderReach(lines, reach, indent) {
+  lines.push(`${indent}HOW TO REACH THEM`);
+  const printable = reach.lines.filter((l) => l.source?.file && l.source?.row);
+  if (printable.length === 0) {
+    lines.push(`${indent}  ${reach.none}`);
+    return;
+  }
+  for (const l of printable) lines.push(`${indent}  ${l.text}`);
+}
+
+function renderAsset(lot, inbox, filings, contacts) {
   const size = lot.size_usd ?? 0;
   const want = describeLot(lot).split(" — ").slice(2).join(" — ") || lot.size_text;
   const lines = [
@@ -331,6 +349,7 @@ function renderAsset(lot, inbox, filings) {
       lines.push(`    ${r.principal}${r.principal_email ? ` <${r.principal_email}>` : ""}  ·  wanted ${r.size_text ?? money(r.size_usd)}  ·  ${h.ageDays}d ago`);
       lines.push(`      "${r.quote ?? r.evidence}"`);
       lines.push(`      ${r.source_message}${r.intermediated_by ? `  — via ${r.intermediated_by}` : ""}`);
+      renderReach(lines, reachFor({ rows: [r], contacts, handle: "the message in your archive" }), "      ");
     }
   }
   lines.push("");
@@ -353,6 +372,14 @@ function renderAsset(lot, inbox, filings) {
       lines.push(`      Holds ${money(h.valUSD)}${h.pctVal != null ? ` (${h.pctVal.toFixed(2)}% of the fund)` : ""} of "${h.holding}"`);
       lines.push(`      ${SIDE === "sell" ? "Could supply it" : "Can write it"}: ${h.capacity.verdict} — ${h.capacity.why}`);
       lines.push(`      ${h.filed ?? ""} N-PORT ${h.accession}  ${h.url}`);
+      /*
+       * THE FILER'S OWN ADDRESSES ONLY. The first draft passed this asset's ledger rows in here too,
+       * and duly printed a broker from an unrelated OpenAI email under "T. Rowe Price Blue Chip
+       * Growth Fund" — a real address, attributed to the wrong party, which is the exact shape of
+       * the noise she asked not to be given. The ledger's people are rendered above, on their own
+       * rows, where they belong.
+       */
+      renderReach(lines, reachFor({ filer: h.filer, contacts }), "      ");
     }
   }
   lines.push("");
@@ -379,6 +406,12 @@ async function main() {
     console.error(`NAMED STOP [EMPTY_BOOK] the book was read and holds no priced ${HER_SIDE}-side line.`);
     process.exit(6);
   }
+
+  /*
+   * READ ONCE, FOR THE WHOLE RUN. 553 correspondents with an address each, and the only place in
+   * this system where a way to actually speak to somebody exists.
+   */
+  const contacts = loadContacts();
 
   const sections = [];
   for (const lot of priced) {
@@ -408,7 +441,8 @@ async function main() {
     "",
   ].join("\n");
 
-  const body = header + sections.map((s) => renderAsset(s.lot, s.inbox, s.filings)).join("\n");
+  const body = header
+    + sections.map((s) => renderAsset(s.lot, s.inbox, s.filings, contacts)).join("\n");
   console.log(body);
 
   if (!SEND) { console.log("\nRe-run with --send to email it."); return; }
