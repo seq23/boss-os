@@ -596,7 +596,10 @@ describe("Phase 16 — contribution and ancestors, in canon's tone", () => {
     expect(after.body.data.contribution.ideal).toBe(4);
 
     for (let i = 0; i < 3; i++) {
-      await api("/api/spirit/contributions", { method: "POST", body: { kind: "help", recipient: `Someone ${i}` } });
+      await api("/api/spirit/contributions", {
+        method: "POST",
+        body: { kind: "help", recipient: `Someone ${i}`, note: `Helped someone ${i} move` },
+      });
     }
     const good = await apiJson("/api/spirit/day");
     expect(good.body.data.contribution.count).toBe(4);
@@ -605,6 +608,92 @@ describe("Phase 16 — contribution and ancestors, in canon's tone", () => {
     const summary = await apiJson("/api/spirit/contributions");
     expect(summary.body.data.note).toMatch(/no daily practice, no streak/);
     expect(summary.body.data.by_month[0].n).toBe(4);
+  });
+
+  /**
+   * FOUR CONTRIBUTIONS IN 23 SECONDS, BY ACCIDENT.
+   *
+   * The Spirit page carried one button that posted `{ kind: "help" }` with nothing else. The owner
+   * pressed it not knowing what it was and it wrote four rows — 13:30:39, 13:30:42, 13:31:01,
+   * 13:31:02, every one `note = NULL` — so her September read "4 this month" against an ideal of
+   * four. These tests are the shape of that event, asserted as a refusal.
+   */
+  describe("a contribution says what it was", () => {
+    it("REFUSES the exact body four accidental taps sent", async () => {
+      const { status, body } = await apiJson("/api/spirit/contributions", {
+        method: "POST",
+        body: { kind: "help" },
+      });
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/note/i);
+
+      // And nothing was written. A refusal that half-wrote would be worse than the defect.
+      const rows = await all<{ id: string }>(`SELECT id FROM contributions`);
+      expect(rows.length).toBe(0);
+    });
+
+    it("refuses a keystroke, which is what a one-character note would be", async () => {
+      const { status } = await apiJson("/api/spirit/contributions", {
+        method: "POST",
+        body: { kind: "help", note: "x" },
+      });
+      expect(status).toBe(400);
+    });
+
+    it("refuses whitespace dressed up as a note", async () => {
+      const { status } = await apiJson("/api/spirit/contributions", {
+        method: "POST",
+        body: { kind: "help", note: "      " },
+      });
+      expect(status).toBe(400);
+    });
+
+    it("records the note, so the log can be read back in December", async () => {
+      const { status, body } = await apiJson("/api/spirit/contributions", {
+        method: "POST",
+        body: { kind: "time", note: "Two hours on the phone with Ray about his lease" },
+      });
+      expect(status).toBe(201);
+      expect(body.data.contribution.note).toMatch(/Ray about his lease/);
+
+      const day = await apiJson("/api/spirit/day");
+      const entry = day.body.data.contribution.entries[0];
+      expect(entry.note).toMatch(/Ray about his lease/);
+    });
+
+    it("lets her remove one, and the removal leaves an audit trail", async () => {
+      const made = await apiJson("/api/spirit/contributions", {
+        method: "POST",
+        body: { kind: "help", note: "Recorded this one by mistake" },
+      });
+      const id = made.body.data.contribution.id;
+
+      const gone = await apiJson(`/api/spirit/contributions/${id}`, { method: "DELETE" });
+      expect(gone.status).toBe(200);
+      expect(gone.body.data.removed).toBe(true);
+      expect(gone.body.data.month_count).toBe(0);
+
+      const rows = await all<{ id: string }>(`SELECT id FROM contributions`);
+      expect(rows.length).toBe(0);
+
+      /*
+       * THE TRACE IS THE POINT. The row goes — it is her diary and a mistaken entry should not have
+       * to stay in it — but the audit entry carries what it said, so the removal is legible later
+       * and reversible by hand. That is what separates a correction from a quiet edit.
+       */
+      const audited = await all<{ action: string; detail: string }>(
+        `SELECT action, detail FROM audit_log WHERE entity_type = 'contribution' AND entity_id = ?`,
+        id,
+      );
+      expect(audited.map((a) => a.action)).toContain("removed");
+      const removal = audited.find((a) => a.action === "removed")!;
+      expect(removal.detail).toMatch(/Recorded this one by mistake/);
+    });
+
+    it("refuses to remove one that does not exist rather than reporting a success", async () => {
+      const { status } = await apiJson("/api/spirit/contributions/con_nope", { method: "DELETE" });
+      expect(status).toBe(404);
+    });
   });
 
   it("keeps the ancestor hour gentle and unscored", async () => {

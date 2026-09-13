@@ -328,6 +328,8 @@ export const api = {
   recordDream: (body: unknown) => call<any>("/spirit/dreams", post("", body)),
   contributions: () => call<any>("/spirit/contributions"),
   recordContribution: (body: unknown) => call<any>("/spirit/contributions", post("", body)),
+  removeContribution: (id: string) =>
+    call<any>(`/spirit/contributions/${id}`, { method: "DELETE" }),
   ancestors: (month?: string) => call<any>(`/spirit/ancestors${month ? `?month=${month}` : ""}`),
   recordAncestorEntry: (body: unknown) => call<any>("/spirit/ancestors", post("", body)),
 

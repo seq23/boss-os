@@ -508,18 +508,7 @@ export function Spirit() {
       )}
 
       <p className="eyebrow">Contribution — {contribution.month}</p>
-      <div className="panel">
-        <div className="stats">
-          <div className="stat"><div className="stat-n">{contribution.count}</div><div className="stat-l">this month</div></div>
-          <div className="stat"><div className="stat-n">{contribution.minimum}</div><div className="stat-l">the floor</div></div>
-          <div className="stat"><div className="stat-n">{contribution.ideal}</div><div className="stat-l">a good month</div></div>
-        </div>
-        <p className="row-sub">{contribution.tone}</p>
-        <button className="btn" style={{ width: "100%" }}
-                onClick={() => api.recordContribution({ kind: "help" }).then(load).catch(setError)}>
-          Record a contribution
-        </button>
-      </div>
+      <ContributionPanel contribution={contribution} onDone={load} onError={setError} />
 
       {/*
         * THE ANCESTOR HOUR IS A STANDING REMINDER, and there is deliberately no dismiss control.
@@ -873,6 +862,162 @@ function AddManifestation({ onDone }: { onDone: (id: string) => void }) {
               disabled={busy || !title.trim() || !statement.trim() || !firstAction.trim()} onClick={submit}>
         {busy ? "Saving…" : "Hold it"}
       </button>
+    </div>
+  );
+}
+
+/**
+ * THE CONTRIBUTION PRACTICE — canon §44, and the button that had to be replaced.
+ *
+ * ─── What went wrong ───────────────────────────────────────────────────────
+ *
+ * This panel was three bare numbers and a button reading "Record a contribution". The owner pressed
+ * it not knowing what it was — "i dont know what 'record a contribution' is i just pushed the
+ * button" — and it posted `{ kind: "help" }` with no note, four times in 23 seconds. Her September
+ * then read "4 this month" against an ideal of four: a full month's practice, logged by accident,
+ * in under half a minute.
+ *
+ * Three faults in one line of JSX, and all three are the panel's, not hers:
+ *
+ *   1. IT DID NOT SAY WHAT IT WAS. A screen that offers an action without naming the practice
+ *      behind it is a screen that invites exactly this.
+ *   2. IT RECORDED NOTHING. `kind` was hardcoded and `note` was never written, though the column
+ *      has always existed. In December she could not look back and see what she actually did. A
+ *      practice log that cannot be read back is a counter, not a practice.
+ *   3. IT COULD NOT BE UNDONE. Four taps, four rows, and the only fix was an engineer with a
+ *      terminal.
+ *
+ * ─── What this does NOT do, deliberately ───────────────────────────────────
+ *
+ * No streak. No progress bar toward four. No nudge, no reminder, no celebration of hitting the
+ * ideal. §44 says "no guilt, no daily requirement" and the tone IS the specification — a progress
+ * bar toward "a good month" is guilt with a nicer name, and a streak turns a practice of giving
+ * into something you can fail at. The count is shown because she asked what it was; it is a
+ * reflection, not a goal, and the copy says so in those words.
+ *
+ * The note is REQUIRED, and that is not a bar to clear. It is what makes the log readable in
+ * December, and it is what makes an accidental entry impossible — there is nothing to accidentally
+ * type. Asking what she did is not asking her to do more.
+ */
+function ContributionPanel({ contribution, onDone, onError }: {
+  contribution: any;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState("help");
+  const [note, setNote] = useState("");
+  const [recipient, setRecipient] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const entries: any[] = contribution.entries ?? [];
+
+  async function submit() {
+    if (note.trim().length < 4) {
+      return onError(new Error("Say what it was, in a few words. That is the whole record."));
+    }
+    setBusy(true);
+    try {
+      await api.recordContribution({
+        kind,
+        note: note.trim(),
+        recipient: recipient.trim() || undefined,
+      });
+      setNote(""); setRecipient(""); setOpen(false);
+      onDone();
+    } catch (e) { onError(e); } finally { setBusy(false); }
+  }
+
+  async function remove(id: string) {
+    setBusy(true);
+    try { await api.removeContribution(id); onDone(); }
+    catch (e) { onError(e); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="panel">
+      {/*
+        * SAID FIRST, ABOVE THE NUMBERS. The numbers meant nothing to a reader who did not know what
+        * was being counted, which is the whole of what went wrong here.
+        */}
+      <p className="row-sub">
+        A contribution is an act of giving or helping — money, time, a hand with something, teaching
+        someone, an introduction that mattered. One a month is the whole requirement and four is a
+        good month. There is no daily version of this, no streak, and nothing is owed for a month
+        that had one.
+      </p>
+
+      <div className="stats">
+        <div className="stat"><div className="stat-n">{contribution.count}</div><div className="stat-l">this month</div></div>
+        <div className="stat"><div className="stat-n">{contribution.minimum}</div><div className="stat-l">the floor</div></div>
+        <div className="stat"><div className="stat-n">{contribution.ideal}</div><div className="stat-l">a good month</div></div>
+      </div>
+      <p className="row-sub">{contribution.tone}</p>
+
+      {/*
+        * THE ENTRIES, NOT JUST THE COUNT. `contribution.entries` came back from the API all along
+        * and the panel rendered none of it — so the record she was building was invisible to her on
+        * the one screen that was building it.
+        */}
+      {entries.length > 0 && (
+        <>
+          <p className="eyebrow">What you recorded</p>
+          {entries.map((entry) => (
+            <div className="row" key={entry.id}>
+              <div className="row-main">
+                <div className="row-title">{entry.note ?? "No note recorded"}</div>
+                <div className="row-sub">
+                  {new Date(entry.ts).toLocaleDateString()} · {entry.kind}
+                  {entry.recipient ? ` · ${entry.recipient}` : ""}
+                </div>
+              </div>
+              <div className="row-actions">
+                <button className="btn btn-small" disabled={busy} onClick={() => void remove(entry.id)}>
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {open ? (
+        <>
+          <label className="field">
+            <span>What was it?</span>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Covered Dee's deposit · an hour on the phone with Ray"
+              aria-label="What the contribution was"
+            />
+          </label>
+          <label className="field">
+            <span>Kind</span>
+            <select value={kind} onChange={(e) => setKind(e.target.value)}>
+              {["money", "time", "help", "teaching", "introduction", "other"].map((k) => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Who it was for (optional)</span>
+            <input value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+          </label>
+          <div className="decide">
+            <button className="btn" disabled={busy} onClick={() => { setOpen(false); setNote(""); }}>
+              Cancel
+            </button>
+            <button className="btn btn-approve" disabled={busy || note.trim().length < 4} onClick={() => void submit()}>
+              {busy ? "…" : "Record it"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <button className="btn" style={{ width: "100%" }} onClick={() => setOpen(true)}>
+          Record something you gave or helped with
+        </button>
+      )}
     </div>
   );
 }

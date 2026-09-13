@@ -869,10 +869,49 @@ spirit.get("/contributions", async (c) => {
   });
 });
 
+/**
+ * The shortest note that is actually a note.
+ *
+ * A single character would satisfy "a note is required" and record nothing, so the floor is set
+ * where a few words live. It is not a quality bar — "took Mom to lunch" is eleven characters and is
+ * a perfectly good record of a contribution — it is a bar against a keystroke.
+ */
+const CONTRIBUTION_NOTE_MIN = 4;
+
+/**
+ * A CONTRIBUTION WITHOUT A NOTE IS NOT RECORDABLE.
+ *
+ * WHAT HAPPENED. The Spirit page carried a single button reading "Record a contribution" that
+ * posted `{ kind: "help" }` with nothing else. The owner pressed it not knowing what it was — "i
+ * dont know what 'record a contribution' is i just pushed the button" — and it wrote FOUR rows in
+ * 23 seconds: 13:30:39, 13:30:42, 13:31:01, 13:31:02, every one `kind = 'help'`, every one
+ * `note = NULL`. Her September then read "4 this month" against an ideal of four. A full month of
+ * §44 practice, logged by accident, in under half a minute.
+ *
+ * TWO FAULTS, ONE FIX. The log was worthless — in December she could not look back and see what she
+ * actually did, because nothing was written down; a practice log that cannot be read back is a
+ * counter, not a practice. And a write that needs no input is a write four taps can repeat.
+ * Requiring the note closes both: it makes the record readable AND it makes an accidental entry
+ * impossible, because there is nothing to accidentally type.
+ *
+ * THIS IS NOT A GUILT MECHANISM and must not become one. §44's tone is explicit — no daily
+ * requirement, no streak, nothing owed for a month that had one. Asking WHAT SHE DID is not asking
+ * her to do more; it is the difference between a diary and a tally.
+ */
 spirit.post("/contributions", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const kind = requiredText(b?.kind, "A kind of contribution");
   if (!CONTRIBUTION_KINDS.has(kind)) throw badRequest(`"${kind}" is not a kind of contribution`, `One of: ${[...CONTRIBUTION_KINDS].join(", ")}.`);
+
+  const note = optionalText(b?.note);
+  if (!note || note.trim().length < CONTRIBUTION_NOTE_MIN) {
+    throw badRequest(
+      "A contribution needs a note saying what it was",
+      "A few words is plenty — \"covered Dee's tuition deposit\", \"hour on the phone with Ray\". " +
+        "Without it the log is a number you cannot read back in December, and a single tap can " +
+        "record a month's practice by accident. Nothing was recorded.",
+    );
+  }
 
   const ts = b?.ts === undefined ? Date.now() : Number(b.ts);
   if (!Number.isFinite(ts)) throw badRequest("ts is an epoch millisecond timestamp");
@@ -887,9 +926,14 @@ spirit.post("/contributions", async (c) => {
     .bind(
       id, ts, monthId(ts), kind, optionalText(b?.recipient),
       positiveInt(b?.amount_micros, "amount_micros"), positiveInt(b?.minutes, "minutes"),
-      optionalText(b?.note), b?.anonymous ? 1 : 0, now,
+      note, b?.anonymous ? 1 : 0, now,
     )
     .run();
+
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "contribution", entityId: id,
+    action: "recorded", detail: { kind, month: monthId(ts) },
+  });
 
   const count = await c.env.DB
     .prepare(`SELECT COUNT(*) AS n FROM contributions WHERE month = ?`).bind(monthId(ts))
@@ -907,6 +951,46 @@ spirit.post("/contributions", async (c) => {
     },
     201,
   );
+});
+
+/**
+ * REMOVING A RECORD OF HER OWN PRACTICE IS HERS TO DO, AND IT LEAVES A TRACE.
+ *
+ * The four accidental rows had to be deleted from production by hand, with a terminal, because the
+ * page that wrote them could not unwrite them. That is the wrong shape twice over: an action she
+ * can take in one tap and cannot undo without an engineer, and a correction that leaves no record
+ * of having happened.
+ *
+ * SO: a real endpoint with an `audit_log` row, never a direct table write. The row goes — this is
+ * her diary and a mistaken entry should not have to stay in it — but the fact that an entry was
+ * removed, when, and what it said does not. That is what separates a correction from a quiet edit,
+ * and `audit_log` is where this system already keeps that distinction for everything else.
+ *
+ * NOT A SOFT DELETE. Unlike a vault snapshot, a contribution row has no object behind it and no
+ * restore path that could mislead; a tombstone would only mean her practice log renders rows she
+ * asked to remove. The audit entry carries the detail, which is the part worth keeping.
+ */
+spirit.delete("/contributions/:id", async (c) => {
+  const id = c.req.param("id");
+  const existing = await c.env.DB
+    .prepare(`SELECT * FROM contributions WHERE id = ?`).bind(id).first<any>();
+  if (!existing) throw notFound("No contribution with that id");
+
+  await c.env.DB.prepare(`DELETE FROM contributions WHERE id = ?`).bind(id).run();
+
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "contribution", entityId: id,
+    action: "removed",
+    // What it said, so the removal is reversible by hand and legible later. The audit row is the
+    // only remaining record, so it has to carry enough to be one.
+    detail: { kind: existing.kind, ts: existing.ts, month: existing.month, note: existing.note },
+  });
+
+  const count = await c.env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM contributions WHERE month = ?`).bind(existing.month)
+    .first<{ n: number }>();
+
+  return ok(c, { id, removed: true, month: existing.month, month_count: count?.n ?? 0 });
 });
 
 // ─── Ancestors — gentle, monthly, unscored ────────────────────────────────────

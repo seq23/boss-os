@@ -304,6 +304,15 @@ export interface SpiritSignal {
     ideal: number;
     met: boolean;
     tone: string;
+    /**
+     * WHAT SHE ACTUALLY RECORDED, not only how many.
+     *
+     * The day view carried a COUNT(*) and nothing else, so the Spirit panel could show "4 this
+     * month" and could not show what any of the four were. That is how four accidental rows
+     * survived on screen looking exactly like four months' worth of practice. A count is a number;
+     * this is the record.
+     */
+    entries: { id: string; ts: number; kind: string; note: string | null; recipient: string | null }[];
   };
   ancestors: {
     month: string; minutes: number; target_minutes: number; met: boolean; tone: string;
@@ -364,7 +373,10 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
   const [rituals, contributions, ancestors, openManifestations, evidenceThisMonth, reality] = await Promise.all([
     db.prepare(`SELECT id, name, cadence, anchor, last_done_at FROM rituals WHERE status = 'active'`)
       .all<{ id: string; name: string; cadence: string; anchor: string | null; last_done_at: number | null }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM contributions WHERE month = ?`).bind(month).first<{ n: number }>(),
+    db
+      .prepare(`SELECT id, ts, kind, note, recipient FROM contributions WHERE month = ? ORDER BY ts DESC`)
+      .bind(month)
+      .all<{ id: string; ts: number; kind: string; note: string | null; recipient: string | null }>(),
     db.prepare(`SELECT COALESCE(SUM(minutes),0) AS minutes FROM ancestor_entries WHERE month = ?`).bind(month).first<{ minutes: number }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM manifestations WHERE status = 'open'`).first<{ n: number }>(),
     db
@@ -401,7 +413,8 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
     .filter(({ verdict }) => verdict.due)
     .map(({ r, verdict }) => ({ id: r.id, name: r.name, cadence: r.cadence, last_done_at: r.last_done_at, why: verdict.why }));
 
-  const contributionCount = contributions?.n ?? 0;
+  const contributionRows = contributions.results ?? [];
+  const contributionCount = contributionRows.length;
   const ancestorMinutes = ancestors?.minutes ?? 0;
 
   /*
@@ -474,6 +487,7 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
       minimum: CONTRIBUTION_MINIMUM,
       ideal: CONTRIBUTION_IDEAL,
       met: contributionCount >= CONTRIBUTION_MINIMUM,
+      entries: contributionRows,
       // Canon §44 is explicit that this is not a daily practice and not a debt.
       tone:
         contributionCount === 0
