@@ -54,3 +54,14 @@ violations) on breach and proves its own detection with a self-test fixture run.
   nothing asks for bold inside sentences any more while `bold()` survives for historical reports.
   **Rule 0: fewer than two levels, or no heading/content pair to compare, hard-fails.** 11-fixture
   self-test.
+
+- `an-alert-describes-a-live-fault.mjs` (`npm run validate:live-fault`) — three of the five alerts
+  on her screen on 13 Sep were false, each in a different way, and all three were the same defect:
+  a query about the past read as a statement about the present. Runs the SHIPPED `alertsForProbes`
+  and `dutyStaleness` over the exact production rows — a credential whose backend is `registered`
+  rather than `enabled` is silent (read off `execution_backends.status`, never a list of names), a
+  `weekdays = [1,3,5]` duty is quiet on a Sunday and loud on the Tuesday after a missed Monday, and
+  a proven-DEAD token still shouts even on a switched-off backend. Plus the route: no `CASE cadence`
+  staleness in SQL, failed-task counts exclude failures the same work has since succeeded at, and
+  the error window excludes `task_failed` events whose task recovered. **Rule 0: zero probes or zero
+  duty fixtures hard-fails.** 14-fixture self-test.

@@ -34,6 +34,7 @@ import { TERMINAL_CHECKS } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { BRIEFING_SECTIONS, orderSections, missingSections, groundInsight } from "../today/briefing";
+import { dutyStaleness, type DutyStalenessRow } from "../duties/staleness";
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
 import { weeklyPacket, packetIsDue } from "../today/packet";
@@ -451,6 +452,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     lastSnapshot,
     lastCron,
     openDeadLetters,
+    unresolvedFailures,
     errorEvents,
     tradingAuthority,
     openPositions,
@@ -503,6 +505,21 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     db.prepare(`SELECT id, started_at, finished_at, status FROM cron_runs ORDER BY started_at DESC LIMIT 1`)
       .first<{ id: string; started_at: number; finished_at: number | null; status: string }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`).first<{ n: number }>(),
+
+    /*
+     * FAILURES NOTHING HAS SINCE SUCCEEDED AT. A duty's task carries the duty's own `task_title`,
+     * so a later `done` task with the same title in the same lane IS the same work having worked.
+     * Matching on title rather than on a foreign key because `tasks` has never carried one, and
+     * inventing a column here would leave every historical row unlinked and the alert still wrong.
+     */
+    db.prepare(
+      `SELECT COUNT(*) AS n FROM tasks f
+        WHERE f.status = 'failed'
+          AND NOT EXISTS (
+            SELECT 1 FROM tasks s
+             WHERE s.title = f.title AND s.lane = f.lane
+               AND s.status = 'done' AND s.created_at > f.created_at)`,
+    ).first<{ n: number }>(),
     /*
      * `detail` IS SELECTED BECAUSE IT IS THE ONLY COLUMN THAT SAYS WHAT HAPPENED, and for five
      * renders it was left unread while `scope` and `event` were printed at her as prose.
@@ -513,8 +530,21 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * production held five — and the cap only exists so a storm cannot cost the whole render.
      */
     db.prepare(
-      `SELECT id, ts, scope, event, detail FROM system_events
-        WHERE level = 'error' AND ts >= ? ORDER BY ts DESC LIMIT 200`,
+      /*
+       * AN ERROR ABOUT A TASK THAT IS NO LONGER FAILING IS HISTORY, NOT AN ALERT.
+       *
+       * Five `queue/task_failed` rows on her screen were all the SAME task, tsk_m2bk7zfffhjatvsf,
+       * hitting the capability wall on 12 September — "3 of 4 refused at capability" — which the
+       * 70B promotion has since removed. The task is not failed any more. The rows are the record
+       * of what happened that evening and they belong in Diagnostics; presenting them at 7am as a
+       * present condition is reading history as news, which is how a screen fills with things she
+       * cannot act on.
+       */
+      `SELECT id, ts, scope, event, detail FROM system_events e
+        WHERE e.level = 'error' AND e.ts >= ?
+          AND NOT (e.scope = 'queue' AND e.event = 'task_failed'
+                   AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = e.entity_id AND t.status <> 'failed'))
+        ORDER BY e.ts DESC LIMIT 200`,
     ).bind(now - DAY_MS).all<ErrorEventRow>(),
     db.prepare(`SELECT live_enabled, kill_switch, max_open_positions FROM trading_authority LIMIT 1`)
       .first<{ live_enabled: number; kill_switch: number; max_open_positions: number }>(),
@@ -613,12 +643,30 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
        * stop reading." Measured from creation, a new duty is given its own cadence to fire in and
        * only then goes loud.
        */
-      `SELECT id, name, last_run_at, created_at
+      /*
+       * ── THE SHAPE IS READ HERE AND JUDGED IN `duties/staleness.ts` ─────────
+       *
+       * What stood here was a WHERE clause built out of `cadence` alone:
+       *
+       *     COALESCE(last_run_at, created_at) < now − (daily ? 2 : weekly ? 14 : 62) days
+       *
+       * and it produced a HIGH alert on her Sunday morning reading "Brokerage Sourcing Sweep
+       * (Mon/Wed/Fri) has not fired for 2 days. Its clock says it should have." Its clock said no
+       * such thing: that duty is `cadence = 'daily'` with `weekdays = [1,3,5]`, it ran on Friday as
+       * designed, and its next occurrence was Monday. `weekdays` was added so a duty could run two
+       * or three times a week; this check was never taught about it, so every weekday-restricted
+       * duty went loud every weekend.
+       *
+       * SQL cannot answer "when does this duty's own schedule next fire" — that needs the IANA
+       * database and the same `nextDueAt` the cron materialises from. So the rows come back whole
+       * and `dutyStaleness()` decides, which also means the ALERT and the employee health dot are
+       * one piece of logic rather than two copies drifting apart.
+       */
+      `SELECT id, name, cadence, weekday, weekdays, local_hour, local_minute, timezone,
+              suspended, last_run_at, created_at
          FROM standing_duties
-        WHERE suspended = 0
-          AND COALESCE(last_run_at, created_at) <
-              ? - (CASE cadence WHEN 'daily' THEN 2 WHEN 'weekly' THEN 14 ELSE 62 END) * 86400000`,
-    ).bind(Date.now()).all<{ id: string; name: string; last_run_at: number | null; created_at: number }>(),
+        WHERE suspended = 0`,
+    ).all<DutyStalenessRow>(),
 
     /*
      * A DUTY WHOSE LAST TASK NEVER FINISHED. `queued` means nothing sent it; `running` for a long
@@ -877,12 +925,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * One missed run is a laptop that was closed; two is a fault.
    */
   for (const d of staleDuties.results ?? []) {
-    const days = Math.floor((now - (d.last_run_at ?? d.created_at ?? now)) / 86_400_000);
+    const late = dutyStaleness(d, now);
+    if (!late.stale) continue;
     alerts.push({
       severity: "high",
       text: d.last_run_at
-        ? `"${d.name}" has not fired for ${days} days. Its clock says it should have.`
-        : `"${d.name}" has never fired since it was created.`,
+        ? `${late.reason} Its next scheduled run is ${late.next_expected ? new Date(late.next_expected).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "not computable"}.`
+        : `"${d.name}" has never fired since it was created, and ${late.missed} scheduled run${late.missed === 1 ? "" : "s"} have gone by.`,
       source_type: "tasks", source_id: d.id,
     });
   }
@@ -959,10 +1008,28 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   const errorGroups = groupErrorEvents(errorEvents.results ?? []);
   const failedTaskGroup = errorGroups.find((g) => g.scope === "queue" && g.event === "task_failed") ?? null;
 
-  if ((tasksAll.failed ?? 0) > 0) {
+  /*
+   * A FAILURE THE SAME WORK HAS SINCE SUCCEEDED AT IS NOT A LIVE FAULT.
+   *
+   * Her screen said "2 tasks failed and have not been requeued or cancelled" at MEDIUM. Both rows
+   * were from 9 September, both read `stdout was not JSON`, and BOTH duties — Brokerage Sourcing
+   * Sweep and the Executive Intelligence Report — have run successfully since. The count was
+   * reading four-day-old history as a present condition, which is the same defect as the stale
+   * duty clock in a different table.
+   *
+   * THE ROWS ARE NOT DELETED, and that is a deliberate choice over the quicker one. They are the
+   * record of what actually happened on 9 September, `task_events` and `backend_runs` hang off
+   * them, and a system that tidies away its own failures cannot answer "has this broken before".
+   * What changes is that the ALERT asks the right question: is anything still broken NOW. That also
+   * makes it self-maintaining — the next success closes the next failure with nobody running a
+   * DELETE — where a one-off cleanup would have left the same query to raise the same false alert
+   * the next time a run failed and recovered.
+   */
+  const liveFailed = unresolvedFailures?.n ?? 0;
+  if (liveFailed > 0) {
     alerts.push({
       severity: "medium",
-      text: failedTaskAlertText(tasksAll.failed ?? 0, failedTaskGroup),
+      text: failedTaskAlertText(liveFailed, failedTaskGroup),
       source_type: "tasks", source_id: null,
     });
   }
@@ -981,7 +1048,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   }
   for (const g of errorGroups) {
     // Already spoken, inside the count it belongs to. Never both.
-    if (g === failedTaskGroup && (tasksAll.failed ?? 0) > 0) continue;
+    if (g === failedTaskGroup && liveFailed > 0) continue;
     alerts.push({
       severity: "medium",
       text: errorAlertText(g),

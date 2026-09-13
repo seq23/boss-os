@@ -49,6 +49,8 @@ credentials except `validate:value-shapes`, noted below.
 | `npm run validate:insight-grounded` | the Investor Insight is shown only when every fact it cites appears elsewhere in the same report; ungrounded, mis-cited and uncited insights are withheld with reasons; and the spec, prompt and screen all carry its four parts. 14-fixture self-test. Rule 0: zero citations examined hard-fails | that the synthesis is *correct* — only that it is built out of today's own material |
 | `npm run validate:one-scale` | Today declares one ordered type scale, no heading level is muted, both end blocks draw from it, and in the real JSX the briefing's heading outranks its own `so_what`. 11-fixture self-test. Rule 0: fewer than two levels, or no heading/content pair, hard-fails | that the page *looks* right. That was checked by reading it |
 
+| `npm run validate:live-fault` | an alert describes something wrong NOW: a credential whose backend is not `enabled` is silent while a proven-dead one still shouts, a weekday-restricted duty is judged against its own schedule, and failures the same work has since succeeded at do not count. Shipped code over the production rows. 14-fixture self-test. Rule 0: zero probes or zero duty fixtures hard-fails | that every remaining alert is *worth raising*, only that it is about the present |
+
 ## Phase proof mapping (approved plan §12.2)
 
 P0 structural checks · P1 typecheck/build, auth E2E, migration, backup-restore · P2 identity
