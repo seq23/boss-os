@@ -81,9 +81,10 @@ export const api = {
   unlock: (passcode: string) => call<{ unlocked: boolean }>("/auth/unlock", post("", { passcode })),
   lock: () => call("/auth/lock", post("")),
 
-  today: (date?: string) => call<any>(`/today${date ? `?date=${date}` : ""}`),
   /**
-   * One group of Today's blocks. The screen fires one of these per group, in parallel, and stitches
+   * One group of Today's blocks — the only way the screen reads the day now. The whole-day form
+   * (`/today` with no `blocks=`) still exists for the cron; a screen must never use it, because on
+   * the Free plan's 10 ms of CPU it is the request Cloudflare kills. The screen fires one of these per group, in parallel, and stitches
    * the answers back into canon §15's thirteen — see `TODAY_GROUPS` in the worker's today route for
    * why the day is not fetched whole.
    */
