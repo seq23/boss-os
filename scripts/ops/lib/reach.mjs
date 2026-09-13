@@ -55,6 +55,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { HER_BROKERAGE_DOMAIN } from "../interest-match.mjs";
+import { linkedInSearch } from "./adv.mjs";
 
 export const CONTACTS_PATH = process.env.BOSS_OS_CONTACTS
   ?? path.join(os.homedir(), ".boss-os", "sourcing", "CONTACTS.json");
@@ -122,6 +123,43 @@ export function loadContacts(file = CONTACTS_PATH) {
   }
 }
 
+/**
+ * ─── EVERY LINE STATES ITS CONFIDENCE, AND THE LEVELS ARE NOT INTERCHANGEABLE ──────────────────
+ *
+ *   "Pattern from 9 known addresses at this domain" is evidence.
+ *   "Most common format for US managers" is a guess.
+ *   Conflating them is how she emails a stranger by the wrong name.
+ *
+ * So confidence is a FIELD, set where the line is built, and it can only ever be one of these:
+ *
+ *   known    — the address is written in a file. Her ledger, or her own correspondence record.
+ *              Nothing was inferred; the line is as good as the file behind it.
+ *   pattern  — the address is PREDICTED from addresses she already has at that exact domain. The
+ *              line says how many agreed. This is the only kind of prediction permitted, and it is
+ *              permitted because the evidence is countable and hers.
+ *   record   — a real person, named in a public filing, with NO ADDRESS AT ALL. Form ADV publishes
+ *              names and titles and no mailbox. This is the honest shape of most of what the ADV
+ *              half returns, and it is genuinely useful: it turns "Fidelity holds it" into a person
+ *              to look for. A `record` line must never be read as a way to reach somebody.
+ *   link     — a search URL she clicks herself. Not a contact; a shortcut to finding one.
+ *
+ * THERE IS NO "GUESS" LEVEL, and its absence is the design. A constructed `firstname@fund.com` with
+ * no pattern behind it reads exactly like a real address on the page and she would find out by
+ * sending it. `predictAddress` returns null rather than inventing one, every time.
+ */
+export const CONFIDENCE = new Set(["known", "pattern", "record", "link"]);
+
+/**
+ * How many known addresses at a domain must AGREE before a pattern is evidence rather than a guess.
+ *
+ * TWO, AND NOT ONE. One address at a domain is a fact about one person: `jsmith@fund.com` is equally
+ * consistent with `flast`, with `jsmith` being a whole first name, and with there being no convention
+ * at all. Two that agree is a convention. And ANY disagreement kills it outright — a domain with both
+ * `jsmith@` and `john.smith@` has two conventions or an exception, and a prediction into it is a coin
+ * flip wearing a number.
+ */
+export const PATTERN_MIN = 2;
+
 /** At most this many correspondents per holder. More than a few is a dump, not an introduction. */
 export const FILER_CAP = 3;
 
@@ -159,6 +197,110 @@ export function domainBelongsTo(domain, token) {
   return label.startsWith(token);
 }
 
+/**
+ * THE SHAPE OF THE ADDRESSES SHE ALREADY HAS AT A DOMAIN.
+ *
+ * Given a person's name and the local part of a known address, which convention does it fit?
+ * Returns a token — `first.last`, `flast`, `first.l`, `first`, `last` — or null when it fits none,
+ * which is the common case and is not a failure.
+ *
+ * NAMED PATTERNS ONLY, AND NO FUZZY MATCHING. A rule like "the local part contains the surname"
+ * would match `sales@` at a firm whose founder is called Sales, and would generate a prediction from
+ * a shared-mailbox address. Each pattern below is an exact reconstruction or nothing.
+ */
+export function patternOf(fullName, local) {
+  const parts = String(fullName ?? "").toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  const l = String(local ?? "").toLowerCase();
+  if (!l) return null;
+
+  if (l === `${first}.${last}`) return "first.last";
+  if (l === `${first}${last}`) return "firstlast";
+  if (l === `${first[0]}${last}`) return "flast";
+  if (l === `${first}.${last[0]}`) return "first.l";
+  if (l === `${first}_${last}`) return "first_last";
+  if (l === first) return "first";
+  if (l === last) return "last";
+  return null;
+}
+
+/** Build the local part a pattern implies for a name, or null if it cannot be built. */
+export function applyPattern(pattern, fullName) {
+  const parts = String(fullName ?? "").toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  switch (pattern) {
+    case "first.last": return `${first}.${last}`;
+    case "firstlast": return `${first}${last}`;
+    case "flast": return `${first[0]}${last}`;
+    case "first.l": return `${first}.${last[0]}`;
+    case "first_last": return `${first}_${last}`;
+    /*
+     * `first` AND `last` ARE DELIBERATELY NOT PREDICTABLE. They are real conventions and they are the
+     * two that COLLIDE: a second Andrea at the firm cannot also be `andrea@`, so the prediction is
+     * wrong precisely when the firm is big enough to matter. They are still recognised above, so a
+     * domain that uses them produces NO pattern rather than a confident wrong one.
+     */
+    default: return null;
+  }
+}
+
+/**
+ * THE ADDRESS CONVENTION AT A DOMAIN, FROM HER OWN CORRESPONDENCE, OR NOTHING.
+ *
+ * @returns `{ pattern, evidence, domain }` where `evidence` is the actual addresses that agreed —
+ *          carried so the line can say "pattern from 9 known addresses at this domain" and she can
+ *          check the claim — or null.
+ */
+export function addressPattern(domain, contacts) {
+  const dom = String(domain ?? "").toLowerCase();
+  if (!dom || !contacts?.contacts?.length) return null;
+
+  const at = contacts.contacts.filter((c) => domainOf(c.email) === dom && c.name);
+  if (at.length < PATTERN_MIN) return null;
+
+  const votes = new Map();
+  let unexplained = 0;
+  for (const c of at) {
+    const pat = patternOf(c.name, String(c.email).split("@")[0]);
+    if (!pat) { unexplained += 1; continue; }
+    if (!votes.has(pat)) votes.set(pat, []);
+    votes.get(pat).push(c.email);
+  }
+
+  const ranked = [...votes.entries()].sort((a, b) => b[1].length - a[1].length);
+  const top = ranked[0];
+  if (!top || top[1].length < PATTERN_MIN) return null;
+  /*
+   * DISAGREEMENT KILLS IT. A second convention with any support at all, or an address at the domain
+   * whose shape nothing explains, means there is no single convention — and a prediction into a
+   * domain with two conventions is a coin flip presented as a fact. Silence is the honest output and
+   * the filing is still there as a handle.
+   */
+  if (ranked.length > 1 || unexplained > 0) return null;
+  if (!applyPattern(top[0], "Placeholder Name")) return null;
+
+  return { pattern: top[0], evidence: top[1], domain: dom };
+}
+
+/**
+ * A PREDICTED ADDRESS, ONLY WHERE THE PATTERN IS KNOWN.
+ *
+ * Returns null far more often than not, and that is the feature. There is no fallback to a "most
+ * common format": a constructed address with nothing behind it looks identical on the page to one
+ * out of her own archive, and the way she would discover the difference is by sending it.
+ */
+export function predictAddress(fullName, domain, contacts) {
+  const pat = addressPattern(domain, contacts);
+  if (!pat) return null;
+  const local = applyPattern(pat.pattern, fullName);
+  if (!local) return null;
+  return { email: `${local}@${pat.domain}`, pattern: pat.pattern, evidence: pat.evidence };
+}
+
 /** How warm the line is, in her own numbers. Never a score — the counts she can check. */
 function warmth(c) {
   const bits = [];
@@ -174,20 +316,26 @@ function warmth(c) {
  * @returns `{ lines, none }` — `lines` each carry `{ text, kind, source }`, and `none` is the honest
  * sentence to print when there are no lines. A caller must never print a line without `source`.
  */
-export function reachFor({ filer = null, rows = [], contacts = null, handle = "the filing" } = {}) {
+export function reachFor({ filer = null, rows = [], contacts = null, adv = null, handle = "the filing" } = {}) {
   const lines = [];
   const seen = new Set();
-  const push = (kind, text, source) => {
+  /*
+   * CONFIDENCE IS REQUIRED AT THE CALL, NOT DEFAULTED. A default would make the level the property of
+   * whoever forgot to pass one, and the whole point is that `known` and `pattern` are different
+   * claims about the world. An unrecognised level is dropped rather than printed at face value.
+   */
+  const push = (kind, confidence, text, source) => {
+    if (!CONFIDENCE.has(confidence)) return;
     const key = `${kind}:${text}`;
     if (seen.has(key)) return;
     seen.add(key);
-    lines.push({ kind, text, source });
+    lines.push({ kind, confidence, text, source });
   };
 
   // 1. The principal, where the ledger actually has one.
   for (const r of rows) {
     if (!r?.principal_email) continue;
-    push("principal",
+    push("principal", "known",
       `${r.principal ?? "the principal"} <${r.principal_email}>  — the principal, from your ledger`,
       { file: "capital/ledger.json", row: r.source_message ?? r.principal_email });
   }
@@ -196,7 +344,7 @@ export function reachFor({ filer = null, rows = [], contacts = null, handle = "t
   for (const r of rows) {
     if (!r?.intermediated_by) continue;
     const c = contacts?.contacts?.find((x) => x.email.toLowerCase() === String(r.intermediated_by).toLowerCase());
-    push("broker",
+    push("broker", "known",
       `${r.intermediated_by}  — THE BROKER on this row, not the principal`
       + (c ? ` (${warmth(c)})` : ""),
       { file: "capital/ledger.json", row: r.source_message ?? r.intermediated_by });
@@ -218,10 +366,63 @@ export function reachFor({ filer = null, rows = [], contacts = null, handle = "t
       .sort((a, b) => (Number(b.c.sent) + Number(b.c.received)) - (Number(a.c.sent) + Number(a.c.received)))
       .slice(0, FILER_CAP);
     for (const { c, dom, hit } of matched) {
-      push("filer",
+      push("filer", "known",
         `${c.name || c.email} <${c.email}>  — you already correspond at ${dom}`
         + (warmth(c) ? ` (${warmth(c)})` : "") + `; matched on "${hit}"`,
         { file: contacts.file, row: c.email });
+    }
+  }
+
+  /*
+   * ─── 4. THE PEOPLE, FROM FORM ADV — NAMED, AND USUALLY WITH NO ADDRESS ────
+   *
+   * This is the half that turns "Fidelity holds it" into a person. Schedule A names the principals;
+   * it publishes no mailbox for any of them. So the ordinary shape of an ADV line is `record`: a real
+   * person, a real title, a real firm, AND NO WAY TO REACH THEM YET. That is not a failed line — it
+   * is the answer to "who might be investors", and it is the reason the LinkedIn link is composed
+   * beside it.
+   *
+   * AN ADDRESS APPEARS ONLY WHERE HER OWN CORRESPONDENCE ALREADY SHOWS THE PATTERN, and then it is
+   * labelled `pattern` and says how many known addresses it rests on. Nothing here ever constructs an
+   * address at a domain she has never written to.
+   */
+  if (adv?.people?.length) {
+    /*
+     * THE DOMAIN COMES FROM HER OWN CORRESPONDENCE, NEVER FROM THE FIRM'S NAME. Deriving
+     * `fidelity.com` from "Fidelity" is exactly the Forge mistake in a new costume: it looks right,
+     * it is unverifiable, and a prediction built on it is a wrong address that reads like a real one.
+     * So the domain must already appear in CONTACTS.json, matched by `domainBelongsTo` — the same
+     * guard that refused `launchusaforge.co`.
+     */
+    const tokens = filer ? filerTokens(filer) : [];
+    const knownDomain = contacts?.contacts
+      ?.map((c) => domainOf(c.email))
+      .find((d) => d && !d.endsWith(HER_BROKERAGE_DOMAIN) && tokens.some((t) => domainBelongsTo(d, t))) ?? null;
+
+    for (const person of adv.people.slice(0, FILER_CAP)) {
+      if (!person?.name || !person.source?.file || !person.source?.row) continue;
+
+      const predicted = knownDomain ? predictAddress(person.name, knownDomain, contacts) : null;
+      if (predicted) {
+        push("adv_person", "pattern",
+          `${person.name}${person.title ? `, ${person.title}` : ""} <${predicted.email}>  — PREDICTED from the `
+          + `${predicted.evidence.length} known address(es) at ${knownDomain}, which all use `
+          + `"${predicted.pattern}". Named on Form ADV; the address is inferred, not read.`,
+          person.source);
+      } else {
+        push("adv_person", "record",
+          `${person.name}${person.title ? `, ${person.title}` : ""}  — named on Form ADV`
+          + `${person.firm ? ` at ${person.firm}` : ""}. NO ADDRESS: Form ADV publishes names, not mailboxes`
+          + `${knownDomain ? ", and this firm's domain has no usable convention in your archive" : ", and you have never written to this firm"}.`,
+          person.source);
+      }
+
+      const search = linkedInSearch(person.name, person.firm ?? filer);
+      if (search) {
+        push("linkedin", "link",
+          `${search}  — a search you run yourself. Nothing here logs in, fetches it or automates it.`,
+          person.source);
+      }
     }
   }
 
@@ -233,6 +434,7 @@ export function reachFor({ filer = null, rows = [], contacts = null, handle = "t
   return {
     lines,
     none: `no address for this holder — ${handle} is the only handle`
-      + (contacts ? "" : ", and CONTACTS.json was not readable"),
+      + (contacts ? "" : ", and CONTACTS.json was not readable")
+      + (adv?.note ? `. ${adv.note}` : ""),
   };
 }

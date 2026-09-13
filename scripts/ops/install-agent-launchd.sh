@@ -305,6 +305,13 @@ echo "Installed $NUDGE_LABEL — the 1st at 07:30 Central (interest-match.mjs --
 # list of people to call. It reads a book filed by email over the weekend against a ledger the Sunday
 # mailbox sweep refreshed.
 #
+# TWO DUTIES, ONE PLIST, AND THE ORDER IS THE ARGUMENT. `filing-hunt.mjs` is Danielle's research half
+# and runs FIRST, at 06:50 by its duty row; `buyer-hunt.mjs` is Monique's mailbox half and renders the
+# combined email at 07:00. Running them the other way round would put last week's filings in this
+# week's email and nothing would say so. Each is wrapped separately so each can go red on its own —
+# EDGAR unreachable for a week is Danielle's row failing, and it must not hide behind a mailbox half
+# that worked fine.
+#
 # WRAPPED IN duty-run.sh SO THE RUN REACHES `duty_buyer_hunt` IN D1 — "I DONT CARE IF ITS LAUNCHD OR
 # D1 - THOSE SHOULD BE LINKED ANYWAY." The token below and `task_input.$.local_job` in migration 0230
 # are the same string, and validate:launchd-duty-link proves it in both directions.
@@ -326,7 +333,7 @@ cat > "$BUYERS_PLIST" <<BUYERSEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent capital:hunts -- --send; cd $REPO && bash $REPO/scripts/ops/duty-run.sh buyer-hunt.mjs -- npm run --silent capital:buyers -- --send</string>
+    <string>cd $REPO && npm run --silent capital:hunts -- --send; cd $REPO && bash $REPO/scripts/ops/duty-run.sh filing-hunt.mjs -- npm run --silent capital:filings; cd $REPO && bash $REPO/scripts/ops/duty-run.sh buyer-hunt.mjs -- npm run --silent capital:buyers -- --send</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
