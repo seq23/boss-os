@@ -144,7 +144,12 @@ describe("return-on-effort ledger", () => {
       "brokerage", "west_peek_raise",
       // The grid, in its own order — `src/shared/boss/grid.mjs`.
       "guides_generator", "citation_velocity", "horse_legal", "hicks_consulting",
-      "virtual_agency", "hpc", "approvalprep", "wedding", "authority_network",
+      "virtual_agency", "hpc", "approvalprep", "wedding",
+      // Added 13 Sep 2026 when she confirmed all three were hers. This list is pinned ON PURPOSE:
+      // it fails whenever the grid gains or loses a line, so a property can never appear in — or
+      // vanish from — her returns ledger without someone saying so here.
+      "youtube", "saas_apps",
+      "authority_network",
     ]);
     expect(body.data.ordering_note).toContain("Nothing here ranks them");
   });
