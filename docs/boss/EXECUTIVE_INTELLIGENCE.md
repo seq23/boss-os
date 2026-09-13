@@ -25,7 +25,6 @@ Its job is to answer:
 2. **Why does it matter to an investor?**
 3. **What changed in capital markets, AI, technology, policy, private markets, and geopolitics?**
 4. **What should a sophisticated investor watch next?**
-5. **What is the user’s current operating posture under the locked 2026 Money / Career / Travel Map?**
 
 The report must be **concise enough to read quickly, but deep enough to act on**.
 
@@ -72,10 +71,7 @@ Never fabricate:
 - funding rounds;
 - M&A;
 - policy actions;
-- court rulings;
-- planetary degrees;
-- void-of-course periods;
-- retrograde station times.
+- court rulings.
 
 If a required fact cannot be verified, say so.
 
@@ -91,8 +87,7 @@ Every morning, refresh:
 - IPOs;
 - government / regulatory / Supreme Court news;
 - private markets / secondaries developments;
-- SpaceX developments;
-- astronomical / astrological data.
+- SpaceX developments.
 
 Do not recycle yesterday’s report unless a story is still active and materially important.
 
@@ -592,289 +587,38 @@ Examples:
 
 ---
 
-# Money / Career / Travel Map
-
-This section is mandatory.
-
-Always state:
-
-1. current exact locked week;
-2. map signal;
-3. map description;
-4. operating guidance;
-5. minimum viable move;
-6. next map transition;
-7. travel guidance.
-
-Treat the map as a **planning framework, not prediction**.
-
-Use this exact legend:
-
-- 🟢 = Push / accelerate / close
-- 🟡 = Maintain / prepare / refine
-- 🔴 = Protect energy / do not force
-- ✈️ = Favorable travel / reset window
-
----
-
-# Locked 2026 Money / Career / Travel Map
-
-Use these exact entries:
-
-- **Jun 29–Jul 5 — 🟡 ✈️** soft re-entry / final travel stretch
-- **Jul 6–12 — 🟡** prep launches / tighten messaging / set Q3 targets
-- **Jul 13–19 — 🟢🟢** major ignition week — launch, announce, make bold asks
-- **Jul 20–26 — 🟢** follow-up, convert interest, push active deals
-- **Jul 27–Aug 2 — 🟢** visibility, capital conversations, closings
-- **Aug 3–9 — 🟢** revenue generation / networking / growth
-- **Aug 10–16 — 🟢** partnerships / investor conversations / sales
-- **Aug 17–23 — 🟢** negotiation / authority-building / closing
-- **Aug 24–30 — 🟡 ✈️** travel / reset and stabilize gains
-- **Aug 31–Sep 6 — 🟢** final summer push / strategic meetings / revenue
-- **Sep 7–13 — 🟡 ✈️** travel / recalibration / systems review
-- **Sep 14–20 — 🟡** pipeline management / internal organization
-- **Sep 21–27 — 🟡** prepare for October / cut distractions
-- **Sep 28–Oct 4 — 🟢** begin harvest / activate strongest opportunities
-- **Oct 5–11 — 🟢🟢** peak money week — contracts / revenue / investments / closings
-- **Oct 12–18 — 🟢🟢** peak money week — capital / deal execution / expansion
-- **Oct 19–25 — 🟢🟢** peak money week — finalize major opportunities
-- **Oct 26–Nov 1 — 🟢** capture momentum / finish strong
-- **Nov 2–8 — 🟢** close loops / secure commitments / collect revenue
-- **Nov 9–15 — 🟢** final major push
-- **Nov 16–22 — 🟡 ✈️** travel / reset
-- **Nov 23–29 — 🟡 ✈️** Thanksgiving / rest / travel / protect gains
-- **Nov 30–Dec 6 — 🟡** year-end review / strategy / planning
-- **Dec 7–13 — 🔴 ✈️** rest / retreat / low-pressure travel
-- **Dec 14–20 — 🔴 ✈️** recovery / reflection / integration
-- **Dec 21–31 — 🔴 ✈️✈️** best full reset window / travel / retreat / visioning / 2027 planning
-
-## Locked travel guidance
-
-- Europe / longer travel: **Jun 15–Jul 5**
-- short resets: **Aug 24–30**
-- short reset: **Sep 7–13**
-- short resets: **Nov 16–29**
-- full reset: **Dec 7–31**
-- strongest full reset: **Dec 21–31**
-- avoid fully unplugging: **Jul 13–Nov 15**
-- especially avoid full unplugging: **Oct 5–25**
-
----
-
-# Map Operating Logic
-
-## Green week
-
-Prioritize:
-
-1. closest-to-money opportunity;
-2. decision-maker contact;
-3. clearing one high-value blocker;
-4. closing paperwork / signatures;
-5. one high-value new ask only after live opportunities are moved.
-
-Minimum viable green-day move:
-
-> **Make one high-value ask capable of materially advancing revenue or a live transaction.**
-
-Do not turn “green” into indiscriminate activity.
-
-## Yellow week
-
-Prioritize:
-
-- maintaining live opportunities;
-- pipeline cleanup;
-- systems review;
-- organization;
-- refining messaging;
-- preparing future asks;
-- protecting bandwidth.
-
-Minimum viable yellow-day move:
-
-> **Clean one live opportunity so its owner, next action, and deadline are explicit.**
-
-## Red week
-
-Prioritize:
-
-- recovery;
-- essential maintenance only;
-- low-pressure strategic thinking;
-- no forced expansion.
-
-Do not create guilt around lower output.
-
----
-
-# Astronomical / Astrological Dashboard
-
-This section is mandatory every day.
-
-Use **tropical, geocentric** positions unless the user explicitly requests another system.
-
-Include:
-
-- Sun
-- Moon
-- Mercury
-- Venus
-- Mars
-- Jupiter
-- Saturn
-- Uranus
-- Neptune
-- Pluto
-- North Node if available
-
-For each:
-
-- zodiac sign;
-- exact degree and minutes;
-- direct / retrograde status.
-
-Example:
-
-| Body | Exact Position | Motion |
-|---|---:|---|
-| Sun | 13°55′ Virgo | Direct |
-| Moon | 12°49′ Cancer | Direct |
-| Mercury | 22°45′ Virgo | Direct |
-
-Never estimate degree/minute values from memory if exact astronomical data are available.
-
----
-
-# Moon Dashboard
-
-Include:
-
-- exact Moon sign and degree;
-- current phase;
-- illumination;
-- next sign ingress;
-- void-of-course status;
-- VOC start;
-- VOC end;
-- convention used.
-
-Use this language:
-
-> “Using the final-major-Ptolemaic-aspect convention…”
-
-Astrology sources disagree about VOC calculation, so do not present one convention as universally authoritative.
-
----
-
-# Major Aspects
-
-Include only important aspects, generally with reasonably tight orbs.
-
-For each:
-
-- aspect;
-- orb;
-- applying / separating if available;
-- brief symbolic theme;
-- practical planning translation.
-
-Never imply causal or predictive certainty.
-
-Use language such as:
-
-> “Traditional symbolism associates this with…”
-
-> “A practical planning translation is…”
-
----
-
-# Current Retrogrades
-
-List all major retrograde planets currently relevant.
-
-At minimum:
-
-- Mercury
-- Venus
-- Mars
-- Jupiter
-- Saturn
-- Uranus
-- Neptune
-- Pluto
-
-Do not call a planet retrograde unless verified.
-
----
-
-# Upcoming Lunations
-
-Always include the **next New Moon and next Full Moon**.
-
-For every lunation include:
-
-- date;
-- exact Central Time;
-- exact zodiac sign;
-- exact degree and minute;
-- whether eclipse if applicable;
-- symbolic themes.
-
-Example:
-
-## 🌑 New Moon
-**Thursday, September 10, 2026**  
-**10:27 PM Central**  
-**18°26′ Virgo**
-
-Never omit exact degree/minute.
-
----
-
-# Mercury Retrograde Tracker
-
-This is mandatory.
-
-State:
-
-- Mercury direct or retrograde;
-- current exact position;
-- last station date/time and degree;
-- days since last station;
-- next station date/time and degree;
-- days until next station;
-- pre-shadow date if useful;
-- next major Mercury event after station;
-- subsequent direct station if known.
-
-Example format:
-
-# 🟢 MERCURY DIRECT
-
-**Current Mercury:** 22°45′ Virgo
-
-**Last station:** July 23, 2026 — 5:58 PM Central — 16°19′ Cancer
-
-**Next station:** October 24, 2026 — 2:13 AM Central — 20°59′ Scorpio
-
-**Next major event:** Mercury cazimi / inferior conjunction — November 4, 2026
-
----
-
-# Astrology Integrity Rules
-
-Astrology must be framed as:
-
-> symbolic planning language, not scientifically validated forecasting.
-
-Never claim:
-
-- guaranteed money outcomes;
-- causal market effects;
-- deterministic personal events.
-
-The Money / Career / Travel Map is also a planning framework, not a prediction.
+# The astrology and the map are NOT in this report
+
+**They were, and her mail of 12 September 2026 08:59 is the instruction that took them out:**
+
+> "Please make sure the spirit page of my boss OS system displays astrology in the way it is in the
+> below report and make sure the daily executive briefing is set up like the below report. **They
+> are not to be mixed in the way this report is** but pull out the astrology for the spirit page and
+> mimic this report for my daily briefing."
+
+What stood here was a `# Money / Career / Travel Map` section, the twenty-six-line
+`# Locked 2026 Money / Career / Travel Map`, `# Map Operating Logic`, and eight sections of
+astronomical dashboard — ephemeris, Moon, aspects, retrogrades, lunations, Mercury tracker and their
+integrity rules. All of it now lives on the **Spirit page**, computed rather than researched:
+
+| What | Where it lives now |
+|---|---|
+| Ephemeris, Moon dashboard, aspects, retrogrades | `src/worker/boss/spirit/dashboard.ts` |
+| The locked 2026 Money / Career / Travel Map | `src/worker/boss/spirit/travelMap.ts` |
+| The screen both are rendered on | `src/client/boss/pages/Spirit.tsx` |
+| Proof they match her report to the arcminute | `tests/spiritDashboard.test.ts` |
+
+**The map went with the chart, and that was her decision rather than a tidy-up.** The map is
+astrologically derived, so leaving it behind would have left this document holding
+astrologically-derived content — a rule that then has to be re-judged on every future edit. With
+both gone, the rule is mechanical: **this specification contains no astrologically-derived section
+at all**, and `scripts/validate/the-briefing-is-not-the-chart.mjs` fails the build if one returns.
+
+**Do not restore any of it here.** If the briefing should reference her operating posture, it must
+read it from `travelMap.ts` rather than carry a second copy of the bands — two lists with no link
+between them is exactly how one of them goes quietly stale.
+
+The eleven market sections of §5 are untouched and stay in the order they are in.
 
 ---
 
@@ -1013,7 +757,6 @@ Avoid:
 - motivational filler;
 - long moral commentary;
 - partisan framing;
-- astrology presented as fact;
 - unsupported market predictions.
 
 Use short paragraphs.
@@ -1056,9 +799,6 @@ Never:
 - treat rumors as completed transactions;
 - repeat stale stories without new information;
 - describe procedural court rulings as final merits decisions;
-- quote exact astrology degrees without a real ephemeris;
-- claim a lunation degree or time from memory;
-- make the Money / Career / Travel Map sound predictive;
 - fill the report with minor funding rounds;
 - use images;
 - include generic sports, lifestyle, entertainment, or local news.
@@ -1078,14 +818,9 @@ Before sending each report, verify:
 - [ ] No fabricated stock price or ticker.
 - [ ] VC/private markets/secondaries section is included.
 - [ ] Government/legal section distinguishes procedure from merits.
-- [ ] Money / Career / Travel Map uses the correct locked week.
-- [ ] Next map transition is stated.
-- [ ] Travel guidance is included.
-- [ ] Planet positions and retrogrades are verified.
-- [ ] Next New Moon includes exact sign + degree/minute + CT.
-- [ ] Next Full Moon includes exact sign + degree/minute + CT.
-- [ ] Mercury Retrograde Tracker is included.
 - [ ] One Thing to Watch is forward-looking and non-obvious.
+- [ ] No astrological or Money / Career / Travel Map content appears anywhere. Both belong to the
+      Spirit page; a report that grew one back is mixing them again.
 - [ ] No images.
 - [ ] Final line is exactly: “Get your agenda from your coach.”
 
@@ -1125,33 +860,7 @@ If this system is implemented in code, gather research into a structured object 
     "starship": [],
     "financing": []
   },
-  "calendar": [],
-  "map": {
-    "current_week": "",
-    "signal": "",
-    "guidance": "",
-    "next_transition": "",
-    "travel_guidance": ""
-  },
-  "astrology": {
-    "sun": {},
-    "moon": {},
-    "mercury": {},
-    "venus": {},
-    "mars": {},
-    "jupiter": {},
-    "saturn": {},
-    "uranus": {},
-    "neptune": {},
-    "pluto": {},
-    "moon_phase": "",
-    "illumination": null,
-    "voc": {},
-    "retrogrades": [],
-    "new_moon": {},
-    "full_moon": {},
-    "mercury_tracker": {}
-  }
+  "calendar": []
 }
 ```
 
@@ -1164,7 +873,7 @@ Use the following as the system-level daily generation instruction after current
 ```text
 Generate today’s Executive Intelligence Report for a sophisticated VC/private-markets investor.
 
-Use only current, verified information available as of the stated cutoff time. Never invent prices, funding rounds, M&A, policy actions, court rulings, company status, or astronomical data.
+Use only current, verified information available as of the stated cutoff time. Never invent prices, funding rounds, M&A, policy actions, court rulings or company status.
 
 Begin with a one-minute executive summary of the 3–5 biggest developments.
 
@@ -1192,22 +901,14 @@ Include:
 - Government / Legal / Supreme Court / Regulation;
 - one concise Investor Insight;
 - Key Events Today;
-- Money / Career / Travel Map;
-- astronomical / astrological dashboard;
-- Moon Dashboard;
-- major aspects;
-- current retrogrades;
-- upcoming New Moon and Full Moon with exact sign, exact degree/minute, and exact Central Time;
-- Mercury Retrograde Tracker;
 - One Thing to Watch.
+
+Do NOT include astrology of any kind, and do not include the Money / Career / Travel Map. Both live
+on the Spirit page and are deliberately not part of this report.
 
 Do not include images.
 
 For SpaceX, first verify whether it is publicly traded. If it is not publicly traded, state that no public stock price exists and use verified private-market valuation / secondary references instead. Never invent a ticker or stock price.
-
-Treat astrology and the Money / Career / Travel Map as symbolic / planning frameworks, not guaranteed predictions.
-
-Use the locked 2026 Money / Career / Travel Map exactly as stored in the install specification.
 
 Write like an executive intelligence analyst:
 direct, analytical, concise, skeptical, investor-focused.
@@ -1251,7 +952,6 @@ A successful report should leave the reader knowing:
 - what changed;
 - what matters;
 - what affects capital;
-- what to watch;
-- what operating posture to use today.
+- what to watch.
 
 That is the Executive Intelligence brain.
