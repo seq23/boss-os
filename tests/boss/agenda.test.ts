@@ -279,25 +279,28 @@ describe("the execution contract closes before it starts", () => {
   });
 
   /*
-   * ─── DANIELLE'S WEEKLY AHREFS PASS, WHEN IT DOES NOT RUN ──────────────────
+   * ─── A JOB THAT DID NOT RUN IS NOT HER WORK ───────────────────────────────
    *
-   * A weekly job that silently stops is indistinguishable from a weekly job finding nothing, and
-   * this repository has shipped exactly that: a duty that fired eleven Sundays and dropped its
-   * payload every time with nothing red anywhere. So a missed pass is a VISIBLE STATE on the day.
+   * These three tests used to assert the OPPOSITE. `siteAuditGap()` read `standing_duties` and
+   * `site_audit_findings` and returned, at the TOP of the execution contract:
    *
-   * BOTH DIRECTIONS ARE THE TEST. The first version of this gate measured only how old the newest
-   * finding was, and fired on every fresh database in the suite — pushing a stalling deal and the
-   * oldest open loop off the day on install morning. A nag that greets you on install is one you
-   * learn to scroll past, so "stays quiet until it is actually overdue" is half of the behaviour.
+   *     "Danielle's Ahrefs pass has not reported — run `ahrefs-audit-fix.sh` or find out why
+   *      launchd did not."
+   *
+   * The owner found it in her contract and named the rule:
+   *
+   *     "something not working should never be in today's contract it should be in the inbox."
+   *
+   * She is right, and the old test's own title says why it mattered: "ahead of the oldest open
+   * loop". It did not merely misfile a notification — a cron was outranking a dying deal on the
+   * screen whose entire job is telling her what to do.
+   *
+   * NOTHING IS LOST. `routes/today.ts` already raises a HIGH alert for every duty that has not
+   * fired within twice its cadence, on the surface carrying the other ~30 machinery items. So the
+   * inverted assertion is the whole fix: overdue or not, suspended or not, the contract is about
+   * her work.
    */
-  it("says nothing while the audit pass is not yet due", async () => {
-    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ?, suspended = 0 WHERE id = 'duty_site_audit_repair'`)
-      .bind(Date.now() + 3 * 86_400_000).run();
-    const c = await executionContract(env as any, 1);
-    expect(c.action).not.toMatch(/Ahrefs/i);
-  });
-
-  it("puts a missed Ahrefs pass at the top of the day, ahead of the oldest open loop", async () => {
+  it("keeps a missed Ahrefs pass OUT of the contract, however overdue it is", async () => {
     await env.DB.prepare(`INSERT INTO days (id, date_ts, created_at) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING`)
       .bind(DAY, Date.parse(`${DAY}T00:00:00Z`), Date.now()).run();
     const old = Date.now() - 30 * 86_400_000;
@@ -305,20 +308,42 @@ describe("the execution contract closes before it starts", () => {
       `INSERT INTO open_loops (id, day_id, kind, title, priority, status, created_at, updated_at) VALUES (?,?,?,?,?, 'open', ?, ?)`,
     ).bind(uid("loop"), DAY, "other", "Something older", 1, old, old).run();
     await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ?, suspended = 0 WHERE id = 'duty_site_audit_repair'`)
-      .bind(Date.now() - 4 * 86_400_000).run();
+      .bind(Date.now() - 40 * 86_400_000).run();
 
-    const c = await executionContract(env as any, 1);
-    expect(c.action).toMatch(/Ahrefs/i);
-    // It says WHY in the facts, not as a timer she can ignore.
-    expect(c.why).toMatch(/never reported once|days since the last audit finding/);
-    expect(c.why).toMatch(/due 4 day/);
-  });
-
-  it("treats a suspended pass as a decision rather than a gap", async () => {
-    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ?, suspended = 1 WHERE id = 'duty_site_audit_repair'`)
-      .bind(Date.now() - 30 * 86_400_000).run();
     const c = await executionContract(env as any, 1);
     expect(c.action).not.toMatch(/Ahrefs/i);
+    expect(c.action).not.toMatch(/launchd/i);
+    expect(c.why ?? "").not.toMatch(/has not reported/i);
+
+    // AND THE WORK IT WAS DISPLACING IS BACK. This is the half that makes the removal a fix rather
+    // than a deletion: the oldest open loop reaches her again.
+    expect(c.action).toMatch(/Something older/);
+  });
+
+  it("keeps machinery out of the proposed priorities too, not only out of the pillar", async () => {
+    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ?, suspended = 0 WHERE id = 'duty_site_audit_repair'`)
+      .bind(Date.now() - 40 * 86_400_000).run();
+
+    const [wealth, execution] = [
+      await wealthContract(env as any, 1),
+      await executionContract(env as any, 1),
+    ];
+    for (const p of proposedPriorities(1, wealth, execution)) {
+      expect(p.text).not.toMatch(/Ahrefs|launchd|has not reported/i);
+    }
+  });
+
+  it("says nothing about the pass whether it is due, overdue or suspended", async () => {
+    for (const [label, dueAt, suspended] of [
+      ["not yet due", Date.now() + 3 * 86_400_000, 0],
+      ["overdue", Date.now() - 4 * 86_400_000, 0],
+      ["suspended", Date.now() - 30 * 86_400_000, 1],
+    ] as const) {
+      await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ?, suspended = ? WHERE id = 'duty_site_audit_repair'`)
+        .bind(dueAt, suspended).run();
+      const c = await executionContract(env as any, 1);
+      expect(c.action, `contract mentioned the pass while ${label}`).not.toMatch(/Ahrefs/i);
+    }
     await env.DB.prepare(`UPDATE standing_duties SET suspended = 0 WHERE id = 'duty_site_audit_repair'`).run();
   });
 });

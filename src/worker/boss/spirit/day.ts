@@ -17,7 +17,8 @@
 import { newId } from "../lib/id";
 import { monthIdInZone } from "../../../shared/boss/timezone";
 import {
-  ADVISORY_NOTE, CANON_WINDOW_TYPES, buildAlmanac, moonPhase, moonPosition, type AlmanacEvent,
+  ADVISORY_NOTE, CANON_WINDOW_TYPES, buildAlmanac, currentLunation, moonPhase, moonPosition,
+  type AlmanacEvent, type CurrentLunation,
 } from "./astro";
 
 const DAY_MS = 86_400_000;
@@ -282,6 +283,20 @@ export interface SpiritSignal {
     hours_away: number;
     detail: unknown;
   } | null;
+  /**
+   * THE CYCLE SHE IS CURRENTLY INSIDE, which `major_event` is not and was never meant to be.
+   *
+   * Her instruction of 13 Sep 2026: "evn tho its sept 13 i should still be able to see the new moon
+   * in virgo section for 2 weeks until the next major lunation". `major_event` answers "is something
+   * about to happen" and correctly goes null once it has; this answers "what opened the cycle I am
+   * in", which has no null — there is always one, and the boundary is the next major lunation rather
+   * than a fixed fortnight.
+   *
+   * NEVER NULL, DELIBERATELY. It is computed from the same Meeus series as the almanac rather than
+   * read from `astro_calendar`, because a lapse in that table's coverage would empty this section —
+   * and an empty "what cycle am I in" is indistinguishable from the bug it exists to fix.
+   */
+  current_lunation: CurrentLunation;
   astro: {
     day: string;
     phase: string;
@@ -304,6 +319,15 @@ export interface SpiritSignal {
     ideal: number;
     met: boolean;
     tone: string;
+    /**
+     * WHAT SHE ACTUALLY RECORDED, not only how many.
+     *
+     * The day view carried a COUNT(*) and nothing else, so the Spirit panel could show "4 this
+     * month" and could not show what any of the four were. That is how four accidental rows
+     * survived on screen looking exactly like four months' worth of practice. A count is a number;
+     * this is the record.
+     */
+    entries: { id: string; ts: number; kind: string; note: string | null; recipient: string | null }[];
   };
   ancestors: {
     month: string; minutes: number; target_minutes: number; met: boolean; tone: string;
@@ -364,7 +388,10 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
   const [rituals, contributions, ancestors, openManifestations, evidenceThisMonth, reality] = await Promise.all([
     db.prepare(`SELECT id, name, cadence, anchor, last_done_at FROM rituals WHERE status = 'active'`)
       .all<{ id: string; name: string; cadence: string; anchor: string | null; last_done_at: number | null }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM contributions WHERE month = ?`).bind(month).first<{ n: number }>(),
+    db
+      .prepare(`SELECT id, ts, kind, note, recipient FROM contributions WHERE month = ? ORDER BY ts DESC`)
+      .bind(month)
+      .all<{ id: string; ts: number; kind: string; note: string | null; recipient: string | null }>(),
     db.prepare(`SELECT COALESCE(SUM(minutes),0) AS minutes FROM ancestor_entries WHERE month = ?`).bind(month).first<{ minutes: number }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM manifestations WHERE status = 'open'`).first<{ n: number }>(),
     db
@@ -401,7 +428,8 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
     .filter(({ verdict }) => verdict.due)
     .map(({ r, verdict }) => ({ id: r.id, name: r.name, cadence: r.cadence, last_done_at: r.last_done_at, why: verdict.why }));
 
-  const contributionCount = contributions?.n ?? 0;
+  const contributionRows = contributions.results ?? [];
+  const contributionCount = contributionRows.length;
   const ancestorMinutes = ancestors?.minutes ?? 0;
 
   /*
@@ -454,6 +482,11 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
      * deliberately. `null` means "nothing major within two days" and is rendered as that sentence.
      */
     major_event: majorEvent,
+    /*
+     * COMPUTED, NOT QUERIED. One call, no row, no network — see `currentLunation` for why the
+     * almanac table is the wrong source for this particular question.
+     */
+    current_lunation: currentLunation(now),
     astro: {
       day: astro.id,
       phase: astro.phase,
@@ -474,6 +507,7 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
       minimum: CONTRIBUTION_MINIMUM,
       ideal: CONTRIBUTION_IDEAL,
       met: contributionCount >= CONTRIBUTION_MINIMUM,
+      entries: contributionRows,
       // Canon §44 is explicit that this is not a daily practice and not a debt.
       tone:
         contributionCount === 0

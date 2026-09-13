@@ -69,6 +69,13 @@ export function Spirit() {
   const sky = signal.sky;
   const major = signal.major_event ?? null;
   /*
+   * THE CYCLE, WHICH IS A DIFFERENT QUESTION FROM THE EVENT. `major_event` answers "is something
+   * about to happen" and is correctly null most of the time; `current_lunation` answers "what cycle
+   * am I in" and is never null. The `?? null` is for a stale bundle served a payload without the
+   * field, not for an expected absence.
+   */
+  const lunation = signal.current_lunation ?? null;
+  /*
    * The two things her 12 September mail moved off the daily briefing and onto this page: the
    * astronomical dashboard at her report's precision, and the locked Money / Career / Travel Map.
    */
@@ -84,10 +91,21 @@ export function Spirit() {
    */
   const at = (ts: number) => {
     const opts: Intl.DateTimeFormatOptions = { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" };
-    const local = new Date(ts).toLocaleString(undefined, opts);
+    /*
+     * HER ZONE, NOT THE BROWSER'S — which is what the rest of this file already does and this
+     * helper did not. `toLocaleString(undefined, …)` renders in whatever zone the device is in, so
+     * the one block she asked to be prominent would have shifted by an hour the moment she opened
+     * it on a laptop in another city, silently, with "your clock is shown above" printed under it.
+     * The header of this file states the rule; this helper was the exception nobody had noticed.
+     */
+    const local = `${inOwnerZone(ts, opts)} ${OWNER_TIMEZONE_LABEL}`;
     const eastern = new Date(ts).toLocaleString("en-US", { ...opts, timeZone: "America/New_York" });
     return { local, eastern };
   };
+
+  /** Degrees AND arcminutes, the precision rule this page already holds for the ephemeris. */
+  const deg = (d: number) =>
+    `${Math.floor(d)}°${String(Math.round((d - Math.floor(d)) * 60)).padStart(2, "0")}′`;
   const when = (ts: number) => {
     const days = Math.round((ts - Date.now()) / 86_400_000);
     return days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
@@ -136,17 +154,57 @@ export function Spirit() {
             Advisory only — context, never a cause and never a permission.
           </div>
         </div>
-      ) : (
+      ) : lunation ? (
         /*
-         * AN HONEST EMPTY STATE, DISTINCT FROM A FAILED ONE. `signal` loaded — we are past the
-         * Loading guard and past ErrorNotice — so "nothing major" is a finding about the sky rather
-         * than a fetch that did not come back, and it says which.
+         * ─── THE CYCLE SHE IS IN, WHICH IS NEVER NOTHING ───────────────────────
+         *
+         *   "spirit page is now passed the new moon in virgo but u should so the last major
+         *    lunation so evn tho its sept 13 i should still be able to see the new moon in virgo
+         *    section for 2 weeks until the next major lunation"
+         *
+         * THIS SLOT USED TO READ "No major event in the next two days", and on 13 September that is
+         * what it said — ten days into the cycle the Virgo new moon opened. `major_event` looks
+         * forward forty-eight hours, so the page forgot the event the instant it passed.
+         *
+         * THAT WAS THE WRONG MODEL, not a horizon that needed widening. A new moon is not a
+         * notification that expires; it OPENS A CYCLE, and she is inside that cycle in the same way
+         * she is inside September. So the panel now always names the lunation she is in, and the
+         * imminent-event panel above takes over only when something is actually about to happen —
+         * two different questions, each with its own answer, neither pretending to be the other.
+         *
+         * BOTH ENDS OF THE WINDOW ARE SHOWN. "Ten days in" means nothing without "four to go", and
+         * the boundary is the computed next lunation rather than a fixed fortnight, which would
+         * drift against a 29.53-day month and be wrong by a day every couple of cycles.
          */
         <div className="panel">
-          <div className="row-title">No major event in the next two days</div>
+          <div style={{ fontSize: "1.5rem", fontWeight: 600, lineHeight: 1.2 }}>{lunation.current.label}</div>
+          <div style={{ fontSize: "1.05rem", marginTop: 4 }}>
+            The cycle you are in — {lunation.days_since === 0 ? "today" : `day ${lunation.days_since + 1}`} of it.
+          </div>
           <div className="row-sub">
-            New moons, full moons and eclipses appear here at full size when one is within
-            forty-eight hours. This is the sky being quiet, not a reading that failed.
+            {at(lunation.current.at).local} · {at(lunation.current.at).eastern} Eastern ·{" "}
+            {deg(lunation.current.degrees_in_sign)} {lunation.current.sign}
+          </div>
+          <div className="row-sub" style={{ marginTop: 6 }}>
+            It runs until the {lunation.next.label} — {at(lunation.next.at).local}, {when(lunation.next.at)}.
+          </div>
+          <div className="row-sub" style={{ marginTop: 8 }}>
+            Advisory only — context, never a cause and never a permission.
+          </div>
+        </div>
+      ) : (
+        /*
+         * AN HONEST EMPTY STATE, DISTINCT FROM A FAILED ONE, and now genuinely unreachable in
+         * ordinary operation: `current_lunation` is computed rather than queried and there is always
+         * one. It is kept for the case this screen is served an older payload that has no
+         * `current_lunation` field at all — a stale cached bundle, or a Worker mid-deploy — because
+         * the alternative is a blank slot that reads as a broken page.
+         */
+        <div className="panel">
+          <div className="row-title">The sky could not be read</div>
+          <div className="row-sub">
+            There is always a lunation in progress, so this is a reading that did not arrive rather
+            than a quiet sky. Nothing here is a reason to act or not act either way.
           </div>
         </div>
       )}
@@ -284,10 +342,20 @@ export function Spirit() {
                       {t.applying ? "" : " · separating"}
                     </div>
                     <div className="row-sub">{t.meaning}</div>
+                    {/*
+                      * ARCMINUTES HERE TOO, and this block was the exception until 13 Sep 2026.
+                      *
+                      * The comment further down this file states the rule and states its reason:
+                      * "at one decimal place a 0°16′ orb and a 0°18′ orb are both 0.3°". That is
+                      * precisely an ORB, and this row was rendering orbs at one decimal — the rule
+                      * was written and the one block it was written about kept its own format.
+                      * Found by `validate:lunation-outlives-moment`, which is the value of holding a
+                      * page to a rule rather than to a paragraph describing one.
+                      */}
                     <div className="row-sub">
-                      {t.body_name} now in {t.sign} {t.degrees_in_sign.toFixed(1)}° · your natal{" "}
-                      {t.natal_point_name} at {t.natal_sign} {t.natal_degrees_in_sign.toFixed(1)}° ·{" "}
-                      {t.orb.toFixed(1)}° from exact
+                      {t.body_name} now in {t.sign} {deg(t.degrees_in_sign)} · your natal{" "}
+                      {t.natal_point_name} at {t.natal_sign} {deg(t.natal_degrees_in_sign)} ·{" "}
+                      {deg(t.orb)} from exact
                     </div>
                   </div>
                 </div>
@@ -508,18 +576,7 @@ export function Spirit() {
       )}
 
       <p className="eyebrow">Contribution — {contribution.month}</p>
-      <div className="panel">
-        <div className="stats">
-          <div className="stat"><div className="stat-n">{contribution.count}</div><div className="stat-l">this month</div></div>
-          <div className="stat"><div className="stat-n">{contribution.minimum}</div><div className="stat-l">the floor</div></div>
-          <div className="stat"><div className="stat-n">{contribution.ideal}</div><div className="stat-l">a good month</div></div>
-        </div>
-        <p className="row-sub">{contribution.tone}</p>
-        <button className="btn" style={{ width: "100%" }}
-                onClick={() => api.recordContribution({ kind: "help" }).then(load).catch(setError)}>
-          Record a contribution
-        </button>
-      </div>
+      <ContributionPanel contribution={contribution} onDone={load} onError={setError} />
 
       {/*
         * THE ANCESTOR HOUR IS A STANDING REMINDER, and there is deliberately no dismiss control.
@@ -873,6 +930,162 @@ function AddManifestation({ onDone }: { onDone: (id: string) => void }) {
               disabled={busy || !title.trim() || !statement.trim() || !firstAction.trim()} onClick={submit}>
         {busy ? "Saving…" : "Hold it"}
       </button>
+    </div>
+  );
+}
+
+/**
+ * THE CONTRIBUTION PRACTICE — canon §44, and the button that had to be replaced.
+ *
+ * ─── What went wrong ───────────────────────────────────────────────────────
+ *
+ * This panel was three bare numbers and a button reading "Record a contribution". The owner pressed
+ * it not knowing what it was — "i dont know what 'record a contribution' is i just pushed the
+ * button" — and it posted `{ kind: "help" }` with no note, four times in 23 seconds. Her September
+ * then read "4 this month" against an ideal of four: a full month's practice, logged by accident,
+ * in under half a minute.
+ *
+ * Three faults in one line of JSX, and all three are the panel's, not hers:
+ *
+ *   1. IT DID NOT SAY WHAT IT WAS. A screen that offers an action without naming the practice
+ *      behind it is a screen that invites exactly this.
+ *   2. IT RECORDED NOTHING. `kind` was hardcoded and `note` was never written, though the column
+ *      has always existed. In December she could not look back and see what she actually did. A
+ *      practice log that cannot be read back is a counter, not a practice.
+ *   3. IT COULD NOT BE UNDONE. Four taps, four rows, and the only fix was an engineer with a
+ *      terminal.
+ *
+ * ─── What this does NOT do, deliberately ───────────────────────────────────
+ *
+ * No streak. No progress bar toward four. No nudge, no reminder, no celebration of hitting the
+ * ideal. §44 says "no guilt, no daily requirement" and the tone IS the specification — a progress
+ * bar toward "a good month" is guilt with a nicer name, and a streak turns a practice of giving
+ * into something you can fail at. The count is shown because she asked what it was; it is a
+ * reflection, not a goal, and the copy says so in those words.
+ *
+ * The note is REQUIRED, and that is not a bar to clear. It is what makes the log readable in
+ * December, and it is what makes an accidental entry impossible — there is nothing to accidentally
+ * type. Asking what she did is not asking her to do more.
+ */
+function ContributionPanel({ contribution, onDone, onError }: {
+  contribution: any;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState("help");
+  const [note, setNote] = useState("");
+  const [recipient, setRecipient] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const entries: any[] = contribution.entries ?? [];
+
+  async function submit() {
+    if (note.trim().length < 4) {
+      return onError(new Error("Say what it was, in a few words. That is the whole record."));
+    }
+    setBusy(true);
+    try {
+      await api.recordContribution({
+        kind,
+        note: note.trim(),
+        recipient: recipient.trim() || undefined,
+      });
+      setNote(""); setRecipient(""); setOpen(false);
+      onDone();
+    } catch (e) { onError(e); } finally { setBusy(false); }
+  }
+
+  async function remove(id: string) {
+    setBusy(true);
+    try { await api.removeContribution(id); onDone(); }
+    catch (e) { onError(e); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="panel">
+      {/*
+        * SAID FIRST, ABOVE THE NUMBERS. The numbers meant nothing to a reader who did not know what
+        * was being counted, which is the whole of what went wrong here.
+        */}
+      <p className="row-sub">
+        A contribution is an act of giving or helping — money, time, a hand with something, teaching
+        someone, an introduction that mattered. One a month is the whole requirement and four is a
+        good month. There is no daily version of this, no streak, and nothing is owed for a month
+        that had one.
+      </p>
+
+      <div className="stats">
+        <div className="stat"><div className="stat-n">{contribution.count}</div><div className="stat-l">this month</div></div>
+        <div className="stat"><div className="stat-n">{contribution.minimum}</div><div className="stat-l">the floor</div></div>
+        <div className="stat"><div className="stat-n">{contribution.ideal}</div><div className="stat-l">a good month</div></div>
+      </div>
+      <p className="row-sub">{contribution.tone}</p>
+
+      {/*
+        * THE ENTRIES, NOT JUST THE COUNT. `contribution.entries` came back from the API all along
+        * and the panel rendered none of it — so the record she was building was invisible to her on
+        * the one screen that was building it.
+        */}
+      {entries.length > 0 && (
+        <>
+          <p className="eyebrow">What you recorded</p>
+          {entries.map((entry) => (
+            <div className="row" key={entry.id}>
+              <div className="row-main">
+                <div className="row-title">{entry.note ?? "No note recorded"}</div>
+                <div className="row-sub">
+                  {new Date(entry.ts).toLocaleDateString()} · {entry.kind}
+                  {entry.recipient ? ` · ${entry.recipient}` : ""}
+                </div>
+              </div>
+              <div className="row-actions">
+                <button className="btn btn-small" disabled={busy} onClick={() => void remove(entry.id)}>
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {open ? (
+        <>
+          <label className="field">
+            <span>What was it?</span>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Covered Dee's deposit · an hour on the phone with Ray"
+              aria-label="What the contribution was"
+            />
+          </label>
+          <label className="field">
+            <span>Kind</span>
+            <select value={kind} onChange={(e) => setKind(e.target.value)}>
+              {["money", "time", "help", "teaching", "introduction", "other"].map((k) => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Who it was for (optional)</span>
+            <input value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+          </label>
+          <div className="decide">
+            <button className="btn" disabled={busy} onClick={() => { setOpen(false); setNote(""); }}>
+              Cancel
+            </button>
+            <button className="btn btn-approve" disabled={busy || note.trim().length < 4} onClick={() => void submit()}>
+              {busy ? "…" : "Record it"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <button className="btn" style={{ width: "100%" }} onClick={() => setOpen(true)}>
+          Record something you gave or helped with
+        </button>
+      )}
     </div>
   );
 }

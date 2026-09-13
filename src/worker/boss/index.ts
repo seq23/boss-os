@@ -275,17 +275,23 @@ export async function runScheduled(env: Env, now = Date.now()): Promise<CronOutc
   await step("expiry_sweep", () => runExpirySweep(env));
   await step("promotion_sweep", () => runPromotionSweep(env));
   /*
-   * WEEKLY, NOT DAILY, and skipped again when nothing of substance moved.
+   * DAILY, AT THE END OF HER DAY, and skipped again when nothing of substance moved.
    *
-   * The owner's instruction on 6 Sep 2026: "i think the cron job should be only 1x per week right
-   * now. i dont do enough on this system to snapshot more than that." The interval honours that.
-   * `skipIfUnchanged` honours the reason behind it - on a quiet week even the weekly copy is a
-   * duplicate of the one before it, and a vault full of identical files makes the one restore
-   * that matters harder to find, not easier.
+   * The owner's instruction on 6 Sep 2026 was weekly - "i dont do enough on this system to snapshot
+   * more than that" - and it did its job: the 96-a-day flood stopped. Her instruction on 13 Sep 2026
+   * supersedes it: one per day, at the end of the day. A week of work is a week of work to lose.
    *
-   * A skip is a recorded step with its reason, never an absent one. "No snapshot this week
-   * because nothing changed" and "no snapshot this week" are different claims, and only the
-   * first one is trustworthy.
+   * "END OF THE DAY" IS THE PART THAT NEEDED CARE, and it lives in `snapshotDue` rather than here:
+   * a window anchored to 20:00 on her clock, so the copy is taken after the day's edits rather than
+   * drifting into the middle of them. See `cron/cadence.ts`.
+   *
+   * `skipIfUnchanged` honours the reason behind the original instruction - on a quiet day the copy
+   * is a duplicate of yesterday's, and a vault full of identical files makes the one restore that
+   * matters harder to find, not easier. It is also what keeps ninety days of retention cheap.
+   *
+   * A skip is a recorded step with its reason, never an absent one. "No snapshot today because
+   * nothing changed" and "no snapshot today" are different claims, and only the first is
+   * trustworthy.
    */
   await step("snapshot", async () => {
     const last = await env.DB
@@ -294,7 +300,7 @@ export async function runScheduled(env: Env, now = Date.now()): Promise<CronOutc
     if (!snapshotDue(now, last?.ts ?? null)) {
       return { skipped: true, reason: "not_due", last_at: last?.ts ?? null };
     }
-    return takeSnapshot(env, "weekly", { skipIfUnchanged: true });
+    return takeSnapshot(env, "daily", { skipIfUnchanged: true, now });
   });
   // Retention runs after the snapshot, so a fresh copy is already in the vault before anything
   // old is considered for deletion. Never the other way round.

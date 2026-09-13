@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import { openNavIfCollapsed, openSystemAreaIfCollapsed } from "./nav";
 
 /**
@@ -103,6 +103,48 @@ export async function emptySlots(page: Page): Promise<Array<{ what: string; text
 }
 
 /**
+ * How long a destination is given to stop being blank before the blank is reported.
+ *
+ * FIVE SECONDS, and the budget is deliberately generous. Measured 22 Aug 2026: at a load average
+ * of 42 this sweep reported four Employees lists as unexplained blanks that were simply still
+ * being fetched, and every one of them was a page that renders its empty state correctly. A sweep
+ * that reports a busy machine as a product defect costs somebody an afternoon and teaches them
+ * the suite lies, which is more expensive than the seconds this spends.
+ *
+ * It is only ever spent in full on a page that stays blank — a page that settles is released the
+ * moment it does. So a healthy sweep costs nothing extra, and a sweep over a genuinely broken
+ * product costs this much per broken page, which is why `sweepSurfaces` widens the test's timeout
+ * to cover that worst case rather than let the informative failure be replaced by a timeout.
+ */
+export const SETTLE_BUDGET_MS = 5_000;
+
+/** Requests the browser has started and not yet finished, per page — the real "network idle". */
+const inFlight = new WeakMap<Page, Set<Request>>();
+
+/**
+ * Track every request the page starts, from the first time this is called.
+ *
+ * `page.waitForLoadState("networkidle")` is NOT this. Load states belong to a navigation: once a
+ * document has reached `networkidle` the state is recorded as reached, and asking for it after an
+ * in-app click resolves immediately — the fetch the click provoked has not started yet, or has
+ * started but the browser's notification of it has not reached Playwright. On a starved runner
+ * that window is wide. Measured 12 Sep 2026 on a 2-core CI runner: eight lists on four pages were
+ * reported as unexplained blanks while their fetches (480–1180ms) were still in the air; the same
+ * sweep with the fetch deferred by 700ms reproduces the identical eight on a laptop. Counting the
+ * requests ourselves is the only way to know the page is quiet.
+ */
+function watchRequests(page: Page): Set<Request> {
+  const existing = inFlight.get(page);
+  if (existing) return existing;
+  const pending = new Set<Request>();
+  inFlight.set(page, pending);
+  page.on("request", (r) => pending.add(r));
+  page.on("requestfinished", (r) => pending.delete(r));
+  page.on("requestfailed", (r) => pending.delete(r));
+  return pending;
+}
+
+/**
  * Go to a destination and wait for it to have SETTLED.
  *
  * Loading and empty share one slot by design ("told apart by tone — never a blank"), so a sweep
@@ -110,33 +152,36 @@ export async function emptySlots(page: Page): Promise<Array<{ what: string; text
  * unexplained blank. Reporting a race as a defect is worse than not testing for it: it costs
  * somebody an afternoon and teaches them the suite lies.
  *
+ * SETTLED MEANS ALL OF: no request in flight, nothing on the page still announcing that it is
+ * reading, two consecutive reads that agree — AND NO BLANK LIST. A blank is the one state this
+ * sweep exists to judge, and a blank while a fetch is late looks identical to a blank that is a
+ * defect. So a blank is never accepted as settled; it is given the whole budget to become
+ * something else, and only reported if it does not. An earlier version accepted two agreeing blank
+ * reads a quarter-second apart as settled, which is how a slow runner became eight false defects.
+ *
  * Returns false when the destination is not reachable for this reader, so a caller can tell "the
  * page said nothing" from "there was no page".
  */
 export async function visitSurface(page: Page, label: string): Promise<boolean> {
+  const pending = watchRequests(page);
   await openNavIfCollapsed(page);
   const target = page.getByRole("button", { name: label, exact: true }).first();
   if (!(await target.isVisible().catch(() => false))) await openSystemAreaIfCollapsed(page);
   if (!(await target.isVisible().catch(() => false))) return false;
   await target.click();
-  await page.waitForLoadState("networkidle").catch(() => undefined);
 
-  /*
-   * FIVE SECONDS, and the budget is deliberately generous. Measured 22 Aug 2026: at a load average
-   * of 42 this sweep reported four Employees lists as unexplained blanks that were simply still
-   * being fetched, and every one of them was a page that renders its empty state correctly. A sweep
-   * that reports a busy machine as a product defect costs somebody an afternoon and teaches them
-   * the suite lies, which is more expensive than the seconds this spends.
-   */
+  const deadline = Date.now() + SETTLE_BUDGET_MS;
   let last = "";
-  for (let i = 0; i < 20; i += 1) {
-    const now = JSON.stringify([await blankLists(page), await emptySlots(page)]);
-    // Settled when two consecutive reads agree AND nothing is still announcing that it is reading.
-    if (now === last && !/…|\.\.\./.test(now)) return true;
+  for (;;) {
+    const blanks = await blankLists(page);
+    const slots = await emptySlots(page);
+    const now = JSON.stringify([blanks, slots]);
+    const stillReading = /…|\.\.\./.test(now);
+    if (pending.size === 0 && !stillReading && blanks.length === 0 && now === last) return true;
+    if (Date.now() >= deadline) return true;
     last = now;
     await page.waitForTimeout(250);
   }
-  return true;
 }
 
 export interface SurfaceComplaints {
@@ -158,6 +203,10 @@ export interface SurfaceComplaints {
 export async function sweepSurfaces(page: Page): Promise<SurfaceComplaints> {
   const destinations = await allDestinations(page);
   expect(destinations.length, "the rail must actually offer destinations to walk").toBeGreaterThan(20);
+  // A page that stays blank costs SETTLE_BUDGET_MS before it is reported. If every page were
+  // broken the walk would outlive the default test budget and the one useful artefact — the
+  // whole list of what each page failed to say — would be replaced by "Test timeout exceeded".
+  test.info().setTimeout(Math.max(test.info().timeout, 30_000 + destinations.length * SETTLE_BUDGET_MS));
 
   const complaints: SurfaceComplaints = { silent: [], unoriented: [], unexplained: [] };
   for (const label of destinations) {

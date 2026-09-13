@@ -90,6 +90,132 @@ export async function spiritContract(env: Env, dayId: string, hardDay: boolean):
  */
 const WEALTH_MEANS = "Money in. Buyers, LPs, and the people who send you both. Camille and Monique's pillar.";
 
+/** Monday to Friday. 0 is Sunday, per `duties/cadence.ts`. */
+export function isWeekday(weekday: number): boolean {
+  return weekday >= 1 && weekday <= 5;
+}
+
+/**
+ * ONE CONCRETE BROKERAGE THING SHE COULD DO TODAY — Monday to Friday, or nothing at all.
+ *
+ * ─── Her instruction ───────────────────────────────────────────────────────
+ *
+ *   "my today's contract should suggest something in brokerage M-F"
+ *
+ * ─── Why the contract was not already doing it ─────────────────────────────
+ *
+ * §5.3 gives the brokerage right of first refusal on the first money move and `wealthContract`
+ * honours that — on paper. In practice the two brokerage sources above it are frequently empty
+ * (`mailbox_findings` pairs and `sourcing_candidates`), so a real weekday fell through to the
+ * relationship touch or, on an empty `relationships` table, to the bootstrap line. She was being
+ * handed set-up work on a business that has live inventory sitting in the system.
+ *
+ * ─── What it is allowed to read, which is narrower than it looks ───────────
+ *
+ * The 2,142-row interest ledger is NOT in this database and must not be: `interest-match.mjs`
+ * states the standing rule — "Named counterparties, assets and sizes never reach the Boss OS
+ * database" — and it lives on her Mac. So "a lot with no matched counterparty" is genuinely not
+ * derivable here, and this does not pretend otherwise.
+ *
+ * What IS here, sovereign and hers:
+ *   - `capital_book_line` — her own live inventory, stored because she is the counterparty and no
+ *     third party is named in it.
+ *   - `counterparty_crossmatches` — a buyer candidate who also appears on her LP tracker. Public
+ *     institutions with aggregate counts, never a person.
+ *
+ * ─── AND IT IS ALLOWED TO SAY NOTHING ──────────────────────────────────────
+ *
+ * Returning null is a correct and frequent answer. Her standing rule on this lane is that coming
+ * back empty-handed is fine and returning noise is not, and a filler suggestion every weekday is
+ * worse than a quiet day — she would stop reading the section, which costs more than the days it
+ * covered. So there is no fallback here and nothing is invented: two real sources, then null.
+ */
+export async function brokerageMove(
+  env: Env,
+  weekday: number,
+): Promise<{ action: string; why: string; detail?: string[] } | null> {
+  if (!isWeekday(weekday)) return null;
+
+  /*
+   * A FIRM SHE IS ALREADY TALKING TO, AS A BUYER FOR SOMETHING SHE IS CARRYING.
+   *
+   * CONFIRMED ONLY, and that threshold is load-bearing for the same reason the missed-deal pairing
+   * takes `high` alone: a `near` match is a maybe, and a maybe at the top of her morning is a guess
+   * presented as a plan. One wrong "approach them about this" costs a call and some credibility.
+   *
+   * `lp_list` IS SAID OUT LOUD rather than filtered on. Suppressed means suppressed AS AN LP, which
+   * says nothing whatever about approaching the same firm as a buyer — the table's own comment
+   * makes that point, and dropping those rows would hide real opportunities while looking careful.
+   * Naming the list lets her make that call in a second, which is a decision she is qualified to
+   * make and this function is not.
+   */
+  const cross = await env.DB
+    .prepare(
+      `SELECT candidate_name, lp_firm, lp_list, lp_last_sent, why
+         FROM counterparty_crossmatches
+        WHERE status = 'new' AND confidence = 'confirmed'
+        ORDER BY created_at ASC
+        LIMIT 3`,
+    )
+    .all<{ candidate_name: string; lp_firm: string; lp_list: string; lp_last_sent: string | null; why: string }>()
+    .catch(() => null);
+
+  const matches = cross?.results ?? [];
+  if (matches.length > 0) {
+    const top = matches[0]!;
+    return {
+      // NAMES THE FIRM AND THE NEXT ACT. "Review your crossmatches" is a queue; this is a thing to do.
+      action: `${top.lp_firm} is on your LP tracker and came up as a buyer for ${top.candidate_name} — decide whether to approach them on the buy side, and say no if not.`,
+      why:
+        `${top.why} You are already in contact with them${top.lp_last_sent ? ` (last LP send ${top.lp_last_sent})` : ""}, ` +
+        `so this is a conversation you are already having rather than a cold approach. They are on the ` +
+        `"${top.lp_list}" list, which is a fact about them as an LP and says nothing about them as a buyer.`,
+      detail: matches.slice(1).map((m) => `${m.lp_firm} ↔ ${m.candidate_name} — ${m.lp_list}`),
+    };
+  }
+
+  /*
+   * A LOT ON HER BOOK THAT NOBODY CAN SIZE A BUYER FOR.
+   *
+   * `storeLiveBook` deliberately keeps a sizeless lot when she typed `add` or `book` — "if `add` can
+   * hold a name with no number" — rather than throwing the name away. That is right at intake and it
+   * leaves a real gap at the other end: Monique matches on size, so a lot with no number is
+   * inventory that cannot be worked. It is hers to close, in one line, and nobody else can.
+   *
+   * THE BOOK'S AGE IS NOT CHECKED HERE. A stale book is machinery-adjacent nagging and already has
+   * a home in `capital/bookNag.ts` on the alert surface. Two places raising the same fact is the
+   * defect this repository names; one fact, one place.
+   */
+  const sizeless = await env.DB
+    .prepare(
+      `SELECT l.asset, l.side, l.size_text
+         FROM capital_book_line l
+         JOIN capital_book b ON b.id = l.book_id
+        WHERE b.superseded_at IS NULL
+          AND l.size_usd IS NULL AND l.size_min_usd IS NULL
+          AND l.size_max_usd IS NULL AND l.size_shares IS NULL
+        ORDER BY l.rowid
+        LIMIT 3`,
+    )
+    .all<{ asset: string; side: string; size_text: string | null }>()
+    .catch(() => null);
+
+  const unsized = sizeless?.results ?? [];
+  if (unsized.length > 0) {
+    const top = unsized[0]!;
+    return {
+      action: `Put a size on ${top.asset} (${top.side}) — reply to boss@sequoiataylor.com with #monique and the number.`,
+      why:
+        `It is on your live book with no size, and Monique matches buyers on size — so that lot is ` +
+        `inventory nobody can work. One line closes it, and only you know the number.`,
+      detail: unsized.slice(1).map((l) => `${l.asset} (${l.side}) — ${l.size_text || "no size given"}`),
+    };
+  }
+
+  // Nothing worth saying. That is an answer, and it is the right one more often than not.
+  return null;
+}
+
 export async function wealthContract(env: Env, weekday: number): Promise<PillarContract> {
   const project = firstMoneyProject();
 
@@ -190,11 +316,34 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
   }
 
   /*
+   * ─── SOMETHING IN BROKERAGE, MONDAY TO FRIDAY ─────────────────────────────
+   *
+   * Her instruction: "my today's contract should suggest something in brokerage M-F."
+   *
+   * PLACED HERE, AND THE POSITION IS THE ARGUMENT. §5.3 already gives the brokerage right of first
+   * refusal, and the two sources above are brokerage too — a missed-deal pairing out of her own
+   * mailbox and a reviewed sourcing candidate are both stronger than anything below, so they keep
+   * their rank. What was missing is that when BOTH are empty — which is most days — the contract
+   * fell through to a relationship touch or, on an empty table, to the bootstrap line. She was
+   * being handed set-up work on a business with live inventory sitting in the system.
+   *
+   * So this sits above the touch and below the two stronger brokerage sources: live inventory and a
+   * firm she is already talking to beat a generic touch, and lose to a deal already half-made.
+   *
+   * IT IS ALLOWED TO BE SILENT, and usually is. `brokerageMove` returns null on weekends and on any
+   * weekday with nothing real to say, and there is deliberately no filler behind it — a suggestion
+   * every weekday whether or not one exists is how she learns to skip the section.
+   */
+  const brokerage = await brokerageMove(env, weekday);
+  if (brokerage) {
+    return { available: true, means: WEALTH_MEANS, ...brokerage };
+  }
+
+  /*
    * TOUCHES DUE, FROM THE RANKED LIST — the instrument the system already has and has never had a
    * row in. `relationships` carries strategic importance, trust, opportunity value, cadence days and
    * last contact, with a scoring engine behind it. Built, never populated, invisible because empty.
-   */
-  /*
+   *
    * TOUCHES DUE, JOINED TO THE PERSON, because the name is not on this table.
    *
    * `relationships` holds the scoring — importance, trust, opportunity value, cadence, last contact
@@ -291,61 +440,93 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
  * with six side projects fails by starting rather than by finishing.
  */
 /**
- * How far past its due time the weekly pass may be before the silence is itself the news.
+ * AT MOST ONE SIDE-HUSTLE ITEM A DAY, AND ONLY WHERE A HUMAN IS ACTUALLY REQUIRED.
  *
- * ONE DAY, not seven. The duty's own `next_due_at` already carries "when it should have run", and
- * that date only moves when the job reports — so being past it at all is the missed pass. The day
- * of slack is for the ordinary case: launchd fires at 06:00 and she may open the screen at 06:30.
- */
-const AUDIT_GRACE_MS = 86_400_000;
-
-/**
- * Danielle's weekly Ahrefs pass, when it has not reported.
+ * ─── Her instruction ───────────────────────────────────────────────────────
  *
- * READ FROM THE FINDINGS, NOT FROM `last_run_at`. The duty row's clock is advanced by the ingest
- * endpoint, so the two agree today — and reading the row would make this a check of a counter
- * rather than of the thing the counter is about. The last time a finding was WRITTEN is the last
- * time this employee actually delivered, and it stays true if somebody ever advances that clock
- * from somewhere else. Guarded so a database without the table yet reads as "nothing to say".
+ *   "should suggest something that requires a human touch from one of the side hustles when
+ *    appropriate n o more than 1 per day as appropriate"
+ *
+ * ─── The cap is the feature, not a limit on the feature ────────────────────
+ *
+ * "No more than 1 per day" is not "usually one". She is protecting the contract from becoming a
+ * list — the same thing §17 does by capping priorities at three, and the same thing
+ * `proposedPriorities` does by refusing to pad a short list. So this returns ONE item or none, and
+ * the count is enforced by the shape of the function rather than by a caller remembering.
+ *
+ * ─── "Requires a human touch" is DECLARED, never inferred ──────────────────
+ *
+ * `owned_deliverables.blocker` is free prose — "waiting on the cover files", "Amazon has not
+ * replied". Reading her out of that text would be matching by RESEMBLANCE, which this repository
+ * refuses everywhere it matters: the Ahrefs fixer matches repositories by REPO_IDENTITY.md "never
+ * by resemblance", and the contacts sync refuses a batch it cannot source. A guess about whether
+ * something needs her, placed in her day, is a guess she has to check before she can trust — and
+ * one wrong one teaches her to skim.
+ *
+ * So 0233 adds `needs_owner`, and the test it encodes is narrow: THIS CANNOT PROCEED WITHOUT HER
+ * JUDGEMENT, HER NAME, HER SIGNATURE OR HER VOICE. Not "important". Not "stuck". Work an employee
+ * or a script can do is work to DISPATCH, and putting it in front of her instead is how the
+ * contract turns into a list of things she has to route.
+ *
+ * ─── AND IT MUST SAY WHY, or it does not appear ────────────────────────────
+ *
+ * A row claiming "this needs you" that cannot say what only she can do is a puzzle, not a task. The
+ * column is nullable because ALTER TABLE cannot add NOT NULL without inventing a default; the
+ * refusal lives here, where it is enforceable, and a test proves it.
+ *
+ * ─── The property list comes from `projects.ts` and nowhere else ───────────
+ *
+ * That file is already the repository's register of what she works on, and is deliberately code
+ * rather than a table. The side hustles are its `spry` lane — Industry Guides, the two SaaS apps,
+ * the three digital-product sites, the YouTube channel — MINUS `authority_network`, which the file
+ * itself excludes in terms: "A cost centre, not a line — never a day's work." The brokerage and
+ * West Peek are not side hustles and have their own pillar.
  */
-async function siteAuditGap(env: Env): Promise<{ action: string; why: string; detail?: string[] } | null> {
-  const duty = await env.DB
-    .prepare(`SELECT suspended, next_due_at FROM standing_duties WHERE id = 'duty_site_audit_repair'`)
-    .first<{ suspended: number; next_due_at: number | null }>()
-    .catch(() => null);
-  // Not installed, or she suspended it on purpose. A suspended duty is a decision, not a gap.
-  if (!duty || duty.suspended) return null;
+export const SIDE_HUSTLE_KEYS = PROJECTS
+  .filter((p) => p.lane === "spry" && p.key !== "authority_network")
+  .map((p) => p.key);
 
-  /*
-   * ─── THE GATE IS "IT WAS DUE AND DID NOT REPORT", NOT "IT HAS BEEN QUIET" ─
-   *
-   * The first version measured only the age of the newest finding, and its own test suite caught
-   * what that meant: on a database where the duty had never yet been due — a fresh install, the
-   * morning after the migration lands, every test fixture in the repository — it fired immediately
-   * and pushed a stalling deal and the oldest open loop off the day. A nag that greets you on
-   * install is one you learn to scroll past, which costs more than the gap it was reporting.
-   *
-   * `next_due_at` is advanced by the ingest endpoint and by nothing else, so a due date still
-   * sitting in the past IS the missed report — the same fact, read from the clock the scheduler
-   * actually keeps. The findings table then supplies how long it has been, which is the part she
-   * can act on. One day of slack because launchd fires at 06:00 and she may open this at 06:30.
-   */
-  if (duty.next_due_at === null) return null;
-  const overdueBy = Date.now() - duty.next_due_at;
-  if (overdueBy < AUDIT_GRACE_MS) return null;
+export async function humanTouch(
+  env: Env,
+): Promise<{ action: string; why: string; detail?: string[] } | null> {
+  const placeholders = SIDE_HUSTLE_KEYS.map(() => "?").join(",");
+  // RULE 0 AT THE CALL SITE: an empty key list would make this `IN ()`, which matches nothing in
+  // SQLite and would silently retire the feature. If projects.ts ever loses its spry lane this must
+  // be a visible absence, not a query that quietly never matches.
+  if (SIDE_HUSTLE_KEYS.length === 0) return null;
 
-  const last = await env.DB
-    .prepare(`SELECT MAX(found_at) AS at FROM site_audit_findings`)
-    .first<{ at: number | null }>()
+  const row = await env.DB
+    .prepare(
+      `SELECT d.id, d.name, d.project_key, d.needs_owner_why, d.blocker, d.blocked_since, e.name AS employee
+         FROM owned_deliverables d
+         LEFT JOIN employees e ON e.id = d.employee_id
+        WHERE d.needs_owner = 1
+          AND d.state IN ('open','blocked')
+          AND d.project_key IN (${placeholders})
+        ORDER BY COALESCE(d.blocked_since, d.last_activity_at, 0) ASC
+        LIMIT 1`,
+    )
+    .bind(...SIDE_HUSTLE_KEYS)
+    .first<{
+      id: string; name: string; project_key: string; needs_owner_why: string | null;
+      blocker: string | null; blocked_since: number | null; employee: string | null;
+    }>()
     .catch(() => null);
-  const days = last?.at ? Math.floor((Date.now() - last.at) / 86_400_000) : null;
+
+  // No row, or a row that cannot say what only she can do. Both are silence, and silence is the
+  // expected answer on most days — "when appropriate" is permission to have nothing.
+  if (!row || !row.needs_owner_why || !row.needs_owner_why.trim()) return null;
+
+  const project = PROJECTS.find((p) => p.key === row.project_key);
+  const days = row.blocked_since ? Math.floor((Date.now() - row.blocked_since) / 86_400_000) : null;
 
   return {
-    action: "Danielle's Ahrefs pass has not reported — run `ahrefs-audit-fix.sh` or find out why launchd did not.",
-    why: days === null
-      ? `It was due ${Math.floor(overdueBy / 86_400_000)} day(s) ago and has never reported once. A duty that has never delivered is not a cadence yet, it is an install that did not finish.`
-      : `${days} days since the last audit finding, on a weekly duty that was due ${Math.floor(overdueBy / 86_400_000)} day(s) ago. Ahrefs has recrawled since then, so this is a missed pass rather than a quiet week — a quiet week writes a row saying so.`,
-    detail: ["Reports land at /api/boss/engineering/site-audit-findings.", "A week with no findings still writes one row; silence means the job did not run."],
+    action: `${project?.name ?? row.project_key}: ${row.needs_owner_why.trim()}`,
+    why:
+      `${row.name} cannot move without you${row.employee ? ` — ${row.employee} owns it and has taken it as far as she can` : ""}` +
+      `${days !== null ? `, and it has been waiting ${days} day${days === 1 ? "" : "s"}` : ""}.` +
+      ` Everything on this line that someone else could do has been done.`,
+    ...(row.blocker ? { detail: [row.blocker] } : {}),
   };
 }
 
@@ -363,23 +544,38 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
   const MEANS = "Did anything you own actually get built or shipped. Danielle's pillar.";
 
   /*
-   * ─── A DUTY WITH HER NAME ON IT THAT HAS NOT RUN OUTRANKS EVERYTHING HERE ──
+   * ─── WHAT USED TO BE FIRST HERE, AND WHY IT IS GONE ────────────────────────
    *
-   * `duty_site_audit_repair` is Danielle's weekly Ahrefs pass. It runs from launchd on her Mac, and
-   * a laptop that was asleep on Thursday morning is not an unusual event — it is the ordinary one.
+   * This slot held `siteAuditGap()`, which composed:
    *
-   * WHY THIS IS AT THE TOP RATHER THAN A NOTE SOMEWHERE. A weekly job that silently stops running
-   * looks exactly like a weekly job finding nothing, and this codebase has shipped that precise
-   * shape: a duty that fired eleven Sundays, dropped its payload every time, and left `last_run_at`
-   * advancing cheerfully the whole while. Employees cannot drop owned work, so a missed week is a
-   * VISIBLE STATE on the day rather than an absence nobody can see.
+   *     "Danielle's Ahrefs pass has not reported — run `ahrefs-audit-fix.sh` or find out why
+   *      launchd did not."
    *
-   * EIGHT DAYS, NOT SEVEN. A weekly duty is due once every seven, so seven would fire on the
-   * ordinary morning before the job's own slot came round and teach her to ignore it. Eight means
-   * the window has actually been missed.
+   * and returned it AHEAD of a stalling deal and the oldest open loop. The owner found it in her
+   * contract and named the general rule, which is worth more than the instance:
+   *
+   *     "something not working should never be in today's contract it should be in the inbox."
+   *
+   * She is right, and the file already knew it. Fifteen lines below, the comment on the West Peek
+   * fallthrough argues the same thing about a different leak, and `today/runOfShow.ts` deleted the
+   * five machine stages for the identical reason: "'0 of 5 stages complete' told her how far the
+   * MACHINERY had got, on a screen whose whole job is telling her how far SHE had got."
+   *
+   * TODAY'S CONTRACT IS WHAT SHE IS DOING TODAY. A job that did not run is not her work — it is a
+   * notification about her own machinery, and putting it here did not merely misfile it: it
+   * DISPLACED real work, because it returned first. A stalling deal is the symptom this pillar
+   * exists to catch and it was being pushed down the page by a cron.
+   *
+   * NOTHING IS LOST BY DELETING IT, and that is the reason there is no replacement call here.
+   * `routes/today.ts` already raises a HIGH alert for EVERY duty that has not fired within twice
+   * its cadence — `"<name>" has not fired for N days` — on the same alert surface that carries the
+   * other thirty machinery items (credentials, budget, cron, kill switch, stuck tasks). This duty
+   * was never exempt from that. So the contract loses a line it should not have had, and the alert
+   * surface keeps the one it already carried. One fact, one place, which is the rule this
+   * repository states everywhere and broke here.
+   *
+   * Guarded by `scripts/validate/todays-contract-is-her-work.mjs` so the next one cannot be added.
    */
-  const audit = await siteAuditGap(env);
-  if (audit) return { available: true, means: MEANS, ...audit };
 
   const stalled = await stalledDeals(env);
   if (stalled.length > 0) {
@@ -395,6 +591,29 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
       ...(stalled.length > 3 ? { gap: `${stalled.length - 3} more deals are also past their stage threshold.` } : {}),
     };
   }
+
+  /*
+   * ─── ONE SIDE-HUSTLE ITEM THAT NEEDS HER, ABOVE THE OLDEST OPEN LOOP ──────
+   *
+   * "should suggest something that requires a human touch from one of the side hustles when
+   *  appropriate n o more than 1 per day as appropriate"
+   *
+   * WHY IT OUTRANKS THE OLDEST LOOP, which is the only interesting choice here. An open loop is HER
+   * OWN work waiting on her; a `needs_owner` item is SOMEBODY ELSE'S work waiting on her. Holding
+   * the second one up spends two people's time instead of one, and the employee has already taken
+   * it as far as she can. §5.7's "finishing beats starting a fourth thing" is about her own pile and
+   * is not in tension with unblocking someone.
+   *
+   * AND IT LOSES TO A STALLING DEAL, because a deal that has stopped moving is money leaving, and
+   * because §5.5 keeps side projects out of the weekday foreground. This is the narrow exception
+   * §5.5 tolerates: not working the side project, but signing the one thing only she can sign.
+   *
+   * THE CAP IS STRUCTURAL. `humanTouch` returns one item or none, and the contract has one action,
+   * so "no more than 1 per day" cannot be violated by a caller forgetting. Most days it is null —
+   * a declaration is required, the reason is required, and absent either the answer is silence.
+   */
+  const touch = await humanTouch(env);
+  if (touch) return { available: true, means: MEANS, ...touch };
 
   /*
    * OLDEST FIRST, BY `created_at` — the column this table actually has. An earlier draft ordered by

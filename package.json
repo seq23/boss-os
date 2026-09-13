@@ -2,6 +2,10 @@
   "name": "boss-os",
   "private": true,
   "version": "21.0.0",
+  "engines": {
+    "node": ">=24",
+    "npm": ">=11"
+  },
   "description": "West Peek OS \u2014 governed institutional operating system (P0-P12 substrate, P13-P25 operating product).",
   "type": "module",
   "scripts": {
@@ -18,7 +22,7 @@
     "test": "vitest run && vitest run --config vitest.boss.config.ts",
     "test:boss": "vitest run --config vitest.boss.config.ts",
     "typecheck": "tsc --noEmit",
-    "validate": "npm run validate:identity && npm run validate:one-source && npm run validate:no-dead-meter && npm run validate:one-cause && npm run validate:identity-local && npm run validate:gmail && npm run validate:no-spry-sender && npm run validate:filter-accounts && npm run validate:capital-staleness && npm run validate:boss-intake && npm run validate:employee-tags && npm run validate:book-verbs && npm run validate:task-body && npm run validate:audit-fixer && npm run validate:css-classes && npm run validate:reachable && npm run validate:classification && npm run validate:duty-delivery && npm run validate:owned-work && npm run validate:says-why && npm run validate:shared-browser && npm run validate:notice-not-approval && npm run validate:one-sky && npm run validate:briefing-not-chart && npm run validate:heading-rank && npm run validate:launchd-duty-link && npm run validate:approval-promise && npm run validate:kdp-outcome && npm run validate:unread-not-empty && npm run validate:free-brain && npm run validate:risk-clearance && npm run validate:instruction-reaches && npm run validate:handoff && npm run validate:hunt-reaches-hunter && npm run validate:contact-source && npm run typecheck && npm run test",
+    "validate": "npm run validate:identity && npm run validate:one-source && npm run validate:no-dead-meter && npm run validate:one-cause && npm run validate:identity-local && npm run validate:gmail && npm run validate:no-spry-sender && npm run validate:filter-accounts && npm run validate:capital-staleness && npm run validate:boss-intake && npm run validate:employee-tags && npm run validate:book-verbs && npm run validate:task-body && npm run validate:audit-fixer && npm run validate:css-classes && npm run validate:reachable && npm run validate:classification && npm run validate:duty-delivery && npm run validate:owned-work && npm run validate:says-why && npm run validate:shared-browser && npm run validate:notice-not-approval && npm run validate:one-sky && npm run validate:briefing-not-chart && npm run validate:heading-rank && npm run validate:launchd-duty-link && npm run validate:approval-promise && npm run validate:kdp-outcome && npm run validate:unread-not-empty && npm run validate:free-brain && npm run validate:risk-clearance && npm run validate:instruction-reaches && npm run validate:handoff && npm run validate:hunt-reaches-hunter && npm run validate:contact-source && npm run validate:ci-npm-parity && npm run validate:retention-outlasts-checklist && npm run validate:restorable-only && npm run validate:roster-has-a-face && npm run validate:contribution-note && npm run validate:contract-is-her-work && npm run validate:one-human-touch && npm run validate:lunation-outlives-moment && npm run validate:one-mark && npm run typecheck && npm run test",
     "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/seed/generate-ai-employee-seed.mjs --check",
     "validate:api-screens": "node scripts/validate/api-has-a-screen.mjs && node scripts/validate/api-has-a-screen.mjs --self-test",
     "validate:authority": "node scripts/validate/no-unauthorized-effects.mjs && node scripts/validate/no-unauthorized-effects.mjs --self-test && node scripts/seed/generate-machine-seed.mjs --check",
@@ -103,7 +107,7 @@
     "validate:no-spry-sender": "node scripts/validate/spry-vc-never-sends.mjs && node scripts/validate/spry-vc-never-sends.mjs --self-test",
     "validate:filter-accounts": "node scripts/validate/the-filter-says-what-it-dropped.mjs && node scripts/validate/the-filter-says-what-it-dropped.mjs --self-test",
     "capital:review": "node scripts/ops/interest-extract.mjs --review",
-    "validate:capital-staleness": "node scripts/validate/capital-staleness.mjs",
+    "validate:capital-staleness": "node scripts/validate/capital-staleness.mjs && node scripts/validate/capital-staleness.mjs --self-test",
     "capital:buyers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs",
     "capital:sellers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --side sell",
     "capital:hunts": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --from-boss",
@@ -115,7 +119,17 @@
     "capital:book": "node scripts/vault/vault.mjs run -- node scripts/ops/capital-book.mjs",
     "validate:risk-clearance": "node scripts/validate/a-risk-clearance-has-evidence.mjs && node scripts/validate/a-risk-clearance-has-evidence.mjs --self-test",
     "bench:risk-clearance": "node scripts/bench/risk-clearance-bench.mjs",
-    "validate:instruction-reaches": "node scripts/validate/an-instruction-reaches-the-model.mjs && node scripts/validate/an-instruction-reaches-the-model.mjs --self-test"
+    "validate:instruction-reaches": "node scripts/validate/an-instruction-reaches-the-model.mjs && node scripts/validate/an-instruction-reaches-the-model.mjs --self-test",
+    "validate:ci-npm-parity": "node scripts/validate/ci-installs-with-the-npm-that-wrote-the-lock.mjs && node scripts/validate/ci-installs-with-the-npm-that-wrote-the-lock.mjs --self-test",
+    "validate:retention-outlasts-checklist": "node scripts/validate/retention-outlasts-the-checklist.mjs && node scripts/validate/retention-outlasts-the-checklist.mjs --self-test",
+    "validate:restorable-only": "node scripts/validate/a-pruned-snapshot-is-not-offered-for-restore.mjs && node scripts/validate/a-pruned-snapshot-is-not-offered-for-restore.mjs --self-test",
+    "validate:roster-has-a-face": "node scripts/validate/every-employee-has-a-portrait.mjs && node scripts/validate/every-employee-has-a-portrait.mjs --self-test",
+    "validate:contribution-note": "node scripts/validate/a-contribution-says-what-it-was.mjs && node scripts/validate/a-contribution-says-what-it-was.mjs --self-test",
+    "validate:contract-is-her-work": "node scripts/validate/todays-contract-is-her-work.mjs && node scripts/validate/todays-contract-is-her-work.mjs --self-test",
+    "validate:one-human-touch": "node scripts/validate/one-brokerage-move-and-one-human-touch.mjs && node scripts/validate/one-brokerage-move-and-one-human-touch.mjs --self-test",
+    "validate:lunation-outlives-moment": "node scripts/validate/the-lunation-outlives-the-moment.mjs && node scripts/validate/the-lunation-outlives-the-moment.mjs --self-test",
+    "validate:one-mark": "node scripts/validate/the-mark-is-one-drawing.mjs && node scripts/validate/the-mark-is-one-drawing.mjs --self-test && node scripts/ops/render-mark.mjs --check",
+    "ops:render-mark": "node scripts/ops/render-mark.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",
@@ -126,7 +140,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.8.71",
-    "@cloudflare/workers-types": "^5.20260804.1",
+    "@cloudflare/workers-types": "^5.20260911.1",
     "@playwright/test": "^1.61.1",
     "@types/node": "^22.20.1",
     "@types/react": "^18.3.12",
@@ -136,6 +150,6 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vitest": "^2.1.4",
-    "wrangler": "^4.42.0"
+    "wrangler": "^4.131.1"
   }
 }
