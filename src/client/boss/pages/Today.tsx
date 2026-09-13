@@ -750,6 +750,19 @@ function renderDetail(
               * not incomplete — so it reads as its own thing, in its own words, and never as an
               * absence. It was four of these that made a complete report call itself "partial".
               */}
+            {/*
+              * ONE LINE, NOT ELEVEN. A report written before per-section sourcing existed cannot
+              * carry citations, and holding it to the rule emptied her screen the moment the rule
+              * shipped. The fact is stated once, where five identical somatic reasons taught the
+              * same lesson.
+              */}
+            {c.pre_rule_sources && (
+              <p className="brief-absent">
+                This briefing was written before figures carried their own source, so its numbers are
+                not individually cited. Its source list is below.
+              </p>
+            )}
+
             {(c.watching ?? []).length > 0 && (
               <>
                 <p className="today-2">Watching for — {(c.watching ?? []).length}</p>

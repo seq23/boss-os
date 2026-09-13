@@ -1301,6 +1301,12 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
                   spec_sections: BRIEFING_SECTIONS,
                   missing_sections: allMissing,
                   withheld_for_sourcing: sourcing.withheld,
+                  /*
+                   * SAID ONCE, NOT ONCE PER SECTION. A report written before per-section sources
+                   * existed is rendered whole with this one line under it — the alternative,
+                   * briefly live, was ten identical paragraphs where her morning used to be.
+                   */
+                  pre_rule_sources: sourcing.pre_rule,
                 };
               })(),
               /*

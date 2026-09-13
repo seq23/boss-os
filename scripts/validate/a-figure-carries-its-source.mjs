@@ -66,6 +66,17 @@ const GOOD_SOURCE = {
 
 export const SOURCING_CASES = [
   {
+    name: "A REPORT WRITTEN BEFORE THE RULE: no section anywhere cites a source",
+    section: { key: "markets_dashboard", heading: "Markets & Macro Dashboard", bullets: ["Brent fell 2.8% to ~$72/bbl."] },
+    sources: [GOOD_SOURCE],
+    preRule: true,
+    keep: true,
+    why:
+      "every report in the database predates per-section sources, and holding them to the rule " +
+      "withheld TEN OF ELEVEN sections of the briefing she had just read — a format change that " +
+      "makes historical days render empty is the regression this repo already warns about",
+  },
+  {
     name: "a section printing figures and citing a real source",
     section: { key: "markets_dashboard", heading: "Markets & Macro Dashboard", bullets: ["Brent closed at $104.61, down 2.8%."], sources: [0] },
     sources: [GOOD_SOURCE],
@@ -181,6 +192,12 @@ export function check({ sourcing, standing, deliver, spec, screen, prompt }) {
         `${c.name}: the section was ${c.kept ? "PRINTED" : "WITHHELD"} and must be ${c.keep ? "PRINTED" : "WITHHELD"} — ${c.why}.`,
       );
     }
+    if (c.pre_rule && !String(c.name).startsWith("A REPORT WRITTEN BEFORE")) {
+      problems.push(
+        `${c.name}: was treated as PRE-RULE even though the report cites sources elsewhere, so the ` +
+        `gate would never fire on a report written under the rule.`,
+      );
+    }
     if (!c.keep && c.kept === false && !c.why_given) {
       problems.push(`${c.name}: withheld with no reason, so the absence is silent.`);
     }
@@ -278,12 +295,20 @@ async function evaluate() {
   registerTsResolve();
   const mod = await import(`file://${join(ROOT, BRIEFING)}`);
 
+  /*
+   * A REPORT UNDER THE RULE IS ONE WHERE SOMETHING CITES, so every case except the pre-rule one is
+   * evaluated alongside a section that does cite — which is what a real post-rule report looks like.
+   * Judging a lone uncited section would make every fixture pre-rule and the gate would never fire.
+   */
+  const CITING = { key: "one_thing_to_watch", heading: "One Thing to Watch", bullets: ["A move worth $1 billion."], sources: [0] };
   const sourcing = SOURCING_CASES.map((c) => {
-    const out = mod.withheldForSourcing([c.section], { sources: c.sources });
+    const filed = c.preRule ? [c.section] : [c.section, CITING];
+    const out = mod.withheldForSourcing(filed, { sources: c.sources });
     return {
       name: c.name, keep: c.keep, why: c.why,
-      kept: out.kept.length === 1,
+      kept: out.kept.some((k) => k.key === c.section.key),
       why_given: out.withheld[0]?.why ?? "",
+      pre_rule: out.pre_rule,
     };
   });
 
@@ -312,17 +337,22 @@ async function selfTest() {
     { name: "the shipped shape passes", input: good, expect: 0 },
     {
       name: "THE $72 CASE: an unsourced figure printed anyway",
-      input: { ...good, sourcing: good.sourcing.map((c, i) => (i === 1 ? { ...c, kept: true } : c)) },
+      input: { ...good, sourcing: good.sourcing.map((c) => (c.name.startsWith("THE $72 CASE") ? { ...c, kept: true } : c)) },
+      expect: 1,
+    },
+    {
+      name: "THE REGRESSION: a pre-rule report held to the rule and emptied",
+      input: { ...good, sourcing: good.sourcing.map((c) => (c.name.startsWith("A REPORT WRITTEN BEFORE") ? { ...c, kept: false } : c)) },
       expect: 1,
     },
     {
       name: "a prose section demanded to carry a citation",
-      input: { ...good, sourcing: good.sourcing.map((c, i) => (i === 2 ? { ...c, kept: false } : c)) },
+      input: { ...good, sourcing: good.sourcing.map((c) => (c.name.includes("prose section") ? { ...c, kept: false } : c)) },
       expect: 1,
     },
     {
       name: "a citation that resolves to nothing accepted",
-      input: { ...good, sourcing: good.sourcing.map((c, i) => (i === 3 ? { ...c, kept: true } : c)) },
+      input: { ...good, sourcing: good.sourcing.map((c) => (c.name.includes("never filed") ? { ...c, kept: true } : c)) },
       expect: 1,
     },
     {

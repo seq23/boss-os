@@ -438,16 +438,45 @@ export function sectionSourcing(
   return { needed: true, ok: true, why: "" };
 }
 
-/** Split a report's sections into the ones that may print and the ones that may not. */
+/**
+ * Split a report's sections into the ones that may print and the ones that may not.
+ *
+ * ─── A RULE IS NOT APPLIED TO WORK DONE BEFORE IT EXISTED ──────────────────
+ *
+ * This is a regression caught on the live screen minutes after shipping, and it is worth writing
+ * down rather than quietly patching. Every report in the database predates per-section `sources` —
+ * the field did not exist — so the gate withheld TEN OF ELEVEN sections of the report she had just
+ * read, and her Executive Briefing went from a full morning to one section and ten identical
+ * paragraphs about a $72 oil figure.
+ *
+ * That is precisely the failure this repository already warns about in the client, about a
+ * different change: "a format change that made historical days render empty would look exactly like
+ * a regression on the screen it was meant to fix." Written down, and then done anyway.
+ *
+ * A REPORT THAT DECLARES NO PER-SECTION SOURCE ANYWHERE PREDATES THE RULE. It is rendered whole,
+ * and the fact is said ONCE rather than eleven times — the same shape as the five identical somatic
+ * reasons. A report where even one section cites its sources was written under the rule, so every
+ * section in it is held to it.
+ *
+ * This is deliberately not a date comparison. A timestamp cut-off is a second thing to keep in step
+ * with a migration; the payload's own shape already answers the question.
+ */
 export function withheldForSourcing(
   sections: unknown[],
   report: { sources?: unknown },
-): { kept: Record<string, unknown>[]; withheld: MissingSection[] } {
+): { kept: Record<string, unknown>[]; withheld: MissingSection[]; pre_rule: boolean } {
   const sources = usableSources(report);
+  const ordered = orderSections(sections);
+  const underTheRule = ordered.some((sec) => Array.isArray(sec.sources) && sec.sources.length > 0);
+
+  if (!underTheRule) {
+    return { kept: ordered, withheld: [], pre_rule: ordered.length > 0 };
+  }
+
   const kept: Record<string, unknown>[] = [];
   const withheld: MissingSection[] = [];
 
-  for (const sec of orderSections(sections)) {
+  for (const sec of ordered) {
     const verdict = sectionSourcing(sec, sources);
     if (verdict.ok) {
       kept.push(sec);
@@ -461,7 +490,7 @@ export function withheldForSourcing(
       why: verdict.why,
     });
   }
-  return { kept, withheld };
+  return { kept, withheld, pre_rule: false };
 }
 
 // ─── What "partial" means ────────────────────────────────────────────────────
