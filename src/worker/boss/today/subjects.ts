@@ -107,6 +107,47 @@ export const WORK_SUBJECTS = new Set([
   "owned_deliverables",
   /** JOINed for the owner's name, so an item says who is waiting rather than only what is waiting. */
   "employees",
+  /**
+   * WORK, AND THE SAME CLOSE CALL `owned_deliverables` ABOVE IS — settled the same way, because it
+   * is the same distinction wearing different clothes.
+   *
+   * `grid_observations` is what Danielle's daily pass over her repositories found. MOST of what is
+   * in it is machinery: red workflows, lanes that stopped shipping, repos that would not read. None
+   * of that comes through here. Every one of those rows carries `disposition = 'dispatch'`, becomes
+   * a task under Danielle's name, and is refused by `examinedTouch`, which reads
+   * `disposition = 'needs_her'` and nothing else.
+   *
+   * WHAT DOES COME THROUGH is a pull request where SHE is the named reviewer, or a client waiting on
+   * a reply that has to come from her. That is not a report about her machinery — it is somebody
+   * waiting on her signature, found by looking rather than by being told. The endpoint refuses the
+   * value on any property that is not `primary` and refuses it without a sentence saying what only
+   * she can do, so the narrowness is enforced in D1 and by `validate:one-human-touch`, not left to
+   * this comment.
+   */
+  "grid_observations",
+  /**
+   * WORK. An employee took something as far as she could and asked HER a question, with the work
+   * stopped behind it. `question` is the thing she is being asked, in words she would use.
+   *
+   * A question addressed to her by name is the definition of her work — it is the one kind of item
+   * that cannot be dispatched, because dispatching it is what produced the question.
+   */
+  "judgement_calls",
+  /**
+   * WORK, AND IT HOLDS NO CONTENT OF ITS OWN — which is exactly why it has to be said out loud here
+   * rather than waved through as plumbing.
+   *
+   * One row per day: which single item was put in front of her, and out of which of the three
+   * sources. The day is the PRIMARY KEY, and that is how "no more than 1 per day" holds — `LIMIT 1`
+   * caps a query, not a day, and a page reloaded twice would otherwise hand her two different items.
+   *
+   * IT IS NOT MACHINERY, and the test is what a row here can ever produce. It cannot produce a
+   * sentence about a job, a cadence or a credential; the only thing it can do is point at a row in
+   * `owned_deliverables`, `grid_observations` or `judgement_calls` — all three of which are her
+   * work, above. A pointer to her work is her work. If it were on the machinery list, the rule would
+   * be telling us the one-a-day cap belongs on the alert surface, which is nonsense.
+   */
+  "human_touch_days",
 ]);
 
 /**

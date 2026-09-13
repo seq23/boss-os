@@ -353,6 +353,43 @@ echo "Installed $BUYERS_LABEL — Tuesdays 07:00 Central (buyer-hunt.mjs, duty_b
 #
 # Monday 07:00, before the week: a performance read on Friday is one she cannot act on until Monday
 # anyway, and by then it is stale.
+# ─── Danielle's daily pass over the grid ────────────────────────────────────
+#
+# 06:20, ahead of the 06:45 sourcing sweep and well ahead of anything she reads. The side-hustle slot
+# in today's contract reads what this found; an examination that ran after the contract was built
+# would put yesterday's news in front of her every morning.
+#
+# WRAPPED IN duty-run.sh SO THE RUN REACHES `duty_grid_watch` IN D1 — "I DONT CARE IF ITS LAUNCHD OR
+# D1 — THOSE SHOULD BE LINKED ANYWAY." The token here and the token in the duty row's
+# task_input.$.local_job are the same string, and `validate:launchd-duty-link` proves it in both
+# directions, offline.
+#
+# READ-ONLY. It opens no branch, no PR and no commit in any grid repository, and it never touches a
+# west-peek repo — the exclusions are named in src/shared/boss/grid.mjs and applied by the run.
+GRID_LABEL="com.seq.boss-grid"
+cat > "$HOME/Library/LaunchAgents/$GRID_LABEL.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$GRID_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>-lc</string>
+      <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh grid-watch.mjs -- npm run --silent grid:post</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>
+    <key>StandardOutPath</key><string>$LOGS/grid.log</string>
+    <key>StandardErrorPath</key><string>$LOGS/grid.log</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>
+PLIST
+launchctl unload "$HOME/Library/LaunchAgents/$GRID_LABEL.plist" 2>/dev/null || true
+launchctl load "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
+
 PROPS_LABEL="com.seq.boss-properties"
 PROPS_PLIST="$HOME/Library/LaunchAgents/$PROPS_LABEL.plist"
 
@@ -907,6 +944,8 @@ require_loaded "$CAPITAL_LABEL"
 require_loaded "$NUDGE_LABEL"
 require_loaded "$SHEET_LABEL"
 require_loaded "$POSITIVE_LABEL"
+# ADDED WITH THE JOB, FOR THE THIRD TIME, AND THE TWO NOTES ABOVE ARE WHY.
+require_loaded "$GRID_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.

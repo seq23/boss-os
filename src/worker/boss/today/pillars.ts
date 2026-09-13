@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { propertyFor, suggestingKeys } from "../../../shared/boss/grid.mjs";
 import { PROJECTS, activeProjects, firstMoneyProject, type Project } from "./projects";
 import { gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR } from "../spirit/practice";
 import { isWestPeekDay } from "../spirit/arcs";
@@ -508,58 +509,101 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
 /**
  * AT MOST ONE SIDE-HUSTLE ITEM A DAY, AND ONLY WHERE A HUMAN IS ACTUALLY REQUIRED.
  *
- * ─── Her instruction ───────────────────────────────────────────────────────
+ * ─── Her instructions ──────────────────────────────────────────────────────
  *
  *   "should suggest something that requires a human touch from one of the side hustles when
  *    appropriate n o more than 1 per day as appropriate"
  *
- * ─── The cap is the feature, not a limit on the feature ────────────────────
+ *   "the system should know all of my side hustles......all of the repos that i care about for
+ *    making money. the grid repos are my side hustles"
  *
- * "No more than 1 per day" is not "usually one". She is protecting the contract from becoming a
- * list — the same thing §17 does by capping priorities at three, and the same thing
- * `proposedPriorities` does by refusing to pad a short list. So this returns ONE item or none, and
- * the count is enforced by the shape of the function rather than by a caller remembering.
+ *   "the agent needs to examine what is going on with those businesses and give me stuff to do
+ *    for those"
  *
- * ─── "Requires a human touch" is DECLARED, never inferred ──────────────────
+ * ─── What was broken, and it was not the reasoning ─────────────────────────
  *
- * `owned_deliverables.blocker` is free prose — "waiting on the cover files", "Amazon has not
- * replied". Reading her out of that text would be matching by RESEMBLANCE, which this repository
- * refuses everywhere it matters: the Ahrefs fixer matches repositories by REPO_IDENTITY.md "never
- * by resemblance", and the contacts sync refuses a batch it cannot source. A guess about whether
- * something needs her, placed in her day, is a guess she has to check before she can trust — and
- * one wrong one teaches her to skim.
+ * 0233 made "needs a human" a DECLARED flag rather than something read out of a free-text blocker,
+ * and that argument still stands: matching by resemblance is what this repository refuses everywhere
+ * it matters, and one wrong guess at the top of her day teaches her to skim. What it missed is that
+ * NOTHING EVER SET THE FLAG. The slot has been silent since it shipped. A slot that only echoes her
+ * own flags is not a suggestion — it is a to-do list she has to write first.
  *
- * So 0233 adds `needs_owner`, and the test it encodes is narrow: THIS CANNOT PROCEED WITHOUT HER
- * JUDGEMENT, HER NAME, HER SIGNATURE OR HER VOICE. Not "important". Not "stuck". Work an employee
- * or a script can do is work to DISPATCH, and putting it in front of her instead is how the
- * contract turns into a list of things she has to route.
+ * ─── The fix is not inference. It is EXAMINATION. ──────────────────────────
  *
- * ─── AND IT MUST SAY WHY, or it does not appear ────────────────────────────
+ * `scripts/ops/grid-watch.mjs` runs daily on her Mac and READS the grid repositories — workflows
+ * still red, pull requests ageing, lanes that stopped shipping — and files what it found with the
+ * URL behind each one. The flag is still declared; what changed is that something which went and
+ * looked now declares it, on the strength of a fact she can open.
  *
- * A row claiming "this needs you" that cannot say what only she can do is a puzzle, not a task. The
- * column is nullable because ALTER TABLE cannot add NOT NULL without inventing a default; the
- * refusal lives here, where it is enforceable, and a test proves it.
+ * ─── THREE SOURCES, IN THIS ORDER, AND THE ORDER IS AN ARGUMENT ────────────
  *
- * ─── The property list comes from `projects.ts` and nowhere else ───────────
+ *   1. DECLARED — `owned_deliverables.needs_owner`, set by hand. FIRST, because a flag she or an
+ *      employee set deliberately outranks anything a job inferred. This is 0233 unchanged: the
+ *      inference is added BESIDE the declaration, never in place of it.
+ *   2. EXAMINED — a `needs_her` observation from today's grid examination. The bar is deliberately
+ *      almost impossible to clear: a pull request where SHE is the requested reviewer, or one on a
+ *      CLIENT property opened by somebody else and left sitting. Red builds and quiet lanes are
+ *      dispatched to Danielle and never appear here.
+ *   3. ASKED — an employee's judgement call that has been waiting. Somebody took the work as far as
+ *      she could and asked a question only the owner can answer. LAST, because it is already in the
+ *      approvals Inbox: it earns a place in the contract only once it has been sitting for days,
+ *      which is the point at which the Inbox has demonstrably failed to get it in front of her.
  *
- * That file is already the repository's register of what she works on, and is deliberately code
- * rather than a table. The side hustles are its `spry` lane — Industry Guides, the two SaaS apps,
- * the three digital-product sites, the YouTube channel — MINUS `authority_network`, which the file
- * itself excludes in terms: "A cost centre, not a line — never a day's work." The brokerage and
- * West Peek are not side hustles and have their own pillar.
+ * ─── THE CAP IS A PRIMARY KEY, WHICH IS WHY IT NOW HOLDS ───────────────────
+ *
+ * `LIMIT 1` caps a QUERY, not a DAY. Reload the page and the query runs again; with two candidates
+ * open she would get a different item each time and "no more than 1 per day" would be true of no day
+ * at all. So the day is the PRIMARY KEY of `human_touch_days`: SQLite cannot hold two rows for one
+ * day, two concurrent renders converge on whichever inserted first, and every later render reads the
+ * same one back. The cap is the shape of the table rather than the discipline of a caller.
+ *
+ * ─── AND SILENCE IS THE COMMON ANSWER ──────────────────────────────────────
+ *
+ * Most days all three sources are empty and this returns null. "When appropriate" is permission to
+ * have nothing, and a slot that always says something is a dashboard she scrolls past.
  */
-export const SIDE_HUSTLE_KEYS = PROJECTS
-  .filter((p) => p.lane === "spry" && p.key !== "authority_network")
-  .map((p) => p.key);
 
-export async function humanTouch(
-  env: Env,
-): Promise<{ action: string; why: string; detail?: string[] } | null> {
-  const placeholders = SIDE_HUSTLE_KEYS.map(() => "?").join(",");
+/**
+ * The side hustles: THE GRID, and only the properties allowed to propose work to her.
+ *
+ * `suggestingKeys()` is the `primary` tier. It excludes `local-guides-generator` — her words: "we
+ * really just include it in case something needs to be fixed but the content generator and all the
+ * real work is in velocity" — and the authority network, which `projects.ts` excludes in terms: "A
+ * cost centre, not a line — never a day's work." Both are still EXAMINED and their breaks are still
+ * fixed; what they do not do is ask for her.
+ */
+export const SIDE_HUSTLE_KEYS = suggestingKeys();
+
+/** One item, and the row it came out of so the day's choice can be pinned and re-read. */
+type Touch = { ref_id: string; action: string; why: string; detail?: string[] };
+
+/**
+ * The day, in HER timezone, as `YYYY-MM-DD`.
+ *
+ * A UTC day would roll over at seven in the evening Chicago time and hand her a second touch before
+ * dinner, which is the cap failing in the one direction nobody would notice.
+ */
+export function herDay(at: number = Date.now()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date(at));
+}
+
+/**
+ * 1. DECLARED — somebody filed this and said, explicitly, that it cannot move without her.
+ *
+ * 0233's query, unchanged in substance. "Needs a human" is DECLARED, never inferred from prose:
+ * `blocker` is free text — "waiting on the cover files", "Amazon has not replied" — and reading her
+ * out of that would be matching by RESEMBLANCE.
+ *
+ * AND IT MUST SAY WHY. A row claiming "this needs you" that cannot say what only she can do is a
+ * puzzle, not a task, and she has enough of those.
+ */
+async function declaredTouch(env: Env, pin: string | null = null): Promise<Touch | null> {
   // RULE 0 AT THE CALL SITE: an empty key list would make this `IN ()`, which matches nothing in
-  // SQLite and would silently retire the feature. If projects.ts ever loses its spry lane this must
-  // be a visible absence, not a query that quietly never matches.
+  // SQLite and would silently retire the feature rather than failing visibly.
   if (SIDE_HUSTLE_KEYS.length === 0) return null;
+  const placeholders = SIDE_HUSTLE_KEYS.map(() => "?").join(",");
 
   const row = await env.DB
     .prepare(
@@ -569,24 +613,24 @@ export async function humanTouch(
         WHERE d.needs_owner = 1
           AND d.state IN ('open','blocked')
           AND d.project_key IN (${placeholders})
+          AND (? IS NULL OR d.id = ?)
         ORDER BY COALESCE(d.blocked_since, d.last_activity_at, 0) ASC
         LIMIT 1`,
     )
-    .bind(...SIDE_HUSTLE_KEYS)
+    .bind(...SIDE_HUSTLE_KEYS, pin, pin)
     .first<{
       id: string; name: string; project_key: string; needs_owner_why: string | null;
       blocker: string | null; blocked_since: number | null; employee: string | null;
     }>()
     .catch(() => null);
 
-  // No row, or a row that cannot say what only she can do. Both are silence, and silence is the
-  // expected answer on most days — "when appropriate" is permission to have nothing.
   if (!row || !row.needs_owner_why || !row.needs_owner_why.trim()) return null;
 
   const project = PROJECTS.find((p) => p.key === row.project_key);
   const days = row.blocked_since ? Math.floor((Date.now() - row.blocked_since) / 86_400_000) : null;
 
   return {
+    ref_id: row.id,
     action: `${project?.name ?? row.project_key}: ${row.needs_owner_why.trim()}`,
     why:
       `${row.name} cannot move without you${row.employee ? ` — ${row.employee} owns it and has taken it as far as she can` : ""}` +
@@ -594,6 +638,195 @@ export async function humanTouch(
       ` Everything on this line that someone else could do has been done.`,
     ...(row.blocker ? { detail: [row.blocker] } : {}),
   };
+}
+
+/**
+ * 2. EXAMINED — what the daily grid examination found and could not dispatch.
+ *
+ * `disposition = 'needs_her'` is written by `POST /api/boss/grid/examination`, which REFUSES the
+ * value on any property that is not `primary` and refuses it outright without a sentence saying what
+ * only she can do. So the two rules that keep this narrow are enforced at the door, in D1, rather
+ * than here — and this repeats the `primary` filter anyway, because a guard on one side of a
+ * boundary is a guard with a one-refactor life expectancy.
+ *
+ * OLDEST FIRST, by when it was FIRST seen. `observed_at` is deliberately not reset on a repeat
+ * sighting: the age of the problem is the reason to report it, and a daily job that refreshed it
+ * would make a three-week-old block permanently one day old.
+ */
+async function examinedTouch(env: Env, pin: string | null = null): Promise<Touch | null> {
+  if (SIDE_HUSTLE_KEYS.length === 0) return null;
+  const placeholders = SIDE_HUSTLE_KEYS.map(() => "?").join(",");
+
+  const row = await env.DB
+    .prepare(
+      `SELECT o.id, o.property_key, o.repo, o.kind, o.needs_her_why, o.headline, o.evidence, o.observed_at
+         FROM grid_observations o
+        WHERE o.disposition = 'needs_her'
+          AND o.state IN ('open','shown')
+          AND o.property_key IN (${placeholders})
+          AND (? IS NULL OR o.id = ?)
+        ORDER BY o.observed_at ASC
+        LIMIT 1`,
+    )
+    .bind(...SIDE_HUSTLE_KEYS, pin, pin)
+    .first<{
+      id: string; property_key: string; repo: string; kind: string;
+      needs_her_why: string | null; headline: string; evidence: string; observed_at: number;
+    }>()
+    .catch(() => null);
+
+  if (!row || !row.needs_her_why || !row.needs_her_why.trim()) return null;
+
+  const property = propertyFor(row.property_key);
+  const days = Math.floor((Date.now() - row.observed_at) / 86_400_000);
+
+  return {
+    ref_id: row.id,
+    /*
+     * A CLIENT PROPERTY SAYS SO, IN FRONT. "Answer the PR on hicksconsulting" and "answer the client
+     * waiting on hicksconsulting" are different sentences and she prioritises them differently.
+     */
+    action: `${property?.owner === "client" ? "Client — " : ""}${property?.label ?? row.property_key}: ${row.needs_her_why.trim()}`,
+    why:
+      `Danielle's daily pass over your repos found this${days > 0 ? ` ${days} day${days === 1 ? "" : "s"} ago` : " this morning"} ` +
+      `and could not hand it to anyone: it needs your name on it. Everything else she found in the grid ` +
+      `today went to her, not to you.`,
+    // THE THING SHE CAN OPEN. An observation she cannot check is an assertion.
+    detail: [row.evidence],
+  };
+}
+
+/**
+ * 3. ASKED — an employee's judgement call that has been sitting.
+ *
+ * `judgement_calls` is the mechanism by which an employee who does not understand ASKS, and a row in
+ * `awaiting` is a question addressed to her by name with the work paused behind it.
+ *
+ * IT IS ALREADY IN THE INBOX, AND THE AGE IS WHAT RESOLVES THAT. One fact belongs in one place, so a
+ * fresh judgement call has no business also occupying the one slot in her contract — the Inbox is
+ * where it goes and the Inbox is doing its job. After two days the Inbox has demonstrably NOT got it
+ * in front of her, and an employee is still stopped. That is when it becomes her day's work rather
+ * than an item on a list.
+ */
+const ASKED_AFTER_DAYS = 2;
+
+async function askedTouch(env: Env, pin: string | null = null): Promise<Touch | null> {
+  if (SIDE_HUSTLE_KEYS.length === 0) return null;
+  const placeholders = SIDE_HUSTLE_KEYS.map(() => "?").join(",");
+
+  const row = await env.DB
+    .prepare(
+      `SELECT j.id, j.title, j.question, j.created_at, d.project_key, e.name AS employee
+         FROM judgement_calls j
+         JOIN owned_deliverables d ON d.id = j.deliverable_id
+         LEFT JOIN employees e ON e.id = j.employee_id
+        WHERE j.state = 'awaiting'
+          AND j.created_at <= ?
+          AND d.state IN ('open','blocked')
+          AND d.project_key IN (${placeholders})
+          AND (? IS NULL OR j.id = ?)
+        ORDER BY j.created_at ASC
+        LIMIT 1`,
+    )
+    .bind(Date.now() - ASKED_AFTER_DAYS * 86_400_000, ...SIDE_HUSTLE_KEYS, pin, pin)
+    .first<{
+      id: string; title: string; question: string; created_at: number;
+      project_key: string; employee: string | null;
+    }>()
+    .catch(() => null);
+
+  if (!row || !row.question.trim()) return null;
+
+  const project = PROJECTS.find((p) => p.key === row.project_key);
+  const days = Math.floor((Date.now() - row.created_at) / 86_400_000);
+
+  return {
+    ref_id: row.id,
+    action: `${project?.name ?? row.project_key}: ${row.question.trim()}`,
+    why:
+      `${row.employee ?? "An employee"} asked you this ${days} day${days === 1 ? "" : "s"} ago and the work ` +
+      `has been stopped since. It is in your Inbox as well; it is here because the Inbox has not got ` +
+      `it in front of you and somebody is waiting.`,
+  };
+}
+
+/**
+ * THE ONE THING THAT NEEDS HER TODAY, OR NOTHING.
+ *
+ * The three sources in order, and the day as a primary key so the answer cannot change on a refresh
+ * and cannot become two.
+ */
+export async function humanTouch(
+  env: Env,
+): Promise<{ action: string; why: string; detail?: string[] } | null> {
+  const SOURCES: Array<[string, (env: Env, pin: string | null) => Promise<Touch | null>]> = [
+    ["declared", declaredTouch],
+    ["examined", examinedTouch],
+    ["asked", askedTouch],
+  ];
+
+  const day = herDay();
+
+  /*
+   * ALREADY CHOSEN TODAY? Then it is that one, re-read from its own table so the sentence stays
+   * current — a pull request that was merged since this morning drops out rather than sitting on her
+   * screen claiming somebody is waiting.
+   */
+  const already = await env.DB
+    .prepare(`SELECT source, ref_id FROM human_touch_days WHERE day = ?`)
+    .bind(day)
+    .first<{ source: string; ref_id: string }>()
+    .catch(() => null);
+
+  if (already) {
+    const fn = SOURCES.find(([name]) => name === already.source)?.[1];
+    const pinned = fn ? await fn(env, already.ref_id) : null;
+    if (!pinned) return null;
+    return { action: pinned.action, why: pinned.why, ...(pinned.detail ? { detail: pinned.detail } : {}) };
+  }
+
+  for (const [source, fn] of SOURCES) {
+    const candidate = await fn(env, null);
+    if (!candidate) continue;
+
+    /*
+     * OR IGNORE, AND THEN READ BACK. Two renders racing at 06:00 both find a candidate; one insert
+     * wins, the other is ignored, and BOTH then read the winner. Without the read-back the loser
+     * would render its own candidate and the day would have had two.
+     */
+    await env.DB
+      .prepare(`INSERT OR IGNORE INTO human_touch_days (day, source, ref_id, chosen_at) VALUES (?,?,?,?)`)
+      .bind(day, source, candidate.ref_id, Date.now())
+      .run()
+      .catch(() => null);
+
+    const chosen = await env.DB
+      .prepare(`SELECT source, ref_id FROM human_touch_days WHERE day = ?`)
+      .bind(day)
+      .first<{ source: string; ref_id: string }>()
+      .catch(() => null);
+
+    if (!chosen) return { action: candidate.action, why: candidate.why, ...(candidate.detail ? { detail: candidate.detail } : {}) };
+
+    const winner = chosen.source === source && chosen.ref_id === candidate.ref_id
+      ? candidate
+      : await (SOURCES.find(([name]) => name === chosen.source)?.[1] ?? (async () => null))(env, chosen.ref_id);
+
+    if (!winner) return null;
+
+    if (chosen.source === "examined") {
+      await env.DB
+        .prepare(`UPDATE grid_observations SET state = 'shown', shown_at = ? WHERE id = ? AND state = 'open'`)
+        .bind(Date.now(), chosen.ref_id)
+        .run()
+        .catch(() => null);
+    }
+
+    return { action: winner.action, why: winner.why, ...(winner.detail ? { detail: winner.detail } : {}) };
+  }
+
+  // Nothing declared, nothing found and nobody waiting. The answer on most days.
+  return null;
 }
 
 export async function executionContract(env: Env, weekday: number): Promise<PillarContract> {

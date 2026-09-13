@@ -33,6 +33,25 @@ const SNAPSHOT_TABLES = [
   "boss_inbound_mail",
   "capital_book",
   "capital_book_line",
+  /*
+   * THE POINTERS TO WORK MONIQUE EMAILED HER FROM THE LEDGER. A count, a kind and a clock — the
+   * whole table is incapable of holding anything else — and losing it to a rebuild would silently
+   * re-show a morning's crossings she has already worked, because `seen_at` is the only thing that
+   * stops a pointer reappearing.
+   */
+  "brokerage_pointers",
+  /*
+   * DANIELLE'S DAILY PASS OVER THE GRID, AND WHICH SINGLE THING WAS PUT IN FRONT OF HER.
+   *
+   * `human_touch_days` is the one that must not be lost: the day is its PRIMARY KEY and that key IS
+   * the one-a-day cap. A restore that dropped it would let the day be claimed a second time, which
+   * is the exact failure the table exists to make impossible. The observations come with it because
+   * the row it points at has to still be there, and the examinations because an observation with no
+   * run behind it cannot say when anything last looked.
+   */
+  "grid_examinations",
+  "grid_observations",
+  "human_touch_days",
   // The airlock's classification registry. A restore that brought the records back without the
   // policy that governs them would rebuild the system with its residency rules erased - every
   // entity unclassified, which the guard refuses, so the restored system would be inert rather

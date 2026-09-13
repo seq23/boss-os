@@ -37,35 +37,33 @@ const WINDOW_DAYS = Number(process.env.SPRY_WINDOW_DAYS ?? 7);
 const JSON_OUT = process.argv.includes("--json");
 
 /**
- * The properties, and the branch a release actually happens on.
+ * ─── THE PROPERTIES ARE THE GRID, AND THIS FILE NO LONGER KEEPS A LIST ─────
  *
- * NAMED EXPLICITLY RATHER THAN DISCOVERED. The account holds thirty-odd repos including client
- * work she has asked to keep out of this entirely, the West Peek repos, and experiments. A
- * heartbeat that cries about a repo she abandoned in March is one she stops reading.
+ *   "the system should know all of my side hustles......all of the repos that i care about for
+ *    making money. the grid repos are my side hustles"
  *
- * READ FROM THE ACCOUNT, NOT GUESSED. The first version of this list was invented from the property
- * names she uses in conversation — `theindustryguides`, `time-2-read`, `weddingchecklistpdf` — and
- * three of eight did not exist as repos. Every entry below was taken from `gh repo list`, and a
- * name that stops resolving reports as `unreachable` rather than quietly passing.
+ * WHAT USED TO BE HERE, AND WHY IT HAD TO GO. Eight repos, hand-written, every entry taken from
+ * `gh repo list` — which was the right instinct at the time, because the first version of the list
+ * was invented from the names she uses in conversation and three of eight did not exist. But taking
+ * them from the account solved the wrong half: the names resolved, and the SET was still somebody's
+ * guess. It carried `heygetonmylevel` and `how-we-know`, which are not on her grid, and it was
+ * missing `WPP-llm`, `p-n-p` and BOTH CLIENT REPOS, which are.
+ *
+ * Meanwhile `today/projects.ts` carried a different list again — five vague entries with no repos at
+ * all — and a run that read it reported she had four side hustles. Two components each keeping their
+ * own list with no link between them, about the one subject where being wrong costs revenue.
+ *
+ * So the list is `src/shared/boss/grid.mjs`, which is her own table keyed by canonical domain, and
+ * this file reads it. Adding a property is one entry in one file, and the west-peek exclusions are
+ * applied here as well rather than relied upon to be absent.
  */
-const PROPERTIES = [
-  // Ads and leads — the Spry line closest to real revenue.
-  { repo: "seq23/local-guides-generator", label: "Local Guides generator — the 5 verticals" },
-  // theindustryguides.com. It speeds up citations and LLM surfacing for the generator's sites, and
-  // it is where she experiments — so a red lane here is expected more often than elsewhere and a
-  // long silence matters more.
-  { repo: "seq23/local-guides-citation-velocity", label: "theindustryguides.com — citation velocity" },
-  // SaaS, looking for partnership distribution.
-  { repo: "seq23/heygetonmylevel", label: "heygetonmylevel" },
-  // Digital products.
-  { repo: "seq23/approvalprep", label: "approvalprep" },
-  { repo: "seq23/dream-wedding-builder", label: "Dream wedding builder" },
-  { repo: "seq23/sprylabs-hpc-site", label: "Spry Labs HPC site" },
-  // The channel.
-  { repo: "seq23/how-we-know", label: "How We Know — YouTube" },
-  // Infrastructure. Watched because when it breaks the others go quiet, not because it earns.
-  { repo: "seq23/authority-backlink-network", label: "Authority network (infrastructure)" },
-];
+import { GRID, GRID_OWNER, isExcluded } from "../../src/shared/boss/grid.mjs";
+
+const PROPERTIES = GRID.flatMap((g) =>
+  g.repos
+    .filter((r) => !isExcluded(r))
+    .map((r) => ({ repo: `${GRID_OWNER}/${r}`, label: g.repos.length > 1 ? `${g.label} — ${r}` : g.label })),
+);
 
 const days = (ts) => Math.floor((Date.now() - ts) / 86_400_000);
 

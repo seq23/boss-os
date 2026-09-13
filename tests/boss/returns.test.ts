@@ -80,7 +80,9 @@ describe("return-on-effort ledger", () => {
     expect(worked.outcome_count).toBe(0);
     expect(worked.per_mille).toBe(0);
 
-    const youtube = body.data.lines.find((l: any) => l.line === "youtube");
+    // The spry lines are the grid now: `youtube` and `saas` were two of the five vague entries
+    // projects.ts carried before it, and the grid she actually gave names neither.
+    const youtube = body.data.lines.find((l: any) => l.line === "virtual_agency");
     const blank = youtube.pairs[0];
     expect(blank.outcome_count).toBeNull();
     expect(blank.per_mille).toBeNull();
@@ -92,7 +94,7 @@ describe("return-on-effort ledger", () => {
       method: "POST",
       body: {
         measurements: [{
-          line: "saas", period: MONTH, source: "search_console",
+          line: "hpc", period: MONTH, source: "search_console",
           effort_label: "impressions", effort_count: 100,
           outcome_label: "partnerships", outcome_count: null,
         }],
@@ -112,19 +114,19 @@ describe("return-on-effort ledger", () => {
       method: "POST",
       body: {
         measurements: [{
-          line: "ads", period: MONTH, source: "search_console",
+          line: "citation_velocity", period: MONTH, source: "search_console",
           effort_label: "impressions earned", effort_count: 7642,
           outcome_label: "clicks", outcome_count: 24, window_days: 28,
         }],
       },
     });
     const { body } = await apiJson(`/api/wealth/returns?period=${MONTH}`);
-    const ads = body.data.lines.find((l: any) => l.line === "ads");
+    const ads = body.data.lines.find((l: any) => l.line === "citation_velocity");
     expect(ads.measured).toBe(true);
     const blind = ads.pairs.filter((p: any) => p.kind === "blind_spot");
     expect(blind.length).toBe(1);
     expect(blind[0].outcome_count).toBeNull();
-    expect(blind[0].unmeasured_why).toContain("invoiced outside Boss OS");
+    expect(blind[0].unmeasured_why).toContain("nothing here sees the invoice");
   });
 
   it("returns the lines in her own order and never sorted by return", async () => {
@@ -139,7 +141,10 @@ describe("return-on-effort ledger", () => {
     });
     const { body } = await apiJson(`/api/wealth/returns?period=${MONTH}`);
     expect(body.data.lines.map((l: any) => l.line)).toEqual([
-      "brokerage", "west_peek_raise", "ads", "saas", "digital_products", "youtube", "authority_network",
+      "brokerage", "west_peek_raise",
+      // The grid, in its own order — `src/shared/boss/grid.mjs`.
+      "guides_generator", "citation_velocity", "horse_legal", "hicks_consulting",
+      "virtual_agency", "hpc", "approvalprep", "wedding", "authority_network",
     ]);
     expect(body.data.ordering_note).toContain("Nothing here ranks them");
   });

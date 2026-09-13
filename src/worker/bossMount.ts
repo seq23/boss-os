@@ -143,6 +143,19 @@ export async function drainBossTasks(
    * wearing its politest face: it ran, it reported success, and nothing was hunted.
    *
    * The hunt stays queued until the thing that can actually perform it claims it.
+   *
+   * ─── AND A GRID FIX IS NOT A DRAFTING JOB EITHER ──────────────────────────
+   *
+   * A task carrying `input.grid_fix` is a red workflow, a stuck pull request or a lane that stopped
+   * shipping in one of her own repositories, found by `scripts/ops/grid-watch.mjs`. Fixing one means
+   * working INSIDE that repository, and her standing rule is ONE AGENT PER REPO — learned when three
+   * agents in one repo turned forty minutes of work into four hours of rebasing. A drain that
+   * claimed a dozen of these at once would break that rule a dozen times in a single tick, and what
+   * it would produce is the same paragraph promising the work that the hunt exclusion above exists
+   * to prevent.
+   *
+   * So a grid fix is named, owned by Danielle and visible on the board, and who opens the branch is
+   * a decision a person makes, one repository at a time.
    */
   const due = await db
     .prepare(
@@ -150,6 +163,7 @@ export async function drainBossTasks(
        JOIN tasks t ON t.id = q.task_id
        WHERE q.state = 'pending' AND q.visible_at <= ?
          AND COALESCE(json_extract(t.input, '$.hunt'), '') = ''
+         AND COALESCE(json_extract(t.input, '$.grid_fix'), '') = ''
        ORDER BY q.enqueued_at LIMIT ?`,
     )
     .bind(now.getTime(), limit)

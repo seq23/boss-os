@@ -100,7 +100,7 @@ async function seedDeliverable(over: {
       "Filed and acknowledged", "kdp_titles_live", over.state ?? "blocked",
       "Today", "YouTube requires the owner's own identity verification",
       Date.now() - 3 * 86_400_000, Date.now() - 3 * 86_400_000, Date.now(), Date.now(),
-      over.projectKey === undefined ? "youtube" : over.projectKey,
+      over.projectKey === undefined ? SIDE_HUSTLE_KEYS[0]! : over.projectKey,
       over.needsOwner ?? 1,
       over.why === undefined ? "Record the 60-second verification video — it has to be your face and your voice." : over.why,
     )
@@ -228,7 +228,10 @@ describe("one side-hustle item a day, and only when it needs her", () => {
     await seedDeliverable();
     const touch = (await humanTouch(env as any))!;
 
-    expect(touch.action).toMatch(/How We Know|YouTube/i);
+    // NAMES THE PROPERTY, whichever it is. The literal name used to be "How We Know — YouTube";
+    // the spry lane is the grid now, so the assertion is that the property is named at all rather
+    // than that one particular line still exists.
+    expect(touch.action.startsWith(PROJECTS.find((p) => p.key === SIDE_HUSTLE_KEYS[0])!.name)).toBe(true);
     expect(touch.action).toMatch(/your face and your voice/i);
     expect(touch.why).toMatch(/cannot move without you/i);
     expect(touch.why).toMatch(/3 days/);
