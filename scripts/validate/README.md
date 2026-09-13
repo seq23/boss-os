@@ -107,3 +107,12 @@ violations) on breach and proves its own detection with a self-test fixture run.
   fired, the section opens with a verdict, and decision rights render `label`/`rationale` rather
   than `dr_capability_patch`. **Rule 0: zero staleness fixtures, or no Governance component,
   hard-fails.** 12-fixture self-test.
+
+- `the-local-gate-is-the-ci-gate.mjs` (`npm run validate:gate-parity`) — a branch passed
+  `npm run validate` end to end and CI went red on `validate:brand` over a `#000` in the stylesheet.
+  The chain named 49 scans, `ci.yml` named 19, and neither set was a subset of the other: NINE ran
+  only in CI (green locally, red on push) and THIRTY-EIGHT ran only locally (ungated in CI, which is
+  the worse half because nothing tells you). `validate:scans` is now the union, CI runs it as one
+  step, and this scan requires that every `validate:*` in `ci.yml` is in the chain, that CI runs the
+  catch-all, and that `validate` stays `validate:scans` + typecheck + tests. **Rule 0: zero CI steps
+  or zero registered scans hard-fails** — two empty lists agree perfectly. 7-fixture self-test.

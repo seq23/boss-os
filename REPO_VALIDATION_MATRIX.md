@@ -56,6 +56,8 @@ credentials except `validate:value-shapes`, noted below.
 | `npm run validate:alert-answerable` | one alert key per CAUSE rather than per event row, "Mark resolved" rendered for every alert with the `TERMINAL_CHECKS` refusal path intact, and the dismiss reason box scrolled into view, focused, and explaining its disabled state. 13-fixture self-test. Rule 0: nothing keyed or no action markup hard-fails | that a dismissal *should* have been made, only that pressing the button does what it looks like it does |
 
 | 
+| `npm run validate:gate-parity` | `npm run validate` and `ci.yml` run the SAME set of scans — every CI step is in the chain, CI runs the `validate:scans` union, and `validate` stays scans + typecheck + tests. 7-fixture self-test. Rule 0: zero CI steps or zero registered scans hard-fails | that any individual scan is *correct*, only that the gate you can run is the gate that runs |
+
 ## Phase proof mapping (approved plan §12.2)
 
 P0 structural checks · P1 typecheck/build, auth E2E, migration, backup-restore · P2 identity

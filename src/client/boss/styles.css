@@ -325,8 +325,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 8px;
-  /* The content dissolves at the bottom edge rather than being sliced, so it reads as scrollable. */
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent 100%);
+  /*
+   * The content dissolves at the bottom edge rather than being sliced, so it reads as scrollable.
+   *
+   * `var(--ink)` rather than `#000`, and not for taste: a mask uses only the ALPHA channel, so any
+   * opaque colour does the same job — and the one rule this stylesheet has kept since it was
+   * written is that colour is declared in the token block and nowhere else. `validate:brand`
+   * caught the literal, which is what it is for.
+   */
+  mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent 100%);
 }
 
 .brief-list { margin: 0 0 8px; padding-left: 18px; }
@@ -859,6 +866,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .link-back:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
 .notice-error { border-color: var(--reject); }
+
+/*
+ * A LIVE PLAYBOOK IS A FINDING, NOT AN ERROR, and the difference is load-bearing rather than
+ * pedantic. `boss-surface.spec.ts` asserts that a Systems panel showing `.notice-error` has FAILED
+ * to reach its endpoint — so dressing "the vault is stale" in the error class told the journey the
+ * Governance panel was broken when it was working perfectly and reporting something true. It reads
+ * the same to a person and means the opposite to everything else.
+ */
+.notice-live { border-color: var(--reject); }
 .notice-hint { display: block; color: var(--muted); font-size: 13px; margin-top: 5px; }
 .notice-x {
   position: absolute;

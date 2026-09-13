@@ -389,7 +389,7 @@ function Governance() {
         * whether anything is wrong.
         */}
       {!plays.error && plays.data !== null && plays.data !== undefined && (
-        <div className={live.length ? "notice notice-error" : "row-sub"}>
+        <div className={live.length ? "notice notice-live" : "row-sub"}>
           {live.length
             ? `${live.length} playbook${live.length === 1 ? "" : "s"} applies right now — ${live.map((p: any) => text(p.title ?? p.key)).join("; ")}. Its steps are below.`
             : `Nothing is currently wrong: no playbook's condition is true${openFlags.length ? `, and the sentinel's ${openFlags.length} open flag${openFlags.length === 1 ? "" : "s"} ${openFlags.length === 1 ? "is" : "are"} listed below` : " and the sentinel has raised nothing"}.`}

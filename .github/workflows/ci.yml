@@ -65,6 +65,22 @@ jobs:
       # keep authority, the AI boundary, cross-repo isolation, brand, design tokens, CSS
       # coverage, and SQL-against-schema honest. Each has its own self-test — a validator that
       # cannot demonstrate it still catches what it exists to catch does not run here.
+      # ─── EVERY REGISTERED SCAN, AS ONE STEP ───────────────────────────────
+      #
+      # THE HOLE THIS CLOSES, found by a red CI run on 13 Sep 2026. `npm run validate` chained 49
+      # scans and this file named 19 — and the two sets were not nested in either direction. Nine
+      # scans ran ONLY here, so a green local run could push a red build (`validate:brand` caught a
+      # `#000` in the stylesheet that `npm run validate` never looked at). And THIRTY-EIGHT ran only
+      # locally, so a contributor who did not run the chain by hand could land a change that broke
+      # any of them with CI green.
+      #
+      # `validate:scans` is now the union, so the command the documentation calls the gate IS the
+      # gate. The named steps below are kept because a failure line that says "Brand system" is
+      # worth more at 7am than one that says "All registered scans", and they are a subset of this
+      # step rather than a second list.
+      - name: All registered scans
+        run: npm run validate:scans
+
       - name: Authority boundary
         run: npm run validate:authority
 
