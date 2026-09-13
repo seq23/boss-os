@@ -178,6 +178,19 @@ export async function buildBodyContract(env: Env, dayId: string, dayMode: string
     movement_floor: reduced
       ? "10 minutes minimum, all of it in bed. Nothing here needs you to stand up."
       : "10 minutes minimum. Outside walk, walking pad, bed yoga or somatic all count.",
+    /*
+     * THE FALLBACK IS THE SAME FIVE MOVEMENTS AS THE LAUNCH SEQUENCE, AND THAT IS DELIBERATE.
+     *
+     * It reads like a copy-paste accident, so it is written down here rather than left to be
+     * rediscovered. §6.9's stored sequence is entirely bed-based — leg raises, knee-to-chest pulls,
+     * torso twists, shoulder rolls, breathing — and §6.8 requires the minimum-viable fallback to be
+     * completable WITHOUT GETTING OUT OF BED. The launch sequence already clears that bar, so on the
+     * worst day there is nothing to cut: the fallback IS the sequence, and inventing a shorter
+     * second list would be inventing content her documents do not contain.
+     *
+     * The screen does not print the five twice. `BodyContract.tsx` DERIVES the identity and says it
+     * in one line, and prints the fallback as its own list should the two ever diverge.
+     */
     minimum_viable: STORED_MORNING_SEQUENCE,
     safety_stop: SAFETY_STOP,
     language_rule: LANGUAGE_RULE,

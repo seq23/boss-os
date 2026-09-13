@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { Coaching } from "./Coaching";
+import { BodyContractView } from "./BodyContract";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice, InfoNotice } from "../components/Notice";
 import { usd } from "../../../shared/boss/types";
@@ -463,31 +464,19 @@ function renderDetail(
           {pillars?.body && (
             <>
               <p className="pillar">Body — movement, food, discipline <span className="pillar-who">Imani</span></p>
-              <div className="row-sub" style={{ marginBottom: 6 }}>{pillars.body.movement_floor}</div>
-              <ol style={{ margin: "0 0 8px", paddingLeft: 18 }}>
-                {(pillars.body.launch_sequence ?? []).map((m: string, i: number) => (
-                  <li key={i} style={{ marginBottom: 2 }}>{m}</li>
-                ))}
-              </ol>
-              {(pillars.body.somatic ?? []).length > 0 && (
-                <>
-                  <div className="row-sub" style={{ marginBottom: 4 }}>Then today's somatic rotation, one per lane:</div>
-                  {pillars.body.somatic.map((sm: any) => (
-                    <div className="row" key={sm.lane}>
-                      <div className="row-main">
-                        <div className="row-title">{sm.movement}</div>
-                        <div className="row-sub">{sm.title} · {sm.because}</div>
-                      </div>
-                    </div>
-                  ))}
-                </>
-              )}
-              <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-                <li className="row-sub"><strong>Water and medicine</strong> — {pillars.body.medication}</li>
-                <li className="row-sub"><strong>Hydration</strong> — {pillars.body.hydration}</li>
-                <li className="row-sub"><strong>Food</strong> — {pillars.body.food_rule}</li>
-              </ul>
-              <div className="row-sub" style={{ marginTop: 6 }}>{pillars.body.safety_stop}</div>
+              {/*
+                * THE KINDS ARE TOLD APART, which they were not.
+                *
+                * "i need to make sure i can delineate between movment and etc..."
+                *
+                * Ten fields rendered as one run: the floor, five launch movements, five somatic
+                * lanes, medicine, water, food and the safety stop, all at the same weight. Medicine
+                * is non-negotiable and time-boxed, the safety stop is a STOP, and both read as more
+                * exercises. `BodyContract.tsx` groups them into movement, intake, medical and stop,
+                * and a registry there is checked against the payload's own interface so a field
+                * added later cannot fall out of her morning unnoticed.
+                */}
+              <BodyContractView body={pillars.body} />
             </>
           )}
 
