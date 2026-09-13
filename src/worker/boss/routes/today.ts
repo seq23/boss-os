@@ -33,7 +33,10 @@ import {
 import { TERMINAL_CHECKS } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic, markSomaticDone } from "../today/body";
 import { buildPillars } from "../today/pillars";
-import { BRIEFING_SECTIONS, orderSections, missingSections, groundInsight } from "../today/briefing";
+import {
+  BRIEFING_SECTIONS, orderSections, missingSections, groundInsight,
+  withheldForSourcing, reportStanding,
+} from "../today/briefing";
 import { dutyStaleness } from "../duties/staleness";
 import { roster, type EmployeeDutyRow, type EmployeeRow } from "../today/roster";
 import { adjustToday } from "../today/adjust";
@@ -1275,9 +1278,31 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
                * A REASON, which is the difference between an honest short report and one that
                * looks complete because it never mentioned what it could not get.
                */
-              sections: orderSections(parseJson(shown.sections, [])),
-              spec_sections: BRIEFING_SECTIONS,
-              missing_sections: missingSections(parseJson(shown.sections, []), parseJson(shown.gaps, [])),
+              /*
+               * ── A FIGURE CARRIES ITS SOURCE, OR THE SECTION DOES NOT PRINT ──
+               *
+               * Friday's report published Brent at ~$72/bbl against an actual close of $104.61 — a
+               * 45% error in a headline figure — and nothing caught it. The duty's own success
+               * criterion says "every figure carries a named source and the time it was read", and
+               * `success_criteria` is a TEXT COLUMN that no code has ever evaluated. Worse, even an
+               * enforced criterion had nothing to check: `sources` is report-level, figures live in
+               * sections, and nothing related one to the other.
+               *
+               * Withheld rather than dropped, so the absence is named on the screen with its reason.
+               */
+              ...(() => {
+                const filed = parseJson<unknown[]>(shown.sections, []);
+                const sourcing = withheldForSourcing(filed, { sources: parseJson(shown.sources, []) });
+                const missing = missingSections(sourcing.kept, parseJson(shown.gaps, []));
+                /* A section withheld for want of a source is missing, and says which of the two it is. */
+                const allMissing = [...missing.filter((m) => !sourcing.withheld.some((w) => w.key === m.key)), ...sourcing.withheld];
+                return {
+                  sections: sourcing.kept,
+                  spec_sections: BRIEFING_SECTIONS,
+                  missing_sections: allMissing,
+                  withheld_for_sourcing: sourcing.withheld,
+                };
+              })(),
               /*
                * THE INSIGHT IS CHECKED BEFORE IT IS SHOWN. Numbers are obviously fabricable and
                * everyone watches them; reasoning is fabricable in a way that reads like insight. An
@@ -1290,6 +1315,10 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
                 sections: parseJson(shown.sections, []),
               }),
               gaps: parseJson(shown.gaps, []),
+              /* Forward-looking, and deliberately not a shortfall. */
+              watching: parseJson(shown.watching, []),
+              /* When it IS partial, which of the four reasons it is. */
+              shortfalls: parseJson(shown.shortfalls, []),
               corrections: parseJson(shown.corrections, []),
               sources: parseJson(shown.sources, []),
               generated_at: shown.generated_at,

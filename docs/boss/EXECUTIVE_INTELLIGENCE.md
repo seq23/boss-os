@@ -59,6 +59,22 @@ Always think like a sophisticated investor asking:
 
 ## 2.1 Never invent market data
 
+> **AMENDED 14 September 2026 — what §2.1 requires of a FIGURE, not only of a report.**
+>
+> Friday's report published Brent at roughly $72/bbl. The Friday close was $104.61: a 45% error in a
+> headline figure, in a report read at 7am to make decisions. It was corrected two days later only
+> because that run happened to re-check. Nothing required it to.
+>
+> The duty's success criterion already said "every figure carries a named source and the time it was
+> read" — and that was prose nothing evaluated, checking a link that did not exist: `sources` is a
+> report-level list, figures live inside sections, and no section had ever named which source a
+> number came from.
+>
+> **So every section that prints a figure carries `sources`, naming entries in the report's own
+> source list.** A section whose figures name no resolvable source DOES NOT PRINT — it is reported
+> as absent, with that as the reason. A citation proves provenance and never accuracy, so
+> `corrections` remains exactly as it is; it is what caught the $72.
+
 Never fabricate:
 
 - stock prices;
@@ -337,6 +353,32 @@ Do not inflate every score to 10.
 
 # Markets & Macro Dashboard
 
+**AMENDED 14 September 2026. The second amendment to this specification, recorded rather than
+folded in.**
+
+## On a day the market was closed, RENDER IT, LABELLED
+
+Two runs of this duty twenty minutes apart disagreed about the same Sunday morning. One WITHHELD
+this section, reasoning that US markets were shut and only Friday's close was available. The other
+FILED it, populated with Friday's close, each row labelled "Friday Sept 11 close".
+
+Both are defensible readings of §2.1 and only one can be right. The rule is now decided so it is not
+re-argued every morning:
+
+> **Render the last close, and label every figure with the date it is the close of.**
+
+§2.1 exists to stop stale data being passed off as **current**. A figure explicitly marked
+"Friday 11 Sept close" is not passed off as current — **the label is what satisfies the rule.**
+Withholding the whole dashboard costs the reader the one section that orients every other one, on
+precisely the morning when that orientation matters most.
+
+The column header carries the date, not a note underneath it. `Friday Sept 11 Close` is a column
+heading; "prices may be stale" is not a substitute for one.
+
+If not even a last close can be verified, the section is omitted and named in `gaps` as before.
+
+---
+
 Include only verified data available at report time.
 
 Typical table:
@@ -536,6 +578,32 @@ For every court story, explicitly distinguish:
 Never imply a procedural ruling is a final constitutional decision.
 
 For regulation, explain investor impact.
+
+---
+
+# Status: what "partial" means
+
+**AMENDED 14 September 2026.**
+
+A run filed all eleven sections, withheld nothing and grounded its insight — and reported
+`status: "partial"`, because it had listed four things it wanted: Monday's Starship flight outcome,
+Sunday-evening escalation in the Red Sea, an IPO pricing date, and post-FOMC spreads. **Every one of
+them was an event that has not happened yet.**
+
+Wanting tomorrow's news is not an incomplete report. It is a correct one.
+
+| Field | Means | Affects status |
+|---|---|---|
+| `gaps` | Something that EXISTS and could not be verified | **Yes** — the report is `partial` |
+| `watching` | Forward-looking. It has not happened yet | **No** — a report may be `complete` with a full `watching` list |
+
+`partial` means something the specification asked for is absent: a section missing, a section
+withheld for printing figures with no source, an unverifiable figure, or an insight that could not
+be grounded. Nothing else.
+
+**The status is DERIVED by the system, not taken from the report.** Filing `"complete"` does not
+make a report complete and filing `"partial"` does not make it partial; the missing sections and the
+insight grounding are both computed from what was actually delivered.
 
 ---
 

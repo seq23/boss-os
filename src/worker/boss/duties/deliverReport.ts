@@ -1,4 +1,7 @@
 import type { Env } from "../env";
+import {
+  withheldForSourcing, missingSections, groundInsight, reportStanding, sectionKeyOf,
+} from "../today/briefing";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { dayIdInZone, weekIdInZone } from "@shared/boss/timezone";
@@ -37,6 +40,11 @@ export interface DeliveredReport {
   summary?: unknown;
   sections?: unknown;
   gaps?: unknown;
+  /**
+   * Forward-looking. It has not happened yet, so it is not a shortfall and never downgrades the
+   * status — a report that wants Monday's Starship outcome is correct, not incomplete.
+   */
+  watching?: unknown;
   sources?: unknown;
   corrections?: unknown;
   day_id?: unknown;
@@ -407,14 +415,46 @@ export async function deliverExecutiveReport(
     : "partial";
 
   const gaps = asArray(args.report?.gaps);
+  const watching = asArray(args.report?.watching);
   const sections = asArray(args.report?.sections);
 
   /*
-   * SAYING "complete" WITH GAPS IS NOT ALLOWED. The spec's success criterion is that anything
-   * unverified is listed as a gap rather than omitted, and a report that lists gaps and calls
-   * itself complete has quietly redefined the word. Downgraded here rather than trusted.
+   * ── "partial" IS DERIVED, AND IT NO LONGER MEANS "WANTS TOMORROW'S NEWS" ──
+   *
+   * A run filed all ELEVEN sections, withheld nothing and grounded its insight — and reported
+   * `status: "partial"`. The four gaps behind that were every one of them a FUTURE EVENT: Monday's
+   * Starship flight, Sunday-evening escalation in the Red Sea, the Anthropic IPO's pricing date,
+   * secondary spreads after Wednesday's FOMC.
+   *
+   * Wanting tomorrow's news is not an incomplete report; it is a correct one. Her own standing rule
+   * says a legitimate stop should read green and self-explaining rather than amber, because an
+   * amber that fires on correct behaviour stops meaning anything.
+   *
+   * So `watching` is its own field and never touches the status, and the status itself is COMPUTED
+   * rather than believed — the run said "partial" and the old code wrote "partial" down. Missing
+   * sections and insight grounding are both derived here from the delivered report. The only thing
+   * still taken on the run's word is which gaps are forward-looking, and the prompt draws that line
+   * explicitly.
    */
-  const honest = status === "complete" && gaps.length > 0 ? "partial" : status;
+  const sourcing = withheldForSourcing(sections, { sources: asArray(args.report?.sources) });
+  const missing = missingSections(sourcing.kept, gaps);
+  const insight = groundInsight({
+    headline: args.report?.headline,
+    summary: args.report?.summary,
+    sections: sourcing.kept,
+  });
+  const attemptedInsight = sourcing.kept.some((sec) => sectionKeyOf(sec) === "investor_insight");
+
+  const standing = reportStanding({
+    runStatus: status,
+    missing,
+    withheldForSources: sourcing.withheld,
+    gaps,
+    watching,
+    insightWithheld: !insight.grounded,
+    insightAttempted: attemptedInsight,
+  });
+  const honest = standing.status;
 
   const summary =
     asText(args.report?.summary) ??
@@ -453,8 +493,8 @@ export async function deliverExecutiveReport(
   await env.DB
     .prepare(
       `INSERT INTO executive_reports
-         (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections, watching, shortfalls)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(day_id) DO UPDATE SET
          generated_at = excluded.generated_at,
          task_id = excluded.task_id,
@@ -465,6 +505,8 @@ export async function deliverExecutiveReport(
          sections = excluded.sections,
          gaps = excluded.gaps,
          sources = excluded.sources,
+         watching = excluded.watching,
+         shortfalls = excluded.shortfalls,
          corrections = excluded.corrections`,
     )
     .bind(
@@ -473,6 +515,8 @@ export async function deliverExecutiveReport(
       JSON.stringify(gaps),
       JSON.stringify(asArray(args.report?.sources)),
       JSON.stringify(asArray(args.report?.corrections)),
+      JSON.stringify(watching),
+      JSON.stringify(standing.shortfalls),
     )
     .run();
 
@@ -501,7 +545,12 @@ export async function deliverExecutiveReport(
   await logEvent(env.DB, {
     level: honest === "failed" ? "warn" : "info",
     scope: "duties", event: "executive_report_delivered", entityId: args.taskId,
-    detail: { day_id: forDay, status: honest, sections: sections.length, gaps: gaps.length, run_id: args.runId },
+    detail: {
+      day_id: forDay, status: honest, sections: sourcing.kept.length,
+      missing: missing.length, withheld_for_sourcing: sourcing.withheld.length,
+      gaps: gaps.length, watching: watching.length,
+      shortfalls: standing.shortfalls, run_id: args.runId,
+    },
   });
 
   return id;
