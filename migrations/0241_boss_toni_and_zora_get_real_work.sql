@@ -61,6 +61,12 @@
 -- Nothing here points at spry.vc, sends from any address, touches a `west-peek-*` repo, or puts a
 -- named counterparty, asset or size into this database. The credential check reads presence and
 -- answers live/dead; the LP tracker reconciles a sheet that already exists.
+--
+-- THE MODEL IS NAMED because the check is not free: the claude.ai Gmail connector cannot be probed
+-- from Node at all — it is an OAuth grant held by claude.ai, not a secret on this machine — so one
+-- very short Haiku run makes one Gmail call and prints one word, about a cent a day. A duty that
+-- names no model inherits the default, which is the most expensive one available, and that is how a
+-- briefing once cost $3.88 without anyone deciding it should.
 
 INSERT OR IGNORE INTO standing_duties
   (id, name, employee_id, lane, local_hour, local_minute, timezone, cadence, weekday, weekdays,
@@ -76,7 +82,16 @@ VALUES (
   json_object(
     'local_job', 'credential-check.mjs',
     'why_local', 'Probing a Google credential means using it, and the Claude Code runner strips every credential from its environment on purpose. This runs from launchd on her Mac and posts back only live/dead and the time it was answered — never a value and never a fragment of one.',
-    'delivers', 'credential_probes',
+    -- NO `delivers` KEY, AND THAT IS THE POINT RATHER THAN AN OMISSION.
+    --
+    -- `duties-deliver-somewhere.mjs` caught the first version of this row, which declared
+    -- `delivers: credential_probes`, and it was right to: a `delivers` key means a run writes
+    -- delivers.json and `deliverReport.ts` files it. This job does not do that. It posts each answer
+    -- to `POST /api/boss/credentials/probe` as it gets it, which is an older and more direct contract
+    -- — and one the guard already proves separately, because the endpoint exists and the script calls
+    -- it. Declaring a delivery that does not happen would have been the exact "runs but inert" shape
+    -- that validator was written after.
+    'requested', json_object('model', 'claude-haiku-4-5-20251001', 'max_seconds', 300),
     'repo', 'boss-os',
     'operates_on', json_array()
   ),
