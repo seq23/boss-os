@@ -34,7 +34,8 @@ import { TERMINAL_CHECKS } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { BRIEFING_SECTIONS, orderSections, missingSections, groundInsight } from "../today/briefing";
-import { dutyStaleness, type DutyStalenessRow } from "../duties/staleness";
+import { dutyStaleness } from "../duties/staleness";
+import { roster, type EmployeeDutyRow, type EmployeeRow } from "../today/roster";
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
 import { weeklyPacket, packetIsDue } from "../today/packet";
@@ -482,15 +483,25 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`)
       .bind(now + DAY_MS).first<{ n: number }>(),
     db.prepare(`SELECT status, COUNT(*) AS n FROM employees GROUP BY status`).all<{ status: string; n: number }>(),
+    /*
+     * EVERY ACTIVE EMPLOYEE, WITH NO LIMIT ON THE LIST.
+     *
+     * "the ai employee status section does not have an accurate list of who is on duty"
+     *
+     * What stood here ordered by `open_tasks DESC` and took the top FIVE. Eight employees are
+     * active, so three were missing from "who is on duty" at any moment and WHICH three moved with
+     * the queue — while the summary line above the list correctly said eight. A roster sorted by
+     * busyness with a cut-off hides exactly the employees doing nothing, which is the state most
+     * worth seeing. `today/roster.ts` sorts by HEALTH instead, worst first, and cuts nobody.
+     */
     db.prepare(
       `SELECT e.id, e.name, e.role, e.lane, COUNT(t.id) AS open_tasks
          FROM employees e
          LEFT JOIN tasks t ON t.employee_id = e.id AND t.status IN ('queued','running','awaiting_approval')
         WHERE e.status = 'active'
         GROUP BY e.id
-        ORDER BY open_tasks DESC, e.name ASC
-        LIMIT 5`,
-    ).all<{ id: string; name: string; role: string; lane: string; open_tasks: number }>(),
+        ORDER BY e.name ASC`,
+    ).all<EmployeeRow>(),
     db.prepare(`SELECT COALESCE(SUM(cost_micros),0) AS micros FROM usage_ledger WHERE ts >= ? AND ts < ?`)
       .bind(from, to).first<{ micros: number }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM memory_items WHERE created_at >= ? AND created_at < ?`)
@@ -662,11 +673,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
        * and `dutyStaleness()` decides, which also means the ALERT and the employee health dot are
        * one piece of logic rather than two copies drifting apart.
        */
-      `SELECT id, name, cadence, weekday, weekdays, local_hour, local_minute, timezone,
-              suspended, last_run_at, created_at
-         FROM standing_duties
-        WHERE suspended = 0`,
-    ).all<DutyStalenessRow>(),
+      `SELECT d.id, d.name, d.employee_id, d.cadence, d.weekday, d.weekdays,
+              d.local_hour, d.local_minute, d.timezone,
+              d.suspended, d.last_run_at, d.created_at, t.status AS last_task_status
+         FROM standing_duties d
+    LEFT JOIN tasks t ON t.id = d.last_task_id
+        WHERE d.suspended = 0`,
+    ).all<EmployeeDutyRow>(),
 
     /*
      * A DUTY WHOSE LAST TASK NEVER FINISHED. `queued` means nothing sent it; `running` for a long
@@ -1460,13 +1473,31 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       isEmpty: pendingTotal === 0,
       sourceId: oldestApproval?.id ?? null,
     },
-    employee_status: {
-      content: {
-        by_status: { active: employeeStatus.active ?? 0, paused: employeeStatus.paused ?? 0, retired: employeeStatus.retired ?? 0 },
-        busiest: busiestEmployees.results ?? [],
-      },
-      isEmpty: (employeeStatus.active ?? 0) === 0,
-    },
+    employee_status: (() => {
+      /*
+       * THE DOT IS A VERDICT, AND IT SAYS WHAT IT ASSERTS.
+       *
+       * "there prob needs to be better UX showing a green dot showing they are working correctly
+       * when they are and that changes to red when they are broken"
+       *
+       * Green means every duty they own is on schedule and none of their last runs failed. Red
+       * means a duty is overdue against ITS OWN schedule — the same `dutyStaleness` the Critical
+       * Alert uses, so the dot and the alert can never disagree — or its last task failed. Amber
+       * means nothing has ever run, because grey-as-green is how a dead employee looks healthy.
+       */
+      const people = roster(busiestEmployees.results ?? [], staleDuties.results ?? [], now);
+      const needing = people.filter((p) => p.health === "red");
+      return {
+        content: {
+          by_status: { active: employeeStatus.active ?? 0, paused: employeeStatus.paused ?? 0, retired: employeeStatus.retired ?? 0 },
+          roster: people,
+          needing_you: needing.length,
+          /* Kept so anything still reading the old shape sees the same people rather than nothing. */
+          busiest: people,
+        },
+        isEmpty: people.length === 0,
+      };
+    })(),
     continuity_status: {
       content: {
         relevant: continuityRelevant,

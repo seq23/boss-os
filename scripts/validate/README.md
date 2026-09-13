@@ -65,3 +65,13 @@ violations) on breach and proves its own detection with a self-test fixture run.
   staleness in SQL, failed-task counts exclude failures the same work has since succeeded at, and
   the error window excludes `task_failed` events whose task recovered. **Rule 0: zero probes or zero
   duty fixtures hard-fails.** 14-fixture self-test.
+
+- `the-roster-is-everyone-and-the-dot-means-something.mjs` (`npm run validate:roster-health`) — the
+  AI Employee Status block rendered `busiest … LIMIT 5` over eight active employees, so three were
+  missing at any moment and which three moved with the queue. Runs the shipped `roster()` over the
+  eight production employees: nobody is cut off, the route's query carries no LIMIT, and each dot is
+  the right falsifiable verdict — a failed last run and an overdue duty are red, a Mon/Wed/Fri duty
+  read on a Sunday is GREEN (the false alert must not come back as a dot), never-run and no-duty are
+  AMBER rather than green, every state carries a sentence, "overdue" is `dutyStaleness` and not a
+  second copy, and the three states differ by shape as well as colour. **Rule 0: an empty roster, or
+  one colour for every employee, hard-fails.** 14-fixture self-test.

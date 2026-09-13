@@ -51,6 +51,8 @@ credentials except `validate:value-shapes`, noted below.
 
 | `npm run validate:live-fault` | an alert describes something wrong NOW: a credential whose backend is not `enabled` is silent while a proven-dead one still shouts, a weekday-restricted duty is judged against its own schedule, and failures the same work has since succeeded at do not count. Shipped code over the production rows. 14-fixture self-test. Rule 0: zero probes or zero duty fixtures hard-fails | that every remaining alert is *worth raising*, only that it is about the present |
 
+| `npm run validate:roster-health` | every active employee is on the roster with no LIMIT, and the health dot is a falsifiable verdict — failed or overdue is red, never-run and no-duty are amber not green, a Mon/Wed/Fri duty on a Sunday is green, each with its reason, told apart by shape as well as colour. 14-fixture self-test. Rule 0: an empty roster or one colour for everyone hard-fails | that an employee is doing GOOD work, only that their duties ran when their own schedule said |
+
 ## Phase proof mapping (approved plan §12.2)
 
 P0 structural checks · P1 typecheck/build, auth E2E, migration, backup-restore · P2 identity

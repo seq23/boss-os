@@ -257,7 +257,15 @@ function summarise(block: Block): string {
         ? "Nothing is waiting on you."
         : `${c.pending} waiting${c.by_risk?.high ? `, ${c.by_risk.high} high risk` : ""}${c.expiring_within_a_day ? `, ${c.expiring_within_a_day} expiring within a day` : ""}.`;
     case "employee_status":
-      return `${c.by_status?.active ?? 0} active, ${c.by_status?.paused ?? 0} paused, ${c.by_status?.retired ?? 0} retired.`;
+      /*
+       * THE SUMMARY ANSWERS "DOES ANYONE NEED ME", which three counts of employment status never
+       * did. The counts stay — they were the one part of this block that was always correct — but
+       * they follow the verdict rather than standing in for it.
+       */
+      return (
+        (c.needing_you ? `${c.needing_you} employee${c.needing_you === 1 ? "" : "s"} need${c.needing_you === 1 ? "s" : ""} you. ` : "Everyone is on schedule. ") +
+        `${c.by_status?.active ?? 0} active, ${c.by_status?.paused ?? 0} paused, ${c.by_status?.retired ?? 0} retired.`
+      );
     case "continuity_status":
       return c.note;
     case "trading_status":
@@ -938,13 +946,33 @@ function renderDetail(
       ) : null;
 
     case "employee_status":
-      return (c.busiest ?? []).length ? (
+      /*
+       * ─── EVERY EMPLOYEE, WITH A VERDICT AND THE REASON FOR IT ──────────────
+       *
+       * "the ai employee status section does not have an accurate list of who is on duty and there
+       * prob needs to be better UX showing a green dot showing they are working correctly when they
+       * are and that changes to red when they are broken"
+       *
+       * The list was the five BUSIEST of eight active employees, so three were missing at any
+       * moment and which three moved with the queue. It is the whole roster now, worst first.
+       *
+       * THE STATE IS IN THE SHAPE AS WELL AS THE COLOUR — a filled disc, a hollow ring, a square —
+       * and the word is always there beside it, so the verdict survives a greyscale screenshot and
+       * a colourblind reader. And every dot carries its sentence: a red dot with no reason is a
+       * puzzle, not an alert.
+       */
+      return (c.roster ?? c.busiest ?? []).length ? (
         <>
-          {c.busiest.map((e: any) => (
+          {(c.roster ?? c.busiest).map((e: any) => (
             <div className="row" key={e.id}>
               <div className="row-main">
-                <div className="row-title">{e.name}</div>
+                <div className="row-title">
+                  <span className={`health health-${e.health ?? "amber"}`} aria-hidden="true" />
+                  {e.name}
+                  <span className="health-l">{e.label ?? ""}</span>
+                </div>
                 <div className="row-sub">{e.role} · {e.lane}</div>
+                {e.reason && <div className="row-sub">{e.reason}</div>}
               </div>
               <div className="row-val">{e.open_tasks} open</div>
             </div>

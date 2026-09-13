@@ -365,6 +365,36 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* What is not here, and why. Never silent, never dressed up as content. */
 .brief-absent { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 
+/* ─── Employee health: a verdict you can read in greyscale ───────────────────
+ *
+ * "showing a green dot showing they are working correctly when they are and that changes to red
+ * when they are broken"
+ *
+ * THE STATE IS IN THE SHAPE AS WELL AS THE COLOUR. A filled disc is green, a hollow ring is amber,
+ * a square is red — so the verdict survives a colourblind reader and a greyscale screenshot, and
+ * the word beside it is always rendered rather than hidden behind a hover. Colour alone would make
+ * this block unreadable for the people most likely to be reading it on a phone in bright sun.
+ */
+.health {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+.health-green { background: var(--ok); border-radius: 50%; }
+.health-amber { background: transparent; border: 2px solid var(--gold-deep); border-radius: 50%; }
+.health-red { background: var(--reject); border-radius: 1px; }
+
+.health-l {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
 /* ─── The Body contract: four kinds, told apart ──────────────────────────────
  *
  *   "i need to make sure i can delineate between movment and etc..."
