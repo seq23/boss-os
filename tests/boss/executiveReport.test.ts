@@ -1,4 +1,5 @@
 import { env } from "cloudflare:test";
+import { BRIEFING_SECTIONS } from "@worker/boss/today/briefing";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deliverExecutiveReport } from "../../src/worker/boss/duties/deliverReport";
 import { row, uid, all } from "./helpers";
@@ -28,7 +29,19 @@ describe("delivering the executive intelligence report", () => {
     await env.DB.prepare(`DELETE FROM executive_reports`).run();
   });
 
-  it("writes the day's report when the task was contracted to deliver one", async () => {
+  /*
+   * THIS TEST ASSERTED THE DEFECT, and updating it is the point rather than a concession.
+   *
+   * It filed ONE section, claimed `status: "complete"`, and expected "complete" back — because the
+   * old delivery WROTE DOWN WHATEVER STATUS THE RUN CLAIMED. That was the one field in the whole
+   * payload nothing ever checked, and it is why a run that filed all eleven sections could report
+   * "partial" and be believed, and why one that filed a single section could have reported
+   * "complete" and been believed too.
+   *
+   * The status is DERIVED now. A report carrying one of §5's eleven sections is partial, and it
+   * says which ten are missing.
+   */
+  it("derives a partial status from what was actually filed, not from what the run claimed", async () => {
     await seedTask({ delivers: "executive_reports", backend_id: "bk_claude_code" });
     const id = await deliverExecutiveReport(env as any, {
       taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
@@ -43,8 +56,85 @@ describe("delivering the executive intelligence report", () => {
 
     const report = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
     expect(report).not.toBeNull();
-    expect(report.status).toBe("complete");
+    expect(report.status).toBe("partial");
     expect(JSON.parse(report.sections)).toHaveLength(1);
+    // And it names WHY, so the word does not send her looking for what is wrong.
+    expect(JSON.parse(report.shortfalls).join(" ")).toMatch(/section/i);
+  });
+
+  /*
+   * THE OTHER HALF OF THE SAME RULE, and the one the live defect was about: a report that filed
+   * everything §5 asks for is COMPLETE however long its `watching` list is. Four forward-looking
+   * notes — Monday's launch, an IPO date not yet set — made a full report call itself partial.
+   */
+  it("is complete when every section is filed, however much it is watching for", async () => {
+    await seedTask({ delivers: "executive_reports", backend_id: "bk_claude_code" });
+    const sources = [{ name: "CNBC", url: "https://www.cnbc.com/x", read_at: "2026-09-13T20:35:00Z" }];
+    await deliverExecutiveReport(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      report: {
+        status: "partial",
+        summary: "All of it.",
+        sections: BRIEFING_SECTIONS.map((b) => ({
+          key: b.key,
+          heading: b.title,
+          so_what: "Something to watch.",
+          bullets: ["A development with no figure in it."],
+          /*
+           * THE INSIGHT HAS TO STAND UP, and the first draft of this test learned that the hard
+           * way: filing an `investor_insight` section with bullets and no insight object is a
+           * section that exists and cannot be grounded, which is a real shortfall and correctly
+           * made the report partial. The fixture files an insight built from the day's own words.
+           */
+          ...(b.key === "investor_insight"
+            ? {
+                insight: {
+                  synthesis: "A development with no figure in it is still a development.",
+                  how_reached: "The same development appears in every section of this fixture.",
+                  transferable_frame: "Ask what is being asserted when nothing is being measured.",
+                  falsified_by: "A figure appearing anywhere in the report.",
+                  cites: [{ fact: "A development with no figure in it.", from: "ai_technology" }],
+                },
+              }
+            : {}),
+        })),
+        sources,
+        watching: [{ wanted: "Monday's launch outcome" }, { wanted: "An IPO date not yet set" }],
+      },
+    });
+
+    const report = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(report.status).toBe("complete");
+    expect(JSON.parse(report.shortfalls)).toHaveLength(0);
+    expect(JSON.parse(report.watching)).toHaveLength(2);
+  });
+
+  /*
+   * THE $72 RULE, END TO END. A section that prints a figure and cites nothing does not reach her.
+   */
+  it("withholds a section that prints a figure and names no source", async () => {
+    await seedTask({ delivers: "executive_reports", backend_id: "bk_claude_code" });
+    await deliverExecutiveReport(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
+      report: {
+        status: "complete",
+        summary: "One figure, no source.",
+        sections: [{ key: "markets_dashboard", heading: "Markets & Macro Dashboard", bullets: ["Brent fell 2.8% to ~$72/bbl."] }],
+        sources: [],
+      },
+    });
+
+    /*
+     * THE SECTION IS STORED AND NOT SHOWN, which is deliberate and was worth learning from a failed
+     * assertion. Dropping it at the WRITE end would destroy research she paid for — the same reason
+     * the old `slice(0, 4)` was moved off the write side — so the row keeps what the run filed and
+     * the READ end withholds it, named, with its reason. What the delivery records is the verdict:
+     * the report is partial, and the shortfall says it printed figures with no source.
+     */
+    const report = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(JSON.parse(report.sections)).toHaveLength(1);
+    expect(report.status).toBe("partial");
+    expect(JSON.parse(report.shortfalls).join(" ")).toMatch(/no source/i);
   });
 
   it("delivers nothing for a task that was not contracted to — the ordinary case", async () => {
@@ -108,7 +198,12 @@ describe("delivering the executive intelligence report", () => {
 
     const rows = await env.DB.prepare(`SELECT status, summary FROM executive_reports WHERE day_id = ?`).bind(day).all();
     expect(rows.results).toHaveLength(1);
-    expect((rows.results![0] as any).status).toBe("complete");
+    /*
+     * ONE ROW PER DAY is what this test is about, and the retry's summary proves the replacement
+     * happened. The STATUS is now derived from what was filed — neither delivery here files a
+     * section, so both are partial — so asserting "complete" would be asserting the old defect,
+     * where the run's own claim was written down unchecked.
+     */
     expect((rows.results![0] as any).summary).toBe("All of it.");
   });
 
