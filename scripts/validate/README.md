@@ -116,3 +116,21 @@ violations) on breach and proves its own detection with a self-test fixture run.
   step, and this scan requires that every `validate:*` in `ci.yml` is in the chain, that CI runs the
   catch-all, and that `validate` stays `validate:scans` + typecheck + tests. **Rule 0: zero CI steps
   or zero registered scans hard-fails** — two empty lists agree perfectly. 7-fixture self-test.
+
+- `a-reason-is-not-a-guess.mjs` (`npm run validate:reason-not-guess`) — the somatic lanes all read
+  "Not done before.", and that was a claim the database could not support: `movement_log` records
+  which movement was CHOSEN, and nothing anywhere recorded her DOING one. Runs the shipped
+  `becauseFor` over the three states the record can now tell apart (done / offered with nothing
+  recorded / never offered) and requires three different sentences, none of them describing doing or
+  skipping where the record is silent, and none turning an absence of data into guilt. Also requires
+  the completion path end to end — `done_at` column → `markSomaticDone` → endpoint → api → an
+  undoable control — and that the day's rotation is decided once (the old delete-and-rewrite made
+  Today and Spirit disagree about the same morning). **Rule 0: zero states exercised hard-fails.**
+  12-fixture self-test.
+
+- `every-seat-owns-work.mjs` (`npm run validate:seat-owns-work`) — Toni and Zora held no standing
+  duty, so their health dot could never be anything but amber, for ever. Replays every migration to
+  build the live seat list and the final duty ownership — no second list beside the database — then
+  requires every active seat to own at least one duty and no seat to own more than everyone else
+  combined (Monique held eight of seventeen, one of which was reconciling a spreadsheet). **Rule 0:
+  zero duties replayed or zero seats found hard-fails.** 7-fixture self-test.

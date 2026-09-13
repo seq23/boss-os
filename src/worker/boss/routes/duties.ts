@@ -49,7 +49,8 @@ import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
-import { ok, badRequest } from "../lib/http";
+import { ok, badRequest, notFound } from "../lib/http";
+import { materialiseDueDuties } from "../duties/materialise";
 import { isDue, nextDueAt } from "../duties/cadence";
 
 export const duties = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -289,6 +290,71 @@ duties.get("/due/:local_job", async (c) => {
  * been failing — the sentence the job wrote. A duty that has never reported reads as exactly that
  * rather than as one that never ran, and the two are told apart by `executor`.
  */
+/**
+ * RUN THIS DUTY NOW.
+ *
+ * ─── Why this exists ───────────────────────────────────────────────────────
+ *
+ * There was no way to fire a standing duty except waiting for its clock, and that is fine until
+ * something about the duty CHANGES. Migration 0237 rewrote the Executive Intelligence Report's
+ * prompt to follow §5's eleven sections; the only way to learn whether the run produced them was to
+ * wait for 06:30 and look. "It will work tomorrow" is a promise, and a promise is what this
+ * repository has a standing rule against handing her in place of evidence.
+ *
+ * IT BYPASSES THE CLOCK AND NOTHING ELSE. Suspension still refuses, a `local_job` still refuses —
+ * its work needs credentials the agent deliberately does not have — intake may still decline, and
+ * the budget and backend guards run exactly as they do at 06:30. The one thing skipped is "is it
+ * due", which is the one thing she is overriding.
+ *
+ * THE CLOCK STILL ADVANCES, because a run is a run. Firing the morning report at lunchtime means
+ * the next one is tomorrow morning, not lunchtime plus a day — `materialiseDueDuties` computes the
+ * next occurrence from the schedule rather than from now, so an on-demand run cannot drag a duty
+ * off its own timetable.
+ */
+duties.post("/:id/run-now", async (c) => {
+  const id = c.req.param("id");
+  const duty = await c.env.DB
+    .prepare(`SELECT id, name, suspended, executor FROM standing_duties WHERE id = ?`).bind(id)
+    .first<{ id: string; name: string; suspended: number; executor: string | null }>();
+  if (!duty) throw notFound("No standing duty with that id");
+
+  const result = await materialiseDueDuties(c.env, Date.now(), id);
+  const fired = result.fired.find((f: { duty: string }) => f.duty === id) ?? null;
+  const skipped = result.skipped.find((sk: { duty: string }) => sk.duty === id) ?? null;
+
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "standing_duty", entityId: id,
+    action: "run_now", detail: { fired: Boolean(fired), reason: skipped?.reason ?? null },
+  });
+
+  if (!fired) {
+    return ok(c, {
+      fired: false,
+      duty: duty.id,
+      reason: skipped?.reason ?? "not_materialised",
+      /*
+       * A REFUSAL IS A REAL OUTCOME AND SAYS WHY. `local_job` is the one people will hit and it is
+       * not a fault: that work runs from launchd on her Mac because it needs credentials the agent
+       * strips on purpose.
+       */
+      note:
+        skipped?.reason === "local_job"
+          ? `"${duty.name}" runs from a scheduled job on your Mac, not from an agent — it needs logins the agent deliberately does not carry. Run it there.`
+          : skipped?.reason === "suspended"
+            ? `"${duty.name}" is suspended. Un-suspend it first; running it by hand does not override that.`
+            : `"${duty.name}" was not queued: ${skipped?.reason ?? "no reason recorded"}.`,
+    });
+  }
+
+  return ok(c, {
+    fired: true,
+    duty: duty.id,
+    task_id: fired.task_id,
+    next_due_at: fired.next_due_at,
+    note: `"${duty.name}" is queued. A runner claims it next; its result lands wherever the duty delivers.`,
+  }, 201);
+});
+
 duties.get("/runs", async (c) => {
   const rows = await c.env.DB
     .prepare(

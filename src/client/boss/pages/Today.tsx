@@ -592,7 +592,7 @@ function renderDetail(
                 * and a registry there is checked against the payload's own interface so a field
                 * added later cannot fall out of her morning unnoticed.
                 */}
-              <BodyContractView body={pillars.body} />
+              <BodyContractView body={pillars.body} onChanged={() => void onChanged()} />
             </>
           )}
 

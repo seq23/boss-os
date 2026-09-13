@@ -31,7 +31,7 @@ import {
   type ErrorEventRow,
 } from "../today/errorAlerts";
 import { TERMINAL_CHECKS } from "../today/deliverables";
-import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
+import { buildBodyContract, selectSomatic, logSomatic, markSomaticDone } from "../today/body";
 import { buildPillars } from "../today/pillars";
 import { BRIEFING_SECTIONS, orderSections, missingSections, groundInsight } from "../today/briefing";
 import { dutyStaleness } from "../duties/staleness";
@@ -2016,6 +2016,44 @@ today.post("/gates/morning", async (c) => {
  * does not hold; claiming a check happened is the defect, not a missing feature. So the answer says
  * how old each probe's evidence is and names the command that refreshes it.
  */
+/**
+ * SHE DID THE ROTATION. The write that did not exist.
+ *
+ * Every "because" line under the somatic lanes was a guess until this endpoint: `movement_log`
+ * recorded which movement was OFFERED and nothing anywhere recorded her doing one, so the screen
+ * said "Not done before." about five movements it could know nothing about.
+ *
+ * ONE MARK FOR THE ROTATION, NOT FIVE, and it undoes. No count, no streak, no progress — the
+ * standing rule against guilt binds here exactly as it does on the contribution practice.
+ */
+today.post("/movement/done", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const done = b?.done === undefined ? true : Boolean(b.done);
+  const id = dayId(Date.now());
+
+  const result = await markSomaticDone(c.env, id, done);
+  if (result.lanes === 0) {
+    throw conflict(
+      "Today's rotation has not been chosen yet",
+      "Open Today or Spirit first — the day's movements are decided on the first read of the morning.",
+    );
+  }
+
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "movement_log", entityId: id,
+    action: done ? "rotation_done" : "rotation_unmarked", detail: { lanes: result.lanes },
+  });
+
+  return ok(c, {
+    day_id: id,
+    done,
+    lanes: result.lanes,
+    note: done
+      ? "Recorded. Tomorrow's rotation will move on from these five."
+      : "Unmarked. Nothing is recorded for today either way.",
+  });
+});
+
 today.post("/alerts/refresh", async (c) => {
   const now = Date.now();
   const open = await c.env.DB

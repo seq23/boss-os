@@ -100,6 +100,12 @@ export const api = {
   // Served rather than restated in the client: a screen that spelled the five floors itself would
   // be a second copy of her contract, free to drift from the one that scores the day.
   floors: () => call<any>("/today/floors"),
+  /*
+   * THE FIRST RECORD OF DOING IN BOSS OS. Until this existed, every "because" line under the
+   * somatic lanes was a guess: the log held which movement was OFFERED and nothing held whether she
+   * did it. One mark for the whole rotation, and it undoes.
+   */
+  markRotationDone: (done: boolean) => call<any>("/today/movement/done", post("", { done })),
   // The ancestor hour. `ts` is the day and time SHE names, never the moment of recording.
   recordAncestorHour: (body: unknown) => call<any>("/spirit/ancestors", post("", body)),
 

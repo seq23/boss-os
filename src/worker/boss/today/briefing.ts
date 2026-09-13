@@ -253,7 +253,28 @@ export function groundInsight(report: { headline?: unknown; summary?: unknown; s
   const sections = orderSections(report.sections ?? []);
   const block = sections.find((s) => sectionKeyOf(s) === "investor_insight");
   const raw = block && typeof block.insight === "object" && block.insight ? (block.insight as Record<string, unknown>) : null;
-  if (!raw) return { insight: null, grounded: false, withheld_because: null };
+
+  /*
+   * SILENCE WITH NO REASON TEACHES NOTHING, which is the whole point of this section.
+   *
+   * This returned `withheld_because: null` whenever the run filed no insight, and the screen then
+   * rendered nothing at all — indistinguishable from the feature being broken, on the one section
+   * that exists to show her how a conclusion was reached. Measured live: the briefing came back
+   * `{"insight":null,"grounded":false,"withheld_because":null}` and the block was simply absent.
+   *
+   * TWO ABSENCES, TOLD APART. A run that filed no Investor Insight section at all is a different
+   * morning from one that filed a section with nothing usable in it, and she is owed both
+   * sentences rather than a blank where an idea should be.
+   */
+  if (!raw) {
+    return {
+      insight: null,
+      grounded: false,
+      withheld_because: block
+        ? "The Investor Insight section was filed with nothing in it, so there is no synthesis to show."
+        : "Today's run filed no Investor Insight. On a thin day that is the honest outcome — a forced daily insight is horoscope writing — but it means there is nothing here to learn from this morning.",
+    };
+  }
 
   const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : "");
   const insight: InvestorInsight = {
