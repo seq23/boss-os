@@ -27,14 +27,39 @@ export const OWNER_TIMEZONE_LABEL = "Central";
  * another city and every almanac time silently shifts. An astronomical instant is a fixed moment;
  * only its presentation is local, and it should be local to HER rather than to the device.
  */
+/**
+ * The component options Intl will NOT accept alongside dateStyle/timeStyle.
+ *
+ * THE BUG THIS FIXES, and it took the Spirit screen down in production on 13 Sep 2026.
+ * `Intl.DateTimeFormat` THROWS — `TypeError: Invalid option : option` — when a style shortcut is
+ * combined with any individual component. This function supplied `dateStyle: "medium"` and
+ * `timeStyle: "short"` as defaults and then spread the caller's options over them, so the moment a
+ * caller asked for something specific the two collided:
+ *
+ *   inOwnerZone(ts, { weekday: "long", month: "long", day: "numeric", hour: "numeric", … })
+ *     → { dateStyle, timeStyle, weekday, month, day, hour, … }  → throws
+ *
+ * The whole page went to "The Spirit screen could not be drawn", while the API it reads was
+ * returning 200 with correct data the entire time. That gap is the lesson: the endpoint was
+ * verified and the RENDER was not, so every check passed while the screen was blank.
+ *
+ * A caller asking for components has been explicit, so the style defaults step aside. They were
+ * only ever a default.
+ */
+const COMPONENT_OPTIONS = [
+  "weekday", "era", "year", "month", "day", "dayPeriod",
+  "hour", "minute", "second", "fractionalSecondDigits", "timeZoneName",
+] as const;
+
 export function inOwnerZone(ts: number | null | undefined, opts: Intl.DateTimeFormatOptions = {}): string {
   if (ts === null || ts === undefined || !Number.isFinite(ts)) return "—";
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: OWNER_TIMEZONE,
-    dateStyle: "medium",
-    timeStyle: "short",
-    ...opts,
-  }).format(new Date(ts));
+  const wantsComponents = COMPONENT_OPTIONS.some(
+    (k) => (opts as Record<string, unknown>)[k] !== undefined,
+  );
+  const base: Intl.DateTimeFormatOptions = wantsComponents
+    ? { timeZone: OWNER_TIMEZONE }
+    : { timeZone: OWNER_TIMEZONE, dateStyle: "medium", timeStyle: "short" };
+  return new Intl.DateTimeFormat("en-US", { ...base, ...opts }).format(new Date(ts));
 }
 
 /** Just the date, same zone. A day boundary is a zone-dependent thing and this respects that. */
