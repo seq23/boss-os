@@ -62,13 +62,36 @@ export const WORK_SUBJECTS = new Set([
   "movement_log",
   /** Her days: the record of what she did, which the contract is built on top of. */
   "days",
-  /** Her capital book and the interest ledger behind it — brokerage work is her work. */
+  /**
+   * Her own live brokerage inventory. She is the counterparty and no third party is named in it,
+   * which is why 0226 stores it at all — and it is the most literally "her work" table here.
+   *
+   * The 2,142-row interest ledger is deliberately NOT on this list, because it is deliberately not
+   * in this database: "Named counterparties, assets and sizes never reach the Boss OS database."
+   */
   "capital_book",
-  "capital_book_lines",
-  "counterparty_interest",
+  "capital_book_line",
+  /**
+   * A buyer candidate who also appears on her LP tracker. Public institutions and aggregate counts,
+   * never a person — same class as `sourcing_candidates`. Deciding whether to approach one on the
+   * buy side is brokerage work and nobody else can make the call.
+   */
   "counterparty_crossmatches",
-  /** Standing side-hustle work that genuinely needs her: see `humanTouch` in pillars.ts. */
-  "deliverables",
+  /**
+   * WORK, AND THE CLOSEST CALL ON THIS LIST — stated rather than waved through.
+   *
+   * `owned_deliverables` is the register of work she has handed to someone, and most of what is
+   * said ABOUT it is machinery: stalls, dead executors, missing terminal checks. All of that already
+   * goes to the alert surface from `today/deliverables.ts` and none of it comes through here.
+   *
+   * What `humanTouch` reads is the narrow subset flagged `needs_owner` — an item that cannot proceed
+   * without her judgement, her name, her signature or her voice. That is not a report about the
+   * machinery; it is a thing only she can do, which is the definition of her work. The distinction
+   * is enforced in code and by `validate:one-human-touch`, not left to this comment.
+   */
+  "owned_deliverables",
+  /** JOINed for the owner's name, so an item says who is waiting rather than only what is waiting. */
+  "employees",
 ]);
 
 /**

@@ -90,6 +90,132 @@ export async function spiritContract(env: Env, dayId: string, hardDay: boolean):
  */
 const WEALTH_MEANS = "Money in. Buyers, LPs, and the people who send you both. Camille and Monique's pillar.";
 
+/** Monday to Friday. 0 is Sunday, per `duties/cadence.ts`. */
+export function isWeekday(weekday: number): boolean {
+  return weekday >= 1 && weekday <= 5;
+}
+
+/**
+ * ONE CONCRETE BROKERAGE THING SHE COULD DO TODAY — Monday to Friday, or nothing at all.
+ *
+ * ─── Her instruction ───────────────────────────────────────────────────────
+ *
+ *   "my today's contract should suggest something in brokerage M-F"
+ *
+ * ─── Why the contract was not already doing it ─────────────────────────────
+ *
+ * §5.3 gives the brokerage right of first refusal on the first money move and `wealthContract`
+ * honours that — on paper. In practice the two brokerage sources above it are frequently empty
+ * (`mailbox_findings` pairs and `sourcing_candidates`), so a real weekday fell through to the
+ * relationship touch or, on an empty `relationships` table, to the bootstrap line. She was being
+ * handed set-up work on a business that has live inventory sitting in the system.
+ *
+ * ─── What it is allowed to read, which is narrower than it looks ───────────
+ *
+ * The 2,142-row interest ledger is NOT in this database and must not be: `interest-match.mjs`
+ * states the standing rule — "Named counterparties, assets and sizes never reach the Boss OS
+ * database" — and it lives on her Mac. So "a lot with no matched counterparty" is genuinely not
+ * derivable here, and this does not pretend otherwise.
+ *
+ * What IS here, sovereign and hers:
+ *   - `capital_book_line` — her own live inventory, stored because she is the counterparty and no
+ *     third party is named in it.
+ *   - `counterparty_crossmatches` — a buyer candidate who also appears on her LP tracker. Public
+ *     institutions with aggregate counts, never a person.
+ *
+ * ─── AND IT IS ALLOWED TO SAY NOTHING ──────────────────────────────────────
+ *
+ * Returning null is a correct and frequent answer. Her standing rule on this lane is that coming
+ * back empty-handed is fine and returning noise is not, and a filler suggestion every weekday is
+ * worse than a quiet day — she would stop reading the section, which costs more than the days it
+ * covered. So there is no fallback here and nothing is invented: two real sources, then null.
+ */
+export async function brokerageMove(
+  env: Env,
+  weekday: number,
+): Promise<{ action: string; why: string; detail?: string[] } | null> {
+  if (!isWeekday(weekday)) return null;
+
+  /*
+   * A FIRM SHE IS ALREADY TALKING TO, AS A BUYER FOR SOMETHING SHE IS CARRYING.
+   *
+   * CONFIRMED ONLY, and that threshold is load-bearing for the same reason the missed-deal pairing
+   * takes `high` alone: a `near` match is a maybe, and a maybe at the top of her morning is a guess
+   * presented as a plan. One wrong "approach them about this" costs a call and some credibility.
+   *
+   * `lp_list` IS SAID OUT LOUD rather than filtered on. Suppressed means suppressed AS AN LP, which
+   * says nothing whatever about approaching the same firm as a buyer — the table's own comment
+   * makes that point, and dropping those rows would hide real opportunities while looking careful.
+   * Naming the list lets her make that call in a second, which is a decision she is qualified to
+   * make and this function is not.
+   */
+  const cross = await env.DB
+    .prepare(
+      `SELECT candidate_name, lp_firm, lp_list, lp_last_sent, why
+         FROM counterparty_crossmatches
+        WHERE status = 'new' AND confidence = 'confirmed'
+        ORDER BY created_at ASC
+        LIMIT 3`,
+    )
+    .all<{ candidate_name: string; lp_firm: string; lp_list: string; lp_last_sent: string | null; why: string }>()
+    .catch(() => null);
+
+  const matches = cross?.results ?? [];
+  if (matches.length > 0) {
+    const top = matches[0]!;
+    return {
+      // NAMES THE FIRM AND THE NEXT ACT. "Review your crossmatches" is a queue; this is a thing to do.
+      action: `${top.lp_firm} is on your LP tracker and came up as a buyer for ${top.candidate_name} — decide whether to approach them on the buy side, and say no if not.`,
+      why:
+        `${top.why} You are already in contact with them${top.lp_last_sent ? ` (last LP send ${top.lp_last_sent})` : ""}, ` +
+        `so this is a conversation you are already having rather than a cold approach. They are on the ` +
+        `"${top.lp_list}" list, which is a fact about them as an LP and says nothing about them as a buyer.`,
+      detail: matches.slice(1).map((m) => `${m.lp_firm} ↔ ${m.candidate_name} — ${m.lp_list}`),
+    };
+  }
+
+  /*
+   * A LOT ON HER BOOK THAT NOBODY CAN SIZE A BUYER FOR.
+   *
+   * `storeLiveBook` deliberately keeps a sizeless lot when she typed `add` or `book` — "if `add` can
+   * hold a name with no number" — rather than throwing the name away. That is right at intake and it
+   * leaves a real gap at the other end: Monique matches on size, so a lot with no number is
+   * inventory that cannot be worked. It is hers to close, in one line, and nobody else can.
+   *
+   * THE BOOK'S AGE IS NOT CHECKED HERE. A stale book is machinery-adjacent nagging and already has
+   * a home in `capital/bookNag.ts` on the alert surface. Two places raising the same fact is the
+   * defect this repository names; one fact, one place.
+   */
+  const sizeless = await env.DB
+    .prepare(
+      `SELECT l.asset, l.side, l.size_text
+         FROM capital_book_line l
+         JOIN capital_book b ON b.id = l.book_id
+        WHERE b.superseded_at IS NULL
+          AND l.size_usd IS NULL AND l.size_min_usd IS NULL
+          AND l.size_max_usd IS NULL AND l.size_shares IS NULL
+        ORDER BY l.rowid
+        LIMIT 3`,
+    )
+    .all<{ asset: string; side: string; size_text: string | null }>()
+    .catch(() => null);
+
+  const unsized = sizeless?.results ?? [];
+  if (unsized.length > 0) {
+    const top = unsized[0]!;
+    return {
+      action: `Put a size on ${top.asset} (${top.side}) — reply to boss@sequoiataylor.com with #monique and the number.`,
+      why:
+        `It is on your live book with no size, and Monique matches buyers on size — so that lot is ` +
+        `inventory nobody can work. One line closes it, and only you know the number.`,
+      detail: unsized.slice(1).map((l) => `${l.asset} (${l.side}) — ${l.size_text || "no size given"}`),
+    };
+  }
+
+  // Nothing worth saying. That is an answer, and it is the right one more often than not.
+  return null;
+}
+
 export async function wealthContract(env: Env, weekday: number): Promise<PillarContract> {
   const project = firstMoneyProject();
 
@@ -190,11 +316,34 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
   }
 
   /*
+   * ─── SOMETHING IN BROKERAGE, MONDAY TO FRIDAY ─────────────────────────────
+   *
+   * Her instruction: "my today's contract should suggest something in brokerage M-F."
+   *
+   * PLACED HERE, AND THE POSITION IS THE ARGUMENT. §5.3 already gives the brokerage right of first
+   * refusal, and the two sources above are brokerage too — a missed-deal pairing out of her own
+   * mailbox and a reviewed sourcing candidate are both stronger than anything below, so they keep
+   * their rank. What was missing is that when BOTH are empty — which is most days — the contract
+   * fell through to a relationship touch or, on an empty table, to the bootstrap line. She was
+   * being handed set-up work on a business with live inventory sitting in the system.
+   *
+   * So this sits above the touch and below the two stronger brokerage sources: live inventory and a
+   * firm she is already talking to beat a generic touch, and lose to a deal already half-made.
+   *
+   * IT IS ALLOWED TO BE SILENT, and usually is. `brokerageMove` returns null on weekends and on any
+   * weekday with nothing real to say, and there is deliberately no filler behind it — a suggestion
+   * every weekday whether or not one exists is how she learns to skip the section.
+   */
+  const brokerage = await brokerageMove(env, weekday);
+  if (brokerage) {
+    return { available: true, means: WEALTH_MEANS, ...brokerage };
+  }
+
+  /*
    * TOUCHES DUE, FROM THE RANKED LIST — the instrument the system already has and has never had a
    * row in. `relationships` carries strategic importance, trust, opportunity value, cadence days and
    * last contact, with a scoring engine behind it. Built, never populated, invisible because empty.
-   */
-  /*
+   *
    * TOUCHES DUE, JOINED TO THE PERSON, because the name is not on this table.
    *
    * `relationships` holds the scoring — importance, trust, opportunity value, cadence, last contact
@@ -290,6 +439,97 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
  * COMPLETION, NOT PROGRESS. The oldest open loop comes before a fourth new thing, because a person
  * with six side projects fails by starting rather than by finishing.
  */
+/**
+ * AT MOST ONE SIDE-HUSTLE ITEM A DAY, AND ONLY WHERE A HUMAN IS ACTUALLY REQUIRED.
+ *
+ * ─── Her instruction ───────────────────────────────────────────────────────
+ *
+ *   "should suggest something that requires a human touch from one of the side hustles when
+ *    appropriate n o more than 1 per day as appropriate"
+ *
+ * ─── The cap is the feature, not a limit on the feature ────────────────────
+ *
+ * "No more than 1 per day" is not "usually one". She is protecting the contract from becoming a
+ * list — the same thing §17 does by capping priorities at three, and the same thing
+ * `proposedPriorities` does by refusing to pad a short list. So this returns ONE item or none, and
+ * the count is enforced by the shape of the function rather than by a caller remembering.
+ *
+ * ─── "Requires a human touch" is DECLARED, never inferred ──────────────────
+ *
+ * `owned_deliverables.blocker` is free prose — "waiting on the cover files", "Amazon has not
+ * replied". Reading her out of that text would be matching by RESEMBLANCE, which this repository
+ * refuses everywhere it matters: the Ahrefs fixer matches repositories by REPO_IDENTITY.md "never
+ * by resemblance", and the contacts sync refuses a batch it cannot source. A guess about whether
+ * something needs her, placed in her day, is a guess she has to check before she can trust — and
+ * one wrong one teaches her to skim.
+ *
+ * So 0233 adds `needs_owner`, and the test it encodes is narrow: THIS CANNOT PROCEED WITHOUT HER
+ * JUDGEMENT, HER NAME, HER SIGNATURE OR HER VOICE. Not "important". Not "stuck". Work an employee
+ * or a script can do is work to DISPATCH, and putting it in front of her instead is how the
+ * contract turns into a list of things she has to route.
+ *
+ * ─── AND IT MUST SAY WHY, or it does not appear ────────────────────────────
+ *
+ * A row claiming "this needs you" that cannot say what only she can do is a puzzle, not a task. The
+ * column is nullable because ALTER TABLE cannot add NOT NULL without inventing a default; the
+ * refusal lives here, where it is enforceable, and a test proves it.
+ *
+ * ─── The property list comes from `projects.ts` and nowhere else ───────────
+ *
+ * That file is already the repository's register of what she works on, and is deliberately code
+ * rather than a table. The side hustles are its `spry` lane — Industry Guides, the two SaaS apps,
+ * the three digital-product sites, the YouTube channel — MINUS `authority_network`, which the file
+ * itself excludes in terms: "A cost centre, not a line — never a day's work." The brokerage and
+ * West Peek are not side hustles and have their own pillar.
+ */
+export const SIDE_HUSTLE_KEYS = PROJECTS
+  .filter((p) => p.lane === "spry" && p.key !== "authority_network")
+  .map((p) => p.key);
+
+export async function humanTouch(
+  env: Env,
+): Promise<{ action: string; why: string; detail?: string[] } | null> {
+  const placeholders = SIDE_HUSTLE_KEYS.map(() => "?").join(",");
+  // RULE 0 AT THE CALL SITE: an empty key list would make this `IN ()`, which matches nothing in
+  // SQLite and would silently retire the feature. If projects.ts ever loses its spry lane this must
+  // be a visible absence, not a query that quietly never matches.
+  if (SIDE_HUSTLE_KEYS.length === 0) return null;
+
+  const row = await env.DB
+    .prepare(
+      `SELECT d.id, d.name, d.project_key, d.needs_owner_why, d.blocker, d.blocked_since, e.name AS employee
+         FROM owned_deliverables d
+         LEFT JOIN employees e ON e.id = d.employee_id
+        WHERE d.needs_owner = 1
+          AND d.state IN ('open','blocked')
+          AND d.project_key IN (${placeholders})
+        ORDER BY COALESCE(d.blocked_since, d.last_activity_at, 0) ASC
+        LIMIT 1`,
+    )
+    .bind(...SIDE_HUSTLE_KEYS)
+    .first<{
+      id: string; name: string; project_key: string; needs_owner_why: string | null;
+      blocker: string | null; blocked_since: number | null; employee: string | null;
+    }>()
+    .catch(() => null);
+
+  // No row, or a row that cannot say what only she can do. Both are silence, and silence is the
+  // expected answer on most days — "when appropriate" is permission to have nothing.
+  if (!row || !row.needs_owner_why || !row.needs_owner_why.trim()) return null;
+
+  const project = PROJECTS.find((p) => p.key === row.project_key);
+  const days = row.blocked_since ? Math.floor((Date.now() - row.blocked_since) / 86_400_000) : null;
+
+  return {
+    action: `${project?.name ?? row.project_key}: ${row.needs_owner_why.trim()}`,
+    why:
+      `${row.name} cannot move without you${row.employee ? ` — ${row.employee} owns it and has taken it as far as she can` : ""}` +
+      `${days !== null ? `, and it has been waiting ${days} day${days === 1 ? "" : "s"}` : ""}.` +
+      ` Everything on this line that someone else could do has been done.`,
+    ...(row.blocker ? { detail: [row.blocker] } : {}),
+  };
+}
+
 export async function executionContract(env: Env, weekday: number): Promise<PillarContract> {
   /*
    * A STALLING DEAL OUTRANKS EVERYTHING HERE, because it is the symptom that costs the most and the
@@ -351,6 +591,29 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
       ...(stalled.length > 3 ? { gap: `${stalled.length - 3} more deals are also past their stage threshold.` } : {}),
     };
   }
+
+  /*
+   * ─── ONE SIDE-HUSTLE ITEM THAT NEEDS HER, ABOVE THE OLDEST OPEN LOOP ──────
+   *
+   * "should suggest something that requires a human touch from one of the side hustles when
+   *  appropriate n o more than 1 per day as appropriate"
+   *
+   * WHY IT OUTRANKS THE OLDEST LOOP, which is the only interesting choice here. An open loop is HER
+   * OWN work waiting on her; a `needs_owner` item is SOMEBODY ELSE'S work waiting on her. Holding
+   * the second one up spends two people's time instead of one, and the employee has already taken
+   * it as far as she can. §5.7's "finishing beats starting a fourth thing" is about her own pile and
+   * is not in tension with unblocking someone.
+   *
+   * AND IT LOSES TO A STALLING DEAL, because a deal that has stopped moving is money leaving, and
+   * because §5.5 keeps side projects out of the weekday foreground. This is the narrow exception
+   * §5.5 tolerates: not working the side project, but signing the one thing only she can sign.
+   *
+   * THE CAP IS STRUCTURAL. `humanTouch` returns one item or none, and the contract has one action,
+   * so "no more than 1 per day" cannot be violated by a caller forgetting. Most days it is null —
+   * a declaration is required, the reason is required, and absent either the answer is silence.
+   */
+  const touch = await humanTouch(env);
+  if (touch) return { available: true, means: MEANS, ...touch };
 
   /*
    * OLDEST FIRST, BY `created_at` — the column this table actually has. An earlier draft ordered by
