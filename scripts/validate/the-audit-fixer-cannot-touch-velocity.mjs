@@ -57,6 +57,8 @@ const PROMPT = "scripts/ops/ahrefs-audit-fix-prompt.md";
 const INSTALLER = "scripts/ops/install-agent-launchd.sh";
 const MOUNT = "src/worker/boss/index.ts";
 const TODAY = "src/worker/boss/today/pillars.ts";
+/** Where a duty's silence is supposed to surface: the alert list, not the day's contract. */
+const ALERTS = "src/worker/boss/routes/today.ts";
 
 /** Replay the shipped migrations and ask the resulting database about the duty and the roster. */
 export function stateFromMigrations(dir = join(ROOT, "migrations")) {
@@ -89,11 +91,34 @@ export function dutyIsReachable(state, files) {
   if (!duty) return [`no duty called ${DUTY_ID} exists after every migration was replayed. The employee she asked for has no standing work.`];
 
   if (duty.suspended) bad.push(`${DUTY_ID} ships SUSPENDED. A duty installed switched off is a feature nobody gets.`);
-  if (duty.cadence !== "weekly") {
-    bad.push(`${DUTY_ID} has cadence '${duty.cadence}'. Ahrefs recrawls weekly and the reports arrive weekly; anything else grades a crawl that has not changed.`);
+  /*
+   * ─── THE CADENCE IS HERS, AND THIS CHECK USED TO SAY OTHERWISE ────────────
+   *
+   * This asserted `cadence === "weekly"`, with the reason "Ahrefs recrawls weekly and the reports
+   * arrive weekly; anything else grades a crawl that has not changed." That reasoning is sound on
+   * its own terms and it is not the one that decides. Owner, 13 September 2026:
+   *
+   *   "fix it so danielle does this ahref sweep on a schedule (1x per month is fine)"
+   *
+   * She is buying back attention, and she is entitled to make that trade: a monthly pass grades four
+   * weeks of accumulated reports instead of one, which means some findings are older when they are
+   * fixed. That is the real cost, it is hers to accept, and stating it here is better than a
+   * validator quietly overruling her because an earlier engineering preference got written down as
+   * a rule. A validator that outranks the owner is not a guard, it is a disagreement with tenure.
+   *
+   * WHAT IS STILL CHECKED is the thing that actually rots: a cadence this system cannot schedule.
+   * `duties/cadence.ts` understands daily, weekly and monthly and nothing else, and a weekly duty
+   * that names no weekday fires on whatever day the scheduler defaults to.
+   */
+  const SCHEDULABLE = new Set(["daily", "weekly", "monthly"]);
+  if (!SCHEDULABLE.has(duty.cadence)) {
+    bad.push(`${DUTY_ID} has cadence '${duty.cadence}', which duties/cadence.ts cannot schedule. nextDueAt() would throw and the duty would keep a stale clock for ever.`);
   }
-  if (duty.weekday === null || duty.weekday === undefined) {
+  if (duty.cadence === "weekly" && (duty.weekday === null || duty.weekday === undefined)) {
     bad.push(`${DUTY_ID} is weekly and names no weekday, so its next occurrence is whatever the scheduler defaults to.`);
+  }
+  if (duty.cadence === "monthly" && duty.weekday !== null && duty.weekday !== undefined) {
+    bad.push(`${DUTY_ID} is monthly and still carries weekday ${duty.weekday}. nextDueAt() ignores weekday for a monthly cadence, so that is a fact governing nothing — which is how the next reader is misled about when this runs.`);
   }
   if (!state.table) bad.push(`no migration creates the table '${TABLE}', so the duty delivers into nothing.`);
   if (!state.policy) bad.push(`'${TABLE}' has no data_policy row. An unclassified table is refused at runtime.`);
@@ -264,21 +289,76 @@ export function velocityCannotBeAutoFixed(files) {
   return bad;
 }
 
-/** Rule: the route is mounted, and a missed week is visible on Today. */
+/**
+ * Rule: the route is mounted, and a missed pass is VISIBLE — on the alert surface, not in the
+ * contract.
+ *
+ * ─── This check used to assert the opposite, and the owner corrected it ────
+ *
+ * It required `today/pillars.ts` to mention the duty and read `site_audit_findings`, because
+ * `siteAuditGap()` composed a line for Today's CONTRACT. She found that line and named the rule:
+ *
+ *   "this was in today's contract: `Danielle's Ahrefs pass has not reported — run
+ *    ahrefs-audit-fix.sh or find out why launchd did not.` ----- something not working should never
+ *    be in today's contract it should be in the inbox."
+ *
+ * Today's contract is what SHE is doing today. A job that did not run is a notification about her
+ * own machinery — and it did not merely sit there, it returned FIRST, ahead of a stalling deal and
+ * the oldest open loop. A cron was outranking a dying deal.
+ *
+ * ─── THE CONCERN WAS RIGHT; ONLY ITS ADDRESS WAS WRONG ────────────────────
+ *
+ * "A duty that stops running looks exactly like one finding nothing" is true and is exactly what
+ * this guard exists for, so the check is not deleted — it is REPOINTED. `routes/today.ts` raises a
+ * HIGH alert for every duty that has not fired within twice its cadence, on the surface that already
+ * carries the other thirty machinery items. This duty was never exempt from it.
+ *
+ * So the invariant is now stated in both directions, which is what makes it a rule rather than a
+ * preference: the alert path MUST exist, and the contract MUST NOT carry it.
+ * `validate:contract-is-her-work` holds the same line from the other end, and two validators that
+ * contradicted each other — which is what these two did for about an hour — is worse than one.
+ */
 export function reachableAndEscalating(files) {
   const bad = [];
   if (files.mount === null) return [`${MOUNT} could not be read.`];
   if (!/routes\/siteAudit/.test(files.mount) || !/app\.route\([^)]*siteAudit\)/.test(files.mount)) {
     bad.push(`${MOUNT} does not mount the siteAudit router, so the endpoint the job posts to does not exist and every run would 404.`);
   }
-  if (files.today === null) {
-    bad.push(`${TODAY} could not be read, so the escalation is unverified.`);
+  // ── The alert path exists, and covers EVERY duty rather than naming this one ──
+  if (files.alerts === null) {
+    bad.push(`${ALERTS} could not be read, so the escalation is unverified.`);
   } else {
-    if (!files.today.includes(DUTY_ID)) {
-      bad.push(`${TODAY} never mentions ${DUTY_ID}. A weekly duty that stops running looks exactly like one finding nothing, and employees cannot drop owned work.`);
+    /*
+     * GENERIC, NOT BY NAME, AND THAT IS STRICTLY BETTER. The old design hand-wrote an escalation for
+     * this one duty; the alert surface raises one for ANY duty whose clock says it should have fired
+     * and has not. So the check is that the generic path exists — a per-duty check here would be a
+     * second list, and the eleven other local-job duties would still have nothing.
+     */
+    const raisesStaleDuties =
+      /FROM standing_duties/.test(files.alerts) &&
+      /has not fired for/.test(files.alerts) &&
+      /never fired since it was created/.test(files.alerts);
+    if (!raisesStaleDuties) {
+      bad.push(
+        `${ALERTS} no longer raises an alert for a duty that has not fired. A duty that stops running ` +
+        `looks exactly like one finding nothing, and with the contract line correctly removed this is ` +
+        `the ONLY thing that would tell her — so its absence is silent by construction.`,
+      );
     }
-    if (!new RegExp(`FROM\\s+${TABLE}`).test(files.today)) {
-      bad.push(`${TODAY} does not read ${TABLE}, so the gap it reports would be a duty's own clock rather than whether anything was actually delivered.`);
+  }
+
+  // ── And the contract does NOT carry it. Stated here too, so the two ends cannot drift. ──
+  if (files.today === null) {
+    bad.push(`${TODAY} could not be read, so it cannot be confirmed free of machinery.`);
+  } else {
+    const code = files.today.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    if (code.includes(DUTY_ID) || new RegExp(`FROM\\s+${TABLE}`).test(code)) {
+      bad.push(
+        `${TODAY} reads ${DUTY_ID} or ${TABLE} again. Her rule of 13 Sep 2026: "something not working ` +
+        `should never be in today's contract it should be in the inbox." It belongs on the alert ` +
+        `surface, where every other duty's silence already goes — and in the contract it DISPLACES ` +
+        `real work, because it returned ahead of a stalling deal.`,
+      );
     }
   }
   return bad;
@@ -289,6 +369,7 @@ export function reachableAndEscalating(files) {
 const loadFiles = () => ({
   route: read(ROUTE), runner: read(RUNNER), reporter: read(REPORTER),
   prompt: read(PROMPT), installer: read(INSTALLER), mount: read(MOUNT), today: read(TODAY),
+  alerts: read(ALERTS),
 });
 
 if (process.argv.includes("--self-test")) {
@@ -327,8 +408,15 @@ if (process.argv.includes("--self-test")) {
   expect("a duty whose model disagrees with its script", dutyIsReachable(state, {
     ...files, runner: (files.runner ?? "").replace("claude-sonnet-4-5-20250929", "claude-haiku-4-5"),
   }), true);
-  expect("a daily cadence for a weekly crawl", dutyIsReachable({
-    ...state, duty: { ...state.duty, cadence: "daily" },
+  // The cadence is hers; what must fail is one `duties/cadence.ts` cannot schedule at all.
+  expect("a cadence the scheduler cannot schedule", dutyIsReachable({
+    ...state, duty: { ...state.duty, cadence: "fortnightly" },
+  }, files), true);
+  expect("a monthly duty still carrying a weekday that governs nothing", dutyIsReachable({
+    ...state, duty: { ...state.duty, cadence: "monthly", weekday: 4 },
+  }, files), true);
+  expect("a weekly duty that names no day", dutyIsReachable({
+    ...state, duty: { ...state.duty, cadence: "weekly", weekday: null },
   }, files), true);
 
   expect("a route that stops calling mayAutoFix", velocityCannotBeAutoFixed({
@@ -350,8 +438,16 @@ if (process.argv.includes("--self-test")) {
     ...files, reporter: (files.reporter ?? "").replaceAll("/site-audit-findings", "/nowhere"),
   }), true);
   expect("an unmounted router", reachableAndEscalating({ ...files, mount: (files.mount ?? "").replace(/app\.route\("\/api\/engineering", siteAudit\);/, "") }), true);
-  expect("a Today that stopped watching for the gap", reachableAndEscalating({
-    ...files, today: (files.today ?? "").replaceAll(DUTY_ID, "duty_something_else"),
+  expect("an alert surface that stopped raising a duty that has not fired", reachableAndEscalating({
+    ...files, alerts: (files.alerts ?? "").replaceAll("has not fired for", "is quite happy after"),
+  }), true);
+  /*
+   * AND THE OTHER DIRECTION, which is the half that would otherwise rot. Her rule is that machinery
+   * belongs in the Inbox, so putting the escalation BACK into the contract must fail here as well as
+   * in `validate:contract-is-her-work`. A rule stated at one end only is a preference.
+   */
+  expect("the escalation put back into Today's contract", reachableAndEscalating({
+    ...files, today: `${files.today ?? ""}\nconst d = await env.DB.prepare("SELECT suspended FROM standing_duties WHERE id = '${DUTY_ID}'").first();`,
   }), true);
 
   if (failed) { console.error(`AUDIT FIXER SELF-TEST FAILED (${failed})`); process.exit(1); }
@@ -403,9 +499,10 @@ if (problems.length) {
 const seat = state.roster.find((s) => s.id === state.duty.employee_id);
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 console.log(
-  `AUDIT FIXER SCAN PASSED: ${DUTY_ID} is held by ${seat.name} (${seat.role}), runs ${state.duty.cadence} on `
-  + `${DAYS[state.duty.weekday]} at ${String(state.duty.local_hour).padStart(2, "0")}:${String(state.duty.local_minute).padStart(2, "0")} `
-  + `${state.duty.timezone}, delivers into ${TABLE} through a mounted route, escalates onto Today when it does not, `
+  `AUDIT FIXER SCAN PASSED: ${DUTY_ID} is held by ${seat.name} (${seat.role}), runs ${state.duty.cadence} `
+  + `${state.duty.cadence === "weekly" ? `on ${DAYS[state.duty.weekday]} ` : state.duty.cadence === "monthly" ? "on the 1st " : ""}`
+  + `at ${String(state.duty.local_hour).padStart(2, "0")}:${String(state.duty.local_minute).padStart(2, "0")} `
+  + `${state.duty.timezone}, delivers into ${TABLE} through a mounted route, raises an ALERT rather than a contract line when it does not, `
   + `and cannot open a pull request against ${NO_AUTO_FIX_REPOS.join(", ")} — refused in the policy, in the runner, `
   + `in the reporter and again server-side. ${state.roster.length} active employees examined.`,
 );
