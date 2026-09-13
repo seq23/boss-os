@@ -219,6 +219,13 @@ export function failedTaskAlertText(failedCount: number, group: ErrorAlertGroup 
   // "in the last day" rather than "today": the window is 24 rolling hours, so the newest failure
   // can perfectly well have happened last night, and a screen that says "today" about last night is
   // the small lie that makes her stop trusting the timestamps.
-  const times = group.count === 1 ? "The failure logged" : `The newest of ${group.count} failures logged`;
-  return `${head} ${times} in the last day was at ${when}: ${group.message}`;
+  /*
+   * "FAILURE EVENTS", NOT "FAILURES" — the two numbers in this sentence count different things and
+   * live production showed them disagreeing on the first morning: two tasks sitting failed, five
+   * failure events in the window, because a task that fails, is requeued and fails again logs twice.
+   * Both numbers are true; a sentence that lets them read as the same number is the small lie that
+   * makes her stop trusting the ones that matter.
+   */
+  const times = group.count === 1 ? "The failure event" : `The newest of ${group.count} failure events`;
+  return `${head} ${times} in the last day was logged at ${when}: ${group.message}`;
 }
