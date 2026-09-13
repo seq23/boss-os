@@ -384,18 +384,32 @@ export interface SnapshotSkipped {
  * free of narrowing they have no reason to do.
  */
 export async function takeSnapshot(env: Env, label: string): Promise<SnapshotWritten>;
+export async function takeSnapshot(env: Env, label: string, opts: { now: number }): Promise<SnapshotWritten>;
 export async function takeSnapshot(
   env: Env,
   label: string,
-  opts: { skipIfUnchanged: true },
+  opts: { skipIfUnchanged: true; now?: number },
 ): Promise<SnapshotWritten | SnapshotSkipped>;
 export async function takeSnapshot(
   env: Env,
   label: string,
-  opts: { skipIfUnchanged?: boolean } = {},
+  opts: { skipIfUnchanged?: boolean; now?: number } = {},
 ): Promise<SnapshotWritten | SnapshotSkipped> {
   const id = newId("snp");
-  const ts = Date.now();
+  /*
+   * THE RUN'S CLOCK, NOT THE WALL CLOCK, WHEN THE CALLER HAS ONE.
+   *
+   * `runScheduled(env, now)` takes an injected clock and decides the cadence against it — and this
+   * function stamped `ts = Date.now()` regardless, so the row it wrote disagreed with the run that
+   * wrote it. In production the two are the same instant and nothing shows. In any test that moves
+   * the clock they are years apart, and the NEXT decision reads a `ts` from the future and answers
+   * "not due" for ever: a simulated fortnight of daily runs took one snapshot and thirteen refusals,
+   * and both the old suite and the new one read that as the cadence working.
+   *
+   * A cadence whose end-to-end behaviour cannot be exercised is a cadence nobody can prove, so the
+   * clock is threaded through rather than re-read here. Absent, it is `Date.now()` as before.
+   */
+  const ts = opts.now ?? Date.now();
   await env.DB
     .prepare(`INSERT INTO vault_snapshots (id, ts, label, status) VALUES (?,?,?,'pending')`)
     .bind(id, ts, label)
