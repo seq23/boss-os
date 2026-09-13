@@ -290,65 +290,6 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
  * COMPLETION, NOT PROGRESS. The oldest open loop comes before a fourth new thing, because a person
  * with six side projects fails by starting rather than by finishing.
  */
-/**
- * How far past its due time the weekly pass may be before the silence is itself the news.
- *
- * ONE DAY, not seven. The duty's own `next_due_at` already carries "when it should have run", and
- * that date only moves when the job reports — so being past it at all is the missed pass. The day
- * of slack is for the ordinary case: launchd fires at 06:00 and she may open the screen at 06:30.
- */
-const AUDIT_GRACE_MS = 86_400_000;
-
-/**
- * Danielle's weekly Ahrefs pass, when it has not reported.
- *
- * READ FROM THE FINDINGS, NOT FROM `last_run_at`. The duty row's clock is advanced by the ingest
- * endpoint, so the two agree today — and reading the row would make this a check of a counter
- * rather than of the thing the counter is about. The last time a finding was WRITTEN is the last
- * time this employee actually delivered, and it stays true if somebody ever advances that clock
- * from somewhere else. Guarded so a database without the table yet reads as "nothing to say".
- */
-async function siteAuditGap(env: Env): Promise<{ action: string; why: string; detail?: string[] } | null> {
-  const duty = await env.DB
-    .prepare(`SELECT suspended, next_due_at FROM standing_duties WHERE id = 'duty_site_audit_repair'`)
-    .first<{ suspended: number; next_due_at: number | null }>()
-    .catch(() => null);
-  // Not installed, or she suspended it on purpose. A suspended duty is a decision, not a gap.
-  if (!duty || duty.suspended) return null;
-
-  /*
-   * ─── THE GATE IS "IT WAS DUE AND DID NOT REPORT", NOT "IT HAS BEEN QUIET" ─
-   *
-   * The first version measured only the age of the newest finding, and its own test suite caught
-   * what that meant: on a database where the duty had never yet been due — a fresh install, the
-   * morning after the migration lands, every test fixture in the repository — it fired immediately
-   * and pushed a stalling deal and the oldest open loop off the day. A nag that greets you on
-   * install is one you learn to scroll past, which costs more than the gap it was reporting.
-   *
-   * `next_due_at` is advanced by the ingest endpoint and by nothing else, so a due date still
-   * sitting in the past IS the missed report — the same fact, read from the clock the scheduler
-   * actually keeps. The findings table then supplies how long it has been, which is the part she
-   * can act on. One day of slack because launchd fires at 06:00 and she may open this at 06:30.
-   */
-  if (duty.next_due_at === null) return null;
-  const overdueBy = Date.now() - duty.next_due_at;
-  if (overdueBy < AUDIT_GRACE_MS) return null;
-
-  const last = await env.DB
-    .prepare(`SELECT MAX(found_at) AS at FROM site_audit_findings`)
-    .first<{ at: number | null }>()
-    .catch(() => null);
-  const days = last?.at ? Math.floor((Date.now() - last.at) / 86_400_000) : null;
-
-  return {
-    action: "Danielle's Ahrefs pass has not reported — run `ahrefs-audit-fix.sh` or find out why launchd did not.",
-    why: days === null
-      ? `It was due ${Math.floor(overdueBy / 86_400_000)} day(s) ago and has never reported once. A duty that has never delivered is not a cadence yet, it is an install that did not finish.`
-      : `${days} days since the last audit finding, on a weekly duty that was due ${Math.floor(overdueBy / 86_400_000)} day(s) ago. Ahrefs has recrawled since then, so this is a missed pass rather than a quiet week — a quiet week writes a row saying so.`,
-    detail: ["Reports land at /api/boss/engineering/site-audit-findings.", "A week with no findings still writes one row; silence means the job did not run."],
-  };
-}
-
 export async function executionContract(env: Env, weekday: number): Promise<PillarContract> {
   /*
    * A STALLING DEAL OUTRANKS EVERYTHING HERE, because it is the symptom that costs the most and the
@@ -363,23 +304,38 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
   const MEANS = "Did anything you own actually get built or shipped. Danielle's pillar.";
 
   /*
-   * ─── A DUTY WITH HER NAME ON IT THAT HAS NOT RUN OUTRANKS EVERYTHING HERE ──
+   * ─── WHAT USED TO BE FIRST HERE, AND WHY IT IS GONE ────────────────────────
    *
-   * `duty_site_audit_repair` is Danielle's weekly Ahrefs pass. It runs from launchd on her Mac, and
-   * a laptop that was asleep on Thursday morning is not an unusual event — it is the ordinary one.
+   * This slot held `siteAuditGap()`, which composed:
    *
-   * WHY THIS IS AT THE TOP RATHER THAN A NOTE SOMEWHERE. A weekly job that silently stops running
-   * looks exactly like a weekly job finding nothing, and this codebase has shipped that precise
-   * shape: a duty that fired eleven Sundays, dropped its payload every time, and left `last_run_at`
-   * advancing cheerfully the whole while. Employees cannot drop owned work, so a missed week is a
-   * VISIBLE STATE on the day rather than an absence nobody can see.
+   *     "Danielle's Ahrefs pass has not reported — run `ahrefs-audit-fix.sh` or find out why
+   *      launchd did not."
    *
-   * EIGHT DAYS, NOT SEVEN. A weekly duty is due once every seven, so seven would fire on the
-   * ordinary morning before the job's own slot came round and teach her to ignore it. Eight means
-   * the window has actually been missed.
+   * and returned it AHEAD of a stalling deal and the oldest open loop. The owner found it in her
+   * contract and named the general rule, which is worth more than the instance:
+   *
+   *     "something not working should never be in today's contract it should be in the inbox."
+   *
+   * She is right, and the file already knew it. Fifteen lines below, the comment on the West Peek
+   * fallthrough argues the same thing about a different leak, and `today/runOfShow.ts` deleted the
+   * five machine stages for the identical reason: "'0 of 5 stages complete' told her how far the
+   * MACHINERY had got, on a screen whose whole job is telling her how far SHE had got."
+   *
+   * TODAY'S CONTRACT IS WHAT SHE IS DOING TODAY. A job that did not run is not her work — it is a
+   * notification about her own machinery, and putting it here did not merely misfile it: it
+   * DISPLACED real work, because it returned first. A stalling deal is the symptom this pillar
+   * exists to catch and it was being pushed down the page by a cron.
+   *
+   * NOTHING IS LOST BY DELETING IT, and that is the reason there is no replacement call here.
+   * `routes/today.ts` already raises a HIGH alert for EVERY duty that has not fired within twice
+   * its cadence — `"<name>" has not fired for N days` — on the same alert surface that carries the
+   * other thirty machinery items (credentials, budget, cron, kill switch, stuck tasks). This duty
+   * was never exempt from that. So the contract loses a line it should not have had, and the alert
+   * surface keeps the one it already carried. One fact, one place, which is the rule this
+   * repository states everywhere and broke here.
+   *
+   * Guarded by `scripts/validate/todays-contract-is-her-work.mjs` so the next one cannot be added.
    */
-  const audit = await siteAuditGap(env);
-  if (audit) return { available: true, means: MEANS, ...audit };
 
   const stalled = await stalledDeals(env);
   if (stalled.length > 0) {

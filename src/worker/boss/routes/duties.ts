@@ -50,7 +50,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest } from "../lib/http";
-import { nextDueAt } from "../duties/cadence";
+import { isDue, nextDueAt } from "../duties/cadence";
 
 export const duties = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -201,6 +201,85 @@ duties.post("/ran", async (c) => {
   });
 
   return ok(c, { run_id: runId, duty_id: duty.id, outcome, last_run_at: outcome === "ok" ? now : duty.last_run_at }, 201);
+});
+
+/**
+ * IS THIS JOB DUE RIGHT NOW? Read-only, and the answer a launchd job asks before doing any work.
+ *
+ * ─── Why a scheduled job has to ask ────────────────────────────────────────
+ *
+ * `com.seq.boss-ahrefs-audit` was installed with a single `StartCalendarInterval` naming Thursday
+ * 06:00 and, measured on 13 Sep 2026, had `runs = 0` and "(never exited)" — it had never fired once.
+ * The plist was written on 11 Sep at 18:06, which is AFTER that week's Thursday window, so its first
+ * occurrence would have been a week later. The calendar entry was not broken; it simply had not
+ * come round.
+ *
+ * That is the benign reading, and it is exactly why the design is wrong. She runs on a laptop that
+ * sleeps on battery. A calendar entry that names ONE moment a week — or, now that the cadence is
+ * monthly, one moment a MONTH — has one chance to fire, and a machine that is shut down through it
+ * loses the whole period. Widening the schedule and hoping is the version of this fix that looks
+ * like a fix.
+ *
+ * ─── The design that survives a sleeping machine ───────────────────────────
+ *
+ * The calendar entry becomes DAILY and cheap, and the JOB asks whether it is actually due. The
+ * duty row's `next_due_at` is the only clock — the one the ingest endpoint already advances — so
+ * there is no second schedule to drift. Consequences:
+ *
+ *   - A missed day costs a day, not a month. The next morning's tick finds the duty still due.
+ *   - launchd runs a missed daily calendar entry when the machine wakes, so ordinary sleep is
+ *     covered by launchd itself and a full shutdown is covered by tomorrow.
+ *   - A day when nothing is due exits 0 having deliberately done nothing AND SAYING SO, which is
+ *     the only form of "exit 0 having done nothing" this repository permits.
+ *
+ * IT RESOLVES BY SCRIPT NAME, like `/ran`, so no second list exists to fall out of step.
+ */
+duties.get("/due/:local_job", async (c) => {
+  const localJob = c.req.param("local_job");
+  const matches = await c.env.DB
+    .prepare(
+      `SELECT id, name, suspended, next_due_at, last_run_at, executor
+         FROM standing_duties
+        WHERE json_extract(task_input, '$.local_job') = ?`,
+    )
+    .bind(localJob)
+    .all<any>();
+  const rows = matches.results ?? [];
+
+  if (rows.length === 0) {
+    throw badRequest(
+      `No standing duty names "${localJob}" as its local job`,
+      "Refused rather than guessed at. A job that cannot find its duty must not decide for itself " +
+        "whether it is due — that is a second schedule, which is the thing this design removes.",
+    );
+  }
+  if (rows.length > 1) {
+    throw badRequest(
+      `${rows.length} duties name "${localJob}" as their local job`,
+      `They are: ${rows.map((r: any) => r.id).join(", ")}. validate:launchd-duty-link fails the build on this.`,
+    );
+  }
+
+  const duty = rows[0];
+  const now = Date.now();
+  const due = duty.next_due_at !== null && isDue(duty.next_due_at, Boolean(duty.suspended), now);
+
+  return ok(c, {
+    duty_id: duty.id,
+    local_job: localJob,
+    due,
+    suspended: Boolean(duty.suspended),
+    next_due_at: duty.next_due_at,
+    last_run_at: duty.last_run_at,
+    // The sentence the job prints when it declines to run, so a skip in a log is self-explaining.
+    reason: duty.suspended
+      ? "the duty is suspended, which is a decision rather than a gap"
+      : duty.next_due_at === null
+        ? "the duty has no next_due_at, so nothing can say whether it is due"
+        : due
+          ? `due since ${new Date(duty.next_due_at).toISOString()}`
+          : `not due until ${new Date(duty.next_due_at).toISOString()}`,
+  });
 });
 
 /**

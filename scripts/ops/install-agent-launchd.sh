@@ -596,14 +596,44 @@ launchctl unload "$MAILBOX_PLIST" 2>/dev/null || true
 launchctl load "$MAILBOX_PLIST"
 echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
 
-# ─── Danielle's weekly Ahrefs audit pass ─────────────────────────────────────
+# ─── Danielle's monthly Ahrefs audit pass ────────────────────────────────────
 #
-# THURSDAY 06:00 CENTRAL, AND THE HOUR IS DERIVED. Every Site Audit mail from sa@ahrefs.com was
-# timed before this was chosen: Thu 27 Aug 02:20-02:31 UTC, Thu 3 Sep 01:07-03:58, Thu 10 Sep
-# 01:07-02:42. Ahrefs recrawls the account weekly and delivers overnight into Thursday UTC, which is
-# Wednesday evening here. 06:00 Central is 11:00 UTC - seven hours after the latest arrival ever
-# observed, and the start of her Thursday, so a PR she has to merge is waiting when she opens the
-# machine. Running BEFORE the batch lands would grade last week's crawl.
+# MONTHLY, per her instruction of 13 Sep 2026: "fix it so danielle does this ahref sweep on a
+# schedule (1x per month is fine)". The duty row carries the cadence (migration 0232); this fires
+# the tick that asks whether it is due.
+#
+# 06:00 CENTRAL, AND THE HOUR IS DERIVED. Every Site Audit mail from sa@ahrefs.com was timed before
+# this was chosen: Thu 27 Aug 02:20-02:31 UTC, Thu 3 Sep 01:07-03:58, Thu 10 Sep 01:07-02:42.
+# Ahrefs recrawls the account and delivers overnight UTC, which is the previous evening here. 06:00
+# Central is 11:00 UTC - seven hours after the latest arrival ever observed, and the start of her
+# day, so a PR she has to merge is waiting when she opens the machine. Running BEFORE the batch
+# lands would grade the previous crawl.
+#
+# ─── DAILY TICK, MONTHLY WORK, AND WHY IT IS NOT A WIDER SCHEDULE ────────────
+#
+# MEASURED 13 Sep 2026: this job was LOADED with runs = 0 and last exit code "(never exited)". It
+# had never fired once, and the log directory was empty. The cause is benign - the plist file is
+# dated 11 Sep 18:06, AFTER that week's Thursday 06:00 window, so its first occurrence had simply
+# not come round - and that is exactly why the design had to change rather than the schedule widen.
+#
+# A StartCalendarInterval naming ONE moment a week had one chance to fire, and it looks identical
+# whether it is waiting or dead. She runs a laptop that sleeps on battery. launchd does re-fire a
+# missed calendar entry when the machine WAKES, so ordinary sleep was already covered - but a
+# machine shut down through the moment loses the whole period, and at a monthly cadence that is a
+# month, from a job whose whole value is that it keeps happening.
+#
+# So the entry fires EVERY DAY at 06:00 and `duty-run.sh --only-if-due` asks the duty row whether
+# there is work. `next_due_at` is the only clock, so there is no second schedule to drift. On
+# twenty-nine days out of thirty the tick exits 0 in under a second having deliberately done
+# nothing AND SAID SO in its log; on the day the work is due, it runs. A missed day now costs a day
+# instead of a month, and a day that launchd misses entirely is picked up by tomorrow's.
+#
+# AN UNREACHABLE BOSS OS IS A FAILURE, NOT A SKIP - duty-due.mjs exits 10 for "not due" and
+# something else for "could not tell", and the wrapper keeps them apart. Conflating them would let
+# an outage on the 1st retire the job in silence.
+#
+# THE FLAG COMES AFTER THE SCRIPT NAME so validate:launchd-duty-link still reads the local_job
+# immediately after `duty-run.sh` and the launchd-to-duty link stays provable offline.
 #
 # A LOCAL JOB AND NOT AN AGENT, for three separate reasons: it reads the contents of her mailbox,
 # which the Claude Code runner cannot; it needs working copies, git and gh, which a Worker has none
@@ -628,11 +658,11 @@ cat > "$AHREFS_PLIST" <<AHREOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>bash $REPO/scripts/ops/duty-run.sh ahrefs-audit-fix.sh -- bash $REPO/scripts/ops/ahrefs-audit-fix.sh</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh ahrefs-audit-fix.sh --only-if-due -- bash $REPO/scripts/ops/ahrefs-audit-fix.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -644,7 +674,7 @@ AHREOF
 
 launchctl unload "$AHREFS_PLIST" 2>/dev/null || true
 launchctl load "$AHREFS_PLIST"
-echo "Installed $AHREFS_LABEL — Thursday 06:00 Central."
+echo "Installed $AHREFS_LABEL — daily 06:00 Central tick, monthly work (asks the duty row)."
 
 # ─── Monique's LP reply digest ───────────────────────────────────────────────
 #

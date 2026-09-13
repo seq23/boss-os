@@ -54,6 +54,32 @@ if [ -z "$LOCAL_JOB" ]; then
   exit 2
 fi
 shift
+
+# ─── --only-if-due: a daily tick on a duty that is not daily ────────────────
+#
+# WHY A DAILY TICK AT ALL. `com.seq.boss-ahrefs-audit` named ONE moment a week and, measured on
+# 13 Sep 2026, had runs = 0 and "(never exited)" — the plist was written on 11 Sep at 18:06, after
+# that week's Thursday window, so its first occurrence had simply not come round. Nothing was
+# broken, and that is the problem: a schedule with one chance to fire looks identical whether it is
+# waiting or dead, and she runs on a laptop that sleeps on battery. A machine shut down through the
+# one moment loses the whole period.
+#
+# So such a job's calendar entry becomes DAILY and cheap, and this gate asks the duty row whether
+# there is work. `next_due_at` is the only clock — no second schedule to drift. A missed day then
+# costs a day rather than a month.
+#
+# THE FLAG COMES AFTER THE LOCAL_JOB, not before it, so `validate:launchd-duty-link` still reads the
+# script name immediately following `duty-run.sh` and the launchd-to-duty link stays provable.
+#
+# AN UNREACHABLE BOSS OS IS A FAILURE, NEVER A SKIP. duty-due.mjs exits 10 for "not due" and
+# something else for "could not tell"; conflating the two would let an outage retire the job in
+# silence, which is the defect class this wrapper exists to close.
+ONLY_IF_DUE=0
+if [ "${1:-}" = "--only-if-due" ]; then
+  ONLY_IF_DUE=1
+  shift
+fi
+
 if [ "${1:-}" = "--" ]; then shift; fi
 if [ $# -eq 0 ]; then
   echo "NAMED STOP [NO_COMMAND] duty-run.sh $LOCAL_JOB was given nothing to run." >&2
@@ -64,6 +90,26 @@ RUN_LOG="$LOG_DIR/$LOCAL_JOB-$(date +%Y-%m-%d-%H%M%S)-$$.log"
 STARTED_AT=$(( $(date +%s) * 1000 ))
 
 echo "[$(date +%H:%M:%S)] duty-run: $LOCAL_JOB" | tee -a "$RUN_LOG"
+
+if [ "$ONLY_IF_DUE" -eq 1 ]; then
+  if [ ! -d "$REPO" ]; then
+    echo "NAMED STOP [NO_REPO] $REPO — cannot ask whether $LOCAL_JOB is due, so nothing was run." | tee -a "$RUN_LOG" >&2
+    exit 2
+  fi
+  cd "$REPO" && LOCAL_JOB="$LOCAL_JOB" \
+    npm run --silent vault:run -- node scripts/ops/duty-due.mjs >> "$RUN_LOG" 2>&1
+  DRC=$?
+  if [ "$DRC" -eq 10 ]; then
+    # The one permitted "exit 0 having done nothing": it is named, dated, and in the log.
+    tail -1 "$RUN_LOG"
+    exit 0
+  fi
+  if [ "$DRC" -ne 0 ]; then
+    echo "NAMED STOP [DUE_UNKNOWN] rc=$DRC — could not establish whether $LOCAL_JOB is due. Not run, and NOT recorded as a skip. See $RUN_LOG." | tee -a "$RUN_LOG" >&2
+    exit "$DRC"
+  fi
+  tail -1 "$RUN_LOG"
+fi
 
 # The job's own output goes to the run log AND to launchd's stdout, so nothing is hidden by this
 # wrapper existing. The exit code is the job's, not the tee's.
