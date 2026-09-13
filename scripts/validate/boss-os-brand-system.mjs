@@ -83,6 +83,16 @@ const ALLOWED_LITERALS = new Set([
   "#050505", "#f7f2ea", "#ffffff", "#f05a1a", "#fff",
   "#fdf8f4", // Boss ground — manifest background_color and the index.html theme-color
   "#3d2f33", // Boss ink
+  /*
+   * Boss briefcase pink, chosen by the owner on 13 Sep 2026: "maybe make it a light pink briefcase
+   * logo". It is the mark's own colour and it appears nowhere else.
+   *
+   * A colour is added here because SHE PICKED IT, never because a build went red. This gate exists
+   * to stop off-brand colour drifting in unnoticed, and it did exactly that — the briefcase shipped
+   * and the gate caught the literal on the next full run. Approving it is the answer; widening the
+   * rule to let any pink through would not be.
+   */
+  "#f3b6c6",
 ]);
 
 /** The two approved brand assets. Their colours come from the parent brand, not from this repo. */
