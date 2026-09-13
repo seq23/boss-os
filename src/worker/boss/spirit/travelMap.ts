@@ -184,6 +184,39 @@ export function view(week: MapWeek, today: string): MapWeekView {
   return { ...week, ...signalFor(week), current: within(week, today) };
 }
 
+/** What each band is NOT, so a reading can end on the mistake the week invites. */
+const OVERREACH: Record<Exclude<Band, "unset">, string> = {
+  green: "Do not turn a green week into indiscriminate activity; one high-value ask beats ten small ones.",
+  peak_green: "This is the week to spend, not the week to prepare. Preparation was the point of the yellow ones.",
+  yellow: "Do not try to manufacture peak intensity out of a maintenance week.",
+  red: "Protecting energy is the assignment. Lower output this week is the plan working, not a lapse.",
+};
+
+/**
+ * THE WEEK AS A SENTENCE, WHICH IS WHAT SHE ACTUALLY READS.
+ *
+ * Her own reading of 12 September, which is the shape this composes to:
+ *
+ *   "This is a yellow travel/recalibration week. Keep live opportunities moving, clean up your
+ *    systems, and prepare the pipeline—but don't try to manufacture peak October intensity in
+ *    September."
+ *
+ * Note what it is made of: the band, her note for the week, and THE MISTAKE THE BAND INVITES. A
+ * coloured tile alone tells her nothing she can act on — "🟡" is a fact about a table, and "don't
+ * manufacture peak October intensity in September" is a decision about today. So the reading is
+ * composed from three named parts rather than stored as thirty sentences that would go stale one at
+ * a time, the same reasoning as `meaningFor` in `transitMeaning.ts`.
+ *
+ * An ungiven week gets NO reading at all. A sentence is the most persuasive form a guess can take.
+ */
+export function reading(week: MapWeek): string | null {
+  if (week.band === "unset") return null;
+  const band = BAND[week.band];
+  const plane = week.travel && week.travel > 0 ? ` ${TRAVEL[week.travel].meaning.toLowerCase()} is favoured.` : "";
+  const note = week.note ? ` ${week.note}.` : "";
+  return `${band.glyph} ${band.meaning}.${note}${plane} ${OVERREACH[week.band]}`;
+}
+
 /**
  * Everything the Spirit page needs to render the map.
  *
@@ -198,7 +231,7 @@ export function travelMap(today: string, weeks: readonly MapWeek[] = MAP_WEEKS) 
     covered: weeks.length > 0,
     empty_reason: weeks.length > 0 ? null : "The locked map has no weeks in it at all. That is a fault, not a year without bands.",
     today,
-    current: current ? view(current, today) : null,
+    current: current ? { ...view(current, today), reading: reading(current) } : null,
     uncovered_reason: current
       ? null
       : `${today} falls outside the locked map. No band is shown, because none was given for it.`,

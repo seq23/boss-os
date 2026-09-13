@@ -697,11 +697,15 @@ function TravelMap({ map }: { map: any }) {
             <div style={{ fontSize: "1.25rem", fontWeight: 600, lineHeight: 1.3 }}>
               {map.current.signal} — {map.current.label}
             </div>
-            {/* The note is hers, per week, and it is the part that says what to do with the colour. */}
-            <p className="row-sub" style={{ marginTop: 4 }}>
-              {map.current.note ?? map.current.meaning}
+            {/*
+              * THE SENTENCE, NOT THE TILE. Her own reading of 12 September was "This is a yellow
+              * travel/recalibration week. Keep live opportunities moving, clean up your systems, and
+              * prepare the pipeline—but don't try to manufacture peak October intensity in
+              * September." A colour is a fact about a table; that is a decision about today.
+              */}
+            <p className="row-sub" style={{ marginTop: 4, fontSize: "1rem" }}>
+              {map.current.reading ?? map.current.meaning}
             </p>
-            <p className="row-sub">{map.current.meaning}</p>
           </>
         ) : (
           /*

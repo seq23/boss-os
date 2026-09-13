@@ -24,7 +24,7 @@ import {
   astroDashboard, degreeMinute, ephemeris, majorAspects, moonDashboard, orbText, voidOfCourse,
 } from "@worker/boss/spirit/dashboard";
 import {
-  BAND, MAP_CAVEAT, MAP_WEEKS, NOT_YET_GIVEN, signalFor, travelMap, unsetWeek, weekFor,
+  BAND, MAP_CAVEAT, MAP_WEEKS, NOT_YET_GIVEN, reading, signalFor, travelMap, unsetWeek, weekFor,
 } from "@worker/boss/spirit/travelMap";
 
 /** Her report's stated frame: "calculated for approximately 12:00 UTC". */
@@ -250,6 +250,23 @@ describe("the locked Money / Career / Travel Map", () => {
     expect(meaning).toMatch(/has not locked a band/);
     expect(week.travel).toBeNull();
     expect(week.note).toBeNull();
+  });
+
+  /*
+   * Her own reading of 12 September is the shape this must produce: the band, her note, and the
+   * mistake the band invites — "…but don't try to manufacture peak October intensity in September."
+   */
+  it("reads the current week as a sentence, ending on the mistake the band invites", () => {
+    const r = travelMap("2026-09-12").current!.reading!;
+    expect(r).toMatch(/Maintain, prepare, refine/);
+    expect(r).toMatch(/Travel, recalibration, systems review/);
+    expect(r).toMatch(/travel\/reset window is favoured/i);
+    expect(r).toMatch(/manufacture peak intensity out of a maintenance week/);
+  });
+
+  it("gives an ungiven week no reading — a sentence is the most persuasive form a guess can take", () => {
+    expect(reading(unsetWeek("Jan 5–11", "2027-01-05", "2027-01-11"))).toBeNull();
+    expect(reading(MAP_WEEKS.find((w) => w.label === "Dec 21–31")!)).toMatch(/Protect energy/);
   });
 
   it("has no glyph for `unset` at all, so no fallback can paint one", () => {
