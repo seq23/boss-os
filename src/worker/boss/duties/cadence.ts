@@ -13,7 +13,7 @@
  * matters because the interesting cases are the two days a year nobody is looking.
  */
 
-import { zonedTime } from "../../../shared/boss/timezone";
+import { zonedTime, dateTimeFormat } from "../../../shared/boss/timezone";
 
 const DAY_MS = 86_400_000;
 
@@ -25,7 +25,7 @@ const DAY_MS = 86_400_000;
  * table. Hand-rolling an offset is how a scheduler ends up an hour wrong in one hemisphere.
  */
 function wallClockIn(timeZone: string, at: number): { y: number; m: number; d: number; h: number; min: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateTimeFormat("en-US", {
     timeZone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hour12: false,
@@ -139,7 +139,7 @@ export function nextDueAt(schedule: DutySchedule, after: number): number {
 
 /** The weekday as the duty's own zone sees it. 0 = Sunday. */
 export function dayOfWeekIn(timeZone: string, at: number): number {
-  const name = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(new Date(at));
+  const name = dateTimeFormat("en-US", { timeZone, weekday: "short" }).format(new Date(at));
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(name);
 }
 

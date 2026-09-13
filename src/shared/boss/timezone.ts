@@ -46,6 +46,28 @@ export const OWNER_TIMEZONE_LABEL = "Central";
  * A caller asking for components has been explicit, so the style defaults step aside. They were
  * only ever a default.
  */
+/**
+ * ONE FORMATTER PER SHAPE, KEPT.
+ *
+ * `dateTimeFormat(...)` loads locale and zone data every time it is constructed, and on
+ * Cloudflare's runtime that is tens of microseconds — not the nanoseconds it costs in a warm Node
+ * process, which is why no local measurement ever showed it. The duty schedule walks a calendar in
+ * day steps and built a fresh formatter for every step; eighteen duties on the Today screen came
+ * to a few thousand constructions and, by Cloudflare's own accounting, ~120 ms of CPU on a plan
+ * that allows 10. A formatter is immutable, so one per (locale, options) shape serves every call
+ * with the same output.
+ */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+export function dateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let f = FORMATTERS.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, options);
+    FORMATTERS.set(key, f);
+  }
+  return f;
+}
+
 const COMPONENT_OPTIONS = [
   "weekday", "era", "year", "month", "day", "dayPeriod",
   "hour", "minute", "second", "fractionalSecondDigits", "timeZoneName",
@@ -59,7 +81,7 @@ export function inOwnerZone(ts: number | null | undefined, opts: Intl.DateTimeFo
   const base: Intl.DateTimeFormatOptions = wantsComponents
     ? { timeZone: OWNER_TIMEZONE }
     : { timeZone: OWNER_TIMEZONE, dateStyle: "medium", timeStyle: "short" };
-  return new Intl.DateTimeFormat("en-US", { ...base, ...opts }).format(new Date(ts));
+  return dateTimeFormat("en-US", { ...base, ...opts }).format(new Date(ts));
 }
 
 /** Just the date, same zone. A day boundary is a zone-dependent thing and this respects that. */
@@ -75,7 +97,7 @@ export function dayInOwnerZone(ts: number | null | undefined): string {
  */
 export function zoneOffsetMs(ts: number, timeZone = OWNER_TIMEZONE): number {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
+    dateTimeFormat("en-US", {
       timeZone, hour12: false,
       year: "numeric", month: "2-digit", day: "2-digit",
       hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -125,7 +147,7 @@ export function monthRange(month: string, timeZone = OWNER_TIMEZONE): { start: n
 /** `YYYY-MM` for the month an instant falls in, in the owner's zone rather than UTC. */
 export function monthIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit" })
+    dateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit" })
       .formatToParts(new Date(ts))
       .map((p) => [p.type, p.value]),
   ) as Record<string, string>;
@@ -135,7 +157,7 @@ export function monthIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
 /** `YYYY-MM-DD` for the day an instant falls in, in the owner's zone rather than UTC. */
 export function dayIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+    dateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
       .formatToParts(new Date(ts))
       .map((p) => [p.type, p.value]),
   ) as Record<string, string>;
@@ -159,7 +181,7 @@ export function dayIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
  */
 export function weekIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+    dateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
       .formatToParts(new Date(ts))
       .map((p) => [p.type, p.value]),
   ) as Record<string, string>;
