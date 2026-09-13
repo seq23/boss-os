@@ -59,6 +59,7 @@ credentials except `validate:value-shapes`, noted below.
 | `npm run validate:gate-parity` | `npm run validate` and `ci.yml` run the SAME set of scans — every CI step is in the chain, CI runs the `validate:scans` union, and `validate` stays scans + typecheck + tests. 7-fixture self-test. Rule 0: zero CI steps or zero registered scans hard-fails | that any individual scan is *correct*, only that the gate you can run is the gate that runs |
 
 | 
+| 
 ## Phase proof mapping (approved plan §12.2)
 
 P0 structural checks · P1 typecheck/build, auth E2E, migration, backup-restore · P2 identity

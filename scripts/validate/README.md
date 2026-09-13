@@ -134,3 +134,23 @@ violations) on breach and proves its own detection with a self-test fixture run.
   requires every active seat to own at least one duty and no seat to own more than everyone else
   combined (Monique held eight of seventeen, one of which was reconciling a spreadsheet). **Rule 0:
   zero duties replayed or zero seats found hard-fails.** 7-fixture self-test.
+
+- `a-device-has-one-home.mjs` (`npm run validate:device-home`) — `npm run vault:run -- node
+  scripts/sync-agent/agent.mjs work-once` died on "BOSS_OS_DEVICE_ID is not set" because the value
+  existed in exactly ONE generated launchd plist (1 of 15) and the installer hardcoded the default.
+  Runs the shipped resolver: a registered machine answers with NO environment, the environment still
+  wins, a blank variable does not, and an unregistered machine gets `null` rather than an invented
+  id. Also that the error names the file and the command, the installer READS the id instead of
+  defining it, and the agent does not go behind the resolver. **Rule 0: zero resolution cases
+  hard-fails.** 8-fixture self-test. *(Deliberately not in the vault — see the file header.)*
+
+- `a-figure-carries-its-source.mjs` (`npm run validate:figure-sourced`) — Friday's report published
+  Brent at ~$72/bbl against a $104.61 close and nothing forced the correction: the duty's
+  `success_criteria` is a TEXT column no code has ever evaluated, and `sources` was report-level
+  while figures lived in sections with no link between them. Runs the shipped gate: a section that
+  prints a figure and cites nothing does not print, a prose section is left alone, and a citation
+  that does not resolve fails like a missing one. Also runs the shipped status logic: eleven
+  sections with a full `watching` list is COMPLETE, while a missing section, a withheld one, an
+  unverified figure or an ungrounded insight is PARTIAL and says which. Plus that the prompt and the
+  spec carry all three decisions. **Rule 0: zero sourcing or zero status cases hard-fails.**
+  16-fixture self-test.

@@ -87,6 +87,14 @@ export const NOT_A_SECTION = [
   "3. The transferable frame",
   "4. What would falsify it",
   "§2.1 binds the reasoning, not only the numbers",
+  /*
+   * The 14 September amendments, which are RULES ABOUT sections rather than sections. This scan
+   * caught them the moment they were written — §5's headings are its section list, so anything else
+   * put between those two anchors has to be named here, and naming it is the cost of adding a rule
+   * to the document rather than a section.
+   */
+  "On a day the market was closed, RENDER IT, LABELLED",
+  "Status: what \"partial\" means",
 ];
 
 export function specSections(spec) {
@@ -219,7 +227,14 @@ export function check({ spec, module: mod, route, screen, css, prompt, missing, 
   if (!/missing_sections\s*:/.test(routeCode)) {
     problems.push(`${ROUTE} does not put \`missing_sections\` in the briefing payload, so the screen cannot show what is absent.`);
   }
-  if (!/orderSections\s*\(/.test(routeCode)) {
+  /*
+   * ORDERING MAY BE DONE BY `orderSections` DIRECTLY OR BY `withheldForSourcing`, WHICH CALLS IT.
+   * The first draft named one function, and when the sourcing gate took over the section list — it
+   * returns them already ordered, because it iterates `orderSections` — this went red over a route
+   * that orders its sections perfectly well. A rule about the OUTCOME must not be written as a rule
+   * about which helper produced it.
+   */
+  if (!/orderSections\s*\(|withheldForSourcing\s*\(/.test(routeCode)) {
     problems.push(`${ROUTE} does not order the delivered sections into §5's order.`);
   }
   if (!/missing_sections/.test(screenCode)) {

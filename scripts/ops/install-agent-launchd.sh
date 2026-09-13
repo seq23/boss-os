@@ -36,8 +36,21 @@ LOGS="$HOME/Library/Logs/boss-agent"
 # THE DEVICE ID IS NOT A SECRET AND DOES NOT BELONG IN THE VAULT. It names which machine claimed a
 # run so the evidence says where the work happened; anyone reading the audit log sees it anyway.
 # `vault:run` carries secrets, this carries an identifier, and keeping them apart is what stops the
-# vault turning into a config file.
-DEVICE_ID="${BOSS_OS_DEVICE_ID:-dev_mac_seq}"
+# vault turning into a config file. That boundary stands.
+#
+# WHAT CHANGED IS THAT THIS FILE NO LONGER DEFINES IT. The default lived here, was baked into ONE
+# generated plist, and existed nowhere else — so `npm run vault:run -- node scripts/sync-agent/agent.mjs`
+# died on every hand-invocation, including the `run-now` path built so a duty could be fired and
+# PROVEN rather than promised. The answer was findable only by grepping a generated artefact.
+#
+# `scripts/ops/device-id.mjs` owns the value now, writes it to ~/.boss-os/device.json beside the rest
+# of this system's machine-local state, and every caller resolves from there. This installer READS
+# it. One value, one home.
+DEVICE_ID="$(node "$REPO/scripts/ops/device-id.mjs" set "${BOSS_OS_DEVICE_ID:-}" >/dev/null 2>&1; node "$REPO/scripts/ops/device-id.mjs")"
+if [ -z "$DEVICE_ID" ]; then
+  echo "Could not resolve a device id. Run: npm run device:set -- <id>" >&2
+  exit 1
+fi
 
 mkdir -p "$LOGS"
 

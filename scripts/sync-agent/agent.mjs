@@ -23,6 +23,7 @@
  * registration.
  */
 import { createRequire } from "node:module";
+import { resolveDeviceId, missingDeviceIdMessage } from "../ops/device-id.mjs";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -211,7 +212,12 @@ export async function unlock(origin, passcode, fetchImpl = fetch) {
 async function main() {
   const cmd = process.argv[2] ?? "status";
   const db = openLocal(process.env.BOSS_OS_LOCAL_DB ?? DEFAULT_DB);
-  const deviceId = process.env.BOSS_OS_DEVICE_ID;
+  /*
+   * RESOLVED, NOT READ OFF THE ENVIRONMENT. The env still wins, but a machine that registered once
+   * no longer needs every caller to remember — which is why every hand-invocation of this agent
+   * died until someone grepped a launchd plist for the answer.
+   */
+  const deviceId = resolveDeviceId();
   const origin = process.env.BOSS_OS_ORIGIN ?? DEFAULT_ORIGIN;
 
   if (cmd === "status") {
@@ -219,7 +225,7 @@ async function main() {
     return;
   }
   if (!deviceId) {
-    console.error("BOSS_OS_DEVICE_ID is not set. Register the device first, then export its id.");
+    console.error(missingDeviceIdMessage());
     process.exit(1);
   }
   if (!process.env.BOSS_PASSCODE) {

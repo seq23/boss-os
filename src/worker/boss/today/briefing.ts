@@ -328,3 +328,208 @@ export function groundInsight(report: { headline?: unknown; summary?: unknown; s
 
   return { insight, grounded: true, withheld_because: null };
 }
+
+
+// ─── A figure carries its source, or it does not print ───────────────────────
+
+/**
+ * THE $72 OIL FIGURE, AND WHY NOTHING CAUGHT IT.
+ *
+ * Friday's report published Brent at roughly $72/bbl. The actual Friday close was $104.61 — a 45%
+ * error in a headline figure, in a report she reads at 7am to make decisions. It was corrected two
+ * days later only because that run happened to re-check. Nothing required it to.
+ *
+ * ─── WHAT WAS ACTUALLY ENFORCED: NOTHING ──────────────────────────────────
+ *
+ * The duty's `success_criteria` reads "every figure carries a named source and the time it was
+ * read". `success_criteria` is a TEXT COLUMN. `author.ts` writes it, two screens display it, and no
+ * code in this repository has ever evaluated one. It is prose the run is told, not a check.
+ *
+ * AND THE MORE SERIOUS HALF: even an enforced criterion would have had nothing to check against.
+ * `sources` is a REPORT-LEVEL array. Figures live in a section's `bullets`, `items` and `table`.
+ * Nothing related one to the other — no section ever named which source a number came from. Two
+ * halves of the same payload, each keeping its own list, with no link between them. That is this
+ * repository's most-produced defect, sitting under its most decision-bearing screen.
+ *
+ * ─── The rule ──────────────────────────────────────────────────────────────
+ *
+ * A section that prints a FIGURE must name a source that RESOLVES — present in `sources`, with a
+ * URL and a readable `read_at`. A section that cannot does not print; it is named in
+ * `missing_sections` with that as the reason, so the absence is loud rather than silent.
+ *
+ * THE CORRECTIONS MECHANISM STAYS. It is what caught the $72 and it is the only thing that can
+ * catch a figure that is wrong but sourced — a citation proves provenance, never accuracy.
+ */
+export interface ReportSource {
+  name: string;
+  url: string;
+  read_at: string;
+}
+
+/** A number that asserts something about the world: money, a percentage, or a magnitude. */
+const FIGURE = /(?:[$£€]\s?\d|\d[\d,.]*\s?%|\b\d[\d,.]*\s?(?:bn|bps|pts|billion|trillion|million|basis points)\b)/i;
+
+export function hasFigure(text: unknown): boolean {
+  if (typeof text === "string") return FIGURE.test(text);
+  if (Array.isArray(text)) return text.some(hasFigure);
+  if (text && typeof text === "object") return Object.values(text as Record<string, unknown>).some(hasFigure);
+  return false;
+}
+
+/**
+ * The sources a report carries that are actually usable as citations.
+ *
+ * A NAME ALONE IS NOT A SOURCE. Without a URL nobody can go and look, and without a read time a
+ * citation cannot distinguish today's close from Friday's — which is the precise shape of the error
+ * this exists to stop.
+ */
+export function usableSources(report: { sources?: unknown }): ReportSource[] {
+  return (Array.isArray(report.sources) ? report.sources : [])
+    .filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === "object")
+    .map((s) => ({
+      name: typeof s.name === "string" ? s.name.trim() : "",
+      url: typeof s.url === "string" ? s.url.trim() : "",
+      read_at: typeof s.read_at === "string" ? s.read_at.trim() : "",
+    }))
+    .filter((s) => s.name !== "" && /^https?:\/\//.test(s.url) && !Number.isNaN(Date.parse(s.read_at)));
+}
+
+/**
+ * Does this section's figure-bearing content name a source that resolves?
+ *
+ * A section may cite by INDEX into `sources` or by NAME; both are checked against the usable list,
+ * so a citation pointing at a source that was never filed fails exactly as a missing one does.
+ */
+export function sectionSourcing(
+  sec: Record<string, unknown>,
+  sources: ReportSource[],
+): { needed: boolean; ok: boolean; why: string } {
+  const body = { so_what: sec.so_what, bullets: sec.bullets, items: sec.items, table: sec.table, body: sec.body };
+  if (!hasFigure(body)) return { needed: false, ok: true, why: "" };
+
+  const cited = Array.isArray(sec.sources) ? sec.sources : [];
+  if (cited.length === 0) {
+    return {
+      needed: true,
+      ok: false,
+      why:
+        "It printed figures and named no source. Friday's report published Brent at ~$72/bbl against " +
+        "an actual close of $104.61 and nothing required it to cite where that came from, so nothing " +
+        "caught it.",
+    };
+  }
+
+  const resolves = cited.some((ref) => {
+    if (typeof ref === "number") return Boolean(sources[ref]);
+    if (typeof ref === "string") {
+      const want = ref.trim().toLowerCase();
+      return sources.some((s) => s.name.toLowerCase().includes(want) || want.includes(s.name.toLowerCase()) || s.url === ref.trim());
+    }
+    return false;
+  });
+
+  if (!resolves) {
+    return {
+      needed: true,
+      ok: false,
+      why: "It cited a source that is not in the report's own source list, so the citation cannot be followed.",
+    };
+  }
+  return { needed: true, ok: true, why: "" };
+}
+
+/** Split a report's sections into the ones that may print and the ones that may not. */
+export function withheldForSourcing(
+  sections: unknown[],
+  report: { sources?: unknown },
+): { kept: Record<string, unknown>[]; withheld: MissingSection[] } {
+  const sources = usableSources(report);
+  const kept: Record<string, unknown>[] = [];
+  const withheld: MissingSection[] = [];
+
+  for (const sec of orderSections(sections)) {
+    const verdict = sectionSourcing(sec, sources);
+    if (verdict.ok) {
+      kept.push(sec);
+      continue;
+    }
+    const key = sectionKeyOf(sec);
+    const known = BRIEFING_SECTIONS.find((b) => b.key === key);
+    withheld.push({
+      key: key ?? "unkeyed",
+      title: known?.title ?? (typeof sec.heading === "string" ? sec.heading : "An unnamed section"),
+      why: verdict.why,
+    });
+  }
+  return { kept, withheld };
+}
+
+// ─── What "partial" means ────────────────────────────────────────────────────
+
+/**
+ * A REPORT THAT FILED EVERYTHING IT WAS ASKED FOR IS COMPLETE, EVEN IF IT WANTS TOMORROW'S NEWS.
+ *
+ * ─── The defect ────────────────────────────────────────────────────────────
+ *
+ * A run filed all ELEVEN sections, withheld nothing, grounded its insight — and reported
+ * `status: "partial"`. The reason was four `gaps`, and every one of them was a FUTURE EVENT:
+ * Monday's Starship flight outcome, Sunday-evening escalation in the Red Sea, the Anthropic IPO's
+ * pricing date, secondary spreads after Wednesday's FOMC.
+ *
+ * Wanting tomorrow's news is not an incomplete report. It is a correct one. Her CLAIM against this
+ * system is written in her own standing rules: a legitimate stop should read GREEN and
+ * self-explaining rather than amber, or the amber stops meaning anything.
+ *
+ * ─── The separation ────────────────────────────────────────────────────────
+ *
+ *   partial   — something the spec REQUIRED is absent: a section missing, a section withheld for
+ *               having no source, an insight that could not be grounded, or a figure it tried to
+ *               verify and could not.
+ *   watching  — forward-looking. It has not happened yet. Its own field, its own word, and it never
+ *               touches the status.
+ *
+ * THE STATUS IS DERIVED, NOT BELIEVED. The run's self-reported status is the one thing here that
+ * was never checked — it said "partial" and the system wrote "partial" down. Missing sections and
+ * insight grounding are both computed here from the report itself, so the only thing still taken on
+ * the run's word is which gaps are forward-looking, and the prompt is explicit about that line.
+ */
+export interface ReportStanding {
+  status: "complete" | "partial" | "failed";
+  /** Why it is not complete, when it is not. Empty when it is. */
+  shortfalls: string[];
+  /** Forward-looking, and deliberately not a shortfall. */
+  watching: unknown[];
+}
+
+export function reportStanding(args: {
+  runStatus: "complete" | "partial" | "failed";
+  missing: MissingSection[];
+  withheldForSources: MissingSection[];
+  gaps: unknown[];
+  watching: unknown[];
+  insightWithheld: boolean;
+  /** True when the run filed an Investor Insight section at all. */
+  insightAttempted: boolean;
+}): ReportStanding {
+  if (args.runStatus === "failed") {
+    return { status: "failed", shortfalls: ["The research run did not produce a usable report."], watching: args.watching };
+  }
+
+  const shortfalls: string[] = [];
+  if (args.missing.length > 0) {
+    shortfalls.push(
+      `${args.missing.length} section${args.missing.length === 1 ? "" : "s"} the specification asks for ${args.missing.length === 1 ? "is" : "are"} not here.`,
+    );
+  }
+  if (args.withheldForSources.length > 0) {
+    shortfalls.push(`${args.withheldForSources.length} section${args.withheldForSources.length === 1 ? "" : "s"} printed figures with no source and ${args.withheldForSources.length === 1 ? "was" : "were"} withheld.`);
+  }
+  if (args.gaps.length > 0) {
+    shortfalls.push(`${args.gaps.length} thing${args.gaps.length === 1 ? "" : "s"} could not be verified.`);
+  }
+  if (args.insightAttempted && args.insightWithheld) {
+    shortfalls.push("The Investor Insight could not be grounded in today's own material.");
+  }
+
+  return { status: shortfalls.length === 0 ? "complete" : "partial", shortfalls, watching: args.watching };
+}

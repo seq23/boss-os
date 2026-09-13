@@ -703,6 +703,16 @@ function renderDetail(
       return (
         <>
           {c.staleness && <div className="row-sub" style={{ marginBottom: 10 }}>{c.staleness}</div>}
+          {/*
+            * "partial" SAYS WHICH. The word on its own sent her looking for what was wrong in a
+            * report where nothing was — the status was being believed from the run rather than
+            * derived, and four forward-looking notes had downgraded a complete morning.
+            */}
+          {c.status === "partial" && (c.shortfalls ?? []).length > 0 && (
+            <div className="row-sub" style={{ marginBottom: 10 }}>
+              Partial because: {(c.shortfalls ?? []).join(" ")}
+            </div>
+          )}
 
           {/* Level 1: the one line that IS the report if she reads nothing else. */}
           {c.headline && <p className="today-1">{c.headline}</p>}
@@ -735,6 +745,24 @@ function renderDetail(
               * is absent and what the run said about it. This is also what makes `status: partial`
               * mean something she can see, instead of a short report that looks complete.
               */}
+            {/*
+              * WATCHING IS NOT A SHORTFALL. A report that wants Monday's launch outcome is correct,
+              * not incomplete — so it reads as its own thing, in its own words, and never as an
+              * absence. It was four of these that made a complete report call itself "partial".
+              */}
+            {(c.watching ?? []).length > 0 && (
+              <>
+                <p className="today-2">Watching for — {(c.watching ?? []).length}</p>
+                <ul className="brief-list">
+                  {c.watching.map((w: any, i: number) => (
+                    <li key={i} className="brief-cite">
+                      {typeof w === "string" ? w : `${w.wanted ?? ""}${w.why ? ` — ${w.why}` : ""}`}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
             {(c.missing_sections ?? []).length > 0 && (
               <>
                 <p className="today-2">Not in today&rsquo;s report — {(c.missing_sections ?? []).length}</p>
