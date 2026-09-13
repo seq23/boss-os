@@ -72,6 +72,11 @@ export const HER_GRID = [
   },
   { repos: ["approvalprep"], tier: "primary", owner: "hers", domains: ["approvalprep.com"] },
   { repos: ["dream-wedding-builder"], tier: "primary", owner: "hers", domains: [], count: 4 },
+  // Added 13 Sep 2026, her words: "all 3 are mine." See the note above HER_GRID.
+  { repos: ["how-we-know"], tier: "primary", owner: "hers", domains: [], handles: ["@howweknowdeep"] },
+  // time-2-read.com is hers and has NO repo on her GitHub. Named so its absence is a recorded fact
+  // rather than something a later reader takes for an oversight.
+  { repos: ["heygetonmylevel"], tier: "primary", owner: "hers", domains: ["heygetonmylevel.com", "time-2-read.com"] },
   { repos: ["authority-backlink-network", "p-n-p"], tier: "infrastructure", owner: "hers", domains: [] },
 ];
 

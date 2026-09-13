@@ -147,6 +147,49 @@ export const GRID = [
     tier: "primary",
     why_tier: "Four properties on one repo. The four canonical domains are not recorded here because she has not named them, and inventing them would corrupt the list this file exists to be.",
   },
+  /*
+   * ─── THE THREE SHE NAMED ON 13 SEPTEMBER ─────────────────────────────────
+   *
+   * The grid table was agreed on 29 August and these three are not on it, so the first pass at
+   * this file dropped them out of the spry lane — correctly, by the rule it was given. Asked
+   * directly, she said: "all 3 are mine." They predate the table rather than being excluded by it.
+   *
+   * This is why the exclusions below are written down. A property that is merely absent cannot be
+   * told apart from one deliberately left out, and the difference is exactly what had to be asked.
+   */
+  {
+    key: "youtube",
+    label: "How We Know — YouTube",
+    // A channel handle, not a domain. The field is what the property IS, and pretending this one
+    // has a domain to make the shape uniform would be a small lie in a file that exists to be true.
+    domains: [],
+    handles: ["@howweknowdeep"],
+    repos: ["how-we-know"],
+    owner: "hers",
+    tier: "primary",
+    why_tier:
+      "`today/projects.ts` carried it as \"The channel. Automated loop; not yet revenue.\" Not yet " +
+      "revenue is not the same as not a property — she has an audit waiting on the fourth video and " +
+      "a standing rule never to delete a video, only to make it private.",
+  },
+  {
+    key: "saas_apps",
+    label: "SaaS apps — partnerships",
+    domains: ["heygetonmylevel.com", "time-2-read.com"],
+    /*
+     * ONLY ONE OF THE TWO HAS A REPO. `heygetonmylevel` is on her GitHub; there is no repo for
+     * time-2-read.com. Recorded as it is rather than paired with a plausible-looking name — the
+     * daily examination reads this list, and a repo that does not exist would fail every run and
+     * teach whoever reads the log to ignore it.
+     */
+    repos: ["heygetonmylevel"],
+    domains_without_repo: ["time-2-read.com"],
+    owner: "hers",
+    tier: "primary",
+    why_tier:
+      "`today/projects.ts` had these parked: \"Two apps looking for partnership distribution rather " +
+      "than direct sales.\" Parked is a status, not an exclusion.",
+  },
   {
     key: "authority_network",
     label: "Authority / backlink network",
