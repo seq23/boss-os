@@ -520,20 +520,79 @@ export async function takeSnapshot(
  * is strictly worse than one that keeps too much, so the floor is defended explicitly rather than
  * left to follow from the ordering.
  */
-export async function pruneSnapshots(env: Env, keep = SNAPSHOT_KEEP) {
+/**
+ * The rows a prune with this `keep` would remove, and the floor it would honour.
+ *
+ * SHARED WITH `pruneSnapshots` RATHER THAN RE-DERIVED, and that is the point of extracting it. The
+ * Vault screen now shows the reader what a prune will do before doing it, and a preview computed by
+ * a second query with its own ORDER BY and its own OFFSET arithmetic is a preview that is free to
+ * disagree with the deletion it describes. A destructive confirmation that describes different rows
+ * from the ones it removes is worse than no confirmation at all — it manufactures consent for
+ * something else. One selection, two callers.
+ */
+async function staleSnapshots(env: Env, keep: number) {
   const floor = Math.max(1, keep);
   const stale = await env.DB
     .prepare(
-      `SELECT id, r2_key FROM vault_snapshots
+      `SELECT id, ts, label, bytes, sha256, r2_key FROM vault_snapshots
         WHERE status = 'complete' AND r2_key IS NOT NULL
         ORDER BY ts DESC
         LIMIT -1 OFFSET ?`,
     )
     .bind(floor)
-    .all<{ id: string; r2_key: string }>();
+    .all<{ id: string; ts: number; label: string; bytes: number; sha256: string | null; r2_key: string }>();
+  return { floor, rows: stale.results ?? [] };
+}
 
-  const rows = stale.results ?? [];
+/**
+ * What a prune WOULD do. Reads only.
+ *
+ * WHY THE SCREEN NEEDS THIS AT ALL. `pruneSnapshots` existed and nothing in the UI called it, so
+ * the owner's "be able to clear old ones for space" had no control — and the obvious control, a
+ * button beside the restore buttons, is the wrong answer. Deleting backups is destructive and
+ * irreversible, so the screen must be able to say how many, which ones, how many bytes come back,
+ * and what survives, BEFORE anything is deleted.
+ */
+export async function prunePreview(env: Env, keep = SNAPSHOT_KEEP) {
+  const { floor, rows } = await staleSnapshots(env, keep);
+
+  const complete = await env.DB
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes, MAX(ts) AS newest, MIN(ts) AS oldest
+         FROM vault_snapshots WHERE status = 'complete' AND r2_key IS NOT NULL`,
+    )
+    .first<{ n: number; bytes: number; newest: number | null; oldest: number | null }>();
+
+  const removing = rows.length;
+  const bytes = rows.reduce((sum, r) => sum + (r.bytes ?? 0), 0);
+  const keptRows = (complete?.n ?? 0) - removing;
+
+  return {
+    keep: floor,
+    removing,
+    bytes_reclaimed: bytes,
+    keeping: keptRows,
+    /*
+     * NAMED, NOT JUST COUNTED. "56 snapshots will be removed" is a number; "the oldest 56, back to
+     * 6 Sep, and your newest copy from tonight is kept" is a sentence someone can actually check
+     * before agreeing to it.
+     */
+    oldest_removed_ts: removing ? rows[rows.length - 1]!.ts : null,
+    newest_removed_ts: removing ? rows[0]!.ts : null,
+    newest_kept_ts: complete?.newest ?? null,
+    oldest_kept_ts: removing ? rows[0]!.ts + 1 : complete?.oldest ?? null,
+    total_complete: complete?.n ?? 0,
+    total_bytes: complete?.bytes ?? 0,
+    ids: rows.map((r) => r.id),
+  };
+}
+
+export async function pruneSnapshots(env: Env, keep = SNAPSHOT_KEEP) {
+  const { floor, rows } = await staleSnapshots(env, keep);
   let deleted = 0;
+  // Counted from the rows actually removed, so "bytes reclaimed" is a measurement and never an
+  // estimate carried over from the preview — a failed delete reclaims nothing and must say so.
+  let reclaimed = 0;
   const failures: { id: string; error: string }[] = [];
 
   for (const rowToPrune of rows) {
@@ -546,6 +605,7 @@ export async function pruneSnapshots(env: Env, keep = SNAPSHOT_KEEP) {
         .bind(Date.now(), rowToPrune.id)
         .run();
       deleted += 1;
+      reclaimed += rowToPrune.bytes ?? 0;
     } catch (err) {
       // A failed delete leaves the row COMPLETE and the object in place, so the next run tries
       // again. Marking it pruned here would orphan the object forever - unreachable from the
@@ -560,8 +620,14 @@ export async function pruneSnapshots(env: Env, keep = SNAPSHOT_KEEP) {
       detail: { kept: floor, deleted, failures },
     });
   }
-  return { kept: floor, deleted, failures };
+  return { kept: floor, deleted, bytes_reclaimed: reclaimed, failures };
 }
+
+/** What a prune would do, so the screen can say it before she agrees to it. Reads only. */
+vault.get("/prune-preview", async (c) => {
+  const asked = Number(c.req.query("keep"));
+  return ok(c, await prunePreview(c.env, Number.isFinite(asked) ? asked : SNAPSHOT_KEEP));
+});
 
 vault.post("/prune", async (c) => {
   const body = await c.req.json<{ keep?: number }>().catch(() => ({ keep: undefined }));

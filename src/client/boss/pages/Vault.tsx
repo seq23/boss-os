@@ -24,6 +24,24 @@ export function Vault() {
 
 
 /**
+ * THE ONE RULE THIS SCREEN KEEPS ABOUT WHAT MAY BE RESTORED FROM.
+ *
+ * A pruned snapshot keeps its row and loses its bytes — deliberately, so vault history stays
+ * readable and a restore attempt against one fails with "pruned" rather than a missing-key error
+ * that reads like corruption. That design is right, and it has a consequence the screen must honour:
+ * a snapshot you cannot restore from has no business being offered as a restore source. Production
+ * held 68 rows of which 56 were tombstones.
+ *
+ * `status === "complete"` is the whole test, and it lives HERE rather than being repeated at each
+ * use, so the picker and any future control that chooses a restore source cannot disagree about
+ * what "restorable" means. `scripts/validate/a-pruned-snapshot-is-not-offered-for-restore.mjs`
+ * asserts that every restore-source list on this screen goes through it.
+ */
+export function restorable(snapshots: any[]) {
+  return snapshots.filter((s) => s.status === "complete" && s.r2_key);
+}
+
+/**
  * Choosing a snapshot and a mode, with the destructive one gated.
  *
  * Deliberately its own component with its own state: the mode and the confirmation must reset when
@@ -37,15 +55,15 @@ function RestorePanel({
   busy: string | null;
   run: (name: string, fn: () => Promise<string>) => Promise<void>;
 }) {
-  const restorable = snapshots.filter((s) => s.status === "complete");
+  const options = restorable(snapshots);
   const [id, setId] = useState<string>("");
   const [mode, setMode] = useState<"verify" | "merge" | "replace">("verify");
   const [confirm, setConfirm] = useState("");
 
-  const chosen = id || restorable[0]?.id || "";
+  const chosen = id || options[0]?.id || "";
   const ready = chosen && (mode !== "replace" || confirm === "REPLACE");
 
-  if (restorable.length === 0) {
+  if (options.length === 0) {
     return (
       <Empty
         title="Nothing to restore from"
@@ -62,7 +80,7 @@ function RestorePanel({
           value={chosen}
           onChange={(e) => { setId(e.target.value); setConfirm(""); }}
         >
-          {restorable.map((s) => (
+          {options.map((s) => (
             <option key={s.id} value={s.id}>
               {new Date(s.ts).toLocaleString()} · {s.label} · {size(s.bytes)}
             </option>
@@ -118,6 +136,161 @@ function RestorePanel({
       >
         {busy === "restore" ? "Restoring…" : `Run ${mode}`}
       </button>
+    </>
+  );
+}
+
+/**
+ * CLEARING OLD SNAPSHOTS FOR SPACE — the owner's ask, and the care it needs.
+ *
+ * `pruneSnapshots` and `POST /vault/prune` both existed and NOTHING IN THE UI CALLED THEM. Retention
+ * only ever happened as a step inside the nightly run, so "be able to clear old ones for space" had
+ * no control at all and the vault sat at 8.4 MB of mostly tombstones.
+ *
+ * WHY THIS IS NOT A BUTTON NEXT TO THE RESTORE CONTROLS, which is the shape it would have taken if
+ * nobody thought about it. Deleting backups is irreversible and it is the one action on this screen
+ * that reduces what the system can recover from. So it is its own section, below restore, and it
+ * refuses to do anything until it has SAID what it will do:
+ *
+ *   1. Preview first, always. The button that deletes does not exist until a preview has been read
+ *      back from the server, so there is no path from a single tap to a deletion.
+ *   2. The preview names both halves — what goes AND what stays. "56 removed" is a number; "the
+ *      oldest 56, and your newest copy from tonight is kept" is a sentence she can check.
+ *   3. The preview is computed by the same selection the prune uses (`staleSnapshots`), so the
+ *      confirmation cannot describe different rows from the ones removed.
+ *   4. Typed confirmation, like Replace. A destructive action as easy to trigger as a safe one is a
+ *      trap regardless of how clear the label is.
+ *
+ * AND THE FLOOR IS STATED ON SCREEN, not just enforced in the Worker: the newest complete snapshot
+ * is never removed, whatever number is typed. `pruneSnapshots` defends that with `Math.max(1, keep)`
+ * and the reader deserves to know it before agreeing to anything.
+ */
+function PrunePanel({
+  busy, run, onDone,
+}: {
+  busy: string | null;
+  run: (name: string, fn: () => Promise<string>) => Promise<void>;
+  onDone: () => void;
+}) {
+  // Empty means "the system's own retention number", which the server owns. The client does not
+  // keep its own copy of SNAPSHOT_KEEP — that would be the second list this repo keeps naming.
+  const [keep, setKeep] = useState<string>("");
+  const [preview, setPreview] = useState<any | null>(null);
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<unknown>(null);
+
+  const asked = keep.trim() === "" ? undefined : Number(keep);
+  const valid = asked === undefined || (Number.isFinite(asked) && asked >= 1);
+
+  async function look() {
+    setError(null);
+    setConfirm("");
+    try { setPreview(await api.prunePreview(asked)); }
+    catch (e) { setError(e); setPreview(null); }
+  }
+
+  return (
+    <>
+      <p className="eyebrow">Clear old snapshots</p>
+      <p className="row-sub" style={{ marginBottom: 8 }}>
+        Deleting a snapshot removes its contents from storage for good. The record stays — date, hash
+        and table counts — so the vault's history is still readable, and the newest complete snapshot
+        is never removed whatever number you choose.
+      </p>
+
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      <label className="field">
+        <span>How many to keep</span>
+        <input
+          value={keep}
+          onChange={(e) => { setKeep(e.target.value); setPreview(null); setConfirm(""); }}
+          placeholder="the system's retention setting"
+          inputMode="numeric"
+          aria-label="How many snapshots to keep"
+        />
+      </label>
+
+      <button
+        className="btn"
+        style={{ width: "100%" }}
+        disabled={busy !== null || !valid}
+        onClick={look}
+      >
+        Show me what this would remove
+      </button>
+
+      {preview && (
+        <div className="panel" style={{ marginTop: 8 }}>
+          {preview.removing === 0 ? (
+            <p className="row-sub">
+              Nothing to remove. {preview.keeping} snapshot{preview.keeping === 1 ? "" : "s"} on hand,
+              which is at or under a retention of {preview.keep}.
+            </p>
+          ) : (
+            <>
+              <div className="row">
+                <div className="row-main">
+                  <div className="row-title">
+                    Removes {preview.removing} snapshot{preview.removing === 1 ? "" : "s"}
+                  </div>
+                  <div className="row-sub">
+                    The oldest {preview.removing}, from{" "}
+                    {new Date(preview.oldest_removed_ts).toLocaleDateString()} to{" "}
+                    {new Date(preview.newest_removed_ts).toLocaleDateString()}.
+                  </div>
+                </div>
+                <div className="row-val">{size(preview.bytes_reclaimed)} back</div>
+              </div>
+              <div className="row">
+                <div className="row-main">
+                  <div className="row-title">
+                    Keeps {preview.keeping} snapshot{preview.keeping === 1 ? "" : "s"}
+                  </div>
+                  <div className="row-sub">
+                    Including your newest, from{" "}
+                    {preview.newest_kept_ts ? new Date(preview.newest_kept_ts).toLocaleString() : "—"}.
+                  </div>
+                </div>
+                <div className="row-val">{size(preview.total_bytes - preview.bytes_reclaimed)}</div>
+              </div>
+
+              <label className="field">
+                <span>This cannot be undone. Type DELETE to confirm.</span>
+                <input
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  placeholder="DELETE"
+                  aria-label="Type DELETE to confirm"
+                />
+              </label>
+
+              <button
+                className="btn"
+                style={{ width: "100%" }}
+                disabled={busy !== null || confirm !== "DELETE"}
+                onClick={() =>
+                  run("prune", async () => {
+                    const r = await api.pruneSnapshots(asked);
+                    setPreview(null);
+                    setConfirm("");
+                    onDone();
+                    // What actually happened, not what the preview predicted. A delete that failed
+                    // reclaims nothing and the row stays complete so the next run retries it.
+                    return `Removed ${r.deleted} snapshot${r.deleted === 1 ? "" : "s"}, ${size(
+                      r.bytes_reclaimed ?? 0,
+                    )} reclaimed. ${r.kept} kept.${
+                      r.failures?.length ? ` ${r.failures.length} could not be deleted and were left in place.` : ""
+                    }`;
+                  })
+                }
+              >
+                {busy === "prune" ? "Removing…" : `Remove ${preview.removing} and keep ${preview.keeping}`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -325,6 +498,17 @@ function Continuity() {
       </p>
       <RestorePanel snapshots={snapshots ?? []} busy={busy} run={run} />
 
+      <PrunePanel busy={busy} run={run} onDone={load} />
+
+      {/*
+        * THE HISTORY LIST KEEPS THE TOMBSTONES, and that is deliberate rather than an oversight.
+        *
+        * A pruned row is the evidence the prune design exists to preserve: it still carries the
+        * date, the hash and the table counts of a copy that once existed, so "we had a snapshot
+        * that night" stays an answerable question after the bytes are gone. What it must NOT do is
+        * appear in the restore picker above, which is why `restorable()` filters it out there and
+        * why it is marked plainly here instead of being quietly listed alongside live copies.
+        */}
       <p className="eyebrow">Snapshots</p>
       {snapshots === null ? (
         <Loading />
@@ -334,19 +518,35 @@ function Continuity() {
         snapshots.slice(0, 20).map((s) => (
           <div className="row" key={s.id}>
             <div className="row-main">
-              <div className="row-title">{new Date(s.ts).toLocaleString()}</div>
-              <div className="row-sub">{s.label} · {s.status}</div>
+              <div className="row-title">
+                {new Date(s.ts).toLocaleString()}
+                {s.status === "pruned" && <span className="pill">pruned</span>}
+              </div>
+              <div className="row-sub">
+                {s.label} · {s.status}
+                {s.sha256 ? ` · ${s.sha256.slice(0, 12)}…` : " · no hash"}
+                {s.status === "pruned" && s.pruned_at
+                  ? ` · contents removed ${new Date(s.pruned_at).toLocaleDateString()}`
+                  : ""}
+              </div>
             </div>
             <div className="row-actions">
-              <button className="btn btn-small" disabled={busy !== null}
-                onClick={() => run(`v${s.id}`, async () => {
-                  const v = await api.verifySnapshot(s.id);
-                  return v.ok
-                    ? `Verified. Hash matches and ${v.parse.rows} rows parse cleanly.`
-                    : `Failed: ${v.sha_match ? "" : "hash mismatch. "}${v.parse.ok ? "" : v.parse.reason}`;
-                })}>
-                Verify
-              </button>
+              {/*
+                * Verify reads the object back out of R2 and re-hashes it. There is no object behind
+                * a pruned row, so offering the control would promise a check it cannot perform and
+                * answer with a failure that reads like corruption.
+                */}
+              {s.status === "complete" && (
+                <button className="btn btn-small" disabled={busy !== null}
+                  onClick={() => run(`v${s.id}`, async () => {
+                    const v = await api.verifySnapshot(s.id);
+                    return v.ok
+                      ? `Verified. Hash matches and ${v.parse.rows} rows parse cleanly.`
+                      : `Failed: ${v.sha_match ? "" : "hash mismatch. "}${v.parse.ok ? "" : v.parse.reason}`;
+                  })}>
+                  Verify
+                </button>
+              )}
               {/*
                 * `/api/boss`, NOT `/api`. Every other call on this screen goes through the api
                 * client, which adds the prefix; this one is a plain href and was written without

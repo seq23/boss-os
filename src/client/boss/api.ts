@@ -419,6 +419,9 @@ export const api = {
   restores: () => call<any[]>("/vault/restores"),
   takeSnapshot: () => call<any>("/vault/snapshots", post("", { label: "manual" })),
   verifySnapshot: (id: string) => call<any>(`/vault/snapshots/${id}/verify`),
+  prunePreview: (keep?: number) =>
+    call<any>(`/vault/prune-preview${keep === undefined ? "" : `?keep=${keep}`}`),
+  pruneSnapshots: (keep?: number) => call<any>("/vault/prune", post("", { keep })),
   drill: () => call<any>("/vault/drill", post("")),
   restore: (body: unknown) => call<any>("/vault/restore", post("", body)),
 
