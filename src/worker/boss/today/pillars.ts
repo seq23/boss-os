@@ -112,12 +112,22 @@ export function isWeekday(weekday: number): boolean {
  *
  * ─── What it is allowed to read, which is narrower than it looks ───────────
  *
- * The 2,142-row interest ledger is NOT in this database and must not be: `interest-match.mjs`
+ * The 2,145-row interest ledger is NOT in this database and must not be: `interest-match.mjs`
  * states the standing rule — "Named counterparties, assets and sizes never reach the Boss OS
- * database" — and it lives on her Mac. So "a lot with no matched counterparty" is genuinely not
- * derivable here, and this does not pretend otherwise.
+ * database" — and it lives on her Mac.
+ *
+ * WHAT CHANGED IN 0234, AND WHAT DID NOT. The ledger still does not cross, and never will. What
+ * crosses is a POINTER: Monique computes the crossings on her Mac where the ledger is, emails her
+ * the full detail from monique@sequoiataylor.com — counterparty, asset, size, next action — and
+ * posts back a count, a kind and the minute the mail went. Nothing else can cross, because
+ * `brokerage_pointers` has no free TEXT column to put it in. This is the same shape
+ * `buyer-hunt.mjs --from-boss` already uses: compute where the data is, report back what is safe.
+ *
+ * So the contract can finally lead with her real book without the book being here.
  *
  * What IS here, sovereign and hers:
+ *   - `brokerage_pointers` — how many crossings Monique found in the ledger and when she sent them.
+ *     A count and a clock. No name has ever been in this table and none can be put in it.
  *   - `capital_book_line` — her own live inventory, stored because she is the counterparty and no
  *     third party is named in it.
  *   - `counterparty_crossmatches` — a buyer candidate who also appears on her LP tracker. Public
@@ -135,6 +145,62 @@ export async function brokerageMove(
   weekday: number,
 ): Promise<{ action: string; why: string; detail?: string[] } | null> {
   if (!isWeekday(weekday)) return null;
+
+  /*
+   * ─── HER OWN BOOK, WORKED THIS MORNING, POINTED AT WITHOUT BEING NAMED ────
+   *
+   * FIRST, AND THE POSITION IS THE ARGUMENT. Everything below this is a candidate the system
+   * inferred; this is two live sides of the same name out of her own ledger, which is the most
+   * valuable thing any part of this machine can find and the reason the ledger was built. A
+   * crossmatch with an LP is a maybe. A crossing is a commission.
+   *
+   * FRESH ONLY, AND ONCE. A pointer is a pointer to a specific email that arrived this morning; one
+   * from Tuesday would send her looking for a message she has already read, which is how she learns
+   * the line is decorative. `seen_at` is stamped when it is shown, so the same mail is pointed at
+   * exactly once, and the window is eighteen hours so a 07:45 send is still live at midnight and
+   * gone by the next morning's run.
+   *
+   * NO NAMES, AND THE QUERY IS THE PROOF. It selects three columns — a count, a kind and a clock —
+   * because those are the only columns there are. `validate:pointer-has-no-names` fails the build
+   * if that ever stops being true.
+   */
+  const FRESH_MS = 18 * 60 * 60 * 1000;
+  const pointer = await env.DB
+    .prepare(
+      `SELECT id, kind, crossings, sent_at
+         FROM brokerage_pointers
+        WHERE seen_at IS NULL AND sent_at >= ?
+        ORDER BY sent_at DESC
+        LIMIT 1`,
+    )
+    .bind(Date.now() - FRESH_MS)
+    .first<{ id: number; kind: string; crossings: number; sent_at: number }>()
+    .catch(() => null);
+
+  if (pointer) {
+    await env.DB
+      .prepare(`UPDATE brokerage_pointers SET seen_at = ? WHERE id = ?`)
+      .bind(Date.now(), pointer.id)
+      .run()
+      .catch(() => null);
+
+    const clock = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Chicago",
+    }).format(new Date(pointer.sent_at));
+    const n = pointer.crossings;
+    const noun = pointer.kind === "cross"
+      ? `crossing${n === 1 ? "" : "s"} from your book`
+      : `conversation${n === 1 ? "" : "s"} worth restarting`;
+
+    return {
+      action: `Monique has ${n} ${noun} — she sent them at ${clock} and they are in your inbox. Work them before anything else today.`,
+      why:
+        `She read your interest ledger on your own Mac, where it stays, and crossed it against your ` +
+        `live book. Both sides of ${n === 1 ? "this one" : "each of these"} have already told you what they ` +
+        `wanted. The names, the sizes and the next move are in the email — they are deliberately not ` +
+        `on this screen and never will be.`,
+    };
+  }
 
   /*
    * A FIRM SHE IS ALREADY TALKING TO, AS A BUYER FOR SOMETHING SHE IS CARRYING.

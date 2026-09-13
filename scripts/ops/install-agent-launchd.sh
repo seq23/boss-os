@@ -250,7 +250,7 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent capital:scan; cd $REPO && bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO && npm run --silent capital:match -- --send</string>
+    <string>cd $REPO && npm run --silent capital:scan; cd $REPO && bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO && npm run --silent capital:match -- --send --pointer</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>

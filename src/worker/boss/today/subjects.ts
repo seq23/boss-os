@@ -66,11 +66,26 @@ export const WORK_SUBJECTS = new Set([
    * Her own live brokerage inventory. She is the counterparty and no third party is named in it,
    * which is why 0226 stores it at all — and it is the most literally "her work" table here.
    *
-   * The 2,142-row interest ledger is deliberately NOT on this list, because it is deliberately not
+   * The 2,145-row interest ledger is deliberately NOT on this list, because it is deliberately not
    * in this database: "Named counterparties, assets and sizes never reach the Boss OS database."
    */
   "capital_book",
   "capital_book_line",
+  /**
+   * WORK, AND IT IS THE ONLY THING ON THIS LIST THAT IS A POINTER TO WORK RATHER THAN THE WORK.
+   * Stated rather than waved through, because a pointer looks like machinery at a glance.
+   *
+   * A row here says Monique found N crossings in the interest ledger this morning and emailed them
+   * to her. It is not a report about whether a job ran — `duty_runs` is that, and it is on the
+   * machinery list where it belongs. It is a count of LIVE DEALS sitting in her inbox, with the
+   * named counterparties, assets and sizes deliberately left on her Mac. Acting on them is
+   * brokerage work and nobody else can do it.
+   *
+   * The distinction that matters: if the job fails, NOTHING IS POSTED and this table says nothing.
+   * The failure goes to the alert surface like every other duty's. So this table can only ever
+   * carry a fact about her business, never a fact about her machinery.
+   */
+  "brokerage_pointers",
   /**
    * A buyer candidate who also appears on her LP tracker. Public institutions and aggregate counts,
    * never a person — same class as `sourcing_candidates`. Deciding whether to approach one on the

@@ -57,6 +57,8 @@
  *
  *   npm run capital:match                          # the standing cross — who fits whom, right now
  *   npm run capital:match -- --send                # ...and email it to her
+ *   npm run capital:match -- --send --pointer      # ...and tell today's contract the mail exists,
+ *                                                  #    as a count and a clock. No names cross.
  *   npm run capital:match -- --find SpaceX --side buy --size 250000000
  *   npm run capital:match -- --revive              # only the leads: interests that never got filled
  *   npm run capital:match -- --nudge               # the monthly, asset-anchored note — at most three
@@ -82,6 +84,68 @@ const WANT_SIZE = Number(argOf("size") ?? 0);
 const NOT = argOf("not");
 const NUDGE = ARGS.includes("--nudge");
 const REVIVE = ARGS.includes("--revive");
+
+/**
+ * ─── THE POINTER: HOW TODAY'S CONTRACT LEARNS THIS MAIL EXISTS ──────────────
+ *
+ * The brokerage line in today's contract could not see this ledger, so on most weekdays it fell
+ * through to a confirmed crossmatch or an unsized book lot — while the most valuable thing the
+ * system knows, two live sides of the same name, sat in an email she might not open until noon.
+ *
+ * THE LEDGER STILL DOES NOT MOVE. The rule at the top of this file is hers and it stands:
+ *
+ *   "Named counterparties, assets and sizes never reach the Boss OS database — not code-named,
+ *    not counted."
+ *
+ * So this posts a COUNT, A KIND AND A CLOCK to `POST /api/boss/capital/brokerage-pointer` — the
+ * same shape `buyer-hunt.mjs --from-boss` already uses, which computes on her Mac where the data is
+ * and reports back only what is safe. The table it lands in has no free TEXT column, so a name
+ * cannot be stored there even by a caller that tried; the endpoint refuses any field but those
+ * three; and `validate:pointer-has-no-names` asserts both offline on every build.
+ *
+ * WEEKDAYS ONLY, AND ONLY WHEN THERE IS SOMETHING. Her instruction on the contract is M-F, and her
+ * standing rule on this lane is that empty-handed beats noise — a pointer to a mail that says
+ * "nothing today" is noise with a count on it. A quiet day posts nothing and the contract says
+ * nothing, which is the correct outcome and the common one.
+ *
+ * AND IT ONLY POSTS WHAT WAS ACTUALLY SENT. The post happens after the Resend call succeeds, never
+ * before and never on a dry run — a pointer to an email that does not exist is worse than no
+ * pointer, because she goes looking and finds nothing.
+ */
+const POINTER = ARGS.includes("--pointer");
+
+async function postPointer(kind, crossings, sentAt) {
+  const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
+  if (!process.env.BOSS_PASSCODE) {
+    console.error("  pointer NOT posted [NO_PASSCODE] — the mail went, today's contract will not know.");
+    console.error("  Run under the vault: npm run vault:run -- npm run capital:match -- --pointer --send");
+    return false;
+  }
+  const unlock = await fetch(`${ORIGIN}/api/boss/auth/unlock`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ passcode: process.env.BOSS_PASSCODE }),
+  }).catch(() => null);
+  if (!unlock?.ok) {
+    console.error(`  pointer NOT posted [UNLOCK_FAILED] — Boss OS refused the passcode (${unlock?.status ?? "no response"}).`);
+    return false;
+  }
+  const cookie = (unlock.headers.get("set-cookie") ?? "").split(";")[0];
+  /*
+   * THE BODY IS BUILT HERE, LITERALLY, FROM THREE PRIMITIVES. Not spread from a match object, not
+   * assembled from a summary — because a spread is how the asset field arrives one day without
+   * anybody deciding it should.
+   */
+  const res = await fetch(`${ORIGIN}/api/boss/capital/brokerage-pointer`, {
+    method: "POST", headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ kind, crossings, sent_at: sentAt }),
+  }).catch(() => null);
+  if (!res?.ok) {
+    console.error(`  pointer NOT posted [${res?.status ?? "no response"}] — the mail went, today's contract will not know.`);
+    return false;
+  }
+  console.log(`  Pointer posted: ${crossings} ${kind}(s), no names. Today's contract will say the mail is there.`);
+  return true;
+}
 
 /** Five, with reasons. Never a directory. */
 const CAP = Number(process.env.CAPITAL_MATCH_CAP ?? 5);
@@ -582,6 +646,17 @@ async function main() {
   const usable = interests.filter((r) => !wrongRows.has(r.source_message));
 
   let body, subject;
+  /*
+   * WHAT THE POINTER WILL SAY, DECIDED HERE WHERE THE COUNTS ARE REAL.
+   *
+   * A CROSS OUTRANKS A REVIVAL, and only one kind is pointed at. Two pointers for one email would
+   * put two brokerage lines in a contract that has one slot, and the cross is the rarer and more
+   * valuable of the two: two live sides of one name today, against a conversation that stopped.
+   * Only the standing run posts one — `--find` is her own ad-hoc question and `--nudge` is a
+   * monthly note, and neither is the morning mail the contract is pointing at.
+   */
+  let pointerKind = null;
+  let pointerCount = 0;
   if (NUDGE) {
     const CONTACTS = process.env.BOSS_OS_CONTACTS_FILE
       ?? path.join(os.homedir(), ".boss-os", "sourcing", "CONTACTS.json");
@@ -636,6 +711,8 @@ async function main() {
       subject = picked.length
         ? `${picked.length} cross${picked.length === 1 ? "" : "es"} in your inbox — ${picked.map((m) => m.asset).join(", ")}`
         : (rev.picked.length ? `${rev.picked.length} conversation(s) worth restarting` : "No cross and no lead worth a call today");
+      if (picked.length) { pointerKind = "cross"; pointerCount = picked.length; }
+      else if (rev.picked.length) { pointerKind = "revival"; pointerCount = rev.picked.length; }
     }
   }
 
@@ -660,7 +737,41 @@ async function main() {
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({ from, to: [TO], subject: subject.slice(0, 200), text }),
     });
-    if (res.ok) { console.log(`\nEmailed ${TO} from ${from}.`); return; }
+    if (res.ok) {
+      const sentAt = Date.now();
+      console.log(`\nEmailed ${TO} from ${from}.`);
+      /*
+       * ─── AND THE POINTER, AFTER THE MAIL AND NEVER BEFORE ──────────────────
+       *
+       * Three gates, and each one is a different way this could become noise:
+       *
+       *   · `--pointer` was asked for. The daily launchd job passes it; a hand-run does not, so
+       *     checking her matches at four in the afternoon does not rewrite her morning.
+       *   · There is something to point AT. A mail saying "no cross and no lead today" is a fine
+       *     mail and a terrible pointer — empty-handed beats noise.
+       *   · It is a weekday. Her instruction on the contract is M-F, and the line is weekday-gated
+       *     at the other end too; posting on a Saturday would only leave a row that goes stale
+       *     unread, which is a worse record than none.
+       *
+       * A FAILED POST DOES NOT FAIL THE RUN. The email is the deliverable and it has already
+       * arrived; refusing to exit 0 because a convenience line did not post would turn a delivered
+       * piece of work into a red duty. It says so, loudly, on stderr where the duty log keeps it.
+       */
+      /*
+       * THE DAY IN HER TIMEZONE, NOT THE MACHINE'S. Read as a weekday NAME rather than by parsing a
+       * formatted date string back into a Date — that round trip reinterprets the result in the
+       * local zone and silently returns the wrong day for anything near midnight, which is exactly
+       * the boundary a Friday-evening or Sunday-night run sits on.
+       */
+      const dayName = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short" }).format(sentAt);
+      const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(dayName);
+      if (POINTER && pointerKind && isWeekday) {
+        await postPointer(pointerKind, pointerCount, sentAt);
+      } else if (POINTER && !pointerKind) {
+        console.log("  No pointer: nothing crossed and nothing was worth reviving. Silence is the answer.");
+      }
+      return;
+    }
     console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
   }
   console.error("NAMED STOP [SEND_REFUSED] every sender was refused.");

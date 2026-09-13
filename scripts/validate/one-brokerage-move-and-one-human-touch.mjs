@@ -53,8 +53,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PILLARS = "src/worker/boss/today/pillars.ts";
 const PROJECTS = "src/worker/boss/today/projects.ts";
 
-/** Tables the brokerage suggestion is allowed to read. Anything else is a widened boundary. */
+/**
+ * Tables the brokerage suggestion is allowed to read. Anything else is a widened boundary.
+ *
+ * `brokerage_pointers` is on this list and the interest ledger still is not. The pointer holds a
+ * count, a kind and a clock, in a table with no free TEXT column — see `migrations/0234` and
+ * `validate:pointer-has-no-names`, which asserts that shape rather than trusting this comment.
+ */
 const BROKERAGE_ALLOWED = new Set([
+  "brokerage_pointers",
   "capital_book",
   "capital_book_line",
   "counterparty_crossmatches",
