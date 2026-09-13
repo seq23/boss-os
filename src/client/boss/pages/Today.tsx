@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Coaching } from "./Coaching";
 import { BodyContractView } from "./BodyContract";
@@ -257,7 +257,15 @@ function summarise(block: Block): string {
         ? "Nothing is waiting on you."
         : `${c.pending} waiting${c.by_risk?.high ? `, ${c.by_risk.high} high risk` : ""}${c.expiring_within_a_day ? `, ${c.expiring_within_a_day} expiring within a day` : ""}.`;
     case "employee_status":
-      return `${c.by_status?.active ?? 0} active, ${c.by_status?.paused ?? 0} paused, ${c.by_status?.retired ?? 0} retired.`;
+      /*
+       * THE SUMMARY ANSWERS "DOES ANYONE NEED ME", which three counts of employment status never
+       * did. The counts stay — they were the one part of this block that was always correct — but
+       * they follow the verdict rather than standing in for it.
+       */
+      return (
+        (c.needing_you ? `${c.needing_you} employee${c.needing_you === 1 ? "" : "s"} need${c.needing_you === 1 ? "s" : ""} you. ` : "Everyone is on schedule. ") +
+        `${c.by_status?.active ?? 0} active, ${c.by_status?.paused ?? 0} paused, ${c.by_status?.retired ?? 0} retired.`
+      );
     case "continuity_status":
       return c.note;
     case "trading_status":
@@ -362,9 +370,13 @@ function summarise(block: Block): string {
 /**
  * `**like this**` becomes bold, and nothing else is interpreted.
  *
- * The briefing prompt asks every bullet to bold its key phrase, because she scans and the bold is
- * what she scans for. Rendering the asterisks literally would put punctuation noise in the one
- * place the formatting was supposed to help.
+ * KEPT, THOUGH NOTHING IS ASKED TO EMIT IT ANY MORE. 0205's prompt told the run to bold the key
+ * phrase in EVERY bullet, and when every bullet contains bold the bold marks nothing — worse, it
+ * competed with the section heading, so the loudest thing on the screen was a phrase in the middle
+ * of a sentence. That is her "some bold stuff that i feel like should not be", and migration 0223
+ * stops asking for it: weight belongs to hierarchy now. Every report already written still carries
+ * the asterisks, so this function stays exactly as it is or a month of history renders as
+ * punctuation noise.
  *
  * DELIBERATELY NOT A MARKDOWN PARSER. This text comes from a research run that reads the open web,
  * so it is untrusted by construction. Splitting on a delimiter and emitting <strong> around
@@ -383,20 +395,124 @@ function bold(text: string) {
  * every report written before it carries. A format change that made historical days render empty
  * would look exactly like a regression on the screen it was meant to fix.
  */
-function renderSection(sec: any, i: number) {
+function renderSection(sec: any, i: number, insight?: any) {
   return (
     <div key={i} style={{ marginBottom: 12 }}>
-      <p className="eyebrow" style={{ marginBottom: 4 }}>{sec.heading ?? `Section ${i + 1}`}</p>
+      {/*
+        * THE HEADING OUTRANKS ITS OWN CONTENT, WHICH IT DID NOT.
+        *
+        * This line was `<p className="eyebrow">` — 11px, `--muted` — directly above a `.row-title`
+        * that is heavier and full ink. Every briefing section was headed by something quieter than
+        * the sentence beneath it. `.today-2` is level 2 of the one scale both blocks on this page
+        * now draw from; `.today-4` is body. The order is structural and cannot invert.
+        */}
+      <p className="today-2">{sec.heading ?? `Section ${i + 1}`}</p>
       {/* What she should DO or watch because of it, before the evidence for it. */}
-      {sec.so_what && <div className="row-title" style={{ marginBottom: 4 }}>{sec.so_what}</div>}
+      {sec.so_what && <div className="today-4">{sec.so_what}</div>}
+
+      {/* §5's Top 5 Headlines: each one a fact, why it matters, and an importance score. */}
+      {Array.isArray(sec.items) && sec.items.length > 0 && (
+        <div>
+          {sec.items.map((it: any, j: number) => (
+            <div key={j} style={{ marginBottom: 8 }}>
+              <p className="today-3">{typeof it === "string" ? it : it.headline ?? it.title ?? `Item ${j + 1}`}</p>
+              {typeof it === "object" && it.summary && <div className="today-4">{bold(String(it.summary))}</div>}
+              {typeof it === "object" && it.why_it_matters && (
+                <p className="brief-why">Why it matters — {bold(String(it.why_it_matters))}</p>
+              )}
+              {typeof it === "object" && it.importance && (
+                <p className="brief-score">Investor importance {String(it.importance)}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/*
+        * §5's Markets & Macro Dashboard is a TABLE or it is absent. §2.1 forbids inventing market
+        * data and she is a registered rep who trades on this, so a dashboard with no verified rows
+        * renders nothing here and is named in what-is-missing instead.
+        */}
+      {sec.table && Array.isArray(sec.table.rows) && sec.table.rows.length > 0 && (
+        <div className="brief-tablewrap">
+          <table className="brief-table">
+            {Array.isArray(sec.table.columns) && sec.table.columns.length > 0 && (
+              <thead>
+                <tr>{sec.table.columns.map((col: string, j: number) => <th key={j}>{col}</th>)}</tr>
+              </thead>
+            )}
+            <tbody>
+              {sec.table.rows.map((row: any, j: number) => (
+                <tr key={j}>
+                  {(Array.isArray(row) ? row : [row]).map((cell: any, k: number) => <td key={k}>{String(cell)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {Array.isArray(sec.bullets) && sec.bullets.length > 0 ? (
-        <ul style={{ margin: 0, paddingLeft: 18 }}>
+        <ul className="brief-list">
           {sec.bullets.map((b: string, j: number) => (
-            <li key={j} style={{ marginBottom: 3, lineHeight: 1.45 }}>{bold(b)}</li>
+            <li key={j}>{bold(b)}</li>
           ))}
         </ul>
       ) : (
-        sec.body && <div className="row-sub" style={{ lineHeight: 1.5 }}>{bold(String(sec.body))}</div>
+        sec.body && <div className="today-4">{bold(String(sec.body))}</div>
+      )}
+
+      {/*
+        * ─── THE INVESTOR INSIGHT, WHICH IS TEACHING RATHER THAN COMMENTARY ───
+        *
+        *   "u r also supposed to use the intelligence of the LLM to develop an investor insights
+        *    section to help me learn how to think about the stuff im reading....."
+        *
+        * The spec already mandated a synthesis, and every one of its examples is a CONCLUSION. She
+        * is asking for the reasoning that reaches it, so she can make the move herself on
+        * tomorrow's news without the report. Four parts, and each is a different kind of claim:
+        * the pattern, the move that found it, the frame to reuse, and what would break it.
+        *
+        * IT IS WITHHELD WHEN IT IS NOT GROUNDED. The worker checks that every fact it joins appears
+        * elsewhere in today's own report; reasoning is fabricable in a way that reads like insight,
+        * and a pattern manufactured out of a thin news day is a horoscope with a Bloomberg accent.
+        */}
+      {sec.key === "investor_insight" && insight && (
+        insight.grounded && insight.insight ? (
+          <div className="brief-insight">
+            <p className="today-3">{insight.insight.synthesis}</p>
+            {insight.insight.how_reached && (
+              <div className="brief-insight-part">
+                <p className="brief-insight-l">How it was reached</p>
+                <div className="today-4">{insight.insight.how_reached}</div>
+              </div>
+            )}
+            {insight.insight.transferable_frame && (
+              <div className="brief-insight-part">
+                <p className="brief-insight-l">Ask this next time</p>
+                <div className="today-4">{insight.insight.transferable_frame}</div>
+              </div>
+            )}
+            {insight.insight.falsified_by && (
+              <div className="brief-insight-part">
+                <p className="brief-insight-l">What would break it</p>
+                <div className="today-4">{insight.insight.falsified_by}</div>
+              </div>
+            )}
+            {(insight.insight.cites ?? []).length > 0 && (
+              <div className="brief-insight-part">
+                <p className="brief-insight-l">Built from</p>
+                <ul className="brief-list">
+                  {insight.insight.cites.map((cite: any, j: number) => (
+                    <li key={j} className="brief-cite">{cite.fact}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          insight.withheld_because && <p className="brief-absent">{insight.withheld_because}</p>
+        )
       )}
     </div>
   );
@@ -588,40 +704,48 @@ function renderDetail(
         <>
           {c.staleness && <div className="row-sub" style={{ marginBottom: 10 }}>{c.staleness}</div>}
 
-          {c.headline && (
-            <p style={{ margin: "0 0 8px", fontFamily: "var(--display)", fontSize: 19, lineHeight: 1.35 }}>
-              {c.headline}
-            </p>
-          )}
-          {c.summary && c.summary !== c.headline && (
-            <p style={{ margin: "0 0 12px", lineHeight: 1.5 }}>{c.summary}</p>
-          )}
+          {/* Level 1: the one line that IS the report if she reads nothing else. */}
+          {c.headline && <p className="today-1">{c.headline}</p>}
+          {c.summary && c.summary !== c.headline && <p className="today-4">{c.summary}</p>}
 
           {/*
-            * FOUR SECTIONS, AND THE REST BEHIND A TOGGLE.
+            * ─── EVERY SECTION, IN §5's ORDER, INSIDE ITS OWN SCROLL ──────────
             *
-            * The prompt asks for four at most. A real run on 8 September, with the new prompt, filed
-            * FOURTEEN — down from twenty, so the instruction moved it and did not govern it. There
-            * are 28KB of specification sitting in the run's own working directory describing a
-            * twenty-section newspaper, and a model splitting the difference between two documents is
-            * what that produces.
+            * "the executive breifing section is missing some sections (and u can make it
+            * scrollable)...like major news (top 5 headlines) a one min summary section, markets
+            * dashboard a tech section a cpaital markets secondary ipo m&A section....."
             *
-            * TRUNCATING ON THE WRITE SIDE WOULD DESTROY RESEARCH SHE PAID FOR, so the cap is applied
-            * HERE instead: the top four are the briefing, everything else stays one click away and
-            * says how much there is. She gets the short read; nothing is lost; and the count on the
-            * toggle is also the honest measure of how far the run overshot.
+            * The `slice(0, 4)` that stood here was a cap put on the WRONG END. It was written
+            * because a run filed fourteen sections and the screen could not take them — but the
+            * fourteen were thematic essays produced by a prompt that had been told to ignore §5,
+            * and hiding ten of them behind a toggle solved the symptom by throwing away research
+            * she paid for. §5's eleven sections are short and each has a job; the fix is that the
+            * run files THOSE, which migration 0223 does, and that this block can hold them, which
+            * is what the scroll is for. She asked for the scroll herself.
             */}
-          {(c.sections ?? []).slice(0, 4).map((sec: any, i: number) => renderSection(sec, i))}
-          {(c.sections ?? []).length > 4 && (
-            <details style={{ marginBottom: 12 }}>
-              <summary className="docket-more" style={{ cursor: "pointer" }}>
-                {(c.sections ?? []).length - 4} more section{(c.sections ?? []).length - 4 === 1 ? "" : "s"} the run filed
-              </summary>
-              <div style={{ marginTop: 8 }}>
-                {(c.sections ?? []).slice(4).map((sec: any, i: number) => renderSection(sec, i + 4))}
-              </div>
-            </details>
-          )}
+          <div className="brief-scroll">
+            {(c.sections ?? []).map((sec: any, i: number) => renderSection(sec, i, c.insight))}
+
+            {/*
+              * ─── WHAT IS NOT HERE, AND WHY ─────────────────────────────────
+              *
+              * A section can never be silently absent. §2.1 — never invent market data — means an
+              * absent Markets & Macro Dashboard is often the CORRECT outcome, and an empty one
+              * filled with plausible numbers would be far worse; what she needs is to see that it
+              * is absent and what the run said about it. This is also what makes `status: partial`
+              * mean something she can see, instead of a short report that looks complete.
+              */}
+            {(c.missing_sections ?? []).length > 0 && (
+              <>
+                <p className="today-2">Not in today&rsquo;s report — {(c.missing_sections ?? []).length}</p>
+                <ul className="brief-list">
+                  {c.missing_sections.map((m: any, i: number) => (
+                    <li key={i} className="brief-cite"><strong>{m.title}</strong> — {m.why}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
 
           {(c.corrections ?? []).length > 0 && (
             <>
@@ -630,7 +754,7 @@ function renderDetail(
                 * single most decision-bearing thing a briefing can say — the 7 September run used it
                 * to correct a standing assumption that a company was still private.
                 */}
-              <p className="eyebrow" style={{ marginTop: 4 }}>Corrects an earlier report</p>
+              <p className="today-2">Corrects an earlier report</p>
               <ul style={{ margin: "0 0 12px", paddingLeft: 18 }}>
                 {c.corrections.map((g: any, i: number) => (
                   <li key={i} style={{ marginBottom: 3, lineHeight: 1.45 }}>
@@ -643,7 +767,7 @@ function renderDetail(
 
           {(c.gaps ?? []).length > 0 && (
             <>
-              <p className="eyebrow">Could not be verified — {(c.gaps ?? []).length}</p>
+              <p className="today-2">Could not be verified — {(c.gaps ?? []).length}</p>
               <ul style={{ margin: "0 0 8px", paddingLeft: 18 }}>
                 {c.gaps.map((g: any, i: number) => (
                   <li key={i} className="row-sub" style={{ marginBottom: 2 }}>
@@ -822,13 +946,33 @@ function renderDetail(
       ) : null;
 
     case "employee_status":
-      return (c.busiest ?? []).length ? (
+      /*
+       * ─── EVERY EMPLOYEE, WITH A VERDICT AND THE REASON FOR IT ──────────────
+       *
+       * "the ai employee status section does not have an accurate list of who is on duty and there
+       * prob needs to be better UX showing a green dot showing they are working correctly when they
+       * are and that changes to red when they are broken"
+       *
+       * The list was the five BUSIEST of eight active employees, so three were missing at any
+       * moment and which three moved with the queue. It is the whole roster now, worst first.
+       *
+       * THE STATE IS IN THE SHAPE AS WELL AS THE COLOUR — a filled disc, a hollow ring, a square —
+       * and the word is always there beside it, so the verdict survives a greyscale screenshot and
+       * a colourblind reader. And every dot carries its sentence: a red dot with no reason is a
+       * puzzle, not an alert.
+       */
+      return (c.roster ?? c.busiest ?? []).length ? (
         <>
-          {c.busiest.map((e: any) => (
+          {(c.roster ?? c.busiest).map((e: any) => (
             <div className="row" key={e.id}>
               <div className="row-main">
-                <div className="row-title">{e.name}</div>
+                <div className="row-title">
+                  <span className={`health health-${e.health ?? "amber"}`} aria-hidden="true" />
+                  {e.name}
+                  <span className="health-l">{e.label ?? ""}</span>
+                </div>
                 <div className="row-sub">{e.role} · {e.lane}</div>
+                {e.reason && <div className="row-sub">{e.reason}</div>}
               </div>
               <div className="row-val">{e.open_tasks} open</div>
             </div>
@@ -977,6 +1121,29 @@ function Alerts({ content, onChanged, onError }: {
   const [verdict, setVerdict] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const dismissBox = useRef<HTMLDivElement | null>(null);
+  const reasonBox = useRef<HTMLTextAreaElement | null>(null);
+
+  /*
+   * ── THE SECOND STEP HAS TO BE WHERE HER EYES ARE ──────────────────────────
+   *
+   *   "and the dimiss and mark resolved buttons dont work"
+   *
+   * The dismiss endpoint worked the whole time — 201, a row in `alert_dismissals`, the alert gone
+   * on the next read. What did not work was the INTERACTION. Pressing "Dismiss" replaces the button
+   * with a reason box whose "Put it aside" / "Cancel" pair renders BELOW THE FOLD, behind the fixed
+   * bottom nav. From her seat: she presses Dismiss, the button she pressed vanishes, and nothing is
+   * dismissed. That is precisely "doesn't work", and no amount of endpoint testing would find it.
+   *
+   * So the box scrolls itself into view and takes the cursor. `block: "nearest"` rather than
+   * "center" because the row is usually almost visible already and yanking the page is its own kind
+   * of broken.
+   */
+  useEffect(() => {
+    if (dismissing === null) return;
+    dismissBox.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    reasonBox.current?.focus();
+  }, [dismissing]);
   const alerts: any[] = content.alerts ?? [];
   const keys: string[] = content.keys ?? [];
 
@@ -997,18 +1164,27 @@ function Alerts({ content, onChanged, onError }: {
           <div className="row-main">
             <div className="row-title">{a.text}</div>
             {dismissing === i ? (
-              <div className="judgement-note">
+              <div className="judgement-note" ref={dismissBox}>
                 <label className="stat-l" htmlFor={`why-dismiss-${i}`}>
                   Why are you putting this aside? It comes back in a week, or sooner if it gets worse.
                 </label>
                 <textarea
                   id={`why-dismiss-${i}`}
+                  ref={reasonBox}
                   className="judgement-why"
                   rows={2}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                 />
                 <div className="decide">
+                  {/*
+                    * THE DISABLED STATE SAYS WHY IT IS DISABLED.
+                    *
+                    * It sat grey and silent until three characters were typed, so on a screen she
+                    * had to scroll to find, the one control there looked dead on arrival. The
+                    * required reason is a good rule and it stays; what changes is that the button
+                    * asks for the thing it is waiting for.
+                    */}
                   <button
                     className="btn btn-reject"
                     disabled={busy || reason.trim().length < 3}
@@ -1017,27 +1193,36 @@ function Alerts({ content, onChanged, onError }: {
                       setReason(""); setDismissing(null); onChanged();
                     })}
                   >
-                    Put it aside
+                    {reason.trim().length < 3 ? "Say why first" : "Put it aside"}
                   </button>
                   <button className="btn btn-defer" disabled={busy} onClick={() => setDismissing(null)}>Cancel</button>
                 </div>
               </div>
             ) : (
               <div className="decide">
-                {/* Only an owned deliverable can be verified, so only those offer it. */}
-                {a.source_type === "tasks" && a.source_id?.startsWith("del_") && (
-                  <button
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => run(async () => {
-                      const r = await api.resolveAlert(a.source_id);
-                      setVerdict(r.verdict);
-                      if (r.closed) onChanged();
-                    })}
-                  >
-                    Mark resolved
-                  </button>
-                )}
+                {/*
+                  * EVERY ALERT OFFERS IT, WHICH IS THE FIX.
+                  *
+                  * This was gated on `a.source_id?.startsWith("del_")` and NONE of the alerts on
+                  * her screen had a `del_` source id — so "the mark resolved button dont work" was
+                  * literally true: the button was not on the page. An owned deliverable still goes
+                  * through its own terminal check, which can refuse her; everything else is
+                  * re-tested by recomputing the surface and seeing whether the condition holds.
+                  */}
+                <button
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => run(async () => {
+                    const r = await api.resolveAlert({
+                      deliverableId: a.source_type === "tasks" && a.source_id?.startsWith("del_") ? a.source_id : null,
+                      key: keys[i],
+                    });
+                    setVerdict(r.verdict);
+                    if (r.closed) onChanged();
+                  })}
+                >
+                  Mark resolved
+                </button>
                 <button className="btn btn-defer" disabled={busy} onClick={() => { setDismissing(i); setReason(""); }}>
                   Dismiss
                 </button>

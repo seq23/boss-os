@@ -13,6 +13,7 @@
  * every refusal in this system comes from there so there is exactly one place to read the rules.
  */
 
+import { planState } from "../router/plan";
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
@@ -53,6 +54,28 @@ export interface BackendRow {
   status: BackendStatus;
   status_reason: string | null;
   created_at: number;
+  /**
+   * free | capped | uncapped | off — what the ceiling MEANS on this row.
+   *
+   * Three backends carried a ceiling of $0.00 and the zeroes meant opposite things: Workers AI is
+   * free, OpenRouter has nothing authorised, and the local runtime is switched off. One number,
+   * three meanings, and the screen showed the number.
+   */
+  spend_kind: string;
+  /**
+   * invoiced | plan_equivalent | free — whether a figure here is MONEY.
+   *
+   * `bk_claude_code` runs on her Claude subscription, so its "spent" is equivalent usage against a
+   * flat fee and no money moves. She was reading it as a bill.
+   */
+  cost_basis: string;
+  /**
+   * stored | plan — where the ceiling comes from.
+   *
+   * "i want claude ceiling to be whatever my plan allows." A backend marked `plan` takes its
+   * ceiling from `router/plan.ts`, so upgrading her plan moves it without anyone editing a row.
+   */
+  ceiling_source: string;
 }
 
 /** The row with its lists parsed. Everything downstream takes this, never the raw row. */
@@ -91,17 +114,32 @@ export function hydrate(row: BackendRow): Backend {
   };
 }
 
+/**
+ * THE CEILING A `plan` BACKEND ACTUALLY HAS.
+ *
+ * Applied at LOAD, so every consumer already written — the dispatch guard, the spend guard, the
+ * budget alert on Today, the Backends screen — sees the derived figure without one of them being
+ * taught about plans. A second place that "also knows about the plan" is how two numbers start
+ * disagreeing, and the stored $50 is what happens when a figure has no source.
+ */
+async function applyPlanCeiling(db: D1Database, rows: Backend[]): Promise<Backend[]> {
+  if (!rows.some((b) => b.ceiling_source === "plan")) return rows;
+  const plan = await planState(db);
+  return rows.map((b) => (b.ceiling_source === "plan" ? { ...b, monthly_ceiling_micros: plan.employeeCeilingMicros } : b));
+}
+
 export async function listBackends(db: D1Database): Promise<Backend[]> {
   const rows = await db
     .prepare(
       `SELECT id, display_name, class, capabilities, allowed_kinds, forbidden_actions,
               credential_ref, security_notes, monthly_ceiling_micros, spent_micros,
-              window_started_at, review_at, status, status_reason, created_at
+              window_started_at, review_at, status, status_reason, created_at,
+              spend_kind, cost_basis, ceiling_source
          FROM execution_backends
         ORDER BY CASE status WHEN 'enabled' THEN 0 WHEN 'registered' THEN 1 ELSE 2 END, id`,
     )
     .all<BackendRow>();
-  return (rows.results ?? []).map(hydrate);
+  return applyPlanCeiling(db, (rows.results ?? []).map(hydrate));
 }
 
 export async function getBackend(db: D1Database, id: string): Promise<Backend | null> {
@@ -109,12 +147,15 @@ export async function getBackend(db: D1Database, id: string): Promise<Backend | 
     .prepare(
       `SELECT id, display_name, class, capabilities, allowed_kinds, forbidden_actions,
               credential_ref, security_notes, monthly_ceiling_micros, spent_micros,
-              window_started_at, review_at, status, status_reason, created_at
+              window_started_at, review_at, status, status_reason, created_at,
+              spend_kind, cost_basis, ceiling_source
          FROM execution_backends WHERE id = ?`,
     )
     .bind(id)
     .first<BackendRow>();
-  return row ? hydrate(row) : null;
+  if (!row) return null;
+  const [withPlan] = await applyPlanCeiling(db, [hydrate(row)]);
+  return withPlan ?? null;
 }
 
 /**

@@ -36,7 +36,7 @@ export interface CredentialAlert {
   source_id: string | null;
 }
 
-interface ProbeRow {
+export interface ProbeRow {
   id: string;
   label: string;
   what_depends: string;
@@ -45,20 +45,51 @@ interface ProbeRow {
   fix_steps: string;
   checked_at: number | null;
   max_age_hours: number;
+  /** The execution backend this credential exists to unlock, if it exists to unlock one. */
+  backend_id: string | null;
+  /** That backend's status: registered | enabled | disabled. Null when there is no backend. */
+  backend_status: string | null;
 }
 
 const on = (ts: number) => new Date(ts).toISOString().slice(0, 10);
 
+/**
+ * Is this credential's absence a DECISION rather than a fault?
+ *
+ * Read off the backend's own status row, never off a list of credential names. A probe that points
+ * at no backend is not covered by this at all — which is every calendar feed, the Gmail connector,
+ * the service account and the delegation, all of which unlock things that ARE switched on.
+ */
+export function isDecisionInForce(p: Pick<ProbeRow, "backend_id" | "backend_status">): boolean {
+  return p.backend_id !== null && p.backend_status !== "enabled";
+}
+
 export async function credentialAlerts(env: Env, now = Date.now()): Promise<CredentialAlert[]> {
   const rows = await env.DB
     .prepare(
-      `SELECT id, label, what_depends, state, detail, fix_steps, checked_at, max_age_hours
-         FROM credential_probes
-        ORDER BY CASE state WHEN 'dead' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END, id`,
+      /*
+       * THE BACKEND'S STATUS COMES BACK WITH THE PROBE, because a credential is only a gap if
+       * something that is switched ON needs it. See `dependsOnSomethingSwitchedOn` below.
+       */
+      `SELECT p.id, p.label, p.what_depends, p.state, p.detail, p.fix_steps, p.checked_at,
+              p.max_age_hours, p.backend_id, b.status AS backend_status
+         FROM credential_probes p
+    LEFT JOIN execution_backends b ON b.id = p.backend_id
+        ORDER BY CASE p.state WHEN 'dead' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END, p.id`,
     )
     .all<ProbeRow>();
 
-  const probes = rows.results ?? [];
+  return alertsForProbes(rows.results ?? [], now);
+}
+
+/**
+ * The judgement, over rows, with no database in it.
+ *
+ * Split out so `scripts/validate/an-alert-describes-a-live-fault.mjs` can run the SHIPPED rules
+ * over the exact production rows that produced the two false HIGH alerts, rather than asserting
+ * something about the source text that looks like the rule.
+ */
+export function alertsForProbes(probes: ProbeRow[], now = Date.now()): CredentialAlert[] {
   const alerts: CredentialAlert[] = [];
 
   /*
@@ -80,6 +111,32 @@ export async function credentialAlerts(env: Env, now = Date.now()): Promise<Cred
   }
 
   for (const p of probes) {
+    /*
+     * ── A DECISION IN FORCE IS NOT A FAULT ───────────────────────────────────
+     *
+     * Two of the five alerts on her screen, both HIGH, both at the top:
+     *
+     *   "Nothing has ever checked The Anthropic key ... It could be dead right now"
+     *   "Nothing has ever checked The OpenAI key ... It could be dead right now"
+     *
+     * Neither key is missing by accident. `bk_anthropic` and `bk_openai` are `registered`, never
+     * enabled, because she routes coaching through the free Llama on Workers AI and has said
+     * plainly that she does not want to spend money here. The system was shouting, twice, at the
+     * top of her morning, about a choice she made on purpose.
+     *
+     * THE RULE IS READ OFF THE BACKEND, NOT OFF THE TWO NAMES. Special-casing `cred_anthropic_key`
+     * would fix this morning and leave the next deliberately-off backend to make the same noise —
+     * and would put the decision in a hardcoded list rather than in the row that actually records
+     * it. `execution_backends.status` already carries exactly this: "registered — known, not usable
+     * yet. enabled — may take work. disabled — deliberately off."
+     *
+     * A DEAD PROBE STILL SHOUTS EITHER WAY. This gate is above the never-checked and stale
+     * branches only. If a credential was proven BROKEN by an actual call, that is evidence about
+     * the world and it is said out loud whatever the backend's status is — the alternative is a
+     * disabled backend quietly hiding a revoked token that something else also uses.
+     */
+    const switchedOff = isDecisionInForce(p);
+
     if (p.state === "dead") {
       alerts.push({
         severity: "critical",
@@ -92,6 +149,8 @@ export async function credentialAlerts(env: Env, now = Date.now()): Promise<Cred
       });
       continue;
     }
+
+    if (switchedOff) continue;
 
     if (p.checked_at === null) {
       alerts.push({

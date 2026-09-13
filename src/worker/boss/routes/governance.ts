@@ -18,6 +18,7 @@ import {
   modeCard, runAntiDependencyCheck,
 } from "../governance/gate";
 import { runSentinel } from "../governance/sentinel";
+import { vaultIsStale } from "../cron/cadence";
 
 export const governance = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -201,7 +202,9 @@ governance.get("/playbooks", async (c) => {
   const live: Record<string, boolean> = {
     open_dead_letters: (deadLetters?.n ?? 0) > 0,
     kill_switch: Boolean(authority?.kill_switch),
-    stale_vault: !snapshot || now - snapshot.ts > 2 * 86_400_000,
+    // See `vaultIsStale` — one rule, asked of the snapshot cadence rather than a hardcoded number
+    // that this file and `governance/sentinel.ts` each kept a copy of.
+    stale_vault: vaultIsStale(now, snapshot?.ts ?? null),
     restricted_export: (restricted?.n ?? 0) > 0,
   };
 

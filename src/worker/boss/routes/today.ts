@@ -33,6 +33,9 @@ import {
 import { TERMINAL_CHECKS } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
+import { BRIEFING_SECTIONS, orderSections, missingSections, groundInsight } from "../today/briefing";
+import { dutyStaleness } from "../duties/staleness";
+import { roster, type EmployeeDutyRow, type EmployeeRow } from "../today/roster";
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
 import { weeklyPacket, packetIsDue } from "../today/packet";
@@ -450,6 +453,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     lastSnapshot,
     lastCron,
     openDeadLetters,
+    unresolvedFailures,
     errorEvents,
     tradingAuthority,
     openPositions,
@@ -479,15 +483,25 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`)
       .bind(now + DAY_MS).first<{ n: number }>(),
     db.prepare(`SELECT status, COUNT(*) AS n FROM employees GROUP BY status`).all<{ status: string; n: number }>(),
+    /*
+     * EVERY ACTIVE EMPLOYEE, WITH NO LIMIT ON THE LIST.
+     *
+     * "the ai employee status section does not have an accurate list of who is on duty"
+     *
+     * What stood here ordered by `open_tasks DESC` and took the top FIVE. Eight employees are
+     * active, so three were missing from "who is on duty" at any moment and WHICH three moved with
+     * the queue — while the summary line above the list correctly said eight. A roster sorted by
+     * busyness with a cut-off hides exactly the employees doing nothing, which is the state most
+     * worth seeing. `today/roster.ts` sorts by HEALTH instead, worst first, and cuts nobody.
+     */
     db.prepare(
       `SELECT e.id, e.name, e.role, e.lane, COUNT(t.id) AS open_tasks
          FROM employees e
          LEFT JOIN tasks t ON t.employee_id = e.id AND t.status IN ('queued','running','awaiting_approval')
         WHERE e.status = 'active'
         GROUP BY e.id
-        ORDER BY open_tasks DESC, e.name ASC
-        LIMIT 5`,
-    ).all<{ id: string; name: string; role: string; lane: string; open_tasks: number }>(),
+        ORDER BY e.name ASC`,
+    ).all<EmployeeRow>(),
     db.prepare(`SELECT COALESCE(SUM(cost_micros),0) AS micros FROM usage_ledger WHERE ts >= ? AND ts < ?`)
       .bind(from, to).first<{ micros: number }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM memory_items WHERE created_at >= ? AND created_at < ?`)
@@ -502,6 +516,21 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     db.prepare(`SELECT id, started_at, finished_at, status FROM cron_runs ORDER BY started_at DESC LIMIT 1`)
       .first<{ id: string; started_at: number; finished_at: number | null; status: string }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`).first<{ n: number }>(),
+
+    /*
+     * FAILURES NOTHING HAS SINCE SUCCEEDED AT. A duty's task carries the duty's own `task_title`,
+     * so a later `done` task with the same title in the same lane IS the same work having worked.
+     * Matching on title rather than on a foreign key because `tasks` has never carried one, and
+     * inventing a column here would leave every historical row unlinked and the alert still wrong.
+     */
+    db.prepare(
+      `SELECT COUNT(*) AS n FROM tasks f
+        WHERE f.status = 'failed'
+          AND NOT EXISTS (
+            SELECT 1 FROM tasks s
+             WHERE s.title = f.title AND s.lane = f.lane
+               AND s.status = 'done' AND s.created_at > f.created_at)`,
+    ).first<{ n: number }>(),
     /*
      * `detail` IS SELECTED BECAUSE IT IS THE ONLY COLUMN THAT SAYS WHAT HAPPENED, and for five
      * renders it was left unread while `scope` and `event` were printed at her as prose.
@@ -512,8 +541,21 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * production held five — and the cap only exists so a storm cannot cost the whole render.
      */
     db.prepare(
-      `SELECT id, ts, scope, event, detail FROM system_events
-        WHERE level = 'error' AND ts >= ? ORDER BY ts DESC LIMIT 200`,
+      /*
+       * AN ERROR ABOUT A TASK THAT IS NO LONGER FAILING IS HISTORY, NOT AN ALERT.
+       *
+       * Five `queue/task_failed` rows on her screen were all the SAME task, tsk_m2bk7zfffhjatvsf,
+       * hitting the capability wall on 12 September — "3 of 4 refused at capability" — which the
+       * 70B promotion has since removed. The task is not failed any more. The rows are the record
+       * of what happened that evening and they belong in Diagnostics; presenting them at 7am as a
+       * present condition is reading history as news, which is how a screen fills with things she
+       * cannot act on.
+       */
+      `SELECT id, ts, scope, event, detail FROM system_events e
+        WHERE e.level = 'error' AND e.ts >= ?
+          AND NOT (e.scope = 'queue' AND e.event = 'task_failed'
+                   AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = e.entity_id AND t.status <> 'failed'))
+        ORDER BY e.ts DESC LIMIT 200`,
     ).bind(now - DAY_MS).all<ErrorEventRow>(),
     db.prepare(`SELECT live_enabled, kill_switch, max_open_positions FROM trading_authority LIMIT 1`)
       .first<{ live_enabled: number; kill_switch: number; max_open_positions: number }>(),
@@ -612,12 +654,32 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
        * stop reading." Measured from creation, a new duty is given its own cadence to fire in and
        * only then goes loud.
        */
-      `SELECT id, name, last_run_at, created_at
-         FROM standing_duties
-        WHERE suspended = 0
-          AND COALESCE(last_run_at, created_at) <
-              ? - (CASE cadence WHEN 'daily' THEN 2 WHEN 'weekly' THEN 14 ELSE 62 END) * 86400000`,
-    ).bind(Date.now()).all<{ id: string; name: string; last_run_at: number | null; created_at: number }>(),
+      /*
+       * ── THE SHAPE IS READ HERE AND JUDGED IN `duties/staleness.ts` ─────────
+       *
+       * What stood here was a WHERE clause built out of `cadence` alone:
+       *
+       *     COALESCE(last_run_at, created_at) < now − (daily ? 2 : weekly ? 14 : 62) days
+       *
+       * and it produced a HIGH alert on her Sunday morning reading "Brokerage Sourcing Sweep
+       * (Mon/Wed/Fri) has not fired for 2 days. Its clock says it should have." Its clock said no
+       * such thing: that duty is `cadence = 'daily'` with `weekdays = [1,3,5]`, it ran on Friday as
+       * designed, and its next occurrence was Monday. `weekdays` was added so a duty could run two
+       * or three times a week; this check was never taught about it, so every weekday-restricted
+       * duty went loud every weekend.
+       *
+       * SQL cannot answer "when does this duty's own schedule next fire" — that needs the IANA
+       * database and the same `nextDueAt` the cron materialises from. So the rows come back whole
+       * and `dutyStaleness()` decides, which also means the ALERT and the employee health dot are
+       * one piece of logic rather than two copies drifting apart.
+       */
+      `SELECT d.id, d.name, d.employee_id, d.cadence, d.weekday, d.weekdays,
+              d.local_hour, d.local_minute, d.timezone,
+              d.suspended, d.last_run_at, d.created_at, t.status AS last_task_status
+         FROM standing_duties d
+    LEFT JOIN tasks t ON t.id = d.last_task_id
+        WHERE d.suspended = 0`,
+    ).all<EmployeeDutyRow>(),
 
     /*
      * A DUTY WHOSE LAST TASK NEVER FINISHED. `queued` means nothing sent it; `running` for a long
@@ -876,12 +938,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * One missed run is a laptop that was closed; two is a fault.
    */
   for (const d of staleDuties.results ?? []) {
-    const days = Math.floor((now - (d.last_run_at ?? d.created_at ?? now)) / 86_400_000);
+    const late = dutyStaleness(d, now);
+    if (!late.stale) continue;
     alerts.push({
       severity: "high",
       text: d.last_run_at
-        ? `"${d.name}" has not fired for ${days} days. Its clock says it should have.`
-        : `"${d.name}" has never fired since it was created.`,
+        ? `${late.reason} Its next scheduled run is ${late.next_expected ? new Date(late.next_expected).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "not computable"}.`
+        : `"${d.name}" has never fired since it was created, and ${late.missed} scheduled run${late.missed === 1 ? "" : "s"} have gone by.`,
       source_type: "tasks", source_id: d.id,
     });
   }
@@ -958,10 +1021,28 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   const errorGroups = groupErrorEvents(errorEvents.results ?? []);
   const failedTaskGroup = errorGroups.find((g) => g.scope === "queue" && g.event === "task_failed") ?? null;
 
-  if ((tasksAll.failed ?? 0) > 0) {
+  /*
+   * A FAILURE THE SAME WORK HAS SINCE SUCCEEDED AT IS NOT A LIVE FAULT.
+   *
+   * Her screen said "2 tasks failed and have not been requeued or cancelled" at MEDIUM. Both rows
+   * were from 9 September, both read `stdout was not JSON`, and BOTH duties — Brokerage Sourcing
+   * Sweep and the Executive Intelligence Report — have run successfully since. The count was
+   * reading four-day-old history as a present condition, which is the same defect as the stale
+   * duty clock in a different table.
+   *
+   * THE ROWS ARE NOT DELETED, and that is a deliberate choice over the quicker one. They are the
+   * record of what actually happened on 9 September, `task_events` and `backend_runs` hang off
+   * them, and a system that tidies away its own failures cannot answer "has this broken before".
+   * What changes is that the ALERT asks the right question: is anything still broken NOW. That also
+   * makes it self-maintaining — the next success closes the next failure with nobody running a
+   * DELETE — where a one-off cleanup would have left the same query to raise the same false alert
+   * the next time a run failed and recovered.
+   */
+  const liveFailed = unresolvedFailures?.n ?? 0;
+  if (liveFailed > 0) {
     alerts.push({
       severity: "medium",
-      text: failedTaskAlertText(tasksAll.failed ?? 0, failedTaskGroup),
+      text: failedTaskAlertText(liveFailed, failedTaskGroup),
       source_type: "tasks", source_id: null,
     });
   }
@@ -980,11 +1061,24 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   }
   for (const g of errorGroups) {
     // Already spoken, inside the count it belongs to. Never both.
-    if (g === failedTaskGroup && (tasksAll.failed ?? 0) > 0) continue;
+    if (g === failedTaskGroup && liveFailed > 0) continue;
     alerts.push({
       severity: "medium",
       text: errorAlertText(g),
-      source_type: "tasks", source_id: g.newest_id,
+      /*
+       * THE IDENTITY IS THE CAUSE, NOT THE ROW.
+       *
+       * This carried `g.newest_id` — an `evt_…` primary key, unique per occurrence — and
+       * `alertKey()` builds a dismissal key out of `source_type:source_id`. So a dismissal was dead
+       * on arrival by construction: the same condition recurring writes a new event with a new id,
+       * and the next render sails straight past the snooze she set. She dismisses it, it comes
+       * back tomorrow, and the button looks broken because for this class of alert it was.
+       *
+       * The grouping already established what this alert is ABOUT — one `scope`+`event` cause — so
+       * that is its identity. Prefixed `evtclass:` rather than `evt_` so it can never be mistaken
+       * for a row id by anything that looks one up.
+       */
+      source_type: "tasks", source_id: `evtclass:${g.scope}:${g.event}`,
     });
   }
 
@@ -1163,7 +1257,38 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
                   ? shown.summary.trim().split(/(?<=[.!?])\s+/)[0]!.slice(0, 160)
                   : null),
               summary: shown.summary,
-              sections: parseJson(shown.sections, []),
+              /*
+               * ─── §5's ELEVEN SECTIONS, IN §5's ORDER, AND THE ABSENT ONES NAMED ──
+               *
+               * "the executive breifing section is missing some sections ... like major news (top 5
+               * headlines) a one min summary section, markets dashboard a tech section a cpaital
+               * markets secondary ipo m&A section....."
+               *
+               * Every one of those is already required by the spec the duty is handed. The old
+               * `slice(0, 4)` here threw away research she paid for, and the run was only filing
+               * three thematic essays anyway because 0205's prompt told it to ignore §5's
+               * structure. The producer is fixed in migration 0223; this end orders what arrives
+               * and, crucially, SAYS WHAT IS NOT HERE.
+               *
+               * `status: "partial"` now means something she can see. A section that is absent —
+               * because §2.1 forbids inventing the data that would have filled it — is absent WITH
+               * A REASON, which is the difference between an honest short report and one that
+               * looks complete because it never mentioned what it could not get.
+               */
+              sections: orderSections(parseJson(shown.sections, [])),
+              spec_sections: BRIEFING_SECTIONS,
+              missing_sections: missingSections(parseJson(shown.sections, []), parseJson(shown.gaps, [])),
+              /*
+               * THE INSIGHT IS CHECKED BEFORE IT IS SHOWN. Numbers are obviously fabricable and
+               * everyone watches them; reasoning is fabricable in a way that reads like insight. An
+               * insight whose facts are not in today's report is withheld with its reason, rather
+               * than printed with a hedge, on the page she reads before she trades.
+               */
+              insight: groundInsight({
+                headline: shown.headline,
+                summary: shown.summary,
+                sections: parseJson(shown.sections, []),
+              }),
               gaps: parseJson(shown.gaps, []),
               corrections: parseJson(shown.corrections, []),
               sources: parseJson(shown.sources, []),
@@ -1361,13 +1486,31 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       isEmpty: pendingTotal === 0,
       sourceId: oldestApproval?.id ?? null,
     },
-    employee_status: {
-      content: {
-        by_status: { active: employeeStatus.active ?? 0, paused: employeeStatus.paused ?? 0, retired: employeeStatus.retired ?? 0 },
-        busiest: busiestEmployees.results ?? [],
-      },
-      isEmpty: (employeeStatus.active ?? 0) === 0,
-    },
+    employee_status: (() => {
+      /*
+       * THE DOT IS A VERDICT, AND IT SAYS WHAT IT ASSERTS.
+       *
+       * "there prob needs to be better UX showing a green dot showing they are working correctly
+       * when they are and that changes to red when they are broken"
+       *
+       * Green means every duty they own is on schedule and none of their last runs failed. Red
+       * means a duty is overdue against ITS OWN schedule — the same `dutyStaleness` the Critical
+       * Alert uses, so the dot and the alert can never disagree — or its last task failed. Amber
+       * means nothing has ever run, because grey-as-green is how a dead employee looks healthy.
+       */
+      const people = roster(busiestEmployees.results ?? [], staleDuties.results ?? [], now);
+      const needing = people.filter((p) => p.health === "red");
+      return {
+        content: {
+          by_status: { active: employeeStatus.active ?? 0, paused: employeeStatus.paused ?? 0, retired: employeeStatus.retired ?? 0 },
+          roster: people,
+          needing_you: needing.length,
+          /* Kept so anything still reading the old shape sees the same people rather than nothing. */
+          busiest: people,
+        },
+        isEmpty: people.length === 0,
+      };
+    })(),
     continuity_status: {
       content: {
         relevant: continuityRelevant,
@@ -1928,6 +2071,61 @@ today.post("/alerts/refresh", async (c) => {
 today.post("/alerts/resolve", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const id = String(b?.deliverable_id ?? "").trim();
+
+  /*
+   * ── EVERY ALERT CAN BE RE-TESTED, NOT JUST AN OWNED DELIVERABLE ───────────
+   *
+   *   "and the dimiss and mark resolved buttons dont work"
+   *
+   * "Mark resolved" was gated on `source_id?.startsWith("del_")`. Of the alerts actually on her
+   * screen, NONE had a `del_` source id — so the button she was complaining about was not on the
+   * page at all. A control that exists in the source and never on the screen is this repository's
+   * most-repeated defect wearing a button.
+   *
+   * THE GENERAL RE-TEST IS RECOMPUTING. Every alert on Today is DERIVED ON READ from the records,
+   * so "is this still true" has one honest answer for all of them: build the surface again and see
+   * whether this alert is still raised. That needs no per-source registry to fall out of step with
+   * the producers — a new alert type is re-testable the day it is written, which a registry could
+   * never promise.
+   *
+   * THE DELIVERABLE PATH IS UNTOUCHED AND STILL WINS. `TERMINAL_CHECKS` does something recomputing
+   * cannot: it refuses her assertion when the records disagree, and says so. That is the design
+   * that stops an employee, a job — or she herself — closing work that is not finished, and it
+   * stays exactly as it was.
+   */
+  if (!id.startsWith("del_")) {
+    const key = String(b?.key ?? "").trim();
+    if (!key) throw badRequest("An alert must name itself to be re-tested", "Pass the alert key the screen was given.");
+
+    const day = await ensureDay(c.env.DB, dayId(Date.now()));
+    const blocks = await assembleDayFlow(c.env, day);
+    const alertsBlock = blocks.find((x) => x.key === "critical_alerts");
+    const content = (alertsBlock?.content ?? {}) as { alerts?: { text: string }[]; keys?: string[] };
+    const at = (content.keys ?? []).indexOf(key);
+
+    await audit(c.env.DB, {
+      actor: "boss", lane: "ops", entityType: "today", entityId: dayId(Date.now()),
+      action: "alert_rechecked", detail: { key, still_raised: at !== -1 },
+    });
+
+    if (at === -1) {
+      return ok(c, {
+        closed: true,
+        verdict: "Re-checked against the records: that condition is no longer true, so the alert is gone.",
+      });
+    }
+    return ok(c, {
+      closed: false,
+      /*
+       * SHOWN VERBATIM, INCLUDING THE PART THAT DISAGREES WITH HER. The alert text is recomputed,
+       * so a condition that has changed shape says the new thing rather than the one she pressed.
+       */
+      verdict:
+        `Still true — re-checked just now and the records say: ${content.alerts?.[at]?.text ?? "the alert stands."} ` +
+        "Nothing here is closed by saying so. If you want it off the screen without it being fixed, dismiss it with a reason.",
+    });
+  }
+
   const row = await c.env.DB
     .prepare(`SELECT id, name, terminal_check, state FROM owned_deliverables WHERE id = ?`)
     .bind(id)

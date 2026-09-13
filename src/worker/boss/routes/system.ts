@@ -9,6 +9,12 @@ import { getSetting, setSetting } from "../lib/settings";
 import { rollBudgetWindows } from "../router/budget";
 import { COST_MODES, COST_MODE_POLICY, isCostMode } from "../../../shared/boss/governance";
 import { pendingApprovals } from "../approvals/pending";
+import { spendLeverState, SPEND_LEVER_POSITIONS } from "../router/spend";
+import {
+  planState, setPlan, PLAN_TIERS, COST_BASIS_NOTE, spendSentence,
+  type SpendKind, type CostBasis,
+} from "../router/plan";
+import { listBackends } from "../backends/registry";
 
 export const system = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -382,6 +388,121 @@ system.put("/settings/:key", async (c) => {
 system.get("/cost-modes", (c) =>
   ok(c, COST_MODES.map((m) => COST_MODE_POLICY[m])),
 );
+
+/**
+ * ONE SCREEN THAT ANSWERS "WHAT CAN THIS THING SPEND".
+ *
+ * ─── Her words ─────────────────────────────────────────────────────────────
+ *
+ *   "i see nothing in systems about controlling costs and setting monthly budgets that all got
+ *    sent to the backends tab? ... arent we on medium level of costs? what happened to the lever?
+ *    ... give me a budget ceiling for each thing there"
+ *
+ * THE LEVER WAS NEVER MISSING, IT WAS INVISIBLE. She is on MODERATE at $25/month with `cost_mode`
+ * NORMAL — the "medium" she remembers. Both live in Settings, neither appeared on Systems, and
+ * cost control had scattered into a tab about something else entirely.
+ *
+ * THE LEVER AND THE COST MODE STAY TWO THINGS. `router/spend.ts` is explicit: "how good a model"
+ * and "how much money" are different decisions, the lever never moves the mode and the mode never
+ * moves the lever. They are two controls here for that reason and must never be merged.
+ *
+ * NO FOURTH BUDGET CONCEPT IS INTRODUCED. Everything below already existed — the lever, the cost
+ * mode, the lane budgets, the per-backend ceilings — and this endpoint puts them in one answer with
+ * each figure carrying what KIND of figure it is. That is the whole complaint: not that the numbers
+ * were wrong, but that no screen put them together or said what they meant.
+ */
+system.get("/costs", async (c) => {
+  const [lever, plan, backends, laneMonth, laneDay] = await Promise.all([
+    spendLeverState(c.env.DB),
+    planState(c.env.DB),
+    listBackends(c.env.DB),
+    c.env.DB.prepare(`SELECT limit_micros, spent_micros, window_started_at FROM budgets WHERE lane='ops' AND period='month'`)
+      .first<{ limit_micros: number; spent_micros: number; window_started_at: number }>(),
+    c.env.DB.prepare(`SELECT limit_micros, spent_micros FROM budgets WHERE lane='ops' AND period='day'`)
+      .first<{ limit_micros: number; spent_micros: number }>(),
+  ]);
+
+  const mode = (await getSetting(c.env.DB, "cost_mode")) ?? "NORMAL";
+
+  return ok(c, {
+    lever: {
+      position: lever.position,
+      positions: SPEND_LEVER_POSITIONS,
+      allowance_micros: lever.allowanceMicros,
+      moderate_micros: lever.moderateMicros,
+      label: lever.label,
+      governs: "How much money the router may spend. It supplies the allowance a backend's own ceiling defers to; the lane budget stays the outer authority and the smallest of the three always wins.",
+    },
+    cost_mode: {
+      value: mode,
+      modes: COST_MODES,
+      governs: "Which model tiers are good enough for the work. A quality decision, not a money one — it never moves the lever and the lever never moves it.",
+    },
+    plan: {
+      ...plan,
+      governs:
+        "What your Claude plan is worth in a month, and how much of it you keep for your own work. " +
+        "The employees may draw the rest, so upgrading the plan moves their ceiling by itself.",
+      /*
+       * SAID IN WORDS BECAUSE THE NUMBER LIES ON ITS OWN. This is a subscription; nothing here is
+       * billed to a card, and the figure beside it has been read as an invoice for a week.
+       */
+      basis_note: COST_BASIS_NOTE.plan_equivalent,
+    },
+    lane: {
+      month_limit_micros: laneMonth?.limit_micros ?? 0,
+      month_spent_micros: laneMonth?.spent_micros ?? 0,
+      /*
+       * THE DAY IS A PACE INSIDE THE MONTH, NOT A SECOND AUTHORITY. 0222 found a $2/day cap under a
+       * $50/month ceiling — $60 against $50 — so the derived figure is reported beside the stored
+       * one and any drift between them is visible rather than latent.
+       */
+      day_limit_micros: laneDay?.limit_micros ?? 0,
+      day_spent_micros: laneDay?.spent_micros ?? 0,
+      day_derived_micros: plan.dailyMicros,
+      day_agrees: (laneDay?.limit_micros ?? 0) === plan.dailyMicros,
+    },
+    backends: backends.map((b) => ({
+      id: b.id,
+      display_name: b.display_name,
+      status: b.status,
+      spend_kind: b.spend_kind,
+      cost_basis: b.cost_basis,
+      ceiling_source: b.ceiling_source,
+      ceiling_micros: b.monthly_ceiling_micros,
+      spent_micros: b.spent_micros,
+      /* The word, not the number — three $0.00 rows meant free, unauthorised and off. */
+      sentence: spendSentence(b.spend_kind as SpendKind, b.monthly_ceiling_micros, b.cost_basis as CostBasis),
+      basis_note: COST_BASIS_NOTE[b.cost_basis as CostBasis] ?? "",
+    })),
+  });
+});
+
+/** Moving the plan tier or the reserve. The ceiling follows; nothing is materialised. */
+system.post("/costs/plan", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (b?.tier === undefined && b?.reserve_pct === undefined && b?.capacity_micros === undefined) {
+    throw badRequest("Nothing to change", "Send { tier }, { reserve_pct } or { capacity_micros }.");
+  }
+  try {
+    const state = await planState(c.env.DB);
+    const next = await setPlan(c.env.DB, {
+      tier: b?.tier,
+      reservePct: b?.reserve_pct === undefined ? undefined : Number(b.reserve_pct),
+      capacityMicros: b?.capacity_micros === undefined ? undefined : Number(b.capacity_micros),
+    });
+    return ok(c, {
+      plan: next,
+      tiers: PLAN_TIERS,
+      moved: {
+        from_ceiling_micros: state.employeeCeilingMicros,
+        to_ceiling_micros: next.employeeCeilingMicros,
+      },
+    });
+  } catch (err) {
+    throw badRequest(err instanceof Error ? err.message : "That plan change was refused");
+  }
+});
 
 /** Runs the maintenance cron by hand, for a restore drill or after a fix. */
 system.post("/maintenance", async (c) => {

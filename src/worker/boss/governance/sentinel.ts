@@ -9,6 +9,7 @@
  * in a row does not double the board.
  */
 
+import { vaultIsStale } from "../cron/cadence";
 import type { Env } from "../env";
 import { raiseFlag, WATCH_LIST } from "./gate";
 import { SERIOUS_JOB_TYPES } from "../routes/capability";
@@ -110,7 +111,10 @@ export async function runSentinel(env: Env, now = Date.now()): Promise<SentinelR
 
   await consider(
     "stale_vault",
-    !snapshot || now - snapshot.ts > 2 * DAY_MS,
+    // One rule, in `cron/cadence.ts`, asked of the cadence that takes the snapshots. This read
+    // `now - snapshot.ts > 2 * DAY_MS` and `routes/governance.ts` held an identical copy — two
+    // components each keeping their own idea of freshness, and neither linked to the schedule.
+    vaultIsStale(now, snapshot?.ts ?? null),
     snapshot
       ? `The last complete snapshot is ${Math.floor((now - snapshot.ts) / DAY_MS)} days old.`
       : "No complete snapshot has ever been taken.",

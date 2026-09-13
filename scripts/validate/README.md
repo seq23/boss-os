@@ -29,3 +29,90 @@ violations) on breach and proves its own detection with a self-test fixture run.
   name mentioned only inside a boolean guard does not count, which is the state
   `language_rule` was in. **Rule 0: zero fields, zero registry entries or zero kinds
   hard-fails.** 13-fixture self-test.
+
+- `every-spec-section-is-rendered-or-named.mjs` (`npm run validate:spec-sections`) — §5 of
+  `EXECUTIVE_INTELLIGENCE.md` names eleven sections in a fixed order; `BRIEFING_SECTIONS` must
+  match it exactly, the shipped `missingSections()` must NAME every §5 section a report does not
+  carry (using the run's own gap as the reason where it gave one), both ends must be wired
+  (`missing_sections` in the payload and on the screen, no `slice(0, 4)`, the block scrollable),
+  and the duty prompt must ask for all eleven by key with no four-section cap and no
+  bold-every-bullet. **Rule 0: zero spec sections, zero registry entries, or a fixture producing
+  zero missing sections hard-fails.** 16-fixture self-test plus a deletion proof.
+
+- `an-insight-rests-on-the-day.mjs` (`npm run validate:insight-grounded`) — an Investor Insight is
+  shown only when every fact it cites appears elsewhere in the SAME report; one resting on a fact
+  that is not in the day, one citing a section that is not there, and one citing nothing are all
+  withheld with a reason she can see. Also that the spec, the prompt and the screen all carry the
+  four parts — synthesis, how it was reached, the transferable frame, what would falsify it.
+  **Rule 0: zero citations examined hard-fails.** 14-fixture self-test.
+
+- `one-scale-for-the-morning.mjs` (`npm run validate:one-scale`) — the Today page declares one
+  ordered type scale (`--today-N-size`/`--today-N-weight`, sizes strictly decreasing, weights never
+  increasing), no heading level resolves to `--muted`, both end blocks draw from it, and in the real
+  JSX the briefing's section heading sits at a HIGHER level than its own `so_what` line — the
+  `.eyebrow`-over-`.row-title` inversion that was on every section of every briefing. Also that
+  nothing asks for bold inside sentences any more while `bold()` survives for historical reports.
+  **Rule 0: fewer than two levels, or no heading/content pair to compare, hard-fails.** 11-fixture
+  self-test.
+
+- `an-alert-describes-a-live-fault.mjs` (`npm run validate:live-fault`) — three of the five alerts
+  on her screen on 13 Sep were false, each in a different way, and all three were the same defect:
+  a query about the past read as a statement about the present. Runs the SHIPPED `alertsForProbes`
+  and `dutyStaleness` over the exact production rows — a credential whose backend is `registered`
+  rather than `enabled` is silent (read off `execution_backends.status`, never a list of names), a
+  `weekdays = [1,3,5]` duty is quiet on a Sunday and loud on the Tuesday after a missed Monday, and
+  a proven-DEAD token still shouts even on a switched-off backend. Plus the route: no `CASE cadence`
+  staleness in SQL, failed-task counts exclude failures the same work has since succeeded at, and
+  the error window excludes `task_failed` events whose task recovered. **Rule 0: zero probes or zero
+  duty fixtures hard-fails.** 14-fixture self-test.
+
+- `the-roster-is-everyone-and-the-dot-means-something.mjs` (`npm run validate:roster-health`) — the
+  AI Employee Status block rendered `busiest … LIMIT 5` over eight active employees, so three were
+  missing at any moment and which three moved with the queue. Runs the shipped `roster()` over the
+  eight production employees: nobody is cut off, the route's query carries no LIMIT, and each dot is
+  the right falsifiable verdict — a failed last run and an overdue duty are red, a Mon/Wed/Fri duty
+  read on a Sunday is GREEN (the false alert must not come back as a dot), never-run and no-duty are
+  AMBER rather than green, every state carries a sentence, "overdue" is `dutyStaleness` and not a
+  second copy, and the three states differ by shape as well as colour. **Rule 0: an empty roster, or
+  one colour for every employee, hard-fails.** 14-fixture self-test.
+
+- `every-alert-can-be-answered.mjs` (`npm run validate:alert-answerable`) — both endpoints worked;
+  the interaction did not. Checks the shipped `alertKey` keeps ONE key across occurrences of the
+  same cause (the error alerts carried `evt_…` row ids, so a dismissal was dead on arrival by
+  construction) while keeping two causes apart; that "Mark resolved" is rendered for every alert —
+  it was gated on a `del_` source id that none of her alerts had, so the button was not on the page;
+  that the server can re-test any alert by recomputing the surface while the `TERMINAL_CHECKS` path
+  for an owned deliverable stays intact; and that the dismiss reason box scrolls into view, takes
+  focus, and says what it is waiting for while still requiring a reason. **Rule 0: nothing keyed, or
+  no alert-action markup, hard-fails.** 13-fixture self-test.
+
+- `a-ceiling-says-what-kind-of-ceiling-it-is.mjs` (`npm run validate:ceiling-kind`) — three backends
+  showed a ceiling of $0.00 meaning free, unauthorised and off; the shipped `spendSentence` must give
+  the three DIFFERENT sentences. Runs `derivePlan` over four plan fixtures: the employee ceiling is
+  capacity minus reserve, a 0% reserve means literally "whatever my plan allows", 100% leaves zero
+  rather than going negative, upgrading the tier moves the ceiling with no row edited, and the
+  derived daily pace × 31 never exceeds the month (0222's $2/day-under-$50/month defect). Also that
+  both registry loaders route through `applyPlanCeiling`, that the cost basis reaches the screen so
+  subscription usage stops reading as a bill, and that the lever and the cost mode are both CONTROLS
+  on Systems and still two separate things. **Rule 0: zero spend kinds or zero plan fixtures
+  hard-fails.** 12-fixture self-test.
+
+- `a-live-playbook-leads-with-its-steps.mjs` (`npm run validate:live-playbook`) — `fpb_vault_stale`
+  was ACTIVE and correct, and the screen reported it uselessly: third in a list, styled like the
+  panels that were fine, with its steps parsed and never rendered. Runs the shipped `vaultIsStale`
+  over four fixtures (a snapshot inside last night's window, a night missed, the seven-day
+  production case, a vault never snapshotted) and requires ONE rule asked of `snapshotWindowOpensAt`
+  and used by both `routes/governance.ts` and `governance/sentinel.ts`, with no hardcoded two-day
+  span left in either. Plus the screen: the live playbook leads with its steps and the reason it
+  fired, the section opens with a verdict, and decision rights render `label`/`rationale` rather
+  than `dr_capability_patch`. **Rule 0: zero staleness fixtures, or no Governance component,
+  hard-fails.** 12-fixture self-test.
+
+- `the-local-gate-is-the-ci-gate.mjs` (`npm run validate:gate-parity`) — a branch passed
+  `npm run validate` end to end and CI went red on `validate:brand` over a `#000` in the stylesheet.
+  The chain named 49 scans, `ci.yml` named 19, and neither set was a subset of the other: NINE ran
+  only in CI (green locally, red on push) and THIRTY-EIGHT ran only locally (ungated in CI, which is
+  the worse half because nothing tells you). `validate:scans` is now the union, CI runs it as one
+  step, and this scan requires that every `validate:*` in `ci.yml` is in the chain, that CI runs the
+  catch-all, and that `validate` stays `validate:scans` + typecheck + tests. **Rule 0: zero CI steps
+  or zero registered scans hard-fails** — two empty lists agree perfectly. 7-fixture self-test.

@@ -76,6 +76,42 @@
 
   /* The distance over which content dissolves into the page edge above the nav. */
   --scrim-h: 56px;
+
+  /*
+   * ─── ONE TYPE SCALE FOR THE TODAY PAGE ───────────────────────────────────
+   *
+   *   "headings should be bold and have diff visual weight than the normal text and some headings
+   *    are 1 vs 2 ... u need to adjust the formatting of both sections at the end (today contract
+   *    and the briefing)"
+   *
+   * She was describing an INVERTED HIERARCHY and it was real. `renderSection` put the briefing's
+   * section heading in `.eyebrow` — 11px, `--muted` — directly above its `so_what` line in
+   * `.row-title`, which is heavier and full ink. The heading was quieter than the sentence under
+   * it, on every section of every briefing. Today's Contract had the same problem in a different
+   * shape: block title, pillar header, group label and body drew from four unrelated classes with
+   * no ordered relationship between them, so "some headings are 1 vs 2" was literally true.
+   *
+   * FOUR LEVELS, ORDERED, AND EVERY PIECE OF TEXT GETS ITS LEVEL FROM ITS STRUCTURAL ROLE — never
+   * from what a research run happened to emit. Sizes strictly decrease and weights never increase
+   * going down, so a heading CANNOT be quieter than what it introduces; that property is what
+   * `scripts/validate/one-scale-for-the-morning.mjs` checks, rather than any particular pixel.
+   *
+   * WEIGHT IS FOR HIERARCHY AND IS NOT SPENT INSIDE SENTENCES. 0205's prompt asked every bullet to
+   * bold its key phrase; when every bullet contains bold, the bold marks nothing and competes with
+   * the heading, so the loudest thing on screen was a phrase in the middle of a sentence. Migration
+   * 0223 stops asking for it. `bold()` stays in the client, unchanged, so historical reports still
+   * render correctly.
+   *
+   * NO COLOUR, NO RULES, NO BOXES, NO BADGES. Hierarchy from weight, size and space alone.
+   */
+  --today-1-size: 21px;   /* the block's own answer — the briefing headline, the day's sentence */
+  --today-1-weight: 600;
+  --today-2-size: 18px;   /* a section heading — a pillar, a §5 section */
+  --today-2-weight: 600;
+  --today-3-size: 16px;   /* a sub-heading inside a section — one headline, one lane, one group */
+  --today-3-weight: 600;
+  --today-4-size: 15px;   /* body: bullets, so-what lines, list items */
+  --today-4-weight: 400;
 }
 
 * { box-sizing: border-box; }
@@ -196,8 +232,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
  */
 .pillar {
   font-family: var(--display);
-  font-size: 18px;
-  font-weight: 600;
+  /* Level 2 of the Today scale — a section heading, the same weight the briefing's sections get. */
+  font-size: var(--today-2-size);
+  font-weight: var(--today-2-weight);
   line-height: 1.3;
   color: var(--ink);
   margin: 22px 0 8px;
@@ -233,6 +270,136 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 4px 0 10px;
   padding: 2px 0 2px 14px;
   border-left: 2px solid var(--gold);
+}
+
+/* ─── The Today scale, as classes ────────────────────────────────────────────
+ *
+ * Four levels, one per structural role. Both blocks at the end of Today draw from these and from
+ * nothing else, so the page reads as one document rather than as two components that happen to
+ * share a screen. Every heading level is full `--ink`: a heading that resolves to `--muted` is the
+ * inversion this scale exists to end.
+ */
+.today-1 {
+  font-family: var(--display);
+  font-size: var(--today-1-size);
+  font-weight: var(--today-1-weight);
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+.today-2 {
+  font-family: var(--display);
+  font-size: var(--today-2-size);
+  font-weight: var(--today-2-weight);
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 18px 0 6px;
+}
+.today-3 {
+  font-family: var(--body);
+  font-size: var(--today-3-size);
+  font-weight: var(--today-3-weight);
+  line-height: 1.35;
+  color: var(--ink);
+  margin: 10px 0 4px;
+}
+.today-4 {
+  font-family: var(--body);
+  font-size: var(--today-4-size);
+  font-weight: var(--today-4-weight);
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+
+/* ─── The Executive Briefing ─────────────────────────────────────────────────
+ *
+ * "the executive breifing section is missing some sections (and u can make it scrollable)"
+ *
+ * SCROLLABLE, because it is the longest block on the page and eleven sections of it must not push
+ * the rest of her morning off the bottom. It is contained and scrolls inside its own bounds; the
+ * height is a viewport fraction so a phone gives it a phone's share and a desktop a desktop's.
+ */
+.brief-scroll {
+  max-height: 62vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  /*
+   * The content dissolves at the bottom edge rather than being sliced, so it reads as scrollable.
+   *
+   * `var(--ink)` rather than `#000`, and not for taste: a mask uses only the ALPHA channel, so any
+   * opaque colour does the same job — and the one rule this stylesheet has kept since it was
+   * written is that colour is declared in the token block and nowhere else. `validate:brand`
+   * caught the literal, which is what it is for.
+   */
+  mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent 100%);
+}
+
+.brief-list { margin: 0 0 8px; padding-left: 18px; }
+.brief-list li { margin-bottom: 3px; line-height: 1.5; }
+.brief-why { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+.brief-score { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); }
+
+/* A dashboard is a table or it is nothing; it is never a paragraph of numbers. */
+.brief-table { width: 100%; border-collapse: collapse; margin: 0 0 8px; font-size: 14px; }
+.brief-table th {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 3px 8px 3px 0;
+  border-bottom: 1px solid var(--line);
+}
+.brief-table td { padding: 3px 8px 3px 0; border-bottom: 1px solid var(--line); }
+.brief-tablewrap { overflow-x: auto; }
+
+/* The Investor Insight, whose four parts are four different kinds of claim. */
+.brief-insight { border-left: 2px solid var(--gold); padding: 2px 0 2px 14px; margin: 0 0 12px; }
+.brief-insight-part { margin: 8px 0 0; }
+.brief-insight-l {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 2px;
+}
+.brief-cite { color: var(--muted); font-size: 13px; }
+
+/* What is not here, and why. Never silent, never dressed up as content. */
+.brief-absent { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+
+/* ─── Employee health: a verdict you can read in greyscale ───────────────────
+ *
+ * "showing a green dot showing they are working correctly when they are and that changes to red
+ * when they are broken"
+ *
+ * THE STATE IS IN THE SHAPE AS WELL AS THE COLOUR. A filled disc is green, a hollow ring is amber,
+ * a square is red — so the verdict survives a colourblind reader and a greyscale screenshot, and
+ * the word beside it is always rendered rather than hidden behind a hover. Colour alone would make
+ * this block unreadable for the people most likely to be reading it on a phone in bright sun.
+ */
+.health {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+.health-green { background: var(--ok); border-radius: 50%; }
+.health-amber { background: transparent; border: 2px solid var(--gold-deep); border-radius: 50%; }
+.health-red { background: var(--reject); border-radius: 1px; }
+
+.health-l {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-left: 8px;
 }
 
 /* ─── The Body contract: four kinds, told apart ──────────────────────────────
@@ -271,20 +438,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 0 0 6px;
 }
 
-.bodygroup-floor { font-size: 15px; color: var(--ink); margin: 0 0 6px; }
+.bodygroup-floor { font-size: var(--today-4-size); color: var(--ink); margin: 0 0 6px; }
 .bodygroup-note { font-size: 13px; color: var(--muted); margin: 6px 0; }
-.bodygroup-firm { font-size: 15px; font-weight: 600; color: var(--ink); margin: 0; }
+.bodygroup-firm { font-size: var(--today-3-size); font-weight: var(--today-3-weight); color: var(--ink); margin: 0; }
 .bodygroup-fine { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
 
 /* The stop condition is the one line here that is allowed to be louder than the instructions. */
-.bodygroup-stopline { font-size: 15px; color: var(--ink); margin: 0; }
+.bodygroup-stopline { font-size: var(--today-3-size); font-weight: var(--today-3-weight); color: var(--ink); margin: 0; }
 
 .bodyseq { margin: 0; padding-left: 18px; }
 .bodyseq li { margin-bottom: 2px; }
 
 .bodylanes { list-style: none; margin: 4px 0 0; padding: 0; }
 .bodylanes li { margin-bottom: 6px; }
-.bodylane-move { display: block; font-size: 15px; color: var(--ink); }
+.bodylane-move { display: block; font-size: var(--today-4-size); color: var(--ink); }
 .bodylane-why { display: block; font-size: 13px; color: var(--muted); }
 
 /* Label and value on one row, so water and food read as targets rather than as steps. */
@@ -302,7 +469,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--muted);
   padding-top: 3px;
 }
-.bodyfacts dd { margin: 0; font-size: 15px; color: var(--ink); }
+.bodyfacts dd { margin: 0; font-size: var(--today-4-size); color: var(--ink); }
 
 /* ─── Docket: the signature card ─────────────────────────────────────────── */
 
@@ -699,6 +866,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .link-back:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
 .notice-error { border-color: var(--reject); }
+
+/*
+ * A LIVE PLAYBOOK IS A FINDING, NOT AN ERROR, and the difference is load-bearing rather than
+ * pedantic. `boss-surface.spec.ts` asserts that a Systems panel showing `.notice-error` has FAILED
+ * to reach its endpoint — so dressing "the vault is stale" in the error class told the journey the
+ * Governance panel was broken when it was working perfectly and reporting something true. It reads
+ * the same to a person and means the opposite to everything else.
+ */
+.notice-live { border-color: var(--reject); }
 .notice-hint { display: block; color: var(--muted); font-size: 13px; margin-top: 5px; }
 .notice-x {
   position: absolute;

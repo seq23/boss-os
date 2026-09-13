@@ -207,10 +207,25 @@ export function check({ rendered, rows, route, grouper, alerts }) {
       `left the answer unread beside the question.`,
     );
   }
-  if (/\$\{\s*\w+\.scope\s*\}\s*:\s*\$\{\s*\w+\.event\s*\}/.test(routeCode)) {
+  /*
+   * THE RULE IS ABOUT ALERT TEXT, AND THIS SCAN HAD TO LEARN THE DIFFERENCE THE HARD WAY.
+   *
+   * The first draft matched the template `${x.scope}: ${x.event}` ANYWHERE in the route, and it
+   * went red on a later fix that gave error alerts a stable IDENTITY —
+   * `source_id: \`evtclass:${g.scope}:${g.event}\`` — which is the opposite of this defect. A
+   * dismissal key built out of the cause is exactly what the grouping established; printing the
+   * cause AT HER as a sentence is what this exists to stop.
+   *
+   * A validator that fails the fix it is asking for teaches people to write worse code, so the
+   * match is scoped to a `text:` position and explicitly not to a `source_id:` one.
+   */
+  const KEY_PAIR = /\$\{\s*\w+\.scope\s*\}\s*:\s*\$\{\s*\w+\.event\s*\}/g;
+  for (const m of routeCode.matchAll(KEY_PAIR)) {
+    const context = routeCode.slice(Math.max(0, m.index - 80), m.index);
+    if (/source_id\s*:/.test(context) && !/text\s*:[^,]*$/.test(context)) continue;
     problems.push(
-      `${ROUTE} still builds an alert text as \`\${row.scope}: \${row.event}\`. That template IS the ` +
-      `defect.`,
+      `${ROUTE} builds an alert TEXT as \`\${row.scope}: \${row.event}\`. That template IS the defect — ` +
+      `she read five copies of "queue: task_failed" with nothing to act on.`,
     );
   }
   if (!/dedupeAlerts\s*\(/.test(routeCode)) {
@@ -305,7 +320,7 @@ async function selfTest() {
     },
     {
       name: "the raw key-pair template returns to the route",
-      input: { ...good, route: `${good.route}\nalerts.push({ text: \`\${ev.scope}: \${ev.event}\` });\n` },
+      input: { ...good, route: `${good.route}\nalerts.push({ text: \`\${ev.scope}: \${ev.event}\`, source_type: "tasks" });\n` },
       expect: 1,
     },
     {
