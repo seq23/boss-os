@@ -176,29 +176,66 @@ const BLIND_SPOTS: Record<string, { label: string; why: string }> = {
       "sequoia@westpeek.ventures is still not connected — the same gap that has hidden opt-out requests " +
       "since 19 August.",
   },
-  ads: {
+  /*
+   * ─── THE SPRY LINES ARE NOW THE GRID, AND THESE ARE REKEYED TO IT ────────
+   *
+   * They used to be `ads`, `saas`, `digital_products` and `youtube` — the five vague entries
+   * `projects.ts` carried before the grid replaced them. `buildLedger` enumerates PROJECTS, so
+   * leaving the old keys here would not have failed: the new lines would simply have had NO BLIND
+   * SPOT, silently, which is the one thing this record is not allowed to do. Its own header says it:
+   * a line that measures a proxy and does not name what it is still blind to "would look finished".
+   *
+   * `blindSpotFor` below refuses to let that happen again by construction.
+   */
+  guides_generator: {
     label: "leads sold to service providers",
     why:
-      "The revenue this line exists for is invoiced outside Boss OS and reaches nothing here. Search " +
-      "Console traffic is a proxy for reach, not a measure of income.",
+      "The revenue the five verticals exist for is invoiced outside Boss OS and reaches nothing here. " +
+      "Search Console traffic is a proxy for reach, not a measure of income. This is also the secondary " +
+      "line — watched so a break is caught, not worked — so low effort on it is the plan rather than a gap.",
   },
-  saas: {
-    label: "partnership conversations",
+  citation_velocity: {
+    label: "leads sold, and whether a citation moved a page",
     why:
-      "Both apps are looking for distribution partners rather than direct sales, and no conversation with " +
-      "a partner is recorded here. Traffic says the sites exist, not that the strategy is working.",
+      "The feeder's whole purpose is to surface the guides in LLM answers and lift them off page seven. " +
+      "Nothing joins a citation won to a position change weeks later, and nothing here sees the invoice, " +
+      "so this line can show heavy work and never show effect.",
   },
-  digital_products: {
+  horse_legal: {
+    label: "what the client pays, and whether they stay",
+    why:
+      "A client property. Billing and retention live outside Boss OS entirely, so effort on it is visible " +
+      "and the reason for the effort is not.",
+  },
+  hicks_consulting: {
+    label: "what the client pays, and whether they stay",
+    why:
+      "A client property. Billing and retention live outside Boss OS entirely, so effort on it is visible " +
+      "and the reason for the effort is not.",
+  },
+  virtual_agency: {
+    label: "sign-ups and revenue",
+    why:
+      "Nothing in this system reads the product's own funnel, so virtualagency-os.com can be shipping " +
+      "weekly and its return is unobservable from here.",
+  },
+  hpc: {
+    label: "sales and enquiries",
+    why:
+      "Both domains are one property and both sell outside Boss OS. The payment processor is not read by " +
+      "anything here, so revenue per visit cannot be stated.",
+  },
+  approvalprep: {
     label: "sales",
     why:
-      "Sales sit in the payment processor, which nothing in this system reads, so revenue per visit " +
-      "cannot be stated for three products that are supposed to sell without attention.",
+      "Sales sit in the payment processor, which nothing in this system reads, so revenue per visit cannot " +
+      "be stated for a product that is supposed to sell without attention.",
   },
-  youtube: {
-    label: "views, watch time and subscribers",
+  wedding: {
+    label: "sales across the four sites",
     why:
-      "Nothing in this system reads YouTube. This line has no outcome signal of any kind, which is a gap " +
-      "in the instruments rather than a verdict on the channel.",
+      "Four properties on one repo, all selling through a processor nothing here reads. The cluster can " +
+      "only be measured as one lump of effort against no outcome at all.",
   },
   authority_network: {
     label: "ranking movement from a won link",
@@ -213,11 +250,37 @@ const NO_SIGNAL_YET: Record<string, string> = {
   west_peek_raise:
     "The LP tracker is a Google Sheet only her Mac can read. Run `npm run returns:contribute` to bring " +
     "sends and replies in; until then this line is unmeasured, not empty.",
-  ads: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
-  saas: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
-  digital_products:
-    "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
+  guides_generator: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
+  citation_velocity: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
+  virtual_agency: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
+  hpc: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
+  approvalprep: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
+  wedding: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
+  horse_legal: "A client property. Nothing here reads its traffic or its billing; effort is all this line can show.",
+  hicks_consulting: "A client property. Nothing here reads its traffic or its billing; effort is all this line can show.",
 };
+
+/**
+ * The blind spot for a line, and THERE IS ALWAYS ONE.
+ *
+ * A line with no entry here would render measured-looking numbers and say nothing about what is
+ * still invisible — which this file's own header calls worse than measuring nothing, "because it
+ * would look finished". That is exactly what would have happened silently when the five vague spry
+ * entries became the grid: `buildLedger` maps over PROJECTS, so the new lines would have appeared
+ * with their blind spot missing and nothing would have objected.
+ *
+ * So a missing entry is a LOUD, VISIBLE GAP rather than an absent one. It names the key, which is
+ * the one piece of information the person adding a property needs.
+ */
+export function blindSpotFor(key: string): { label: string; why: string } {
+  return BLIND_SPOTS[key] ?? {
+    label: "everything — this line has no blind spot written for it",
+    why:
+      `No blind spot is recorded for "${key}" in \`today/returns.ts\`. Until one is written, treat every ` +
+      "number on this line as incomplete in ways nobody has stated: a ledger that quietly omits what it " +
+      "cannot see is the one failure this record exists to prevent.",
+  };
+}
 
 /**
  * The whole ledger for one month.
@@ -348,18 +411,22 @@ export async function buildLedger(db: D1Database, period: string): Promise<Ledge
 
     // The blind spot goes last, so it reads as the caveat on the numbers above it rather than as a
     // number of its own. It is present whether or not anything else was measured.
-    const blind = BLIND_SPOTS[project.key];
-    if (blind) {
-      pairs.push(pair({
-        kind: "blind_spot",
-        effort_label: "",
-        effort_count: 0,
-        outcome_label: blind.label,
-        outcome_count: null,
-        unmeasured_why: blind.why,
-        source: "none",
-      }));
-    }
+    /*
+     * ALWAYS, NEVER `if (blind)`. The old form skipped the caveat for any line with no entry, which
+     * is silence in exactly the place this record cannot afford it — and it would have gone silent on
+     * six lines at once the day the spry lane became the grid. `blindSpotFor` returns a loud
+     * placeholder naming the key instead, so a missing one is a visible gap rather than an absent one.
+     */
+    const blind = blindSpotFor(project.key);
+    pairs.push(pair({
+      kind: "blind_spot",
+      effort_label: "",
+      effort_count: 0,
+      outcome_label: blind.label,
+      outcome_count: null,
+      unmeasured_why: blind.why,
+      source: "none",
+    }));
 
     return {
       line: project.key,

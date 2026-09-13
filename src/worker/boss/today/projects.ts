@@ -32,6 +32,8 @@
  * LP or a client is in this file, and nothing about them belongs in it.
  */
 
+import { GRID } from "../../../shared/boss/grid.mjs";
+
 export type ProjectLane = "brokerage" | "west_peek" | "spry";
 
 export interface Project {
@@ -54,6 +56,20 @@ export interface Project {
   next_action: string | null;
   /** Public properties only. Absent for the two lanes that carry confidential counterparties. */
   properties?: string[];
+  /**
+   * The repositories behind it, for a spry line. Absent on the brokerage and West Peek lanes, which
+   * are not repositories.
+   *
+   * ADDED BECAUSE ITS ABSENCE WAS THE DEFECT. Her words: "the system should know all of my side
+   * hustles......all of the repos that i care about for making money. the grid repos are my side
+   * hustles." This file had five vague spry entries with no repo field and no domains, and a run
+   * that read it concluded she had "4 side hustles".
+   */
+  repos?: readonly string[];
+  /** `hers` or `client`. A client property's "needs her" item is a client-facing act. */
+  owner?: "hers" | "client";
+  /** primary | secondary | infrastructure — see `src/shared/boss/grid.mjs`. */
+  tier?: "primary" | "secondary" | "infrastructure";
 }
 
 export const PROJECTS: Project[] = [
@@ -108,62 +124,54 @@ export const PROJECTS: Project[] = [
    *
    * What they need is ATTENTION, occasionally — a weekly read, not a daily check. §21.2's Weekly
    * Debrief is the slot that already exists for it.
+   *
+   * ─── AND THE SPRY LANE IS NOW THE GRID, GENERATED FROM IT ─────────────────
+   *
+   *   "the system should know all of my side hustles......all of the repos that i care about for
+   *    making money. the grid repos are my side hustles"
+   *
+   * THIS USED TO BE FIVE HAND-WRITTEN ENTRIES — Industry Guides, SaaS apps, Digital products, How We
+   * Know, Authority network — WITH NO REPO FIELD AND NO DOMAINS. It was the wrong set, and because
+   * it was the only set anything read, a run that read it reported she had "4 side hustles".
+   * Meanwhile `spry-heartbeat.mjs` kept a SECOND list of eight repos which included two she had not
+   * named and omitted four she had. Two components each keeping their own list with no link, about
+   * the one subject where being wrong costs revenue.
+   *
+   * So the spry lane is DERIVED from `src/shared/boss/grid.mjs`, which is the grid keyed by
+   * canonical domain exactly as she gave it, and is the single list the Worker, the daily
+   * examination and the validator all read. Nothing is hand-written here any more, so nothing can
+   * drift; adding a property is one entry in one file.
+   *
+   * WHY STATUS IS `maintained` FOR ALL OF THEM. §5.2 allows one active project per lane and these
+   * run themselves — she reads them, she does not work them. A grid property becomes visible in her
+   * day through `humanTouch`, which surfaces at most one thing a day and only where a human is
+   * genuinely required. That is the narrow exception §5.5 tolerates, and it is not "active".
    */
-  {
-    key: "ads",
-    name: "Industry Guides — ads and lead generation",
+  ...GRID.map((g): Project => ({
+    key: g.key,
+    name: g.label,
     lane: "spry",
-    pillar: "wealth",
+    /*
+     * WEALTH FOR A LINE THAT SELLS, EXECUTION FOR ONE THAT IS BUILT OR MAINTAINED. Infrastructure is
+     * execution by definition — it earns nothing on its own, which is the reason it never proposes
+     * a day's work.
+     */
+    pillar: g.tier === "infrastructure" ? "execution" : "wealth",
     status: "maintained",
-    purpose: "Leads generated across five verticals, sold to service providers. Closest of the Spry lines to real revenue.",
+    purpose: g.why_tier
+      ?? `${g.domains.length ? g.domains.join(", ") : `${g.property_count ?? g.repos.length} propert${(g.property_count ?? g.repos.length) === 1 ? "y" : "ies"}`} — ${g.owner === "client" ? "a client property" : "hers"}.`,
+    /*
+     * NULL, AND THAT IS NOT AN OMISSION. A standing "next action" on a maintained property is a
+     * chore she invented for herself. What actually reaches her is what the daily examination FOUND
+     * — a specific pull request, on a specific morning, with a URL — and inventing a generic one
+     * here would compete with it for the same slot while saying less.
+     */
     next_action: null,
-    properties: ["theindustryguides.com", "local guides generator — 5 verticals"],
-  },
-  {
-    key: "saas",
-    name: "SaaS apps — partnerships",
-    lane: "spry",
-    pillar: "execution",
-    status: "parked",
-    purpose: "Two apps looking for partnership distribution rather than direct sales.",
-    next_action: null,
-    properties: ["time-2-read.com", "heygetonmylevel.com"],
-  },
-  {
-    key: "digital_products",
-    name: "Digital products",
-    lane: "spry",
-    pillar: "wealth",
-    status: "maintained",
-    purpose: "Three product sites that sell without attention.",
-    next_action: null,
-    properties: ["approvalprep.com", "weddingchecklistpdf.com", "billionairehighperformancecoach.com"],
-  },
-  {
-    key: "youtube",
-    name: "How We Know — YouTube",
-    lane: "spry",
-    pillar: "execution",
-    status: "maintained",
-    purpose: "The channel. Automated loop; not yet revenue.",
-    next_action: null,
-    properties: ["@howweknowdeep"],
-  },
-
-  /*
-   * INFRASTRUCTURE IS NOT A PROJECT, and calling it one is how a cost centre quietly competes with
-   * revenue lines for slots. The authority network exists to make the others findable; it earns
-   * nothing on its own and is never the answer to "what should I work on today".
-   */
-  {
-    key: "authority_network",
-    name: "Authority backlink network",
-    lane: "spry",
-    pillar: "execution",
-    status: "maintained",
-    purpose: "Plumbing for the properties above. A cost centre, not a line — never a day's work.",
-    next_action: null,
-  },
+    properties: [...g.domains],
+    repos: g.repos,
+    owner: g.owner,
+    tier: g.tier,
+  })),
 ];
 
 /** §5.3's engine: the one project with right of first refusal on the first money move, every day. */

@@ -32,6 +32,7 @@ import { diaryRoutes } from "./routes/diary";
 import { deliverables } from "./routes/deliverables";
 import { siteAudit } from "./routes/siteAudit";
 import { capital } from "./routes/capital";
+import { grid } from "./routes/grid";
 import { prompt } from "./routes/prompt";
 import { capability, runCapabilityCadence } from "./routes/capability";
 import { governance } from "./routes/governance";
@@ -159,6 +160,7 @@ app.route("/api/deliverables", deliverables);
 app.route("/api/engineering", siteAudit);
 // Her live book, so Monique's local buyer hunt reads the same inventory the intake filed.
 app.route("/api/capital", capital);
+app.route("/api/grid", grid);
 app.route("/api/prompt", prompt);
 app.route("/api/capability", capability);
 app.route("/api/governance", governance);

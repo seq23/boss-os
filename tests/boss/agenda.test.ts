@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { api, apiJson, row, all, uid } from "./helpers";
+import { GRID } from "../../src/shared/boss/grid.mjs";
 import { PROJECTS, activeProjects, firstMoneyProject } from "../../src/worker/boss/today/projects";
 import { proposedPriorities, wealthContract, executionContract } from "../../src/worker/boss/today/pillars";
 
@@ -60,12 +61,32 @@ describe("the project list is a decision, not a collection", () => {
      * Her standing rule: "i wont put client names or company names in the OS." The properties listed
      * are her own public sites; the two lanes that touch counterparties carry none at all.
      */
-    const text = JSON.stringify(PROJECTS);
     for (const lane of ["brokerage", "west_peek"]) {
       const p = PROJECTS.find((x) => x.lane === lane)!;
       expect(p.properties, `${lane} must not enumerate properties`).toBeUndefined();
     }
-    expect(text).not.toMatch(/\bclient\b.*repo/i);
+
+    /*
+     * ─── WHAT THIS USED TO ASSERT, AND WHY IT NO LONGER COULD ────────────────
+     *
+     * It was `expect(text).not.toMatch(/\bclient\b.*repo/i)` over the whole JSON — a proxy for the
+     * rule, written when the spry lane was five vague entries with no repos and no domains in it.
+     * The spry lane is THE GRID now, and the grid carries repos by design and marks two properties
+     * `owner: "client"` because she said to: "Two are CLIENT repos. They are in the grid. Carry the
+     * distinction as a field." So the proxy started failing on the correct data.
+     *
+     * ASSERTING THE RULE ITSELF IS BOTH STRICTER AND RIGHT. Every domain in this file must be one
+     * she declared in the grid, and no string anywhere may be an email address. That catches a
+     * counterparty being added — which the old regex never would have — while permitting the public
+     * sites she named herself.
+     */
+    const declaredDomains = new Set(GRID.flatMap((g) => g.domains.map((d) => d.toLowerCase())));
+    for (const p of PROJECTS) {
+      for (const d of p.properties ?? []) {
+        expect(declaredDomains.has(d.toLowerCase()), `${d} is not a domain the grid declares`).toBe(true);
+      }
+    }
+    expect(JSON.stringify(PROJECTS)).not.toMatch(/@[a-z0-9-]+\.[a-z]{2,}/i);
   });
 
   it("treats the backlink network as infrastructure rather than a line", () => {

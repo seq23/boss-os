@@ -47,10 +47,22 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { reachFor, loadContacts, domainBelongsTo, filerTokens, FILER_CAP, CONTACTS_PATH } from "../../scripts/ops/lib/reach.mjs";
+import {
+  reachFor, loadContacts, domainBelongsTo, filerTokens, FILER_CAP, CONTACTS_PATH,
+  CONFIDENCE, PATTERN_MIN, addressPattern, predictAddress,
+} from "../../scripts/ops/lib/reach.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const HUNT = "scripts/ops/buyer-hunt.mjs";
+/*
+ * THE RENDERING RULE IS SCANNED ACROSS BOTH HALVES OF THE HUNT.
+ *
+ * `renderReach` moved to `filing-hunt.mjs` when the filings half became Danielle's work — "Danielle
+ * finds, Monique relates" — while `buyer-hunt.mjs` still renders the ledger's own people and still
+ * calls it. A scan pinned to one file would have gone on approving a rule it could no longer see, in
+ * whichever file it stopped looking at.
+ */
+const HUNT_FILES = ["scripts/ops/buyer-hunt.mjs", "scripts/ops/filing-hunt.mjs"];
+const HUNT = HUNT_FILES.join(" and ");
 
 /**
  * A FIXTURE, not her real files.
@@ -70,10 +82,37 @@ const CONTACTS = {
   ],
 };
 
+/**
+ * FORM ADV'S ANSWER, which is usually a NAME AND NO MAILBOX.
+ *
+ * ADV publishes principals and titles; it publishes no address for anybody. So the ordinary shape of
+ * an ADV line is `record` — a real person, no way to reach them yet — and that is a SUCCESS, not a
+ * failed line. It is the answer to "who might be investors" and it is what "holder confirmed, no
+ * person identified" looks like when there is at least a person.
+ */
+const ADV = {
+  people: [{ name: "Marco Sutic", title: "Managing Partner", firm: "Cuatro Markets LLC", source: { file: "adv/people-1.json", row: "ind-1" } }],
+  note: null,
+};
+
 const ROWS = {
   withBroker: { principal: "unnamed seller", principal_email: null, intermediated_by: "andrea@cuatromarkets.com", source_message: "19f623c931af9348" },
   withPrincipal: { principal: "Patti Pan", principal_email: "pantian@solaris-venture.com", intermediated_by: null, source_message: "1a0011112222" },
   bare: { principal: "U.S. fund", principal_email: null, intermediated_by: null, source_message: "19ecd92ba5a2f1d9" },
+};
+
+/**
+ * A contacts file whose domain has ONE unambiguous convention.
+ *
+ * Deliberately separate from CONTACTS, which mixes `andrea@` and `dgraf@` at the same domain — two
+ * conventions, so no pattern, which is the correct refusal and is asserted below.
+ */
+const PATTERNED = {
+  file: "fixture/CONTACTS.json",
+  contacts: [
+    { email: "andrea.lamari@cuatromarkets.com", name: "Andrea Lamari", sent: 51, received: 93, days_since_last: 16 },
+    { email: "dylan.graf@cuatromarkets.com", name: "Dylan Graf", sent: 4, received: 9, days_since_last: 40 },
+  ],
 };
 
 /** `[what it is, input, how many lines, a predicate on the text, or null]`. */
@@ -96,7 +135,27 @@ const CASES = [
     { filer: "Cuatro Markets LLC", contacts: null }, 0, null],
   ["no input at all produces no lines",
     {}, 0, null],
+  /*
+   * ─── THE ADV HALF ────────────────────────────────────────────────────────
+   *
+   * A person named on a public filing at a firm she has never written to: a `record` line saying
+   * plainly that there is no address, plus the LinkedIn search she runs herself. Two lines and not
+   * one constructed mailbox.
+   */
+  ["a named principal at a firm she has never written to gives a RECORD and a link, never an address",
+    { filer: "Willow Ridge Advisers LLC", contacts: CONTACTS, adv: ADV }, 2,
+    (t) => /Marco Sutic/.test(t)],
+  /*
+   * AND WHERE THE PATTERN IS KNOWN, one predicted address that says what it rests on. The two
+   * contacts at cuatromarkets.com both use `first.last`, so "marco.sutic@" is evidence — and the
+   * line has to SAY "2 known address(es)", because a prediction that does not show its count is
+   * indistinguishable on the page from one read out of a file.
+   */
+  ["a predicted address says how many known addresses it rests on",
+    { filer: "Cuatro Markets LLC", contacts: PATTERNED, adv: ADV }, 4,
+    (t) => /PREDICTED/.test(t) && /2 known address/.test(t)],
 ];
+
 
 /**
  * Rule: every line has a file and a row, and the row is really in that file.
@@ -107,8 +166,9 @@ const CASES = [
 export function everyLineHasASource(reach = reachFor) {
   const bad = [];
   let examined = 0;
-  const known = new Set(CONTACTS.contacts.map((c) => c.email));
+  const known = new Set([...CONTACTS.contacts, ...PATTERNED.contacts].map((c) => c.email));
   const ledgerRows = new Set(Object.values(ROWS).map((r) => r.source_message));
+  const advRows = new Set(ADV.people.map((p) => p.source.row));
 
   for (const [label, input, expectedCount, predicate] of CASES) {
     const out = reach(input);
@@ -129,15 +189,53 @@ export function everyLineHasASource(reach = reachFor) {
         bad.push(`${label}: "${l.text.slice(0, 60)}" has no file and row behind it. That is an address she cannot check, which is how a wrong one gets sent.`);
         continue;
       }
-      const inFile = l.source.file.includes("CONTACTS") ? known.has(l.source.row) : ledgerRows.has(l.source.row);
+      /*
+       * ─── EVERY LINE STATES ITS CONFIDENCE, AND IT IS ONE OF THE FOUR ──────
+       *
+       *   "Pattern from 9 known addresses at this domain" is evidence.
+       *   "Most common format for US managers" is a guess.
+       *
+       * A line with no level, or an invented one, is the conflation itself: it lets a predicted
+       * address sit on the page looking exactly like one read out of her archive.
+       */
+      if (!l.confidence || !CONFIDENCE.has(l.confidence)) {
+        bad.push(`${label}: "${l.text.slice(0, 60)}" carries confidence ${JSON.stringify(l.confidence)}, which is not one of ${[...CONFIDENCE].join(", ")}.`);
+      }
+      /*
+       * A PREDICTION MUST SHOW ITS COUNT. Without the number the reader cannot tell a convention
+       * seen nine times from one seen twice, and cannot tell either from a guess.
+       */
+      if (l.confidence === "pattern" && !/\d+ known address/.test(l.text)) {
+        bad.push(`${label}: a PREDICTED address does not say how many known addresses it rests on. That is the sentence that makes it evidence rather than a guess.`);
+      }
+      /*
+       * A `record` LINE MUST NOT LOOK LIKE A CONTACT. Form ADV publishes no mailbox, so a record
+       * line carrying an address means one was synthesised somewhere upstream.
+       */
+      if (l.confidence === "record" && /@/.test(l.text.replace(/NO ADDRESS[^.]*/, ""))) {
+        bad.push(`${label}: a RECORD line carries an address. Form ADV publishes names, not mailboxes — that address came from nowhere.`);
+      }
+      const inFile = l.source.file.includes("CONTACTS")
+        ? known.has(l.source.row)
+        : l.source.file.includes("adv/")
+          ? advRows.has(l.source.row)
+          : ledgerRows.has(l.source.row);
       if (!inFile) {
         bad.push(`${label}: cites ${l.source.file} row "${l.source.row}", which is not in that file. A citation nobody can follow is not a citation.`);
       }
       // THE ADDRESS ITSELF must be one that exists somewhere, never assembled.
       const address = /<([^>]+@[^>]+)>|(\S+@\S+)/.exec(l.text);
       const email = (address?.[1] ?? address?.[2] ?? "").replace(/[,;)]+$/, "");
-      if (email && !known.has(email) && !Object.values(ROWS).some((r) => r.principal_email === email || r.intermediated_by === email)) {
-        bad.push(`${label}: printed "${email}", which appears in neither the contacts file nor the ledger rows. That address was SYNTHESISED.`);
+      const fromAFile = known.has(email)
+        || Object.values(ROWS).some((r) => r.principal_email === email || r.intermediated_by === email);
+      /*
+       * AN ADDRESS THAT IS IN NO FILE IS SYNTHESISED, AND THERE IS EXACTLY ONE LICENCE FOR THAT:
+       * a line that DECLARED itself `pattern`. Anything else printing an unknown address is the
+       * failure this whole file exists to catch — a constructed `firstname@fund.com` reads exactly
+       * like a real one and she would find out by sending it.
+       */
+      if (email && !fromAFile && l.confidence !== "pattern" && l.confidence !== "link") {
+        bad.push(`${label}: printed "${email}" at confidence "${l.confidence}", and it appears in neither the contacts file nor the ledger rows. That address was SYNTHESISED and is presented as read.`);
       }
     }
     if (predicate && !lines.some((l) => predicate(l.text))) {
@@ -183,8 +281,12 @@ export function theMatcherIsNotASubstring(match = domainBelongsTo) {
 }
 
 /** Rule: the renderer refuses a line that cannot show its source. */
-export function theRendererRefusesASourcelessLine(source) {
-  if (source === null) return [`${HUNT} could not be read, so the rendering rule is unverified.`];
+export function theRendererRefusesASourcelessLine(sources) {
+  if (sources === null) return [`${HUNT} could not be read, so the rendering rule is unverified.`];
+  // Both halves concatenated: the rule has to hold somewhere across the pair, and RULE 0 below
+  // fails if neither file exists to hold it.
+  const source = typeof sources === "string" ? sources : Object.values(sources ?? {}).join("\n");
+  if (!source.trim()) return [`${HUNT} are both empty or missing, so the rendering rule is unverified.`];
   const bad = [];
   if (!/reachFor\(/.test(source)) {
     bad.push(`${HUNT} never calls reachFor, so the output has no way to reach anybody in it — which is the state this fixes.`);
@@ -227,8 +329,13 @@ export function herRealContactsAreOnlyEverQuoted() {
 
 // ─── Self-test ───────────────────────────────────────────────────────────────
 
-const huntPath = join(ROOT, HUNT);
-const huntSource = existsSync(huntPath) ? readFileSync(huntPath, "utf8") : null;
+const huntSource = Object.fromEntries(
+  HUNT_FILES.filter((f) => existsSync(join(ROOT, f))).map((f) => [f, readFileSync(join(ROOT, f), "utf8")]),
+);
+
+/** The two halves, mutated together so a fixture breaks the rule wherever it currently lives. */
+const mutate = (fn) => Object.fromEntries(Object.entries(huntSource).map(([f, src]) => [f, fn(src)]));
+
 
 if (process.argv.includes("--self-test")) {
   let failed = 0;
@@ -262,16 +369,47 @@ if (process.argv.includes("--self-test")) {
   })), true);
   expect("a function that says nothing when it finds nothing", everyLineHasASource((i) => ({ ...reachFor(i), none: "" })), true);
   expect("a function that never produces a line at all", everyLineHasASource(() => ({ lines: [], none: "no address for this holder — the filing is the only handle" })), true);
+  /*
+   * ─── THE CONFLATION, AS THREE FIXTURES ────────────────────────────────────
+   *
+   *   "Pattern from 9 known addresses at this domain" is evidence.
+   *   "Most common format for US managers" is a guess.
+   *
+   * Each of these is one small edit that erases the difference on the page, and each is the edit
+   * somebody makes while tidying up.
+   */
+  expect("A PREDICTION THAT STOPS SHOWING ITS COUNT, so it reads like an address out of a file",
+    everyLineHasASource((i) => ({
+      ...reachFor(i),
+      lines: reachFor(i).lines.map((l) => ({ ...l, text: l.text.replace(/PREDICTED from the \d+ known address\(es\)/, "address") })),
+    })), true);
+  expect("a synthesised address presented as one that was READ",
+    everyLineHasASource((i) => ({
+      ...reachFor(i),
+      lines: reachFor(i).lines.map((l) => (l.confidence === "pattern" ? { ...l, confidence: "known" } : l)),
+    })), true);
+  expect("a line with no confidence level at all",
+    everyLineHasASource((i) => ({
+      ...reachFor(i),
+      lines: reachFor(i).lines.map(({ confidence, ...rest }) => rest),
+    })), true);
+  expect("an ADV record line that has acquired an address from nowhere",
+    everyLineHasASource((i) => ({
+      ...reachFor(i),
+      lines: reachFor(i).lines.map((l) => (l.confidence === "record"
+        ? { ...l, text: `${l.text} <marco@willowridge.com>` }
+        : l)),
+    })), true);
   expect("THE SUBSTRING MATCHER that connected Forge Global to launchusaforge.co",
     theMatcherIsNotASubstring((d, t) => String(d).includes(String(t))), true);
   expect("a renderer that prints a line without checking its source", theRendererRefusesASourcelessLine(
-    huntSource?.replace("const printable = reach.lines.filter((l) => l.source?.file && l.source?.row);", "const printable = reach.lines;") ?? null,
+    mutate((src) => src.replace("const printable = reach.lines.filter((l) => l.source?.file && l.source?.row);", "const printable = reach.lines;")),
   ), true);
   expect("a renderer with no empty-handed branch", theRendererRefusesASourcelessLine(
-    huntSource?.replace(/reach\.none/g, '""') ?? null,
+    mutate((src) => src.replace(/reach\.none/g, '""')),
   ), true);
   expect("a hunt that never asks how to reach anybody", theRendererRefusesASourcelessLine(
-    huntSource?.replace(/reachFor\(/g, "noop(") ?? null,
+    mutate((src) => src.replace(/reachFor\(/g, "noop(")),
   ), true);
   expect("a hunt that could not be read", theRendererRefusesASourcelessLine(null), true);
 

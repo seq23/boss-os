@@ -26,17 +26,23 @@
  *      generic-suggestion fallback.
  *   3. It reads ONLY sovereign brokerage tables, and specifically NOT the interest ledger, which is
  *      on her Mac and whose contents may never reach this database.
- *   4. `humanTouch` is capped by CONSTRUCTION — `LIMIT 1` and a single return — never by a caller
- *      remembering to slice.
- *   5. "Needs a human" is DECLARED (`needs_owner`), never inferred from prose. A `blocker LIKE`
- *      match, or any test that reads the free-text blocker to decide, is the failure.
- *   6. It refuses a row that cannot say WHY only she can do it.
- *   7. The side-hustle list comes from `projects.ts`'s `spry` lane, MINUS `authority_network` —
- *      which that file itself excludes ("a cost centre, not a line — never a day's work"). Never a
- *      hardcoded list of property names, which would be the second list this repo keeps naming.
+ *   4. THE CAP IS A DAY, NOT A QUERY. `LIMIT 1` caps a query; reload the page and it runs again,
+ *      and with two candidates open she gets a different item each time. So `humanTouch` reads and
+ *      writes `human_touch_days`, whose PRIMARY KEY is the day — a cap SQLite enforces rather than
+ *      a caller remembering. Every source query still `LIMIT 1` underneath it.
+ *   5. "Needs a human" is DECLARED, never inferred from prose. `declaredTouch` filters on
+ *      `needs_owner = 1`; a `blocker LIKE` match, or any test that reads the free-text blocker to
+ *      decide, is the failure. Inference was ADDED BESIDE this, never in place of it.
+ *   6. Every source refuses a row that cannot say WHY only she can do it.
+ *   7. The side-hustle list is THE GRID — `suggestingKeys()` from `src/shared/boss/grid.mjs` — and
+ *      never a hardcoded list of property names, which would be the second list this repo keeps
+ *      naming. It is the `primary` tier only: the generator is secondary ("fix only if broken") and
+ *      the authority network is infrastructure ("a cost centre, not a line — never a day's work").
  *   8. NO STREAK, NO CAP-RAISING. `SIDE_HUSTLE_KEYS` must not be spread into more than one item.
+ *   9. `examinedTouch` reads only `disposition = 'needs_her'`. A slot that could read a dispatched
+ *      observation would put red builds in her contract, which is the dashboard she scrolls past.
  *
- * RULE 0: if either function is missing, or the spry lane is empty, this HARD-FAILS. A scan whose
+ * RULE 0: if any of these functions is missing, or the grid is empty, this HARD-FAILS. A scan whose
  * subject does not exist has proved nothing, and an empty key list would make `IN ()` match nothing
  * for ever while every check here passed.
  *
@@ -52,9 +58,17 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 const PILLARS = "src/worker/boss/today/pillars.ts";
 const PROJECTS = "src/worker/boss/today/projects.ts";
+const GRID = "src/shared/boss/grid.mjs";
 
-/** Tables the brokerage suggestion is allowed to read. Anything else is a widened boundary. */
+/**
+ * Tables the brokerage suggestion is allowed to read. Anything else is a widened boundary.
+ *
+ * `brokerage_pointers` is on this list and the interest ledger still is not. The pointer holds a
+ * count, a kind and a clock, in a table with no free TEXT column — see `migrations/0234` and
+ * `validate:pointer-has-no-names`, which asserts that shape rather than trusting this comment.
+ */
 const BROKERAGE_ALLOWED = new Set([
+  "brokerage_pointers",
   "capital_book",
   "capital_book_line",
   "counterparty_crossmatches",
@@ -131,12 +145,15 @@ export function keysInLane(projects, lane) {
   return out;
 }
 
-export function check({ pillars, projects }) {
+export function check({ pillars, projects, gridSrc = "" }) {
   const problems = [];
   const code = (src) => src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
 
-  const brokerage = functionBody(code(pillars), "brokerageMove");
-  const touch = functionBody(code(pillars), "humanTouch");
+  const src = code(pillars);
+  const brokerage = functionBody(src, "brokerageMove");
+  const touch = functionBody(src, "humanTouch");
+  const declared = functionBody(src, "declaredTouch");
+  const examined = functionBody(src, "examinedTouch");
 
   // ── RULE 0 ────────────────────────────────────────────────────────────────
   if (!brokerage) {
@@ -149,15 +166,20 @@ export function check({ pillars, projects }) {
   if (!touch) {
     problems.push(`${PILLARS} has no \`humanTouch\` this scan can read, so the one-a-day cap governs nothing.`);
   }
-
-  const spry = keysInLane(projects, "spry");
-  if (spry.length === 0) {
+  if (!declared) {
     problems.push(
-      `${PROJECTS} declares no projects in the \`spry\` lane. That lane IS the side hustles, so an ` +
-      `empty one means \`SIDE_HUSTLE_KEYS\` is empty, the query becomes \`IN ()\`, and the feature is ` +
-      `silently retired while every other check here passes.`,
+      `${PILLARS} has no \`declaredTouch\`. The explicit \`needs_owner\` flag is still supported and still ` +
+      `outranks anything inferred; inference was added BESIDE the declaration, never in place of it.`,
     );
   }
+  if (!examined) {
+    problems.push(
+      `${PILLARS} has no \`examinedTouch\`, so the slot is back to echoing flags she sets by hand — which ` +
+      `is the defect: nothing ever set one, and the slot was silent from the day it shipped.`,
+    );
+  }
+
+  const spry = keysInLane(projects, "spry");
   if (problems.length) return problems;
 
   // ── 1. Weekends ───────────────────────────────────────────────────────────
@@ -206,20 +228,42 @@ export function check({ pillars, projects }) {
     }
   }
 
-  // ── 4. The cap is structural ──────────────────────────────────────────────
-  if (!/LIMIT 1\b/.test(touch)) {
+  // ── 4. The cap is a DAY, enforced by a primary key ────────────────────────
+  if (!/human_touch_days/.test(touch)) {
+    problems.push(
+      `\`humanTouch\` does not use \`human_touch_days\`. "No more than 1 per day" is not "one per query": ` +
+      `LIMIT 1 caps a SELECT, and a page reloaded twice with two candidates open hands her two different ` +
+      `items. The day is the PRIMARY KEY of that table, so SQLite refuses the second row — which is the ` +
+      `only kind of cap that survives a refactor.`,
+    );
+  }
+  if (!/INSERT OR IGNORE INTO human_touch_days/.test(touch)) {
+    problems.push(
+      `\`humanTouch\` does not claim the day with INSERT OR IGNORE. Two renders racing at 06:00 would both ` +
+      `write, and the day would have had two touches.`,
+    );
+  }
+  if (!/SELECT source, ref_id FROM human_touch_days/.test(touch)) {
+    problems.push(
+      `\`humanTouch\` does not read the day's choice back. Without the read-back the render that LOST the ` +
+      `insert race goes on to show its own candidate, and the cap it just obeyed means nothing.`,
+    );
+  }
+  if (!/LIMIT 1\b/.test(declared)) {
     problems.push(
       `\`humanTouch\` does not \`LIMIT 1\`. "No more than 1 per day" is not "usually one" — she is ` +
       `protecting the contract from becoming a list, so the cap must hold by construction rather than ` +
       `by a caller remembering to slice.`,
     );
   }
-  if (/\.all</.test(touch) && !/\.first</.test(touch)) {
-    problems.push(`\`humanTouch\` selects a list where it should select one row. A list is a cap waiting to be forgotten.`);
+  for (const [name, body] of [["declaredTouch", declared], ["examinedTouch", examined]]) {
+    if (/\.all</.test(body) && !/\.first</.test(body)) {
+      problems.push(`\`${name}\` selects a list where it should select one row. A list is a cap waiting to be forgotten.`);
+    }
   }
 
   // ── 5. Declared, never inferred ───────────────────────────────────────────
-  if (!/needs_owner\s*=\s*1/.test(touch)) {
+  if (!/needs_owner\s*=\s*1/.test(declared)) {
     problems.push(
       `\`humanTouch\` does not filter on \`needs_owner = 1\`. Whether something needs HER must be ` +
       `declared by whoever filed it, not read out of prose — matching by resemblance is what this ` +
@@ -227,48 +271,59 @@ export function check({ pillars, projects }) {
       `to skim the section.`,
     );
   }
-  if (/blocker\s+LIKE|blocker\.(?:includes|match|test)|\/.*\/\.test\(\s*\w*\.?blocker/.test(touch)) {
+  if (/blocker\s+LIKE|blocker\.(?:includes|match|test)|\/.*\/\.test\(\s*\w*\.?blocker/.test(declared + examined)) {
     problems.push(
       `\`humanTouch\` reads the free-text \`blocker\` to decide whether she is needed. That is inference ` +
       `dressed as a rule. Use the declaration.`,
     );
   }
-  if (!/state IN \('open','blocked'\)|state\s+IN\s*\(/.test(touch)) {
-    problems.push(`\`humanTouch\` does not bound the states it will surface, so a done or killed item could reappear.`);
+  if (!/state IN \('open','blocked'\)|state\s+IN\s*\(/.test(declared)) {
+    problems.push(`\`declaredTouch\` does not bound the states it will surface, so a done or killed item could reappear.`);
   }
 
-  // ── 6. It must say why ────────────────────────────────────────────────────
-  if (!/needs_owner_why/.test(touch) || !/return null/.test(touch)) {
+  // ── 6. Every source must say why ──────────────────────────────────────────
+  if (!/needs_owner_why/.test(declared) || !/return null/.test(declared)) {
     problems.push(
-      `\`humanTouch\` does not refuse a row with no \`needs_owner_why\`. A row claiming "this needs you" ` +
+      `\`declaredTouch\` does not refuse a row with no \`needs_owner_why\`. A row claiming "this needs you" ` +
       `that cannot say what only she can do is a puzzle, not a task, and she has enough of those.`,
     );
   }
-
-  // ── 7 and 8. The list comes from projects.ts, minus the cost centre ───────
-  const keysDecl = /SIDE_HUSTLE_KEYS\s*=\s*PROJECTS([\s\S]{0,300}?);/.exec(code(pillars));
-  if (!keysDecl) {
+  if (!/needs_her_why/.test(examined) || !/return null/.test(examined)) {
     problems.push(
-      `${PILLARS} does not derive SIDE_HUSTLE_KEYS from PROJECTS. A hardcoded list of property names ` +
-      `is the second list this repository keeps naming, and it drifts the first time a line is ` +
-      `retired or added.`,
+      `\`examinedTouch\` does not refuse an observation with no \`needs_her_why\`. An examination that found ` +
+      `something and cannot say why only she can act on it has found work to dispatch, not work for her.`,
     );
-  } else {
-    if (!/lane\s*===\s*["']spry["']/.test(keysDecl[1])) {
-      problems.push(`SIDE_HUSTLE_KEYS does not select the \`spry\` lane, which is what the side hustles are.`);
-    }
-    if (!/authority_network/.test(keysDecl[1])) {
-      problems.push(
-        `SIDE_HUSTLE_KEYS does not exclude \`authority_network\`. ${PROJECTS} excludes it in terms — ` +
-        `"A cost centre, not a line — never a day's work" — and including it puts plumbing in front of ` +
-        `her as though it earned something.`,
-      );
-    }
-    for (const forbidden of ["brokerage", "west_peek_raise"]) {
-      if (new RegExp(`["']${forbidden}["']`).test(keysDecl[1]) && !/!==/.test(keysDecl[1])) {
-        problems.push(`SIDE_HUSTLE_KEYS names "${forbidden}", which is not a side hustle and has its own pillar.`);
-      }
-    }
+  }
+
+  // ── 9. The slot may only read what could not be dispatched ────────────────
+  if (!/disposition\s*=\s*'needs_her'/.test(examined)) {
+    problems.push(
+      `\`examinedTouch\` does not filter on \`disposition = 'needs_her'\`. Without it a red build or a stale ` +
+      `bot PR reaches her contract — "a slot that lists five red builds is a dashboard she will scroll ` +
+      `past". Anything a script or an employee can do is dispatched and never shown to her.`,
+    );
+  }
+
+  // ── 7 and 8. The list IS the grid ─────────────────────────────────────────
+  const keysDecl = /SIDE_HUSTLE_KEYS\s*=\s*([^;]*);/.exec(code(pillars));
+  if (!keysDecl) {
+    problems.push(`${PILLARS} does not declare SIDE_HUSTLE_KEYS at all.`);
+  } else if (!/suggestingKeys\(\)/.test(keysDecl[1])) {
+    problems.push(
+      `SIDE_HUSTLE_KEYS is not \`suggestingKeys()\` from ${GRID}. Her words: "the grid repos are my side ` +
+      `hustles." A hardcoded list of property names is the second list this repository keeps naming — and ` +
+      `it is how this file came to say she had four side hustles while the heartbeat script said eight.`,
+    );
+  } else if (/\[/.test(keysDecl[1])) {
+    problems.push(`SIDE_HUSTLE_KEYS appears to be a literal array. The grid is the list.`);
+  }
+
+  if (!/suggestingKeys/.test(gridSrc) || !/tier === "primary"/.test(gridSrc)) {
+    problems.push(
+      `${GRID}'s \`suggestingKeys\` does not select the \`primary\` tier. Secondary and infrastructure ` +
+      `properties are watched and fixed and must never propose work to her: "we really just include it in ` +
+      `case something needs to be fixed", and "a cost centre, not a line — never a day's work".`,
+    );
   }
 
   return problems;
@@ -276,32 +331,25 @@ export function check({ pillars, projects }) {
 
 // ─── Self-test ──────────────────────────────────────────────────────────────
 
-function selfTest() {
-  const goodProjects = `
+const goodProjects = `
 export const PROJECTS = [
-  {
-    key: "brokerage",
-    lane: "brokerage",
-  },
-  {
-    key: "ads",
-    lane: "spry",
-  },
-  {
-    key: "youtube",
-    lane: "spry",
-  },
-  {
-    key: "authority_network",
-    lane: "spry",
-  },
+  { key: "brokerage", lane: "brokerage" },
 ];
 `;
-  const goodPillars = `
+
+const goodGrid = `
+export function suggestingKeys() {
+  return GRID.filter((p) => p.tier === "primary").map((p) => p.key);
+}
+`;
+
+const goodPillars = `
 export function isWeekday(weekday) { return weekday >= 1 && weekday <= 5; }
 
 export async function brokerageMove(env, weekday) {
   if (!isWeekday(weekday)) return null;
+  const pointer = await env.DB.prepare("SELECT kind, crossings FROM brokerage_pointers WHERE seen_at IS NULL LIMIT 1").first();
+  if (pointer) return { action: "p", why: "q" };
   const cross = await env.DB.prepare("SELECT candidate_name FROM counterparty_crossmatches WHERE status = 'new'").all();
   if (cross.results.length) return { action: "a", why: "b" };
   const sizeless = await env.DB.prepare("SELECT l.asset FROM capital_book_line l JOIN capital_book b ON b.id = l.book_id").all();
@@ -309,24 +357,45 @@ export async function brokerageMove(env, weekday) {
   return null;
 }
 
-export const SIDE_HUSTLE_KEYS = PROJECTS
-  .filter((p) => p.lane === "spry" && p.key !== "authority_network")
-  .map((p) => p.key);
+export const SIDE_HUSTLE_KEYS = suggestingKeys();
 
-export async function humanTouch(env) {
+async function declaredTouch(env, pin = null) {
   if (SIDE_HUSTLE_KEYS.length === 0) return null;
   const row = await env.DB.prepare(
     "SELECT d.id, d.needs_owner_why FROM owned_deliverables d WHERE d.needs_owner = 1 AND d.state IN ('open','blocked') LIMIT 1",
   ).first();
   if (!row || !row.needs_owner_why || !row.needs_owner_why.trim()) return null;
-  return { action: "x", why: "y" };
+  return { ref_id: row.id, action: "x", why: "y" };
+}
+
+async function examinedTouch(env, pin = null) {
+  const row = await env.DB.prepare(
+    "SELECT o.id, o.needs_her_why FROM grid_observations o WHERE o.disposition = 'needs_her' AND o.state IN ('open','shown') LIMIT 1",
+  ).first();
+  if (!row || !row.needs_her_why || !row.needs_her_why.trim()) return null;
+  return { ref_id: row.id, action: "x", why: "y" };
+}
+
+export async function humanTouch(env) {
+  const day = herDay();
+  const already = await env.DB.prepare("SELECT source, ref_id FROM human_touch_days WHERE day = ?").bind(day).first();
+  if (already) return null;
+  for (const [source, fn] of SOURCES) {
+    const candidate = await fn(env, null);
+    if (!candidate) continue;
+    await env.DB.prepare("INSERT OR IGNORE INTO human_touch_days (day, source, ref_id, chosen_at) VALUES (?,?,?,?)").run();
+    const chosen = await env.DB.prepare("SELECT source, ref_id FROM human_touch_days WHERE day = ?").bind(day).first();
+    return { action: candidate.action, why: candidate.why };
+  }
+  return null;
 }
 `;
 
-  const P = (s) => ({ pillars: s, projects: goodProjects });
+const P = (pillars, grid = goodGrid) => ({ pillars, projects: goodProjects, gridSrc: grid });
 
+function selfTest() {
   const cases = [
-    { name: "the shipped shape passes", input: { pillars: goodPillars, projects: goodProjects }, expect: 0 },
+    { name: "the shipped shape passes", input: P(goodPillars), expect: 0 },
     {
       name: "brokerage suggestion with no weekday gate",
       input: P(goodPillars.replace("  if (!isWeekday(weekday)) return null;\n", "")),
@@ -334,10 +403,9 @@ export async function humanTouch(env) {
     },
     {
       name: "the weekday gate placed AFTER the first query",
-      input: P(goodPillars.replace(
-        "  if (!isWeekday(weekday)) return null;\n  const cross",
-        "  const cross",
-      ).replace("if (cross.results.length) return { action: \"a\", why: \"b\" };", "if (!isWeekday(weekday)) return null;\n  if (cross.results.length) return { action: \"a\", why: \"b\" };")),
+      input: P(goodPillars
+        .replace("  if (!isWeekday(weekday)) return null;\n  const pointer", "  const pointer")
+        .replace('if (pointer) return { action: "p", why: "q" };', 'if (!isWeekday(weekday)) return null;\n  if (pointer) return { action: "p", why: "q" };')),
       expect: 1,
     },
     {
@@ -350,10 +418,7 @@ export async function humanTouch(env) {
     },
     {
       name: "the brokerage suggestion reaching for the interest ledger",
-      input: P(goodPillars.replace(
-        'SELECT candidate_name FROM counterparty_crossmatches',
-        'SELECT name FROM counterparty_interest',
-      )),
+      input: P(goodPillars.replace("FROM counterparty_crossmatches", "FROM counterparty_interest")),
       expect: 1,
     },
     {
@@ -362,11 +427,14 @@ export async function humanTouch(env) {
       expect: 1,
     },
     {
-      name: "THE CAP REMOVED: humanTouch selecting a list",
-      input: P(goodPillars.replace(
-        `"SELECT d.id, d.needs_owner_why FROM owned_deliverables d WHERE d.needs_owner = 1 AND d.state IN ('open','blocked') LIMIT 1",\n  ).first();`,
-        `"SELECT d.id, d.needs_owner_why FROM owned_deliverables d WHERE d.needs_owner = 1 AND d.state IN ('open','blocked')",\n  ).all();`,
-      )),
+      name: "THE CAP REMOVED: the day is no longer claimed, so a reload hands her a second item",
+      input: P(goodPillars.replaceAll("human_touch_days", "touch_scratch")),
+      expect: 1,
+    },
+    {
+      name: "the day claimed but never read back, so the loser of a race shows its own candidate",
+      input: P(goodPillars.replace('    const chosen = await env.DB.prepare("SELECT source, ref_id FROM human_touch_days WHERE day = ?").bind(day).first();\n', "")
+        .replace('  const already = await env.DB.prepare("SELECT source, ref_id FROM human_touch_days WHERE day = ?").bind(day).first();\n  if (already) return null;\n', "")),
       expect: 1,
     },
     {
@@ -375,8 +443,10 @@ export async function humanTouch(env) {
       expect: 1,
     },
     {
-      name: "a row surfaced without saying why only she can do it",
-      input: P(goodPillars.replace("  if (!row || !row.needs_owner_why || !row.needs_owner_why.trim()) return null;\n", "").replace("d.needs_owner_why", "d.name")),
+      name: "the declared source surfacing a row without saying why only she can do it",
+      input: P(goodPillars
+        .replace("  if (!row || !row.needs_owner_why || !row.needs_owner_why.trim()) return null;\n", "")
+        .replace("d.needs_owner_why", "d.name")),
       expect: 1,
     },
     {
@@ -385,42 +455,44 @@ export async function humanTouch(env) {
       expect: 1,
     },
     {
-      name: "SECOND LIST: side hustles hardcoded as property names",
+      name: "THE DASHBOARD DEFECT: the slot reading dispatched observations too",
+      input: P(goodPillars.replace("o.disposition = 'needs_her' AND ", "")),
+      expect: 1,
+    },
+    {
+      name: "an examined observation surfaced with no reason only she can act",
+      input: P(goodPillars
+        .replace("  if (!row || !row.needs_her_why || !row.needs_her_why.trim()) return null;\n", "")
+        .replace("o.needs_her_why", "o.headline")),
+      expect: 1,
+    },
+    {
+      name: "SECOND LIST: the side hustles hardcoded instead of read from the grid",
       input: P(goodPillars.replace(
-        `export const SIDE_HUSTLE_KEYS = PROJECTS\n  .filter((p) => p.lane === "spry" && p.key !== "authority_network")\n  .map((p) => p.key);`,
-        `export const SIDE_HUSTLE_KEYS = ["ads", "youtube", "saas"];`,
+        "export const SIDE_HUSTLE_KEYS = suggestingKeys();",
+        'export const SIDE_HUSTLE_KEYS = ["ads", "youtube", "saas"];',
       )),
       expect: 1,
     },
     {
-      name: "the cost centre put back in front of her",
-      input: P(goodPillars.replace(` && p.key !== "authority_network"`, "")),
+      name: "the secondary and infrastructure properties allowed to propose work to her",
+      input: P(goodPillars, goodGrid.replace('p.tier === "primary"', "true")),
       expect: 1,
     },
-    {
-      name: "RULE 0 — brokerageMove gone",
-      input: P(goodPillars.replace(/export async function brokerageMove[\s\S]*?\n\}\n/, "")),
-      expect: 1,
-    },
-    {
-      name: "RULE 0 — humanTouch gone",
-      input: P(goodPillars.replace(/export async function humanTouch[\s\S]*?\n\}\n/, "")),
-      expect: 1,
-    },
-    {
-      name: "RULE 0 — the spry lane emptied, which would silently retire the feature",
-      input: { pillars: goodPillars, projects: goodProjects.replace(/lane: "spry"/g, 'lane: "west_peek"') },
-      expect: 1,
-    },
+    { name: "RULE 0 — brokerageMove gone", input: P(goodPillars.replace(/export async function brokerageMove[\s\S]*?\n\}\n/, "")), expect: 1 },
+    { name: "RULE 0 — humanTouch gone", input: P(goodPillars.replace(/export async function humanTouch[\s\S]*?\n\}\n/, "")), expect: 1 },
+    { name: "RULE 0 — the declared path removed rather than added beside", input: P(goodPillars.replace(/async function declaredTouch[\s\S]*?\n\}\n/, "")), expect: 1 },
+    { name: "RULE 0 — the examination path gone, so the slot echoes her own flags again", input: P(goodPillars.replace(/async function examinedTouch[\s\S]*?\n\}\n/, "")), expect: 1 },
   ];
 
   let failed = 0;
   for (const c of cases) {
     const found = check(c.input).length;
-    const ok = c.expect === 0 ? found === 0 : found >= 1;
-    if (!ok) {
+    const okCase = c.expect === 0 ? found === 0 : found >= 1;
+    if (!okCase) {
       failed += 1;
       console.error(`  FAIL  ${c.name} — expected ${c.expect === 0 ? "no" : "at least one"} problem, found ${found}`);
+      if (c.expect === 0) for (const p of check(c.input)) console.error(`          • ${p}`);
     }
   }
 
@@ -443,7 +515,8 @@ if (process.argv.includes("--self-test")) {
   }
 
   const projects = readFileSync(join(ROOT, PROJECTS), "utf8");
-  const problems = check({ pillars: readFileSync(join(ROOT, PILLARS), "utf8"), projects });
+  const gridSrc = existsSync(join(ROOT, GRID)) ? readFileSync(join(ROOT, GRID), "utf8") : "";
+  const problems = check({ pillars: readFileSync(join(ROOT, PILLARS), "utf8"), projects, gridSrc });
 
   if (problems.length) {
     console.error("one-brokerage-move-and-one-human-touch FAILED\n");
@@ -451,10 +524,12 @@ if (process.argv.includes("--self-test")) {
     process.exit(1);
   }
 
-  const spry = keysInLane(projects, "spry").filter((k) => k !== "authority_network");
+  const { suggestingKeys } = await import(join(ROOT, GRID));
+  const suggesting = suggestingKeys();
   console.log(
     `one-brokerage-move-and-one-human-touch: the brokerage move is weekday-gated, may return null, and ` +
-    `reads only her own book; the side-hustle item is capped at one by construction, declared not ` +
-    `inferred, over ${spry.length} side hustle(s) (${spry.join(", ")}). OK.`,
+    `reads only her own book; the side-hustle item is capped at one PER DAY by a primary key, declared ` +
+    `first and examined second, over ${suggesting.length} suggesting grid propert(ies) ` +
+    `(${suggesting.join(", ")}). OK.`,
   );
 }

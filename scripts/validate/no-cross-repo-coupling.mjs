@@ -26,6 +26,27 @@ const SRC_DIR = path.join(ROOT, "src");
 const ADAPTER = "src/worker/services/networkAdapter.ts";
 
 const SIBLING_REPO_PATH = /(west-peek-network-os|agency-event-os|seq23\/secondaries|\.\.\/\.\.\/\.\.\/[a-z-]*network)/i;
+
+/**
+ * ─── THE ONE FILE THAT MAY NAME A PARTNER REPO, BECAUSE IT NAMES IT TO REFUSE IT ───────────────
+ *
+ * `src/shared/boss/grid.mjs` is the grid: the repos she cares about for making money, AND the ones
+ * that are out of scope. The exclusion list carries `west-peek`, `agency-event-os` and `secondaries`
+ * by name, with a reason each.
+ *
+ * NAMING A REPOSITORY IN ORDER TO REFUSE IT IS THE OPPOSITE OF COUPLING, and the incident behind it
+ * is the reason it has to be by name: on 29 August 2026 an agent working "portfolio-wide" branched
+ * and merged into `west-peek-network-os` under a scope that had merely OMITTED it. An exclusion that
+ * is only an absence is picked up again by the next scope that says "all her repos" and nothing
+ * objects. So this scan would have been forcing the weaker of the two designs.
+ *
+ * THE EXEMPTION IS NARROW AND IT BUYS A STRICTER RULE, NOT A LOOSER ONE. The grid may name a repo;
+ * it may never carry a PATH into one, an import from one, or a database file belonging to one —
+ * checked immediately below, and harder than the general rule, because this is the one file whose
+ * whole subject is other repositories.
+ */
+const EXCLUSION_REGISTRY = "src/shared/boss/grid.mjs";
+const PATH_INTO_A_REPO = /(\.\.\/\.\.\/\.\.\/|~\/GitHub\/|\/Users\/[a-z]+\/GitHub\/)/i;
 const FOREIGN_DB_FILE = /["'`][^"'`]*\.(sqlite3?|db)["'`]/i;
 const FOREIGN_BINDING = /env\.(?!WP_OS_)(?:[A-Z][A-Z0-9_]{2,})\b/;
 /**
@@ -120,7 +141,21 @@ export function checkSources(files) {
   const violations = [];
   for (const [rel, rawSource] of Object.entries(files)) {
     const source = stripComments(rawSource);
-    if (SIBLING_REPO_PATH.test(source)) {
+    if (rel === EXCLUSION_REGISTRY) {
+      /*
+       * It may NAME them. It may not REACH them: no relative path out of the tree, no `~/GitHub`,
+       * no absolute path into a checkout. A list of repositories to stay out of that contained a
+       * path into one would be the coupling this scan exists to stop, hiding inside the guard
+       * against it.
+       */
+      const reach = source.match(PATH_INTO_A_REPO);
+      if (reach) {
+        violations.push(
+          `${rel}: carries a filesystem path into another repository ("${reach[0]}"). The grid names ` +
+          `repositories so that they can be refused; a path into one is the coupling itself.`,
+        );
+      }
+    } else if (SIBLING_REPO_PATH.test(source)) {
       violations.push(`${rel}: reference to a partner repository path (cross-repo coupling; D5 forbids direct access)`);
     }
     if (FOREIGN_DB_FILE.test(source)) {
@@ -161,6 +196,12 @@ function selfTest() {
     "src/worker/services/portfolio.ts": "await env.WP_OS_DB.prepare('SELECT 1').first();",
     // P16: a declared provider credential is not another system's storage.
     "src/worker/ai/routing.ts": "const key = env.OPENROUTER_API_KEY;",
+    /*
+     * THE GRID NAMES WHAT IS OUT OF SCOPE, AND NAMING IS NOT COUPLING. An exclusion that is merely
+     * an absence is picked up again by the next scope that says "all her repos" — which is exactly
+     * how an agent came to branch and merge into west-peek-network-os on 29 Aug 2026.
+     */
+    "src/shared/boss/grid.mjs": 'export const EXCLUDED = [{ match: "west-peek", why: "A different business." }, { match: "agency-event-os", why: "Out of scope." }];',
   };
   const failures = [];
   if (checkSources(clean).length !== 0) failures.push("clean fixture was flagged");
@@ -168,6 +209,16 @@ function selfTest() {
   const cases = {
     "partner repo path": { ...clean, "src/worker/services/sneaky.ts": 'const db = open("../../west-peek-network-os/data/app.db");' },
     "database file literal": { ...clean, "src/worker/services/sneaky.ts": 'const p = "/var/data/contacts.sqlite";' },
+    // The exemption buys a STRICTER rule for that one file, not a looser one: it may name a repo
+    // and may never carry a path into one.
+    "the exclusion registry carrying a path into a repo": {
+      ...clean,
+      "src/shared/boss/grid.mjs": 'export const HOME = "~/GitHub/west-peek-network-os";',
+    },
+    "the exclusion registry reaching out of the tree": {
+      ...clean,
+      "src/shared/boss/grid.mjs": 'import x from "../../../west-peek-network-os/lib.mjs";',
+    },
     "foreign binding": { ...clean, "src/worker/services/sneaky.ts": "await env.NETWORK_OS_DB.prepare('SELECT 1').all();" },
     "network hostname outside the adapter": { ...clean, "src/worker/services/sneaky.ts": 'await get("https://network-os.example.com/api/contacts");' },
     "direct fetch inside the adapter": {
