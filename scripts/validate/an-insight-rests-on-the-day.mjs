@@ -144,7 +144,7 @@ export function newestPrompt(migrationsDir) {
   return latest;
 }
 
-export function check({ grounded, ungrounded, noCites, badSection, citeCount, spec, screen, route, prompt }) {
+export function check({ grounded, ungrounded, noCites, badSection, noSection, emptySection, citeCount, spec, screen, route, prompt }) {
   const problems = [];
   const code = (src) => src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*|--)/.test(l)).join("\n");
 
@@ -190,6 +190,21 @@ export function check({ grounded, ungrounded, noCites, badSection, citeCount, sp
       `from a quiet news day.`,
     );
   }
+  /*
+   * A WITHHELD INSIGHT ALWAYS SAYS WHY, and this rule was missing when the first version shipped.
+   * Live production returned `{"insight":null,"grounded":false,"withheld_because":null}` and the
+   * block rendered nothing at all — indistinguishable from the feature being broken, on the one
+   * section whose entire purpose is showing her how a conclusion was reached.
+   */
+  for (const [what, state] of [["no section at all", noSection], ["an empty section", emptySection]]) {
+    if (state && !state.grounded && !state.withheld_because) {
+      problems.push(
+        `An insight withheld because there was ${what} says nothing about why. Silence with no reason ` +
+        `teaches nothing — and on this section that is the whole point.`,
+      );
+    }
+  }
+
   if (badSection?.grounded) {
     problems.push(`An insight citing a section that is not in the report was shown. The citation cannot be checked, so it is not a citation.`);
   }
@@ -261,6 +276,9 @@ async function selfTest() {
     ungrounded: mod.groundInsight(ungroundedFixture()),
     noCites: mod.groundInsight(noCitesReport),
     badSection: mod.groundInsight(badSectionReport),
+    /* The two shapes of ABSENCE, which must each carry their own sentence. */
+    noSection: mod.groundInsight({ sections: [{ key: "ai_technology", heading: "AI & Technology", bullets: ["x"] }] }),
+    emptySection: mod.groundInsight({ sections: [{ key: "investor_insight", heading: "Investor Insight" }] }),
     citeCount: grounded.sections[2].insight.cites.length,
     spec: readFileSync(join(ROOT, SPEC), "utf8"),
     screen: readFileSync(join(ROOT, SCREEN), "utf8"),
@@ -333,6 +351,16 @@ async function selfTest() {
       input: { ...good, route: good.route.replaceAll("groundInsight", "passThrough") },
       expect: 1,
     },
+    {
+      name: "THE LIVE DEFECT: withheld with no reason at all",
+      input: { ...good, noSection: { grounded: false, insight: null, withheld_because: null } },
+      expect: 1,
+    },
+    {
+      name: "an empty insight section withheld silently",
+      input: { ...good, emptySection: { grounded: false, insight: null, withheld_because: null } },
+      expect: 1,
+    },
     { name: "RULE 0 — zero citations examined", input: { ...good, citeCount: 0 }, expect: 1 },
   ];
 
@@ -378,6 +406,9 @@ if (process.argv.includes("--self-test")) {
     ungrounded: mod.groundInsight(ungroundedFixture()),
     noCites: mod.groundInsight(noCitesReport),
     badSection: mod.groundInsight(badSectionReport),
+    /* The two shapes of ABSENCE, which must each carry their own sentence. */
+    noSection: mod.groundInsight({ sections: [{ key: "ai_technology", heading: "AI & Technology", bullets: ["x"] }] }),
+    emptySection: mod.groundInsight({ sections: [{ key: "investor_insight", heading: "Investor Insight" }] }),
     citeCount: grounded.sections[2].insight.cites.length,
     spec: readFileSync(join(ROOT, SPEC), "utf8"),
     screen: readFileSync(join(ROOT, SCREEN), "utf8"),

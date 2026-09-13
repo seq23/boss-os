@@ -863,6 +863,17 @@ echo "Installed $POSITIVE_LABEL — Tuesday 08:15 Central (lp-positive.mjs --ema
 # It costs about a cent a day: the connector cannot be checked from Node at all — it is an OAuth
 # grant held by claude.ai, not a secret on this machine — so one very short Haiku run makes one
 # Gmail call and prints one word. Named rather than hidden, and cheap against days of blind running.
+# WRAPPED IN duty-run.sh SO THE RUN REACHES `duty_credentials` IN D1.
+#
+# This job ran daily for a week with NO duty row anywhere on the roster. Nine credentials were being
+# probed by something nobody owned — so if it had stopped, every probe would have gone on reading
+# `live` from its last answer and the screen would have said the logins were fine because nothing
+# was watching the watcher. That is the exact failure the register was built after.
+#
+# It was also invisible to `a-launchd-run-reaches-its-duty.mjs`, which proves every local_job duty is
+# named by exactly one invocation — it could not see this job because there was no duty to link it
+# to. Migration 0241 creates the duty and gives it to Toni, whose remit is risk; this is the other
+# half of that link.
 CRED_LABEL="com.seq.boss-credentials"
 CRED_PLIST="$HOME/Library/LaunchAgents/$CRED_LABEL.plist"
 
@@ -876,7 +887,7 @@ cat > "$CRED_PLIST" <<CREDEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent credentials:check</string>
+    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh credential-check.mjs -- npm run --silent credentials:check</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -892,7 +903,7 @@ CREDEOF
 
 launchctl unload "$CRED_PLIST" 2>/dev/null || true
 launchctl load "$CRED_PLIST"
-echo "Installed $CRED_LABEL — daily 06:15 Central."
+echo "Installed $CRED_LABEL — daily 06:15 Central, reporting to duty_credentials (Toni)."
 
 echo "Installed $LABEL — checks for queued work at 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"

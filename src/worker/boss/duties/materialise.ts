@@ -45,10 +45,32 @@ export interface MaterialiseResult {
   skipped: { duty: string; reason: string }[];
 }
 
-export async function materialiseDueDuties(env: Env, now = Date.now()): Promise<MaterialiseResult> {
-  const rows = await env.DB
-    .prepare(`SELECT * FROM standing_duties ORDER BY next_due_at`)
-    .all<DutyRow>();
+/**
+ * Materialise the duties whose clock says so — or ONE duty, now, because she asked.
+ *
+ * ─── Why "now" had to exist ────────────────────────────────────────────────
+ *
+ * There was no way to fire a standing duty except waiting for its clock. That is fine until
+ * something about a duty CHANGES: migration 0237 rewrote the Executive Intelligence Report's prompt
+ * to follow §5's eleven sections, and the only way to find out whether the run actually produced
+ * them was to wait for 06:30 the next morning and look.
+ *
+ * "It will work tomorrow" is a promise, and this repository has a standing rule against handing her
+ * one of those in place of evidence. A duty you cannot fire is a duty you cannot prove.
+ *
+ * `only` DOES NOT SKIP THE GATES. It bypasses the CLOCK and nothing else — a suspended duty stays
+ * suspended, a `local_job` still refuses, intake may still decline it, and the budget and backend
+ * guards all run exactly as they do at 06:30. The difference between this and the scheduled path is
+ * one boolean about time.
+ */
+export async function materialiseDueDuties(
+  env: Env,
+  now = Date.now(),
+  only?: string,
+): Promise<MaterialiseResult> {
+  const rows = only
+    ? await env.DB.prepare(`SELECT * FROM standing_duties WHERE id = ?`).bind(only).all<DutyRow>()
+    : await env.DB.prepare(`SELECT * FROM standing_duties ORDER BY next_due_at`).all<DutyRow>();
 
   const duties = rows.results ?? [];
   const fired: MaterialiseResult["fired"] = [];
@@ -76,7 +98,15 @@ export async function materialiseDueDuties(env: Env, now = Date.now()): Promise<
       continue;
     }
 
-    if (!isDue(duty.next_due_at, duty.suspended === 1, now)) {
+    /*
+     * A SUSPENDED DUTY IS STILL SUSPENDED WHEN SHE ASKS FOR IT BY HAND. Suspension is a decision;
+     * "run it now" is about the clock, not about the decision.
+     */
+    if (only && duty.suspended === 1) {
+      skipped.push({ duty: duty.id, reason: "suspended" });
+      continue;
+    }
+    if (!only && !isDue(duty.next_due_at, duty.suspended === 1, now)) {
       skipped.push({ duty: duty.id, reason: duty.suspended === 1 ? "suspended" : "not_due" });
       continue;
     }

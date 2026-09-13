@@ -25,7 +25,8 @@
  * properly awake — so there are no counts, no streaks, no progress bars, and no completion state.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { api } from "../api";
 
 /** The four kinds. A field belongs to exactly one. */
 export type BodyKind = "movement" | "intake" | "medical" | "stop";
@@ -65,6 +66,8 @@ export interface SomaticLane {
   title: string;
   movement: string;
   because: string;
+  /** When she marked the rotation done today, or null. The only record of DOING in this system. */
+  done_at?: number | null;
 }
 
 export interface BodyPayload {
@@ -128,9 +131,38 @@ function Group({ kind, label, children }: { kind: BodyKind; label: string; child
   );
 }
 
-export function BodyContractView({ body }: { body: BodyPayload }) {
+export function BodyContractView({ body, onChanged }: { body: BodyPayload; onChanged?: () => void }) {
   const somatic = body.somatic ?? [];
   const shared = sharedBecause(somatic);
+  const [marking, setMarking] = useState(false);
+  const [markError, setMarkError] = useState<string | null>(null);
+  const doneToday = somatic.some((s) => Boolean(s.done_at));
+
+  /*
+   * ── THE CONTROL THAT MAKES EVERY REASON LINE TRUE ─────────────────────────
+   *
+   * Every line under these lanes said "Not done before." — five times — because `movement_log`
+   * recorded which movement was OFFERED and nothing anywhere recorded her doing one. The sentence
+   * was a claim the database could not support.
+   *
+   * ONE MARK FOR THE ROTATION, NOT FIVE. Five ticks at 7am is five chances to decide this screen is
+   * work. IT UNDOES, because a mis-tap that cannot be taken back teaches her not to touch it.
+   *
+   * NO COUNT, NO STREAK, NO PROGRESS BAR. The standing rule against guilt binds here as it does on
+   * the contribution practice; an unmarked day stays UNKNOWN rather than failed.
+   */
+  const mark = async (next: boolean) => {
+    setMarking(true);
+    setMarkError(null);
+    try {
+      await api.markRotationDone(next);
+      onChanged?.();
+    } catch (e: any) {
+      setMarkError(e?.message ?? "That could not be recorded.");
+    } finally {
+      setMarking(false);
+    }
+  };
   const fallbackIsLaunch = minimumViableIsTheLaunchSequence(body);
   const label = (kind: BodyKind) => BODY_KIND_LABELS.find((k) => k.kind === kind)?.label ?? kind;
 
@@ -178,7 +210,25 @@ export function BodyContractView({ body }: { body: BodyPayload }) {
                 </li>
               ))}
             </ul>
-            {shared && <p className="bodygroup-note">{shared} — none of these five is in the movement log yet.</p>}
+            {/*
+              * ONE FACT, SAID ONCE. When every lane agrees, it is a statement about the RECORD
+              * rather than five statements about five movements — and now that the record can tell
+              * "done" from "offered" apart, the lines differentiate themselves as soon as there is
+              * anything to differentiate.
+              */}
+            {shared && <p className="bodygroup-note">{shared} — the same for all five.</p>}
+            {somatic.length > 0 && (
+              <>
+                <button
+                  className="btn btn-small"
+                  disabled={marking}
+                  onClick={() => void mark(!doneToday)}
+                >
+                  {doneToday ? "Done today — undo" : "Mark the rotation done"}
+                </button>
+                {markError && <p className="bodygroup-note">{markError}</p>}
+              </>
+            )}
           </>
         )}
       </Group>
