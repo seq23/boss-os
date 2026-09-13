@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { batchReads } from "../lib/batchReads";
 
 /**
  * OWNED WORK, AND WHY IT CANNOT BE QUIETLY DROPPED.
@@ -277,7 +278,11 @@ async function probeIsLive(env: Env, probeId: string): Promise<{ met: boolean; p
  * that depend on a separate job would be one more thing that can fail silently.
  */
 export async function deliverableAlerts(env: Env, now = Date.now()): Promise<DeliverableAlert[]> {
-  const rows = await env.DB
+  // The open set and the week's finished set in one round trip; the two reads after the loop go
+  // out together too, AFTER it, because the loop can raise the judgement call they list. Each
+  // statement is CPU on this runtime — lib/batchReads.ts.
+  const before = batchReads(env.DB);
+  const rowsP = before.all<DeliverableRow>(true, () => env.DB
     .prepare(
       `SELECT d.id, d.name, d.employee_id, e.name AS employee_name, d.lane, d.terminal_condition,
               d.terminal_check, d.state, d.duty_id, d.escalation_path, d.blocker,
@@ -287,8 +292,18 @@ export async function deliverableAlerts(env: Env, now = Date.now()): Promise<Del
          LEFT JOIN employees e ON e.id = d.employee_id
         WHERE d.state IN ('open','blocked')
         ORDER BY COALESCE(d.blocked_since, d.created_at)`,
+    ));
+  const recentlyDoneP = before.all<{ id: string; name: string; terminal_check: string; done_at: number; employee_name: string | null; employee_id: string }>(true, () => env.DB
+    .prepare(
+      `SELECT d.id, d.name, d.terminal_check, d.done_at, e.name AS employee_name, d.employee_id
+         FROM owned_deliverables d
+         LEFT JOIN employees e ON e.id = d.employee_id
+        WHERE d.state = 'done' AND d.done_at IS NOT NULL AND d.done_at > ?
+        ORDER BY d.done_at DESC`,
     )
-    .all<DeliverableRow>();
+    .bind(now - 7 * 86_400_000));
+  await before.flush();
+  const rows = await rowsP;
 
   const open = rows.results ?? [];
   const alerts: DeliverableAlert[] = [];
@@ -310,16 +325,7 @@ export async function deliverableAlerts(env: Env, now = Date.now()): Promise<Del
    * reading last time. This is the same screen she already opens every morning, and it is the
    * channel that survives the Gmail connector being dead, which the email cannot say of itself.
    */
-  const recentlyDone = await env.DB
-    .prepare(
-      `SELECT d.id, d.name, d.terminal_check, d.done_at, e.name AS employee_name, d.employee_id
-         FROM owned_deliverables d
-         LEFT JOIN employees e ON e.id = d.employee_id
-        WHERE d.state = 'done' AND d.done_at IS NOT NULL AND d.done_at > ?
-        ORDER BY d.done_at DESC`,
-    )
-    .bind(now - 7 * 86_400_000)
-    .all<{ id: string; name: string; terminal_check: string; done_at: number; employee_name: string | null; employee_id: string }>();
+  const recentlyDone = await recentlyDoneP;
 
   for (const d of recentlyDone.results ?? []) {
     const check = TERMINAL_CHECKS[d.terminal_check];
@@ -478,7 +484,8 @@ export async function deliverableAlerts(env: Env, now = Date.now()): Promise<Del
    * It is deliberately not a stop on the employee's other work: Simone keeps chasing the KDP case on
    * her own cadence while the covers wait. What is blocked is the covers, and the alert says so.
    */
-  const waiting = await env.DB
+  const after = batchReads(env.DB);
+  const waitingP = after.all<any>(true, () => env.DB
     .prepare(
       `SELECT j.id, j.title, j.question, j.created_at, j.attempt, j.approval_id, e.name AS employee_name,
               j.employee_id, a.status AS approval_status
@@ -487,8 +494,22 @@ export async function deliverableAlerts(env: Env, now = Date.now()): Promise<Del
          LEFT JOIN approvals a ON a.id = j.approval_id
         WHERE j.state = 'awaiting'
         ORDER BY j.created_at`,
-    )
-    .all<any>();
+    ));
+
+  const assignmentsP = after.all<any>(true, () => env.DB
+    .prepare(
+      `SELECT a.id, a.what, a.why, a.assigned_at, a.stale_after_days, a.deliverable_id,
+              o.name AS owner_name, a.owner_employee_id,
+              h.name AS helper_name, a.helper_employee_id
+         FROM work_assignments a
+         LEFT JOIN employees o ON o.id = a.owner_employee_id
+         LEFT JOIN employees h ON h.id = a.helper_employee_id
+        WHERE a.state = 'open'
+        ORDER BY a.assigned_at`,
+    ))
+    .catch(() => ({ results: [] as any[] }));
+  await after.flush();
+  const [waiting, assignments] = await Promise.all([waitingP, assignmentsP]);
 
   for (const j of waiting.results ?? []) {
     const days = Math.floor((now - j.created_at) / 86_400_000);
@@ -532,19 +553,6 @@ export async function deliverableAlerts(env: Env, now = Date.now()): Promise<Del
    * Three days rather than the deliverable's seven. A piece handed to a colleague is a small,
    * specific thing; a week of silence on one is a week nobody was working it.
    */
-  const assignments = await env.DB
-    .prepare(
-      `SELECT a.id, a.what, a.why, a.assigned_at, a.stale_after_days, a.deliverable_id,
-              o.name AS owner_name, a.owner_employee_id,
-              h.name AS helper_name, a.helper_employee_id
-         FROM work_assignments a
-         LEFT JOIN employees o ON o.id = a.owner_employee_id
-         LEFT JOIN employees h ON h.id = a.helper_employee_id
-        WHERE a.state = 'open'
-        ORDER BY a.assigned_at`,
-    )
-    .all<any>()
-    .catch(() => ({ results: [] as any[] }));
 
   for (const a of (assignments as { results?: any[] }).results ?? []) {
     const days = Math.floor((now - a.assigned_at) / 86_400_000);
