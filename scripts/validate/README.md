@@ -29,3 +29,28 @@ violations) on breach and proves its own detection with a self-test fixture run.
   name mentioned only inside a boolean guard does not count, which is the state
   `language_rule` was in. **Rule 0: zero fields, zero registry entries or zero kinds
   hard-fails.** 13-fixture self-test.
+
+- `every-spec-section-is-rendered-or-named.mjs` (`npm run validate:spec-sections`) — §5 of
+  `EXECUTIVE_INTELLIGENCE.md` names eleven sections in a fixed order; `BRIEFING_SECTIONS` must
+  match it exactly, the shipped `missingSections()` must NAME every §5 section a report does not
+  carry (using the run's own gap as the reason where it gave one), both ends must be wired
+  (`missing_sections` in the payload and on the screen, no `slice(0, 4)`, the block scrollable),
+  and the duty prompt must ask for all eleven by key with no four-section cap and no
+  bold-every-bullet. **Rule 0: zero spec sections, zero registry entries, or a fixture producing
+  zero missing sections hard-fails.** 16-fixture self-test plus a deletion proof.
+
+- `an-insight-rests-on-the-day.mjs` (`npm run validate:insight-grounded`) — an Investor Insight is
+  shown only when every fact it cites appears elsewhere in the SAME report; one resting on a fact
+  that is not in the day, one citing a section that is not there, and one citing nothing are all
+  withheld with a reason she can see. Also that the spec, the prompt and the screen all carry the
+  four parts — synthesis, how it was reached, the transferable frame, what would falsify it.
+  **Rule 0: zero citations examined hard-fails.** 14-fixture self-test.
+
+- `one-scale-for-the-morning.mjs` (`npm run validate:one-scale`) — the Today page declares one
+  ordered type scale (`--today-N-size`/`--today-N-weight`, sizes strictly decreasing, weights never
+  increasing), no heading level resolves to `--muted`, both end blocks draw from it, and in the real
+  JSX the briefing's section heading sits at a HIGHER level than its own `so_what` line — the
+  `.eyebrow`-over-`.row-title` inversion that was on every section of every briefing. Also that
+  nothing asks for bold inside sentences any more while `bold()` survives for historical reports.
+  **Rule 0: fewer than two levels, or no heading/content pair to compare, hard-fails.** 11-fixture
+  self-test.

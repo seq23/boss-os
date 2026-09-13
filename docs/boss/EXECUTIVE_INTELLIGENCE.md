@@ -541,6 +541,28 @@ For regulation, explain investor impact.
 
 # Investor Insight
 
+**AMENDED 13 September 2026, on her instruction. This is the one section of this specification that
+is not verbatim from the original install, and the amendment is recorded rather than folded in.**
+
+> "u r also supposed to use the intelligence of the LLM to develop an investor insights section to
+>  help me learn how to think about the stuff im reading....."
+
+Every example below is a CONCLUSION. She is asking to be taught the REASONING THAT REACHES IT, so
+she can perform the move herself on tomorrow's news without this report. So the section now carries
+four parts, not one.
+
+**Pitch it at the level of ANALYTICAL FRAME, never definitions.** She runs a venture fund and is a
+registered representative at a brokerage. She is not learning what a secondary is. The teaching is
+how an experienced allocator connects a capex commitment to a discount rate to a secondary bid.
+Anything that explains a term she uses daily is condescending and she will stop reading the section.
+
+**No hedging.** "This may or may not indicate" teaches nothing. §2.3 requires fact and analysis to be
+separated; do that, then commit to the analysis.
+
+**ONE insight per day. Not three.** A list of insights is a list of guesses.
+
+## 1. The synthesis
+
 One concise, synthesized idea.
 
 This should not repeat a headline.
@@ -555,7 +577,46 @@ Examples:
 
 > “Public price discovery is forcing private valuations to become security-specific again.”
 
-Ideal length: 2–5 short paragraphs.
+## 2. How it was reached
+
+Which facts **in today's report** were joined, and what made them connect.
+
+Name the move. For example:
+
+- "two unrelated lines are the same fact seen from different sides";
+- "the second-order effect is in a different asset class from the first";
+- "the market has priced the event and not its precedent".
+
+## 3. The transferable frame
+
+The question to ask next time this shape appears.
+
+This is the part that makes the section teaching rather than commentary. It must be a question she
+could carry to tomorrow's news with this report closed.
+
+## 4. What would falsify it
+
+An insight she cannot test is entertainment.
+
+Name the observation that would break it.
+
+---
+
+## §2.1 binds the reasoning, not only the numbers
+
+The facts joined must be facts that **appeared in today's report**. The section must be able to say
+“today's material does not support a synthesis worth writing” rather than manufacture a pattern out
+of a thin news day — a forced daily insight becomes horoscope writing, which on this page would be a
+joke at her expense.
+
+This is **enforced in code, not merely requested**: `src/worker/boss/today/briefing.ts` checks that
+every fact the insight cites appears elsewhere in the same report, and an insight that fails is
+WITHHELD with its reason shown to her. `scripts/validate/an-insight-rests-on-the-day.mjs` is the
+guard. So the delivered insight must carry its citations:
+
+    cites: [{ fact: "...", from: "<section key of today's report>" }]
+
+Ideal length: 2–5 short paragraphs across the four parts.
 
 ---
 

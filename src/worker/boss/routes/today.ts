@@ -33,6 +33,7 @@ import {
 import { TERMINAL_CHECKS } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
+import { BRIEFING_SECTIONS, orderSections, missingSections, groundInsight } from "../today/briefing";
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
 import { weeklyPacket, packetIsDue } from "../today/packet";
@@ -1163,7 +1164,38 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
                   ? shown.summary.trim().split(/(?<=[.!?])\s+/)[0]!.slice(0, 160)
                   : null),
               summary: shown.summary,
-              sections: parseJson(shown.sections, []),
+              /*
+               * ─── §5's ELEVEN SECTIONS, IN §5's ORDER, AND THE ABSENT ONES NAMED ──
+               *
+               * "the executive breifing section is missing some sections ... like major news (top 5
+               * headlines) a one min summary section, markets dashboard a tech section a cpaital
+               * markets secondary ipo m&A section....."
+               *
+               * Every one of those is already required by the spec the duty is handed. The old
+               * `slice(0, 4)` here threw away research she paid for, and the run was only filing
+               * three thematic essays anyway because 0205's prompt told it to ignore §5's
+               * structure. The producer is fixed in migration 0223; this end orders what arrives
+               * and, crucially, SAYS WHAT IS NOT HERE.
+               *
+               * `status: "partial"` now means something she can see. A section that is absent —
+               * because §2.1 forbids inventing the data that would have filled it — is absent WITH
+               * A REASON, which is the difference between an honest short report and one that
+               * looks complete because it never mentioned what it could not get.
+               */
+              sections: orderSections(parseJson(shown.sections, [])),
+              spec_sections: BRIEFING_SECTIONS,
+              missing_sections: missingSections(parseJson(shown.sections, []), parseJson(shown.gaps, [])),
+              /*
+               * THE INSIGHT IS CHECKED BEFORE IT IS SHOWN. Numbers are obviously fabricable and
+               * everyone watches them; reasoning is fabricable in a way that reads like insight. An
+               * insight whose facts are not in today's report is withheld with its reason, rather
+               * than printed with a hedge, on the page she reads before she trades.
+               */
+              insight: groundInsight({
+                headline: shown.headline,
+                summary: shown.summary,
+                sections: parseJson(shown.sections, []),
+              }),
               gaps: parseJson(shown.gaps, []),
               corrections: parseJson(shown.corrections, []),
               sources: parseJson(shown.sources, []),
