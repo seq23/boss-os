@@ -235,6 +235,75 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-left: 2px solid var(--gold);
 }
 
+/* ─── The Body contract: four kinds, told apart ──────────────────────────────
+ *
+ *   "i need to make sure i can delineate between movment and etc..."
+ *
+ * Movement, intake, medicine and the stop condition were one undifferentiated run at one weight.
+ * Each kind now gets a rail in its own colour and a quiet mono label, which is the same grammar the
+ * lane rail down the left of the shell already uses — a colour you learn once and then read without
+ * reading. The colours are the tokens that already mean those things here: gold is the working
+ * lane, blush is the soft one, rose is the body, `--reject` is the only colour in this file that
+ * means stop.
+ *
+ * NO ORNAMENT BEYOND THAT. This is the first thing she reads in the morning and the brief is calm
+ * and uncluttered — no cards, no counts, no completion state, nothing to feel behind on.
+ */
+.bodycontract { margin: 0 0 4px; }
+
+.bodygroup {
+  border-left: 2px solid var(--line);
+  padding: 2px 0 2px 14px;
+  margin: 0 0 14px;
+}
+
+.bodygroup-movement { border-left-color: var(--gold); }
+.bodygroup-intake { border-left-color: var(--blush-deep); }
+.bodygroup-medical { border-left-color: var(--rose); }
+.bodygroup-stop { border-left-color: var(--reject); }
+
+.bodygroup-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.bodygroup-floor { font-size: 15px; color: var(--ink); margin: 0 0 6px; }
+.bodygroup-note { font-size: 13px; color: var(--muted); margin: 6px 0; }
+.bodygroup-firm { font-size: 15px; font-weight: 600; color: var(--ink); margin: 0; }
+.bodygroup-fine { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+
+/* The stop condition is the one line here that is allowed to be louder than the instructions. */
+.bodygroup-stopline { font-size: 15px; color: var(--ink); margin: 0; }
+
+.bodyseq { margin: 0; padding-left: 18px; }
+.bodyseq li { margin-bottom: 2px; }
+
+.bodylanes { list-style: none; margin: 4px 0 0; padding: 0; }
+.bodylanes li { margin-bottom: 6px; }
+.bodylane-move { display: block; font-size: 15px; color: var(--ink); }
+.bodylane-why { display: block; font-size: 13px; color: var(--muted); }
+
+/* Label and value on one row, so water and food read as targets rather than as steps. */
+.bodyfacts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0;
+}
+.bodyfacts dt {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 3px;
+}
+.bodyfacts dd { margin: 0; font-size: 15px; color: var(--ink); }
+
 /* ─── Docket: the signature card ─────────────────────────────────────────── */
 
 .docket {

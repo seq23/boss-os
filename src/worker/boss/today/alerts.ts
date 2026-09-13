@@ -88,3 +88,24 @@ export async function applyDismissals(
 
   return { shown, dismissed };
 }
+
+/**
+ * TWO ALERTS THAT SAY THE SAME WORDS ARE ONE ALERT, WHOEVER PRODUCED THEM.
+ *
+ * She read eleven alerts of which five were the identical string `queue: task_failed`. The
+ * grouping in `today/errorAlerts.ts` is what fixed that cause; this is the guarantee that no
+ * FUTURE producer can reintroduce the shape. A repeated sentence carries no information the first
+ * one did not — the second copy's only effect is to push a different alert off the screen.
+ *
+ * The LOUDEST copy survives, and it keeps its own `source_id`, so collapsing can never quieten an
+ * alert or detach it from the thing it is about.
+ */
+export function dedupeAlerts(alerts: Alert[]): Alert[] {
+  const byText = new Map<string, Alert>();
+  for (const a of alerts) {
+    const seen = byText.get(a.text);
+    if (!seen || (RANK[a.severity] ?? 0) > (RANK[seen.severity] ?? 0)) byText.set(a.text, a);
+  }
+  // Insertion order is the order producers ran in, which is the priority this surface is built on.
+  return alerts.filter((a) => byText.get(a.text) === a);
+}

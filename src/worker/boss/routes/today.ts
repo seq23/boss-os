@@ -23,7 +23,13 @@ import { bookNagAlerts } from "../capital/bookNag";
 import { unansweredQuestionAlerts } from "../intake/questions";
 import { credentialAlerts } from "../today/credentials";
 import { diary } from "../today/diary";
-import { alertKey, applyDismissals } from "../today/alerts";
+import { alertKey, applyDismissals, dedupeAlerts } from "../today/alerts";
+import {
+  groupErrorEvents,
+  errorAlertText,
+  failedTaskAlertText,
+  type ErrorEventRow,
+} from "../today/errorAlerts";
 import { TERMINAL_CHECKS } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic } from "../today/body";
 import { buildPillars } from "../today/pillars";
@@ -496,8 +502,19 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     db.prepare(`SELECT id, started_at, finished_at, status FROM cron_runs ORDER BY started_at DESC LIMIT 1`)
       .first<{ id: string; started_at: number; finished_at: number | null; status: string }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`).first<{ n: number }>(),
-    db.prepare(`SELECT id, ts, scope, event FROM system_events WHERE level = 'error' AND ts >= ? ORDER BY ts DESC LIMIT 5`)
-      .bind(now - DAY_MS).all<{ id: string; ts: number; scope: string; event: string }>(),
+    /*
+     * `detail` IS SELECTED BECAUSE IT IS THE ONLY COLUMN THAT SAYS WHAT HAPPENED, and for five
+     * renders it was left unread while `scope` and `event` were printed at her as prose.
+     *
+     * The limit is 200 rather than 5 because these rows are GROUPED now: a limit of five over an
+     * unknown number produced a count that was neither complete nor a sample, and "5 times" has to
+     * be the truth about the day or it is worse than no number. One day of error rows is small —
+     * production held five — and the cap only exists so a storm cannot cost the whole render.
+     */
+    db.prepare(
+      `SELECT id, ts, scope, event, detail FROM system_events
+        WHERE level = 'error' AND ts >= ? ORDER BY ts DESC LIMIT 200`,
+    ).bind(now - DAY_MS).all<ErrorEventRow>(),
     db.prepare(`SELECT live_enabled, kill_switch, max_open_positions FROM trading_authority LIMIT 1`)
       .first<{ live_enabled: number; kill_switch: number; max_open_positions: number }>(),
     db.prepare(`SELECT COUNT(*) AS n FROM trading_positions WHERE qty <> 0 AND closed_at IS NULL`)
@@ -928,8 +945,25 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     });
   }
 
+  /*
+   * ── FAILURES, AS ONE FACT PER CAUSE ───────────────────────────────────────
+   *
+   * She opened this screen and found ELEVEN alerts, FIVE of them the literal text
+   * `queue: task_failed` — a key pair printed as a sentence, five times, with the actual cause
+   * unread in the `detail` column beside it, and duplicating the failed-task count two lines up.
+   *
+   * `today/errorAlerts.ts` carries the whole rule and the evidence behind it. Here there are two
+   * calls and one guarantee: the failed-task count and the failed-task reason are ONE alert.
+   */
+  const errorGroups = groupErrorEvents(errorEvents.results ?? []);
+  const failedTaskGroup = errorGroups.find((g) => g.scope === "queue" && g.event === "task_failed") ?? null;
+
   if ((tasksAll.failed ?? 0) > 0) {
-    alerts.push({ severity: "medium", text: `${tasksAll.failed} task${tasksAll.failed === 1 ? "" : "s"} failed and have not been requeued or cancelled.`, source_type: "tasks", source_id: null });
+    alerts.push({
+      severity: "medium",
+      text: failedTaskAlertText(tasksAll.failed ?? 0, failedTaskGroup),
+      source_type: "tasks", source_id: null,
+    });
   }
   if (lastCron && lastCron.status !== "complete" && lastCron.status !== "running") {
     alerts.push({ severity: "high", text: `The last nightly run finished ${lastCron.status}.`, source_type: "tasks", source_id: lastCron.id });
@@ -944,8 +978,14 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       source_type: "approvals", source_id: null,
     });
   }
-  for (const ev of errorEvents.results ?? []) {
-    alerts.push({ severity: "medium", text: `${ev.scope}: ${ev.event}`, source_type: "tasks", source_id: ev.id });
+  for (const g of errorGroups) {
+    // Already spoken, inside the count it belongs to. Never both.
+    if (g === failedTaskGroup && (tasksAll.failed ?? 0) > 0) continue;
+    alerts.push({
+      severity: "medium",
+      text: errorAlertText(g),
+      source_type: "tasks", source_id: g.newest_id,
+    });
   }
 
   /*
@@ -957,8 +997,14 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * put it aside comes back anyway — deciding not to look at a medium is not deciding not to look at
    * the critical it turns into.
    */
-  const { shown: shownAlerts, dismissed: dismissedAlerts } = await applyDismissals(env, alerts, now).catch(() => ({
-    shown: alerts,
+  /*
+   * Collapsed BEFORE dismissals, so a dismissal applies to the one alert she actually sees rather
+   * than to one of several identical copies of it.
+   */
+  const distinctAlerts = dedupeAlerts(alerts);
+
+  const { shown: shownAlerts, dismissed: dismissedAlerts } = await applyDismissals(env, distinctAlerts, now).catch(() => ({
+    shown: distinctAlerts,
     dismissed: [] as { key: string; text: string; reason: string; until: number }[],
   }));
   {
