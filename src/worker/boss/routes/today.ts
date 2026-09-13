@@ -1065,7 +1065,20 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     alerts.push({
       severity: "medium",
       text: errorAlertText(g),
-      source_type: "tasks", source_id: g.newest_id,
+      /*
+       * THE IDENTITY IS THE CAUSE, NOT THE ROW.
+       *
+       * This carried `g.newest_id` — an `evt_…` primary key, unique per occurrence — and
+       * `alertKey()` builds a dismissal key out of `source_type:source_id`. So a dismissal was dead
+       * on arrival by construction: the same condition recurring writes a new event with a new id,
+       * and the next render sails straight past the snooze she set. She dismisses it, it comes
+       * back tomorrow, and the button looks broken because for this class of alert it was.
+       *
+       * The grouping already established what this alert is ABOUT — one `scope`+`event` cause — so
+       * that is its identity. Prefixed `evtclass:` rather than `evt_` so it can never be mistaken
+       * for a row id by anything that looks one up.
+       */
+      source_type: "tasks", source_id: `evtclass:${g.scope}:${g.event}`,
     });
   }
 
@@ -2058,6 +2071,61 @@ today.post("/alerts/refresh", async (c) => {
 today.post("/alerts/resolve", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const id = String(b?.deliverable_id ?? "").trim();
+
+  /*
+   * ── EVERY ALERT CAN BE RE-TESTED, NOT JUST AN OWNED DELIVERABLE ───────────
+   *
+   *   "and the dimiss and mark resolved buttons dont work"
+   *
+   * "Mark resolved" was gated on `source_id?.startsWith("del_")`. Of the alerts actually on her
+   * screen, NONE had a `del_` source id — so the button she was complaining about was not on the
+   * page at all. A control that exists in the source and never on the screen is this repository's
+   * most-repeated defect wearing a button.
+   *
+   * THE GENERAL RE-TEST IS RECOMPUTING. Every alert on Today is DERIVED ON READ from the records,
+   * so "is this still true" has one honest answer for all of them: build the surface again and see
+   * whether this alert is still raised. That needs no per-source registry to fall out of step with
+   * the producers — a new alert type is re-testable the day it is written, which a registry could
+   * never promise.
+   *
+   * THE DELIVERABLE PATH IS UNTOUCHED AND STILL WINS. `TERMINAL_CHECKS` does something recomputing
+   * cannot: it refuses her assertion when the records disagree, and says so. That is the design
+   * that stops an employee, a job — or she herself — closing work that is not finished, and it
+   * stays exactly as it was.
+   */
+  if (!id.startsWith("del_")) {
+    const key = String(b?.key ?? "").trim();
+    if (!key) throw badRequest("An alert must name itself to be re-tested", "Pass the alert key the screen was given.");
+
+    const day = await ensureDay(c.env.DB, dayId(Date.now()));
+    const blocks = await assembleDayFlow(c.env, day);
+    const alertsBlock = blocks.find((x) => x.key === "critical_alerts");
+    const content = (alertsBlock?.content ?? {}) as { alerts?: { text: string }[]; keys?: string[] };
+    const at = (content.keys ?? []).indexOf(key);
+
+    await audit(c.env.DB, {
+      actor: "boss", lane: "ops", entityType: "today", entityId: dayId(Date.now()),
+      action: "alert_rechecked", detail: { key, still_raised: at !== -1 },
+    });
+
+    if (at === -1) {
+      return ok(c, {
+        closed: true,
+        verdict: "Re-checked against the records: that condition is no longer true, so the alert is gone.",
+      });
+    }
+    return ok(c, {
+      closed: false,
+      /*
+       * SHOWN VERBATIM, INCLUDING THE PART THAT DISAGREES WITH HER. The alert text is recomputed,
+       * so a condition that has changed shape says the new thing rather than the one she pressed.
+       */
+      verdict:
+        `Still true — re-checked just now and the records say: ${content.alerts?.[at]?.text ?? "the alert stands."} ` +
+        "Nothing here is closed by saying so. If you want it off the screen without it being fixed, dismiss it with a reason.",
+    });
+  }
+
   const row = await c.env.DB
     .prepare(`SELECT id, name, terminal_check, state FROM owned_deliverables WHERE id = ?`)
     .bind(id)

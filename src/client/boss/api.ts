@@ -166,8 +166,17 @@ export const api = {
    * done is the same claim TERMINAL_CHECKS exists to refuse, wearing different clothes.
    */
   refreshAlerts: () => call<any>("/today/alerts/refresh", post("")),
-  resolveAlert: (deliverableId: string) =>
-    call<{ closed: boolean; verdict: string }>("/today/alerts/resolve", post("", { deliverable_id: deliverableId })),
+  /*
+   * BOTH ARGUMENTS TRAVEL. An owned deliverable is re-verified by its own terminal check; every
+   * other alert is re-tested by recomputing the surface and looking for its key. The screen passes
+   * whichever it has, so no alert is left without a way to be asked again — which is what "Mark
+   * resolved" rendering on none of her alerts actually meant.
+   */
+  resolveAlert: (args: { deliverableId?: string | null; key?: string | null }) =>
+    call<{ closed: boolean; verdict: string }>("/today/alerts/resolve", post("", {
+      deliverable_id: args.deliverableId ?? "",
+      key: args.key ?? "",
+    })),
   dismissAlert: (body: Record<string, unknown>) => call<any>("/today/alerts/dismiss", post("", body)),
 
   diary: () => call<any>("/diary"),

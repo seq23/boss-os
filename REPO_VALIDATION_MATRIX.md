@@ -53,6 +53,8 @@ credentials except `validate:value-shapes`, noted below.
 
 | `npm run validate:roster-health` | every active employee is on the roster with no LIMIT, and the health dot is a falsifiable verdict — failed or overdue is red, never-run and no-duty are amber not green, a Mon/Wed/Fri duty on a Sunday is green, each with its reason, told apart by shape as well as colour. 14-fixture self-test. Rule 0: an empty roster or one colour for everyone hard-fails | that an employee is doing GOOD work, only that their duties ran when their own schedule said |
 
+| `npm run validate:alert-answerable` | one alert key per CAUSE rather than per event row, "Mark resolved" rendered for every alert with the `TERMINAL_CHECKS` refusal path intact, and the dismiss reason box scrolled into view, focused, and explaining its disabled state. 13-fixture self-test. Rule 0: nothing keyed or no action markup hard-fails | that a dismissal *should* have been made, only that pressing the button does what it looks like it does |
+
 ## Phase proof mapping (approved plan §12.2)
 
 P0 structural checks · P1 typecheck/build, auth E2E, migration, backup-restore · P2 identity

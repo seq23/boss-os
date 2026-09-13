@@ -75,3 +75,13 @@ violations) on breach and proves its own detection with a self-test fixture run.
   AMBER rather than green, every state carries a sentence, "overdue" is `dutyStaleness` and not a
   second copy, and the three states differ by shape as well as colour. **Rule 0: an empty roster, or
   one colour for every employee, hard-fails.** 14-fixture self-test.
+
+- `every-alert-can-be-answered.mjs` (`npm run validate:alert-answerable`) — both endpoints worked;
+  the interaction did not. Checks the shipped `alertKey` keeps ONE key across occurrences of the
+  same cause (the error alerts carried `evt_…` row ids, so a dismissal was dead on arrival by
+  construction) while keeping two causes apart; that "Mark resolved" is rendered for every alert —
+  it was gated on a `del_` source id that none of her alerts had, so the button was not on the page;
+  that the server can re-test any alert by recomputing the surface while the `TERMINAL_CHECKS` path
+  for an owned deliverable stays intact; and that the dismiss reason box scrolls into view, takes
+  focus, and says what it is waiting for while still requiring a reason. **Rule 0: nothing keyed, or
+  no alert-action markup, hard-fails.** 13-fixture self-test.

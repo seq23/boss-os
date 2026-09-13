@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Coaching } from "./Coaching";
 import { BodyContractView } from "./BodyContract";
@@ -1121,6 +1121,29 @@ function Alerts({ content, onChanged, onError }: {
   const [verdict, setVerdict] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const dismissBox = useRef<HTMLDivElement | null>(null);
+  const reasonBox = useRef<HTMLTextAreaElement | null>(null);
+
+  /*
+   * ── THE SECOND STEP HAS TO BE WHERE HER EYES ARE ──────────────────────────
+   *
+   *   "and the dimiss and mark resolved buttons dont work"
+   *
+   * The dismiss endpoint worked the whole time — 201, a row in `alert_dismissals`, the alert gone
+   * on the next read. What did not work was the INTERACTION. Pressing "Dismiss" replaces the button
+   * with a reason box whose "Put it aside" / "Cancel" pair renders BELOW THE FOLD, behind the fixed
+   * bottom nav. From her seat: she presses Dismiss, the button she pressed vanishes, and nothing is
+   * dismissed. That is precisely "doesn't work", and no amount of endpoint testing would find it.
+   *
+   * So the box scrolls itself into view and takes the cursor. `block: "nearest"` rather than
+   * "center" because the row is usually almost visible already and yanking the page is its own kind
+   * of broken.
+   */
+  useEffect(() => {
+    if (dismissing === null) return;
+    dismissBox.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    reasonBox.current?.focus();
+  }, [dismissing]);
   const alerts: any[] = content.alerts ?? [];
   const keys: string[] = content.keys ?? [];
 
@@ -1141,18 +1164,27 @@ function Alerts({ content, onChanged, onError }: {
           <div className="row-main">
             <div className="row-title">{a.text}</div>
             {dismissing === i ? (
-              <div className="judgement-note">
+              <div className="judgement-note" ref={dismissBox}>
                 <label className="stat-l" htmlFor={`why-dismiss-${i}`}>
                   Why are you putting this aside? It comes back in a week, or sooner if it gets worse.
                 </label>
                 <textarea
                   id={`why-dismiss-${i}`}
+                  ref={reasonBox}
                   className="judgement-why"
                   rows={2}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                 />
                 <div className="decide">
+                  {/*
+                    * THE DISABLED STATE SAYS WHY IT IS DISABLED.
+                    *
+                    * It sat grey and silent until three characters were typed, so on a screen she
+                    * had to scroll to find, the one control there looked dead on arrival. The
+                    * required reason is a good rule and it stays; what changes is that the button
+                    * asks for the thing it is waiting for.
+                    */}
                   <button
                     className="btn btn-reject"
                     disabled={busy || reason.trim().length < 3}
@@ -1161,27 +1193,36 @@ function Alerts({ content, onChanged, onError }: {
                       setReason(""); setDismissing(null); onChanged();
                     })}
                   >
-                    Put it aside
+                    {reason.trim().length < 3 ? "Say why first" : "Put it aside"}
                   </button>
                   <button className="btn btn-defer" disabled={busy} onClick={() => setDismissing(null)}>Cancel</button>
                 </div>
               </div>
             ) : (
               <div className="decide">
-                {/* Only an owned deliverable can be verified, so only those offer it. */}
-                {a.source_type === "tasks" && a.source_id?.startsWith("del_") && (
-                  <button
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => run(async () => {
-                      const r = await api.resolveAlert(a.source_id);
-                      setVerdict(r.verdict);
-                      if (r.closed) onChanged();
-                    })}
-                  >
-                    Mark resolved
-                  </button>
-                )}
+                {/*
+                  * EVERY ALERT OFFERS IT, WHICH IS THE FIX.
+                  *
+                  * This was gated on `a.source_id?.startsWith("del_")` and NONE of the alerts on
+                  * her screen had a `del_` source id — so "the mark resolved button dont work" was
+                  * literally true: the button was not on the page. An owned deliverable still goes
+                  * through its own terminal check, which can refuse her; everything else is
+                  * re-tested by recomputing the surface and seeing whether the condition holds.
+                  */}
+                <button
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => run(async () => {
+                    const r = await api.resolveAlert({
+                      deliverableId: a.source_type === "tasks" && a.source_id?.startsWith("del_") ? a.source_id : null,
+                      key: keys[i],
+                    });
+                    setVerdict(r.verdict);
+                    if (r.closed) onChanged();
+                  })}
+                >
+                  Mark resolved
+                </button>
                 <button className="btn btn-defer" disabled={busy} onClick={() => { setDismissing(i); setReason(""); }}>
                   Dismiss
                 </button>
