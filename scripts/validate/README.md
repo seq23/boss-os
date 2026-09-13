@@ -85,3 +85,25 @@ violations) on breach and proves its own detection with a self-test fixture run.
   for an owned deliverable stays intact; and that the dismiss reason box scrolls into view, takes
   focus, and says what it is waiting for while still requiring a reason. **Rule 0: nothing keyed, or
   no alert-action markup, hard-fails.** 13-fixture self-test.
+
+- `a-ceiling-says-what-kind-of-ceiling-it-is.mjs` (`npm run validate:ceiling-kind`) — three backends
+  showed a ceiling of $0.00 meaning free, unauthorised and off; the shipped `spendSentence` must give
+  the three DIFFERENT sentences. Runs `derivePlan` over four plan fixtures: the employee ceiling is
+  capacity minus reserve, a 0% reserve means literally "whatever my plan allows", 100% leaves zero
+  rather than going negative, upgrading the tier moves the ceiling with no row edited, and the
+  derived daily pace × 31 never exceeds the month (0222's $2/day-under-$50/month defect). Also that
+  both registry loaders route through `applyPlanCeiling`, that the cost basis reaches the screen so
+  subscription usage stops reading as a bill, and that the lever and the cost mode are both CONTROLS
+  on Systems and still two separate things. **Rule 0: zero spend kinds or zero plan fixtures
+  hard-fails.** 12-fixture self-test.
+
+- `a-live-playbook-leads-with-its-steps.mjs` (`npm run validate:live-playbook`) — `fpb_vault_stale`
+  was ACTIVE and correct, and the screen reported it uselessly: third in a list, styled like the
+  panels that were fine, with its steps parsed and never rendered. Runs the shipped `vaultIsStale`
+  over four fixtures (a snapshot inside last night's window, a night missed, the seven-day
+  production case, a vault never snapshotted) and requires ONE rule asked of `snapshotWindowOpensAt`
+  and used by both `routes/governance.ts` and `governance/sentinel.ts`, with no hardcoded two-day
+  span left in either. Plus the screen: the live playbook leads with its steps and the reason it
+  fired, the section opens with a verdict, and decision rights render `label`/`rationale` rather
+  than `dr_capability_patch`. **Rule 0: zero staleness fixtures, or no Governance component,
+  hard-fails.** 12-fixture self-test.

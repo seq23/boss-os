@@ -20,6 +20,7 @@ import { BackendRegistry, Launch, Watch } from "./Backends";
  */
 type SectionId =
   | "launch" | "watch" | "backends"
+  | "costs"
   | "airlock" | "router" | "intake" | "governance" | "knowledge" | "prompt"
   | "quant" | "bridge" | "capability" | "runtimes" | "sync" | "publishing";
 
@@ -33,6 +34,13 @@ const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "launch", label: "Launch" },
   { id: "watch", label: "Watch" },
   { id: "backends", label: "Backends" },
+  /*
+   * COSTS SITS WITH THE ACTION SECTIONS because it is a place she DECIDES in, not one she
+   * inspects. Her words: "i see nothing in systems about controlling costs and setting monthly
+   * budgets that all got sent to the backends tab?" — cost control had scattered into a tab about
+   * something else, so the lever she was given had effectively vanished.
+   */
+  { id: "costs", label: "Costs" },
   /*
    * PUBLISHING SITS WITH THE ACTION SECTIONS, not with the machinery, because it is the only place
    * in Boss OS that can tell her the publishing block has lifted — and that is a thing she does,
@@ -76,6 +84,7 @@ export function Systems() {
       {section === "launch" && <Launch />}
       {section === "watch" && <Watch />}
       {section === "backends" && <BackendRegistry />}
+      {section === "costs" && <Costs />}
       {section === "publishing" && <Publishing />}
       {section === "airlock" && <Airlock />}
       {section === "router" && <Router />}
@@ -191,27 +200,239 @@ function Intake() {
   );
 }
 
+/* ─── Costs & budgets ─────────────────────────────────────────────────────── */
+
+const money = (micros: number) => `$${((micros ?? 0) / 1e6).toFixed(2)}`;
+
+/**
+ * ONE SCREEN THAT ANSWERS "WHAT CAN THIS THING SPEND".
+ *
+ * ─── Her words ─────────────────────────────────────────────────────────────
+ *
+ *   "i see nothing in systems about controlling costs and setting monthly budgets that all got
+ *    sent to the backends tab? so claude cieling is $50? i want claude ceiling to be whatever my
+ *    plan allows ... arent we on medium level of costs? what happened to the lever?"
+ *
+ * THE LEVER WAS NEVER MISSING, IT WAS INVISIBLE. She is on MODERATE at $25/month with cost_mode
+ * NORMAL — exactly the "medium" she remembers. Both lived in Settings and neither appeared here,
+ * so from her seat the control she was given had disappeared. It is a CONTROL on this screen, not
+ * a readout.
+ *
+ * THE LEVER AND THE COST MODE STAY TWO THINGS, one sentence each saying what they govern.
+ * `router/spend.ts` is explicit that "how good a model" and "how much money" are different
+ * decisions; merging them into one list would be inventing the fourth budget concept this system
+ * has spent three migrations avoiding.
+ */
+function Costs() {
+  const costs = usePanel(() => api.costs());
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const d: any = costs.data;
+
+  const change = async (fn: () => Promise<any>, said: string) => {
+    setBusy(true);
+    setNote(null);
+    try { await fn(); setNote(said); costs.reload(); }
+    catch (e: any) { costs.setError(e); }
+    finally { setBusy(false); }
+  };
+
+  if (costs.error) return <ErrorNotice error={costs.error} onDismiss={costs.reload} />;
+  if (!d) return <Loading />;
+
+  return (
+    <>
+      {note && <div className="notice" style={{ borderColor: "var(--gold)" }}>{note}</div>}
+
+      {/* ── The lever, as a control ───────────────────────────────────────── */}
+      <div className="panel">
+        <p className="pillar">Spend lever — {d.lever.position}</p>
+        <div className="row-sub">{d.lever.governs}</div>
+        <div className="seg" role="group" aria-label="Spend lever">
+          {(d.lever.positions ?? []).map((p: string) => (
+            <button
+              key={p}
+              className="seg-btn"
+              aria-selected={d.lever.position === p}
+              disabled={busy}
+              onClick={() => change(() => api.setSpendLever({ position: p }), `Lever moved to ${p}.`)}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+        <div className="row-sub">MODERATE&rsquo;s allowance is {money(d.lever.moderate_micros)} a month.</div>
+      </div>
+
+      {/* ── The cost mode, which is a different question ──────────────────── */}
+      <div className="panel">
+        <p className="pillar">Cost mode — {d.cost_mode.value}</p>
+        <div className="row-sub">{d.cost_mode.governs}</div>
+        <div className="seg" role="group" aria-label="Cost mode">
+          {(d.cost_mode.modes ?? []).map((m: string) => (
+            <button
+              key={m}
+              className="seg-btn"
+              aria-selected={d.cost_mode.value === m}
+              disabled={busy}
+              onClick={() => change(() => api.setSetting("cost_mode", m), `Cost mode set to ${m}.`)}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── The plan, and the reserve that is the real control ────────────── */}
+      <div className="panel">
+        <p className="pillar">Your plan — {text(d.plan.tierLabel)}</p>
+        <div className="row-sub">{d.plan.governs}</div>
+        {/*
+          * RESERVE, NOT CAP. "i want claude ceiling to be whatever my plan allows" and, from 0195,
+          * the real worry: "a week where she cannot use Claude Code for her own work because her
+          * staff spent it." A reserve honours both — zero it and the ceiling is literally the whole
+          * plan; the 25% default protects the week she was afraid of losing.
+          */}
+        <dl className="kv">
+          <dt>Plan capacity</dt><dd>{money(d.plan.capacityMicros)} a month</dd>
+          <dt>Kept for you</dt><dd>{d.plan.reservePct}% — {money(d.plan.reserveMicros)}</dd>
+          <dt>Employees may draw</dt><dd>{money(d.plan.employeeCeilingMicros)}, which is {money(d.plan.dailyMicros)} a day</dd>
+        </dl>
+        {/* NOT A BILL. The figure beside this has been read as an invoice for a week. */}
+        <div className="row-sub">{d.plan.basis_note}</div>
+        <div className="seg" role="group" aria-label="Reserve">
+          {[0, 10, 25, 50].map((pct) => (
+            <button
+              key={pct}
+              className="seg-btn"
+              aria-selected={d.plan.reservePct === pct}
+              disabled={busy}
+              onClick={() => change(() => api.setPlan({ reserve_pct: pct }), `Reserve set to ${pct}%.`)}
+            >
+              {pct === 0 ? "Keep nothing" : `${pct}%`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── A ceiling per thing, which is what she asked for ──────────────── */}
+      <Panel title="Ceiling for each backend" hint="No backends are registered." state={costs}>
+        {(d.backends ?? []).map((b: any) => (
+          <Row
+            key={b.id}
+            title={`${text(b.display_name)}${b.ceiling_source === "plan" ? " — follows your plan" : ""}`}
+            /* THE WORD, NOT THE NUMBER. Three $0.00 rows meant free, unauthorised and off. */
+            sub={text(b.sentence)}
+            val={b.spend_kind === "capped" && b.ceiling_micros > 0 ? `${money(b.spent_micros)} of ${money(b.ceiling_micros)}` : b.spend_kind.toUpperCase()}
+          />
+        ))}
+      </Panel>
+
+      <Panel title="The ops lane" hint="No lane budget is set." state={costs}>
+        <Row title="This month" sub="The outer authority. Nothing may spend past it, whatever a backend's own ceiling says." val={`${money(d.lane.month_spent_micros)} of ${money(d.lane.month_limit_micros)}`} />
+        {/*
+          * THE DAY IS A PACE, NOT A SECOND AUTHORITY, and any drift from the derived figure is
+          * shown rather than left latent — 0222 found a $2/day cap sitting under a $50/month
+          * ceiling, two limits that could not both be honoured.
+          */}
+        <Row
+          title="Today"
+          sub={d.lane.day_agrees
+            ? "Derived from the month, so the two can never disagree."
+            : `Stored as ${money(d.lane.day_limit_micros)} but the month divides to ${money(d.lane.day_derived_micros)} — these disagree and the month wins.`}
+          val={`${money(d.lane.day_spent_micros)} of ${money(d.lane.day_limit_micros)}`}
+        />
+      </Panel>
+    </>
+  );
+}
+
 /* ─── Governance ──────────────────────────────────────────────────────────── */
 
+/**
+ * GOVERNANCE, WITH A VERDICT AT THE TOP AND THE LIVE PLAYBOOK LEADING.
+ *
+ * ─── Her words ─────────────────────────────────────────────────────────────
+ *
+ *   "the governence section on systems needs work. some thing about playbook broken or stale"
+ *
+ * `fpb_vault_stale` was ACTIVE, and it was RIGHT — the newest complete snapshot in production was
+ * seven days old. The screen was reporting a real finding uselessly:
+ *
+ *   · It sat THIRD, in a list styled identically to the two panels that were fine, with the word
+ *     ACTIVE in the value column and no indication that anything wanted her.
+ *   · Its STEPS were loaded and never rendered. `failure_playbooks.steps` is JSON and the endpoint
+ *     parses it; a playbook is exactly its steps, and without them it is a label saying something
+ *     is wrong.
+ *   · Three panels of raw rows and no sentence anywhere saying what was currently true.
+ *   · Decision rights rendered `action_class` — she was reading `dr_capability_patch` — while
+ *     every row already carries a `label` and a `rationale` that nothing used.
+ *
+ * A LIVE PLAYBOOK IS THE ONLY THING ON THIS SCREEN THAT ASKS FOR ANYTHING. It leads, in the state
+ * colour, with its steps open. The rest is machinery you inspect.
+ */
 function Governance() {
   const flags = usePanel(() => api.complianceFlags());
   const rights = usePanel(() => api.decisionRights());
   const plays = usePanel(() => api.playbooks());
+
+  const books = asList(plays.data?.playbooks ?? plays.data);
+  const live = books.filter((p: any) => p.applies_now ?? p.active);
+  const quiet = books.filter((p: any) => !(p.applies_now ?? p.active));
+  const openFlags = asList(flags.data);
+
   return (
     <>
+      {/*
+        * THE ONE LINE AT THE TOP: what is true right now, and what it wants from her. Three panels
+        * of rows with no verdict is a database view, and she has to read all of it to find out
+        * whether anything is wrong.
+        */}
+      {!plays.error && plays.data !== null && plays.data !== undefined && (
+        <div className={live.length ? "notice notice-error" : "row-sub"}>
+          {live.length
+            ? `${live.length} playbook${live.length === 1 ? "" : "s"} applies right now — ${live.map((p: any) => text(p.title ?? p.key)).join("; ")}. Its steps are below.`
+            : `Nothing is currently wrong: no playbook's condition is true${openFlags.length ? `, and the sentinel's ${openFlags.length} open flag${openFlags.length === 1 ? "" : "s"} ${openFlags.length === 1 ? "is" : "are"} listed below` : " and the sentinel has raised nothing"}.`}
+        </div>
+      )}
+
+      {live.map((p: any) => (
+        <div className="panel" key={p.id ?? p.key}>
+          <p className="pillar">{text(p.title ?? p.key)}</p>
+          <div className="row-sub">Why it fired: {text(p.condition_text ?? p.condition, "no condition recorded")}</div>
+          {/* THE STEPS, WHICH ARE THE PLAYBOOK. They were parsed by the endpoint and never shown. */}
+          <ol className="brief-list">
+            {(Array.isArray(p.steps) ? p.steps : []).map((step: any, i: number) => (
+              <li key={i}>{typeof step === "string" ? step : text(step?.step ?? step?.text ?? JSON.stringify(step))}</li>
+            ))}
+          </ol>
+          <div className="row-sub">Owner: {text(p.owner, "boss")}</div>
+        </div>
+      ))}
+
       <Panel title="Compliance sentinel" hint="The sentinel has raised nothing. Run it from Settings to check now." state={flags}>
-        {asList(flags.data).map((f: any) => (
+        {openFlags.map((f: any) => (
           <Row key={f.id} title={text(f.title ?? f.watch_item)} sub={text(f.detail ?? f.reason, "")} val={text(f.severity ?? f.status)} />
         ))}
       </Panel>
       <Panel title="Decision rights" hint="No decision classes are declared." state={rights}>
+        {/*
+          * HER WORDS, NOT THE DATABASE'S. Each row carries a `label` and a `rationale`; the screen
+          * was rendering `action_class`, so she read `dr_capability_patch` where the row itself
+          * says what it is and why.
+          */}
         {asList(rights.data).map((r: any) => (
-          <Row key={r.id ?? r.action_class} title={text(r.action_class ?? r.id)} sub={text(r.rule ?? r.who, "")} val={text(r.decider ?? r.authority)} />
+          <Row
+            key={r.id ?? r.action_class}
+            title={text(r.label ?? r.action_class ?? r.id)}
+            sub={text(r.rationale ?? r.rule ?? r.who, "")}
+            val={text(r.decider ?? r.authority)}
+          />
         ))}
       </Panel>
       <Panel title="Failure playbooks" hint="No playbook's condition is true right now, which is the good case." state={plays}>
-        {asList(plays.data).map((p: any) => (
-          <Row key={p.id ?? p.key} title={text(p.title ?? p.key)} sub={text(p.condition, "")} val={p.active ? "ACTIVE" : undefined} />
+        {quiet.map((p: any) => (
+          <Row key={p.id ?? p.key} title={text(p.title ?? p.key)} sub={text(p.condition_text ?? p.condition, "")} />
         ))}
       </Panel>
     </>

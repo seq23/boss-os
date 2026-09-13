@@ -55,6 +55,7 @@ credentials except `validate:value-shapes`, noted below.
 
 | `npm run validate:alert-answerable` | one alert key per CAUSE rather than per event row, "Mark resolved" rendered for every alert with the `TERMINAL_CHECKS` refusal path intact, and the dismiss reason box scrolled into view, focused, and explaining its disabled state. 13-fixture self-test. Rule 0: nothing keyed or no action markup hard-fails | that a dismissal *should* have been made, only that pressing the button does what it looks like it does |
 
+| 
 ## Phase proof mapping (approved plan §12.2)
 
 P0 structural checks · P1 typecheck/build, auth E2E, migration, backup-restore · P2 identity

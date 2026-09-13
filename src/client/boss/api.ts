@@ -128,6 +128,15 @@ export const api = {
    * `moderate_micros` is MODERATE's allowance, which the owner sets and changes in place. Sending
    * the figure without a position is how she edits the number without moving the lever.
    */
+  /*
+   * ONE ANSWER TO "WHAT CAN THIS THING SPEND" — the lever, the cost mode, the plan and its reserve,
+   * the lane budgets and every backend's ceiling, each figure carrying what KIND of figure it is.
+   * Cost control had scattered into the Backends tab; this is what puts it back in one place.
+   */
+  costs: () => call<any>("/system/costs"),
+  setPlan: (body: { tier?: string; reserve_pct?: number; capacity_micros?: number }) =>
+    call<any>("/system/costs/plan", post("", body)),
+
   spendLever: () => call<any>("/system/spend-lever"),
   setSpendLever: (body: { position?: string; moderate_micros?: number }) =>
     call<any>("/system/spend-lever", post("", body)),

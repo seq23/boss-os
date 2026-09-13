@@ -167,6 +167,38 @@ export function snapshotDue(now: number, lastCompletedAt: number | null): boolea
 }
 
 /**
+ * IS THE VAULT STALE? ASKED OF THE CADENCE THAT TAKES THE SNAPSHOTS.
+ *
+ * ─── The defect this exists to end ─────────────────────────────────────────
+ *
+ * `fpb_vault_stale` had been ACTIVE on the Governance screen continuously, and it was RIGHT — the
+ * newest complete snapshot in production was 6 September and it was read on the 13th. But it was
+ * right by coincidence, because the rule it used was a number nobody linked to anything:
+ *
+ *     governance.ts   stale_vault: !snapshot || now - snapshot.ts > 2 * 86_400_000
+ *     sentinel.ts     stale_vault: !snapshot || now - snapshot.ts > 2 * DAY_MS
+ *
+ * TWO COPIES OF ONE RULE, in two files, each free to drift from the other and BOTH free to drift
+ * from the cadence that actually takes the snapshots. When the owner asked for a daily snapshot
+ * "at end of day" and the window moved, neither of these knew: they would have kept measuring a
+ * daily backup against a two-day ruler, and a fortnight later somebody would have changed the
+ * cadence again and discovered the alarm still worked by accident.
+ *
+ * So the question is asked of the schedule. Stale means THE LAST WINDOW CLOSED UNSERVED: a
+ * snapshot taken inside last night's window is current all of today, and a night that was missed
+ * goes red the next morning. Change `SNAPSHOT_HOUR_LOCAL` or the cadence, and the alarm moves with
+ * it, because there is nothing else for it to move independently of.
+ *
+ * ONE MISSED NIGHT IS RED, DELIBERATELY, and it is the one place in this system where that is the
+ * right threshold. Everywhere else a single miss is a closed laptop; here the thing that did not
+ * happen is the copy that protects everything else.
+ */
+export function vaultIsStale(now: number, lastCompletedAt: number | null): boolean {
+  if (lastCompletedAt === null) return true;
+  return lastCompletedAt < snapshotWindowOpensAt(now - 86_400_000);
+}
+
+/**
  * Tables whose churn is not a reason to write a new copy of everything else.
  *
  * These three are the diagnostic spine - they grow on every run by definition, including the run
