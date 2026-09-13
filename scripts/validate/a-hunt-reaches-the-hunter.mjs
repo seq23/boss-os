@@ -93,6 +93,31 @@ if (fs.existsSync(path.join(ROOT, hunter))) {
 /* ── 4. A launchd job runs it promptly, not weekly ────────────────────────── */
 const ONDEMAND = 'com.seq.boss-hunt-ondemand';
 const plist = path.join(process.env.HOME ?? '', 'Library/LaunchAgents', `${ONDEMAND}.plist`);
+
+/*
+ * ── THIS LINK ONLY EXISTS ON HER MAC, AND SAYS SO RATHER THAN FAILING EVERYWHERE ──
+ *
+ * launchd is a macOS service and the job is installed in HER home directory. On a Linux CI runner
+ * there is no `~/Library/LaunchAgents` to look in, so "the plist is not installed" is not a finding
+ * about the hunt chain — it is a finding about the machine, and reporting it as a break made this
+ * scan fail on every build the moment it was added to the CI gate.
+ *
+ * THIS IS A NAMED STOP, NOT A SKIP THAT PASSES. The condition is observable and cannot be set by
+ * anyone — macOS, with a LaunchAgents directory — so on her Mac, where it matters, the check runs
+ * exactly as before and still hard-fails. Everywhere else the scan says out loud that this one link
+ * was not examined and counts it as unchecked, so the pass line cannot imply it was.
+ *
+ * `capital-staleness.mjs` and `the-filter-says-what-it-dropped.mjs` already read machine-local files
+ * and already tolerate their absence; this was the one that did not.
+ */
+const launchAgents = path.join(process.env.HOME ?? '', 'Library/LaunchAgents');
+const thisIsHerMac = process.platform === 'darwin' && fs.existsSync(launchAgents);
+let ondemandNote = `${ONDEMAND} runs it`;
+
+if (!thisIsHerMac) {
+  ondemandNote =
+    `${ONDEMAND} NOT EXAMINED — launchd jobs live on her Mac and this is ${process.platform}`;
+} else {
 checks += 1;
 if (!fs.existsSync(plist)) {
   errors.push(
@@ -111,6 +136,7 @@ if (!fs.existsSync(plist)) {
     errors.push(`${ONDEMAND} is on disk but not loaded into launchd, so it never runs.`);
   }
 }
+}
 
 // RULE 0.
 if (checks === 0) {
@@ -124,4 +150,4 @@ if (errors.length) {
 }
 console.log(
   `[hunt-reaches-hunter] PASS: ${checks} link(s) — her sentence parses to `
-  + `${JSON.stringify(hunt)}, the drain leaves it queued, ${hunter} claims it, and ${ONDEMAND} runs it.`);
+  + `${JSON.stringify(hunt)}, the drain leaves it queued, ${hunter} claims it, and ${ondemandNote}.`);
