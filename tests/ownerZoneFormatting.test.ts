@@ -36,7 +36,7 @@ function optionLiteralsInClient(): { file: string; literal: string }[] {
   for (const file of tsxFiles(CLIENT)) {
     const src = readFileSync(file, "utf8");
     for (const m of src.matchAll(/inOwnerZone\([^,)]+,\s*(\{[^}]*\})/g)) {
-      out.push({ file: file.replace(CLIENT, "client"), literal: m[1] });
+      out.push({ file: file.replace(CLIENT, "client"), literal: m[1] ?? "" });
     }
   }
   return out;
