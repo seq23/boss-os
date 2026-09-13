@@ -17,7 +17,8 @@
 import { newId } from "../lib/id";
 import { monthIdInZone } from "../../../shared/boss/timezone";
 import {
-  ADVISORY_NOTE, CANON_WINDOW_TYPES, buildAlmanac, moonPhase, moonPosition, type AlmanacEvent,
+  ADVISORY_NOTE, CANON_WINDOW_TYPES, buildAlmanac, currentLunation, moonPhase, moonPosition,
+  type AlmanacEvent, type CurrentLunation,
 } from "./astro";
 
 const DAY_MS = 86_400_000;
@@ -282,6 +283,20 @@ export interface SpiritSignal {
     hours_away: number;
     detail: unknown;
   } | null;
+  /**
+   * THE CYCLE SHE IS CURRENTLY INSIDE, which `major_event` is not and was never meant to be.
+   *
+   * Her instruction of 13 Sep 2026: "evn tho its sept 13 i should still be able to see the new moon
+   * in virgo section for 2 weeks until the next major lunation". `major_event` answers "is something
+   * about to happen" and correctly goes null once it has; this answers "what opened the cycle I am
+   * in", which has no null — there is always one, and the boundary is the next major lunation rather
+   * than a fixed fortnight.
+   *
+   * NEVER NULL, DELIBERATELY. It is computed from the same Meeus series as the almanac rather than
+   * read from `astro_calendar`, because a lapse in that table's coverage would empty this section —
+   * and an empty "what cycle am I in" is indistinguishable from the bug it exists to fix.
+   */
+  current_lunation: CurrentLunation;
   astro: {
     day: string;
     phase: string;
@@ -467,6 +482,11 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
      * deliberately. `null` means "nothing major within two days" and is rendered as that sentence.
      */
     major_event: majorEvent,
+    /*
+     * COMPUTED, NOT QUERIED. One call, no row, no network — see `currentLunation` for why the
+     * almanac table is the wrong source for this particular question.
+     */
+    current_lunation: currentLunation(now),
     astro: {
       day: astro.id,
       phase: astro.phase,

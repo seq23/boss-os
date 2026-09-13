@@ -288,6 +288,103 @@ function lunationNumber(ts: number): number {
   return Math.round(yearsSince2000 * 12.3685);
 }
 
+/**
+ * THE LUNATION SHE IS CURRENTLY INSIDE — not the one that is about to arrive.
+ *
+ * ─── The defect, in her words ──────────────────────────────────────────────
+ *
+ *   "spirit page is now passed the new moon in virgo but u should so the last major lunation so
+ *    evn tho its sept 13 i should still be able to see the new moon in virgo section for 2 weeks
+ *    until the next major lunation"
+ *
+ * `major_event` looks forward 48 hours and 6 hours back. Measured on production 13 Sep 2026 it was
+ * NULL and the page read "No major event in the next two days" — while she was ten days into the
+ * Virgo new moon, in the cycle it opened. The page forgot the event the instant it passed.
+ *
+ * THAT IS THE WRONG MODEL, AND IT IS NOT A HORIZON THAT NEEDS WIDENING. A new moon is not a
+ * notification that expires; it OPENS A CYCLE, and the cycle runs until the next major lunation
+ * closes it. She is still inside the Virgo new moon on the 13th in exactly the way she is still
+ * inside September. So the boundary is computed — the next new or full moon — and never a fixed
+ * fourteen days, which would drift against a 29.53-day synodic month and be wrong by a day every
+ * couple of cycles.
+ *
+ * ─── Computed here rather than read from `astro_calendar` ──────────────────
+ *
+ * The almanac table is seeded from this same series and is the right source for a calendar. It is
+ * the wrong source for THIS, because a lapse in its coverage would empty the section — and an empty
+ * "what cycle am I in" is indistinguishable from the bug being fixed. This is arithmetic over a
+ * truncated Meeus series; it cannot be empty, and it cannot go stale.
+ *
+ * NEW MOONS AND FULL MOONS BOTH COUNT. She said "the next major lunation", and a full moon is one:
+ * the cycle she is in after a full moon is the waning half, which is a different thing to be inside
+ * from the waxing half. Quarters do not count — they would halve the window to a week and put
+ * something new at the top of the page most of the time, which is the same as putting nothing.
+ */
+export interface LunationMoment {
+  kind: "new_moon" | "full_moon";
+  label: string;
+  at: number;
+  sign: (typeof ZODIAC)[number];
+  degrees_in_sign: number;
+}
+
+export interface CurrentLunation {
+  /** The lunation she is inside: the most recent new or full moon at or before `ts`. */
+  current: LunationMoment;
+  /** The one that closes it. The window is [current.at, next.at). */
+  next: LunationMoment;
+  days_since: number;
+  days_until: number;
+  /** How far through this cycle, 0–1. Computed against the real interval, never a fixed 14 days. */
+  fraction: number;
+  method: string;
+}
+
+function lunationMoment(at: number, kind: "new_moon" | "full_moon"): LunationMoment {
+  const position = moonPosition(at);
+  return {
+    kind,
+    label: `${kind === "new_moon" ? "New Moon" : "Full Moon"} in ${position.sign}`,
+    at: Math.round(at),
+    sign: position.sign,
+    degrees_in_sign: position.degrees_in_sign,
+  };
+}
+
+export function currentLunation(ts: number): CurrentLunation {
+  /*
+   * FIVE LUNATIONS EITHER SIDE IS DELIBERATE OVERKILL. Two would do — the answer is always within
+   * one — and the cost is forty evaluations of a truncated series, which is nothing. The reason to
+   * be generous is that `lunationNumber` ROUNDS, so near a boundary the nearest k can be the one
+   * after the moment being asked about, and a tight window would then have no candidate at or
+   * before `ts`. A search that can come up empty is exactly the failure being fixed.
+   */
+  const k0 = lunationNumber(ts);
+  const moments: LunationMoment[] = [];
+  for (let k = k0 - 5; k <= k0 + 5; k += 1) {
+    moments.push(lunationMoment(phaseTime(k, "new"), "new_moon"));
+    moments.push(lunationMoment(phaseTime(k + 0.5, "full"), "full_moon"));
+  }
+  moments.sort((a, b) => a.at - b.at);
+
+  let current = moments[0]!;
+  for (const m of moments) {
+    if (m.at <= ts) current = m;
+    else break;
+  }
+  const next = moments.find((m) => m.at > ts) ?? current;
+
+  const span = Math.max(1, next.at - current.at);
+  return {
+    current,
+    next,
+    days_since: Math.floor((ts - current.at) / DAY_MS),
+    days_until: Math.ceil((next.at - ts) / DAY_MS),
+    fraction: Math.min(1, Math.max(0, (ts - current.at) / span)),
+    method: METHOD,
+  };
+}
+
 export interface AlmanacEvent {
   /*
    * `retrograde`, `shadow` and `ingress` joined this union when the planetary layer was computed.

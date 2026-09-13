@@ -69,6 +69,13 @@ export function Spirit() {
   const sky = signal.sky;
   const major = signal.major_event ?? null;
   /*
+   * THE CYCLE, WHICH IS A DIFFERENT QUESTION FROM THE EVENT. `major_event` answers "is something
+   * about to happen" and is correctly null most of the time; `current_lunation` answers "what cycle
+   * am I in" and is never null. The `?? null` is for a stale bundle served a payload without the
+   * field, not for an expected absence.
+   */
+  const lunation = signal.current_lunation ?? null;
+  /*
    * The two things her 12 September mail moved off the daily briefing and onto this page: the
    * astronomical dashboard at her report's precision, and the locked Money / Career / Travel Map.
    */
@@ -84,10 +91,21 @@ export function Spirit() {
    */
   const at = (ts: number) => {
     const opts: Intl.DateTimeFormatOptions = { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" };
-    const local = new Date(ts).toLocaleString(undefined, opts);
+    /*
+     * HER ZONE, NOT THE BROWSER'S — which is what the rest of this file already does and this
+     * helper did not. `toLocaleString(undefined, …)` renders in whatever zone the device is in, so
+     * the one block she asked to be prominent would have shifted by an hour the moment she opened
+     * it on a laptop in another city, silently, with "your clock is shown above" printed under it.
+     * The header of this file states the rule; this helper was the exception nobody had noticed.
+     */
+    const local = `${inOwnerZone(ts, opts)} ${OWNER_TIMEZONE_LABEL}`;
     const eastern = new Date(ts).toLocaleString("en-US", { ...opts, timeZone: "America/New_York" });
     return { local, eastern };
   };
+
+  /** Degrees AND arcminutes, the precision rule this page already holds for the ephemeris. */
+  const deg = (d: number) =>
+    `${Math.floor(d)}°${String(Math.round((d - Math.floor(d)) * 60)).padStart(2, "0")}′`;
   const when = (ts: number) => {
     const days = Math.round((ts - Date.now()) / 86_400_000);
     return days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
@@ -136,17 +154,57 @@ export function Spirit() {
             Advisory only — context, never a cause and never a permission.
           </div>
         </div>
-      ) : (
+      ) : lunation ? (
         /*
-         * AN HONEST EMPTY STATE, DISTINCT FROM A FAILED ONE. `signal` loaded — we are past the
-         * Loading guard and past ErrorNotice — so "nothing major" is a finding about the sky rather
-         * than a fetch that did not come back, and it says which.
+         * ─── THE CYCLE SHE IS IN, WHICH IS NEVER NOTHING ───────────────────────
+         *
+         *   "spirit page is now passed the new moon in virgo but u should so the last major
+         *    lunation so evn tho its sept 13 i should still be able to see the new moon in virgo
+         *    section for 2 weeks until the next major lunation"
+         *
+         * THIS SLOT USED TO READ "No major event in the next two days", and on 13 September that is
+         * what it said — ten days into the cycle the Virgo new moon opened. `major_event` looks
+         * forward forty-eight hours, so the page forgot the event the instant it passed.
+         *
+         * THAT WAS THE WRONG MODEL, not a horizon that needed widening. A new moon is not a
+         * notification that expires; it OPENS A CYCLE, and she is inside that cycle in the same way
+         * she is inside September. So the panel now always names the lunation she is in, and the
+         * imminent-event panel above takes over only when something is actually about to happen —
+         * two different questions, each with its own answer, neither pretending to be the other.
+         *
+         * BOTH ENDS OF THE WINDOW ARE SHOWN. "Ten days in" means nothing without "four to go", and
+         * the boundary is the computed next lunation rather than a fixed fortnight, which would
+         * drift against a 29.53-day month and be wrong by a day every couple of cycles.
          */
         <div className="panel">
-          <div className="row-title">No major event in the next two days</div>
+          <div style={{ fontSize: "1.5rem", fontWeight: 600, lineHeight: 1.2 }}>{lunation.current.label}</div>
+          <div style={{ fontSize: "1.05rem", marginTop: 4 }}>
+            The cycle you are in — {lunation.days_since === 0 ? "today" : `day ${lunation.days_since + 1}`} of it.
+          </div>
           <div className="row-sub">
-            New moons, full moons and eclipses appear here at full size when one is within
-            forty-eight hours. This is the sky being quiet, not a reading that failed.
+            {at(lunation.current.at).local} · {at(lunation.current.at).eastern} Eastern ·{" "}
+            {deg(lunation.current.degrees_in_sign)} {lunation.current.sign}
+          </div>
+          <div className="row-sub" style={{ marginTop: 6 }}>
+            It runs until the {lunation.next.label} — {at(lunation.next.at).local}, {when(lunation.next.at)}.
+          </div>
+          <div className="row-sub" style={{ marginTop: 8 }}>
+            Advisory only — context, never a cause and never a permission.
+          </div>
+        </div>
+      ) : (
+        /*
+         * AN HONEST EMPTY STATE, DISTINCT FROM A FAILED ONE, and now genuinely unreachable in
+         * ordinary operation: `current_lunation` is computed rather than queried and there is always
+         * one. It is kept for the case this screen is served an older payload that has no
+         * `current_lunation` field at all — a stale cached bundle, or a Worker mid-deploy — because
+         * the alternative is a blank slot that reads as a broken page.
+         */
+        <div className="panel">
+          <div className="row-title">The sky could not be read</div>
+          <div className="row-sub">
+            There is always a lunation in progress, so this is a reading that did not arrive rather
+            than a quiet sky. Nothing here is a reason to act or not act either way.
           </div>
         </div>
       )}
@@ -284,10 +342,20 @@ export function Spirit() {
                       {t.applying ? "" : " · separating"}
                     </div>
                     <div className="row-sub">{t.meaning}</div>
+                    {/*
+                      * ARCMINUTES HERE TOO, and this block was the exception until 13 Sep 2026.
+                      *
+                      * The comment further down this file states the rule and states its reason:
+                      * "at one decimal place a 0°16′ orb and a 0°18′ orb are both 0.3°". That is
+                      * precisely an ORB, and this row was rendering orbs at one decimal — the rule
+                      * was written and the one block it was written about kept its own format.
+                      * Found by `validate:lunation-outlives-moment`, which is the value of holding a
+                      * page to a rule rather than to a paragraph describing one.
+                      */}
                     <div className="row-sub">
-                      {t.body_name} now in {t.sign} {t.degrees_in_sign.toFixed(1)}° · your natal{" "}
-                      {t.natal_point_name} at {t.natal_sign} {t.natal_degrees_in_sign.toFixed(1)}° ·{" "}
-                      {t.orb.toFixed(1)}° from exact
+                      {t.body_name} now in {t.sign} {deg(t.degrees_in_sign)} · your natal{" "}
+                      {t.natal_point_name} at {t.natal_sign} {deg(t.natal_degrees_in_sign)} ·{" "}
+                      {deg(t.orb)} from exact
                     </div>
                   </div>
                 </div>
