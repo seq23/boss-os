@@ -32,7 +32,6 @@ import {
 import { buildBodyContract, logSomatic } from "../today/body";
 import { TIME_ACCURACY, natalChart, transits, transitAspects, type BirthData, type TimeAccuracy } from "../spirit/natal";
 import { TRANSIT_CAVEAT } from "../spirit/transitMeaning";
-import { monthAhead } from "../spirit/month";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
   ANCESTOR_MINUTES_TARGET, CONTRIBUTION_IDEAL, CONTRIBUTION_MINIMUM,
@@ -279,19 +278,26 @@ spirit.get("/month", async (c) => {
    * something touches HER chart, which is the one thing an almanac structurally cannot do, and
    * keeps the sky-wide events below that as context.
    */
-  const monthBirthRow = await c.env.DB
-    .prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)
-    .first<{ value: string }>();
-  const highlights = monthAhead(
-    monthBirthRow ? (JSON.parse(monthBirthRow.value) as BirthData) : null,
-    Date.parse(`${month}-15T12:00:00Z`),
-  );
+  /*
+   * THE MONTH'S IMPORTANT DATES ARE COMPUTED ON HER SCREEN, NOT HERE.
+   *
+   * `monthAhead` samples the slow planets against her chart every six hours for five weeks — about
+   * nine milliseconds of arithmetic, which is most of the 10 ms of CPU the Free plan gives this
+   * whole request, and the reason this route was being killed (13 September 2026: `exceededCpu`,
+   * a blank Spirit tab). The arithmetic is deterministic and the browser has no such budget, so the
+   * payload carries the two inputs — her birth data and the instant to compute for — and the page
+   * runs the same `monthAhead` from the same module. Same function, same numbers, other CPU.
+   *
+   * The birth data was also being read twice on this route; once is enough.
+   */
+  const birth = birthRow ? (JSON.parse(birthRow.value) as BirthData) : null;
+  const highlightsAt = Date.parse(`${month}-15T12:00:00Z`);
 
   return ok(c, {
     month,
     advisory: true,
     note: ADVISORY_NOTE,
-    highlights,
+    highlights_inputs: { birth, at: highlightsAt },
     almanac: (events.results ?? []).map((e) => ({ ...e, detail: e.detail ? JSON.parse(e.detail) : null })),
     contribution: {
       entries: contributionRows,

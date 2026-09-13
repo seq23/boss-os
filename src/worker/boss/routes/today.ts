@@ -333,7 +333,56 @@ export function reportStaleness(
   return `${carried}The 06:30 run has not delivered today's report yet and its task is not waiting anywhere — dispatch it by hand if you need it now.`;
 }
 
-export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
+/**
+ * THE THIRTEEN BLOCKS, IN SIX REQUESTS.
+ *
+ * This Worker runs on the Cloudflare Free plan, which allows 10 ms of CPU per request, and the
+ * owner's decision (13 September 2026) is that it stays there. Assembling all thirteen blocks in
+ * one request — forty-odd D1 reads, the report's JSON parsed three ways, the sky computed — cost
+ * ~18 ms by Cloudflare's own accounting, and the platform killed it: `outcome: exceededCpu`, a 403
+ * on Today and a blank Spirit. Nothing was wrong with any block; there were just too many of them
+ * in one CPU budget.
+ *
+ * So the screen asks for the blocks in groups, in parallel, and each group is its own request with
+ * its own 10 ms. NOTHING IS CUT: the same thirteen blocks, the same content, the same order — the
+ * client stitches the groups back into canon §15's list. The groups are chosen so that the reads
+ * a block needs sit with it: everything Critical Alerts consumes is in `alerts`, the roster and
+ * the duty rows are in `status`, and the two coaching blocks ride with the contract because they
+ * are computed from the same day mode.
+ *
+ * `assembleDayFlow` with no `only` still builds every block in one pass — that is what the nightly
+ * cron does, where the budget is the cron's and a whole day is written at once.
+ */
+export const TODAY_GROUPS = {
+  contract: ["todays_contract", "day_flow", "coaching_focus", "daily_thinking_lens"],
+  briefing: ["executive_briefing"],
+  meetings: ["meetings", "open_loops"],
+  alerts: ["critical_alerts"],
+  spirit: ["spirit_signal"],
+  status: ["approval_inbox", "employee_status", "continuity_status", "trading_status"],
+} as const satisfies Record<string, readonly BlockKey[]>;
+
+export type TodayGroup = keyof typeof TODAY_GROUPS;
+
+export function parseBlockKeys(raw: string | undefined): BlockKey[] | undefined {
+  if (!raw) return undefined;
+  const known = new Set<string>(TODAY_BLOCKS.map((b) => b.key));
+  const keys = raw.split(",").map((k) => k.trim()).filter((k) => known.has(k)) as BlockKey[];
+  if (keys.length === 0) {
+    throw badRequest(
+      "No known block was named",
+      `blocks= takes a comma-separated subset of: ${TODAY_BLOCKS.map((b) => b.key).join(", ")}`,
+    );
+  }
+  return keys;
+}
+
+export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly BlockKey[]): Promise<Block[]> {
+  // Every block when nothing is named; otherwise exactly the named ones. A read a block does not
+  // need is not made — that, not caching, is what keeps each group inside its budget.
+  const keys = new Set<BlockKey>(only ?? TODAY_BLOCKS.map((b) => b.key));
+  const want = (...k: BlockKey[]) => k.some((x) => keys.has(x));
+  const partial = keys.size < TODAY_BLOCKS.length;
   /*
    * THE MEETING PACKET, on the two days it is worth having and null on the other five.
    *
@@ -370,15 +419,18 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * screenshotted was a collapsed line reading "Nothing in the diary" over a full agenda — one
    * sentence counting the CRM table while the body rendered the packet. They cannot disagree now.
    */
-  const theDiary = await diary(env, Date.now()).catch(() => null);
-
-  const filedPacket = await env.DB
-    .prepare(
-      `SELECT id, counterpart, day_id, headline, blocking, published_at
-         FROM meeting_packets ORDER BY day_id DESC, published_at DESC LIMIT 1`,
-    )
-    .first<any>()
-    .catch(() => null);
+  const [theDiary, filedPacket] = want("meetings")
+    ? await Promise.all([
+        diary(env, Date.now()).catch(() => null),
+        env.DB
+          .prepare(
+            `SELECT id, counterpart, day_id, headline, blocking, published_at
+               FROM meeting_packets ORDER BY day_id DESC, published_at DESC LIMIT 1`,
+          )
+          .first<any>()
+          .catch(() => null),
+      ])
+    : [null, null];
 
   /*
    * Today's report, and the last good one.
@@ -388,7 +440,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * keyed to the day it is FOR, not the day it was written, so a retry at 09:00 still fills the
    * 06:30 slot rather than creating a second Tuesday.
    */
-  const [report, lastReport, reportDuty] = await Promise.all([
+  const [report, lastReport, reportDuty] = !want("executive_briefing") ? [null, null, null] : await Promise.all([
     env.DB
       .prepare(`SELECT * FROM executive_reports WHERE day_id = ? AND archived_at IS NULL LIMIT 1`)
       .bind(day.id)
@@ -437,21 +489,28 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * looking ahead at tomorrow would otherwise move today's overdue commitments
    * onto a day that has not happened — and off the screen the Boss is on.
    */
-  if (day.date_ts <= dayStart(now)) {
+  if (want("open_loops") && day.date_ts <= dayStart(now)) {
     await surfaceOverdueFollowUps(db, day.id, Math.min(now, to - 1), now);
   }
 
+  // A read no wanted block consumes resolves to null instead of being made.
+  const when = <T,>(wanted: boolean, read: () => Promise<T>, fallback: T): Promise<T> =>
+    wanted ? read() : Promise.resolve(fallback);
+  const NONE = { results: [] } as unknown as D1Result<any>;
+  const A = want("critical_alerts");
+  const S = want("employee_status");
+
+  /*
+   * FIVE READS THAT NO BLOCK CONSUMED are gone from this list — task counts by status, open tasks,
+   * tasks opened today, spend today, captures today. They were computed on every render and used
+   * by nothing on the screen; in a 10 ms budget a read nobody consumes is not free.
+   */
   const [
-    taskCounts,
-    openTasks,
-    todaysTasks,
     approvalsByRisk,
     oldestApproval,
     expiringApprovals,
     employeeCounts,
     busiestEmployees,
-    spend,
-    captures,
     proposedPromotions,
     lastSnapshot,
     lastCron,
@@ -469,23 +528,22 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     dueTouches,
     spirit,
   ] = await Promise.all([
-    db.prepare(`SELECT status, COUNT(*) AS n FROM tasks GROUP BY status`).all<{ status: string; n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','running','awaiting_approval')`)
-      .first<{ n: number }>(),
-    db.prepare(`SELECT status, COUNT(*) AS n FROM tasks WHERE created_at >= ? AND created_at < ? GROUP BY status`)
-      .bind(from, to).all<{ status: string; n: number }>(),
     /*
      * THE ONE SOURCE, NOT A FIFTH ANSWER. This block used to count pending approvals with its own
      * GROUP BY and sum the buckets; `system.ts` counted them again; the list route selected them a
      * third time with a cap the counts did not have. That is how "Approval Inbox - 9 waiting" ended
      * up above an Inbox holding nothing. See `approvals/pending.ts`.
      */
-    pendingApprovals(db),
-    db.prepare(`SELECT id, title, risk, requested_at FROM approvals WHERE status = 'pending' ORDER BY requested_at ASC LIMIT 1`)
+    when(want("approval_inbox"), () => pendingApprovals(db), null as Awaited<ReturnType<typeof pendingApprovals>> | null),
+    when(want("approval_inbox"), () =>
+      db.prepare(`SELECT id, title, risk, requested_at FROM approvals WHERE status = 'pending' ORDER BY requested_at ASC LIMIT 1`)
       .first<{ id: string; title: string; risk: string; requested_at: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`)
+      null),
+    when(want("approval_inbox") || A, () =>
+      db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`)
       .bind(now + DAY_MS).first<{ n: number }>(),
-    db.prepare(`SELECT status, COUNT(*) AS n FROM employees GROUP BY status`).all<{ status: string; n: number }>(),
+      null),
+    when(S, () => db.prepare(`SELECT status, COUNT(*) AS n FROM employees GROUP BY status`).all<{ status: string; n: number }>(), NONE),
     /*
      * EVERY ACTIVE EMPLOYEE, WITH NO LIMIT ON THE LIST.
      *
@@ -497,7 +555,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * busyness with a cut-off hides exactly the employees doing nothing, which is the state most
      * worth seeing. `today/roster.ts` sorts by HEALTH instead, worst first, and cuts nobody.
      */
-    db.prepare(
+    when(S, () =>
+      db.prepare(
       `SELECT e.id, e.name, e.role, e.lane, COUNT(t.id) AS open_tasks
          FROM employees e
          LEFT JOIN tasks t ON t.employee_id = e.id AND t.status IN ('queued','running','awaiting_approval')
@@ -505,28 +564,31 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         GROUP BY e.id
         ORDER BY e.name ASC`,
     ).all<EmployeeRow>(),
-    db.prepare(`SELECT COALESCE(SUM(cost_micros),0) AS micros FROM usage_ledger WHERE ts >= ? AND ts < ?`)
-      .bind(from, to).first<{ micros: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM memory_items WHERE created_at >= ? AND created_at < ?`)
-      .bind(from, to).first<{ n: number }>(),
-    db.prepare(
+      NONE),
+    when(want("continuity_status"), () =>
+      db.prepare(
       `SELECT COUNT(*) AS n FROM promotion_events p
         WHERE p.outcome = 'proposed'
           AND EXISTS (SELECT 1 FROM approvals a WHERE a.id = p.approval_id AND a.status = 'pending')`,
     ).first<{ n: number }>(),
-    db.prepare(`SELECT id, ts, label, status, bytes FROM vault_snapshots ORDER BY ts DESC LIMIT 1`)
+      null),
+    when(want("continuity_status"), () =>
+      db.prepare(`SELECT id, ts, label, status, bytes FROM vault_snapshots ORDER BY ts DESC LIMIT 1`)
       .first<{ id: string; ts: number; label: string; status: string; bytes: number }>(),
-    db.prepare(`SELECT id, started_at, finished_at, status FROM cron_runs ORDER BY started_at DESC LIMIT 1`)
+      null),
+    when(A, () =>
+      db.prepare(`SELECT id, started_at, finished_at, status FROM cron_runs ORDER BY started_at DESC LIMIT 1`)
       .first<{ id: string; started_at: number; finished_at: number | null; status: string }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`).first<{ n: number }>(),
-
+      null),
+    when(A, () => db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`).first<{ n: number }>(), null),
     /*
      * FAILURES NOTHING HAS SINCE SUCCEEDED AT. A duty's task carries the duty's own `task_title`,
      * so a later `done` task with the same title in the same lane IS the same work having worked.
      * Matching on title rather than on a foreign key because `tasks` has never carried one, and
      * inventing a column here would leave every historical row unlinked and the alert still wrong.
      */
-    db.prepare(
+    when(A, () =>
+      db.prepare(
       `SELECT COUNT(*) AS n FROM tasks f
         WHERE f.status = 'failed'
           AND NOT EXISTS (
@@ -534,6 +596,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
              WHERE s.title = f.title AND s.lane = f.lane
                AND s.status = 'done' AND s.created_at > f.created_at)`,
     ).first<{ n: number }>(),
+      null),
     /*
      * `detail` IS SELECTED BECAUSE IT IS THE ONLY COLUMN THAT SAYS WHAT HAPPENED, and for five
      * renders it was left unread while `scope` and `event` were printed at her as prose.
@@ -543,7 +606,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * be the truth about the day or it is worse than no number. One day of error rows is small —
      * production held five — and the cap only exists so a storm cannot cost the whole render.
      */
-    db.prepare(
+    when(A, () =>
+      db.prepare(
       /*
        * AN ERROR ABOUT A TASK THAT IS NO LONGER FAILING IS HISTORY, NOT AN ALERT.
        *
@@ -560,17 +624,27 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
                    AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = e.entity_id AND t.status <> 'failed'))
         ORDER BY e.ts DESC LIMIT 200`,
     ).bind(now - DAY_MS).all<ErrorEventRow>(),
-    db.prepare(`SELECT live_enabled, kill_switch, max_open_positions FROM trading_authority LIMIT 1`)
+      NONE),
+    when(want("trading_status") || A, () =>
+      db.prepare(`SELECT live_enabled, kill_switch, max_open_positions FROM trading_authority LIMIT 1`)
       .first<{ live_enabled: number; kill_switch: number; max_open_positions: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM trading_positions WHERE qty <> 0 AND closed_at IS NULL`)
+      null),
+    when(want("trading_status"), () =>
+      db.prepare(`SELECT COUNT(*) AS n FROM trading_positions WHERE qty <> 0 AND closed_at IS NULL`)
       .first<{ n: number }>(),
-    db.prepare(`SELECT status, COUNT(*) AS n FROM trading_orders WHERE status IN ('draft','awaiting_approval','sent') GROUP BY status`)
+      null),
+    when(want("trading_status"), () =>
+      db.prepare(`SELECT status, COUNT(*) AS n FROM trading_orders WHERE status IN ('draft','awaiting_approval','sent') GROUP BY status`)
       .all<{ status: string; n: number }>(),
-    db.prepare(`SELECT id, ts, kind, severity, summary FROM trading_incidents WHERE resolved_at IS NULL ORDER BY ts DESC LIMIT 5`)
+      NONE),
+    when(want("trading_status") || A, () =>
+      db.prepare(`SELECT id, ts, kind, severity, summary FROM trading_incidents WHERE resolved_at IS NULL ORDER BY ts DESC LIMIT 5`)
       .all<{ id: string; ts: number; kind: string; severity: string; summary: string }>(),
-    listLoops(db, day),
+      NONE),
+    when(want("open_loops"), () => listLoops(db, day), [] as LoopRow[]),
     // ── Phase 13 substrate: meetings, their briefs and their captures ──
-    db.prepare(
+    when(want("meetings"), () =>
+      db.prepare(
       `SELECT m.id, m.title, m.purpose, m.scheduled_at, m.duration_min, m.location, m.status,
               p.id AS person_id, p.full_name, o.name AS organization_name,
               b.id AS brief_id, b.generated_at AS briefed_at,
@@ -585,7 +659,9 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         WHERE m.scheduled_at >= ? AND m.scheduled_at < ? AND m.status <> 'cancelled'
         ORDER BY m.scheduled_at ASC`,
     ).bind(from, to).all<MeetingBlockRow>(),
-    db.prepare(
+      NONE),
+    when(want("meetings"), () =>
+      db.prepare(
       `SELECT m.id, m.title, m.scheduled_at, p.full_name
          FROM meetings m
          JOIN people p ON p.id = m.person_id
@@ -593,36 +669,35 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         WHERE m.scheduled_at < ? AND m.scheduled_at >= ? AND m.status <> 'cancelled' AND c.id IS NULL
         ORDER BY m.scheduled_at DESC LIMIT 10`,
     ).bind(from, from - 7 * DAY_MS).all<{ id: string; title: string; scheduled_at: number; full_name: string }>(),
-    db.prepare(
+      NONE),
+    when(want("meetings"), () =>
+      db.prepare(
       `SELECT COUNT(*) AS n FROM follow_ups WHERE status = 'open' AND due_at < ?`,
     ).bind(to).first<{ n: number }>(),
-    db.prepare(
+      null),
+    when(want("meetings"), () =>
+      db.prepare(
       `SELECT r.id, p.full_name, r.next_touch_due_at, r.relationship_health, r.cadence_days
          FROM relationships r
          JOIN people p ON p.id = r.person_id
         WHERE r.status = 'active' AND r.next_touch_due_at IS NOT NULL AND r.next_touch_due_at < ?
         ORDER BY r.strategic_importance DESC LIMIT 5`,
     ).bind(to).all<{ id: string; full_name: string; next_touch_due_at: number; relationship_health: number; cadence_days: number }>(),
+      NONE),
     // Phase 16 substrate: computed sky, real practice, and canon §5.2's
     // reality-priority read, assembled by the same function the Spirit screen
     // calls, so the two can never disagree.
-    spiritSignal(db, day.id, now),
+    when(want("spirit_signal"), () => spiritSignal(db, day.id, now), null),
   ]);
 
   const byStatus = (rows: { status: string; n: number }[] | undefined) =>
     Object.fromEntries((rows ?? []).map((r) => [r.status, r.n]));
 
-  const tasksAll = byStatus(taskCounts.results);
-  const tasksToday = byStatus(todaysTasks.results);
-  const pendingByRisk = approvalsByRisk.by_risk;
-  const pendingTotal = approvalsByRisk.total;
+  const pendingByRisk = approvalsByRisk?.by_risk ?? { high: 0, medium: 0, low: 0 };
+  const pendingTotal = approvalsByRisk?.total ?? 0;
   const employeeStatus = byStatus(employeeCounts.results);
   const orderStatus = byStatus(liveOrders.results);
 
-  const openTaskCount = openTasks?.n ?? 0;
-  const openedToday = Object.values(tasksToday).reduce((a, b) => a + b, 0);
-  const spendToday = spend?.micros ?? 0;
-  const captureCount = captures?.n ?? 0;
 
   const priorities = json<{ text: string; order: number }[]>(day.morning_priorities, []);
   const contract = json<Record<string, unknown> | null>(day.morning_contract, null);
@@ -636,13 +711,13 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * having run a gate still has seven blocks, and showing her none would be the screen deciding she
    * had no day.
    */
-  await ensureRunOfShow(env, day.id);
+  if (want("day_flow")) await ensureRunOfShow(env, day.id);
   /*
    * Duty health, read here rather than on a cron, so it is true at the moment she looks rather than
    * at the moment something last checked.
    */
   const [staleDuties, stuckDuties, lastNetworkRefresh, agentBudget, warnSetting] = await Promise.all([
-    env.DB.prepare(
+    when(A || S, () => env.DB.prepare(
       /*
        * `COALESCE(last_run_at, created_at)`, NOT `COALESCE(last_run_at, 0)`.
        *
@@ -682,32 +757,32 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
          FROM standing_duties d
     LEFT JOIN tasks t ON t.id = d.last_task_id
         WHERE d.suspended = 0`,
-    ).all<EmployeeDutyRow>(),
+    ).all<EmployeeDutyRow>(), NONE),
 
     /*
      * A DUTY WHOSE LAST TASK NEVER FINISHED. `queued` means nothing sent it; `running` for a long
      * time means nothing on her Mac claimed it. Both look identical from the duty's own record,
      * which is exactly how the report duty stayed broken.
      */
-    env.DB.prepare(
+    when(A, () => env.DB.prepare(
       `SELECT d.id, d.name, t.status
          FROM standing_duties d
          JOIN tasks t ON t.id = d.last_task_id
         WHERE d.suspended = 0
           AND t.status IN ('queued', 'running')
           AND t.created_at < ? - 86400000`,
-    ).bind(Date.now()).all<{ id: string; name: string; status: string }>(),
+    ).bind(Date.now()).all<{ id: string; name: string; status: string }>(), NONE),
 
-    env.DB.prepare(
+    when(A, () => env.DB.prepare(
       `SELECT ts FROM system_events WHERE event = 'network_refreshed' ORDER BY ts DESC LIMIT 1`,
-    ).first<{ ts: number }>(),
+    ).first<{ ts: number }>(), null),
 
-    env.DB.prepare(
+    when(A, () => env.DB.prepare(
       `SELECT monthly_ceiling_micros, spent_micros, window_started_at FROM execution_backends WHERE id = 'bk_claude_code'`,
-    ).first<{ monthly_ceiling_micros: number; spent_micros: number; window_started_at: number | null }>(),
+    ).first<{ monthly_ceiling_micros: number; spent_micros: number; window_started_at: number | null }>(), null),
 
-    env.DB.prepare(`SELECT value FROM settings WHERE key = 'agent_budget_warn_pct'`)
-      .first<{ value: string }>(),
+    when(A, () => env.DB.prepare(`SELECT value FROM settings WHERE key = 'agent_budget_warn_pct'`)
+      .first<{ value: string }>(), null),
   ]);
 
   // A window from a previous month is last month's total, not this month's spend.
@@ -740,7 +815,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * day she skipped and a day she simply never closed.
    */
   const yesterdayId = new Date(Date.parse(`${day.id}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
-  const yesterday = await env.DB
+  const yesterday = !want("todays_contract") ? null : await env.DB
     .prepare(
       `SELECT id, anchor_outcome, morning_completed_at, midday_completed_at, night_completed_at, morning_contract
          FROM days WHERE id = ?`,
@@ -814,7 +889,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         },
   };
 
-  const derivedContract = contract
+  // Derived for the contract block, and for the Run of Show's anchor when no contract is agreed.
+  const derivedContract = contract || !want("todays_contract", "day_flow")
     ? null
     : await (async () => {
         try {
@@ -851,14 +927,14 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       })();
 
   const [runOfShow, focus] = await Promise.all([
-    readRunOfShow(env, day.id, {
+    when(want("day_flow"), () => readRunOfShow(env, day.id, {
       dayMode: (day as { day_mode?: string | null }).day_mode ?? null,
       anchor:
         (contract as { commitment?: string } | null)?.commitment ??
         derivedContract?.contract.commitment ??
         null,
-    }),
-    coachingFocus(env, day.id, (day as { day_mode?: string | null }).day_mode ?? null),
+    }), [] as Awaited<ReturnType<typeof readRunOfShow>>),
+    when(want("coaching_focus"), () => coachingFocus(env, day.id, (day as { day_mode?: string | null }).day_mode ?? null), null),
   ]);
   const lens = lensFor(day.id);
   const attention = json<{ focus_area: string; pct: number; note?: string }[]>(day.night_attention, []);
@@ -885,7 +961,15 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * take the escalation with it, and the whole rule is that a commitment must outlive the machinery
    * meant to be keeping it. See `today/deliverables.ts`.
    */
-  alerts.push(...(await deliverableAlerts(env, now).catch(() => [])));
+  // The four read-time producers run in parallel, and only when the alerts block is wanted: each
+  // is its own handful of reads, and in series they were the slowest stretch of the assembler.
+  const produced = !A ? [] : await Promise.all([
+    deliverableAlerts(env, now).catch(() => []),
+    credentialAlerts(env, now).catch(() => []),
+    bookNagAlerts(env, now).catch(() => []),
+    unansweredQuestionAlerts(env, now).catch(() => []),
+  ]);
+  for (const list of produced) alerts.push(...list);
   /*
    * A DEAD LOGIN IS A CRITICAL ALERT, NOT A LOG LINE.
    *
@@ -894,20 +978,17 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    * reason it surfaced at all is that a human ran a script by hand. This is the channel that does
    * not share a failure mode with the work: the report reaches her whether or not the mailbox does.
    */
-  alerts.push(...(await credentialAlerts(env, now).catch(() => [])));
   /*
    * MONIQUE ASKING FOR THE BOOK. Evaluated on read, beside the other two, for the same reason: a
    * standing ask that depends on a cron dies with the cron and says nothing. See capital/bookNag.ts
    * for why this is not an `owned_deliverables` row — that mechanism completes, and this condition
    * comes back every week.
    */
-  alerts.push(...(await bookNagAlerts(env, now).catch(() => [])));
   /*
    * AN EMPLOYEE WAITING ON AN ANSWER. Same mechanism and the same reason: a question asked by mail
    * and never answered is work that is not happening, and the polite reply that asked it is
    * indistinguishable from a job well done until somebody looks. See intake/questions.ts.
    */
-  alerts.push(...(await unansweredQuestionAlerts(env, now).catch(() => [])));
   if (tradingAuthority?.kill_switch) {
     alerts.push({ severity: "critical", text: "The trading kill switch is engaged. Nothing in that lane executes.", source_type: "trading", source_id: null });
   }
@@ -1100,10 +1181,12 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
    */
   const distinctAlerts = dedupeAlerts(alerts);
 
-  const { shown: shownAlerts, dismissed: dismissedAlerts } = await applyDismissals(env, distinctAlerts, now).catch(() => ({
-    shown: distinctAlerts,
-    dismissed: [] as { key: string; text: string; reason: string; until: number }[],
-  }));
+  const { shown: shownAlerts, dismissed: dismissedAlerts } = !A
+    ? { shown: distinctAlerts, dismissed: [] as { key: string; text: string; reason: string; until: number }[] }
+    : await applyDismissals(env, distinctAlerts, now).catch(() => ({
+        shown: distinctAlerts,
+        dismissed: [] as { key: string; text: string; reason: string; until: number }[],
+      }));
   {
   }
 
@@ -1130,7 +1213,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
   }));
   const unbriefed = meetingsToday.filter((m) => !m.briefed && !m.captured);
 
-  const built: Record<BlockKey, { content: unknown; isEmpty: boolean; sourceId?: string | null }> = {
+  const builders: Record<BlockKey, () => { content: unknown; isEmpty: boolean; sourceId?: string | null }> = {
     /*
      * THE AGENDA IS THERE BEFORE SHE ASKS. IT NO LONGER WAITS FOR A BUTTON.
      *
@@ -1155,7 +1238,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * override, which is a real act with a real record. What it no longer does is decide whether
      * she gets to SEE her day.
      */
-    todays_contract: {
+    todays_contract: () => ({
       /*
        * ── THE DATE, AND WHAT A GATE ACTUALLY IS ────────────────────────────
        *
@@ -1195,7 +1278,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
             },
       // An empty day is now only ever a genuine failure to compute one.
       isEmpty: !contract && !derivedContract,
-    },
+    }),
     /*
      * THE EXECUTIVE BRIEFING IS THE REPORT NOW, AND THAT REMOVED DUPLICATION RATHER THAN ADDING
      * ANYTHING.
@@ -1215,7 +1298,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * say so and name the gaps". A report that refuses to appear teaches her to stop looking at 7am.
      * A missing report says when the last good one was, so a blank is never unexplained.
      */
-    executive_briefing: (() => {
+    executive_briefing: () => {
       /*
        * THE REPORT ARRIVES BY ITSELF, AND A BLANK IS NEVER THE ANSWER.
        *
@@ -1339,7 +1422,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
             },
         isEmpty: !shown,
       };
-    })(),
+    },
     /*
      * THE RUN OF SHOW, WHICH IS WHAT THIS BLOCK WAS ALWAYS MEANT TO BE.
      *
@@ -1351,7 +1434,7 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * The gates are still here, under `gates`, because knowing which gates have run is genuinely
      * useful — it is just not the day.
      */
-    day_flow: {
+    day_flow: () => ({
       content: {
         blocks: runOfShow,
         complete: runOfShow.filter((b) => b.done).length,
@@ -1367,8 +1450,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         conflict_rule: "If the Run of Show conflicts with the Pillar Contracts, the Pillar Contracts win.",
       },
       isEmpty: runOfShow.every((b) => !b.done),
-    },
-    meetings: {
+    }),
+    meetings: () => ({
       content: {
         /*
          * THE WEDNESDAY PACKET LIVES HERE RATHER THAN IN A FOURTEENTH BLOCK. This file states that
@@ -1428,16 +1511,16 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         (overdueFollowUps?.n ?? 0) === 0 &&
         (dueTouches.results?.length ?? 0) === 0,
       sourceId: meetingsToday[0]?.id ?? null,
-    },
-    open_loops: {
+    }),
+    open_loops: () => ({
       content: {
         loops: loops.slice(0, 10),
         total: loops.length,
         carried_forward: carried,
       },
       isEmpty: loops.length === 0,
-    },
-    critical_alerts: {
+    }),
+    critical_alerts: () => ({
       content: {
         alerts: shownAlerts,
         /*
@@ -1459,30 +1542,30 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         dismissed: dismissedAlerts,
       },
       isEmpty: shownAlerts.length === 0,
-    },
-    spirit_signal: {
+    }),
+    spirit_signal: () => ({
       content: {
         advisory: true,
-        note: spirit.note,
-        reality_priority: spirit.reality_priority,
+        note: spirit!.note,
+        reality_priority: spirit!.reality_priority,
         moon: {
-          phase: spirit.astro.phase,
-          sign: spirit.astro.moon_sign,
-          cusp: spirit.astro.cusp,
-          next_sign: spirit.astro.next_sign,
-          illumination_bps: spirit.astro.illumination_bps,
-          waxing: spirit.astro.waxing,
+          phase: spirit!.astro.phase,
+          sign: spirit!.astro.moon_sign,
+          cusp: spirit!.astro.cusp,
+          next_sign: spirit!.astro.next_sign,
+          illumination_bps: spirit!.astro.illumination_bps,
+          waxing: spirit!.astro.waxing,
         },
-        windows: spirit.astro.windows,
-        rituals_due: spirit.rituals_due,
-        contribution: spirit.contribution,
-        ancestors: spirit.ancestors,
-        manifestations: spirit.manifestations,
+        windows: spirit!.astro.windows,
+        rituals_due: spirit!.rituals_due,
+        contribution: spirit!.contribution,
+        ancestors: spirit!.ancestors,
+        manifestations: spirit!.manifestations,
       },
       // Canon §15 keeps the element on the screen; it is never "empty" in the
       // sense the other blocks are, because the sky is always something.
       isEmpty: false,
-    },
+    }),
     /*
      * BLOCKS 08 AND 09, BUILT FROM HER OWN DOCUMENTS AND FROM NO MODEL AT ALL.
      *
@@ -1491,17 +1574,17 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
      * rotating lens and a named mode are decidable from the day's state, so neither block spends an
      * inference call, and each says why it chose what it chose.
      */
-    coaching_focus: {
+    coaching_focus: () => ({
       content: {
-        mode: focus.mode.title,
-        trigger: focus.mode.trigger,
-        rules: focus.mode.rules,
-        because: focus.because,
-        law: { n: focus.law.n, title: focus.law.title, text: focus.law.text, because: focus.law_because },
+        mode: focus!.mode.title,
+        trigger: focus!.mode.trigger,
+        rules: focus!.mode.rules,
+        because: focus!.because,
+        law: { n: focus!.law.n, title: focus!.law.title, text: focus!.law.text, because: focus!.law_because },
       },
       isEmpty: false,
-    },
-    daily_thinking_lens: {
+    }),
+    daily_thinking_lens: () => ({
       content: {
         track: lens.title,
         purpose: lens.purpose,
@@ -1510,8 +1593,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         note: "A filter for how today gets read, not a thing to do.",
       },
       isEmpty: false,
-    },
-    approval_inbox: {
+    }),
+    approval_inbox: () => ({
       content: {
         pending: pendingTotal,
         by_risk: { high: pendingByRisk.high ?? 0, medium: pendingByRisk.medium ?? 0, low: pendingByRisk.low ?? 0 },
@@ -1520,8 +1603,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       },
       isEmpty: pendingTotal === 0,
       sourceId: oldestApproval?.id ?? null,
-    },
-    employee_status: (() => {
+    }),
+    employee_status: () => {
       /*
        * THE DOT IS A VERDICT, AND IT SAYS WHAT IT ASSERTS.
        *
@@ -1545,8 +1628,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         },
         isEmpty: people.length === 0,
       };
-    })(),
-    continuity_status: {
+    },
+    continuity_status: () => ({
       content: {
         relevant: continuityRelevant,
         last_snapshot: lastSnapshot ?? null,
@@ -1562,8 +1645,8 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
       },
       isEmpty: !continuityRelevant,
       sourceId: lastSnapshot?.id ?? null,
-    },
-    trading_status: {
+    }),
+    trading_status: () => ({
       content: {
         relevant: tradingRelevant,
         kill_switch: Boolean(tradingAuthority?.kill_switch),
@@ -1573,18 +1656,25 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
         open_incidents: openIncidents.results ?? [],
       },
       isEmpty: !tradingRelevant,
-    },
+    }),
   };
 
-  const blocks: Block[] = TODAY_BLOCKS.map((spec, index) => ({
-    key: spec.key,
-    title: spec.title,
-    order: index + 1,
-    content: built[spec.key].content,
-    source_type: spec.source,
-    source_id: built[spec.key].sourceId ?? null,
-    is_empty: built[spec.key].isEmpty,
-  }));
+  // Only the wanted blocks are built, so a builder never runs against reads that were not made.
+  // `order` stays the canon position, not the position within this group: the client sorts on it
+  // when it stitches the groups back together.
+  const blocks: Block[] = TODAY_BLOCKS.flatMap((spec, index) => {
+    if (!keys.has(spec.key)) return [];
+    const b = builders[spec.key]();
+    return [{
+      key: spec.key,
+      title: spec.title,
+      order: index + 1,
+      content: b.content,
+      source_type: spec.source,
+      source_id: b.sourceId ?? null,
+      is_empty: b.isEmpty,
+    }];
+  });
 
   await persistBlocks(db, day.id, blocks);
 
@@ -1593,11 +1683,42 @@ export async function assembleDayFlow(env: Env, day: DayRow): Promise<Block[]> {
     .bind(day.id)
     .first<{ n: number }>();
 
+  if (!partial) {
+    await db
+      .prepare(
+        `UPDATE days SET day_flow_json = ?, open_loops_count = ?, gate_entries_count = ? WHERE id = ?`,
+      )
+      .bind(JSON.stringify(blocks), loops.length, gateCount?.n ?? 0, day.id)
+      .run();
+    return blocks;
+  }
+
+  /*
+   * A PARTIAL BUILD STILL LEAVES `day_flow_json` WHOLE. The compiler reads the briefing's lines out
+   * of that column, and a column holding only the group that happened to be requested last would
+   * lose them. So the whole day is re-stitched from `day_flow_blocks`, which every group writes to
+   * — as text, without parsing: thirteen JSON documents are joined, not decoded and re-encoded.
+   */
+  const stored = await db
+    .prepare(
+      `SELECT block_key, block_order, title, content, source_type, source_id, is_empty
+         FROM day_flow_blocks WHERE day_id = ? ORDER BY block_order ASC`,
+    )
+    .bind(day.id)
+    .all<{ block_key: string; block_order: number; title: string; content: string; source_type: string; source_id: string | null; is_empty: number }>();
+  const stitched = "[" + (stored.results ?? []).map((r) =>
+    `{"key":${JSON.stringify(r.block_key)},"title":${JSON.stringify(r.title)},"order":${r.block_order},` +
+    `"content":${r.content},"source_type":${JSON.stringify(r.source_type)},"source_id":${JSON.stringify(r.source_id)},` +
+    `"is_empty":${r.is_empty ? "true" : "false"}}`).join(",") + "]";
   await db
     .prepare(
-      `UPDATE days SET day_flow_json = ?, open_loops_count = ?, gate_entries_count = ? WHERE id = ?`,
+      keys.has("open_loops")
+        ? `UPDATE days SET day_flow_json = ?, gate_entries_count = ?, open_loops_count = ? WHERE id = ?`
+        : `UPDATE days SET day_flow_json = ?, gate_entries_count = ? WHERE id = ?`,
     )
-    .bind(JSON.stringify(blocks), loops.length, gateCount?.n ?? 0, day.id)
+    .bind(...(keys.has("open_loops")
+      ? [stitched, gateCount?.n ?? 0, loops.length, day.id]
+      : [stitched, gateCount?.n ?? 0, day.id]))
     .run();
 
   return blocks;
@@ -1681,7 +1802,9 @@ async function resolveDay(c: Context<{ Bindings: Env; Variables: Vars }>): Promi
 /** The default screen. One request returns the whole briefing. */
 today.get("/", async (c) => {
   const day = await resolveDay(c);
-  const blocks = await assembleDayFlow(c.env, day);
+  // `?blocks=a,b` builds only those blocks — how the screen loads, six requests in parallel, each
+  // inside the Free plan's 10 ms. No parameter builds all thirteen in one pass, as the cron does.
+  const blocks = await assembleDayFlow(c.env, day, parseBlockKeys(c.req.query("blocks")));
   const fresh = await c.env.DB.prepare(`SELECT * FROM days WHERE id = ?`).bind(day.id).first<DayRow>();
   const gates = await c.env.DB
     .prepare(`SELECT gate, completed_at FROM gate_entries WHERE day_id = ? ORDER BY completed_at ASC`)

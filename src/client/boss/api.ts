@@ -82,6 +82,13 @@ export const api = {
   lock: () => call("/auth/lock", post("")),
 
   today: (date?: string) => call<any>(`/today${date ? `?date=${date}` : ""}`),
+  /**
+   * One group of Today's blocks. The screen fires one of these per group, in parallel, and stitches
+   * the answers back into canon §15's thirteen — see `TODAY_GROUPS` in the worker's today route for
+   * why the day is not fetched whole.
+   */
+  todayBlocks: (blocks: readonly string[], date?: string) =>
+    call<any>(`/today?blocks=${blocks.join(",")}${date ? `&date=${date}` : ""}`),
   days: () => call<any[]>("/today/days"),
   coachingState: () => call<any>("/today/coaching"),
   coachingConsent: (body: unknown) => call<any>("/today/coaching/consent", post("", body)),

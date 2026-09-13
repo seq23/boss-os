@@ -85,8 +85,11 @@ function exactDates(birth: BirthData, from: number, to: number, tz: string): Mon
   const chart = natalChart(birth);
   const best = new Map<string, { orb: number; at: number; body: string; point: string; aspect: string; pointName: string; bodyName: string }>();
 
+  // Only the slow bodies are asked for — the fast ones were computed at every sample and thrown
+  // away on the next line, which was half the cost of the month.
+  const slow = [...SLOW];
   for (let t = from; t <= to; t += SIX_HOURS) {
-    for (const a of transitAspects(chart, t)) {
+    for (const a of transitAspects(chart, t, slow)) {
       if (!SLOW.has(a.body)) continue;
       const key = `${a.body}|${a.natal_point}|${a.aspect}`;
       const seen = best.get(key);

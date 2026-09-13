@@ -33,6 +33,20 @@ type Payload = {
   limits: { morning_priorities: number; midday_checks: number; night_review_prompts: number };
 };
 
+/**
+ * The groups, mirrored from `TODAY_GROUPS` in the worker. Each is one request; together they are
+ * the thirteen. A key listed nowhere here would never be fetched, which is why the worker's list is
+ * the authority and this one is checked against it by test.
+ */
+export const TODAY_GROUPS: readonly (readonly string[])[] = [
+  ["todays_contract", "day_flow", "coaching_focus", "daily_thinking_lens"],
+  ["executive_briefing"],
+  ["meetings", "open_loops"],
+  ["critical_alerts"],
+  ["spirit_signal"],
+  ["approval_inbox", "employee_status", "continuity_status", "trading_status"],
+];
+
 const time = (ms: number) =>
   new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
@@ -42,14 +56,37 @@ export function Today() {
   const [flash, setFlash] = useState<string | null>(null);
   const [gate, setGate] = useState<"morning" | "midday" | "night" | null>(null);
 
+  /*
+   * SIX REQUESTS, ONE SCREEN.
+   *
+   * Boss OS runs on Cloudflare's Free plan, which allows a request 10 ms of CPU, and the owner keeps
+   * it there. Fetching the whole day in one request cost ~18 ms and Cloudflare killed it — that was
+   * the 403 on this tab. So the thirteen blocks are asked for in groups, all at once, and stitched
+   * back together here in canon's order. Nothing is missing from the result; it just arrives in
+   * parallel.
+   *
+   * A group that fails does not take the screen with it: the blocks that arrived render, and the
+   * failure is shown as a notice naming what it was. A blank tab was the defect; a tab with twelve
+   * blocks and one sentence is the fix.
+   */
   const load = useCallback(async () => {
-    try {
-      setData(await api.today());
-      setError(null);
-    } catch (e) {
-      setError(e);
+    const settled = await Promise.allSettled(
+      TODAY_GROUPS.map((group) => api.todayBlocks(group)),
+    );
+    const good = settled.filter((r): r is PromiseFulfilledResult<Payload> => r.status === "fulfilled").map((r) => r.value);
+    const bad = settled.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+
+    if (good.length === 0) {
+      setError(bad[0]?.reason ?? new Error("Today could not be loaded"));
       setData((prev) => prev);
+      return;
     }
+
+    const blocks = good.flatMap((p) => p.blocks).sort((a, b) => a.order - b.order);
+    // Every group carries the day and its gates; the freshest answer is the one to show.
+    const latest = good[good.length - 1]!;
+    setData({ day: latest.day, blocks, gates: latest.gates, limits: latest.limits });
+    setError(bad.length > 0 ? bad[0]!.reason : null);
   }, []);
 
   useEffect(() => { load(); }, [load]);

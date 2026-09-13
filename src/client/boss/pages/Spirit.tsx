@@ -3,6 +3,9 @@ import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { inOwnerZone, dayInOwnerZone, OWNER_TIMEZONE_LABEL } from "../../../shared/boss/timezone";
+// The same arithmetic the Worker used to run for this screen, run here instead — pure functions
+// with no bindings, so the page and the Worker cannot disagree about a date.
+import { monthAhead } from "../../../worker/boss/spirit/month";
 
 /**
  * Spirit — canon §43, §42.1–42.3, §44, and §5.2.
@@ -65,6 +68,7 @@ export function Spirit() {
   if (!signal || !month) return <Loading />;
 
   const { astro, rituals_due, contribution, ancestors, manifestations } = signal;
+  const highlights = monthAhead(month.highlights_inputs?.birth ?? null, month.highlights_inputs?.at ?? Date.now());
   const practice = signal.practice;
   const sky = signal.sky;
   const major = signal.major_event ?? null;
@@ -638,6 +642,29 @@ export function Spirit() {
           {manifestations.without_evidence_this_month} with nothing done or happened this month.
         </div>
       )}
+
+      {/*
+        * THE DATES ABOUT HER, computed here from the payload's inputs — see the month route for why
+        * the Worker no longer spends its CPU on this. Rendered at last: the endpoint had carried
+        * these since 7 September and no screen had ever shown them.
+        */}
+      <p className="eyebrow">Dates worth knowing — {month.month}</p>
+      <div className="row-sub">{highlights.note}</div>
+      {highlights.dates.length === 0 ? (
+        <Empty title="No dates this month rise above the ordinary" hint="The full almanac is below." />
+      ) : (
+        highlights.dates.map((d: any) => (
+          <div className="row" key={`${d.day}-${d.headline}`}>
+            <div className="row-main">
+              <div className="row-title">{d.headline}</div>
+              <div className="row-sub">
+                {inOwnerZone(d.at)} {OWNER_TIMEZONE_LABEL} · {d.scope === "personal" ? "your chart" : "sky-wide"} · {d.why}
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+      <div className="row-sub">{highlights.caveat}</div>
 
       <p className="eyebrow">Almanac — {month.month}</p>
       {month.almanac.filter((e: any) => e.kind !== "window").map((e: any) => (

@@ -34,7 +34,7 @@
  */
 
 import { moonPhase, moonPosition } from "./astro";
-import { planetPosition, ZODIAC_SIGNS } from "./planets";
+import { geocentricLongitude, planetPosition, ZODIAC_SIGNS } from "./planets";
 
 /** Hers, verbatim, and it sits above the table rather than under it. */
 export const ASTROLOGY_DISCLAIMER =
@@ -202,29 +202,60 @@ export interface MoonAspectEvent {
  * what a `null` with no accompanying flag would have been.
  */
 export function lastAspectBeforeIngress(ts: number, ingressAt: number): MoonAspectEvent | null {
-  let last: MoonAspectEvent | null = null;
-  for (const body of VOC_PARTNERS) {
-    for (const angle of PTOLEMAIC) {
-      let prev = offsetFromExact(moonPosition(ts).longitude, longitudeOf(body, ts).longitude, angle);
-      for (let t = ts + SCAN_STEP_MS; t <= ingressAt; t += SCAN_STEP_MS) {
-        const now = offsetFromExact(moonPosition(t).longitude, longitudeOf(body, t).longitude, angle);
-        if (prev === 0 || (prev < 0) !== (now < 0)) {
+  /*
+   * ONE MOON PER STEP, NOT THIRTY.
+   *
+   * This scan used to be written body-outer, angle-middle, time-inner: for every one of six
+   * partners and five angles it walked the whole window in ten-minute steps, and at each step it
+   * evaluated the full Meeus lunar series again — the same instant, thirty times over — and the
+   * partner's position through `planetPosition`, which also computes latitude, distance and a
+   * daily motion the comparison never reads. Two and a half days of window is ~360 steps, so that
+   * was ~11,000 lunar evaluations to answer a question that needs 360. On the Free plan's 10 ms
+   * this one function was most of the Spirit tab's budget.
+   *
+   * Now the window is walked ONCE. At each step the Moon is evaluated once and each partner once,
+   * by `geocentricLongitude` — the very value `planetPosition` reports as `longitude`, so nothing
+   * about the answer moves — and the thirty (partner, angle) pairs are checked against those
+   * numbers. The crossings found, and the minute each bisects to, are the same as before.
+   *
+   * THE TIE-BREAK IS KEPT. The old loop accepted a later crossing only when strictly later, so
+   * among crossings at the same minute the first (partner, angle) in list order won. Candidates
+   * are chosen the same way here rather than by whichever the time-major walk met first.
+   */
+  const partners = VOC_PARTNERS.map((body) => ({ body, longitude: geocentricLongitude(body, ts) }));
+  const moon0 = moonPosition(ts).longitude;
+  const prev: number[] = [];
+  for (const p of partners) for (const angle of PTOLEMAIC) prev.push(offsetFromExact(moon0, p.longitude, angle));
+
+  let best: { at: number; rank: number; body: string; angle: number } | null = null;
+  for (let t = ts + SCAN_STEP_MS; t <= ingressAt; t += SCAN_STEP_MS) {
+    const moon = moonPosition(t).longitude;
+    let i = 0;
+    for (const p of partners) {
+      const lon = geocentricLongitude(p.body, t);
+      for (const angle of PTOLEMAIC) {
+        const was = prev[i]!;
+        const now = offsetFromExact(moon, lon, angle);
+        if (was === 0 || (was < 0) !== (now < 0)) {
           // Bisect onto the crossing so the minute is real rather than a step boundary.
           let lo = t - SCAN_STEP_MS;
           let hi = Math.min(t, ingressAt);
-          const sign0 = prev < 0;
+          const sign0 = was < 0;
           while (hi - lo > MINUTE_MS) {
             const mid = Math.floor((lo + hi) / 2);
-            const v = offsetFromExact(moonPosition(mid).longitude, longitudeOf(body, mid).longitude, angle);
+            const v = offsetFromExact(moonPosition(mid).longitude, geocentricLongitude(p.body, mid), angle);
             if ((v < 0) === sign0) lo = mid; else hi = mid;
           }
-          if (!last || hi > last.at) last = { at: hi, body, name: NAMES[body]!, aspect: ASPECT_NAME[angle]! };
+          if (!best || hi > best.at || (hi === best.at && i < best.rank)) {
+            best = { at: hi, rank: i, body: p.body, angle };
+          }
         }
-        prev = now;
+        prev[i] = now;
+        i++;
       }
     }
   }
-  return last;
+  return best ? { at: best.at, body: best.body, name: NAMES[best.body]!, aspect: ASPECT_NAME[best.angle]! } : null;
 }
 
 export interface VoidOfCourse {
