@@ -66,6 +66,29 @@ const GOOD_SOURCE = {
 
 export const SOURCING_CASES = [
   {
+    name: "DEGRADE, NOT DISAPPEAR: one uncited figure beside sourced prose",
+    section: {
+      key: "one_minute_summary",
+      heading: "One-Minute Executive Summary",
+      so_what: "Watch the discount rate rather than the capex line.",
+      bullets: ["Brent fell 2.8% to ~$72/bbl.", "Capex credibility is replacing adoption as the anchor."],
+    },
+    sources: [GOOD_SOURCE],
+    keep: true,
+    dropped: 1,
+    why:
+      "the first gate deleted the whole section, and a measured run lost SIX that way — including " +
+      "the One-Minute Summary and the Top 5 Headlines, the two she asked for by name. Losing a " +
+      "sourced sentence because an uncited number sat next to it is the wrong trade",
+  },
+  {
+    name: "a section whose every line carries an uncited figure",
+    section: { key: "key_events", heading: "Key Events Today", bullets: ["FOMC at 13:00 CT, $2.5bn reprices."] },
+    sources: [GOOD_SOURCE],
+    keep: false,
+    why: "nothing survives the strip, so a heading over nothing would be an absence with more ceremony",
+  },
+  {
     name: "A REPORT WRITTEN BEFORE THE RULE: no section anywhere cites a source",
     section: { key: "markets_dashboard", heading: "Markets & Macro Dashboard", bullets: ["Brent fell 2.8% to ~$72/bbl."] },
     sources: [GOOD_SOURCE],
@@ -198,8 +221,24 @@ export function check({ sourcing, standing, deliver, spec, screen, prompt }) {
         `gate would never fire on a report written under the rule.`,
       );
     }
-    if (!c.keep && c.kept === false && !c.why_given) {
-      problems.push(`${c.name}: withheld with no reason, so the absence is silent.`);
+    if (c.keep && c.want_dropped > 0 && c.dropped !== c.want_dropped) {
+      problems.push(
+        `${c.name}: dropped ${c.dropped} line(s) and should have dropped ${c.want_dropped}. The uncited ` +
+        `FIGURE is what goes, never the section around it.`,
+      );
+    }
+    /*
+     * EVERY ABSENCE CARRIES A REASON, UNDER BOTH NAMES. A reviewer read `reason`, got `undefined`,
+     * and reported that six absences had come back unexplained — which would have been serious had
+     * it been true. It was not; the field is `why`. But a payload where the obvious name returns
+     * nothing gets stepped on again, so both are populated and both are checked.
+     */
+    if (!c.keep && c.kept === false && (!c.why_given || !c.reason_given)) {
+      problems.push(
+        `${c.name}: withheld with no reason under \`why\`=${JSON.stringify(c.why_given)} / ` +
+        `\`reason\`=${JSON.stringify(c.reason_given)}. A section that vanishes without saying why is ` +
+        `indistinguishable from a broken feature.`,
+      );
     }
   }
 
@@ -261,6 +300,7 @@ export function check({ sourcing, standing, deliver, spec, screen, prompt }) {
      */
     for (const [what, re] of [
       ["per-section sources", /sources\s+REQUIRED/],
+      ["that EVERY section names them, not only the dashboard", /Not just the dashboard\./],
       ["the watching / gaps split", /FORWARD-LOOKING only/],
       ["the closed-market dashboard rule", /RENDER THE LAST CLOSE AND LABEL IT/],
     ]) {
@@ -308,6 +348,9 @@ async function evaluate() {
       name: c.name, keep: c.keep, why: c.why,
       kept: out.kept.some((k) => k.key === c.section.key),
       why_given: out.withheld[0]?.why ?? "",
+      reason_given: out.withheld[0]?.reason ?? "",
+      dropped: out.kept.find((k) => k.key === c.section.key)?.dropped_for_sourcing ?? 0,
+      want_dropped: c.dropped ?? 0,
       pre_rule: out.pre_rule,
     };
   });
@@ -383,6 +426,21 @@ async function selfTest() {
     {
       name: "corrections dropped in the name of citations",
       input: { ...good, deliver: good.deliver.replaceAll("corrections", "dropped") },
+      expect: 1,
+    },
+    {
+      name: "the prompt letting the dashboard be the only sourced section again",
+      input: { ...good, prompt: good.prompt.replace(/Not just the dashboard\./, "") },
+      expect: 1,
+    },
+    {
+      name: "THE REGRESSION: a section deleted whole instead of degraded",
+      input: { ...good, sourcing: good.sourcing.map((c) => (c.name.startsWith("DEGRADE") ? { ...c, kept: false } : c)) },
+      expect: 1,
+    },
+    {
+      name: "an absence with an empty reason",
+      input: { ...good, sourcing: good.sourcing.map((c) => (c.keep ? c : { ...c, reason_given: "" })) },
       expect: 1,
     },
     {

@@ -409,6 +409,16 @@ function renderSection(sec: any, i: number, insight?: any) {
       <p className="today-2">{sec.heading ?? `Section ${i + 1}`}</p>
       {/* What she should DO or watch because of it, before the evidence for it. */}
       {sec.so_what && <div className="today-4">{sec.so_what}</div>}
+      {/*
+        * WHAT THIS SECTION LOST, SAID ON THE SECTION. An uncited figure never reaches her — that is
+        * the $72 rule — but the line that carried it disappearing in silence would be the same
+        * defect in a smaller box, so the section says how much it dropped and why.
+        */}
+      {sec.dropped_for_sourcing > 0 && (
+        <p className="brief-absent">
+          {sec.dropped_for_sourcing} line{sec.dropped_for_sourcing === 1 ? "" : "s"} dropped here — {sec.dropped_for_sourcing === 1 ? "it" : "they"} carried figures with no source.
+        </p>
+      )}
 
       {/* §5's Top 5 Headlines: each one a fact, why it matters, and an importance score. */}
       {Array.isArray(sec.items) && sec.items.length > 0 && (
