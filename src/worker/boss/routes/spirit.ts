@@ -13,6 +13,7 @@
  */
 
 import { Hono } from "hono";
+import { batchReads } from "../lib/batchReads";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -97,9 +98,13 @@ spirit.get("/day", async (c) => {
    * all. The screen showed the sky and none of the practice, which is the wrong way round: §5.2 puts
    * reality first, and the practice IS the reality here.
    */
-  const day = await c.env.DB
-    .prepare(`SELECT day_mode FROM days WHERE id = ?`).bind(id)
-    .first<{ day_mode: string | null }>();
+  // The day's mode and her birth data in one round trip; the signal above already batched its own.
+  const [dayRows, birthRows] = await c.env.DB.batch([
+    c.env.DB.prepare(`SELECT day_mode FROM days WHERE id = ?`).bind(id),
+    c.env.DB.prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`),
+  ]);
+  const day = (dayRows!.results as { day_mode: string | null }[])[0] ?? null;
+  const birthRow = (birthRows!.results as { value: string }[])[0] ?? null;
   const mode = day?.day_mode ?? null;
   const reduced = mode === "recovery" || mode === "mvd";
 
@@ -134,10 +139,6 @@ spirit.get("/day", async (c) => {
    * these are reported as what is overhead and never as a reason to do or not do anything. No
    * interpretation is generated: an aspect is named, and what it means is hers.
    */
-  const birthRow = await c.env.DB
-    .prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)
-    .first<{ value: string }>();
-
   let sky: unknown = {
     available: false,
     reason: "No birth data yet, so there is no natal chart for anything to transit.",
@@ -247,23 +248,24 @@ spirit.get("/month", async (c) => {
   await ensureAlmanac(c.env.DB, Date.now());
   await ensureAlmanacAround(c.env.DB, start + 15 * DAY_MS);
 
+  // Seven reads, one batch — every statement is CPU on this runtime (lib/batchReads.ts).
+  const reads = batchReads(c.env.DB);
   const [events, contributions, ancestors, rituals, manifestations, dreams, birthRow] = await Promise.all([
-    c.env.DB
+    reads.all<any>(true, () => c.env.DB
       .prepare(`SELECT * FROM astro_calendar WHERE starts_at >= ? AND starts_at < ? ORDER BY starts_at ASC`)
-      .bind(start, end)
-      .all<any>(),
-    c.env.DB.prepare(`SELECT * FROM contributions WHERE month = ? ORDER BY ts DESC`).bind(month).all<any>(),
-    c.env.DB.prepare(`SELECT * FROM ancestor_entries WHERE month = ? ORDER BY ts DESC`).bind(month).all<any>(),
-    c.env.DB
+      .bind(start, end)),
+    reads.all<any>(true, () => c.env.DB.prepare(`SELECT * FROM contributions WHERE month = ? ORDER BY ts DESC`).bind(month)),
+    reads.all<any>(true, () => c.env.DB.prepare(`SELECT * FROM ancestor_entries WHERE month = ? ORDER BY ts DESC`).bind(month)),
+    reads.all<any>(true, () => c.env.DB
       .prepare(
         `SELECT r.*, (SELECT COUNT(*) FROM ritual_runs x WHERE x.ritual_id = r.id AND x.ts >= ? AND x.ts < ?) AS runs_this_month
            FROM rituals r WHERE r.status = 'active' ORDER BY r.cadence, r.name`,
       )
-      .bind(start, end)
-      .all<any>(),
-    c.env.DB.prepare(`SELECT * FROM manifestations WHERE status = 'open' ORDER BY created_at DESC`).all<any>(),
-    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM dream_entries WHERE ts >= ? AND ts < ?`).bind(start, end).first<{ n: number }>(),
-    c.env.DB.prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`).first<{ value: string }>(),
+      .bind(start, end)),
+    reads.all<any>(true, () => c.env.DB.prepare(`SELECT * FROM manifestations WHERE status = 'open' ORDER BY created_at DESC`)),
+    reads.first<{ n: number }>(true, () => c.env.DB.prepare(`SELECT COUNT(*) AS n FROM dream_entries WHERE ts >= ? AND ts < ?`).bind(start, end)),
+    reads.first<{ value: string }>(true, () => c.env.DB.prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)),
+    reads.flush(),
   ]);
 
   const contributionRows = contributions.results ?? [];

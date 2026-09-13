@@ -15,6 +15,7 @@
  */
 
 import { newId } from "../lib/id";
+import { batchReads, type BatchReads } from "../lib/batchReads";
 import { monthIdInZone } from "../../../shared/boss/timezone";
 import {
   ADVISORY_NOTE, CANON_WINDOW_TYPES, buildAlmanac, currentLunation, moonPhase, moonPosition,
@@ -95,9 +96,12 @@ export async function ensureAlmanacRange(
  */
 export async function ensureAlmanac(db: D1Database, now = Date.now(), months = ALMANAC_MONTHS): Promise<{ built: number; total: number }> {
   const horizon = now + months * 30.44 * DAY_MS;
-  const covered = await db
-    .prepare(`SELECT MAX(starts_at) AS latest, COUNT(*) AS n FROM astro_calendar WHERE source = 'computed'`)
-    .first<{ latest: number | null; n: number }>();
+  // Both checks in one round trip — every statement is CPU on this runtime (lib/batchReads.ts).
+  const [coveredRows, kinds] = await db.batch([
+    db.prepare(`SELECT MAX(starts_at) AS latest, COUNT(*) AS n FROM astro_calendar WHERE source = 'computed'`),
+    db.prepare(`SELECT DISTINCT kind FROM astro_calendar WHERE source = 'computed'`),
+  ]) as [D1Result<{ latest: number | null; n: number }>, D1Result<{ kind: string }>];
+  const covered = coveredRows.results[0] ?? null;
 
   /*
    * "FAR ENOUGH AHEAD" IS NOT THE SAME QUESTION AS "EVERYTHING IT SHOULD HOLD".
@@ -110,9 +114,6 @@ export async function ensureAlmanac(db: D1Database, now = Date.now(), months = A
    * So the horizon AND the set of kinds both have to hold. A kind that is expected and absent means
    * this build knows how to compute something the table has never been given.
    */
-  const kinds = await db
-    .prepare(`SELECT DISTINCT kind FROM astro_calendar WHERE source = 'computed'`)
-    .all<{ kind: string }>();
   const present = new Set((kinds.results ?? []).map((k) => k.kind));
   const missingKind = EXPECTED_COMPUTED_KINDS.find((k) => !present.has(k));
 
@@ -237,14 +238,17 @@ export interface RealityPriority {
  * screen says so — a system that offers a lunar window while three tasks are
  * dead in the queue has its priorities inverted.
  */
-export async function realityPriority(db: D1Database, now = Date.now()): Promise<RealityPriority> {
+export async function realityPriority(db: D1Database, now = Date.now(), reads?: BatchReads): Promise<RealityPriority> {
+  // Six counts, one round trip. `reads` may be a caller's batch, so the signal's reads ride with it.
+  const own = reads ?? batchReads(db);
   const [deadLetters, failedTasks, incidents, expiring, overdueFollowUps, killSwitch] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'failed'`).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM trading_incidents WHERE resolved_at IS NULL AND severity IN ('high','critical')`).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`).bind(now + DAY_MS).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM follow_ups WHERE status = 'open' AND due_at < ?`).bind(now).first<{ n: number }>(),
-    db.prepare(`SELECT kill_switch FROM trading_authority LIMIT 1`).first<{ kill_switch: number }>(),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`)),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'failed'`)),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM trading_incidents WHERE resolved_at IS NULL AND severity IN ('high','critical')`)),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`).bind(now + DAY_MS)),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM follow_ups WHERE status = 'open' AND due_at < ?`).bind(now)),
+    own.first<{ kill_switch: number }>(true, () => db.prepare(`SELECT kill_switch FROM trading_authority LIMIT 1`)),
+    reads ? Promise.resolve() : own.flush(),
   ]);
 
   const counts = {
@@ -385,16 +389,28 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
   const dayStart = astro.date_ts;
   const month = monthId(dayStart);
 
+  // Twelve reads, one batch: the signal's own six, the reality-priority counts, and the horizon
+  // scan for a major event. On the Free plan's 10 ms this is the difference — lib/batchReads.ts.
+  const reads = batchReads(db);
+  const HORIZON_MS = 48 * 60 * 60 * 1000;
+  const upcomingP = reads
+    .all<{ kind: string; label: string; starts_at: number; detail: string | null }>(true, () => db
+      .prepare(
+        `SELECT kind, label, starts_at, detail FROM astro_calendar
+          WHERE starts_at >= ? AND starts_at <= ?
+          ORDER BY starts_at LIMIT 20`,
+      )
+      .bind(now - 6 * 60 * 60 * 1000, now + HORIZON_MS))
+    .catch(() => ({ results: [] as any[] }));
   const [rituals, contributions, ancestors, openManifestations, evidenceThisMonth, reality] = await Promise.all([
-    db.prepare(`SELECT id, name, cadence, anchor, last_done_at FROM rituals WHERE status = 'active'`)
-      .all<{ id: string; name: string; cadence: string; anchor: string | null; last_done_at: number | null }>(),
-    db
+    reads.all<{ id: string; name: string; cadence: string; anchor: string | null; last_done_at: number | null }>(true, () =>
+      db.prepare(`SELECT id, name, cadence, anchor, last_done_at FROM rituals WHERE status = 'active'`)),
+    reads.all<{ id: string; ts: number; kind: string; note: string | null; recipient: string | null }>(true, () => db
       .prepare(`SELECT id, ts, kind, note, recipient FROM contributions WHERE month = ? ORDER BY ts DESC`)
-      .bind(month)
-      .all<{ id: string; ts: number; kind: string; note: string | null; recipient: string | null }>(),
-    db.prepare(`SELECT COALESCE(SUM(minutes),0) AS minutes FROM ancestor_entries WHERE month = ?`).bind(month).first<{ minutes: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM manifestations WHERE status = 'open'`).first<{ n: number }>(),
-    db
+      .bind(month)),
+    reads.first<{ minutes: number }>(true, () => db.prepare(`SELECT COALESCE(SUM(minutes),0) AS minutes FROM ancestor_entries WHERE month = ?`).bind(month)),
+    reads.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM manifestations WHERE status = 'open'`)),
+    reads.first<{ n: number }>(true, () => db
       .prepare(
         `SELECT COUNT(*) AS n FROM manifestations m
           WHERE m.status = 'open'
@@ -403,9 +419,11 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
                WHERE e.manifestation_id = m.id AND e.kind IN ('action','result') AND e.ts >= ?
             )`,
       )
-      .bind(Date.parse(`${month}-01T00:00:00.000Z`))
-      .first<{ n: number }>(),
-    realityPriority(db, now),
+      .bind(Date.parse(`${month}-01T00:00:00.000Z`))),
+    realityPriority(db, now, reads),
+    // Everything above is recorded; this sends it. realityPriority records its reads synchronously
+    // before its first await, so they are in the batch too.
+    reads.flush(),
   ]);
 
   const windows = (JSON.parse(astro.windows ?? "[]") as { label: string; detail?: string }[]).map((w) => ({
@@ -453,16 +471,7 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
    * is the same as putting nothing there.
    */
   const MAJOR_KINDS = new Set(["new_moon", "full_moon", "eclipse"]);
-  const HORIZON_MS = 48 * 60 * 60 * 1000;
-  const upcoming = await db
-    .prepare(
-      `SELECT kind, label, starts_at, detail FROM astro_calendar
-        WHERE starts_at >= ? AND starts_at <= ?
-        ORDER BY starts_at LIMIT 20`,
-    )
-    .bind(now - 6 * 60 * 60 * 1000, now + HORIZON_MS)
-    .all<{ kind: string; label: string; starts_at: number; detail: string | null }>()
-    .catch(() => ({ results: [] as any[] }));
+  const upcoming = await upcomingP;
   const majorRow = (upcoming.results ?? []).find((e) => MAJOR_KINDS.has(e.kind)) ?? null;
   const majorEvent = majorRow
     ? {

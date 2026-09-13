@@ -25,6 +25,7 @@
  */
 
 import { AWAITING_ALMANAC, MANUAL_ALMANAC, MANUAL_ALMANAC_KINDS, type ManualAlmanacKind } from "./astro";
+import { batchReads } from "../lib/batchReads";
 import { newId } from "../lib/id";
 import { badRequest } from "../lib/http";
 
@@ -266,33 +267,38 @@ export async function almanacCoverage(db: D1Database, now = Date.now(), months =
   const horizonEndsAt = now + months * 30.44 * DAY_MS;
   const manual: ManualKindCoverage[] = [];
 
-  for (const entry of MANUAL_ALMANAC) {
-    const stats = await db
+  // Three reads per manual kind, all in one batch rather than serial awaits — each statement is
+  // CPU on this runtime, and this ran on every Spirit month view. See lib/batchReads.ts.
+  const reads = batchReads(db);
+  const recorded = MANUAL_ALMANAC.map((entry) => ({
+    entry,
+    stats: reads.first<{ n: number; earliest: number | null; latest: number | null }>(true, () => db
       .prepare(
         `SELECT COUNT(*) AS n, MIN(starts_at) AS earliest, MAX(COALESCE(ends_at, starts_at)) AS latest
            FROM astro_calendar WHERE kind = ? AND source = 'imported'`,
       )
-      .bind(entry.kind)
-      .first<{ n: number; earliest: number | null; latest: number | null }>();
-
-    const sources = await db
+      .bind(entry.kind)),
+    sources: reads.all<{ method: string }>(true, () => db
       .prepare(`SELECT DISTINCT method FROM astro_calendar WHERE kind = ? AND source = 'imported'`)
-      .bind(entry.kind)
-      .all<{ method: string }>();
-
+      .bind(entry.kind)),
     /*
      * COMPUTED ROWS COUNT AS COVERAGE NOW, and before the planetary layer existed there were none to
      * count — this query asked only for `source = 'imported'`, so the answer was always zero and the
      * screen always said AWAITING. Both sources are counted for coverage; the imported tally is kept
      * separate so a person can still see what they entered themselves.
      */
-    const computed = await db
+    computed: reads.first<{ n: number; latest: number | null }>(true, () => db
       .prepare(
         `SELECT COUNT(*) AS n, MAX(COALESCE(ends_at, starts_at)) AS latest
            FROM astro_calendar WHERE kind = ? AND source = 'computed'`,
       )
-      .bind(entry.kind)
-      .first<{ n: number; latest: number | null }>();
+      .bind(entry.kind)),
+  }));
+  await reads.flush();
+
+  for (const r of recorded) {
+    const entry = r.entry;
+    const [stats, sources, computed] = await Promise.all([r.stats, r.sources, r.computed]);
 
     const imported = stats?.n ?? 0;
     const rows = imported + (computed?.n ?? 0);

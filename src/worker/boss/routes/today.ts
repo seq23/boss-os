@@ -15,6 +15,7 @@ import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
 import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relationships/follow_ups";
 import { spiritSignal } from "../spirit/day";
+import { batchReads } from "../lib/batchReads";
 import { pendingApprovals } from "../approvals/pending";
 import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from "../today/runOfShow";
 import { coachingFocus, lensFor } from "../today/faculty";
@@ -199,6 +200,11 @@ export async function ensureDay(db: D1Database, id: string): Promise<DayRow> {
   const dateTs = parseDayId(id);
   if (dateTs === null) throw badRequest("A day is identified as YYYY-MM-DD in UTC", `Received "${id}"`);
 
+  // One read on the ordinary path. The day exists on every request after the first, and a
+  // request costs about a millisecond of CPU per statement on this runtime — see lib/batchReads.ts.
+  const existing = await db.prepare(`SELECT * FROM days WHERE id = ?`).bind(id).first<DayRow>();
+  if (existing) return existing;
+
   await db
     .prepare(`INSERT INTO days (id, date_ts, created_at) VALUES (?,?,?) ON CONFLICT(id) DO NOTHING`)
     .bind(id, dateTs, Date.now())
@@ -382,7 +388,6 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
   // need is not made — that, not caching, is what keeps each group inside its budget.
   const keys = new Set<BlockKey>(only ?? TODAY_BLOCKS.map((b) => b.key));
   const want = (...k: BlockKey[]) => k.some((x) => keys.has(x));
-  const partial = keys.size < TODAY_BLOCKS.length;
   /*
    * THE MEETING PACKET, on the two days it is worth having and null on the other five.
    *
@@ -419,18 +424,17 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
    * screenshotted was a collapsed line reading "Nothing in the diary" over a full agenda — one
    * sentence counting the CRM table while the body rendered the packet. They cannot disagree now.
    */
-  const [theDiary, filedPacket] = want("meetings")
-    ? await Promise.all([
-        diary(env, Date.now()).catch(() => null),
-        env.DB
-          .prepare(
-            `SELECT id, counterpart, day_id, headline, blocking, published_at
-               FROM meeting_packets ORDER BY day_id DESC, published_at DESC LIMIT 1`,
-          )
-          .first<any>()
-          .catch(() => null),
-      ])
-    : [null, null];
+  const db = env.DB;
+  // Every plain read in this assembler goes into ONE batch per stage — see lib/batchReads.ts for
+  // the measurement that makes this the whole difference between a screen and a 403.
+  const reads = batchReads(db);
+
+  const theDiaryP = want("meetings") ? diary(env, Date.now()).catch(() => null) : Promise.resolve(null);
+  const filedPacketP = reads.first<any>(want("meetings"), () => env.DB
+    .prepare(
+      `SELECT id, counterpart, day_id, headline, blocking, published_at
+         FROM meeting_packets ORDER BY day_id DESC, published_at DESC LIMIT 1`,
+    )).catch(() => null);
 
   /*
    * Today's report, and the last good one.
@@ -440,11 +444,10 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
    * keyed to the day it is FOR, not the day it was written, so a retry at 09:00 still fills the
    * 06:30 slot rather than creating a second Tuesday.
    */
-  const [report, lastReport, reportDuty] = !want("executive_briefing") ? [null, null, null] : await Promise.all([
-    env.DB
+  const B = want("executive_briefing");
+  const reportP = reads.first<any>(B, () => env.DB
       .prepare(`SELECT * FROM executive_reports WHERE day_id = ? AND archived_at IS NULL LIMIT 1`)
-      .bind(day.id)
-      .first<any>(),
+      .bind(day.id));
     /*
      * THE WHOLE ROW, NOT JUST ITS TIMESTAMP — which is the fix.
      *
@@ -457,25 +460,21 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
      * A day-old briefing is worth more than a blank one every time. It is shown, labelled with the
      * day it is for and how old it is, and Today never renders nothing where a report exists.
      */
-    env.DB
-      .prepare(`SELECT * FROM executive_reports WHERE status != 'failed' AND archived_at IS NULL ORDER BY generated_at DESC LIMIT 1`)
-      .first<any>(),
-    env.DB
+  const lastReportP = reads.first<any>(B, () => env.DB
+      .prepare(`SELECT * FROM executive_reports WHERE status != 'failed' AND archived_at IS NULL ORDER BY generated_at DESC LIMIT 1`));
+  const reportDutyP = reads.first<{
+        id: string; name: string; suspended: number; last_run_at: number | null;
+        next_due_at: number | null; last_task_id: string | null;
+        task_status: string | null; task_error: string | null;
+      }>(B, () => env.DB
       .prepare(
         `SELECT d.id, d.name, d.suspended, d.last_run_at, d.next_due_at, d.last_task_id,
                 t.status AS task_status, t.error AS task_error
            FROM standing_duties d
            LEFT JOIN tasks t ON t.id = d.last_task_id
           WHERE d.id = 'duty_exec_intel'`,
-      )
-      .first<{
-        id: string; name: string; suspended: number; last_run_at: number | null;
-        next_due_at: number | null; last_task_id: string | null;
-        task_status: string | null; task_error: string | null;
-      }>(),
-  ]);
+      ));
 
-  const db = env.DB;
   const now = Date.now();
   const from = day.date_ts;
   const to = startOfDayId(nextDayId(day.id));
@@ -496,7 +495,6 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
   // A read no wanted block consumes resolves to null instead of being made.
   const when = <T,>(wanted: boolean, read: () => Promise<T>, fallback: T): Promise<T> =>
     wanted ? read() : Promise.resolve(fallback);
-  const NONE = { results: [] } as unknown as D1Result<any>;
   const A = want("critical_alerts");
   const S = want("employee_status");
 
@@ -535,15 +533,11 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
      * up above an Inbox holding nothing. See `approvals/pending.ts`.
      */
     when(want("approval_inbox"), () => pendingApprovals(db), null as Awaited<ReturnType<typeof pendingApprovals>> | null),
-    when(want("approval_inbox"), () =>
-      db.prepare(`SELECT id, title, risk, requested_at FROM approvals WHERE status = 'pending' ORDER BY requested_at ASC LIMIT 1`)
-      .first<{ id: string; title: string; risk: string; requested_at: number }>(),
-      null),
-    when(want("approval_inbox") || A, () =>
-      db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`)
-      .bind(now + DAY_MS).first<{ n: number }>(),
-      null),
-    when(S, () => db.prepare(`SELECT status, COUNT(*) AS n FROM employees GROUP BY status`).all<{ status: string; n: number }>(), NONE),
+    reads.first<{ id: string; title: string; risk: string; requested_at: number }>(want("approval_inbox"), () => db.prepare(`SELECT id, title, risk, requested_at FROM approvals WHERE status = 'pending' ORDER BY requested_at ASC LIMIT 1`)
+      ),
+    reads.first<{ n: number }>(want("approval_inbox") || A, () => db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`)
+      .bind(now + DAY_MS)),
+    reads.all<{ status: string; n: number }>(S, () => db.prepare(`SELECT status, COUNT(*) AS n FROM employees GROUP BY status`)),
     /*
      * EVERY ACTIVE EMPLOYEE, WITH NO LIMIT ON THE LIST.
      *
@@ -555,48 +549,38 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
      * busyness with a cut-off hides exactly the employees doing nothing, which is the state most
      * worth seeing. `today/roster.ts` sorts by HEALTH instead, worst first, and cuts nobody.
      */
-    when(S, () =>
-      db.prepare(
+    reads.all<EmployeeRow>(S, () => db.prepare(
       `SELECT e.id, e.name, e.role, e.lane, COUNT(t.id) AS open_tasks
          FROM employees e
          LEFT JOIN tasks t ON t.employee_id = e.id AND t.status IN ('queued','running','awaiting_approval')
         WHERE e.status = 'active'
         GROUP BY e.id
         ORDER BY e.name ASC`,
-    ).all<EmployeeRow>(),
-      NONE),
-    when(want("continuity_status"), () =>
-      db.prepare(
+    )),
+    reads.first<{ n: number }>(want("continuity_status"), () => db.prepare(
       `SELECT COUNT(*) AS n FROM promotion_events p
         WHERE p.outcome = 'proposed'
           AND EXISTS (SELECT 1 FROM approvals a WHERE a.id = p.approval_id AND a.status = 'pending')`,
-    ).first<{ n: number }>(),
-      null),
-    when(want("continuity_status"), () =>
-      db.prepare(`SELECT id, ts, label, status, bytes FROM vault_snapshots ORDER BY ts DESC LIMIT 1`)
-      .first<{ id: string; ts: number; label: string; status: string; bytes: number }>(),
-      null),
-    when(A, () =>
-      db.prepare(`SELECT id, started_at, finished_at, status FROM cron_runs ORDER BY started_at DESC LIMIT 1`)
-      .first<{ id: string; started_at: number; finished_at: number | null; status: string }>(),
-      null),
-    when(A, () => db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`).first<{ n: number }>(), null),
+    )),
+    reads.first<{ id: string; ts: number; label: string; status: string; bytes: number }>(want("continuity_status"), () => db.prepare(`SELECT id, ts, label, status, bytes FROM vault_snapshots ORDER BY ts DESC LIMIT 1`)
+      ),
+    reads.first<{ id: string; started_at: number; finished_at: number | null; status: string }>(A, () => db.prepare(`SELECT id, started_at, finished_at, status FROM cron_runs ORDER BY started_at DESC LIMIT 1`)
+      ),
+    reads.first<{ n: number }>(A, () => db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`)),
     /*
      * FAILURES NOTHING HAS SINCE SUCCEEDED AT. A duty's task carries the duty's own `task_title`,
      * so a later `done` task with the same title in the same lane IS the same work having worked.
      * Matching on title rather than on a foreign key because `tasks` has never carried one, and
      * inventing a column here would leave every historical row unlinked and the alert still wrong.
      */
-    when(A, () =>
-      db.prepare(
+    reads.first<{ n: number }>(A, () => db.prepare(
       `SELECT COUNT(*) AS n FROM tasks f
         WHERE f.status = 'failed'
           AND NOT EXISTS (
             SELECT 1 FROM tasks s
              WHERE s.title = f.title AND s.lane = f.lane
                AND s.status = 'done' AND s.created_at > f.created_at)`,
-    ).first<{ n: number }>(),
-      null),
+    )),
     /*
      * `detail` IS SELECTED BECAUSE IT IS THE ONLY COLUMN THAT SAYS WHAT HAPPENED, and for five
      * renders it was left unread while `scope` and `event` were printed at her as prose.
@@ -606,8 +590,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
      * be the truth about the day or it is worse than no number. One day of error rows is small —
      * production held five — and the cap only exists so a storm cannot cost the whole render.
      */
-    when(A, () =>
-      db.prepare(
+    reads.all<ErrorEventRow>(A, () => db.prepare(
       /*
        * AN ERROR ABOUT A TASK THAT IS NO LONGER FAILING IS HISTORY, NOT AN ALERT.
        *
@@ -623,28 +606,18 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
           AND NOT (e.scope = 'queue' AND e.event = 'task_failed'
                    AND EXISTS (SELECT 1 FROM tasks t WHERE t.id = e.entity_id AND t.status <> 'failed'))
         ORDER BY e.ts DESC LIMIT 200`,
-    ).bind(now - DAY_MS).all<ErrorEventRow>(),
-      NONE),
-    when(want("trading_status") || A, () =>
-      db.prepare(`SELECT live_enabled, kill_switch, max_open_positions FROM trading_authority LIMIT 1`)
-      .first<{ live_enabled: number; kill_switch: number; max_open_positions: number }>(),
-      null),
-    when(want("trading_status"), () =>
-      db.prepare(`SELECT COUNT(*) AS n FROM trading_positions WHERE qty <> 0 AND closed_at IS NULL`)
-      .first<{ n: number }>(),
-      null),
-    when(want("trading_status"), () =>
-      db.prepare(`SELECT status, COUNT(*) AS n FROM trading_orders WHERE status IN ('draft','awaiting_approval','sent') GROUP BY status`)
-      .all<{ status: string; n: number }>(),
-      NONE),
-    when(want("trading_status") || A, () =>
-      db.prepare(`SELECT id, ts, kind, severity, summary FROM trading_incidents WHERE resolved_at IS NULL ORDER BY ts DESC LIMIT 5`)
-      .all<{ id: string; ts: number; kind: string; severity: string; summary: string }>(),
-      NONE),
+    ).bind(now - DAY_MS)),
+    reads.first<{ live_enabled: number; kill_switch: number; max_open_positions: number }>(want("trading_status") || A, () => db.prepare(`SELECT live_enabled, kill_switch, max_open_positions FROM trading_authority LIMIT 1`)
+      ),
+    reads.first<{ n: number }>(want("trading_status"), () => db.prepare(`SELECT COUNT(*) AS n FROM trading_positions WHERE qty <> 0 AND closed_at IS NULL`)
+      ),
+    reads.all<{ status: string; n: number }>(want("trading_status"), () => db.prepare(`SELECT status, COUNT(*) AS n FROM trading_orders WHERE status IN ('draft','awaiting_approval','sent') GROUP BY status`)
+      ),
+    reads.all<{ id: string; ts: number; kind: string; severity: string; summary: string }>(want("trading_status") || A, () => db.prepare(`SELECT id, ts, kind, severity, summary FROM trading_incidents WHERE resolved_at IS NULL ORDER BY ts DESC LIMIT 5`)
+      ),
     when(want("open_loops"), () => listLoops(db, day), [] as LoopRow[]),
     // ── Phase 13 substrate: meetings, their briefs and their captures ──
-    when(want("meetings"), () =>
-      db.prepare(
+    reads.all<MeetingBlockRow>(want("meetings"), () => db.prepare(
       `SELECT m.id, m.title, m.purpose, m.scheduled_at, m.duration_min, m.location, m.status,
               p.id AS person_id, p.full_name, o.name AS organization_name,
               b.id AS brief_id, b.generated_at AS briefed_at,
@@ -658,36 +631,34 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
     LEFT JOIN relationships r ON r.id = m.relationship_id
         WHERE m.scheduled_at >= ? AND m.scheduled_at < ? AND m.status <> 'cancelled'
         ORDER BY m.scheduled_at ASC`,
-    ).bind(from, to).all<MeetingBlockRow>(),
-      NONE),
-    when(want("meetings"), () =>
-      db.prepare(
+    ).bind(from, to)),
+    reads.all<{ id: string; title: string; scheduled_at: number; full_name: string }>(want("meetings"), () => db.prepare(
       `SELECT m.id, m.title, m.scheduled_at, p.full_name
          FROM meetings m
          JOIN people p ON p.id = m.person_id
     LEFT JOIN meeting_captures c ON c.meeting_id = m.id
         WHERE m.scheduled_at < ? AND m.scheduled_at >= ? AND m.status <> 'cancelled' AND c.id IS NULL
         ORDER BY m.scheduled_at DESC LIMIT 10`,
-    ).bind(from, from - 7 * DAY_MS).all<{ id: string; title: string; scheduled_at: number; full_name: string }>(),
-      NONE),
-    when(want("meetings"), () =>
-      db.prepare(
+    ).bind(from, from - 7 * DAY_MS)),
+    reads.first<{ n: number }>(want("meetings"), () => db.prepare(
       `SELECT COUNT(*) AS n FROM follow_ups WHERE status = 'open' AND due_at < ?`,
-    ).bind(to).first<{ n: number }>(),
-      null),
-    when(want("meetings"), () =>
-      db.prepare(
+    ).bind(to)),
+    reads.all<{ id: string; full_name: string; next_touch_due_at: number; relationship_health: number; cadence_days: number }>(want("meetings"), () => db.prepare(
       `SELECT r.id, p.full_name, r.next_touch_due_at, r.relationship_health, r.cadence_days
          FROM relationships r
          JOIN people p ON p.id = r.person_id
         WHERE r.status = 'active' AND r.next_touch_due_at IS NOT NULL AND r.next_touch_due_at < ?
         ORDER BY r.strategic_importance DESC LIMIT 5`,
-    ).bind(to).all<{ id: string; full_name: string; next_touch_due_at: number; relationship_health: number; cadence_days: number }>(),
-      NONE),
+    ).bind(to)),
     // Phase 16 substrate: computed sky, real practice, and canon §5.2's
     // reality-priority read, assembled by the same function the Spirit screen
     // calls, so the two can never disagree.
     when(want("spirit_signal"), () => spiritSignal(db, day.id, now), null),
+    // Sends every read recorded above as one batch; nothing above resolves until it runs.
+    reads.flush(),
+  ]);
+  const [theDiary, filedPacket, report, lastReport, reportDuty] = await Promise.all([
+    theDiaryP, filedPacketP, reportP, lastReportP, reportDutyP,
   ]);
 
   const byStatus = (rows: { status: string; n: number }[] | undefined) =>
@@ -717,7 +688,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
    * at the moment something last checked.
    */
   const [staleDuties, stuckDuties, lastNetworkRefresh, agentBudget, warnSetting] = await Promise.all([
-    when(A || S, () => env.DB.prepare(
+    reads.all<EmployeeDutyRow>(A || S, () => env.DB.prepare(
       /*
        * `COALESCE(last_run_at, created_at)`, NOT `COALESCE(last_run_at, 0)`.
        *
@@ -757,32 +728,33 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
          FROM standing_duties d
     LEFT JOIN tasks t ON t.id = d.last_task_id
         WHERE d.suspended = 0`,
-    ).all<EmployeeDutyRow>(), NONE),
+    )),
 
     /*
      * A DUTY WHOSE LAST TASK NEVER FINISHED. `queued` means nothing sent it; `running` for a long
      * time means nothing on her Mac claimed it. Both look identical from the duty's own record,
      * which is exactly how the report duty stayed broken.
      */
-    when(A, () => env.DB.prepare(
+    reads.all<{ id: string; name: string; status: string }>(A, () => env.DB.prepare(
       `SELECT d.id, d.name, t.status
          FROM standing_duties d
          JOIN tasks t ON t.id = d.last_task_id
         WHERE d.suspended = 0
           AND t.status IN ('queued', 'running')
           AND t.created_at < ? - 86400000`,
-    ).bind(Date.now()).all<{ id: string; name: string; status: string }>(), NONE),
+    ).bind(Date.now())),
 
-    when(A, () => env.DB.prepare(
+    reads.first<{ ts: number }>(A, () => env.DB.prepare(
       `SELECT ts FROM system_events WHERE event = 'network_refreshed' ORDER BY ts DESC LIMIT 1`,
-    ).first<{ ts: number }>(), null),
+    )),
 
-    when(A, () => env.DB.prepare(
+    reads.first<{ monthly_ceiling_micros: number; spent_micros: number; window_started_at: number | null }>(A, () => env.DB.prepare(
       `SELECT monthly_ceiling_micros, spent_micros, window_started_at FROM execution_backends WHERE id = 'bk_claude_code'`,
-    ).first<{ monthly_ceiling_micros: number; spent_micros: number; window_started_at: number | null }>(), null),
+    )),
 
-    when(A, () => env.DB.prepare(`SELECT value FROM settings WHERE key = 'agent_budget_warn_pct'`)
-      .first<{ value: string }>(), null),
+    reads.first<{ value: string }>(A, () => env.DB.prepare(`SELECT value FROM settings WHERE key = 'agent_budget_warn_pct'`)
+      ),
+    reads.flush(),
   ]);
 
   // A window from a previous month is last month's total, not this month's spend.
@@ -1676,50 +1648,30 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
     }];
   });
 
-  await persistBlocks(db, day.id, blocks);
-
-  const gateCount = await db
-    .prepare(`SELECT COUNT(*) AS n FROM gate_entries WHERE day_id = ?`)
-    .bind(day.id)
-    .first<{ n: number }>();
-
-  if (!partial) {
-    await db
-      .prepare(
-        `UPDATE days SET day_flow_json = ?, open_loops_count = ?, gate_entries_count = ? WHERE id = ?`,
-      )
-      .bind(JSON.stringify(blocks), loops.length, gateCount?.n ?? 0, day.id)
-      .run();
-    return blocks;
-  }
-
   /*
-   * A PARTIAL BUILD STILL LEAVES `day_flow_json` WHOLE. The compiler reads the briefing's lines out
-   * of that column, and a column holding only the group that happened to be requested last would
-   * lose them. So the whole day is re-stitched from `day_flow_blocks`, which every group writes to
-   * — as text, without parsing: thirteen JSON documents are joined, not decoded and re-encoded.
+   * PERSISTED IN THE SAME ROUND TRIP AS IT IS RENDERED. The blocks' upserts, the gate count, and
+   * the day row's whole-day `day_flow_json` go out as ONE batch: the day column is re-stitched in
+   * SQL from `day_flow_blocks` — so a group that built two blocks still leaves all thirteen in the
+   * column, and a full build is the same statement. `open_loops_count` is written only by a build
+   * that read the loops; the other groups leave it as it was.
    */
-  const stored = await db
-    .prepare(
-      `SELECT block_key, block_order, title, content, source_type, source_id, is_empty
-         FROM day_flow_blocks WHERE day_id = ? ORDER BY block_order ASC`,
-    )
-    .bind(day.id)
-    .all<{ block_key: string; block_order: number; title: string; content: string; source_type: string; source_id: string | null; is_empty: number }>();
-  const stitched = "[" + (stored.results ?? []).map((r) =>
-    `{"key":${JSON.stringify(r.block_key)},"title":${JSON.stringify(r.title)},"order":${r.block_order},` +
-    `"content":${r.content},"source_type":${JSON.stringify(r.source_type)},"source_id":${JSON.stringify(r.source_id)},` +
-    `"is_empty":${r.is_empty ? "true" : "false"}}`).join(",") + "]";
-  await db
-    .prepare(
-      keys.has("open_loops")
-        ? `UPDATE days SET day_flow_json = ?, gate_entries_count = ?, open_loops_count = ? WHERE id = ?`
-        : `UPDATE days SET day_flow_json = ?, gate_entries_count = ? WHERE id = ?`,
-    )
-    .bind(...(keys.has("open_loops")
-      ? [stitched, gateCount?.n ?? 0, loops.length, day.id]
-      : [stitched, gateCount?.n ?? 0, day.id]))
-    .run();
+  await db.batch([
+    ...persistStatements(db, day.id, blocks),
+    db
+      .prepare(
+        `UPDATE days SET
+           day_flow_json = (
+             SELECT json_group_array(json_object(
+               'key', b.block_key, 'title', b.title, 'order', b.block_order,
+               'content', json(b.content), 'source_type', b.source_type, 'source_id', b.source_id,
+               'is_empty', json(CASE WHEN b.is_empty THEN 'true' ELSE 'false' END)))
+               FROM (SELECT * FROM day_flow_blocks WHERE day_id = ? ORDER BY block_order ASC) b),
+           gate_entries_count = (SELECT COUNT(*) FROM gate_entries WHERE day_id = ?)
+           ${keys.has("open_loops") ? ", open_loops_count = ?" : ""}
+         WHERE id = ?`,
+      )
+      .bind(...(keys.has("open_loops") ? [day.id, day.id, loops.length, day.id] : [day.id, day.id, day.id])),
+  ]);
 
   return blocks;
 }
@@ -1729,30 +1681,28 @@ function absent(key: BlockKey) {
   return { available: false, reason: spec.reason, arrives_in_phase: spec.phase };
 }
 
-async function persistBlocks(db: D1Database, dayIdValue: string, blocks: Block[]): Promise<void> {
+function persistStatements(db: D1Database, dayIdValue: string, blocks: Block[]): D1PreparedStatement[] {
   const now = Date.now();
-  await db.batch(
-    blocks.map((b) =>
-      db
-        .prepare(
-          `INSERT INTO day_flow_blocks
-             (id, day_id, block_key, block_order, title, content, source_type, source_id, is_empty, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(day_id, block_key) DO UPDATE SET
-             block_order = excluded.block_order,
-             title       = excluded.title,
-             content     = excluded.content,
-             source_type = excluded.source_type,
-             source_id   = excluded.source_id,
-             is_empty    = excluded.is_empty,
-             updated_at  = excluded.updated_at`,
-        )
-        .bind(
-          newId("dfb"), dayIdValue, b.key, b.order, b.title,
-          JSON.stringify(b.content), b.source_type, b.source_id,
-          b.is_empty ? 1 : 0, now, now,
-        ),
-    ),
+  return blocks.map((b) =>
+    db
+      .prepare(
+        `INSERT INTO day_flow_blocks
+           (id, day_id, block_key, block_order, title, content, source_type, source_id, is_empty, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(day_id, block_key) DO UPDATE SET
+           block_order = excluded.block_order,
+           title       = excluded.title,
+           content     = excluded.content,
+           source_type = excluded.source_type,
+           source_id   = excluded.source_id,
+           is_empty    = excluded.is_empty,
+           updated_at  = excluded.updated_at`,
+      )
+      .bind(
+        newId("dfb"), dayIdValue, b.key, b.order, b.title,
+        JSON.stringify(b.content), b.source_type, b.source_id,
+        b.is_empty ? 1 : 0, now, now,
+      ),
   );
 }
 
@@ -1805,16 +1755,18 @@ today.get("/", async (c) => {
   // `?blocks=a,b` builds only those blocks — how the screen loads, six requests in parallel, each
   // inside the Free plan's 10 ms. No parameter builds all thirteen in one pass, as the cron does.
   const blocks = await assembleDayFlow(c.env, day, parseBlockKeys(c.req.query("blocks")));
-  const fresh = await c.env.DB.prepare(`SELECT * FROM days WHERE id = ?`).bind(day.id).first<DayRow>();
-  const gates = await c.env.DB
-    .prepare(`SELECT gate, completed_at FROM gate_entries WHERE day_id = ? ORDER BY completed_at ASC`)
-    .bind(day.id)
-    .all<{ gate: string; completed_at: number }>();
+  const [freshRows, gates] = await c.env.DB.batch([
+    c.env.DB.prepare(`SELECT * FROM days WHERE id = ?`).bind(day.id),
+    c.env.DB
+      .prepare(`SELECT gate, completed_at FROM gate_entries WHERE day_id = ? ORDER BY completed_at ASC`)
+      .bind(day.id),
+  ]);
+  const fresh = (freshRows!.results as DayRow[])[0] ?? day;
 
   return ok(c, {
     day: fresh,
     blocks,
-    gates: gates.results ?? [],
+    gates: (gates!.results as { gate: string; completed_at: number }[]) ?? [],
     limits: {
       morning_priorities: MAX_MORNING_PRIORITIES,
       midday_checks: MAX_MIDDAY_CHECKS,
