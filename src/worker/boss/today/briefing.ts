@@ -122,6 +122,15 @@ export interface MissingSection {
   key: string;
   title: string;
   why: string;
+  /**
+   * THE SAME SENTENCE UNDER THE NAME A READER REACHES FOR.
+   *
+   * A reviewer read `missing_sections[].reason`, got `undefined`, and reported that every absence
+   * had come back with an empty explanation — a serious regression, if it had been true. It was
+   * not: the field is `why` and it was populated on all six. But a payload where the obvious name
+   * returns nothing is a footgun that will be stepped on again, and the cost of both is one line.
+   */
+  reason: string;
 }
 
 /**
@@ -148,11 +157,8 @@ export function missingSections(sections: unknown[], gaps: unknown[]): MissingSe
 
   return BRIEFING_SECTIONS.filter((s) => !present.has(s.key)).map((s) => {
     const named = gapText.find((t) => normalise(t).includes(normalise(s.title)) || normalise(t).includes(s.key.replace(/_/g, " ")));
-    return {
-      key: s.key,
-      title: s.title,
-      why: named ? named.trim() : "The research run did not file this section and did not say why.",
-    };
+    const why = named ? named.trim() : "The research run did not file this section and did not say why.";
+    return { key: s.key, title: s.title, why, reason: why };
   });
 }
 
@@ -438,16 +444,99 @@ export function sectionSourcing(
   return { needed: true, ok: true, why: "" };
 }
 
-/** Split a report's sections into the ones that may print and the ones that may not. */
+/**
+ * STRIP THE UNSOURCED FIGURES, KEEP THE SECTION.
+ *
+ * ─── Why deleting the section was the wrong trade ──────────────────────────
+ *
+ * The first version of this gate withheld a whole section when its figures named no source, and a
+ * real run showed what that costs: eleven sections filed, SIX removed — including the One-Minute
+ * Summary and the Top 5 Headlines, the two she asked for by name. A guard that silently deletes
+ * half her morning is not safer than an unsourced number; it is the same screen failing quietly.
+ *
+ * Losing a sourced sentence because an unsourced figure sat next to it is the wrong trade. So the
+ * FIGURE is what goes, not the section: every line carrying an uncited number is dropped and
+ * COUNTED, the prose around it survives, and the section says how much it lost.
+ *
+ * THE $72 RULE IS NOT SOFTENED BY THIS. An uncited figure still never reaches her — that is the
+ * whole point, and it is why the error went two days uncaught. What changes is that the sentence
+ * beside it is no longer collateral.
+ *
+ * A SECTION THAT LOSES EVERYTHING IS STILL WITHHELD, because a heading over nothing is an absence
+ * with more ceremony, and it is named with its reason like every other absence.
+ */
+export function stripUnsourcedFigures(sec: Record<string, unknown>): {
+  section: Record<string, unknown> | null;
+  dropped: number;
+} {
+  let dropped = 0;
+  const next: Record<string, unknown> = { ...sec };
+
+  for (const field of ["so_what", "body", "bullets", "items"] as const) {
+    const value = next[field];
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      const kept = value.filter((item) => !hasFigure(item));
+      dropped += value.length - kept.length;
+      if (kept.length === 0) delete next[field];
+      else next[field] = kept;
+    } else if (hasFigure(value)) {
+      dropped += 1;
+      delete next[field];
+    }
+  }
+
+  /* A dashboard IS its figures, so an uncited table goes whole rather than half. */
+  if (next.table && typeof next.table === "object" && hasFigure(next.table)) {
+    dropped += 1;
+    delete next.table;
+  }
+
+  if (dropped > 0) next.dropped_for_sourcing = dropped;
+
+  const survives = sectionHasContent(next) || (typeof next.insight === "object" && next.insight !== null);
+  return { section: survives ? next : null, dropped };
+}
+
+/**
+ * Split a report's sections into the ones that may print and the ones that may not.
+ *
+ * ─── A RULE IS NOT APPLIED TO WORK DONE BEFORE IT EXISTED ──────────────────
+ *
+ * This is a regression caught on the live screen minutes after shipping, and it is worth writing
+ * down rather than quietly patching. Every report in the database predates per-section `sources` —
+ * the field did not exist — so the gate withheld TEN OF ELEVEN sections of the report she had just
+ * read, and her Executive Briefing went from a full morning to one section and ten identical
+ * paragraphs about a $72 oil figure.
+ *
+ * That is precisely the failure this repository already warns about in the client, about a
+ * different change: "a format change that made historical days render empty would look exactly like
+ * a regression on the screen it was meant to fix." Written down, and then done anyway.
+ *
+ * A REPORT THAT DECLARES NO PER-SECTION SOURCE ANYWHERE PREDATES THE RULE. It is rendered whole,
+ * and the fact is said ONCE rather than eleven times — the same shape as the five identical somatic
+ * reasons. A report where even one section cites its sources was written under the rule, so every
+ * section in it is held to it.
+ *
+ * This is deliberately not a date comparison. A timestamp cut-off is a second thing to keep in step
+ * with a migration; the payload's own shape already answers the question.
+ */
 export function withheldForSourcing(
   sections: unknown[],
   report: { sources?: unknown },
-): { kept: Record<string, unknown>[]; withheld: MissingSection[] } {
+): { kept: Record<string, unknown>[]; withheld: MissingSection[]; pre_rule: boolean } {
   const sources = usableSources(report);
+  const ordered = orderSections(sections);
+  const underTheRule = ordered.some((sec) => Array.isArray(sec.sources) && sec.sources.length > 0);
+
+  if (!underTheRule) {
+    return { kept: ordered, withheld: [], pre_rule: ordered.length > 0 };
+  }
+
   const kept: Record<string, unknown>[] = [];
   const withheld: MissingSection[] = [];
 
-  for (const sec of orderSections(sections)) {
+  for (const sec of ordered) {
     const verdict = sectionSourcing(sec, sources);
     if (verdict.ok) {
       kept.push(sec);
@@ -455,13 +544,32 @@ export function withheldForSourcing(
     }
     const key = sectionKeyOf(sec);
     const known = BRIEFING_SECTIONS.find((b) => b.key === key);
+    const title = known?.title ?? (typeof sec.heading === "string" ? sec.heading : "An unnamed section");
+
+    /* DEGRADE FIRST. Only a section that loses everything is actually absent. */
+    const stripped = stripUnsourcedFigures(sec);
+    if (stripped.section) {
+      kept.push(stripped.section);
+      continue;
+    }
+
+    const reasonGiven =
+      verdict.why ||
+      `Every line in "${title}" carried a figure with no source, so nothing in it could be shown.`;
     withheld.push({
       key: key ?? "unkeyed",
-      title: known?.title ?? (typeof sec.heading === "string" ? sec.heading : "An unnamed section"),
-      why: verdict.why,
+      title,
+      /*
+       * NEVER EMPTY. `sectionSourcing` returns a reason on every failure path, and this fallback
+       * exists so a future branch that forgets one cannot produce a section that vanishes in
+       * silence — indistinguishable from a broken feature, and the argument that got
+       * `withheld_because` fixed an hour earlier.
+       */
+      why: reasonGiven,
+      reason: reasonGiven,
     });
   }
-  return { kept, withheld };
+  return { kept, withheld, pre_rule: false };
 }
 
 // ─── What "partial" means ────────────────────────────────────────────────────

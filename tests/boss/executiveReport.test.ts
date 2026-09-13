@@ -119,8 +119,18 @@ describe("delivering the executive intelligence report", () => {
       report: {
         status: "complete",
         summary: "One figure, no source.",
-        sections: [{ key: "markets_dashboard", heading: "Markets & Macro Dashboard", bullets: ["Brent fell 2.8% to ~$72/bbl."] }],
-        sources: [],
+        /*
+         * A POST-RULE REPORT IS ONE WHERE SOMETHING CITES. This fixture failed at first with only
+         * the uncited section in it, and it was right to: a report where nothing anywhere carries a
+         * source predates the rule and is rendered whole, because holding historical reports to a
+         * rule that did not exist emptied her screen the moment it shipped. So the fixture files a
+         * properly cited section alongside the offender, which is what a real morning looks like.
+         */
+        sections: [
+          { key: "markets_dashboard", heading: "Markets & Macro Dashboard", bullets: ["Brent fell 2.8% to ~$72/bbl."] },
+          { key: "one_thing_to_watch", heading: "One Thing to Watch", bullets: ["A move worth $1 billion."], sources: [0] },
+        ],
+        sources: [{ name: "CNBC", url: "https://www.cnbc.com/x", read_at: "2026-09-13T20:35:00Z" }],
       },
     });
 
@@ -132,7 +142,7 @@ describe("delivering the executive intelligence report", () => {
      * the report is partial, and the shortfall says it printed figures with no source.
      */
     const report = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
-    expect(JSON.parse(report.sections)).toHaveLength(1);
+    expect(JSON.parse(report.sections)).toHaveLength(2);
     expect(report.status).toBe("partial");
     expect(JSON.parse(report.shortfalls).join(" ")).toMatch(/no source/i);
   });
