@@ -1,7 +1,7 @@
 {
   "_honesty": "THESE ARE AI-GENERATED IMAGES OF PEOPLE WHO DO NOT EXIST. That sentence is not decoration: seven polished headshots on a Team screen are indistinguishable from photographs of real staff, and the one way this becomes a problem is if someone later mistakes one for a colleague. It is stated here, in the alt text every portrait renders with, and in the manifest committed beside the assets. None of these faces may ever be presented as a person.",
-  "generated_at": "2026-09-06T19:16:28.036Z",
-  "direction": "One direction for all seven, from CASTING.json _style. Per-seat variation is the `look` line only.",
+  "generated_at": "2026-09-13T13:33:30.146Z",
+  "direction": "One direction for all 8, from CASTING.json _style. Per-seat variation is the `look` line only.",
   "portraits": [
     {
       "name": "Simone",
@@ -37,6 +37,11 @@
       "name": "Toni",
       "file": "toni.jpg",
       "bytes": 133627
+    },
+    {
+      "name": "Imani",
+      "file": "imani.jpg",
+      "bytes": 178286
     }
   ]
 }

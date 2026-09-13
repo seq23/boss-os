@@ -124,14 +124,38 @@ if (dryRun) {
   process.exit(0);
 }
 
-// A manifest beside the assets, so the honesty statement travels with the files rather than living
-// only in a comment somebody has to go looking for.
+/*
+ * A manifest beside the assets, so the honesty statement travels with the files rather than living
+ * only in a comment somebody has to go looking for.
+ *
+ * MERGED, NOT OVERWRITTEN — and this was a real bug, found on 13 Sep 2026 when Imani's missing
+ * portrait had to be shot on its own. The manifest was rebuilt from `written`, which holds only the
+ * seats THIS RUN produced. So `--only Imani` would have written a manifest naming one portrait and
+ * silently deleted the entries for the other seven — files still on disk, unlisted and therefore
+ * unguarded, which is worse than no manifest at all because the file still looks complete.
+ *
+ * The `--only` flag exists precisely so a single seat can be re-shot. A flag that corrupts the
+ * record every time it is used is a trap, so the record is keyed by name and updated in place.
+ */
 if (written.length) {
+  const existing = existsSync(join(DIR, "MANIFEST.json"))
+    ? JSON.parse(readFileSync(join(DIR, "MANIFEST.json"), "utf8"))
+    : { portraits: [] };
+
+  const byName = new Map((existing.portraits ?? []).map((p) => [p.name, p]));
+  for (const p of written) byName.set(p.name, p);
+
+  // Ordered by the casting sheet, so the manifest reads as the roster rather than as a shoot log.
+  const order = sheet.cast.map((c) => c.name);
+  const portraits = [...byName.values()].sort(
+    (a, b) => (order.indexOf(a.name) + 1 || 99) - (order.indexOf(b.name) + 1 || 99),
+  );
+
   const manifest = {
     _honesty: sheet._honesty,
     generated_at: new Date().toISOString(),
-    direction: "One direction for all seven, from CASTING.json _style. Per-seat variation is the `look` line only.",
-    portraits: written,
+    direction: `One direction for all ${sheet.cast.length}, from CASTING.json _style. Per-seat variation is the \`look\` line only.`,
+    portraits,
   };
   writeFileSync(join(DIR, "MANIFEST.json"), JSON.stringify(manifest, null, 2) + "\n");
 }
