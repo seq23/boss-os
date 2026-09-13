@@ -212,7 +212,13 @@ const OVERREACH: Record<Exclude<Band, "unset">, string> = {
 export function reading(week: MapWeek): string | null {
   if (week.band === "unset") return null;
   const band = BAND[week.band];
-  const plane = week.travel && week.travel > 0 ? ` ${TRAVEL[week.travel].meaning.toLowerCase()} is favoured.` : "";
+  // `TRAVEL.meaning` already reads "Favorable travel/reset window", so appending "is favoured"
+  // produced "favorable travel/reset window is favoured". The glyph and a short clause do the job.
+  const plane = week.travel === 2
+    ? " This is one of the best travel and reset windows of the year."
+    : week.travel === 1
+      ? " Travel and rest are favoured this week."
+      : "";
   const note = week.note ? ` ${week.note}.` : "";
   return `${band.glyph} ${band.meaning}.${note}${plane} ${OVERREACH[week.band]}`;
 }

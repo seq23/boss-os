@@ -260,7 +260,7 @@ describe("the locked Money / Career / Travel Map", () => {
     const r = travelMap("2026-09-12").current!.reading!;
     expect(r).toMatch(/Maintain, prepare, refine/);
     expect(r).toMatch(/Travel, recalibration, systems review/);
-    expect(r).toMatch(/travel\/reset window is favoured/i);
+    expect(r).toMatch(/Travel and rest are favoured this week/);
     expect(r).toMatch(/manufacture peak intensity out of a maintenance week/);
   });
 
