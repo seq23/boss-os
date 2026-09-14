@@ -13,7 +13,7 @@
  * matters because the interesting cases are the two days a year nobody is looking.
  */
 
-import { zonedTime, dateTimeFormat } from "../../../shared/boss/timezone";
+import { zonedTime, wallClock } from "../../../shared/boss/timezone";
 
 const DAY_MS = 86_400_000;
 
@@ -25,17 +25,9 @@ const DAY_MS = 86_400_000;
  * table. Hand-rolling an offset is how a scheduler ends up an hour wrong in one hemisphere.
  */
 function wallClockIn(timeZone: string, at: number): { y: number; m: number; d: number; h: number; min: number } {
-  const parts = dateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).formatToParts(new Date(at));
-
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-  // `hour12: false` renders midnight as 24 in some runtimes. Left as 24 it silently becomes the
-  // next day's zero hour and every comparison below is a day out.
-  const h = get("hour") % 24;
-  return { y: get("year"), m: get("month"), d: get("day"), h, min: get("minute") };
+  // From the cached zone offset — see `wallClock` in shared/boss/timezone.ts for why no formatter.
+  const w = wallClock(at, timeZone);
+  return { y: w.y, m: w.m, d: w.d, h: w.h, min: w.min };
 }
 
 /** The zone's offset from UTC at a given instant, in minutes. Positive means ahead of UTC. */
@@ -133,8 +125,7 @@ export function nextDueAt(schedule: DutySchedule, after: number): number {
 }
 
 export function dayOfWeekIn(timeZone: string, at: number): number {
-  const name = dateTimeFormat("en-US", { timeZone, weekday: "short" }).format(new Date(at));
-  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(name);
+  return wallClock(at, timeZone).dow;
 }
 
 /**

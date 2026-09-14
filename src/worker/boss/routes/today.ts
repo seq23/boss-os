@@ -33,7 +33,7 @@ import {
 } from "../today/errorAlerts";
 import { TERMINAL_CHECKS } from "../today/deliverables";
 import { buildBodyContract, selectSomatic, logSomatic, markSomaticDone } from "../today/body";
-import { buildPillars } from "../today/pillars";
+import { buildPillars, wealthContract } from "../today/pillars";
 import {
   BRIEFING_SECTIONS, orderSections, missingSections, groundInsight,
   withheldForSourcing, reportStanding,
@@ -340,7 +340,7 @@ export function reportStaleness(
 }
 
 /**
- * THE THIRTEEN BLOCKS, IN SIX REQUESTS.
+ * THE THIRTEEN BLOCKS, IN SEVEN REQUESTS.
  *
  * This Worker runs on the Cloudflare Free plan, which allows 10 ms of CPU per request, and the
  * owner's decision (13 September 2026) is that it stays there. Assembling all thirteen blocks in
@@ -360,7 +360,8 @@ export function reportStaleness(
  * cron does, where the budget is the cron's and a whole day is written at once.
  */
 export const TODAY_GROUPS = {
-  contract: ["todays_contract", "day_flow", "coaching_focus", "daily_thinking_lens"],
+  contract: ["todays_contract"],
+  flow: ["day_flow", "coaching_focus", "daily_thinking_lens"],
   briefing: ["executive_briefing"],
   meetings: ["meetings", "open_loops"],
   alerts: ["critical_alerts"],
@@ -861,8 +862,10 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
         },
   };
 
-  // Derived for the contract block, and for the Run of Show's anchor when no contract is agreed.
-  const derivedContract = contract || !want("todays_contract", "day_flow")
+  // Derived for the contract block only. The Run of Show also needs the anchor when no contract is
+  // agreed, but the anchor is the wealth pillar's action alone — computing all four pillars for it
+  // was what put `day_flow` over the budget, so the flow group asks for just that one below.
+  const derivedContract = contract || !want("todays_contract")
     ? null
     : await (async () => {
         try {
@@ -898,13 +901,16 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
         }
       })();
 
+  const anchor: string | null =
+    (contract as { commitment?: string } | null)?.commitment ??
+    derivedContract?.contract.commitment ??
+    (want("day_flow") && !contract
+      ? (await wealthContract(env, dayWeekday).catch(() => null))?.action ?? null
+      : null);
   const [runOfShow, focus] = await Promise.all([
     when(want("day_flow"), () => readRunOfShow(env, day.id, {
       dayMode: (day as { day_mode?: string | null }).day_mode ?? null,
-      anchor:
-        (contract as { commitment?: string } | null)?.commitment ??
-        derivedContract?.contract.commitment ??
-        null,
+      anchor,
     }), [] as Awaited<ReturnType<typeof readRunOfShow>>),
     when(want("coaching_focus"), () => coachingFocus(env, day.id, (day as { day_mode?: string | null }).day_mode ?? null), null),
   ]);
@@ -1751,22 +1757,32 @@ async function resolveDay(c: Context<{ Bindings: Env; Variables: Vars }>): Promi
 
 /** The default screen. One request returns the whole briefing. */
 today.get("/", async (c) => {
-  const day = await resolveDay(c);
-  // `?blocks=a,b` builds only those blocks — how the screen loads, six requests in parallel, each
-  // inside the Free plan's 10 ms. No parameter builds all thirteen in one pass, as the cron does.
-  const blocks = await assembleDayFlow(c.env, day, parseBlockKeys(c.req.query("blocks")));
-  const [freshRows, gates] = await c.env.DB.batch([
-    c.env.DB.prepare(`SELECT * FROM days WHERE id = ?`).bind(day.id),
+  /*
+   * THE DAY AND ITS GATES IN ONE ROUND TRIP, BEFORE THE BLOCKS. This route used to read the day,
+   * build, then read the day again and the gates — three round trips of overhead on every one of
+   * the screen's requests, on a runtime where each is most of a millisecond of a 10 ms budget. The
+   * re-read existed to pick up the counts the assembler writes onto the day row, which nothing on
+   * the screen reads; what the screen reads — the gate timestamps, the mode, the date — the
+   * assembler never changes. A day that does not exist yet has no gate entries, so the empty
+   * gates list is right for it without a second read.
+   */
+  const requested = c.req.query("date");
+  const id = requested ? String(requested) : dayId(Date.now());
+  const [dayRows, gateRows] = await c.env.DB.batch([
+    c.env.DB.prepare(`SELECT * FROM days WHERE id = ?`).bind(id),
     c.env.DB
       .prepare(`SELECT gate, completed_at FROM gate_entries WHERE day_id = ? ORDER BY completed_at ASC`)
-      .bind(day.id),
+      .bind(id),
   ]);
-  const fresh = (freshRows!.results as DayRow[])[0] ?? day;
+  const day = (dayRows!.results as DayRow[])[0] ?? (await ensureDay(c.env.DB, id));
+  // `?blocks=a,b` builds only those blocks — how the screen loads, seven requests in parallel, each
+  // inside the Free plan's 10 ms. No parameter builds all thirteen in one pass, as the cron does.
+  const blocks = await assembleDayFlow(c.env, day, parseBlockKeys(c.req.query("blocks")));
 
   return ok(c, {
-    day: fresh,
+    day,
     blocks,
-    gates: (gates!.results as { gate: string; completed_at: number }[]) ?? [],
+    gates: (gateRows!.results as { gate: string; completed_at: number }[]) ?? [],
     limits: {
       morning_priorities: MAX_MORNING_PRIORITIES,
       midday_checks: MAX_MIDDAY_CHECKS,

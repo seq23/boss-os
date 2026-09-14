@@ -15,7 +15,7 @@ import { monthAhead } from "../../src/worker/boss/spirit/month";
  * request, and the owner's decision is that it stays there — "i'm not paying cloudflare." Nothing
  * on the screen was wrong. There was just too much of it in one request.
  *
- * So Today is now fetched as six groups in parallel, each its own request, and the month's
+ * So Today is now fetched as seven groups in parallel, each its own request, and the month's
  * important dates are computed in the browser from the inputs the Worker sends. These tests guard
  * the seams that split introduced:
  *

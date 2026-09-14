@@ -39,7 +39,8 @@ type Payload = {
  * the authority and this one is checked against it by test.
  */
 export const TODAY_GROUPS: readonly (readonly string[])[] = [
-  ["todays_contract", "day_flow", "coaching_focus", "daily_thinking_lens"],
+  ["todays_contract"],
+  ["day_flow", "coaching_focus", "daily_thinking_lens"],
   ["executive_briefing"],
   ["meetings", "open_loops"],
   ["critical_alerts"],
@@ -57,7 +58,7 @@ export function Today() {
   const [gate, setGate] = useState<"morning" | "midday" | "night" | null>(null);
 
   /*
-   * SIX REQUESTS, ONE SCREEN.
+   * SEVEN REQUESTS, ONE SCREEN.
    *
    * Boss OS runs on Cloudflare's Free plan, which allows a request 10 ms of CPU, and the owner keeps
    * it there. Fetching the whole day in one request cost ~18 ms and Cloudflare killed it — that was
