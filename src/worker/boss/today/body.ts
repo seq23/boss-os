@@ -134,15 +134,20 @@ export function becauseFor(lastDone: number, lastChosen: number): string {
  * one a screen offered her and she never got to. Ranking still falls back to when a movement was
  * last chosen, so novelty works exactly as before on a record with no completions in it yet.
  */
+type HistoryRow = { lane: string; movement: string; last_chosen: number; last_done: number };
+
 export async function selectSomatic(env: Env, dayId: string): Promise<SomaticSelection[]> {
   const history = await env.DB
     .prepare(
       `SELECT lane, movement, MAX(chosen_at) AS last_chosen, COALESCE(MAX(done_at), 0) AS last_done
          FROM movement_log GROUP BY lane, movement`,
     )
-    .all<{ lane: string; movement: string; last_chosen: number; last_done: number }>();
+    .all<HistoryRow>();
+  return selectFromHistory(history.results ?? []);
+}
 
-  const seen = new Map((history.results ?? []).map((r) => [`${r.lane}::${r.movement}`, r]));
+function selectFromHistory(rows: HistoryRow[]): SomaticSelection[] {
+  const seen = new Map(rows.map((r) => [`${r.lane}::${r.movement}`, r]));
 
   return MOVEMENT_LANES.map((lane) => {
     const ranked = lane.movements
@@ -190,30 +195,53 @@ export async function selectSomatic(env: Env, dayId: string): Promise<SomaticSel
  * marked them done — and nothing is re-selected. A day with no rows selects once and writes once.
  */
 export async function todaysSomatic(env: Env, dayId: string): Promise<SomaticSelection[]> {
-  const existing = await env.DB
-    .prepare(`SELECT lane, movement, chosen_at, done_at FROM movement_log WHERE day_id = ?`)
-    .bind(dayId)
-    .all<{ lane: string; movement: string; chosen_at: number; done_at: number | null }>();
+  return (await todaysSomaticWithState(env, dayId)).selection;
+}
+
+/**
+ * The selection, and whether it came from today's own rows — which is exactly what `logSomatic`
+ * would read again to decide whether to write. Callers that hold this skip that read.
+ */
+export async function todaysSomaticWithState(env: Env, dayId: string): Promise<{ selection: SomaticSelection[]; logged: boolean }> {
+  /*
+   * THREE READS, ONE ROUND TRIP. Today's rows decide which of the two histories is the right one —
+   * all of it when today is unchosen, everything before today when it is — and both are cheaper to
+   * carry in the same batch than to decide first and read second, because on this runtime the
+   * round trip is the cost (lib/batchReads.ts). The one not needed is discarded unread.
+   */
+  const [existing, history, wholeHistory] = await env.DB.batch([
+    env.DB
+      .prepare(`SELECT lane, movement, chosen_at, done_at FROM movement_log WHERE day_id = ?`)
+      .bind(dayId),
+    env.DB
+      .prepare(
+        `SELECT lane, movement, MAX(chosen_at) AS last_chosen, COALESCE(MAX(done_at), 0) AS last_done
+           FROM movement_log WHERE day_id < ? GROUP BY lane, movement`,
+      )
+      .bind(dayId),
+    env.DB
+      .prepare(
+        `SELECT lane, movement, MAX(chosen_at) AS last_chosen, COALESCE(MAX(done_at), 0) AS last_done
+           FROM movement_log GROUP BY lane, movement`,
+      ),
+  ]) as [
+    D1Result<{ lane: string; movement: string; chosen_at: number; done_at: number | null }>,
+    D1Result<HistoryRow>,
+    D1Result<HistoryRow>,
+  ];
 
   const rows = existing.results ?? [];
-  if (rows.length === 0) return selectSomatic(env, dayId);
+  if (rows.length === 0) return { selection: selectFromHistory(wholeHistory.results ?? []), logged: false };
 
   /*
    * THE REASON IS RE-DERIVED FROM HISTORY BEFORE TODAY, not from the row itself. A movement chosen
    * today has a `chosen_at` of today, and reading it back would make every line say "Came up today",
    * which is both useless and circular.
    */
-  const history = await env.DB
-    .prepare(
-      `SELECT lane, movement, MAX(chosen_at) AS last_chosen, COALESCE(MAX(done_at), 0) AS last_done
-         FROM movement_log WHERE day_id < ? GROUP BY lane, movement`,
-    )
-    .bind(dayId)
-    .all<{ lane: string; movement: string; last_chosen: number; last_done: number }>();
   const before = new Map((history.results ?? []).map((r) => [`${r.lane}::${r.movement}`, r]));
 
   const byLane = new Map(rows.map((r) => [r.lane, r]));
-  return MOVEMENT_LANES.flatMap((lane) => {
+  const selection = MOVEMENT_LANES.flatMap((lane) => {
     const row = byLane.get(lane.key);
     if (!row) return [];
     const prior = before.get(`${lane.key}::${row.movement}`);
@@ -227,6 +255,7 @@ export async function todaysSomatic(env: Env, dayId: string): Promise<SomaticSel
       done_at: row.done_at,
     }];
   });
+  return { selection, logged: true };
 }
 
 /**
@@ -278,6 +307,8 @@ export async function markSomaticDone(
 }
 
 export interface BodyContract {
+  /** Whether today's rotation is already in `movement_log` — so `logSomatic` need not read to find out. */
+  somatic_logged: boolean;
   launch_sequence: string[];
   somatic: SomaticSelection[];
   hydration: string;
@@ -303,10 +334,11 @@ export async function buildBodyContract(env: Env, dayId: string, dayMode: string
    * `todaysSomatic`, NOT `selectSomatic`. The day's rotation is decided once and then read back, so
    * Today and Spirit agree and neither changes under her between two looks at the same morning.
    */
-  const somatic = await todaysSomatic(env, dayId);
+  const { selection: somatic, logged } = await todaysSomaticWithState(env, dayId);
   const reduced = dayMode === "recovery" || dayMode === "mvd";
 
   return {
+    somatic_logged: logged,
     launch_sequence: STORED_MORNING_SEQUENCE,
     // A reduced day keeps regulation and the lower back, which are the two the brain leads with.
     somatic: reduced ? somatic.filter((s) => s.lane === "neck" || s.lane === "pelvis_lumbar") : somatic,

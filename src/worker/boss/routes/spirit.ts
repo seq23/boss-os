@@ -125,7 +125,7 @@ spirit.get("/day", async (c) => {
    * write history for last Tuesday and reshuffle everything after it. `logSomatic` is idempotent
    * per day, so re-reading today changes nothing.
    */
-  if (id === dayId(Date.now())) await logSomatic(c.env, id, body.somatic);
+  if (id === dayId(Date.now()) && !body.somatic_logged) await logSomatic(c.env, id, body.somatic);
 
   /*
    * TRANSITS, FILTERED TO THE ONES THAT ACTUALLY TOUCH HER.

@@ -2085,7 +2085,7 @@ today.post("/gates/morning", async (c) => {
    * holding the sequence the whole time, and nothing ever called it.
    */
   const bodyContract = await buildBodyContract(c.env, day.id, day.day_mode);
-  await logSomatic(c.env, day.id, bodyContract.somatic);
+  if (!bodyContract.somatic_logged) await logSomatic(c.env, day.id, bodyContract.somatic);
 
   const agenda = {
     anchor: contract.commitment,

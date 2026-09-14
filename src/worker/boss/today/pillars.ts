@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { batchReads } from "../lib/batchReads";
 import { propertyFor, suggestingKeys } from "../../../shared/boss/grid.mjs";
 import { PROJECTS, activeProjects, firstMoneyProject, type Project } from "./projects";
 import { gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR } from "../spirit/practice";
@@ -321,18 +322,51 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
    * as its own panel would be a second answer to the same question sitting next to the first, which
    * is how a screen starts disagreeing with itself.
    */
-  const pairing = await env.DB
+  /*
+   * THE CASCADE'S READS GO OUT TOGETHER. This is a chain of fallbacks — a mailbox pairing, else
+   * fresh candidates, else the brokerage pointer, else a touch due, else the empty-network ask —
+   * and it read each rung only after the one above came back empty: up to five serial round trips
+   * on a runtime where each is most of a millisecond of a 10 ms budget. The rungs are decided in
+   * the same order from the same rows; they are simply all read at once. `brokerageMove` stays
+   * lazy because it writes.
+   */
+  const reads = batchReads(env.DB);
+  const pairingP = reads.all<{
+      subject_code: string; counterpart_code: string | null; subject_matter: string | null;
+      headline: string; because: string; suggested_action: string;
+    }>(true, () => env.DB
     .prepare(
       `SELECT subject_code, counterpart_code, subject_matter, headline, because, suggested_action
          FROM mailbox_findings
         WHERE kind = 'missed_deal' AND confidence = 'high'
           AND status = 'new' AND archived_at IS NULL
         ORDER BY found_at DESC LIMIT 3`,
+    ));
+  const freshP = reads.first<{ n: number }>(true, () => env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM sourcing_candidates WHERE status = 'new'`));
+  const topP = reads.all<{ name: string; ticket_floor_usd: number | null; thesis: string | null; source_name: string | null }>(true, () => env.DB
+      .prepare(
+        `SELECT name, ticket_floor_usd, thesis, source_name
+           FROM sourcing_candidates
+          WHERE status = 'new'
+          ORDER BY COALESCE(ticket_floor_usd, 0) DESC, created_at DESC
+          LIMIT 3`,
+      ));
+  const dueP = reads.all<{ id: string; full_name: string; cadence_days: number | null; last_contact_at: number | null; strategic_importance: number | null }>(true, () => env.DB
+    .prepare(
+      `SELECT r.id, p.full_name, r.cadence_days, r.last_contact_at, r.strategic_importance
+         FROM relationships r
+         JOIN people p ON p.id = r.person_id
+        WHERE r.status = 'active'
+          AND r.next_touch_due_at IS NOT NULL
+          AND r.next_touch_due_at <= ?
+        ORDER BY r.relationship_health DESC, r.next_touch_due_at ASC
+        LIMIT 3`,
     )
-    .all<{
-      subject_code: string; counterpart_code: string | null; subject_matter: string | null;
-      headline: string; because: string; suggested_action: string;
-    }>();
+    .bind(Date.now()));
+  const anyRowsP = reads.first<{ n: number }>(true, () => env.DB.prepare(`SELECT COUNT(*) AS n FROM relationships WHERE status = 'active'`));
+  await reads.flush();
+  const pairing = await pairingP;
 
   const pairs = pairing.results ?? [];
   if (pairs.length > 0) {
@@ -352,21 +386,11 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
     };
   }
 
-  const fresh = await env.DB
-    .prepare(`SELECT COUNT(*) AS n FROM sourcing_candidates WHERE status = 'new'`)
-    .first<{ n: number }>();
+  const fresh = await freshP;
   const waiting = fresh?.n ?? 0;
 
   if (waiting > 0) {
-    const top = await env.DB
-      .prepare(
-        `SELECT name, ticket_floor_usd, thesis, source_name
-           FROM sourcing_candidates
-          WHERE status = 'new'
-          ORDER BY COALESCE(ticket_floor_usd, 0) DESC, created_at DESC
-          LIMIT 3`,
-      )
-      .all<{ name: string; ticket_floor_usd: number | null; thesis: string | null; source_name: string | null }>();
+    const top = await topP;
 
     return {
       available: true,
@@ -424,24 +448,12 @@ export async function wealthContract(env: Env, weekday: number): Promise<PillarC
    * no company or counterparty name enters the OS — so what is stored here is SANDPIPER, and the
    * mapping to a real person stays with her.
    */
-  const due = await env.DB
-    .prepare(
-      `SELECT r.id, p.full_name, r.cadence_days, r.last_contact_at, r.strategic_importance
-         FROM relationships r
-         JOIN people p ON p.id = r.person_id
-        WHERE r.status = 'active'
-          AND r.next_touch_due_at IS NOT NULL
-          AND r.next_touch_due_at <= ?
-        ORDER BY r.relationship_health DESC, r.next_touch_due_at ASC
-        LIMIT 3`,
-    )
-    .bind(Date.now())
-    .all<{ id: string; full_name: string; cadence_days: number | null; last_contact_at: number | null; strategic_importance: number | null }>();
+  const due = await dueP;
 
   const rows = due.results ?? [];
 
   if (rows.length === 0) {
-    const anyRows = await env.DB.prepare(`SELECT COUNT(*) AS n FROM relationships WHERE status = 'active'`).first<{ n: number }>();
+    const anyRows = await anyRowsP;
     const empty = (anyRows?.n ?? 0) === 0;
 
     /*
@@ -876,6 +888,11 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
    * Guarded by `scripts/validate/todays-contract-is-her-work.mjs` so the next one cannot be added.
    */
 
+  // The oldest loop is read alongside the stalled deals rather than after the human touch: it is
+  // the last rung of this cascade, and reading it in parallel costs less than reading it in turn.
+  const loopP = env.DB
+    .prepare(`SELECT id, title, created_at, priority FROM open_loops WHERE status = 'open' ORDER BY priority ASC, created_at ASC LIMIT 1`)
+    .first<{ id: string; title: string; created_at: number; priority: number }>();
   const stalled = await stalledDeals(env);
   if (stalled.length > 0) {
     const d = stalled[0]!;
@@ -920,9 +937,7 @@ export async function executionContract(env: Env, weekday: number): Promise<Pill
    * owed" on a day with a month-old loop rotting in it. Priority breaks the tie, so a high-priority
    * loop is not outranked by an older trivial one.
    */
-  const loop = await env.DB
-    .prepare(`SELECT id, title, created_at, priority FROM open_loops WHERE status = 'open' ORDER BY priority ASC, created_at ASC LIMIT 1`)
-    .first<{ id: string; title: string; created_at: number; priority: number }>();
+  const loop = await loopP;
 
   if (loop) {
     const days = Math.floor((Date.now() - loop.created_at) / 86_400_000);
