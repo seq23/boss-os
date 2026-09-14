@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { batchReads, type BatchReads } from "../lib/batchReads";
 
 /**
  * A QUESTION SHE HAS NOT ANSWERED IS WORK THAT IS NOT HAPPENING.
@@ -33,16 +34,19 @@ const DAY = 86_400_000;
 /** A question is a conversation for this long. After it, it is a blockage. */
 export const QUESTION_PATIENCE_HOURS = 18;
 
-export async function unansweredQuestionAlerts(env: Env, now = Date.now()): Promise<QuestionAlert[]> {
-  const { results } = await env.DB
+export async function unansweredQuestionAlerts(env: Env, now = Date.now(), reads?: BatchReads): Promise<QuestionAlert[]> {
+  // One read. A caller assembling several producers passes its batch so this rides in it.
+  const own = reads ?? batchReads(env.DB);
+  const rowsP = own.all<{ id: string; received_at: number; subject: string | null; why: string; employee: string | null }>(true, () => env.DB
     .prepare(
       `SELECT m.id, m.received_at, m.subject, m.why, e.name AS employee
          FROM boss_inbound_mail m
          LEFT JOIN employees e ON e.id = m.employee_id
         WHERE m.outcome = 'NEEDS_CLARITY' AND m.answered_at IS NULL
         ORDER BY m.received_at`,
-    )
-    .all<{ id: string; received_at: number; subject: string | null; why: string; employee: string | null }>();
+    ));
+  if (!reads) await own.flush();
+  const { results } = await rowsP;
 
   const open = (results ?? []).filter((r) => now - r.received_at >= QUESTION_PATIENCE_HOURS * 3_600_000);
   if (open.length === 0) return [];

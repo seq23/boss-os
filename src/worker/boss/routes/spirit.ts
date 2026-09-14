@@ -13,6 +13,7 @@
  */
 
 import { Hono } from "hono";
+import { batchReads } from "../lib/batchReads";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -29,10 +30,9 @@ import { dayIdInZone, monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL, weekIdIn
 import {
   gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
 } from "../spirit/practice";
-import { buildBodyContract, logSomatic } from "../today/body";
+import { buildBodyContractWithState, logSomatic } from "../today/body";
 import { TIME_ACCURACY, natalChart, transits, transitAspects, type BirthData, type TimeAccuracy } from "../spirit/natal";
 import { TRANSIT_CAVEAT } from "../spirit/transitMeaning";
-import { monthAhead } from "../spirit/month";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
 import {
   ANCESTOR_MINUTES_TARGET, CONTRIBUTION_IDEAL, CONTRIBUTION_MINIMUM,
@@ -98,16 +98,21 @@ spirit.get("/day", async (c) => {
    * all. The screen showed the sky and none of the practice, which is the wrong way round: §5.2 puts
    * reality first, and the practice IS the reality here.
    */
-  const day = await c.env.DB
-    .prepare(`SELECT day_mode FROM days WHERE id = ?`).bind(id)
-    .first<{ day_mode: string | null }>();
+  // The day's mode and her birth data in one round trip; the signal above already batched its own.
+  const [dayRows, birthRows] = await c.env.DB.batch([
+    c.env.DB.prepare(`SELECT day_mode FROM days WHERE id = ?`).bind(id),
+    c.env.DB.prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`),
+  ]);
+  const day = (dayRows!.results as { day_mode: string | null }[])[0] ?? null;
+  const birthRow = (birthRows!.results as { value: string }[])[0] ?? null;
   const mode = day?.day_mode ?? null;
   const reduced = mode === "recovery" || mode === "mvd";
 
-  const [gratitude, body] = await Promise.all([
+  const [gratitude, bodyState] = await Promise.all([
     gratitudeFor(c.env, id),
-    buildBodyContract(c.env, id, mode),
+    buildBodyContractWithState(c.env, id, mode),
   ]);
+  const body = bodyState.body;
 
   /*
    * THE ROTATION HAS TO ADVANCE WHETHER OR NOT A GATE RUNS.
@@ -121,7 +126,7 @@ spirit.get("/day", async (c) => {
    * write history for last Tuesday and reshuffle everything after it. `logSomatic` is idempotent
    * per day, so re-reading today changes nothing.
    */
-  if (id === dayId(Date.now())) await logSomatic(c.env, id, body.somatic);
+  if (id === dayId(Date.now()) && !bodyState.somatic_logged) await logSomatic(c.env, id, body.somatic);
 
   /*
    * TRANSITS, FILTERED TO THE ONES THAT ACTUALLY TOUCH HER.
@@ -135,10 +140,6 @@ spirit.get("/day", async (c) => {
    * these are reported as what is overhead and never as a reason to do or not do anything. No
    * interpretation is generated: an aspect is named, and what it means is hers.
    */
-  const birthRow = await c.env.DB
-    .prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)
-    .first<{ value: string }>();
-
   let sky: unknown = {
     available: false,
     reason: "No birth data yet, so there is no natal chart for anything to transit.",
@@ -248,23 +249,24 @@ spirit.get("/month", async (c) => {
   await ensureAlmanac(c.env.DB, Date.now());
   await ensureAlmanacAround(c.env.DB, start + 15 * DAY_MS);
 
+  // Seven reads, one batch — every statement is CPU on this runtime (lib/batchReads.ts).
+  const reads = batchReads(c.env.DB);
   const [events, contributions, ancestors, rituals, manifestations, dreams, birthRow] = await Promise.all([
-    c.env.DB
+    reads.all<any>(true, () => c.env.DB
       .prepare(`SELECT * FROM astro_calendar WHERE starts_at >= ? AND starts_at < ? ORDER BY starts_at ASC`)
-      .bind(start, end)
-      .all<any>(),
-    c.env.DB.prepare(`SELECT * FROM contributions WHERE month = ? ORDER BY ts DESC`).bind(month).all<any>(),
-    c.env.DB.prepare(`SELECT * FROM ancestor_entries WHERE month = ? ORDER BY ts DESC`).bind(month).all<any>(),
-    c.env.DB
+      .bind(start, end)),
+    reads.all<any>(true, () => c.env.DB.prepare(`SELECT * FROM contributions WHERE month = ? ORDER BY ts DESC`).bind(month)),
+    reads.all<any>(true, () => c.env.DB.prepare(`SELECT * FROM ancestor_entries WHERE month = ? ORDER BY ts DESC`).bind(month)),
+    reads.all<any>(true, () => c.env.DB
       .prepare(
         `SELECT r.*, (SELECT COUNT(*) FROM ritual_runs x WHERE x.ritual_id = r.id AND x.ts >= ? AND x.ts < ?) AS runs_this_month
            FROM rituals r WHERE r.status = 'active' ORDER BY r.cadence, r.name`,
       )
-      .bind(start, end)
-      .all<any>(),
-    c.env.DB.prepare(`SELECT * FROM manifestations WHERE status = 'open' ORDER BY created_at DESC`).all<any>(),
-    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM dream_entries WHERE ts >= ? AND ts < ?`).bind(start, end).first<{ n: number }>(),
-    c.env.DB.prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`).first<{ value: string }>(),
+      .bind(start, end)),
+    reads.all<any>(true, () => c.env.DB.prepare(`SELECT * FROM manifestations WHERE status = 'open' ORDER BY created_at DESC`)),
+    reads.first<{ n: number }>(true, () => c.env.DB.prepare(`SELECT COUNT(*) AS n FROM dream_entries WHERE ts >= ? AND ts < ?`).bind(start, end)),
+    reads.first<{ value: string }>(true, () => c.env.DB.prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)),
+    reads.flush(),
   ]);
 
   const contributionRows = contributions.results ?? [];
@@ -279,19 +281,26 @@ spirit.get("/month", async (c) => {
    * something touches HER chart, which is the one thing an almanac structurally cannot do, and
    * keeps the sky-wide events below that as context.
    */
-  const monthBirthRow = await c.env.DB
-    .prepare(`SELECT value FROM settings WHERE key = 'natal_birth_data'`)
-    .first<{ value: string }>();
-  const highlights = monthAhead(
-    monthBirthRow ? (JSON.parse(monthBirthRow.value) as BirthData) : null,
-    Date.parse(`${month}-15T12:00:00Z`),
-  );
+  /*
+   * THE MONTH'S IMPORTANT DATES ARE COMPUTED ON HER SCREEN, NOT HERE.
+   *
+   * `monthAhead` samples the slow planets against her chart every six hours for five weeks — about
+   * nine milliseconds of arithmetic, which is most of the 10 ms of CPU the Free plan gives this
+   * whole request, and the reason this route was being killed (13 September 2026: `exceededCpu`,
+   * a blank Spirit tab). The arithmetic is deterministic and the browser has no such budget, so the
+   * payload carries the two inputs — her birth data and the instant to compute for — and the page
+   * runs the same `monthAhead` from the same module. Same function, same numbers, other CPU.
+   *
+   * The birth data was also being read twice on this route; once is enough.
+   */
+  const birth = birthRow ? (JSON.parse(birthRow.value) as BirthData) : null;
+  const highlightsAt = Date.parse(`${month}-15T12:00:00Z`);
 
   return ok(c, {
     month,
     advisory: true,
     note: ADVISORY_NOTE,
-    highlights,
+    highlights_inputs: { birth, at: highlightsAt },
     almanac: (events.results ?? []).map((e) => ({ ...e, detail: e.detail ? JSON.parse(e.detail) : null })),
     contribution: {
       entries: contributionRows,

@@ -1,7 +1,7 @@
 import { buildAlmanac, type AlmanacEvent } from "./astro";
 import { natalChart, transitAspects, type BirthData } from "./natal";
 import { ORB, TRANSIT_BODY, NATAL_POINT, ASPECT_TONE } from "./transitMeaning";
-import { monthIdInZone, OWNER_TIMEZONE_LABEL } from "@shared/boss/timezone";
+import { monthIdInZone, OWNER_TIMEZONE_LABEL, dateTimeFormat } from "@shared/boss/timezone";
 
 /**
  * THE MONTH'S DATES THAT ACTUALLY MATTER — asked for because a list of everything is not a month.
@@ -73,7 +73,7 @@ const WEIGHT: Record<string, number> = {
 };
 
 const dayIn = (ts: number, tz: string) =>
-  new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ts));
+  dateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ts));
 
 /**
  * When each slow transit reaches its tightest point inside the window.
@@ -85,8 +85,11 @@ function exactDates(birth: BirthData, from: number, to: number, tz: string): Mon
   const chart = natalChart(birth);
   const best = new Map<string, { orb: number; at: number; body: string; point: string; aspect: string; pointName: string; bodyName: string }>();
 
+  // Only the slow bodies are asked for — the fast ones were computed at every sample and thrown
+  // away on the next line, which was half the cost of the month.
+  const slow = [...SLOW];
   for (let t = from; t <= to; t += SIX_HOURS) {
-    for (const a of transitAspects(chart, t)) {
+    for (const a of transitAspects(chart, t, slow)) {
       if (!SLOW.has(a.body)) continue;
       const key = `${a.body}|${a.natal_point}|${a.aspect}`;
       const seen = best.get(key);

@@ -46,6 +46,28 @@ export const OWNER_TIMEZONE_LABEL = "Central";
  * A caller asking for components has been explicit, so the style defaults step aside. They were
  * only ever a default.
  */
+/**
+ * ONE FORMATTER PER SHAPE, KEPT.
+ *
+ * `dateTimeFormat(...)` loads locale and zone data every time it is constructed, and on
+ * Cloudflare's runtime that is tens of microseconds — not the nanoseconds it costs in a warm Node
+ * process, which is why no local measurement ever showed it. The duty schedule walks a calendar in
+ * day steps and built a fresh formatter for every step; eighteen duties on the Today screen came
+ * to a few thousand constructions and, by Cloudflare's own accounting, ~120 ms of CPU on a plan
+ * that allows 10. A formatter is immutable, so one per (locale, options) shape serves every call
+ * with the same output.
+ */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+export function dateTimeFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let f = FORMATTERS.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, options);
+    FORMATTERS.set(key, f);
+  }
+  return f;
+}
+
 const COMPONENT_OPTIONS = [
   "weekday", "era", "year", "month", "day", "dayPeriod",
   "hour", "minute", "second", "fractionalSecondDigits", "timeZoneName",
@@ -59,7 +81,7 @@ export function inOwnerZone(ts: number | null | undefined, opts: Intl.DateTimeFo
   const base: Intl.DateTimeFormatOptions = wantsComponents
     ? { timeZone: OWNER_TIMEZONE }
     : { timeZone: OWNER_TIMEZONE, dateStyle: "medium", timeStyle: "short" };
-  return new Intl.DateTimeFormat("en-US", { ...base, ...opts }).format(new Date(ts));
+  return dateTimeFormat("en-US", { ...base, ...opts }).format(new Date(ts));
 }
 
 /** Just the date, same zone. A day boundary is a zone-dependent thing and this respects that. */
@@ -73,23 +95,60 @@ export function dayInOwnerZone(ts: number | null | undefined): string {
  * Derived by asking `Intl` what the wall clock reads there and comparing — which is the only way to
  * get it right across a DST boundary without shipping a table of transition dates that goes stale.
  */
-export function zoneOffsetMs(ts: number, timeZone = OWNER_TIMEZONE): number {
+/**
+ * THE OFFSET IS LOOKED UP ONCE PER QUARTER-HOUR PER ZONE, THEN REMEMBERED.
+ *
+ * A zone's UTC offset is a step function that changes only at its transitions, and every IANA
+ * zone in use moves on a quarter-hour boundary of UTC — so inside one 15-minute bucket the offset
+ * is a constant, and one `formatToParts` answers for the whole bucket. That call is the expensive
+ * part: on the Workers runtime it is tens of microseconds even with the formatter cached, and the
+ * duty calendar asks for it several hundred times per Today screen. The bucket cache turns those
+ * into a Map lookup. Same answer, checked against the uncached version across a year in five zones.
+ */
+const OFFSET_BUCKET_MS = 15 * 60_000;
+const OFFSETS = new Map<string, number>();
+
+function offsetLookup(bucketStart: number, timeZone: string): number {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
+    dateTimeFormat("en-US", {
       timeZone, hour12: false,
       year: "numeric", month: "2-digit", day: "2-digit",
       hour: "2-digit", minute: "2-digit", second: "2-digit",
     })
-      .formatToParts(new Date(ts))
+      .formatToParts(new Date(bucketStart))
       .map((p) => [p.type, p.value]),
   ) as Record<string, string>;
-
   const asIfUtc = Date.UTC(
     Number(parts.year), Number(parts.month) - 1, Number(parts.day),
     Number(parts.hour) % 24, Number(parts.minute), Number(parts.second),
   );
-  return asIfUtc - ts;
+  return asIfUtc - bucketStart;
 }
+
+export function zoneOffsetMs(ts: number, timeZone = OWNER_TIMEZONE): number {
+  const bucketStart = Math.floor(ts / OFFSET_BUCKET_MS) * OFFSET_BUCKET_MS;
+  const key = `${timeZone}|${bucketStart}`;
+  let offset = OFFSETS.get(key);
+  if (offset === undefined) {
+    offset = offsetLookup(bucketStart, timeZone);
+    OFFSETS.set(key, offset);
+  }
+  return offset;
+}
+
+/**
+ * The civil clock in a zone, from the cached offset rather than a formatter: year, month (1–12),
+ * day, hour, minute and weekday as the wall clock there reads them.
+ */
+export function wallClock(ts: number, timeZone = OWNER_TIMEZONE): { y: number; m: number; d: number; h: number; min: number; dow: number } {
+  const local = new Date(ts + zoneOffsetMs(ts, timeZone));
+  return {
+    y: local.getUTCFullYear(), m: local.getUTCMonth() + 1, d: local.getUTCDate(),
+    h: local.getUTCHours(), min: local.getUTCMinutes(), dow: local.getUTCDay(),
+  };
+}
+
+const two = (n: number) => String(n).padStart(2, "0");
 
 /**
  * The UTC instant of a wall-clock moment in the owner's zone.
@@ -124,22 +183,14 @@ export function monthRange(month: string, timeZone = OWNER_TIMEZONE): { start: n
 
 /** `YYYY-MM` for the month an instant falls in, in the owner's zone rather than UTC. */
 export function monthIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit" })
-      .formatToParts(new Date(ts))
-      .map((p) => [p.type, p.value]),
-  ) as Record<string, string>;
-  return `${parts.year}-${parts.month}`;
+  const w = wallClock(ts, timeZone);
+  return `${w.y}-${two(w.m)}`;
 }
 
 /** `YYYY-MM-DD` for the day an instant falls in, in the owner's zone rather than UTC. */
 export function dayIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
-      .formatToParts(new Date(ts))
-      .map((p) => [p.type, p.value]),
-  ) as Record<string, string>;
-  return `${parts.year}-${parts.month}-${parts.day}`;
+  const w = wallClock(ts, timeZone);
+  return `${w.y}-${two(w.m)}-${two(w.d)}`;
 }
 
 /**
@@ -158,14 +209,10 @@ export function dayIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
  * a stored identifier needs.
  */
 export function weekIdInZone(ts: number, timeZone = OWNER_TIMEZONE): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
-      .formatToParts(new Date(ts))
-      .map((p) => [p.type, p.value]),
-  ) as Record<string, string>;
+  const w = wallClock(ts, timeZone);
 
   // Anchored at noon UTC on the civil date, so the arithmetic below never straddles a day boundary.
-  const civil = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 12));
+  const civil = new Date(Date.UTC(w.y, w.m - 1, w.d, 12));
   // ISO: Thursday of this week decides the year. Sunday is 0 from getUTCDay and must read as 7.
   const dow = civil.getUTCDay() || 7;
   civil.setUTCDate(civil.getUTCDate() + 4 - dow);

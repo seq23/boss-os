@@ -385,7 +385,7 @@ function positionAt(key: string, at: number): { longitude: number; retrograde: b
  * get to make about her life — §5.2 again. What it can honestly report is which aspect is closest
  * to perfect right now.
  */
-export function transitAspects(chart: NatalChart, at: number): TransitAspect[] {
+export function transitAspects(chart: NatalChart, at: number, bodies: readonly string[] = TRANSITING): TransitAspect[] {
   /*
    * THE ANGLES ARE INCLUDED, and they are half the reason this is worth having. Transits to the
    * Ascendant and Midheaven are how a chart says anything at all about work and how she lands in a
@@ -404,9 +404,11 @@ export function transitAspects(chart: NatalChart, at: number): TransitAspect[] {
   const AHEAD = 6 * 3_600_000;
   const out: TransitAspect[] = [];
 
-  for (const body of TRANSITING) {
+  for (const body of bodies) {
     const now = positionAt(body, at);
-    const soon = positionAt(body, at + AHEAD);
+    // Only the longitude is read six hours on, so only the longitude is computed: `planetPosition`
+    // would also derive latitude, distance and a daily motion, at seven orbit evaluations a body.
+    const soon = { longitude: body === "moon" ? moonPosition(at + AHEAD).longitude : geocentricLongitude(body, at + AHEAD) };
     const orbLimit = ORB[body] ?? 2;
 
     for (const point of points) {

@@ -37,6 +37,7 @@
  */
 
 import type { ApprovalRow } from "./execute";
+import { batchReads } from "../lib/batchReads";
 
 /** The one definition of "waiting on her". Everything else here is built from it. */
 export const PENDING = `status = 'pending'`;
@@ -101,15 +102,26 @@ export async function pendingApprovals(
    * applies, so the number and the list are two readings of one query rather than two queries that
    * happen to share a WHERE clause. Two statements is exactly how the four callers drifted.
    */
-  const res = await db
+  // THE THREE STATEMENTS SHARE ONE ROUND TRIP. Each statement is CPU on this runtime, and this
+  // function runs on every Today and Inbox read — see lib/batchReads.ts. The statements are still
+  // three, for the reasons the comments below give; they just go out together.
+  const reads = batchReads(db);
+  const resP = reads.all<ApprovalRow & { pending_total: number }>(true, () => db
     .prepare(
       `SELECT *, COUNT(*) OVER () AS pending_total FROM approvals
         WHERE ${where}
         ORDER BY CASE risk WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, requested_at DESC
         LIMIT ${PENDING_PAGE}`,
     )
-    .bind(...params)
-    .all<ApprovalRow & { pending_total: number }>();
+    .bind(...params));
+  const risksP = reads.all<{ risk: string; n: number }>(true, () => db
+    .prepare(`SELECT risk, COUNT(*) AS n FROM approvals WHERE ${where} AND NOT (${IS_NOTICE}) GROUP BY risk`)
+    .bind(...params));
+  const countedP = reads.first<{ n: number }>(true, () => db
+    .prepare(`SELECT COUNT(*) AS n FROM approvals WHERE ${where} AND NOT (${IS_NOTICE})`)
+    .bind(...params));
+  await reads.flush();
+  const res = await resP;
 
   const raw = res.results ?? [];
   /*
@@ -128,10 +140,7 @@ export async function pendingApprovals(
    * that does not add up to its own headline. It is a second statement, but it is a second statement
    * INSIDE the one function every caller uses, which is the property that was missing before.
    */
-  const risks = await db
-    .prepare(`SELECT risk, COUNT(*) AS n FROM approvals WHERE ${where} AND NOT (${IS_NOTICE}) GROUP BY risk`)
-    .bind(...params)
-    .all<{ risk: string; n: number }>();
+  const risks = await risksP;
   const by_risk = { high: 0, medium: 0, low: 0 };
   for (const r of risks.results ?? []) {
     if (r.risk === "high" || r.risk === "medium" || r.risk === "low") by_risk[r.risk] = Number(r.n) || 0;
@@ -145,10 +154,7 @@ export async function pendingApprovals(
    * table. It is a second statement inside the one function every caller uses, which is the property
    * that made this file exist.
    */
-  const counted = await db
-    .prepare(`SELECT COUNT(*) AS n FROM approvals WHERE ${where} AND NOT (${IS_NOTICE})`)
-    .bind(...params)
-    .first<{ n: number }>();
+  const counted = await countedP;
   const total = Number(counted?.n ?? 0);
 
   const strip = (r: ApprovalRow & { pending_total?: number }) => {

@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { batchReads } from "../lib/batchReads";
 import { isWestPeekDay, secondBlockVehicle } from "./arcs";
 
 /**
@@ -282,16 +283,18 @@ export async function gratitudeFor(env: Env, dayId: string): Promise<GratitudeRe
   const theme = themeFor(dayId);
   const weekday = new Date(`${dayId}T12:00:00Z`).getUTCDay();
 
+  // Five reads, one batch — each statement is CPU on this runtime (lib/batchReads.ts).
+  const reads = batchReads(env.DB);
   const [day, loops, lastScored, holding, recentDays] = await Promise.all([
-    env.DB.prepare(`SELECT morning_contract, day_mode FROM days WHERE id = ?`).bind(dayId)
-      .first<{ morning_contract: string | null; day_mode: string | null }>(),
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'open'`).first<{ n: number }>(),
-    env.DB.prepare(`SELECT verdict FROM days WHERE id < ? AND verdict IS NOT NULL ORDER BY id DESC LIMIT 1`)
-      .bind(dayId).first<{ verdict: string }>(),
-    env.DB.prepare(`SELECT title FROM manifestations WHERE status = 'open' ORDER BY created_at DESC LIMIT 1`)
-      .first<{ title: string }>(),
-    env.DB.prepare(`SELECT id FROM days WHERE id <= ? ORDER BY id DESC LIMIT 30`).bind(dayId)
-      .all<{ id: string }>(),
+    reads.first<{ morning_contract: string | null; day_mode: string | null }>(true, () =>
+      env.DB.prepare(`SELECT morning_contract, day_mode FROM days WHERE id = ?`).bind(dayId)),
+    reads.first<{ n: number }>(true, () => env.DB.prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'open'`)),
+    reads.first<{ verdict: string }>(true, () =>
+      env.DB.prepare(`SELECT verdict FROM days WHERE id < ? AND verdict IS NOT NULL ORDER BY id DESC LIMIT 1`).bind(dayId)),
+    reads.first<{ title: string }>(true, () =>
+      env.DB.prepare(`SELECT title FROM manifestations WHERE status = 'open' ORDER BY created_at DESC LIMIT 1`)),
+    reads.all<{ id: string }>(true, () => env.DB.prepare(`SELECT id FROM days WHERE id <= ? ORDER BY id DESC LIMIT 30`).bind(dayId)),
+    reads.flush(),
   ]);
 
   let anchor: string | null = null;

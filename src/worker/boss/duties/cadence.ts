@@ -13,7 +13,7 @@
  * matters because the interesting cases are the two days a year nobody is looking.
  */
 
-import { zonedTime } from "../../../shared/boss/timezone";
+import { zonedTime, wallClock } from "../../../shared/boss/timezone";
 
 const DAY_MS = 86_400_000;
 
@@ -25,17 +25,9 @@ const DAY_MS = 86_400_000;
  * table. Hand-rolling an offset is how a scheduler ends up an hour wrong in one hemisphere.
  */
 function wallClockIn(timeZone: string, at: number): { y: number; m: number; d: number; h: number; min: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).formatToParts(new Date(at));
-
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-  // `hour12: false` renders midnight as 24 in some runtimes. Left as 24 it silently becomes the
-  // next day's zero hour and every comparison below is a day out.
-  const h = get("hour") % 24;
-  return { y: get("year"), m: get("month"), d: get("day"), h, min: get("minute") };
+  // From the cached zone offset — see `wallClock` in shared/boss/timezone.ts for why no formatter.
+  const w = wallClock(at, timeZone);
+  return { y: w.y, m: w.m, d: w.d, h: w.h, min: w.min };
 }
 
 /** The zone's offset from UTC at a given instant, in minutes. Positive means ahead of UTC. */
@@ -97,37 +89,32 @@ export interface DutySchedule {
 export function nextDueAt(schedule: DutySchedule, after: number): number {
   const { timezone, local_hour, local_minute, cadence } = schedule;
 
+  /*
+   * ONE ZONE LOOKUP PER DAY THAT CANNOT MATCH, THREE FOR ONE THAT CAN.
+   *
+   * This walked every day with four or five `Intl` calls — the wall clock, two offset lookups to
+   * place the local time, and the weekday twice — before deciding most of them were the wrong
+   * weekday. Eighteen duties on the Today screen, each walked from its last run, came to a few
+   * thousand of those calls, and on the Workers runtime each is real CPU. The screen was being
+   * killed for it. Now a day is rejected by its civil date alone: the weekday of (y, m, d) is
+   * arithmetic, and the first of the month is `d === 1`. The instant is only placed for a day that
+   * could be the answer, and the answers are the same — checked against the old walk across four
+   * zones, every cadence, and every hour of a year including both transitions.
+   */
   for (let i = 0; i < 400; i += 1) {
     // Advance in local days, not UTC days: on a transition day the local date changes after 23 or
     // 25 hours, and stepping by a flat 24 skips or repeats a date exactly when it matters most.
     const probe = wallClockIn(timezone, after + i * DAY_MS);
-    const candidate = utcForLocalTime(timezone, probe.y, probe.m, probe.d, local_hour, local_minute);
-
-    if (candidate <= after) continue;
-
-    if (cadence === "weekly") {
-      const want = schedule.weekday ?? 1;
-      if (new Date(candidate).getUTCDay() !== dayOfWeekIn(timezone, candidate)) {
-        // Unreachable in practice; kept so a future edit that breaks the assumption is loud.
-      }
-      if (dayOfWeekIn(timezone, candidate) !== want) continue;
-    }
-
-    /*
-     * A DAILY DUTY MAY NAME THE DAYS IT ACTUALLY RUNS.
-     *
-     * The owner asked for buyer sourcing "2-3x per week if needed", and the cadence vocabulary had
-     * only daily, weekly and monthly — so the choice was seven runs or one. Seven was three times
-     * her whole budget for a single duty; one loses the recency that makes the hunt worth doing.
-     *
-     * `weekdays` is the missing middle: a daily duty with [1,3,5] fires Monday, Wednesday and
-     * Friday. Absent, a daily duty is every day exactly as before, so nothing else changes shape.
-     */
-    if (cadence === "daily" && schedule.weekdays && schedule.weekdays.length > 0) {
-      if (!schedule.weekdays.includes(dayOfWeekIn(timezone, candidate))) continue;
-    }
 
     if (cadence === "monthly" && probe.d !== 1) continue;
+
+    // The weekday of the civil date, with no zone lookup: a date's weekday is the same everywhere.
+    const weekday = new Date(Date.UTC(probe.y, probe.m - 1, probe.d, 12)).getUTCDay();
+    if (cadence === "weekly" && weekday !== (schedule.weekday ?? 1)) continue;
+    if (cadence === "daily" && schedule.weekdays && schedule.weekdays.length > 0 && !schedule.weekdays.includes(weekday)) continue;
+
+    const candidate = utcForLocalTime(timezone, probe.y, probe.m, probe.d, local_hour, local_minute);
+    if (candidate <= after) continue;
 
     return candidate;
   }
@@ -137,10 +124,8 @@ export function nextDueAt(schedule: DutySchedule, after: number): number {
   );
 }
 
-/** The weekday as the duty's own zone sees it. 0 = Sunday. */
 export function dayOfWeekIn(timeZone: string, at: number): number {
-  const name = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(new Date(at));
-  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(name);
+  return wallClock(at, timeZone).dow;
 }
 
 /**

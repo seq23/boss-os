@@ -51,19 +51,22 @@ export function alertKey(a: Alert): string {
  * comes back louder ignores its own dismissal. That is the difference between a snooze and the
  * silence that let a dead credential run for days.
  */
+/** The one read `applyDismissals` makes, so a caller can carry it in a batch with the producers. */
+export const dismissalsStatement = (env: Env, now: number) => env.DB
+  .prepare(
+    `SELECT alert_key, alert_text, reason, severity_at_dismissal, until
+       FROM alert_dismissals WHERE until > ?`,
+  )
+  .bind(now);
+
 export async function applyDismissals(
   env: Env,
   alerts: Alert[],
   now = Date.now(),
+  // Rows already read by `dismissalsStatement`, when the caller batched them earlier.
+  pre?: Promise<{ results?: any[] }>,
 ): Promise<{ shown: Alert[]; dismissed: { key: string; text: string; reason: string; until: number }[] }> {
-  const rows = await env.DB
-    .prepare(
-      `SELECT alert_key, alert_text, reason, severity_at_dismissal, until
-         FROM alert_dismissals WHERE until > ?`,
-    )
-    .bind(now)
-    .all<any>()
-    .catch(() => ({ results: [] as any[] }));
+  const rows = await (pre ?? dismissalsStatement(env, now).all<any>()).catch(() => ({ results: [] as any[] }));
 
   const live = new Map<string, any>();
   for (const d of (rows as { results?: any[] }).results ?? []) live.set(d.alert_key, d);

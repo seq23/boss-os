@@ -353,6 +353,7 @@ system.get("/usage", async (c) => {
   return ok(c, rows.results ?? []);
 });
 
+
 system.get("/settings", async (c) => {
   const rows = await c.env.DB.prepare(`SELECT * FROM settings ORDER BY key`).all();
   return ok(c, rows.results ?? []);

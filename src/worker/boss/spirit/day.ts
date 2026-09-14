@@ -15,6 +15,7 @@
  */
 
 import { newId } from "../lib/id";
+import { batchReads, type BatchReads } from "../lib/batchReads";
 import { monthIdInZone } from "../../../shared/boss/timezone";
 import {
   ADVISORY_NOTE, CANON_WINDOW_TYPES, buildAlmanac, currentLunation, moonPhase, moonPosition,
@@ -93,11 +94,23 @@ export async function ensureAlmanacRange(
  * fetched: the same arithmetic on any machine produces the same rows, which is
  * the property that lets the Emergency Offline Library mean anything.
  */
-export async function ensureAlmanac(db: D1Database, now = Date.now(), months = ALMANAC_MONTHS): Promise<{ built: number; total: number }> {
+/** The two statements `ensureAlmanac` decides on, so a caller can carry them in its own batch. */
+export const almanacCheckStatements = (db: D1Database) => [
+  db.prepare(`SELECT MAX(starts_at) AS latest, COUNT(*) AS n FROM astro_calendar WHERE source = 'computed'`),
+  db.prepare(`SELECT DISTINCT kind FROM astro_calendar WHERE source = 'computed'`),
+];
+
+export async function ensureAlmanac(
+  db: D1Database,
+  now = Date.now(),
+  months = ALMANAC_MONTHS,
+  // Already-read answers to `almanacCheckStatements`, when the caller batched them with its own.
+  checked?: [D1Result<{ latest: number | null; n: number }>, D1Result<{ kind: string }>],
+): Promise<{ built: number; total: number }> {
   const horizon = now + months * 30.44 * DAY_MS;
-  const covered = await db
-    .prepare(`SELECT MAX(starts_at) AS latest, COUNT(*) AS n FROM astro_calendar WHERE source = 'computed'`)
-    .first<{ latest: number | null; n: number }>();
+  // Both checks in one round trip — every statement is CPU on this runtime (lib/batchReads.ts).
+  const [coveredRows, kinds] = checked ?? (await db.batch(almanacCheckStatements(db)) as [D1Result<{ latest: number | null; n: number }>, D1Result<{ kind: string }>]);
+  const covered = coveredRows.results[0] ?? null;
 
   /*
    * "FAR ENOUGH AHEAD" IS NOT THE SAME QUESTION AS "EVERYTHING IT SHOULD HOLD".
@@ -110,9 +123,6 @@ export async function ensureAlmanac(db: D1Database, now = Date.now(), months = A
    * So the horizon AND the set of kinds both have to hold. A kind that is expected and absent means
    * this build knows how to compute something the table has never been given.
    */
-  const kinds = await db
-    .prepare(`SELECT DISTINCT kind FROM astro_calendar WHERE source = 'computed'`)
-    .all<{ kind: string }>();
   const present = new Set((kinds.results ?? []).map((k) => k.kind));
   const missingKind = EXPECTED_COMPUTED_KINDS.find((k) => !present.has(k));
 
@@ -139,12 +149,22 @@ export const EXPECTED_COMPUTED_KINDS = [
  * the sky next week. Rather than keeping decades of rows, the range around a
  * requested date is computed on demand and kept.
  */
-export async function ensureAlmanacAround(db: D1Database, ts: number, now = Date.now()): Promise<{ built: number; total: number }> {
-  const near = await db
-    .prepare(`SELECT COUNT(*) AS n FROM astro_calendar WHERE kind IN ('new_moon','full_moon') AND starts_at >= ? AND starts_at <= ?`)
-    .bind(ts - 40 * DAY_MS, ts + 40 * DAY_MS)
-    .first<{ n: number }>();
+/** The statement `ensureAlmanacAround` decides on, so a caller can carry it in its own batch. */
+export const almanacAroundStatement = (db: D1Database, ts: number) => db
+  .prepare(`SELECT COUNT(*) AS n FROM astro_calendar WHERE kind IN ('new_moon','full_moon') AND starts_at >= ? AND starts_at <= ?`)
+  .bind(ts - 40 * DAY_MS, ts + 40 * DAY_MS);
+
+export async function ensureAlmanacAround(
+  db: D1Database,
+  ts: number,
+  now = Date.now(),
+  opts: { near?: D1Result<{ n: number }>; withTotal?: boolean } = {},
+): Promise<{ built: number; total: number }> {
+  const nearRows = opts.near ?? (await db.batch([almanacAroundStatement(db, ts)]))[0] as D1Result<{ n: number }>;
+  const near = nearRows.results[0] ?? null;
   if ((near?.n ?? 0) >= 2) {
+    // The total is a second read that only the almanac routes show; the signal does not ask for it.
+    if (opts.withTotal === false) return { built: 0, total: 0 };
     const total = await db.prepare(`SELECT COUNT(*) AS n FROM astro_calendar`).first<{ n: number }>();
     return { built: 0, total: total?.n ?? 0 };
   }
@@ -171,8 +191,11 @@ export interface AstroDayRow {
  * Computes and stores one day's sky. Noon UTC is used as the moment, so a day's
  * row describes the middle of the day rather than its first instant.
  */
-export async function ensureAstroDay(db: D1Database, id: string, now = Date.now()): Promise<AstroDayRow> {
-  const existing = await db.prepare(`SELECT * FROM astro_days WHERE id = ?`).bind(id).first<AstroDayRow>();
+/** The statement `ensureAstroDay` reads first, so a caller can carry it in its own batch. */
+export const astroDayStatement = (db: D1Database, id: string) => db.prepare(`SELECT * FROM astro_days WHERE id = ?`).bind(id);
+
+export async function ensureAstroDay(db: D1Database, id: string, now = Date.now(), pre?: D1Result<AstroDayRow>): Promise<AstroDayRow> {
+  const existing = pre ? (pre.results[0] ?? null) : await db.prepare(`SELECT * FROM astro_days WHERE id = ?`).bind(id).first<AstroDayRow>();
   if (existing) return existing;
 
   const dateTs = Date.parse(`${id}T00:00:00.000Z`);
@@ -237,14 +260,17 @@ export interface RealityPriority {
  * screen says so — a system that offers a lunar window while three tasks are
  * dead in the queue has its priorities inverted.
  */
-export async function realityPriority(db: D1Database, now = Date.now()): Promise<RealityPriority> {
+export async function realityPriority(db: D1Database, now = Date.now(), reads?: BatchReads): Promise<RealityPriority> {
+  // Six counts, one round trip. `reads` may be a caller's batch, so the signal's reads ride with it.
+  const own = reads ?? batchReads(db);
   const [deadLetters, failedTasks, incidents, expiring, overdueFollowUps, killSwitch] = await Promise.all([
-    db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'failed'`).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM trading_incidents WHERE resolved_at IS NULL AND severity IN ('high','critical')`).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`).bind(now + DAY_MS).first<{ n: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM follow_ups WHERE status = 'open' AND due_at < ?`).bind(now).first<{ n: number }>(),
-    db.prepare(`SELECT kill_switch FROM trading_authority LIMIT 1`).first<{ kill_switch: number }>(),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM dead_letters WHERE status = 'open'`)),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'failed'`)),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM trading_incidents WHERE resolved_at IS NULL AND severity IN ('high','critical')`)),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at < ?`).bind(now + DAY_MS)),
+    own.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM follow_ups WHERE status = 'open' AND due_at < ?`).bind(now)),
+    own.first<{ kill_switch: number }>(true, () => db.prepare(`SELECT kill_switch FROM trading_authority LIMIT 1`)),
+    reads ? Promise.resolve() : own.flush(),
   ]);
 
   const counts = {
@@ -376,25 +402,47 @@ function ritualDue(
  * read, so the two can never disagree.
  */
 export async function spiritSignal(db: D1Database, id: string, now = Date.now()): Promise<SpiritSignal> {
-  await ensureAlmanac(db, now);
+  /*
+   * THE THREE "ENSURE" CHECKS SHARE ONE ROUND TRIP. Each used to read on its own before deciding it
+   * had nothing to build — three round trips on every Spirit and Today read, for a horizon that is
+   * rebuilt about once a month. The checks are read together; only a check that fails then writes.
+   */
+  const requested = Date.parse(`${id}T12:00:00.000Z`);
+  const [coveredRows, kinds, near, astroPre] = await db.batch([
+    ...almanacCheckStatements(db),
+    almanacAroundStatement(db, Number.isFinite(requested) ? requested : now),
+    astroDayStatement(db, id),
+  ]) as [D1Result<{ latest: number | null; n: number }>, D1Result<{ kind: string }>, D1Result<{ n: number }>, D1Result<AstroDayRow>];
+  await ensureAlmanac(db, now, ALMANAC_MONTHS, [coveredRows, kinds]);
   // A day outside the rolling horizon — last spring, next decade — still has a
   // sky, and it is as computable as any other.
-  const requested = Date.parse(`${id}T12:00:00.000Z`);
-  if (Number.isFinite(requested)) await ensureAlmanacAround(db, requested, now);
-  const astro = await ensureAstroDay(db, id, now);
+  if (Number.isFinite(requested)) await ensureAlmanacAround(db, requested, now, { near, withTotal: false });
+  const astro = await ensureAstroDay(db, id, now, astroPre);
   const dayStart = astro.date_ts;
   const month = monthId(dayStart);
 
+  // Twelve reads, one batch: the signal's own six, the reality-priority counts, and the horizon
+  // scan for a major event. On the Free plan's 10 ms this is the difference — lib/batchReads.ts.
+  const reads = batchReads(db);
+  const HORIZON_MS = 48 * 60 * 60 * 1000;
+  const upcomingP = reads
+    .all<{ kind: string; label: string; starts_at: number; detail: string | null }>(true, () => db
+      .prepare(
+        `SELECT kind, label, starts_at, detail FROM astro_calendar
+          WHERE starts_at >= ? AND starts_at <= ?
+          ORDER BY starts_at LIMIT 20`,
+      )
+      .bind(now - 6 * 60 * 60 * 1000, now + HORIZON_MS))
+    .catch(() => ({ results: [] as any[] }));
   const [rituals, contributions, ancestors, openManifestations, evidenceThisMonth, reality] = await Promise.all([
-    db.prepare(`SELECT id, name, cadence, anchor, last_done_at FROM rituals WHERE status = 'active'`)
-      .all<{ id: string; name: string; cadence: string; anchor: string | null; last_done_at: number | null }>(),
-    db
+    reads.all<{ id: string; name: string; cadence: string; anchor: string | null; last_done_at: number | null }>(true, () =>
+      db.prepare(`SELECT id, name, cadence, anchor, last_done_at FROM rituals WHERE status = 'active'`)),
+    reads.all<{ id: string; ts: number; kind: string; note: string | null; recipient: string | null }>(true, () => db
       .prepare(`SELECT id, ts, kind, note, recipient FROM contributions WHERE month = ? ORDER BY ts DESC`)
-      .bind(month)
-      .all<{ id: string; ts: number; kind: string; note: string | null; recipient: string | null }>(),
-    db.prepare(`SELECT COALESCE(SUM(minutes),0) AS minutes FROM ancestor_entries WHERE month = ?`).bind(month).first<{ minutes: number }>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM manifestations WHERE status = 'open'`).first<{ n: number }>(),
-    db
+      .bind(month)),
+    reads.first<{ minutes: number }>(true, () => db.prepare(`SELECT COALESCE(SUM(minutes),0) AS minutes FROM ancestor_entries WHERE month = ?`).bind(month)),
+    reads.first<{ n: number }>(true, () => db.prepare(`SELECT COUNT(*) AS n FROM manifestations WHERE status = 'open'`)),
+    reads.first<{ n: number }>(true, () => db
       .prepare(
         `SELECT COUNT(*) AS n FROM manifestations m
           WHERE m.status = 'open'
@@ -403,9 +451,11 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
                WHERE e.manifestation_id = m.id AND e.kind IN ('action','result') AND e.ts >= ?
             )`,
       )
-      .bind(Date.parse(`${month}-01T00:00:00.000Z`))
-      .first<{ n: number }>(),
-    realityPriority(db, now),
+      .bind(Date.parse(`${month}-01T00:00:00.000Z`))),
+    realityPriority(db, now, reads),
+    // Everything above is recorded; this sends it. realityPriority records its reads synchronously
+    // before its first await, so they are in the batch too.
+    reads.flush(),
   ]);
 
   const windows = (JSON.parse(astro.windows ?? "[]") as { label: string; detail?: string }[]).map((w) => ({
@@ -453,16 +503,7 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
    * is the same as putting nothing there.
    */
   const MAJOR_KINDS = new Set(["new_moon", "full_moon", "eclipse"]);
-  const HORIZON_MS = 48 * 60 * 60 * 1000;
-  const upcoming = await db
-    .prepare(
-      `SELECT kind, label, starts_at, detail FROM astro_calendar
-        WHERE starts_at >= ? AND starts_at <= ?
-        ORDER BY starts_at LIMIT 20`,
-    )
-    .bind(now - 6 * 60 * 60 * 1000, now + HORIZON_MS)
-    .all<{ kind: string; label: string; starts_at: number; detail: string | null }>()
-    .catch(() => ({ results: [] as any[] }));
+  const upcoming = await upcomingP;
   const majorRow = (upcoming.results ?? []).find((e) => MAJOR_KINDS.has(e.kind)) ?? null;
   const majorEvent = majorRow
     ? {
