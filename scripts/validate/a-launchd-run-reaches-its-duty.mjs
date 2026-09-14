@@ -101,6 +101,24 @@ export function wrappedJobs(installer) {
   return [...installer.matchAll(/duty-run\.sh\s+([A-Za-z0-9_.-]+\.(?:sh|mjs))\b/g)].map((m) => m[1]);
 }
 
+/**
+ * Every duty a later migration RETIRES.
+ *
+ * A duty that has ended — the KDP case chase, once the books were Live — is deleted by a migration,
+ * and a deleted duty needs no launchd job. Without this the validator would demand an installer
+ * block for work that no longer exists, which is how a retired job stays on the schedule: on
+ * 14 September 2026 `com.seq.kdp-watch` fired for a duty production no longer had, and emailed her
+ * about a case that had closed two days earlier.
+ */
+export function retiredIn(sql) {
+  const out = [];
+  for (const m of sql.matchAll(/DELETE\s+FROM\s+standing_duties\s+WHERE\s+id\s*(?:=\s*'(duty_[a-z0-9_]+)'|IN\s*\(([^)]*)\))/gi)) {
+    if (m[1]) out.push(m[1]);
+    if (m[2]) for (const id of m[2].matchAll(/'(duty_[a-z0-9_]+)'/g)) out.push(id[1]);
+  }
+  return out;
+}
+
 /** Is a duty's declaration an `executor = 'local_job'` one? */
 export function isLocalJob(text) {
   return /'local_job'\s*,\s*'[A-Za-z0-9_.-]+\.(?:sh|mjs)'/.test(text) || /'local_job'/.test(text);
@@ -123,9 +141,11 @@ function scan() {
    * A Set, because the question is "how many DISTINCT duties claim this script" — which is the
    * thing that would actually make one run vouch for two pieces of work.
    */
+  const retired = new Set(files.flatMap((f) => retiredIn(read(`migrations/${f}`))));
   const declared = new Map();
   for (const f of files) {
     for (const duty of dutiesIn(read(`migrations/${f}`))) {
+      if (retired.has(duty.id)) continue;
       const script = localJobScript(duty.text);
       if (!script) continue;
       if (!declared.has(script)) declared.set(script, new Set());
@@ -259,13 +279,14 @@ function selfTest() {
   let failed = 0;
   const cases = [
     { name: "a wrapped shell job is found", src: `<string>bash $REPO/scripts/ops/duty-run.sh kdp-watch.sh -- bash x</string>`, want: ["kdp-watch.sh"] },
+    { name: "a retired duty is read out of its DELETE", src: `DELETE FROM standing_duties WHERE id = 'duty_kdp_publication';\nDELETE FROM standing_duties WHERE id IN ('duty_a', 'duty_b');`, want: ["duty_kdp_publication", "duty_a", "duty_b"], fn: retiredIn },
     { name: "a wrapped node job is found", src: `duty-run.sh lp-positive.mjs -- npm run x`, want: ["lp-positive.mjs"] },
     { name: "two invocations are both found", src: `duty-run.sh a.sh -- x\nduty-run.sh b.mjs -- y`, want: ["a.sh", "b.mjs"] },
     { name: "the wrapper's own definition is not an invocation", src: `bash scripts/ops/duty-run.sh <local_job> -- <command...>`, want: [] },
     { name: "an unwrapped command yields nothing", src: `<string>cd $REPO && npm run --silent properties</string>`, want: [] },
   ];
   for (const c of cases) {
-    const got = wrappedJobs(c.src);
+    const got = (c.fn ?? wrappedJobs)(c.src);
     if (JSON.stringify(got) !== JSON.stringify(c.want)) {
       console.error(`  ✗ ${c.name}: expected ${JSON.stringify(c.want)}, got ${JSON.stringify(got)}`);
       failed += 1;

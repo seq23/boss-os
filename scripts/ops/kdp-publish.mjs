@@ -378,6 +378,19 @@ async function main() {
   const { data: state } = await kdpRes.json();
   const covers = state?.covers ?? null;
 
+  /*
+   * ── NOTHING TO PUBLISH IS THE FIRST QUESTION, NOT THE LAST ──────────────
+   *
+   * On 13 September this ran against a shelf where six of seven titles were already Live and got
+   * as far as verifying the covers before Amazon's sign-in stopped it. Had she signed in, it would
+   * have re-uploaded covers onto published books. `chase.open` is the Worker's answer from the
+   * register and from her own verdict on the commitment; when it is false there is no work here.
+   */
+  if (state?.chase && state.chase.open === false) {
+    say("NOTHING_TO_PUBLISH", `${state.chase.why} Nothing was uploaded and nothing was clicked.`);
+    process.exit(0);
+  }
+
   if (!covers) {
     await reportStop(cookie, "NO_COVER_BATCH", "no cover batch has ever been put to her, so there is no approval to act on.",
       "Run npm run kdp:covers to raise one. Nothing publishes without her verdict.");

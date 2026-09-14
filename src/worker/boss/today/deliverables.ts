@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { batchReads } from "../lib/batchReads";
+import { audit } from "../lib/audit";
 
 /**
  * OWNED WORK, AND WHY IT CANNOT BE QUIETLY DROPPED.
@@ -157,13 +158,14 @@ export const TERMINAL_CHECKS: Record<
    *
    * `in_review` DOES NOT COUNT AS DONE. A title Amazon is still looking at is not published, and
    * three of hers sat in review for days before going Live. Counting them would close the
-   * deliverable on the strength of a submission.
+   * deliverable on the strength of a submission. Nor does `draft` — a title nobody has sent is not
+   * on sale, however little stands in its way.
    */
   kdp_all_live: async (env: Env) => {
     const row = await env.DB
       .prepare(
         `SELECT
-           SUM(CASE WHEN state IN ('blocked','in_review') THEN 1 ELSE 0 END) AS outstanding,
+           SUM(CASE WHEN state IN ('blocked','draft','in_review') THEN 1 ELSE 0 END) AS outstanding,
            SUM(CASE WHEN state = 'live' THEN 1 ELSE 0 END) AS live,
            COUNT(*) AS total
          FROM kdp_titles WHERE state != 'withdrawn'`,
@@ -202,7 +204,7 @@ export const TERMINAL_CHECKS: Record<
     }
 
     const stuck = await env.DB
-      .prepare(`SELECT title_ref, state FROM kdp_titles WHERE state IN ('blocked','in_review') ORDER BY state, title_ref`)
+      .prepare(`SELECT title_ref, state FROM kdp_titles WHERE state IN ('blocked','draft','in_review') ORDER BY state, title_ref`)
       .all<{ title_ref: string; state: string }>();
     const still = (stuck.results ?? []).map((r) => `${r.title_ref} (${r.state})`).join(", ");
     return { met: false, progress: `${live} of ${total} Live. Still outstanding: ${still}.` };
@@ -729,4 +731,61 @@ export async function recordDeliverableActivity(
       args.id,
     )
     .run();
+}
+
+/**
+ * She stopped a commitment, in her own words.
+ *
+ * THE SAME WRITE WHETHER SHE CLICKS OR WRITES. `routes/deliverables.ts` takes `killed` from the
+ * screen; `intake/inboundMail.ts` takes "please close out the kdp upload issue" from her mail. On
+ * 14 September 2026 the second of those went to a language model, which wrote a paragraph saying
+ * the issue was closed while the row stayed `blocked` — and the watcher that reads the row was
+ * going to email her about it again on Wednesday. An instruction to close is a state change; this
+ * is the one function that makes it, so the two doors cannot drift.
+ *
+ * `killed`, NOT `done`. Done is granted by the terminal check counting real records and by nothing
+ * a person says — see the route. Her reason is kept on the row, so a commitment that vanished is
+ * distinguishable from one that was forgotten.
+ */
+export async function stopDeliverable(
+  env: Env,
+  args: { id: string; reason: string; via: "screen" | "mail"; mailId?: string | null; now?: number },
+): Promise<{ from: string } | null> {
+  const now = args.now ?? Date.now();
+  const row = await env.DB
+    .prepare(`SELECT id, state FROM owned_deliverables WHERE id = ?`).bind(args.id)
+    .first<{ id: string; state: string }>();
+  if (!row) return null;
+  const reason = String(args.reason ?? "").trim().slice(0, 500);
+  if (!reason) return null;
+
+  await env.DB
+    .prepare(
+      `UPDATE owned_deliverables
+          SET state = 'killed',
+              blocked_since = NULL,
+              killed_at = ?,
+              killed_reason = ?,
+              needs_owner = 0,
+              needs_owner_why = NULL,
+              current_status = ?,
+              current_status_at = ?,
+              current_status_kind = 'determined',
+              last_activity_at = ?,
+              updated_at = ?
+        WHERE id = ?`,
+    )
+    .bind(
+      now, reason,
+      `Stopped by you on ${new Date(now).toISOString().slice(0, 10)}${args.via === "mail" ? ", by email" : ""}: "${reason}"`,
+      now, now, now, args.id,
+    )
+    .run();
+
+  await audit(env.DB, {
+    actor: "owner", lane: "ops", entityType: "owned_deliverable", entityId: args.id,
+    action: "state_killed",
+    detail: { from: row.state, reason, via: args.via, ...(args.mailId ? { mail_id: args.mailId } : {}) },
+  });
+  return { from: row.state };
 }

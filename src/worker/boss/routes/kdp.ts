@@ -45,7 +45,14 @@ const SENTINELS = new Set([
   "no-reply", "replied", "needs-her", "cleared", "published", "nudged", "stalled",
 ]);
 
-const STATES = new Set(["blocked", "in_review", "live", "withdrawn"]);
+/**
+ * `draft` IS A TITLE NOBODY HAS PUBLISHED, and it is not `blocked`. On 14 September 2026 six of the
+ * seven titles read Live on the bookshelf and the seventh read Draft — publishable, nothing refusing
+ * it, simply not sent. The register had no word for that: `blocked` would have kept a cleared case
+ * open and `in_review` would have claimed Amazon was looking at it. A register that cannot say the
+ * true state says a false one.
+ */
+const STATES = new Set(["blocked", "draft", "in_review", "live", "withdrawn"]);
 
 /**
  * DID THE RUN ACTUALLY RUN?
@@ -111,8 +118,8 @@ function actionFor(
   if (blocked === 0) {
     return {
       who: "nobody",
-      headline: "Every authored title is Live.",
-      detail: "Nothing is stuck. This duty has nothing left to chase and can be suspended.",
+      headline: "Nothing is blocked.",
+      detail: "No title is refused. There is nothing left to chase; a title still in Draft is yours to publish whenever you want it out.",
     };
   }
   if (!check) {
@@ -220,7 +227,7 @@ function actionFor(
 kdp.get("/", async (c) => {
   const now = Date.now();
 
-  const [titles, checks, duty] = await Promise.all([
+  const [titles, checks, duty, commitment] = await Promise.all([
     c.env.DB.prepare(
       `SELECT title_ref, label, state, note, state_changed_at, went_live_at
          FROM kdp_titles ORDER BY state, title_ref`,
@@ -237,6 +244,9 @@ kdp.get("/", async (c) => {
       id: string; name: string; employee_id: string; next_due_at: number;
       last_run_at: number | null; suspended: number; executor: string;
     }>(),
+    c.env.DB.prepare(
+      `SELECT id, state, killed_at, killed_reason, done_at FROM owned_deliverables WHERE id = 'del_kdp_publication'`,
+    ).first<{ id: string; state: string; killed_at: number | null; killed_reason: string | null; done_at: number | null }>(),
   ]);
 
   const rows = (titles.results ?? []) as any[];
@@ -266,8 +276,32 @@ kdp.get("/", async (c) => {
     )
     .first<any>();
 
-  const byState = { blocked: 0, in_review: 0, live: 0, withdrawn: 0 } as Record<string, number>;
+  const byState = { blocked: 0, draft: 0, in_review: 0, live: 0, withdrawn: 0 } as Record<string, number>;
   for (const t of rows) byState[t.state] = (byState[t.state] ?? 0) + 1;
+
+  /*
+   * ─── IS THERE ANYTHING LEFT TO CHASE? SAID ONCE, READ BY EVERY RUN ─────────
+   *
+   * 14 September 2026, 09:23: the case watcher ran on schedule, found no title blocked on the
+   * register, and emailed her anyway — a message built from a 9 September narrative about covers
+   * awaiting approval, two days after six of the seven titles went Live. Nothing it read told it to
+   * stop, because nothing said, in one field, whether the chase was still open.
+   *
+   * This is that field. `open` is false when no title is blocked OR when she has stopped the
+   * commitment herself. `kdp-watch.sh` and `kdp-publish.mjs` read it FIRST and exit at a named stop
+   * when it is false — no mail is read, no determination is filed, no email goes to her. The
+   * register decides; the run does not.
+   */
+  const chase = commitment && (commitment.state === "killed" || commitment.state === "done")
+    ? {
+        open: false,
+        why: commitment.state === "killed"
+          ? `You stopped this on ${new Date(commitment.killed_at ?? now).toISOString().slice(0, 10)}: "${commitment.killed_reason ?? ""}"`
+          : `Finished on ${new Date(commitment.done_at ?? now).toISOString().slice(0, 10)}: every title reached Live.`,
+      }
+    : (byState.blocked ?? 0) === 0
+      ? { open: false, why: "No title is blocked on the register. There is no case to chase and nothing to publish." }
+      : { open: true, why: `${byState.blocked} title(s) still blocked.` };
 
   /*
    * A WATCHER THAT HAS STOPPED IS THE FAILURE THIS WHOLE THING EXISTS TO PREVENT, and it looks
@@ -294,6 +328,8 @@ kdp.get("/", async (c) => {
       : null,
     titles: rows,
     counts: byState,
+    commitment: commitment ? { id: commitment.id, state: commitment.state, killed_reason: commitment.killed_reason } : null,
+    chase,
     latest,
     days_since_last_check: sinceLastCheck,
     history,
@@ -494,7 +530,17 @@ kdp.post("/check", async (c) => {
    * going through proves the account flag is gone and leaves six books unpublished, which is not
    * the terminal condition. The check will close it on the run that clears the last one.
    */
-  const stillBlocked = sentinel !== "published" && sentinel !== "cleared";
+  /*
+   * AND THE REGISTER OUTRANKS THE SENTINEL. On 14 September a `needs-her` arrived for a shelf with
+   * zero blocked titles and re-blocked the commitment, resetting `blocked_since` to that minute and
+   * putting a cleared case back at the top of Today. A run's sentinel describes what the run read in
+   * her mail; whether a book is blocked is a fact about the register, and the register is consulted.
+   */
+  const stillBlockedRow = await c.env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM kdp_titles WHERE state = 'blocked'`)
+    .first<{ n: number }>();
+  const anyBlocked = (stillBlockedRow?.n ?? 0) > 0;
+  const stillBlocked = anyBlocked && sentinel !== "published" && sentinel !== "cleared";
 
   /*
    * ── THE ALERT IS UPDATED, EVERY RUN, WITHOUT TOUCHING THE STANDING REASON ──

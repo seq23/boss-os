@@ -14,7 +14,9 @@ import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
 import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
 import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
+import { closeDirectiveFor } from "../../../shared/boss/intake/close.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
+import { stopDeliverable } from "../today/deliverables";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -419,6 +421,44 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     ? huntRequestIn(`${trueSubject}\n${readable}`)
     : null;
 
+  /*
+   * ─── "PLEASE CLOSE OUT THE KDP UPLOAD ISSUE" IS A STATE CHANGE, NOT A PROMPT ──
+   *
+   * 14 September 2026, 09:27, in reply to a watcher email about a block that had cleared two days
+   * earlier. The message routed to Simone and then went to a model, which wrote "The KDP upload
+   * issue is now closed" into her approval queue while `owned_deliverables.del_kdp_publication`
+   * stayed `blocked` — and the Wednesday run would have emailed her about it again. Understood by a
+   * model, applied by nothing.
+   *
+   * So a close verb beside the name of ONE open deliverable the routed seat owns stops that
+   * deliverable, here, by rule, with her sentence as the reason — before any model sees the message.
+   * Two candidates is a question, not a guess. It is the seat's own register that is searched, so
+   * telling Simone to close something can never close Monique's work.
+   */
+  let closedNote: string | null = null;
+  let closeQuestion: string | null = null;
+  if (route.outcome !== "AMBIGUOUS" && (readable || subject)) {
+    const owned = await env.DB
+      .prepare(`SELECT id, name FROM owned_deliverables WHERE employee_id = ? AND state IN ('open','blocked') ORDER BY created_at`)
+      .bind(route.seat.id)
+      .all<{ id: string; name: string }>();
+    const close = closeDirectiveFor({ subject: trueSubject, text: readable, deliverables: owned.results ?? [] });
+    if (close && "ambiguous" in close) {
+      const names = (owned.results ?? []).filter((d) => close.ambiguous.includes(d.id)).map((d) => `"${d.name}"`);
+      closeQuestion =
+        `You asked ${route.seat.name} to close something, and more than one of her open commitments fits: ${names.join(" and ")}. ` +
+        "Nothing was closed. Reply with the one you mean, in its own words, and it will be.";
+    } else if (close) {
+      const stopped = await stopDeliverable(env, { id: close.id, reason: close.reason, via: "mail", mailId, now });
+      if (stopped) {
+        closedNote =
+          `Closed "${close.name}" (${close.id}) on your instruction — it was ${stopped.from}, and it is now stopped with your ` +
+          `reason on the record: "${close.reason}". It will not be chased again and it leaves Today's alerts. ` +
+          "Nothing else was opened from this message; if there was more in it to do, send that on its own.";
+      }
+    }
+  }
+
   let bookNote: string | null = null;
   let bookFailure: string | null = null;
   const directive = readable || subject ? bookDirectiveFor(route, subject, readable) : null;
@@ -472,7 +512,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * — the R2 key is the handle — and asking "what would you like me to do?" about a message she
    * plainly wrote is the most insulting question this system can send.
    */
-  const question = bookFailure ? null : clarificationFor({
+  const question = bookFailure || closedNote ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
     seatName: route.seat.name, tag: route.tag, isReply, bookFiled: Boolean(bookNote),
     hasVerb: Boolean(directive), forwarded: Boolean(origin?.from), unread: oversize,
@@ -515,7 +555,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * The no-verb path still opens a task, deliberately — there she wrote a message that HAPPENED to
    * be a book, and the message may well have been asking for something as well.
    */
-  const filedByVerb = Boolean(directive && bookNote);
+  // A close she asked for, like a book verb that worked, is the whole job: nothing goes to a model.
+  const filedByVerb = Boolean(directive && bookNote) || Boolean(closedNote) || Boolean(closeQuestion);
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
     try {
       const admitted = await admitTask(env, {
@@ -584,10 +625,15 @@ function headline(text: string): string {
   // BOOK_NOT_READ is a fourth outcome beside ROUTED / DEFAULTED / AMBIGUOUS: the message arrived,
   // was hers, named a book verb, and could not be carried out. Recorded as its own fact so it is
   // countable rather than hiding inside "routed".
+  // CLOSED is a fifth outcome: the message arrived, was hers, named a commitment and stopped it.
+  // Recorded as its own fact so a closure is countable rather than hiding inside "routed".
   const outcome = bookFailure ? "BOOK_NOT_READ"
-    : question ? "NEEDS_CLARITY"
-      : admitFailure ? "NOT_ADMITTED" : route.outcome;
+    : closedNote ? "CLOSED"
+      : question || closeQuestion ? "NEEDS_CLARITY"
+        : admitFailure ? "NOT_ADMITTED" : route.outcome;
   const why = [route.why,
+    ...(closedNote ? [closedNote] : []),
+    ...(closeQuestion ? [closeQuestion] : []),
     ...(viaConsole ? ["Typed into Boss OS from her own authenticated session, not received over SMTP."] : []),
     ...(bookNote ? [bookNote] : []),
     ...(question ? [`${route.seat.name} asked you a question instead of starting work. ${question.why}`] : []),
@@ -618,7 +664,7 @@ function headline(text: string): string {
    * verb both mean "nothing was started"; leading with "Monique has it." and eight lines of tag
    * directory buries the only sentence that matters under the reassurance that it worked.
    */
-  const stopped = question ? question.ask : bookFailure;
+  const stopped = question ? question.ask : closeQuestion ?? closedNote ?? bookFailure;
   const reply = stopped ? [
     stopped,
     /*

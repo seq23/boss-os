@@ -1,10 +1,12 @@
 #!/bin/bash
 # Watch KDP Case #51496198 for a support reply and act on it.
 #
-# SIMONE'S DUTY, EXECUTED. `duty_kdp_publication` in Boss OS names her as the owner and names this
-# script as its executor; `validate:duty-delivery` fails the build if the two stop agreeing. The
-# duty is `executor = 'local_job'`, so the cron materialises nothing for it — reading her mailbox
-# needs credentials the Claude Code runner strips, and this is the only thing that can do the work.
+# RETIRED FROM THE SCHEDULE, 14 September 2026. `duty_kdp_publication` chased case #51496198 until
+# the books were Live; six of seven went Live on the 12th and she closed the commitment by email on
+# the 14th. Migration 0244 retires the duty and the installer removes `com.seq.kdp-watch`. The
+# script stays for a hand run (`npm run kdp:check`) and it asks the register FIRST — see below —
+# so it can never again chase a case that is closed. The standing surface duty (`kdp-surface.sh`)
+# is what reads Amazon's mail from here on.
 #
 # THE CANONICAL COPY IS THIS FILE, IN THE REPO. `~/bin/kdp-watch.sh` is a symlink to it, installed
 # by scripts/ops/install-agent-launchd.sh. It lived only in ~/bin until 7 September, which meant
@@ -110,6 +112,32 @@ This is on Today under Critical Alerts, which is the record. This email is only 
     say "  AND COULD NOT REPORT IT EITHER: no repo at $REPO."
   fi
 }
+
+# ─── IS THERE ANYTHING TO CHASE? ASKED BEFORE A SINGLE EMAIL IS READ ────────────────────────────
+#
+# 14 September 2026, 09:23: this script ran on schedule with ZERO titles blocked on the register and
+# six of seven Live on the bookshelf since the 12th, and emailed her that the covers were waiting
+# for her approval. The register was never asked. She replied "please close out the kdp upload
+# issue" and was right to.
+#
+# `chase.open` is the Worker's answer, from the register and from whether she has stopped the
+# commitment. CLOSED is a named stop that reads nothing, files nothing and sends nothing. UNKNOWN is
+# NOT closed — a run that cannot read the register stops too, but says so and exits non-zero,
+# because "I could not check" and "there is nothing to do" must never render the same.
+if [ -d "$REPO" ]; then
+  CHASE_LINE="$(cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-chase-open.mjs 2>&1 | tail -1)"
+  CHASE_RC=$?
+  say "register: $CHASE_LINE"
+  case "$CHASE_LINE" in
+    "KDP-CHASE: CLOSED"*)
+      say "NAMED STOP [NOTHING_TO_CHASE] the case is closed on the register. No mail read, no determination filed, no email sent."
+      exit 0 ;;
+    "KDP-CHASE: OPEN"*) ;;
+    *)
+      say "NAMED STOP [REGISTER_UNREADABLE] could not learn whether the case is open, so nothing was chased. This is not the same as closed."
+      exit 11 ;;
+  esac
+fi
 
 CLAUDE="$(command -v claude || echo /opt/homebrew/bin/claude)"
 if [ ! -x "$CLAUDE" ]; then

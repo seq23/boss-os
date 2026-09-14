@@ -53,8 +53,14 @@ describe("the boundary", () => {
 });
 
 describe("a check that arrives", () => {
-  it("is recorded, and advances the duty's clock — which nothing else can", async () => {
-    const before = await row<any>(`SELECT last_run_at, next_due_at FROM standing_duties WHERE id = 'duty_kdp_publication'`);
+  it("is recorded, and survives the duty being retired", async () => {
+    /*
+     * 0244 RETIRED `duty_kdp_publication`: the case closed on 14 September 2026 and production had
+     * already lost the row by hand. A check arriving for a retired duty — a hand run, a stale Mac —
+     * is still a fact about the case and is still recorded; there is simply no clock to advance.
+     */
+    const duty = await row<any>(`SELECT id FROM standing_duties WHERE id = 'duty_kdp_publication'`);
+    expect(duty).toBeNull();
     const res = await apiJson<any>("/api/kdp/check", {
       method: "POST",
       body: {
@@ -63,15 +69,8 @@ describe("a check that arrives", () => {
       },
     });
     expect(res.status).toBe(201);
-
-    const after = await row<any>(`SELECT last_run_at, next_due_at FROM standing_duties WHERE id = 'duty_kdp_publication'`);
-    /*
-     * A `local_job` duty is never materialised by the cron, so this is the ONLY thing that can say
-     * the duty ran — which is the correct place for it: the duty ran when the work happened, not
-     * when a scheduler believed it had.
-     */
-    expect(after.last_run_at).toBeGreaterThan(before.last_run_at ?? 0);
-    expect(after.next_due_at).toBeGreaterThan(Date.now());
+    const recorded = await row<any>(`SELECT sentinel FROM kdp_case_checks WHERE id = ?`, res.body.data.id);
+    expect(recorded?.sentinel).toBe("no-reply");
   });
 
   it("marks a title Live only when the watcher actually published one", async () => {
@@ -151,13 +150,78 @@ describe("the cron and a job it cannot do", () => {
   it("never materialises an agent task for locally-executed work", async () => {
     // Force it due: without the guard this would queue a task the agent would claim, fail at, or
     // invent an answer for — a run that never happened, reported as success.
-    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = 1 WHERE id = 'duty_kdp_publication'`).run();
+    // `duty_kdp_surface` is Simone's standing local job now that the case chase is retired.
+    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = 1 WHERE id = 'duty_kdp_surface'`).run();
     const out = await materialiseDueDuties(env as any);
-    expect(out.fired.some((f) => f.duty === "duty_kdp_publication")).toBe(false);
-    expect(out.skipped.some((s) => s.duty === "duty_kdp_publication" && s.reason === "local_job")).toBe(true);
+    expect(out.fired.some((f) => f.duty === "duty_kdp_surface")).toBe(false);
+    expect(out.skipped.some((s) => s.duty === "duty_kdp_surface" && s.reason === "local_job")).toBe(true);
 
     // And its clock is untouched, so an unreported job reads as overdue rather than as fine.
-    const d = await row<any>(`SELECT next_due_at FROM standing_duties WHERE id = 'duty_kdp_publication'`);
+    const d = await row<any>(`SELECT next_due_at FROM standing_duties WHERE id = 'duty_kdp_surface'`);
     expect(d.next_due_at).toBe(1);
+  });
+});
+
+
+/**
+ * 14 SEPTEMBER 2026, 09:23. Simone emailed her about a block that had cleared two days earlier.
+ * Three things let it happen; these pin the two that live in the Worker. The third — the launchd
+ * job outliving its duty — is pinned by `validate:launchd-duty-link` reading migration 0244.
+ */
+describe("a closed case is not chased", () => {
+  const liveShelf = async () => {
+    await env.DB.prepare(`UPDATE kdp_titles SET state = 'live', went_live_at = ? WHERE state = 'blocked'`).bind(Date.now()).run();
+  };
+  const blockedShelf = async () => {
+    await env.DB.prepare(`UPDATE kdp_titles SET state = 'blocked', went_live_at = NULL WHERE title_ref NOT LIKE 'B0%'`).run();
+    await env.DB.prepare(`UPDATE owned_deliverables SET state = 'blocked', killed_at = NULL, killed_reason = NULL WHERE id = 'del_kdp_publication'`).run();
+  };
+
+  it("says on the register whether there is anything left to chase", async () => {
+    const before = await apiJson<any>("/api/kdp");
+    expect(before.body.data.chase.open).toBe(true);
+    await liveShelf();
+    const after = await apiJson<any>("/api/kdp");
+    expect(after.body.data.chase.open).toBe(false);
+    expect(after.body.data.chase.why).toMatch(/No title is blocked/);
+    await blockedShelf();
+  });
+
+  it("a needs-her for a shelf with nothing blocked does NOT re-block the commitment", async () => {
+    /*
+     * THE PRODUCTION DEFECT, EXACTLY. `needs-her` arrived at 09:25 for a register reading
+     * `blocked: 0`, set the deliverable back to `blocked`, reset `blocked_since` to that minute, and
+     * put a cleared case back at the top of Today. The sentinel describes what a run read in her
+     * mail; whether a book is blocked is a fact about the register.
+     */
+    await liveShelf();
+    await env.DB.prepare(`UPDATE owned_deliverables SET state = 'open', blocked_since = NULL WHERE id = 'del_kdp_publication'`).run();
+    await apiJson<any>("/api/kdp/check", {
+      method: "POST",
+      body: { sentinel: "needs-her", determination: "Covers prepared and ready; approve them and sign in to publish.", needs_owner: true },
+    });
+    const d = await row<any>(`SELECT state, blocked_since FROM owned_deliverables WHERE id = 'del_kdp_publication'`);
+    expect(d.state).toBe("open");
+    expect(d.blocked_since).toBeNull();
+    await blockedShelf();
+  });
+
+  it("her stopping the commitment closes the chase even with a title in draft", async () => {
+    // Six Live, one Draft — the real shelf on 14 September. Draft is outstanding for the terminal
+    // check, and it is not a block, and her verdict outranks both for whether anyone chases.
+    await liveShelf();
+    await env.DB.prepare(`UPDATE kdp_titles SET state = 'draft', went_live_at = NULL WHERE title_ref = 'A1EYXUFGFV7CN6'`).run();
+    await env.DB.prepare(
+      `UPDATE owned_deliverables SET state = 'killed', killed_at = ?, killed_reason = 'please close out the kdp upload issue.' WHERE id = 'del_kdp_publication'`,
+    ).bind(Date.now()).run();
+    const res = await apiJson<any>("/api/kdp");
+    expect(res.body.data.counts.draft).toBe(1);
+    expect(res.body.data.chase.open).toBe(false);
+    expect(res.body.data.chase.why).toMatch(/You stopped this/);
+    expect(res.body.data.commitment.state).toBe("killed");
+    // The register can say draft, and a draft is hers to set by hand.
+    const set = await apiJson<any>("/api/kdp/titles/A1EYXUFGFV7CN6", { method: "POST", body: { state: "draft", note: "Draft on the bookshelf." } });
+    expect(set.status).toBe(200);
+    await blockedShelf();
   });
 });
