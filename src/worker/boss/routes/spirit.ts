@@ -30,7 +30,7 @@ import { dayIdInZone, monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL, weekIdIn
 import {
   gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
 } from "../spirit/practice";
-import { buildBodyContract, logSomatic } from "../today/body";
+import { buildBodyContractWithState, logSomatic } from "../today/body";
 import { TIME_ACCURACY, natalChart, transits, transitAspects, type BirthData, type TimeAccuracy } from "../spirit/natal";
 import { TRANSIT_CAVEAT } from "../spirit/transitMeaning";
 import { almanacCoverage, importAlmanac } from "../spirit/almanac_import";
@@ -108,10 +108,11 @@ spirit.get("/day", async (c) => {
   const mode = day?.day_mode ?? null;
   const reduced = mode === "recovery" || mode === "mvd";
 
-  const [gratitude, body] = await Promise.all([
+  const [gratitude, bodyState] = await Promise.all([
     gratitudeFor(c.env, id),
-    buildBodyContract(c.env, id, mode),
+    buildBodyContractWithState(c.env, id, mode),
   ]);
+  const body = bodyState.body;
 
   /*
    * THE ROTATION HAS TO ADVANCE WHETHER OR NOT A GATE RUNS.
@@ -125,7 +126,7 @@ spirit.get("/day", async (c) => {
    * write history for last Tuesday and reshuffle everything after it. `logSomatic` is idempotent
    * per day, so re-reading today changes nothing.
    */
-  if (id === dayId(Date.now()) && !body.somatic_logged) await logSomatic(c.env, id, body.somatic);
+  if (id === dayId(Date.now()) && !bodyState.somatic_logged) await logSomatic(c.env, id, body.somatic);
 
   /*
    * TRANSITS, FILTERED TO THE ONES THAT ACTUALLY TOUCH HER.

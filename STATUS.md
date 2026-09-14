@@ -309,6 +309,47 @@ Cloudflare is not connected to this repository. Pushing is saving work, never de
 
 ---
 
+## The Free plan's 10 ms — the budget every request lives inside
+
+**Boss OS runs on the Cloudflare Workers Free plan, by the owner's decision (13 September 2026:
+"i'm not paying cloudflare"), and that plan allows 10 ms of CPU per request.** Cloudflare tolerates
+a request that runs over now and then; a route that is over *consistently* gets terminated with
+`outcome: exceededCpu` — which the browser shows as a 403 on Today and a blank Spirit. That is what
+happened on 13 September when `/today` reached ~18 ms, and it is why the code is shaped the way it
+is now. Storage and request counts are nowhere near their limits; CPU per request is the only one
+that bites.
+
+**What the measurements established** (production, Cloudflare's own `cpuTime` via `wrangler tail`):
+
+- A D1 statement costs ~0.7 ms of CPU as its own await, ~0.4 ms inside `Promise.all`, and next to
+  nothing inside one `db.batch` — 24 statements in a batch cost 1–2 ms. **The round trip is the
+  cost, not the SQL.** `src/worker/boss/lib/batchReads.ts` exists for this and says so.
+- `new Intl.DateTimeFormat` and `formatToParts` are tens of microseconds each on this runtime — not
+  the nanoseconds a warm Node process shows — so anything that formats dates in a loop is CPU.
+  `dateTimeFormat()` memoises formatters and `zoneOffsetMs()` caches the zone offset per
+  quarter-hour; the duty calendar (`duties/cadence.ts`) is arithmetic now.
+- The same request reads 2–3× higher on a slow or busy machine. Medians on a normal machine are
+  what to compare, never one number.
+
+**How Today and Spirit are served now:**
+
+- **Today is seven requests, not one.** `GET /today?blocks=a,b` builds only those blocks;
+  `TODAY_GROUPS` in `routes/today.ts` is the grouping, mirrored in `pages/Today.tsx` and pinned equal
+  by `tests/boss/todayFitsTheBudget.test.ts`. The client fires all seven in parallel and stitches them
+  in canon order. Nothing was cut: same thirteen blocks, same content. A screen must never call
+  `/today` bare — that is the request that gets killed. The cron still builds all thirteen in one
+  pass (cron invocations have their own budget).
+- **The month's important dates are computed in the browser.** `/spirit/month` sends
+  `highlights_inputs` (her birth data and the instant); `pages/Spirit.tsx` runs `monthAhead` from
+  the same module and — for the first time — renders them.
+- **Every route's plain reads go out as one batch per stage.** When you add a read to Today, Spirit,
+  the alert producers or the pillars, put it in the stage's `batchReads` rather than awaiting it.
+
+**How to check a route before shipping it:** `npx wrangler tail --env production --format json`
+in one terminal, hit the route a few times through `npm run vault:run` with the passcode, and read
+`cpuTime` and `outcome` off the events. Under ~8 ms median on a normal machine is the bar; the
+groups sat at 3–8 ms on 13 September after the work above, from 18 ms killed.
+
 ## The maintenance cron — how it actually behaves
 
 The Cloudflare cron fires **hourly** (`0 * * * *`) — 24 wake-ups a day. It was `*/15 * * * *`, the

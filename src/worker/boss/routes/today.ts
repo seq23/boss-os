@@ -32,7 +32,7 @@ import {
   type ErrorEventRow,
 } from "../today/errorAlerts";
 import { TERMINAL_CHECKS } from "../today/deliverables";
-import { buildBodyContract, selectSomatic, logSomatic, markSomaticDone } from "../today/body";
+import { buildBodyContract, buildBodyContractWithState, selectSomatic, logSomatic, markSomaticDone } from "../today/body";
 import { buildPillars, wealthContract } from "../today/pillars";
 import {
   BRIEFING_SECTIONS, orderSections, missingSections, groundInsight,
@@ -2091,8 +2091,8 @@ today.post("/gates/morning", async (c) => {
    * WORK. Spirit was the starkest — `spirit/practice.ts` had been composing the sentence and
    * holding the sequence the whole time, and nothing ever called it.
    */
-  const bodyContract = await buildBodyContract(c.env, day.id, day.day_mode);
-  if (!bodyContract.somatic_logged) await logSomatic(c.env, day.id, bodyContract.somatic);
+  const { body: bodyContract, somatic_logged } = await buildBodyContractWithState(c.env, day.id, day.day_mode);
+  if (!somatic_logged) await logSomatic(c.env, day.id, bodyContract.somatic);
 
   const agenda = {
     anchor: contract.commitment,

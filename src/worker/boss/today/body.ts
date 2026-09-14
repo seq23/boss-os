@@ -194,15 +194,11 @@ function selectFromHistory(rows: HistoryRow[]): SomaticSelection[] {
  * So: the day's rows are the day's answer. If they exist, they are returned — carrying whether she
  * marked them done — and nothing is re-selected. A day with no rows selects once and writes once.
  */
-export async function todaysSomatic(env: Env, dayId: string): Promise<SomaticSelection[]> {
-  return (await todaysSomaticWithState(env, dayId)).selection;
-}
-
 /**
  * The selection, and whether it came from today's own rows — which is exactly what `logSomatic`
- * would read again to decide whether to write. Callers that hold this skip that read.
+ * would read again to decide whether to write. Callers that hold `logged` skip that read.
  */
-export async function todaysSomaticWithState(env: Env, dayId: string): Promise<{ selection: SomaticSelection[]; logged: boolean }> {
+export async function todaysSomatic(env: Env, dayId: string): Promise<{ selection: SomaticSelection[]; logged: boolean }> {
   /*
    * THREE READS, ONE ROUND TRIP. Today's rows decide which of the two histories is the right one —
    * all of it when today is unchosen, everything before today when it is — and both are cheaper to
@@ -307,8 +303,6 @@ export async function markSomaticDone(
 }
 
 export interface BodyContract {
-  /** Whether today's rotation is already in `movement_log` — so `logSomatic` need not read to find out. */
-  somatic_logged: boolean;
   launch_sequence: string[];
   somatic: SomaticSelection[];
   hydration: string;
@@ -330,15 +324,26 @@ export interface BodyContract {
  * standing exists in this file at all.
  */
 export async function buildBodyContract(env: Env, dayId: string, dayMode: string | null): Promise<BodyContract> {
+  return (await buildBodyContractWithState(env, dayId, dayMode)).body;
+}
+
+/**
+ * The contract, and whether today's rotation is already in `movement_log` — which is exactly the
+ * read `logSomatic` would make to decide whether to write. A caller that goes on to log passes
+ * this instead of paying for that read; the flag is bookkeeping, not contract, so it lives beside
+ * the payload rather than in it.
+ */
+export async function buildBodyContractWithState(
+  env: Env, dayId: string, dayMode: string | null,
+): Promise<{ body: BodyContract; somatic_logged: boolean }> {
   /*
    * `todaysSomatic`, NOT `selectSomatic`. The day's rotation is decided once and then read back, so
    * Today and Spirit agree and neither changes under her between two looks at the same morning.
    */
-  const { selection: somatic, logged } = await todaysSomaticWithState(env, dayId);
+  const { selection: somatic, logged } = await todaysSomatic(env, dayId);
   const reduced = dayMode === "recovery" || dayMode === "mvd";
 
-  return {
-    somatic_logged: logged,
+  const body: BodyContract = {
     launch_sequence: STORED_MORNING_SEQUENCE,
     // A reduced day keeps regulation and the lower back, which are the two the brain leads with.
     somatic: reduced ? somatic.filter((s) => s.lane === "neck" || s.lane === "pelvis_lumbar") : somatic,
@@ -375,4 +380,5 @@ export async function buildBodyContract(env: Env, dayId: string, dayMode: string
     language_rule: LANGUAGE_RULE,
     bed_only: reduced,
   };
+  return { body, somatic_logged: logged };
 }
