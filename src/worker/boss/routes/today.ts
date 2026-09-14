@@ -24,7 +24,7 @@ import { bookNagAlerts } from "../capital/bookNag";
 import { unansweredQuestionAlerts } from "../intake/questions";
 import { credentialAlerts } from "../today/credentials";
 import { diary } from "../today/diary";
-import { alertKey, applyDismissals, dedupeAlerts } from "../today/alerts";
+import { alertKey, applyDismissals, dedupeAlerts, dismissalsStatement } from "../today/alerts";
 import {
   groupErrorEvents,
   errorAlertText,
@@ -941,12 +941,17 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
    */
   // The four read-time producers run in parallel, and only when the alerts block is wanted: each
   // is its own handful of reads, and in series they were the slowest stretch of the assembler.
-  const produced = !A ? [] : await Promise.all([
+  // The credential, question and dismissal reads ride in one batch with each other; the deliverable
+  // producer keeps its own two (it writes between them) and the book nag reads no table.
+  const alertReads = batchReads(db);
+  const dismissalsP = A ? alertReads.all<any>(true, () => dismissalsStatement(env, now)) : undefined;
+  const produced = !A ? [] : (await Promise.all([
     deliverableAlerts(env, now).catch(() => []),
-    credentialAlerts(env, now).catch(() => []),
+    credentialAlerts(env, now, alertReads).catch(() => []),
     bookNagAlerts(env, now).catch(() => []),
-    unansweredQuestionAlerts(env, now).catch(() => []),
-  ]);
+    unansweredQuestionAlerts(env, now, alertReads).catch(() => []),
+    alertReads.flush(),
+  ])).slice(0, 4) as { severity: string; text: string; source_type: string; source_id: string | null }[][];
   for (const list of produced) alerts.push(...list);
   /*
    * A DEAD LOGIN IS A CRITICAL ALERT, NOT A LOG LINE.
@@ -1161,7 +1166,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
 
   const { shown: shownAlerts, dismissed: dismissedAlerts } = !A
     ? { shown: distinctAlerts, dismissed: [] as { key: string; text: string; reason: string; until: number }[] }
-    : await applyDismissals(env, distinctAlerts, now).catch(() => ({
+    : await applyDismissals(env, distinctAlerts, now, dismissalsP).catch(() => ({
         shown: distinctAlerts,
         dismissed: [] as { key: string; text: string; reason: string; until: number }[],
       }));
@@ -1297,6 +1302,8 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
        */
       const shown = report ?? lastReport ?? null;
       const carried = !report && Boolean(lastReport);
+      // Parsed once; the sections are seventeen kilobytes and were being decoded three times.
+      const filedSections = shown ? parseJson<unknown[]>(shown.sections, []) : [];
 
       return {
         content: shown
@@ -1352,7 +1359,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
                * Withheld rather than dropped, so the absence is named on the screen with its reason.
                */
               ...(() => {
-                const filed = parseJson<unknown[]>(shown.sections, []);
+                const filed = filedSections;
                 const sourcing = withheldForSourcing(filed, { sources: parseJson(shown.sources, []) });
                 const missing = missingSections(sourcing.kept, parseJson(shown.gaps, []));
                 /* A section withheld for want of a source is missing, and says which of the two it is. */
@@ -1379,7 +1386,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
               insight: groundInsight({
                 headline: shown.headline,
                 summary: shown.summary,
-                sections: parseJson(shown.sections, []),
+                sections: filedSections,
               }),
               gaps: parseJson(shown.gaps, []),
               /* Forward-looking, and deliberately not a shortfall. */

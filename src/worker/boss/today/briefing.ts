@@ -220,10 +220,12 @@ export function reportCorpus(report: { summary?: unknown; headline?: unknown; se
  * be is MADE OF the day's words: the proportion of its content words that appear in the rest of the
  * report.
  */
-export function citationOverlap(fact: string, corpus: string): number {
+export function citationOverlap(fact: string, corpus: string | Set<string>): number {
   const wanted = significantWords(fact);
   if (wanted.length === 0) return 0;
-  const have = new Set(significantWords(corpus));
+  // A caller checking several cites against one report tokenises the report once and passes the
+  // set: tokenising seventeen kilobytes per cite was most of the briefing block's CPU.
+  const have = corpus instanceof Set ? corpus : new Set(significantWords(corpus));
   return wanted.filter((w) => have.has(w)).length / wanted.length;
 }
 
@@ -308,7 +310,7 @@ export function groundInsight(report: { headline?: unknown; summary?: unknown; s
   }
 
   const presentKeys = new Set(sections.map((s) => sectionKeyOf(s)).filter((k): k is string => Boolean(k)));
-  const corpus = reportCorpus(report);
+  const corpus = new Set(significantWords(reportCorpus(report)));
 
   for (const c of insight.cites) {
     if (c.from && !presentKeys.has(c.from)) {

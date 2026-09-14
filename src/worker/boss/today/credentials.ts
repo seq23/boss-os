@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { batchReads, type BatchReads } from "../lib/batchReads";
 
 /**
  * A DEAD CREDENTIAL, ON HER SCREEN, BEFORE A DUTY NEEDS IT AND FAILS.
@@ -64,8 +65,10 @@ export function isDecisionInForce(p: Pick<ProbeRow, "backend_id" | "backend_stat
   return p.backend_id !== null && p.backend_status !== "enabled";
 }
 
-export async function credentialAlerts(env: Env, now = Date.now()): Promise<CredentialAlert[]> {
-  const rows = await env.DB
+export async function credentialAlerts(env: Env, now = Date.now(), reads?: BatchReads): Promise<CredentialAlert[]> {
+  // One read. A caller assembling several producers passes its batch so this rides in it.
+  const own = reads ?? batchReads(env.DB);
+  const rowsP = own.all<ProbeRow>(true, () => env.DB
     .prepare(
       /*
        * THE BACKEND'S STATUS COMES BACK WITH THE PROBE, because a credential is only a gap if
@@ -76,8 +79,9 @@ export async function credentialAlerts(env: Env, now = Date.now()): Promise<Cred
          FROM credential_probes p
     LEFT JOIN execution_backends b ON b.id = p.backend_id
         ORDER BY CASE p.state WHEN 'dead' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END, p.id`,
-    )
-    .all<ProbeRow>();
+    ));
+  if (!reads) await own.flush();
+  const rows = await rowsP;
 
   return alertsForProbes(rows.results ?? [], now);
 }
