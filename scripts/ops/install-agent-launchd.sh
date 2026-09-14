@@ -439,75 +439,36 @@ launchctl unload "$PROPS_PLIST" 2>/dev/null || true
 launchctl load "$PROPS_PLIST"
 echo "Installed $PROPS_LABEL — Monday 07:00 Central."
 
-# ─── Simone's publication chase ──────────────────────────────────────────────
+# ─── Simone's publication chase — RETIRED 14 September 2026 ─────────────────
 #
-# Seven authored books cannot be published: a server-side flag on the KDP account, with Amazon case
-# #51496198 as the only route to it. `duty_kdp_publication` names Simone as the owner and this job
-# as the executor, because determining whether a support reply resolves a case needs the SUBJECTS
-# AND BODIES of her mail — and the Claude Code runner strips every credential from an agent's
-# environment on purpose. Agents research the open web; local jobs read her accounts.
+# `duty_kdp_publication` chased KDP case #51496198 until the books were Live. Six of the seven went
+# Live on 12 September; she stopped the commitment by email on the 14th ("please close out the kdp
+# upload issue"). Migration 0244 retires the duty. This block used to write `com.seq.kdp-watch`
+# (Mon/Wed/Fri 09:23); it now makes sure that job is gone, because on 14 September it fired for a
+# duty production no longer had and emailed her about a case that had closed two days earlier.
 #
-# THE SCRIPT AND PROMPT LIVED ONLY IN ~/bin UNTIL 7 SEPTEMBER. They worked, and nothing installed
-# them, nothing repaired them, and nothing could tell if they had drifted from what the duty row
-# said. The repo copies are now canonical and ~/bin holds symlinks, so there is one of each.
-#
-# MON/WED/FRI 09:23, WHICH IS NOT ARBITRARY. KDP support replies on weekdays, so a weekend check
-# finds the same nothing twice; every-other-day as a 48-hour interval would drift against the clock
-# and re-fire on wake, and a day-of-month rule breaks across a month boundary.
+# The script and prompt stay in the repo as history and can still be run by hand (`npm run
+# kdp:check`); they read `chase.open` from Boss OS first and stop when there is nothing to chase.
+# The standing surface duty below is what she asked for going forward.
 KDP_LABEL="com.seq.kdp-watch"
 KDP_PLIST="$HOME/Library/LaunchAgents/$KDP_LABEL.plist"
-KDP_LOGS="$HOME/Library/Logs/kdp-watch"
-
-mkdir -p "$KDP_LOGS" "$HOME/bin"
-chmod +x "$REPO/scripts/ops/kdp-watch.sh"
-
-# ONE COPY OF EACH, AND THE REPO HOLDS IT. `ln -sfn` replaces whatever is at these paths, including
-# the older real files — which is the point: two components each keeping their own copy of one
-# prompt is the drift this repository names by name.
-ln -sfn "$REPO/scripts/ops/kdp-watch.sh" "$HOME/bin/kdp-watch.sh"
-ln -sfn "$REPO/scripts/ops/kdp-watch-prompt.md" "$HOME/bin/kdp-watch-prompt.md"
-
-cat > "$KDP_PLIST" <<KDPEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>$KDP_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>-lc</string>
-    <string>bash $REPO/scripts/ops/duty-run.sh kdp-watch.sh -- bash $REPO/scripts/ops/kdp-watch.sh</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>23</integer></dict>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>23</integer></dict>
-    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>23</integer></dict>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
-  <key>StandardOutPath</key><string>$KDP_LOGS/launchd.log</string>
-  <key>StandardErrorPath</key><string>$KDP_LOGS/launchd.err</string>
-  <key>RunAtLoad</key><false/>
-</dict></plist>
-KDPEOF
-
-launchctl unload "$KDP_PLIST" 2>/dev/null || true
-launchctl load "$KDP_PLIST"
-echo "Installed $KDP_LABEL — Mon/Wed/Fri 09:23 Central."
+if [ -f "$KDP_PLIST" ]; then
+  launchctl unload "$KDP_PLIST" 2>/dev/null || true
+  mv "$KDP_PLIST" "$KDP_PLIST.retired-2026-09-14"
+  echo "Retired $KDP_LABEL — the case is closed; the plist is kept beside its old name."
+fi
+launchctl bootout "gui/$(id -u)/$KDP_LABEL" 2>/dev/null || true
+rm -f "$HOME/bin/kdp-watch.sh" "$HOME/bin/kdp-watch-prompt.md"
 
 # ─── Simone's standing KDP triage ────────────────────────────────────────────
 #
 # "u need to make sure simone has a dedicated task for handling anything related to KDP so she needs
 # to check for any KDP emails and read them and determine if she needs to take action."
 #
-# SEPARATE FROM THE CASE WATCH ABOVE, AND DAILY RATHER THAN MON/WED/FRI. The case watch chases one
-# support thread to resolution and ends the day the seven books are Live; this is permanent, and a
-# title taken down on a Saturday should not wait until Monday to be noticed.
+# THE CASE WATCH ABOVE ENDED; THIS IS PERMANENT. A title taken down on a Saturday should not wait
+# until Monday to be noticed, so it is daily.
 #
-# 09:30 — seven minutes after the case watch, so on Mon/Wed/Fri the two never race for the same Gmail
-# session and the case run's determination is already filed when this looks at the wider surface.
+# 09:30 — the slot it has always had.
 SURFACE_LABEL="com.seq.kdp-surface"
 SURFACE_PLIST="$HOME/Library/LaunchAgents/$SURFACE_LABEL.plist"
 SURFACE_LOGS="$HOME/Library/Logs/kdp-surface"
@@ -980,8 +941,9 @@ require_loaded "$GRID_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
-[ -L "$HOME/bin/kdp-watch-prompt.md" ] || missing="$missing ~/bin/kdp-watch-prompt.md(symlink)"
-[ -f "$REPO/scripts/ops/kdp-watch-prompt.md" ] || missing="$missing scripts/ops/kdp-watch-prompt.md"
+# kdp-watch's symlinks are gone on purpose — the job is retired above. A retired job that still
+# passed the verifier would be the installer vouching for something it no longer installs.
+[ -L "$HOME/bin/kdp-watch-prompt.md" ] && missing="$missing ~/bin/kdp-watch-prompt.md(should-be-retired)"
 [ -L "$HOME/bin/mailbox-sweep-prompt.md" ] || missing="$missing ~/bin/mailbox-sweep-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/mailbox-sweep-prompt.md" ] || missing="$missing scripts/ops/mailbox-sweep-prompt.md"
 [ -L "$HOME/bin/ahrefs-audit-fix.sh" ] || missing="$missing ~/bin/ahrefs-audit-fix.sh(symlink)"

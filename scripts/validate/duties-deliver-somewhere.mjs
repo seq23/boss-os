@@ -196,9 +196,22 @@ function scan() {
   // whole-file search would let an unrelated UPDATE three hundred lines away vouch for a silent row.
   ALL_MIGRATION_STATEMENTS = allSql.split(";");
 
+  /*
+   * A DUTY A LATER MIGRATION RETIRES IS NOT EXAMINED. Its script may stay in the repo as history
+   * and its installer block may go; demanding a delivery path for work that has ended is how a
+   * finished job keeps its schedule. Same parser as `a-launchd-run-reaches-its-duty.mjs`.
+   */
+  const retired = new Set();
+  for (const m of allSql.matchAll(/DELETE\s+FROM\s+standing_duties\s+WHERE\s+id\s*(?:=\s*'(duty_[a-z0-9_]+)'|IN\s*\(([^)]*)\))/gi)) {
+    if (m[1]) retired.add(m[1]);
+    if (m[2]) for (const id of m[2].matchAll(/'(duty_[a-z0-9_]+)'/g)) retired.add(id[1]);
+  }
   const duties = [];
   for (const f of files) {
-    for (const d of dutiesIn(read(`migrations/${f}`))) duties.push({ ...d, file: f });
+    for (const d of dutiesIn(read(`migrations/${f}`))) {
+      if (retired.has(d.id)) continue;
+      duties.push({ ...d, file: f });
+    }
   }
 
   const tables = createdTables(allSql);

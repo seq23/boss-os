@@ -551,3 +551,89 @@ describe("a tag she typed is a decision she made", () => {
     expect(JSON.parse(task!.input).handed_off).toBeUndefined();
   });
 });
+
+describe("please close out the kdp upload issue", () => {
+  /*
+   * HER EXACT MESSAGE, 14 September 2026, 09:27 Central, in reply to a watcher email about a block
+   * that had cleared two days earlier. On production it routed to Simone, went to a model, and came
+   * back as a paragraph in her approval queue saying the issue was closed — while the row stayed
+   * `blocked` and the Wednesday run would have emailed her again.
+   */
+  const HERS = "#simone please close out the kdp upload issue. The books have been published and the error resolved. "
+    + "All you need to do going forward is monitor the inbox for kdp emails and make a determination if anything is needed to be done or escalated to me…\n\nSent from my iPhone";
+
+  beforeEach(async () => {
+    await env.DB.prepare(
+      `UPDATE owned_deliverables SET state = 'blocked', killed_at = NULL, killed_reason = NULL, blocked_since = ? WHERE id = 'del_kdp_publication'`,
+    ).bind(Date.now() - 86_400_000).run();
+  });
+
+  it("STOPS THE COMMITMENT BY RULE, with her sentence as the reason, and opens no model task", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#simone", body: HERS }), env as never);
+    expect(res.outcome).toBe("CLOSED");
+    expect(res.taskId).toBeNull();
+    expect(res.employeeId).toBe("emp_chief");
+
+    const d = await env.DB.prepare(
+      `SELECT state, killed_reason, blocked_since, needs_owner, current_status FROM owned_deliverables WHERE id = 'del_kdp_publication'`,
+    ).first<any>();
+    expect(d.state).toBe("killed");
+    expect(d.killed_reason).toMatch(/close out the kdp upload issue/);
+    expect(d.blocked_since).toBeNull();
+    expect(d.needs_owner).toBe(0);
+    expect(d.current_status).toMatch(/Stopped by you/);
+
+    // The reply says WHICH row changed, not that a paragraph was written about it.
+    expect(res.reply).toContain("del_kdp_publication");
+    expect(res.reply).toMatch(/Closed "Every authored book published"/);
+
+    const audit = await env.DB.prepare(
+      `SELECT actor, action, detail FROM audit_log WHERE entity_id = 'del_kdp_publication' AND action = 'state_killed' ORDER BY ts DESC LIMIT 1`,
+    ).first<any>();
+    expect(audit?.actor).toBe("owner");
+    expect(JSON.parse(audit.detail).via).toBe("mail");
+  });
+
+  it("and the register then says there is nothing to chase", async () => {
+    await handleBossInboundMail(mail({ subject: "#simone", body: HERS }), env as never);
+    const { apiJson } = await import("./helpers");
+    const kdp = await apiJson<any>("/api/kdp");
+    expect(kdp.body.data.chase.open).toBe(false);
+    expect(kdp.body.data.chase.why).toMatch(/You stopped this/);
+  });
+
+  it("a statement of fact is not an instruction to close", async () => {
+    const res = await handleBossInboundMail(
+      mail({ subject: "#simone", body: "fyi the kdp error resolved itself over the weekend, books are published" }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    const d = await env.DB.prepare(`SELECT state FROM owned_deliverables WHERE id = 'del_kdp_publication'`).first<any>();
+    expect(d.state).toBe("blocked");
+  });
+
+  it("cannot close another seat's commitment", async () => {
+    // Simone owns the KDP commitment. The same sentence to Monique names nothing on Monique's desk.
+    const res = await handleBossInboundMail(
+      mail({ subject: "#monique", body: "#monique please close out the kdp upload issue." }), env as never);
+    expect(res.outcome).not.toBe("CLOSED");
+    const d = await env.DB.prepare(`SELECT state FROM owned_deliverables WHERE id = 'del_kdp_publication'`).first<any>();
+    expect(d.state).toBe("blocked");
+  });
+
+  it("two candidates is a question, not a guess", async () => {
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO owned_deliverables (id, name, employee_id, lane, terminal_condition, terminal_check, state, escalation_path, created_at, updated_at)
+       VALUES ('del_kdp_paperbacks', 'Every KDP paperback edition on sale', 'emp_chief', 'ops', 'test', 'kdp_all_live', 'open', 'test', ?, ?)`,
+    ).bind(now, now).run();
+    try {
+      const res = await handleBossInboundMail(mail({ subject: "#simone", body: "#simone close out the kdp work please" }), env as never);
+      expect(res.outcome).toBe("NEEDS_CLARITY");
+      expect(res.taskId).toBeNull();
+      expect(res.reply).toMatch(/more than one of her open commitments fits/);
+      const d = await env.DB.prepare(`SELECT state FROM owned_deliverables WHERE id = 'del_kdp_publication'`).first<any>();
+      expect(d.state).toBe("blocked");
+    } finally {
+      await env.DB.prepare(`DELETE FROM owned_deliverables WHERE id = 'del_kdp_paperbacks'`).run();
+    }
+  });
+});

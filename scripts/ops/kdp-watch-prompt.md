@@ -1,5 +1,13 @@
 Watch KDP Case #51496198 for a reply and act on it.
 
+> **RETIRED FROM THE SCHEDULE, 14 September 2026.** Six of the seven titles went Live on the 12th
+> and she closed the commitment by email on the 14th. `kdp-watch.sh` now asks Boss OS whether the
+> chase is open BEFORE running you, and stops if it is not — so if you are reading this, the
+> register says at least one title is `blocked` again. Everything below is written for that case.
+> Two rules override every paragraph that follows: **read `GET /api/boss/kdp` and the bookshelf
+> before believing anything this file says about which titles are stuck**, and **never email her
+> about the covers — she approved them on 9 September and they are on the books.**
+
 **This is Simone's duty `duty_kdp_publication` in Boss OS.** She owns it; you are how it executes,
 because reading her mailbox needs credentials the Claude Code runner strips from an agent's
 environment. Her charter applies to what you write: draft the recommendation, never the decision.

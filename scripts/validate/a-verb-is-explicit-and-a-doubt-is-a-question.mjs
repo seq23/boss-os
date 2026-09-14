@@ -207,7 +207,9 @@ export function nothingUnclearReachesAModel(source) {
   // A failure has to be a REPLY, and the row has to say so.
   if (!/"BOOK_NOT_READ"/.test(source)) bad.push("an unreadable book instruction is no longer recorded as its own outcome, so it hides inside ROUTED.");
   if (!/"NEEDS_CLARITY"/.test(source)) bad.push("a question is no longer recorded as its own outcome, so a week of unanswered questions is invisible.");
-  if (!/const stopped = question \? question\.ask : bookFailure;/.test(source)
+  // A close she asked for, and a close that had to be asked about, are stops of the same kind:
+  // they lead the reply too. The regex admits exactly those two beside the original.
+  if (!/const stopped = question \? question\.ask : (?:closeQuestion \?\? closedNote \?\? )?bookFailure;/.test(source)
     || !/const reply = stopped \?/.test(source)) {
     bad.push("a message that STOPPED no longer leads with the reason — the one sentence that matters is buried under the reassurance that it worked.");
   }

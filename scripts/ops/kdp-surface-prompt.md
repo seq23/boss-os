@@ -25,9 +25,11 @@ today". A run that found only promotional mail ends in silence.
 1. Load the Gmail tools with ToolSearch (`search_threads`, `get_thread`).
 2. Search `newer_than:2d (from:amazon.com OR from:kdp.amazon.com OR "Kindle Direct" OR kdp)` and read
    what arrived since the last run.
-3. **Skip anything the case watch already handled.** `duty_kdp_publication` runs at 09:23 and covers
-   Case #51496198; you run at 09:30 and this is the wider surface. If a message is part of that case
-   thread, leave it alone — it already has a determination.
+3. **Case #51496198 is closed.** The case watch that chased it (`duty_kdp_publication`) was retired
+   on 14 September 2026: six of the seven titles went Live on the 12th and she closed the commitment
+   herself. If Amazon writes on that thread again, it is ordinary mail on this surface — bucket it
+   like anything else. Do not reopen the case, and do not tell her the covers are waiting: she
+   approved them on 9 September and they are on the books.
 4. Put each remaining message in exactly ONE bucket.
 
 | Bucket | What belongs in it | What you do |
