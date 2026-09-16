@@ -198,6 +198,53 @@ describe("her live book", () => {
     const toZora = routeToSeat("#zora", roster)!;
     expect(looksLikeBook(toZora, HER_BOOK)).toBe(false);
   });
+
+  /**
+   * THE 12 SEPTEMBER REPORT, IN SHAPE. Her Executive Intelligence Report went to `#simone`, was
+   * handed to Monique by rule, and was filed as book v2 — thirteen fragments of news prose with a
+   * dollar sign in them, superseding the seven-line book she had typed the night before.
+   */
+  const A_REPORT = [
+    "Executive Intelligence Report",
+    "Saturday, September 12, 2026 • Weekend Edition • Central Time",
+    "One-Minute Executive Summary",
+    "1. The Middle East energy shock worsened again overnight. Saudi Arabia temporarily shut its",
+    "critical East-West oil pipeline after a drone attack, while Houthi forces tightened control.",
+    "U.S. diesel is already above $6/gallon, and Chevron is warning that the crude buffers are depleted.",
+    "2. Friday's CPI effectively locked in a much more hawkish Fed setup. August CPI rose 0.4% month",
+    "over month and 3.4% year over year, while core CPI rose 0.3% MoM and 2.4% YoY.",
+    "3. Nvidia may anchor a $100B Anthropic IPO at a ~$2T valuation, Reuters reports.",
+    "Z.AI launches $5B in concurrent equity and convertible financing.",
+    "4. Private credit pressure may be stabilizing, but liquidity mismatch remains very real.",
+    "Miro sells for $1.36B.",
+    "That may ultimately be one of the healthiest developments for late-stage secondaries.",
+  ].join("\n");
+
+  it("does not read a news report as her book, however many prices it quotes", async () => {
+    const roster = await activeRoster(env as never);
+    const monique = routeToSeat("#monique", roster)!;
+    // Three priced fragments against ten lines of prose: a list this is not, even at her desk.
+    expect(looksLikeBook(monique, A_REPORT)).toBe(false);
+    // Sent to Simone and handed to Monique by rule, the tag she typed is not Monique's. No guess.
+    const simone = routeToSeat("#simone", roster)!;
+    const handedOff = { ...simone, seat: monique.seat };
+    expect(looksLikeBook(handedOff, HER_BOOK)).toBe(false);
+  });
+
+  it("end to end: the report handed to Monique by rule opens work and leaves her book alone", async () => {
+    await handleBossInboundMail(mail({ subject: "#monique book", body: HER_BOOK }), env as never);
+    const before = await currentBook(env as never);
+    // Untagged, so it defaults to the Chief of Staff and the rule hands it to Monique on
+    // "sell" + "shares" + a dollar size — the desk that owns the book, reached without her tag.
+    const res = await handleBossInboundMail(
+      mail({ subject: "weekend report", body: `Please set the briefing up like the report below.\n\n${A_REPORT}\nSell Order: Databricks shares | $ 25.00 M @ $ 263.00` }),
+      env as never);
+    expect(res.employeeId).toBe(before ? routeToSeat("#monique", await activeRoster(env as never))!.seat.id : "");
+    expect(res.outcome).toBe("DEFAULTED");
+    const after = await currentBook(env as never);
+    expect(after?.id).toBe(before?.id);
+    expect(after?.version).toBe(1);
+  });
 });
 
 /**
@@ -389,6 +436,60 @@ describe("an employee who does not understand asks", () => {
     expect(stale.length).toBe(1);
     expect(stale[0]!.severity).toBe("high");
     expect(stale[0]!.text).toMatch(/waiting on you/i);
+  });
+
+  /**
+   * THE QUESTION SHE COULD NOT ANSWER. `iml_m297nsjanp50ygzr` was typed into Boss OS on 11
+   * September, carried no Message-ID, and sat on Today at HIGH saying "reply to that email" about
+   * an email that did not exist. A console message now mints its own id, and the answer route
+   * replies to it by the same path an emailed reply takes.
+   */
+  it("a question typed into the console carries a Message-ID a reply can name", async () => {
+    const m = mail({ subject: "#Monique", body: DATABRICKS_MESSAGE });
+    m.headers.set("x-boss-intake-origin", "console");
+    const asked = await handleBossInboundMail(m, env as never);
+    expect(asked.outcome).toBe("NEEDS_CLARITY");
+    const row = await env.DB.prepare(`SELECT message_id FROM boss_inbound_mail WHERE id = ?`).bind(asked.mailId).first<{ message_id: string }>();
+    expect(row?.message_id).toBe(`<${asked.mailId}@boss-os-console>`);
+  });
+
+  it("ANSWERED FROM TODAY: the answer closes the question and becomes work by the reply path", async () => {
+    const { apiJson } = await import("./helpers");
+    const m = mail({ subject: "#Monique", body: DATABRICKS_MESSAGE });
+    m.headers.set("x-boss-intake-origin", "console");
+    const asked = await handleBossInboundMail(m, env as never);
+
+    const r = await apiJson(`/api/intake/questions/${asked.mailId}/answer`, { method: "POST", body: { answer: "#monique add Databricks — size TBD" } });
+    expect(r.status).toBe(200);
+    expect(r.body.data.answered_at).toBeTruthy();
+    // The answer was a book verb, so it filed rather than opening a model task — and it is closed.
+    expect(await unansweredQuestionAlerts(env as never, Date.now() + 4 * 86_400_000)).toEqual([]);
+    const dbx = (await currentBookLines(env as never)).find((l) => l.asset === "Databricks");
+    expect(dbx).toBeTruthy();
+
+    // A second answer is refused: one question, one answer, one audit row.
+    const again = await apiJson(`/api/intake/questions/${asked.mailId}/answer`, { method: "POST", body: { answer: "again" } });
+    expect(again.status).toBe(409);
+  });
+
+  it("WITHDRAWN FROM TODAY: the reason is recorded and no work is opened", async () => {
+    const { apiJson } = await import("./helpers");
+    const asked = await handleBossInboundMail(mail({ subject: "#simone", body: "" }), env as never);
+    expect(asked.outcome).toBe("NEEDS_CLARITY");
+    const before = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
+
+    const r = await apiJson(`/api/intake/questions/${asked.mailId}/answer`, { method: "POST", body: { withdraw: "Already done on 12 September, in a session rather than by reply." } });
+    expect(r.status).toBe(200);
+    expect(r.body.data.opened_work).toBe(false);
+    const after = await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>();
+    expect(after?.n).toBe(before?.n);
+    const row = await env.DB.prepare(`SELECT answered_at, answer_note FROM boss_inbound_mail WHERE id = ?`).bind(asked.mailId).first<any>();
+    expect(row.answered_at).toBeTruthy();
+    expect(row.answer_note).toMatch(/12 September/);
+    expect(await unansweredQuestionAlerts(env as never, Date.now() + 4 * 86_400_000)).toEqual([]);
+
+    // Both verbs at once is refused; neither is refused too.
+    expect((await apiJson(`/api/intake/questions/${asked.mailId}/answer`, { method: "POST", body: {} })).status).toBe(400);
   });
 });
 

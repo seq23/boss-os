@@ -1212,6 +1212,14 @@ function Alerts({ content, onChanged, onError }: {
   const [reason, setReason] = useState("");
   const dismissBox = useRef<HTMLDivElement | null>(null);
   const reasonBox = useRef<HTMLTextAreaElement | null>(null);
+  /*
+   * A QUESTION FROM AN EMPLOYEE IS ANSWERED HERE, NOT IN HER MAIL CLIENT. The intake alert used to
+   * end "reply to that email" — and for a question she had typed into this screen there was no
+   * email. Same reason box, two verbs: an answer becomes work by the reply path; a withdrawal says
+   * why there is nothing to do and opens nothing.
+   */
+  const [answering, setAnswering] = useState<number | null>(null);
+  const [answer, setAnswer] = useState("");
 
   /*
    * ── THE SECOND STEP HAS TO BE WHERE HER EYES ARE ──────────────────────────
@@ -1229,10 +1237,10 @@ function Alerts({ content, onChanged, onError }: {
    * of broken.
    */
   useEffect(() => {
-    if (dismissing === null) return;
+    if (dismissing === null && answering === null) return;
     dismissBox.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     reasonBox.current?.focus();
-  }, [dismissing]);
+  }, [dismissing, answering]);
   const alerts: any[] = content.alerts ?? [];
   const keys: string[] = content.keys ?? [];
 
@@ -1287,8 +1295,50 @@ function Alerts({ content, onChanged, onError }: {
                   <button className="btn btn-defer" disabled={busy} onClick={() => setDismissing(null)}>Cancel</button>
                 </div>
               </div>
+            ) : answering === i ? (
+              <div className="judgement-note" ref={dismissBox}>
+                <label className="stat-l" htmlFor={`answer-${i}`}>
+                  Your answer goes straight to that desk as work. Or withdraw the question, saying why it no longer needs one.
+                </label>
+                <textarea
+                  id={`answer-${i}`}
+                  ref={reasonBox}
+                  className="judgement-why"
+                  rows={3}
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                />
+                <div className="decide">
+                  <button
+                    className="btn"
+                    disabled={busy || answer.trim().length < 3}
+                    onClick={() => run(async () => {
+                      const r = await api.answerQuestion(a.source_id, { answer: answer.trim() });
+                      setVerdict(r.note); setAnswer(""); setAnswering(null); onChanged();
+                    })}
+                  >
+                    {answer.trim().length < 3 ? "Write the answer first" : "Send the answer"}
+                  </button>
+                  <button
+                    className="btn btn-reject"
+                    disabled={busy || answer.trim().length < 3}
+                    onClick={() => run(async () => {
+                      const r = await api.answerQuestion(a.source_id, { withdraw: answer.trim() });
+                      setVerdict(r.note); setAnswer(""); setAnswering(null); onChanged();
+                    })}
+                  >
+                    {answer.trim().length < 3 ? "Write the reason first" : "Withdraw the question"}
+                  </button>
+                  <button className="btn btn-defer" disabled={busy} onClick={() => setAnswering(null)}>Cancel</button>
+                </div>
+              </div>
             ) : (
               <div className="decide">
+                {a.source_type === "intake" && a.source_id && (
+                  <button className="btn" disabled={busy} onClick={() => { setAnswering(i); setAnswer(""); }}>
+                    Answer
+                  </button>
+                )}
                 {/*
                   * EVERY ALERT OFFERS IT, WHICH IS THE FIX.
                   *

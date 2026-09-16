@@ -13,7 +13,7 @@
  * while the two are being reconciled, and every Boss route keeps the path its own tests use.
  */
 import type { Env } from "./env";
-import bossApp, { runScheduled as runBossNightly, runDuties as runBossDuties } from "./boss/index";
+import bossApp, { runScheduled as runBossNightly, runDuties as runBossDuties, runReaper as runBossReaper } from "./boss/index";
 import type { Env as BossEnv, TaskMessage } from "./boss/env";
 import { handleTask, handleDeadLetter } from "./boss/queue/consumer";
 
@@ -210,4 +210,4 @@ export async function drainBossTasks(
   return { ran, failed, dead };
 }
 
-export { runBossNightly, runBossDuties };
+export { runBossNightly, runBossDuties, runBossReaper };

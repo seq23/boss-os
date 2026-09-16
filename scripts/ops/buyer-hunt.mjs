@@ -66,6 +66,7 @@ import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
 import { sendersFor } from "./notify.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { researchLot, renderFilings, renderReach } from "./filing-hunt.mjs";
+import { mirrorOrStop } from "./lib/book-mirror.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -125,9 +126,14 @@ function loadBook() {
   if (ONE_ASSET) {
     return { positions: [{ asset: ONE_ASSET, side: HER_SIDE, size_usd: ONE_SIZE || null, size_min_usd: null, size_max_usd: null, size_shares: null, size_text: ONE_SIZE ? money(ONE_SIZE) : "", source_line: `--asset ${ONE_ASSET}` }], unparsed: [], source: "the command line" };
   }
+  // The pulled mirror is the book when there is one — see lib/book-mirror.mjs for the week this cost.
+  if (!argOf("book")) {
+    const mirror = mirrorOrStop();
+    if (mirror) return mirror;
+  }
   if (!fs.existsSync(BOOK_FILE)) return null;
   const parsed = parseLiveBook(fs.readFileSync(BOOK_FILE, "utf8"));
-  return { ...parsed, source: BOOK_FILE };
+  return { ...parsed, source: `${BOOK_FILE} (a local file, not production's book)` };
 }
 
 // ─── Source 1: her own mailbox ───────────────────────────────────────────────
@@ -214,9 +220,15 @@ async function main() {
     console.error("  own words — one line per name, e.g. 'Anthropic IPO shares $2B, and separately $500M'.");
     process.exit(5);
   }
-  const priced = book.positions.filter((p) => p.side === HER_SIDE && p.size_usd);
+  /*
+   * A SIZELESS LOT IS HUNTED TOO. "Databricks — size TBD" was filed on 11 September with the
+   * promise "no size yet; I hunt buyers anyway" — and this filter dropped it for four runs. The
+   * filings half already answers a null size honestly (`capacity` returns UNVERIFIED, "no size to
+   * test against"), so the name is searched and the arithmetic is simply not claimed.
+   */
+  const priced = book.positions.filter((p) => p.side === HER_SIDE);
   if (priced.length === 0) {
-    console.error(`NAMED STOP [EMPTY_BOOK] the book was read and holds no priced ${HER_SIDE}-side line.`);
+    console.error(`NAMED STOP [EMPTY_BOOK] the book was read and holds no ${HER_SIDE}-side line.`);
     process.exit(6);
   }
 

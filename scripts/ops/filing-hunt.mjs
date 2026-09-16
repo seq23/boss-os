@@ -394,15 +394,22 @@ async function main() {
   if (asset) {
     lots = [{ asset, side: HER_SIDE, size_usd: size || null, size_text: size ? money(size) : "" }];
   } else {
-    if (!fs.existsSync(BOOK_TEXT)) {
-      console.error(`NAMED STOP [NO_BOOK] ${BOOK_TEXT} does not exist and no --asset was given.`);
-      console.error("  Email your book to boss@sequoiataylor.com with #monique, or pass --asset and --size.");
-      process.exit(5);
+    // The pulled mirror is the book when there is one — see lib/book-mirror.mjs for the week this cost.
+    const { mirrorOrStop } = await import("./lib/book-mirror.mjs");
+    const mirror = argOf("book") ? null : mirrorOrStop();
+    if (mirror) {
+      lots = mirror.positions.filter((l) => l.side === HER_SIDE);
+    } else {
+      if (!fs.existsSync(BOOK_TEXT)) {
+        console.error(`NAMED STOP [NO_BOOK] ${BOOK_TEXT} does not exist and no --asset was given.`);
+        console.error("  Email your book to boss@sequoiataylor.com with #monique, or pass --asset and --size.");
+        process.exit(5);
+      }
+      lots = parseLiveBook(fs.readFileSync(BOOK_TEXT, "utf8")).positions.filter((l) => l.side === HER_SIDE);
     }
-    lots = parseLiveBook(fs.readFileSync(BOOK_TEXT, "utf8")).positions.filter((l) => l.side === HER_SIDE && l.size_usd);
   }
   if (lots.length === 0) {
-    console.error(`NAMED STOP [EMPTY_BOOK] the book was read and holds no priced ${HER_SIDE}-side line.`);
+    console.error(`NAMED STOP [EMPTY_BOOK] the book was read and holds no ${HER_SIDE}-side line.`);
     process.exit(6);
   }
 

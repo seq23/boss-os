@@ -54,6 +54,25 @@ fi
 
 mkdir -p "$LOGS"
 
+# ─── EVERY PLIST IS PARSED BEFORE IT IS LOADED ──────────────────────────────
+#
+# `com.seq.boss-scooter-sheet` ran on Tuesday 15 September and failed in bash with
+#   syntax error near unexpected token `&'  ...  `npm run lp:sync -- --commit &amp;& npm run ...'
+# The stanza wrote `&amp;&amp;` inside a file whose other lines carried a bare `&&`. That is not
+# XML, so launchd's parser fell back to a lenient read and decoded the escaped pair as `&amp;&` —
+# half an entity — and handed bash a line no shell can parse. The job "installed", loaded, fired on
+# schedule and did nothing for a week. Every `&&` in this file is now written `&amp;&amp;`, and this
+# refuses to load a file `plutil` cannot parse, so the class cannot come back through a stanza
+# somebody adds later. `scripts/validate/the-installer-writes-well-formed-plists.mjs` proves the
+# same thing offline, in CI, over this file's own text.
+lint_plist() {
+  if ! plutil -lint "$1" >/dev/null 2>&1; then
+    echo "NAMED STOP [PLIST_MALFORMED] $1 is not a valid property list; not loaded." >&2
+    plutil -lint "$1" >&2 || true
+    exit 1
+  fi
+}
+
 # FIVE TIMES A DAY, MATCHED TO WHEN WORK APPEARS — not a poll.
 #
 # The first draft ran every fifteen minutes, which is ninety-six process starts a day for a queue
@@ -90,7 +109,7 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO && npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO && npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -109,6 +128,7 @@ cat > "$PLIST" <<PLISTEOF
 PLISTEOF
 
 launchctl unload "$PLIST" 2>/dev/null || true
+lint_plist "$PLIST"
 launchctl load "$PLIST"
 
 # ─── The Wednesday packet reminder ───────────────────────────────────────────
@@ -134,7 +154,7 @@ cat > "$PACKET_PLIST" <<PACKETEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent packet:remind</string>
+    <string>cd $REPO &amp;&amp; npm run --silent packet:remind</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -147,6 +167,7 @@ cat > "$PACKET_PLIST" <<PACKETEOF
 PACKETEOF
 
 launchctl unload "$PACKET_PLIST" 2>/dev/null || true
+lint_plist "$PACKET_PLIST"
 launchctl load "$PACKET_PLIST"
 
 # ─── The weekly network refresh ──────────────────────────────────────────────
@@ -171,7 +192,7 @@ cat > "$NETWORK_PLIST" <<NETEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent contacts:extract && npm run --silent contacts:sync -- --commit</string>
+    <string>cd $REPO &amp;&amp; npm run --silent contacts:extract &amp;&amp; npm run --silent contacts:sync -- --commit</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -184,6 +205,7 @@ cat > "$NETWORK_PLIST" <<NETEOF
 NETEOF
 
 launchctl unload "$NETWORK_PLIST" 2>/dev/null || true
+lint_plist "$NETWORK_PLIST"
 launchctl load "$NETWORK_PLIST"
 echo "Installed $NETWORK_LABEL — Sunday 18:00 Central."
 
@@ -213,7 +235,7 @@ cat > "$PEOPLE_PLIST" <<PEOPLEEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh people-worth-a-call.mjs -- npm run --silent people:recommend -- --send</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh people-worth-a-call.mjs -- npm run --silent people:recommend -- --send</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -226,6 +248,7 @@ cat > "$PEOPLE_PLIST" <<PEOPLEEOF
 PEOPLEEOF
 
 launchctl unload "$PEOPLE_PLIST" 2>/dev/null || true
+lint_plist "$PEOPLE_PLIST"
 launchctl load "$PEOPLE_PLIST"
 echo "Installed $PEOPLE_LABEL — Monday 07:15 Central (people-worth-a-call.mjs)."
 
@@ -263,7 +286,7 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent capital:scan; cd $REPO && bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO && npm run --silent capital:match -- --send --pointer</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -276,6 +299,7 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
 CAPEOF
 
 launchctl unload "$CAPITAL_PLIST" 2>/dev/null || true
+lint_plist "$CAPITAL_PLIST"
 launchctl load "$CAPITAL_PLIST"
 echo "Installed $CAPITAL_LABEL — daily 07:45 Central (interest-ledger.mjs, interest-extract.mjs, interest-match.mjs)."
 
@@ -292,7 +316,7 @@ cat > "$NUDGE_PLIST" <<NUDGEEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh interest-match.mjs -- npm run --silent capital:match -- --nudge --send</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-match.mjs -- npm run --silent capital:match -- --nudge --send</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -305,6 +329,7 @@ cat > "$NUDGE_PLIST" <<NUDGEEOF
 NUDGEEOF
 
 launchctl unload "$NUDGE_PLIST" 2>/dev/null || true
+lint_plist "$NUDGE_PLIST"
 launchctl load "$NUDGE_PLIST"
 echo "Installed $NUDGE_LABEL — the 1st at 07:30 Central (interest-match.mjs --nudge)."
 
@@ -346,7 +371,7 @@ cat > "$BUYERS_PLIST" <<BUYERSEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent capital:hunts -- --send; cd $REPO && bash $REPO/scripts/ops/duty-run.sh filing-hunt.mjs -- npm run --silent capital:filings; cd $REPO && bash $REPO/scripts/ops/duty-run.sh buyer-hunt.mjs -- npm run --silent capital:buyers -- --send</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:book -- --pull; cd $REPO &amp;&amp; npm run --silent capital:hunts -- --send; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh filing-hunt.mjs -- npm run --silent capital:filings; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh buyer-hunt.mjs -- npm run --silent capital:buyers -- --send</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -359,6 +384,7 @@ cat > "$BUYERS_PLIST" <<BUYERSEOF
 BUYERSEOF
 
 launchctl unload "$BUYERS_PLIST" 2>/dev/null || true
+lint_plist "$BUYERS_PLIST"
 launchctl load "$BUYERS_PLIST"
 echo "Installed $BUYERS_LABEL — Tuesdays 07:00 Central (buyer-hunt.mjs, duty_buyer_hunt)."
 
@@ -397,7 +423,7 @@ cat > "$HOME/Library/LaunchAgents/$GRID_LABEL.plist" <<PLIST
     <array>
       <string>/bin/bash</string>
       <string>-lc</string>
-      <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh grid-watch.mjs -- npm run --silent grid:post</string>
+      <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh grid-watch.mjs -- npm run --silent grid:post</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>
@@ -408,6 +434,8 @@ cat > "$HOME/Library/LaunchAgents/$GRID_LABEL.plist" <<PLIST
 </plist>
 PLIST
 launchctl unload "$HOME/Library/LaunchAgents/$GRID_LABEL.plist" 2>/dev/null || true
+lint_plist "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
+lint_plist "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
 launchctl load "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
 
 PROPS_LABEL="com.seq.boss-properties"
@@ -423,7 +451,7 @@ cat > "$PROPS_PLIST" <<PROPSEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && npm run --silent spry:heartbeat; npm run --silent properties</string>
+    <string>cd $REPO &amp;&amp; npm run --silent spry:heartbeat; npm run --silent properties</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -436,6 +464,7 @@ cat > "$PROPS_PLIST" <<PROPSEOF
 PROPSEOF
 
 launchctl unload "$PROPS_PLIST" 2>/dev/null || true
+lint_plist "$PROPS_PLIST"
 launchctl load "$PROPS_PLIST"
 echo "Installed $PROPS_LABEL — Monday 07:00 Central."
 
@@ -503,6 +532,7 @@ cat > "$SURFACE_PLIST" <<SURFEOF
 SURFEOF
 
 launchctl unload "$SURFACE_PLIST" 2>/dev/null || true
+lint_plist "$SURFACE_PLIST"
 launchctl load "$SURFACE_PLIST"
 echo "Installed $SURFACE_LABEL — daily 09:30 Central."
 
@@ -558,6 +588,7 @@ cat > "$PUBLISH_PLIST" <<PUBEOF
 PUBEOF
 
 launchctl unload "$PUBLISH_PLIST" 2>/dev/null || true
+lint_plist "$PUBLISH_PLIST"
 launchctl load "$PUBLISH_PLIST"
 echo "Installed $PUBLISH_LABEL — daily 09:45 Central."
 
@@ -611,6 +642,7 @@ cat > "$MAILBOX_PLIST" <<MBXEOF
 MBXEOF
 
 launchctl unload "$MAILBOX_PLIST" 2>/dev/null || true
+lint_plist "$MAILBOX_PLIST"
 launchctl load "$MAILBOX_PLIST"
 echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
 
@@ -691,6 +723,7 @@ cat > "$AHREFS_PLIST" <<AHREOF
 AHREOF
 
 launchctl unload "$AHREFS_PLIST" 2>/dev/null || true
+lint_plist "$AHREFS_PLIST"
 launchctl load "$AHREFS_PLIST"
 echo "Installed $AHREFS_LABEL — daily 06:00 Central tick, monthly work (asks the duty row)."
 
@@ -740,6 +773,7 @@ cat > "$LP_PLIST" <<LPEOF
 LPEOF
 
 launchctl unload "$LP_PLIST" 2>/dev/null || true
+lint_plist "$LP_PLIST"
 launchctl load "$LP_PLIST"
 echo "Installed $LP_LABEL — daily 07:45 Central, dormant until the West Peek grant exists."
 
@@ -777,7 +811,7 @@ cat > "$SHEET_PLIST" <<SHEETEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh lp-tracker-sync.mjs -- bash -c 'npm run --silent lp:sync -- --commit &amp;&amp; npm run --silent lp:outcomes -- --commit'</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh lp-tracker-sync.mjs -- bash -c 'npm run --silent lp:sync -- --commit &amp;&amp; npm run --silent lp:outcomes -- --commit'</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -790,6 +824,7 @@ cat > "$SHEET_PLIST" <<SHEETEOF
 SHEETEOF
 
 launchctl unload "$SHEET_PLIST" 2>/dev/null || true
+lint_plist "$SHEET_PLIST"
 launchctl load "$SHEET_PLIST"
 echo "Installed $SHEET_LABEL — Tuesday 07:15 Central (lp-tracker-sync.mjs then lp-outcomes.mjs)."
 
@@ -806,7 +841,7 @@ cat > "$POSITIVE_PLIST" <<POSEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh lp-positive.mjs -- npm run --silent lp:positive -- --email</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh lp-positive.mjs -- npm run --silent lp:positive -- --email</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -819,6 +854,7 @@ cat > "$POSITIVE_PLIST" <<POSEOF
 POSEOF
 
 launchctl unload "$POSITIVE_PLIST" 2>/dev/null || true
+lint_plist "$POSITIVE_PLIST"
 launchctl load "$POSITIVE_PLIST"
 echo "Installed $POSITIVE_LABEL — Tuesday 08:15 Central (lp-positive.mjs --email)."
 
@@ -861,7 +897,7 @@ cat > "$CRED_PLIST" <<CREDEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO && bash $REPO/scripts/ops/duty-run.sh credential-check.mjs -- npm run --silent credentials:check</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh credential-check.mjs -- npm run --silent credentials:check</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -876,6 +912,7 @@ cat > "$CRED_PLIST" <<CREDEOF
 CREDEOF
 
 launchctl unload "$CRED_PLIST" 2>/dev/null || true
+lint_plist "$CRED_PLIST"
 launchctl load "$CRED_PLIST"
 echo "Installed $CRED_LABEL — daily 06:15 Central, reporting to duty_credentials (Toni)."
 
@@ -896,7 +933,7 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$KDP_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL" && loaded "$SURFACE_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL" && loaded "$SURFACE_LABEL" && loaded "$GRID_LABEL" && loaded "$BUYERS_LABEL"; then break; fi
   sleep 1
 done
 
@@ -920,7 +957,12 @@ require_loaded "$PROPS_LABEL"
 # "Verified" line that did not mention it — the installer and its own verifier each keeping their own
 # list of jobs, which is the defect this file's comments warn about, inside this file.
 require_loaded "$PEOPLE_LABEL"
-require_loaded "$KDP_LABEL"
+# THE RETIRED CASE WATCH MUST BE ABSENT, and its absence is checked the same way its presence was.
+# `require_loaded "$KDP_LABEL"` survived the retirement stanza above, so from 14 September every run
+# of this installer ended "NOT INSTALLED: com.seq.kdp-watch" and exit 1 — after it had already
+# written the other plists — which is how a verifier that lies teaches people to stop reading it.
+checked="$checked !$KDP_LABEL"
+loaded "$KDP_LABEL" && missing="$missing $KDP_LABEL(should-be-retired)"
 require_loaded "$MAILBOX_LABEL"
 require_loaded "$CRED_LABEL"
 require_loaded "$LP_LABEL"
@@ -938,6 +980,11 @@ require_loaded "$SHEET_LABEL"
 require_loaded "$POSITIVE_LABEL"
 # ADDED WITH THE JOB, FOR THE THIRD TIME, AND THE TWO NOTES ABOVE ARE WHY.
 require_loaded "$GRID_LABEL"
+# AND A FOURTH TIME. The Tuesday buyers job and the daily audit gate were written on 12 and 13
+# September and neither was ever on this list; the grid job was on the list and had never been
+# installed at all, because nobody ran the installer after writing it. Measured on 15 September.
+require_loaded "$BUYERS_LABEL"
+require_loaded "$AHREFS_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
