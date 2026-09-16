@@ -367,6 +367,14 @@ Boss OS's maintenance is guarded inside `runScheduled`, independently of the tri
   almanac extends, the capability cadence runs, the sentinel runs, approvals expire, promotions sweep
 - **Weekly**: the snapshot — and it is skipped even then if nothing of substance changed
 - **After every snapshot**: retention prunes to the newest 12
+- **Every tick, beside the duties**: the reaper (`backends/reap.ts`) fails a backend run a machine
+  claimed and never reported once it has been silent for twice what it asked for — never under an
+  hour. Before 16 September a run whose Mac closed its lid read `running` for ever.
+
+**The jobs on her Mac are installed by `scripts/ops/install-agent-launchd.sh`, and editing the
+installer installs nothing.** Three changes on 13 September (the grid job, the wrapped credential
+check, the filing hunt) were never installed until the 16th, and Today said so. After changing the
+installer, run it; it lints every plist and lists what launchd holds.
 
 **Owner's instruction, 6 Sep 2026:** *"the cron job should be only 1x per week right now. i dont do
 enough on this system to snapshot more than that."* The split honours that. Applying weekly to the
