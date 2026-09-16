@@ -108,12 +108,20 @@ export function extractStatements(files) {
  * statement that fails to create a table announces itself immediately as every query against that
  * table failing. Silence is not possible.
  */
+/** Migration statements D1 would refuse for a reason the local engine never raises. */
+export const MIGRATION_FAULTS = [];
+
 function buildSchema() {
   const db = new DatabaseSync(":memory:");
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
   for (const file of files) {
     const sql = readFileSync(path.join(MIGRATIONS_DIR, file), "utf8");
     for (const stmt of splitStatements(sql)) {
+      // A migration is applied by D1 and by nothing else, so the one D1-only limit this scan knows
+      // about is checked here, where the statement is in hand. Comments are stripped first: a
+      // header that quotes the offending pattern must not fail the file that fixed it.
+      const tooLong = longLikePattern(stmt.replace(/--.*$/gm, ""));
+      if (tooLong) MIGRATION_FAULTS.push({ where: `migrations/${file}`, sql: stmt.slice(0, 90), reason: tooLong });
       try {
         db.exec(stmt);
       } catch {
@@ -151,7 +159,29 @@ function splitStatements(sql) {
  * "no such table" and "no such column" count, which is exactly the class of bug that shipped three
  * times in one day.
  */
+/**
+ * D1 CAPS A LIKE PATTERN AT 50 BYTES, AND THE LOCAL SQLITE DOES NOT.
+ *
+ * 16 September 2026: `npm run deploy:production` stopped on migration 0245 with "LIKE or GLOB
+ * pattern too complex" — a 66-byte literal that node:sqlite (the engine this validator builds the
+ * schema in) accepts without comment, because its SQLITE_MAX_LIKE_PATTERN_LENGTH is 50,000 and
+ * D1's is the SQLite default of 50. Every statement here had passed. A migration that fails on
+ * production and nowhere else is exactly the class this scan exists for, so the literal length is
+ * checked directly: no LIKE/GLOB against a string literal longer than 50 bytes, in a migration or
+ * in the worker.
+ */
+export const D1_LIKE_PATTERN_MAX_BYTES = 50;
+export function longLikePattern(sql) {
+  for (const m of String(sql).matchAll(/\b(?:NOT\s+)?(?:LIKE|GLOB)\s+'((?:[^']|'')*)'/gi)) {
+    const bytes = Buffer.byteLength(m[1].replace(/''/g, "'"), "utf8");
+    if (bytes > D1_LIKE_PATTERN_MAX_BYTES) return `LIKE pattern is ${bytes} bytes; D1 refuses more than ${D1_LIKE_PATTERN_MAX_BYTES} ("LIKE or GLOB pattern too complex")`;
+  }
+  return null;
+}
+
 function checkOne(db, sql) {
+  const tooLong = longLikePattern(sql);
+  if (tooLong) return tooLong;
   try {
     db.prepare(`EXPLAIN ${sql}`);
     return null;
@@ -196,6 +226,9 @@ function selfTest(db) {
     ["INSERT INTO people (id, lane, full_name, column_that_does_not_exist) VALUES (?,?,?,?)", /has no column named/i, "a bad column in an INSERT is caught, not only in a SELECT"],
     ["INSERT INTO people (id, lane, full_name, privacy_class, created_at, updated_at) VALUES (?,?,?,?,?,?)", null, "a correct INSERT still passes"],
     ["INSERT INTO firm_user (id, email, full_name) VALUES (?1, ?2, ?3)", null, "a bound insert passes — arguments are not the point"],
+    // The 0245 line that D1 refused and the local engine let through, verbatim.
+    ["UPDATE boss_inbound_mail SET message_id = '<' || id || '@boss-os-console>' WHERE message_id IS NULL AND why LIKE '%Typed into Boss OS from her own authenticated session%'", /pattern too complex/i, "a LIKE pattern over D1's 50-byte cap is caught"],
+    ["SELECT id FROM boss_inbound_mail WHERE why LIKE '%Typed into Boss OS from her own%'", null, "a LIKE pattern under the cap passes"],
   ];
   let failed = 0;
   for (const [sql, expected, why] of cases) {
@@ -206,8 +239,12 @@ function selfTest(db) {
       failed += 1;
     }
   }
+  if (MIGRATION_FAULTS.length) {
+    process.stderr.write(`SELF-TEST FAILED: ${MIGRATION_FAULTS.length} migration statement(s) D1 would refuse: ${MIGRATION_FAULTS.map((f) => f.where).join(", ")}\n`);
+    failed += 1;
+  }
   if (failed) process.exit(1);
-  process.stdout.write(`SELF-TEST PASSED: ${cases.length}/${cases.length} cases, including all three bugs that prompted this scan.\n`);
+  process.stdout.write(`SELF-TEST PASSED: ${cases.length}/${cases.length} cases, including all three bugs that prompted this scan, and the migrations carry no LIKE pattern D1 refuses.\n`);
 }
 
 async function main() {
@@ -240,7 +277,7 @@ async function main() {
     return;
   }
 
-  const failures = [];
+  const failures = [...MIGRATION_FAULTS];
   for (const [sql, where] of entries) {
     const reason = checkOne(db, sql);
     if (reason) failures.push({ where, sql: sql.slice(0, 90), reason });
