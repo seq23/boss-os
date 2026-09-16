@@ -5467,3 +5467,69 @@ from Network OS" scheduled job flipped from `Degraded` to `SUCCEEDED` (4,712 con
 synced, vs. the pre-fix 250-contact cap), and an open work card ("Deck: Vynlo") showed Wyatt's
 actual extracted findings from a real inbound deck — sector, product description, and company
 status — confirming both journeys the operator asked about are live and working on real data.
+
+## 15–16 Sep 2026 — Today's seven alerts were all true, and every one traced to a defect
+
+Boss OS, not the chassis. The owner asked for the critical alerts fixed at the cause and then
+dismissed. Read from production through the vault before anything was touched: seven alerts, none
+of them `critical` by severity, all in the block called Critical Alerts, none of them wrong.
+
+### The alerts, and what was actually behind each
+
+- **Three "could not be checked" (two calendar feeds, the Gmail connector), MEDIUM.** The 07:25
+  probe ran on a Mac launchd had just woken; two of four feeds dropped one packet and the
+  connector probe hit its 180-second timeout — which `credential-check.mjs` reported as "the Claude
+  CLI could not be started on this machine". `ETIMEDOUT` and `ENOENT` are now told apart, and a
+  feed is fetched twice before it is called unreachable. Re-run through `duty-run.sh`: 7/7 live.
+- **`duty_credentials` missed two runs, HIGH.** The installed plist ran the check bare; the
+  `duty-run.sh` wrapper was written into the installer on 13 September (#9) and the installer was
+  never re-run. Re-installed; the run is recorded.
+- **`duty_grid_watch` never fired, HIGH.** `com.seq.boss-grid` was written into the installer on
+  13 September (#4) and never installed. Installed; ran; 12/12 repos read, 2 observations filed.
+- **Two questions waiting, HIGH.** `iml_m297nsjanp50ygzr` ("#Monique — please add searching for
+  buyers of Databricks to the weekly list") was typed into Boss OS on the 11th, carried no
+  Message-ID, and so the one path that closes a question — her reply's `In-Reply-To` — could never
+  fire; the alert said "reply to that email" about an email that did not exist. The other
+  (`#simone`, the 12 September report) was answered by work that afternoon with no way to say so.
+  Console messages now mint `<iml_…@boss-os-console>` (0245 backfills), `POST
+  /intake/questions/:id/answer` takes `answer` (routed as a reply, closes the question, becomes
+  work) or `withdraw` (reason on the record, opens nothing), and Today's intake alert has the
+  control. Both closed through it after deploy.
+- **DONE — Toni finished "West Peek LP replies can be read", MEDIUM.** By design: a completion
+  stays a week. Dismissed through the app's own endpoint with a reason.
+
+### Found on the way, confirmed against production, fixed and guarded
+
+- **Her live book was a news report.** `looksLikeBook` filed the 12 September Executive
+  Intelligence Report as book v2 — thirteen "lots" such as "U.S. budget deficit hits — $1970B" —
+  after a rule-based handoff to Monique, superseding the seven-line book she had typed on the 11th.
+  A guessed book now needs HER tag on Monique's desk and must be list-shaped (readable lines not
+  outnumbered by unreadable ones). Two tests, both red on the old code. The book was refiled as v3
+  through the intake, in her own words, Databricks (size TBD) included.
+- **The weekly hunt was on the wrong list.** `buyer-hunt.mjs` and `filing-hunt.mjs` read a
+  hand-typed `book.txt`; nothing read the `book.json` that `capital-book --pull` writes; the Tuesday
+  job never pulled; sizeless lots were dropped despite the intake's written promise "no size yet; I
+  hunt buyers anyway". One reader (`scripts/ops/lib/book-mirror.mjs`) for both hunts, the writer
+  shares its paths, the job pulls first, sizeless lots are hunted; `validate:hunt-reads-mirror`
+  proves all four offline. The filing duty ran for the first time (7 lots, 6 names) and the
+  Databricks buyer hunt she asked for on the 11th was emailed.
+- **`duty_scooter_sheet` failed on schedule with a bash syntax error.** The installer wrote
+  `&amp;&amp;` beside bare `&&`; launchd's lenient parse of the malformed file produced `&amp;&`.
+  Every `&&` is escaped, `plutil -lint` runs before every load, the verifier lists the buyers,
+  audit and grid jobs and requires the retired case watch ABSENT — it had required it PRESENT since
+  14 September, so every install had ended "NOT INSTALLED". `validate:plists-well-formed` proves the
+  class offline. The sheet job ran and recorded (8 status cells, 4 reply-queue rows).
+- **A backend run read `running` for two and a half days.** `brn_m2ecxghymfgwg7xf`, claimed by
+  her Mac on the 13th at 22:10, never reported, and nothing could end it. `backends/reap.ts` fails
+  a run silent for twice what it asked for (never under an hour), fails its task, audits, leaves the
+  duty due. On the hourly tick in its own `waitUntil`; a source-level test holds the wiring.
+- This morning's failed inbound-supply extraction (network at wake-up) re-run and recorded.
+
+### Verified
+
+- `npm run validate` green: 73 scans (two new), typecheck, both suites.
+- `wrangler tail --env production`: Today's groups at 5–9 ms cpuTime, Spirit at 5 ms, no
+  exceptions, no `exceededCpu`; the hourly tick observed clean.
+- Eight employees `active`, each owning work (`every-seat-owns-work`); the nightly ran complete
+  every night 11–16 September; zero open dead letters.
+- The Today page, read fresh through the API after deploy: the alerts block is empty.

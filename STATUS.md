@@ -4,7 +4,7 @@
 what version it is, and whether it was finished. Everything here is written to be read cold, by
 someone — or something — with no memory of the conversation that produced it.
 
-Last verified against the code and against production: **6 September 2026.**
+Last verified against the code and against production: **16 September 2026.**
 
 ---
 
