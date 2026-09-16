@@ -168,6 +168,25 @@ const ICAL_FEEDS = [
   { id: "cred_cal_cryptoclearr", env: "CAL_ICS_CRYPTOCLEARR" },
 ];
 
+/**
+ * ONE RETRY, BECAUSE THE LAPTOP HAD JUST WOKEN UP.
+ *
+ * 15 September 2026, 07:25 Central: two of the four feeds — and only two — came back "could not be
+ * reached from this machine", on a Mac that had been asleep on battery until launchd woke it for
+ * this job; by 07:47 the network was up and the same two feeds read fine by hand. Each unknown then
+ * sat on Today as its own alert for the day. A single retry after a short pause is not a cover-up
+ * — a feed that is really unreachable still reports unknown — it is the difference between
+ * measuring the credential and measuring the Wi-Fi.
+ */
+async function fetchTwice(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (first) {
+    await new Promise((r) => setTimeout(r, 5_000));
+    try { return await fetch(url, init); } catch { throw first; }
+  }
+}
+
 async function probeCalendars() {
   const out = [];
   for (const feed of ICAL_FEEDS) {
@@ -181,7 +200,7 @@ async function probeCalendars() {
       continue;
     }
     try {
-      const res = await fetch(url, { headers: { accept: "text/calendar" } });
+      const res = await fetchTwice(url, { headers: { accept: "text/calendar" } });
       if (!res.ok) {
         /*
          * THE STATUS, NEVER THE URL. A 404 here almost always means the address was reset — which
@@ -240,6 +259,25 @@ const CONNECTOR_PROMPT = [
   "Do not quote, summarise or describe any message. Do not print anything except that one line.",
 ].join("\n");
 
+/**
+ * WHAT `spawnSync` COULD NOT DO, SAID PRECISELY.
+ *
+ * `run.error` was reported as "the Claude CLI could not be started on this machine" whatever the
+ * error was. On 15 September that sentence went onto Today about a CLI that starts fine: the probe
+ * had hit its 180-second timeout on a machine whose network was still coming up, and `ETIMEDOUT`
+ * was reported as `ENOENT`. Whoever read the alert would have gone looking for a missing binary.
+ * A probe's detail is the thing somebody acts on, so it names the actual failure.
+ */
+export function connectorStartFailure(error) {
+  const code = String(error?.code ?? "");
+  const detail = code === "ETIMEDOUT"
+    ? "The connector test did not finish within three minutes, so whether it works is unknown. That is usually the machine waking up or claude.ai being slow, not the connector."
+    : code === "ENOENT"
+      ? "The Claude CLI is not on this machine's PATH, so the connector could not be tested."
+      : `The Claude CLI could not be run (${code || "unknown error"}), so the connector could not be tested.`;
+  return { id: "cred_gmail_connector", state: "unknown", detail };
+}
+
 function probeConnector() {
   const claude = process.env.CLAUDE_BIN ?? "claude";
   const run = spawnSync(
@@ -248,13 +286,7 @@ function probeConnector() {
     { encoding: "utf8", timeout: 180_000 },
   );
 
-  if (run.error) {
-    return {
-      id: "cred_gmail_connector",
-      state: "unknown",
-      detail: "The Claude CLI could not be started on this machine, so the connector could not be tested.",
-    };
-  }
+  if (run.error) return connectorStartFailure(run.error);
 
   const text = `${run.stdout ?? ""}\n${run.stderr ?? ""}`;
   const m = /CRED-GMAIL:\s*(live|dead|unknown)/i.exec(text);
@@ -337,7 +369,9 @@ async function main() {
   );
 }
 
-main().catch((err) => {
-  console.error(`credential check failed: ${err?.message ?? err}`);
-  process.exitCode = 1;
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(`credential check failed: ${err?.message ?? err}`);
+    process.exitCode = 1;
+  });
+}

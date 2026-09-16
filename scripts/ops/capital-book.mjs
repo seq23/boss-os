@@ -19,13 +19,11 @@
  */
 
 import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 
-const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
-const BOOK_TEXT = path.join(DIR, "book.txt");
-const BOOK_JSON = path.join(DIR, "book.json");
+// The paths come from the one module the hunts read the mirror through, so the writer and the
+// readers cannot disagree about where the book is.
+import { CAPITAL_DIR as DIR, BOOK_TEXT, BOOK_JSON } from "./lib/book-mirror.mjs";
 const BASE = process.env.BOSS_OS_BASE_URL ?? "https://boss.sequoiataylor.com";
 
 const ARGS = process.argv.slice(2);

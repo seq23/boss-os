@@ -131,8 +131,28 @@ function senderOf(message: BossMailMessage): string {
  */
 export function looksLikeBook(route: BossRoute, text: string): boolean {
   if (!booksAreThisSeats(route, text)) return false;
+  /*
+   * ─── A GUESS IS MADE ONLY AT THE DESK SHE ADDRESSED HERSELF ──────────────
+   *
+   * 12 September 2026, 19:57: her 700-line Executive Intelligence Report, sent to `#simone`, was
+   * handed to Monique BY RULE because it "names a counterparty and a trade" — and this function,
+   * seeing Monique's desk and thirteen dollar signs, filed it as book v2. Thirteen lots named
+   * "3. Nvidia may anchor a", "U.S. budget deficit hits" and "roughly €", and it superseded the
+   * real book she had typed the night before. The buyer hunt then worked from a news article.
+   *
+   * A handoff moves work between desks; it must not lend Monique's inventory rule to a message she
+   * never addressed to Monique. The verb path is unaffected — `#monique add` still files — because
+   * `bookDirectiveFor` reads the tag she typed, and that tag is the one this checks too.
+   */
+  if (!route.tag || route.tag !== seatTag(route.seat.name)) return false;
   const parsed = parseLiveBook(text);
-  return parsed.positions.filter((p: { size_usd: number | null }) => p.size_usd !== null).length >= 2;
+  const priced = parsed.positions.filter((p: { size_usd: number | null }) => p.size_usd !== null).length;
+  /*
+   * A BOOK IS A LIST, NOT PROSE WITH NUMBERS IN IT. Hers is seven lines and every one of them
+   * reads; the report was 13 priced fragments against 687 lines that did not. When the lines that
+   * could not be read outnumber the lots, this is not her inventory and no guess is made.
+   */
+  return priced >= 2 && parsed.unparsed.length <= priced;
 }
 
 /**
@@ -175,6 +195,11 @@ async function applyBookDirective(
   return removeFromLiveBook(env, input);
 }
 
+/** The Message-ID a console-typed message carries, so a reply to it has something to name. */
+export function consoleMessageId(mailId: string): string {
+  return `<${mailId}@boss-os-console>`;
+}
+
 export async function handleBossInboundMail(message: BossMailMessage, env: Env): Promise<BossMailResult> {
   const mailId = newId("iml");
   const now = Date.now();
@@ -199,7 +224,6 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * written to prevent. Recording on arrival means the worst case is a row that says the outcome is
    * still RECEIVED, which is a visible loose end rather than a message that never existed.
    */
-  const messageId = (message.headers.get("message-id") ?? "").trim().slice(0, 400) || null;
   /*
    * DID THIS ARRIVE BY SMTP, OR DID SHE TYPE IT HERE? Recorded rather than blurred. `POST
    * /api/intake/mail` runs this exact handler from her own authenticated session — see that route
@@ -207,6 +231,18 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * message nobody posted would be a lie in the one table whose whole job is saying what was proven.
    */
   const viaConsole = (message.headers.get("x-boss-intake-origin") ?? "").toLowerCase() === "console";
+  /*
+   * ─── A QUESTION SHE CANNOT ANSWER IS A QUESTION THAT NAGS FOR EVER ────────
+   *
+   * A question closes when her reply's `In-Reply-To` names the `Message-ID` of the message that
+   * asked it. A message typed into Boss OS has no mail client and so had no Message-ID — which
+   * meant `iml_m297nsjanp50ygzr` ("#Monique - Please add searching for buyers of Databricks…", typed
+   * on 11 September) sat on Today at HIGH with the instruction "reply to that email", about an
+   * email that did not exist. So a console message mints its own id, in the shape a mail client
+   * would, and the answer route below replies to it by exactly the path an emailed reply takes.
+   */
+  const messageId = (message.headers.get("message-id") ?? "").trim().slice(0, 400)
+    || (viaConsole ? consoleMessageId(mailId) : null);
   const recordArrival = async (outcome: string, why: string) => {
     await env.DB.prepare(
       `INSERT INTO boss_inbound_mail

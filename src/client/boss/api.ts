@@ -201,6 +201,14 @@ export const api = {
       key: args.key ?? "",
     })),
   dismissAlert: (body: Record<string, unknown>) => call<any>("/today/alerts/dismiss", post("", body)),
+  /*
+   * A QUESTION IS ANSWERED WHERE IT IS ASKED. An `answer` is routed exactly as an emailed reply
+   * would be — it closes the question and becomes work on the right desk; a `withdraw` records why
+   * the question no longer needs one and opens nothing. A question typed into Boss OS had no email
+   * to reply to, so until this the alert asked her to use a door that did not exist.
+   */
+  answerQuestion: (id: string, body: { answer?: string; withdraw?: string }) =>
+    call<{ answered_at: number | null; opened_work: boolean; note: string }>(`/intake/questions/${encodeURIComponent(id)}/answer`, post("", body)),
 
   diary: () => call<any>("/diary"),
   addMeeting: (body: Record<string, unknown>) => call<any>("/diary", post("", body)),

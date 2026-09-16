@@ -61,7 +61,7 @@ export async function unansweredQuestionAlerts(env: Env, now = Date.now(), reads
       `${open.length} question${open.length === 1 ? "" : "s"} from your employees ${open.length === 1 ? "is" : "are"} waiting on you — `
       + `the oldest is ${days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"}`} old, from ${oldest.employee ?? "your inbox"}`
       + `${oldest.subject ? ` about "${oldest.subject}"` : ""}. `
-      + "Nothing was started on it and nothing was invented: reply to that email and it goes straight into work.",
+      + "Nothing was started on it and nothing was invented: press Answer here and it goes straight into work, or withdraw it if there is nothing left to do.",
     source_type: "intake",
     source_id: oldest.id,
   }];

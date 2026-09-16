@@ -7,7 +7,7 @@ import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { isLane } from "../../../shared/boss/lanes";
 import { classify, KIND_TO_DEPARTMENT } from "../intake/classify";
 import { INTAKE_KINDS } from "../../../shared/boss/governance";
-import { handleBossInboundMail } from "../intake/inboundMail";
+import { handleBossInboundMail, consoleMessageId } from "../intake/inboundMail";
 import { BOSS_INTAKE_MAILBOX, BOSS_INTAKE_SENDERS } from "../../../shared/boss/intake/mail.mjs";
 
 export const intake = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -317,4 +317,104 @@ intake.post("/mail", async (c) => {
   }, c.env);
 
   return ok(c, result, 201);
+});
+
+/**
+ * ─── ANSWERING A QUESTION FROM THE SCREEN IT WAS ASKED ON ─────────────────
+ *
+ * A question closes when her reply names the message that asked it — `In-Reply-To` matching
+ * `message_id`, arithmetic over rows. That worked for mail and could not work for a message she
+ * typed here, which had no Message-ID at all (0245 backfills one). It also assumed she would go to
+ * her mail client to answer something Today had just shown her, which on 15 September she did not,
+ * for four days.
+ *
+ * TWO VERBS, BOTH EXPLICIT, NEITHER GUESSED FROM HER WORDS:
+ *
+ *   `answer`   — her reply, routed through `handleBossInboundMail` EXACTLY as an emailed reply
+ *                would be: `In-Reply-To` set, so the same UPDATE closes the question and the same
+ *                rule ("a reply is never questioned") turns the answer into work on the right desk.
+ *                No second closing path, no second routing path.
+ *   `withdraw` — the question no longer needs answering, with the reason on the record. The
+ *                12 September message asked what to do with a report; the work was done that
+ *                afternoon in a session, not in a reply, so there is nothing to route and a note
+ *                is the honest record. This opens NO work and touches nothing but the row.
+ *
+ * A question that is already answered, or is not a question, is refused rather than re-closed, so
+ * the audit trail cannot show two answers to one question.
+ */
+intake.post("/questions/:id/answer", async (c) => {
+  const id = c.req.param("id");
+  const b = await c.req.json<{ answer?: string; withdraw?: string }>().catch(() => null);
+  const answer = String(b?.answer ?? "").trim();
+  const withdraw = String(b?.withdraw ?? "").trim();
+  if (!answer && !withdraw) {
+    throw badRequest("Say something", "Send `answer` with your reply, or `withdraw` with why the question no longer needs one.");
+  }
+  if (answer && withdraw) {
+    throw badRequest("One verb", "An answer goes to work and a withdrawal does not — send one or the other.");
+  }
+
+  const q = await c.env.DB
+    .prepare(`SELECT id, subject, outcome, answered_at, message_id, employee_id FROM boss_inbound_mail WHERE id = ?`)
+    .bind(id)
+    .first<{ id: string; subject: string | null; outcome: string; answered_at: number | null; message_id: string | null; employee_id: string | null }>();
+  if (!q) throw notFound(`No such message: nothing arrived with the id ${id}.`);
+  if (q.outcome !== "NEEDS_CLARITY") throw conflict("Not a question", `${id} was ${q.outcome}; only a question that was asked can be answered.`);
+  if (q.answered_at) throw conflict("Already answered", `${id} was answered on ${new Date(q.answered_at).toISOString().slice(0, 10)}.`);
+
+  const now = Date.now();
+
+  if (withdraw) {
+    await c.env.DB
+      .prepare(`UPDATE boss_inbound_mail SET answered_at = ?, answer_note = ? WHERE id = ? AND answered_at IS NULL`)
+      .bind(now, withdraw.slice(0, 600), id)
+      .run();
+    await audit(c.env.DB, {
+      actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: id,
+      action: "question_withdrawn", detail: { note: withdraw.slice(0, 200) },
+    });
+    return ok(c, { id, answered_at: now, opened_work: false, note: "Withdrawn. Nothing was started; the reason is on the record beside the question." });
+  }
+
+  /*
+   * THE REPLY IS A MESSAGE, AND IT TAKES THE MESSAGE'S DOOR. `message_id` is never null after 0245
+   * for a console row, and never was for mail; the fallback exists so a row from before either
+   * still has something a reply can name, and it is the same shape 0245 wrote.
+   */
+  const inReplyTo = q.message_id ?? consoleMessageId(id);
+  if (!q.message_id) {
+    await c.env.DB.prepare(`UPDATE boss_inbound_mail SET message_id = ? WHERE id = ? AND message_id IS NULL`).bind(inReplyTo, id).run();
+  }
+  const from = BOSS_INTAKE_SENDERS[0]!;
+  const subject = /^\s*re\s*:/i.test(q.subject ?? "") ? String(q.subject) : `Re: ${q.subject ?? ""}`.trim();
+  const raw = `From: ${from}\r\nTo: ${BOSS_INTAKE_MAILBOX}\r\nSubject: ${subject}\r\nIn-Reply-To: ${inReplyTo}\r\n\r\n${answer}`;
+  const result = await handleBossInboundMail({
+    from,
+    to: BOSS_INTAKE_MAILBOX,
+    headers: new Headers({
+      from,
+      subject,
+      "in-reply-to": inReplyTo,
+      references: inReplyTo,
+      "x-boss-intake-origin": "console",
+      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
+    }),
+    raw: new Response(raw).body!,
+    rawSize: new TextEncoder().encode(raw).length,
+  }, c.env);
+
+  const closed = await c.env.DB
+    .prepare(`SELECT answered_at FROM boss_inbound_mail WHERE id = ?`).bind(id)
+    .first<{ answered_at: number | null }>();
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: id,
+    action: "question_answered", detail: { reply_mail_id: result.mailId, outcome: result.outcome, task_id: result.taskId ?? null },
+  });
+  return ok(c, {
+    id, answered_at: closed?.answered_at ?? null, opened_work: Boolean(result.taskId),
+    reply: result,
+    note: closed?.answered_at
+      ? (result.taskId ? "Answered, and your answer is on the right desk as work." : "Answered. Nothing was opened from it — read the reply for why.")
+      : "The reply was routed but the question did not close — that is a fault, and it is in the audit row.",
+  });
 });
