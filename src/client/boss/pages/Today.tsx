@@ -1327,7 +1327,7 @@ function Alerts({ content, onChanged, onError }: {
                       setVerdict(r.note); setAnswer(""); setAnswering(null); onChanged();
                     })}
                   >
-                    {answer.trim().length < 3 ? "Say why first" : "Withdraw the question"}
+                    {answer.trim().length < 3 ? "Write the reason first" : "Withdraw the question"}
                   </button>
                   <button className="btn btn-defer" disabled={busy} onClick={() => setAnswering(null)}>Cancel</button>
                 </div>
