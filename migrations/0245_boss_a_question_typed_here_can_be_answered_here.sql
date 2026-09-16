@@ -25,3 +25,5 @@ UPDATE boss_inbound_mail
    AND why LIKE '%Typed into Boss OS from her own authenticated session%';
 
 ALTER TABLE boss_inbound_mail ADD COLUMN answer_note TEXT;
+
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0245_boss_a_question_typed_here_can_be_answered_here');

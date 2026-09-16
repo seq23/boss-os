@@ -51,6 +51,7 @@ import { ensureAlmanac } from "./spirit/day";
 import { handleTask, handleDeadLetter } from "./queue/consumer";
 import { rollBudgetWindows } from "./router/budget";
 import { materialiseDueDuties } from "./duties/materialise";
+import { reapSilentRuns } from "./backends/reap";
 import { newId } from "./lib/id";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -346,6 +347,16 @@ export async function runScheduled(env: Env, now = Date.now()): Promise<CronOutc
  */
 export async function runDuties(env: Env, now = Date.now()) {
   return materialiseDueDuties(env, now);
+}
+
+/**
+ * EVERY TICK, LIKE THE DUTIES. A backend run a machine claimed and never reported is failed once
+ * it has been silent for twice what it asked for — see `backends/reap.ts` for the run that read
+ * `running` for two and a half days. Its own `waitUntil` at the call site, for the same reason the
+ * duties have theirs.
+ */
+export async function runReaper(env: Env, now = Date.now()) {
+  return reapSilentRuns(env, now);
 }
 
 /** What the tick decided. A skip carries its reason so silence is never the only evidence. */

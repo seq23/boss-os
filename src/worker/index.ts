@@ -24,7 +24,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, drainBossTasks, runBossNightly, runBossDuties, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1490,6 +1490,15 @@ export default {
         if (r.fired.length) console.log("boss duties materialised", JSON.stringify(r.fired));
       }).catch((err) => {
         console.error("boss duties failed", err);
+      }),
+    );
+    // A run a machine claimed and never reported is failed here, on the hour, rather than left
+    // reading `running` until somebody notices. See boss/backends/reap.ts.
+    ctx.waitUntil(
+      runBossReaper(toBossEnvForCron(env), now.getTime()).then((r) => {
+        if (r.reaped.length) console.log("boss silent runs reaped", JSON.stringify(r.reaped));
+      }).catch((err) => {
+        console.error("boss reaper failed", err);
       }),
     );
     ctx.waitUntil(
