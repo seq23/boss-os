@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { recordHumanVerdict } from "../router/experience";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -241,6 +242,21 @@ approvals.post("/:id/decide", async (c) => {
     actor: "boss", lane: current.lane, entityType: "approval", entityId: id,
     action: decision, detail: note ? { note } : undefined,
   });
+
+  /*
+   * A PERSON JUST JUDGED WORK A MODEL DID, AND THAT IS THE ONLY EVIDENCE WORTH ANYTHING.
+   *
+   * `router/experience.ts` will never call a model proven on router-recorded rows alone — "the call
+   * returned" is not "the work stood". This is the other half: it traces the approval back through
+   * `routing_decisions` to the model and the task kind, and records what she actually decided.
+   *
+   * IT CANNOT FAIL THE DECISION. Recording evidence about a judgement must never be able to undo
+   * the judgement, and `recordHumanVerdict` records nothing rather than guessing when any link in
+   * that trace is missing.
+   */
+  if (current.origin_type === "task" && (decision === "approved" || decision === "rejected")) {
+    await recordHumanVerdict(c.env.DB, { taskId: current.origin_id, decision, note: note ?? undefined });
+  }
 
   // Deferring is explicitly not a decision about the payload, so nothing runs.
   let execution = null;
