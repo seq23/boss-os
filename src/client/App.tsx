@@ -3446,7 +3446,30 @@ export function App() {
   const activeItem = NAV_ITEMS.find((n) => n.key === active) ?? NAV_FALLBACK;
 
   const refresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
-  const authed = me.status === 200 && me.data;
+  /*
+   * ─── SIGNING OUT IS A LOCAL FACT, AND IT TAKES EFFECT AT THE CLICK ──────────────────────────
+   *
+   * `signOut()` in `lib/api.ts` is synchronous: it drops the dev identity and clears
+   * sessionStorage before it returns, so the moment `handleSignOut` runs there is no identity left
+   * for anything to be shown to. The page did not act like it. `authed` was read purely from the
+   * LAST `/api/me` RESPONSE, so between the click and that request coming back — a full round trip —
+   * `me.data` still held the previous person and the whole signed-in surface stayed on screen:
+   * their nav, their home layout, the firm's numbers. P42's own stated posture is "nothing about
+   * the firm before it knows who is asking", and for the width of that round trip the page was
+   * showing the firm to a browser that no longer held an identity.
+   *
+   * The same gap is what made "the signed-out page leads back in" load-sensitive rather than
+   * deterministic. While the reload was in flight `me.loading` was true, and the block below
+   * rendered NEITHER the signed-out page NOR the sign-in card — a blank surface whose duration was
+   * whatever the network took. On a loaded CI machine that pushed the `signed-out-signin` button
+   * past the test's budget and the click timed out. The test was right and the page was slow for a
+   * reason that had nothing to do with signing out.
+   *
+   * So `signedOut` is authoritative the instant it is set. `me.reload()` still runs — the server's
+   * 401 is what confirms it, and a production Access session is ended by the redirect above, not by
+   * this flag — but nothing on screen waits for it any more.
+   */
+  const authed = !signedOut && me.status === 200 && me.data;
 
   // On the phone sheet, choosing a destination is the whole interaction — close behind it.
   const navigate = useCallback((key: string) => {
@@ -3638,12 +3661,16 @@ export function App() {
               Admin and on the personal surfaces: `pageHost` returns null there, because Admin is
               machinery rather than a room somebody runs and Home is already signed by its deliverer. */}
           {authed && <PageHostCard navKey={active} />}
-          {!authed && !me.loading && active !== "help" && (
-            signedOut ? (
-              <SignedOutPage onSignIn={() => setSignedOut(false)} />
-            ) : (
-              <SignInCard onLogin={() => { setSignedOut(false); me.reload(); }} />
-            )
+          {/*
+            THE GOODBYE DOES NOT WAIT FOR THE NETWORK, and the sign-in card still does.
+            `signedOut` is a local fact (see `authed` above) so it renders immediately; "never
+            signed in" is genuinely unknown until `/api/me` answers, which is why that branch keeps
+            its `!me.loading` guard. Collapsing the two behind one loading check is what produced a
+            blank surface for the width of a round trip after every sign-out.
+          */}
+          {signedOut && active !== "help" && <SignedOutPage onSignIn={() => setSignedOut(false)} />}
+          {!signedOut && !authed && !me.loading && active !== "help" && (
+            <SignInCard onLogin={() => { setSignedOut(false); me.reload(); }} />
           )}
           {/* Help is reachable signed-out too: an operator who cannot get in still deserves to
               learn what this is and how to get started. */}

@@ -518,7 +518,29 @@ function DealRow({ deal, open, onChanged, onOpen }: {
     });
     setBusy(false);
     if (res.status !== 200) setMessage(res.data?.detail ?? res.data?.error ?? `Could not move it (HTTP ${res.status}).`);
-    else onChanged();
+    /*
+     * A REFUSAL REFRESHES THE ROW TOO. It used to reload only on success, so a row that was refused
+     * because the page's copy of the deal had gone stale kept the same stale copy — and therefore
+     * offered the same refused move again, for ever, until somebody reloaded by hand. Re-reading
+     * after a refusal is what turns "this is out of date" into a row that is no longer out of date.
+     */
+    onChanged();
+  }
+
+  /**
+   * MOVE IT ON — and the server decides what "on" means.
+   *
+   * No target is sent. The next stage is read off the record by `advanceOpportunity`, so a press
+   * that lands while the board's reload is still in flight moves the deal instead of being refused
+   * for naming a stage the record has already left. See the spine comment in
+   * `src/worker/services/investment.ts`.
+   */
+  async function advance() {
+    setBusy(true);
+    const res = await api<{ error?: string; detail?: string }>(`/api/opportunities/${deal.id}/advance`, { method: "POST" });
+    setBusy(false);
+    if (res.status !== 200) setMessage(res.data?.detail ?? res.data?.error ?? `Could not move it (HTTP ${res.status}).`);
+    onChanged();
   }
 
   const rowClass = ["deal-row", left ? "deal-row-out" : "", open ? "deal-row-open" : ""].filter(Boolean).join(" ");
@@ -608,7 +630,7 @@ function DealRow({ deal, open, onChanged, onOpen }: {
             className="btn-strong"
             disabled={busy}
             data-testid={`deal-advance-${deal.id}`}
-            onClick={() => void moveTo(next.key)}
+            onClick={() => void advance()}
           >
             {busy ? "…" : `Move to ${next.label.toLowerCase()}`}
           </button>
@@ -1066,7 +1088,19 @@ function CompanyDealRecord({
     );
     setBusy(false);
     setMessage(failed ?? `${companyName} is now at ${(stage(to)?.label ?? "its new stage").toLowerCase()}.`);
-    if (!failed) reloadAll();
+    // A refusal re-reads too: the usual cause is that this copy of the deal is behind the record,
+    // and keeping the stale copy would make every later press fail the same way. See DealRow.
+    reloadAll();
+  }
+
+  /** "Move it on", with the next stage read off the record rather than off this page. See DealRow. */
+  async function advance() {
+    if (!d) return;
+    setBusy(true);
+    const failed = mutationError(await api(`/api/opportunities/${d.id}/advance`, { method: "POST" }), 200);
+    setBusy(false);
+    setMessage(failed ?? `${companyName} has moved on a stage.`);
+    reloadAll();
   }
 
   async function addSecondDeal(e: React.FormEvent) {
@@ -1202,7 +1236,7 @@ function CompanyDealRecord({
 
             <div className="record-actions">
               {next && (
-                <button type="button" className="btn-strong" disabled={busy} data-testid="deal-record-advance" onClick={() => void moveTo(next.key)}>
+                <button type="button" className="btn-strong" disabled={busy} data-testid="deal-record-advance" onClick={() => void advance()}>
                   {busy ? "…" : `Move to ${next.label.toLowerCase()}`}
                 </button>
               )}
