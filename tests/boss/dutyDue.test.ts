@@ -115,15 +115,37 @@ describe("a scheduled job asks whether it is due", () => {
 });
 
 /**
- * THE AHREFS DUTY SPECIFICALLY — monthly, and its seed no longer disagrees with its cadence.
+ * THE AHREFS DUTY SPECIFICALLY — weekly on Thursday, and its seed agrees with that cadence.
+ *
+ * ─── The rule this has always guarded, through two cadence changes ──────────
  *
  * Migration 0227 seeded `next_due_at` as `unixepoch() * 1000 + 86400000` — TOMORROW — on a WEEKLY
- * Thursday duty, while its own comment stated the rule: "a duty whose cadence and seed disagree is
- * left due on the wrong day and nothing says so." That contradiction is what composed the line the
- * owner found in Today's contract.
+ * Thursday duty, while its own comment stated the rule it broke: "a duty whose cadence and seed
+ * disagree is left due on the wrong day and nothing says so." That contradiction is what composed
+ * the line the owner found in Today's contract. **The invariant under test is that agreement**, and
+ * it outlives whichever cadence is current.
+ *
+ * ─── 0246: back to weekly, and the stale-weekday hazard INVERTS ─────────────
+ *
+ * 0232 made the pass monthly on her instruction, and this block then asserted `weekday IS NULL` —
+ * correctly, because `nextDueAt` ignores weekday for a monthly cadence, so a leftover Thursday
+ * would have been a fact governing nothing.
+ *
+ * 0246 makes it weekly again, on the evidence of the first run ever to complete: 48 Site Audit
+ * mails across 23 projects in 14 days, delivered overnight into four consecutive Thursdays UTC.
+ * **So the direction of the weekday rule reverses.** Under a weekly cadence, a NULL weekday is now
+ * the defect: `nextDueAt` falls back to its own default day, and the duty quietly fires on a
+ * weekday nobody chose — which is the same class of silent drift, wearing the opposite value.
+ *
+ * Both halves are asserted here, which is why this is strictly tighter than what it replaces: the
+ * old test pinned the cadence, one weekday value, the hour, the job and the seed's day-of-month.
+ * This pins the cadence, the weekday POSITIVELY (a value, not an absence), the hour, the job, and
+ * the seed's day-of-WEEK, its hour, and that it is inside one cadence period rather than merely in
+ * the future — a monthly-shaped seed left on a weekly duty would pass the old "not in the past"
+ * check and fail this one.
  */
-describe("duty_site_audit_repair after 0232", () => {
-  it("is monthly, carries no stale weekday, and is due on the 1st", async () => {
+describe("duty_site_audit_repair after 0246", () => {
+  it("is weekly on Thursday, names its weekday, and is seeded in agreement with that cadence", async () => {
     const duty = await env.DB
       .prepare(
         `SELECT cadence, weekday, local_hour, next_due_at,
@@ -132,16 +154,32 @@ describe("duty_site_audit_repair after 0232", () => {
       )
       .first<any>();
 
-    expect(duty?.cadence).toBe("monthly");
-    // NULL rather than 4: `nextDueAt` ignores weekday for a monthly cadence, so leaving Thursday in
-    // the row would be a fact that no longer governs anything.
-    expect(duty?.weekday).toBeNull();
+    expect(duty?.cadence).toBe("weekly");
+    /*
+     * 4 rather than NULL, and asserted as a VALUE. `nextDueAt` honours weekday for a weekly cadence
+     * and defaults when it is absent, so an unnamed day is a duty firing whenever the scheduler
+     * happens to choose. `validate:audit-fixer` holds the same line from outside the database.
+     */
+    expect(duty?.weekday).toBe(4);
     expect(duty?.local_hour).toBe(6);
     expect(duty?.local_job).toBe("ahrefs-audit-fix.sh");
 
-    // The seed lands on the first of a month, and never in the past.
+    // ── THE 0197 RULE: the seed agrees with the cadence, which is the original defect. ──
     expect(duty.next_due_at).toBeGreaterThan(Date.now());
-    expect(new Date(duty.next_due_at).getUTCDate()).toBe(1);
+    // A Thursday, because that is the day the cadence names. 4 = Thursday, 0 = Sunday.
+    expect(new Date(duty.next_due_at).getUTCDay()).toBe(4);
+    /*
+     * 11:00 UTC is 06:00 America/Chicago in summer and one hour EARLY in winter — deliberately the
+     * safe direction, because the daily tick asks "am I due?" at 06:00 local and must already find
+     * yes. Seeding late would settle the run permanently on Friday.
+     */
+    expect(new Date(duty.next_due_at).getUTCHours()).toBe(11);
+    /*
+     * AND INSIDE ONE WEEK, which is the assertion that actually catches a cadence change whose seed
+     * was not updated with it. A next_due_at three weeks out is a monthly seed wearing a weekly
+     * cadence: it is in the future, it is even on a Thursday, and it is still wrong.
+     */
+    expect(duty.next_due_at - Date.now()).toBeLessThan(8 * 24 * HOUR);
   });
 
   /**
@@ -149,7 +187,13 @@ describe("duty_site_audit_repair after 0232", () => {
    *
    * The repair lane may never auto-fix `local-guides-citation-velocity`. A migration that rebuilt
    * `task_input` to change a cadence is the obvious way to drop that exclusion without anyone
-   * noticing, so the test checks the exclusion survived rather than checking that 0232 was careful.
+   * noticing, so the test checks the exclusion SURVIVED rather than checking that any particular
+   * migration was careful.
+   *
+   * TWO cadence changes have now passed through this row — 0232 and 0246 — and both touched only
+   * the schedule columns and said so in their own text. That is exactly the claim this test refuses
+   * to take on trust, and it gets stronger with each migration that leaves it standing: the risk is
+   * not one careless author, it is the third or fourth edit by someone who has stopped reading.
    */
   it("still forbids the fixer from touching local-guides-citation-velocity", async () => {
     const duty = await env.DB

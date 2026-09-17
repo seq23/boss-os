@@ -9,15 +9,16 @@
  * week's window, so its first occurrence was still ahead of it. Nothing was broken. That is the
  * point: a schedule with one chance to fire looks identical whether it is waiting or dead, and on a
  * laptop that sleeps on battery the difference matters. A machine shut down through the one moment
- * loses the whole period — a month, now that the cadence is monthly.
+ * loses the whole period. That cost is why the tick is daily and this check exists: a slept-through
+ * Thursday costs a DAY, because the next morning's tick finds the duty still due.
  *
  * So the calendar entry fires DAILY and cheaply, and this decides whether there is work to do. The
  * duty row's `next_due_at` is the only clock; there is no second schedule to fall out of step with.
  *
  * ─── Rule 0, and the one permitted exception to it ─────────────────────────
  *
- * This repository's rule is that no stage may exit 0 having done nothing. A daily tick on a monthly
- * duty does nothing on twenty-nine days out of thirty, and that is correct — so it exits 0 and SAYS
+ * This repository's rule is that no stage may exit 0 having done nothing. A daily tick on a weekly
+ * duty does nothing on six days out of seven, and that is correct — so it exits 0 and SAYS
  * WHICH DAY IT IS AND WHEN THE WORK IS NEXT DUE. A named stop a human can read is the exception;
  * silence is not.
  *
