@@ -293,6 +293,7 @@ import {
   handleArchiveOpportunity,
   handleRecommendOpportunity,
   handleTransitionOpportunity,
+  handleAdvanceOpportunity,
   handleBackfillOpportunity,
   handleConfirmPlaceholders,
   handleDealflowBoard,
@@ -833,6 +834,7 @@ const router = new Router()
   .get("/api/opportunities/:id", handleGetOpportunity)
   .patch("/api/opportunities/:id", handleUpdateOpportunity)
   .post("/api/opportunities/:id/transition", handleTransitionOpportunity)
+  .post("/api/opportunities/:id/advance", handleAdvanceOpportunity)
   // An employee advises; the partner still decides. Never moves the deal.
   .post("/api/opportunities/:id/recommend", handleRecommendOpportunity)
   .post("/api/opportunities/:id/archive", handleArchiveOpportunity)

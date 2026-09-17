@@ -103,7 +103,34 @@ test.describe("Boss OS surface", () => {
     // is where the overlap was first visible.
     for (const label of ["Today", "Systems", "Vault", "Capital"]) {
       await page.getByRole("button", { name: label, exact: true }).click();
-      await page.waitForTimeout(400);
+
+      /*
+       * MEASURE A PAGE THAT HAS ARRIVED, NOT ONE THAT IS STILL ARRIVING.
+       *
+       * This used to be `waitForTimeout(400)` and then a scroll, which assumes the page is fully
+       * rendered within 400ms of the click. Today is SEVEN parallel requests since the CPU split,
+       * and `Promise.allSettled` means it renders `<Loading/>` — three `.skel` divs, a few hundred
+       * pixels — until the last of them lands. On a loaded machine that is longer than 400ms, and
+       * the sequence becomes: scroll a short page (nothing moves), the real content arrives, then
+       * measure an UNSCROLLED page whose last element is naturally below the fold. Run 35233778331
+       * caught exactly that — "Today @ laptop: last content ends at 1476.09375, nav starts at
+       * 595.46875" on a 720px viewport.
+       *
+       * So it waits for the page to reach a named state instead of for a duration. This is the
+       * contract "all seven Systems panels reach their endpoint" already uses below, and it
+       * STRENGTHENS the guard rather than relaxing it: a page that never leaves its skeleton now
+       * fails here too, where before it was measured as though it had loaded.
+       */
+      /*
+       * A DIRECT CHILD, DELIBERATELY. `Loading` returns three bare `.skel` divs from the PAGE
+       * component, so they land as children of `main.page` itself — that, and only that, is the
+       * state "this page has not arrived". Panels further down own their own skeletons and some of
+       * them legitimately sit unresolved inside a closed disclosure (Capital's firm list is three
+       * of them), so a descendant selector would wait fifteen seconds for something that is not a
+       * loading page and has nothing to do with the layout being measured.
+       */
+      await expect(page.locator("main.page > .skel")).toHaveCount(0, { timeout: 15_000 });
+      await expect.poll(async () => (await page.locator("main.page").innerText()).trim().length).toBeGreaterThan(0);
 
       await page.keyboard.press("End");
       await page.mouse.wheel(0, 4000);

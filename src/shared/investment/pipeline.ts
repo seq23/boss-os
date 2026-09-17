@@ -134,6 +134,34 @@ export const SPINE: readonly Stage[] = STAGES.filter((s) => s.order !== null).so
 
 export const EXITS: readonly Stage[] = STAGES.filter((s) => s.isExit);
 
+/**
+ * THE NEXT STAGE ALONG THE SPINE — one function, read by the server, not by the browser.
+ *
+ * WHAT WENT WRONG WITHOUT IT. The Dealflow board computed the next stage itself, from its own
+ * last-fetched copy of the deal, and sent it to the server as an absolute target. That makes the
+ * page the authority on a fact only the record holds, and the consequence is a LOST PRESS: advance
+ * a deal, and until the board's reload lands the button still carries the PREVIOUS next stage.
+ * Press it and the server is asked to move the deal to a stage it has already left, the lifecycle
+ * refuses that as illegal — correctly — and the move a partner asked for does not happen. Worse,
+ * the row keeps its stale copy, so every later press is refused the same way until somebody
+ * reloads by hand.
+ *
+ * It is not a test artefact. `p57`'s pipeline walk caught it at a different stage on every run,
+ * and a partner pressing "move it on" twice in quick succession hits exactly the same dead row.
+ *
+ * So `advanceOpportunity` calls this with the status the RECORD holds at the moment of the press,
+ * and the request carries no target at all. There is nothing left for a stale page to get wrong.
+ *
+ * NULL RATHER THAN A GUESS at the end of the line and off it. `CLOSED` has nowhere further to go,
+ * and `PASS` and `WITHDRAWN` are not on the spine — reopening one is a deliberate move to
+ * SCREENING and stays an explicit choice a person makes, never a step something takes for them.
+ */
+export function nextStageKey(status: string): StageKey | null {
+  const here = BY_KEY.get(status as StageKey);
+  if (!here || here.order === null) return null;
+  return SPINE.find((s) => (s.order ?? 0) === here.order! + 1)?.key ?? null;
+}
+
 export interface StallRead {
   days: number;
   stalled: boolean;
