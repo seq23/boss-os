@@ -60,6 +60,14 @@ beforeEach(async () => {
 describe("Stage 7 — the bench refuses to spend rather than guessing", () => {
   it("records every paid pair as NOT RUN at FREE_ONLY, and writes no benchmark row", async () => {
     await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_fireworks'`).run();
+    /*
+     * THE PROVIDER, NOT JUST THE BACKEND. Migration 0247 disabled `prv_fireworks` because enabling
+     * follows the key and there is no FIREWORKS_API_KEY, and `loadBenchModels` joins `providers` on
+     * `enabled = 1` — so with the shipped seed this model is not a candidate at all and the bench
+     * refuses with "examined nothing" before reaching the lever it is here to test. Asking for the
+     * paid path explicitly is a fair description of what it would take in production.
+     */
+    await env.DB.prepare(`UPDATE providers SET enabled = 1 WHERE id = 'prv_fireworks'`).run();
     let called = false;
     restore = stubFetch(() => { called = true; return completionResponse("must not run"); });
 
@@ -82,6 +90,9 @@ describe("Stage 7 — the bench refuses to spend rather than guessing", () => {
   it("still refuses a paid model when the lever is up but the backend is not commissioned", async () => {
     await setSpendLever(env.DB, { position: "OPEN" }, "test");
     await env.DB.prepare(`UPDATE execution_backends SET status = 'registered' WHERE id = 'bk_fireworks'`).run();
+    // The provider is enabled so the model is a CANDIDATE; the backend stays uncommissioned, which is
+    // the thing this test is about. See 0247.
+    await env.DB.prepare(`UPDATE providers SET enabled = 1 WHERE id = 'prv_fireworks'`).run();
     let called = false;
     restore = stubFetch(() => { called = true; return completionResponse("must not run"); });
 
@@ -179,6 +190,14 @@ describe("Stage 7 — the bench refuses to spend rather than guessing", () => {
 
   it("logs the run, including every reason nothing ran", async () => {
     await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_fireworks'`).run();
+    /*
+     * THE PROVIDER, NOT JUST THE BACKEND. Migration 0247 disabled `prv_fireworks` because enabling
+     * follows the key and there is no FIREWORKS_API_KEY, and `loadBenchModels` joins `providers` on
+     * `enabled = 1` — so with the shipped seed this model is not a candidate at all and the bench
+     * refuses with "examined nothing" before reaching the lever it is here to test. Asking for the
+     * paid path explicitly is a fair description of what it would take in production.
+     */
+    await env.DB.prepare(`UPDATE providers SET enabled = 1 WHERE id = 'prv_fireworks'`).run();
     await runBench(env, { modelIds: ["mdl_kimi_k2"], workloadIds: ["wl_research"] });
     const logged = await row(`SELECT level, detail FROM system_events WHERE event = 'bench_run' ORDER BY ts DESC LIMIT 1`);
     expect(logged!.level).toBe("warn");

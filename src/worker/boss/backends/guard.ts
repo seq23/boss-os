@@ -213,6 +213,41 @@ const FREE_ROUTES: Record<string, { kind: "included_allowance" | "free_model_slu
   },
 };
 
+/**
+ * WILL THIS ROUTE ACTUALLY BE BILLED? Answered without a database row.
+ *
+ * `freeTier` above needs a `Backend` — a row — because it also produces the basis sentence a person
+ * reads. The ROUTER needs the same fact one stage earlier, while it is ORDERING candidates, and at
+ * that point it holds a model and a provider and has not read the backend rows yet.
+ *
+ * WHY IT MATTERS, AND IT IS NOT A DETAIL. Migration 0248 gave the two Workers AI models their real
+ * published rates — 152/287 micros for the 8B, 293/2253 for the 70B. Both had been 0. The continuity
+ * tier is ordered cheapest-first, so the moment those prices existed the 8B became "cheaper" than
+ * the 70B and the router started choosing it.
+ *
+ * That ordering is wrong, and it is wrong on the exact case this repository already has a scar from.
+ * `candidateOrder.mjs` exists because alphabetical ordering sent an 8-billion-parameter model a
+ * request to find a buyer for $1B of OpenAI stock, which it answered with "Routing: Route to
+ * Customer Service Team". The tie-break was rewritten so that at EQUAL COST capability wins — and
+ * pricing the models silently broke the tie that made that rule reachable.
+ *
+ * Both models are on an included allowance. NEITHER IS BILLED. Ordering them against each other by
+ * a list price that the allowance absorbs is ordering by a number that will not be charged, and it
+ * costs quality for nothing. So the router asks this instead, and two genuinely-free routes tie
+ * again — which hands the decision back to capability, where it belongs.
+ *
+ * IT READS THE SAME `FREE_ROUTES` CONSTANT `freeTier` DOES. One hardcoded statement of which tiers
+ * a vendor gives away, two readers. A second list would be the defect this file already warns
+ * about, and it would be the copy that let something start spending.
+ */
+export function routeIsBilled(backendId: string, modelSlug?: string | null): boolean {
+  const rule = FREE_ROUTES[backendId];
+  if (!rule) return true;
+  if (rule.kind === "included_allowance") return false;
+  const slug = typeof modelSlug === "string" ? modelSlug.trim() : "";
+  return !(slug.length > 0 && rule.suffix !== undefined && slug.endsWith(rule.suffix));
+}
+
 export function freeTier(backend: Backend, model?: string | null): FreeTier {
   // Nothing on this side is billed for work that happens on the owner's own machine under her own
   // session. That is not the same as "free" in the sovereignty sense — see externalInference().

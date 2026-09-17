@@ -142,8 +142,29 @@ export function theTwoListsAgree({ models, wiring }) {
   return bad;
 }
 
-/** Free means free: nothing is charged per token, in either direction. */
-const isFree = (m) => Number(m.in_micros_1k) === 0 && Number(m.out_micros_1k) === 0;
+/**
+ * FREE MEANS NOTHING IS BILLED — WHICH IS NOT THE SAME AS A ZERO IN THE PRICE COLUMN.
+ *
+ * This used to read `in_micros_1k === 0 && out_micros_1k === 0`, and that definition was correct
+ * only for as long as nobody had priced the models. Migration 0248 recorded Cloudflare's own
+ * published rates for both Workers AI models, and on the old definition this guard immediately
+ * announced that the system had no free brain left — while nothing about what those calls cost had
+ * changed at all.
+ *
+ * WHAT MAKES A WORKERS AI CALL COST NOTHING IS THE INCLUDED DAILY ALLOWANCE, a property of the
+ * BACKEND. `backends/guard.ts` is the one place that fact is stated (`FREE_ROUTES`), the router
+ * reads it through `routeIsBilled` when it orders candidates, and this reads the same idea. A zero
+ * price column is what a model looks like when nobody has checked it, and treating that as proof of
+ * free is how an unchecked placeholder became a guarantee.
+ *
+ * An OpenRouter `:free` slug is free the same way: by an observable property of the route rather
+ * than by a number somebody typed.
+ */
+const FREE_BY_ALLOWANCE = new Set(["prv_workers_ai"]);
+const isFree = (m) =>
+  FREE_BY_ALLOWANCE.has(String(m.provider_id)) ||
+  String(m.slug ?? "").endsWith(":free") ||
+  (Number(m.in_micros_1k) === 0 && Number(m.out_micros_1k) === 0);
 const isLive = (m) => Number(m.enabled) === 1 && Number(m.provider_enabled) === 1;
 
 /**
@@ -332,8 +353,24 @@ if (process.argv.includes("--self-test")) {
     models: world.models.map((m) => (m.id === "mdl_cf_llama33_70b" ? { ...m, enabled: 0 } : m)),
   }), true);
 
+  /*
+   * "NO FREE MODEL AT ALL" NOW HAS TO STRIP ALL THREE WAYS A ROUTE CAN BE FREE.
+   *
+   * This fixture used to set a price and stop there, which stopped being a description of a world
+   * with no free brain the moment `isFree` learned that free is a property of the ROUTE — an
+   * included allowance on Workers AI, or OpenRouter's `:free` suffix — rather than of a number in
+   * the price column. Moving every model onto a metered provider with a metered slug is what the
+   * sentence actually means now.
+   */
   expect("a world with no free model at all", theBestFreeModelIsDeclared({
-    ...world, models: world.models.map((m) => ({ ...m, in_micros_1k: 600, out_micros_1k: 2500 })),
+    ...world,
+    models: world.models.map((m) => ({
+      ...m,
+      provider_id: "prv_metered",
+      slug: String(m.slug ?? "").replace(/:free$/, ""),
+      in_micros_1k: 600,
+      out_micros_1k: 2500,
+    })),
   }), true);
 
   expect("the migration and the wiring say the same thing", theTwoListsAgree(world), false);

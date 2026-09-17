@@ -11,10 +11,13 @@ import { rollBudgetWindows, laneBudgetState, employeeBudgetState } from "./budge
 import { WIRING_BY_PROVIDER, adapterCredential, backendKindFor } from "./backends";
 import { formatMicros, spendLeverState } from "./spend";
 import { checkBackend } from "../backends/registry";
-import { laneAllowance, monthWindowStart, type Refusal } from "../backends/guard";
+import { laneAllowance, monthWindowStart, routeIsBilled, type Refusal } from "../backends/guard";
 import {
   MAX_ATTEMPTS_PER_BACKEND, breakerState, recordFailure, recordSuccess, trip,
 } from "./breaker";
+import { confidentialLexicon, scanForConfidential } from "./confidential";
+import { bypassFor, predictSpend, type BypassRow } from "./bypass";
+import { getNumber } from "../lib/settings";
 
 /**
  * Refusal codes from the backend guard that mean "money", as opposed to "not
@@ -175,7 +178,7 @@ async function loadModel(db: D1Database, modelId: string): Promise<ModelRow | nu
     .prepare(
       `SELECT m.id, m.slug, m.provider_id, m.display_name, m.in_micros_1k, m.out_micros_1k,
               m.enabled, m.privacy_class, m.capability_tier, m.benchmark_status,
-              m.approved_task_kinds, m.forbidden_task_kinds, m.max_risk,
+              m.approved_task_kinds, m.forbidden_task_kinds, m.max_risk, m.data_use,
               p.base_url, p.api_key_var
          FROM models m JOIN providers p ON p.id = m.provider_id
         WHERE m.id = ? AND p.enabled = 1`,
@@ -199,7 +202,7 @@ async function loadContinuityModels(db: D1Database, exclude: string[]): Promise<
     .prepare(
       `SELECT m.id, m.slug, m.provider_id, m.display_name, m.in_micros_1k, m.out_micros_1k,
               m.enabled, m.privacy_class, m.capability_tier, m.benchmark_status,
-              m.approved_task_kinds, m.forbidden_task_kinds, m.max_risk,
+              m.approved_task_kinds, m.forbidden_task_kinds, m.max_risk, m.data_use,
               p.base_url, p.api_key_var
          FROM models m JOIN providers p ON p.id = m.provider_id
         WHERE m.enabled = 1 AND p.enabled = 1`,
@@ -242,19 +245,28 @@ export async function recordUsage(
     lane: string; routeId: string | null; modelId: string | null; employeeId?: string | null;
     taskId?: string | null; inTokens: number; outTokens: number; costMicros: number;
     status: string; detail?: string | null; backendId?: string | null;
+    /**
+     * WHICH DECISION PAID FOR THIS, when it was not the budget.
+     *
+     * Null for almost everything, which is the point: a month's total reads as "the budget, plus
+     * these three decisions" rather than as an unexplained overrun. Spend under a bypass is still
+     * spend and still moves every counter — the stamp says whose authority it was, never that it
+     * did not count.
+     */
+    bypassId?: string | null;
   },
 ) {
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
         `INSERT INTO usage_ledger (id, ts, lane, route_id, model_id, employee_id, task_id,
-                                   in_tokens, out_tokens, cost_micros, status, detail)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+                                   in_tokens, out_tokens, cost_micros, status, detail, bypass_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         newId("usg"), Date.now(), row.lane, row.routeId, row.modelId,
         row.employeeId ?? null, row.taskId ?? null, row.inTokens, row.outTokens,
-        row.costMicros, row.status, row.detail ?? null,
+        row.costMicros, row.status, row.detail ?? null, row.bypassId ?? null,
       ),
   ];
 
@@ -398,11 +410,33 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   }
 
   const requireBenchmarkHighRisk = await getBool(db, "require_benchmark_high_risk", true);
+
+  /*
+   * ─── THE CONFIDENTIAL LINE IS DRAWN BEFORE ANY CANDIDATE IS SCREENED ───────
+   *
+   * The owner ruled that LP names and deal terms are confidential, and every model here is
+   * `privacy_class = 'cloud'`, so the existing privacy rule cannot separate the route that may hold
+   * them from the route that may not. This reads the OUTGOING MESSAGES against the names this
+   * database actually holds, plus the patterns that describe the shape of a deal term — see
+   * `confidential.ts` for why it is not a prompt, a wrapper or a caller's promise.
+   *
+   * IT RUNS EVEN WHEN THE CALLER SAID NOTHING. A caller that declares `restricted` is believed
+   * immediately; a caller that declares nothing is still read. The two cover each other's gap, and
+   * the mechanism does not depend on every caller ever written remembering a flag.
+   *
+   * AN UNESTABLISHED SCAN IS A HIT. If the lexicon cannot be built the run is treated as
+   * confidential, which leaves it the routes that do not train — free, and still working.
+   */
+  const lexicon = await confidentialLexicon(db);
+  const confidential = scanForConfidential(opts.messages, lexicon, opts.sensitivity);
+
   const ctx = {
     policy, risk, sensitivity,
     intakeKind: opts.intakeKind ?? null,
     requireBenchmarkHighRisk,
     cloudForRestrictedAllowed: opts.cloudForRestrictedAllowed ?? false,
+    contentIsConfidential: confidential.confidential,
+    confidentialReason: confidential.reason,
   };
 
   const envelopeCeiling = opts.budgetMicros && opts.budgetMicros > 0 ? opts.budgetMicros : null;
@@ -437,9 +471,28 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   // with a fact about spelling, for free. `general` outranks `fast` because that is what those words
   // mean, and cost is genuinely unchanged, so nothing here promotes a candidate past an earlier
   // stage: every model in this list has already survived screening on its own merits.
+  /*
+   * AND THE COST IT IS ORDERED BY IS THE COST THAT WILL BE CHARGED.
+   *
+   * `estimateCostMicros` is a list price. For a route on an included allowance nothing is charged,
+   * so ordering two free routes against each other by their list prices ranks them on a number
+   * neither will ever produce. That went from theoretical to live in migration 0248: both Workers AI
+   * models had been priced at 0, and the moment they carried their real published rates the 8B
+   * became "cheaper" than the 70B and won every tie — undoing the tie-break directly above, which
+   * exists because an 8B model once answered a $1B secondary question with "Route to Customer
+   * Service Team".
+   *
+   * `routeIsBilled` reads the same `FREE_ROUTES` constant the guard's own free-tier proof reads, so
+   * there is one statement of which tiers a vendor gives away. Two free routes tie again, and a tie
+   * is decided by capability.
+   */
   const continuity = orderCandidates(
     await loadContinuityModels(db, declaredIds),
-    (m) => estimateCostMicros(m, promptChars, route.max_output_tokens),
+    (m) => {
+      const backendId = WIRING_BY_PROVIDER.get(m.provider_id)?.backendId;
+      if (backendId && !routeIsBilled(backendId, m.slug)) return 0;
+      return estimateCostMicros(m, promptChars, route.max_output_tokens);
+    },
   );
 
   // THE TRADING LANE GETS NO CONTINUITY TIER. PLAN_v21 Stage 1's table says it in
@@ -486,6 +539,26 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   // is judged against the same lever and the same lane budget.
   const lever = await spendLeverState(db);
   const lane = await laneAllowance(db, opts.lane);
+
+  /*
+   * ─── THE PER-RUN CEILING, AND THE ONE WAY OVER IT ──────────────────────────
+   *
+   * `budgets` covers a day and a month and nothing smaller, so until now a single runaway call
+   * could take a third of the ops day before the daily cap noticed — and the daily cap would then
+   * report the damage rather than prevent it. $0.75 by default (0250), matching the sibling repo
+   * and matching the trading lane's whole daily budget.
+   *
+   * THE DEFAULT IS PASSED TO `getNumber`, so an absent or hand-edited row holds the cap rather than
+   * removing it. A setting that cannot be read is not permission.
+   *
+   * A BYPASS MOVES THIS CEILING; IT NEVER REMOVES IT. `bypassFor` returns null for absent, expired,
+   * revoked, malformed, future-dated, or raised-by-anyone-but-the-owner — every one of which leaves
+   * the cap exactly where it was.
+   */
+  const perRunCapDefault = await getNumber(db, "per_run_cap_micros", 750_000);
+  const perRunBypass = await bypassFor(db, "per_run", null);
+  const perRunCap = perRunBypass.active ? perRunBypass.active.amount_micros : perRunCapDefault;
+  let bypassUsed: BypassRow | null = null;
 
   for (const { model, tier } of ordered) {
     const def = WIRING_BY_PROVIDER.get(model.provider_id);
@@ -557,6 +630,56 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       );
       continue;
     }
+
+    /*
+     * ─── THE PER-RUN CEILING, ENFORCED ────────────────────────────────────────
+     *
+     * Checked on the ESTIMATE, before the call, which is the only moment it can do anything. It is
+     * deliberately AFTER the guard: the guard owns the lane, the lever and the backend sub-cap, and
+     * a run that a dollar authority has already refused should be refused in those words rather
+     * than in these.
+     *
+     * A FREE ROUTE IS STILL CHECKED. That looks odd and is correct: `estimate` is now a real figure
+     * for Workers AI (0248 priced it), and "free" here means "inside an allowance a Worker cannot
+     * measure". A generation large enough to breach a per-run ceiling is large enough to be worth
+     * her deciding on, whether or not today's allowance happens to absorb it.
+     *
+     * AND IT PREDICTS. `predictSpend` builds the sentence that names the task, the cap and the
+     * shortfall — her request was to learn a task will exceed a cap BEFORE it stops, so the refusal
+     * carries the prediction rather than a bare "blocked".
+     */
+    if (estimate > perRunCap) {
+      const prediction = predictSpend({
+        what: opts.taskId ? `task ${opts.taskId}` : `${opts.lane} run on ${model.display_name}`,
+        estimateMicros: estimate,
+        perRunCapMicros: perRunCap,
+        dayRemainingMicros: lane.remaining_micros,
+        monthRemainingMicros: null,
+      });
+      note("budget", "rejected", prediction.sentence, { estimate_micros: estimate, free });
+      budgetRefusal = {
+        message: prediction.sentence,
+        remedy: perRunBypass.active
+          ? `A per-run bypass is already in force at ${formatMicros(perRunCap)} and this is over even that. ` +
+            `Raise a larger one, or split the work.`
+          : `Raise a per-run bypass naming an amount, a reason and an expiry, or split the work into ` +
+            `smaller runs. The per-run ceiling is ${formatMicros(perRunCap)}.`,
+      };
+      await logEvent(db, {
+        level: "warn", scope: "router", event: "per_run_cap_would_be_breached", lane: opts.lane,
+        entityId: opts.taskId ?? null,
+        detail: {
+          model_id: model.id, estimate_micros: estimate, cap_micros: perRunCap,
+          over_by_micros: estimate - perRunCap, bypass_id: perRunBypass.active?.id ?? null,
+        },
+      });
+      continue;
+    }
+
+    // Spend that ran under a bypass is stamped, so a month reads as "the budget, plus these
+    // decisions". Recorded when the CALL is made, not when the bypass is read, so a bypass that
+    // existed and was never needed leaves no trace in the ledger.
+    if (perRunBypass.active && estimate > perRunCapDefault) bypassUsed = perRunBypass.active;
 
     // The task's permission envelope binds on top of everything the guard said.
     // It is what a human granted THIS piece of work, not a spending preference.
@@ -657,6 +780,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       lane: opts.lane, routeId: route.route_id, modelId: model.id, backendId: def.backendId,
       employeeId: opts.employeeId, taskId: opts.taskId,
       inTokens: called.inTokens, outTokens: called.outTokens, costMicros, status: "ok",
+      bypassId: bypassUsed?.id ?? null,
       detail: free
         ? `Free route on ${backendName}. ${verdictBackend.cost_basis.basis} ` +
           `A Worker cannot read how much of an included allowance is left, so $0 here is the tier's price and not a measurement.`

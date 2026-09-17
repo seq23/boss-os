@@ -65,6 +65,22 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
     credential: { kind: "binding", name: "AI" },
     adapter: workersAi,
     note: "A binding, so no key and no egress. The included daily allowance makes routine work genuinely $0.",
+    /*
+     * THE PRICES ARE NOT ZERO, AND THE ROUTE IS STILL FREE. Those are two different facts and this
+     * file used to conflate them.
+     *
+     * Cloudflare publishes a real per-token rate for both of these (migration 0248 quotes it, from
+     * the vendor's own token column, cross-checked against the neuron column at $0.011 per 1,000
+     * neurons). What makes a Workers AI call cost nothing is the INCLUDED DAILY ALLOWANCE, which is
+     * a property of the BACKEND — `backends/guard.ts` proves it there, and `routeIsBilled` is the
+     * one statement of it.
+     *
+     * Writing 0 here to mean "free" put a price nobody had checked into the ledger and made the
+     * estimate exactly zero, so the per-run cap, the task envelope and the lane budget had nothing
+     * to compare against and could not have refused a Workers AI call however large it was. These
+     * figures MUST equal the migration's: `validate:free-brain` compares the two lists and fails if
+     * they drift, which is how this was caught.
+     */
     models: [
       {
         // THE SLUG IS `-fp8` BECAUSE THAT IS THE ONE THAT EXISTS. The unquantised
@@ -74,12 +90,12 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
         // script now checks every slug against `wrangler ai models` before writing a row.
         id: "mdl_cf_llama31_8b", slug: "@cf/meta/llama-3.1-8b-instruct-fp8",
         displayName: "Llama 3.1 8B (Workers AI)", capabilityTier: "fast",
-        inMicros1k: 0, outMicros1k: 0, contextTokens: 8192,
+        inMicros1k: 152, outMicros1k: 287, contextTokens: 8192,
       },
       {
         id: "mdl_cf_llama33_70b", slug: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
         displayName: "Llama 3.3 70B (Workers AI)", capabilityTier: "general",
-        inMicros1k: 0, outMicros1k: 0, contextTokens: 24000,
+        inMicros1k: 293, outMicros1k: 2253, contextTokens: 24000,
       },
     ],
   },

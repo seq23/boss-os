@@ -37,6 +37,21 @@ async function commissionFireworks(position: "MODERATE" | "OPEN" = "MODERATE") {
   await env.DB
     .prepare(`UPDATE execution_backends SET status = 'enabled', status_reason = 'commissioned in a test' WHERE id = 'bk_fireworks'`)
     .run();
+  /*
+   * AND THE PROVIDER ITSELF, WHICH THE SEED NO LONGER ENABLES.
+   *
+   * Migration 0247 disabled `prv_fireworks`, because enabling follows the key and there is no
+   * FIREWORKS_API_KEY — production's secrets are BOSS_PASSCODE, BOSS_SESSION_SECRET and
+   * OPENROUTER_API_KEY. `loadModel` and `loadContinuityModels` both join `providers` on
+   * `p.enabled = 1`, so with the shipped seed a Fireworks model is not a candidate at all.
+   *
+   * That is a CONTRACT CHANGE and this is it being written down rather than worked around. Every
+   * test below that wants a paid Fireworks path now has to ask for one explicitly, in both halves —
+   * the backend commissioned AND the provider enabled — which is a fair description of what it
+   * would actually take in production. `theShippedSeedFollowsItsKeys` below asserts the shipped
+   * state directly, so this helper cannot quietly become the thing that hides it.
+   */
+  await env.DB.prepare(`UPDATE providers SET enabled = 1 WHERE id = 'prv_fireworks'`).run();
   await setSpendLever(env.DB, { position }, "test");
 }
 
@@ -186,13 +201,51 @@ describe("Phase 2 — model router", () => {
     expect(decision!.outcome).toBe("ask_human");
   });
 
-  it("lets restricted content through once the card has been approved", async () => {
+  /**
+   * THE CARD STILL WORKS, AND IT NO LONGER WORKS EVERYWHERE — WHICH IS THE POINT.
+   *
+   * This test used to assert only that SOMETHING ran once the card was approved, and it passed on
+   * Fireworks. Migration 0249 recorded what each route's terms actually permit, and the router now
+   * asks that FIRST: restricted content may not reach a route whose terms permit training on it, or
+   * whose terms nothing here could establish, and no card lifts that.
+   *
+   * So the assertion is strengthened rather than relaxed. Both halves are now checked:
+   *
+   *   · the approved card DOES let restricted content onto a cloud route that does not train
+   *     (Workers AI — Cloudflare states it does not train on customer content), and
+   *   · it does NOT let it onto the ones where that could not be established, and the decision log
+   *     says so in those words.
+   *
+   * A test that only checked the first half would pass on the day somebody deleted the second.
+   */
+  it("lets restricted content through on a route that does not train — and onto no other", async () => {
     await commissionFireworks();
-    restore = stubFetch(() => completionResponse("allowed", 10, 10));
-    const result = await routeCompletion(env, {
+    await provisionWorkersAi();
+    const { bound, calls } = withAi("allowed");
+
+    const result = await routeCompletion(bound, {
       ...baseRequest, taskId: "tsk_r8", sensitivity: "restricted", cloudForRestrictedAllowed: true,
     });
-    expect(result.modelId).toBeTruthy();
+
+    // It ran, and it ran on the route whose data-use terms allow it.
+    expect(result.modelId).toMatch(/^mdl_cf_/);
+    expect(calls.length).toBe(1);
+    const permitted = await row<{ data_use: string }>(
+      `SELECT data_use FROM models WHERE id = ?`, result.modelId,
+    );
+    expect(permitted!.data_use).toBe("NO_TRAINING_CONTRACTUAL");
+
+    // And every candidate that could not establish it was refused at privacy, by name.
+    const decision = await row<{ candidates: string }>(
+      `SELECT candidates FROM routing_decisions WHERE task_id = 'tsk_r8'`,
+    );
+    const candidates = JSON.parse(decision!.candidates) as { model_id: string; stage: string; verdict: string; reason: string }[];
+    const trained = candidates.filter((c) => c.reason.includes("training on what is sent"));
+    expect(trained.length).toBeGreaterThan(0);
+    for (const c of trained) {
+      expect(c.stage).toBe("privacy");
+      expect(c.verdict).toBe("rejected");
+    }
   });
 
   it("refuses a model whose estimate exceeds the envelope", async () => {
@@ -229,6 +282,9 @@ describe("Stage 4 — the spend lever governs money, and nothing else", () => {
     // The negative test for the default position. No lever is set, which is the
     // shipped state, and the shipped state is $0.
     await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_fireworks'`).run();
+    // The PROVIDER too, because 0247 disabled it for want of a key — without this there is no paid
+    // candidate left for the lever to refuse, and the test would pass for the wrong reason.
+    await env.DB.prepare(`UPDATE providers SET enabled = 1 WHERE id = 'prv_fireworks'`).run();
     let called = false;
     restore = stubFetch(() => { called = true; return completionResponse("should not run"); });
 
@@ -394,12 +450,25 @@ describe("Stage 4 — availability, and a degraded tier that says so", () => {
 
     const decision = await row(`SELECT candidates FROM routing_decisions WHERE task_id = 'tsk_free70b'`);
     const candidates = JSON.parse(decision!.candidates) as {
-      model_id: string; verdict: string; estimate_micros?: number;
+      model_id: string; verdict: string; estimate_micros?: number; free?: boolean;
     }[];
     const seventy = candidates.find((c) => c.model_id === "mdl_cf_llama33_70b");
     expect(seventy).toBeTruthy();
     expect(seventy!.verdict).toBe("used");
-    expect(seventy!.estimate_micros).toBe(0);
+    /*
+     * PRICED IS NOT BILLED, AND THE DECISION LOG NOW SHOWS BOTH.
+     *
+     * This used to assert the estimate was 0, which was true only because nobody had ever priced
+     * the model. Migration 0248 gave it Cloudflare's own published rate, so the ESTIMATE is a real
+     * list price while the CHARGE is still zero — the call sits inside the included daily
+     * allowance. Those are two different facts and the log is right to carry both.
+     *
+     * Asserting the estimate is non-zero is the stronger claim: it would fail again the day
+     * somebody reverted the price to a placeholder, which is the state 0248 exists to end. The
+     * "costs nothing" half is asserted above on `result.costMicros` and `result.freeTier`.
+     */
+    expect(seventy!.estimate_micros).toBeGreaterThan(0);
+    expect(seventy!.free).toBe(true);
     // The 8B was never called: the better free model got there first.
     expect(calls).not.toContain("@cf/meta/llama-3.1-8b-instruct-fp8");
   });
