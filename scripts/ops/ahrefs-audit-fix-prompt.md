@@ -67,6 +67,26 @@ is how the hand-run that this duty is modelled on actually worked, and it needs 
 4. Then find the SOURCE that emits it — the template, the partial, the assembler's deny-list, the
    generator — and fix it there.
 
+### A CRAWL THAT FAILED IS A FINDING, AND IT IS THE MOST MISLEADING ONE
+
+Some mail is not an issue report at all:
+
+```
+(Spryexecutiveos) Site Audit crawl failed
+(Dentistryguides) Site Audit crawl error
+```
+
+**These carry no error count, and that is exactly the trap.** A site Ahrefs could not crawl reports
+no errors — not because it has none, but because nothing looked. On 17 September 2026 six of the
+twenty-three projects were in this state and a pass that only counted errors would have called all
+six healthy. "Nothing looked" and "nothing was wrong" are opposite facts, which is the same
+distinction this whole duty is built on.
+
+So **every crawl failure or crawl error is reported**, `disposition: "surfaced"`, saying which
+project could not be crawled and that its real error count is unknown rather than zero. Do not try
+to fix it: the cause is usually robots.txt, a block, DNS or an origin that was down, and none of
+those is visible from the repository.
+
 If a class cannot be checked from outside (`Slow page`, `Slow server response for AI crawlers`,
 `Changed pages not submitted to IndexNow`), do not guess at it. Report it `surfaced` with the count
 and say what a person would have to open to see the list.
