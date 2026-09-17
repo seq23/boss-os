@@ -11,7 +11,7 @@ import { rollBudgetWindows, laneBudgetState, employeeBudgetState } from "./budge
 import { WIRING_BY_PROVIDER, adapterCredential, backendKindFor } from "./backends";
 import { formatMicros, spendLeverState } from "./spend";
 import { checkBackend } from "../backends/registry";
-import { laneAllowance, monthWindowStart, type Refusal } from "../backends/guard";
+import { laneAllowance, monthWindowStart, routeIsBilled, type Refusal } from "../backends/guard";
 import {
   MAX_ATTEMPTS_PER_BACKEND, breakerState, recordFailure, recordSuccess, trip,
 } from "./breaker";
@@ -260,8 +260,8 @@ export async function recordUsage(
     db
       .prepare(
         `INSERT INTO usage_ledger (id, ts, lane, route_id, model_id, employee_id, task_id,
-                                   in_tokens, out_tokens, cost_micros, status, detail)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+                                   in_tokens, out_tokens, cost_micros, status, detail, bypass_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         newId("usg"), Date.now(), row.lane, row.routeId, row.modelId,
@@ -471,9 +471,28 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   // with a fact about spelling, for free. `general` outranks `fast` because that is what those words
   // mean, and cost is genuinely unchanged, so nothing here promotes a candidate past an earlier
   // stage: every model in this list has already survived screening on its own merits.
+  /*
+   * AND THE COST IT IS ORDERED BY IS THE COST THAT WILL BE CHARGED.
+   *
+   * `estimateCostMicros` is a list price. For a route on an included allowance nothing is charged,
+   * so ordering two free routes against each other by their list prices ranks them on a number
+   * neither will ever produce. That went from theoretical to live in migration 0248: both Workers AI
+   * models had been priced at 0, and the moment they carried their real published rates the 8B
+   * became "cheaper" than the 70B and won every tie — undoing the tie-break directly above, which
+   * exists because an 8B model once answered a $1B secondary question with "Route to Customer
+   * Service Team".
+   *
+   * `routeIsBilled` reads the same `FREE_ROUTES` constant the guard's own free-tier proof reads, so
+   * there is one statement of which tiers a vendor gives away. Two free routes tie again, and a tie
+   * is decided by capability.
+   */
   const continuity = orderCandidates(
     await loadContinuityModels(db, declaredIds),
-    (m) => estimateCostMicros(m, promptChars, route.max_output_tokens),
+    (m) => {
+      const backendId = WIRING_BY_PROVIDER.get(m.provider_id)?.backendId;
+      if (backendId && !routeIsBilled(backendId, m.slug)) return 0;
+      return estimateCostMicros(m, promptChars, route.max_output_tokens);
+    },
   );
 
   // THE TRADING LANE GETS NO CONTINUITY TIER. PLAN_v21 Stage 1's table says it in

@@ -69,7 +69,11 @@ const SNAPSHOT_TABLES = [
   "approvals", "approval_events",
   "tasks", "task_events", "permission_envelopes", "evidence_packets",
   "employee_reviews",
-  "usage_ledger", "routing_decisions",
+  // `spend_bypass` sits beside the ledger it explains. A bypass is a decision the OWNER made —
+  // this amount, for this reason, until this time — and the ledger rows it authorised carry its id.
+  // Losing it in a rebuild would leave `usage_ledger.bypass_id` pointing at nothing, so a month
+  // that read as "the budget plus three decisions" would silently become an unexplained overrun.
+  "usage_ledger", "routing_decisions", "spend_bypass",
   "memory_items", "promotion_rules", "promotion_events",
   "vault_entries",
   "days", "day_flow_blocks", "open_loops", "gate_entries",

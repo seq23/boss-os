@@ -58,11 +58,26 @@
 -- sources and decides what is true; an 8B model doing it produces something that looks like
 -- research, which is worse than an empty answer because it gets believed.
 --
--- COACHING IS FORBIDDEN ON EVERY MODEL IN THIS DATABASE, including the benchmarked 70B. That is not
--- an omission: `backends.ts` routes coaching DIRECTLY to a frontier backend for that reason, and
--- neither frontier model has a row here (both providers are disabled and neither was provisioned).
--- So coaching correctly has nowhere to run today and says so, rather than quietly landing on the
--- cheapest thing with a pulse — which is precisely what happened on 9 September.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- COACHING, AND THE LINE THAT IS NOT WHERE IT FIRST LOOKED.
+--
+-- The first version of this migration forbade `coaching` on EVERY model here, including the
+-- benchmarked 70B, reasoning that `backends.ts` routes coaching directly to a frontier backend and
+-- neither frontier model has a row in this database. `tests/boss/coaching.test.ts` immediately
+-- showed what that actually does: the morning coaching turn — which runs today, on Workers AI,
+-- confined there by her own consent record — stops working entirely and returns a red light.
+--
+-- THAT IS THE WRONG TRADE AND THE REASONING WAS SLOPPY. The 9 September incident was LLAMA 3.1 8B
+-- answering a coaching turn. It was not the 70B. Forbidding the only capable route that can
+-- currently run takes a working morning routine away and replaces it with nothing — a refusal is
+-- only better than a weak answer when there is a stronger answer to wait for, and here there is
+-- not, because commissioning a frontier backend needs a key the owner has not set.
+--
+-- So the line is drawn at the TIER, which is where the incident actually was. `coaching` is absent
+-- from the fast allowlist, so no 8B and no Gemma can ever take it again — that is the guard the
+-- incident asked for, and it is enforced. The 70B keeps it, and `backends.ts` still prefers a
+-- frontier backend for coaching the moment one is commissioned, which is a routing preference
+-- rather than a prohibition and is the right shape for "use the best available".
 --
 -- Plan: docs/boss/PLAN_v21.md Stage 4. Canon: Sovereignty Addendum §3.1, stage 2 (required
 -- capability), which is the stage these columns are read at.
@@ -81,10 +96,28 @@ WHERE capability_tier = 'fast';
 
 -- ── The general tier: open, minus the work that needs a better brain ─────────
 
+-- `mdl_kimi_k2` — Fireworks, paid, and disabled today for want of a key. Coaching is forbidden here
+-- rather than on the free 70B, because the day a Fireworks key arrives this becomes an eligible
+-- MID-TIER PAID model, and "her interior life, answered by whatever is cheapest and available" is
+-- the exact failure of 9 September with a bill attached. If coaching is to cost money it goes to a
+-- frontier backend, deliberately, which is what `backends.ts` already does.
 UPDATE models SET
   approved_task_kinds  = NULL,
   forbidden_task_kinds = '["coaching"]'
-WHERE id IN ('mdl_cf_llama33_70b', 'mdl_kimi_k2');
+WHERE id = 'mdl_kimi_k2';
+
+-- `mdl_cf_llama33_70b` — the workhorse, and the ONLY general route that can run today: free on a
+-- binding, benchmarked, contractually non-training (0249), and therefore the only model in this
+-- database permitted to hold an LP name.
+--
+-- IT IS OPEN, AND THAT IS A DECISION RATHER THAN AN OMISSION. Naming anything on its denylist would
+-- take capability away with nothing to replace it, because every other general route is disabled or
+-- restricted. The enforcement that matters — judgement work cannot go to a cheap model — is carried
+-- entirely by the fast tier's allowlist above, which is where the failure actually happened.
+UPDATE models SET
+  approved_task_kinds  = NULL,
+  forbidden_task_kinds = NULL
+WHERE id = 'mdl_cf_llama33_70b';
 
 -- OpenRouter's general model carries more than coaching, and the extra entries are the same fact
 -- the confidential line enforces from the other direction. 0249 records this provider as
