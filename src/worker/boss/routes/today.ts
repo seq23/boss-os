@@ -688,7 +688,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
    * Duty health, read here rather than on a cron, so it is true at the moment she looks rather than
    * at the moment something last checked.
    */
-  const [staleDuties, stuckDuties, lastNetworkRefresh, agentBudget, warnSetting] = await Promise.all([
+  const [staleDuties, stuckDuties, auditFindings, lastNetworkRefresh, agentBudget, warnSetting] = await Promise.all([
     reads.all<EmployeeDutyRow>(A || S, () => env.DB.prepare(
       /*
        * `COALESCE(last_run_at, created_at)`, NOT `COALESCE(last_run_at, 0)`.
@@ -744,6 +744,40 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
           AND t.status IN ('queued', 'running')
           AND t.created_at < ? - 86400000`,
     ).bind(Date.now())),
+
+    /*
+     * ── WHAT DANIELLE'S AHREFS PASS FOUND AND COULD NOT FIX ──────────────────
+     *
+     * THE DUTY RUNNING IS NOT THE SAME FACT AS THE WORK BEING DONE, and until this read existed
+     * only the first of those two had a home. `staleDuties` above goes loud when the pass stops
+     * firing; nothing anywhere went loud when it fired, worked correctly, and handed back findings
+     * that need a person. So the moment the pass ran, the duty's alert fell silent and the findings
+     * became invisible — a screen reporting health while the work sat untouched.
+     *
+     * MEASURED, NOT ASSUMED. The first real pass, 17 September 2026, returned two `no_repo` rows:
+     * 118 confirmed errors on porchandparty901.com and 3 on uscisexam.com, neither domain claimed
+     * by any REPO_IDENTITY.md. `GET /site-audit-findings` served them and NO CLIENT SCREEN CALLED
+     * IT — "exists but nothing invokes it", this repository's own named defect, at the delivery end
+     * of a duty whose whole purpose is to be read.
+     *
+     * ONLY THE DISPOSITIONS THAT NEED A HUMAN. `fixed_pr` already produced a pull request she will
+     * see in GitHub, and `none` is a correctly empty pass — alerting on either would train her to
+     * ignore the surface, which is the failure mode this file has been corrected for twice.
+     *
+     * AND IT IS AN ALERT, NEVER A CONTRACT LINE. Her rule, 13 September 2026: "something not
+     * working should never be in today's contract it should be in the inbox."
+     */
+    reads.all<{ disposition: string; n: number; worst_project: string; worst_errors: number | null }>(A, () => env.DB.prepare(
+      `SELECT disposition,
+              COUNT(*) AS n,
+              project AS worst_project,
+              MAX(COALESCE(errors, 0)) AS worst_errors
+         FROM site_audit_findings
+        WHERE archived_at IS NULL
+          AND status = 'new'
+          AND disposition IN ('no_repo', 'surfaced', 'off_limits')
+        GROUP BY disposition`,
+    )),
 
     reads.first<{ ts: number }>(A, () => env.DB.prepare(
       `SELECT ts FROM system_events WHERE event = 'network_refreshed' ORDER BY ts DESC LIMIT 1`,
@@ -1015,6 +1049,42 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
       source_type: "tasks", source_id: d.id,
     });
   }
+  /*
+   * ── AND WHAT THE PASS FOUND THAT SHE HAS TO DECIDE ────────────────────────
+   *
+   * One line per KIND of unfinished business rather than one per finding. A hundred rows would
+   * bury the thirty machinery items already here, and within a kind the next move is identical —
+   * so the count and the worst-hit site are what make it actionable in a glance.
+   *
+   * EACH SENTENCE SAYS WHAT A NON-ENGINEER DOES NEXT. A finding with no next move is an
+   * observation, and an alert that only names a defect class sends her to ask somebody what it
+   * means.
+   */
+  for (const f of auditFindings.results ?? []) {
+    const site = f.worst_project;
+    const many = f.n === 1 ? "" : ` (${f.n} sites in all)`;
+    const errs = (f.worst_errors ?? 0) > 0 ? `${f.worst_errors} errors` : "errors";
+    if (f.disposition === "no_repo") {
+      alerts.push({
+        severity: "high",
+        text: `Danielle found ${errs} on ${site}${many} and no repository claims that domain, so she could not fix it. Tell her which project owns the site, or say it is not one of ours.`,
+        source_type: "tasks", source_id: "duty_site_audit_repair",
+      });
+    } else if (f.disposition === "off_limits") {
+      alerts.push({
+        severity: "medium",
+        text: `Danielle found ${errs} on ${site}${many} in a repository she is not allowed to change while it is being worked on. Somebody working in it has to fix these by hand.`,
+        source_type: "tasks", source_id: "duty_site_audit_repair",
+      });
+    } else {
+      alerts.push({
+        severity: "medium",
+        text: `Danielle found ${errs} on ${site}${many} that she could not safely fix on her own and left for a person to decide.`,
+        source_type: "tasks", source_id: "duty_site_audit_repair",
+      });
+    }
+  }
+
   /*
    * THE BUDGET, WHERE SHE WILL SEE IT.
    *
