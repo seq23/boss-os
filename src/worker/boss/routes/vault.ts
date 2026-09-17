@@ -74,6 +74,12 @@ const SNAPSHOT_TABLES = [
   // Losing it in a rebuild would leave `usage_ledger.bypass_id` pointing at nothing, so a month
   // that read as "the budget plus three decisions" would silently become an unexplained overrun.
   "usage_ledger", "routing_decisions", "spend_bypass",
+  /*
+   * WHAT THE MODELS HAVE ACTUALLY DONE (0253). It is evidence, it is append-only, and it takes
+   * months of real work to accumulate — losing it in a rebuild would reset every model to UNKNOWN
+   * and put the router back to ordering candidates on price alone.
+   */
+  "model_job_outcome",
   "memory_items", "promotion_rules", "promotion_events",
   "vault_entries",
   "days", "day_flow_blocks", "open_loops", "gate_entries",

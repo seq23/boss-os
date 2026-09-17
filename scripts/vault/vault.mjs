@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "n
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { deployTargetWorkerName } from "./deploy-target.mjs";
 
 const VAULT_DIR = join(homedir(), ".west-peek-os", "vault");
 const VAULT_FILE = join(VAULT_DIR, "secrets.vault");
@@ -197,6 +198,7 @@ async function promptSecret(name) {
 
 const VALID_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
 
@@ -313,22 +315,81 @@ async function main() {
       break;
     }
     case "sync:cloudflare": {
-      // Sends specifically mapped secrets to Cloudflare Worker secret storage.
-      // Requires CLOUDFLARE_ACCOUNT_ID (env, non-secret) and CLOUDFLARE_API_TOKEN (vault).
+      /*
+       * SENDS SECRETS TO THIS REPOSITORY'S WORKER, AND PROVES IT IS THIS REPOSITORY'S WORKER.
+       *
+       * ─── WHAT THIS USED TO DO, CONFIRMED BY RUNNING IT ────────────────────────────────────────
+       *
+       * `cloudflare-mapping.json` carried `"worker_name": "west-peek-os"`, and the fallback on the
+       * line that read it was the same string. Run from THIS repository, it wrote eight secrets to
+       * a DIFFERENT APPLICATION — West Peek OS, a separate business — and reported success. It also
+       * silently omitted ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY and PERPLEXITY_API_KEY,
+       * because they are not in `secret_names` and nothing checked the vault for keys the mapping
+       * had never heard of. So a person provisioning Boss OS got no provider keys here and mutated
+       * somebody else's app, and the only signal was a log line naming a worker they were not
+       * thinking about.
+       *
+       * The standing rule is that Boss OS carries West Peek chassis code BY COPY AND DIVERGE, never
+       * by import or extension. This is that boundary leaking through an operational script, which
+       * is the one place the `src/`-only cross-repo scan could not see.
+       *
+       * ─── THE TARGET IS DERIVED FROM wrangler.toml, NOT TYPED ──────────────────────────────────
+       *
+       * A worker name in a JSON file is a second statement of a fact `wrangler.toml` already owns,
+       * and two statements of one fact is how they came to disagree. The deploy profile's `name` is
+       * now the authority; the mapping may still DECLARE it, and a declaration that disagrees is a
+       * hard failure rather than a silent preference for either one.
+       *
+       * ─── AND NO KEY IS EVER SILENTLY SKIPPED ──────────────────────────────────────────────────
+       *
+       * Every name in the vault must be classified: synced (`secret_names`) or deliberately not
+       * (`not_synced`, which requires a written reason each). A key in neither aborts the run and
+       * names itself. An allowlist that can silently omit is not an allowlist, it is a guess.
+       */
       const mappingPath = join(new URL(".", import.meta.url).pathname, "cloudflare-mapping.json");
       if (!existsSync(mappingPath)) fail(`no sync mapping file: ${mappingPath} (names-only mapping required)`);
       const mapping = JSON.parse(readFileSync(mappingPath, "utf8"));
+
+      const workerName = deployTargetWorkerName();
+      if (mapping.worker_name && mapping.worker_name !== workerName) {
+        fail(
+          `mapping names worker "${mapping.worker_name}" and wrangler.toml [env.production] deploys ` +
+          `"${workerName}". Refusing to sync: one of these is another application, and writing secrets ` +
+          `to the wrong one is what this check exists to stop.`,
+        );
+      }
+
       const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
       if (!accountId) fail("CLOUDFLARE_ACCOUNT_ID not set (non-secret env). CREDENTIAL GATE.");
       const key = loadMasterKey();
       const secrets = readVault(key);
       if (!secrets.CLOUDFLARE_API_TOKEN) fail("CLOUDFLARE_API_TOKEN absent from vault. CREDENTIAL GATE.");
-      const workerName = mapping.worker_name ?? "west-peek-os";
+
       const names = mapping.secret_names ?? [];
+      const notSynced = mapping.not_synced ?? {};
       if (names.length === 0) fail("mapping has empty secret_names; nothing to sync.");
+
+      // RULE 0, HERE: a run that classified nothing has done nothing.
+      const held = Object.keys(secrets).sort();
+      if (held.length === 0) fail("the vault holds no keys, so this sync would examine nothing.");
+
+      const unclassified = held.filter((n) => !names.includes(n) && !(n in notSynced));
+      if (unclassified.length) {
+        fail(
+          `the vault holds ${unclassified.length} key(s) the mapping does not classify: ` +
+          `${unclassified.join(", ")}. Add each to secret_names, or to not_synced with a reason. ` +
+          `A key silently omitted is how this Worker came to be missing every provider credential.`,
+        );
+      }
+      for (const [name, reason] of Object.entries(notSynced)) {
+        if (typeof reason !== "string" || reason.trim().length < 12) {
+          fail(`not_synced.${name} has no written reason. An exclusion with no reason is an oversight with a name.`);
+        }
+      }
       for (const name of names) {
         if (!(name in secrets)) fail(`mapped secret ${name} is not in the vault; refusing partial sync.`);
       }
+
       for (const name of names) {
         const res = await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${workerName}/secrets`,
@@ -344,7 +405,10 @@ async function main() {
         if (!res.ok) fail(`Cloudflare secret sync failed for ${name}: HTTP ${res.status}`);
         console.log(`Synced ${name} → Cloudflare worker ${workerName} (value never displayed).`);
       }
-      console.log("Cloudflare secret sync complete.");
+      console.log(
+        `Cloudflare secret sync complete: ${names.length} synced to ${workerName}, ` +
+        `${Object.keys(notSynced).length} held back with a written reason, 0 unclassified.`,
+      );
       break;
     }
     default:

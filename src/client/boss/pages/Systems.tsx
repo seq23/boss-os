@@ -264,6 +264,56 @@ function Costs() {
         <div className="row-sub">MODERATE&rsquo;s allowance is {money(d.lever.moderate_micros)} a month.</div>
       </div>
 
+      {/* ── Where she sits on the gradient, and what it costs her ─────────── */}
+      {/*
+        * SHE SEES THIS WITHOUT ASKING, and it says WHY rather than only what. The band alone is a
+        * word she would have to remember the meaning of; the sentence under it is the arithmetic —
+        * what has been spent, how much of the month has gone, and what that paces to.
+        *
+        * AND IT IS VISIBLE BEFORE IT BITES. `next_rung` is the thing that has not happened yet, so
+        * she learns the system is about to get more careful from this panel rather than from work
+        * quietly getting cheaper. `measured_against` says which figure that rung watches, because
+        * the care rungs read the forecast and the money rungs read what has actually gone.
+        */}
+      <div className="panel">
+        <p className="pillar">
+          Spend gradient — {d.gradient.applies ? d.gradient.band : `not applied at ${d.lever.position}`}
+        </p>
+        <div className="row-sub">{d.gradient.where_and_why}</div>
+        <div className="row-sub">{d.gradient.costs_you}</div>
+        {d.gradient.notice && (
+          <div className="notice" style={{ borderColor: "var(--gold)" }}>{d.gradient.notice}</div>
+        )}
+        <dl className="kv">
+          <dt>Spent this month</dt><dd>{money(d.gradient.month_spent_micros)}</dd>
+          <dt>Month elapsed</dt><dd>{d.gradient.month_elapsed_pct}%</dd>
+          <dt>On course for</dt><dd>{money(d.gradient.paced_month_end_micros)} by month end</dd>
+          {d.gradient.next_rung && (
+            <>
+              <dt>Next rung</dt>
+              <dd>
+                {money(d.gradient.next_rung.away_micros)} away — at {money(d.gradient.next_rung.at_micros)}
+                {d.gradient.next_rung.measured_against === "paced_month_end" ? " of the paced total" : " actually spent"},
+                {" "}{d.gradient.next_rung.what_changes}
+              </dd>
+            </>
+          )}
+        </dl>
+        <div className="row-sub">{d.gradient.governs}</div>
+      </div>
+
+      {/* ── What the models have actually done, and how little that is yet ── */}
+      {/*
+        * THE HONEST LIMIT, ON THE SCREEN. A panel that showed a preference without showing that the
+        * preference rests on nothing would be manufacturing exactly the paper confidence this
+        * replaces. The sentence says how many runs it needs before it starts helping.
+        */}
+      <div className="panel">
+        <p className="pillar">What the models have actually done</p>
+        <div className="row-sub">{d.model_evidence.sentence}</div>
+        <div className="row-sub">{d.model_evidence.governs}</div>
+      </div>
+
       {/* ── The cost mode, which is a different question ──────────────────── */}
       <div className="panel">
         <p className="pillar">Cost mode — {d.cost_mode.value}</p>

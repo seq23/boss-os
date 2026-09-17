@@ -11,6 +11,11 @@ import { COST_MODES, COST_MODE_POLICY, isCostMode } from "../../../shared/boss/g
 import { pendingApprovals } from "../approvals/pending";
 import { spendLeverState, SPEND_LEVER_POSITIONS } from "../router/spend";
 import {
+  GRADIENT_CAUTIOUS_MICROS, GRADIENT_CHEAPER_MICROS, GRADIENT_HARD_STOP_MICROS,
+  GRADIENT_NOTIFY_MICROS, gradientState, notifySentence,
+} from "../router/gradient";
+import { sufficiency } from "../router/experience";
+import {
   planState, setPlan, PLAN_TIERS, COST_BASIS_NOTE, spendSentence,
   type SpendKind, type CostBasis,
 } from "../router/plan";
@@ -425,7 +430,71 @@ system.get("/costs", async (c) => {
 
   const mode = (await getSetting(c.env.DB, "cost_mode")) ?? "NORMAL";
 
+  /*
+   * ─── WHERE SHE SITS ON THE GRADIENT, AND WHAT IT IS COSTING HER ───────────
+   *
+   * Her requirement was not "a number somewhere". It was that she sees, without asking: the lever
+   * position, where she is on the gradient AND WHY, what it currently costs her in capability, and
+   * — approaching a threshold — that it is coming BEFORE it bites. A control that only announces
+   * itself at the moment it stops work is a control she meets as an obstacle.
+   *
+   * THE LADDER IS RETURNED WITH IT rather than left implicit in a band name, so the screen can draw
+   * the rungs and mark where she is rather than printing a word she has to remember the meaning of.
+   */
+  const gradient = await gradientState(c.env.DB, lever.position);
+  const evidence = await sufficiency(c.env.DB);
+
+  const nextRung = [
+    { at: GRADIENT_CHEAPER_MICROS, paced: true, label: "cheaper choices" },
+    { at: GRADIENT_CAUTIOUS_MICROS, paced: true, label: "free-first, paid for protected work only" },
+    { at: GRADIENT_NOTIFY_MICROS, paced: false, label: "you are notified, with the bypass decision" },
+    { at: GRADIENT_HARD_STOP_MICROS, paced: false, label: "hard stop, bypass available" },
+  ].find((r) => (r.paced ? gradient.pacedMicros : gradient.spentMicros) < r.at) ?? null;
+
   return ok(c, {
+    gradient: {
+      applies: gradient.applies,
+      band: gradient.band,
+      month_spent_micros: gradient.spentMicros,
+      month_elapsed_pct: Math.round(gradient.elapsed * 100),
+      elapsed_floored: gradient.elapsedFloored,
+      paced_month_end_micros: gradient.pacedMicros,
+      austerity: gradient.austerity,
+      paid_ceiling_factor: gradient.paidCeilingFactor,
+      notify: gradient.notify,
+      hard_stop: gradient.hardStop,
+      where_and_why: gradient.sentence,
+      costs_you: gradient.capabilityCost,
+      /*
+       * APPROACHING A RUNG IS VISIBLE BEFORE IT BITES. `next_rung` is what has not happened yet and
+       * how far away it is, in the same units as the figure beside it.
+       */
+      next_rung: nextRung
+        ? {
+            at_micros: nextRung.at,
+            measured_against: nextRung.paced ? "paced_month_end" : "raw_month_to_date",
+            away_micros: Math.max(0, nextRung.at - (nextRung.paced ? gradient.pacedMicros : gradient.spentMicros)),
+            what_changes: nextRung.label,
+          }
+        : null,
+      notice: gradient.notify ? notifySentence(gradient) : null,
+      ladder_micros: {
+        cheaper: GRADIENT_CHEAPER_MICROS,
+        cautious: GRADIENT_CAUTIOUS_MICROS,
+        notify: GRADIENT_NOTIFY_MICROS,
+        hard_stop: GRADIENT_HARD_STOP_MICROS,
+      },
+      governs:
+        "How careful to be with money, measured against how much of the month has gone. It runs only inside " +
+        "MODERATE, it never moves the lever, and it never touches protected work — that keeps a capable model " +
+        "or stops and says so.",
+    },
+    model_evidence: {
+      ...evidence,
+      governs:
+        "Which models have actually done which jobs, by (task kind, model). An unproven model is UNKNOWN, not " +
+        "good, and unknown never wins work that matters.",
+    },
     lever: {
       position: lever.position,
       positions: SPEND_LEVER_POSITIONS,

@@ -27,6 +27,8 @@ import { unansweredQuestionAlerts } from "../intake/questions";
 import { credentialAlerts } from "../today/credentials";
 import { diary } from "../today/diary";
 import { alertKey, applyDismissals, dedupeAlerts, dismissalsStatement } from "../today/alerts";
+import { gradientState, notifySentence } from "../router/gradient";
+import { spendLeverState } from "../router/spend";
 import {
   groupErrorEvents,
   errorAlertText,
@@ -989,6 +991,15 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
     alertReads.flush(),
   ])).slice(0, 4) as { severity: string; text: string; source_type: string; source_id: string | null }[][];
   for (const list of produced) alerts.push(...list);
+
+  /*
+   * WHERE THE MONTH SITS ON HER SPEND LADDER. Read here, next to the other producers, and only when
+   * the alerts block is wanted. It reads the lever first because the gradient's own answer depends
+   * on it: at FREE_ONLY and OPEN the gradient does not apply, and claiming it does would be telling
+   * her the system is being careful when she has told it not to be.
+   */
+  const spendLever = A ? await spendLeverState(db) : null;
+  const spendGradient = spendLever ? await gradientState(db, spendLever.position) : null;
   /*
    * A DEAD LOGIN IS A CRITICAL ALERT, NOT A LOG LINE.
    *
@@ -1119,6 +1130,36 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
         source_type: "tasks", source_id: "bk_claude_code",
       });
     }
+  }
+
+  /*
+   * ─── HER $50 LINE, AND THE DECISION THAT COMES WITH IT ────────────────────
+   *
+   * Her ladder: at $50 she is NOTIFIED, with the bypass decision in front of her; at $75 it stops.
+   * A notice that only says "you have spent $52" is a fact she then has to go and do something
+   * about; `notifySentence` carries the amount, the stop it is heading for, and the one instrument
+   * that moves it, so the decision arrives with the news.
+   *
+   * AND APPROACHING IT IS VISIBLE BEFORE IT BITES. The medium line fires once the month is PACING
+   * past the cautious rung — that is the gradient tightening on its own, and she should learn it
+   * from this screen rather than from work quietly getting cheaper.
+   *
+   * THE LEVER IS READ, NOT ASSUMED. At OPEN the gradient does not apply and saying "the system is
+   * being careful" would be false; the money lines still fire, because money is money at every
+   * lever position.
+   */
+  if (spendGradient && (spendGradient.notify || spendGradient.hardStop)) {
+    alerts.push({
+      severity: spendGradient.hardStop ? "critical" : "high",
+      text: notifySentence(spendGradient),
+      source_type: "tasks", source_id: "spend_gradient",
+    });
+  } else if (spendGradient?.applies && spendGradient.band === "CAUTIOUS") {
+    alerts.push({
+      severity: "medium",
+      text: `${spendGradient.sentence} ${spendGradient.capabilityCost}`,
+      source_type: "tasks", source_id: "spend_gradient",
+    });
   }
 
   /*

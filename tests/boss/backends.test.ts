@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { afterEach, describe, expect, it } from "vitest";
 import { all, api, apiJson, insertApproval, insertTask, row, uid } from "./helpers";
 import { executeDecision, type ApprovalRow } from "../../src/worker/boss/approvals/execute";
-import { spendLeverState, type SpendLeverState } from "../../src/worker/boss/router/spend";
+import { setSpendLever, spendLeverState, type SpendLeverState } from "../../src/worker/boss/router/spend";
 import {
   ROUTE_ORDER,
   checkBackend,
@@ -635,6 +635,17 @@ describe("Stage 1 — eligibleFor", () => {
     await forceEnable("bk_openrouter");
     await forceEnable("bk_fireworks");
 
+    /*
+     * THE LEVER IS SET, NOT INHERITED — a contract change from migration 0253, written down rather
+     * than worked around. `settings.spend_lever` had never been seeded, so this test's posture came
+     * from an ABSENCE that `spendLeverState` resolved to FREE_ONLY. 0253 seeds the live default as
+     * MODERATE, because an unseeded row meant every paid backend commissioned in 0247 was
+     * unreachable and nothing said so. The fail-closed CODE default is unchanged and still
+     * FREE_ONLY. A test about the FREE_ONLY posture now asks for it, which is also what production
+     * would take.
+     */
+    await setSpendLever(env.DB, { position: "FREE_ONLY" }, "test");
+
     const result = await eligibleFor(env as any, "research", { model: "x/y:free" });
     expect(result.task_kind_known).toBe(true);
     expect(result.lever.position).toBe("FREE_ONLY");
@@ -674,6 +685,12 @@ describe("Stage 1 — eligibleFor", () => {
 
 describe("Stage 1 — /api/backends", () => {
   it("lists the registry with readiness, the lever and the route order, and no secret", async () => {
+    /*
+     * THE SEEDED LIVE DEFAULT IS MODERATE (migration 0253), and this asserts it rather than
+     * asserting the absence that used to stand in for it. The endpoint's job here is to REPORT the
+     * position, not to have a particular one; the fail-closed resolution of an unreadable value is
+     * asserted directly by "resolves an absent, empty, unrecognised or mis-cased position" above.
+     */
     const res = await api("/api/backends");
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -681,7 +698,7 @@ describe("Stage 1 — /api/backends", () => {
 
     const body = JSON.parse(text);
     expect(body.data.backends).toHaveLength(7);
-    expect(body.data.lever.position).toBe("FREE_ONLY");
+    expect(body.data.lever.position).toBe("MODERATE");
     // Five route-order criteria, which is a different five and does not move.
     expect(body.data.route_order).toHaveLength(5);
     for (const b of body.data.backends) {
