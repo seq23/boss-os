@@ -646,11 +646,19 @@ lint_plist "$MAILBOX_PLIST"
 launchctl load "$MAILBOX_PLIST"
 echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
 
-# ─── Danielle's monthly Ahrefs audit pass ────────────────────────────────────
+# ─── Danielle's weekly Ahrefs audit pass ─────────────────────────────────────
 #
-# MONTHLY, per her instruction of 13 Sep 2026: "fix it so danielle does this ahref sweep on a
-# schedule (1x per month is fine)". The duty row carries the cadence (migration 0232); this fires
-# the tick that asks whether it is due.
+# WEEKLY ON THURSDAY, per her instruction of 17 Sep 2026: "fix danielle so she fixes the shit and
+# does it on a schedule that makes sense". That supersedes "1x per month is fine" of 13 Sep, which
+# was a fair trade made before any arrival data existed. The data now does: the first pass ever to
+# complete reported 48 Site Audit mails across 23 projects in 14 days, and error counts that move
+# week on week (porchandparty901: 331 -> 118). A monthly pass grades a crawl already superseded
+# three times.
+#
+# THE DUTY ROW CARRIES THE CADENCE (migration 0246, which replaced 0232's monthly). This plist
+# fires the DAILY tick that asks whether it is due - and that is the part that must not be read as
+# the schedule. The cadence lives in one place, next_due_at, so there is no second clock here to
+# fall out of step with it.
 #
 # 06:00 CENTRAL, AND THE HOUR IS DERIVED. Every Site Audit mail from sa@ahrefs.com was timed before
 # this was chosen: Thu 27 Aug 02:20-02:31 UTC, Thu 3 Sep 01:07-03:58, Thu 10 Sep 01:07-02:42.
@@ -669,14 +677,16 @@ echo "Installed $MAILBOX_LABEL — Sunday 18:30 Central."
 # A StartCalendarInterval naming ONE moment a week had one chance to fire, and it looks identical
 # whether it is waiting or dead. She runs a laptop that sleeps on battery. launchd does re-fire a
 # missed calendar entry when the machine WAKES, so ordinary sleep was already covered - but a
-# machine shut down through the moment loses the whole period, and at a monthly cadence that is a
-# month, from a job whose whole value is that it keeps happening.
+# machine shut down through the moment loses the whole period, from a job whose whole value is that
+# it keeps happening. That was a month under 0232's monthly cadence and is a week under 0246's; the
+# hazard is the ONE-CHANCE-TO-FIRE SHAPE, not the length of the period, which is why returning to
+# weekly does not bring it back.
 #
 # So the entry fires EVERY DAY at 06:00 and `duty-run.sh --only-if-due` asks the duty row whether
 # there is work. `next_due_at` is the only clock, so there is no second schedule to drift. On
-# twenty-nine days out of thirty the tick exits 0 in under a second having deliberately done
-# nothing AND SAID SO in its log; on the day the work is due, it runs. A missed day now costs a day
-# instead of a month, and a day that launchd misses entirely is picked up by tomorrow's.
+# six days out of seven the tick exits 0 in under a second having deliberately done nothing AND
+# SAID SO in its log; on the day the work is due, it runs. A missed day now costs a DAY instead of
+# the whole period, and a day that launchd misses entirely is picked up by tomorrow's.
 #
 # AN UNREACHABLE BOSS OS IS A FAILURE, NOT A SKIP - duty-due.mjs exits 10 for "not due" and
 # something else for "could not tell", and the wrapper keeps them apart. Conflating them would let
@@ -725,7 +735,7 @@ AHREOF
 launchctl unload "$AHREFS_PLIST" 2>/dev/null || true
 lint_plist "$AHREFS_PLIST"
 launchctl load "$AHREFS_PLIST"
-echo "Installed $AHREFS_LABEL — daily 06:00 Central tick, monthly work (asks the duty row)."
+echo "Installed $AHREFS_LABEL — daily 06:00 Central tick, weekly Thursday work (asks the duty row)."
 
 # ─── Monique's LP reply digest ───────────────────────────────────────────────
 #
