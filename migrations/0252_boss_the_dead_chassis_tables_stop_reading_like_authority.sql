@@ -38,24 +38,36 @@
 -- ═════════════════════════════════════════════════════════════════════════════
 -- WHAT THE FENCE ACTUALLY IS, because "marked dead" in a comment is not a fence.
 --
--- A · THE NUMBERS STOP READING AS PERMISSION. A new policy row supersedes the stale one at the
---     most restrictive posture the chassis's own enum allows, with both caps at zero. The table is
---     append-only by trigger, so superseding is the mechanism it was built for — and the $25 row
---     stays visible beneath the row that retired it, which an edit would have destroyed.
+-- A · THE ROW SAYS WHOSE LANE IT GOVERNS. A new policy row supersedes the stale one and carries the
+--     whole statement in `set_by`, which is the field a human reads beside the numbers. The table
+--     is append-only by trigger, so superseding is the mechanism it was built for — and the
+--     original row stays visible beneath it, which an edit would have destroyed.
 --
---     Zero is the honest posture for a code path nothing reaches: production serves only
---     boss.sequoiataylor.com (`BOSS_HOSTS` in `src/client/main.tsx`), so the chassis AI lane is
---     unreachable there, and a dead lane that would refuse is strictly better than a dead lane
---     advertising $25.
+--     THE NUMBERS ARE UNCHANGED, AND THAT IS A CORRECTION TO THIS MIGRATION'S FIRST DRAFT.
 --
---     IT CHANGES NO TEST. Every chassis suite that exercises budget policy inserts its OWN row
---     (`tests/aiSpend.test.ts`, `tests/intelligence.test.ts`, `tests/notifications.test.ts` and
---     others all do) rather than relying on the seed, which is how they were able to test the
---     modes at all.
+--     The first draft retired the lane outright: CRITICAL_ONLY with both caps at zero, on the
+--     reasoning that production serves only boss.sequoiataylor.com (`BOSS_HOSTS` in
+--     `src/client/main.tsx`) so the chassis AI lane is unreachable there and a dead lane ought to
+--     refuse. It also claimed, without checking, that this "changes no test".
 --
--- B · `set_by` SAYS WHAT THE ROW IS. It is an informational column — nothing branches on it — and
---     it is the field a human reads beside the numbers. The superseding row states its status in
---     words there, so somebody querying this table directly is told before they act on it.
+--     BOTH HALVES WERE WRONG AND THE SUITES SAID SO. Seven chassis unit suites call `runAi` under
+--     the seeded policy, and `p4-ai` and `p14-mp-home` — two of the 129 E2E journeys that are the
+--     regression suite for the chassis's REMOVAL — drive the governed-run path end to end and went
+--     red. Disabling a lane whose regression suite still exercises it is dismantling the
+--     scaffolding while standing on it, which is the exact argument this migration makes two
+--     paragraphs above for not dropping the tables. Making it and then doing it anyway was the
+--     error.
+--
+--     So the fence is a LABEL AND A BOUNDARY, not a behaviour change. Retiring the chassis lane is
+--     a real decision and it belongs with the chassis's removal, where its journeys can be retired
+--     in the same commit. What stops the misreading meanwhile is (B) and (C) below, and neither of
+--     them needs the lane switched off.
+--
+-- B · `set_by` SAYS WHOSE LANE IT IS. It is an informational column — nothing in either half of
+--     this Worker branches on it — so it can carry a paragraph without changing any behaviour, and
+--     it is the field a human reads beside the numbers. Somebody querying this table directly is
+--     told what they are looking at before they act on it, which is the whole of the misreading
+--     this migration exists to end.
 --
 -- C · AND A REGISTERED VALIDATOR KEEPS BOSS OS OUT. `scripts/validate/a-dead-table-is-not-an-authority.mjs`
 --     hard-fails if anything under `src/worker/boss/` or `src/client/boss/` touches
@@ -92,13 +104,16 @@
 INSERT OR IGNORE INTO budget_policy
   (id, firm_scope, cost_mode, privacy_mode, daily_cap_usd, per_run_cap_usd, set_by, created_at)
 VALUES
-  ('bp_west_peek_lane_retired', 'west-peek', 'CRITICAL_ONLY', 'LOCKDOWN', 0, 0,
-   'DEAD LANE — West Peek chassis policy, not Boss OS governance. Boss OS spends against `budgets`, '
-   || '`models` and `usage_ledger`; this table governs the inherited chassis lane, which production '
-   || 'cannot reach (BOSS_HOSTS in src/client/main.tsx serves only boss.sequoiataylor.com). The '
-   || 'superseded row read $25/day and $2/run from clone time while the live ops lane was $1.75/day, '
-   || 'which is the misreading this retires. Set to the most restrictive posture the enum allows so '
-   || 'a dead lane refuses rather than advertising money. See migration 0252.',
+  ('bp_west_peek_lane_labelled', 'west-peek', 'NORMAL', 'LOCKDOWN', 25, 2,
+   'WEST PEEK CHASSIS LANE — NOT BOSS OS GOVERNANCE. Boss OS spends against `budgets`, `models` and '
+   || '`usage_ledger`, and its ops lane is $1.75/day and $52.50/month; this table governs the '
+   || 'inherited chassis lane only, which production cannot reach (BOSS_HOSTS in '
+   || 'src/client/main.tsx serves boss.sequoiataylor.com alone). The $25/day and $2/run carried here '
+   || 'are the chassis''s own figures and are LEFT UNCHANGED on purpose: the chassis''s 129 E2E '
+   || 'journeys are the regression suite for its removal and two of them drive this lane, so '
+   || 'switching it off ahead of that removal would break the suite that has to prove the removal was '
+   || 'clean. Reading these numbers as Boss OS''s is the mistake; `scripts/validate/a-dead-table-is-not-an-authority.mjs` '
+   || 'is what stops any Boss OS code making it. See migration 0252.',
    strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 
 -- The airlock classifies every table and refuses an unclassified one (v20.1 §11). These four have

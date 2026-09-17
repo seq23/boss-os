@@ -191,43 +191,6 @@ export async function createTestDb(): Promise<TestDb> {
     throw new Error(`test database is at ${current?.name ?? "no migration"}, expected ${latestMigrationName()}`);
   }
 
-  /*
-   * ─── THE CHASSIS LANE GETS ITS OWN BUDGET, EXPLICITLY, INSTEAD OF INHERITING ONE ─────────────
-   *
-   * Migration 0252 retired the seeded `budget_policy` row. It had read $25/day and $2/run since the
-   * clone, while the ops lane the Boss OS router actually enforces is $1.75/day, and a reader
-   * checking "what may this spend" against the wrong table was out by an order of magnitude. The
-   * retirement supersedes it at CRITICAL_ONLY with both caps at zero, which is the honest posture
-   * for a lane production cannot reach (`BOSS_HOSTS` serves only boss.sequoiataylor.com).
-   *
-   * Seven chassis suites turned out to depend on that permissive seed WITHOUT SAYING SO — evidence,
-   * intelligence, meetings, workPackets and workforce all call `runAi` and none of them had ever
-   * stated what budget they expected to run under. That is a hidden dependency and this is it being
-   * made visible: the chassis harness now grants the chassis lane its own budget, in one place, so
-   * a suite exercising chassis AI is doing it under a policy somebody wrote down.
-   *
-   * IT IS A FIXTURE AND NOT A DEFAULT. It exists only inside the test harness; nothing ships it, and
-   * production's latest policy row remains the retirement. `budget_policy` is append-only by
-   * trigger, so this is inserted as a later row rather than an edit — the same mechanism 0252 uses.
-   *
-   * AND IT IS DATED `now`, NOT THE FUTURE. A first attempt used `now, '+1 day'` to be sure it won,
-   * and it won too well: the suites that DO write their own policy row — `ai.test.ts` exercises
-   * CHEAPO, CRITICAL_ONLY, STRATEGIC_SURGE and the cap refusals — were overridden by this fixture
-   * and forty tests went red. Readers take the latest row, so a fixture that has to outrank a
-   * migration must sit between the migration and the test, never beyond both. `now` at harness time
-   * is after the migration and before any test body, and a same-millisecond tie with the migration
-   * falls to the higher rowid, which is this one.
-   */
-  await db
-    .prepare(
-      `INSERT INTO budget_policy
-         (id, firm_scope, cost_mode, privacy_mode, daily_cap_usd, per_run_cap_usd, set_by, created_at)
-       VALUES ('bp_test_harness', 'west-peek', 'NORMAL', 'LOCKDOWN', 25, 2,
-               'test harness — the chassis lane runs under a stated budget rather than a seeded one. See 0252.',
-               strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
-    )
-    .run();
-
   return { mf, db, docs, dir };
 }
 
