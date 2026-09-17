@@ -76,8 +76,23 @@ export async function theRealBuildPrompt() {
   return mod.buildPrompt;
 }
 
-/** A task row with no template, which is what every mail-driven task is. */
-const NO_TEMPLATE_ENV = { DB: { prepare: () => ({ bind: () => ({ first: async () => null }) }) } };
+/**
+ * A task row with no template, which is what every mail-driven task is.
+ *
+ * `all` returns no rows because this guard is about HER WORDS, not about the firmwide notices that
+ * now ride in front of them — those have their own guard in
+ * `scripts/validate/a-notice-reaches-the-employee.mjs`. A double that served notices here would
+ * make every assertion below pass on text this file is not checking.
+ */
+const NO_TEMPLATE_ENV = {
+  DB: {
+    prepare: () => ({
+      bind: () => ({ first: async () => null, all: async () => ({ results: [] }) }),
+      first: async () => null,
+      all: async () => ({ results: [] }),
+    }),
+  },
+};
 
 /**
  * The shapes this system actually admits, read out of the source that writes them rather than

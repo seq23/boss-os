@@ -31,6 +31,13 @@ const SNAPSHOT_TABLES = [
    * a book with a dangling reference and no provenance.
    */
   "boss_inbound_mail",
+  /*
+   * THE FIRM'S STANDING NOTICES. Every employee reads these at the top of every run, so a restore
+   * that brought the employees back without them would rebuild a firm whose staff had been told
+   * nothing — and it would look completely normal, because a prompt with no notice block in it
+   * reads exactly like a prompt that never had one.
+   */
+  "boss_notices",
   "capital_book",
   "capital_book_line",
   /*

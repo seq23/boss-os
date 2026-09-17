@@ -342,3 +342,41 @@ governance.post("/learning", async (c) => {
     .run();
   return ok(c, await c.env.DB.prepare(`SELECT * FROM learning_entries WHERE id = ?`).bind(id).first(), 201);
 });
+
+// ─── Firmwide notices ─────────────────────────────────────────────────────────
+//
+// Posted here because this IS the admin/governance surface — the mode card, the protected actions,
+// the playbooks and the learning ledger all live on it, and a notice about how the firm works
+// belongs beside them rather than in a new top-level section of its own.
+//
+// WHAT MAKES THIS NOT DECORATION is not on this page: `queue/consumer.ts` `buildPrompt` reads the
+// same table on every employee run, and `scripts/validate/a-notice-reaches-the-employee.mjs`
+// proves it. Writing here changes what every employee is told, immediately and without a deploy.
+
+governance.get("/notices", async (c) => {
+  const rows = await c.env.DB
+    .prepare(`SELECT id, title, body, author, created_at FROM boss_notices ORDER BY created_at ASC, id ASC`)
+    .all();
+  return ok(c, {
+    notices: rows.results ?? [],
+    note:
+      "Every employee reads these at the top of every run. A notice describes how the firm already " +
+      "works; it does not create policy on its own, and where code enforces the same rule, both stay.",
+  });
+});
+
+governance.post("/notices", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const title = requiredText(b?.title, "A title");
+  const body = requiredText(b?.body, "The notice itself");
+  // An anonymous standing instruction is the shape this firm refuses everywhere else.
+  const author = requiredText(b?.author, "Who is posting it");
+  const id = newId("fnt");
+  const now = Date.now();
+  await c.env.DB
+    .prepare(`INSERT INTO boss_notices (id, title, body, author, created_at) VALUES (?,?,?,?,?)`)
+    .bind(id, title, body, author, now)
+    .run();
+  await audit(c.env.DB, { actor: "boss", lane: "ops", entityType: "firm_notice", entityId: id, action: "posted", detail: { title, author } });
+  return ok(c, await c.env.DB.prepare(`SELECT * FROM boss_notices WHERE id = ?`).bind(id).first(), 201);
+});
