@@ -7,6 +7,7 @@ import { getSetting } from "../lib/settings";
 import { loadEnvelope } from "../intake/envelope";
 import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure } from "../router";
 import { dispatchRunForTask } from "../backends/dispatch";
+import { firmNoticeBlock } from "../prompt/notices";
 
 /**
  * Workers cap CPU per request, so employee work never runs inside an HTTP
@@ -253,6 +254,30 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
  * rewrite that reads the key and drops it on the floor.
  */
 export async function buildPrompt(env: Env, task: any, input: Record<string, any>): Promise<string> {
+  /*
+   * ─── THE FIRM'S STANDING NOTICES GO IN FRONT OF EVERY EMPLOYEE RUN ─────────
+   *
+   * THIS IS THE ONE INSERTION POINT, and it is here rather than on the system message on purpose.
+   * Both run paths in this file go through `buildPrompt`: the cloud router above, and
+   * `dispatchRunForTask` for work that runs on her Mac — and the dispatch path has no system
+   * message at all. Putting the notices on the system message would have reached exactly half the
+   * employees, which is the "two components each keeping their own list" defect this repository
+   * names most often.
+   *
+   * It is deliberately NOT wrapped in a try/catch. An employee running without the firm's standing
+   * instructions, quietly, is worse than a task that fails saying the notices could not be read.
+   *
+   * Proven by `scripts/validate/a-notice-reaches-the-employee.mjs`, which calls this function for
+   * real rather than grepping this file for a name.
+   */
+  const notices = await firmNoticeBlock(env.DB);
+  const withNotices = (instruction: string) => (notices ? `${notices}\n\n${instruction}` : instruction);
+
+  return withNotices(await buildInstruction(env, task, input));
+}
+
+/** The task's own words: its template, its prompt, or the body she mailed in. */
+async function buildInstruction(env: Env, task: any, input: Record<string, any>): Promise<string> {
   if (task.template_id) {
     const tpl = await env.DB
       .prepare(`SELECT prompt FROM task_templates WHERE id = ? AND enabled = 1`)

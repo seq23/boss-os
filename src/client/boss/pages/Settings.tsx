@@ -559,15 +559,18 @@ function Governance() {
   const [playbooks, setPlaybooks] = useState<any | null>(null);
   const [dependency, setDependency] = useState<any | null>(null);
   const [maintenance, setMaintenance] = useState<any | null>(null);
+  const [notices, setNotices] = useState<any | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
   function load() {
     Promise.all([
       api.modeCard(), api.governanceState(), api.complianceFlags(),
-      api.playbooks(), api.antiDependency(), api.maintenance(),
+      api.playbooks(), api.antiDependency(), api.maintenance(), api.firmNotices(),
     ])
-      .then(([c, s, f, p, d, m]) => { setCard(c); setState(s); setFlags(f); setPlaybooks(p); setDependency(d); setMaintenance(m); })
+      .then(([c, s, f, p, d, m, n]) => {
+        setCard(c); setState(s); setFlags(f); setPlaybooks(p); setDependency(d); setMaintenance(m); setNotices(n);
+      })
       .catch(setError);
   }
   useEffect(load, []);
@@ -669,6 +672,33 @@ function Governance() {
       ))}
       {dependency && <p className="row-sub">{dependency.verdict}</p>}
 
+      <p className="eyebrow">Firmwide notices</p>
+      <div className="panel">
+        <p className="row-sub">
+          {notices?.note ??
+            "Every employee reads these at the top of every run."}
+        </p>
+      </div>
+      {notices && (notices.notices ?? []).length === 0 ? (
+        /*
+         * HONESTLY EMPTY. No placeholder notice, no sample text. A seeded filler would read as
+         * firm policy to every employee on every run, which is the one thing a noticeboard must
+         * never do.
+         */
+        <div className="row-sub">No notices have been posted. Employees run without any.</div>
+      ) : (
+        (notices?.notices ?? []).map((n: any, i: number) => (
+          <details key={n.id}>
+            <summary className="docket-more" style={{ cursor: "pointer" }}>{i + 1}. {n.title}</summary>
+            <div className="docket-full">
+              <div className="row-sub" style={{ whiteSpace: "pre-wrap" }}>{n.body}</div>
+              <div className="row-sub">{n.author} · {new Date(n.created_at).toLocaleDateString()}</div>
+            </div>
+          </details>
+        ))
+      )}
+      <NoticeComposer onPosted={load} />
+
       <p className="eyebrow">Maintenance</p>
       {(maintenance?.items ?? []).map((m: any) => (
         <div className="row" key={m.key}>
@@ -684,5 +714,48 @@ function Governance() {
         </div>
       ))}
     </>
+  );
+}
+
+/**
+ * Posting a notice. Three fields, because a notice is three things: a title, the notice itself,
+ * and who is standing behind it. Everything else a noticeboard usually grows — versions,
+ * acknowledgements, expiry, categories, who it targets — was deliberately not built.
+ *
+ * WHAT THIS BUTTON ACTUALLY DOES, which is the reason it is worth having: the text typed here is
+ * read by `queue/consumer.ts` `buildPrompt` on the next employee run, cloud or Mac, with no deploy
+ * in between.
+ */
+function NoticeComposer({ onPosted }: { onPosted: () => void }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [author, setAuthor] = useState("Sequoia Taylor");
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function postIt() {
+    setBusy(true); setError(null);
+    try {
+      await api.postFirmNotice({ title, body, author });
+      setTitle(""); setBody("");
+      onPosted();
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="panel">
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+      <label className="field"><span>Title</span>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+      <label className="field"><span>The notice — plain language an employee can act on</span>
+        <textarea rows={4} value={body} onChange={(e) => setBody(e.target.value)} /></label>
+      <label className="field"><span>Posted by</span>
+        <input value={author} onChange={(e) => setAuthor(e.target.value)} /></label>
+      <button className="btn" style={{ width: "100%" }}
+              disabled={busy || !title.trim() || !body.trim() || !author.trim()}
+              onClick={postIt}>
+        Post it to the firm
+      </button>
+    </div>
   );
 }

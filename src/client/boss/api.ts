@@ -413,6 +413,8 @@ export const api = {
     call<any>(`/governance/flags/${id}/${action}`, post("", { note })),
   antiDependency: () => call<any>("/governance/anti-dependency"),
   playbooks: () => call<any>("/governance/playbooks"),
+  firmNotices: () => call<any>("/governance/notices"),
+  postFirmNotice: (body: unknown) => call<any>("/governance/notices", post("", body)),
   maintenance: () => call<any>("/governance/maintenance"),
   maintenanceDone: (key: string) => call<any>(`/governance/maintenance/${key}/done`, post("")),
   brandProfiles: () => call<any[]>("/governance/brand"),
