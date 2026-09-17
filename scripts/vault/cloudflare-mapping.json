@@ -1,13 +1,31 @@
 {
-  "worker_name": "west-peek-os",
+  "_note": "worker_name is a DECLARATION, checked against wrangler.toml [env.production] name. If the two disagree the sync aborts. Every key the vault holds must appear in secret_names or in not_synced with a written reason; one in neither aborts the sync by name.",
+  "worker_name": "boss-os",
   "secret_names": [
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "PERPLEXITY_API_KEY",
     "OPENROUTER_API_KEY",
+    "BOSS_PASSCODE",
+    "BOSS_OS_MAIL_KEY",
     "RESEND_API_KEY",
-    "GOOGLE_OAUTH_CLIENT_ID",
-    "GOOGLE_OAUTH_CLIENT_SECRET",
-    "RUNWARE_API_KEY",
     "CF_ACCESS_CLIENT_ID",
     "CF_ACCESS_CLIENT_SECRET",
-    "WP_OS_NETWORK_OS_SESSION_SECRET"
-  ]
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "RUNWARE_API_KEY"
+  ],
+  "not_synced": {
+    "CLOUDFLARE_API_TOKEN": "The credential this sync authenticates WITH. Uploading it to the Worker would put the key that can rewrite every secret inside the thing it rewrites.",
+    "GSC_SERVICE_ACCOUNT_JSON": "Search Console service account, used by local operator scripts on her Mac. Nothing in the Worker reads it and a Worker secret is not where a service-account JSON belongs.",
+    "RUNWAY_API_KEY": "Video generation, driven from her Mac by the slate tooling. No Worker route reaches it.",
+    "CAL_ICS_SEQ_TAYLOR": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",
+    "CAL_ICS_WESTPEEK": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",
+    "CAL_ICS_STAYLOR_SPRY": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",
+    "CAL_ICS_CRYPTOCLEARR": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",
+    "CRYPTOCLEARR_IMAP_PASSWORD": "IMAP password used by the local mailbox sweep. The Worker receives mail through Cloudflare Email Routing and never opens an IMAP connection.",
+    "SOS_IMAP_PASSWORD": "IMAP password used by the local mailbox sweep. Same reason.",
+    "WP_OS_NETWORK_OS_SESSION_SECRET": "Belongs to West Peek OS, a different application. Boss OS carries West Peek chassis code by copy and diverge and must never hold its credentials."
+  }
 }
