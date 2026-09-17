@@ -37,7 +37,7 @@ export interface FirmNotice {
 /** Every notice, oldest first, so a notice keeps its place as others are posted. */
 export async function loadFirmNotices(db: D1Database): Promise<FirmNotice[]> {
   const rows = await db
-    .prepare(`SELECT id, title, body, author, created_at FROM firm_notices ORDER BY created_at ASC, id ASC`)
+    .prepare(`SELECT id, title, body, author, created_at FROM boss_notices ORDER BY created_at ASC, id ASC`)
     .all<FirmNotice>();
   return rows.results ?? [];
 }

@@ -23,7 +23,7 @@ async function promptFor(input: Record<string, unknown>, task: Record<string, un
 
 describe("firmwide notices", () => {
   it("seeds twelve notices, each with a title, a body and an author", async () => {
-    const notices = await all(`SELECT * FROM firm_notices ORDER BY created_at ASC, id ASC`);
+    const notices = await all(`SELECT * FROM boss_notices ORDER BY created_at ASC, id ASC`);
     expect(notices.length).toBe(12);
     for (const n of notices) {
       expect(n.title.trim().length).toBeGreaterThan(10);
@@ -35,7 +35,7 @@ describe("firmwide notices", () => {
   });
 
   it("states the twelve things the firm already does", async () => {
-    const text = (await all(`SELECT * FROM firm_notices`))
+    const text = (await all(`SELECT * FROM boss_notices`))
       .map((n: any) => `${n.title}\n${n.body}`).join("\n").toLowerCase();
     for (const phrase of [
       "scooter@westpeek.ventures",
@@ -56,7 +56,7 @@ describe("firmwide notices", () => {
   });
 
   it("does not carry the spend ladder, which code enforces and an employee cannot act on", async () => {
-    const text = (await all(`SELECT * FROM firm_notices`)).map((n: any) => `${n.title} ${n.body}`).join(" ");
+    const text = (await all(`SELECT * FROM boss_notices`)).map((n: any) => `${n.title} ${n.body}`).join(" ");
     expect(/spend ladder|spend gradient|cost ladder/i.test(text)).toBe(false);
   });
 
@@ -125,7 +125,7 @@ describe("firmwide notices", () => {
     expect(listed.status).toBe(200);
     expect(listed.body.data.notices.some((n: any) => n.title === title)).toBe(true);
 
-    await env.DB.prepare(`DELETE FROM firm_notices WHERE title = ?`).bind(title).run();
+    await env.DB.prepare(`DELETE FROM boss_notices WHERE title = ?`).bind(title).run();
   });
 
   it("refuses an anonymous or empty notice", async () => {

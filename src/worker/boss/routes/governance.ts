@@ -355,7 +355,7 @@ governance.post("/learning", async (c) => {
 
 governance.get("/notices", async (c) => {
   const rows = await c.env.DB
-    .prepare(`SELECT id, title, body, author, created_at FROM firm_notices ORDER BY created_at ASC, id ASC`)
+    .prepare(`SELECT id, title, body, author, created_at FROM boss_notices ORDER BY created_at ASC, id ASC`)
     .all();
   return ok(c, {
     notices: rows.results ?? [],
@@ -374,9 +374,9 @@ governance.post("/notices", async (c) => {
   const id = newId("fnt");
   const now = Date.now();
   await c.env.DB
-    .prepare(`INSERT INTO firm_notices (id, title, body, author, created_at) VALUES (?,?,?,?,?)`)
+    .prepare(`INSERT INTO boss_notices (id, title, body, author, created_at) VALUES (?,?,?,?,?)`)
     .bind(id, title, body, author, now)
     .run();
   await audit(c.env.DB, { actor: "boss", lane: "ops", entityType: "firm_notice", entityId: id, action: "posted", detail: { title, author } });
-  return ok(c, await c.env.DB.prepare(`SELECT * FROM firm_notices WHERE id = ?`).bind(id).first(), 201);
+  return ok(c, await c.env.DB.prepare(`SELECT * FROM boss_notices WHERE id = ?`).bind(id).first(), 201);
 });

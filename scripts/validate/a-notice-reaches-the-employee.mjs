@@ -31,8 +31,13 @@
  *      firm policy. The block opens before the fence does.
  *   4. THE SEED SAYS SOMETHING. Twelve notices, each with a title, a body long enough to act on,
  *      and a named author. An anonymous standing instruction is the shape this firm refuses.
+ *   5. NO NOTICE READS AS A DEAL TERM. Learned the hard way in this change: the first draft of
+ *      notice 8 said "a COMMITMENT made", `router/confidential.ts` reads the outgoing prompt for
+ *      exactly that word, and because the notices ride in front of every prompt, EVERY employee run
+ *      in the system scanned as LP material and every training-permitting route was refused. Firm
+ *      boilerplate must not use the vocabulary that marks real deal content.
  *
- * RULE 0: zero notices examined, or zero prompt shapes examined, is a FAILURE. "Every notice
+ * RULE 0: zero notices, zero prompt shapes, or zero deal-term patterns is a FAILURE. "Every notice
  * reaches every employee" is trivially true of a firm with no notices, and that sentence over an
  * empty loop is the thing this file exists to stop being said.
  *
@@ -49,6 +54,7 @@ import { build } from "esbuild";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CONSUMER = "src/worker/boss/queue/consumer.ts";
+const CONFIDENTIAL = "src/worker/boss/router/confidential.ts";
 const MIGRATIONS = join(ROOT, "migrations");
 
 // ─── The schema and the seed that actually ship ──────────────────────────────
@@ -70,8 +76,23 @@ export function theShippedDatabase() {
 
 export function theSeededNotices(db) {
   return db
-    .prepare(`SELECT id, title, body, author, created_at FROM firm_notices ORDER BY created_at ASC, id ASC`)
+    .prepare(`SELECT id, title, body, author, created_at FROM boss_notices ORDER BY created_at ASC, id ASC`)
     .all();
+}
+
+/** The real deal-term patterns the router refuses on, bundled out of the shipped TypeScript. */
+export async function theRealDealTermPatterns() {
+  const out = join(mkdtempSync(join(tmpdir(), "confidential-")), "confidential.mjs");
+  await build({
+    entryPoints: [join(ROOT, CONFIDENTIAL)],
+    bundle: true, format: "esm", platform: "neutral", outfile: out, logLevel: "silent",
+    external: ["cloudflare:*"],
+  });
+  const mod = await import(out);
+  if (!Array.isArray(mod.DEAL_TERM_PATTERNS) || mod.DEAL_TERM_PATTERNS.length === 0) {
+    throw new Error(`${CONFIDENTIAL} exports no DEAL_TERM_PATTERNS, so this guard cannot check the seed against them.`);
+  }
+  return mod.DEAL_TERM_PATTERNS;
 }
 
 /** The real `buildPrompt`, bundled out of the shipped TypeScript. */
@@ -98,7 +119,7 @@ export function envServing(notices, template = null) {
   return {
     DB: {
       prepare(sql) {
-        const isNotices = /FROM firm_notices/i.test(sql);
+        const isNotices = /FROM boss_notices/i.test(sql);
         const result = {
           bind: () => result,
           all: async () => ({ results: isNotices ? notices : [] }),
@@ -195,6 +216,37 @@ export async function theNoticesAreOutsideTheFence(buildPrompt, notices) {
   return bad;
 }
 
+/**
+ * A NOTICE MUST NOT READ AS A DEAL TERM.
+ *
+ * This is not hypothetical, it is what happened. The first draft of notice 8 said "money moved, a
+ * COMMITMENT made" — and `router/confidential.ts` reads the outgoing prompt for the shape of a deal
+ * term, with `\bcommitment\b` on the list. Because the notices now ride in front of EVERY prompt,
+ * every employee run in the system scanned as LP material, every route whose terms permit training
+ * was refused, and `tests/boss/router.test.ts` went red with "2 of 6 refused" and a task that simply
+ * failed.
+ *
+ * The guard is right and the notice was wrong: the firm's own boilerplate has no business using the
+ * vocabulary that marks real deal content, because it makes that vocabulary meaningless. A notice
+ * that needs to talk about LP confidentiality — notice 4 does — says it without the trigger words.
+ */
+export function noNoticeReadsAsADealTerm(notices, patterns) {
+  const bad = [];
+  for (const n of notices) {
+    for (const p of patterns) {
+      const hit = new RegExp(p.re.source, p.re.flags.replace("g", "")).exec(`${n.title} ${n.body}`);
+      if (hit) {
+        bad.push(
+          `${n.id} contains ${JSON.stringify(hit[0])}, which router/confidential.ts reads as ${p.what}. `
+          + `Because this text is in front of every prompt, EVERY run would scan as LP material and `
+          + `every training-permitting route would be refused. Say it another way.`,
+        );
+      }
+    }
+  }
+  return bad;
+}
+
 export function theSeedSaysSomething(notices) {
   const bad = [];
   for (const n of notices) {
@@ -210,7 +262,7 @@ export function theSeedSaysSomething(notices) {
 }
 
 /** RULE 0 — a loop over nothing is not a pass. */
-export function rule0(notices, shapes) {
+export function rule0(notices, shapes, patterns) {
   const bad = [];
   if (!notices || notices.length === 0) {
     bad.push(
@@ -220,6 +272,9 @@ export function rule0(notices, shapes) {
   }
   if (!shapes || shapes.length === 0) {
     bad.push("no prompt shape was examined, so nothing about buildPrompt was checked.");
+  }
+  if (!patterns || patterns.length === 0) {
+    bad.push("no deal-term pattern was loaded, so the seed was not checked against the confidential line.");
   }
   return bad;
 }
@@ -245,11 +300,13 @@ if (process.argv.includes("--self-test")) {
   const buildPrompt = await theRealBuildPrompt();
   const notices = theSeededNotices(theShippedDatabase());
   const shapes = thePromptShapes();
+  const patterns = await theRealDealTermPatterns();
 
   expect("the shipped buildPrompt carries every seeded notice", await everyNoticeReachesEveryShape(buildPrompt, notices, shapes), false);
   expect("the shipped buildPrompt keeps the notices outside the fence", await theNoticesAreOutsideTheFence(buildPrompt, notices), false);
   expect("the seeded notices are actionable and signed", theSeedSaysSomething(notices), false);
-  expect("the real seed and shapes pass Rule 0", rule0(notices, shapes), false);
+  expect("no seeded notice reads as a deal term", noNoticeReadsAsADealTerm(notices, patterns), false);
+  expect("the real seed, shapes and patterns pass Rule 0", rule0(notices, shapes, patterns), false);
 
   /* ─── THE NEGATIVE PROOFS ─── the broken state, restored, required to come back red. ─── */
 
@@ -264,7 +321,7 @@ if (process.argv.includes("--self-test")) {
   const readsThenDropsIt = async (env, task, input) => {
     // The subtler failure, and the one a grep-based guard would call green: the block is loaded and
     // then not used. This is how `internal_memo` shipped.
-    await env.DB.prepare("SELECT id, title, body, author, created_at FROM firm_notices").all();
+    await env.DB.prepare("SELECT id, title, body, author, created_at FROM boss_notices").all();
     return input.prompt ?? task.title;
   };
   expect("a buildPrompt that loads the notices and drops them", await everyNoticeReachesEveryShape(readsThenDropsIt, notices, shapes), true);
@@ -285,8 +342,14 @@ if (process.argv.includes("--self-test")) {
 
   expect("an unsigned notice", theSeedSaysSomething([{ id: "x", title: "A long enough title here", body: "y".repeat(200), author: "" }]), true);
   expect("a notice that is only a slogan", theSeedSaysSomething([{ id: "x", title: "A long enough title here", body: "Be careful.", author: "S" }]), true);
-  expect("an empty noticeboard fails Rule 0", rule0([], shapes), true);
-  expect("no prompt shapes fails Rule 0", rule0(notices, []), true);
+  expect(
+    "the wording that actually broke it — \"a commitment made\"",
+    noNoticeReadsAsADealTerm([{ id: "x", title: "T", body: "Nothing consequential — money moved, a commitment made — leaves without a person." }], patterns),
+    true,
+  );
+  expect("an empty noticeboard fails Rule 0", rule0([], shapes, patterns), true);
+  expect("no prompt shapes fails Rule 0", rule0(notices, [], patterns), true);
+  expect("no deal-term patterns fails Rule 0", rule0(notices, shapes, []), true);
 
   if (failed) {
     console.error(`\nSELF-TEST FAILED: ${failed} case(s)`);
@@ -299,13 +362,15 @@ if (process.argv.includes("--self-test")) {
 const buildPrompt = await theRealBuildPrompt();
 const notices = theSeededNotices(theShippedDatabase());
 const shapes = thePromptShapes();
+const patterns = await theRealDealTermPatterns();
 
 let failures = 0;
-failures += report("RULE 0", rule0(notices, shapes));
+failures += report("RULE 0", rule0(notices, shapes, patterns));
 if (failures === 0) {
   failures += report("A NOTICE DOES NOT REACH THE PROMPT", await everyNoticeReachesEveryShape(buildPrompt, notices, shapes));
   failures += report("THE NOTICES ARE NOT OUTSIDE THE FENCE", await theNoticesAreOutsideTheFence(buildPrompt, notices));
   failures += report("THE SEED IS NOT ACTIONABLE", theSeedSaysSomething(notices));
+  failures += report("A NOTICE READS AS A DEAL TERM", noNoticeReadsAsADealTerm(notices, patterns));
 }
 
 if (failures) {

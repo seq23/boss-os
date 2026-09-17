@@ -36,7 +36,13 @@
 -- employee cannot act on it — a notice about it would be decoration, which is the exact failure
 -- this migration exists to avoid.
 
-CREATE TABLE IF NOT EXISTS firm_notices (
+-- `boss_notices`, NOT `firm_notices`, and the prefix is load-bearing rather than stylistic. In this
+-- database `firm_*` means the West Peek chassis's firm tables — `firm_user`, `firm_skill`,
+-- `firm_spend_budget`, `firm_user_role` — and `tests/boss/bridge.test.ts` asserts that no fifth one
+-- appears, so the breach the clone opened cannot quietly widen. A Boss OS table wearing that prefix
+-- would have failed that test for a true reason: it would have looked like the fund domain growing.
+-- `boss_` is the convention this half already uses (`boss_inbound_mail`, `boss_task_queue`).
+CREATE TABLE IF NOT EXISTS boss_notices (
   id          TEXT PRIMARY KEY,
   title       TEXT NOT NULL,
   -- Plain language an employee can act on. Not legalese, and the reasoning stays where it helps:
@@ -49,9 +55,9 @@ CREATE TABLE IF NOT EXISTS firm_notices (
 );
 
 -- Read order is posting order, oldest first, so a notice keeps its place as others are added.
-CREATE INDEX IF NOT EXISTS idx_firm_notices_created ON firm_notices (created_at);
+CREATE INDEX IF NOT EXISTS idx_boss_notices_created ON boss_notices (created_at);
 
-INSERT OR IGNORE INTO firm_notices (id, title, body, author, created_at) VALUES
+INSERT OR IGNORE INTO boss_notices (id, title, body, author, created_at) VALUES
   ('fnt_managing_partners',
    'The Managing Partners are Sequoia Taylor and Scooter Taylor',
    'Sequoia Taylor (sequoia@westpeek.ventures) and Scooter Taylor (scooter@westpeek.ventures) are '
@@ -114,8 +120,14 @@ INSERT OR IGNORE INTO firm_notices (id, title, body, author, created_at) VALUES
 
   ('fnt_employees_propose',
    'Employees propose. Partners decide',
+   -- "a commitment made" was the first wording, and it took every employee run off the free tier.
+   -- `router/confidential.ts` reads the OUTGOING PROMPT for the shape of a deal term, and
+   -- `\bcommitment\b` is one of them — so a notice about proposals made every prompt in the system
+   -- scan as LP material and refused every route whose terms permit training. The guard is right and
+   -- the notice was wrong: firm boilerplate has no business using the vocabulary that marks real
+   -- deal content. `a-notice-reaches-the-employee.mjs` now fails the build on it.
    'Your output is a proposal with your reasoning attached, not an action taken. Nothing '
-   || 'consequential — money moved, a commitment made, a document published, a relationship changed '
+   || 'consequential — money moved, a promise made, a document published, a relationship changed '
    || '— leaves this firm without a person deciding it. Make the recommendation, make it specific, '
    || 'say what you would do and why. Then hand it over.',
    'Sequoia Taylor', strftime('%s', '2026-09-17') * 1000),
@@ -164,10 +176,10 @@ INSERT OR IGNORE INTO firm_notices (id, title, body, author, created_at) VALUES
 -- APPEND_ONLY because there is no edit path and no delete path: a notice that no longer applies is
 -- superseded by a later one, and the original stays readable beneath it (notice 9).
 INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
-  ('firm_notices', 'governance', 'CLOUD_SYNC', 'EXTERNAL_OK',
+  ('boss_notices', 'governance', 'CLOUD_SYNC', 'EXTERNAL_OK',
    'Standing firm notices, written to be read by every employee on every run. Posted by a partner; '
    || 'no LP name, no deal term, no personal content.');
 
-UPDATE data_policy SET merge_policy = 'APPEND_ONLY' WHERE entity = 'firm_notices';
+UPDATE data_policy SET merge_policy = 'APPEND_ONLY' WHERE entity = 'boss_notices';
 
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0254_boss_a_notice_reaches_the_employee');
