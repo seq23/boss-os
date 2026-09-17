@@ -116,8 +116,8 @@ describe("the gradient is pro-rated against the month elapsed", () => {
     }
     // Monotone with no step anywhere, and strictly falling until it reaches its floor. The floor is
     // the one place two readings may be equal: below the cautious rung it must always be moving.
-    for (let i = 1; i < factors.length; i++) expect(factors[i]).toBeLessThanOrEqual(factors[i - 1]);
-    for (let i = 1; i < 4; i++) expect(factors[i]).toBeLessThan(factors[i - 1]);
+    for (let i = 1; i < factors.length; i++) expect(factors[i]!).toBeLessThanOrEqual(factors[i - 1]!);
+    for (let i = 1; i < 4; i++) expect(factors[i]!).toBeLessThan(factors[i - 1]!);
     expect(factors[0]).toBe(1);
     expect(factors[factors.length - 1]).toBeCloseTo(0.2, 6);
   });
