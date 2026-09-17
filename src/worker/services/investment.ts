@@ -7,6 +7,8 @@ import { actorFromIdentity, authorize, privacyVisibilityClause, type Actor } fro
 import { consumeApprovalCard, requestApproval } from "./approvals";
 import { computePrimaryDeal, computeSecondaryStructure, premiumDiscount, safeDiv, xirr, type CarryBasis } from "../../shared/dealmath";
 import { privacyLabelSchema } from "../../shared/privacy";
+// The spine and its order belong to ONE module, read by the board and by this service alike.
+import { nextStageKey } from "../../shared/investment/pipeline";
 // Item 7: the manual route is one of four, and they all converge on `openIntoFunnel`.
 import { manualArrival, openIntoFunnel } from "./dealIntake";
 
@@ -86,6 +88,25 @@ const OPPORTUNITY_TRANSITIONS: Readonly<Record<OpportunityStatus, readonly Oppor
   PASS: ["SCREENING"],
   WITHDRAWN: ["SCREENING"],
 };
+
+/**
+ * ─── THE NEXT STAGE IS THE RECORD'S OWN FACT, AND THE SPINE IS NOT RESTATED HERE ───────────────
+ *
+ * `nextStageKey` lives in `src/shared/investment/pipeline.ts`, which already held the spine and its
+ * order and is the module the board renders from. Copying that order into this file would be two
+ * lists of the same facts with no link between them — the defect this repository is written
+ * against — and the copy that drifted would be the one deciding where deals go.
+ *
+ * WHAT IS ADDED HERE is the one thing the shared module cannot know: that a step along the spine is
+ * also a LEGAL TRANSITION. `OPPORTUNITY_TRANSITIONS` is the lifecycle and stays the authority, so a
+ * spine step the lifecycle does not permit yields null rather than a move the very next line would
+ * have to refuse anyway.
+ */
+export function nextOnSpine(status: OpportunityStatus): OpportunityStatus | null {
+  const candidate = nextStageKey(status) as OpportunityStatus | null;
+  if (!candidate) return null;
+  return OPPORTUNITY_TRANSITIONS[status].includes(candidate) ? candidate : null;
+}
 
 /** Human review transitions for math quality. INPUTS_MISSING resolves via update/calculate. */
 const MATH_STATUS_TRANSITIONS: Readonly<Record<MathQualityStatus, readonly MathQualityStatus[]>> = {
@@ -424,6 +445,45 @@ export async function archiveOpportunity(
 
 /** Leaving the pipeline without investing. Both are decisions and both want a reason. */
 const EXIT_STATUSES: readonly OpportunityStatus[] = ["PASS", "WITHDRAWN"];
+
+/**
+ * Move a deal ONE STAGE ALONG THE SPINE, from wherever the record actually is.
+ *
+ * WHY THIS EXISTS RATHER THAN A `to` FROM THE BROWSER. The board used to compute the next stage
+ * from its own last-fetched copy of the deal and send it as an absolute target — which makes the
+ * page the authority on a fact only the record holds, and LOSES PRESSES. Advance a deal, and until
+ * the board's reload lands the button still carries the PREVIOUS next stage; press it and the
+ * server is asked to move the deal to a stage it has already left, `OPPORTUNITY_TRANSITIONS`
+ * refuses that as illegal — correctly — and the move the partner asked for does not happen. The
+ * row then keeps its stale copy, so every later press is refused the same way until the page is
+ * reloaded by hand.
+ *
+ * `p57`'s pipeline walk caught it at a different stage on every run, and it is a live defect and
+ * not a test artefact: a partner pressing "move it on" twice in quick succession gets a dead row.
+ *
+ * EVERY GUARD STILL APPLIES, because this computes the target and then calls the one function that
+ * moves a deal — authorization, the Managing Partner gate on CLOSED, the IC packet that opens on
+ * arrival, the event ledger. It is the same path with the target read off the record instead of off
+ * the browser, never a second way to move a deal.
+ *
+ * AT THE END OF THE LINE IT SAYS SO. A deal already CLOSED, or sitting off the spine at PASS or
+ * WITHDRAWN, has no next stage, and this refuses rather than inventing one — the interface does not
+ * offer the control there, so anything reaching this is a stale page or a script, and both deserve
+ * the same answer.
+ */
+export async function advanceOpportunity(env: Env, actor: Actor, id: string): Promise<OpportunityRow> {
+  const row = await getOpportunity(env, id);
+  if (!row) throw new InvestmentError(404, "not_found");
+  const to = nextOnSpine(row.status);
+  if (!to) {
+    throw new InvestmentError(
+      409,
+      "no_next_stage",
+      `A deal at ${row.status} has nowhere further along the pipeline to go.`,
+    );
+  }
+  return transitionOpportunity(env, actor, id, to);
+}
 
 export async function transitionOpportunity(
   env: Env,
@@ -1894,6 +1954,18 @@ export async function handleTransitionOpportunity(ctx: RouteContext): Promise<Re
     return json(
       await transitionOpportunity(ctx.env, actorFromIdentity(ctx.identity!), ctx.params.id!, parsed.data.to, parsed.data.reason),
     );
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * NO BODY, ON PURPOSE. "Move it on" carries no target, which is the whole point: there is nothing
+ * in the request for a stale page to get wrong.
+ */
+export async function handleAdvanceOpportunity(ctx: RouteContext): Promise<Response> {
+  try {
+    return json(await advanceOpportunity(ctx.env, actorFromIdentity(ctx.identity!), ctx.params.id!));
   } catch (err) {
     return errorResponse(err);
   }
