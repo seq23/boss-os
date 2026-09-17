@@ -90,7 +90,7 @@ END;
 
 -- The classification and merge policy rows, so the two scans that examine every table do not have
 -- to guess. Operating machinery: no personal content of its own, append-only.
-INSERT OR IGNORE INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
+INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
   ('model_job_outcome', 'router', 'CLOUD_SYNC', 'EXTERNAL_OK',
    'Operating machinery. Holds a task kind, a model id and a verdict. No personal content of its own.');
 

@@ -182,10 +182,25 @@ export function check({ models, providers, settings, bypassSchema, sources, appl
 
   // ── 5. The per-run cap is enforced, not merely stored ──────────────────────
   const router = code(sources[ROUTER] ?? "");
-  if (!/if \(estimate > perRunCap\)/.test(router)) {
+  /*
+   * THE COMPARISON, WHEREVER THE SPEND GRADIENT LEAVES THE CAP.
+   *
+   * 0253 narrows the per-run ceiling for ORDINARY work by a continuous factor, so the figure the
+   * estimate is compared against is now `effectivePerRunCap`. The rule is unchanged and this got
+   * STRICTER rather than looser: the comparison must still happen, AND the narrowed figure must be
+   * derived from `perRunCap` rather than from anything else — a gradient that replaced the ceiling
+   * instead of scaling it would be the cap going missing behind a new name.
+   */
+  if (!/if \(estimate > (effectivePerRunCap|perRunCap)\)/.test(router)) {
     bad.push(
       `${ROUTER} never compares an estimate against the per-run cap. A cap that is stored and not `
       + "compared is the exact shape `per_run` already had in duties/author.ts.",
+    );
+  }
+  if (/effectivePerRunCap/.test(router) && !/const effectivePerRunCap = Math\.max\(0, Math\.floor\(perRunCap \* effect\.perRunFactor\)\);/.test(router)) {
+    bad.push(
+      `${ROUTER} compares against an effective per-run cap that is not derived from perRunCap. The gradient `
+      + "may SCALE the ceiling and may never replace it.",
     );
   }
   if (!/getNumber\(db, "per_run_cap_micros", 750_000\)/.test(router)) {
@@ -357,7 +372,21 @@ function selfTest() {
       name: "THE ACTUAL DEFECT: a per-run cap stored and never compared",
       input: {
         ...good,
-        sources: { ...good.sources, [ROUTER]: good.sources[ROUTER].replace("if (estimate > perRunCap)", "if (false)") },
+        sources: { ...good.sources, [ROUTER]: good.sources[ROUTER].replace(/if \((estimate > (?:effectivePerRunCap|perRunCap))\)/, "if (false)") },
+      },
+      expect: 1,
+    },
+    {
+      name: "THE NEW DEFECT: a gradient that REPLACES the per-run ceiling instead of scaling it",
+      input: {
+        ...good,
+        sources: {
+          ...good.sources,
+          [ROUTER]: good.sources[ROUTER].replace(
+            "const effectivePerRunCap = Math.max(0, Math.floor(perRunCap * effect.perRunFactor));",
+            "const effectivePerRunCap = Number.MAX_SAFE_INTEGER;",
+          ),
+        },
       },
       expect: 1,
     },

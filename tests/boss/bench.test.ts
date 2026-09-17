@@ -59,6 +59,16 @@ beforeEach(async () => {
 
 describe("Stage 7 — the bench refuses to spend rather than guessing", () => {
   it("records every paid pair as NOT RUN at FREE_ONLY, and writes no benchmark row", async () => {
+    /*
+     * THE LEVER IS SET, NOT INHERITED — a contract change from migration 0253, written down rather
+     * than worked around. `settings.spend_lever` had never been seeded, so this test's posture came
+     * from an ABSENCE that `spendLeverState` resolved to FREE_ONLY. 0253 seeds the live default as
+     * MODERATE, because an unseeded row meant every paid backend commissioned in 0247 was
+     * unreachable and nothing said so. The fail-closed CODE default is unchanged and still
+     * FREE_ONLY. A test about the FREE_ONLY posture now asks for it, which is also what production
+     * would take.
+     */
+    await setSpendLever(env.DB, { position: "FREE_ONLY" }, "test");
     await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_fireworks'`).run();
     /*
      * THE PROVIDER, NOT JUST THE BACKEND. Migration 0247 disabled `prv_fireworks` because enabling

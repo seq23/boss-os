@@ -279,8 +279,17 @@ describe("Phase 2 — model router", () => {
 
 describe("Stage 4 — the spend lever governs money, and nothing else", () => {
   it("REFUSES paid work at FREE_ONLY, names the lever, and calls nobody", async () => {
-    // The negative test for the default position. No lever is set, which is the
-    // shipped state, and the shipped state is $0.
+    // The negative test for the FREE_ONLY position.
+    /*
+     * THE LEVER IS SET, NOT INHERITED — a contract change from migration 0253, written down rather
+     * than worked around. `settings.spend_lever` had never been seeded, so this test's posture came
+     * from an ABSENCE that `spendLeverState` resolved to FREE_ONLY. 0253 seeds the live default as
+     * MODERATE, because an unseeded row meant every paid backend commissioned in 0247 was
+     * unreachable and nothing said so. The fail-closed CODE default is unchanged and still
+     * FREE_ONLY. A test about the FREE_ONLY posture now asks for it, which is also what production
+     * would take.
+     */
+    await setSpendLever(env.DB, { position: "FREE_ONLY" }, "test");
     await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_fireworks'`).run();
     // The PROVIDER too, because 0247 disabled it for want of a key — without this there is no paid
     // candidate left for the lever to refuse, and the test would pass for the wrong reason.
