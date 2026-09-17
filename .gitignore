@@ -24,3 +24,8 @@ ARTIFACTS/*
 !ARTIFACTS/benchmarks/
 ARTIFACTS/benchmarks/*.zip
 scripts/ops/_probe.mjs
+
+# A self-referencing node_modules symlink was committed on 17 Sep 2026 and broke
+# every wrangler command in this checkout with exit 194 and no output. The ignore
+# rule above only matches a directory; this one matches the symlink too.
+node_modules
