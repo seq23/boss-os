@@ -17,6 +17,10 @@ import {
 } from "./breaker";
 import { confidentialLexicon, scanForConfidential } from "./confidential";
 import { bypassFor, predictSpend, type BypassRow } from "./bypass";
+import {
+  GRADIENT_HARD_STOP_MICROS, gradientEffect, gradientState, isProtectedWork,
+} from "./gradient";
+import { experienceFor, mayBePreferredForProtectedWork, rank as experienceRank, recordOutcome } from "./experience";
 import { getNumber } from "../lib/settings";
 
 /**
@@ -439,6 +443,59 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     confidentialReason: confidential.reason,
   };
 
+  // Read ONCE and hand to the guard, so every candidate in one routing decision
+  // is judged against the same lever and the same lane budget.
+  const lever = await spendLeverState(db);
+  const lane = await laneAllowance(db, opts.lane);
+
+  /*
+   * ─── THE SPEND GRADIENT ────────────────────────────────────────────────────
+   *
+   * Read ONCE, next to the lever, for the same reason the lever is: every candidate in one routing
+   * decision must be judged against one posture. See `router/gradient.ts` for the pro-rating and
+   * for the two rules it may never break — it never moves the lever, and it never touches protected
+   * work.
+   *
+   * `appliesAt` inside `gradientState` is what keeps her hand on top: at FREE_ONLY and at OPEN this
+   * returns `applies: false` and `gradientEffect` is `NO_EFFECT`, so the gradient decides behaviour
+   * only in the interval BETWEEN her instructions.
+   */
+  const gradient = await gradientState(db, lever.position);
+  const protectedWork = isProtectedWork({
+    risk, sensitivity, intakeKind: opts.intakeKind ?? null,
+  });
+  const effect = gradientEffect(gradient, protectedWork);
+
+  /*
+   * ─── HER $75 LINE, WHICH THE LANE BUDGETS DO NOT DRAW ─────────────────────
+   *
+   * The two `period = 'month'` budget rows limit $75 (ops) and $10 (trading) SEPARATELY, so between
+   * them they permit $85 before either hard-stops. Her ladder names one figure for the month across
+   * everything, and a line nothing compares anything against is the "runs but inert" defect — so it
+   * is compared here, against the same summed figure the gradient reports.
+   *
+   * BYPASS AVAILABLE, AND IT MOVES THE LINE RATHER THAN REMOVING IT — the same semantics as the
+   * per-run ceiling above, from the same `bypassFor`, which fails closed on absent, expired,
+   * revoked, malformed, future-dated and not-raised-by-the-owner.
+   *
+   * FREE ROUTES ARE UNAFFECTED, deliberately and consistently with every other money stop in this
+   * file: the month she runs out of money must not be the month the system stops doing the work
+   * that costs nothing.
+   */
+  const monthBypass = await bypassFor(db, "month", null);
+  const monthLine = monthBypass.active ? monthBypass.active.amount_micros : GRADIENT_HARD_STOP_MICROS;
+  const monthLineReached = gradient.spentMicros >= monthLine;
+
+  /*
+   * WHAT THIS MODEL HAS ACTUALLY DONE, for the cost stage only.
+   *
+   * Evidence belongs to §3.1's FIFTH stage and nowhere earlier: it reorders survivors and it can
+   * neither make a model eligible nor refuse one. With an empty table every model is `unknown`,
+   * every rank is equal, and the order collapses to the cost order that exists today — which is the
+   * honest behaviour when there is no evidence, and is why this changes nothing until it has some.
+   */
+  const experience = await experienceFor(db, opts.intakeKind ?? null);
+
   const envelopeCeiling = opts.budgetMicros && opts.budgetMicros > 0 ? opts.budgetMicros : null;
   const promptChars = opts.messages.reduce((n, m) => n + m.content.length, 0);
 
@@ -486,12 +543,32 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
    * there is one statement of which tiers a vendor gives away. Two free routes tie again, and a tie
    * is decided by capability.
    */
+  /*
+   * AND THE RECORD OUTRANKS THE PRICE.
+   *
+   * `experienceRank` is folded into the SAME key rather than sorted separately, so the existing
+   * tie-break — capability, not the alphabet — still decides between two candidates that rank and
+   * price identically. The rank is multiplied by a figure larger than any per-call estimate can
+   * reach, which makes it a strict outer sort: a model PROVEN on this kind of work is preferred
+   * over a cheaper one with no record, and a model with a POOR record on it is tried last.
+   *
+   * UNKNOWN IS NOT RANKED AS BAD, it is ranked as unproven — below proven, above poor, level with
+   * every other unknown. And for PROTECTED work it may not be promoted at all: only a proven record
+   * lifts a candidate, so an absence of evidence can never carry a model up the order on work that
+   * matters. That is the guarantee stated as arithmetic rather than as a hope.
+   */
+  const RANK_WEIGHT = 1_000_000_000;
   const continuity = orderCandidates(
     await loadContinuityModels(db, declaredIds),
     (m) => {
       const backendId = WIRING_BY_PROVIDER.get(m.provider_id)?.backendId;
-      if (backendId && !routeIsBilled(backendId, m.slug)) return 0;
-      return estimateCostMicros(m, promptChars, route.max_output_tokens);
+      const price = backendId && !routeIsBilled(backendId, m.slug)
+        ? 0
+        : estimateCostMicros(m, promptChars, route.max_output_tokens);
+      const exp = experience.get(m.id);
+      const promotable = protectedWork ? mayBePreferredForProtectedWork(exp) : true;
+      const r = promotable ? experienceRank(exp) : Math.max(1, experienceRank(exp));
+      return r * RANK_WEIGHT + price;
     },
   );
 
@@ -535,10 +612,6 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   let hops = 0;
   let freeHops = 0;
 
-  // Read ONCE and hand to the guard, so every candidate in one routing decision
-  // is judged against the same lever and the same lane budget.
-  const lever = await spendLeverState(db);
-  const lane = await laneAllowance(db, opts.lane);
 
   /*
    * ─── THE PER-RUN CEILING, AND THE ONE WAY OVER IT ──────────────────────────
@@ -559,6 +632,16 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   const perRunBypass = await bypassFor(db, "per_run", null);
   const perRunCap = perRunBypass.active ? perRunBypass.active.amount_micros : perRunCapDefault;
   let bypassUsed: BypassRow | null = null;
+  /*
+   * THE COLLISION SHE DECIDED: AT FREE_ONLY, PAID WORK FAILS LOUDLY.
+   *
+   * Her words: work that needs a paid model must stop and say so, naming the work and the lever —
+   * never quietly substitute a weaker one. She knows this can stop her morning brief; that is
+   * intended. `leverRefusedPaid` remembers that the lever, and not availability or capability, is
+   * what removed a candidate, so the stop below can tell her which of the three it was.
+   */
+  let leverRefusedPaid = false;
+  let freeOnlyStop: { message: string; hint: string } | null = null;
 
   for (const { model, tier } of ordered) {
     const def = WIRING_BY_PROVIDER.get(model.provider_id);
@@ -605,12 +688,89 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
         estimate_micros: estimate,
       });
       if (refusal.approvable) approvable = true;
+      if (refusal.code === "lever_free_only") leverRefusedPaid = true;
       if (budgetShaped) budgetRefusal = { message: refusal.sentence, remedy: refusal.sentence };
       continue;
     }
 
     const free = verdictBackend.cost_basis.free;
     const backendName = def.providerName;
+
+    /*
+     * ─── AT FREE_ONLY, A PROTECTED JOB DOES NOT QUIETLY TAKE THE FREE SEAT ───
+     *
+     * The guard has already refused every paid candidate with `lever_free_only`. Without this, the
+     * loop would carry straight on to the next candidate, find a free Workers AI model, and answer
+     * — which is the exact substitution she ruled out: the work that mattered gets a weaker model
+     * and nothing anywhere says a downgrade happened.
+     *
+     * IT ONLY FIRES WHEN THE LEVER ACTUALLY REMOVED SOMETHING. A protected route whose own primary
+     * model is free was never downgraded by anything and runs normally; this is not "protected work
+     * may not use free models", it is "protected work is not silently MOVED to one by the lever".
+     */
+    if (lever.position === "FREE_ONLY" && protectedWork && free && leverRefusedPaid) {
+      const what = opts.taskId ? `Task ${opts.taskId}` : `This ${opts.lane} ${opts.intakeKind ?? "run"}`;
+      const sentence =
+        `${what} is protected work (risk ${risk}, sensitivity ${sensitivity}` +
+        `${opts.intakeKind ? `, ${opts.intakeKind}` : ""}) and the model its route calls for costs money, but the ` +
+        `spend lever is at FREE_ONLY. It stops here rather than running on ${model.display_name}, which is a ` +
+        `weaker model than this work asked for. Nothing was substituted.`;
+      note("budget", "rejected", sentence, { estimate_micros: estimate, free });
+      freeOnlyStop = { message: sentence, hint: lever.remedy };
+      break;
+    }
+
+    /*
+     * ─── HER $75 MONTH LINE ──────────────────────────────────────────────────
+     *
+     * Protected work is NOT exempt from this one, and that is the difference between the gradient
+     * and the hard stop. The gradient is a preference and protected work is carved out of it; $75
+     * is money that is gone, and no class of work can spend money that is not there. What protected
+     * work gets is a bypass she can raise, which is a decision rather than a downgrade.
+     */
+    if (monthLineReached && !free) {
+      const sentence =
+        `This month has cost ${formatMicros(gradient.spentMicros)}, at or past the ` +
+        `${formatMicros(monthLine)} line${monthBypass.active ? " you raised a bypass to" : ""}. ` +
+        `${model.display_name} charges for this call, so it stops. Free routes keep running.`;
+      note("budget", "rejected", sentence, { estimate_micros: estimate, free });
+      budgetRefusal = {
+        message: sentence,
+        remedy: monthBypass.active
+          ? `A month bypass is already in force at ${formatMicros(monthLine)} and the month is past even that. ` +
+            `Raise a larger one, or let it stop until the window rolls.`
+          : `Raise a month bypass naming an amount, a reason and an expiry, or let it stop until the month rolls.`,
+      };
+      continue;
+    }
+
+    /*
+     * ─── THE GRADIENT, APPLIED TO ORDINARY WORK ONLY ─────────────────────────
+     *
+     * `effect` is `NO_EFFECT` for protected work and at every lever position but MODERATE, so this
+     * branch is unreachable for either — the guarantee is upstream in `gradientEffect`, not in the
+     * shape of this `if`. At the cautious rung ordinary work runs free-first and paid routes are
+     * held for protected work; at the cheaper rung it declines to spend on a frontier model.
+     */
+    if (!free && effect.paidForProtectedOnly) {
+      note("budget", "rejected",
+        `${effect.reason} ${model.display_name} charges for this call, so it is held back and a free route is ` +
+        `used instead. This is ordinary work; protected work is unaffected.`,
+        { estimate_micros: estimate, free });
+      budgetRefusal = {
+        message: effect.reason,
+        remedy:
+          `The gradient tightened on its own because the month is running hot. Spend less, or raise the ops ` +
+          `month budget, or move the spend lever to OPEN — it is your hand and it wins.`,
+      };
+      continue;
+    }
+    if (!free && !effect.allowFrontierForOrdinaryWork && model.capability_tier === "frontier") {
+      note("budget", "rejected",
+        `${effect.reason} ${model.display_name} is a frontier model and this is ordinary work.`,
+        { estimate_micros: estimate, free });
+      continue;
+    }
 
     const cred = adapterCredential(env, def);
     if (!cred.available) {
@@ -648,11 +808,20 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
      * shortfall — her request was to learn a task will exceed a cap BEFORE it stops, so the refusal
      * carries the prediction rather than a bare "blocked".
      */
-    if (estimate > perRunCap) {
+    /*
+     * AND THE PER-RUN CEILING TIGHTENS CONTINUOUSLY, WHICH IS THE GRADIENT'S ACTUAL SHAPE.
+     *
+     * The three band names are a summary for a person to read. `perRunFactor` is the mechanism: it
+     * slides from 1.0 to 0.2 with no step in it, so there is no single dollar at which behaviour
+     * jumps. PROTECTED WORK'S FACTOR IS ALWAYS EXACTLY 1 — `gradientEffect` returns before any band
+     * is read — so this line cannot narrow a protected run's ceiling by a single micro.
+     */
+    const effectivePerRunCap = Math.max(0, Math.floor(perRunCap * effect.perRunFactor));
+    if (estimate > effectivePerRunCap) {
       const prediction = predictSpend({
         what: opts.taskId ? `task ${opts.taskId}` : `${opts.lane} run on ${model.display_name}`,
         estimateMicros: estimate,
-        perRunCapMicros: perRunCap,
+        perRunCapMicros: effectivePerRunCap,
         dayRemainingMicros: lane.remaining_micros,
         monthRemainingMicros: null,
       });
@@ -669,8 +838,10 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
         level: "warn", scope: "router", event: "per_run_cap_would_be_breached", lane: opts.lane,
         entityId: opts.taskId ?? null,
         detail: {
-          model_id: model.id, estimate_micros: estimate, cap_micros: perRunCap,
-          over_by_micros: estimate - perRunCap, bypass_id: perRunBypass.active?.id ?? null,
+          model_id: model.id, estimate_micros: estimate, cap_micros: effectivePerRunCap,
+          declared_cap_micros: perRunCap, gradient_factor: effect.perRunFactor,
+          gradient_band: gradient.band, protected_work: protectedWork,
+          over_by_micros: estimate - effectivePerRunCap, bypass_id: perRunBypass.active?.id ?? null,
         },
       });
       continue;
@@ -789,6 +960,20 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
 
     note("cost", "used", "completed", { estimate_micros: estimate, free });
 
+    /*
+     * THE EVIDENCE ROW, WRITTEN AT THE MOMENT IT IS KNOWN.
+     *
+     * `source: "router"` and not "human", and the distinction is load-bearing: this records that the
+     * call RETURNED, which is not the same as the work having stood. `router/experience.ts` will
+     * never call a model proven on rows of this kind alone. It is the denominator; a person deciding
+     * an approval is the numerator.
+     */
+    await recordOutcome(db, {
+      taskKind: opts.intakeKind ?? null, modelId: model.id, outcome: "succeeded", source: "router",
+      lane: opts.lane, taskId: opts.taskId ?? null,
+      note: `completed on ${backendName}${free ? " (free route)" : ""}`,
+    });
+
     const isPrimary = model.id === route.primary_model_id;
     const degraded = !isPrimary;
     const degradedReason = degraded ? firstRefusalReason(considered, model.id) : null;
@@ -840,7 +1025,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     ? "ask_human"
     : attemptedCall
       ? "provider_failed"
-      : budgetRefusal
+      : freeOnlyStop || budgetRefusal
         ? "blocked_budget"
         : "blocked_no_model";
 
@@ -848,6 +1033,8 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     ...base, outcome,
     reason: approvable
       ? "restricted content and no permitted private route"
+      : freeOnlyStop && !attemptedCall
+        ? freeOnlyStop.message.slice(0, 300)
       : budgetRefusal && !attemptedCall
         ? budgetRefusal.message.slice(0, 300)
         : lastError
@@ -875,6 +1062,19 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       `Every model on this route failed: ${lastError.message}`,
       "The provider may be down. The queue will retry; check Diagnostics if it keeps failing.",
     );
+  }
+
+  /*
+   * FAIL LOUDLY, AND BEFORE THE GENERIC MONEY REFUSAL.
+   *
+   * A `BudgetExceeded` becomes a spend-approval card, which is the right end for "the lane ran out".
+   * This is a different thing and must not be dressed as that one: the money exists, she has said
+   * not to spend it, and the answer is her lever — not an approval that would quietly authorise a
+   * downgrade she has already ruled out. So it is a policy refusal, terminal, naming the work and
+   * the lever.
+   */
+  if (freeOnlyStop) {
+    throw new RoutingBlocked(freeOnlyStop.message, "blocked_budget", freeOnlyStop.hint);
   }
 
   if (budgetRefusal) {
