@@ -118,9 +118,17 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
 -- The airlock classifies every table, and an unclassified one is refused rather than trusted
 -- (v20.1 §11). A bypass is ordinary cloud-resident governance data — it holds an amount, a reason
 -- and a time, and never any of the material the confidential line exists to protect.
-INSERT OR IGNORE INTO data_policy (entity, residency, ai_processing, reason)
-VALUES ('spend_bypass', 'CLOUD_SYNC', 'EXTERNAL_OK',
-        'A spend decision: which cap, how much, why, until when. It holds no LP name, no deal term '
-        || 'and no content — only the shape of an authorisation the owner gave.');
+-- ON CONFLICT DO NOTHING RATHER THAN `INSERT OR IGNORE`, and `subsystem` is not optional. The
+-- first draft used OR IGNORE and omitted the column: `subsystem` is NOT NULL, the insert failed the
+-- constraint, and OR IGNORE swallowed it — the table shipped unclassified and only
+-- `validate:classification` noticed. OR IGNORE hides the error it was reached for; ON CONFLICT
+-- names the one collision that is expected and lets every other failure be loud.
+INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
+  ('spend_bypass', 'ops', 'CLOUD_SYNC', 'EXTERNAL_OK',
+   'A spend decision the owner made: which cap, how much, why, and until when. It holds no LP name, '
+   || 'no deal term and no content — a scope word, a number, a sentence of hers and two dates. It is '
+   || 'the record that lets a month be read as "the budget, plus these decisions" rather than as an '
+   || 'unexplained overrun, so it must travel with the ledger it explains.')
+ON CONFLICT(entity) DO NOTHING;
 
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0250_boss_a_single_run_has_a_ceiling_and_she_can_lift_it');

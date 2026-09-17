@@ -11,6 +11,9 @@ import {
 } from "../router/spend";
 import { breakerStates, resetBreaker } from "../router/breaker";
 import { BenchRefused, runBench } from "../router/bench";
+import { bypassFor, isLive, predictSpend, type BypassRow } from "../router/bypass";
+import { getNumber } from "../lib/settings";
+import { laneAllowance } from "../backends/guard";
 
 export const models = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -472,6 +475,201 @@ models.put("/spend-lever", async (c) => {
   }
   const change = await setSpendLever(c.env.DB, { position: position as SpendLeverPosition, moderateMicros: moderate }, "boss");
   return ok(c, { change, lever: await spendLeverState(c.env.DB) });
+});
+
+// ─── The per-run ceiling, and the bypass that is hers ────────────────────────
+
+/**
+ * WHAT THE CAPS ARE AND WHAT IS CURRENTLY LIFTED.
+ *
+ * One read, so a surface never has to assemble "what may this spend" from three places and get a
+ * different answer from the router's. Every figure here is the same figure `routeCompletion`
+ * consults.
+ */
+models.get("/caps", async (c) => {
+  const perRunDefault = await getNumber(c.env.DB, "per_run_cap_micros", 750_000);
+  const perRun = await bypassFor(c.env.DB, "per_run", null);
+  const lanes = await c.env.DB.prepare(`SELECT id FROM lanes ORDER BY id`).all<{ id: string }>();
+
+  const byLane = [];
+  for (const l of lanes.results ?? []) {
+    const allowance = await laneAllowance(c.env.DB, l.id);
+    byLane.push({
+      lane: l.id,
+      remaining_micros: allowance.remaining_micros,
+      blocked: allowance.blocked,
+      blocked_period: allowance.blocked_period,
+      day_bypass: (await bypassFor(c.env.DB, "day", l.id)).active,
+      month_bypass: (await bypassFor(c.env.DB, "month", l.id)).active,
+    });
+  }
+
+  return ok(c, {
+    per_run: {
+      cap_micros: perRun.active ? perRun.active.amount_micros : perRunDefault,
+      default_micros: perRunDefault,
+      lifted_by: perRun.active,
+      note: perRun.active ? perRun.note : `Every single run stops at ${formatMicros(perRunDefault)}.`,
+    },
+    lanes: byLane,
+  });
+});
+
+/**
+ * WILL THIS PIECE OF WORK FIT? — asked BEFORE it is queued, not discovered when it dies.
+ *
+ * "Predict, do not just block" was half her request, and it is the half that is easy to leave out.
+ * A surface can call this with what a task is estimated to cost and show "this is going to be
+ * short by $0.40, and here is the bypass that would cover it" while the work is still hers to
+ * change. It decides nothing and writes nothing.
+ */
+models.post("/caps/predict", async (c) => {
+  const b = await c.req.json<any>().catch(() => ({}));
+  const estimate = Number(b?.estimate_micros);
+  if (!Number.isFinite(estimate) || estimate < 0) {
+    throw badRequest("estimate_micros must be a number of micros, zero or more");
+  }
+  const lane = typeof b?.lane === "string" && b.lane.trim() ? b.lane.trim() : "ops";
+  const what = typeof b?.what === "string" && b.what.trim() ? b.what.trim() : `a run in the ${lane} lane`;
+
+  const perRunDefault = await getNumber(c.env.DB, "per_run_cap_micros", 750_000);
+  const perRun = await bypassFor(c.env.DB, "per_run", null);
+  const allowance = await laneAllowance(c.env.DB, lane);
+
+  return ok(c, {
+    prediction: predictSpend({
+      what,
+      estimateMicros: Math.floor(estimate),
+      perRunCapMicros: perRun.active ? perRun.active.amount_micros : perRunDefault,
+      dayRemainingMicros: allowance.remaining_micros,
+      monthRemainingMicros: null,
+    }),
+  });
+});
+
+models.get("/caps/bypasses", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT id, scope, lane, amount_micros, reason, raised_by, created_at, expires_at,
+              revoked_at, revoked_reason
+         FROM spend_bypass ORDER BY created_at DESC LIMIT 100`,
+    )
+    .all<BypassRow & { revoked_reason: string | null }>();
+  const now = Date.now();
+  // LIVE IS COMPUTED, NEVER STORED. A stored flag would need something to switch it off at the
+  // right moment, and the thing that forgot to run is how an expired bypass outlives its reason.
+  return ok(c, (rows.results ?? []).map((r) => ({ ...r, live: isLive(r, now) })));
+});
+
+/**
+ * RAISE ONE. The only way over a cap, and the only place it can be done.
+ *
+ * ─── WHY THE ACTOR IS A CONSTANT AND NOT A PARAMETER ────────────────────────
+ *
+ * `raised_by` is not read from the request. It is the literal string `'owner'`, and the column
+ * CHECKs that it is. The failure this shape exists to prevent is an automation granting itself
+ * headroom — a duty hits a cap, something helpful writes a bypass, and the cap is decorative from
+ * then on. If the actor were a field, that automation would simply put "owner" in it.
+ *
+ * Everything under `/api/boss` is already behind her passcode and there is exactly one human who
+ * holds it (STATUS.md: "One passcode is the whole perimeter"). So the honest encoding of "only she
+ * may raise one" is: this endpoint, behind that passcode, with no way to attribute the decision to
+ * anybody else. A duty or a cron reaching this route would have had to steal the passcode first,
+ * and at that point the bypass is not the problem.
+ *
+ * EVERY FIELD IS REQUIRED. There is no partial bypass, no default amount and no default expiry — a
+ * missing field is a refusal, because every one of them is the thing that makes it bounded.
+ */
+models.post("/caps/bypass", async (c) => {
+  const b = await c.req.json<any>().catch(() => ({}));
+
+  const scope = b?.scope;
+  if (scope !== "per_run" && scope !== "day" && scope !== "month") {
+    throw badRequest(
+      "scope must be per_run, day or month",
+      "Name the cap you are lifting. A bypass that silently covered all three would be the open-ended switch this is designed not to be.",
+    );
+  }
+
+  const lane = scope === "per_run" ? null : String(b?.lane ?? "").trim();
+  if (scope !== "per_run") {
+    if (!lane) throw badRequest("A day or month bypass must name a lane", "ops or trading.");
+    const known = await c.env.DB.prepare(`SELECT id FROM lanes WHERE id = ?`).bind(lane).first();
+    if (!known) throw notFound(`There is no ${lane} lane`);
+  }
+
+  const amount = Number(b?.amount_micros);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw badRequest(
+      "amount_micros must be a positive number of micros",
+      "A bypass names a ceiling that moved. Spending past the number you give is refused exactly as it would have been without one.",
+    );
+  }
+
+  const reason = String(b?.reason ?? "").trim();
+  if (reason.length < 12) {
+    throw badRequest(
+      "Say why, in a sentence",
+      "\"urgent\" satisfies a non-empty check and tells you nothing in November. This is the same minimum a pass reason carries.",
+    );
+  }
+
+  const expiresAt = Number(b?.expires_at);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    throw badRequest(
+      "expires_at must be a millisecond timestamp in the future",
+      "Every bypass ends. A switch with no end is the one shape this cannot express.",
+    );
+  }
+
+  const id = newId("byp");
+  const now = Date.now();
+  await c.env.DB
+    .prepare(
+      `INSERT INTO spend_bypass (id, scope, lane, amount_micros, reason, raised_by, created_at, expires_at)
+       VALUES (?,?,?,?,?, 'owner', ?,?)`,
+    )
+    .bind(id, scope, lane, Math.floor(amount), reason, now, Math.floor(expiresAt))
+    .run();
+
+  await audit(c.env.DB, {
+    actor: "owner", lane: lane ?? "ops", entityType: "spend_bypass", entityId: id,
+    action: "raised",
+    detail: { scope, lane, amount_micros: Math.floor(amount), reason, expires_at: Math.floor(expiresAt) },
+  });
+
+  const row = await c.env.DB
+    .prepare(`SELECT * FROM spend_bypass WHERE id = ?`).bind(id).first<BypassRow>();
+  return ok(c, { bypass: row, note: (await bypassFor(c.env.DB, scope, lane)).note });
+});
+
+/**
+ * REVOKE ONE, because she changed her mind.
+ *
+ * Marked rather than deleted: a decision withdrawn is still a decision taken, and the ledger rows
+ * it already authorised still point at it. Effective immediately — `isLive` refuses any row with a
+ * `revoked_at`, so the next spend decision is back under the cap.
+ */
+models.post("/caps/bypass/:id/revoke", async (c) => {
+  const id = c.req.param("id");
+  const b = await c.req.json<any>().catch(() => ({}));
+  const reason = String(b?.reason ?? "").trim() || "Revoked by the owner.";
+
+  const row = await c.env.DB.prepare(`SELECT * FROM spend_bypass WHERE id = ?`).bind(id).first<BypassRow>();
+  if (!row) throw notFound(`No bypass ${id}`);
+  if (row.revoked_at !== null) throw conflict("That bypass was already revoked");
+
+  await c.env.DB
+    .prepare(`UPDATE spend_bypass SET revoked_at = ?, revoked_reason = ? WHERE id = ?`)
+    .bind(Date.now(), reason.slice(0, 600), id)
+    .run();
+
+  await audit(c.env.DB, {
+    actor: "owner", lane: row.lane ?? "ops", entityType: "spend_bypass", entityId: id,
+    action: "revoked", detail: { reason },
+  });
+
+  return ok(c, { revoked: id });
 });
 
 // ─── Stage 7 · the bench ─────────────────────────────────────────────────────

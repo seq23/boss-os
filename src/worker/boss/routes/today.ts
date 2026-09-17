@@ -10,6 +10,8 @@ import {
 import { assertMayReachExternalModel } from "../policy/airlock";
 import { runCoachingTurn } from "../coaching/run";
 import { WIRING_BY_BACKEND } from "../router/backends";
+// One statement of which tiers a vendor gives away, shared with the router and the guard.
+import { routeIsBilled } from "../backends/guard";
 import { dayIdInZone, zonedTime } from "../../../shared/boss/timezone";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
@@ -2838,12 +2840,12 @@ today.get("/coaching", async (c) => {
       .all<{ id: string; display_name: string }>(),
     c.env.DB
       .prepare(
-        `SELECT m.provider_id, COUNT(*) AS models, MAX(m.in_micros_1k + m.out_micros_1k) AS dearest
+        `SELECT m.provider_id, COUNT(*) AS models, GROUP_CONCAT(m.slug, CHAR(10)) AS slugs
            FROM models m JOIN providers p ON p.id = m.provider_id
           WHERE m.enabled = 1 AND p.enabled = 1
           GROUP BY m.provider_id`,
       )
-      .all<{ provider_id: string; models: number; dearest: number }>(),
+      .all<{ provider_id: string; models: number; slugs: string | null }>(),
   ]);
 
   /*
@@ -2856,9 +2858,24 @@ today.get("/coaching", async (c) => {
   const backends = (enabledBackends.results ?? [])
     .map((b) => {
       const stats = byProvider.get(WIRING_BY_BACKEND.get(b.id)?.providerId ?? "");
-      return stats
-        ? { id: b.id, display_name: b.display_name, models: stats.models, free: stats.dearest === 0 }
-        : null;
+      if (!stats) return null;
+      /*
+       * FREE MEANS NOTHING IS BILLED, NOT THAT THE PRICE COLUMN SAYS ZERO.
+       *
+       * This read `MAX(in_micros_1k + out_micros_1k) === 0`, which was right only while nobody had
+       * priced anything. Migration 0248 recorded Cloudflare's own published rates for the two
+       * Workers AI models and this label immediately flipped to "not free" — for the one backend
+       * she actually uses, whose calls still cost exactly nothing, because what makes them free is
+       * the INCLUDED DAILY ALLOWANCE and not a number in a column.
+       *
+       * `routeIsBilled` is the single statement of which tiers a vendor gives away, read from
+       * `backends/guard.ts`'s own FREE_ROUTES — the same function the router orders candidates by.
+       * A backend is shown as free when every model she could reach on it is unbilled, so a
+       * provider carrying one metered model is not advertised as free on the strength of the others.
+       */
+      const slugs = (stats.slugs ?? "").split("\n").filter(Boolean);
+      const free = slugs.length > 0 && slugs.every((slug) => !routeIsBilled(b.id, slug));
+      return { id: b.id, display_name: b.display_name, models: stats.models, free };
     })
     .filter((b): b is NonNullable<typeof b> => b !== null)
     .sort((a, b) => Number(b.free) - Number(a.free) || a.display_name.localeCompare(b.display_name));
