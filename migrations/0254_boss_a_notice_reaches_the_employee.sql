@@ -154,4 +154,20 @@ INSERT OR IGNORE INTO firm_notices (id, title, body, author, created_at) VALUES
    || 'success over an empty loop.',
    'Sequoia Taylor', strftime('%s', '2026-09-17') * 1000);
 
+-- ─── Classification ──────────────────────────────────────────────────────────
+--
+-- EXTERNAL_OK is not a shrug here, it is the whole point: these notices are written specifically to
+-- be sent to a model on every run. A notice is a statement of how the firm works, posted by a
+-- partner, and it carries no LP name, no deal term and no personal content — notice 4 exists
+-- precisely so that the things which cannot go to an external route stay out of one.
+--
+-- APPEND_ONLY because there is no edit path and no delete path: a notice that no longer applies is
+-- superseded by a later one, and the original stays readable beneath it (notice 9).
+INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
+  ('firm_notices', 'governance', 'CLOUD_SYNC', 'EXTERNAL_OK',
+   'Standing firm notices, written to be read by every employee on every run. Posted by a partner; '
+   || 'no LP name, no deal term, no personal content.');
+
+UPDATE data_policy SET merge_policy = 'APPEND_ONLY' WHERE entity = 'firm_notices';
+
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0254_boss_a_notice_reaches_the_employee');
