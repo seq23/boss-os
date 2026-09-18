@@ -397,7 +397,13 @@ export async function executeRun(envelope, deps = {}) {
     });
   }
 
-  const runner = execute ?? (await defaultExecutor());
+  /*
+   * THE ENVELOPE SAYS WHICH SEAT CLAIMED THIS RUN, so the envelope chooses the adapter. Falling
+   * back to Claude Code for an unlabelled envelope preserves every existing caller exactly — that
+   * is the same default `packet()` already applies two hundred lines above — while a named
+   * `bk_codex` now reaches the CLI it was claimed for instead of the other one.
+   */
+  const runner = execute ?? (await defaultExecutor(envelope?.backend_id ?? "bk_claude_code"));
   let result;
   try {
     result = await runner({ envelope, prompt, sentinel, forbidden, cwd: envelope.repo_path });
@@ -652,10 +658,35 @@ export async function workOnce(deps = {}) {
 
 /* ─── The real implementations ───────────────────────────────────────────── */
 
+/**
+ * Which adapter runs an `agent_executed` envelope — keyed on the backend that CLAIMED it.
+ *
+ * IT USED TO RETURN `claudeCodeExecutor` UNCONDITIONALLY, which was correct while there was one
+ * seat and silently wrong the moment there were two: `claimRun` already takes a `backendId`, so a
+ * run claimed for `bk_codex` would have been handed to the Claude Code CLI and the second seat
+ * would have been a registry row that nothing invoked. That is the defect this repository names
+ * most often, and it would have looked like a working lane on every screen.
+ *
+ * AN UNKNOWN BACKEND THROWS RATHER THAN DEFAULTING. A default here is a guess about which of the
+ * owner's subscriptions to spend, made at the moment nobody is watching. A new `agent_executed`
+ * backend is a deliberate act with a diff behind it, and until it has an entry the runner says
+ * which one it could not resolve.
+ */
+export const AGENT_EXECUTORS = {
+  bk_claude_code: async () => (await import("./backends/claudeCode.mjs")).claudeCodeExecutor,
+  bk_codex: async () => (await import("./backends/codex.mjs")).codexExecutor,
+};
+
 /** Lazily resolved so importing this module costs nothing and works where child_process does not. */
-async function defaultExecutor() {
-  const { claudeCodeExecutor } = await import("./backends/claudeCode.mjs");
-  return claudeCodeExecutor;
+async function defaultExecutor(backendId = "bk_claude_code") {
+  const load = AGENT_EXECUTORS[backendId];
+  if (!load) {
+    throw new Error(
+      `No executor is registered for ${backendId}. Add it to AGENT_EXECUTORS in scripts/sync-agent/runner.mjs; ` +
+      `the runner will not guess which of the owner's subscriptions to spend.`,
+    );
+  }
+  return await load();
 }
 
 /**
