@@ -36,9 +36,20 @@ import {
  * cannot become a mystery in somebody else's suite.
  */
 
+/*
+ * THE SHIPPED STATE THIS FILE PUTS BACK, and it is the STATE AFTER EVERY MIGRATION rather than the
+ * state 0173 seeded. `restoreSeed()` runs between tests, so a stale row here does not merely make
+ * one assertion wrong — it rewrites the database out from under every test that follows. When 0256
+ * enabled bk_openrouter and gave it a $5 sub-cap, a map still saying `registered, 0` would have
+ * quietly reverted both after the first test that touched it.
+ */
 const SEEDED = {
   bk_claude_code: { status: "registered", ceiling: 0 },
-  bk_openrouter: { status: "registered", ceiling: 0 },
+  // Enabled by 0256, with a figure of its own: effectiveAllowance treats a 0 ceiling as NO SUB-CAP
+  // STATED, so enabling at 0 would have let it spend the whole lane budget once the lever moves.
+  bk_openrouter: { status: "enabled", ceiling: 5_000_000 },
+  // The second $0 subscription seat, 0256. Enabled because its executor ships with it.
+  bk_codex: { status: "enabled", ceiling: 0 },
   bk_workers_ai: { status: "registered", ceiling: 0 },
   bk_fireworks: { status: "registered", ceiling: 0 },
   bk_local_runtime: { status: "disabled", ceiling: 0 },
@@ -66,6 +77,20 @@ async function forceEnable(id: string, ceilingMicros = 0) {
     .bind(ceilingMicros, id)
     .run();
   return (await getBackend(env.DB, id))!;
+}
+
+/**
+ * Put a backend back to `registered`.
+ *
+ * NEEDED SINCE 0256, which enables three backends in the shipped state. Tests whose subject is "no
+ * backend may take this" used to get that posture for free, from a registry where nothing was on.
+ * Reaching it now is a deliberate setup step — which is better, because the posture is stated in the
+ * test rather than inherited from a seed that can change underneath it.
+ */
+async function forceShut(...ids: string[]) {
+  for (const id of ids) {
+    await env.DB.prepare(`UPDATE execution_backends SET status = 'registered' WHERE id = ?`).bind(id).run();
+  }
 }
 
 async function setLever(value: string) {
@@ -108,7 +133,7 @@ afterEach(restoreSeed);
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Stage 1 — the registry as seeded", () => {
-  it("holds seven backends at $0, and the only enabled one is the one Stage 2 actually built", async () => {
+  it("holds eight backends, and every enabled one has something built for it", async () => {
     const rows = await listBackends(env.DB);
     /*
      * SEVEN SINCE 0211. The two frontier providers were added for coaching alone, on her
@@ -118,7 +143,7 @@ describe("Stage 1 — the registry as seeded", () => {
      * and the new rows obey it: registering is not commissioning.
      */
     expect(rows.map((b) => b.id).sort()).toEqual([
-      "bk_anthropic", "bk_claude_code", "bk_fireworks", "bk_local_runtime",
+      "bk_anthropic", "bk_claude_code", "bk_codex", "bk_fireworks", "bk_local_runtime",
       "bk_openai", "bk_openrouter", "bk_workers_ai",
     ]);
     for (const b of rows) {
@@ -137,9 +162,16 @@ describe("Stage 1 — the registry as seeded", () => {
        * line. The two coaching backends carry $5/month each, which is a deliberate reviewable
        * number against a name, which is the invariant this loop is actually about.
        */
-      if (b.id === "bk_claude_code" || b.id === "bk_anthropic" || b.id === "bk_openai") {
-        expect(b.monthly_ceiling_micros).toBeGreaterThan(0);
-      } else expect(b.monthly_ceiling_micros).toBe(0);
+      /*
+       * AND bk_openrouter JOINED THEM AT 0256. It is the one backend that is enabled AND metered,
+       * so it is the one where a missing figure actually costs money: a 0 here is read by
+       * effectiveAllowance as "no sub-cap stated" and leaves it bounded only by the lane. The rule
+       * this loop enforces is therefore sharpened rather than relaxed — an ENABLED backend that can
+       * be billed must carry a deliberate reviewable number against its name.
+       */
+      if (b.id === "bk_claude_code" || b.id === "bk_anthropic" || b.id === "bk_openai" || b.id === "bk_openrouter") {
+        expect(b.monthly_ceiling_micros, b.id).toBeGreaterThan(0);
+      } else expect(b.monthly_ceiling_micros, b.id).toBe(0);
       // The forbidden list is the invariant that never moves, enabled or not. No backend may commit,
       // merge, push, deploy or read a secret, and enabling one does not buy it any of those.
       expect(b.forbidden_actions).toEqual(expect.arrayContaining(["commit", "merge", "push", "deploy", "secret_read"]));
@@ -152,10 +184,27 @@ describe("Stage 1 — the registry as seeded", () => {
      * reason "Awaiting Stage 2" long after Stage 2 existed. The other four have had nothing built
      * for them and must stay shut.
      */
-    const enabled = rows.filter((b) => b.status === "enabled").map((b) => b.id);
-    expect(enabled).toEqual(["bk_claude_code"]);
+    const enabled = rows.filter((b) => b.status === "enabled").map((b) => b.id).sort();
+    expect(enabled).toEqual(["bk_claude_code", "bk_codex", "bk_openrouter"]);
     const claude = rows.find((b) => b.id === "bk_claude_code")!;
     expect(claude.status_reason).toMatch(/Stage 2 shipped/);
+
+    /*
+     * THE RULE IS UNCHANGED AND IS NOW ASSERTED DIRECTLY RATHER THAN BY COUNTING TO ONE.
+     * "Registering is not commissioning" never meant "only one backend may be enabled"; it meant
+     * nothing may be enabled until the thing that runs it exists. Pinning the literal list
+     * `["bk_claude_code"]` encoded the count instead of the rule, so it went red for a change that
+     * obeys it. Each enabled backend must now SAY what was built for it, which is stricter: the old
+     * form let a fourth be enabled with an empty reason as long as the array was updated.
+     */
+    for (const b of rows.filter((x) => x.status === "enabled")) {
+      expect(b.status_reason ?? "", `${b.id} is enabled with no reason recorded`).not.toHaveLength(0);
+      expect(b.status_reason, b.id).toMatch(/Stage 2 shipped|Enabled 17 September 2026/);
+    }
+    // And the converse, which is the half that actually guards the money: nothing is enabled that
+    // has no executor and no key.
+    const shut = rows.filter((b) => b.status !== "enabled").map((b) => b.id).sort();
+    expect(shut).toEqual(["bk_anthropic", "bk_fireworks", "bk_local_runtime", "bk_openai", "bk_workers_ai"]);
   });
 
   it("says DEFERRED for the local runtime rather than anything that reads like readiness", async () => {
@@ -650,9 +699,21 @@ describe("Stage 1 — eligibleFor", () => {
     expect(result.task_kind_known).toBe(true);
     expect(result.lever.position).toBe("FREE_ONLY");
 
-    // Claude Code costs this system nothing at all, so it sorts ahead of a free-tier cloud model.
-    expect(result.order.map((o) => o.backend_id)).toEqual(["bk_claude_code", "bk_openrouter"]);
-    expect(result.order.map((o) => o.cost_rank)).toEqual([0, 2]);
+    /*
+     * BOTH SUBSCRIPTION SEATS SORT AHEAD OF THE FREE-TIER CLOUD MODEL, and that ordering is the
+     * whole of rung 0. A seat costs this system nothing at all (`no_vendor_call`, rank 0); an
+     * OpenRouter `:free` slug costs nothing either but is still a vendor call (rank 2).
+     *
+     * STRENGTHENED RATHER THAN RENUMBERED. The old form pinned a two-element list, which happened
+     * to encode "there is exactly one $0 seat" — a fact about the roster, not about the rule. What
+     * is asserted now is the rule: every rank-0 seat precedes every cloud route, the ranks
+     * ascend, and nothing metered appears at all.
+     */
+    expect(result.order.map((o) => o.backend_id)).toEqual(["bk_claude_code", "bk_codex", "bk_openrouter"]);
+    expect(result.order.map((o) => o.cost_rank)).toEqual([0, 0, 2]);
+    const ranks = result.order.map((o) => o.cost_rank);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    expect(result.order.filter((o) => o.cost_rank === 0).length).toBe(2);
 
     // Fireworks is metered, so it is refused rather than quietly dropped from the list.
     const fireworks = result.refused.find((r) => r.backend_id === "bk_fireworks");
@@ -666,18 +727,38 @@ describe("Stage 1 — eligibleFor", () => {
     expect(unknown.task_kind_known).toBe(false);
     expect(unknown.order).toHaveLength(0);
 
+    /*
+     * THE SECOND HALF NEEDS "classify" TO REACH NOTHING, and since 0256 two more backends take it:
+     * bk_codex lists classify among its allowed kinds and bk_openrouter always did. They are shut
+     * here explicitly rather than the assertion being relaxed, because the distinction under test —
+     * an UNKNOWN kind versus a known kind nobody may take — is unchanged and still worth pinning.
+     * bk_claude_code stays enabled and is refused on its own allowed_kinds, which is the case that
+     * makes `task_kind_known: true` meaningful.
+     */
+    await forceShut("bk_codex", "bk_openrouter");
     const known = await eligibleFor(env as any, "classify");
     expect(known.task_kind_known).toBe(true);
     expect(known.order).toHaveLength(0);
     expect(known.refused.length).toBeGreaterThan(0);
+    // And the refusal is about the KIND, not about the backend being off — otherwise shutting the
+    // two above would have made this pass for the wrong reason.
+    expect(known.refused.some((r) => r.code === "task_kind_not_allowed")).toBe(true);
   });
 
   it("returns nothing permitted, and every reason, when nothing is enabled", async () => {
+    // 0256 ships three backends enabled, so "nothing is enabled" is now a posture this test has to
+    // create rather than inherit. Stating it here is what keeps the subject of the test honest.
+    await forceShut("bk_claude_code", "bk_codex", "bk_openrouter");
+
     const result = await eligibleFor(env as any, "research");
     expect(result.order).toHaveLength(0);
-    // Seven since 0211's two coaching backends, both registered and therefore both refused by name.
-    expect(result.refused).toHaveLength(7);
+    // EIGHT since 0256 added bk_codex: every backend in the registry is refused BY NAME, which is
+    // the property under test — a backend that is off must appear as a refusal with a sentence,
+    // never be silently missing from the list.
+    expect(result.refused).toHaveLength(8);
     expect(new Set(result.refused.map((r) => r.code))).toEqual(new Set(["backend_not_enabled"]));
+    // The count above is only meaningful if it matches the registry, so tie the two together.
+    expect(result.refused).toHaveLength((await listBackends(env.DB)).length);
   });
 });
 
@@ -697,7 +778,7 @@ describe("Stage 1 — /api/backends", () => {
     expect(text).not.toContain("test-key-not-a-real-credential");
 
     const body = JSON.parse(text);
-    expect(body.data.backends).toHaveLength(7);
+    expect(body.data.backends).toHaveLength(8);
     expect(body.data.lever.position).toBe("MODERATE");
     // Five route-order criteria, which is a different five and does not move.
     expect(body.data.route_order).toHaveLength(5);
@@ -706,7 +787,14 @@ describe("Stage 1 — /api/backends", () => {
       // thing this asserts against, not readiness itself.
       expect(b.readiness.sentence).toBeTruthy();
       expect(b.credential.ref === null || typeof b.credential.ref === "string").toBe(true);
-      if (b.id !== "bk_claude_code") expect(b.readiness.ready).toBe(false);
+      /*
+       * READY IS NOW THREE, and the rule is stated rather than the roster. A backend is ready when
+       * it is enabled AND its credential is present; 0256 enabled bk_codex (a session on her Mac,
+       * no key) and bk_openrouter (OPENROUTER_API_KEY). Listing the ready ones by name would pin
+       * the roster again, so this asserts the IMPLICATION in both directions instead.
+       */
+      if (b.readiness.ready) expect(b.status, b.id).toBe("enabled");
+      if (b.status !== "enabled") expect(b.readiness.ready, b.id).toBe(false);
     }
   });
 
@@ -742,12 +830,36 @@ describe("Stage 1 — PATCH /api/backends/:id", () => {
   });
 
   it("refuses to enable a backend whose credential is absent", async () => {
+    /*
+     * 0256 SHIPS bk_openrouter ENABLED, so reaching the case under test means putting it back —
+     * and `restoreSeed()` deletes OPENROUTER_API_KEY, so from here the credential really is absent.
+     * "Enabling follows the key and never precedes it" is the rule, and it is unchanged.
+     */
+    await forceShut("bk_openrouter");
     const { status, body } = await apiJson("/api/backends/bk_openrouter", {
       method: "PATCH", body: { status: "enabled", reason: "Trying it out" },
     });
     expect(status).toBe(409);
     expect(body.error).toContain("OPENROUTER_API_KEY");
     expect((await getBackend(env.DB, "bk_openrouter"))!.status).toBe("registered");
+
+    /*
+     * AND A SECOND BACKEND, which is the strengthening rather than a repeat. The case above now
+     * depends on this test having just shut a row, so on its own it could pass against a guard that
+     * only ever refuses a row it had seen change. bk_anthropic has never been touched here, so it
+     * proves the guard reads the CREDENTIAL rather than the history.
+     *
+     * NOT bk_fireworks, which was the obvious pick and is wrong: `vitest.boss.config.ts` injects a
+     * FIREWORKS_API_KEY binding, so that row is credentialled inside this suite and the PATCH
+     * correctly returns 200. Writing the assertion first and discovering that is exactly what this
+     * second case is for — a guard proven against one row is a guard proven once.
+     */
+    const anth = await apiJson("/api/backends/bk_anthropic", {
+      method: "PATCH", body: { status: "enabled", reason: "Trying it out" },
+    });
+    expect(anth.status).toBe(409);
+    expect(anth.body.error).toContain("ANTHROPIC_API_KEY");
+    expect((await getBackend(env.DB, "bk_anthropic"))!.status).toBe("registered");
   });
 
   it("enables the one whose credential is held on the owner's machine, and audits it", async () => {
@@ -971,10 +1083,18 @@ describe("Stage 1 — POST /candidates", () => {
 
     const permitted = body.data.candidates.filter((c: any) => c.refused === false);
     const refused = body.data.candidates.filter((c: any) => c.refused === true);
-    expect(permitted.map((c: any) => c.backend_id)).toEqual(["bk_claude_code"]);
-    // Six since 0211: the two coaching backends are registered and not enabled, so they appear here
-    // as refusals with a sentence rather than being silently absent from the list.
-    expect(refused.length).toBe(6);
+    /*
+     * TWO SEATS TAKE repo_work SINCE 0256, and that is the point of the second one: coding work no
+     * longer has a single place to go. Both are $0 and on her own machine.
+     */
+    expect(permitted.map((c: any) => c.backend_id).sort()).toEqual(["bk_claude_code", "bk_codex"]);
+    /*
+     * AND EVERY OTHER BACKEND STILL APPEARS AS A REFUSAL WITH A SENTENCE rather than being silently
+     * absent — which is the actual subject of this test. Derived from the roster instead of typed,
+     * so adding a backend cannot make it pass by arithmetic.
+     */
+    expect(refused.length).toBe((await listBackends(env.DB)).length - permitted.length);
+    expect(permitted.length + refused.length).toBe(body.data.candidates.length);
 
     // The client renders these verbatim and invents nothing, so they must all be present.
     for (const c of body.data.candidates) {

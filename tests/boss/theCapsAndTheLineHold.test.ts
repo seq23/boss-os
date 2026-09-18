@@ -4,6 +4,7 @@ import { routeCompletion, BudgetExceeded, RoutingBlocked } from "../../src/worke
 import { setSpendLever } from "../../src/worker/boss/router/spend";
 import { bypassFor, isLive, predictSpend, type BypassRow } from "../../src/worker/boss/router/bypass";
 import { scanForModelAccess, privateLexicon, isPrivateModelRoute } from "../../src/worker/boss/router/modelAccess";
+import { routeIsBilled } from "../../src/worker/boss/backends/guard";
 import { row, all, api, apiJson, stubFetch, completionResponse } from "./helpers";
 
 /**
@@ -116,17 +117,63 @@ describe("1 · the shipped seed follows its keys", () => {
     const openrouter = await row<{ enabled: number }>(`SELECT enabled FROM providers WHERE id = 'prv_openrouter'`);
     expect(openrouter!.enabled).toBe(1);
 
-    // And only :free slugs are registered, so the lane it gained costs nothing at any lever
-    // position — including OPEN, where nothing would refuse it.
-    const orModels = await all<{ slug: string; in_micros_1k: number; out_micros_1k: number }>(
-      `SELECT slug, in_micros_1k, out_micros_1k FROM models WHERE provider_id = 'prv_openrouter'`,
+    /*
+     * ─── WHAT KEEPS THIS LANE AT $0 CHANGED AT 0256, AND THE ASSERTION IS STRICTER FOR IT ───────
+     *
+     * This used to read "only :free slugs are registered, so the lane costs nothing at any lever
+     * position — including OPEN, where nothing would refuse it." That was true, and it was safety
+     * by ABSENCE: nothing could spend because nothing spendable existed.
+     *
+     * 0256 registers six metered rungs deliberately, so the absence is gone and the guarantee has
+     * to be carried by the controls instead. That is a weaker guarantee at OPEN and a real one
+     * everywhere else, and pretending otherwise by deleting the paid rows would leave private work
+     * with one lane again. So the test now pins the CONTROLS rather than the absence, and it pins
+     * more of them than it used to:
+     *
+     *   · every metered slug carries a REAL price, because an unpriced metered route is the thing
+     *     `routeIsBilled` cannot classify and the caps have nothing to compare against (0248);
+     *   · `routeIsBilled` — the single statement of which routes a vendor gives away, read by both
+     *     the guard and the router — agrees with the slug on every row;
+     *   · the backend carries a sub-cap of its own, because a 0 ceiling is read by
+     *     `effectiveAllowance` as NO SUB-CAP STATED and would leave OpenRouter bounded only by the
+     *     lane the moment the lever moves.
+     */
+    const orModels = await all<{ id: string; slug: string; in_micros_1k: number; out_micros_1k: number }>(
+      `SELECT id, slug, in_micros_1k, out_micros_1k FROM models WHERE provider_id = 'prv_openrouter'`,
     );
     expect(orModels.length).toBeGreaterThan(0);
+
+    let free = 0;
+    let metered = 0;
     for (const m of orModels) {
-      expect(m.slug.endsWith(":free")).toBe(true);
-      expect(m.in_micros_1k).toBe(0);
-      expect(m.out_micros_1k).toBe(0);
+      const isFreeSlug = m.slug.endsWith(":free");
+      // ONE STATEMENT OF FREE, AND THE ROW AGREES WITH IT. `routeIsBilled` is what the router reads
+      // when it orders candidates and what the guard reads when it proves a route free.
+      expect(routeIsBilled("bk_openrouter", m.slug), m.id).toBe(!isFreeSlug);
+      if (isFreeSlug) {
+        free++;
+        expect(m.in_micros_1k, m.id).toBe(0);
+        expect(m.out_micros_1k, m.id).toBe(0);
+      } else {
+        metered++;
+        // A metered row priced at 0 would estimate every call at nothing, so the per-run cap, the
+        // task envelope and the lane budget would all have zero to compare against and could not
+        // refuse it however large it was. That is the 0248 defect, and it is fatal on a paid row.
+        expect(m.in_micros_1k, m.id).toBeGreaterThan(0);
+        expect(m.out_micros_1k, m.id).toBeGreaterThan(0);
+      }
     }
+    /* RULE 0 on both halves: a loop that saw only one kind proves nothing about the other. */
+    expect(free, "no free OpenRouter route is registered").toBeGreaterThan(0);
+    expect(metered, "no metered route is registered, so the billed half was never checked").toBeGreaterThan(0);
+
+    const orBackend = await row<{ status: string; monthly_ceiling_micros: number }>(
+      `SELECT status, monthly_ceiling_micros FROM execution_backends WHERE id = 'bk_openrouter'`,
+    );
+    // Reachable at last: it sat at `registered` from 0173 to 0256, so evaluateBackend refused it at
+    // its first rule and every model on it was unreachable.
+    expect(orBackend!.status).toBe("enabled");
+    expect(orBackend!.monthly_ceiling_micros).toBeGreaterThan(0);
   });
 
   /** Every price either cites a vendor or says, in the row, that it could not be confirmed. */

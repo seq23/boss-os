@@ -40,8 +40,38 @@ export function capabilityRank(tier) {
 }
 
 /**
- * Cheapest first; at equal cost, the more capable tier; then the name, so the order is total and a
- * routing decision is reproducible.
+ * Where a model sits on the one ladder — `models.ladder_rung`, migration 0256. Lower is tried first.
+ *
+ * AN UNPLACED MODEL SORTS LAST, not first. A row nobody put on the ladder has not been considered
+ * against the others, and letting it default to 0 would let a model jump the whole queue by having
+ * no opinion recorded about it. `Infinity` is the honest reading of "not placed".
+ */
+export function ladderRung(rung) {
+  const n = Number(rung);
+  return Number.isFinite(n) ? n : Infinity;
+}
+
+/**
+ * Cheapest first; at equal cost, the LADDER; then the more capable tier; then the name, so the
+ * order is total and a routing decision is reproducible.
+ *
+ * ─── WHY THE LADDER SITS WHERE IT DOES ──────────────────────────────────────
+ *
+ * Below cost, because cost is Stage 5's whole definition and a seeded preference may never buy a
+ * dearer route. Above capability and the alphabet, because those two are what the ladder replaces:
+ * every free route costs 0, so they ALL tie on price, and the tie used to fall through to
+ * `display_name.localeCompare` — which is the defect recorded at the top of this file, the one that
+ * sent a $1B block trade to an 8B model because "Llama 3.1" sorts before "Llama 3.3".
+ *
+ * Four free reasoning lanes were added in 0256. Without a rung they would have been ordered by
+ * spelling, exactly as before, and the fix would have lasted until the next model with an early
+ * initial. The alphabet is still the final tie-break, and it now only ever decides between two rows
+ * that cost the same, sit on the same rung and share a tier — which is to say, between rows that
+ * genuinely have nothing to choose between them.
+ *
+ * IT IS A SEED, NOT A VERDICT. The router folds `experienceRank` into `costOf` at a weight larger
+ * than any price, so a lane whose work gets reworked or rejected sinks beneath one that has never
+ * been tried. The ladder decides only what happens before there is evidence.
  *
  * `costOf` is passed in rather than computed here: the estimate depends on the prompt and the
  * route's output ceiling, which are the router's business and not this module's.
@@ -51,6 +81,9 @@ export function orderCandidates(models, costOf) {
     const ca = costOf(a);
     const cb = costOf(b);
     if (ca !== cb) return ca - cb;
+    const ra = ladderRung(a.ladder_rung);
+    const rb = ladderRung(b.ladder_rung);
+    if (ra !== rb) return ra - rb;
     const ta = capabilityRank(a.capability_tier);
     const tb = capabilityRank(b.capability_tier);
     if (ta !== tb) return tb - ta;

@@ -144,23 +144,45 @@ describe("consent is a constraint, not a label", () => {
       .run();
     await env.DB.prepare(`DELETE FROM models WHERE provider_id = 'prv_workers_ai'`).run();
 
-    // Nothing provisioned yet: Workers AI is registered, not enabled, and has no model rows.
-    const before = await apiJson("/api/today/coaching");
-    expect(before.body.data.backends).toEqual([]);
+    /*
+     * THE ASSERTION IS ABOUT WORKERS AI, NOT ABOUT THE LIST BEING EMPTY.
+     *
+     * It used to read `toEqual([])`, which was a true statement about the roster rather than about
+     * the rule, and 0256 made it false for a reason that OBEYS the rule: bk_openrouter is now
+     * commissioned and carries twelve model rows, so offering it is correct. Pinning emptiness
+     * would have forced the fix to be "hide a backend that can answer", which is the opposite of
+     * what this test exists to protect.
+     *
+     * So the invariant is stated directly and applied to every entry, which is stricter than the
+     * old form: an empty list satisfied `toEqual([])` no matter how broken the query was.
+     */
+    const ids = async () => (await apiJson("/api/today/coaching")).body.data.backends;
+    const offered = await ids();
+    for (const b of offered) {
+      expect(b.models, `${b.id} is offered with no models`).toBeGreaterThan(0);
+      const st = await row<{ status: string }>(
+        `SELECT status FROM execution_backends WHERE id = ?`, b.id,
+      );
+      expect(st?.status, `${b.id} is offered while ${st?.status}`).toBe("enabled");
+    }
+    // Workers AI is registered, not enabled, and its model rows were just deleted.
+    expect(offered.map((b: any) => b.id)).not.toContain("bk_workers_ai");
 
     await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled' WHERE id = 'bk_workers_ai'`).run();
-    // Enabled but still no models — a backend that cannot answer must not be offered as one that can.
-    expect((await apiJson("/api/today/coaching")).body.data.backends).toEqual([]);
+    // ENABLED BUT STILL NO MODELS — a backend that cannot answer must not be offered as one that
+    // can. This is the heart of the test, and it is now asserted about the row that is actually in
+    // that state rather than about the whole list being empty.
+    expect((await ids()).map((b: any) => b.id)).not.toContain("bk_workers_ai");
 
     expect((await apiJson("/api/models/provision/bk_workers_ai", { method: "POST", body: {} })).status).toBe(201);
 
-    const after = await apiJson("/api/today/coaching");
+    const after = await ids();
     // THE REGRESSION THIS PINS: backend→provider comes from the wiring, not from matching
     // `credential_ref` against `api_key_var`. Workers AI stores `binding:AI` in one and `AI` in the
     // other — both true, and a SQL join on them silently drops the only free backend she has.
-    expect(after.body.data.backends).toEqual([
-      { id: "bk_workers_ai", display_name: "Workers AI", models: 2, free: true },
-    ]);
+    expect(after).toContainEqual({ id: "bk_workers_ai", display_name: "Workers AI", models: 2, free: true });
+    // And provisioning added it rather than replacing what was already offered.
+    expect(after.length).toBe(offered.length + 1);
   });
 
   it("DECLARES ITS TASK KIND, without which no backend can admit it", async () => {

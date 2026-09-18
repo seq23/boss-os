@@ -192,7 +192,23 @@ export const COST_MODE_POLICY: Record<CostMode, CostModePolicy> = {
     id: "NORMAL",
     label: "Normal",
     allowedTiers: ["fast", "general"],
-    maxFallbackHops: 1,
+    /*
+     * RAISED FROM 1 TO 3 BY MIGRATION 0256, and this is the line that makes the ladder real.
+     *
+     * The paid half of the ladder is six rungs, cheapest first — $0.10/$0.40 up to $2.00/$10.00.
+     * At one hop a run could try exactly ONE of them and then stop, so five registered, priced,
+     * probed lanes could never be reached on any single run however hard the earlier ones failed.
+     * Thirteen lanes under a limit of one is decoration.
+     *
+     * IT BOUNDS SPEND, NOT ATTEMPTS, which is why three is safe. The hop counter only increments
+     * for a route that is actually billed, and every rung is screened against the per-run cap
+     * ($0.75), the lane budget, the $5.00 OpenRouter sub-cap and the month line before it is
+     * called — so three hops cannot cost more than one hop was already allowed to. What it buys is
+     * the ability to fall PAST a cheap lane that is down to the next cheap lane, instead of
+     * stopping at the first outage. Three is the depth at which a run reaches the third-cheapest
+     * paid rung; going deeper trades latency for lanes the breaker has usually removed anyway.
+     */
+    maxFallbackHops: 3,
     autonomousSpendAllowed: true,
     taskBudgetShare: 0.15,
     note: "Balanced default.",
