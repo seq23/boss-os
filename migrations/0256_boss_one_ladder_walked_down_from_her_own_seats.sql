@@ -265,7 +265,8 @@ VALUES
    'Inkling (OpenRouter, free)', 0, 0, 1048576, 0,
    'cloud', 'general', 'unbenchmarked', 'low', 1, NULL,
    'SOURCED', 1789603200000,
-   'Free in the feed read 2026-09-17, and NOT ROUTABLE FROM THIS WORKER. A real call returned '
+   'https://openrouter.ai/api/v1/models read 2026-09-17: prompt 0, completion 0 — free, and the '
+   || 'price was read rather than assumed. NOT ROUTABLE FROM THIS WORKER. A real call returned '
    || 'HTTP 403, verbatim: "thinkingmachines/inkling:free is only available on agentic harnesses. '
    || 'Try plugging it into a coding agent or productivity app listed on ...". A Cloudflare Worker '
    || 'is not an agentic harness, so this is a structural refusal rather than a transient one and '
@@ -276,7 +277,8 @@ VALUES
    'Qwen 3.8 27B (OpenRouter, free)', 0, 0, 262144, 0,
    'cloud', 'general', 'unbenchmarked', 'low', 1, NULL,
    'SOURCED', 1789603200000,
-   'Free in the feed read 2026-09-17, and it would not complete: HTTP 429 "Provider returned '
+   'https://openrouter.ai/api/v1/models read 2026-09-17: prompt 0, completion 0 — free, and the '
+   || 'price was read rather than assumed. IT WOULD NOT COMPLETE: HTTP 429 "Provider returned '
    || 'error" on TEN attempts across two sessions with backoff — 0 of 10 — while z-ai/glm-5.2:free '
    || 'recovered from the identical error 3 times in 9 on the same key in the same window. Upstream '
    || 'capacity, not a credential, and not merely a bad minute. '
@@ -358,7 +360,8 @@ VALUES
    'Claude Sonnet 5, batch (OpenRouter)', 1000, 5000, 1000000, 0,
    'cloud', 'general', 'unbenchmarked', 'low', 1, NULL,
    'SOURCED', 1789603200000,
-   '$1.00 in / $5.00 out per million in the feed read 2026-09-17 — half of Sonnet 5 — and NOT '
+   'https://openrouter.ai/api/v1/models read 2026-09-17: $1.00 in / $5.00 out per million — half '
+   || 'of Sonnet 5, and the price was read rather than assumed. NOT '
    || 'REACHABLE BY THIS ADAPTER. A real call returned HTTP 404, verbatim: "This model is only '
    || 'available through the Batch API. Use the /api/beta/batches endpoint instead." That is a '
    || 'different protocol, not a different model, and router/openrouter.ts speaks '

@@ -51,6 +51,7 @@
  */
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerTsResolve } from "./lib/ts-resolve.mjs";
@@ -76,18 +77,65 @@ export const PLAN_CASES = [
   { name: "upgrading the plan moves the ceiling with no row edited", tier: "claude_max_20x", reserve: 25, capacity: 200_000_000, ceiling: 150_000_000 },
 ];
 
-/** The newest migration that touches the backend spend columns, comments stripped. */
+/**
+ * EVERY migration that touches the backend spend columns, in order, comments stripped.
+ *
+ * ─── IT USED TO BE "THE NEWEST ONE", AND THAT WAS A LATENT BUG THIS FILE FOUND THE HARD WAY ────
+ *
+ * The declarations live in 0239. This function returned only the LAST file mentioning `spend_kind`,
+ * which was 0239 right up until migration 0256 registered a new backend and set `spend_kind` on
+ * that one row. From that moment the authority this validator inspected was a file containing one
+ * declaration, and it reported that Workers AI, OpenRouter, the local runtime and Claude Code had
+ * all lost theirs — four false failures, on rows nobody had touched.
+ *
+ * "The newest file that mentions the column" was only ever a proxy for "what the column says now",
+ * and the proxy breaks the first time a declaration is added somewhere else. Migrations are
+ * CUMULATIVE, so the honest reading is the cumulative one, and reading all of them is strictly
+ * stronger than reading one: a declaration can now live in any migration and still be found, and a
+ * declaration deleted from the only file that had it is still caught.
+ *
+ * THE END STATE IS ALSO CHECKED, separately and by replay, in `declaredState()` below. Text and
+ * state answer different questions — "was it written down" and "is it true after every migration
+ * runs" — and this file now asks both, because a later migration could silently overwrite an
+ * earlier declaration and the text check alone would never see it.
+ */
 export function spendMigration(migrationsDir) {
   const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
-  let latest = null;
+  const touching = [];
   for (const f of files) {
     const src = readFileSync(join(migrationsDir, f), "utf8").split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
-    if (/spend_kind/.test(src)) latest = src;
+    if (/spend_kind|ceiling_source|cost_basis/.test(src)) touching.push(src);
   }
-  return latest;
+  return touching.length === 0 ? null : touching.join("\n");
 }
 
-export function check({ sentences, plans, registry, route, screen, migration }) {
+/**
+ * What the spend columns ACTUALLY say once every migration has run.
+ *
+ * Replayed into in-memory SQLite, the way `validate:ladder` and `validate:free-brain` read the
+ * world. This is the half the text check cannot do: a later migration that overwrote an earlier
+ * declaration would leave the old text sitting in an old file, matching the regex, while the
+ * database said something else entirely.
+ *
+ * Returns null if the replay produced nothing, which Rule 0 turns into a failure rather than a pass.
+ */
+export function declaredState(migrationsDir) {
+  const db = new DatabaseSync(":memory:");
+  const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
+  for (const f of files) {
+    try { db.exec(readFileSync(join(migrationsDir, f), "utf8")); } catch { /* replayed best-effort */ }
+  }
+  try {
+    const rows = db.prepare(
+      `SELECT id, spend_kind, cost_basis, ceiling_source FROM execution_backends`,
+    ).all();
+    return rows.length === 0 ? null : rows.map((r) => ({ ...r }));
+  } catch {
+    return null;
+  }
+}
+
+export function check({ sentences, plans, registry, route, screen, migration, state }) {
   const problems = [];
   const code = (src) => src.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
   const screenCode = code(screen);
@@ -125,6 +173,61 @@ export function check({ sentences, plans, registry, route, screen, migration }) 
     }
     if (!/cost_basis\s*=\s*'plan_equivalent'/.test(migration)) {
       problems.push(`No backend is marked \`plan_equivalent\`, so the subscription figure still reads as a bill.`);
+    }
+  }
+
+  /*
+   * ── THE END STATE, NOT ONLY THE TEXT ──────────────────────────────────────
+   *
+   * Everything above asks whether a declaration was WRITTEN. This asks whether it is TRUE after
+   * every migration has run, which is the only version of the question the screen actually renders.
+   * A later migration that overwrote one of these would leave the original text in an old file,
+   * still matching, while the row said something else.
+   */
+  if (state === null) {
+    problems.push(
+      `Replaying the migrations produced no execution_backends rows, so the spend kinds were checked ` +
+      `only as text. A declaration nobody can read back is not a declaration.`,
+    );
+  } else {
+    const byId = new Map(state.map((r) => [r.id, r]));
+    let examined = 0;
+    for (const c of ZERO_CASES) {
+      const r = byId.get(c.id);
+      if (!r) { problems.push(`\`${c.id}\` does not exist after the migrations replay, so its $0.00 says nothing.`); continue; }
+      examined += 1;
+      if (r.spend_kind !== c.kind) {
+        problems.push(`\`${c.id}\` ends up \`${r.spend_kind}\` after every migration, not \`${c.kind}\` — it is ${c.why}.`);
+      }
+      if (r.cost_basis !== c.basis) {
+        problems.push(`\`${c.id}\` ends up cost_basis \`${r.cost_basis}\`, not \`${c.basis}\`, so the screen prices it wrongly.`);
+      }
+    }
+    const claude = byId.get("bk_claude_code");
+    if (claude && claude.ceiling_source !== "plan") {
+      problems.push(
+        `\`bk_claude_code\` ends up ceiling_source \`${claude.ceiling_source}\` after every migration. ` +
+        `A hand-set figure goes stale the moment she upgrades and nothing notices.`,
+      );
+    }
+    /*
+     * EVERY SUBSCRIPTION SEAT, not just the one that existed when this was written. 0256 added a
+     * second ($0 on her ChatGPT Plus plan), and a seat recorded as `invoiced` is the fake-invoice
+     * defect 0239 exists to prevent — she read one for a week.
+     */
+    for (const r of state) {
+      if (r.cost_basis === "plan_equivalent") examined += 1;
+      if (/^bk_(claude_code|codex)$/.test(r.id) && r.cost_basis !== "plan_equivalent") {
+        problems.push(
+          `\`${r.id}\` runs on one of her own subscriptions and is recorded cost_basis ` +
+          `\`${r.cost_basis}\`. No card is charged for it, and a figure that looks like a bill and is ` +
+          `not one is exactly what 0239 was written to stop.`,
+        );
+      }
+    }
+    /* RULE 0 for this rule specifically. */
+    if (examined === 0) {
+      problems.push(`No backend row was actually examined for its spend kind, so this rule passed over an empty loop.`);
     }
   }
 
@@ -230,10 +333,55 @@ async function selfTest() {
     route: readFileSync(join(ROOT, SYSTEM_ROUTE), "utf8"),
     screen: readFileSync(join(ROOT, SCREEN), "utf8"),
     migration: spendMigration(join(ROOT, "migrations")),
+    state: declaredState(join(ROOT, "migrations")),
   };
 
   const cases = [
     { name: "the shipped shape passes", input: good, expect: 0 },
+    /*
+     * ─── THE END-STATE RULE, PROVEN NEGATIVELY ────────────────────────────────
+     * Added with the rule itself: a guard nobody has watched fail is not a guard.
+     */
+    {
+      name: "THE BUG THAT FOUND THIS: only the newest migration inspected, so declarations elsewhere vanish",
+      // Exactly what `spendMigration` used to return once 0256 set spend_kind on one new row.
+      input: { ...good, migration: "UPDATE execution_backends SET spend_kind = 'free' WHERE id = 'bk_codex';" },
+      expect: 4,
+    },
+    {
+      name: "a row whose end state contradicts the declaration written in an older migration",
+      input: {
+        ...good,
+        state: good.state.map((r) => (r.id === "bk_workers_ai" ? { ...r, spend_kind: "capped" } : r)),
+      },
+      expect: 1,
+    },
+    {
+      name: "a subscription seat recorded as though a card were charged",
+      input: {
+        ...good,
+        state: good.state.map((r) => (r.id === "bk_codex" ? { ...r, cost_basis: "invoiced" } : r)),
+      },
+      expect: 1,
+    },
+    {
+      name: "Claude Code's ceiling hand-set again instead of derived from the plan",
+      input: {
+        ...good,
+        state: good.state.map((r) => (r.id === "bk_claude_code" ? { ...r, ceiling_source: "stored" } : r)),
+      },
+      expect: 1,
+    },
+    {
+      name: "a replay that produced no rows at all, which must not read as agreement",
+      input: { ...good, state: null },
+      expect: 1,
+    },
+    {
+      name: "a state with no backend row to examine — Rule 0 on this rule",
+      input: { ...good, state: [] },
+      expect: 4,
+    },
     {
       name: "THE DEFECT: the three $0 backends saying the same thing",
       input: { ...good, sentences: good.sentences.map((s) => ({ ...s, sentence: "Up to $0.00 a month." })) },
@@ -323,6 +471,7 @@ if (process.argv.includes("--self-test")) {
     route: readFileSync(join(ROOT, SYSTEM_ROUTE), "utf8"),
     screen: readFileSync(join(ROOT, SCREEN), "utf8"),
     migration: spendMigration(join(ROOT, "migrations")),
+    state: declaredState(join(ROOT, "migrations")),
   });
 
   if (problems.length) {

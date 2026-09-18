@@ -100,7 +100,19 @@ describe("the ladder exists and can actually be walked", () => {
     const free = rungs.filter((m) => m.slug.endsWith(":free") || m.provider_id === "prv_workers_ai");
     // Before 0256 the free tier was Llama 3.3 70B and Gemma 3 27B, neither of which reasons.
     expect(free.filter((m) => m.reasoning === 1).length).toBeGreaterThan(0);
-    expect(free[0].reasoning, `first free rung is ${free[0].display_name}`).toBe(1);
+
+    /*
+     * RULE 0, AND `noUncheckedIndexedAccess` MADE IT COMPULSORY RATHER THAN OPTIONAL.
+     *
+     * `free[0]` is `T | undefined` under this tsconfig, and the honest narrowing is not a `!` — it
+     * is the assertion that the list has something in it, which is a thing this test should be
+     * saying anyway. Without it, a world where the free tier had vanished entirely would make the
+     * remaining assertion vacuous and this test would report that the ladder gained a reasoning
+     * brain over a ladder with no free rungs at all.
+     */
+    const first = free[0];
+    expect(first, "there are no free rungs, so 'reaches it first' means nothing").toBeDefined();
+    expect(first!.reasoning, `first free rung is ${first!.display_name}`).toBe(1);
   });
 });
 
