@@ -65,7 +65,23 @@ const RULES: Rule[] = [
     risk: "high",
     sensitivity: "restricted",
     assignment: "USER_ONLY",
-    terms: /\b(trade|trading|order|position|portfolio|allocation|exchange|broker|ticker|long|short|buy|sell)\b/i,
+    /*
+     * `allocation` LEFT THIS LIST, AND IT IS THE SAME DEFECT THIS RULE ALREADY CARRIES A PARAGRAPH
+     * ABOUT BELOW.
+     *
+     * "Build the event kit: run of show, room layout, and the ALLOCATION of seats" matched here.
+     * The card came out classified as high-risk trading work, USER_ONLY, awaiting an approval
+     * nobody knew to give — and once intake started labelling model access, it also came out
+     * `private_model_only`, which is precisely the over-restriction the owner overruled: "WHO CARES
+     * ABOUT HIRING SEARCH AND EVENT KITS AND ROOM KITS. THEY ARE NOT PRIVATE INFO."
+     *
+     * NOTHING REAL IS LOST. The trading LANE still forces this classification below whatever the
+     * wording, `portfolio`, `ticker`, `broker`, `trade` and `position` all remain, and the router's
+     * own scan still treats allocation wording as a signal — it simply asks for a second one before
+     * acting on it (`router/modelAccess.ts`). A seating plan has no second signal; a real
+     * allocation next to a figure does.
+     */
+    terms: /\b(trade|trading|order|position|portfolio|exchange|broker|ticker|long|short|buy|sell)\b/i,
     reason: "Trading lane work. No model receives execution authority here.",
   },
   {
@@ -338,6 +354,19 @@ export function classify(input: {
   let intakeKind: IntakeKind = declared ?? chosen?.kind ?? "one_off";
   let risk: RiskLevel = base?.risk ?? "low";
   let sensitivity: Sensitivity = base?.sensitivity ?? "private";
+  /*
+   * WAS THE SENSITIVITY DECLARED, OR GUESSED FROM A WORD?
+   *
+   * It matters because only a DECLARED `restricted` may tighten model access. A keyword rule's
+   * verdict is a guess about wording, and this file already documents what those guesses cost: the
+   * Executive Intelligence Report was classified as trading work by the phrase "every planetary
+   * position". Letting a guess like that decide which models may see the work would put the
+   * sibling repo's over-restriction back, one rule-table row at a time.
+   *
+   * The content scan in `router/modelAccess.ts` is the backstop, and it reads the real prompt
+   * rather than the title, so nothing is left unguarded by this.
+   */
+  let sensitivityWasDeclared = false;
   let assignment: ExecutionAssignment = base?.assignment ?? "AI_DRAFT";
   let reason = base?.reason ?? "No specific category matched, so this is a one-off drafting task.";
 
@@ -348,6 +377,8 @@ export function classify(input: {
     sensitivity = "restricted";
     assignment = "USER_ONLY";
     reason = "Trading lane. Analysis only; execution stays with the Boss.";
+    // THE LANE IS A FACT, NOT A GUESS. A caller that put this in the trading lane said so.
+    sensitivityWasDeclared = true;
     matched.push("lane_trading");
   }
 
@@ -374,6 +405,7 @@ export function classify(input: {
     input.sensitivity === "private" || input.sensitivity === "restricted"
   ) {
     sensitivity = input.sensitivity;
+    sensitivityWasDeclared = true;
     matched.push("explicit_sensitivity");
   }
 
@@ -384,7 +416,9 @@ export function classify(input: {
    * one-way, tighten-only input, and `internal` contributes nothing through it.
    */
   const accessVerdict = classifyModelAccess({
-    text, intakeKind, sensitivity, declared: input.model_access ?? null,
+    text, intakeKind,
+    sensitivity: sensitivityWasDeclared ? sensitivity : null,
+    declared: input.model_access ?? null,
   });
   const audienceVerdict = classifyAudience({ text, declared: input.audience ?? null });
   matched.push(...accessVerdict.matched, ...audienceVerdict.matched);
