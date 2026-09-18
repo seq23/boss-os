@@ -77,8 +77,15 @@ export async function theWorld(dir = join(ROOT, "migrations")) {
   const routes = db.prepare(`SELECT id, lane, primary_model_id, fallback_model_id FROM routes`).all();
   const backends = db.prepare(`SELECT id, status, monthly_ceiling_micros FROM execution_backends`).all();
   const models = db.prepare(
+    /*
+     * `ladder_rung` IS SELECTED BECAUSE THE COMPARATOR READS IT (0256). Leaving it out would hand
+     * `orderCandidates` rows whose rung is undefined, every one of them sorting as unplaced, and
+     * this file would then be exercising a DIFFERENT order from the one the router gets — which is
+     * the "two components each keeping their own list" defect wearing a validator's badge.
+     */
     `SELECT m.id, m.provider_id, m.slug, m.display_name, m.capability_tier, m.enabled,
-            m.in_micros_1k, m.out_micros_1k, m.context_tokens, p.enabled AS provider_enabled
+            m.in_micros_1k, m.out_micros_1k, m.context_tokens, m.ladder_rung,
+            p.enabled AS provider_enabled
        FROM models m JOIN providers p ON p.id = m.provider_id`,
   ).all().map((m) => ({ ...m }));
 

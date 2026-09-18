@@ -35,19 +35,25 @@ import { getNumber } from "../lib/settings";
 /**
  * How many FREE routes one run may try after the paid ones. Bounded, not unlimited.
  *
- * RAISED FROM 2 TO 6 BY 0256, and the number is derived rather than picked. The free half of the
- * ladder is eight rungs — four free reasoning lanes on OpenRouter, the two Workers AI models and
+ * RAISED FROM 2 TO 10 BY 0256, and the number is derived rather than picked. The free half of the
+ * ladder is EIGHT rungs — four free reasoning lanes on OpenRouter, the two Workers AI models and
  * the two older OpenRouter free models — and at 2 the walk stopped after the second, which made
  * six of the eight unreachable on any single run. Registering lanes that a hop limit forbids
  * anything from reaching is the "exists but nothing invokes it" defect, and it would have been
  * invisible: nothing goes red when a ladder quietly stops two rungs down.
  *
- * IT IS STILL A LIMIT, AND IT STILL COSTS NOTHING TO SPEND. A free attempt spends no money; what it
- * spends is latency and the caller's patience, which is why the bound exists at all. Six leaves
- * two rungs of headroom below the eight so the cap is not silently load-bearing, and the breaker
- * removes a lane that keeps failing long before this number is reached.
+ * TEN, NOT EIGHT, AND THE FIRST DRAFT OF THIS SAID SIX. `validate:ladder` counted the free rungs
+ * against this constant and failed the build, which is the guard doing exactly its job — the
+ * comment claimed headroom the arithmetic did not have. The rule the validator enforces is that
+ * this limit must COVER every free rung, so it is recomputed from the ladder rather than guessed
+ * at, and two spare rungs keep it from being silently load-bearing the next time a free lane is
+ * added.
+ *
+ * IT IS STILL A LIMIT, AND A FREE ATTEMPT STILL SPENDS NOTHING. What it spends is latency and the
+ * caller's patience, which is why the bound exists at all; the breaker removes a lane that keeps
+ * failing long before this number is reached.
  */
-export const MAX_FREE_HOPS = 6;
+export const MAX_FREE_HOPS = 10;
 
 
 const BUDGET_REFUSAL_CODES = new Set([

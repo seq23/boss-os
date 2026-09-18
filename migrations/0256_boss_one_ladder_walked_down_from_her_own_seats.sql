@@ -33,10 +33,10 @@
 --   ----  ----------------------------------------  --------  ----------------------------------
 --    100  nvidia/nemotron-3-ultra-550b-a55b:free     ACTIVE    200, "lane is alive", 91 reasoning tokens, cost 0
 --    110  deepseek/deepseek-v4-flash-0731:free       ACTIVE    200, "lane is alive", 36 reasoning tokens, cost 0
---    120  z-ai/glm-5.2:free                          ACTIVE    200 on retry after one 429, "lane is alive"
+--    120  z-ai/glm-5.2:free                          ACTIVE    3 of 9 served "lane is alive"; 6 x 429. Intermittent, see its row
 --    130  nvidia/nemotron-3-super-120b-a12b:free     ACTIVE    200, "lane is alive", 89 reasoning tokens, cost 0
 --     --  thinkingmachines/inkling:free              DISABLED  403 "is only available on agentic harnesses"
---     --  qwen/qwen3.8-27b:free                      DISABLED  429 "Provider returned error", four attempts
+--     --  qwen/qwen3.8-27b:free                      DISABLED  0 of 10 across two sessions; 429 every time
 --    200  google/gemini-2.5-flash-lite               ACTIVE    200, "Lane is alive", cost $0.0000022
 --    210  openai/gpt-5-mini                          ACTIVE    200, "lane is alive", 64 reasoning tokens
 --    220  google/gemini-2.5-flash                    ACTIVE    200, "Lane is alive", cost $0.0000105
@@ -90,9 +90,13 @@
 --             data policy (Free model training)." The guard demonstrably removes lanes.
 --
 -- SO THE PAID RUNGS CARRY `NO_TRAINING_CONTRACTUAL` AND THE FREE RUNGS DO NOT, and the split is
--- carried by evidence rather than by vendor reputation. This takes the number of lanes that may
--- hold an LP name from ONE — Workers AI, 0249 — to NINE: two subscription seats and the six paid
--- rungs, plus Workers AI. That is the largest single thing in this migration.
+-- carried by evidence rather than by vendor reputation. This takes the number of routes that may
+-- hold an LP name from TWO to TEN: the six paid rungs, the second subscription seat, and the three
+-- that already qualified (both Workers AI models and bk_claude_code). Counted as MODEL ROWS the
+-- ladder goes from two to eight, which is the figure `validate:ladder` prints, because the two
+-- subscription seats are backends rather than rows in `models`. That is the largest single thing in
+-- this migration, and it is the half the owner cares about most: before it, private work had one
+-- cloud lane and stopped if that lane was down.
 --
 -- AND THE CLAIM IS SELF-ENFORCING. `router/openrouter.ts` sends the flag on EVERY request to a
 -- model this table marks non-training, not merely on requests the caller labelled private. A row
@@ -232,8 +236,15 @@ VALUES
    'cloud', 'general', 'unbenchmarked', 'low', 1, 120,
    'SOURCED', 1789603200000,
    'https://openrouter.ai/api/v1/models read 2026-09-17: prompt 0, completion 0, context 32768, '
-   || 'reasoning supported. Real completion the same day after one transient 429: HTTP 200, '
-   || '"lane is alive". The shortest context on the ladder, which is why it sits below the two 1M rungs.'),
+   || 'reasoning supported. INTERMITTENT AND REGISTERED ANYWAY, on measured evidence rather than on '
+   || 'one sample: 3 of 9 attempts served a real "lane is alive" completion and the other 6 returned '
+   || 'HTTP 429 "Provider returned error". A second operator probing the same key the same night saw '
+   || '0 of 3 and would have benched it; the two observations together say saturated-but-alive, not '
+   || 'dead. It stays because a 429 is retryable (statusIsRetryable), the breaker removes it if it '
+   || 'keeps failing, the free walk is six deep so a refusal costs one cheap hop and no money, and a '
+   || 'lane that answers a third of the time is worth strictly more than nothing at $0. '
+   || 'It sits at rung 120 rather than higher because of the 32k context — the shortest on the '
+   || 'ladder — not because of the flakiness.'),
 
   ('mdl_or_nemotron_super_free', 'prv_openrouter', 'nvidia/nemotron-3-super-120b-a12b:free',
    'Nemotron 3 Super 120B (OpenRouter, free)', 0, 0, 262144, 1,
@@ -266,10 +277,16 @@ VALUES
    'cloud', 'general', 'unbenchmarked', 'low', 1, NULL,
    'SOURCED', 1789603200000,
    'Free in the feed read 2026-09-17, and it would not complete: HTTP 429 "Provider returned '
-   || 'error" on four attempts with backoff, while z-ai/glm-5.2:free recovered from the identical '
-   || 'error on its first retry. Upstream capacity, not a credential. Disabled because a lane that '
-   || 'has never completed a generation may not be routable — that is the failure this whole '
-   || 'migration was written to avoid. Re-probe and enable if the capacity returns.');
+   || 'error" on TEN attempts across two sessions with backoff — 0 of 10 — while z-ai/glm-5.2:free '
+   || 'recovered from the identical error 3 times in 9 on the same key in the same window. Upstream '
+   || 'capacity, not a credential, and not merely a bad minute. '
+   || 'A SECOND OPERATOR PROBING THE SAME KEY THE SAME NIGHT SAW IT SERVE ONCE, and would have '
+   || 'registered it ACTIVE on that. The success is not disputed and it is not enough: a lane goes '
+   || 'ACTIVE on evidence that it can be RELIED ON, and 1 in 11 across both operators is not that. '
+   || 'A dead lane looks perfect right up to the outage it was meant to survive. '
+   || 'THE PROMOTE PATH IS ONE UPDATE: re-probe, and if it serves repeatedly set enabled = 1 and '
+   || 'ladder_rung = 125, which is the gap deliberately left for it between GLM 5.2 and Nemotron '
+   || 'Super.');
 
 -- ── The six paid rungs. Cheapest first, every one private-capable ────────────────────────────
 
@@ -451,5 +468,48 @@ INSERT OR IGNORE INTO execution_backends
 UPDATE execution_backends
    SET spend_kind = 'free', cost_basis = 'plan_equivalent', ceiling_source = 'stored'
  WHERE id = 'bk_codex';
+
+-- ── What "reasoning = 1" is actually claiming, per rung ──────────────────────────────────────
+--
+-- Every rung declares `reasoning` in the OpenRouter feed's `supported_parameters`, which is the
+-- vendor stating the capability. SIX OF THE TEN WERE ALSO OBSERVED USING IT, and the difference is
+-- worth writing down rather than flattening, because a capability nobody has seen exercised is a
+-- weaker fact than one that has been:
+--
+--   OBSERVED EMITTING REASONING TOKENS   nemotron-3-ultra:free 91, nemotron-3-super:free 89,
+--                                        deepseek-v4-flash:free 36, gpt-5-mini 64,
+--                                        nemotron-3-ultra metered 135, gemini-2.5-flash-lite 32,
+--                                        gemini-2.5-flash 29
+--   DECLARED, NOT OBSERVED               claude-haiku-4.5 and claude-sonnet-5 returned 0 reasoning
+--                                        tokens even with reasoning.effort "low" explicitly set.
+--
+-- THE ZEROES ARE NOT EVIDENCE OF ABSENCE and they are not being reported as such. The probe asked
+-- for three words; an extended-thinking model answering "lane is alive" at low effort has nothing
+-- to think about, and both accepted the parameter without complaint. A second operator running the
+-- same check the same night recorded 36 reasoning tokens from Haiku, which did not reproduce here.
+-- The rows carry reasoning = 1 on the vendor's declaration; this note is so nobody later reads that
+-- column as "seen doing it" for those two.
+
+-- ── A baseline, so the thing this ladder exists to move can be shown to have moved ───────────
+--
+-- Rule 0 applies to outcomes as well as to stages: a ladder built to cut cost that nobody ever
+-- measures is a change that exits 0 having done nothing observable. The figure is read from
+-- OpenRouter's own /api/v1/key on 17 September 2026.
+--
+-- IT IS ACCOUNT-WIDE, NOT THIS REPOSITORY'S, and the row says so in as many words. The same
+-- OPENROUTER_API_KEY serves both this Worker and the sibling repo, so $48.67 month-to-date is the
+-- two of them together against her ~$10/month target. Recording it as if it were Boss OS's own
+-- spend would be the "authoritative-looking number that misleads" 0222 warned about — the baseline
+-- is honest precisely because it names what it does and does not cover.
+INSERT INTO settings (key, value, updated_at) VALUES
+  ('openrouter_spend_baseline_micros', '48673004', unixepoch() * 1000),
+  ('openrouter_spend_baseline_note',
+   'Read from OpenRouter /api/v1/key on 2026-09-17: usage_monthly $48.673, limit $100, '
+   || 'limit_remaining $51.327, is_free_tier false. ACCOUNT-WIDE — the same key serves west-peek-os, '
+   || 'so this is both repositories together, not Boss OS alone, and it is the number migration 0256 '
+   || 'exists to move against her ~$10/month target. The free-model allowance was 1000/day with 6 '
+   || 'used, so the four free rungs have room and will not cap out.',
+   unixepoch() * 1000)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;
 
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0256_boss_one_ladder_walked_down_from_her_own_seats');
