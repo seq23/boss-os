@@ -1,10 +1,19 @@
 import type {
+  Audience,
   ExecutionAssignment,
   IntakeKind,
+  ModelAccess,
   RiskLevel,
   Sensitivity,
 } from "../../../shared/boss/governance";
-import { isIntakeKind } from "../../../shared/boss/governance";
+import {
+  DEFAULT_AUDIENCE,
+  DEFAULT_MODEL_ACCESS,
+  isAudience,
+  isIntakeKind,
+  isModelAccess,
+  modelAccessFromLegacySensitivity,
+} from "../../../shared/boss/governance";
 
 /**
  * The Task Intake Engine, checklist slice.
@@ -19,6 +28,17 @@ export interface Classification {
   intakeKind: IntakeKind;
   risk: RiskLevel;
   sensitivity: Sensitivity;
+  /**
+   * WHICH MODELS MAY SEE THE INPUT. Decided by `classifyModelAccess` alone.
+   *
+   * Her ruling, and the reason this is a field on every work card rather than a judgement made
+   * later at the router: "WE NEED TO CLASSIFY ON EACH WORK CARD GOING FORWARD ... SO THERE IS NO
+   * CONFUSION. MOST WORK IS INTERNAL AND NOT-CONFIDENTIAL SO CAN USE FREE TRAINING MODELS WITH
+   * REASONING AND CLOSE TO $0."
+   */
+  modelAccess: ModelAccess;
+  /** WHO MAY RECEIVE THE OUTPUT. Decided by `classifyAudience` alone. Never touches routing. */
+  audience: Audience;
   executionAssignment: ExecutionAssignment;
   reason: string;
   matched: string[];
@@ -162,6 +182,109 @@ const RULES: Rule[] = [
 const OUTBOUND = /\b(send|publish|post to|email (her|him|them|it)|submit|share with|deliver to)\b/i;
 const MONEY = /\b(pay|purchase|buy|subscribe|invoice|wire|spend|\$\s?\d)/i;
 
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * THE TWO AXES, CLASSIFIED BY TWO FUNCTIONS THAT CANNOT SEE EACH OTHER'S ANSWER.
+ *
+ * Both take the same text and neither takes the other's verdict. That is not a stylistic choice —
+ * it is the guarantee, expressed as a signature. A function that received the audience could be
+ * made to read `internal` as "keep it off the public models", which is the exact mistake the
+ * sibling repo made and the exact thing the owner overruled:
+ *
+ *   "ITS NOT DEAL TERMS OR LP INFORMATION SO IT DOESNT MATTER IF ITS USING THIS DATA TO TRAIN."
+ *
+ * `scripts/validate/two-axes-are-independent.mjs` proves the independence by exhaustion rather than
+ * by reading this comment: it drives both functions over a matrix of inputs and fails if either
+ * axis moves when only the other axis's signals change.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * THE PRIVATE SIDE OF THE FUND, and nothing else.
+ *
+ * Deliberately narrow. Everything not named here — hiring, events, rooms, workshops, market
+ * research, tool scouting, backlink prospecting, site audits, Kindle work, community material,
+ * Productions, the executive brief's public inputs — is `public_model_approved` and may use a free
+ * reasoning lane. THIS LIST IS A FLOOR, NOT A CEILING: the router scans the outgoing prompt as well
+ * (`router/modelAccess.ts`) and can raise a run this missed. Intake labels the card; the router
+ * still reads the content.
+ */
+const PRIVATE_MODEL_ONLY_TERMS =
+  /\b(lp|lps|limited partner|capital call|drawdown|side letter|term sheet|cap ?table|carried interest|preferred return|clawback|data ?room|diligence|fund (figures?|financials?|ledger)|capital account|subscription agreement|investment memo)\b/i;
+
+/** Intake kinds whose subject matter is the fund's private side whatever words the title uses. */
+const PRIVATE_MODEL_ONLY_KINDS = new Set<string>(["trading", "west_peek_bridge", "coaching"]);
+
+/**
+ * Which models may see this work.
+ *
+ * NOTHING ABOUT THE RECIPIENT IS READ HERE. There is no `audience` parameter and no lane check that
+ * stands in for one.
+ */
+export function classifyModelAccess(input: {
+  text: string;
+  intakeKind: IntakeKind;
+  /** The legacy scale, which may only ever TIGHTEN this. See `modelAccessFromLegacySensitivity`. */
+  sensitivity?: Sensitivity | null;
+  /** An explicit label from the caller. Wins outright — this is the field she fills in. */
+  declared?: string | null;
+}): { access: ModelAccess; matched: string[] } {
+  if (isModelAccess(input.declared)) {
+    return { access: input.declared, matched: ["explicit_model_access"] };
+  }
+  const matched: string[] = [];
+  let access: ModelAccess = DEFAULT_MODEL_ACCESS;
+
+  if (PRIVATE_MODEL_ONLY_KINDS.has(input.intakeKind)) {
+    access = "private_model_only";
+    matched.push(`private_kind_${input.intakeKind}`);
+  }
+  if (PRIVATE_MODEL_ONLY_TERMS.test(input.text)) {
+    access = "private_model_only";
+    matched.push("private_terms");
+  }
+  if (modelAccessFromLegacySensitivity(input.sensitivity) === "private_model_only") {
+    access = "private_model_only";
+    matched.push("legacy_restricted");
+  }
+  return { access, matched };
+}
+
+/**
+ * EXTERNAL MEANS A PERSON OUTSIDE THE FIRM IS THE READER.
+ *
+ * Internal is Sequoia or Scooter. Everyone else — a candidate, a founder, a guest, a journalist, an
+ * LP — is external. Note that an LP is external AND private model only, and a coaching note is
+ * internal AND private model only: the two axes genuinely do land in all four corners, which is why
+ * there are two of them.
+ *
+ * NOTHING ABOUT TRAINING TERMS IS READ HERE. There is no `modelAccess` parameter.
+ */
+const EXTERNAL_RECIPIENTS =
+  /\b(candidate|applicant|founder|guest|attendee|journalist|press|investor|prospect|client|customer|vendor|supplier|subscriber|audience|public|member|community|reader|viewer|lp|lps|limited partner)\b/i;
+const EXTERNAL_VERBS =
+  /\b(send|publish|post to|submit|share with|deliver to|announce|newsletter|outreach|invite|pitch to|reply to)\b/i;
+
+export function classifyAudience(input: {
+  text: string;
+  /** An explicit label from the caller. Wins outright. */
+  declared?: string | null;
+}): { audience: Audience; matched: string[] } {
+  if (isAudience(input.declared)) {
+    return { audience: input.declared, matched: ["explicit_audience"] };
+  }
+  const recipient = EXTERNAL_RECIPIENTS.test(input.text);
+  const verb = EXTERNAL_VERBS.test(input.text);
+  /*
+   * BOTH, NOT EITHER. "Research what founders are saying" names an external party and produces a
+   * partner-only brief; "send the summary" names a verb with no outside reader. Requiring the
+   * recipient AND the act of reaching them is what keeps the default — internal — where the owner
+   * says most work sits, while still catching the thing that genuinely leaves the building.
+   */
+  if (recipient && verb) return { audience: "external", matched: ["external_recipient_and_verb"] };
+  return { audience: DEFAULT_AUDIENCE, matched: [] };
+}
+
 export function classify(input: {
   title: string;
   prompt?: string | null;
@@ -169,6 +292,10 @@ export function classify(input: {
   intakeKind?: string | null;
   risk?: string | null;
   sensitivity?: string | null;
+  /** `public_model_approved` or `private_model_only`. Governs routing and nothing else. */
+  model_access?: string | null;
+  /** `internal` or `external`. Governs approval and nothing else. */
+  audience?: string | null;
 }): Classification {
   const text = `${input.title} ${input.prompt ?? ""}`;
   const matched: string[] = [];
@@ -250,7 +377,24 @@ export function classify(input: {
     matched.push("explicit_sensitivity");
   }
 
-  return { intakeKind, risk, sensitivity, executionAssignment: assignment, reason, matched };
+  /*
+   * THE TWO AXES ARE DECIDED LAST AND SIDE BY SIDE, each from its own function, neither given the
+   * other's answer. `sensitivity` reaches the model-access call because `restricted` on the legacy
+   * scale really did mean "do not train on this" and those rows must not be downgraded — it is a
+   * one-way, tighten-only input, and `internal` contributes nothing through it.
+   */
+  const accessVerdict = classifyModelAccess({
+    text, intakeKind, sensitivity, declared: input.model_access ?? null,
+  });
+  const audienceVerdict = classifyAudience({ text, declared: input.audience ?? null });
+  matched.push(...accessVerdict.matched, ...audienceVerdict.matched);
+
+  return {
+    intakeKind, risk, sensitivity,
+    modelAccess: accessVerdict.access,
+    audience: audienceVerdict.audience,
+    executionAssignment: assignment, reason, matched,
+  };
 }
 
 /**

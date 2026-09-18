@@ -57,6 +57,104 @@ export type PrivacyClass = "local" | "private_cloud" | "cloud";
 export type RiskLevel = "low" | "medium" | "high";
 export type Sensitivity = "public" | "internal" | "private" | "restricted";
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * THE TWO AXES, AND WHY THEY ARE TWO.
+ *
+ * `Sensitivity` above is ONE LINE with four points on it, and two different questions were being
+ * read off that line at once:
+ *
+ *   · WHO MAY RECEIVE THE OUTPUT      — `public` and `internal` answer this
+ *   · WHICH MODELS MAY SEE THE INPUT  — `private` and `restricted` answer this
+ *
+ * A single scale forces them to move together, and the failure that produces is not theoretical:
+ * in the sibling repo "internal", which only ever meant the recipient is a partner, was read as
+ * "too sensitive to train on". Hiring searches, event kits, room packets and workshop material —
+ * none of it private — were barred from every free lane and every run landed on the most expensive
+ * model on the account. The owner, seeing it:
+ *
+ *   "ITS NOT DEAL TERMS OR LP INFORMATION SO IT DOESNT MATTER IF ITS USING THIS DATA TO TRAIN.
+ *    WHO CARES ABOUT HIRING SEARCH AND EVENT KITS AND ROOM KITS. THEY ARE NOT PRIVATE INFO."
+ *
+ *   "WE NEED TO CLASSIFY ON EACH WORK CARD GOING FORWARD — CONFIDENTIAL VS NOT, AND INTERNAL VS
+ *    EXTERNAL, SO THERE IS NO CONFUSION. MOST WORK IS INTERNAL AND NOT-CONFIDENTIAL SO CAN USE
+ *    FREE TRAINING MODELS WITH REASONING AND CLOSE TO $0."
+ *
+ * So there are two axes, each with its own default, and NEITHER IS DERIVED FROM THE OTHER. Both
+ * off-diagonal corners are real work this firm actually does:
+ *
+ *   private_model_only  + internal   an LP memo for Sequoia
+ *   public_model_approved + external an event kit sent to a guest
+ *
+ * ─── AND THE WORDING IS HERS, DELIBERATELY ──────────────────────────────────────────────────────
+ *
+ *   "I'D ALSO LIKE TO CHANGE THE TERMINOLOGY FROM CONFIDENTIAL / NOT — MAYBE JUST LABEL IT
+ *    PUBLIC MODEL APPROVED / PRIVATE MODEL ONLY"
+ *
+ * "Confidential" asks the reader how secret something FEELS. That is a judgement, it has no
+ * falsifiable answer, and under uncertainty it pulls every reader toward the cautious-looking box —
+ * which is the exact mechanism that produced the sibling's bill. `public_model_approved` names the
+ * CONSEQUENCE instead, so the question a person answers is "where may this go", which is a
+ * question about routes and has a right answer.
+ *
+ * THE STORED VALUE IS THE DISPLAYED WORDING. Persisting `confidential` and rendering "Private model
+ * only" would put the removed vocabulary straight back into the database for the next reader to
+ * find, so there is one spelling and `MODEL_ACCESS_LABEL` is only a capitalisation of it.
+ * ───────────────────────────────────────────────────────────────────────────────────────────── */
+
+/** WHICH MODELS MAY SEE THE INPUT. The only axis that governs routing. */
+export const MODEL_ACCESSES = ["public_model_approved", "private_model_only"] as const;
+export type ModelAccess = (typeof MODEL_ACCESSES)[number];
+
+/** Most work. The default, and it is a default because most work really is this. */
+export const DEFAULT_MODEL_ACCESS: ModelAccess = "public_model_approved";
+
+export const MODEL_ACCESS_LABEL: Record<ModelAccess, string> = {
+  public_model_approved: "Public model approved",
+  private_model_only: "Private model only",
+};
+
+export const MODEL_ACCESS_NOTE: Record<ModelAccess, string> = {
+  public_model_approved:
+    "May go to any capable model, including free reasoning lanes whose terms permit training on prompts.",
+  private_model_only:
+    "Must stay on a route whose terms forbid training. LP names, deal terms, fund figures, diligence material.",
+};
+
+export function isModelAccess(v: unknown): v is ModelAccess {
+  return typeof v === "string" && (MODEL_ACCESSES as readonly string[]).includes(v);
+}
+
+/** WHO MAY RECEIVE THE OUTPUT. Governs approval, never routing. */
+export const AUDIENCES = ["internal", "external"] as const;
+export type Audience = (typeof AUDIENCES)[number];
+
+export const DEFAULT_AUDIENCE: Audience = "internal";
+
+export const AUDIENCE_LABEL: Record<Audience, string> = {
+  internal: "Internal",
+  external: "External",
+};
+
+export function isAudience(v: unknown): v is Audience {
+  return typeof v === "string" && (AUDIENCES as readonly string[]).includes(v);
+}
+
+/**
+ * THE ONE PLACE THE LEGACY SCALE TOUCHES THE NEW ONE, AND IT ONLY EVER TIGHTENS.
+ *
+ * `restricted` on the old scale did mean "do not send this out", and rows carrying it predate the
+ * split, so it must not be silently downgraded. Every other value — `public`, `internal`, `private`
+ * — says nothing whatsoever about training and therefore contributes NOTHING here: it returns the
+ * default, and a caller's explicit `model_access` still wins over that.
+ *
+ * READ THE DIRECTION. This maps sensitivity → model access and there is deliberately no function
+ * going the other way. `internal` cannot reach in and make something private-model-only, which is
+ * the whole defect being removed.
+ */
+export function modelAccessFromLegacySensitivity(sensitivity: string | null | undefined): ModelAccess {
+  return sensitivity === "restricted" ? "private_model_only" : DEFAULT_MODEL_ACCESS;
+}
+
 export interface CostModePolicy {
   id: CostMode;
   label: string;

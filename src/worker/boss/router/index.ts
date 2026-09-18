@@ -15,7 +15,7 @@ import { laneAllowance, monthWindowStart, routeIsBilled, type Refusal } from "..
 import {
   MAX_ATTEMPTS_PER_BACKEND, breakerState, recordFailure, recordSuccess, trip,
 } from "./breaker";
-import { confidentialLexicon, scanForConfidential } from "./confidential";
+import { privateLexicon, scanForModelAccess } from "./modelAccess";
 import { bypassFor, predictSpend, type BypassRow } from "./bypass";
 import {
   GRADIENT_HARD_STOP_MICROS, gradientEffect, gradientState, isProtectedWork,
@@ -125,6 +125,18 @@ export interface RouteRequest {
   intakeKind?: string | null;
   risk?: string;
   sensitivity?: string;
+  /**
+   * THE WORK CARD'S OWN LABEL — `public_model_approved` or `private_model_only`.
+   *
+   * It is the axis that governs routing, and it is SEPARATE from the audience axis on purpose.
+   * `internal` vs `external` says who may receive the output and reaches nothing in this file; a
+   * run is not sent to a narrower set of models because a partner is the reader. See
+   * `shared/boss/governance.ts`.
+   *
+   * Absent means `public_model_approved`, and it means it SAFELY: the content scan below runs
+   * either way and can raise the run on its own, so an omitted label costs nothing.
+   */
+  modelAccess?: string | null;
   costMode?: string | null;
   /** Hard ceiling from the task's permission envelope. 0 means lane budget only. */
   budgetMicros?: number;
@@ -431,16 +443,19 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
    * AN UNESTABLISHED SCAN IS A HIT. If the lexicon cannot be built the run is treated as
    * confidential, which leaves it the routes that do not train — free, and still working.
    */
-  const lexicon = await confidentialLexicon(db);
-  const confidential = scanForConfidential(opts.messages, lexicon, opts.sensitivity);
+  const lexicon = await privateLexicon(db);
+  const access = scanForModelAccess(opts.messages, lexicon, {
+    modelAccess: opts.modelAccess ?? null,
+    sensitivity: opts.sensitivity,
+  });
 
   const ctx = {
     policy, risk, sensitivity,
     intakeKind: opts.intakeKind ?? null,
     requireBenchmarkHighRisk,
     cloudForRestrictedAllowed: opts.cloudForRestrictedAllowed ?? false,
-    contentIsConfidential: confidential.confidential,
-    confidentialReason: confidential.reason,
+    modelAccess: access.access,
+    modelAccessReason: access.reason,
   };
 
   // Read ONCE and hand to the guard, so every candidate in one routing decision
