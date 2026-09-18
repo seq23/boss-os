@@ -8,6 +8,19 @@ export interface CompletionRequest {
   messages: ChatMessage[];
   maxOutputTokens: number;
   temperature: number;
+  /**
+   * Ask the provider to refuse any endpoint that trains on what it is sent.
+   *
+   * SET FROM THE MODEL ROW, NOT FROM THE CALLER'S LABEL. The router sets it true exactly when
+   * `models.data_use` is `NO_TRAINING_CONTRACTUAL`, so a row claiming to be private-capable cannot
+   * be called without the vendor being asked to honour that claim. See `openrouter.ts`.
+   *
+   * ABSENT MEANS "DO NOT ASK", WHICH IS ONLY EVER CORRECT FOR A ROUTE ALREADY RECORDED AS
+   * TRAINING-PERMITTING — `policy.ts` has refused those any private work long before an adapter
+   * runs. An adapter with no way to honour it ignores the field; that is safe because such a
+   * provider's models cannot be marked non-training in the first place without a diff here.
+   */
+  requireNoTraining?: boolean;
 }
 
 export interface CompletionResult {

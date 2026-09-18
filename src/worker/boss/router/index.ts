@@ -15,7 +15,7 @@ import { laneAllowance, monthWindowStart, routeIsBilled, type Refusal } from "..
 import {
   MAX_ATTEMPTS_PER_BACKEND, breakerState, recordFailure, recordSuccess, trip,
 } from "./breaker";
-import { privateLexicon, scanForModelAccess } from "./modelAccess";
+import { isPrivateModelRoute, privateLexicon, scanForModelAccess } from "./modelAccess";
 import { bypassFor, predictSpend, type BypassRow } from "./bypass";
 import {
   GRADIENT_HARD_STOP_MICROS, gradientEffect, gradientState, isProtectedWork,
@@ -32,8 +32,22 @@ import { getNumber } from "../lib/settings";
  * `BudgetExceeded` into exactly that card. A capability refusal is terminal and
  * must not masquerade as one.
  */
-/** How many FREE routes one run may try after the paid ones. Bounded, not unlimited. */
-export const MAX_FREE_HOPS = 2;
+/**
+ * How many FREE routes one run may try after the paid ones. Bounded, not unlimited.
+ *
+ * RAISED FROM 2 TO 6 BY 0256, and the number is derived rather than picked. The free half of the
+ * ladder is eight rungs — four free reasoning lanes on OpenRouter, the two Workers AI models and
+ * the two older OpenRouter free models — and at 2 the walk stopped after the second, which made
+ * six of the eight unreachable on any single run. Registering lanes that a hop limit forbids
+ * anything from reaching is the "exists but nothing invokes it" defect, and it would have been
+ * invisible: nothing goes red when a ladder quietly stops two rungs down.
+ *
+ * IT IS STILL A LIMIT, AND IT STILL COSTS NOTHING TO SPEND. A free attempt spends no money; what it
+ * spends is latency and the caller's patience, which is why the bound exists at all. Six leaves
+ * two rungs of headroom below the eight so the cap is not silently load-bearing, and the breaker
+ * removes a lane that keeps failing long before this number is reached.
+ */
+export const MAX_FREE_HOPS = 6;
 
 
 const BUDGET_REFUSAL_CODES = new Set([
@@ -195,6 +209,7 @@ async function loadModel(db: D1Database, modelId: string): Promise<ModelRow | nu
       `SELECT m.id, m.slug, m.provider_id, m.display_name, m.in_micros_1k, m.out_micros_1k,
               m.enabled, m.privacy_class, m.capability_tier, m.benchmark_status,
               m.approved_task_kinds, m.forbidden_task_kinds, m.max_risk, m.data_use,
+              m.reasoning, m.ladder_rung,
               p.base_url, p.api_key_var
          FROM models m JOIN providers p ON p.id = m.provider_id
         WHERE m.id = ? AND p.enabled = 1`,
@@ -219,6 +234,7 @@ async function loadContinuityModels(db: D1Database, exclude: string[]): Promise<
       `SELECT m.id, m.slug, m.provider_id, m.display_name, m.in_micros_1k, m.out_micros_1k,
               m.enabled, m.privacy_class, m.capability_tier, m.benchmark_status,
               m.approved_task_kinds, m.forbidden_task_kinds, m.max_risk, m.data_use,
+              m.reasoning, m.ladder_rung,
               p.base_url, p.api_key_var
          FROM models m JOIN providers p ON p.id = m.provider_id
         WHERE m.enabled = 1 AND p.enabled = 1`,
@@ -931,6 +947,17 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
             messages: opts.messages,
             maxOutputTokens: route.max_output_tokens,
             temperature: route.temperature,
+            /*
+             * THE ROW'S PRIVACY CLAIM, SENT TO THE VENDOR TO HONOUR — see `openrouter.ts`.
+             *
+             * Read from `models.data_use` through the SAME predicate `policy.ts` uses to decide
+             * eligibility, so there is one statement of what "private model" means and the two
+             * cannot drift into disagreeing. It is deliberately NOT keyed off `ctx.modelAccess`:
+             * a route recorded as non-training is asked to prove it on every call, not only on the
+             * calls somebody remembered to label, and if the vendor cannot the request fails
+             * instead of leaking.
+             */
+            requireNoTraining: isPrivateModelRoute(model.data_use),
           },
           { baseUrl: model.base_url, apiKey: cred.apiKey, ai: cred.ai },
         );

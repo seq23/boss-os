@@ -107,7 +107,50 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
     credential: { kind: "env", name: "OPENROUTER_API_KEY" },
     adapter: openrouter,
     note: "One host, reached only through this router. Free variants carry the :free suffix, which is what proves the route free — a zero in a price column does not.",
+    /*
+     * ─── THE ONE LADDER, MIGRATION 0256 ───────────────────────────────────────
+     *
+     * Every row below completed a REAL GENERATION through `/chat/completions` on 17 September 2026
+     * before it was written here — HTTP 200 with actual text back, not a read-only probe. The two
+     * lanes that would not complete are in the migration, registered and DISABLED with their
+     * refusals quoted, and they are deliberately absent from this list: this constant is the
+     * provisioning source, and provisioning a row that cannot serve is how a dead lane comes to
+     * look healthy.
+     *
+     * PRICES ARE MICRODOLLARS PER 1,000 TOKENS and must equal the migration's exactly —
+     * `validate:free-brain` compares the two lists field by field and fails on any drift. They were
+     * read live from https://openrouter.ai/api/v1/models and every paid one was then checked
+     * against the `usage.cost` a real call actually reported.
+     *
+     * NOTHING HERE IS `frontier`, INCLUDING SONNET 5, and that is a deliberate reading of what the
+     * column does. `capability_tier` gates cost modes — `NORMAL.allowedTiers` is `["fast",
+     * "general"]` and NORMAL is the live mode — so a `frontier` rung is refused at Stage 2 on every
+     * ordinary run and the ladder simply stops above it. A last resort nothing can reach is not a
+     * last resort. Cost ordering, not the tier, is what keeps the dear rungs last.
+     */
     models: [
+      // ── Free reasoning, rungs 100-130. All $0 by the :free suffix; all training-permitting. ──
+      {
+        id: "mdl_or_nemotron_ultra_free", slug: "nvidia/nemotron-3-ultra-550b-a55b:free",
+        displayName: "Nemotron 3 Ultra 550B (OpenRouter, free)", capabilityTier: "general",
+        inMicros1k: 0, outMicros1k: 0, contextTokens: 1000000,
+      },
+      {
+        id: "mdl_or_deepseek_v4_free", slug: "deepseek/deepseek-v4-flash-0731:free",
+        displayName: "DeepSeek V4 Flash (OpenRouter, free)", capabilityTier: "general",
+        inMicros1k: 0, outMicros1k: 0, contextTokens: 1048576,
+      },
+      {
+        id: "mdl_or_glm52_free", slug: "z-ai/glm-5.2:free",
+        displayName: "GLM 5.2 (OpenRouter, free)", capabilityTier: "general",
+        inMicros1k: 0, outMicros1k: 0, contextTokens: 32768,
+      },
+      {
+        id: "mdl_or_nemotron_super_free", slug: "nvidia/nemotron-3-super-120b-a12b:free",
+        displayName: "Nemotron 3 Super 120B (OpenRouter, free)", capabilityTier: "general",
+        inMicros1k: 0, outMicros1k: 0, contextTokens: 262144,
+      },
+      // ── The two older free rows, rungs 150-160. Unchanged. ──────────────────
       {
         id: "mdl_or_llama33_free", slug: "meta-llama/llama-3.3-70b-instruct:free",
         displayName: "Llama 3.3 70B (OpenRouter, free)", capabilityTier: "general",
@@ -117,6 +160,47 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
         id: "mdl_or_gemma3_free", slug: "google/gemma-3-27b-it:free",
         displayName: "Gemma 3 27B (OpenRouter, free)", capabilityTier: "fast",
         inMicros1k: 0, outMicros1k: 0, contextTokens: 96000,
+      },
+      /*
+       * ── Paid, rungs 200-250, cheapest first, every one private-capable. ─────
+       *
+       * These are the lanes an LP name may reach, and what makes that true is not the vendor's
+       * reputation: `openrouter.ts` sends `provider: { data_collection: "deny" }` on every call to
+       * a model recorded non-training, OpenRouter refuses any endpoint that collects, and a request
+       * it cannot satisfy comes back 404 rather than going somewhere that trains. Proven
+       * negatively the same day — two `:free` rungs were refused under the identical flag.
+       */
+      {
+        id: "mdl_or_gemini_flash_lite", slug: "google/gemini-2.5-flash-lite",
+        displayName: "Gemini 2.5 Flash Lite (OpenRouter)", capabilityTier: "general",
+        inMicros1k: 100, outMicros1k: 400, contextTokens: 1048576,
+      },
+      {
+        id: "mdl_or_gpt5_mini", slug: "openai/gpt-5-mini",
+        displayName: "GPT-5 mini (OpenRouter)", capabilityTier: "general",
+        inMicros1k: 250, outMicros1k: 2000, contextTokens: 400000,
+      },
+      {
+        id: "mdl_or_gemini_flash", slug: "google/gemini-2.5-flash",
+        displayName: "Gemini 2.5 Flash (OpenRouter)", capabilityTier: "general",
+        inMicros1k: 300, outMicros1k: 2500, contextTokens: 1048576,
+      },
+      {
+        // The same model as the free rung at the top, by a paid road: when the free endpoint is
+        // exhausted the work gets the same brain and a bill, not a weaker brain and silence.
+        id: "mdl_or_nemotron_ultra", slug: "nvidia/nemotron-3-ultra-550b-a55b",
+        displayName: "Nemotron 3 Ultra 550B (OpenRouter, metered)", capabilityTier: "general",
+        inMicros1k: 625, outMicros1k: 3125, contextTokens: 262144,
+      },
+      {
+        id: "mdl_or_haiku45", slug: "anthropic/claude-haiku-4.5",
+        displayName: "Claude Haiku 4.5 (OpenRouter)", capabilityTier: "general",
+        inMicros1k: 1000, outMicros1k: 5000, contextTokens: 200000,
+      },
+      {
+        id: "mdl_or_sonnet5", slug: "anthropic/claude-sonnet-5",
+        displayName: "Claude Sonnet 5 (OpenRouter)", capabilityTier: "general",
+        inMicros1k: 2000, outMicros1k: 10000, contextTokens: 1000000,
       },
     ],
   },
