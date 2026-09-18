@@ -63,7 +63,12 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 24, to match ci.yml and `engines`. NOT 22: `validate:ci-npm-parity`
+          # rejected that, correctly — node 22 ships npm 10, `engines.npm` declares
+          # 11, and npm 10 refuses a lock npm 11 wrote ("Missing: ... from lock
+          # file") before a single step runs. The guard caught this workflow on its
+          # first CI run, which is what it is for.
+          node-version: 24
           cache: npm
 
       - name: Install (reproducible, from package-lock)
