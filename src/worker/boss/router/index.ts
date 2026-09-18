@@ -233,6 +233,15 @@ async function recordDecision(
   row: {
     lane: string; taskId?: string | null; employeeId?: string | null; intakeKind?: string | null;
     risk?: string | null; sensitivity?: string | null; costMode?: string | null;
+    /**
+     * WHICH LABEL WAS IN FORCE FOR THIS DECISION.
+     *
+     * Null on the exits that happen BEFORE the scan runs — a spent budget, a route that does not
+     * exist — and that is honest rather than a gap: no label was in force yet. Every decision
+     * downstream of the scan carries the real one, so a run that refused four of six candidates
+     * can be read back without re-deriving anything.
+     */
+    modelAccess?: string | null;
     routeId?: string | null; chosenModelId?: string | null; outcome: string; reason: string;
     candidates: unknown;
   },
@@ -242,13 +251,13 @@ async function recordDecision(
     .prepare(
       `INSERT INTO routing_decisions
          (id, ts, lane, task_id, employee_id, intake_kind, risk, sensitivity, cost_mode,
-          route_id, chosen_model_id, outcome, reason, candidates)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          model_access, route_id, chosen_model_id, outcome, reason, candidates)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .bind(
       id, Date.now(), row.lane, row.taskId ?? null, row.employeeId ?? null,
       row.intakeKind ?? null, row.risk ?? null, row.sensitivity ?? null, row.costMode ?? null,
-      row.routeId ?? null, row.chosenModelId ?? null, row.outcome, row.reason,
+      row.modelAccess ?? null, row.routeId ?? null, row.chosenModelId ?? null, row.outcome, row.reason,
       JSON.stringify(row.candidates),
     )
     .run();
@@ -370,6 +379,8 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   const base = {
     lane: opts.lane, taskId: opts.taskId, employeeId: opts.employeeId,
     intakeKind: opts.intakeKind, risk, sensitivity, costMode, routeId: opts.routeId,
+    /** Filled in the moment the scan answers, below. Null before then, and null means "not yet". */
+    modelAccess: null as string | null,
   };
 
   if (!policy.autonomousSpendAllowed) {
@@ -448,6 +459,8 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     modelAccess: opts.modelAccess ?? null,
     sensitivity: opts.sensitivity,
   });
+
+  base.modelAccess = access.access;
 
   const ctx = {
     policy, risk, sensitivity,

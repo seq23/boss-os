@@ -32,10 +32,16 @@
  *   4. THE SEED SAYS SOMETHING. Twelve notices, each with a title, a body long enough to act on,
  *      and a named author. An anonymous standing instruction is the shape this firm refuses.
  *   5. NO NOTICE READS AS A DEAL TERM. Learned the hard way in this change: the first draft of
- *      notice 8 said "a COMMITMENT made", `router/confidential.ts` reads the outgoing prompt for
+ *      notice 8 said "a COMMITMENT made", `router/modelAccess.ts` reads the outgoing prompt for
  *      exactly that word, and because the notices ride in front of every prompt, EVERY employee run
  *      in the system scanned as LP material and every training-permitting route was refused. Firm
  *      boilerplate must not use the vocabulary that marks real deal content.
+ *
+ *      THE BAR HERE IS STRICTER THAN ROUTING'S, ON PURPOSE. `DEAL_TERM_PATTERNS` is the UNION of
+ *      both tiers `modelAccess.ts` now keeps, and routing only acts on a tier-two word when a
+ *      second signal corroborates it. A notice gets no such benefit of the doubt: routing judges
+ *      one run, and a notice is prepended to every run in the system for ever. 0255's notice about
+ *      the two labels is the most likely text in the repo to trip this, and is in scope here.
  *
  * RULE 0: zero notices, zero prompt shapes, or zero deal-term patterns is a FAILURE. "Every notice
  * reaches every employee" is trivially true of a firm with no notices, and that sentence over an
@@ -54,7 +60,7 @@ import { build } from "esbuild";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CONSUMER = "src/worker/boss/queue/consumer.ts";
-const CONFIDENTIAL = "src/worker/boss/router/confidential.ts";
+const CONFIDENTIAL = "src/worker/boss/router/modelAccess.ts";
 const MIGRATIONS = join(ROOT, "migrations");
 
 // ─── The schema and the seed that actually ship ──────────────────────────────
@@ -220,7 +226,7 @@ export async function theNoticesAreOutsideTheFence(buildPrompt, notices) {
  * A NOTICE MUST NOT READ AS A DEAL TERM.
  *
  * This is not hypothetical, it is what happened. The first draft of notice 8 said "money moved, a
- * COMMITMENT made" — and `router/confidential.ts` reads the outgoing prompt for the shape of a deal
+ * COMMITMENT made" — and `router/modelAccess.ts` reads the outgoing prompt for the shape of a deal
  * term, with `\bcommitment\b` on the list. Because the notices now ride in front of EVERY prompt,
  * every employee run in the system scanned as LP material, every route whose terms permit training
  * was refused, and `tests/boss/router.test.ts` went red with "2 of 6 refused" and a task that simply
@@ -237,7 +243,7 @@ export function noNoticeReadsAsADealTerm(notices, patterns) {
       const hit = new RegExp(p.re.source, p.re.flags.replace("g", "")).exec(`${n.title} ${n.body}`);
       if (hit) {
         bad.push(
-          `${n.id} contains ${JSON.stringify(hit[0])}, which router/confidential.ts reads as ${p.what}. `
+          `${n.id} contains ${JSON.stringify(hit[0])}, which router/modelAccess.ts reads as ${p.what}. `
           + `Because this text is in front of every prompt, EVERY run would scan as LP material and `
           + `every training-permitting route would be refused. Say it another way.`,
         );

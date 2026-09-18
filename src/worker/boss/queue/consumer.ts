@@ -120,6 +120,12 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       intakeKind: task.intake_kind ?? null,
       risk: task.risk ?? "low",
       sensitivity: task.sensitivity ?? "private",
+      /*
+       * THE CARD'S OWN LABEL REACHES THE ROUTER, and the audience label deliberately does not.
+       * A run is not confined to a narrower set of models because a partner is the reader — that
+       * conflation is the whole defect this axis was split to remove.
+       */
+      modelAccess: task.model_access ?? null,
       costMode,
       budgetMicros: envelope?.budget_micros ?? 0,
       cloudForRestrictedAllowed: Boolean(envelope?.cloud_for_restricted_allowed),

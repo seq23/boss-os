@@ -165,4 +165,21 @@ UPDATE boss_notices SET
   author = 'Sequoia Taylor'
 WHERE id = 'fnt_lp_names_never_train';
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- AND ONE OLDER NOTICE HAD TO MOVE, WHICH IS THE GUARD EARNING ITS PLACE ON THE DAY IT WAS WIDENED.
+--
+-- Tightening the detector also meant naming `capital account` as fund-instrument vocabulary, and
+-- `fnt_productions_is_separate` — a notice about Scooter's business being separate from the fund —
+-- listed "no capital account" among the fund records Productions work does not touch. Entirely
+-- innocent, and it rides in front of every prompt in the system, so under the widened tier one it
+-- would have done exactly what "a commitment made" did in 0254: taken every employee run in the
+-- firm onto the private lane.
+--
+-- IT WAS CAUGHT BY THE VALIDATOR RATHER THAN IN PRODUCTION, on the first run after the patterns
+-- changed, which is the entire argument for holding firm boilerplate to the union of both tiers.
+-- The notice says the same thing in words that are not on the list.
+UPDATE boss_notices SET
+  body = replace(body, 'no portfolio tracker, no capital account.', 'no portfolio tracker, nothing on the fund''s own books.')
+WHERE id = 'fnt_productions_is_separate';
+
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0255_boss_two_labels_on_every_work_card');
