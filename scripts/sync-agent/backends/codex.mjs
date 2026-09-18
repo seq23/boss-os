@@ -268,6 +268,13 @@ export async function codexExecutor(
  * only the CLI can establish, and guessing at it from a file would be a second opinion that goes
  * stale. What this answers is the question the Stage 1 acceptance sentence asks: is there a
  * credential here that should not be.
+ *
+ * THE ENVIRONMENT IT READS IS THE CHILD'S. Callers pass `childEnv(process.env)`, for the reason
+ * spelled out at the same function in `claudeCode.mjs`: OPENAI_API_KEY is in the vault, the claimer
+ * runs under `vault:run`, and judging the PARENT would refuse this seat every single time while the
+ * allowlist in `childEnv` already guarantees the CLI never sees a key. That is the exact fault that
+ * stopped the Claude Code seat and the morning brief on 18 Sep 2026, written here before it could
+ * happen to the second seat as well. The refusal stays live and fires if the allowlist ever leaks.
  */
 export function describeAuth(source = typeof process === "undefined" ? {} : process.env) {
   if (source.OPENAI_API_KEY) {

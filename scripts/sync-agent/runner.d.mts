@@ -124,5 +124,10 @@ export function reportRun(evidence: EvidencePacket, opts: { origin: string; devi
 export function workOnce(deps: WorkDeps): Promise<{ claimed: boolean; reported?: boolean; error: string | null; evidence: EvidencePacket | null }>;
 export function defaultRunCommand(cmd: string, opts?: { cwd?: string; forbidden?: string[]; timeoutMs?: number }): Promise<{ exit_code: number; tail: string }>;
 export function childEnv(source?: Record<string, string | undefined>): Record<string, string>;
+/** One loader per `agent_executed` seat — the same key set as AGENT_EXECUTORS, pinned by a validator. */
+export const SEAT_PREFLIGHT: Record<
+  string,
+  () => Promise<(source?: Record<string, string | undefined>) => { mode: string; ok: boolean; detail: string }>
+>;
 export function defaultGitProbe(cwd: string): Promise<GitState>;
 export function defaultPlaceMaterials(cwd: string, materials: string[]): Promise<string[]>;

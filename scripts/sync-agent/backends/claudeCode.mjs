@@ -5,14 +5,21 @@
  * approved envelope into one non-interactive `claude --print` invocation on the owner's Mac and
  * turns its output back into the fields backend_runs stores.
  *
- * NO API KEY EXISTS AND NONE IS REQUESTED. This was verified on the machine rather than assumed:
- * `claude` (2.1.263, /opt/homebrew/bin/claude) authenticates through the owner's own logged-in
- * session, held in the macOS keychain as the item "Claude Code-credentials"; there is no
- * ANTHROPIC_API_KEY in the environment and no ~/.claude/.credentials.json on disk. So the cloud half
- * of Boss OS holds no coding credential — nothing to leak, nothing to spend — and that is a property
- * to preserve rather than an accident: buildArgs() never adds an auth flag, and childEnv() strips
- * every variable that looks like a credential before the process starts. If a future envelope ever
- * arrives carrying a key, the runner refuses it (REFUSAL.CREDENTIAL_NOT_LOCAL) rather than using it.
+ * NO API KEY REACHES THE CLI, AND NONE IS REQUESTED. This was verified on the machine rather than
+ * assumed: `claude` (2.1.263, /opt/homebrew/bin/claude) authenticates through the owner's own
+ * logged-in session, held in the macOS keychain as the item "Claude Code-credentials"; there is no
+ * ~/.claude/.credentials.json on disk. So the cloud half of Boss OS holds no coding credential —
+ * nothing to leak, nothing to spend — and that is a property to preserve rather than an accident:
+ * buildArgs() never adds an auth flag, and childEnv() strips every variable that is not on its
+ * allowlist before the process starts. If a future envelope ever arrives carrying a key, the runner
+ * refuses it (REFUSAL.CREDENTIAL_NOT_LOCAL) rather than using it.
+ *
+ * THE PARENT'S ENVIRONMENT IS A DIFFERENT QUESTION AND THE ANSWER CHANGED. This file used to claim
+ * "there is no ANTHROPIC_API_KEY in the environment", and on 17 Sep 2026 that stopped being true:
+ * `bk_anthropic` was commissioned, the key went into the vault, and `vault:run` injects the vault
+ * into the claimer. The enforcement above was unaffected — childEnv is an allowlist — but the
+ * sentence was not, and `describeAuth` was reading the sentence's world rather than the code's.
+ * See the note there; it cost a morning brief.
  *
  * THE DENY FLAGS BELOW ARE THE OUTER LAYER, NOT THE ENFORCEMENT. `--disallowedTools` is a request to
  * the CLI, and a request is exactly the thing this design refuses to depend on. The forbidden list is
@@ -315,6 +322,24 @@ export async function defaultReadDelivers(cwd) {
  *
  * A backend that cannot run must say WHICH thing is missing rather than failing obscurely — the
  * Stage 1 acceptance sentence, applied to the one backend that has no credential to be missing.
+ *
+ * IT JUDGES THE CHILD'S ENVIRONMENT, NOT THE PARENT'S, AND THAT DISTINCTION COST A MORNING BRIEF.
+ * The launchd job `com.seq.boss-agent` runs the claimer under `npm run vault:run`, which injects
+ * every vault key into the PARENT process — and ANTHROPIC_API_KEY entered the vault on 17 Sep 2026
+ * when `bk_anthropic` was commissioned. From that moment this function, called on `process.env`,
+ * refused, `agent.mjs` exited 1, and nothing claimed anything: four consecutive refusals in
+ * ~/Library/Logs/boss-agent/agent.err and no Executive Intelligence Report on 18 Sep.
+ *
+ * THE REFUSAL WAS NEVER WRONG — IT WAS POINTED AT THE WRONG PROCESS. `childEnv()` is an allowlist
+ * (PATH, HOME, USER, LOGNAME, SHELL, LANG, LC_ALL, TERM, TMPDIR, NODE_ENV), so no key of any name
+ * can reach the CLI however the parent was launched. The thing this guard protects — that Claude
+ * Code bills the owner's session and never an API key — is enforced there. Judging the parent made
+ * this a guard that could not reach what it governs, and its only live effect was a false stop.
+ *
+ * SO CALLERS PASS `childEnv(process.env)` AND THE REFUSAL STAYS LIVE. It now asserts the one fact
+ * that matters and could not otherwise be asserted: if `childEnv`'s allowlist ever grows a
+ * credential, this refuses and the claimer stops — which is the correct behaviour on that day.
+ * `a-seat-claims-its-own-work.mjs` pins both halves so the coupling cannot rot.
  */
 export function describeAuth(source = typeof process === "undefined" ? {} : process.env) {
   if (source.ANTHROPIC_API_KEY) {

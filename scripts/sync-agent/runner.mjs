@@ -677,6 +677,25 @@ export const AGENT_EXECUTORS = {
   bk_codex: async () => (await import("./backends/codex.mjs")).codexExecutor,
 };
 
+/**
+ * How each seat answers "can I authenticate on this machine" — one entry per AGENT_EXECUTORS entry.
+ *
+ * TWO LISTS, ONE LINK, BECAUSE TWO COMPONENTS EACH KEEPING THEIR OWN LIST WITH NO LINK BETWEEN THEM
+ * is the defect this repository catches most often. A seat that can be executed but never
+ * preflighted, or preflighted but never executed, is exactly the shape `bk_codex` had on 18 Sep
+ * 2026: an executor registered above, an adapter shipped, and a claim loop hard-coded to
+ * `bk_claude_code` that could never ask for its work. `a-seat-claims-its-own-work.mjs` hard-fails
+ * when the two key sets differ, so adding a seat to one and forgetting the other stops CI.
+ *
+ * EVERY `describeAuth` HERE IS CALLED WITH `childEnv(process.env)`, never the parent's environment.
+ * See the note at claudeCode.mjs `describeAuth`: the claimer runs under `vault:run`, which injects
+ * every vault key, and judging the parent refused a seat whose child could never see a key.
+ */
+export const SEAT_PREFLIGHT = {
+  bk_claude_code: async () => (await import("./backends/claudeCode.mjs")).describeAuth,
+  bk_codex: async () => (await import("./backends/codex.mjs")).describeAuth,
+};
+
 /** Lazily resolved so importing this module costs nothing and works where child_process does not. */
 async function defaultExecutor(backendId = "bk_claude_code") {
   const load = AGENT_EXECUTORS[backendId];

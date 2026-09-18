@@ -245,16 +245,53 @@ async function main() {
    * already changed a repository and needs a person. Keeping them apart keeps `once` honest.
    */
   if (cmd === "work-once" || cmd === "work") {
-    const { workOnce } = await import("./runner.mjs");
-    const { describeAuth } = await import("./backends/claudeCode.mjs");
-    const auth = describeAuth();
-    if (!auth.ok) {
+    const { workOnce, childEnv, SEAT_PREFLIGHT } = await import("./runner.mjs");
+    /*
+     * PREFLIGHT EVERY SEAT, AND ON THE ENVIRONMENT THE CHILD ACTUALLY GETS.
+     *
+     * Two faults lived in the four lines this replaces, and together they cost the 18 Sep 2026
+     * morning brief.
+     *
+     *   1. It called `describeAuth()` on `process.env`. This process runs under `vault:run`, which
+     *      injects every vault key; ANTHROPIC_API_KEY entered the vault when `bk_anthropic` was
+     *      commissioned on 17 Sep, and from then on the claimer exited 1 before claiming anything.
+     *      `childEnv` strips every credential before the CLI starts, so the key was never reachable
+     *      by the thing the guard was protecting. Passing `childEnv(process.env)` keeps the refusal
+     *      live against the environment it actually governs.
+     *   2. It asked ONLY the Claude Code seat, and then `workOnce` claimed only for
+     *      `bk_claude_code` — so `bk_codex`, enabled the same night with its executor shipped
+     *      alongside, was a seat nothing could ever claim for. "Exists but nothing invokes it",
+     *      one layer below where this repository usually catches it.
+     *
+     * A SEAT THAT CANNOT AUTHENTICATE IS SKIPPED AND NAMED, NOT FATAL. One dead seat must not stop
+     * the other from doing the day's work — that is the difference between a chain member and a
+     * dependency, and `bk_local_runtime`'s "NO LOCAL HOST, deferred indefinitely" is what it looks
+     * like when it is got wrong. Only a run in which NO seat is usable exits non-zero.
+     */
+    const childEnvironment = childEnv(process.env);
+    const seats = [];
+    for (const [backendId, load] of Object.entries(SEAT_PREFLIGHT)) {
+      const describeAuth = await load();
+      const auth = describeAuth(childEnvironment);
+      if (auth.ok) seats.push(backendId);
+      else console.error(`${backendId}: ${auth.detail}`);
+    }
+    if (seats.length === 0) {
       // A backend that cannot run says WHICH thing is wrong, rather than failing obscurely.
-      console.error(auth.detail);
+      console.error("No agent_executed seat can authenticate on this machine. Nothing was claimed.");
       process.exit(1);
     }
     const run = async () => {
-      const out = await workOnce({ origin, deviceId, cookie });
+      /*
+       * ONE CYCLE TRIES EVERY SEAT AND STOPS AT THE FIRST CLAIM. Runs are parked per backend, so a
+       * queue holding only Codex work must not look like an empty queue because Claude Code had
+       * nothing.
+       */
+      let out = { claimed: false, error: null, evidence: null };
+      for (const backendId of seats) {
+        out = await workOnce({ origin, deviceId, cookie, backendId });
+        if (out.claimed || out.error) break;
+      }
       if (out.evidence && !out.reported) {
         /*
          * THE RUN HAPPENED AND THE CLOUD DID NOT HEAR. Printing the whole packet is the only place
