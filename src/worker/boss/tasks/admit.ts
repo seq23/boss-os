@@ -41,6 +41,13 @@ export interface AdmitInput {
   intake_kind?: string | null;
   risk?: string | null;
   sensitivity?: string | null;
+  /**
+   * `public_model_approved` or `private_model_only`. WHICH MODELS MAY SEE THE INPUT.
+   * Omitted means the classifier decides; see `intake/classify.ts`.
+   */
+  model_access?: string | null;
+  /** `internal` or `external`. WHO MAY RECEIVE THE OUTPUT. It never reaches the router. */
+  audience?: string | null;
   cost_mode?: string | null;
 }
 
@@ -111,6 +118,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   const classification = classify({
     title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
     intakeKind: intakeKind ?? undefined, risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
+    model_access: b.model_access ?? undefined, audience: b.audience ?? undefined,
   });
 
   const employeeId: string | null =
@@ -153,12 +161,17 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at,
-                          intake_kind, template_id, execution_assignment, risk, sensitivity, cost_mode)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                          intake_kind, template_id, execution_assignment, risk, sensitivity,
+                          model_access, audience, cost_mode)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       id, lane, employeeId, b.title, Object.keys(input).length ? JSON.stringify(input) : null,
       status, now, classification.intakeKind, templateId, assignment,
-      classification.risk, classification.sensitivity, costMode,
+      classification.risk, classification.sensitivity,
+      // THE TWO AXES LAND ON THE ROW, so the card says what it is rather than leaving the router to
+      // re-derive it from the prompt every time. The router still scans; this is the declaration
+      // the scan corroborates.
+      classification.modelAccess, classification.audience, costMode,
     ),
     env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake',?)`)
       .bind(newId("tev"), id, now, JSON.stringify(classification)),

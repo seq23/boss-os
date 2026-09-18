@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { routeCompletion, BudgetExceeded, RoutingBlocked } from "../../src/worker/boss/router";
 import { setSpendLever } from "../../src/worker/boss/router/spend";
 import { bypassFor, isLive, predictSpend, type BypassRow } from "../../src/worker/boss/router/bypass";
-import { scanForConfidential, confidentialLexicon, mayHoldConfidential } from "../../src/worker/boss/router/confidential";
+import { scanForModelAccess, privateLexicon, isPrivateModelRoute } from "../../src/worker/boss/router/modelAccess";
 import { row, all, api, apiJson, stubFetch, completionResponse } from "./helpers";
 
 /**
@@ -213,27 +213,27 @@ describe("2 · the confidential line, offered exactly the content it exists to r
    * repeated the LP's name into the log would have moved the leak rather than stopped it.
    */
   it("names the kind of thing it found and never the thing itself", async () => {
-    const lexicon = await confidentialLexicon(env.DB);
-    const verdict = scanForConfidential(
+    const lexicon = await privateLexicon(env.DB);
+    const verdict = scanForModelAccess(
       [{ role: "user", content: "Northgate Partners committed $2.5M with an MFN side letter." }],
       lexicon,
     );
-    expect(verdict.confidential).toBe(true);
+    expect(verdict.access).toBe("private_model_only");
     expect(verdict.reason).not.toContain("Northgate");
     expect(verdict.reason).not.toContain("2.5M");
-    expect(verdict.kinds.join(" ")).toMatch(/money figure|side-letter|commitment/);
+    expect(verdict.kinds.join(" ")).toMatch(/money figure|side-letter|commitment|private/);
   });
 
   it("treats a scan it could not complete as a hit, rather than as a clean bill", () => {
     const broken = { names: [], established: false, note: "the lexicon could not be read" };
-    const verdict = scanForConfidential([{ role: "user", content: "hello" }], broken);
-    expect(verdict.confidential).toBe(true);
+    const verdict = scanForModelAccess([{ role: "user", content: "hello" }], broken);
+    expect(verdict.access).toBe("private_model_only");
   });
 
-  it("lets exactly one data-use value hold confidential material", () => {
-    expect(mayHoldConfidential("NO_TRAINING_CONTRACTUAL")).toBe(true);
+  it("lets exactly one data-use value be a private-model route", () => {
+    expect(isPrivateModelRoute("NO_TRAINING_CONTRACTUAL")).toBe(true);
     for (const v of ["TRAINS_ON_PROMPTS", "UNKNOWN", "", null, undefined, "NO_TRAINING", "anything"]) {
-      expect(mayHoldConfidential(v as never)).toBe(false);
+      expect(isPrivateModelRoute(v as never)).toBe(false);
     }
   });
 });

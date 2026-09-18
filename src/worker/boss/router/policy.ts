@@ -1,5 +1,6 @@
 import { riskAllows, type CostModePolicy } from "../../../shared/boss/governance";
-import { mayHoldConfidential } from "./confidential";
+import { isPrivateModelRoute } from "./modelAccess";
+import type { ModelAccess } from "../../../shared/boss/governance";
 
 /**
  * Model eligibility.
@@ -29,7 +30,7 @@ export interface ModelRow {
    * Whether this route's own terms permit training on what is sent to it — `models.data_use`, 0249.
    *
    * OPTIONAL IN THE TYPE AND FAIL-CLOSED IN THE RULE. A row loaded by a query that forgot to select
-   * the column arrives as `undefined`, and `mayHoldConfidential(undefined)` is false, so the
+   * the column arrives as `undefined`, and `isPrivateModelRoute(undefined)` is false, so the
    * omission restricts the model rather than exempting it. A column you forgot to read must never
    * be the reason something was allowed.
    */
@@ -46,15 +47,18 @@ export interface PolicyContext {
   /** Set by an approved sensitive-routing card. */
   cloudForRestrictedAllowed: boolean;
   /**
-   * THE ROUTER READ THE OUTGOING MESSAGES AND FOUND LP NAMES OR DEAL TERMS IN THEM.
+   * WHICH MODELS MAY SEE THIS WORK — the owner's label, and the only axis that governs routing.
    *
-   * Computed once per run in `routeCompletion` from `scanForConfidential`, not supplied by a
-   * caller — the point of it is that it does not depend on a caller remembering anything. An
-   * unestablished scan sets this true; see `confidential.ts`.
+   * Computed once per run in `routeCompletion` by `scanForModelAccess`, from the work card's own
+   * label OR from the content itself, so it does not depend on a caller remembering anything. An
+   * unestablished lexicon lands on `private_model_only`; see `modelAccess.ts`.
+   *
+   * IT IS NOT THE AUDIENCE AXIS. There is deliberately no `audience` field on this context: who
+   * receives the output decides approval, never which models are eligible.
    */
-  contentIsConfidential: boolean;
+  modelAccess: ModelAccess;
   /** What kind of thing was found, for the refusal. NEVER the thing itself. */
-  confidentialReason: string;
+  modelAccessReason: string;
 }
 
 /**
@@ -103,7 +107,7 @@ export function evaluateModel(model: ModelRow, ctx: PolicyContext): Verdict {
   //
   // NOTHING IS FILTERED. This removes CANDIDATES, never words. There is no scrubber, because a
   // scrubber that missed one name would be worse than none, having been trusted.
-  if (ctx.contentIsConfidential && !mayHoldConfidential(model.data_use)) {
+  if (ctx.modelAccess === "private_model_only" && !isPrivateModelRoute(model.data_use)) {
     return {
       eligible: false,
       stage: "privacy",
@@ -111,7 +115,8 @@ export function evaluateModel(model: ModelRow, ctx: PolicyContext): Verdict {
       reason:
         `${model.display_name} is recorded as ${model.data_use ?? "having no data-use finding"} — its terms permit ` +
         `training on what is sent to it, or nothing here establishes that they do not — and ` +
-        `${ctx.confidentialReason}. LP names and deal terms do not go to a route that may keep them. ` +
+        `${ctx.modelAccessReason}. This work is private model only, and LP names and deal terms do ` +
+        `not go to a route that may keep them. ` +
         `No approval lifts this: what would be approved is not one call but a permanent presence in ` +
         `somebody else's corpus.`,
     };
