@@ -56,7 +56,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const POLICY = "src/worker/boss/router/policy.ts";
 const ROUTER = "src/worker/boss/router/index.ts";
 const BYPASS = "src/worker/boss/router/bypass.ts";
-const CONFIDENTIAL = "src/worker/boss/router/confidential.ts";
+const CONFIDENTIAL = "src/worker/boss/router/modelAccess.ts";
 const GUARD = "src/worker/boss/backends/guard.ts";
 const TODAY = "src/worker/boss/routes/today.ts";
 const FREE_BRAIN = "scripts/validate/the-best-free-model-is-a-candidate.mjs";
@@ -149,12 +149,12 @@ export function check({ models, providers, settings, bypassSchema, sources, appl
       + "value somebody invents later, including null — must be restricted.",
     );
   }
-  if (!/ctx\.contentIsConfidential && !mayHoldConfidential\(model\.data_use\)/.test(policy)) {
+  if (!/ctx\.modelAccess === "private_model_only" && !isPrivateModelRoute\(model\.data_use\)/.test(policy)) {
     bad.push(`${POLICY} does not refuse a training-permitting route for confidential content`);
   }
   // THE REFUSAL MUST NOT BE APPROVABLE. A card that could lift it would be approving a permanent
   // presence in somebody's corpus, which is not a thing any card in this system means.
-  const rule = /if \(ctx\.contentIsConfidential[\s\S]{0,900}?\n  \}/.exec(policy)?.[0] ?? "";
+  const rule = /if \(ctx\.modelAccess === "private_model_only"[\s\S]{0,900}?\n  \}/.exec(policy)?.[0] ?? "";
   if (!/approvable: false/.test(rule)) {
     bad.push(
       `${POLICY}'s confidential refusal is approvable. Restricted-to-cloud is approvable because the `
@@ -176,7 +176,7 @@ export function check({ models, providers, settings, bypassSchema, sources, appl
   }
 
   // ── 4. The scan fails closed, and never quotes what it found ───────────────
-  if (!/if \(!lexicon\.established\)[\s\S]{0,200}confidential: true/.test(confidential)) {
+  if (!/if \(!lexicon\.established\)[\s\S]{0,200}privateVerdict\(\["scan unavailable"\]/.test(confidential)) {
     bad.push(`${CONFIDENTIAL} does not treat an unestablished scan as a hit`);
   }
 
@@ -350,7 +350,7 @@ function selfTest() {
         sources: {
           ...good.sources,
           [POLICY]: good.sources[POLICY].replace(
-            "ctx.contentIsConfidential && !mayHoldConfidential(model.data_use)",
+            'ctx.modelAccess === "private_model_only" && !isPrivateModelRoute(model.data_use)',
             "false",
           ),
         },
