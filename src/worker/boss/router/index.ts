@@ -5,6 +5,7 @@ import { getBool, getSetting } from "../lib/settings";
 import { AppError } from "../lib/http";
 import { costPolicy } from "../../../shared/boss/governance";
 import { orderCandidates } from "../../../shared/boss/router/candidateOrder.mjs";
+import { ATTEMPT_DEADLINE_MS, CHAIN_BUDGET_MS, nextAttemptDeadlineMs } from "./deadlines";
 import { ProviderCallError, type ChatMessage } from "./types";
 import { evaluateModel, estimateCostMicros, type ModelRow, type RouteStage } from "./policy";
 import { rollBudgetWindows, laneBudgetState, employeeBudgetState } from "./budget";
@@ -654,6 +655,11 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
   let approvable = false;
   let lastError: Error | null = null;
   let attemptedCall = false;
+  /*
+   * WHEN THE WALK BEGAN. Every rung's deadline is measured from here, not from its own start, so
+   * fourteen well-behaved-but-slow attempts cannot add up past the chain budget. See deadlines.ts.
+   */
+  const chainStartedAt = Date.now();
   let budgetRefusal: { message: string; remedy: string } | null = null;
   // The hop limit caps how many BACKENDS a run may call. It deliberately does not
   // cap how many models are screened: in a cheap cost mode the eligible model is
@@ -936,6 +942,29 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       }
       hops++;
     }
+    /*
+     * ── THE WHOLE WALK IS BOUNDED, NOT JUST EACH CALL ──────────────────────
+     *
+     * Before 18 September 2026 nothing on this path had a deadline of any kind — no AbortSignal, no
+     * race around the AI binding, nothing. The ladder made that arithmetic much worse: up to ten
+     * free attempts plus four paid ones, each retryable, none bounded. The worst case was not a long
+     * wait, it had no upper bound, and what she experiences as "nothing is happening" is exactly the
+     * complaint that started the day.
+     *
+     * A DOOMED CALL IS NOT STARTED. If what remains of the budget cannot hold an attempt, the walk
+     * ends here with a sentence saying so, rather than beginning a call the budget guarantees will
+     * be cut off — which would spend her money and her time on an answer that cannot arrive.
+     */
+    const attemptBudgetMs = nextAttemptDeadlineMs(chainStartedAt, Date.now());
+    if (attemptBudgetMs === null) {
+      note(
+        "availability", "skipped",
+        `this run has spent its ${Math.round(CHAIN_BUDGET_MS / 1000)}s budget walking the ladder; ` +
+        `no further rung was tried`,
+      );
+      break;
+    }
+
     attemptedCall = true;
 
     // Bounded retries: the same backend is tried again ONLY for an error the
@@ -964,6 +993,12 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
              * instead of leaking.
              */
             requireNoTraining: isPrivateModelRoute(model.data_use),
+            /*
+             * NEVER LONGER THAN WHAT IS LEFT OF THE CHAIN. `ATTEMPT_DEADLINE_MS` is the ceiling for
+             * one call; a run already most of the way through its budget gets the smaller figure, so
+             * the last attempt cannot overrun the bound that the whole thing exists to keep.
+             */
+            signal: AbortSignal.timeout(attemptBudgetMs),
           },
           { baseUrl: model.base_url, apiKey: cred.apiKey, ai: cred.ai },
         );

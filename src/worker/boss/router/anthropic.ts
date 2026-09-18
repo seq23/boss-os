@@ -44,6 +44,8 @@ export const anthropic: ProviderAdapter = {
 
     const res = await fetch(`${ctx.baseUrl}/messages`, {
       method: "POST",
+      // The call is abandoned when the router's deadline fires; see deadlines.ts.
+      signal: req.signal,
       headers: {
         "content-type": "application/json",
         "x-api-key": ctx.apiKey,
