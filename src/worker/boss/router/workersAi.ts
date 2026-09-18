@@ -1,6 +1,27 @@
 import { ProviderCallError, type ProviderAdapter } from "./types";
 
 /**
+ * Resolve the work, or reject the moment the signal fires — whichever happens first.
+ *
+ * An absent signal means no deadline was supplied, which only a direct test or bench call does; the
+ * router always supplies one.
+ */
+async function withDeadline<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return await work;
+  if (signal.aborted) throw new Error("the deadline for this call had already passed");
+  return await Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      signal.addEventListener(
+        "abort",
+        () => reject(new Error("the call passed its deadline and was abandoned")),
+        { once: true },
+      );
+    }),
+  ]);
+}
+
+/**
  * Workers AI — the free half of Stage 4.
  *
  * IT IS A BINDING, NOT A CLIENT. Nothing here calls `fetch`, so there is no
@@ -29,11 +50,24 @@ export const workersAi: ProviderAdapter = {
 
     let raw: unknown;
     try {
-      raw = await ctx.ai.run(req.modelSlug, {
-        messages: req.messages,
-        max_tokens: req.maxOutputTokens,
-        temperature: req.temperature,
-      });
+      /*
+       * RACED AGAINST THE DEADLINE, BECAUSE A BINDING TAKES NO SIGNAL.
+       *
+       * `env.AI.run` has no `signal` option, so the abort cannot be handed to it the way the four
+       * fetch adapters hand it to `fetch`. Racing is the honest second-best: the run stops waiting
+       * and the ladder moves on, even though the binding call itself continues in the background.
+       * Leaving this adapter alone because the mechanism is imperfect would have left the ONE
+       * always-enabled, always-free backend as the single unbounded call on the path — which is the
+       * one most likely to be reached, since it is where every fallback lands.
+       */
+      raw = await withDeadline(
+        ctx.ai.run(req.modelSlug, {
+          messages: req.messages,
+          max_tokens: req.maxOutputTokens,
+          temperature: req.temperature,
+        }),
+        req.signal,
+      );
     } catch (err) {
       // A binding failure has no HTTP status. Treat it as retryable once: the
       // usual causes (a cold model, a capacity blip) clear on a second attempt,

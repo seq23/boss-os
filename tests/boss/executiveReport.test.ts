@@ -185,6 +185,27 @@ describe("delivering the executive intelligence report", () => {
     expect(report.summary).toBeTruthy();
   });
 
+  /*
+   * THE 17 SEPTEMBER 2026 ROW, PINNED. The run exited 0, wrote no delivers.json, and the report was
+   * filed `partial` with a null headline — which Today.tsx renders as "Report delivered." over an
+   * empty report, and which then archived the last good briefing behind it. "Succeeded and produced
+   * nothing" is a failure; there is nothing to be partial about.
+   */
+  it("calls a success that delivered nothing at all FAILED, and says so in words", async () => {
+    await seedTask({ delivers: "executive_reports" });
+    await deliverExecutiveReport(env as any, {
+      taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report: null,
+    });
+    const report = await row<any>(
+      `SELECT status, headline, summary, sections FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(report.status).toBe("failed");
+    // The collapsed line she reads at 7am must not be able to fall through to "Report delivered."
+    expect(report.headline).toBeTruthy();
+    expect(report.summary).toBeTruthy();
+    expect(String(report.headline)).not.toContain("delivered");
+    expect(JSON.parse(report.sections)).toEqual([]);
+  });
+
   it("calls an unlabelled success partial rather than complete", async () => {
     await seedTask({ delivers: "executive_reports" });
     await deliverExecutiveReport(env as any, {

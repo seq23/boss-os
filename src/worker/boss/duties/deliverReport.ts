@@ -325,8 +325,17 @@ export async function deliverPracticeWeek(
   const forWeek = asText(args.payload?.week_id) ?? weekIdInZone(now);
 
   const reported = asText(args.payload?.status);
+  /*
+   * THE SIBLING OF THE EXECUTIVE REPORT'S FAULT, FIXED HERE BEFORE IT COSTS A WEEK. See the long
+   * note at `deliverExecutiveReport`: a null payload means the run wrote no `delivers.json` at all,
+   * and reading that as "partial" is what filed an empty Executive Intelligence Report as a
+   * delivered one on 17 Sep 2026. Nothing delivered is not a partial week; there is nothing to be
+   * partial about. A contract change rarely breaks one pin, and this was the other one.
+   */
+  const deliveredNothing = args.payload === null || args.payload === undefined;
   const status =
     args.runStatus !== "succeeded" ? "failed"
+    : deliveredNothing ? "failed"
     : reported === "complete" || reported === "partial" || reported === "failed" ? reported
     // Succeeded and named no status: it delivered SOMETHING, and calling that complete would be a
     // claim the runner never made. Partial is the honest floor.
@@ -407,8 +416,34 @@ export async function deliverExecutiveReport(
    * was, rather than rendering an unexplained blank that looks identical to "nothing ran".
    */
   const reported = asText(args.report?.status);
+  /*
+   * NOTHING DELIVERED IS NOT A PARTIAL REPORT, AND READING IT AS ONE COST HER 17 SEPTEMBER 2026.
+   *
+   * `args.report` is null exactly when the run wrote no `delivers.json` this process could read —
+   * the runner grades that `delivery.present === false` and the route passes null through. The line
+   * this replaces did not distinguish it from a payload that simply named no status, so a run that
+   * exited 0 having produced NOTHING was filed `partial` with a null headline, a null summary and
+   * `sections '[]'`.
+   *
+   * WHAT SHE SAW. Today.tsx renders the collapsed line as `headline ?? summary ?? "Report
+   * delivered."`, so the one sentence she reads at 7am said REPORT DELIVERED over an empty report.
+   * The row then archived every earlier day, burying the last good briefing, and the newest-report
+   * fallback (`WHERE status != 'failed'`) kept serving the empty row to the next morning as well.
+   * The honest copy — "Today's research run failed. Nothing below is a finding." — existed the whole
+   * time, twenty lines below, and was structurally unreachable from this branch.
+   *
+   * Her own firmwide notice, `fnt_a_quiet_run_says_why`: "Quiet success and silent failure must
+   * never look the same... Never end a run reporting success over an empty loop." This is the line
+   * that made the system break it.
+   *
+   *   no payload at all          → failed. There is nothing to be partial about.
+   *   payload, no status named   → partial, unchanged. It delivered SOMETHING.
+   *   payload naming its status  → believed, then re-derived below.
+   */
+  const deliveredNothing = args.report === null || args.report === undefined;
   const status =
     args.runStatus !== "succeeded" ? "failed"
+    : deliveredNothing ? "failed"
     : reported === "complete" || reported === "partial" || reported === "failed" ? reported
     // A run that succeeded and named no status delivered SOMETHING, and calling that complete would
     // be a claim the runner never made. Partial is the honest floor.

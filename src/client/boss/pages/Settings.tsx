@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { usd } from "../../../shared/boss/types";
+import { leverView } from "../../../shared/boss/spendLeverView.mjs";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { asList } from "../components/panels";
@@ -160,12 +161,35 @@ function SpendLever({ budgets }: { budgets: any[] }) {
    * blank on the one number that matters most when something is wrong.
    */
   const opsMonth = budgets.find((b: any) => b.lane === "ops" && b.period === "month") ?? budgets[0] ?? null;
-  const position = String(lever?.position ?? (opsMonth && opsMonth.hard_stop === 0 ? "OPEN" : "FREE_ONLY"));
-  const open = position === "OPEN";
-  const spent = Number(lever?.spent_micros ?? opsMonth?.spent_micros ?? 0);
-  const allowance = Number(lever?.allowance_micros ?? lever?.allowanceMicros ?? opsMonth?.limit_micros ?? 0);
-  const moderate = Number(lever?.moderate_micros ?? lever?.moderateMicros ?? opsMonth?.limit_micros ?? 0);
-  const pct = allowance > 0 ? Math.min(100, Math.round((spent / allowance) * 100)) : 0;
+
+  /*
+   * ── THE LEVER IS NESTED, AND READING IT FLAT TOLD HER THE OPPOSITE OF THE TRUTH ──
+   *
+   * `GET /system/spend-lever` answers `{ lever, positions, lane_budgets, backend_spend }`, and this
+   * panel stored the whole ENVELOPE in `lever` and then read `lever.position` — one level too
+   * shallow, on every single line. `spendLeverState` also spells its figures camelCase
+   * (`allowanceMicros`, `moderateMicros`), which the snake_case reads missed a second time.
+   *
+   * WHAT SHE SAW ON 18 SEPTEMBER 2026. `settings.spend_lever` is MODERATE with
+   * `spend_lever_moderate_micros` = 25000000 — $25.00 of paid work per backend per month. This
+   * screen said FREE ONLY — $0. Every read fell through to a fallback derived from
+   * `budgets.hard_stop`, and `setSpendLever` writes `hard_stop = 1` for BOTH free-only and
+   * moderate, so the guess could only ever say OPEN or FREE_ONLY and could never say MODERATE.
+   * A two-state guess at a three-state lever, defaulting to the reassuring end.
+   *
+   * THREE MORE THINGS FOLLOWED FROM IT, all invisible: the moderate-figure input renders only at
+   * `position === "MODERATE"`, so the lever's own number could not be edited from the product at
+   * all; the spend line showed the ops-month LANE budget ($52.50) as though it were the lever's
+   * allowance ($25.00); and `remedy` — the sentence that says in words what the lever is doing —
+   * was undefined and never rendered.
+   *
+   * AND THE FALLBACK NO LONGER INVENTS A POSITION. Guessing "free only" when the lever cannot be
+   * read is the worst available default: it is the answer that makes her stop looking, on the one
+   * screen whose entire job is telling her whether money may be spent. Unknown is rendered as
+   * unknown. The spend figure still falls back to the ops month, because a number with a stated
+   * scope beats a blank.
+   */
+  const { position, known, open, spent, allowance, moderate, pct, remedy } = leverView(lever, opsMonth);
 
   async function move(next: { position?: string; moderate_micros?: number }) {
     setSaving(true);
@@ -236,23 +260,35 @@ function SpendLever({ budgets }: { budgets: any[] }) {
           <div className={open ? "spendfig spendfig-open" : "spendfig"}>
             <div className="spendfig-n">{usd(spent)}</div>
             <div className="spendfig-l">
-              {open
-                ? "spent this window · nothing is bounding it"
-                : `spent of ${usd(allowance)} allowed this window`}
+              {!known
+                ? "spent in the ops month · the lever's own ceiling could not be read"
+                : open
+                  ? "spent this window · nothing is bounding it"
+                  : `spent on the dearest backend, of ${usd(allowance)} allowed per backend this month`}
             </div>
-            {!open && (
+            {known && !open && (
               <div className="meter"><span style={{ width: `${pct}%` }} /></div>
             )}
           </div>
 
-          {error && (
+          {/*
+            * AN UNREADABLE LEVER SAYS SO, AND NAMES NO POSITION.
+            *
+            * This used to infer a position from `budgets.hard_stop` and show it as though it were
+            * the lever. It could only ever produce OPEN or FREE_ONLY — `setSpendLever` writes
+            * hard_stop = 1 for MODERATE as well — so the inference rendered MODERATE as "Free only"
+            * and told her no money could be spent while $25 a backend was authorised. The guess is
+            * gone; not knowing is now a stated state, and it is stated whether or not the fetch
+            * threw, because the shape being wrong never threw at all.
+            */}
+          {!known && (
             <p className="row-sub">
-              The lever itself could not be read, so the position shown is inferred from the budget
-              rows and the figure above is the ops month spend. Moving it will not take effect until
-              the endpoint answers.
+              The spend lever could not be read, so no position is shown above and none should be
+              trusted. The figure is the ops month's spend. Moving the lever will not take effect
+              until the endpoint answers.
             </p>
           )}
-          {!error && lever?.remedy && <p className="row-sub">{lever.remedy}</p>}
+          {known && remedy && <p className="row-sub">{remedy}</p>}
         </>
       )}
     </>

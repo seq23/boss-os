@@ -21,6 +21,16 @@ export interface CompletionRequest {
    * provider's models cannot be marked non-training in the first place without a diff here.
    */
   requireNoTraining?: boolean;
+  /**
+   * When this fires, the call is abandoned.
+   *
+   * REQUIRED IN PRACTICE THOUGH OPTIONAL IN TYPE. Every adapter must honour it, and
+   * `a-model-call-cannot-hang.mjs` fails the build for any adapter that reaches a provider without
+   * passing it on. It is optional here only so a test or a bench may call an adapter directly
+   * without constructing one; the router always supplies it. See `deadlines.ts` for the numbers and
+   * the measurements behind them.
+   */
+  signal?: AbortSignal;
 }
 
 export interface CompletionResult {

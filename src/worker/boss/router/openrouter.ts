@@ -52,6 +52,8 @@ export const openrouter: ProviderAdapter = {
     }
     const res = await fetch(`${ctx.baseUrl}/chat/completions`, {
       method: "POST",
+      // The call is abandoned when the router's deadline fires; see deadlines.ts.
+      signal: req.signal,
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${ctx.apiKey}`,
