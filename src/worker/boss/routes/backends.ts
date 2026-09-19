@@ -997,14 +997,49 @@ export const spendLeverRoutes = new Hono<{ Bindings: Env; Variables: Vars }>();
 spendLeverRoutes.get("/", async (c) => {
   const state = await spendLeverState(c.env.DB);
   const lane = await laneAllowance(c.env.DB, "ops");
+  /*
+   * ─── THE ENVELOPE THE SCREEN READS, FROM THE ROUTE THE SCREEN CALLS ────────
+   *
+   * CONFIRMED in a browser, 19 September 2026 (hostile sweep): Settings' spend lever read
+   * "The spend lever could not be read, so no position is shown above and none should be trusted"
+   * on a healthy build, at every position. `api.spendLever()` calls THIS path; `leverView` reads
+   * `envelope.lever.position`; this route answered the flat state, so `.lever` was undefined and
+   * the panel honestly reported an unreadable lever. The validator that exists for exactly this
+   * (`the-lever-she-sees-is-the-lever-that-spends.mjs`) parsed `models.get("/spend-lever")` — a
+   * second route at /api/models/spend-lever that nothing in the client calls — and passed.
+   *
+   * So this answers the same envelope as that route (`lever`, `positions`, `lane_budgets`,
+   * `backend_spend`), keeps the flat keys for anything that read them, and the validator now
+   * parses the route the client's path resolves to.
+   */
+  const [budgets, backends] = await Promise.all([
+    c.env.DB
+      .prepare(`SELECT lane, period, limit_micros, spent_micros, hard_stop FROM budgets ORDER BY lane, period`)
+      .all<{ lane: string; period: string; limit_micros: number; spent_micros: number; hard_stop: number }>(),
+    c.env.DB
+      .prepare(`SELECT id, display_name, monthly_ceiling_micros, spent_micros FROM execution_backends ORDER BY id`)
+      .all<{ id: string; display_name: string; monthly_ceiling_micros: number; spent_micros: number }>(),
+  ]);
   return ok(c, {
+    lever: state,
+    positions: SPEND_LEVER_POSITIONS,
+    lane_budgets: (budgets.results ?? []).map((b) => ({
+      ...b,
+      spent: formatMicros(b.spent_micros),
+      limit: formatMicros(b.limit_micros),
+      enforcing: b.hard_stop === 1,
+    })),
+    backend_spend: (backends.results ?? []).map((b) => ({
+      id: b.id, display_name: b.display_name,
+      spent_micros: b.spent_micros, spent: formatMicros(b.spent_micros),
+      own_ceiling_micros: b.monthly_ceiling_micros,
+    })),
     ...state,
     // Both spellings, because the client accepts either and a rename should not break a screen.
     allowance_micros: state.allowanceMicros,
     moderate_micros: state.moderateMicros,
     moderate_source: state.moderateSource,
     lane_remaining_micros: lane.remaining_micros,
-    positions: SPEND_LEVER_POSITIONS,
   });
 });
 

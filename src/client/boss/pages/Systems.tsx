@@ -585,36 +585,63 @@ function Bridge() {
   const sep = usePanel(() => api.bridgeSeparation());
   const cats = usePanel(() => api.bridgeCategories());
   const hand = usePanel(() => api.handoffs());
+  const s: any = sep.data;
+  const c: any = cats.data;
+  /*
+   * ─── WHAT THIS PANEL USED TO PRINT ────────────────────────────────────────
+   *
+   * CONFIRMED in a browser at phone width, 19 September 2026 (hostile sweep): "Separation" dumped
+   * the `separation` array as one JSON string into a <dd>, and "Forbidden categories" rendered each
+   * category object as a pill reading "[object Object]" — eight of them in a flex row that did not
+   * wrap, pushing the whole page 577px past the right edge of a 390px screen. A section that says
+   * nothing a person can read AND breaks the page beside it. The route was right all along: each
+   * dimension names who keeps it and whether it is proven; each forbidden category carries its
+   * reason. So they are printed as rows, in words.
+   */
   return (
     <>
       <section className="panel">
         <p className="eyebrow">Separation</p>
         <ErrorNotice error={sep.error} />
-        {sep.data === null && !sep.error ? (
+        {s === null && !sep.error ? (
           <Loading />
-        ) : (
-          <dl className="kv">
-            {Object.entries((sep.data as any) ?? {}).map(([k, v]) => (
-              <div key={k} style={{ display: "contents" }}>
-                <dt>{k.replace(/_/g, " ")}</dt>
-                <dd className="mono">{typeof v === "object" ? JSON.stringify(v) : text(v)}</dd>
-              </div>
+        ) : s ? (
+          <>
+            <p className="row-sub">{text(s.note, "")}</p>
+            <dl className="kv">
+              <dt>Proven here</dt><dd>{text(s.proven_locally)} of {asList(s.separation).length} dimensions</dd>
+              <dt>Externally unproven</dt><dd>{asList(s.externally_unproven).length ? asList(s.externally_unproven).map(String).join(", ") : "none"}</dd>
+              <dt>Crossings</dt><dd>{text(s.crossings)}</dd>
+              <dt>Refusals</dt><dd>{text(s.refusals)}</dd>
+            </dl>
+            {asList(s.separation).map((d: any) => (
+              <Row
+                key={String(d.dimension)}
+                title={text(d.dimension)}
+                sub={`Kept by ${text(d.kept_by)}${d.unproven_because ? ` — ${d.unproven_because}` : ""}`}
+                val={String(d.proof ?? "").replace(/_/g, " ")}
+              />
             ))}
-          </dl>
-        )}
+          </>
+        ) : null}
       </section>
       <section className="panel">
-        <p className="eyebrow">Forbidden categories</p>
+        <p className="eyebrow">Forbidden categories — never cross, in either direction</p>
         <ErrorNotice error={cats.error} />
-        {cats.data === null && !cats.error ? (
+        {c === null && !cats.error ? (
           <Loading />
-        ) : (
-          <div className="btn-row">
-            {asList((cats.data as any)?.forbidden ?? (cats.data as any)?.categories ?? cats.data).map((c: any) => (
-              <span className="pill" key={String(c)}>{String(c)}</span>
+        ) : c ? (
+          <>
+            <p className="row-sub">{text(c.rule, "")}</p>
+            {asList(c.forbidden).map((f: any) => (
+              <Row key={String(f.key ?? f)} title={text(f.label ?? f)} sub={text(f.reason, "")} val="refused" />
             ))}
-          </div>
-        )}
+            <p className="eyebrow" style={{ marginTop: 12 }}>Allowed, with the Boss's approval</p>
+            {asList(c.allowed).map((a: any) => (
+              <Row key={String(a.key ?? a)} title={text(a.label ?? a)} sub={asList(a.directions).map(String).join(" · ")} />
+            ))}
+          </>
+        ) : null}
       </section>
       <Panel title="Handoffs" hint="Nothing has crossed the boundary, in either direction." state={hand}>
         {asList(hand.data).map((h: any) => (
