@@ -40,7 +40,6 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadBriefingSpec, currentBriefingPrompt } from "./lib/briefing-prompt.mjs";
-import { registerTsResolve } from "./lib/ts-resolve.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES = "tests/fixtures/briefing";
@@ -71,16 +70,11 @@ export function newestFixture(dir) {
   };
 }
 
-async function loadDeliver() {
-  registerTsResolve();
-  return import(new URL("../../src/worker/boss/duties/deliverReport.ts", import.meta.url).href);
-}
-
 /**
  * Everything checkable, over a report + snapshot + prompt + sources.
  * Returns the list of problems; empty means on par.
  */
-export async function check({ spec, deliver, fixture, prompt, files, deliveredAt }) {
+export async function check({ spec, fixture, prompt, files, deliveredAt }) {
   const problems = [];
 
   if (!fixture) {
@@ -98,7 +92,7 @@ export async function check({ spec, deliver, fixture, prompt, files, deliveredAt
   const excluded = spec.stripExcludedSections(sections);
   for (const r of excluded.removed) problems.push(`Section "${r.key}" carries ${r.rule} content. The Spirit page owns that.`);
 
-  const applied = deliver.applyMarketData(excluded.kept, Array.isArray(fixture.delivers.sources) ? fixture.delivers.sources : [], fixture.markets, deliveredAt);
+  const applied = spec.applyMarketData(excluded.kept, Array.isArray(fixture.delivers.sources) ? fixture.delivers.sources : [], fixture.markets, deliveredAt);
   if (fixture.markets) {
     if (!applied.dashboard_built) problems.push("A market snapshot was present and the dashboard was not built from it.");
     const dash = applied.sections.find((s) => spec.sectionKeyOf?.(s) === "markets_dashboard" || s.key === "markets_dashboard");
@@ -211,6 +205,17 @@ export async function check({ spec, deliver, fixture, prompt, files, deliveredAt
   const chain = /market-snapshot\.mjs;[\s\S]*?agent\.mjs work-once/.test(F.launchd);
   if (!chain) problems.push("The launchd chain does not run the market snapshot before the claim.");
   if (!/<key>Hour<\/key><integer>6<\/integer><key>Minute<\/key><integer>5<\/integer>/.test(F.launchd)) problems.push("The launchd job has no 06:05 slot to claim a 06:00 duty.");
+  /*
+   * THE RETRY TIME THE SCREEN NAMES IS THE TIME THE MAC ACTUALLY LOOKS. `MAC_CLAIM_SLOTS_CT` in
+   * routes/today.ts and the boss-agent plist's StartCalendarInterval are two lists; this is the link.
+   */
+  const slotsInCode = [...(F.today.match(/MAC_CLAIM_SLOTS_CT[^=]*=\s*\[([\s\S]*?)\];/)?.[1] ?? "").matchAll(/\{\s*h:\s*(\d+),\s*m:\s*(\d+)\s*\}/g)]
+    .map((m) => `${m[1]}:${m[2]}`);
+  const agentBlock = F.launchd.slice(F.launchd.indexOf('LABEL="com.seq.boss-agent"'), F.launchd.indexOf("launchctl load \"$PLIST\""));
+  const slotsInPlist = [...agentBlock.matchAll(/<key>Hour<\/key><integer>(\d+)<\/integer><key>Minute<\/key><integer>(\d+)<\/integer>/g)].map((m) => `${m[1]}:${m[2]}`);
+  if (slotsInCode.length === 0) problems.push("routes/today.ts has no MAC_CLAIM_SLOTS_CT, so a failed run cannot name its retry time.");
+  else if (slotsInCode.join(",") !== slotsInPlist.join(",")) problems.push(`The retry slots the screen names (${slotsInCode.join(", ")}) are not the boss-agent's launchd slots (${slotsInPlist.join(", ")}).`);
+  if (!/retryFailedBriefing\(/.test(F.deliver) || !/materialiseDueDuties\(env, now, "duty_exec_intel"\)/.test(F.deliver)) problems.push("deliverReport.ts does not re-queue a failed morning.");
   if (!/local_hour = 6,\s*local_minute = 0/.test(F.migration)) problems.push("Migration 0257 does not move the duty to 06:00 Central.");
   if (!/'\$\.prompt'\s*\)/.test(F.migration) || !/json_remove/.test(F.migration)) problems.push("Migration 0257 does not remove $.prompt from the duty row.");
   if (!/'\$\.spec_module', 'executive_briefing'/.test(F.migration)) problems.push("Migration 0257 does not point the duty at the module.");
@@ -224,13 +229,12 @@ export async function check({ spec, deliver, fixture, prompt, files, deliveredAt
 
 async function load() {
   const specModule = await loadBriefingSpec();
-  const deliver = await loadDeliver();
   const briefing = await import(new URL("../../src/worker/boss/today/briefing.ts", import.meta.url).href);
   const spec = { ...specModule, sectionKeyOf: briefing.sectionKeyOf, usableSources: briefing.usableSources };
   const files = Object.fromEntries(Object.entries(FILES).map(([k, p]) => [k, existsSync(join(ROOT, p)) ? readFileSync(join(ROOT, p), "utf8") : ""]));
   const fixture = newestFixture(join(ROOT, FIXTURES));
   const deliveredAt = fixture?.delivers?.delivered_at ? Date.parse(fixture.delivers.delivered_at) : Date.parse(`${fixture?.day ?? "2026-09-19"}T12:00:00Z`);
-  return { spec, deliver, files, fixture, prompt: await currentBriefingPrompt(), deliveredAt };
+  return { spec, files, fixture, prompt: await currentBriefingPrompt(), deliveredAt };
 }
 
 async function selfTest() {
@@ -258,6 +262,8 @@ async function selfTest() {
     { name: "a runner that reads delivers.json without clearing it first is caught", input: { ...good, files: { ...good.files, runner: good.files.runner.replace("await clearStaleDelivers(envelope.repo_path)", "false") } }, expect: 1 },
     { name: "a launchd chain without the market snapshot is caught", input: { ...good, files: { ...good.files, launchd: good.files.launchd.replace(/node scripts\/ops\/market-snapshot\.mjs;/g, "") } }, expect: 1 },
     { name: "a materialiser that stopped composing from the module is caught", input: { ...good, files: { ...good.files, materialise: good.files.materialise.replace("prompt: composeBriefingPrompt(", "prompt: oldPrompt(") } }, expect: 1 },
+    { name: "a retry slot on the screen that the Mac does not have is caught", input: { ...good, files: { ...good.files, today: good.files.today.replace("{ h: 6, m: 5 }", "{ h: 6, m: 15 }") } }, expect: 1 },
+    { name: "a delivery that stopped re-queuing a failed morning is caught", input: { ...good, files: { ...good.files, deliver: good.files.deliver.replace(/retryFailedBriefing\(/g, "noRetry(") } }, expect: 1 },
     { name: "a screen that dropped the final line is caught", input: { ...good, files: { ...good.files, screen: good.files.screen.replace(/c\.final_line/g, "c.nothing") } }, expect: 1 },
   ];
 

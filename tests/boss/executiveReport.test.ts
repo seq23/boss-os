@@ -862,3 +862,99 @@ describe("the briefing is built and graded against the file's specification", ()
     expect(JSON.parse(stored.shortfalls).join(" ")).toMatch(/No live market snapshot reached this run/);
   });
 });
+
+/**
+ * ─── THE LIVE RUN, DELIVERED THROUGH THE SHIPPED PATH ─────────────────────
+ *
+ * `tests/fixtures/briefing/live-2026-09-19.*` is what Sonnet 4.5 produced on her Claude Code session
+ * on 19 September 2026 (546 s, 42 turns, 30 sources, notional $1.66, $0.00 API) and the market
+ * snapshot it was handed. This delivers it exactly as the route would and pins what her screen gets.
+ */
+import liveDelivers from "../fixtures/briefing/live-2026-09-19.delivers.json";
+import liveMarkets from "../fixtures/briefing/live-2026-09-19.markets.json";
+
+describe("the 19 September live run, delivered", () => {
+  it("lands as a full report with the dashboard from the feed, the stamp from evidence, and its two honest shortfalls named", async () => {
+    await env.DB.prepare(`DELETE FROM executive_reports`).run();
+    await seedTask({ delivers: "executive_reports", backend_id: "bk_claude_code", prompt_version: "2026-09-19.1" });
+    const runId = uid("brn");
+    const finished = Date.parse("2026-09-19T14:40:05Z");
+    await env.DB.prepare(`INSERT INTO backend_runs (id, task_id, backend_id, envelope_id, requested, started_at, finished_at, status) VALUES (?,?,?,?,?,?,?,'running')`)
+      .bind(runId, TASK, "bk_claude_code", uid("env"), "{}", Date.parse("2026-09-19T14:30:58Z"), finished).run();
+
+    await deliverExecutiveReport(env as any, {
+      taskId: TASK, runId, runStatus: "succeeded",
+      report: { ...(liveDelivers as any), day_id: "2026-09-19" },
+      marketData: liveMarkets as any,
+      now: finished,
+    });
+
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    const sections = JSON.parse(stored.sections);
+    expect(sections.map((s: any) => s.key)).toEqual(BRIEFING_SECTIONS.map((b) => b.key));
+    const dash = sections.find((s: any) => s.key === "markets_dashboard");
+    expect(dash.table_built_by).toBe("system");
+    expect(dash.table.rows).toHaveLength(MARKET_WATCHLIST.length);
+    expect(dash.table.rows.find((r: string[]) => r[0] === "S&P 500")[1]).toBe("7,650.5");
+    expect(dash.table.rows.find((r: string[]) => r[0] === "SpaceX (SPCX)")[1]).toBe("$152.71");
+    expect(dash.table.rows.some((r: string[]) => /not available/.test(String(r[1])))).toBe(false);
+    const spx = sections.find((s: any) => s.key === "spacex_watch");
+    expect(spx.spacex_public).toBe(true);
+    expect(spx.bullets[0]).toMatch(/^SPCX \$152\.71 \(−1\.36%\)/);
+
+    // The stamp: the snapshot was 14:23Z, the run finished 14:40Z; sources typed after that are ignored.
+    expect(stored.checked_through).toBeLessThanOrEqual(finished);
+    expect(stored.checked_through).toBeGreaterThanOrEqual(Date.parse(liveMarkets.fetched_at));
+    expect(stored.prompt_version).toBe("2026-09-19.1");
+
+    // Honest: partial, for exactly the two faults the run committed — and nothing invented to hide them.
+    const shortfalls: string[] = JSON.parse(stored.shortfalls);
+    expect(shortfalls.some((s) => /bare homepage/.test(s))).toBe(true);
+    expect(shortfalls.some((s) => /after the run finished/.test(s))).toBe(true);
+    expect(shortfalls.filter((s) => !/bare homepage|after the run finished/.test(s))).toEqual([]);
+    expect(stored.status).toBe("partial");
+    expect(JSON.parse(stored.consulted).filter((c: any) => c.kind === "market_feed")).toHaveLength(liveMarkets.consulted.length);
+  });
+});
+
+/**
+ * ─── A FAILED MORNING RETRIES ITSELF, AND SAYS SO ────────────────────────
+ */
+describe("a failed briefing run is retried, bounded, and named", () => {
+  beforeEach(async () => {
+    await env.DB.prepare(`DELETE FROM executive_reports`).run();
+    await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
+    await seedTask({ delivers: "executive_reports", backend_id: "bk_claude_code" });
+  });
+
+  it("queues one retry before noon Central and says when the Mac will pick it up", async () => {
+    const at = Date.parse("2026-09-19T11:31:00Z"); // 06:31 Central
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "failed", report: null, now: at });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(stored.status).toBe("failed");
+    expect(stored.summary).toMatch(/A retry is queued for your Mac's next slot/);
+    const queued = await all<any>(`SELECT id, input FROM tasks WHERE id != ? AND input LIKE '%"delivers":"executive_reports"%'`, TASK);
+    expect(queued).toHaveLength(1);
+    expect(JSON.parse(queued[0].input).prompt).toMatch(/EXECUTIVE INTELLIGENCE ENGINE/);
+  });
+
+  it("does not retry after noon Central, and says tomorrow's run is the next", async () => {
+    const at = Date.parse("2026-09-19T18:05:00Z"); // 13:05 Central
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "failed", report: null, now: at });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(stored.summary).toMatch(/past noon Central/);
+    const queued = await all<any>(`SELECT id FROM tasks WHERE id != ? AND input LIKE '%"delivers":"executive_reports"%'`, TASK);
+    expect(queued).toHaveLength(0);
+  });
+
+  it("stops at three attempts a morning", async () => {
+    const at = Date.parse("2026-09-19T11:31:00Z");
+    for (let i = 0; i < 3; i++) {
+      await env.DB.prepare(`INSERT INTO tasks (id, lane, title, input, status, created_at) VALUES (?, 'ops', 'Executive Intelligence Report', ?, 'failed', ?)`)
+        .bind(uid("tsk"), JSON.stringify({ delivers: "executive_reports" }), at - 60_000 * (i + 1)).run();
+    }
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "failed", report: null, now: at });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(stored.summary).toMatch(/attempts already today/);
+  });
+});

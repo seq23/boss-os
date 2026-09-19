@@ -910,3 +910,83 @@ export function editionStamp(args: { dayId: string; checkedThrough: number | nul
         : null,
   };
 }
+
+// ─── Applying the feed to a delivered report ─────────────────────────────────
+
+/**
+ * THE DASHBOARD IS BUILT FROM THE FEED, AND THE REPORT IS GRADED AGAINST THE FILE.
+ *
+ * Both are done HERE, on delivery, and not left to the prompt — see `briefingSpec.ts` for the
+ * fourteen days of measurement behind that. What this adds to the row:
+ *
+ *   · `market_data`   — MARKETS.json as the runner observed it, verbatim. The dashboard table is
+ *                       rebuilt from it; a symbol the feed did not answer reads "not available at
+ *                       HH:MM CT" by construction. The run's own table, if it typed one, is replaced.
+ *   · `checked_through` — the edition stamp, derived from the newest source read time and the
+ *                       snapshot, never later than delivery and never taken from the run's prose.
+ *   · `prompt_version` — which specification the run was handed, so a report can be read against
+ *                       the rules that produced it.
+ *   · `consulted`     — the sources-consulted ledger: every feed URL the snapshot opened with its
+ *                       outcome, and every source the run cited with when it read it.
+ *
+ * Astrology or travel-map content in any section removes THAT SECTION and names it — the Spirit
+ * page owns both, by her instruction of 12 September and again of 19 September.
+ */
+export function applyMarketData(
+  sections: Record<string, unknown>[],
+  sources: unknown[],
+  market: MarketData | null | undefined,
+  now: number,
+): { sections: Record<string, unknown>[]; sources: unknown[]; unavailable: number; dashboard_built: boolean } {
+  if (!market || !Array.isArray(market.quotes) || market.quotes.length === 0) {
+    return { sections, sources, unavailable: 0, dashboard_built: false };
+  }
+  const built = dashboardFromMarketData(market, now);
+  const nextSources = [...sources];
+  const indexes: number[] = [];
+  for (const src of built.sources) {
+    const existing = nextSources.findIndex((s) => s && typeof s === "object" && (s as { url?: unknown }).url === src.url);
+    if (existing >= 0) { indexes.push(existing); continue; }
+    nextSources.push(src);
+    indexes.push(nextSources.length - 1);
+  }
+
+  const out = sections.map((sec) => ({ ...sec }));
+  const dashIdx = out.findIndex((sec) => sectionKeyOf(sec) === "markets_dashboard");
+  const dashboard: Record<string, unknown> = dashIdx >= 0 ? out[dashIdx]! : { key: "markets_dashboard", heading: "Markets & Macro Dashboard" };
+  const priorCited = Array.isArray(dashboard.sources) ? dashboard.sources : [];
+  dashboard.table = built.table;
+  dashboard.table_built_by = "system";
+  dashboard.sources = [...new Set([...priorCited, ...indexes])];
+  if (typeof dashboard.so_what !== "string" || !dashboard.so_what.trim()) {
+    dashboard.so_what = `${built.session_label}'s figures, fetched by the system from the feeds named in the source list.`;
+  }
+  if (dashIdx >= 0) out[dashIdx] = dashboard;
+  else out.splice(Math.min(2, out.length), 0, dashboard);
+
+  // SpaceX's public/private answer for today leads the SpaceX Watch, from the same feed.
+  const status = spacexStatus(market);
+  const spxIdx = out.findIndex((sec) => sectionKeyOf(sec) === "spacex_watch");
+  if (spxIdx >= 0 && status.public !== null) {
+    const sec = out[spxIdx]!;
+    const bullets = Array.isArray(sec.bullets) ? [...sec.bullets] : [];
+    const spcxIndex = indexes[MARKET_SPCX_INDEX(market)] ?? null;
+    bullets.unshift(`${status.line}${spcxIndex !== null ? ` [${spcxIndex + 1}]` : ""}`);
+    sec.bullets = bullets;
+    sec.sources = [...new Set([...(Array.isArray(sec.sources) ? sec.sources : []), ...(spcxIndex !== null ? [spcxIndex] : [])])];
+    sec.spacex_public = status.public;
+  }
+
+  return { sections: out, sources: nextSources, unavailable: built.unavailable, dashboard_built: true };
+}
+
+/** Which of the dashboard's source entries is SPCX's, in the order `dashboardFromMarketData` emits them. */
+function MARKET_SPCX_INDEX(market: MarketData): number {
+  const seen: string[] = [];
+  for (const q of market.quotes) {
+    if (q.value === null || !Number.isFinite(q.value)) continue;
+    if (!seen.includes(q.source_url)) seen.push(q.source_url);
+    if (q.symbol === "SPCX") return seen.indexOf(q.source_url);
+  }
+  return -1;
+}
