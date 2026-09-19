@@ -7,6 +7,7 @@ import { getSetting } from "../lib/settings";
 import { loadEnvelope } from "../intake/envelope";
 import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure } from "../router";
 import { dispatchRunForTask } from "../backends/dispatch";
+import { deliverExecutiveReport } from "../duties/deliverReport";
 import { firmNoticeBlock } from "../prompt/notices";
 
 /**
@@ -68,8 +69,44 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    * The task then stays 'running' with nothing more happening in the cloud: the run sits awaiting a
    * claim, the sync agent takes it, and `POST /api/boss/backends/report` closes both.
    */
-  const backendId = typeof input.backend_id === "string" ? input.backend_id : null;
-  if (backendId) {
+  /*
+   * ─── THE LADDER: HER TWO $0 SEATS IN ORDER, THEN THE CLOUD RUNGS ────────────
+   *
+   * Her question, 19 Sep 2026: "the Boss OS briefing is run using my two $0 lanes first, right —
+   * Claude and OpenAI? The ladder is working?" Before this block the answer was no: `backend_id`
+   * named ONE seat, a refusal from the guard failed the task ("Change the backend on the duty"),
+   * and nothing here or in `/claim` could reach `bk_codex` for this duty by any path.
+   *
+   * `input.backend_ladder` is the ordered list (`briefingLadder.ts` stamps it on the briefing);
+   * `input.backend_id` alone is a one-rung ladder, so every existing caller is unchanged. Each
+   * refusal is recorded on the task as a `ladder_step` event with the guard's sentence, and the walk
+   * moves down. When every seat refuses and `input.cloud_fallback` is set, the walk continues into
+   * `routeCompletion` below — the free rungs first, paid last, by the router's own comparator — and
+   * the delivery names which rung wrote it. Without `cloud_fallback`, exhausting the seats fails the
+   * task with every refusal on it, as before.
+   */
+  const ladder: string[] = Array.isArray(input.backend_ladder) && input.backend_ladder.length
+    ? input.backend_ladder.filter((x: unknown): x is string => typeof x === "string")
+    : typeof input.backend_id === "string" ? [input.backend_id] : [];
+  const refusals: { backend_id: string; refused: string }[] = [];
+  const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
+    ? ((input.requested as any).model_by_backend as Record<string, string | null>)
+    : null;
+
+  for (const backendId of ladder) {
+    const requested = typeof input.requested === "object" && input.requested ? { ...(input.requested as Record<string, unknown>) } : {};
+    /*
+     * EACH SEAT GETS ITS OWN MODEL. A single `requested.model` carried a Claude model id to whichever
+     * seat claimed — a Codex run handed `claude-sonnet-4-5` cannot start. `model_by_backend` names
+     * the model per seat; a null means the seat's own default.
+     */
+    if (modelBySeat && backendId in modelBySeat) {
+      const m = modelBySeat[backendId];
+      if (m) requested.model = m; else delete requested.model;
+    }
+    requested.backend_ladder = ladder;
+    requested.model_by_backend = modelBySeat ?? undefined;
+
     const dispatched = await dispatchRunForTask(env, {
       // Scheduled: a duty made this, so the budget may refuse it. Work she asks for arrives through
       // POST /backends/dispatch instead and is never gated.
@@ -81,35 +118,58 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       prompt: await buildPrompt(env, task, input),
       kind: task.intake_kind ?? null,
       envelopeId: task.envelope_id ?? null,
-      requested: typeof input.requested === "object" && input.requested ? (input.requested as Record<string, unknown>) : {},
+      requested,
       sensitivity: task.sensitivity ?? null,
       estimatedCostMicros: envelope?.budget_micros ?? 0,
     });
 
     if (dispatched.refused) {
-      /*
-       * A REFUSAL FAILS THE TASK WITH THE REFUSAL SENTENCE ON IT. The alternative — a run recorded
-       * as refused while the task sits 'running' for ever — is the shape where the report simply
-       * stops appearing and nothing anywhere says why.
-       */
-      await failTask(env, task, employee, envelope, costMode, dispatched.refused,
-        "The boundary declined this backend. Change the backend on the duty, or lift what blocked it.");
-      return;
+      refusals.push({ backend_id: backendId, refused: dispatched.refused });
+      await env.DB
+        .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
+        .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: backendId, refused: dispatched.refused, next: ladder[ladder.indexOf(backendId) + 1] ?? (input.cloud_fallback ? "cloud rungs" : null) }))
+        .run();
+      continue;
     }
 
     await env.DB
       .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'dispatched',?)`)
-      .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ run_id: dispatched.run_id, backend_id: backendId }))
+      .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ run_id: dispatched.run_id, backend_id: backendId, ladder_position: ladder.indexOf(backendId) + 1, refused_before: refusals }))
       .run();
     await logEvent(env.DB, {
       level: "info", scope: "queue", event: "task_dispatched_to_backend", lane: task.lane, entityId: task.id,
-      detail: { run_id: dispatched.run_id, backend_id: backendId },
+      detail: { run_id: dispatched.run_id, backend_id: backendId, refused_before: refusals.map((r) => r.backend_id) },
     });
     return;
   }
 
+  if (ladder.length > 0 && !input.cloud_fallback) {
+    /*
+     * A REFUSAL FAILS THE TASK WITH EVERY REFUSAL SENTENCE ON IT. The alternative — a run recorded
+     * as refused while the task sits 'running' for ever — is the shape where the report simply
+     * stops appearing and nothing anywhere says why.
+     */
+    await failTask(env, task, employee, envelope, costMode,
+      refusals.map((r) => `${r.backend_id}: ${r.refused}`).join(" | "),
+      "Every seat on the ladder declined this work. Change the ladder on the duty, or lift what blocked it.");
+    return;
+  }
+  if (refusals.length > 0) {
+    await logEvent(env.DB, {
+      level: "warn", scope: "queue", event: "ladder_fell_to_cloud", lane: task.lane, entityId: task.id,
+      detail: { refused: refusals },
+    });
+  }
+
   const routeId = employee?.route_id ?? (task.lane === "trading" ? "rt_trading_default" : "rt_ops_default");
-  const prompt = await buildPrompt(env, task, input);
+  const cloudDelivers = ladder.length > 0 && typeof input.delivers === "string" ? input.delivers : null;
+  const prompt = (await buildPrompt(env, task, input)) + (cloudDelivers
+    ? "\n\n==================================================\nYOU ARE A CLOUD RUNG, NOT A SEAT\n==================================================\n" +
+      "Both of her subscription seats declined this run, so you are answering from a cloud model with NO filesystem, NO MARKETS.json and NO web tools. " +
+      "Return the delivers.json OBJECT as your ENTIRE reply — valid JSON, nothing before or after it. You cannot open a source, so you must not cite one: " +
+      "leave `sources` empty, put every figure you would have wanted into `gaps` with why, and file only the sections you can write WITHOUT a current number. " +
+      "A short honest brief beats an invented one; every uncited figure is removed before she sees it and the section that lost it is named."
+    : "");
 
   try {
     const result = await routeCompletion(env, {
@@ -214,6 +274,26 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       level: "info", scope: "queue", event: "task_completed", lane: task.lane, entityId: task.id,
       detail: { model: result.modelId, cost_micros: result.costMicros, fallback: result.usedFallback },
     });
+
+    /*
+     * THE CLOUD RUNG'S REPORT LANDS THROUGH THE SAME DOOR, GRADED BY THE SAME GRADER, AND SAYS WHO
+     * WROTE IT. A briefing that fell off both seats is still the day's briefing; the alternative is a
+     * blank block at 7am with the answer buried in `tasks.output`. The rung is recorded as
+     * `written_by`, so the Today block reads "Written by Nemotron 3 Ultra 550B (OpenRouter, free)"
+     * rather than implying her Claude seat produced it.
+     */
+    if (cloudDelivers === "executive_reports") {
+      await deliverExecutiveReport(env, {
+        taskId: task.id,
+        runId: result.decisionId,
+        report: parseDeliversFromText(result.text),
+        runStatus: "succeeded",
+        marketData: null,
+        writtenBy: { kind: "cloud_rung", backend_id: result.providerId, model: result.modelId, label: result.modelName, refused_seats: refusals.map((r) => r.backend_id) },
+      }).catch(async (e) => {
+        await logEvent(env.DB, { level: "error", scope: "duties", event: "report_delivery_failed", entityId: task.id, detail: { rung: result.modelId, error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
+      });
+    }
   } catch (err) {
     // Budget and sensitive-routing blocks are not failures — they are the system
     // holding the task at a gate that only a human can open.
@@ -407,6 +487,40 @@ async function holdForApproval(
     level: "info", scope: "queue", event: "task_held", lane: task.lane, entityId: task.id,
     detail: { kind: card.kind, reason: card.summary },
   });
+}
+
+/**
+ * The delivers.json object out of a cloud rung's reply, or null when there is none to read.
+ *
+ * THE FIRST BALANCED OBJECT, NEVER A REGEX OVER PROSE. A rung that wrapped its JSON in a sentence
+ * still delivers; one that answered in prose delivers nothing and is filed failed, which is the
+ * honest outcome for a reply the grader cannot read.
+ */
+export function parseDeliversFromText(text: string): Record<string, unknown> | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          const obj = JSON.parse(text.slice(start, i + 1));
+          return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : null;
+        } catch { return null; }
+      }
+    }
+  }
+  return null;
 }
 
 async function failTask(

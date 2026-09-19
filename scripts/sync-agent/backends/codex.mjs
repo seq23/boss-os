@@ -83,13 +83,26 @@ export function isBenignStderr(stderr) {
  * authority it already had.
  */
 export function buildArgs(envelope, prompt, { model } = {}) {
+  /*
+   * A RESEARCH RUN WRITES delivers.json AND OPENS THE WEB; read-only cannot do either.
+   *
+   * `--sandbox read-only` was right for the lane's first proof (a generation with nothing to write).
+   * The Executive Intelligence Report is a file the run writes in its own workspace and twenty to
+   * forty pages it opens. `workspace-write` confines writes to the cwd — the same directory the
+   * envelope's `allowed_paths` names and the runner's scope scan checks after the fact — and
+   * `--search` enables the native web_search tool the envelope's `web_tools` asked for. Neither is
+   * granted to an envelope that did not ask: no web tools and no research kind means read-only.
+   */
+  const web = Array.isArray(envelope?.web_tools) ? envelope.web_tools : [];
+  const writes = web.length > 0 || envelope?.kind === "research" || envelope?.kind === "document";
   const args = [
     "exec",
-    "--sandbox", "read-only",
+    "--sandbox", writes ? "workspace-write" : "read-only",
     // Runs happen in a scratch workspace, not a repository. Without this the CLI refuses and
     // relocates the working directory out from under the run.
     "--skip-git-repo-check",
   ];
+  if (web.length > 0) args.push("--search");
   if (model ?? envelope?.model) args.push("--model", String(model ?? envelope.model));
   // Last, and as ONE argv element. spawn() is called without a shell, so nothing inside it is
   // interpreted; it is text handed to a process, the same as a file would be.

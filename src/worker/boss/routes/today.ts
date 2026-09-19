@@ -1,3 +1,4 @@
+import { editionStamp, FINAL_LINE } from "../duties/briefingSpec";
 import { Hono, type Context } from "hono";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
@@ -12,7 +13,7 @@ import { runCoachingTurn } from "../coaching/run";
 import { WIRING_BY_BACKEND } from "../router/backends";
 // One statement of which tiers a vendor gives away, shared with the router and the guard.
 import { routeIsBilled } from "../backends/guard";
-import { dayIdInZone, zonedTime } from "../../../shared/boss/timezone";
+import { dayIdInZone, wallClock, zonedTime } from "../../../shared/boss/timezone";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
 import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relationships/follow_ups";
@@ -300,10 +301,32 @@ function parseJson<T>(raw: unknown, fallback: T): T {
  * COMPUTED ON READ. Nothing here is written by a cron, so a cron that did not run cannot make this
  * wrong — it is true at the moment she looks, which is the only moment that matters.
  */
+/**
+ * WHEN THE MAC NEXT LOOKS FOR WORK, in Central wall-clock minutes-from-midnight.
+ *
+ * These are the `StartCalendarInterval` slots of `com.seq.boss-agent` in
+ * `scripts/ops/install-agent-launchd.sh`, and `the-briefing-is-on-par.mjs` fails the build if the two
+ * lists disagree — the one link between them, so a failed-run notice can name a retry time that is
+ * actually when the retry happens.
+ */
+export const MAC_CLAIM_SLOTS_CT: { h: number; m: number }[] = [
+  { h: 6, m: 5 }, { h: 6, m: 35 }, { h: 6, m: 50 }, { h: 7, m: 10 }, { h: 12, m: 35 }, { h: 18, m: 35 },
+];
+
+/** "07:10 Central" for the next slot after `now`, or the first slot tomorrow. */
+export function nextClaimSlot(now: number): string {
+  const wc = wallClock(now);
+  const minutes = wc.h * 60 + wc.min;
+  const next = MAC_CLAIM_SLOTS_CT.find((s) => s.h * 60 + s.m > minutes) ?? MAC_CLAIM_SLOTS_CT[0]!;
+  const tomorrow = !MAC_CLAIM_SLOTS_CT.some((s) => s.h * 60 + s.m > minutes);
+  return `${String(next.h).padStart(2, "0")}:${String(next.m).padStart(2, "0")} Central${tomorrow ? " tomorrow" : ""}`;
+}
+
 export function reportStaleness(
   duty: {
     suspended: number; last_run_at: number | null; next_due_at: number | null;
     task_status: string | null; task_error: string | null;
+    local_hour?: number | null; local_minute?: number | null;
   } | null,
   showingDay: string | null,
   todayId: string,
@@ -312,35 +335,47 @@ export function reportStaleness(
   const carried = showingDay !== null && showingDay !== todayId
     ? `This is the briefing for ${showingDay}, carried over because today's has not arrived. `
     : "";
+  /*
+   * THE TIME IS THE DUTY'S, NOT A LITERAL. Every sentence here said "06:30" while the row said
+   * 06:30, and would have gone on saying it after 0257 moved the duty to 06:00.
+   */
+  const at = duty && typeof duty.local_hour === "number"
+    ? `${String(duty.local_hour).padStart(2, "0")}:${String(duty.local_minute ?? 0).padStart(2, "0")}`
+    : "06:00";
 
   if (!duty) {
     return `${carried}There is no Executive Intelligence Report duty in the system at all, so nothing is scheduled to produce one.`;
   }
   if (duty.suspended) {
-    return `${carried}The 06:30 report duty is suspended, so no report will be produced until it is resumed.`;
+    return `${carried}The ${at} report duty is suspended, so no report will be produced until it is resumed.`;
   }
   if (duty.last_run_at === null) {
-    return `${carried}The 06:30 report duty has never fired.`;
+    return `${carried}The ${at} report duty has never fired.`;
   }
   if (duty.task_status === "failed") {
-    return `${carried}The 06:30 run failed: ${duty.task_error ?? "no error was recorded"}.`;
+    /*
+     * A FAILED RUN NAMES ITS REASON AND ITS RETRY. The retry is real: the duty is re-materialised on
+     * delivery of a failed report (see `deliverReport.ts`), and the Mac's next slot is when the new
+     * task is claimed. A notice that says "failed" and stops teaches her to stop looking at 7am.
+     */
+    return `${carried}The ${at} run failed: ${duty.task_error ?? "no error was recorded"}. A retry is queued for your Mac's next slot, ${nextClaimSlot(now)}.`;
   }
   if (duty.task_status === "cancelled") {
-    return `${carried}The 06:30 run was cancelled: ${duty.task_error ?? "no reason was recorded"}.`;
+    return `${carried}The ${at} run was cancelled: ${duty.task_error ?? "no reason was recorded"}.`;
   }
   if (duty.task_status === "queued") {
     const hours = Math.floor((now - duty.last_run_at) / 3_600_000);
-    return `${carried}The 06:30 run fired ${hours}h ago and its task is still queued — nothing on your Mac has claimed it. The agent job is not running.`;
+    return `${carried}The ${at} run fired ${hours}h ago and its task is still queued — nothing on your Mac has claimed it yet. Its next slot is ${nextClaimSlot(now)}; if that passes too, the agent job is not running.`;
   }
   if (duty.task_status === "running") {
     const hours = Math.floor((now - duty.last_run_at) / 3_600_000);
-    return `${carried}The 06:30 run has been running for ${hours}h without reporting back.`;
+    return `${carried}The ${at} run has been running for ${hours}h without reporting back.`;
   }
   if (duty.next_due_at !== null && duty.next_due_at > now) {
     const mins = Math.max(1, Math.round((duty.next_due_at - now) / 60_000));
     return `${carried}Today's report is not due for another ${mins} minute${mins === 1 ? "" : "s"}.`;
   }
-  return `${carried}The 06:30 run has not delivered today's report yet and its task is not waiting anywhere — dispatch it by hand if you need it now.`;
+  return `${carried}The ${at} run has not delivered today's report yet and its task is not waiting anywhere — dispatch it by hand if you need it now.`;
 }
 
 /**
@@ -470,10 +505,12 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
   const reportDutyP = reads.first<{
         id: string; name: string; suspended: number; last_run_at: number | null;
         next_due_at: number | null; last_task_id: string | null;
+        local_hour: number | null; local_minute: number | null;
         task_status: string | null; task_error: string | null;
       }>(B, () => env.DB
       .prepare(
         `SELECT d.id, d.name, d.suspended, d.last_run_at, d.next_due_at, d.last_task_id,
+                d.local_hour, d.local_minute,
                 t.status AS task_status, t.error AS task_error
            FROM standing_duties d
            LEFT JOIN tasks t ON t.id = d.last_task_id
@@ -1510,6 +1547,23 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
               sources: parseJson(shown.sources, []),
               generated_at: shown.generated_at,
               for_day: shown.day_id,
+              /*
+               * THE EDITION, STAMPED FROM EVIDENCE. "Saturday, September 19, 2026 • Morning
+               * Edition • Central Time / Information checked through 6:28 AM CT" — the file's
+               * framing, with the time DERIVED from the newest source read and the market snapshot
+               * rather than typed by the run. Rows written before 0257 carry no stamp and say so.
+               */
+              edition: editionStamp({ dayId: shown.day_id, checkedThrough: shown.checked_through ?? null }),
+              /* The absolute final line, appended by the system. Nothing may render after it. */
+              final_line: FINAL_LINE,
+              prompt_version: shown.prompt_version ?? null,
+              /*
+               * WHO WROTE IT. Her Claude seat first, her Codex seat second, a free cloud rung after
+               * both — and the block says which, so a rung's morning is never read as her seat's.
+               */
+              written_by: parseJson(shown.written_by, null),
+              /* True when the dashboard was built from the live snapshot rather than typed by the run. */
+              dashboard_from_feed: Boolean(shown.market_data),
               /* True when this is yesterday's briefing standing in for one that has not arrived. */
               carried_over: carried,
               staleness: carried ? reportStaleness(reportDuty, shown.day_id, day.id, now) : null,

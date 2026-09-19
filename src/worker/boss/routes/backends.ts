@@ -367,6 +367,21 @@ backends.post("/claim", async (c) => {
   const deviceId = optionalText(b?.device_id);
   const backendId = optionalText(b?.backend_id) ?? "bk_claude_code";
   if (!deviceId) throw badRequest("A claim needs a device", "Send { device_id, backend_id }.");
+  /*
+   * ─── A SEAT MAY TAKE WORK PARKED FOR A SEAT ABOVE IT ON THE SAME LADDER ────
+   *
+   * `fallback_from` is the list of seats on the claiming machine that failed preflight this cycle.
+   * A run parked for one of them whose own `requested.backend_ladder` lists THIS seat later is
+   * handed over, re-labelled, and the hand-off recorded. Before this, a Mac whose Claude seat could
+   * not authenticate left the briefing unclaimed while its Codex seat sat idle beside it — the
+   * ladder existed in a migration comment and nowhere a run could walk.
+   *
+   * Only seats the CALLER says are down, only runs whose ladder names the caller, only agent
+   * seats: a cloud backend never appears here, and a run with no ladder is never re-labelled.
+   */
+  const fallbackFrom = Array.isArray(b?.fallback_from)
+    ? (b.fallback_from as unknown[]).filter((x): x is string => typeof x === "string" && x !== backendId)
+    : [];
 
   const backend = await getBackend(c.env.DB, backendId);
   if (!backend) throw notFound("No backend is registered with that id");
@@ -390,26 +405,50 @@ backends.post("/claim", async (c) => {
    * the task was doing double duty as both filter and lock; `claimed_at IS NULL` is a lock that
    * does not also make a claim depend on an unrelated status.
    */
+  const seatIds = [backendId, ...fallbackFrom];
   const waiting = await c.env.DB
     .prepare(
-      `SELECT r.id, r.task_id, r.envelope_id, r.requested
+      `SELECT r.id, r.task_id, r.envelope_id, r.requested, r.backend_id AS parked_for
          FROM backend_runs r
          JOIN tasks t ON t.id = r.task_id
-        WHERE r.backend_id = ? AND r.status = 'running' AND r.finished_at IS NULL
+        WHERE r.backend_id IN (${seatIds.map(() => "?").join(",")}) AND r.status = 'running' AND r.finished_at IS NULL
           AND r.claimed_at IS NULL
           AND t.status IN ('queued', 'running')
-        ORDER BY r.started_at LIMIT 10`,
+        ORDER BY CASE WHEN r.backend_id = ? THEN 0 ELSE 1 END, r.started_at LIMIT 10`,
     )
-    .bind(backendId)
-    .all<{ id: string; task_id: string; envelope_id: string | null; requested: string }>();
+    .bind(...seatIds, backendId)
+    .all<{ id: string; task_id: string; envelope_id: string | null; requested: string; parked_for: string }>();
 
   for (const run of waiting.results ?? []) {
+    let handoff: { from: string } | null = null;
+    if (run.parked_for !== backendId) {
+      let parkedRequested: any = {};
+      try { parkedRequested = JSON.parse(run.requested); } catch { parkedRequested = {}; }
+      const ladder: unknown[] = Array.isArray(parkedRequested.backend_ladder) ? parkedRequested.backend_ladder : [];
+      const from = ladder.indexOf(run.parked_for);
+      const to = ladder.indexOf(backendId);
+      // Only a later seat on the run's OWN ladder may take it. Anything else stays where it is.
+      if (from === -1 || to === -1 || to <= from) continue;
+      handoff = { from: run.parked_for };
+    }
+
     // Exclusive by construction: exactly one UPDATE changes a row whose claimed_at is still null.
     const claimed = await c.env.DB
-      .prepare(`UPDATE backend_runs SET claimed_at = ?, claimed_by = ? WHERE id = ? AND claimed_at IS NULL`)
-      .bind(Date.now(), deviceId, run.id)
+      .prepare(`UPDATE backend_runs SET claimed_at = ?, claimed_by = ?, backend_id = ? WHERE id = ? AND claimed_at IS NULL`)
+      .bind(Date.now(), deviceId, backendId, run.id)
       .run();
     if ((claimed.meta.changes ?? 0) === 0) continue; // somebody else took it between the read and here
+
+    if (handoff) {
+      await c.env.DB
+        .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_handoff',?)`)
+        .bind(newId("tev"), run.task_id, Date.now(), JSON.stringify({ run_id: run.id, from: handoff.from, to: backendId, device_id: deviceId, why: `${handoff.from} could not authenticate on ${deviceId}` }))
+        .run();
+      await logEvent(c.env.DB, {
+        level: "warn", scope: "backends", event: "ladder_handoff", entityId: run.task_id,
+        detail: { run_id: run.id, from: handoff.from, to: backendId, device_id: deviceId },
+      });
+    }
 
     await c.env.DB
       .prepare(`UPDATE tasks SET status = 'running', started_at = COALESCE(started_at, ?) WHERE id = ?`)
@@ -459,7 +498,15 @@ backends.post("/claim", async (c) => {
     if (Array.isArray(requested.allowed_paths) && requested.allowed_paths.length) envelope.allowed_paths = requested.allowed_paths;
     if (Array.isArray(requested.verification) && requested.verification.length) envelope.verification = requested.verification;
     if (requested.required_capability) envelope.required_capability = requested.required_capability;
-    if (requested.model) envelope.model = requested.model;
+    /*
+     * EACH SEAT GETS ITS OWN MODEL. `model_by_backend` wins over `model`; a null entry means the
+     * seat's own default and no `--model` is passed. A hand-off from Claude Code to Codex therefore
+     * never carries a Claude model id into a Codex invocation.
+     */
+    const byBackend = requested.model_by_backend && typeof requested.model_by_backend === "object" ? requested.model_by_backend : null;
+    if (byBackend && backendId in byBackend) {
+      if (byBackend[backendId]) envelope.model = byBackend[backendId];
+    } else if (requested.model) envelope.model = requested.model;
     if (requested.max_seconds) envelope.max_seconds = requested.max_seconds;
 
     /*
@@ -702,6 +749,9 @@ backends.post("/report", async (c) => {
         taskId: task.id,
         runId,
         report: (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as any,
+        // MARKETS.json as the runner observed it before the run — the dashboard is built from this,
+        // never from figures the model typed. See `briefingSpec.ts`.
+        marketData: (ev.market_data && typeof ev.market_data === "object" ? ev.market_data : null) as any,
         runStatus: status,
         now,
       }).catch(async (err) => {

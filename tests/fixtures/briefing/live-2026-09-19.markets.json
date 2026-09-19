@@ -1,0 +1,228 @@
+{
+  "fetched_at": "2026-09-19T14:23:36.416Z",
+  "quotes": [
+    {
+      "symbol": "^GSPC",
+      "label": "S&P 500",
+      "kind": "index",
+      "session_note": "index close",
+      "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=5d&interval=1d",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 7650.5,
+      "change_pct": 0.167,
+      "previous_close": 7637.759765625,
+      "as_of": "2026-09-18T21:29:48.000Z",
+      "closes": [
+        7619.97998046875,
+        7585.72998046875,
+        7551.81005859375,
+        7637.759765625,
+        7650.5
+      ]
+    },
+    {
+      "symbol": "^IXIC",
+      "label": "Nasdaq Composite",
+      "kind": "index",
+      "session_note": "index close",
+      "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EIXIC?range=5d&interval=1d",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 26522.545,
+      "change_pct": 0.395,
+      "previous_close": 26418.30078125,
+      "as_of": "2026-09-18T21:15:59.000Z",
+      "closes": [
+        26186.41015625,
+        25981.5703125,
+        25978.4296875,
+        26418.30078125,
+        26522.5390625
+      ]
+    },
+    {
+      "symbol": "^DJI",
+      "label": "Dow Jones Industrial",
+      "kind": "index",
+      "session_note": "index close",
+      "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EDJI?range=5d&interval=1d",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 51682.64,
+      "change_pct": -0.184,
+      "previous_close": 51778.0390625,
+      "as_of": "2026-09-18T21:52:27.000Z",
+      "closes": [
+        52421.19921875,
+        52093.109375,
+        51461.8984375,
+        51778.0390625,
+        51682.640625
+      ]
+    },
+    {
+      "symbol": "US10Y",
+      "label": "10-year Treasury",
+      "kind": "yield",
+      "session_note": "Treasury par yield, daily",
+      "source_url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 5.01,
+      "change_pct": 0.07,
+      "previous_close": 4.94,
+      "as_of": "2026-09-18T19:30:00.000Z"
+    },
+    {
+      "symbol": "US2Y",
+      "label": "2-year Treasury",
+      "kind": "yield",
+      "session_note": "Treasury par yield, daily",
+      "source_url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 4.76,
+      "change_pct": 0.09,
+      "previous_close": 4.67,
+      "as_of": "2026-09-18T19:30:00.000Z"
+    },
+    {
+      "symbol": "BZ=F",
+      "label": "Brent crude",
+      "kind": "futures",
+      "session_note": "front-month futures settle",
+      "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/BZ%3DF?range=5d&interval=1d",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 99.29,
+      "change_pct": -0.64,
+      "previous_close": 104.81999969482422,
+      "as_of": "2026-09-18T20:58:56.000Z",
+      "closes": [
+        105.68000030517578,
+        108.75,
+        105.83000183105469,
+        104.81999969482422,
+        103.87000274658203
+      ]
+    },
+    {
+      "symbol": "CL=F",
+      "label": "WTI crude",
+      "kind": "futures",
+      "session_note": "front-month futures settle",
+      "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?range=5d&interval=1d",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 96.08,
+      "change_pct": -1.183,
+      "previous_close": 101.91000366210938,
+      "as_of": "2026-09-18T20:59:57.000Z",
+      "closes": [
+        101.38999938964844,
+        105.83000183105469,
+        102.43000030517578,
+        101.91000366210938,
+        100.30000305175781
+      ]
+    },
+    {
+      "symbol": "GC=F",
+      "label": "Gold",
+      "kind": "futures",
+      "session_note": "front-month futures settle",
+      "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?range=5d&interval=1d",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 4424.9,
+      "change_pct": 0.573,
+      "previous_close": 4399.7001953125,
+      "as_of": "2026-09-18T20:59:59.000Z",
+      "closes": [
+        4351.89990234375,
+        4332.7998046875,
+        4387.5,
+        4399.7001953125,
+        4424.89990234375
+      ]
+    },
+    {
+      "symbol": "BTC-USD",
+      "label": "Bitcoin",
+      "kind": "crypto",
+      "session_note": "spot, 24h",
+      "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD?range=5d&interval=1d",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 81449.61,
+      "change_pct": 0.663,
+      "previous_close": 80901.4609375,
+      "as_of": "2026-09-19T14:23:33.000Z",
+      "closes": [
+        75612.5078125,
+        76150.3203125,
+        76403.7734375,
+        80901.4609375,
+        81449.609375
+      ]
+    },
+    {
+      "symbol": "SPCX",
+      "label": "SpaceX (SPCX)",
+      "kind": "equity",
+      "session_note": "regular-session close",
+      "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/SPCX?range=5d&interval=1d",
+      "fetched_at": "2026-09-19T14:23:36.416Z",
+      "value": 152.71,
+      "change_pct": -1.357,
+      "previous_close": 154.80999755859375,
+      "as_of": "2026-09-18T20:00:00.000Z",
+      "closes": [
+        148.14999389648438,
+        143.49000549316406,
+        150.8800048828125,
+        154.80999755859375,
+        152.7100067138672
+      ]
+    }
+  ],
+  "consulted": [
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=5d&interval=1d",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/SPCX?range=5d&interval=1d",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EDJI?range=5d&interval=1d",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/BZ%3DF?range=5d&interval=1d",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/CL%3DF?range=5d&interval=1d",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/BTC-USD?range=5d&interval=1d",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/%5EIXIC?range=5d&interval=1d",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    },
+    {
+      "url": "https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?range=5d&interval=1d",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    },
+    {
+      "url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv",
+      "status": "HTTP 200",
+      "fetched_at": "2026-09-19T14:23:36.416Z"
+    }
+  ]
+}

@@ -3,6 +3,8 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { isDue, nextDueAt, type DutySchedule } from "./cadence";
 import { admitTask } from "../tasks/admit";
+import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
+import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, modelBySeat } from "./briefingLadder";
 
 /**
  * Turning due duties into queued work.
@@ -182,13 +184,48 @@ export async function materialiseDueDuties(
      */
     let admitted;
     try {
+      let input: Record<string, unknown> = duty.task_input ? (JSON.parse(duty.task_input) as Record<string, unknown>) : {};
+      /*
+       * ── THE BRIEFING'S PROMPT IS COMPOSED HERE, FROM THE MODULE, ON EVERY FIRING ──
+       *
+       * `duty_exec_intel` no longer carries `$.prompt` in its row (0257). It carries
+       * `spec_module: "executive_briefing"`, and the text the run is handed is
+       * `composeBriefingPrompt()` from `briefingSpec.ts` — the file's production prompt, versioned,
+       * diffable, and read by the same grader that scores what comes back. Eight prior rewrites each
+       * landed as a `json_set` in a migration nobody could diff; this is the end of that.
+       *
+       * The version is stamped on the task so the report row records which specification produced
+       * it. `hasMarketData` is true here because the Mac writes MARKETS.json before every claim; the
+       * prompt still tells the run what to do if the file is absent.
+       */
+      if (input.spec_module === "executive_briefing") {
+        const requested = typeof input.requested === "object" && input.requested ? { ...(input.requested as Record<string, unknown>) } : {};
+        input = {
+          ...input,
+          prompt: composeBriefingPrompt({ dayLabel: ctDayLabel(now), hasMarketData: true }),
+          prompt_version: BRIEFING_PROMPT_VERSION,
+          /*
+           * THE LADDER IS STAMPED FROM THE MODULE TOO. Her two $0 seats in the order she named them,
+           * each with its own model, and the cloud rungs beneath when both refuse. See
+           * `briefingLadder.ts` for why this was not true before 19 September.
+           */
+          backend_id: BRIEFING_LADDER_IDS[0],
+          backend_ladder: BRIEFING_LADDER_IDS,
+          cloud_fallback: true,
+          requested: { ...requested, model_by_backend: modelBySeat() },
+        };
+      }
+      const briefing = input.spec_module === "executive_briefing";
       admitted = await admitTask(env, {
         title: duty.task_title,
         lane: duty.lane,
         employee_id: duty.employee_id,
         // The kind the duty was defined with, rather than one inferred from its title every morning.
         intake_kind: duty.task_kind,
-        input: duty.task_input ? (JSON.parse(duty.task_input) as Record<string, unknown>) : {},
+        input,
+        // The briefing declares its axes; a word-match on its own prompt made the cloud rungs
+        // unreachable. See BRIEFING_CLASSIFICATION.
+        ...(briefing ? BRIEFING_CLASSIFICATION : {}),
       });
     } catch (err) {
       skipped.push({ duty: duty.id, reason: `not_admitted: ${err instanceof Error ? err.message : String(err)}` });

@@ -313,6 +313,13 @@ function packet(envelope, over = {}) {
     // Structured output a run was contracted to produce, read from its workspace by the adapter.
     // Null for every ordinary run, which is most of them.
     delivers: null,
+    /*
+     * Live market data the workspace held when the run started — MARKETS.json, written by
+     * `scripts/ops/market-snapshot.mjs` minutes earlier. OBSERVED BY THIS PROCESS, NOT ASSERTED BY
+     * THE MODEL: the Worker builds the dashboard from it, so it travels beside `delivers` rather
+     * than inside it, where a run could have edited it.
+     */
+    market_data: null,
     materials_placed: [],
     status: "failed",
     summary: "",
@@ -344,6 +351,8 @@ export async function executeRun(envelope, deps = {}) {
     runCommand = defaultRunCommand,
     gitProbe = defaultGitProbe,
     placeMaterials = defaultPlaceMaterials,
+    clearStaleDelivers = defaultClearStaleDelivers,
+    readMaterialJson = defaultReadMaterialJson,
     now = () => Date.now(),
     backend = {},
   } = deps;
@@ -403,6 +412,28 @@ export async function executeRun(envelope, deps = {}) {
    * is the same default `packet()` already applies two hundred lines above — while a named
    * `bk_codex` now reaches the CLI it was claimed for instead of the other one.
    */
+  /*
+   * ─── A STALE delivers.json IS REMOVED BEFORE THE RUN STARTS ────────────────
+   *
+   * CONFIRMED, 15 September 2026: the Executive Intelligence Report for that Tuesday is
+   * byte-identical to Sunday's. The run was killed at its 900 s leash having spent $0 — it produced
+   * nothing — and the adapter then read `delivers.json` from the shared workspace, found Sunday's
+   * file sitting there from the previous run, and graded it "complete... the leash is short, not the
+   * work". She read a two-day-old briefing labelled as that morning's, with `sources[].read_at`
+   * two days in the past, and nothing flagged it.
+   *
+   * The file is the run's OUTPUT by contract. A `delivers.json` that exists before the run has
+   * started is, by definition, not this run's. It goes, and the removal is recorded on the packet so
+   * a reviewer can see the workspace was clean.
+   */
+  const cleared = await clearStaleDelivers(envelope.repo_path);
+
+  /*
+   * MARKETS.json IS READ HERE, BEFORE THE RUN, AND CARRIED AS EVIDENCE. The run may read the same
+   * file; it may not be the thing that tells the Worker what the file said.
+   */
+  const marketData = await readMaterialJson(envelope.repo_path, "MARKETS.json");
+
   const runner = execute ?? (await defaultExecutor(envelope?.backend_id ?? "bk_claude_code"));
   let result;
   try {
@@ -462,6 +493,7 @@ export async function executeRun(envelope, deps = {}) {
     // A VIOLATION SUPPRESSES THE DELIVERY BELOW. Nothing produced by a run that did something it was
     // forbidden to do gets stored as a report.
     delivers: result.delivers ?? null,
+    market_data: marketData,
     files_touched: result.files_touched ?? after.changed_files ?? [],
     commands,
     checks_run: checks,
@@ -470,7 +502,11 @@ export async function executeRun(envelope, deps = {}) {
     started_at: startedAt,
     finished_at: finishedAt,
     violations,
-    remaining_risks: [...(result.remaining_risks ?? []), ...gitRisks(before, after)],
+    remaining_risks: [
+      ...(cleared ? ["A delivers.json from an earlier run was removed from the workspace before this run started."] : []),
+      ...(result.remaining_risks ?? []),
+      ...gitRisks(before, after),
+    ],
     // What the run was handed. Evidence has to say what it could see, not only what it did.
     materials_placed: placed,
   });
@@ -607,11 +643,17 @@ function gitRisks(before, after) {
  * ONE AT A TIME IS DELIBERATE. Concurrency here buys nothing — there is one machine and one owner —
  * and costs the ability to say plainly what is running when something has to be stopped.
  */
-export async function claimRun({ origin, deviceId, backendId = "bk_claude_code", fetchImpl = fetch, cookie = "" }) {
+export async function claimRun({ origin, deviceId, backendId = "bk_claude_code", fallbackFrom = [], fetchImpl = fetch, cookie = "" }) {
   const res = await fetchImpl(`${origin}/api/boss/backends/claim`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
-    body: JSON.stringify({ device_id: deviceId, backend_id: backendId }),
+    /*
+     * `fallback_from` names the seats on THIS machine that failed preflight this cycle. The cloud
+     * may then hand this seat a run parked for one of them, when the run's own ladder lists this
+     * seat below it. A seat never asks for another seat's work on its own initiative — only for
+     * work the other seat provably cannot take right now.
+     */
+    body: JSON.stringify({ device_id: deviceId, backend_id: backendId, ...(fallbackFrom.length ? { fallback_from: fallbackFrom } : {}) }),
   });
   const body = await res.json().catch(() => null);
   if (!res.ok || !body?.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
@@ -638,10 +680,10 @@ export async function reportRun(evidence, { origin, deviceId, fetchImpl = fetch,
  * same principle as the sync half: nothing is dropped on an outage.
  */
 export async function workOnce(deps = {}) {
-  const { origin, deviceId, backendId = "bk_claude_code", fetchImpl = fetch, cookie = "", ...rest } = deps;
+  const { origin, deviceId, backendId = "bk_claude_code", fallbackFrom = [], fetchImpl = fetch, cookie = "", ...rest } = deps;
   let envelope = null;
   try {
-    envelope = await claimRun({ origin, deviceId, backendId, fetchImpl, cookie });
+    envelope = await claimRun({ origin, deviceId, backendId, fallbackFrom, fetchImpl, cookie });
   } catch (err) {
     return { claimed: false, error: String(err), evidence: null };
   }
@@ -786,6 +828,38 @@ export async function defaultPlaceMaterials(cwd, materials) {
     placed.push(name);
   }
   return placed;
+}
+
+/**
+ * Remove a `delivers.json` left in the workspace by an earlier run. Returns true when one was there.
+ *
+ * NEVER THROWS INTO THE RUN. A workspace that cannot be cleaned is reported as a risk by the caller
+ * rather than stopping the morning; the adapter's own "file present" grade still stands behind it.
+ */
+export async function defaultClearStaleDelivers(cwd) {
+  try {
+    const { unlink } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    await unlink(join(cwd, "delivers.json"));
+    return true;
+  } catch (err) {
+    if (err?.code === "ENOENT") return false;
+    return false;
+  }
+}
+
+/** Read a JSON material from the workspace, or null when it is absent or unreadable. Bounded at 1MB. */
+export async function defaultReadMaterialJson(cwd, name) {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const raw = await readFile(join(cwd, name), "utf8");
+    if (raw.length > 1_000_000) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function defaultGitProbe(cwd) {

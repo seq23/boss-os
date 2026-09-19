@@ -73,16 +73,27 @@ lint_plist() {
   fi
 }
 
-# FIVE TIMES A DAY, MATCHED TO WHEN WORK APPEARS — not a poll.
+# SIX TIMES A DAY, MATCHED TO WHEN WORK APPEARS — not a poll.
 #
 # The first draft ran every fifteen minutes, which is ninety-six process starts a day for a queue
 # that receives ONE item on a normal morning. That is the same shape as the 96x/day runaway this
 # system already replaced once, and the owner called it out before it ever ran.
 #
-# The report duty fires at 06:30 Central, so the first three slots cover it and two retries. The
-# midday and evening slots catch anything dispatched by hand during the day. A run dispatched at
+# THE REPORT DUTY FIRES AT 06:00 CENTRAL (migration 0257), and the 06:05 slot claims it. It used to
+# say 06:30, and the comment here used to say "the first three slots cover it" — which was never
+# true: the Worker's cron is hourly on the hour, so a 06:30 duty fired at 07:00, the 06:35 and 06:50
+# slots found nothing, the 07:10 slot claimed it, and the report landed at 07:18–07:25 every single
+# day (CONFIRMED against fourteen days of backend_runs). 06:00 is on the tick, 06:05 claims it, and a
+# 20–25 minute run is on her screen before seven. The 06:35, 06:50 and 07:10 slots are the retries.
+# The midday and evening slots catch anything dispatched by hand during the day. A run dispatched at
 # 15:00 waits until 18:35 rather than for ever, and `npm run vault:run -- node
 # scripts/sync-agent/agent.mjs work-once` claims it immediately if she does not want to wait.
+#
+# THE MARKET SNAPSHOT RUNS SECOND, after the sky and before the claim, separated by `;` for the same
+# reason the sky is: a feed that is down must not stop the report, it must only make the dashboard
+# say "not available". `scripts/ops/market-snapshot.mjs` writes MARKETS.json from Yahoo Finance's
+# chart API and the U.S. Treasury's own par-yield CSV — free and keyless, so it runs OUTSIDE
+# `vault:run`; nothing in the vault is needed to ask a public feed for a price.
 # KDP-RESUME RIDES ON THIS JOB RATHER THAN GETTING ITS OWN.
 #
 # "if i say apprpved she should continue to finish". Simone's watch runs Mon/Wed/Fri at 09:23, so an
@@ -109,10 +120,11 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO &amp;&amp; node scripts/ops/market-snapshot.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>5</integer></dict>
     <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>35</integer></dict>
     <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>50</integer></dict>
     <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>10</integer></dict>
@@ -926,7 +938,7 @@ lint_plist "$CRED_PLIST"
 launchctl load "$CRED_PLIST"
 echo "Installed $CRED_LABEL — daily 06:15 Central, reporting to duty_credentials (Toni)."
 
-echo "Installed $LABEL — checks for queued work at 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
+echo "Installed $LABEL — fetches the sky and the market, then checks for queued work at 06:05, 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
 # RULE 0: an installer that installed nothing must not exit 0 looking pleased. launchctl load is
