@@ -102,10 +102,15 @@ async function gh(path) {
  */
 async function examineRepo(property, repo) {
   const full = `${GRID_OWNER}/${repo}`;
-  const out = { property, repo: full, reached: false, observations: [] };
+  const out = { property, repo: full, reached: false, observations: [], reading: null };
 
   const runs = await gh(`repos/${full}/actions/runs?per_page=60`);
   if (!runs) {
+    out.reading = {
+      property_key: property.key, reader: "github", target: full, state: "blocked",
+      summary: `${full} could not be read through gh.`, numbers: {},
+      evidence_url: `https://github.com/${full}`, error: "gh api returned nothing — renamed, private, or gh not authorised",
+    };
     out.observations.push({
       kind: "unreachable",
       disposition: "dispatch",
@@ -117,6 +122,35 @@ async function examineRepo(property, repo) {
   out.reached = true;
 
   const all = runs.workflow_runs ?? [];
+
+  /*
+   * ─── THE READING, NOT ONLY THE EXCEPTIONS (19 Sep 2026) ───────────────────
+   *
+   * Everything below files OBSERVATIONS — what is wrong. A green, shipping repository left no row
+   * anywhere, so on the property card "healthy" and "never looked" were the same absence. This is
+   * the plain fact per repo, every run: the last run on `main`, how many pull requests are open,
+   * the latest release. It is posted to `/api/grid/health/readings` as the `github` reader.
+   */
+  const onMain = all.filter((r) => r.head_branch === "main");
+  const last = onMain[0] ?? all[0] ?? null;
+  const openPrs = await gh(`repos/${full}/pulls?state=open&per_page=30`);
+  const release = await gh(`repos/${full}/releases/latest`);
+  out.reading = {
+    property_key: property.key,
+    reader: "github",
+    target: full,
+    state: last ? (last.conclusion === "success" || last.conclusion === null ? "ok" : "warn") : "warn",
+    summary: last
+      ? `${full}: last run on ${last.head_branch ?? "?"} "${last.name}" ${last.conclusion ?? last.status} (${days(Date.parse(last.updated_at))}d ago), ${(openPrs ?? []).length} open PR(s)${release?.tag_name ? `, latest release ${release.tag_name}` : ", no release"}.`
+      : `${full}: no workflow run on record, ${(openPrs ?? []).length} open PR(s).`,
+    numbers: {
+      last_run: last ? { name: last.name, branch: last.head_branch, conclusion: last.conclusion, status: last.status, url: last.html_url, at: Date.parse(last.updated_at) } : null,
+      open_prs: (openPrs ?? []).length,
+      latest_release: release?.tag_name ? { tag: release.tag_name, at: Date.parse(release.published_at ?? release.created_at), url: release.html_url } : null,
+    },
+    evidence_url: last?.html_url ?? `https://github.com/${full}/actions`,
+    error: last && last.conclusion && last.conclusion !== "success" ? `last run ${last.conclusion}` : null,
+  };
   const success = all.filter((r) => r.conclusion === "success");
   const failed = all.filter((r) => r.conclusion === "failure");
 
@@ -246,6 +280,84 @@ async function examineRepo(property, repo) {
   return out;
 }
 
+/**
+ * One Cloudflare reading per grid property that has a canonical domain: the Pages project or
+ * Worker custom domain serving it, and the age of its latest deployment.
+ *
+ * READ-ONLY: three GETs against the account, no writes. Every reason it cannot read is a `blocked`
+ * row with the sentence, so the card never shows a blank for this reader.
+ */
+async function cloudflareReadings() {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID ?? "8d147e242033699dd37c6f5a451f48d2";
+  const withDomains = GRID.filter((p) => p.domains.length > 0);
+  const blockedAll = (why) => withDomains.map((p) => ({
+    property_key: p.key, reader: "cloudflare", target: p.domains[0], state: "blocked", summary: why, numbers: {}, evidence_url: null, error: why,
+  }));
+  if (!token) return blockedAll("The Mac's vault run carried no CLOUDFLARE_API_TOKEN, so the deployment state could not be read. Run grid:post through the vault.");
+
+  const cf = async (path) => {
+    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/${path}`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+    if (!res) return null;
+    const json = await res.json().catch(() => null);
+    return json?.success ? json.result : null;
+  };
+  /*
+   * THE PAGES LISTING PAGES AT TEN AND REFUSES `per_page` (error 8000024, probed 19 Sep 2026: 34
+   * projects over four pages). Walk `page=` until `total_pages`; a listing that stopped at ten
+   * would have declared approvalprep, theindustryguides and virtualagency-os "on another account".
+   */
+  const projects = [];
+  for (let page = 1; page <= 20; page++) {
+    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects?page=${page}`, { headers: { authorization: `Bearer ${token}` } }).catch(() => null);
+    const json = res ? await res.json().catch(() => null) : null;
+    if (!json?.success) { if (page === 1) { projects.length = 0; } break; }
+    projects.push(...(json.result ?? []));
+    if (page >= (json.result_info?.total_pages ?? 1)) break;
+  }
+  const workerDomains = await cf("workers/domains");
+  if (projects.length === 0 && !workerDomains) return blockedAll("Cloudflare's API refused the token for both Pages projects and Worker domains (read-only GETs). Check the token's permissions.");
+
+  const out = [];
+  for (const p of withDomains) {
+    // ONE READING PER DOMAIN. The guides generator is five Pages projects on five domains; a single
+    // row per property would report whichever matched first and say nothing about the other four.
+    for (const domain of p.domains) {
+      const project = projects.find((pr) => (pr.domains ?? []).some((d) => d === domain || d === `www.${domain}`));
+      if (project) {
+        const dep = project.latest_deployment ?? project.canonical_deployment ?? null;
+        const at = dep?.modified_on ? Date.parse(dep.modified_on) : null;
+        const stage = dep?.latest_stage ?? null;
+        const okStage = !stage || stage.status === "success";
+        out.push({
+          property_key: p.key, reader: "cloudflare", target: domain,
+          state: okStage ? "ok" : "warn",
+          summary: `${domain}: Pages project ${project.name}, latest deployment ${stage ? `${stage.name} ${stage.status}` : "recorded"}${at ? ` ${days(at)}d ago` : ""}${dep?.deployment_trigger?.metadata?.branch ? ` from ${dep.deployment_trigger.metadata.branch}` : ""}.`,
+          numbers: { kind: "pages", project: project.name, deployment_id: dep?.id ?? null, deployed_at: at, stage: stage?.status ?? null, branch: dep?.deployment_trigger?.metadata?.branch ?? null, domains: project.domains ?? [] },
+          evidence_url: `https://dash.cloudflare.com/${accountId}/pages/view/${project.name}`,
+          error: okStage ? null : `latest deployment ${stage?.status}`,
+        });
+        continue;
+      }
+      const wd = (workerDomains ?? []).find((d) => d.hostname === domain || d.hostname === `www.${domain}`);
+      if (wd) {
+        out.push({
+          property_key: p.key, reader: "cloudflare", target: domain,
+          state: "ok",
+          summary: `${domain}: served by Worker ${wd.service} (custom domain, zone ${wd.zone_name ?? "?"}).`,
+          numbers: { kind: "worker", service: wd.service, hostname: wd.hostname, environment: wd.environment ?? null },
+          evidence_url: `https://dash.cloudflare.com/${accountId}/workers/services/view/${wd.service}`,
+          error: null,
+        });
+        continue;
+      }
+      const why = `No Pages project or Worker custom domain on this account serves ${domain}. Either it is hosted elsewhere or the project is on another account.`;
+      out.push({ property_key: p.key, reader: "cloudflare", target: domain, state: "blocked", summary: why, numbers: {}, evidence_url: null, error: why });
+    }
+  }
+  return out;
+}
+
 async function main() {
   const startedAt = Date.now();
 
@@ -357,6 +469,30 @@ async function main() {
   }
   const filed = await res.json().catch(() => ({}));
   console.log(`\nFiled: ${filed?.data?.observations ?? "?"} observation(s), ${filed?.data?.dispatched ?? 0} dispatched.`);
+
+  /*
+   * ─── THE TWO MAC-SIDE HEALTH READERS, POSTED TOGETHER (19 Sep 2026) ───────
+   *
+   * GitHub: the reading each `examineRepo` recorded above. Cloudflare: read HERE because
+   * `CLOUDFLARE_API_TOKEN` is deliberately never synced to the Worker (it is the credential the
+   * sync authenticates WITH); `npm run grid:post` runs through the vault, so it is in this
+   * process's environment and nowhere else. Both land in `property_health_readings` through
+   * `/api/grid/health/readings`, which refuses a property the grid does not declare.
+   *
+   * A Cloudflare reading that cannot be taken is a BLOCKED row that says why — no token, no
+   * account id, no project matching the property's domains — never a missing card.
+   */
+  const readings = results.filter((r) => r.reading).map((r) => r.reading);
+  readings.push(...(await cloudflareReadings()));
+  const posted = await fetch(`${ORIGIN}/api/boss/grid/health/readings`, {
+    method: "POST", headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ readings }),
+  }).catch(() => null);
+  if (!posted?.ok) {
+    console.error(`\nNAMED STOP [READINGS_NOT_FILED] ${posted?.status ?? "no response"} — ${readings.length} health reading(s) were taken and Boss OS was not told: ${await posted?.text().catch(() => "")}`);
+    process.exit(9);
+  }
+  console.log(`Health readings filed: ${readings.length} (${readings.filter((r) => r.reader === "github").length} GitHub, ${readings.filter((r) => r.reader === "cloudflare").length} Cloudflare).`);
 
   /*
    * RULE 0, AT THE EXIT CODE. A run that reached nothing must go RED on the duty row, because the
