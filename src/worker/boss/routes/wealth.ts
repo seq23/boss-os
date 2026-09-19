@@ -18,7 +18,10 @@ import { composeOutreach, isRefusal, type CandidateRow, type CrossmatchFact } fr
 import {
   recommendBuyers, type CandidateFacts, type CrossmatchFacts,
 } from "../../../shared/wealth/recommend";
-import { getSetting } from "../lib/settings";
+import { getSetting, getSettings, setSetting } from "../lib/settings";
+import {
+  parsePositionSizes, readStoredPositions, WORKING_POSITION_KEY, WORKING_POSITIONS_KEY,
+} from "../../../shared/wealth/positionSizes";
 import { raiseJudgementCall } from "../approvals/raise";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { LANE_BREACH_REFUSAL, readTradingCapital } from "../investor/bridge";
@@ -38,7 +41,8 @@ const BPS = 10_000;
  * positions register before a ranking can work is how the ranking never works. One number, stated
  * once, changes "floor $50M" from decoration into "they cannot buy what you have".
  */
-const WORKING_POSITION_KEY = "brokerage_working_position_usd";
+// `WORKING_POSITION_KEY` and its plural sibling live in `shared/wealth/positionSizes.ts`, so the
+// field, the route and the letter read one definition of what a size is.
 
 const ENTITY_KINDS = new Set(["person", "llc", "corp", "trust", "fund", "foundation", "other"]);
 const VEHICLE_KINDS = new Set([
@@ -153,6 +157,12 @@ wealth.post("/sourcing/:id/status", async (c) => {
   return ok(c, { id, status, letter });
 });
 
+/** The one thing the letter may claim about her book: the sizes she stated herself. */
+async function herSide(env: Env): Promise<{ positions_usd: number[] }> {
+  const raw = await getSetting(env.DB, WORKING_POSITIONS_KEY);
+  return { positions_usd: readStoredPositions(raw) };
+}
+
 /**
  * Compose the letter for one candidate and put it in her Inbox.
  *
@@ -178,13 +188,46 @@ export async function draftOutreachFor(
     .bind(candidateId)
     .all<CrossmatchFact>();
 
-  const composed = composeOutreach(candidate, matches.results ?? [], note, now);
+  const composed = composeOutreach(candidate, matches.results ?? [], note, now, await herSide(env));
   if (isRefusal(composed)) {
     await env.DB
       .prepare(`UPDATE sourcing_candidates SET notes = ?, updated_at = ? WHERE id = ?`)
       .bind(`${composed.refused} ${composed.because}`, now, candidateId)
       .run();
     return { drafted: false, detail: `${composed.refused} ${composed.because}` };
+  }
+
+  /*
+   * ─── A LETTER SHE SENT BACK MAY NOT COME BACK UNCHANGED ────────────────────
+   *
+   * CONFIRMED ON PRODUCTION, 19 SEPTEMBER 2026. She rejected thirteen letters with a reason; the
+   * resume handler called this function for each, the composer is deterministic from the row, and
+   * thirteen word-for-word identical letters were raised 0.1 s after each rejection (`apr_m2wzrn0e…`
+   * rejected at 1789827114262, its twin `jdg_m2x04sfx…` raised at 1789827114391). Capital said the
+   * letters were in flight; the Inbox showed the same thirteen again. Her words: "the Inbox tab
+   * brings them back after I sent them away."
+   *
+   * THE RAISING LANE CHECKS THE REJECTION BEFORE IT RAISES. `buyer_outreach_drafts.state` is the one
+   * state both tabs read: if any attempt she sent back has this exact body, no new card is raised,
+   * her note stays on the record, and the answer names the stop. A second attempt is raised only
+   * when it would actually differ from what she rejected — which is the only kind of second attempt
+   * she can evaluate.
+   */
+  const rejectedTwin = await env.DB
+    .prepare(
+      `SELECT attempt, her_note FROM buyer_outreach_drafts
+        WHERE candidate_id = ? AND state = 'try_again' AND body = ? ORDER BY attempt DESC LIMIT 1`,
+    )
+    .bind(candidateId, composed.body)
+    .first<{ attempt: number; her_note: string | null }>();
+  if (rejectedTwin) {
+    return {
+      drafted: false,
+      detail:
+        `No new letter to ${candidate.name}: it would be word-for-word the one you sent back ` +
+        `(attempt ${rejectedTwin.attempt}). Camille writes these from a fixed opening, so your note is on the record ` +
+        "and the opening has to change before another attempt is worth your time. Nothing was raised.",
+    };
   }
 
   /*
@@ -287,10 +330,20 @@ wealth.get("/recommendations", async (c) => {
   ]);
 
   const candidates = cands.results ?? [];
-  const rawPosition = await getSetting(c.env.DB, WORKING_POSITION_KEY);
-  const position = rawPosition !== null && Number.isFinite(Number(rawPosition)) && Number(rawPosition) > 0
-    ? Number(rawPosition)
-    : null;
+  /*
+   * THE RANKING TESTS REACHABILITY AGAINST HER LARGEST POSITION. A buyer whose floor is above the
+   * biggest thing she is working cannot transact with her at all; one whose floor is under it can
+   * buy at least that. The list she typed is kept whole for the screen and the letter; the singular
+   * key is the largest of it and is what the recommender has always read.
+   */
+  const stored = await getSettings(c.env.DB, [WORKING_POSITION_KEY, WORKING_POSITIONS_KEY]);
+  const positions = readStoredPositions(stored[WORKING_POSITIONS_KEY]);
+  const rawPosition = stored[WORKING_POSITION_KEY] ?? null;
+  const position = positions.length > 0
+    ? positions[0]!
+    : rawPosition !== null && Number.isFinite(Number(rawPosition)) && Number(rawPosition) > 0
+      ? Number(rawPosition)
+      : null;
 
   const ranked = recommendBuyers(
     candidates,
@@ -303,7 +356,7 @@ wealth.get("/recommendations", async (c) => {
   const byId = new Map(candidates.map((r) => [r.id, r]));
   const withLetters = ranked.recommendations.map((r) => {
     const row = byId.get(r.candidate_id)!;
-    const composed = composeOutreach(row, [], null, now);
+    const composed = composeOutreach(row, [], null, now, { positions_usd: positions });
     return {
       ...r,
       /*
@@ -316,7 +369,11 @@ wealth.get("/recommendations", async (c) => {
     };
   });
 
-  return ok(c, { ...ranked, recommendations: withLetters });
+  return ok(c, {
+    ...ranked,
+    basis: { ...ranked.basis, working_positions_usd: positions },
+    recommendations: withLetters,
+  });
 });
 
 /**
@@ -377,6 +434,123 @@ wealth.post("/outreach/:id/sent", async (c) => {
       .bind(now, row.candidate_id),
   ]);
   return ok(c, { id: c.req.param("id"), state: "sent" });
+});
+
+// === Inbox overhaul ===
+//
+// The routes the 19 September 2026 overhaul added, in one block so the sibling lane's routes and
+// these never interleave. Position sizes, the sent-back letters, and the Gmail draft.
+
+/**
+ * Her position sizes, as she types them.
+ *
+ * CONFIRMED DEFECT, 19 SEPTEMBER 2026: "I cannot even input my position sizes; it doesn't record."
+ * The field took one bare number in millions and `Number("$5M, 12M and 40M")` is NaN; the only
+ * error rendered ~3,000px above the field. No request ever left the browser — production holds no
+ * position key and no setting write for the day.
+ *
+ * ONE ROUTE, ONE PARSER, TWO KEYS. `shared/wealth/positionSizes.ts` reads what she wrote — on the
+ * server as well as in the field, so a client that skipped the check cannot store garbage. The
+ * plural key holds the list for the screen and the letter; the singular key is the largest of it
+ * and is what the recommender has always ranked against. Both are written in one batch so they can
+ * never disagree.
+ */
+wealth.put("/working-positions", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const text = String(b?.text ?? "");
+  const parsed = parsePositionSizes(text);
+  if (!parsed.ok) throw badRequest(parsed.message, parsed.hint);
+
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?,?,?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).bind(WORKING_POSITIONS_KEY, JSON.stringify(parsed.positions_usd), now),
+    c.env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?,?,?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).bind(WORKING_POSITION_KEY, String(parsed.positions_usd[0]), now),
+  ]);
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "setting", entityId: WORKING_POSITIONS_KEY,
+    action: "updated", detail: { positions_usd: parsed.positions_usd, typed: text },
+  });
+
+  // READ BACK FROM THE TABLE, not echoed from the parse: the response is proof of the write.
+  const stored = await getSettings(c.env.DB, [WORKING_POSITION_KEY, WORKING_POSITIONS_KEY]);
+  return ok(c, {
+    positions_usd: readStoredPositions(stored[WORKING_POSITIONS_KEY]),
+    largest_usd: Number(stored[WORKING_POSITION_KEY]),
+  });
+});
+
+/** The stored sizes, for a screen that wants them without the whole recommendation. */
+wealth.get("/working-positions", async (c) => {
+  const stored = await getSettings(c.env.DB, [WORKING_POSITION_KEY, WORKING_POSITIONS_KEY]);
+  const positions = readStoredPositions(stored[WORKING_POSITIONS_KEY]);
+  return ok(c, {
+    positions_usd: positions,
+    largest_usd: positions[0] ?? (stored[WORKING_POSITION_KEY] ? Number(stored[WORKING_POSITION_KEY]) : null),
+  });
+});
+
+/**
+ * The letters she sent back, with her reason on each — the honest state of "in flight".
+ *
+ * Capital used to say the sent-back letters were being fixed while the Inbox showed them again.
+ * This reads the same `state` the raising lane checks, so the two tabs cannot disagree: a letter is
+ * here because she rejected it, and it leaves here when a DIFFERENT letter is raised or she drops
+ * the firm.
+ */
+wealth.get("/outreach/sent-back", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT d.id, d.candidate_id, d.attempt, d.her_note, d.updated_at, s.name AS candidate_name, s.status AS candidate_status
+         FROM buyer_outreach_drafts d
+         JOIN sourcing_candidates s ON s.id = d.candidate_id
+        WHERE d.state = 'try_again'
+          AND NOT EXISTS (
+            SELECT 1 FROM buyer_outreach_drafts later
+             WHERE later.candidate_id = d.candidate_id AND later.attempt > d.attempt
+          )
+          AND s.status <> 'rejected'
+        ORDER BY d.updated_at DESC LIMIT 200`,
+    )
+    .all<any>();
+  return ok(c, { items: rows.results ?? [] });
+});
+
+/**
+ * Redraft every sent-back letter that the current opening would actually change.
+ *
+ * One press after the opening changes, rather than thirteen. Each firm goes through
+ * `draftOutreachFor`, which refuses any letter identical to one she rejected, so this can never
+ * re-raise the boomerang: it raises exactly the letters that differ and names the ones it left.
+ */
+wealth.post("/outreach/redraft-sent-back", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT DISTINCT d.candidate_id, s.name
+         FROM buyer_outreach_drafts d JOIN sourcing_candidates s ON s.id = d.candidate_id
+        WHERE d.state = 'try_again' AND s.status <> 'rejected'
+          AND NOT EXISTS (SELECT 1 FROM buyer_outreach_drafts later
+                           WHERE later.candidate_id = d.candidate_id AND later.attempt > d.attempt)
+        LIMIT 50`,
+    )
+    .all<{ candidate_id: string; name: string }>();
+  const raised: string[] = [];
+  const left: { name: string; why: string }[] = [];
+  for (const r of rows.results ?? []) {
+    const latestNote = await c.env.DB
+      .prepare(`SELECT her_note FROM buyer_outreach_drafts WHERE candidate_id = ? AND state = 'try_again' ORDER BY attempt DESC LIMIT 1`)
+      .bind(r.candidate_id)
+      .first<{ her_note: string | null }>();
+    const out = await draftOutreachFor(c.env, r.candidate_id, latestNote?.her_note ?? null);
+    if (out.drafted) raised.push(r.name);
+    else left.push({ name: r.name, why: out.detail });
+  }
+  return ok(c, { considered: (rows.results ?? []).length, raised, left });
 });
 
 // ─── The return-on-effort ledger ──────────────────────────────────────────────
