@@ -178,7 +178,45 @@ export async function queueRewrite(
  */
 export const STALE_RUNNING_MS = 3 * 60_000;
 
-export async function materialiseRewrites(env: Env, now = Date.now()): Promise<{ queued: number; requeued: number }> {
+export async function materialiseRewrites(
+  env: Env,
+  now = Date.now(),
+  opts: { retryFailed?: boolean } = {},
+): Promise<{ queued: number; requeued: number }> {
+  /*
+   * HER PRESS RETRIES A FAILURE. A rewrite that failed — the router refused, the model broke a rule
+   * twice — stays failed on the desk with its reason, and the tick never retries it on its own (a
+   * rule the model breaks twice is not going to pass on the third). "Rewrite the N with my notes"
+   * is her saying try again, so from that door only, failed rewrites go back to the queue.
+   */
+  let retried = 0;
+  if (opts.retryFailed) {
+    const failed = await env.DB
+      .prepare(`SELECT id, task_id, source_draft_id FROM outreach_rewrites WHERE state = 'failed'`)
+      .all<{ id: string; task_id: string | null; source_draft_id: string }>();
+    for (const row of failed.results ?? []) {
+      // The letter must still be the latest attempt and still sent back; otherwise the row is history.
+      const still = await env.DB
+        .prepare(
+          `SELECT 1 FROM buyer_outreach_drafts d WHERE d.id = ? AND d.state = 'try_again'
+              AND NOT EXISTS (SELECT 1 FROM buyer_outreach_drafts l WHERE l.candidate_id = d.candidate_id AND l.attempt > d.attempt)`,
+        )
+        .bind(row.source_draft_id)
+        .first();
+      if (!still || !row.task_id) continue;
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE outreach_rewrites SET state = 'queued', failure = NULL, started_at = NULL, finished_at = NULL, updated_at = ? WHERE id = ?`).bind(now, row.id),
+        env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, finished_at = NULL WHERE id = ?`).bind(row.task_id),
+        env.DB.prepare(
+          `INSERT INTO boss_task_queue (id, task_id, lane, attempt, state, visible_at, enqueued_at)
+             SELECT ?, ?, 'ops', 0, 'pending', ?, ?
+              WHERE NOT EXISTS (SELECT 1 FROM boss_task_queue WHERE task_id = ? AND state IN ('pending','running'))`,
+        ).bind(newId("btq"), row.task_id, now, now, row.task_id),
+      ]);
+      retried++;
+    }
+  }
+
   const owed = await env.DB
     .prepare(
       `SELECT d.id FROM buyer_outreach_drafts d
@@ -217,12 +255,12 @@ export async function materialiseRewrites(env: Env, now = Date.now()): Promise<{
     ]);
     requeued++;
   }
-  if (queued || requeued) {
+  if (queued || requeued || retried) {
     await logEvent(env.DB, {
-      level: "info", scope: "wealth", event: "rewrites_materialised", detail: { queued, requeued },
+      level: "info", scope: "wealth", event: "rewrites_materialised", detail: { queued, requeued, retried },
     }).catch(() => {});
   }
-  return { queued, requeued };
+  return { queued: queued + retried, requeued };
 }
 
 // ─── The model call ───────────────────────────────────────────────────────────

@@ -333,6 +333,35 @@ describe("what she is owed is materialised without her pressing anything", () =>
     expect(m.queued).toBe(0);
   });
 
+  it("her press on the desk retries a FAILED rewrite; the tick and the read never do", async () => {
+    const { draft } = await sendBack(NOTE_1);
+    const rw = await env.DB.prepare(`SELECT * FROM outreach_rewrites`).first<any>();
+    const model = fakeModel([JSON.stringify({ subject: "s", body: "Contact me at a@b.com. " + GOOD_BODY })]);
+    const task = await env.DB.prepare(`SELECT * FROM tasks WHERE id = ?`).bind(rw.task_id).first<any>();
+    await runOutreachRewrite(env as any, task, rw.id, model.complete);
+    expect((await env.DB.prepare(`SELECT state FROM outreach_rewrites WHERE id = ?`).bind(rw.id).first<any>()).state).toBe("failed");
+
+    // The read and the tick leave a failure alone — a rule broken twice is not retried on its own.
+    await apiJson<any>("/api/wealth/outreach/rewrites");
+    await runDuties(env as any);
+    expect((await env.DB.prepare(`SELECT state FROM outreach_rewrites WHERE id = ?`).bind(rw.id).first<any>()).state).toBe("failed");
+
+    // Her press retries it: queued again, the task queued again, one queue row, no duplicate rewrite.
+    const pressed = await apiJson<any>("/api/wealth/outreach/redraft-sent-back", { method: "POST", body: {} });
+    expect(pressed.body.data.queued_now).toBe(1);
+    expect(pressed.body.data.rewriting).toBe(1);
+    const after = await env.DB.prepare(`SELECT state, failure FROM outreach_rewrites WHERE id = ?`).bind(rw.id).first<any>();
+    expect(after.state).toBe("queued");
+    expect(after.failure).toBeNull();
+    expect((await env.DB.prepare(`SELECT status FROM tasks WHERE id = ?`).bind(rw.task_id).first<any>()).status).toBe("queued");
+    const q = await env.DB.prepare(`SELECT COUNT(*) AS n FROM boss_task_queue WHERE task_id = ? AND state = 'pending'`).bind(rw.task_id).first<{ n: number }>();
+    expect(q?.n).toBe(1);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM outreach_rewrites WHERE source_draft_id = ?`).bind(draft.id).first<{ n: number }>())?.n).toBe(1);
+    // Pressing twice does not queue twice.
+    const again = await apiJson<any>("/api/wealth/outreach/redraft-sent-back", { method: "POST", body: {} });
+    expect(again.body.data.queued_now).toBe(0);
+  });
+
   it("a rewrite stuck running past the stale limit is re-queued rather than displayed for ever", async () => {
     await sendBack(NOTE_1);
     const rw = await env.DB.prepare(`SELECT * FROM outreach_rewrites`).first<any>();

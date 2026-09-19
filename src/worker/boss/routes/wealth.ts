@@ -582,7 +582,7 @@ wealth.get("/outreach/sent-back", async (c) => {
  * disagree about what is in motion.
  */
 wealth.post("/outreach/redraft-sent-back", async (c) => {
-  const m = await materialiseRewrites(c.env);
+  const m = await materialiseRewrites(c.env, Date.now(), { retryFailed: true });
   const progress = await rewriteProgress(c.env);
   return ok(c, { ...progress, queued_now: m.queued, requeued_now: m.requeued });
 });

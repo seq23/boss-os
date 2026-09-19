@@ -43,6 +43,9 @@ async function tab(page: Page, label: string) {
 function cleanSql(): string {
   return [
     `DELETE FROM gmail_drafts WHERE candidate_id LIKE '${PREFIX}%'`,
+    `DELETE FROM boss_task_queue WHERE task_id IN (SELECT task_id FROM outreach_rewrites WHERE candidate_id LIKE '${PREFIX}%')`,
+    `DELETE FROM tasks WHERE id IN (SELECT task_id FROM outreach_rewrites WHERE candidate_id LIKE '${PREFIX}%')`,
+    `DELETE FROM outreach_rewrites WHERE candidate_id LIKE '${PREFIX}%'`,
     `DELETE FROM approvals WHERE id IN (SELECT approval_id FROM judgement_calls WHERE id IN (SELECT judgement_id FROM buyer_outreach_drafts WHERE candidate_id LIKE '${PREFIX}%'))`,
     `DELETE FROM judgement_calls WHERE id IN (SELECT judgement_id FROM buyer_outreach_drafts WHERE candidate_id LIKE '${PREFIX}%')`,
     `DELETE FROM buyer_outreach_drafts WHERE candidate_id LIKE '${PREFIX}%'`,
@@ -194,16 +197,41 @@ test.describe("Boss OS Inbox overhaul", () => {
     await expect(sentBack.locator(".row")).toHaveCount(13);
     await expect(sentBack).toContainText("Rewrite the opening");
 
-    // THE RAISING LANE RUNS AGAIN — from the desk — AND RAISES NOTHING, because the letter would be
-    // word-for-word the one she sent back.
-    await page.getByTestId("redraft-sent-back").click();
-    await expect(page.getByText(/Nothing redrafted/)).toBeVisible();
+    /*
+     * ─── THE REWRITE SHE COULD NOT SEE (19 Sep 2026, 13:00: "I don't see it working") ──────────
+     *
+     * Every send-back with a note queued a rewrite on the Worker's own queue, and the desk prints
+     * ONE sentence from the rows. `wrangler dev --local` has no rung that may take private,
+     * medium-risk work, so here every rewrite stops by name — which is the honest boundary: the
+     * line says 13 could not be rewritten and each row says why. Nothing identical is raised.
+     */
+    const progress = page.getByTestId("rewrite-progress");
+    await expect(progress).toContainText("13 sent back with your note", { timeout: 30_000 });
+    await expect(progress).toContainText("13 could not be rewritten", { timeout: 60_000 });
+    await expect(progress).toContainText("0 of 13 ready");
+    await expect(progress).toContainText("Your note: Rewrite the opening");
+    await expect(progress).toContainText("The router refused the rewrite");
+    const rewrites = queryLocalD1<{ state: string; n: number }>(
+      `SELECT r.state, COUNT(*) AS n FROM outreach_rewrites r JOIN buyer_outreach_drafts d ON d.id = r.source_draft_id
+        WHERE d.candidate_id LIKE '${PREFIX}%' GROUP BY r.state`,
+    );
+    expect(rewrites).toEqual([{ state: "failed", n: 13 }]);
+
+    // HER PRESS RETRIES THEM — "Rewrite the 13 with my notes" — queued again, and the same named stop.
+    const button = page.getByTestId("redraft-sent-back");
+    await expect(button).toHaveText("Rewrite the 13 with my notes");
+    await button.click();
+    await expect(page.getByText(/Camille is rewriting now/)).toBeVisible();
+    await expect(progress).toContainText("13 could not be rewritten", { timeout: 60_000 });
+
+    // The Inbox prints the same sentence and holds nothing: no attempt 2 anywhere.
     await tab(page, "Inbox");
     await expect(page.getByTestId("inbox-masthead")).toContainText("0");
+    await expect(page.getByTestId("rewrite-progress")).toContainText("13 sent back with your note");
     const stillOne = queryLocalD1<{ n: number }>(
       `SELECT COUNT(*) AS n FROM buyer_outreach_drafts WHERE candidate_id LIKE '${PREFIX}%'`,
     );
-    expect(stillOne[0]!.n).toBe(13); // no attempt 2 anywhere
+    expect(stillOne[0]!.n).toBe(13);
   });
 
   test("the green button on a letter creates the draft — one primary action, no send — and here reports the named stop", async ({ page }) => {
