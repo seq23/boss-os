@@ -36,7 +36,14 @@
  *
  *   · a `from` field, a `sendersFor` roster entry, or a Resend/SMTP envelope carrying it
  *   · a Gmail write scope anywhere — `gmail.send`, `gmail.compose`, `gmail.modify`,
- *     `mail.google.com` — which would make sending possible even with no sender line yet
+ *     `mail.google.com` — which would make sending possible even with no sender line yet.
+ *     ONE EXCEPTION, NARROWED TO THE BONE (owner, 19 September 2026: "it should never send — the
+ *     green button should be to create the draft"): `src/worker/boss/wealth/gmailDraft.ts` may hold
+ *     `gmail.compose`, and ONLY `gmail.compose`, and ONLY while it names no send endpoint. The
+ *     grant behind it is compose, not send, and the file is checked for `messages/send`,
+ *     `drafts/send`, `.send(`, `gmail.send` and `gmail.modify` on every build. A draft in her own
+ *     mailbox is not a communication from a regulated person; the moment this file could send one,
+ *     the build fails.
  *   · a `reply_to` on that domain, which is an invitation to a reply that lands in a mailbox
  *     nothing here is allowed to answer from
  *
@@ -54,6 +61,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DOMAIN = "spry.vc";
+/** The one module that may hold gmail.compose. See the header. */
+const DRAFT_MODULE = "src/worker/boss/wealth/gmailDraft.ts";
+
+/** Drop comments and doc prose so a rule can be DESCRIBED in a file without the scan reading it as code. */
+function stripProse(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
+}
 
 /** Where executable code lives. Migrations and docs describe the mailbox and cannot send from it. */
 const SCAN_DIRS = ["scripts", "src"];
@@ -96,6 +110,10 @@ export function violations(files) {
   const ENVELOPE = new RegExp(String.raw`<[^>\s]+@` + DOMAIN.replace(".", "\\.") + String.raw`>`, "i");
   /** Any Gmail scope that can write. Sending becomes possible the moment one of these is asked for. */
   const WRITE_SCOPE = /gmail\.send|gmail\.compose|gmail\.modify|mail\.google\.com|auth\/gmail\.insert/i;
+  /** Wider than compose: the scopes the draft module may never ask for. */
+  const WIDER_THAN_COMPOSE = /gmail\.send|gmail\.modify|mail\.google\.com|auth\/gmail\.insert/i;
+  /** Every shape a Gmail send takes: the two REST endpoints and a client-library `.send(`. */
+  const SEND_ENDPOINT = /messages\/send|drafts\/[^"'`\s]*\/send|drafts\.send|messages\.send|\.send\s*\(/i;
   const DOMAIN_RE = new RegExp(DOMAIN.replace(".", "\\."), "i");
 
   for (const [rel, src] of Object.entries(files)) {
@@ -117,12 +135,27 @@ export function violations(files) {
      * mailbox is read today. So the test is exactly that mechanism — a file that impersonates a
      * Workspace user must never also ask for a scope that can write.
      */
-    const impersonates = /GSC_SERVICE_ACCOUNT_JSON/.test(src)
-      || (/\bsub\b\s*[:,]/.test(src) && /oauth2\.googleapis\.com\/token/.test(src));
-    if (impersonates && WRITE_SCOPE.test(src)) {
+    // CODE, NOT PROSE. A comment that names the scope in order to forbid it cannot acquire it; the
+    // env declaration and the egress allowlist both describe the draft module's grant in words.
+    const code = stripProse(src);
+    const impersonates = /GSC_SERVICE_ACCOUNT_JSON/.test(code)
+      || (/\bsub\b\s*[:,]/.test(code) && /oauth2\.googleapis\.com\/token/.test(code));
+    if (rel === DRAFT_MODULE) {
+      /*
+       * THE ONE FILE THAT MAY COMPOSE, HELD TO A STRICTER RULE THAN EVERYTHING ELSE. It must
+       * impersonate (that is its job), it must ask for compose and nothing wider, and it must
+       * contain no send endpoint of any shape. Each of those is a separate named failure.
+       */
+      if (!impersonates) bad.push(`${rel}: is the draft module and no longer impersonates the mailbox — the draft path has moved and this guard is watching an empty room.`);
+      if (!/gmail\.compose/.test(code)) bad.push(`${rel}: is the draft module and no longer asks for gmail.compose — the grant this file exists to use is gone from it.`);
+      if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose. Compose is the whole grant; anything wider can send.`);
+      if (SEND_ENDPOINT.test(code)) bad.push(`${rel}: names a send endpoint. The green button creates a draft; it never sends.`);
+    } else if (impersonates && WRITE_SCOPE.test(code)) {
       bad.push(`${rel}: impersonates a Workspace user AND asks for a Gmail scope that can WRITE. `
         + `Reading ${DOMAIN} is permitted; sending from it never is.`);
     }
+    // An entry on the egress allowlist or an env declaration may NAME the scope in prose; a file
+    // that both impersonates and holds the scope in code is what the rule above catches.
 
     if (!hasDomain) continue;
 
@@ -176,6 +209,18 @@ if (process.argv.includes("--self-test")) {
      { "scripts/ops/x.mjs": 'const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON);\nconst MAILBOX = "staylor@spry.vc";\nconst SCOPE = "https://www.googleapis.com/auth/gmail.readonly";' }, false],
     ["prose about the rule, which is allowed",
      { "scripts/ops/x.mjs": ' * NEVER SEND FROM spry.vc — she can read staylor@spry.vc and never write from it.\nconst MAILBOX = "staylor@spry.vc";' }, false],
+    ["the draft module, composing and naming only drafts.create, which is allowed",
+     { "src/worker/boss/wealth/gmailDraft.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };\nawait fetchImpl("https://gmail.googleapis.com/gmail/v1/users/me/drafts", { method: "POST" });' }, false],
+    ["the draft module growing a messages.send call",
+     { "src/worker/boss/wealth/gmailDraft.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };\nawait fetchImpl("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST" });' }, true],
+    ["the draft module growing a drafts.send call",
+     { "src/worker/boss/wealth/gmailDraft.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };\nawait fetchImpl(`https://gmail.googleapis.com/gmail/v1/users/me/drafts/${id}/send`);' }, true],
+    ["the draft module asking for gmail.send beside compose",
+     { "src/worker/boss/wealth/gmailDraft.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };' }, true],
+    ["the draft module whose prose mentions send is still clean — only code counts",
+     { "src/worker/boss/wealth/gmailDraft.ts": '/* no users.messages.send here, and no drafts.send */\nconst S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };' }, false],
+    ["ANY OTHER impersonating file asking for compose",
+     { "src/worker/boss/routes/wealth.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };' }, true],
   ];
   let failed = 0;
   for (const [name, files, shouldCatch] of cases) {
@@ -194,6 +239,10 @@ if (process.argv.includes("--self-test")) {
 // ─── The real scan ───────────────────────────────────────────────────────────
 
 const files = sources();
+if (!(DRAFT_MODULE in files)) {
+  console.error(`SPRY SENDER SCAN FAILED — ${DRAFT_MODULE} is missing. The one file allowed to compose has moved or gone; the exception must move with it or be removed.`);
+  process.exit(2);
+}
 if (Object.keys(files).length === 0) {
   console.error(`SPRY SENDER SCAN FAILED — examined 0 files under ${SCAN_DIRS.join(", ")}.`);
   process.exit(2);

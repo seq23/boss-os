@@ -810,6 +810,12 @@ async function handleJudgementCall(
 
   return {
     status: "executed",
-    detail: { judgement_id: j.id, verdict, resume_kind: j.resume_kind, resumed: resumed.detail },
+    detail: {
+      judgement_id: j.id, verdict, resume_kind: j.resume_kind, resumed: resumed.detail,
+      // Inbox overhaul: whether a DIFFERENT attempt came back (so the list reloads), and what
+      // happened in her Gmail on an approval (so the card can say "in your drafts" or the stop).
+      redrafted: resumed.redrafted ?? false,
+      gmail_draft: resumed.gmail_draft ?? null,
+    },
   };
 }

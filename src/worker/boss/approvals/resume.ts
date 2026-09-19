@@ -50,6 +50,10 @@ export type Verdict = "approved" | "try_again";
 export interface ResumeResult {
   /** One sentence, in her language, about what is now in motion. Shown back to her. */
   detail: string;
+  /** For a try-again: whether a DIFFERENT attempt was raised (true) or the note was recorded and nothing came back (false). */
+  redrafted?: boolean;
+  /** For an approved letter: what happened in her Gmail. */
+  gmail_draft?: { state: string; gmail_draft_id: string | null; failure_code: string | null };
 }
 
 export type ResumeHandler = (
@@ -112,10 +116,29 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
         )
         .bind(now, note, now, draft.id)
         .run();
+
+      /*
+       * ─── THE GREEN BUTTON MAKES A DRAFT. IT NEVER SENDS. ─────────────────
+       *
+       * Owner, 19 September 2026: "it should never send — the green button should be to create
+       * the draft." The approval above is the authorization; the draft is created in HER mailbox
+       * (`wealth/gmailDraft.ts`, one scope, one endpoint, no transport), and the outcome — created,
+       * or a NAMED STOP — is written to `gmail_drafts` and said back here. A blocked draft never
+       * undoes the approval: the letter is on the desk with a "Create the draft" button that tries
+       * again.
+       */
+      const { createDraftForOutreach, BROKERAGE_MAILBOX } = await import("../wealth/gmailDraft");
+      const gmail = await createDraftForOutreach(env, draft.id);
       return {
         detail:
-          `Approved. The letter to ${who} is on the desk under Capital, ready to send from your own address — ` +
-          "nothing here has sent it and nothing here can. Press \"I sent it\" when you have, and the candidate moves to contacted.",
+          gmail.state === "created"
+            ? `Approved. The letter to ${who} is in your Gmail drafts under ${BROKERAGE_MAILBOX} — read it once more there, add the address, and send it yourself. Nothing here has sent it and nothing here can.`
+            : `Approved, and the letter to ${who} is on the desk under Capital. ${gmail.detail}`,
+        gmail_draft: {
+          state: gmail.state,
+          gmail_draft_id: gmail.gmail_draft_id,
+          failure_code: gmail.failure_code,
+        },
       };
     }
 
@@ -137,12 +160,23 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
      * instruction she has to remember to act on. If it cannot be composed, the reason is returned
      * and her note is still recorded — the verdict is never lost to a drafting failure.
      */
+    /*
+     * ─── AND IT MAY NOT COME BACK UNCHANGED ──────────────────────────────────
+     *
+     * The first live batch, 19 September 2026: thirteen letters sent back with a reason, thirteen
+     * identical letters raised 0.1 s later by this exact line, and her Inbox back where it started.
+     * `draftOutreachFor` now refuses any letter whose body matches one she rejected, so a redraft
+     * happens only when it would actually differ. When it would not, the honest answer is written
+     * here rather than a card raised: her note is on the record, the item is off her desk, and the
+     * opening has to change before another attempt is worth her time.
+     */
     const { draftOutreachFor } = await import("../routes/wealth");
     const again = await draftOutreachFor(env, draft.candidate_id, note, now);
     return {
       detail: again.drafted
-        ? `Sent back with your reason attached. Attempt ${draft.attempt + 1} to ${who} is already in your Inbox. Nothing was sent to anybody.`
-        : `Sent back and your reason is on the record. A new letter was not written: ${again.detail}`,
+        ? `Sent back with your reason attached. Attempt ${draft.attempt + 1} to ${who} — a different letter — is in your Inbox. Nothing was sent to anybody.`
+        : `Sent back and your reason is on the record. ${again.detail}`,
+      redrafted: again.drafted,
     };
   },
 

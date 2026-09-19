@@ -64,6 +64,12 @@ export interface Env {
   WP_OS_AI_EMAIL_EXTERNAL?: string;
   GOOGLE_OAUTH_CLIENT_ID?: string;
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
+  /**
+   * Boss OS only: the gsc-bot service account, so the Worker can create a Gmail draft in the
+   * owner's own mailbox on her press (src/worker/boss/wealth/gmailDraft.ts). Passed through by
+   * bossMount.ts; nothing in the chassis reads it. Synced by `npm run vault:sync:cloudflare`.
+   */
+  GSC_SERVICE_ACCOUNT_JSON?: string;
 
   // ── Network OS live pull (P35) ──
   // All three are required. Network OS authenticates a `wpn_session` cookie signed with its own

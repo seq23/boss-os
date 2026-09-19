@@ -155,6 +155,13 @@ jobs:
       - name: Monique reads spry.vc and never sends from it
         run: npm run validate:no-spry-sender
 
+      # "it should never send — the green button should be to create the draft." (19 Sep 2026.)
+      # The inbox letter card has one primary action and it makes a Gmail draft; none of the files
+      # her press reaches imports a transport or names a send endpoint. The chassis carries three
+      # working transports one import away, which is why this is a scan and not a comment.
+      - name: The inbox draft never sends
+        run: npm run validate:inbox-draft
+
       # A filter over 104,241 messages whose discard is one number is a filter nobody can audit, and
       # an unauditable filter loses deals silently. Every message ends in a named bucket, a 100%
       # discard is a named stop, and a company name entering the filter fails the build.

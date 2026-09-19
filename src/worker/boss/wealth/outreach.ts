@@ -44,7 +44,7 @@
  * so on her screen rather than to draft a letter and hope she notices the warning under it.
  */
 
-const USD = 1_000_000;
+import { listSizes } from "../../../shared/wealth/positionSizes";
 
 export interface CandidateRow {
   id: string;
@@ -80,9 +80,6 @@ export interface Refusal {
   because: string;
 }
 
-const money = (usd: number) =>
-  usd >= 1_000_000 ? `$${Math.round(usd / 1_000_000)}M` : `$${Math.round(usd / 1000)}k`;
-
 const onDay = (ts: number) => new Date(ts).toISOString().slice(0, 10);
 
 const months = (from: number, to: number) => Math.max(1, Math.round((to - from) / (30 * 86_400_000)));
@@ -94,11 +91,24 @@ const months = (from: number, to: number) => Math.max(1, Math.round((to - from) 
  * and an exception here would surface as "something failed" — which is the least useful sentence
  * this system can print about a decision it made deliberately.
  */
+/**
+ * What the letter may say about HER side of the trade, stated by her and never inferred.
+ *
+ * `positions_usd` is the list she typed on the Capital desk (`shared/wealth/positionSizes.ts`).
+ * When it is empty the letter says nothing about size at all — the previous sentence here read the
+ * BUYER'S published minimum back to them as if it were her book ("The positions I work are $50M
+ * and up"), which is a fabricated claim in a letter that goes out under her name.
+ */
+export interface HerSide {
+  positions_usd: number[];
+}
+
 export function composeOutreach(
   candidate: CandidateRow,
   crossmatches: CrossmatchFact[],
   note: string | null,
   now: number,
+  her: HerSide = { positions_usd: [] },
 ): Draft | Refusal {
   const suppressed = crossmatches.find((m) => m.lp_list !== "sequence" && m.confidence === "confirmed");
   if (suppressed) {
@@ -139,28 +149,34 @@ export function composeOutreach(
         "and it never got to a trade. I have new late-stage secondary supply and I would rather bring it to you than to somebody who has not already told me what they want.",
     );
   } else {
+    /*
+     * ─── THE COLD OPENING, IN HER WORDS ──────────────────────────────────────
+     *
+     * Her rejection note on the first live batch, 19 September 2026, sent back thirteen letters
+     * with one reason:
+     *
+     *   "I dont like the intro: "I broker ...." We should make this sound like I have investors
+     *    interested in late stage positions. I also dont like the I am approaching paragraph sounds
+     *    like Ai and too technical. We should start by say My name is Sequoia Taylor, and I run
+     *    Spry VC. Maybe a link to my linkedin page: linkedin.com/in/sequoiataylor"
+     *
+     * So: her name and firm first, investors with appetite rather than a broker with inventory, the
+     * LinkedIn page, and NO "I am approaching X because <thesis>" paragraph. The thesis still
+     * decides whether the firm is on the list; it is no longer read back to them.
+     */
+    used.push("cold_intro");
     lines.push(
-      "I broker private, late-stage technology secondaries — I match holders of shares in private companies with institutions that buy them.",
+      "My name is Sequoia Taylor, and I run Spry VC. I work with investors who are actively looking for " +
+        "late-stage positions in private technology companies, and I match them with holders who want liquidity.",
     );
   }
 
-  // ─── Why them specifically, with the source that says so ───────────────────
-  //
-  // The one sentence that separates a real approach from a blast. If the sweep could not produce a
-  // thesis, this sentence does not appear — a letter that cannot say why it is addressed to this
-  // firm should not pretend it can.
-  if (candidate.thesis) {
-    used.push("thesis");
+  if (her.positions_usd.length > 0) {
+    used.push("her_positions");
     lines.push(
-      `I am approaching ${candidate.name} because ${candidate.thesis.replace(/\.$/, "")}` +
-        (candidate.source_name ? `, which I read on ${candidate.source_name}${candidate.read_at ? ` on ${onDay(candidate.read_at)}` : ""}.` : "."),
-    );
-  }
-
-  if (candidate.ticket_floor_usd) {
-    used.push("ticket_floor");
-    lines.push(
-      `The positions I work are ${money(candidate.ticket_floor_usd)} and up, which is where I understand you start.`,
+      her.positions_usd.length === 1
+        ? `The position I am working right now is ${listSizes(her.positions_usd)}.`
+        : `The positions I am working right now are ${listSizes(her.positions_usd)}.`,
     );
   }
 
@@ -169,6 +185,8 @@ export function composeOutreach(
     "If it is useful, I will send you what is currently available and the terms, and you can tell me whether any of it is a fit. " +
       "If it is not, tell me what you are actually looking for and I will only come back when I have it.",
   );
+  // Her page, her ask — the one link in the letter, and it is hers.
+  lines.push("Sequoia Taylor\nSpry VC\nlinkedin.com/in/sequoiataylor");
 
   // ─── An LP overlap she should know she is carrying into the room ───────────
   //

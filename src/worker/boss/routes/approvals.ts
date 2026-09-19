@@ -61,6 +61,76 @@ approvals.get("/notices", async (c) => {
   return ok(c, notices);
 });
 
+// === Inbox overhaul ===
+//
+// One reason for many dockets. Her words, 19 September 2026: "I need to be able to reject all
+// things at once with an overarching reason why — right now I had 13 messages to reject." Confirmed
+// on production: eleven of the thirteen carry the decision note "same".
+//
+// A batch is one act with one reason. It is NOT one decision: the client still calls
+// `POST /:id/decide` once per docket with the batch id, so every item passes the same governance
+// check, writes the same event, and its own record reads as a decision about it — with the whole
+// sentence, not "same". Progress is therefore visible per item ("7 of 13 rejected") and a failure
+// on one docket fails one docket.
+
+/** How short a shared reason may be. "same" is four characters; the defect is the reason. */
+export const MIN_BATCH_REASON_CHARS = 12;
+
+approvals.post("/batches", async (c) => {
+  const body = await c.req.json<any>().catch(() => null);
+  const decision = String(body?.decision ?? "");
+  const reason = String(body?.reason ?? "").trim();
+  const count = Number(body?.count);
+
+  /*
+   * REJECTED ONLY. Approving is judging work she has looked at; thirteen letters approved as one act
+   * are thirteen letters she may not have read, and "Silence is never approval" (canon D7) is the
+   * rule this would erode. Rejecting with a reason sends nothing and loses nothing but a card.
+   */
+  if (decision !== "rejected") {
+    throw badRequest(
+      "Only a rejection can be given to many dockets at once",
+      "Approving is a judgement about work you have read, one docket at a time. Reject the ones you do not want, then approve the rest individually.",
+    );
+  }
+  if (reason.length < MIN_BATCH_REASON_CHARS) {
+    throw badRequest(
+      `The shared reason needs at least ${MIN_BATCH_REASON_CHARS} characters`,
+      "It is written onto every record; \"same\" tells the person redoing the work nothing.",
+    );
+  }
+  if (!Number.isInteger(count) || count < 1 || count > 200) {
+    throw badRequest("A batch names how many dockets it covers", "Send count between 1 and 200.");
+  }
+
+  const id = newId("apb");
+  const now = Date.now();
+  await c.env.DB
+    .prepare(
+      `INSERT INTO approval_batches (id, decision, reason, requested_count, created_at, updated_at)
+       VALUES (?,?,?,?,?,?)`,
+    )
+    .bind(id, decision, reason, count, now, now)
+    .run();
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "approval_batch", entityId: id,
+    action: "opened", detail: { decision, count, reason },
+  });
+  return ok(c, { id, decision, reason, requested_count: count, done_count: 0, failed_count: 0 }, 201);
+});
+
+/** The batch and its items, so a record can show "one of 13, with this reason". */
+approvals.get("/batches/:id", async (c) => {
+  const id = c.req.param("id");
+  const batch = await c.env.DB.prepare(`SELECT * FROM approval_batches WHERE id = ?`).bind(id).first<any>();
+  if (!batch) throw notFound("No batch with that id");
+  const items = await c.env.DB
+    .prepare(`SELECT id, title, status, decided_at, decision_note FROM approvals WHERE batch_id = ? ORDER BY decided_at`)
+    .bind(id)
+    .all();
+  return ok(c, { batch, items: items.results ?? [] });
+});
+
 /** Full docket: the approval, its event trail, and whatever it will act on. */
 approvals.get("/:id", async (c) => {
   const id = c.req.param("id");
@@ -175,12 +245,33 @@ approvals.post("/", async (c) => {
  */
 approvals.post("/:id/decide", async (c) => {
   const id = c.req.param("id");
-  const { decision, note } = await c.req.json<{ decision: string; note?: string }>();
+  const parsed = await c.req.json<{ decision: string; note?: string; batch_id?: string }>();
+  const { decision, batch_id } = parsed;
+  let note = parsed.note;
   if (!DECISIONS.includes(decision as (typeof DECISIONS)[number])) {
     throw badRequest("Decision must be approved, rejected, or deferred");
   }
   if (note !== undefined && note !== null && typeof note !== "string") {
     throw badRequest("A decision note must be text");
+  }
+
+  /*
+   * ONE OF MANY. A batch id ties this decision to the act that carried the shared reason. The
+   * batch's decision must match — a batch opened to reject cannot be used to approve — and the
+   * reason is copied onto THIS record, so the docket reads the whole sentence on its own.
+   */
+  let batch: { id: string; decision: string; reason: string } | null = null;
+  if (batch_id !== undefined && batch_id !== null) {
+    if (typeof batch_id !== "string") throw badRequest("A batch id must be text");
+    batch = await c.env.DB
+      .prepare(`SELECT id, decision, reason FROM approval_batches WHERE id = ?`)
+      .bind(batch_id)
+      .first<{ id: string; decision: string; reason: string }>();
+    if (!batch) throw notFound("No batch with that id");
+    if (batch.decision !== decision) {
+      throw conflict(`That batch was opened to ${batch.decision === "rejected" ? "reject" : batch.decision}`, "A batch carries one decision. Open another for a different one.");
+    }
+    if (!note || !note.trim()) note = batch.reason;
   }
 
   const current = await c.env.DB
@@ -219,10 +310,10 @@ approvals.post("/:id/decide", async (c) => {
    */
   const claim = await c.env.DB
     .prepare(
-      `UPDATE approvals SET status = ?, decided_at = ?, decided_by = 'boss', decision_note = ?
+      `UPDATE approvals SET status = ?, decided_at = ?, decided_by = 'boss', decision_note = ?, batch_id = ?
         WHERE id = ? AND status IN ('pending','deferred')`,
     )
-    .bind(decision, now, note ?? null, id)
+    .bind(decision, now, note ?? null, batch?.id ?? null, id)
     .run();
 
   if ((claim.meta.changes ?? 0) === 0) {
@@ -233,14 +324,15 @@ approvals.post("/:id/decide", async (c) => {
     );
   }
 
+  const eventDetail = note || batch ? { ...(note ? { note } : {}), ...(batch ? { batch_id: batch.id } : {}) } : null;
   await c.env.DB
     .prepare(`INSERT INTO approval_events (id, approval_id, ts, event, detail) VALUES (?,?,?,?,?)`)
-    .bind(newId("ape"), id, now, decision, note ? JSON.stringify({ note }) : null)
+    .bind(newId("ape"), id, now, decision, eventDetail ? JSON.stringify(eventDetail) : null)
     .run();
 
   await audit(c.env.DB, {
     actor: "boss", lane: current.lane, entityType: "approval", entityId: id,
-    action: decision, detail: note ? { note } : undefined,
+    action: decision, detail: eventDetail ?? undefined,
   });
 
   /*
@@ -264,8 +356,37 @@ approvals.post("/:id/decide", async (c) => {
     execution = await executeDecision(c.env, current, decision, note ?? null);
   }
 
+  /*
+   * THE BATCH COUNTS WHAT ACTUALLY HAPPENED. `done` is a decision that was recorded; a decision whose
+   * execution then failed is still a decision she made, so it counts as done and the execution
+   * status says the rest. `failed` is reserved for a docket the route refused — the client records
+   * that when its own call throws, through `/batches/:id/failed`.
+   */
+  if (batch) {
+    await c.env.DB
+      .prepare(`UPDATE approval_batches SET done_count = done_count + 1, updated_at = ? WHERE id = ?`)
+      .bind(now, batch.id)
+      .run();
+  }
+
   const row = await c.env.DB.prepare(`SELECT * FROM approvals WHERE id = ?`).bind(id).first();
-  return ok(c, { approval: row, execution });
+  return ok(c, { approval: row, execution, batch_id: batch?.id ?? null });
+});
+
+/** A docket the batch could not decide — refused by name — is counted on the act, not lost. */
+approvals.post("/batches/:id/failed", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json<any>().catch(() => null);
+  const res = await c.env.DB
+    .prepare(`UPDATE approval_batches SET failed_count = failed_count + 1, updated_at = ? WHERE id = ?`)
+    .bind(Date.now(), id)
+    .run();
+  if (!res.meta.changes) throw notFound("No batch with that id");
+  await audit(c.env.DB, {
+    actor: "boss", lane: "ops", entityType: "approval_batch", entityId: id,
+    action: "item_failed", detail: { approval_id: body?.approval_id ?? null, error: body?.error ?? null },
+  });
+  return ok(c, { id });
 });
 
 /**

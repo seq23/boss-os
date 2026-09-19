@@ -85,7 +85,7 @@ async function assetsFor(env: Env, judgementId: string) {
  * Anything else parses to null and the card is unchanged, so this can never turn an ordinary
  * judgement into a broken one.
  */
-function letterOn(resumeDetail: string | null): { subject: string; body: string; to_hint: string | null } | null {
+function letterOn(resumeDetail: string | null): { subject: string; body: string; to_hint: string | null; her_note: string | null } | null {
   if (!resumeDetail) return null;
   let parsed: any;
   try { parsed = JSON.parse(resumeDetail); } catch { return null; }
@@ -94,6 +94,8 @@ function letterOn(resumeDetail: string | null): { subject: string; body: string;
     subject: parsed.subject,
     body: parsed.body,
     to_hint: typeof parsed.to_hint === "string" ? parsed.to_hint : null,
+    // The note a redraft answers, so the card can show what changed and why (Inbox overhaul).
+    her_note: typeof parsed.built_from?.her_note === "string" ? parsed.built_from.her_note : null,
   };
 }
 

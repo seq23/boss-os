@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
+import { listSizes, moneyShort, parseMoneyUsd, parsePositionSizes } from "../../../shared/wealth/positionSizes";
 
 /**
  * Capital — Investor OS and the Wealth Command Center on one screen.
@@ -143,6 +144,13 @@ function Buyers() {
   const [rec, setRec] = useState<any | null>(null);
   const [letters, setLetters] = useState<{ approved: any[]; awaiting: any[] } | null>(null);
   /*
+   * THE LETTERS SHE SENT BACK, read from the same `state` the raising lane checks. Capital used to
+   * say these were in flight while the Inbox raised them again, word for word; now this list and
+   * the Inbox cannot disagree, because a sent-back letter leaves here only when a DIFFERENT letter
+   * is raised or she drops the firm. `null` means not read, never none.
+   */
+  const [sentBack, setSentBack] = useState<any[] | null>(null);
+  /*
    * `null` MEANS "NOT READ", NOT "NONE". Every one of these three starts null and is only ever set
    * to a value by a request that came back. An empty state rendered over a failed fetch is the
    * defect she has been served most often by this application, and the sections below all say which
@@ -159,8 +167,37 @@ function Buyers() {
       .then((r) => { setRec(r); setRecFailed(false); })
       .catch((e) => { setError(e); setRecFailed(true); });
     api.outreach().then(setLetters).catch((e) => { setError(e); setLetters(null); });
+    api.outreachSentBack().then((r) => setSentBack(r.items ?? [])).catch((e) => { setError(e); setSentBack(null); });
   }
   useEffect(load, []);
+
+  /**
+   * One press after the opening changes, rather than one per firm. The route raises exactly the
+   * letters that would differ from what she rejected and names the ones it left — it can never
+   * re-raise the letter she sent back.
+   */
+  async function redraftAll() {
+    setBusy("redraft"); setError(null);
+    try {
+      const r = await api.redraftSentBack();
+      setFlash(
+        r.raised.length === 0
+          ? `Nothing redrafted: ${r.considered === 0 ? "no letter is sent back." : r.left.map((l) => l.why).join(" ")}`
+          : `${r.raised.length} rewritten and in your Inbox: ${r.raised.join(", ")}.${r.left.length ? ` Left as they were: ${r.left.map((l) => l.name).join(", ")}.` : ""}`,
+      );
+      load();
+    } catch (e) { setError(e); } finally { setBusy(null); }
+  }
+
+  /** The Gmail draft, from the desk — for a letter approved while the Worker was blocked. */
+  async function gmailDraft(id: string) {
+    setBusy(id); setError(null);
+    try {
+      const r = await api.gmailDraft(id);
+      setFlash(r.detail ?? (r.state === "created" ? "In your Gmail drafts." : "Not created."));
+      load();
+    } catch (e) { setError(e); } finally { setBusy(null); }
+  }
 
   async function draft(id: string) {
     setBusy(id); setError(null);
@@ -221,14 +258,43 @@ function Buyers() {
         */}
       {(letters?.approved.length ?? 0) > 0 && (
         <>
-          <p className="eyebrow">Approved — you send these, nothing here can</p>
+          <p className="eyebrow">Approved · {letters!.approved.length} — in your Gmail drafts, or say why not</p>
           {letters!.approved.map((l: any) => (
-            <div className="panel" key={l.id}>
+            <div className="panel" key={l.id} data-testid="approved-letter">
               <div className="row-title">{l.candidate_name}</div>
               <div className="row-sub" style={{ marginTop: 6 }}><strong>Subject:</strong> {l.subject}</div>
               <div className="row-sub" style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{l.body}</div>
               <div className="row-sub" style={{ marginTop: 8 }}><strong>Where it goes:</strong> {l.to_hint}</div>
+              {/*
+                * ─── WHERE THE DRAFT IS, IN WORDS ────────────────────────────────
+                *
+                * Owner, 19 September 2026: "it should never send — the green button should be to
+                * create the draft." The Inbox press created it; this line says whether it exists,
+                * when, and in which mailbox — or names the stop. Nothing on this desk sends either.
+                */}
+              <div className="row-sub" style={{ marginTop: 8 }} data-testid="gmail-state">
+                {l.gmail?.state === "created" ? (
+                  <>
+                    <strong>In your Gmail drafts</strong> ({l.gmail.mailbox}) as of{" "}
+                    {new Date(l.gmail.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                    {" · "}
+                    <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noreferrer">open Gmail</a>
+                    {" · draft "}{l.gmail.gmail_draft_id}
+                  </>
+                ) : l.gmail?.state === "blocked" ? (
+                  <><strong>Not in your drafts yet — {l.gmail.failure_code === "grant_missing" ? "waiting for the gmail.compose grant" : "the Worker holds no Google key"}.</strong> {l.gmail.failure_detail}</>
+                ) : l.gmail?.state === "failed" ? (
+                  <><strong>Gmail refused the draft.</strong> {l.gmail.failure_detail}</>
+                ) : (
+                  <strong>No draft has been created for this letter yet.</strong>
+                )}
+              </div>
               <div className="btn-row">
+                {l.gmail?.state !== "created" && (
+                  <button className="btn btn-small btn-approve" disabled={busy === l.id} onClick={() => gmailDraft(l.id)} data-testid="gmail-draft-retry">
+                    {busy === l.id ? "Creating the draft…" : "Create the draft in my Gmail"}
+                  </button>
+                )}
                 <button
                   className="btn btn-small"
                   onClick={() => {
@@ -239,13 +305,49 @@ function Buyers() {
                 >
                   {copied === l.id ? "Copied" : "Copy the letter"}
                 </button>
-                <button className="btn btn-small btn-approve" onClick={() => { api.outreachSent(l.id).then(load).catch(setError); }}>
-                  I sent it
+                {/* HER record that she sent it from Gmail. Nothing here sends; this moves the firm to contacted. */}
+                <button className="btn btn-small btn-defer" onClick={() => { api.outreachSent(l.id).then(load).catch(setError); }}>
+                  I sent it from Gmail
                 </button>
               </div>
             </div>
           ))}
         </>
+      )}
+
+      {/*
+        * ─── SENT BACK, WITH YOUR REASON ON EACH ──────────────────────────────
+        *
+        * The honest state of "in flight". These are the letters she rejected; the Inbox does not
+        * hold them (the same `state` says so on both tabs), and they do not come back until the
+        * opening produces a DIFFERENT letter. One button redrafts all of them at once, and it can
+        * only raise letters that differ from what she sent back.
+        */}
+      {(sentBack?.length ?? 0) > 0 && (
+        <>
+          <p className="eyebrow">Sent back · {sentBack!.length} — off your desk, your note on each</p>
+          <div className="panel" data-testid="sent-back">
+            {sentBack!.map((d: any) => (
+              <div className="row" key={d.id}>
+                <div className="row-main">
+                  <div className="row-title">{d.candidate_name} · attempt {d.attempt}</div>
+                  <div className="row-sub">{d.her_note ?? "No reason was given."}</div>
+                </div>
+              </div>
+            ))}
+            <div className="btn-row">
+              <button className="btn btn-small" disabled={busy === "redraft"} onClick={redraftAll} data-testid="redraft-sent-back">
+                {busy === "redraft" ? "Redrafting…" : `Redraft the ${sentBack!.length} with the current opening`}
+              </button>
+            </div>
+            <div className="row-sub">
+              Only a letter that would differ from the one you sent back is raised; the rest stay here and say why.
+            </div>
+          </div>
+        </>
+      )}
+      {sentBack === null && !error && (
+        <div className="row-sub">The sent-back letters could not be read just now, so this is not saying there are none.</div>
       )}
 
       {(letters?.awaiting.length ?? 0) > 0 && (
@@ -362,7 +464,7 @@ function Buyers() {
         * invent a number or ask her to build a register, one field states the size she is working.
         * Until it is set, the limitation is printed here in plain words and nobody is ranked on size.
         */}
-      {rec && <WorkingPosition basis={rec.basis} onSaved={load} onError={setError} />}
+      {rec && <WorkingPositions basis={rec.basis} onSaved={load} onError={setError} />}
 
       {withheld.length > 0 && (
         <>
@@ -404,60 +506,105 @@ function Buyers() {
 }
 
 /**
- * The size of the position she is working, and the sentence that says what happens without it.
+ * The sizes of the positions she is working, typed the way she types them.
  *
- * SAVED AS A SETTING BECAUSE THE ALTERNATIVE IS A REGISTER SHE WILL NEVER FILL. The honest version
- * of this feature is a positions table; the honest version of THIS WEEK is one number, and a number
- * she can state in five seconds is a ranking that works today.
+ * ─── The defect this replaces, CONFIRMED 19 September 2026 ─────────────────
+ *
+ *   "I cannot even input my position sizes; it doesn't record."
+ *
+ * The field took ONE bare number in millions and ran `Number()` over it. She works several positions
+ * and typed them as anyone would — "$5M, 12M and 40M" — which is NaN, and the only error rendered
+ * at the TOP of the page: measured at phone width, the alert sat at y = −2980 while the input sat at
+ * y = 627. No request left the browser. Production holds no position key and no setting write.
+ *
+ * ─── What changed ──────────────────────────────────────────────────────────
+ *
+ *   · The parser (`shared/wealth/positionSizes.ts`) reads 5M, 500k, 1.2B, "5, 12 and 40", and the
+ *     server runs the SAME parser, so nothing the field lets through is refused later.
+ *   · THE ERROR IS BESIDE THE FIELD (`.field-error`), names the token it could not read, and the
+ *     save button is disabled while the text is unreadable — silence is no longer a possible outcome.
+ *   · The route writes the list AND the largest in one batch and reads them back; what the panel
+ *     shows after saving is what the table holds, not what was typed.
  */
-function WorkingPosition({ basis, onSaved, onError }: {
+function WorkingPositions({ basis, onSaved, onError }: {
   basis: any; onSaved: () => void; onError: (e: unknown) => void;
 }) {
+  const stored: number[] = Array.isArray(basis.working_positions_usd) ? basis.working_positions_usd : [];
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState(
-    basis.working_position_usd ? String(Math.round(basis.working_position_usd / 1_000_000)) : "",
-  );
+  const [text, setText] = useState(stored.length ? listSizes(stored).replace(/\$/g, "") : "");
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<number[] | null>(null);
 
-  const stated = basis.working_position_usd
-    ? `$${(basis.working_position_usd / 1_000_000).toFixed(basis.working_position_usd % 1_000_000 === 0 ? 0 : 1)}M`
-    : null;
+  const parsed = parsePositionSizes(text);
+  const stated = stored.length
+    ? listSizes(stored)
+    : basis.working_position_usd
+      ? moneyShort(basis.working_position_usd)
+      : null;
 
   async function save() {
+    if (!parsed.ok) return;
     setBusy(true);
     try {
-      const millions = Number(value);
-      if (!Number.isFinite(millions) || millions <= 0) {
-        throw { message: "That is not a size.", hint: "Give the position in millions of dollars — 5 means $5M." };
-      }
-      await api.setSetting("brokerage_working_position_usd", String(Math.round(millions * 1_000_000)));
+      const out = await api.setWorkingPositions(text);
+      setSaved(out.positions_usd);
       setOpen(false);
       onSaved();
     } catch (e) { onError(e); } finally { setBusy(false); }
   }
 
   return (
-    <div className="panel">
+    <div className="panel" data-testid="working-positions">
       <div className="row-title">
-        {stated ? `You are working a ${stated} position` : "Nothing here knows the size you are working"}
+        {stated
+          ? `You are working ${stored.length > 1 ? "positions of" : "a position of"} ${stated}`
+          : "Nothing here knows the sizes you are working"}
       </div>
+      {saved && (
+        <div className="row-sub" style={{ marginTop: 6 }} data-testid="working-positions-saved">
+          Recorded: {listSizes(saved)}. The ranking below now tests every buyer's floor against {moneyShort(saved[0]!)}.
+        </div>
+      )}
       {basis.limitation && <div className="row-sub" style={{ marginTop: 6 }}>{basis.limitation}</div>}
       <div className="row-sub" style={{ marginTop: 6 }}>
         {basis.with_a_published_floor} of {basis.candidates_considered} firms publish a minimum cheque.
       </div>
       <div className="btn-row">
-        <button className="btn btn-small" onClick={() => setOpen((v) => !v)}>
-          {open ? "Cancel" : stated ? "Change the size" : "State the size"}
+        <button className="btn btn-small" onClick={() => setOpen((v) => !v)} data-testid="working-positions-toggle">
+          {open ? "Cancel" : stated ? "Change the sizes" : "State the sizes"}
         </button>
       </div>
       {open && (
         <>
           <label className="field">
-            <span>The position you are working, in millions of dollars</span>
-            <input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" />
+            <span>The positions you are working — 5M, 500k, 1.2B, or several: "5M, 12M and 40M"</span>
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              inputMode="text"
+              aria-invalid={text.length > 0 && !parsed.ok}
+              aria-describedby="working-positions-help"
+              data-testid="working-positions-input"
+            />
           </label>
-          <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy} onClick={save}>
-            {busy ? "Saving…" : "Use this for the ranking"}
+          {text.length > 0 && !parsed.ok && (
+            <div className="field-error" role="alert" id="working-positions-help" data-testid="working-positions-error">
+              {parsed.message} {parsed.hint}
+            </div>
+          )}
+          {text.length > 0 && parsed.ok && (
+            <div className="row-sub" id="working-positions-help" style={{ margin: "-6px 0 10px" }}>
+              Reads as {listSizes(parsed.positions_usd)}.
+            </div>
+          )}
+          <button
+            className="btn btn-approve"
+            style={{ width: "100%" }}
+            disabled={busy || !parsed.ok}
+            onClick={save}
+            data-testid="working-positions-save"
+          >
+            {busy ? "Saving…" : "Record these sizes"}
           </button>
         </>
       )}
@@ -741,12 +888,21 @@ function AddDeal({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
+  /*
+   * FOUND BY THE HOSTILE SWEEP, 19 SEPTEMBER 2026. This read `Number(check) || 0`, so "$250k" and
+   * "250,000" were both recorded as a $0 cheque and nothing said so — the sizes defect, one panel
+   * down. The figure is parsed the way the sizes are, the error sits beside the field, and the
+   * button will not press while the amount is unreadable. Empty still means "not stated".
+   */
+  const cheque = parseMoneyUsd(check);
+
   async function submit() {
+    if (!cheque.ok) return;
     setBusy(true); setError(null);
     try {
       await api.createDeal({
         name,
-        check_size_micros: Math.round((Number(check) || 0) * USD),
+        check_size_micros: Math.round((cheque.usd ?? 0) * USD),
         next_step: nextStep || null,
       });
       onDone();
@@ -757,11 +913,13 @@ function AddDeal({ onDone }: { onDone: () => void }) {
     <div className="panel">
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
       <label className="field"><span>Name</span><input value={name} onChange={(e) => setName(e.target.value)} /></label>
-      <label className="field"><span>Cheque size (USD)</span>
-        <input value={check} onChange={(e) => setCheck(e.target.value)} inputMode="numeric" /></label>
+      <label className="field"><span>Cheque size (USD) — 250000, $250k or 1.2M</span>
+        <input value={check} onChange={(e) => setCheck(e.target.value)} inputMode="text" aria-invalid={!cheque.ok} data-testid="deal-cheque" /></label>
+      {!cheque.ok && <div className="field-error" role="alert" data-testid="deal-cheque-error">{cheque.message} {cheque.hint}</div>}
+      {cheque.ok && cheque.usd !== null && <div className="row-sub" style={{ margin: "-6px 0 10px" }}>Reads as {moneyShort(cheque.usd)}.</div>}
       <label className="field"><span>Next step</span>
         <input value={nextStep} onChange={(e) => setNextStep(e.target.value)} /></label>
-      <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy || !name.trim()} onClick={submit}>
+      <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy || !name.trim() || !cheque.ok} onClick={submit} data-testid="deal-submit">
         {busy ? "Saving…" : "Source it"}
       </button>
     </div>
@@ -1073,13 +1231,19 @@ function PredictionForm({ decisionId, onDone }: { decisionId: string | null; onD
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
+  // A probability is a whole number of percent strictly between 0 and 100; anything else is
+  // refused beside the field rather than sent as NaN for the server to name in basis points.
+  const prob = Number(probability.replace(/%$/, "").trim());
+  const probOk = probability.trim() !== "" && Number.isFinite(prob) && prob > 0 && prob < 100;
+
   async function submit() {
+    if (!probOk) return;
     setBusy(true); setError(null);
     try {
       await api.createPrediction({
         decision_id: decisionId,
         statement,
-        probability_bps: Math.round(Number(probability) * 100),
+        probability_bps: Math.round(prob * 100),
         resolution_criteria: criteria,
         resolves_at: new Date(`${when}T12:00:00.000Z`).getTime(),
       });
@@ -1093,13 +1257,14 @@ function PredictionForm({ decisionId, onDone }: { decisionId: string | null; onD
       <label className="field"><span>What you expect</span>
         <textarea rows={2} value={statement} onChange={(e) => setStatement(e.target.value)} /></label>
       <label className="field"><span>How likely (%)</span>
-        <input value={probability} onChange={(e) => setProbability(e.target.value)} inputMode="numeric" /></label>
+        <input value={probability} onChange={(e) => setProbability(e.target.value)} inputMode="numeric" aria-invalid={!probOk} /></label>
+      {!probOk && <div className="field-error" role="alert">A probability is a whole number between 1 and 99 — 70 means 70%.</div>}
       <label className="field"><span>What would settle it</span>
         <textarea rows={2} value={criteria} onChange={(e) => setCriteria(e.target.value)} /></label>
       <label className="field"><span>By when</span>
         <input type="date" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
       <p className="row-sub">0% and 100% are refused. Certainty is not a forecast.</p>
-      <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy || !statement.trim()} onClick={submit}>
+      <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy || !statement.trim() || !probOk} onClick={submit}>
         {busy ? "Saving…" : "Record the forecast"}
       </button>
     </div>

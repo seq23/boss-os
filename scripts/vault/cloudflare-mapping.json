@@ -14,11 +14,11 @@
     "CF_ACCESS_CLIENT_SECRET",
     "GOOGLE_OAUTH_CLIENT_ID",
     "GOOGLE_OAUTH_CLIENT_SECRET",
-    "RUNWARE_API_KEY"
+    "RUNWARE_API_KEY",
+    "GSC_SERVICE_ACCOUNT_JSON"
   ],
   "not_synced": {
     "CLOUDFLARE_API_TOKEN": "The credential this sync authenticates WITH. Uploading it to the Worker would put the key that can rewrite every secret inside the thing it rewrites.",
-    "GSC_SERVICE_ACCOUNT_JSON": "Search Console service account, used by local operator scripts on her Mac. Nothing in the Worker reads it and a Worker secret is not where a service-account JSON belongs.",
     "RUNWAY_API_KEY": "Video generation, driven from her Mac by the slate tooling. No Worker route reaches it.",
     "CAL_ICS_SEQ_TAYLOR": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",
     "CAL_ICS_WESTPEEK": "Calendar feed URL read by the local calendar:sync job, not by the Worker.",
@@ -27,5 +27,8 @@
     "CRYPTOCLEARR_IMAP_PASSWORD": "IMAP password used by the local mailbox sweep. The Worker receives mail through Cloudflare Email Routing and never opens an IMAP connection.",
     "SOS_IMAP_PASSWORD": "IMAP password used by the local mailbox sweep. Same reason.",
     "WP_OS_NETWORK_OS_SESSION_SECRET": "Belongs to West Peek OS, a different application. Boss OS carries West Peek chassis code by copy and diverge and must never hold its credentials."
+  },
+  "synced_reasons": {
+    "GSC_SERVICE_ACCOUNT_JSON": "Moved from not_synced on 19 Sep 2026. Owner: \"it should never send — the green button should be to create the draft.\" The Worker creates a Gmail DRAFT in her own mailbox on her press (src/worker/boss/wealth/gmailDraft.ts), which needs the gsc-bot service account under the gmail.compose scope she granted the same day. One scope, one endpoint (drafts.create); spry-vc-never-sends.mjs and the-inbox-draft-never-sends.mjs fail the build if a send scope or send endpoint appears on that path. Until this is synced the card prints the NAMED STOP \"the Worker holds no Google key\"."
   }
 }

@@ -70,12 +70,25 @@ describe("a reviewed buyer gets a letter, and nothing sends it", () => {
     expect(drafts.results).toHaveLength(1);
     const d = drafts.results![0]!;
 
-    // COMPOSED FROM THE FACTS ON THE ROW, not from a template with blanks. Every one of these is a
-    // column the sourcing sweep filled, and a letter that could not name why it was addressed to
-    // this firm would have dropped the sentence rather than left a gap.
-    expect(d.body).toContain("Saints Capital");
-    expect(d.body).toContain("founded exclusively for the direct secondary market");
-    expect(d.body).toContain("$10M");
+    /*
+     * IN HER WORDS, 19 SEPTEMBER 2026. Her rejection note on the first live batch of thirteen: "I
+     * dont like the intro: "I broker ...." We should make this sound like I have investors
+     * interested in late stage positions. I also dont like the I am approaching paragraph sounds
+     * like Ai and too technical. We should start by say My name is Sequoia Taylor, and I run Spry
+     * VC. Maybe a link to my linkedin page". Each clause is pinned; the old letter fails every one.
+     */
+    expect(d.body).toContain("My name is Sequoia Taylor, and I run Spry VC");
+    expect(d.body).toContain("investors who are actively looking for late-stage positions");
+    expect(d.body).toContain("linkedin.com/in/sequoiataylor");
+    expect(d.body).not.toContain("I broker");
+    expect(d.body).not.toContain("I am approaching");
+    expect(d.body).not.toContain("founded exclusively for the direct secondary market");
+    // THE BUYER'S FLOOR IS NOT HER BOOK. The old letter read their $10M minimum back to them as
+    // "the positions I work are $10M and up" — a claim about her inventory that nothing supported.
+    expect(d.body).not.toContain("$10M");
+    expect(d.body).not.toContain("positions I work are");
+    // The subject still names the firm, so the Inbox card and the draft say who it is for.
+    expect(d.subject).toContain("Saints Capital");
     expect(d.to_hint).toContain("https://example.test/secondaries");
     expect(d.state).toBe("awaiting");
 
@@ -127,7 +140,19 @@ describe("a reviewed buyer gets a letter, and nothing sends it", () => {
     const j = await env.DB.prepare(`SELECT * FROM judgement_calls WHERE id = ?`).bind(d.judgement_id).first<any>();
 
     const out = await runResume(env as any, j, "approved", null);
-    expect(out.detail).toContain("ready to send from your own address");
+    /*
+     * THE GREEN BUTTON MAKES A DRAFT, AND WITHOUT A KEY IT SAYS SO BY NAME. Owner, 19 September
+     * 2026: "it should never send — the green button should be to create the draft." This harness
+     * binds no service account, so the outcome is the NAMED STOP, recorded on gmail_drafts and said
+     * back in words — never a silent approval that looks like a draft exists.
+     */
+    expect(out.detail).toContain("Blocked: the Worker holds no Google key");
+    expect(out.gmail_draft?.state).toBe("blocked");
+    expect(out.gmail_draft?.failure_code).toBe("no_worker_key");
+    const gm = await env.DB.prepare(`SELECT * FROM gmail_drafts WHERE outreach_draft_id = ?`).bind(d.id).all<any>();
+    expect(gm.results).toHaveLength(1);
+    expect(gm.results![0]!.state).toBe("blocked");
+    expect(gm.results![0]!.gmail_draft_id).toBeNull();
 
     const after = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts WHERE id = ?`).bind(d.id).first<any>();
     expect(after.state).toBe("approved");
@@ -137,10 +162,12 @@ describe("a reviewed buyer gets a letter, and nothing sends it", () => {
     const cand = await env.DB.prepare(`SELECT status FROM sourcing_candidates WHERE id = ?`).bind(CAND).first<any>();
     expect(cand.status).toBe("reviewed");
 
-    // It is now on the desk, ready.
+    // It is now on the desk, and the desk says where the draft is — here, that it is blocked and why.
     const desk = await apiJson<any>("/api/wealth/outreach");
     expect(desk.body.data.approved).toHaveLength(1);
     expect(desk.body.data.awaiting).toHaveLength(0);
+    expect(desk.body.data.approved[0].gmail.state).toBe("blocked");
+    expect(desk.body.data.approved[0].gmail.failure_code).toBe("no_worker_key");
 
     // And SHE marks it sent — the one act that moves the candidate.
     await apiJson(`/api/wealth/outreach/${d.id}/sent`, { method: "POST", body: {} });
@@ -158,21 +185,90 @@ describe("a reviewed buyer gets a letter, and nothing sends it", () => {
     expect(res.status).toBe(400);
   });
 
-  it("try again writes a second letter carrying her reason, and supersedes the first", async () => {
+  /*
+   * ─── THE BOOMERANG, PINNED SHUT ────────────────────────────────────────────
+   *
+   * CONFIRMED ON PRODUCTION, 19 SEPTEMBER 2026: thirteen letters sent back with a reason, thirteen
+   * word-for-word identical letters raised 0.1 s later (apr_m2wzrn0e… rejected at 1789827114262,
+   * its twin jdg_m2x04sfx… raised at 1789827114391). Her words: "the Inbox tab brings them back
+   * after I sent them away."
+   *
+   * The test this replaces PINNED THAT BEHAVIOUR — it asserted "Attempt 2" appeared after a
+   * try-again with a note, on a composer whose output cannot change with the note. It was the
+   * boomerang written as a passing test. Restoring the old resume handler makes every assertion
+   * below fail.
+   */
+  it("try again with a note does NOT raise the same letter again — it leaves the desk with her note on record", async () => {
     await review();
     const first = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts`).first<any>();
     const j = await env.DB.prepare(`SELECT * FROM judgement_calls WHERE id = ?`).bind(first.judgement_id).first<any>();
 
-    const out = await runResume(env as any, j, "try_again", "Too long, and do not mention the floor.");
+    // THROUGH THE REAL ROUTE — the same press the Inbox makes — so the judgement's own state moves too.
+    const decided = await apiJson<any>(`/api/approvals/${j.approval_id}/decide`, {
+      method: "POST", body: { decision: "rejected", note: "Too long, and do not mention the floor." },
+    });
+    expect(decided.status).toBe(200);
+    expect(decided.body.data.execution.status).toBe("executed");
+    expect(decided.body.data.execution.detail.redrafted).toBe(false);
+    const out = { detail: decided.body.data.execution.detail.resumed as string };
+    expect(out.detail).toContain("word-for-word the one you sent back");
+    expect(out.detail).not.toContain("Attempt 2");
+
+    // ONE row, hers, sent back. No second attempt exists anywhere.
+    const rows = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts ORDER BY attempt`).all<any>();
+    expect(rows.results).toHaveLength(1);
+    expect(rows.results![0]!.state).toBe("try_again");
+    expect(rows.results![0]!.her_note).toContain("Too long");
+    const calls = await env.DB.prepare(`SELECT COUNT(*) AS n FROM judgement_calls WHERE resume_kind = 'buyer_outreach_email' AND state = 'awaiting'`).first<{ n: number }>();
+    expect(calls?.n).toBe(0);
+
+    // BOTH TABS READ THE SAME STATE. The Inbox does not hold it; the desk lists it as sent back.
+    const pending = await apiJson<any>("/api/judgement/pending");
+    expect(pending.body.data.items.filter((i: any) => i.resume_kind === "buyer_outreach_email")).toHaveLength(0);
+    const desk = await apiJson<any>("/api/wealth/outreach/sent-back");
+    expect(desk.body.data.items).toHaveLength(1);
+    expect(desk.body.data.items[0].her_note).toContain("Too long");
+
+    // THE RAISING LANE RUNS AGAIN AND STILL RAISES NOTHING — both doors it has.
+    const again = await apiJson<any>(`/api/wealth/recommendations/${CAND}/draft`, { method: "POST", body: {} });
+    expect(again.body.data.drafted).toBe(false);
+    expect(again.body.data.detail).toContain("word-for-word");
+    const all = await apiJson<any>("/api/wealth/outreach/redraft-sent-back", { method: "POST", body: {} });
+    expect(all.body.data.considered).toBe(1);
+    expect(all.body.data.raised).toHaveLength(0);
+    expect(all.body.data.left).toHaveLength(1);
+    const stillOne = await env.DB.prepare(`SELECT COUNT(*) AS n FROM buyer_outreach_drafts`).first<{ n: number }>();
+    expect(stillOne?.n).toBe(1);
+  });
+
+  it("try again raises a second attempt ONLY when the letter would actually differ, and it carries her note", async () => {
+    await review();
+    const first = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts`).first<any>();
+    const j = await env.DB.prepare(`SELECT * FROM judgement_calls WHERE id = ?`).bind(first.judgement_id).first<any>();
+
+    // Between attempts she states the sizes she is working, which the letter now names.
+    await apiJson("/api/wealth/working-positions", { method: "PUT", body: { text: "5M and 40M" } });
+
+    const out = await runResume(env as any, j, "try_again", "Say what sizes I actually have.");
+    expect(out.redrafted).toBe(true);
     expect(out.detail).toContain("Attempt 2");
+    expect(out.detail).toContain("a different letter");
 
     const rows = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts ORDER BY attempt`).all<any>();
     expect(rows.results).toHaveLength(2);
     expect(rows.results![0]!.state).toBe("try_again");
-    expect(rows.results![0]!.her_note).toContain("Too long");
     expect(rows.results![1]!.attempt).toBe(2);
     expect(rows.results![1]!.state).toBe("awaiting");
+    expect(rows.results![1]!.body).not.toBe(rows.results![0]!.body);
+    expect(rows.results![1]!.body).toContain("$40M and $5M");
     // Her sentence travels with the attempt so the next one can be evaluated against it.
-    expect(JSON.parse(rows.results![1]!.built_from).her_note).toContain("Too long");
+    expect(JSON.parse(rows.results![1]!.built_from).her_note).toContain("Say what sizes");
+    // And the Inbox card carries it too.
+    const pending = await apiJson<any>("/api/judgement/pending");
+    const card = pending.body.data.items.find((i: any) => i.id === rows.results![1]!.judgement_id);
+    expect(card.letter.her_note).toContain("Say what sizes");
+    // The sent-back list no longer holds the firm: a later attempt exists.
+    const desk = await apiJson<any>("/api/wealth/outreach/sent-back");
+    expect(desk.body.data.items).toHaveLength(0);
   });
 });
