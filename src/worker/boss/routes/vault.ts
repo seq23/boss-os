@@ -135,6 +135,15 @@ const SNAPSHOT_TABLES = [
   // would hand her a firm marked "reviewed" with nothing behind it, which is the dead end this
   // table exists to remove.
   "buyer_outreach_drafts",
+  // 0259 — one act of hers with one reason, applied to many dockets. NOT RE-DERIVABLE: the shared
+  // reason is copied onto each approval, but WHICH thirteen were one act, and how many of them
+  // failed, exists only here. Restoring the approvals without it leaves thirteen identical notes
+  // with nothing saying they were one decision.
+  "approval_batches",
+  // 0260 — where each approved letter's Gmail draft went: the draft id in her mailbox, or the
+  // named stop. The draft itself lives in Gmail and survives anything here; this row is the only
+  // link from a letter on the desk to it, and without it the desk would offer to create a second.
+  "gmail_drafts",
   // 0189 — things to raise with a standing counterpart. Losing these in a restore loses the half
   // that was never derivable: items said in passing that exist nowhere else, including the access
   // grant that unblocks reading LP replies. Everything else in the packet recomputes from records;
