@@ -78,9 +78,6 @@ describe("the route records the sizes and reads them back", () => {
     expect(rows.results![0]!.value).toBe("40000000");
     expect(JSON.parse(rows.results![1]!.value)).toEqual([40_000_000, 12_000_000, 5_000_000]);
 
-    const get = await apiJson<any>("/api/wealth/working-positions");
-    expect(get.body.data.positions_usd).toEqual([40_000_000, 12_000_000, 5_000_000]);
-
     // The desk's recommendation basis carries the list AND ranks against the largest.
     const rec = await apiJson<any>("/api/wealth/recommendations");
     expect(rec.body.data.basis.working_positions_usd).toEqual([40_000_000, 12_000_000, 5_000_000]);
@@ -106,9 +103,11 @@ describe("the route records the sizes and reads them back", () => {
 
   it("the two keys can never disagree: a second save replaces both", async () => {
     await apiJson("/api/wealth/working-positions", { method: "PUT", body: { text: "5M" } });
-    await apiJson("/api/wealth/working-positions", { method: "PUT", body: { text: "12M, 3M" } });
-    const get = await apiJson<any>("/api/wealth/working-positions");
-    expect(get.body.data.positions_usd).toEqual([12_000_000, 3_000_000]);
-    expect(get.body.data.largest_usd).toBe(12_000_000);
+    const second = await apiJson<any>("/api/wealth/working-positions", { method: "PUT", body: { text: "12M, 3M" } });
+    expect(second.body.data.positions_usd).toEqual([12_000_000, 3_000_000]);
+    expect(second.body.data.largest_usd).toBe(12_000_000);
+    const rec = await apiJson<any>("/api/wealth/recommendations");
+    expect(rec.body.data.basis.working_positions_usd).toEqual([12_000_000, 3_000_000]);
+    expect(rec.body.data.basis.working_position_usd).toBe(12_000_000);
   });
 });

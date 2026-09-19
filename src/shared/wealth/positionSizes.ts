@@ -128,3 +128,25 @@ export function readStoredPositions(raw: string | null | undefined): number[] {
     return [];
   }
 }
+
+/**
+ * ONE money figure typed in dollars — a cheque, a valuation — with the same units the sizes take
+ * ($250k, 1.2M, 250,000) but where a bare number IS dollars, because the field says "(USD)".
+ *
+ * Found by the hostile sweep of the Capital tab, 19 September 2026: the "Cheque size (USD)" field
+ * ran `Number(check) || 0`, so "$250k" and "250,000" were both recorded as a $0 cheque with no
+ * error anywhere — the sizes defect again, one panel down. Empty is allowed and means "not stated".
+ */
+export function parseMoneyUsd(input: string): { ok: true; usd: number | null } | { ok: false; message: string; hint: string } {
+  const text = String(input ?? "").trim();
+  if (!text) return { ok: true, usd: null };
+  const m = /^\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?|\.\d+)\s*(k|m|mm|b|bn|million|thousand|billion)?$/i.exec(text.replace(/(\d)\s+(k|m|mm|b|bn|million|thousand|billion)\b/i, "$1$2"));
+  if (!m) {
+    return { ok: false, message: `"${text}" is not an amount.`, hint: "Write it in dollars — 250000, $250k or 1.2M." };
+  }
+  const figure = Number((m[1] ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(figure) || figure < 0) return { ok: false, message: `"${text}" is not an amount.`, hint: "Write it in dollars — 250000, $250k or 1.2M." };
+  const unitWord = (m[2] ?? "").toLowerCase();
+  const factor = !unitWord ? 1 : unitWord.startsWith("b") ? UNIT.b : unitWord.startsWith("m") ? UNIT.m : UNIT.k;
+  return { ok: true, usd: Math.round(figure * factor) };
+}

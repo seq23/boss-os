@@ -15,20 +15,23 @@ export function Docket({
   approval, onDecide, onOpen, selected, onSelect,
 }: {
   approval: any;
-  onDecide: (id: string, decision: string) => Promise<void>;
+  onDecide: (id: string, decision: string, note?: string) => Promise<void>;
   onOpen: (id: string) => void;
   /** Bulk selection (Inbox overhaul, 19 Sep 2026). Undefined when the list is not selectable. */
   selected?: boolean;
   onSelect?: (id: string, shiftKey: boolean) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [note, setNote] = useState("");
 
-  async function decide(decision: string) {
+  async function decide(decision: string, withNote?: string) {
     setBusy(decision);
     try {
-      await onDecide(approval.id, decision);
+      await onDecide(approval.id, decision, withNote);
     } finally {
       setBusy(null);
+      setAsking(false);
     }
   }
 
@@ -89,17 +92,50 @@ export function Docket({
           </button>
         </div>
       ) : (
+        // The decision arm. Kept as ONE arm after the notice branch on purpose: the
+        // notice-versus-approval scan slices the notice arm at the first `) : (`, and a second
+        // ternary at this level would put the verdict buttons inside the slice it reads.
+        asking ? (
+        /*
+         * A REJECTION CARRIES A REASON, INLINE (Inbox overhaul, 19 September 2026). Eleven of
+         * thirteen rejections on production said "same". The box opens on the card before the
+         * verdict is sent, exactly as the judgement card's does, so a single reject is never
+         * wordless either.
+         */
+        <div className="judgement-note">
+          <label className="stat-l" htmlFor={`why-${approval.id}`}>Why, in one sentence. Kept on the record.</label>
+          <textarea
+            id={`why-${approval.id}`}
+            className="judgement-why"
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Not this quarter — we are not adding budget lines until the raise closes."
+          />
+          <div className="decide">
+            <button
+              className="btn btn-reject"
+              disabled={busy !== null || note.trim().length < 12}
+              onClick={() => decide("rejected", note.trim())}
+            >
+              {busy === "rejected" ? "Rejecting…" : "Reject with this reason"}
+            </button>
+            <button className="btn btn-defer" disabled={busy !== null} onClick={() => setAsking(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
         <div className="decide">
           <button className="btn btn-approve" disabled={busy !== null} onClick={() => decide("approved")}>
             {busy === "approved" ? "Approving…" : "Approve"}
           </button>
-          <button className="btn btn-reject" disabled={busy !== null} onClick={() => decide("rejected")}>
-            {busy === "rejected" ? "Rejecting…" : "Reject"}
+          <button className="btn btn-reject" disabled={busy !== null} onClick={() => setAsking(true)}>
+            Reject
           </button>
           <button className="btn btn-defer" disabled={busy !== null} onClick={() => decide("deferred")}>
             Later
           </button>
         </div>
+      )
       )}
     </article>
   );

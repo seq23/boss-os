@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
-import { listSizes, moneyShort, parsePositionSizes } from "../../../shared/wealth/positionSizes";
+import { listSizes, moneyShort, parseMoneyUsd, parsePositionSizes } from "../../../shared/wealth/positionSizes";
 
 /**
  * Capital — Investor OS and the Wealth Command Center on one screen.
@@ -888,12 +888,21 @@ function AddDeal({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
+  /*
+   * FOUND BY THE HOSTILE SWEEP, 19 SEPTEMBER 2026. This read `Number(check) || 0`, so "$250k" and
+   * "250,000" were both recorded as a $0 cheque and nothing said so — the sizes defect, one panel
+   * down. The figure is parsed the way the sizes are, the error sits beside the field, and the
+   * button will not press while the amount is unreadable. Empty still means "not stated".
+   */
+  const cheque = parseMoneyUsd(check);
+
   async function submit() {
+    if (!cheque.ok) return;
     setBusy(true); setError(null);
     try {
       await api.createDeal({
         name,
-        check_size_micros: Math.round((Number(check) || 0) * USD),
+        check_size_micros: Math.round((cheque.usd ?? 0) * USD),
         next_step: nextStep || null,
       });
       onDone();
@@ -904,11 +913,13 @@ function AddDeal({ onDone }: { onDone: () => void }) {
     <div className="panel">
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
       <label className="field"><span>Name</span><input value={name} onChange={(e) => setName(e.target.value)} /></label>
-      <label className="field"><span>Cheque size (USD)</span>
-        <input value={check} onChange={(e) => setCheck(e.target.value)} inputMode="numeric" /></label>
+      <label className="field"><span>Cheque size (USD) — 250000, $250k or 1.2M</span>
+        <input value={check} onChange={(e) => setCheck(e.target.value)} inputMode="text" aria-invalid={!cheque.ok} data-testid="deal-cheque" /></label>
+      {!cheque.ok && <div className="field-error" role="alert" data-testid="deal-cheque-error">{cheque.message} {cheque.hint}</div>}
+      {cheque.ok && cheque.usd !== null && <div className="row-sub" style={{ margin: "-6px 0 10px" }}>Reads as {moneyShort(cheque.usd)}.</div>}
       <label className="field"><span>Next step</span>
         <input value={nextStep} onChange={(e) => setNextStep(e.target.value)} /></label>
-      <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy || !name.trim()} onClick={submit}>
+      <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy || !name.trim() || !cheque.ok} onClick={submit} data-testid="deal-submit">
         {busy ? "Saving…" : "Source it"}
       </button>
     </div>
@@ -1220,13 +1231,19 @@ function PredictionForm({ decisionId, onDone }: { decisionId: string | null; onD
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
+  // A probability is a whole number of percent strictly between 0 and 100; anything else is
+  // refused beside the field rather than sent as NaN for the server to name in basis points.
+  const prob = Number(probability.replace(/%$/, "").trim());
+  const probOk = probability.trim() !== "" && Number.isFinite(prob) && prob > 0 && prob < 100;
+
   async function submit() {
+    if (!probOk) return;
     setBusy(true); setError(null);
     try {
       await api.createPrediction({
         decision_id: decisionId,
         statement,
-        probability_bps: Math.round(Number(probability) * 100),
+        probability_bps: Math.round(prob * 100),
         resolution_criteria: criteria,
         resolves_at: new Date(`${when}T12:00:00.000Z`).getTime(),
       });
@@ -1240,13 +1257,14 @@ function PredictionForm({ decisionId, onDone }: { decisionId: string | null; onD
       <label className="field"><span>What you expect</span>
         <textarea rows={2} value={statement} onChange={(e) => setStatement(e.target.value)} /></label>
       <label className="field"><span>How likely (%)</span>
-        <input value={probability} onChange={(e) => setProbability(e.target.value)} inputMode="numeric" /></label>
+        <input value={probability} onChange={(e) => setProbability(e.target.value)} inputMode="numeric" aria-invalid={!probOk} /></label>
+      {!probOk && <div className="field-error" role="alert">A probability is a whole number between 1 and 99 — 70 means 70%.</div>}
       <label className="field"><span>What would settle it</span>
         <textarea rows={2} value={criteria} onChange={(e) => setCriteria(e.target.value)} /></label>
       <label className="field"><span>By when</span>
         <input type="date" value={when} onChange={(e) => setWhen(e.target.value)} /></label>
       <p className="row-sub">0% and 100% are refused. Certainty is not a forecast.</p>
-      <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy || !statement.trim()} onClick={submit}>
+      <button className="btn btn-approve" style={{ width: "100%" }} disabled={busy || !statement.trim() || !probOk} onClick={submit}>
         {busy ? "Saving…" : "Record the forecast"}
       </button>
     </div>

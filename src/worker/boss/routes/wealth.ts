@@ -522,16 +522,6 @@ wealth.put("/working-positions", async (c) => {
   });
 });
 
-/** The stored sizes, for a screen that wants them without the whole recommendation. */
-wealth.get("/working-positions", async (c) => {
-  const stored = await getSettings(c.env.DB, [WORKING_POSITION_KEY, WORKING_POSITIONS_KEY]);
-  const positions = readStoredPositions(stored[WORKING_POSITIONS_KEY]);
-  return ok(c, {
-    positions_usd: positions,
-    largest_usd: positions[0] ?? (stored[WORKING_POSITION_KEY] ? Number(stored[WORKING_POSITION_KEY]) : null),
-  });
-});
-
 /**
  * The letters she sent back, with her reason on each — the honest state of "in flight".
  *

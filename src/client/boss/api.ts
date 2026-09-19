@@ -359,7 +359,6 @@ export const api = {
   outreachSentBack: () => call<{ items: any[] }>("/wealth/outreach/sent-back"),
   redraftSentBack: () => call<{ considered: number; raised: string[]; left: { name: string; why: string }[] }>("/wealth/outreach/redraft-sent-back", post("")),
   gmailDraft: (outreachDraftId: string) => call<any>(`/wealth/outreach/${outreachDraftId}/gmail-draft`, post("")),
-  workingPositions: () => call<{ positions_usd: number[]; largest_usd: number | null }>("/wealth/working-positions"),
   setWorkingPositions: (text: string) =>
     call<{ positions_usd: number[]; largest_usd: number }>("/wealth/working-positions", { method: "PUT", body: JSON.stringify({ text }) }),
   crossmatches: () => call<any>("/wealth/crossmatches"),

@@ -74,6 +74,8 @@ export function ApprovalDetail({ id, onBack, onDecided }: {
           {a.expires_at && <><dt>Expires</dt><dd>{new Date(a.expires_at).toLocaleString()}</dd></>}
           {a.decided_at && <><dt>Decided</dt><dd>{new Date(a.decided_at).toLocaleString()}</dd></>}
           {a.decision_note && <><dt>Note</dt><dd>{a.decision_note}</dd></>}
+          {/* One of many: the act this decision belonged to, so "same" never has to stand alone again. */}
+          {a.batch_id && <><dt>Decided with</dt><dd>others, as one act · batch {a.batch_id}</dd></>}
         </dl>
       </article>
 
@@ -90,7 +92,37 @@ export function ApprovalDetail({ id, onBack, onDecided }: {
         </div>
       ))}
 
-      {!decided && (
+      {/*
+        * ─── THE BACK DOOR, CLOSED (hostile sweep, 19 September 2026) ────────────────
+        *
+        * This panel offered Approve / Reject / Later for EVERY kind. A notice reached it through
+        * "Open the full docket →" and got three verdict buttons over a sentence with nothing to
+        * decide — the 9 September defect, one screen deeper. A judgement call (a letter, a cover)
+        * would have got a plain "Approve" here with the work not on the screen, which is the exact
+        * failure the Inbox card exists to prevent. So: a notice gets "Got it"; a judgement call is
+        * decided on its card where the work is visible; everything else keeps the three verdicts.
+        */}
+      {!decided && a.kind === "notice" && (
+        <div className="decide-panel">
+          <div className="decide">
+            <button className="btn" disabled={busy !== null} onClick={() => decide("approved")}>
+              {busy === "approved" ? "Clearing…" : "Got it"}
+            </button>
+          </div>
+        </div>
+      )}
+      {!decided && a.kind === "judgement_call" && (
+        <div className="decide-panel">
+          <div className="row-sub">
+            This one is decided on its card in the Inbox, where the work itself is on the screen. The green
+            button there creates the Gmail draft; nothing here sends.
+          </div>
+          <div className="decide">
+            <button className="btn" onClick={onBack}>← Back to the card</button>
+          </div>
+        </div>
+      )}
+      {!decided && a.kind !== "notice" && a.kind !== "judgement_call" && (
         <div className="decide-panel">
           <label className="field">
             <span>Decision note</span>

@@ -48,6 +48,8 @@ function cleanSql(): string {
     `DELETE FROM buyer_outreach_drafts WHERE candidate_id LIKE '${PREFIX}%'`,
     `DELETE FROM sourcing_candidates WHERE id LIKE '${PREFIX}%'`,
     `DELETE FROM settings WHERE key IN ('brokerage_working_position_usd','brokerage_working_positions_usd')`,
+    `DELETE FROM approvals WHERE id LIKE 'apr_e2e_inbox_%'`,
+    `DELETE FROM deals WHERE name LIKE 'E2E Hostile Deal%'`,
   ].join("; ");
 }
 
@@ -269,5 +271,60 @@ test.describe("Boss OS Inbox overhaul", () => {
     await expect(page.getByTestId("working-positions")).toContainText("Reads as $2.5M and $500k");
     await page.getByTestId("working-positions-save").click();
     await expect(page.getByTestId("working-positions-saved")).toContainText("Recorded: $2.5M and $500k");
+  });
+
+  test("an ordinary docket rejects WITH a reason, and a notice opened in full gets one honest button", async ({ page }) => {
+    const now = Date.now();
+    provisionLocalD1(
+      `INSERT INTO approvals (id, lane, title, summary, kind, risk, status, requested_at, expires_at) VALUES
+         ('apr_e2e_inbox_task', 'ops', 'E2E budget line', 'A budget line to check', 'spend', 'low', 'pending', ${now}, ${now + 86_400_000}),
+         ('apr_e2e_inbox_notice', 'ops', 'E2E notice: I emailed you the outcomes', NULL, 'notice', 'low', 'pending', ${now}, ${now + 86_400_000})`,
+    );
+    await unlock(page);
+    await tab(page, "Inbox");
+
+    // The notice has its own section and one button; the decision has three, and Reject asks why.
+    const notice = page.locator("article.docket").filter({ hasText: "E2E notice" });
+    await expect(notice.getByRole("button", { name: "Got it" })).toHaveCount(1);
+    await expect(notice.getByRole("button", { name: /Reject|Later|Approve/ })).toHaveCount(0);
+    await expect(notice.locator("input.docket-select")).toHaveCount(0); // a notice cannot be bulk-rejected
+
+    // Opened in full, a notice still gets one honest button — the back door the sweep found.
+    await notice.getByRole("button", { name: /Open the full docket/ }).click();
+    await expect(page.getByRole("button", { name: "Got it" })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /^Reject$|^Later$|^Approve$/ })).toHaveCount(0);
+    await page.getByRole("button", { name: "← Inbox" }).click();
+
+    const card = page.locator("article.docket").filter({ hasText: "E2E budget line" });
+    await card.getByRole("button", { name: "Reject" }).click();
+    const send = card.getByRole("button", { name: "Reject with this reason" });
+    await expect(send).toBeDisabled();
+    await card.locator("textarea").fill("Not this quarter — no new budget lines until the raise closes.");
+    await expect(send).toBeEnabled();
+    await send.click();
+    await expect(card).toHaveCount(0);
+    const rows = queryLocalD1<{ status: string; decision_note: string }>(`SELECT status, decision_note FROM approvals WHERE id = 'apr_e2e_inbox_task'`);
+    expect(rows[0]!.status).toBe("rejected");
+    expect(rows[0]!.decision_note).toContain("Not this quarter");
+  });
+
+  test("the cheque on a sourced deal records what she typed, and an unreadable cheque is refused beside the field", async ({ page }) => {
+    await unlock(page);
+    await tab(page, "Capital");
+    await page.getByRole("button", { name: "Ledger", exact: true }).click();
+    await page.getByRole("button", { name: "Source a deal" }).click();
+    await page.getByLabel("Name").fill("E2E Hostile Deal");
+    const cheque = page.getByTestId("deal-cheque");
+    await cheque.fill("two fifty");
+    await expect(page.getByTestId("deal-cheque-error")).toContainText("is not an amount");
+    await expect(page.getByTestId("deal-submit")).toBeDisabled();
+    // THE OLD READING: Number("two fifty") || 0 recorded a $0 cheque with no error anywhere.
+    await cheque.fill("$250k");
+    await expect(page.getByText("Reads as $250k")).toBeVisible();
+    await page.getByTestId("deal-submit").click();
+    await expect(page.locator("main.page")).toContainText("E2E Hostile Deal");
+    const rows = queryLocalD1<{ check_size_micros: number }>(`SELECT check_size_micros FROM deals WHERE name = 'E2E Hostile Deal'`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.check_size_micros).toBe(250_000 * 1_000_000);
   });
 });
