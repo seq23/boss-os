@@ -113,6 +113,48 @@ function Ledger() {
   );
 }
 
+// ─── Monique's finds in her personal LP search ─────────────────────────────
+
+/**
+ * Her words, 19 Sep 2026: "I still want Monique to do her job of finding positive replies in my LP
+ * search — the LP search is my personal LP search, that's why she is doing it." The daily digest
+ * (`GET /api/lp`, written by `lp-replies.sh` on her Mac) had no screen — it reached her by email
+ * and through Today's wealth pillar only. This is the screen: who said yes, who wants the deck,
+ * who asked a question, per day. Counts only; the names live on her Mac. No fund totals here.
+ */
+function MoniquesFinds() {
+  const [data, setData] = useState<{ digests: any[]; duty: any | null } | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { api.lpDigests().then(setData).catch(() => setFailed(true)); }, []);
+  const recent = (data?.digests ?? []).slice(0, 7);
+  return (
+    <>
+      <p className="eyebrow">Your LP search — Monique's reads</p>
+      <div className="panel" data-testid="moniques-finds">
+        {failed && <div className="row-sub">Monique's digest could not be read just now, so this is not saying she found nothing.</div>}
+        {data && recent.length === 0 && (
+          <div className="row-sub">
+            No digest yet. {data.duty?.suspended ? `The duty is suspended: ${data.duty.suspended_reason ?? "no reason recorded"}.` : "Monique reads the replies daily at 07:00 CT from your Mac; the first digest lands here after that run."}
+          </div>
+        )}
+        {recent.map((d: any) => (
+          <div className="row" key={d.id}>
+            <div className="row-main">
+              <div className="row-title">
+                {d.day_id} · {d.interested} said yes · {d.wants_deck} want the deck · {d.questions} asked a question
+              </div>
+              <div className="row-sub">{d.total_read} read · {d.opt_outs} opted out · {d.bounces} bounced{d.summary ? ` — ${d.summary}` : ""}</div>
+            </div>
+          </div>
+        ))}
+        {data?.duty && recent.length > 0 && (
+          <div className="row-sub">Last run {data.duty.last_run_at ? new Date(data.duty.last_run_at).toLocaleString() : "never"}; next due {data.duty.next_due_at ? new Date(data.duty.next_due_at).toLocaleString() : "—"}.</div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ─── "Find firms that did X and draft the ask" — her instructions, as work ────
 
 /**
@@ -509,6 +551,7 @@ function Buyers() {
       )}
 
       <FirmScans />
+      <MoniquesFinds />
 
       {/* ─── The recommendation ──────────────────────────────────────────── */}
       <p className="eyebrow">Write to these this week</p>
