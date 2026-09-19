@@ -52,6 +52,36 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   }
 
   /*
+   * ─── A REWRITE OF A LETTER SHE SENT BACK HAS ITS OWN WRITER ─────────────────
+   *
+   * `input.outreach_rewrite` names a row in `outreach_rewrites` (Job 1, 19 Sep 2026). It is not a
+   * generic drafting task: the reply is checked against the letter's rules in code and raised as
+   * attempt N+1 in her Inbox by `wealth/rewrite.ts`, which also records the outcome on the row the
+   * desk and the Inbox poll. The task closes here with that outcome; a transient provider failure
+   * throws so the queue retries it with backoff.
+   */
+  const rewriteRef = input.outreach_rewrite && typeof input.outreach_rewrite === "object"
+    ? (input.outreach_rewrite as { rewrite_id?: unknown }).rewrite_id
+    : null;
+  if (typeof rewriteRef === "string") {
+    const { runOutreachRewrite } = await import("../wealth/rewrite");
+    const out = await runOutreachRewrite(env, { id: task.id, lane: task.lane, employee_id: task.employee_id ?? null }, rewriteRef);
+    const finishedAt = Date.now();
+    if (out.state === "ready") {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE tasks SET status = 'done', output = ?, cost_micros = cost_micros + ?, finished_at = ? WHERE id = ?`)
+          .bind(JSON.stringify({ text: out.detail, model: out.written_by, draft_id: out.draft_id ?? null, judgement_id: out.judgement_id ?? null }), out.cost_micros, finishedAt, task.id),
+        env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'completed',?)`)
+          .bind(newId("tev"), task.id, finishedAt, JSON.stringify({ rewrite_id: rewriteRef, draft_id: out.draft_id ?? null })),
+      ]);
+    } else {
+      await failTask(env, task, employee, envelope, costMode, out.detail,
+        "Read the reason on the Capital desk; send the letter back again with a clearer note, or drop the firm.");
+    }
+    return;
+  }
+
+  /*
    * WORK THAT MUST HAPPEN ON HER MACHINE LEAVES HERE, RATHER THAN BEING ASKED OF A CLOUD MODEL.
    *
    * The consumer's only move used to be `routeCompletion`. For a task like the Executive

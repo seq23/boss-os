@@ -43,6 +43,8 @@ export interface JudgementRow {
   resume_kind: string;
   state: string;
   attempt: number;
+  /** The bulk rejection this verdict was part of, when it was one. Carried, never required. */
+  batch_id?: string | null;
 }
 
 export type Verdict = "approved" | "try_again";
@@ -50,8 +52,9 @@ export type Verdict = "approved" | "try_again";
 export interface ResumeResult {
   /** One sentence, in her language, about what is now in motion. Shown back to her. */
   detail: string;
-  /** For a try-again: whether a DIFFERENT attempt was raised (true) or the note was recorded and nothing came back (false). */
-  redrafted?: boolean;
+  /** For a try-again: whether a rewrite answering her note was queued (true) or nothing could be (false, and `detail` says why). */
+  rewrite_queued?: boolean;
+  rewrite_id?: string | null;
   /** For an approved letter: what happened in her Gmail. */
   gmail_draft?: { state: string; gmail_draft_id: string | null; failure_code: string | null };
 }
@@ -152,31 +155,37 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
         detail:
           `Sent back with no reason, so the next letter to ${who} would be a guess. Say what was wrong and ` +
           "mark them reviewed again; nothing was sent to anybody.",
+        rewrite_queued: false,
+        rewrite_id: null,
       };
     }
 
     /*
-     * THE REDRAFT IS ATTEMPTED HERE, so "try again" is a thing that happens rather than an
-     * instruction she has to remember to act on. If it cannot be composed, the reason is returned
-     * and her note is still recorded — the verdict is never lost to a drafting failure.
-     */
-    /*
-     * ─── AND IT MAY NOT COME BACK UNCHANGED ──────────────────────────────────
+     * ─── THE REWRITE ANSWERS HER NOTE, AND IT STARTS NOW ─────────────────────
      *
-     * The first live batch, 19 September 2026: thirteen letters sent back with a reason, thirteen
-     * identical letters raised 0.1 s later by this exact line, and her Inbox back where it started.
-     * `draftOutreachFor` now refuses any letter whose body matches one she rejected, so a redraft
-     * happens only when it would actually differ. When it would not, the honest answer is written
-     * here rather than a card raised: her note is on the record, the item is off her desk, and the
-     * opening has to change before another attempt is worth her time.
+     * 19 September 2026, twice. The first batch of thirteen came back word-for-word (fixed in #27
+     * by refusing the twin). The second batch — "I just rejected the 13 again and gave it my notes
+     * and I don't see it working on re-writing them" — came back as thirteen honest refusals:
+     * `draftOutreachFor` composes from the row and cannot read a note, so the only letter it could
+     * write was the one she rejected. CONFIRMED on production: every one of the thirteen
+     * `approval_events.executed` rows for apb_m2x9y0t8yq0tfpe0 says "No new letter … word-for-word".
+     *
+     * So a send-back with a note no longer calls the composer. It queues a REWRITE
+     * (`wealth/rewrite.ts`): a model on the Worker's own queue, private-model-only, given the letter
+     * she sent back and every note she has written on the firm, checked against the rules in code,
+     * and raised as attempt N+1 with her note beside it. The request that recorded her verdict
+     * drains the queue after the response, so it lands in minutes rather than on the Mac's next
+     * slot — and the desk and the Inbox both print its progress from the same row.
      */
-    const { draftOutreachFor } = await import("../routes/wealth");
-    const again = await draftOutreachFor(env, draft.candidate_id, note, now);
+    const { queueRewrite } = await import("../wealth/rewrite");
+    const batchId = typeof j.batch_id === "string" ? j.batch_id : null;
+    const queued = await queueRewrite(env, draft.id, { batchId }, now);
     return {
-      detail: again.drafted
-        ? `Sent back with your reason attached. Attempt ${draft.attempt + 1} to ${who} — a different letter — is in your Inbox. Nothing was sent to anybody.`
-        : `Sent back and your reason is on the record. ${again.detail}`,
-      redrafted: again.drafted,
+      detail: queued.queued
+        ? `Sent back with your note. ${queued.detail}`
+        : `Sent back and your reason is on the record. ${queued.detail}`,
+      rewrite_queued: queued.queued,
+      rewrite_id: queued.rewrite_id,
     };
   },
 

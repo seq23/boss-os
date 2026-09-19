@@ -353,7 +353,8 @@ approvals.post("/:id/decide", async (c) => {
   // Deferring is explicitly not a decision about the payload, so nothing runs.
   let execution = null;
   if (decision === "approved" || decision === "rejected") {
-    execution = await executeDecision(c.env, current, decision, note ?? null);
+    // The batch she decided this in rides along, so a rewrite queued by a send-back can name it.
+    execution = await executeDecision(c.env, { ...current, batch_id: batch?.id ?? null } as typeof current, decision, note ?? null);
   }
 
   /*

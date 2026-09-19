@@ -186,19 +186,21 @@ describe("a reviewed buyer gets a letter, and nothing sends it", () => {
   });
 
   /*
-   * ─── THE BOOMERANG, PINNED SHUT ────────────────────────────────────────────
+   * ─── THE BOOMERANG, PINNED SHUT — AND THE REWRITE THAT ANSWERS HER NOTE ────
    *
-   * CONFIRMED ON PRODUCTION, 19 SEPTEMBER 2026: thirteen letters sent back with a reason, thirteen
-   * word-for-word identical letters raised 0.1 s later (apr_m2wzrn0e… rejected at 1789827114262,
-   * its twin jdg_m2x04sfx… raised at 1789827114391). Her words: "the Inbox tab brings them back
-   * after I sent them away."
+   * CONFIRMED ON PRODUCTION, 19 SEPTEMBER 2026, TWICE. Morning: thirteen letters sent back with a
+   * reason, thirteen word-for-word identical letters raised 0.1 s later. Afternoon, after #27
+   * closed that: thirteen sent back again with a real note ("talk about some of the names I'm
+   * currently working on … hyperlink to my linkedin"), and thirteen honest refusals — "No new
+   * letter … it would be word-for-word" — because the composer cannot read a note. Her words: "I
+   * don't see it working on re-writing them."
    *
-   * The test this replaces PINNED THAT BEHAVIOUR — it asserted "Attempt 2" appeared after a
-   * try-again with a note, on a composer whose output cannot change with the note. It was the
-   * boomerang written as a passing test. Restoring the old resume handler makes every assertion
-   * below fail.
+   * So a send-back with a note now QUEUES A REWRITE and raises nothing itself. The assertions
+   * below pin both halves: nothing identical comes back (the boomerang), and the work she is owed
+   * is queued, visible as progress, and owned (the silence). Restoring the old resume handler
+   * fails both.
    */
-  it("try again with a note does NOT raise the same letter again — it leaves the desk with her note on record", async () => {
+  it("try again with a note raises NOTHING itself — it queues the rewrite and says so on both tabs", async () => {
     await review();
     const first = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts`).first<any>();
     const j = await env.DB.prepare(`SELECT * FROM judgement_calls WHERE id = ?`).bind(first.judgement_id).first<any>();
@@ -209,12 +211,13 @@ describe("a reviewed buyer gets a letter, and nothing sends it", () => {
     });
     expect(decided.status).toBe(200);
     expect(decided.body.data.execution.status).toBe("executed");
-    expect(decided.body.data.execution.detail.redrafted).toBe(false);
-    const out = { detail: decided.body.data.execution.detail.resumed as string };
-    expect(out.detail).toContain("word-for-word the one you sent back");
-    expect(out.detail).not.toContain("Attempt 2");
+    expect(decided.body.data.execution.detail.rewrite_queued).toBe(true);
+    const resumed = decided.body.data.execution.detail.resumed as string;
+    expect(resumed).toContain("rewriting the letter");
+    expect(resumed).toContain("nothing is sent to anybody");
+    expect(resumed).not.toContain("Attempt 2");
 
-    // ONE row, hers, sent back. No second attempt exists anywhere.
+    // ONE letter row, hers, sent back. No second attempt exists anywhere — the rewrite has not run.
     const rows = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts ORDER BY attempt`).all<any>();
     expect(rows.results).toHaveLength(1);
     expect(rows.results![0]!.state).toBe("try_again");
@@ -222,53 +225,53 @@ describe("a reviewed buyer gets a letter, and nothing sends it", () => {
     const calls = await env.DB.prepare(`SELECT COUNT(*) AS n FROM judgement_calls WHERE resume_kind = 'buyer_outreach_email' AND state = 'awaiting'`).first<{ n: number }>();
     expect(calls?.n).toBe(0);
 
-    // BOTH TABS READ THE SAME STATE. The Inbox does not hold it; the desk lists it as sent back.
+    // THE REWRITE IS QUEUED, OWNED BY CAMILLE, ON THE WORKER'S OWN QUEUE — not parked for a Mac slot.
+    const rw = await env.DB.prepare(`SELECT * FROM outreach_rewrites`).all<any>();
+    expect(rw.results).toHaveLength(1);
+    expect(rw.results![0]!.state).toBe("queued");
+    expect(rw.results![0]!.her_note).toContain("Too long");
+    expect(rw.results![0]!.source_draft_id).toBe(first.id);
+    const task = await env.DB.prepare(`SELECT * FROM tasks WHERE id = ?`).bind(rw.results![0]!.task_id).first<any>();
+    expect(task.status).toBe("queued");
+    expect(task.employee_id).toBe("emp_research");
+    expect(task.model_access).toBe("private_model_only");
+    expect(JSON.parse(task.input).outreach_rewrite.rewrite_id).toBe(rw.results![0]!.id);
+    expect(JSON.parse(task.input).backend_id).toBeUndefined(); // no seat, no launchd wait
+
+    // BOTH TABS READ THE SAME STATE. The Inbox does not hold it; the desk lists it as sent back,
+    // and the progress line — ONE sentence for both tabs — says it is being rewritten.
     const pending = await apiJson<any>("/api/judgement/pending");
     expect(pending.body.data.items.filter((i: any) => i.resume_kind === "buyer_outreach_email")).toHaveLength(0);
     const desk = await apiJson<any>("/api/wealth/outreach/sent-back");
     expect(desk.body.data.items).toHaveLength(1);
     expect(desk.body.data.items[0].her_note).toContain("Too long");
+    const progress = await apiJson<any>("/api/wealth/outreach/rewrites");
+    expect(progress.body.data.total).toBe(1);
+    expect(progress.body.data.rewriting).toBe(1);
+    expect(progress.body.data.ready).toBe(0);
+    expect(progress.body.data.sentence).toBe("1 sent back with your note · rewriting now · 0 of 1 ready in your Inbox");
 
-    // THE RAISING LANE RUNS AGAIN AND STILL RAISES NOTHING — both doors it has.
+    // THE OLD DOORS STILL RAISE NOTHING IDENTICAL, AND THE DESK BUTTON QUEUES NO SECOND REWRITE.
     const again = await apiJson<any>(`/api/wealth/recommendations/${CAND}/draft`, { method: "POST", body: {} });
     expect(again.body.data.drafted).toBe(false);
     expect(again.body.data.detail).toContain("word-for-word");
     const all = await apiJson<any>("/api/wealth/outreach/redraft-sent-back", { method: "POST", body: {} });
-    expect(all.body.data.considered).toBe(1);
-    expect(all.body.data.raised).toHaveLength(0);
-    expect(all.body.data.left).toHaveLength(1);
+    expect(all.body.data.queued_now).toBe(0);
+    expect(all.body.data.total).toBe(1);
     const stillOne = await env.DB.prepare(`SELECT COUNT(*) AS n FROM buyer_outreach_drafts`).first<{ n: number }>();
     expect(stillOne?.n).toBe(1);
+    const stillOneRewrite = await env.DB.prepare(`SELECT COUNT(*) AS n FROM outreach_rewrites`).first<{ n: number }>();
+    expect(stillOneRewrite?.n).toBe(1);
   });
 
-  it("try again raises a second attempt ONLY when the letter would actually differ, and it carries her note", async () => {
+  it("try again with NO note queues nothing and says the next letter would be a guess", async () => {
     await review();
     const first = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts`).first<any>();
     const j = await env.DB.prepare(`SELECT * FROM judgement_calls WHERE id = ?`).bind(first.judgement_id).first<any>();
-
-    // Between attempts she states the sizes she is working, which the letter now names.
-    await apiJson("/api/wealth/working-positions", { method: "PUT", body: { text: "5M and 40M" } });
-
-    const out = await runResume(env as any, j, "try_again", "Say what sizes I actually have.");
-    expect(out.redrafted).toBe(true);
-    expect(out.detail).toContain("Attempt 2");
-    expect(out.detail).toContain("a different letter");
-
-    const rows = await env.DB.prepare(`SELECT * FROM buyer_outreach_drafts ORDER BY attempt`).all<any>();
-    expect(rows.results).toHaveLength(2);
-    expect(rows.results![0]!.state).toBe("try_again");
-    expect(rows.results![1]!.attempt).toBe(2);
-    expect(rows.results![1]!.state).toBe("awaiting");
-    expect(rows.results![1]!.body).not.toBe(rows.results![0]!.body);
-    expect(rows.results![1]!.body).toContain("$40M and $5M");
-    // Her sentence travels with the attempt so the next one can be evaluated against it.
-    expect(JSON.parse(rows.results![1]!.built_from).her_note).toContain("Say what sizes");
-    // And the Inbox card carries it too.
-    const pending = await apiJson<any>("/api/judgement/pending");
-    const card = pending.body.data.items.find((i: any) => i.id === rows.results![1]!.judgement_id);
-    expect(card.letter.her_note).toContain("Say what sizes");
-    // The sent-back list no longer holds the firm: a later attempt exists.
-    const desk = await apiJson<any>("/api/wealth/outreach/sent-back");
-    expect(desk.body.data.items).toHaveLength(0);
+    const out = await runResume(env as any, j, "try_again", null);
+    expect(out.rewrite_queued).toBe(false);
+    expect(out.detail).toContain("would be a guess");
+    const rw = await env.DB.prepare(`SELECT COUNT(*) AS n FROM outreach_rewrites`).first<{ n: number }>();
+    expect(rw?.n).toBe(0);
   });
 });

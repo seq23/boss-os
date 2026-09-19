@@ -357,6 +357,13 @@ export async function runScheduled(env: Env, now = Date.now()): Promise<CronOutc
  * maintenance, and neither of them can swallow this.
  */
 export async function runDuties(env: Env, now = Date.now()) {
+  /*
+   * THE REWRITES SHE IS OWED RIDE THE SAME TICK. A letter sent back with a note is queued work
+   * whether or not anybody opens the app; the tick is the safety net for a rewrite queued while
+   * the Worker was mid-deploy or cut off mid-run (`wealth/rewrite.ts` re-queues a stale one).
+   */
+  const { materialiseRewrites } = await import("./wealth/rewrite");
+  await materialiseRewrites(env, now).catch(() => ({ queued: 0, requeued: 0 }));
   return materialiseDueDuties(env, now);
 }
 
