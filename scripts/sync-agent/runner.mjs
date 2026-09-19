@@ -643,11 +643,17 @@ function gitRisks(before, after) {
  * ONE AT A TIME IS DELIBERATE. Concurrency here buys nothing — there is one machine and one owner —
  * and costs the ability to say plainly what is running when something has to be stopped.
  */
-export async function claimRun({ origin, deviceId, backendId = "bk_claude_code", fetchImpl = fetch, cookie = "" }) {
+export async function claimRun({ origin, deviceId, backendId = "bk_claude_code", fallbackFrom = [], fetchImpl = fetch, cookie = "" }) {
   const res = await fetchImpl(`${origin}/api/boss/backends/claim`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
-    body: JSON.stringify({ device_id: deviceId, backend_id: backendId }),
+    /*
+     * `fallback_from` names the seats on THIS machine that failed preflight this cycle. The cloud
+     * may then hand this seat a run parked for one of them, when the run's own ladder lists this
+     * seat below it. A seat never asks for another seat's work on its own initiative — only for
+     * work the other seat provably cannot take right now.
+     */
+    body: JSON.stringify({ device_id: deviceId, backend_id: backendId, ...(fallbackFrom.length ? { fallback_from: fallbackFrom } : {}) }),
   });
   const body = await res.json().catch(() => null);
   if (!res.ok || !body?.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
@@ -674,10 +680,10 @@ export async function reportRun(evidence, { origin, deviceId, fetchImpl = fetch,
  * same principle as the sync half: nothing is dropped on an outage.
  */
 export async function workOnce(deps = {}) {
-  const { origin, deviceId, backendId = "bk_claude_code", fetchImpl = fetch, cookie = "", ...rest } = deps;
+  const { origin, deviceId, backendId = "bk_claude_code", fallbackFrom = [], fetchImpl = fetch, cookie = "", ...rest } = deps;
   let envelope = null;
   try {
-    envelope = await claimRun({ origin, deviceId, backendId, fetchImpl, cookie });
+    envelope = await claimRun({ origin, deviceId, backendId, fallbackFrom, fetchImpl, cookie });
   } catch (err) {
     return { claimed: false, error: String(err), evidence: null };
   }

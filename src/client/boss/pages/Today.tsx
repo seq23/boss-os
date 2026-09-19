@@ -814,6 +814,7 @@ function renderDetail(
             <p className="brief-edition">
               {c.edition.day_label} • {c.edition.edition_label}
               {c.edition.checked_through_label && <><br />{c.edition.checked_through_label}</>}
+              {c.written_by?.label && <><br />Written by {c.written_by.label}{(c.written_by.refused_seats ?? []).length > 0 ? ` — after ${c.written_by.refused_seats.join(", ")} declined` : ""}</>}
             </p>
           )}
           {/* Level 1: the one line that IS the report if she reads nothing else. */}

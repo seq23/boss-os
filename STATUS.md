@@ -194,6 +194,18 @@ the $2.50/day posture; the CLI's notional figure accrues to `bk_claude_code`'s $
 proxy. Guard: `validate:briefing-on-par`, which runs the shipped code over the live fixture in
 `tests/fixtures/briefing/`.
 
+**The ladder (0258).** Her question: *"the Boss OS briefing is run using my two $0 lanes first,
+right — Claude and OpenAI?"* It was not — one seat, a refusal failed the task, `/claim` handed a run
+only to the seat it was parked for. Now `backend_ladder = [bk_claude_code, bk_codex]` on the duty:
+the consumer walks it (`ladder_step` events), a seat may claim a run parked for a seat above it
+that failed preflight (`fallback_from`, `ladder_handoff`), each seat gets its own model, and when
+both refuse the walk continues into the cloud router. **The `:free` OpenRouter rungs are refused for
+this content by the router's LP/deal-terms scan** (they train on prompts; the briefing's wording
+reads as deal material; nothing a caller declares lowers that) — so below the seats the first rung
+that can take it is the cheapest non-training one. `written_by` on the row and on Today says who
+wrote each morning. `node scripts/ops/briefing-ladder.mjs` prints the ladder as the migrations
+leave it.
+
 **A wall-clock time and a zone, never a UTC hour.** `0 12 * * *` is correct in September and an hour
 early from November; nobody files a bug for that, the report is just quietly stale for five months a
 year. Duty materialisation runs on EVERY hourly tick rather than inside the 03:00 UTC maintenance

@@ -1557,6 +1557,11 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
               /* The absolute final line, appended by the system. Nothing may render after it. */
               final_line: FINAL_LINE,
               prompt_version: shown.prompt_version ?? null,
+              /*
+               * WHO WROTE IT. Her Claude seat first, her Codex seat second, a free cloud rung after
+               * both — and the block says which, so a rung's morning is never read as her seat's.
+               */
+              written_by: parseJson(shown.written_by, null),
               /* True when the dashboard was built from the live snapshot rather than typed by the run. */
               dashboard_from_feed: Boolean(shown.market_data),
               /* True when this is yesterday's briefing standing in for one that has not arrived. */

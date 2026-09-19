@@ -419,12 +419,46 @@ export async function retryFailedBriefing(env: Env, forDay: string, now: number)
   }
 }
 
+export interface WrittenBy {
+  kind: "seat" | "cloud_rung";
+  backend_id: string;
+  model: string | null;
+  label: string;
+  /** Seats that refused before this one wrote it, in ladder order. */
+  refused_seats?: string[];
+}
+
+/** Which seat wrote a run, from its row. Null when the run is not on record. */
+export async function writtenByFromRun(env: Env, runId: string): Promise<WrittenBy | null> {
+  const run = await env.DB
+    .prepare(`SELECT backend_id, requested FROM backend_runs WHERE id = ?`).bind(runId)
+    .first<{ backend_id: string; requested: string | null }>()
+    .catch(() => null);
+  if (!run) return null;
+  let requested: Record<string, unknown> = {};
+  try { requested = run.requested ? (JSON.parse(run.requested) as Record<string, unknown>) : {}; } catch { requested = {}; }
+  const model = typeof requested.model === "string" ? requested.model : null;
+  const label = run.backend_id === "bk_claude_code"
+    ? `Claude Code on her Max seat${model ? ` (${model})` : ""}`
+    : run.backend_id === "bk_codex"
+      ? `Codex CLI on her ChatGPT Plus seat${model ? ` (${model})` : ""}`
+      : run.backend_id;
+  const ladder = Array.isArray(requested.backend_ladder) ? (requested.backend_ladder as string[]) : [];
+  const at = ladder.indexOf(run.backend_id);
+  return { kind: "seat", backend_id: run.backend_id, model, label, refused_seats: at > 0 ? ladder.slice(0, at) : [] };
+}
+
 export async function deliverExecutiveReport(
   env: Env,
   args: {
     taskId: string; runId: string; report: DeliveredReport | null; runStatus: string; now?: number;
     /** MARKETS.json as the runner observed it in the workspace before the run. */
     marketData?: MarketData | null;
+    /**
+     * Who wrote it, when it was not a seat on her Mac. A seat's identity is read off `backend_runs`
+     * (backend and requested model); a cloud rung has no run row and names itself here.
+     */
+    writtenBy?: WrittenBy | null;
   },
 ): Promise<string | null> {
   const now = args.now ?? Date.now();
@@ -570,6 +604,7 @@ export async function deliverExecutiveReport(
     standing.status === "failed" ? "failed" : shortfalls.length === 0 ? "complete" : "partial";
 
   const stamp = checkedThrough({ sources: reportSources, market, finishedAt: now });
+  const writtenBy = args.writtenBy ?? (await writtenByFromRun(env, args.runId));
   const consulted = [
     ...(market?.consulted ?? []).map((c) => ({ url: c.url, status: c.status, fetched_at: c.fetched_at, kind: "market_feed" })),
     ...reportSources
@@ -627,8 +662,8 @@ export async function deliverExecutiveReport(
     .prepare(
       `INSERT INTO executive_reports
          (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections, watching, shortfalls,
-          checked_through, prompt_version, market_data, consulted)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          checked_through, prompt_version, market_data, consulted, written_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(day_id) DO UPDATE SET
          generated_at = excluded.generated_at,
          task_id = excluded.task_id,
@@ -645,7 +680,8 @@ export async function deliverExecutiveReport(
          checked_through = excluded.checked_through,
          prompt_version = excluded.prompt_version,
          market_data = excluded.market_data,
-         consulted = excluded.consulted`,
+         consulted = excluded.consulted,
+         written_by = excluded.written_by`,
     )
     .bind(
       id, forDay, now, args.taskId, args.runId, honest, headline, summary,
@@ -659,6 +695,7 @@ export async function deliverExecutiveReport(
       promptVersion,
       market ? JSON.stringify(market) : null,
       JSON.stringify(consulted),
+      writtenBy ? JSON.stringify(writtenBy) : null,
     )
     .run();
 
@@ -694,6 +731,7 @@ export async function deliverExecutiveReport(
       shortfalls, run_id: args.runId,
       dashboard_built: applied.dashboard_built, excluded_removed: excluded.removed.length,
       checked_through: stamp.label, prompt_version: promptVersion,
+      written_by: writtenBy?.label ?? null,
     },
   });
 

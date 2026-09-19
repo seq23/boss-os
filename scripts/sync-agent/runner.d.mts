@@ -111,6 +111,8 @@ export interface WorkDeps extends RunDeps {
   origin: string;
   deviceId: string;
   backendId?: string;
+  /** Seats on this machine that failed preflight this cycle; the cloud may hand their ladder-successor's work to this seat. */
+  fallbackFrom?: string[];
   fetchImpl?: typeof fetch;
   cookie?: string;
 }

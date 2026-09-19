@@ -270,11 +270,12 @@ async function main() {
      */
     const childEnvironment = childEnv(process.env);
     const seats = [];
+    const unusable = [];
     for (const [backendId, load] of Object.entries(SEAT_PREFLIGHT)) {
       const describeAuth = await load();
       const auth = describeAuth(childEnvironment);
       if (auth.ok) seats.push(backendId);
-      else console.error(`${backendId}: ${auth.detail}`);
+      else { unusable.push(backendId); console.error(`${backendId}: ${auth.detail}`); }
     }
     if (seats.length === 0) {
       // A backend that cannot run says WHICH thing is wrong, rather than failing obscurely.
@@ -289,7 +290,12 @@ async function main() {
        */
       let out = { claimed: false, error: null, evidence: null };
       for (const backendId of seats) {
-        out = await workOnce({ origin, deviceId, cookie, backendId });
+        /*
+         * A USABLE SEAT MAY TAKE WORK PARKED FOR A SEAT THAT CANNOT AUTHENTICATE — when the run's
+         * own ladder lists it as the next rung. That is the whole of "the ladder is working" on the
+         * Mac's side: her Claude seat down, her Codex seat writes the briefing, at $0.
+         */
+        out = await workOnce({ origin, deviceId, cookie, backendId, fallbackFrom: unusable });
         if (out.claimed || out.error) break;
       }
       if (out.evidence && !out.reported) {

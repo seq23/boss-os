@@ -4,6 +4,7 @@ import { logEvent } from "../lib/log";
 import { isDue, nextDueAt, type DutySchedule } from "./cadence";
 import { admitTask } from "../tasks/admit";
 import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
+import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, modelBySeat } from "./briefingLadder";
 
 /**
  * Turning due duties into queued work.
@@ -198,12 +199,23 @@ export async function materialiseDueDuties(
        * prompt still tells the run what to do if the file is absent.
        */
       if (input.spec_module === "executive_briefing") {
+        const requested = typeof input.requested === "object" && input.requested ? { ...(input.requested as Record<string, unknown>) } : {};
         input = {
           ...input,
           prompt: composeBriefingPrompt({ dayLabel: ctDayLabel(now), hasMarketData: true }),
           prompt_version: BRIEFING_PROMPT_VERSION,
+          /*
+           * THE LADDER IS STAMPED FROM THE MODULE TOO. Her two $0 seats in the order she named them,
+           * each with its own model, and the cloud rungs beneath when both refuse. See
+           * `briefingLadder.ts` for why this was not true before 19 September.
+           */
+          backend_id: BRIEFING_LADDER_IDS[0],
+          backend_ladder: BRIEFING_LADDER_IDS,
+          cloud_fallback: true,
+          requested: { ...requested, model_by_backend: modelBySeat() },
         };
       }
+      const briefing = input.spec_module === "executive_briefing";
       admitted = await admitTask(env, {
         title: duty.task_title,
         lane: duty.lane,
@@ -211,6 +223,9 @@ export async function materialiseDueDuties(
         // The kind the duty was defined with, rather than one inferred from its title every morning.
         intake_kind: duty.task_kind,
         input,
+        // The briefing declares its axes; a word-match on its own prompt made the cloud rungs
+        // unreachable. See BRIEFING_CLASSIFICATION.
+        ...(briefing ? BRIEFING_CLASSIFICATION : {}),
       });
     } catch (err) {
       skipped.push({ duty: duty.id, reason: `not_admitted: ${err instanceof Error ? err.message : String(err)}` });

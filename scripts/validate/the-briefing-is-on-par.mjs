@@ -40,6 +40,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadBriefingSpec, currentBriefingPrompt } from "./lib/briefing-prompt.mjs";
+import { ladder as briefingLadder } from "../ops/briefing-ladder.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES = "tests/fixtures/briefing";
@@ -53,6 +54,11 @@ const FILES = {
   launchd: "scripts/ops/install-agent-launchd.sh",
   screen: "src/client/boss/pages/Today.tsx",
   migration: "migrations/0257_boss_the_briefing_on_par_with_the_one_she_pays_for.sql",
+  ladderMigration: "migrations/0258_boss_the_briefing_walks_her_two_seats_then_the_rungs.sql",
+  consumer: "src/worker/boss/queue/consumer.ts",
+  agent: "scripts/sync-agent/agent.mjs",
+  codex: "scripts/sync-agent/backends/codex.mjs",
+  ladderModule: "src/worker/boss/duties/briefingLadder.ts",
 };
 
 /** The newest live fixture pair in the folder. */
@@ -74,8 +80,41 @@ export function newestFixture(dir) {
  * Everything checkable, over a report + snapshot + prompt + sources.
  * Returns the list of problems; empty means on par.
  */
-export async function check({ spec, fixture, prompt, files, deliveredAt }) {
+export async function check({ spec, fixture, prompt, files, deliveredAt, ladder }) {
   const problems = [];
+
+  /*
+   * ─── THE LADDER: HER TWO $0 SEATS FIRST, IN HER ORDER, AND EVERY LINK THAT MAKES IT WALKABLE ──
+   *
+   * "the Boss OS briefing is run using my two $0 lanes first, right — Claude and OpenAI?" The
+   * resolver is run over the replayed migrations and its first two rungs are pinned; then every
+   * piece of code that turns the list into a walk is checked for, because a list nothing walks is
+   * the state this repository found on 19 September.
+   */
+  const rungs = Array.isArray(ladder?.candidates) ? ladder.candidates : [];
+  if (rungs.length === 0) problems.push("The briefing ladder resolves to ZERO candidates. Rule 0.");
+  else {
+    if (!(rungs[0]?.backend_id === "bk_claude_code" && rungs[0]?.kind === "seat" && rungs[0]?.model === "claude-sonnet-4-5-20250929")) problems.push(`Rung 1 is ${rungs[0]?.backend_id}/${rungs[0]?.model}, not bk_claude_code on Sonnet 4.5.`);
+    if (!(rungs[1]?.backend_id === "bk_codex" && rungs[1]?.kind === "seat" && rungs[1]?.model === null)) problems.push(`Rung 2 is ${rungs[1]?.backend_id}/${rungs[1]?.model}, not bk_codex on its own default.`);
+    if (!rungs.slice(0, 2).every((r) => r.cost === "$0 (subscription)")) problems.push("A seat is not priced as a subscription seat.");
+    const below = rungs.slice(2);
+    if (!below.some((r) => r.kind === "free_rung")) problems.push("No free rung below the seats.");
+    if (!below.some((r) => r.kind === "paid_rung")) problems.push("No paid rung below the seats — the ladder has no last resort.");
+    const firstPaid = below.findIndex((r) => r.kind === "paid_rung");
+    if (below.slice(0, firstPaid).some((r) => r.cost !== "$0 (free tier)")) problems.push("A priced rung sits above a free one.");
+    if (!ladder?.duty || JSON.stringify(ladder.duty.backend_ladder) !== JSON.stringify(["bk_claude_code", "bk_codex"])) problems.push(`The duty row's backend_ladder is ${JSON.stringify(ladder?.duty?.backend_ladder ?? null)}, not the two seats in her order.`);
+    if (ladder?.duty?.cloud_fallback !== true) problems.push("The duty row does not fall through to the cloud rungs when both seats refuse.");
+  }
+  const F0 = files;
+  if (!/for \(const backendId of ladder\)/.test(F0.consumer) || !/'ladder_step'/.test(F0.consumer)) problems.push("queue/consumer.ts does not walk backend_ladder.");
+  if (!/cloudDelivers === "executive_reports"/.test(F0.consumer) || !/writtenBy: \{ kind: "cloud_rung"/.test(F0.consumer)) problems.push("queue/consumer.ts does not deliver a cloud rung's briefing with written_by.");
+  if (!/fallback_from/.test(F0.route) || !/'ladder_handoff'/.test(F0.route)) problems.push("routes/backends.ts /claim cannot hand a run to the next seat on its ladder.");
+  if (!/model_by_backend/.test(F0.route)) problems.push("routes/backends.ts /claim does not give each seat its own model.");
+  if (!/fallbackFrom: unusable/.test(F0.agent)) problems.push("agent.mjs does not tell the cloud which seats failed preflight.");
+  if (!/"--search"/.test(F0.codex) || !/workspace-write/.test(F0.codex)) problems.push("codex.mjs cannot write delivers.json or open the web for a research run.");
+  if (!/backend_ladder: BRIEFING_LADDER_IDS/.test(F0.materialise) || !/BRIEFING_CLASSIFICATION/.test(F0.materialise)) problems.push("materialise.ts does not stamp the ladder and the declared axes from the module.");
+  if (!/'\$\.backend_ladder'/.test(F0.ladderMigration) || !/'\$\.cloud_fallback'/.test(F0.ladderMigration)) problems.push("Migration 0258 does not put the ladder on the duty row.");
+  if (!/written_by/.test(F0.today) || !/c\.written_by/.test(F0.screen)) problems.push("The Today block does not name who wrote the briefing.");
 
   if (!fixture) {
     problems.push(`No live fixture in ${FIXTURES}/ (live-YYYY-MM-DD.delivers.json). The lane has never been run end to end and saved.`);
@@ -234,7 +273,7 @@ async function load() {
   const files = Object.fromEntries(Object.entries(FILES).map(([k, p]) => [k, existsSync(join(ROOT, p)) ? readFileSync(join(ROOT, p), "utf8") : ""]));
   const fixture = newestFixture(join(ROOT, FIXTURES));
   const deliveredAt = fixture?.delivers?.delivered_at ? Date.parse(fixture.delivers.delivered_at) : Date.parse(`${fixture?.day ?? "2026-09-19"}T12:00:00Z`);
-  return { spec, files, fixture, prompt: await currentBriefingPrompt(), deliveredAt };
+  return { spec, files, fixture, prompt: await currentBriefingPrompt(), deliveredAt, ladder: await briefingLadder() };
 }
 
 async function selfTest() {
@@ -264,6 +303,12 @@ async function selfTest() {
     { name: "a materialiser that stopped composing from the module is caught", input: { ...good, files: { ...good.files, materialise: good.files.materialise.replace("prompt: composeBriefingPrompt(", "prompt: oldPrompt(") } }, expect: 1 },
     { name: "a retry slot on the screen that the Mac does not have is caught", input: { ...good, files: { ...good.files, today: good.files.today.replace("{ h: 6, m: 5 }", "{ h: 6, m: 15 }") } }, expect: 1 },
     { name: "a delivery that stopped re-queuing a failed morning is caught", input: { ...good, files: { ...good.files, deliver: good.files.deliver.replace(/retryFailedBriefing\(/g, "noRetry(") } }, expect: 1 },
+    { name: "a ladder whose second rung is not Codex is caught", input: { ...good, ladder: { ...good.ladder, candidates: [good.ladder.candidates[0], ...good.ladder.candidates.slice(2)] } }, expect: 1 },
+    { name: "a ladder with zero candidates is a hard failure", input: { ...good, ladder: { ...good.ladder, candidates: [] } }, expect: 1 },
+    { name: "a duty row that lost cloud_fallback is caught", input: { ...good, ladder: { ...good.ladder, duty: { ...good.ladder.duty, cloud_fallback: false } } }, expect: 1 },
+    { name: "a consumer that stopped walking the ladder is caught", input: { ...good, files: { ...good.files, consumer: good.files.consumer.replace("for (const backendId of ladder)", "for (const backendId of [ladder[0]])") } }, expect: 1 },
+    { name: "a claim route that lost the hand-off is caught", input: { ...good, files: { ...good.files, route: good.files.route.replace(/fallback_from/g, "nothing") } }, expect: 1 },
+    { name: "a Codex adapter back on read-only is caught", input: { ...good, files: { ...good.files, codex: good.files.codex.replace(/workspace-write/g, "read-only") } }, expect: 1 },
     { name: "a screen that dropped the final line is caught", input: { ...good, files: { ...good.files, screen: good.files.screen.replace(/c\.final_line/g, "c.nothing") } }, expect: 1 },
   ];
 
@@ -296,6 +341,6 @@ if (process.argv.includes("--self-test")) {
   console.log(
     `the-briefing-is-on-par: the live fixture (${input.fixture.day}) carries ${n} sections and ${src} article-level sources; ` +
     `every summary figure and headline number is cited inline, every [n] resolves, the dashboard is built from ` +
-    `${input.fixture.markets.quotes.length} feed quotes, nothing astrological, and the prompt, runner, launchd, migration and screen are wired. OK.`,
+    `${input.fixture.markets.quotes.length} feed quotes, nothing astrological, and the prompt, runner, launchd, migration and screen are wired; the ladder reads bk_claude_code → bk_codex → rungs. OK.`,
   );
 }
