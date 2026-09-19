@@ -91,6 +91,16 @@ export function Inbox({ onCountChange, onOpen }: {
    */
   const [notices, setNotices] = useState<any[] | null>(null);
   /*
+   * ─── "LATER" MUST GO SOMEWHERE SHE CAN SEE ────────────────────────────────
+   *
+   * CONFIRMED in a browser, 19 September 2026 (hostile sweep): Later wrote `status = 'deferred'`,
+   * the list reads `status = 'pending'`, and the flash said "It stays on the list until it
+   * expires" while the card left the screen for good — no surface read deferred rows, so a
+   * put-off decision was a lost decision until the expiry sweep marked it expired. This list is
+   * the deferred rows, read from the same table, shown under the decisions, decidable from there.
+   */
+  const [putOff, setPutOff] = useState<any[] | null>(null);
+  /*
    * The judgement calls, by their approval id. Fetched alongside the dockets so a judgement card
    * can render the actual work — the covers, the letter — rather than a sentence describing them.
    */
@@ -118,14 +128,16 @@ export function Inbox({ onCountChange, onOpen }: {
        * covers missing and nothing saying they were missing. It now fails with the rest of the
        * load, and the list says so.
        */
-      const [approvals, sys, judged, told] = await Promise.all([
+      const [approvals, sys, judged, told, deferred] = await Promise.all([
         api.approvals("pending"),
         api.status(),
         api.judgementPending(),
         api.notices(),
+        api.approvals("deferred"),
       ]);
       setItems(approvals);
       setNotices(told);
+      setPutOff(deferred);
       setJudgements(Object.fromEntries((judged.items ?? []).map((j: any) => [j.approval_id, j])));
       setStatus(sys);
       /*
@@ -142,6 +154,7 @@ export function Inbox({ onCountChange, onOpen }: {
       // NOT `[]`. A failed fetch and an empty inbox are opposite facts, and the section below says
       // which one it is looking at rather than rendering both as silence.
       setNotices((prev) => prev ?? null);
+      setPutOff((prev) => prev ?? null);
     }
   }, [onCountChange]);
 
@@ -155,7 +168,22 @@ export function Inbox({ onCountChange, onOpen }: {
   async function decide(id: string, decision: string, note?: string) {
     const snapshot = items ?? [];
     const index = snapshot.findIndex((a) => a.id === id);
-    if (index === -1) return;
+    /*
+     * ─── A NOTICE IS NOT IN `items`, AND "GOT IT" USED TO DO NOTHING ──────────
+     *
+     * CONFIRMED in a browser, 19 September 2026 (hostile sweep): `approvals/pending.ts` splits the
+     * table into decisions (`rows` → `items`) and notices (`notices`), and this guard returned when
+     * the id was not among the decisions — which is every notice. The "Got it" press fired no
+     * request, the card stayed, and nothing said so. A dead button on the one card that exists to
+     * be dismissed teaches her the Inbox is decorative. So a notice is looked up in its own list,
+     * and the early return is only for an id that is on NEITHER list.
+     */
+    const noticeSnapshot = notices ?? [];
+    const noticeIndex = noticeSnapshot.findIndex((n) => n.id === id);
+    const putOffSnapshot = putOff ?? [];
+    const putOffIndex = putOffSnapshot.findIndex((n) => n.id === id);
+    if (index === -1 && noticeIndex === -1 && putOffIndex === -1) return;
+    setPutOff((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
 
     const optimistic = snapshot.filter((a) => a.id !== id);
     setNotices((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
@@ -179,7 +207,7 @@ export function Inbox({ onCountChange, onOpen }: {
         // A different letter came back for this firm; show it rather than leaving a stale list.
         if (exec.detail?.redrafted) load();
       } else if (decision === "deferred") {
-        setFlash("Deferred. It stays on the list until it expires.");
+        setFlash("Put off. It waits under \"Put off\" below until it expires, and you can decide it from there.");
       } else {
         setFlash(null);
       }
@@ -192,11 +220,19 @@ export function Inbox({ onCountChange, onOpen }: {
         .catch(() => setStatus(null));
       if (decision === "deferred") load();
     } catch (e) {
-      // Roll back to exactly where the card was.
-      const rolled = [...optimistic];
-      rolled.splice(index, 0, snapshot[index]);
-      setItems(rolled);
-      onCountChange(rolled.length);
+      // Roll back to exactly where the card was — on whichever list it came from.
+      if (index !== -1) {
+        const rolled = [...optimistic];
+        rolled.splice(index, 0, snapshot[index]);
+        setItems(rolled);
+        onCountChange(rolled.length);
+      } else if (noticeIndex !== -1) {
+        const rolledNotices = [...noticeSnapshot.filter((n) => n.id !== id)];
+        rolledNotices.splice(noticeIndex, 0, noticeSnapshot[noticeIndex]);
+        setNotices(rolledNotices);
+      } else {
+        setPutOff(putOffSnapshot);
+      }
       setError(e);
     }
   }
@@ -526,6 +562,21 @@ export function Inbox({ onCountChange, onOpen }: {
             )}
           </section>
         ))
+      )}
+
+      {/* Below the decisions: what she put off. See `putOff` above for why this section exists. */}
+      {(putOff?.length ?? 0) > 0 && (
+        <section className="inbox-group" data-testid="inbox-put-off">
+          <p className="eyebrow">Put off · {putOff!.length} — still yours to decide; gone only when it expires</p>
+          {putOff!.map((a) => (
+            <Docket key={a.id} approval={a} onDecide={decide} onOpen={onOpen} />
+          ))}
+        </section>
+      )}
+      {putOff === null && !error && (
+        <div className="row-sub">
+          What you put off could not be read just now, so this is not saying there is nothing put off.
+        </div>
       )}
     </>
   );
