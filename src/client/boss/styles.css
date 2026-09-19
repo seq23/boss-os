@@ -371,6 +371,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* What is not here, and why. Never silent, never dressed up as content. */
 .brief-absent { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+/* The edition stamp above the headline, and the final line below everything. */
+.brief-edition { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; line-height: 1.6; }
+.brief-final { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); margin: 12px 0 0; }
+/* A headline's data block: the numbers that make it a story, set apart from the prose. */
+.brief-numbers { margin: 4px 0 6px; padding-left: 18px; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
+/* Inline [n] citations, and the numbered source list they point at. */
+.brief-ref { font-size: 10px; line-height: 0; margin-left: 2px; }
+.brief-ref a { color: var(--muted); text-decoration: none; margin-right: 2px; }
+.brief-ref a:hover, .brief-ref a:focus-visible { color: var(--ink); text-decoration: underline; }
+.brief-sources { margin: 6px 0 0; padding-left: 22px; }
+.brief-sources li { margin-bottom: 2px; }
+.brief-sources li:target { color: var(--ink); }
 
 /* ─── Employee health: a verdict you can read in greyscale ───────────────────
  *

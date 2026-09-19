@@ -844,3 +844,29 @@ export function spacexStatus(market: MarketData | null | undefined): { public: b
     line: `SPCX ${fmt(q.value, "equity")}${q.change_pct === null ? "" : ` (${pct(q.change_pct)})`}${q.previous_close ? `, prior close ${fmt(q.previous_close, "equity")}` : ""} — ${q.session_note}.`,
   };
 }
+
+/**
+ * The edition block the screen renders above the report:
+ *
+ *   Saturday, September 19, 2026 • Morning Edition • Central Time
+ *   Information checked through 6:28 AM CT
+ *
+ * The day is the day the report is FOR (`day_id`), never the day it was written; the stamp is the
+ * derived `checked_through` instant, or absent for rows written before it existed.
+ */
+export function editionStamp(args: { dayId: string; checkedThrough: number | null | undefined }): {
+  day_label: string;
+  edition_label: string;
+  checked_through_label: string | null;
+} {
+  const [y, m, d] = args.dayId.split("-").map((v) => Number(v));
+  const noon = Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1, 18); // 18:00 UTC is midday-ish in Chicago on either side of DST
+  return {
+    day_label: ctDayLabel(noon),
+    edition_label: EDITION_LABEL,
+    checked_through_label:
+      typeof args.checkedThrough === "number" && Number.isFinite(args.checkedThrough)
+        ? `Information checked through ${ctClock(args.checkedThrough)} CT`
+        : null,
+  };
+}

@@ -423,7 +423,31 @@ function summarise(block: Block): string {
  */
 function bold(text: string) {
   const parts = String(text).split(/\*\*/);
-  return parts.map((piece, i) => (i % 2 === 1 ? <strong key={i}>{piece}</strong> : <span key={i}>{piece}</span>));
+  return parts.map((piece, i) => (i % 2 === 1 ? <strong key={i}>{cited(piece, i)}</strong> : <span key={i}>{cited(piece, i)}</span>));
+}
+
+/**
+ * `[3]` and `[3, 7]` become superscript citation marks pointing at the numbered source list.
+ *
+ * STILL NOT A MARKDOWN PARSER. The only thing recognised is digits inside square brackets, and the
+ * only thing emitted is a <sup> with an in-page anchor — nothing from the text becomes an attribute.
+ * The file's report cites every figure this way; a number she can trace to its source in one tap
+ * is the whole difference between a briefing and a rumour.
+ */
+function cited(text: string, keyBase: number) {
+  const pieces = String(text).split(/(\[\d{1,3}(?:\s*,\s*\d{1,3})*\])/);
+  return pieces.map((piece, j) => {
+    const m = /^\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]$/.exec(piece);
+    if (!m) return <span key={`${keyBase}-${j}`}>{piece}</span>;
+    const refs = m[1]!.split(",").map((n) => n.trim());
+    return (
+      <sup key={`${keyBase}-${j}`} className="brief-ref">
+        {refs.map((n, k) => (
+          <a key={k} href={`#brief-src-${n}`} title={`Source ${n}`}>{n}</a>
+        ))}
+      </sup>
+    );
+  });
 }
 
 /**
@@ -465,6 +489,22 @@ function renderSection(sec: any, i: number, insight?: any) {
             <div key={j} style={{ marginBottom: 8 }}>
               <p className="today-3">{typeof it === "string" ? it : it.headline ?? it.title ?? `Item ${j + 1}`}</p>
               {typeof it === "object" && it.summary && <div className="today-4">{bold(String(it.summary))}</div>}
+              {/*
+                * THE DATA BLOCK. The file's headlines each carry the numbers that make them a story
+                * — "First-half revenue $140.6 million, +1,252% [2]" — set apart from the prose so
+                * the eye finds them first. Each line carries its own [n].
+                */}
+              {typeof it === "object" && Array.isArray(it.numbers) && it.numbers.length > 0 && (
+                <ul className="brief-numbers">
+                  {it.numbers.map((n: string, k: number) => <li key={k}>{bold(String(n))}</li>)}
+                </ul>
+              )}
+              {/* SpaceX Watch files its parts as items with bullets: SPCX, the reference map, Starship, Starlink, supply. */}
+              {typeof it === "object" && Array.isArray(it.bullets) && it.bullets.length > 0 && (
+                <ul className="brief-list">
+                  {it.bullets.map((b: string, k: number) => <li key={k}>{bold(String(b))}</li>)}
+                </ul>
+              )}
               {typeof it === "object" && it.why_it_matters && (
                 <p className="brief-why">Why it matters — {bold(String(it.why_it_matters))}</p>
               )}
@@ -483,6 +523,9 @@ function renderSection(sec: any, i: number, insight?: any) {
         */}
       {sec.table && Array.isArray(sec.table.rows) && sec.table.rows.length > 0 && (
         <div className="brief-tablewrap">
+          {sec.table_built_by === "system" && (
+            <p className="brief-cite">Figures fetched by the system from the feeds in the source list, not typed by the run.</p>
+          )}
           <table className="brief-table">
             {Array.isArray(sec.table.columns) && sec.table.columns.length > 0 && (
               <thead>
@@ -762,6 +805,17 @@ function renderDetail(
             </div>
           )}
 
+          {/*
+            * THE EDITION. "Saturday, September 19, 2026 • Morning Edition • Central Time" and
+            * "Information checked through 6:28 AM CT" — the file's framing, and the stamp is derived
+            * from the evidence on the server rather than written by the run.
+            */}
+          {c.edition && (
+            <p className="brief-edition">
+              {c.edition.day_label} • {c.edition.edition_label}
+              {c.edition.checked_through_label && <><br />{c.edition.checked_through_label}</>}
+            </p>
+          )}
           {/* Level 1: the one line that IS the report if she reads nothing else. */}
           {c.headline && <p className="today-1">{c.headline}</p>}
           {c.summary && c.summary !== c.headline && <p className="today-4">{c.summary}</p>}
@@ -867,21 +921,33 @@ function renderDetail(
             </>
           )}
 
-          {/* Provenance, reachable and out of the way. */}
+          {/*
+            * PROVENANCE, NUMBERED, AND REACHABLE FROM EVERY [n] IN THE TEXT. The file ends with a
+            * numbered footnote list of real URLs; each `[n]` above is an anchor to its row here.
+            * Open by default now — she asked for the sourcing to be visible, not tucked away.
+            */}
           {(c.sources ?? []).length > 0 && (
-            <details>
+            <details open>
               <summary className="docket-more" style={{ cursor: "pointer" }}>
-                {c.sources.length} source{c.sources.length === 1 ? "" : "s"}, with when each was read
+                {c.sources.length} source{c.sources.length === 1 ? "" : "s"}, numbered, with when each was read
               </summary>
-              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              <ol className="brief-sources">
                 {c.sources.map((src: any, i: number) => (
-                  <li key={i} className="row-sub" style={{ marginBottom: 2 }}>
-                    {typeof src === "string" ? src : `${src.name ?? src.url ?? "unnamed"}${src.read_at ? ` · read ${src.read_at}` : ""}`}
+                  <li key={i} id={`brief-src-${i + 1}`} className="row-sub">
+                    {typeof src === "string"
+                      ? src
+                      : <>
+                          {src.url ? <a href={String(src.url)} target="_blank" rel="noreferrer noopener">{src.name ?? src.url}</a> : (src.name ?? "unnamed")}
+                          {src.read_at ? ` · read ${src.read_at}` : ""}
+                        </>}
                   </li>
                 ))}
-              </ul>
+              </ol>
             </details>
           )}
+
+          {/* The absolute final line of every report, appended by the system. Nothing renders after it. */}
+          {c.final_line && <p className="brief-final">{c.final_line}</p>}
         </>
       );
     }

@@ -1,3 +1,4 @@
+import { editionStamp, FINAL_LINE } from "../duties/briefingSpec";
 import { Hono, type Context } from "hono";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
@@ -1510,6 +1511,18 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
               sources: parseJson(shown.sources, []),
               generated_at: shown.generated_at,
               for_day: shown.day_id,
+              /*
+               * THE EDITION, STAMPED FROM EVIDENCE. "Saturday, September 19, 2026 • Morning
+               * Edition • Central Time / Information checked through 6:28 AM CT" — the file's
+               * framing, with the time DERIVED from the newest source read and the market snapshot
+               * rather than typed by the run. Rows written before 0257 carry no stamp and say so.
+               */
+              edition: editionStamp({ dayId: shown.day_id, checkedThrough: shown.checked_through ?? null }),
+              /* The absolute final line, appended by the system. Nothing may render after it. */
+              final_line: FINAL_LINE,
+              prompt_version: shown.prompt_version ?? null,
+              /* True when the dashboard was built from the live snapshot rather than typed by the run. */
+              dashboard_from_feed: Boolean(shown.market_data),
               /* True when this is yesterday's briefing standing in for one that has not arrived. */
               carried_over: carried,
               staleness: carried ? reportStaleness(reportDuty, shown.day_id, day.id, now) : null,
