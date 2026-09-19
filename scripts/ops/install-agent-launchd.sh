@@ -938,7 +938,7 @@ lint_plist "$CRED_PLIST"
 launchctl load "$CRED_PLIST"
 echo "Installed $CRED_LABEL — daily 06:15 Central, reporting to duty_credentials (Toni)."
 
-echo "Installed $LABEL — checks for queued work at 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
+echo "Installed $LABEL — fetches the sky and the market, then checks for queued work at 06:05, 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
 # RULE 0: an installer that installed nothing must not exit 0 looking pleased. launchctl load is
