@@ -173,7 +173,8 @@ function FirmScans() {
           style={{ width: "100%", marginTop: 8 }}
         />
         <div className="btn-row">
-          <button className="btn btn-small" disabled={busy || text.trim().length < 20} onClick={start} data-testid="start-firm-scan">
+          {/* A label that fits a phone: at 390px the long verb overflowed the page by 53px (found by the journey). */}
+          <button className="btn btn-small" disabled={busy || text.trim().length < 20} onClick={start} data-testid="start-firm-scan" style={{ whiteSpace: "normal", maxWidth: "100%" }}>
             {busy ? "Handing it to Camille…" : "Ask Camille to find them and draft the ask"}
           </button>
         </div>
