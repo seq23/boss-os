@@ -17,10 +17,11 @@ const DAY = new Date().toISOString().slice(0, 10);
 function cleanSql(): string {
   return [
     `DELETE FROM gate_entries WHERE day_id = '${DAY}'`,
-    `UPDATE days SET morning_completed_at = NULL, midday_completed_at = NULL, night_completed_at = NULL WHERE id = '${DAY}'`,
+    `UPDATE days SET morning_completed_at = NULL, midday_completed_at = NULL, night_completed_at = NULL, morning_contract = NULL, morning_priorities = NULL WHERE id = '${DAY}'`,
     `DELETE FROM open_loops WHERE title LIKE 'E2E loop %'`,
     `DELETE FROM diary_entries WHERE title LIKE 'E2E meeting %'`,
     `DELETE FROM alert_dismissals WHERE reason LIKE 'E2E %'`,
+    `DELETE FROM mailbox_findings WHERE id = 'mbf_e2e_pair'`,
   ].join("; ");
 }
 
@@ -163,6 +164,23 @@ for (const vp of [PHONE, LAPTOP]) {
       await row.getByRole("button", { name: /cancel/i }).click();
       await expect.poll(() => queryLocalD1<{ c: number | null }>(`SELECT cancelled_at AS c FROM diary_entries WHERE title = 'E2E meeting with the Hartleys'`)[0]?.c).toBeTruthy();
       await expect(diary.locator(".row", { hasText: "E2E meeting with the Hartleys" })).toHaveCount(0);
+    });
+
+    test("Monique's find — both sides of a trade in her own mailbox — is the day's first money move", async ({ page }) => {
+      const now = Date.now();
+      provisionLocalD1(
+        `INSERT INTO mailbox_findings (id, kind, subject_code, counterpart_code, headline, because, suggested_action, evidence, subject_matter, confidence, status, found_at, updated_at)
+         VALUES ('mbf_e2e_pair', 'missed_deal', 'HERON', 'FALCON', 'E2E: a seller and a buyer of the same block', 'Both wrote to you about the same company in the same fortnight.', 'E2E: put HERON and FALCON in one thread about the block today', '[]', 'the block', 'high', 'new', ${now}, ${now})`,
+      );
+      await unlock(page);
+      await tab(page, "Today");
+      const contract = page.locator("main.page .docket", { has: page.locator("h3", { hasText: /contract/i }) });
+      await contract.locator("summary").click();
+      await expect(contract).toContainText("Wealth — the first money move");
+      await expect(contract).toContainText("E2E: put HERON and FALCON in one thread about the block today");
+      await expect(contract).toContainText("Monique found both sides of this in your own mailbox");
+      // The names are CODES. A real name in a finding would be a leak on the one screen she opens first.
+      await expect(contract).not.toContainText("@");
     });
 
     test("an alert is put aside with a reason, and the reason is what the record keeps", async ({ page }) => {
