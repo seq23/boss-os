@@ -4,6 +4,7 @@ import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { Panel, Row, asList, text, usePanel } from "../components/panels";
 import { BackendRegistry, Launch, Watch } from "./Backends";
+import { PropertyHealth } from "../components/PropertyHealth";
 
 /**
  * The seven subsystems that had an API and no screen.
@@ -19,7 +20,7 @@ import { BackendRegistry, Launch, Watch } from "./Backends";
  * fabricates a number the server did not send.
  */
 type SectionId =
-  | "launch" | "watch" | "backends"
+  | "launch" | "watch" | "properties" | "backends"
   | "costs"
   | "airlock" | "router" | "intake" | "governance" | "knowledge" | "prompt"
   | "quant" | "bridge" | "capability" | "runtimes" | "sync" | "publishing";
@@ -33,6 +34,12 @@ const SECTIONS: { id: SectionId; label: string }[] = [
    */
   { id: "launch", label: "Launch" },
   { id: "watch", label: "Watch" },
+  /*
+   * PROPERTIES SITS WITH THE ACTION SECTIONS because a red reading is a thing she acts on. Her
+   * words, 19 Sep 2026: "Connect all the GSC and whatever else to measure the health and GitHub
+   * and all." Every grid property, four readers each, and a blocked reader says why by name.
+   */
+  { id: "properties", label: "Properties" },
   { id: "backends", label: "Backends" },
   /*
    * COSTS SITS WITH THE ACTION SECTIONS because it is a place she DECIDES in, not one she
@@ -83,6 +90,7 @@ export function Systems() {
       </div>
       {section === "launch" && <Launch />}
       {section === "watch" && <Watch />}
+      {section === "properties" && <PropertyHealth />}
       {section === "backends" && <BackendRegistry />}
       {section === "costs" && <Costs />}
       {section === "publishing" && <Publishing />}

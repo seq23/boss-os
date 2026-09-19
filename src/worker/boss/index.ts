@@ -47,6 +47,7 @@ import { runSentinel } from "./governance/sentinel";
 import { investor } from "./routes/investor";
 import { wealth } from "./routes/wealth";
 import { research } from "./routes/research";
+import { gridHealth } from "./routes/gridHealth";
 import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
 import { ensureAlmanac } from "./spirit/day";
 import { handleTask, handleDeadLetter } from "./queue/consumer";
@@ -211,6 +212,11 @@ app.route("/api/research", research);
 // Job 1 — the rewrite that answers her note lives on the wealth mount:
 //   GET  /api/wealth/outreach/rewrites          the progress both tabs print (and drains the queue)
 //   POST /api/wealth/outreach/redraft-sent-back "Rewrite the N with my notes"
+// Job 3 — the grid health readers: uptime and Search Console from the Worker, GitHub and
+// Cloudflare posted from her Mac. `/api/grid` declares only `/` and `/examination`, so this is
+// never shadowed by it.
+app.route("/api/grid/health", gridHealth);
+//
 // === end Her jobs ===
 
 app.all("/api/*", (c) => c.json({ ok: false, error: "No such endpoint" }, 404));
