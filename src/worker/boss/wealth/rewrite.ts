@@ -121,7 +121,13 @@ export async function queueRewrite(
     )
     .bind(draft.candidate_id)
     .all<{ her_note: string }>();
-  const notesAll = [...new Set((notes.results ?? []).map((r) => r.her_note.trim()))];
+  /*
+   * A NOTE THAT SHORT IS NOT AN INSTRUCTION. Production's second attempt carries eleven notes that
+   * read "same" (the bulk-reject route refuses under 12 characters now; these predate it). They are
+   * her verdict, not a rule, and handing "same" to the model as a standing instruction is noise.
+   */
+  const notesAll = [...new Set((notes.results ?? []).map((r) => r.her_note.trim()).filter((n) => n.length >= 12))];
+  if (!notesAll.includes(note)) notesAll.push(note);
 
   const rewriteId = newId("orw");
   await env.DB
