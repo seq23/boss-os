@@ -36,7 +36,38 @@ describe("return-on-effort ledger", () => {
   });
 
   it("reports a ratio rather than a total, and rounds to per-mille so a real rate is not lost", async () => {
-    // Her actual number: 542 LP emails produced 4 replies. As a whole percentage that is "0%".
+    // 542 asks producing 4 outcomes. As a whole percentage that is "0%".
+    const posted = await apiJson("/api/wealth/returns", {
+      method: "POST",
+      body: {
+        measurements: [{
+          line: "authority_network", period: MONTH, source: "manual",
+          effort_label: "asks sent", effort_count: 542,
+          outcome_label: "links", outcome_count: 4,
+        }],
+      },
+    });
+    expect(posted.status).toBe(200);
+
+    const { body } = await apiJson(`/api/wealth/returns?period=${MONTH}`);
+    const line = body.data.lines.find((l: any) => l.line === "authority_network");
+    const pair = line.pairs.find((p: any) => p.source === "manual");
+    expect(pair.effort_count).toBe(542);
+    expect(pair.outcome_count).toBe(4);
+    expect(pair.per_mille).toBe(7);
+    expect(line.measured).toBe(true);
+  });
+
+  /*
+   * ─── WEST PEEK'S RAISE IS NOT A LINE ON HER CAPITAL TAB ───────────────────
+   *
+   * Owner, 19 September 2026: "I don't want it to track the LP stuff for West Peek on that tab —
+   * that's irrelevant here … the overall amount of money raised and all that is not for Boss OS."
+   * The test this replaces PINNED the line ("542 LP emails produced 4 replies" as west_peek_raise).
+   * Now the ledger never lists it, and the contribute door refuses it by name — so the Mac job
+   * that used to read the LP tracker cannot put it back.
+   */
+  it("never lists the West Peek raise, and refuses a contribution to it by name", async () => {
     const posted = await apiJson("/api/wealth/returns", {
       method: "POST",
       body: {
@@ -47,15 +78,14 @@ describe("return-on-effort ledger", () => {
         }],
       },
     });
-    expect(posted.status).toBe(200);
-
+    expect(posted.status).toBe(400);
+    expect(posted.body.error).toContain("west_peek_raise");
     const { body } = await apiJson(`/api/wealth/returns?period=${MONTH}`);
-    const raise = body.data.lines.find((l: any) => l.line === "west_peek_raise");
-    const pair = raise.pairs.find((p: any) => p.source === "lp_tracker");
-    expect(pair.effort_count).toBe(542);
-    expect(pair.outcome_count).toBe(4);
-    expect(pair.per_mille).toBe(7);
-    expect(raise.measured).toBe(true);
+    expect(body.data.lines.some((l: any) => l.line === "west_peek_raise")).toBe(false);
+    expect(body.data.lines_defined.some((l: any) => l.lane === "west_peek")).toBe(false);
+    expect(JSON.stringify(body.data)).not.toMatch(/capital committed|LP emails sent/);
+    const rows = await env.DB.prepare(`SELECT COUNT(*) AS n FROM line_returns WHERE line = 'west_peek_raise'`).first<{ n: number }>();
+    expect(rows!.n).toBe(0);
   });
 
   /*
@@ -141,7 +171,8 @@ describe("return-on-effort ledger", () => {
     });
     const { body } = await apiJson(`/api/wealth/returns?period=${MONTH}`);
     expect(body.data.lines.map((l: any) => l.line)).toEqual([
-      "brokerage", "west_peek_raise",
+      "brokerage",
+      // NOT west_peek_raise — owner, 19 Sep 2026: the West Peek raise is not tracked on this tab.
       // The grid, in its own order — `src/shared/boss/grid.mjs`.
       "guides_generator", "citation_velocity", "horse_legal", "hicks_consulting",
       "virtual_agency", "hpc", "approvalprep", "wedding",
@@ -170,8 +201,8 @@ describe("return-on-effort ledger", () => {
   it("upserts rather than appends, so running the job twice does not double the month", async () => {
     const one = {
       measurements: [{
-        line: "west_peek_raise", period: MONTH, source: "lp_tracker",
-        effort_label: "LP emails sent", effort_count: 100, outcome_label: "replies", outcome_count: 1,
+        line: "authority_network", period: MONTH, source: "manual",
+        effort_label: "asks sent", effort_count: 100, outcome_label: "links", outcome_count: 1,
       }],
     };
     await apiJson("/api/wealth/returns", { method: "POST", body: one });
@@ -185,14 +216,14 @@ describe("return-on-effort ledger", () => {
       method: "POST",
       body: {
         measurements: [
-          { line: "west_peek_raise", period: "all", source: "lp_tracker", effort_label: "LP emails sent, all time", effort_count: 542, outcome_label: "replies", outcome_count: 4 },
-          { line: "west_peek_raise", period: MONTH, source: "lp_tracker", effort_label: "LP emails sent", effort_count: 60, outcome_label: "replies", outcome_count: 0 },
+          { line: "authority_network", period: "all", source: "manual", effort_label: "asks sent, all time", effort_count: 542, outcome_label: "links", outcome_count: 4 },
+          { line: "authority_network", period: MONTH, source: "manual", effort_label: "asks sent", effort_count: 60, outcome_label: "links", outcome_count: 0 },
         ],
       },
     });
     const { body } = await apiJson(`/api/wealth/returns?period=${MONTH}`);
-    const raise = body.data.lines.find((l: any) => l.line === "west_peek_raise");
-    expect(raise.pairs.filter((p: any) => p.source === "lp_tracker").map((p: any) => p.effort_count)).toEqual([60]);
+    const raise = body.data.lines.find((l: any) => l.line === "authority_network");
+    expect(raise.pairs.filter((p: any) => p.source === "manual").map((p: any) => p.effort_count)).toEqual([60]);
     expect(body.data.lifetime.map((r: any) => r.effort_count)).toEqual([542]);
   });
 });
