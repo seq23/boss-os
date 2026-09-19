@@ -296,7 +296,7 @@ export async function runFirmScan(
     await progress(env, scanId, { state: "searching", started_at: scan.started_at ?? Date.now() });
 
     // 2. Queries, then the feeds.
-    const qr = await ask(composeQueriesPrompt(req), "research");
+    const qr = await ask(composeQueriesPrompt(req), "search_queries");
     let queries: string[] = [];
     try {
       const first = qr.text.indexOf("["); const last = qr.text.lastIndexOf("]");
@@ -339,7 +339,7 @@ export async function runFirmScan(
     if (read === 0) return fail(`${sources.length} sources were found and none could be read (${sources.map((s) => s.error).join("; ")}).`);
 
     // 3. Extract, verify.
-    const er = await ask(composeExtractPrompt(req, sources), "research");
+    const er = await ask(composeExtractPrompt(req, sources), "extract_from_fetched_text");
     const raw = parseFindingsReply(er.text);
     if (!raw) return fail("The model's findings were not a JSON list; nothing was recorded.");
     const now = Date.now();

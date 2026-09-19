@@ -342,6 +342,19 @@ export const INTAKE_KIND_TO_BACKEND_KIND: Record<string, string> = {
   trading: "research",
   west_peek_bridge: "document",
   new_agent_proposal: "document",
+  /*
+   * ─── THE FIRM SCAN'S CALLS, NAMED FOR WHAT THE MODEL IS ACTUALLY ASKED TO DO ───
+   *
+   * "Find firms that did X" (research/firmScan.ts) is a `research` TASK, and Workers AI is rightly
+   * not allowed research — a model that cannot open a page must not be asked to recall one. But
+   * the scan does not ask it to: the Worker fetches the news itself and hands the model the text.
+   * What the model does is write three search queries (a classification-sized job) and extract
+   * named firms with a verbatim sentence from text it was given (a summarise-sized job), and each
+   * finding is then checked against the page by code. Those calls carry these kinds, so the
+   * routing record says what happened and the free non-training rung may take them.
+   */
+  search_queries: "classify",
+  extract_from_fetched_text: "summarise",
 };
 
 export function backendKindFor(intakeKind: string | null | undefined): string | null {
