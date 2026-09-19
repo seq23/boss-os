@@ -168,14 +168,6 @@ const BLIND_SPOTS: Record<string, { label: string; why: string }> = {
       "Nothing in Boss OS records what a closed deal paid. `deals.check_size_micros` is the size of the " +
       "trade rather than her fee, so the brokerage can be measured in closings and never in money.",
   },
-  west_peek_raise: {
-    label: "capital committed",
-    why:
-      "No LP commitment or dollar raised is recorded anywhere in this system; a reply is the furthest " +
-      "outcome visible. Reply counts also depend on the Reply Log being kept by hand, because " +
-      "sequoia@westpeek.ventures is still not connected — the same gap that has hidden opt-out requests " +
-      "since 19 August.",
-  },
   /*
    * ─── THE SPRY LINES ARE NOW THE GRID, AND THESE ARE REKEYED TO IT ────────
    *
@@ -247,9 +239,6 @@ const BLIND_SPOTS: Record<string, { label: string; why: string }> = {
 
 /** What a line still needs before it can be measured at all, when it has no numbers whatsoever. */
 const NO_SIGNAL_YET: Record<string, string> = {
-  west_peek_raise:
-    "The LP tracker is a Google Sheet only her Mac can read. Run `npm run returns:contribute` to bring " +
-    "sends and replies in; until then this line is unmeasured, not empty.",
   guides_generator: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
   citation_velocity: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
   virtual_agency: "Search Console holds the traffic and only her Mac has the credential. Run `npm run returns:contribute`.",
@@ -388,7 +377,7 @@ export async function buildLedger(db: D1Database, period: string): Promise<Ledge
     ],
   };
 
-  const lines: LineReturn[] = PROJECTS.map((project) => {
+  const lines: LineReturn[] = RETURN_LINES.map((project) => {
     const pairs = [...(computed[project.key] ?? []), ...(byLine.get(project.key) ?? [])];
 
     /*
@@ -452,9 +441,26 @@ export async function buildLedger(db: D1Database, period: string): Promise<Ledge
   };
 }
 
+/*
+ * ─── WEST PEEK'S RAISE IS NOT A LINE ON HER CAPITAL TAB ─────────────────────
+ *
+ * Owner, 19 September 2026: "I don't want it to track the LP stuff for West Peek on that tab —
+ * that's irrelevant here. I still want Monique to do her job of finding positive replies in my
+ * LP search — the LP search is my personal LP search, that's why she is doing it — but the
+ * overall amount of money raised and all that is not for Boss OS."
+ *
+ * So the `west_peek` lane is excluded from the return ledger by lane, here, at the one place the
+ * lines are enumerated: no "LP emails sent / replies / capital committed" line, no `lp_tracker`
+ * contribution accepted (`LINE_KEYS` below is what the contribute route checks), and Scooter's
+ * tracker sync is suspended (0262). The West Peek project stays in `projects.ts` because Today's
+ * Wednesday cadence (§5.4) is her diary, not a fund total. Monique's LP-reply duties are untouched.
+ * Guard: `scripts/validate/no-west-peek-fund-totals.mjs`.
+ */
+export const RETURN_LINES = PROJECTS.filter((p) => p.lane !== "west_peek");
+
 /** The line keys the ledger accepts, and the properties each Spry line owns. */
 export function lineDefinitions() {
-  return PROJECTS.map((p) => ({
+  return RETURN_LINES.map((p) => ({
     line: p.key,
     name: p.name,
     lane: p.lane,
@@ -463,4 +469,4 @@ export function lineDefinitions() {
   }));
 }
 
-export const LINE_KEYS = new Set(PROJECTS.map((p) => p.key));
+export const LINE_KEYS = new Set(RETURN_LINES.map((p) => p.key));
