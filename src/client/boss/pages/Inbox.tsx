@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api";
+import { api, type RewriteProgress } from "../api";
 import { Docket } from "../components/Docket";
 import { JudgementDocket } from "../components/JudgementDocket";
 import { Empty, Loading } from "../components/Shell";
@@ -105,8 +105,15 @@ export function Inbox({ onCountChange, onOpen }: {
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const [confirming, setConfirming] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; failed: number; total: number; redrafted: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; failed: number; total: number; rewriting: number } | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  /*
+   * THE REWRITE LINE — the same sentence the Capital desk prints, from the same Worker read:
+   * "13 sent back with your note · rewriting now · 4 of 13 ready". Polled while anything is
+   * rewriting; the poll also drains the queue, and each letter that lands reloads the list so it
+   * appears here as it is ready. `null` means not read, never none.
+   */
+  const [rewrites, setRewrites] = useState<RewriteProgress | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -126,6 +133,7 @@ export function Inbox({ onCountChange, onOpen }: {
       ]);
       setItems(approvals);
       setNotices(told);
+      api.rewriteProgress().then(setRewrites).catch(() => setRewrites(null));
       setJudgements(Object.fromEntries((judged.items ?? []).map((j: any) => [j.approval_id, j])));
       setStatus(sys);
       /*
@@ -146,6 +154,18 @@ export function Inbox({ onCountChange, onOpen }: {
   }, [onCountChange]);
 
   useEffect(() => { load(); }, [load]);
+
+  // While a rewrite is in motion, keep reading; a letter that lands reloads the list.
+  useEffect(() => {
+    if (!rewrites || rewrites.rewriting === 0) return;
+    const t = setInterval(() => {
+      api.rewriteProgress().then((p) => {
+        setRewrites(p);
+        if (p.ready !== rewrites.ready || p.rewriting !== rewrites.rewriting) load();
+      }).catch(() => {});
+    }, 4000);
+    return () => clearInterval(t);
+  }, [rewrites, load]);
 
   /**
    * Optimistic: the docket leaves the list the moment you decide. If the request
@@ -176,8 +196,8 @@ export function Inbox({ onCountChange, onOpen }: {
         if (exec.detail?.still_awaiting) load();
       } else if (exec?.status === "executed" && exec.detail?.resumed) {
         setFlash(exec.detail.resumed as string);
-        // A different letter came back for this firm; show it rather than leaving a stale list.
-        if (exec.detail?.redrafted) load();
+        // A rewrite was queued for this firm; the progress line shows it and the list reloads as it lands.
+        if (exec.detail?.rewrite_queued) api.rewriteProgress().then(setRewrites).catch(() => {});
       } else if (decision === "deferred") {
         setFlash("Deferred. It stays on the list until it expires.");
       } else {
@@ -249,7 +269,7 @@ export function Inbox({ onCountChange, onOpen }: {
     setConfirming(false);
     setError(null);
     setResult(null);
-    setProgress({ done: 0, failed: 0, total: ids.length, redrafted: 0 });
+    setProgress({ done: 0, failed: 0, total: ids.length, rewriting: 0 });
 
     let batchId: string;
     try {
@@ -261,13 +281,13 @@ export function Inbox({ onCountChange, onOpen }: {
       return;
     }
 
-    let done = 0, failed = 0, redrafted = 0;
+    let done = 0, failed = 0, rewriting = 0;
     const failures: string[] = [];
     for (const id of ids) {
       try {
         const r = await api.decide(id, "rejected", reason.trim(), batchId);
         done += 1;
-        if (r.execution?.detail?.redrafted) redrafted += 1;
+        if (r.execution?.detail?.rewrite_queued) rewriting += 1;
         setItems((prev) => (prev ? prev.filter((a) => a.id !== id) : prev));
       } catch (e) {
         failed += 1;
@@ -275,7 +295,7 @@ export function Inbox({ onCountChange, onOpen }: {
         failures.push(`${(items ?? []).find((a) => a.id === id)?.title ?? id}: ${message}`);
         api.batchItemFailed(batchId, id, message).catch(() => { /* counted locally regardless */ });
       }
-      setProgress({ done, failed, total: ids.length, redrafted });
+      setProgress({ done, failed, total: ids.length, rewriting });
     }
 
     setSelected(new Set());
@@ -284,7 +304,7 @@ export function Inbox({ onCountChange, onOpen }: {
     setProgress(null);
     setResult(
       `${done} rejected · ${failed} failed` +
-        (redrafted > 0 ? ` · ${redrafted} came back rewritten to your note and ${redrafted === 1 ? "is" : "are"} below` : "") +
+        (rewriting > 0 ? ` · ${rewriting} sent to Camille to rewrite with your note — each lands below as it is ready` : "") +
         (failures.length ? ` — ${failures.join("; ")}` : ""),
     );
     await load();
@@ -350,6 +370,17 @@ export function Inbox({ onCountChange, onOpen }: {
           {oldest !== null && waiting !== 0 ? ` · oldest ${ageWords(Date.now() - oldest)}` : ""}
         </div>
       </div>
+
+      {rewrites?.sentence && (
+        <div className="notice" data-testid="rewrite-progress" style={{ borderColor: "var(--gold)" }}>
+          <strong>{rewrites.sentence}</strong>
+          {rewrites.failed.length > 0 && (
+            <ul className="row-sub" style={{ marginTop: 6, paddingLeft: 18 }}>
+              {rewrites.failed.map((f) => <li key={f.candidate_name}><strong>{f.candidate_name}:</strong> {f.why}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="stats">
         <div className="stat">

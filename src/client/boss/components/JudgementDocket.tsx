@@ -129,8 +129,9 @@ export function JudgementDocket({
             address, and send it yourself.
           </div>
           {judgement.letter.her_note && (
-            <div className="row-sub" style={{ marginTop: 8 }}>
+            <div className="row-sub" style={{ marginTop: 8 }} data-testid="letter-answers-note">
               <strong>Answering your note:</strong> {judgement.letter.her_note}
+              {judgement.letter.written_by && <> · <em>rewritten by {judgement.letter.written_by}</em></>}
             </div>
           )}
         </div>

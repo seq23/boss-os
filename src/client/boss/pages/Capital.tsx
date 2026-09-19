@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, type RewriteProgress } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { listSizes, moneyShort, parseMoneyUsd, parsePositionSizes } from "../../../shared/wealth/positionSizes";
@@ -151,6 +151,13 @@ function Buyers() {
    */
   const [sentBack, setSentBack] = useState<any[] | null>(null);
   /*
+   * THE PROGRESS SHE COULD NOT SEE (19 Sep 2026: "I don't see it working on re-writing them").
+   * One sentence from the Worker — "13 sent back with your note · rewriting now · 4 of 13 ready" —
+   * polled every few seconds while anything is rewriting. The poll is also what drains the queue,
+   * so watching the screen is what makes it fast. `null` means not read, never none.
+   */
+  const [rewrites, setRewrites] = useState<RewriteProgress | null>(null);
+  /*
    * `null` MEANS "NOT READ", NOT "NONE". Every one of these three starts null and is only ever set
    * to a value by a request that came back. An empty state rendered over a failed fetch is the
    * defect she has been served most often by this application, and the sections below all say which
@@ -168,8 +175,23 @@ function Buyers() {
       .catch((e) => { setError(e); setRecFailed(true); });
     api.outreach().then(setLetters).catch((e) => { setError(e); setLetters(null); });
     api.outreachSentBack().then((r) => setSentBack(r.items ?? [])).catch((e) => { setError(e); setSentBack(null); });
+    api.rewriteProgress().then(setRewrites).catch((e) => { setError(e); setRewrites(null); });
   }
   useEffect(load, []);
+  // While a rewrite is in motion, keep reading: the count moves, and the read drains the queue.
+  useEffect(() => {
+    if (!rewrites || rewrites.rewriting === 0) return;
+    const t = setInterval(() => {
+      api.rewriteProgress().then((p) => {
+        setRewrites(p);
+        if (p.ready !== rewrites.ready || p.rewriting !== rewrites.rewriting) {
+          api.outreachSentBack().then((r) => setSentBack(r.items ?? [])).catch(() => {});
+          api.outreach().then(setLetters).catch(() => {});
+        }
+      }).catch(() => {});
+    }, 4000);
+    return () => clearInterval(t);
+  }, [rewrites]);
 
   /**
    * One press after the opening changes, rather than one per firm. The route raises exactly the
@@ -180,10 +202,13 @@ function Buyers() {
     setBusy("redraft"); setError(null);
     try {
       const r = await api.redraftSentBack();
+      setRewrites(r);
       setFlash(
-        r.raised.length === 0
-          ? `Nothing redrafted: ${r.considered === 0 ? "no letter is sent back." : r.left.map((l) => l.why).join(" ")}`
-          : `${r.raised.length} rewritten and in your Inbox: ${r.raised.join(", ")}.${r.left.length ? ` Left as they were: ${r.left.map((l) => l.name).join(", ")}.` : ""}`,
+        r.total === 0
+          ? "Nothing to rewrite: no letter is sent back with a note."
+          : r.queued_now === 0 && r.rewriting === 0
+            ? `Nothing new to queue — ${r.sentence ?? "every rewrite has already run."}`
+            : `${r.queued_now > 0 ? `${r.queued_now} queued. ` : ""}Camille is rewriting now, answering your notes; each letter lands in your Inbox as it is ready.`,
       );
       load();
     } catch (e) { setError(e); } finally { setBusy(null); }
@@ -323,25 +348,46 @@ function Buyers() {
         * opening produces a DIFFERENT letter. One button redrafts all of them at once, and it can
         * only raise letters that differ from what she sent back.
         */}
+      {rewrites?.sentence && (
+        <div className="notice" data-testid="rewrite-progress" style={{ borderColor: "var(--gold)" }}>
+          <strong>{rewrites.sentence}</strong>
+          {rewrites.latest_batch && (
+            <div className="row-sub" style={{ marginTop: 6 }}>Your note: {rewrites.latest_batch.reason}</div>
+          )}
+          {rewrites.failed.length > 0 && (
+            <ul className="row-sub" style={{ marginTop: 6, paddingLeft: 18 }}>
+              {rewrites.failed.map((f) => <li key={f.candidate_name}><strong>{f.candidate_name}:</strong> {f.why}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
       {(sentBack?.length ?? 0) > 0 && (
         <>
           <p className="eyebrow">Sent back · {sentBack!.length} — off your desk, your note on each</p>
           <div className="panel" data-testid="sent-back">
-            {sentBack!.map((d: any) => (
-              <div className="row" key={d.id}>
-                <div className="row-main">
-                  <div className="row-title">{d.candidate_name} · attempt {d.attempt}</div>
-                  <div className="row-sub">{d.her_note ?? "No reason was given."}</div>
+            {sentBack!.map((d: any) => {
+              const rw = rewrites?.items.find((i) => i.candidate_id === d.candidate_id);
+              return (
+                <div className="row" key={d.id}>
+                  <div className="row-main">
+                    <div className="row-title">
+                      {d.candidate_name} · attempt {d.attempt}
+                      {rw && <span className="row-sub"> · {rw.state === "queued" ? "rewrite queued" : rw.state === "running" ? "rewriting now" : rw.state === "failed" ? "could not be rewritten" : "rewritten"}</span>}
+                    </div>
+                    <div className="row-sub">{d.her_note ?? "No reason was given."}</div>
+                    {rw?.state === "failed" && rw.failure && <div className="field-error">{rw.failure}</div>}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div className="btn-row">
-              <button className="btn btn-small" disabled={busy === "redraft"} onClick={redraftAll} data-testid="redraft-sent-back">
-                {busy === "redraft" ? "Redrafting…" : `Redraft the ${sentBack!.length} with the current opening`}
+              <button className="btn btn-small" disabled={busy === "redraft" || (rewrites?.rewriting ?? 0) > 0} onClick={redraftAll} data-testid="redraft-sent-back">
+                {busy === "redraft" ? "Queueing…" : (rewrites?.rewriting ?? 0) > 0 ? "Rewriting now…" : `Rewrite the ${sentBack!.length} with my notes`}
               </button>
             </div>
             <div className="row-sub">
-              Only a letter that would differ from the one you sent back is raised; the rest stay here and say why.
+              Camille rewrites each one to answer your note, on the Worker's own queue — minutes, not the Mac's next slot. A rewrite that
+              would repeat a letter you sent back is refused and says so here; a letter that breaks a rule twice is left here with the reason.
             </div>
           </div>
         </>
