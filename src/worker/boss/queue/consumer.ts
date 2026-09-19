@@ -84,7 +84,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   /*
    * ─── "FIND FIRMS THAT DID X AND DRAFT THE ASK" RUNS ITS OWN PATH ────────────
    *
-   * `input.firm_scan.scan_id` names a `firm_scans` row (Job 5, 19 Sep 2026). The scan reads public
+   * `input.firm_scan.scan_id` names a `ask_scans` row (Job 5, 19 Sep 2026). The scan reads public
    * news, verifies every finding against the page it cites, and raises each letter through the
    * letters' own door; the task closes with the scan's counts rather than a paragraph.
    */

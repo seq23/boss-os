@@ -17,7 +17,7 @@
 --
 -- ─── What exists now ─────────────────────────────────────────────────────────
 --
--- A `firm_scans` row per instruction, owned by Camille, run on the Worker's own queue:
+-- A `ask_scans` row per instruction, owned by Camille, run on the Worker's own queue:
 --   1. the instruction is parsed into FIND (what the firms did) and ASK (what she wants of them);
 --   2. news search feeds are read for the FIND (public RSS, no key), each article fetched;
 --   3. a model on the ladder extracts the firms and THE SENTENCE that says they did X — and a
@@ -29,7 +29,7 @@
 --
 -- Every step writes its count here, so the task can say "6 sources read · 4 firms found ·
 -- 4 letters in your Inbox" from rows rather than from a model's own account of itself.
-CREATE TABLE firm_scans (
+CREATE TABLE ask_scans (
   id              TEXT PRIMARY KEY,
   task_id         TEXT NOT NULL,
   instruction     TEXT NOT NULL,
@@ -51,13 +51,13 @@ CREATE TABLE firm_scans (
   finished_at     INTEGER,
   updated_at      INTEGER NOT NULL
 );
-CREATE INDEX idx_firm_scans_state ON firm_scans(state, requested_at);
+CREATE INDEX idx_ask_scans_state ON ask_scans(state, requested_at);
 
 -- One row per firm the model named. `verified` is the grounding: the quote appears verbatim in
 -- the fetched page. An unverified finding is kept for the record and gets NO letter.
-CREATE TABLE firm_scan_findings (
+CREATE TABLE ask_scan_findings (
   id            TEXT PRIMARY KEY,
-  scan_id       TEXT NOT NULL REFERENCES firm_scans(id) ON DELETE CASCADE,
+  scan_id       TEXT NOT NULL REFERENCES ask_scans(id) ON DELETE CASCADE,
   firm          TEXT NOT NULL,
   role          TEXT,                -- what the source says they did, in a few words
   quote         TEXT NOT NULL,
@@ -69,12 +69,12 @@ CREATE TABLE firm_scan_findings (
   draft_detail  TEXT,
   created_at    INTEGER NOT NULL
 );
-CREATE INDEX idx_firm_scan_findings_scan ON firm_scan_findings(scan_id, verified);
+CREATE INDEX idx_ask_scan_findings_scan ON ask_scan_findings(scan_id, verified);
 
 INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
-  ('firm_scans', 'research', 'CLOUD_SYNC', 'EXTERNAL_OK',
+  ('ask_scans', 'research', 'CLOUD_SYNC', 'EXTERNAL_OK',
    'Her instruction and the counts of a public-web scan. Public news, public firms; nothing here is a counterparty''s confidence.'),
-  ('firm_scan_findings', 'research', 'CLOUD_SYNC', 'EXTERNAL_OK',
+  ('ask_scan_findings', 'research', 'CLOUD_SYNC', 'EXTERNAL_OK',
    'A firm named in a public article, the sentence that names it, and the URL. Public by construction: a finding is only kept if the sentence is on the public page it cites.')
 ON CONFLICT(entity) DO NOTHING;
 

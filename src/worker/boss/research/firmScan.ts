@@ -28,7 +28,7 @@
  *      From there it is the proven chain: the green button makes the Gmail draft in staylor@spry.vc,
  *      a send-back with a note is rewritten (0261), nothing sends.
  *
- * Every step writes its count on `firm_scans`, so the desk says "6 sources read · 4 firms · 4
+ * Every step writes its count on `ask_scans`, so the desk says "6 sources read · 4 firms · 4
  * letters in your Inbox" from rows. Cost: the calls land on the ladder's first eligible rung; the
  * fetched text is public news so the work is `public_model_approved` unless the router's own scan
  * says otherwise, and `cost_micros` is recorded per scan.
@@ -237,7 +237,7 @@ async function progress(env: Env, scanId: string, patch: Record<string, unknown>
   const keys = Object.keys(patch);
   if (keys.length === 0) return;
   await env.DB
-    .prepare(`UPDATE firm_scans SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
+    .prepare(`UPDATE ask_scans SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
     .bind(...keys.map((k) => patch[k]), Date.now(), scanId)
     .run();
 }
@@ -262,7 +262,7 @@ export async function runFirmScan(
 ): Promise<ScanOutcome> {
   const complete = deps.complete ?? routeCompletion;
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const scan = await env.DB.prepare(`SELECT * FROM firm_scans WHERE id = ?`).bind(scanId).first<any>();
+  const scan = await env.DB.prepare(`SELECT * FROM ask_scans WHERE id = ?`).bind(scanId).first<any>();
   if (!scan) return { state: "failed", detail: "The scan row is gone.", verified: 0, drafts: 0, cost_micros: 0, written_by: null };
   if (scan.state === "done") return { state: "done", detail: "Already run.", verified: scan.verified_count, drafts: scan.drafts_count, cost_micros: scan.cost_micros, written_by: scan.written_by };
   const req: FirmScanRequest = { find: scan.find_text, ask: scan.ask_text, raw: scan.instruction };
@@ -354,7 +354,7 @@ export async function runFirmScan(
     }
     for (const f of findings) {
       await env.DB
-        .prepare(`INSERT INTO firm_scan_findings (id, scan_id, firm, role, quote, evidence_url, source_title, verified, created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
+        .prepare(`INSERT INTO ask_scan_findings (id, scan_id, firm, role, quote, evidence_url, source_title, verified, created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
         .bind(newId("fsf"), scanId, f.firm, f.role, f.quote, f.evidence_url, f.source_title, f.verified ? 1 : 0, now)
         .run();
     }
@@ -394,7 +394,7 @@ export async function runFirmScan(
         messages.push({ role: "assistant", content: r.text }, { role: "user", content: `That letter broke these rules: ${broken.map((b, i) => `${i + 1}) ${b}`).join("; ")}. Write it again as the JSON object, keeping every rule.` });
       }
       if (!letter || broken.length) {
-        await env.DB.prepare(`UPDATE firm_scan_findings SET candidate_id = ?, draft_state = 'refused', draft_detail = ? WHERE scan_id = ? AND firm = ?`)
+        await env.DB.prepare(`UPDATE ask_scan_findings SET candidate_id = ?, draft_state = 'refused', draft_detail = ? WHERE scan_id = ? AND firm = ?`)
           .bind(candidateId, `Two tries, and the letter still broke a rule: ${broken.join("; ")}`, scanId, f.firm).run();
         continue;
       }
@@ -409,7 +409,7 @@ export async function runFirmScan(
         },
       };
       const raised = await raiseLetterFor(env, candidate, composed, null, Date.now());
-      await env.DB.prepare(`UPDATE firm_scan_findings SET candidate_id = ?, draft_state = ?, draft_detail = ? WHERE scan_id = ? AND firm = ?`)
+      await env.DB.prepare(`UPDATE ask_scan_findings SET candidate_id = ?, draft_state = ?, draft_detail = ? WHERE scan_id = ? AND firm = ?`)
         .bind(candidateId, raised.drafted ? "awaiting" : "refused", raised.detail, scanId, f.firm).run();
       if (raised.drafted) drafts++;
       await progress(env, scanId, { drafts_count: drafts });
@@ -454,12 +454,12 @@ async function upsertCandidate(env: Env, f: Finding, req: FirmScanRequest, now: 
 
 /** What the desk shows for a scan: the counts, the findings, and where each letter is. */
 export async function scanReport(env: Env, scanId: string) {
-  const scan = await env.DB.prepare(`SELECT * FROM firm_scans WHERE id = ?`).bind(scanId).first<any>();
+  const scan = await env.DB.prepare(`SELECT * FROM ask_scans WHERE id = ?`).bind(scanId).first<any>();
   if (!scan) return null;
   const findings = await env.DB
     .prepare(
       `SELECT f.*, d.id AS draft_id, d.state AS letter_state, d.judgement_id
-         FROM firm_scan_findings f
+         FROM ask_scan_findings f
          LEFT JOIN buyer_outreach_drafts d ON d.id = (
            SELECT id FROM buyer_outreach_drafts WHERE candidate_id = f.candidate_id ORDER BY attempt DESC LIMIT 1
          )

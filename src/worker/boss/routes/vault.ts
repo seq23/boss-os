@@ -144,6 +144,15 @@ const SNAPSHOT_TABLES = [
   // named stop. The draft itself lives in Gmail and survives anything here; this row is the only
   // link from a letter on the desk to it, and without it the desk would offer to create a second.
   "gmail_drafts",
+  // 0261 — the rewrite she is owed for each letter she sent back with a note: which letter, which
+  // note, where it is (queued/running/ready/failed) and who wrote it. NOT RE-DERIVABLE: a ready
+  // row is the only link from her note to the attempt that answered it.
+  "outreach_rewrites",
+  // 0264 — "find firms that did X and draft the ask": the instruction, its counts, and every firm
+  // named with the sentence and URL that named it. The letters live in buyer_outreach_drafts; the
+  // evidence for why each firm got one lives only here.
+  "ask_scans",
+  "ask_scan_findings",
   // 0263 — the latest health reading per grid property per reader: a status code and latency, a
   // workflow conclusion, a week of Search Console clicks, a deployment's age. RE-DERIVABLE only
   // going forward: the readers run again, but the history — when a site first went 5xx, which

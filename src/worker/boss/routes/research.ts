@@ -3,7 +3,7 @@
  *
  * Three doors, one row. `POST /firm-scans` is the desk's own door; Team → New task and the mail
  * intake reach the same `admitTask`, whose grammar recognises the shape. Every read here comes
- * from `firm_scans` / `firm_scan_findings` and the letters they raised — counts from rows, never
+ * from `ask_scans` / `ask_scan_findings` and the letters they raised — counts from rows, never
  * from a model's account of itself.
  */
 
@@ -19,7 +19,7 @@ research.get("/firm-scans", async (c) => {
   const rows = await c.env.DB
     .prepare(
       `SELECT s.*, t.status AS task_status, t.error AS task_error, t.employee_id, e.name AS employee_name
-         FROM firm_scans s
+         FROM ask_scans s
          LEFT JOIN tasks t ON t.id = s.task_id
          LEFT JOIN employees e ON e.id = t.employee_id
         ORDER BY s.requested_at DESC LIMIT 20`,
@@ -55,7 +55,7 @@ research.post("/firm-scans", async (c) => {
   if (!admitted.created || !admitted.task_id) {
     throw badRequest(`Intake declined it: ${admitted.reason ?? "no reason given"}`);
   }
-  const scan = await c.env.DB.prepare(`SELECT * FROM firm_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
+  const scan = await c.env.DB.prepare(`SELECT * FROM ask_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
   return ok(c, { task_id: admitted.task_id, scan_id: scan?.id ?? null, find: parsed.find, ask: parsed.ask, queued: admitted.queued }, 201);
 });
 

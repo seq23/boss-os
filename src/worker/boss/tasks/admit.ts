@@ -128,7 +128,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
    * … and draft an email for me to ask if I can send investors to them" — used to reach a cloud
    * rung as free text and come back as a paragraph promising to look. `parseFirmScan` is a grammar
    * that recognises the shape here, at the one point every door passes through, so Team → New
-   * task, the mail intake and the API all produce the same work: a `firm_scans` row owned by
+   * task, the mail intake and the API all produce the same work: a `ask_scans` row owned by
    * Camille, run by `research/firmScan.ts`. A sentence the grammar cannot read is untouched.
    */
   const { parseFirmScan } = await import("../research/firmScan");
@@ -200,7 +200,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   if (firmScan && scanId) {
     await env.DB
       .prepare(
-        `INSERT INTO firm_scans (id, task_id, instruction, find_text, ask_text, state, requested_at, updated_at)
+        `INSERT INTO ask_scans (id, task_id, instruction, find_text, ask_text, state, requested_at, updated_at)
          VALUES (?,?,?,?,?,'queued',?,?)`,
       )
       .bind(scanId, id, firmScan.raw, firmScan.find, firmScan.ask, now, now)

@@ -35,11 +35,11 @@ async function tab(page: Page, label: string) {
 
 function cleanSql(): string {
   return [
-    `DELETE FROM firm_scan_findings WHERE scan_id IN (SELECT id FROM firm_scans WHERE instruction LIKE '%Anthropic IPO%')`,
-    `DELETE FROM boss_task_queue WHERE task_id IN (SELECT task_id FROM firm_scans WHERE instruction LIKE '%Anthropic IPO%')`,
-    `DELETE FROM task_events WHERE task_id IN (SELECT task_id FROM firm_scans WHERE instruction LIKE '%Anthropic IPO%')`,
-    `DELETE FROM tasks WHERE id IN (SELECT task_id FROM firm_scans WHERE instruction LIKE '%Anthropic IPO%')`,
-    `DELETE FROM firm_scans WHERE instruction LIKE '%Anthropic IPO%'`,
+    `DELETE FROM ask_scan_findings WHERE scan_id IN (SELECT id FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%')`,
+    `DELETE FROM boss_task_queue WHERE task_id IN (SELECT task_id FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%')`,
+    `DELETE FROM task_events WHERE task_id IN (SELECT task_id FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%')`,
+    `DELETE FROM tasks WHERE id IN (SELECT task_id FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%')`,
+    `DELETE FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%'`,
   ].join("; ");
 }
 
@@ -59,7 +59,7 @@ test.describe("Her jobs — find firms and draft the ask", () => {
     await box.fill("find me a list of firms that reported participation in the Anthropic IPO");
     await page.getByTestId("start-firm-scan").click();
     await expect(panel).toContainText("does not say both what to find and what to ask");
-    expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM firm_scans WHERE instruction LIKE '%Anthropic IPO%'`)[0]!.n).toBe(0);
+    expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%'`)[0]!.n).toBe(0);
 
     // Her sentence.
     await box.fill(INSTRUCTION);
@@ -71,7 +71,7 @@ test.describe("Her jobs — find firms and draft the ask", () => {
     const row = page.getByTestId("firm-scan").filter({ hasText: INSTRUCTION });
     await expect(row).toHaveCount(1);
     const scans = queryLocalD1<{ id: string; task_id: string; state: string; find_text: string }>(
-      `SELECT id, task_id, state, find_text FROM firm_scans WHERE instruction LIKE '%Anthropic IPO%'`,
+      `SELECT id, task_id, state, find_text FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%'`,
     );
     expect(scans).toHaveLength(1);
     expect(scans[0]!.find_text).toBe("reported participation in the Anthropic IPO");
@@ -85,7 +85,7 @@ test.describe("Her jobs — find firms and draft the ask", () => {
     await expect(sentence).toContainText("Stopped: The router refused the scan", { timeout: 60_000 });
     await expect(row.locator(".field-error")).toContainText("refused");
     const after = queryLocalD1<{ state: string; failure: string; status: string }>(
-      `SELECT s.state, s.failure, t.status FROM firm_scans s JOIN tasks t ON t.id = s.task_id WHERE s.id = '${scans[0]!.id}'`,
+      `SELECT s.state, s.failure, t.status FROM ask_scans s JOIN tasks t ON t.id = s.task_id WHERE s.id = '${scans[0]!.id}'`,
     )[0]!;
     expect(after.state).toBe("failed");
     expect(after.failure).toContain("router refused");
@@ -106,7 +106,7 @@ test.describe("Her jobs — find firms and draft the ask", () => {
     await page.getByRole("button", { name: "Send it in" }).click();
     await expect(page.locator("main.page")).toContainText("Camille has it", { timeout: 15_000 });
     await expect(page.locator("main.page")).toContainText("find firms that reported participation in the Anthropic IPO");
-    const scans = queryLocalD1<{ ask_text: string }>(`SELECT ask_text FROM firm_scans WHERE instruction LIKE '%Anthropic IPO%'`);
+    const scans = queryLocalD1<{ ask_text: string }>(`SELECT ask_text FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%'`);
     expect(scans).toHaveLength(1);
     expect(scans[0]!.ask_text).toBe("if I can send investors to them");
   });

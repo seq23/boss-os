@@ -85,8 +85,8 @@ function fakeWeb(overrides: Record<string, () => Response> = {}) {
 }
 
 async function clean() {
-  await env.DB.prepare(`DELETE FROM firm_scan_findings`).run();
-  await env.DB.prepare(`DELETE FROM firm_scans`).run();
+  await env.DB.prepare(`DELETE FROM ask_scan_findings`).run();
+  await env.DB.prepare(`DELETE FROM ask_scans`).run();
   await env.DB.prepare(`DELETE FROM buyer_outreach_drafts`).run();
   await env.DB.prepare(`DELETE FROM judgement_calls WHERE resume_kind = 'buyer_outreach_email'`).run();
   await env.DB.prepare(`DELETE FROM sourcing_candidates WHERE kind = 'ask'`).run();
@@ -155,7 +155,7 @@ describe("one instruction in, a list and letters out", () => {
     expect(res.body.data.task.status).toBe("queued");
     const input = JSON.parse(res.body.data.task.input);
     expect(input.firm_scan.find).toBe("have reported IPO participation in the release");
-    const scan = await env.DB.prepare(`SELECT * FROM firm_scans WHERE task_id = ?`).bind(res.body.data.task.id).first<any>();
+    const scan = await env.DB.prepare(`SELECT * FROM ask_scans WHERE task_id = ?`).bind(res.body.data.task.id).first<any>();
     expect(scan.state).toBe("queued");
     expect(scan.ask_text).toBe("if I can send investors to them");
 
@@ -178,7 +178,7 @@ describe("one instruction in, a list and letters out", () => {
 
   it("reads the feed, fetches the pages, verifies each firm against its page, drafts the ask, and the desk counts it from rows", async () => {
     const admitted = await admitTask(env as any, { title: INSTRUCTION, input: { prompt: INSTRUCTION } });
-    const scan = await env.DB.prepare(`SELECT * FROM firm_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
+    const scan = await env.DB.prepare(`SELECT * FROM ask_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
     const web = fakeWeb();
     try {
       const model = fakeModel([
@@ -206,7 +206,7 @@ describe("one instruction in, a list and letters out", () => {
       expect(extract.user).toContain(`URL: ${ARTICLE_2}`);
 
       // The row is what the desk prints.
-      const row = await env.DB.prepare(`SELECT * FROM firm_scans WHERE id = ?`).bind(scan.id).first<any>();
+      const row = await env.DB.prepare(`SELECT * FROM ask_scans WHERE id = ?`).bind(scan.id).first<any>();
       expect(row.state).toBe("done");
       expect(row.sources_found).toBe(2);
       expect(row.sources_read).toBe(2);
@@ -256,7 +256,7 @@ describe("one instruction in, a list and letters out", () => {
 
   it("a letter that breaks a rule twice is refused by name on the finding, and the rest still land", async () => {
     const admitted = await admitTask(env as any, { title: INSTRUCTION, input: { prompt: INSTRUCTION } });
-    const scan = await env.DB.prepare(`SELECT * FROM firm_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
+    const scan = await env.DB.prepare(`SELECT * FROM ask_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
     const web = fakeWeb();
     try {
       const bad = JSON.stringify({ subject: "s", body: "I am a broker. Email me at a@b.com. " + JSON.parse(GOOD_LETTER("Goldman Sachs")).body });
@@ -269,7 +269,7 @@ describe("one instruction in, a list and letters out", () => {
       expect(out.state).toBe("done");
       expect(out.verified).toBe(2);
       expect(out.drafts).toBe(1);
-      const gs = await env.DB.prepare(`SELECT draft_state, draft_detail FROM firm_scan_findings WHERE scan_id = ? AND firm = 'Goldman Sachs'`).bind(scan.id).first<any>();
+      const gs = await env.DB.prepare(`SELECT draft_state, draft_detail FROM ask_scan_findings WHERE scan_id = ? AND firm = 'Goldman Sachs'`).bind(scan.id).first<any>();
       expect(gs.draft_state).toBe("refused");
       expect(gs.draft_detail).toContain("broker");
       expect(gs.draft_detail).toContain("at-sign");
@@ -280,7 +280,7 @@ describe("one instruction in, a list and letters out", () => {
 
   it("no source, or no readable page, stops by name rather than drafting from nothing", async () => {
     const admitted = await admitTask(env as any, { title: INSTRUCTION, input: { prompt: INSTRUCTION } });
-    const scan = await env.DB.prepare(`SELECT * FROM firm_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
+    const scan = await env.DB.prepare(`SELECT * FROM ask_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
     const web = fakeWeb({ [ARTICLE_1]: () => new Response("", { status: 403 }), [ARTICLE_2]: () => new Response("<html></html>", { status: 200 }) });
     try {
       const model = fakeModel([]);
@@ -306,7 +306,7 @@ describe("one instruction in, a list and letters out", () => {
       expect(task.status).toBe("failed");
       expect(task.error).toContain("scan");
       expect(task.output).toBeNull();
-      const scan = await env.DB.prepare(`SELECT state, failure FROM firm_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
+      const scan = await env.DB.prepare(`SELECT state, failure FROM ask_scans WHERE task_id = ?`).bind(admitted.task_id).first<any>();
       expect(["failed", "queued"]).toContain(scan.state);
       expect(scan.failure).toBeTruthy();
     } finally { web.restore(); }

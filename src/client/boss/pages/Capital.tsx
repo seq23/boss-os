@@ -118,7 +118,7 @@ function Ledger() {
 /**
  * Her words, 19 Sep 2026: "find me a list of firms that have reported IPO participation in the
  * release, and draft an email for me to ask if I can send investors to them." One sentence in;
- * a verified list and the letters out, every step counted from rows (`firm_scans`). The same
+ * a verified list and the letters out, every step counted from rows (`ask_scans`). The same
  * sentence typed into Team → New task or mailed to an employee starts the same scan.
  */
 function FirmScans() {
