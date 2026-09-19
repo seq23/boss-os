@@ -196,6 +196,17 @@ app.route("/api/backends", backends);
  */
 app.route("/api/system/spend-lever", spendLeverRoutes);
 
+// === Her jobs ===
+//
+// Her report of 19 September 2026, ~13:00 CT — five jobs, one PR. Every route the PR adds mounts
+// here, in one block, so the next reader finds them together rather than scattered among the
+// chassis mounts above: the letter rewrite that answers her note (Job 1), the Capital tab scoped
+// to her own business (Job 2), the grid health readers (Job 3), and the "find firms that did X and
+// draft the ask" path (Job 5). Sub-paths that live on an existing mount (/api/wealth/…) are in that
+// route file and named in this block's comment rather than mounted twice.
+//
+// === end Her jobs ===
+
 app.all("/api/*", (c) => c.json({ ok: false, error: "No such endpoint" }, 404));
 
 // The SPA and its assets are served by the ASSETS binding for everything else.
