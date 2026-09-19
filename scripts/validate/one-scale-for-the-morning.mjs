@@ -55,6 +55,7 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { currentBriefingPrompt } from "./lib/briefing-prompt.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -205,22 +206,21 @@ export function check({ css, screen, bodyView, prompt }) {
 
 // ─── Self-test ──────────────────────────────────────────────────────────────
 
-function newestPrompt(migrationsDir) {
-  const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
-  let latest = null;
-  for (const f of files) {
-    const src = readFileSync(join(migrationsDir, f), "utf8").split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
-    if (/\$\.prompt/.test(src) && /duty_exec_intel/.test(src)) latest = src;
-  }
-  return latest;
+function newestPrompt() {
+  /*
+   * THE PROMPT IS READ FROM THE MODULE THAT COMPOSES IT, NOT HUNTED THROUGH MIGRATIONS. Migration
+   * 0257 took `$.prompt` out of the duty row; `briefingSpec.ts` is the specification and
+   * `materialise.ts` composes it on every firing. See scripts/validate/lib/briefing-prompt.mjs.
+   */
+  return currentBriefingPrompt();
 }
 
-function selfTest() {
+async function selfTest() {
   const good = {
     css: readFileSync(join(ROOT, CSS), "utf8"),
     screen: readFileSync(join(ROOT, SCREEN), "utf8"),
     bodyView: readFileSync(join(ROOT, BODY_VIEW), "utf8"),
-    prompt: newestPrompt(join(ROOT, "migrations")),
+    prompt: await newestPrompt(),
   };
 
   const cases = [
@@ -308,14 +308,14 @@ if (missingFiles.length) {
 }
 
 if (process.argv.includes("--self-test")) {
-  selfTest();
+  await selfTest();
 } else {
   const css = readFileSync(join(ROOT, CSS), "utf8");
   const problems = check({
     css,
     screen: readFileSync(join(ROOT, SCREEN), "utf8"),
     bodyView: readFileSync(join(ROOT, BODY_VIEW), "utf8"),
-    prompt: newestPrompt(join(ROOT, "migrations")),
+    prompt: await newestPrompt(),
   });
 
   if (problems.length) {
