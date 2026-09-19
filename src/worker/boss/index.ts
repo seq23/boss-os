@@ -46,6 +46,7 @@ import { backends, spendLeverRoutes } from "./routes/backends";
 import { runSentinel } from "./governance/sentinel";
 import { investor } from "./routes/investor";
 import { wealth } from "./routes/wealth";
+import { gridHealth } from "./routes/gridHealth";
 import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
 import { ensureAlmanac } from "./spirit/day";
 import { handleTask, handleDeadLetter } from "./queue/consumer";
@@ -204,6 +205,11 @@ app.route("/api/system/spend-lever", spendLeverRoutes);
 // to her own business (Job 2), the grid health readers (Job 3), and the "find firms that did X and
 // draft the ask" path (Job 5). Sub-paths that live on an existing mount (/api/wealth/…) are in that
 // route file and named in this block's comment rather than mounted twice.
+//
+// Job 3 — the grid health readers: uptime and Search Console from the Worker, GitHub and
+// Cloudflare posted from her Mac. `/api/grid` declares only `/` and `/examination`, so this is
+// never shadowed by it.
+app.route("/api/grid/health", gridHealth);
 //
 // === end Her jobs ===
 

@@ -5,6 +5,7 @@ import { isDue, nextDueAt, type DutySchedule } from "./cadence";
 import { admitTask } from "../tasks/admit";
 import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
 import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, modelBySeat } from "./briefingLadder";
+import { runWorkerReader } from "../health/readers";
 
 /**
  * Turning due duties into queued work.
@@ -37,13 +38,14 @@ export interface DutyRow {
   task_title: string;
   task_input: string | null;
   suspended: number;
-  /** 'agent' | 'local_job'. Absent on rows written before 0201, which means agent. */
+  /** 'agent' | 'local_job' | 'worker'. Absent on rows written before 0201, which means agent. */
   executor?: string | null;
 }
 
 export interface MaterialiseResult {
   considered: number;
-  fired: { duty: string; task_id: string; next_due_at: number }[];
+  /** `task_id` is null for a `worker` duty: it ran here and wrote its rows; no task exists for it. */
+  fired: { duty: string; task_id: string | null; next_due_at: number }[];
   skipped: { duty: string; reason: string }[];
 }
 
@@ -165,6 +167,47 @@ export async function materialiseDueDuties(
     await env.DB
       .prepare(`UPDATE standing_duties SET next_due_at = ?, last_run_at = ? WHERE id = ?`)
       .bind(advanced, now, duty.id).run();
+
+    /*
+     * ─── A `worker` DUTY RUNS HERE, ON THE TICK IT COMES DUE (0263) ──────────
+     *
+     * The two grid health readers the Worker can perform itself — a GET to each canonical domain,
+     * and a Search Console read with the key the Worker already holds — need no seat to claim
+     * them and no Mac slot. Admitting a task would hand a ten-second read to a runner that claims
+     * hours later; running it here lands the reading on the same tick. The outcome is written
+     * straight onto the duty row, so the roster's dot means what it means for every other duty:
+     * ok with a timestamp, or failed with the sentence.
+     *
+     * RULE 0 IS INSIDE THE READER: zero rows written throws, and the throw is recorded as a
+     * failure by name rather than as a duty that "ran".
+     */
+    if (duty.executor === "worker") {
+      let input: Record<string, unknown> = {};
+      try { input = duty.task_input ? (JSON.parse(duty.task_input) as Record<string, unknown>) : {}; } catch { input = {}; }
+      const readerName = typeof input.worker_reader === "string" ? input.worker_reader : "";
+      try {
+        const result = await runWorkerReader(env, readerName, now);
+        await env.DB
+          .prepare(`UPDATE standing_duties SET last_outcome = 'ok', last_outcome_at = ?, last_failure_reason = NULL WHERE id = ?`)
+          .bind(Date.now(), duty.id).run();
+        await audit(env.DB, {
+          actor: "system", lane: duty.lane, entityType: "standing_duty", entityId: duty.id,
+          action: "ran_in_worker", detail: { ...result, next_due_at: advanced },
+        });
+        fired.push({ duty: duty.id, task_id: null, next_due_at: advanced });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        await env.DB
+          .prepare(`UPDATE standing_duties SET last_outcome = 'failed', last_outcome_at = ?, last_failure_reason = ? WHERE id = ?`)
+          .bind(Date.now(), reason, duty.id).run();
+        skipped.push({ duty: duty.id, reason: `worker_reader_failed: ${reason}` });
+        await logEvent(env.DB, {
+          level: "error", scope: "duties", event: "worker_reader_failed", entityId: duty.id,
+          detail: { reader: readerName, error: reason },
+        }).catch(() => {});
+      }
+      continue;
+    }
 
     /*
      * ADMITTED THROUGH THE REAL INTAKE, WHICH IT NEVER USED TO BE.
