@@ -5,6 +5,10 @@ import {
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { dayIdInZone, weekIdInZone } from "@shared/boss/timezone";
+import {
+  assessBriefing, checkedThrough, dashboardFromMarketData, spacexStatus, stripExcludedSections,
+  type MarketData,
+} from "./briefingSpec";
 
 /**
  * WRITING THE EXECUTIVE INTELLIGENCE REPORT, WHICH NOTHING ANYWHERE USED TO DO.
@@ -388,9 +392,91 @@ export async function deliverPracticeWeek(
   return id;
 }
 
+/**
+ * THE DASHBOARD IS BUILT FROM THE FEED, AND THE REPORT IS GRADED AGAINST THE FILE.
+ *
+ * Both are done HERE, on delivery, and not left to the prompt — see `briefingSpec.ts` for the
+ * fourteen days of measurement behind that. What this adds to the row:
+ *
+ *   · `market_data`   — MARKETS.json as the runner observed it, verbatim. The dashboard table is
+ *                       rebuilt from it; a symbol the feed did not answer reads "not available at
+ *                       HH:MM CT" by construction. The run's own table, if it typed one, is replaced.
+ *   · `checked_through` — the edition stamp, derived from the newest source read time and the
+ *                       snapshot, never later than delivery and never taken from the run's prose.
+ *   · `prompt_version` — which specification the run was handed, so a report can be read against
+ *                       the rules that produced it.
+ *   · `consulted`     — the sources-consulted ledger: every feed URL the snapshot opened with its
+ *                       outcome, and every source the run cited with when it read it.
+ *
+ * Astrology or travel-map content in any section removes THAT SECTION and names it — the Spirit
+ * page owns both, by her instruction of 12 September and again of 19 September.
+ */
+export function applyMarketData(
+  sections: Record<string, unknown>[],
+  sources: unknown[],
+  market: MarketData | null | undefined,
+  now: number,
+): { sections: Record<string, unknown>[]; sources: unknown[]; unavailable: number; dashboard_built: boolean } {
+  if (!market || !Array.isArray(market.quotes) || market.quotes.length === 0) {
+    return { sections, sources, unavailable: 0, dashboard_built: false };
+  }
+  const built = dashboardFromMarketData(market, now);
+  const nextSources = [...sources];
+  const indexes: number[] = [];
+  for (const src of built.sources) {
+    const existing = nextSources.findIndex((s) => s && typeof s === "object" && (s as { url?: unknown }).url === src.url);
+    if (existing >= 0) { indexes.push(existing); continue; }
+    nextSources.push(src);
+    indexes.push(nextSources.length - 1);
+  }
+
+  const out = sections.map((sec) => ({ ...sec }));
+  const dashIdx = out.findIndex((sec) => sectionKeyOf(sec) === "markets_dashboard");
+  const dashboard: Record<string, unknown> = dashIdx >= 0 ? out[dashIdx]! : { key: "markets_dashboard", heading: "Markets & Macro Dashboard" };
+  const priorCited = Array.isArray(dashboard.sources) ? dashboard.sources : [];
+  dashboard.table = built.table;
+  dashboard.table_built_by = "system";
+  dashboard.sources = [...new Set([...priorCited, ...indexes])];
+  if (typeof dashboard.so_what !== "string" || !dashboard.so_what.trim()) {
+    dashboard.so_what = `${built.session_label}'s figures, fetched by the system from the feeds named in the source list.`;
+  }
+  if (dashIdx >= 0) out[dashIdx] = dashboard;
+  else out.splice(Math.min(2, out.length), 0, dashboard);
+
+  // SpaceX's public/private answer for today leads the SpaceX Watch, from the same feed.
+  const status = spacexStatus(market);
+  const spxIdx = out.findIndex((sec) => sectionKeyOf(sec) === "spacex_watch");
+  if (spxIdx >= 0 && status.public !== null) {
+    const sec = out[spxIdx]!;
+    const bullets = Array.isArray(sec.bullets) ? [...sec.bullets] : [];
+    const spcxIndex = indexes[MARKET_SPCX_INDEX(market)] ?? null;
+    bullets.unshift(`${status.line}${spcxIndex !== null ? ` [${spcxIndex + 1}]` : ""}`);
+    sec.bullets = bullets;
+    sec.sources = [...new Set([...(Array.isArray(sec.sources) ? sec.sources : []), ...(spcxIndex !== null ? [spcxIndex] : [])])];
+    sec.spacex_public = status.public;
+  }
+
+  return { sections: out, sources: nextSources, unavailable: built.unavailable, dashboard_built: true };
+}
+
+/** Which of the dashboard's source entries is SPCX's, in the order `dashboardFromMarketData` emits them. */
+function MARKET_SPCX_INDEX(market: MarketData): number {
+  const seen: string[] = [];
+  for (const q of market.quotes) {
+    if (q.value === null || !Number.isFinite(q.value)) continue;
+    if (!seen.includes(q.source_url)) seen.push(q.source_url);
+    if (q.symbol === "SPCX") return seen.indexOf(q.source_url);
+  }
+  return -1;
+}
+
 export async function deliverExecutiveReport(
   env: Env,
-  args: { taskId: string; runId: string; report: DeliveredReport | null; runStatus: string; now?: number },
+  args: {
+    taskId: string; runId: string; report: DeliveredReport | null; runStatus: string; now?: number;
+    /** MARKETS.json as the runner observed it in the workspace before the run. */
+    marketData?: MarketData | null;
+  },
 ): Promise<string | null> {
   const now = args.now ?? Date.now();
 
@@ -402,6 +488,7 @@ export async function deliverExecutiveReport(
   let input: Record<string, unknown> = {};
   try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
   if (input.delivers !== "executive_reports") return null;
+  const promptVersion = typeof input.prompt_version === "string" ? input.prompt_version : null;
 
   /*
    * THE DAY IT IS FOR, IN HER ZONE, NOT THE DAY IT WAS WRITTEN. A report generated at 06:30 for the
@@ -451,7 +538,32 @@ export async function deliverExecutiveReport(
 
   const gaps = asArray(args.report?.gaps);
   const watching = asArray(args.report?.watching);
-  const sections = asArray(args.report?.sections);
+  const filedSections = asArray(args.report?.sections);
+
+  /*
+   * ── THE SPIRIT PAGE'S CONTENT IS REMOVED, NAMED, AND NEVER RENDERED ─────
+   */
+  const excluded = stripExcludedSections(filedSections);
+
+  /*
+   * ── THE DASHBOARD FROM THE FEED, THE SPACEX ANSWER FROM THE FEED ────────
+   */
+  const market = args.marketData && typeof args.marketData === "object" ? args.marketData : null;
+  const applied = applyMarketData(
+    excluded.kept.filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === "object"),
+    asArray(args.report?.sources),
+    market,
+    now,
+  );
+  const sections = applied.sections;
+  const reportSources = applied.sources;
+
+  /*
+   * ── GRADED AGAINST THE FILE'S SHAPE ─────────────────────────────────────
+   * Uncited summary figures, dangling [n] references, thin sections, unusable sources. Each is a
+   * shortfall she can read; none is silently fixed.
+   */
+  const assessment = assessBriefing({ sections, sources: reportSources });
 
   /*
    * ── "partial" IS DERIVED, AND IT NO LONGER MEANS "WANTS TOMORROW'S NEWS" ──
@@ -471,7 +583,7 @@ export async function deliverExecutiveReport(
    * still taken on the run's word is which gaps are forward-looking, and the prompt draws that line
    * explicitly.
    */
-  const sourcing = withheldForSourcing(sections, { sources: asArray(args.report?.sources) });
+  const sourcing = withheldForSourcing(sections, { sources: reportSources });
   const missing = missingSections(sourcing.kept, gaps);
   const insight = groundInsight({
     headline: args.report?.headline,
@@ -489,7 +601,25 @@ export async function deliverExecutiveReport(
     insightWithheld: !insight.grounded,
     insightAttempted: attemptedInsight,
   });
-  const honest = standing.status;
+  const extraShortfalls = [
+    ...excluded.removed.map((r) => `A section carried ${r.rule} content and was removed; that belongs on the Spirit page.`),
+    ...(applied.dashboard_built && applied.unavailable > 0
+      ? [`${applied.unavailable} dashboard figure${applied.unavailable === 1 ? " was" : "s were"} not available from the feed and read${applied.unavailable === 1 ? "s" : ""} so.`]
+      : []),
+    ...(!applied.dashboard_built && status !== "failed" ? ["No live market snapshot reached this run; the dashboard is the run's own, cited figures."] : []),
+    ...assessment.problems.filter((p) => !/is not in the report\.$/.test(p)),
+  ];
+  const shortfalls = [...standing.shortfalls, ...extraShortfalls];
+  const honest: "complete" | "partial" | "failed" =
+    standing.status === "failed" ? "failed" : shortfalls.length === 0 ? "complete" : "partial";
+
+  const stamp = checkedThrough({ sources: reportSources, market, finishedAt: now });
+  const consulted = [
+    ...(market?.consulted ?? []).map((c) => ({ url: c.url, status: c.status, fetched_at: c.fetched_at, kind: "market_feed" })),
+    ...reportSources
+      .filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === "object")
+      .map((s) => ({ url: String(s.url ?? ""), status: "cited", fetched_at: String(s.read_at ?? ""), kind: "web" })),
+  ];
 
   const summary =
     asText(args.report?.summary) ??
@@ -528,8 +658,9 @@ export async function deliverExecutiveReport(
   await env.DB
     .prepare(
       `INSERT INTO executive_reports
-         (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections, watching, shortfalls)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections, watching, shortfalls,
+          checked_through, prompt_version, market_data, consulted)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(day_id) DO UPDATE SET
          generated_at = excluded.generated_at,
          task_id = excluded.task_id,
@@ -542,16 +673,24 @@ export async function deliverExecutiveReport(
          sources = excluded.sources,
          watching = excluded.watching,
          shortfalls = excluded.shortfalls,
-         corrections = excluded.corrections`,
+         corrections = excluded.corrections,
+         checked_through = excluded.checked_through,
+         prompt_version = excluded.prompt_version,
+         market_data = excluded.market_data,
+         consulted = excluded.consulted`,
     )
     .bind(
       id, forDay, now, args.taskId, args.runId, honest, headline, summary,
       JSON.stringify(sections),
       JSON.stringify(gaps),
-      JSON.stringify(asArray(args.report?.sources)),
+      JSON.stringify(reportSources),
       JSON.stringify(asArray(args.report?.corrections)),
       JSON.stringify(watching),
-      JSON.stringify(standing.shortfalls),
+      JSON.stringify(shortfalls),
+      stamp.at,
+      promptVersion,
+      market ? JSON.stringify(market) : null,
+      JSON.stringify(consulted),
     )
     .run();
 
@@ -584,7 +723,9 @@ export async function deliverExecutiveReport(
       day_id: forDay, status: honest, sections: sourcing.kept.length,
       missing: missing.length, withheld_for_sourcing: sourcing.withheld.length,
       gaps: gaps.length, watching: watching.length,
-      shortfalls: standing.shortfalls, run_id: args.runId,
+      shortfalls, run_id: args.runId,
+      dashboard_built: applied.dashboard_built, excluded_removed: excluded.removed.length,
+      checked_through: stamp.label, prompt_version: promptVersion,
     },
   });
 

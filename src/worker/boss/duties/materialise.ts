@@ -3,6 +3,7 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { isDue, nextDueAt, type DutySchedule } from "./cadence";
 import { admitTask } from "../tasks/admit";
+import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
 
 /**
  * Turning due duties into queued work.
@@ -182,13 +183,34 @@ export async function materialiseDueDuties(
      */
     let admitted;
     try {
+      let input: Record<string, unknown> = duty.task_input ? (JSON.parse(duty.task_input) as Record<string, unknown>) : {};
+      /*
+       * ── THE BRIEFING'S PROMPT IS COMPOSED HERE, FROM THE MODULE, ON EVERY FIRING ──
+       *
+       * `duty_exec_intel` no longer carries `$.prompt` in its row (0257). It carries
+       * `spec_module: "executive_briefing"`, and the text the run is handed is
+       * `composeBriefingPrompt()` from `briefingSpec.ts` — the file's production prompt, versioned,
+       * diffable, and read by the same grader that scores what comes back. Eight prior rewrites each
+       * landed as a `json_set` in a migration nobody could diff; this is the end of that.
+       *
+       * The version is stamped on the task so the report row records which specification produced
+       * it. `hasMarketData` is true here because the Mac writes MARKETS.json before every claim; the
+       * prompt still tells the run what to do if the file is absent.
+       */
+      if (input.spec_module === "executive_briefing") {
+        input = {
+          ...input,
+          prompt: composeBriefingPrompt({ dayLabel: ctDayLabel(now), hasMarketData: true }),
+          prompt_version: BRIEFING_PROMPT_VERSION,
+        };
+      }
       admitted = await admitTask(env, {
         title: duty.task_title,
         lane: duty.lane,
         employee_id: duty.employee_id,
         // The kind the duty was defined with, rather than one inferred from its title every morning.
         intake_kind: duty.task_kind,
-        input: duty.task_input ? (JSON.parse(duty.task_input) as Record<string, unknown>) : {},
+        input,
       });
     } catch (err) {
       skipped.push({ duty: duty.id, reason: `not_admitted: ${err instanceof Error ? err.message : String(err)}` });

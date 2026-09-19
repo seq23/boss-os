@@ -16,13 +16,29 @@
  *   const mod = await import(`file://${absolutePathToSomething}.ts`);
  */
 import { registerHooks } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { join, dirname } from "node:path";
 
 let registered = false;
+
+/**
+ * `@shared/*` is the one path alias the bundler knows (tsconfig `paths`, vite `resolve.alias`). A
+ * worker module that reaches for `@shared/boss/timezone` is unimportable here without it, which is
+ * how `briefingSpec.ts` — the module the market snapshot and the on-par validator both run — stayed
+ * out of reach of the very scripts written to run it.
+ */
+const SHARED_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "src", "shared");
 
 export function registerTsResolve() {
   if (registered) return;
   registerHooks({
     resolve(specifier, context, next) {
+      if (specifier.startsWith("@shared/")) {
+        const target = pathToFileURL(join(SHARED_ROOT, specifier.slice("@shared/".length))).href;
+        for (const ext of ["", ".ts", ".tsx", "/index.ts"]) {
+          try { return next(target + ext, context); } catch { /* try the next shape */ }
+        }
+      }
       try {
         return next(specifier, context);
       } catch (err) {

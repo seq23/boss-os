@@ -702,6 +702,9 @@ backends.post("/report", async (c) => {
         taskId: task.id,
         runId,
         report: (ev.delivers && typeof ev.delivers === "object" ? ev.delivers : null) as any,
+        // MARKETS.json as the runner observed it before the run — the dashboard is built from this,
+        // never from figures the model typed. See `briefingSpec.ts`.
+        marketData: (ev.market_data && typeof ev.market_data === "object" ? ev.market_data : null) as any,
         runStatus: status,
         now,
       }).catch(async (err) => {
