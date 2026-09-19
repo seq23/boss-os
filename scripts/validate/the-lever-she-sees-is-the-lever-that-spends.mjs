@@ -55,7 +55,17 @@ import { leverView } from "../../src/shared/boss/spendLeverView.mjs";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
 
-const ROUTE = "src/worker/boss/routes/models.ts";
+/*
+ * THE ROUTE THE CLIENT CALLS, not a route that happens to share the name. On 19 September 2026 the
+ * scan parsed `models.get("/spend-lever")` (/api/models/spend-lever) while `api.spendLever()` calls
+ * `/system/spend-lever`, served by `spendLeverRoutes.get("/")` in routes/backends.ts — which
+ * answered the flat state, so the panel read "could not be read" on every healthy build and this
+ * scan was green. Both routes are parsed now, and the client's path is checked against the mount.
+ */
+const ROUTE = "src/worker/boss/routes/backends.ts";
+const SIBLING_ROUTE = "src/worker/boss/routes/models.ts";
+const CLIENT_API = "src/client/boss/api.ts";
+const MOUNT = "src/worker/boss/index.ts";
 const STATE = "src/worker/boss/router/spend.ts";
 const SCREEN = "src/client/boss/pages/Settings.tsx";
 
@@ -65,8 +75,8 @@ const SCREEN = "src/client/boss/pages/Settings.tsx";
  * READ FROM THE ROUTE, NOT LISTED HERE. A list here would be the second copy of the thing whose
  * first copy is what drifted.
  */
-export function envelopeKeys(src) {
-  const at = src.indexOf('models.get("/spend-lever"');
+export function envelopeKeys(src, handler = 'spendLeverRoutes.get("/"') {
+  const at = src.indexOf(handler);
   if (at < 0) return [];
   const body = src.slice(at, src.indexOf("});", at));
   const ret = body.indexOf("return ok(c, {");
@@ -149,6 +159,26 @@ function scan() {
       `${ROUTE}'s /spend-lever response does not carry \`backend_spend\`, which is the population the ` +
       `lever's per-backend allowance is measured against.`,
     );
+  }
+
+  // 1b. The sibling route at /api/models/spend-lever answers the same envelope, so the two can
+  // never drift apart again — a screen switched from one path to the other reads the same shape.
+  const siblingKeys = envelopeKeys(read(SIBLING_ROUTE), 'models.get("/spend-lever"');
+  for (const key of ["lever", "backend_spend"]) {
+    if (!siblingKeys.includes(key)) {
+      problems.push(`${SIBLING_ROUTE}'s /spend-lever response does not carry \`${key}\`; the two lever routes must answer one envelope.`);
+    }
+  }
+
+  // 1c. THE CLIENT CALLS THE ROUTE THIS SCAN PARSES. `api.spendLever()` names a path; the mount in
+  // index.ts says which handler serves it. If either moves, the scan is looking at the wrong door.
+  const apiSrc = read(CLIENT_API);
+  const apiPath = /spendLever:\s*\(\)\s*=>\s*call<[^>]*>\("([^"]+)"\)/.exec(apiSrc)?.[1] ?? null;
+  if (apiPath !== "/system/spend-lever") {
+    problems.push(`${CLIENT_API} spendLever() calls ${apiPath ?? "no readable path"}; this scan parses the handler behind /system/spend-lever.`);
+  }
+  if (!/app\.route\("\/api\/system\/spend-lever",\s*spendLeverRoutes\)/.test(read(MOUNT))) {
+    problems.push(`${MOUNT} does not mount spendLeverRoutes at /api/system/spend-lever, so the client's path is not served by the handler this scan parses.`);
   }
 
   // 2 and 5. Every position survives the round trip.
@@ -235,13 +265,25 @@ function selfTest() {
   const cases = [
     {
       name: "the envelope's top-level keys are read",
-      fn: envelopeKeys,
+      fn: (src) => envelopeKeys(src, 'models.get("/spend-lever"'),
       src: `models.get("/spend-lever", async (c) => {\n  const lever = 1;\n  return ok(c, {\n    lever,\n    positions: SPEND_LEVER_POSITIONS,\n    lane_budgets: (x).map((b) => ({\n      lane: b.lane,\n    })),\n    backend_spend: y,\n  });\n});`,
       want: ["lever", "positions", "lane_budgets", "backend_spend"],
     },
     {
-      name: "a renamed envelope key is noticed",
+      name: "the route the client calls is parsed by its own handler name",
       fn: envelopeKeys,
+      src: `spendLeverRoutes.get("/", async (c) => {\n  return ok(c, {\n    lever: state,\n    positions: P,\n    backend_spend: y,\n  });\n});`,
+      want: ["lever", "positions", "backend_spend"],
+    },
+    {
+      name: "the flat state the route used to answer carries no lever key",
+      fn: envelopeKeys,
+      src: `spendLeverRoutes.get("/", async (c) => {\n  return ok(c, {\n    ...state,\n    allowance_micros: 1,\n    positions: P,\n  });\n});`,
+      want: ["allowance_micros", "positions"],
+    },
+    {
+      name: "a renamed envelope key is noticed",
+      fn: (src) => envelopeKeys(src, 'models.get("/spend-lever"'),
       src: `models.get("/spend-lever", async (c) => {\n  return ok(c, {\n    spend_lever,\n    positions: P,\n  });\n});`,
       want: ["spend_lever", "positions"],
     },
