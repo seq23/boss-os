@@ -46,6 +46,7 @@ import { backends, spendLeverRoutes } from "./routes/backends";
 import { runSentinel } from "./governance/sentinel";
 import { investor } from "./routes/investor";
 import { wealth } from "./routes/wealth";
+import { research } from "./routes/research";
 import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
 import { ensureAlmanac } from "./spirit/day";
 import { handleTask, handleDeadLetter } from "./queue/consumer";
@@ -205,6 +206,11 @@ app.route("/api/system/spend-lever", spendLeverRoutes);
 // draft the ask" path (Job 5). Sub-paths that live on an existing mount (/api/wealth/…) are in that
 // route file and named in this block's comment rather than mounted twice.
 //
+// Job 5 — "find firms that did X and draft the ask": the scans, their findings, and the desk's door.
+app.route("/api/research", research);
+// Job 1 — the rewrite that answers her note lives on the wealth mount:
+//   GET  /api/wealth/outreach/rewrites          the progress both tabs print (and drains the queue)
+//   POST /api/wealth/outreach/redraft-sent-back "Rewrite the N with my notes"
 // === end Her jobs ===
 
 app.all("/api/*", (c) => c.json({ ok: false, error: "No such endpoint" }, 404));

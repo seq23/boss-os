@@ -82,6 +82,34 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   }
 
   /*
+   * ─── "FIND FIRMS THAT DID X AND DRAFT THE ASK" RUNS ITS OWN PATH ────────────
+   *
+   * `input.firm_scan.scan_id` names a `firm_scans` row (Job 5, 19 Sep 2026). The scan reads public
+   * news, verifies every finding against the page it cites, and raises each letter through the
+   * letters' own door; the task closes with the scan's counts rather than a paragraph.
+   */
+  const scanRef = input.firm_scan && typeof input.firm_scan === "object"
+    ? (input.firm_scan as { scan_id?: unknown }).scan_id
+    : null;
+  if (typeof scanRef === "string") {
+    const { runFirmScan } = await import("../research/firmScan");
+    const out = await runFirmScan(env, { id: task.id, lane: task.lane, employee_id: task.employee_id ?? null }, scanRef);
+    const finishedAt = Date.now();
+    if (out.state === "done") {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE tasks SET status = 'done', output = ?, cost_micros = cost_micros + ?, finished_at = ? WHERE id = ?`)
+          .bind(JSON.stringify({ text: out.detail, model: out.written_by, firm_scan_id: scanRef, verified: out.verified, drafts: out.drafts }), out.cost_micros, finishedAt, task.id),
+        env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'completed',?)`)
+          .bind(newId("tev"), task.id, finishedAt, JSON.stringify({ firm_scan_id: scanRef, verified: out.verified, drafts: out.drafts })),
+      ]);
+    } else {
+      await failTask(env, task, employee, envelope, costMode, out.detail,
+        "Read the reason on the Capital desk under your instructions; reword the instruction, or requeue the task.");
+    }
+    return;
+  }
+
+  /*
    * WORK THAT MUST HAPPEN ON HER MACHINE LEAVES HERE, RATHER THAN BEING ASKED OF A CLOUD MODEL.
    *
    * The consumer's only move used to be `routeCompletion`. For a task like the Executive

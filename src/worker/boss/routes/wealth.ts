@@ -346,7 +346,9 @@ export async function raiseLetterFor(
 wealth.get("/recommendations", async (c) => {
   const now = Date.now();
   const [cands, matches, live] = await Promise.all([
-    c.env.DB.prepare(`SELECT * FROM sourcing_candidates ORDER BY created_at DESC LIMIT 200`).all<CandidateRow & CandidateFacts>(),
+    // Firms found by an instruction ("find firms that did X") are kind 'ask' and never enter the
+    // buyer recommendation: they are written to for HER ask, not ranked as buyers of her supply.
+    c.env.DB.prepare(`SELECT * FROM sourcing_candidates WHERE kind <> 'ask' ORDER BY created_at DESC LIMIT 200`).all<CandidateRow & CandidateFacts>(),
     c.env.DB.prepare(`SELECT id, candidate_id, lp_firm, lp_list, confidence, why FROM counterparty_crossmatches WHERE status <> 'rejected'`)
       .all<CrossmatchFacts>(),
     c.env.DB.prepare(`SELECT DISTINCT candidate_id FROM buyer_outreach_drafts WHERE state IN ('awaiting','approved','sent')`)
