@@ -58,6 +58,8 @@ export function parsePositionSizes(input: string): ParsedSizes | RejectedSizes {
    */
   const pieces = text
     .replace(/\band\b/gi, " ")
+    // "2.5 million" is one figure: glue a unit word to the number before it.
+    .replace(/(\d)\s+(k|m|mm|b|bn|million|thousand|billion)\b/gi, "$1$2")
     .replace(/,(?!\d{3}\b)/g, " ")
     .split(/[;\/\n]+|\s+/)
     .map((p) => p.trim())
