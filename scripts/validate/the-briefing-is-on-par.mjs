@@ -119,9 +119,19 @@ export async function check({ spec, deliver, fixture, prompt, files, deliveredAt
   }
 
   // ── 1, 2: the grade ──────────────────────────────────────────────────────
-  const graded = spec.assessBriefing({ sections: applied.sections, sources: applied.sources });
+  const graded = spec.assessBriefing({ sections: applied.sections, sources: applied.sources }, { dayId: fixture.day, finishedAt: deliveredAt });
   if (graded.empty) problems.push("Nothing to grade.");
-  for (const p of graded.problems) if (!/bare homepage/.test(p)) problems.push(`Graded: ${p}`);
+  /*
+   * TWO GRADED FAULTS THE LIVE FIXTURE CARRIES ARE HELD AS SHORTFALLS ON HER SCREEN, NOT HIDDEN HERE:
+   * one bare-homepage source, and read times typed after the run finished. The validator's job with
+   * them is to prove the grader still catches both — see the self-test — and to fail if the fixture
+   * ever grows a third kind. The fixture is the run's output and is not edited to look clean.
+   */
+  const tolerated = /bare homepage|after the run finished/;
+  for (const p of graded.problems) if (!tolerated.test(p)) problems.push(`Graded: ${p}`);
+  if (!graded.problems.some((p) => /after the run finished/.test(p)) && applied.sources.some((s) => Date.parse(s?.read_at) > deliveredAt)) {
+    problems.push("The report carries a read time after the run finished and the grader did not name it.");
+  }
   const summary = applied.sections.find((s) => s.key === "one_minute_summary");
   const n = Array.isArray(summary?.bullets) ? summary.bullets.length : 0;
   if (n < 3 || n > 5) problems.push(`The One-Minute Executive Summary has ${n} items; the file has 3–5.`);
@@ -239,6 +249,8 @@ async function selfTest() {
     { name: "a citation past the end of the source list is caught", input: withDelivers((f) => { const s = f.delivers.sections.find((x) => x.key === "one_minute_summary"); s.bullets[0] += " [99]"; }), expect: 1 },
     { name: "a headline with no data block is caught", input: withDelivers((f) => { const s = f.delivers.sections.find((x) => x.key === "top_5_headlines"); delete s.items[0].numbers; }), expect: 1 },
     { name: "a snapshot symbol the feed refused must read 'not available' — and does", input: withDelivers((f) => { f.markets.quotes[0].value = null; }), expect: 0 },
+    { name: "a headline dated sixteen days before the report is caught", input: withDelivers((f) => { f.delivers.sections.find((x) => x.key === "top_5_headlines").items[0].as_of = "2026-09-03"; }), expect: 1 },
+    { name: "a headline dated the day before passes the freshness rule", input: withDelivers((f) => { f.delivers.sections.find((x) => x.key === "top_5_headlines").items[0].as_of = "2026-09-18"; }), expect: 0 },
     { name: "a report leaning on three homepages is caught", input: withDelivers((f) => { for (const u of ["https://techcrunch.com/", "https://www.reuters.com/", "https://apnews.com/"]) f.delivers.sources.push({ name: u, url: u, read_at: "2026-09-19T11:00:00Z" }); }), expect: 1 },
     { name: "a prompt that hard-codes SpaceX's status is caught", input: { ...good, prompt: `${good.prompt}\nSpaceX is not publicly listed; never invent a ticker.` }, expect: 1 },
     { name: "a prompt that lost the never-invent rule is caught", input: { ...good, prompt: good.prompt.replace(/Never invent/g, "Try not to invent") }, expect: 1 },

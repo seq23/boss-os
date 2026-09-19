@@ -563,7 +563,14 @@ export async function deliverExecutiveReport(
    * Uncited summary figures, dangling [n] references, thin sections, unusable sources. Each is a
    * shortfall she can read; none is silently fixed.
    */
-  const assessment = assessBriefing({ sections, sources: reportSources });
+  const run = await env.DB
+    .prepare(`SELECT started_at, finished_at FROM backend_runs WHERE id = ?`).bind(args.runId)
+    .first<{ started_at: number | null; finished_at: number | null }>()
+    .catch(() => null);
+  const assessment = assessBriefing(
+    { sections, sources: reportSources },
+    { dayId: forDay, finishedAt: run?.finished_at ?? now },
+  );
 
   /*
    * ── "partial" IS DERIVED, AND IT NO LONGER MEANS "WANTS TOMORROW'S NEWS" ──

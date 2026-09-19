@@ -44,7 +44,7 @@ import { dateTimeFormat, OWNER_TIMEZONE } from "@shared/boss/timezone";
  */
 
 /** Bumped on every material change to the prompt or schema. Recorded on each report row. */
-export const BRIEFING_PROMPT_VERSION = "2026-09-19.1";
+export const BRIEFING_PROMPT_VERSION = "2026-09-19.2";
 
 /** The absolute final line of every report. Appended by the system, never trusted to the run. */
 export const FINAL_LINE = "Get your agenda from your coach.";
@@ -544,7 +544,12 @@ kill at the leash leaves a real partial report rather than nothing. The system d
                 sources   REQUIRED on any section that prints a figure: an array of 1-based indexes
                           into your \`sources\` list (or names). A section that prints a money amount,
                           a percentage or a magnitude and names no resolvable source is not shown.
-                items     top_5_headlines: [{ headline, summary, numbers: [string with [n]], why_it_matters, importance }]
+                items     top_5_headlines: [{ headline, as_of, summary, numbers: [string with [n]], why_it_matters, importance }]
+                          as_of is the YYYY-MM-DD of the development itself. A Top 5 story is from the
+                          last 24 hours; 72 hours only when it is still developing and you say what is
+                          new today. The system flags a headline older than that. The 19 Sep run led
+                          with a 3 Sep acquisition and a 13 Sep attack while that morning's Reuters
+                          exclusive and an IPO filing from the day before went unmentioned.
                           spacex_watch: [{ headline, bullets: [..] }] for SPCX, Technical / Reference
                           Map, Starship Watch, Starlink Watch, Supply / Lockup Watch.
                 insight   investor_insight only: { synthesis, how_reached, transferable_frame, falsified_by, cites: [{ fact, from }] }
@@ -631,7 +636,12 @@ export function sectionText(sec: Record<string, unknown>): string {
 export function assessBriefing(report: {
   sections?: unknown;
   sources?: unknown;
-}): BriefingAssessment {
+}, opts: {
+  /** The day the report is for, YYYY-MM-DD in her zone. Enables the 72-hour freshness check. */
+  dayId?: string;
+  /** When the run finished. A source read after this was typed, not opened. */
+  finishedAt?: number;
+} = {}): BriefingAssessment {
   const sections = (Array.isArray(report.sections) ? report.sections : [])
     .filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === "object");
   const rawSources = Array.isArray(report.sources) ? report.sources : [];
@@ -647,6 +657,7 @@ export function assessBriefing(report: {
   const noteCites = (s: unknown) => {
     for (const n of inlineCitations(s)) if (n > rawSources.length) unresolved.add(n);
   };
+  const staleHeadlines: string[] = [];
 
   for (const sec of sections) {
     const key = sectionKeyOf(sec);
@@ -689,12 +700,20 @@ export function assessBriefing(report: {
       }
     }
     if (key === "top_5_headlines") {
-      for (const it of Array.isArray(sec.items) ? sec.items : []) {
+      for (const [i, it] of (Array.isArray(sec.items) ? sec.items : []).entries()) {
         if (!it || typeof it !== "object") continue;
         const o = it as Record<string, unknown>;
         const lines = Array.isArray(o.numbers) ? o.numbers : [];
         for (const n of lines) if (hasFigure(n) && inlineCitations(n).length === 0) headlineUncited++;
         if (lines.length === 0 && hasFigure(o.summary) && inlineCitations(o.summary).length === 0) headlineUncited++;
+        /*
+         * FRESHNESS IS GRADED WHEN THE RUN DATES ITS STORY. The file's research window is 24 hours,
+         * 72 for a developing story. A headline dated further back than that is yesterday's paper.
+         */
+        if (opts.dayId && typeof o.as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.as_of)) {
+          const age = (Date.parse(`${opts.dayId}T12:00:00Z`) - Date.parse(`${o.as_of}T12:00:00Z`)) / 86_400_000;
+          if (age > 3) staleHeadlines.push(`Headline ${i + 1} is dated ${o.as_of}, ${Math.round(age)} days before the report`);
+        }
       }
     }
   }
@@ -713,6 +732,16 @@ export function assessBriefing(report: {
    */
   const homepages = usable.filter((s) => /^https?:\/\/[^/]+\/?$/.test(s.url)).map((s) => s.url);
   if (homepages.length > 0) problems.push(`${homepages.length} source${homepages.length === 1 ? " is" : "s are"} a bare homepage, not the article read: ${homepages.join(", ")}.`);
+  /*
+   * A READ TIME AFTER THE RUN FINISHED WAS TYPED, NOT OBSERVED. The 19 Sep live run finished at
+   * 14:40:04Z and filed read_at values through 14:5xZ, one minute apart — a sequence, not a log.
+   * The stamp already ignores them; her screen now says so too.
+   */
+  if (typeof opts.finishedAt === "number") {
+    const typed = usable.filter((s) => Date.parse(s.read_at) > opts.finishedAt!).length;
+    if (typed > 0) problems.push(`${typed} source read time${typed === 1 ? " is" : "s are"} after the run finished, so ${typed === 1 ? "it was" : "they were"} typed rather than observed.`);
+  }
+  for (const p of staleHeadlines) problems.push(`${p}; the research window is 24 hours, 72 for a developing story.`);
   for (const hit of excluded) problems.push(`${HEADING.get(hit.key) ?? hit.key} contains ${hit.rule} content, which belongs on the Spirit page.`);
 
   return {
