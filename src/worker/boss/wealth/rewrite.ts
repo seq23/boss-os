@@ -282,13 +282,43 @@ export function composeRewritePrompt(f: LetterFacts): { system: string; user: st
   return { system, user };
 }
 
+/**
+ * Raw newlines inside a JSON string are not JSON, and Llama 3.3 70B writes them anyway.
+ *
+ * CONFIRMED on the first live run (19 Sep 2026, local wrangler dev against the real Workers AI
+ * rung): the reply was a perfect {subject, body} object whose body carried literal line breaks
+ * between paragraphs — `JSON.parse` refused it twice and the rewrite failed as "not a JSON
+ * object" over a letter that answered every note. So control characters inside string literals
+ * are escaped before parsing; nothing outside a string is touched.
+ */
+export function escapeControlCharsInStrings(text: string): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inString) {
+      if (ch === "\\") { out += ch + (text[i + 1] ?? ""); i++; continue; }
+      if (ch === '"') { inString = false; out += ch; continue; }
+      if (ch === "\n") { out += "\\n"; continue; }
+      if (ch === "\r") { out += "\\r"; continue; }
+      if (ch === "\t") { out += "\\t"; continue; }
+      out += ch;
+    } else {
+      if (ch === '"') inString = true;
+      out += ch;
+    }
+  }
+  return out;
+}
+
 /** Parse the model's reply into a letter, tolerating a code fence or prose around the object. */
 export function parseLetterReply(text: string): { subject: string; body: string } | null {
   const raw = String(text ?? "").trim();
-  const candidates = [raw, raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")];
+  const shapes = [raw, raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")];
   const first = raw.indexOf("{");
   const last = raw.lastIndexOf("}");
-  if (first >= 0 && last > first) candidates.push(raw.slice(first, last + 1));
+  if (first >= 0 && last > first) shapes.push(raw.slice(first, last + 1));
+  const candidates = [...shapes, ...shapes.map(escapeControlCharsInStrings)];
   for (const c of candidates) {
     try {
       const v = JSON.parse(c);
@@ -455,6 +485,12 @@ export async function runOutreachRewrite(
     letter = parseLetterReply(result.text);
     broken = letter ? checkLetter(letter, facts) : ["the reply was not a {subject, body} JSON object"];
     if (broken.length === 0) break;
+    // Diagnostics on the task, so a rule the model keeps breaking can be read rather than guessed.
+    await env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'rewrite_reply_rejected',?)`)
+      .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ pass, broken, reply_head: result.text.slice(0, 600), model: result.modelName }))
+      .run()
+      .catch(() => {});
     messages.push({ role: "assistant", content: result.text });
     messages.push({
       role: "user",

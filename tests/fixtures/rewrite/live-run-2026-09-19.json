@@ -1,0 +1,30 @@
+{
+  "what": "One real run of the rewrite path, 19 Sep 2026, local wrangler dev with the AI binding proxied to the real Workers AI rung production uses (mdl_cf_llama33_70b). Her actual second-batch note, verbatim. Nothing was written to production; cost $0 (Workers AI allowance; the router records the notional micros below).",
+  "seconds_from_send_back_to_ready": 2.585,
+  "id": "orw_m2xe0y6kvv326mmh",
+  "state": "ready",
+  "her_note": "You need to add more...maybe. talk about some of the names im \"currently working on\" like anthropic bytedance openai polymarket higgsfield moonshot sandbox neuralink,  in the introduction u should add a hyperlink to my linkedin profile where you say Spry VC (linkedin.com/in/sequoiataylor)",
+  "written_by": "Llama 3.3 70B (Workers AI) — DEGRADED TIER via Workers AI",
+  "cost_micros": 0,
+  "requested_at": 1789841668304,
+  "started_at": 1789841668334,
+  "finished_at": 1789841670889,
+  "sent_back_subject": "Late-stage secondaries — Saints Capital (live rewrite 1789841666966)",
+  "sent_back_body": "My name is Sequoia Taylor, and I run Spry VC. I work with investors who are actively looking for late-stage positions in private technology companies, and I match them with holders who want liquidity.\n\nIf it is useful, I will send you what is currently available and the terms, and you can tell me whether any of it is a fit. If it is not, tell me what you are actually looking for and I will only come back when I have it.\n\nSequoia Taylor\nSpry VC\nlinkedin.com/in/sequoiataylor",
+  "rewritten_subject": "Late-stage secondaries",
+  "rewritten_body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I am currently working on some interesting names such as Anthropic, Bytedance, OpenAI, Polymarket, Higgsfield, Moonshot, Sandbox, and Neuralink.\n\nI work with investors who are actively looking for late-stage positions in private technology companies, and I match them with holders who want liquidity. I think it would be worth exploring whether we can work together to find a good fit.\n\nCan you let me know if you are interested in learning more about what I have available?\n \nSequoia Taylor\nSpry VC\nlinkedin.com/in/sequoiataylor",
+  "task_events": [
+    {
+      "ts": 1789841668310,
+      "event": "intake"
+    },
+    {
+      "ts": 1789841668332,
+      "event": "started"
+    },
+    {
+      "ts": 1789841670891,
+      "event": "completed"
+    }
+  ]
+}

@@ -131,6 +131,9 @@ describe("the rules are code, not prose", () => {
     expect(parseLetterReply(JSON.stringify(obj))).toEqual(obj);
     expect(parseLetterReply("```json\n" + JSON.stringify(obj) + "\n```")).toEqual(obj);
     expect(parseLetterReply("Here it is:\n" + JSON.stringify(obj) + "\nHope that helps")).toEqual(obj);
+    // CONFIRMED on the first live run: Llama 3.3 70B puts real line breaks inside the JSON string.
+    const rawNewlines = '{"subject": "Late-stage secondaries", "body": "My name is Sequoia Taylor.\n\nSecond paragraph."}';
+    expect(parseLetterReply(rawNewlines)).toEqual({ subject: "Late-stage secondaries", body: "My name is Sequoia Taylor.\n\nSecond paragraph." });
     expect(parseLetterReply("just prose")).toBeNull();
     expect(parseLetterReply(JSON.stringify({ subject: "A" }))).toBeNull();
   });
