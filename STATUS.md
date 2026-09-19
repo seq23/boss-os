@@ -206,6 +206,51 @@ that can take it is the cheapest non-training one. `written_by` on the row and o
 wrote each morning. `node scripts/ops/briefing-ladder.mjs` prints the ladder as the migrations
 leave it.
 
+### Her five jobs (19 September 2026, ~13:00 CT)
+
+**1 · A letter sent back with a note is rewritten to answer it, in minutes, and she can watch.**
+CONFIRMED on production: her second batch (`approval_batches` apb_m2x9y0t8yq0tfpe0, 13 of 13) was
+answered thirteen times with "No new letter … word-for-word" — the composer is deterministic and
+cannot read a note. Now `wealth/rewrite.ts` (0261 `outreach_rewrites`): a send-back with a note
+queues a rewrite on the Worker's own queue (never the Mac's launchd slot), `private_model_only`, so
+it lands on the first non-training rung (Workers AI, $0); the reply is checked against the letter's
+rules in code (name, Spry VC + LinkedIn, never "broker", no address, no figure she did not state,
+different from every rejected letter) with one retry; attempt N+1 is raised with her note beside it
+and "rewritten by <rung>" on the card. The Capital desk and the Inbox print ONE sentence from rows —
+"13 sent back with your note · rewriting now · 4 of 13 ready" — and polling it drains the queue.
+"Rewrite the N with my notes" retries failures. The 13 on production start the moment the deployed
+Worker's first poll or tick runs (`materialiseRewrites`). Live proof:
+`tests/fixtures/rewrite/live-run-2026-09-19.json` (2.6 s, cost 0). The green button's Gmail draft was
+proven end to end the same day: draft `r-1259884589917502769` / message `1a0bad962e5938bf` created
+by the real approve path in staylor@spry.vc, read back under gmail.readonly, deleted, 404 after.
+
+**2 · The Capital tab tracks nothing of West Peek's raise.** The `west_peek` lane is excluded from
+the return ledger at its one enumeration (`RETURN_LINES`), the contribute door refuses the line, the
+Mac contributor no longer reads the LP tracker. Monique's personal LP-search duties (`duty_lp_replies`,
+`duty_lp_positive`) are kept and pinned. Guard: `validate:no-west-peek-totals`. Kept on purpose:
+`duty_scooter_sheet` (she asked for the Wednesday copy by name on 8 Sep; it carries replies, not
+money) and Today's Wednesday cadence (§5.4, her diary).
+
+**3 · The grid has readers.** `src/shared/boss/propertyReaders.mjs` names, per property, uptime /
+GSC / GitHub / Cloudflare as WIRED or CANNOT with the reason; 0263 `property_health_readings` and the
+new `executor = 'worker'` duty kind (uptime daily, GSC weekly from the Worker; GitHub and Cloudflare
+posted by `grid-watch.mjs` from her Mac, where the tokens live). Systems → Properties shows the card.
+Guard: `validate:property-readers`.
+
+**5 · "Find me a list of firms that did X, and draft an email to ask Y."** One shape of work on
+every door (`admitTask` runs the grammar in `research/firmScan.ts`): Camille owns it; public news
+RSS is read from the Worker, each page fetched; a finding is kept only if its sentence is on the
+page it cites; each verified firm gets a letter through the letters' own door — Inbox card, Gmail
+draft on the green button, rewrite on a send-back. `ask_scans` / `ask_scan_findings` (0264) carry
+the counts the desk prints. Run for real once against the live web on 19 Sep (Anthropic IPO):
+`tests/fixtures/firm-scan/live-run-2026-09-19.json` — 5 sources read, 6 of 8 firms verified, 6
+letters in 63 s, cost 0, with the gaps stated in the file.
+
+**How the live proofs were run.** `wrangler dev` without `--local` proxies only the `AI` binding to
+the real Workers AI (D1, KV, R2 stay local); the Google key came from the vault into `.dev.vars` for
+the session and was deleted after. `wrangler.toml` is unchanged; `npm run e2e` stays hermetic and
+proves the NAMED STOPS instead.
+
 **A wall-clock time and a zone, never a UTC hour.** `0 12 * * *` is correct in September and an hour
 early from November; nobody files a bug for that, the report is just quietly stale for five months a
 year. Duty materialisation runs on EVERY hourly tick rather than inside the 03:00 UTC maintenance
