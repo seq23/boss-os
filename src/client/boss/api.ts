@@ -579,4 +579,7 @@ export const api = {
   watchList: () => call<any[]>("/governance/watch-list"),
 
   incidents: () => call<any[]>("/trading/incidents"),
+
+  // ── Her jobs, 19 Sep 2026 — Job 3: the health of every grid property, per reader. ──
+  propertyHealth: () => call<any>("/grid/health"),
 };
