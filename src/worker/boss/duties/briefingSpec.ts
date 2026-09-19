@@ -388,7 +388,8 @@ yield) and the URL it came from. THE MARKETS DASHBOARD TABLE IS BUILT BY THE SYS
 you do not type its figures. Use its numbers everywhere else you need them (the summary, the
 headlines, SpaceX Watch) and cite MARKETS.json's entries by copying them into your sources list.
 A quote with value null was not available — say "not available at the time of the snapshot" and
-never fill it from memory or from a search result.
+never fill it from memory or from a search result. Any OTHER figure you cannot verify from a source
+you opened is written as "not available at HH:MM CT" (the Central time you looked), never estimated.
 
   SPCX IS ON THE WATCHLIST. A quote for it means SpaceX is publicly traded today and the SpaceX
   Watch leads with the stock. A null means the feed did not confirm a listing — then verify from
@@ -590,6 +591,8 @@ export interface BriefingAssessment {
   unresolved_citations: number[];
   /** Sources without an article-level URL or a parseable read_at. */
   unusable_sources: number;
+  /** Sources that are a bare homepage rather than the article that was read. */
+  homepage_sources: string[];
   /** Excluded content found, by section key and rule name. */
   excluded_hits: { key: string; rule: string }[];
   /** True when nothing at all was filed — Rule 0's own case. */
@@ -703,6 +706,13 @@ export function assessBriefing(report: {
   if (unresolved.size > 0) problems.push(`Inline citations ${[...unresolved].sort((a, b) => a - b).map((n) => `[${n}]`).join(" ")} point past the end of the sources list.`);
   const unusable = rawSources.length - usable.length;
   if (unusable > 0) problems.push(`${unusable} source${unusable === 1 ? "" : "s"} lack${unusable === 1 ? "s" : ""} an article URL or a readable read time.`);
+  /*
+   * A HOMEPAGE IS WHERE A SOURCE LIVES, NOT WHAT WAS READ. The file's eighteen footnotes are every
+   * one an article. The live run of 19 Sep cited spaceflightnow.com/ bare, once in thirty — so the
+   * rule is graded rather than assumed, and she sees which ones.
+   */
+  const homepages = usable.filter((s) => /^https?:\/\/[^/]+\/?$/.test(s.url)).map((s) => s.url);
+  if (homepages.length > 0) problems.push(`${homepages.length} source${homepages.length === 1 ? " is" : "s are"} a bare homepage, not the article read: ${homepages.join(", ")}.`);
   for (const hit of excluded) problems.push(`${HEADING.get(hit.key) ?? hit.key} contains ${hit.rule} content, which belongs on the Spirit page.`);
 
   return {
@@ -713,6 +723,7 @@ export function assessBriefing(report: {
     headline_numbers_uncited: headlineUncited,
     unresolved_citations: [...unresolved].sort((a, b) => a - b),
     unusable_sources: unusable,
+    homepage_sources: homepages,
     excluded_hits: excluded,
     empty: sections.length === 0,
   };
