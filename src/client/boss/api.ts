@@ -169,10 +169,19 @@ export const api = {
   notices: () => call<any[]>("/approvals/notices"),
   approvals: (status = "pending") => call<any[]>(`/approvals?status=${status}`),
   approval: (id: string) => call<any>(`/approvals/${id}`),
-  decide: (id: string, decision: string, note?: string) =>
-    call<{ approval: any; execution: { status: string; detail: any } | null }>(
-      `/approvals/${id}/decide`, post("", { decision, note }),
+  decide: (id: string, decision: string, note?: string, batchId?: string) =>
+    call<{ approval: any; execution: { status: string; detail: any } | null; batch_id?: string | null }>(
+      `/approvals/${id}/decide`, post("", { decision, note, batch_id: batchId }),
     ),
+  /*
+   * ONE REASON FOR MANY DOCKETS (Inbox overhaul, 19 Sep 2026). The batch carries the reason and
+   * the count; each docket is still decided by its own `decide` call carrying the batch id, so the
+   * record per item is a decision about that item and the screen can count as it goes.
+   */
+  openBatch: (decision: "rejected", reason: string, count: number) =>
+    call<{ id: string; reason: string; requested_count: number }>("/approvals/batches", post("", { decision, reason, count })),
+  batchItemFailed: (batchId: string, approvalId: string, error: string) =>
+    call<any>(`/approvals/batches/${batchId}/failed`, post("", { approval_id: approvalId, error })),
 
   /*
    * Work that needs her judgement, with the work itself attached. The Inbox asks for these
@@ -345,6 +354,14 @@ export const api = {
    */
   outreach: () => call<{ approved: any[]; awaiting: any[] }>("/wealth/outreach"),
   outreachSent: (id: string) => call<any>(`/wealth/outreach/${id}/sent`, post("")),
+  /* Inbox overhaul, 19 Sep 2026: the letters she sent back, the redraft-all press, the Gmail draft
+   * retry from the desk, and her position sizes typed as a list. */
+  outreachSentBack: () => call<{ items: any[] }>("/wealth/outreach/sent-back"),
+  redraftSentBack: () => call<{ considered: number; raised: string[]; left: { name: string; why: string }[] }>("/wealth/outreach/redraft-sent-back", post("")),
+  gmailDraft: (outreachDraftId: string) => call<any>(`/wealth/outreach/${outreachDraftId}/gmail-draft`, post("")),
+  workingPositions: () => call<{ positions_usd: number[]; largest_usd: number | null }>("/wealth/working-positions"),
+  setWorkingPositions: (text: string) =>
+    call<{ positions_usd: number[]; largest_usd: number }>("/wealth/working-positions", { method: "PUT", body: JSON.stringify({ text }) }),
   crossmatches: () => call<any>("/wealth/crossmatches"),
   setCrossmatchStatus: (id: string, body: unknown) => call<any>(`/wealth/crossmatches/${id}/status`, post("", body)),
 

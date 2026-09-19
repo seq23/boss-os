@@ -12,11 +12,14 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 export function Docket({
-  approval, onDecide, onOpen,
+  approval, onDecide, onOpen, selected, onSelect,
 }: {
   approval: any;
   onDecide: (id: string, decision: string) => Promise<void>;
   onOpen: (id: string) => void;
+  /** Bulk selection (Inbox overhaul, 19 Sep 2026). Undefined when the list is not selectable. */
+  selected?: boolean;
+  onSelect?: (id: string, shiftKey: boolean) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -35,11 +38,22 @@ export function Docket({
 
   return (
     <article
-      className="docket"
+      className={`docket${selected ? " docket-selected" : ""}`}
       style={{ ["--lane" as string]: approval.lane === "trading" ? "var(--lane-trading)" : "var(--lane-ops)" }}
+      data-approval-id={approval.id}
     >
       <div className="docket-head">
         <span className="docket-no">
+          {onSelect && approval.kind !== "notice" && (
+            <input
+              type="checkbox"
+              className="docket-select"
+              aria-label={`Select ${approval.title}`}
+              checked={Boolean(selected)}
+              onClick={(e) => onSelect(approval.id, e.shiftKey)}
+              onChange={() => { /* handled in onClick so the shift key is visible */ }}
+            />
+          )}
           {KIND_LABEL[approval.kind] ?? approval.kind} · {filedAt}
         </span>
         <span className={`risk risk-${approval.risk}`}>{approval.risk}</span>

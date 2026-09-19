@@ -23,11 +23,14 @@ import { useState } from "react";
  *    nothing attached makes the next attempt a coin flip.
  */
 export function JudgementDocket({
-  approval, judgement, onDecide,
+  approval, judgement, onDecide, selected, onSelect,
 }: {
   approval: any;
   judgement: any;
   onDecide: (id: string, decision: string, note?: string) => Promise<void>;
+  /** Bulk selection (Inbox overhaul, 19 Sep 2026). Undefined when the list is not selectable. */
+  selected?: boolean;
+  onSelect?: (id: string, shiftKey: boolean) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
@@ -50,9 +53,27 @@ export function JudgementDocket({
   const missing = assets.filter((a) => !a.available).length;
 
   return (
-    <article className="docket" style={{ ["--lane" as string]: "var(--lane-ops)" }}>
+    <article
+      className={`docket${selected ? " docket-selected" : ""}`}
+      style={{ ["--lane" as string]: "var(--lane-ops)" }}
+      data-approval-id={approval.id}
+    >
       <div className="docket-head">
         <span className="docket-no">
+          {onSelect && (
+            /*
+             * SELECT MANY, THEN ONE REASON. Space toggles (the native checkbox does that), shift-click
+             * selects the range from the last one she touched; the Inbox owns the range logic.
+             */
+            <input
+              type="checkbox"
+              className="docket-select"
+              aria-label={`Select ${approval.title}`}
+              checked={Boolean(selected)}
+              onClick={(e) => onSelect(approval.id, e.shiftKey)}
+              onChange={() => { /* handled in onClick so the shift key is visible */ }}
+            />
+          )}
           your judgement · {judgement?.employee_name ?? judgement?.employee_id ?? "an employee"} · {filedAt}
           {judgement?.attempt > 1 ? ` · attempt ${judgement.attempt}` : ""}
         </span>
@@ -97,14 +118,21 @@ export function JudgementDocket({
             <div className="row-sub" style={{ marginTop: 8 }}><strong>Where it goes:</strong> {judgement.letter.to_hint}</div>
           )}
           {/*
-            * SAID ON THE CARD, NOT ONLY IN THE HANDLER. Approve is the most consequential-looking
-            * button in the product and she should never have to wonder whether pressing it emailed
-            * a stranger. It does not, and it cannot.
+            * SAID ON THE CARD, NOT ONLY IN THE HANDLER. The green button is the most
+            * consequential-looking control in the product and she should never have to wonder
+            * whether pressing it emailed a stranger. It does not, and it cannot: it creates a
+            * DRAFT in her own Gmail, and she sends from there.
             */}
           <div className="row-sub" style={{ marginTop: 8 }}>
-            Approving does not send this. Boss OS has no way to reach anybody's inbox; approving
-            finishes the letter and puts it on the Capital desk for you to send yourself.
+            The green button does not send this. It creates the draft in your Gmail
+            (staylor@spry.vc) with the subject and body filled; you read it once more there, add the
+            address, and send it yourself.
           </div>
+          {judgement.letter.her_note && (
+            <div className="row-sub" style={{ marginTop: 8 }}>
+              <strong>Answering your note:</strong> {judgement.letter.her_note}
+            </div>
+          )}
         </div>
       )}
 
@@ -142,9 +170,24 @@ export function JudgementDocket({
           </div>
         </div>
       ) : (
+        /*
+         * ─── THE GREEN BUTTON MAKES A DRAFT. THERE IS NO SEND BUTTON. ────────────────
+         *
+         * Owner, 19 September 2026, verbatim: "it should never send — the green button should be
+         * to create the draft." Until that day this button read "Approve — it is ready to send",
+         * which was true only in the sense that she would then copy the letter out of the Capital
+         * desk by hand. Now the approval IS the draft: one press records her yes and creates the
+         * draft in her own mailbox, and the result comes back on this card.
+         *
+         * NO SEND ACTION MAY BE ADDED HERE. `scripts/validate/the-inbox-draft-never-sends.mjs`
+         * fails the build if this card grows a second primary button, a label that is a send verb,
+         * or a letter label that does not say "draft".
+         */
         <div className="decide">
           <button className="btn btn-approve" disabled={busy !== null} onClick={() => decide("approved")}>
-            {busy === "approved" ? "Approving…" : judgement?.letter ? "Approve — it is ready to send" : "Approve — carry on and finish"}
+            {busy === "approved"
+              ? (judgement?.letter ? "Creating the draft…" : "Approving…")
+              : judgement?.letter ? "Create the draft in my Gmail" : "Approve — carry on and finish"}
           </button>
           <button className="btn btn-reject" disabled={busy !== null} onClick={() => setAsking(true)}>
             Try again

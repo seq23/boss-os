@@ -1481,3 +1481,97 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .coach-heading { font-family: var(--display); font-size: 19px; font-weight: 600; letter-spacing:-.01em; margin: 0 0 6px; }
 .coach-purpose { margin: 0 0 8px; font-size: 15px; line-height: 1.5; }
 .coach-fineprint { margin-top: 6px; font-size: 12.5px; }
+
+/* ─── Inbox overhaul, 19 September 2026 ──────────────────────────────────────
+ *
+ * "I need to be able to reject all things at once with an overarching reason why." The masthead
+ * answers first; a card can be selected; one bar carries the one act. Every colour is a token that
+ * already exists — nothing new is declared here, and `.btn`, `.panel`, `.notice`, `.field` and
+ * `.eyebrow` are reused rather than restyled.
+ */
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 4px 0 12px;
+}
+.masthead-n {
+  font-family: var(--display);
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+.masthead-l {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.bulk-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  margin: 12px 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.bulk-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.bulk-bar .btn-small { flex: 0 0 auto; }
+
+.docket-select {
+  width: 16px;
+  height: 16px;
+  margin: 0 8px 0 0;
+  vertical-align: -3px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+.docket-select:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.docket-selected {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 8%, var(--card));
+}
+
+.quick-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.quick-reasons .btn {
+  flex: 0 1 auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--body);
+  font-size: 13px;
+  text-align: left;
+}
+
+/* An error that lives BESIDE the field it is about. The position-size field rendered its only
+ * error ~3,000px above the input; this is the class that stops that recurring. */
+.field-error {
+  color: var(--reject);
+  font-size: 13px;
+  margin: -6px 0 10px;
+}
+
+.inbox-group { margin-top: 6px; }
