@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { BRIEFING_SECTIONS } from "@worker/boss/today/briefing";
+import { MARKET_WATCHLIST } from "@worker/boss/duties/briefingSpec";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deliverExecutiveReport } from "../../src/worker/boss/duties/deliverReport";
 import { row, uid, all } from "./helpers";
@@ -23,6 +24,88 @@ async function seedTask(input: Record<string, unknown>) {
     `INSERT INTO tasks (id, lane, title, input, status, created_at) VALUES (?, 'ops', 'Executive Intelligence Report', ?, 'running', ?)`,
   ).bind(TASK, JSON.stringify(input), Date.now()).run();
 }
+
+/** A source list the way the run files them: article URLs, read times. */
+const SOURCES = [
+  { name: "Reuters — S&P 500, Nasdaq advance", url: "https://www.reuters.com/business/wall-st-2026-09-18/", read_at: "2026-09-19T11:12:00Z" },
+  { name: "Reuters — Nscale files for US IPO", url: "https://www.reuters.com/technology/nscale-ipo-2026-09-18/", read_at: "2026-09-19T11:14:00Z" },
+  { name: "AP — FCC grants Paramount request", url: "https://apnews.com/article/abc123", read_at: "2026-09-19T11:16:00Z" },
+];
+
+/**
+ * A report to the file's depth: five cited summary items, five headlines with data blocks, six-line
+ * sections, a grounded insight. What "complete" means after 19 September 2026.
+ */
+function fullReport() {
+  const bullet = (i: number) => `Something moved in the world [${(i % SOURCES.length) + 1}].`;
+  const sections = BRIEFING_SECTIONS.map((b) => {
+    const base: Record<string, unknown> = { key: b.key, heading: b.title, so_what: "Something to watch.", sources: [1, 2, 3] };
+    switch (b.key) {
+      case "one_minute_summary":
+        return { ...base, bullets: [1, 2, 3, 4, 5].map((i) => `Development ${i}: the index gained 0.2% on the day [${(i % 3) + 1}].`) };
+      case "top_5_headlines":
+        return {
+          ...base,
+          items: [1, 2, 3, 4, 5].map((i) => ({
+            headline: `Headline ${i}`,
+            summary: "What happened, versus prior expectations.",
+            numbers: [`Revenue $140.6 million, +1,252% [2]`, `Loss $1.02 billion [2]`],
+            why_it_matters: "Second-order effects, beneficiaries, exposure, what to monitor.",
+            importance: 8,
+          })),
+        };
+      case "markets_dashboard":
+        return { ...base, bullets: ["Equities 🟡 mixed.", "Rates 🔴 adverse.", "Secondaries opportunity 🟢 constructive."] };
+      case "spacex_watch":
+        return {
+          ...base,
+          items: [
+            { headline: "SPCX", bullets: ["Closed lower on the day [1].", "IPO price $135 [1]."] },
+            { headline: "Starship Watch", bullets: ["Flight 14 targeted for September 28 [3]."] },
+          ],
+        };
+      case "investor_insight":
+        return {
+          ...base,
+          insight: {
+            synthesis: "Something moved in the world, and the same development appears in every section.",
+            how_reached: "The same development appears in every section of this fixture.",
+            transferable_frame: "Ask what is being asserted when nothing is being measured.",
+            falsified_by: "A contradicting figure appearing anywhere in the report.",
+            cites: [{ fact: "Something moved in the world.", from: "ai_technology" }],
+          },
+        };
+      case "one_thing_to_watch":
+        return { ...base, bullets: [bullet(0), bullet(1), bullet(2)] };
+      default:
+        return { ...base, bullets: [bullet(0), bullet(1)] };
+    }
+  });
+  return { status: "complete", headline: "One thing changed today.", summary: "All of it.", sections, sources: SOURCES, gaps: [] as unknown[], watching: [] as unknown[] };
+}
+
+/** MARKETS.json as the snapshot writes it, two quotes answered and one the feed refused. */
+const MARKET = {
+  fetched_at: "2026-09-19T11:05:30Z",
+  quotes: [
+    { symbol: "^GSPC", label: "S&P 500", kind: "index", value: 7650.5, change_pct: 0.167, previous_close: 7637.76, as_of: "2026-09-18T21:29:48Z", session_note: "index close", source_url: "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=5d&interval=1d", fetched_at: "2026-09-19T11:05:30Z" },
+    { symbol: "US10Y", label: "10-year Treasury", kind: "yield", value: 5.01, change_pct: 0.07, previous_close: 4.94, as_of: "2026-09-18T19:30:00Z", session_note: "Treasury par yield, daily", source_url: "https://home.treasury.gov/x.csv", fetched_at: "2026-09-19T11:05:30Z" },
+    { symbol: "BZ=F", label: "Brent crude", kind: "futures", value: null, change_pct: null, previous_close: null, as_of: null, session_note: "front-month futures settle", source_url: "https://query1.finance.yahoo.com/v8/finance/chart/BZ%3DF?range=5d&interval=1d", fetched_at: "2026-09-19T11:05:30Z", error: "HTTP 429" },
+    { symbol: "SPCX", label: "SpaceX (SPCX)", kind: "equity", value: 152.71, change_pct: -1.357, previous_close: 154.81, as_of: "2026-09-18T20:00:00Z", session_note: "regular-session close", source_url: "https://query1.finance.yahoo.com/v8/finance/chart/SPCX?range=5d&interval=1d", fetched_at: "2026-09-19T11:05:30Z" },
+  ],
+  consulted: [{ url: "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=5d&interval=1d", status: "HTTP 200", fetched_at: "2026-09-19T11:05:30Z" }],
+} as any;
+
+/** Every watchlist symbol answered — the ordinary morning. */
+const FULL_MARKET = {
+  fetched_at: "2026-09-19T11:05:30Z",
+  quotes: MARKET_WATCHLIST.map((w, i) => ({
+    symbol: w.symbol, label: w.label, kind: w.kind, value: 100 + i, change_pct: 0.1 * i, previous_close: 99 + i,
+    as_of: "2026-09-18T21:00:00Z", session_note: w.session_note,
+    source_url: `https://feed.example/${encodeURIComponent(w.symbol)}`, fetched_at: "2026-09-19T11:05:30Z",
+  })),
+  consulted: [],
+} as any;
 
 describe("delivering the executive intelligence report", () => {
   beforeEach(async () => {
@@ -67,46 +150,39 @@ describe("delivering the executive intelligence report", () => {
    * everything §5 asks for is COMPLETE however long its `watching` list is. Four forward-looking
    * notes — Monday's launch, an IPO date not yet set — made a full report call itself partial.
    */
-  it("is complete when every section is filed, however much it is watching for", async () => {
+  it("is complete when every section is filed to the file's depth, however much it is watching for", async () => {
     await seedTask({ delivers: "executive_reports", backend_id: "bk_claude_code" });
-    const sources = [{ name: "CNBC", url: "https://www.cnbc.com/x", read_at: "2026-09-13T20:35:00Z" }];
     await deliverExecutiveReport(env as any, {
       taskId: TASK, runId: uid("brn"), runStatus: "succeeded",
       report: {
+        ...fullReport(),
         status: "partial",
-        summary: "All of it.",
-        sections: BRIEFING_SECTIONS.map((b) => ({
-          key: b.key,
-          heading: b.title,
-          so_what: "Something to watch.",
-          bullets: ["A development with no figure in it."],
-          /*
-           * THE INSIGHT HAS TO STAND UP, and the first draft of this test learned that the hard
-           * way: filing an `investor_insight` section with bullets and no insight object is a
-           * section that exists and cannot be grounded, which is a real shortfall and correctly
-           * made the report partial. The fixture files an insight built from the day's own words.
-           */
-          ...(b.key === "investor_insight"
-            ? {
-                insight: {
-                  synthesis: "A development with no figure in it is still a development.",
-                  how_reached: "The same development appears in every section of this fixture.",
-                  transferable_frame: "Ask what is being asserted when nothing is being measured.",
-                  falsified_by: "A figure appearing anywhere in the report.",
-                  cites: [{ fact: "A development with no figure in it.", from: "ai_technology" }],
-                },
-              }
-            : {}),
-        })),
-        sources,
         watching: [{ wanted: "Monday's launch outcome" }, { wanted: "An IPO date not yet set" }],
       },
+      marketData: FULL_MARKET,
     });
 
     const report = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(JSON.parse(report.shortfalls)).toEqual([]);
     expect(report.status).toBe("complete");
-    expect(JSON.parse(report.shortfalls)).toHaveLength(0);
     expect(JSON.parse(report.watching)).toHaveLength(2);
+  });
+
+  /*
+   * THE DEPTH IS PART OF THE CONTRACT NOW. This test's predecessor filed every section with ONE
+   * bullet and expected "complete" — which was the four-bullet memo the owner compared to her other
+   * briefing and called inferior. A one-line summary is a partial report and it says why.
+   */
+  it("calls a one-line summary partial, and names the depth the specification asks for", async () => {
+    await seedTask({ delivers: "executive_reports", backend_id: "bk_claude_code" });
+    const thin = fullReport();
+    thin.sections = thin.sections.map((sec: any) =>
+      sec.key === "one_minute_summary" ? { ...sec, bullets: [sec.bullets[0]] } : sec,
+    );
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report: thin, marketData: FULL_MARKET });
+    const report = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(report.status).toBe("partial");
+    expect(JSON.parse(report.shortfalls).join(" ")).toMatch(/One-Minute Executive Summary has 1 item; the specification asks for at least 3/);
   });
 
   /*
@@ -673,5 +749,116 @@ describe("tool suggestions refuse the vendor as its own evidence", () => {
     await seed(CONTRACT);
     await deliver([{ name: "Z", url: "https://z.example/", what_it_does: "Thing", evidence_url: "https://q.example/r" }]);
     expect((await row2()).status).toBe("new");
+  });
+});
+
+/**
+ * ─── 19 SEPTEMBER 2026: ON PAR WITH THE ONE SHE PAYS FOR ─────────────────
+ *
+ * The dashboard is built from the feed, the Spirit page's content is removed, the report is graded
+ * against the file's shape, and the edition stamp is derived from evidence. Each assertion below is
+ * a defect measured in production that morning.
+ */
+describe("the briefing is built and graded against the file's specification", () => {
+  beforeEach(async () => {
+    await env.DB.prepare(`DELETE FROM executive_reports`).run();
+    await seedTask({ delivers: "executive_reports", backend_id: "bk_claude_code", prompt_version: "2026-09-19.1" });
+  });
+
+  it("builds the dashboard from MARKETS.json, replaces whatever the run typed, and reads 'not available' for a refused symbol", async () => {
+    const report = fullReport();
+    // The run typed a wrong table, the way 19 Sep's did. It must not survive.
+    report.sections = report.sections.map((sec: any) =>
+      sec.key === "markets_dashboard" ? { ...sec, table: { columns: ["Asset", "Close"], rows: [["S&P 500", "7,637.76 (+1.1%)"]] } } : sec,
+    );
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report, marketData: MARKET, now: Date.parse("2026-09-19T11:31:00Z") });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    const dash = JSON.parse(stored.sections).find((s: any) => s.key === "markets_dashboard");
+    expect(dash.table_built_by).toBe("system");
+    const rows = dash.table.rows as string[][];
+    expect(rows.find((r) => r[0] === "S&P 500")?.[1]).toBe("7,650.5");
+    expect(rows.find((r) => r[0] === "S&P 500")?.[2]).toBe("+0.17%");
+    expect(rows.find((r) => r[0] === "10-year Treasury")?.[1]).toBe("5.01%");
+    expect(rows.find((r) => r[0] === "Brent crude")?.[1]).toMatch(/^not available at \d{1,2}:\d{2} (AM|PM) CT$/);
+    expect(JSON.stringify(rows)).not.toContain("7,637.76");
+    // Every row the feed answered rests on a source that is now in the report's own list.
+    const sources = JSON.parse(stored.sources);
+    expect(sources.some((s: any) => s.url.includes("query1.finance.yahoo.com"))).toBe(true);
+    expect(sources.some((s: any) => s.url.includes("home.treasury.gov"))).toBe(true);
+    expect(stored.market_data).not.toBeNull();
+    // Four quotes in the fixture, one refused; the six the fixture never carried are not available either.
+    expect(JSON.parse(stored.shortfalls).join(" ")).toMatch(/7 dashboard figures were not available/);
+  });
+
+  it("answers SpaceX's public/private question from the feed, at the top of the SpaceX Watch", async () => {
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report: fullReport(), marketData: MARKET });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    const spx = JSON.parse(stored.sections).find((s: any) => s.key === "spacex_watch");
+    expect(spx.spacex_public).toBe(true);
+    expect(spx.bullets[0]).toMatch(/^SPCX \$152\.71 \(−1\.36%\), prior close \$154\.81 — regular-session close\. \[\d+\]$/);
+  });
+
+  it("removes a section carrying astrology or the travel map and names it, so the Spirit page's content never renders here", async () => {
+    const report = fullReport();
+    report.sections.push({ key: "extra", heading: "Moon Dashboard", so_what: "The Moon is in Capricorn.", bullets: ["Waxing Moon, 56% illumination; Mercury direct."] } as any);
+    report.sections.push({ key: "extra2", heading: "Money / Career / Travel Map", so_what: "SEPTEMBER 14–20 — maintain.", bullets: ["Next map transition September 21."] } as any);
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report, marketData: MARKET });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    const text = stored.sections as string;
+    expect(text).not.toMatch(/Moon Dashboard|Capricorn|Travel Map|map transition/);
+    const shortfalls = JSON.parse(stored.shortfalls).join(" ");
+    expect(shortfalls).toMatch(/astrology content and was removed/);
+    expect(shortfalls).toMatch(/travel map content and was removed/);
+    expect(stored.status).toBe("partial");
+  });
+
+  it("names an uncited summary figure and a dangling [n] as shortfalls", async () => {
+    const report = fullReport();
+    report.sections = report.sections.map((sec: any) =>
+      sec.key === "one_minute_summary"
+        ? { ...sec, bullets: [...sec.bullets.slice(0, 3), "Brent fell 2.8% to $104.61 with no citation.", "Nscale targets a $30 billion valuation [41]."] }
+        : sec,
+    );
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report, marketData: MARKET });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    const shortfalls = JSON.parse(stored.shortfalls).join(" ");
+    expect(shortfalls).toMatch(/1 summary item carries a figure with no inline \[n\] citation/);
+    expect(shortfalls).toMatch(/Inline citations \[41\] point past the end of the sources list/);
+    expect(stored.status).toBe("partial");
+  });
+
+  it("derives the edition stamp from the newest evidence, never later than delivery, and records the prompt version", async () => {
+    const delivered = Date.parse("2026-09-19T11:31:00Z");
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report: fullReport(), marketData: MARKET, now: delivered });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    // Newest source read 11:16Z; snapshot 11:05Z; delivery 11:31Z. The stamp is the newest READ.
+    expect(stored.checked_through).toBe(Date.parse("2026-09-19T11:16:00Z"));
+    expect(stored.prompt_version).toBe("2026-09-19.1");
+    const consulted = JSON.parse(stored.consulted);
+    expect(consulted.some((c: any) => c.kind === "market_feed" && c.status === "HTTP 200")).toBe(true);
+    // The run's three sources plus the three feed URLs the dashboard's rows rest on.
+    expect(consulted.filter((c: any) => c.kind === "web")).toHaveLength(SOURCES.length + 3);
+  });
+
+  it("ignores a read time the run fabricated in the future, as 19 September's did", async () => {
+    const delivered = Date.parse("2026-09-19T11:31:00Z");
+    const report = fullReport();
+    report.sources = [...SOURCES, { name: "Future", url: "https://example.com/a", read_at: "2026-09-19T13:00:00Z" }];
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report, marketData: MARKET, now: delivered });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    expect(stored.checked_through).toBe(Date.parse("2026-09-19T11:16:00Z"));
+  });
+
+  it("leaves the run's own cited dashboard standing when no snapshot reached it, and says so", async () => {
+    const report = fullReport();
+    report.sections = report.sections.map((sec: any) =>
+      sec.key === "markets_dashboard" ? { ...sec, table: { columns: ["Asset", "Friday Sept 18 Close"], rows: [["S&P 500", "7,650.5 (+0.2%)"]] } } : sec,
+    );
+    await deliverExecutiveReport(env as any, { taskId: TASK, runId: uid("brn"), runStatus: "succeeded", report, marketData: null });
+    const stored = await row<any>(`SELECT * FROM executive_reports WHERE task_id = ?`, TASK);
+    const dash = JSON.parse(stored.sections).find((s: any) => s.key === "markets_dashboard");
+    expect(dash.table_built_by).toBeUndefined();
+    expect(dash.table.rows[0][1]).toBe("7,650.5 (+0.2%)");
+    expect(JSON.parse(stored.shortfalls).join(" ")).toMatch(/No live market snapshot reached this run/);
   });
 });

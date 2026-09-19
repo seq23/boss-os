@@ -852,3 +852,66 @@ describe("the deliverable is the file, and the exit code is not the verdict", ()
     expect(packet.status).toBe("failed");
   });
 });
+
+/**
+ * ─── 15 SEPTEMBER 2026: SUNDAY'S REPORT, FILED AS TUESDAY'S ───────────────
+ *
+ * CONFIRMED from production: `executive_reports` for 2026-09-15 is byte-identical to 2026-09-14.
+ * The Tuesday run was killed at its 900 s leash having spent $0 — it produced nothing — and the
+ * adapter then read `delivers.json` from the shared workspace, found Sunday's file, and graded it
+ * "complete... the leash is short, not the work". The workspace is persistent by design (SKY.json
+ * and the spec live there); the deliverable is the one file in it that must NOT persist.
+ */
+describe("a stale delivers.json cannot be refiled as this run's", () => {
+  const research = () => envelope({
+    kind: "research",
+    repo_path: "/Users/owner/.boss-os/reports",
+    allowed_paths: ["/Users/owner/.boss-os/reports"],
+    verification: [],
+  });
+
+  it("removes a delivers.json left by an earlier run BEFORE the backend starts, and says so on the packet", async () => {
+    const order: string[] = [];
+    const out = await executeRun(research(), {
+      clearStaleDelivers: async () => { order.push("clear"); return true; },
+      readMaterialJson: async () => null,
+      execute: async () => { order.push("run"); return (await okExecutor()()); },
+      gitProbe: gitStub(CLEAN),
+    });
+    expect(order).toEqual(["clear", "run"]);
+    expect(out.remaining_risks.join(" ")).toMatch(/delivers\.json from an earlier run was removed/);
+  });
+
+  it("is silent about the workspace when there was nothing stale to remove", async () => {
+    const out = await executeRun(research(), {
+      clearStaleDelivers: async () => false,
+      readMaterialJson: async () => null,
+      execute: okExecutor(),
+      gitProbe: gitStub(CLEAN),
+    });
+    expect(out.remaining_risks.join(" ")).not.toMatch(/earlier run was removed/);
+  });
+
+  it("carries MARKETS.json as observed evidence beside the run's own delivers, never inside it", async () => {
+    const market = { fetched_at: "2026-09-19T11:05:00Z", quotes: [{ symbol: "^GSPC", value: 7650.5 }], consulted: [] };
+    const out = await executeRun(research(), {
+      clearStaleDelivers: async () => false,
+      readMaterialJson: async (_cwd: string, name: string) => (name === "MARKETS.json" ? market : null),
+      execute: okExecutor({ delivers: { status: "complete", sections: [] } }),
+      gitProbe: gitStub(CLEAN),
+    });
+    expect(out.market_data).toEqual(market);
+    expect(out.delivers).toEqual({ status: "complete", sections: [] });
+    expect((out.delivers as any).market_data).toBeUndefined();
+  });
+
+  it("carries null market data when the snapshot did not run, so the Worker knows the dashboard is the run's own", async () => {
+    const out = await executeRun(research(), {
+      clearStaleDelivers: async () => false,
+      readMaterialJson: async () => null,
+      execute: okExecutor(),
+      gitProbe: gitStub(CLEAN),
+    });
+    expect(out.market_data).toBeNull();
+  });
+});
