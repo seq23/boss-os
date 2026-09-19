@@ -1,0 +1,351 @@
+{
+  "what": "One real run of the 'find firms that did X and draft the ask' path, 19 Sep 2026, on local wrangler dev with the AI binding proxied to the real Workers AI rung production uses, against the live public web (Bing News RSS, then each article). Her instruction verbatim. Nothing written to production; nothing sent; the six letters are judgement cards awaiting her in the local Inbox.",
+  "instruction": "find me a list of firms that have reported IPO participation in the release, and draft an email for me to ask if I can send investors to them",
+  "parsed": {
+    "find": "have reported IPO participation in the release",
+    "ask": "if I can send investors to them"
+  },
+  "seconds_from_instruction_to_letters": 62.769,
+  "cost_micros": 0,
+  "written_by": "Llama 3.3 70B (Workers AI) — DEGRADED TIER via Workers AI",
+  "queries": [
+    "IPO participation firms announced",
+    "Companies report IPO involvement",
+    "Firms with IPO releases"
+  ],
+  "counts": {
+    "sources_found": 8,
+    "sources_read": 5,
+    "findings": 8,
+    "verified": 6,
+    "drafts": 6
+  },
+  "honest_gaps": [
+    "She did not name the event ('in the release'), so the queries were generic (IPO participation) and the feed answered with the day's IPO coverage: the Anthropic IPO underwriters and, from a SpaceX piece, Fidelity. Naming the event — 'firms that reported participation in the Anthropic IPO' — narrows it; the grammar and the path are unchanged.",
+    "'Participation' read from public news is what the page says: four banks working on the IPO and one firm making stock available. Anchor investors named in a release would appear the same way if a page said so — a finding exists only where a sentence exists.",
+    "Two of eight firms the model named had no sentence on the page it cited and got no letter, by design. They are on the finding list marked unverified.",
+    "Letters passed every rule (name, Spry VC + LinkedIn, no broker, no address, no figure). Their tone is serviceable rather than hers; a send-back with a note rewrites each one through the 0261 path."
+  ],
+  "findings": [
+    {
+      "firm": "Citi",
+      "role": "Working on Anthropic’s IPO",
+      "quote": "Morgan Stanley, Goldman Sachs, JPMorgan and Citi are among the banks working on the IPO.",
+      "evidence_url": "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+      "source_title": "Anthropic Moves IPO Timeline Toward Mid-October, Report Says",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to Citi. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that mentioned Citi as one of the banks involved in Anthropic's IPO. \n\nI am reaching out to explore potential collaboration opportunities. I would like to know if I can send investors to you, should they be interested in learning more about the IPO or other relevant investment opportunities.\n\nSequoia Taylor \nSpry VC \nlinkedin.com/in/sequoiataylor",
+      "letter_state": "awaiting"
+    },
+    {
+      "firm": "Citi",
+      "role": "Working on Anthropic’s IPO",
+      "quote": "Morgan Stanley, Goldman Sachs, JPMorgan and Citi are among the banks working on the IPO.",
+      "evidence_url": "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+      "source_title": "Anthropic Moves IPO Timeline Toward Mid-October, Report Says",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to Citi. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that mentioned Citi is involved in the upcoming Anthropic IPO. \n\nI am reaching out to explore potential collaboration opportunities. I would like to know if I can send investors to work with your team. \n\nSequoia Taylor \nSpry VC \nlinkedin.com/in/sequoiataylor",
+      "letter_state": "superseded"
+    },
+    {
+      "firm": "Fidelity",
+      "role": "Makes SpaceX stock available",
+      "quote": "Fidelity customers with as little as $2,000 in a retail brokerage account, lower than typical IPO requirements due to increased share availability,",
+      "evidence_url": "https://www.businessinsider.com/spacex-ipo-fidelity-spcx-stock-how-to-invest-retail-traders-2026-6",
+      "source_title": "Fidelity just announced how it will make SpaceX stock available to more investors",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to Fidelity. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Exploring Opportunities for Late-Stage Investors",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that Fidelity is making SpaceX stock available to customers with lower than typical IPO requirements due to increased share availability. \n\nI am reaching out to inquire if I can send investors to Fidelity to take advantage of this opportunity. I believe my network of investors would be a good fit for this offering and I would like to explore the possibility of working together.\n\nSequoia Taylor \n/ Spry VC \n/ linkedin.com/in/sequoiataylor",
+      "letter_state": "awaiting"
+    },
+    {
+      "firm": "Fidelity",
+      "role": "Makes SpaceX stock available",
+      "quote": "Fidelity customers with as little as $2,000 in a retail brokerage account, lower than typical IPO requirements due to increased share availability,",
+      "evidence_url": "https://www.businessinsider.com/spacex-ipo-fidelity-spcx-stock-how-to-invest-retail-traders-2026-6",
+      "source_title": "Fidelity just announced how it will make SpaceX stock available to more investors",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to Fidelity. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Exploring Opportunities for Late-Stage Investors",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. \n\nI recently came across the news that Fidelity will be making SpaceX stock available to more investors. I am reaching out to explore the possibility of sending investors to Fidelity, and I would appreciate the opportunity to discuss this further.\n\nSequoia Taylor \nSpry VC \nlinkedin.com/in/sequoiataylor",
+      "letter_state": "superseded"
+    },
+    {
+      "firm": "Goldman Sachs",
+      "role": "Working on Anthropic’s IPO",
+      "quote": "Morgan Stanley, Goldman Sachs, JPMorgan and Citi are among the banks working on the IPO.",
+      "evidence_url": "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+      "source_title": "Anthropic Moves IPO Timeline Toward Mid-October, Report Says",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to Goldman Sachs. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that your firm is involved in the upcoming IPO of Anthropic. \n\nI am reaching out to explore potential collaboration opportunities. I would like to inquire if I can send investors to you who may be interested in participating in this IPO. \n\nSequoia Taylor \n/ Spry VC \n/ linkedin.com/in/sequoiataylor",
+      "letter_state": "awaiting"
+    },
+    {
+      "firm": "Goldman Sachs",
+      "role": "Working on Anthropic’s IPO",
+      "quote": "Morgan Stanley, Goldman Sachs, JPMorgan and Citi are among the banks working on the IPO.",
+      "evidence_url": "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+      "source_title": "Anthropic Moves IPO Timeline Toward Mid-October, Report Says",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to Goldman Sachs. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that Goldman Sachs is among the banks working on the Anthropic IPO. \n\nI am reaching out to explore potential collaboration opportunities. I would like to inquire if I can send investors to you who may be interested in participating in this IPO. \n\nSequoia Taylor \nSpry VC \nlinkedin.com/in/sequoiataylor",
+      "letter_state": "superseded"
+    },
+    {
+      "firm": "JPMorgan",
+      "role": "Working on Anthropic’s IPO",
+      "quote": "Morgan Stanley, Goldman Sachs, JPMorgan and Citi are among the banks working on the IPO.",
+      "evidence_url": "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+      "source_title": "Anthropic Moves IPO Timeline Toward Mid-October, Report Says",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to JPMorgan. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that mentioned JPMorgan is among the banks working on Anthropic's IPO. \n\nI am reaching out to explore potential collaboration opportunities. I would like to inquire if I can send investors to you, should they be interested in participating in this or similar deals.\n\nSequoia Taylor \n/ Spry VC \n/ linkedin.com/in/sequoiataylor",
+      "letter_state": "awaiting"
+    },
+    {
+      "firm": "JPMorgan",
+      "role": "Working on Anthropic’s IPO",
+      "quote": "Morgan Stanley, Goldman Sachs, JPMorgan and Citi are among the banks working on the IPO.",
+      "evidence_url": "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+      "source_title": "Anthropic Moves IPO Timeline Toward Mid-October, Report Says",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to JPMorgan. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that mentioned JPMorgan is involved in the upcoming Anthropic IPO. \n\nI am reaching out to explore potential collaboration opportunities. I would like to know if I can send investors to you who may be interested in participating in this IPO. \n\nSequoia Taylor \nSpry VC \nlinkedin.com/in/sequoiataylor",
+      "letter_state": "superseded"
+    },
+    {
+      "firm": "Morgan Stanley",
+      "role": "Working on Anthropic’s IPO",
+      "quote": "Morgan Stanley, Goldman Sachs, JPMorgan and Citi are among the banks working on the IPO.",
+      "evidence_url": "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+      "source_title": "Anthropic Moves IPO Timeline Toward Mid-October, Report Says",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to Morgan Stanley. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that Morgan Stanley is among the banks working on Anthropic's IPO. \n\nI am reaching out to explore potential collaboration opportunities. I was wondering if I can send investors to you who may be interested in participating in this IPO. \n\nSequoia Taylor \n/ Spry VC \n/ linkedin.com/in/sequoiataylor",
+      "letter_state": "awaiting"
+    },
+    {
+      "firm": "Morgan Stanley",
+      "role": "Working on Anthropic’s IPO",
+      "quote": "Morgan Stanley, Goldman Sachs, JPMorgan and Citi are among the banks working on the IPO.",
+      "evidence_url": "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+      "source_title": "Anthropic Moves IPO Timeline Toward Mid-October, Report Says",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to Morgan Stanley. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. I came across information that Morgan Stanley is involved in the upcoming Anthropic IPO. \n\nI am reaching out to explore potential collaboration opportunities. I was wondering if I can send investors to you who may be interested in participating in this IPO. \n\nSequoia Taylor \nSpry VC \nlinkedin.com/in/sequoiataylor",
+      "letter_state": "superseded"
+    },
+    {
+      "firm": "SpaceX",
+      "role": "Allocates shares to retail investors",
+      "quote": "SpaceX has shouted out retail investors ahead of the IPO, aiming to make it easier for them to get in at the initial offering price, which is usually something reserved for institutional buyers.",
+      "evidence_url": "https://www.businessinsider.com/spacex-ipo-fidelity-spcx-stock-how-to-invest-retail-traders-2026-6",
+      "source_title": "Fidelity just announced how it will make SpaceX stock available to more investors",
+      "verified": 1,
+      "draft_state": "awaiting",
+      "draft_detail": "Camille drafted an approach to SpaceX. It is in your Inbox for approval — nothing has been sent.",
+      "subject": "Introduction and Potential Collaboration",
+      "body": "My name is Sequoia Taylor, and I run Spry VC (linkedin.com/in/sequoiataylor). I work with investors looking for late-stage positions and have established relationships with various limited partners. \n\nI came across information that SpaceX is allocating shares to retail investors at the initial offering price, a move that levels the playing field for individual investors. \n\nI am reaching out to inquire if I can send investors to you, should they be interested in participating in your IPO. \n\nSequoia Taylor \n/ Spry VC \n/ linkedin.com/in/sequoiataylor",
+      "letter_state": "awaiting"
+    },
+    {
+      "firm": "Nasdaq",
+      "role": "Chosen by Anthropic for IPO",
+      "quote": "Anthropic has chosen Nasdaq as the exchange for its potential stock market debut, according to a report by Business Insider, citing a person familiar with the company’s plans.",
+      "evidence_url": "https://www.livemint.com/companies/news/anthropic-picks-nasdaq-for-potential-ipo-report-says-october-listing-in-focus-11789316902621.html",
+      "source_title": "Anthropic picks Nasdaq for potential IPO, report says; October listing in focus",
+      "verified": 0,
+      "draft_state": null,
+      "draft_detail": null,
+      "subject": null,
+      "body": null,
+      "letter_state": null
+    },
+    {
+      "firm": "Nvidia",
+      "role": "In talks to invest in Anthropic’s IPO",
+      "quote": "Nvidia is in talks with Anthropic over a potential investment of up to $10 billion in its planned IPO, which could become the largest stock market listing in history, Reuters reported, citing two people familiar with the matter.",
+      "evidence_url": "https://www.livemint.com/companies/news/anthropic-picks-nasdaq-for-potential-ipo-report-says-october-listing-in-focus-11789316902621.html",
+      "source_title": "Anthropic picks Nasdaq for potential IPO, report says; October listing in focus",
+      "verified": 0,
+      "draft_state": null,
+      "draft_detail": null,
+      "subject": null,
+      "body": null,
+      "letter_state": null
+    }
+  ],
+  "routing_decisions": [
+    {
+      "ts": 1789842649671,
+      "intake_kind": "search_queries",
+      "outcome": "degraded",
+      "chosen_model_id": "mdl_cf_llama33_70b"
+    },
+    {
+      "ts": 1789842680499,
+      "intake_kind": "extract_from_fetched_text",
+      "outcome": "degraded",
+      "chosen_model_id": "mdl_cf_llama33_70b"
+    },
+    {
+      "ts": 1789842684904,
+      "intake_kind": "drafting",
+      "outcome": "degraded",
+      "chosen_model_id": "mdl_cf_llama33_70b"
+    },
+    {
+      "ts": 1789842687744,
+      "intake_kind": "drafting",
+      "outcome": "degraded",
+      "chosen_model_id": "mdl_cf_llama33_70b"
+    },
+    {
+      "ts": 1789842690149,
+      "intake_kind": "drafting",
+      "outcome": "degraded",
+      "chosen_model_id": "mdl_cf_llama33_70b"
+    },
+    {
+      "ts": 1789842692731,
+      "intake_kind": "drafting",
+      "outcome": "degraded",
+      "chosen_model_id": "mdl_cf_llama33_70b"
+    },
+    {
+      "ts": 1789842695768,
+      "intake_kind": "drafting",
+      "outcome": "degraded",
+      "chosen_model_id": "mdl_cf_llama33_70b"
+    },
+    {
+      "ts": 1789842711295,
+      "intake_kind": "drafting",
+      "outcome": "degraded",
+      "chosen_model_id": "mdl_cf_llama33_70b"
+    }
+  ],
+  "task_events": [
+    {
+      "ts": 1789842648533,
+      "event": "intake",
+      "detail": {
+        "intakeKind": "decision_support",
+        "risk": "high",
+        "sensitivity": "private",
+        "modelAccess": "public_model_approved",
+        "audience": "internal",
+        "executionAssignment": "AI_DRAFT",
+        "reason": "Decision support. The system argues both sides; the Boss decides. Something leaves the boundary, so approval is required first.",
+        "matched": [
+          "decision_support",
+          "outbound"
+        ]
+      }
+    },
+    {
+      "ts": 1789842648539,
+      "event": "started",
+      "detail": {
+        "attempt": 1
+      }
+    },
+    {
+      "ts": 1789842650249,
+      "event": "scan_sources",
+      "detail": {
+        "queries": [
+          "IPO participation firms announced",
+          "Companies report IPO involvement",
+          "Firms with IPO releases"
+        ],
+        "found": 8,
+        "urls": [
+          "https://www.businessinsider.com/spacex-ipo-fidelity-spcx-stock-how-to-invest-retail-traders-2026-6",
+          "https://news.crunchbase.com/public/startups-to-watch-ipo-ai-chips-fintech-2026/",
+          "https://www.msn.com/en-in/news/other/anthropic-pushes-back-ipo-plans-marketing-may-begin-in-mid-october-report/ar-AA2bBDdh",
+          "https://www.msn.com/en-in/news/other/anthropic-in-talks-to-bring-nvidia-as-anchor-investor-in-potential-100-billion-ipo-report/ar-AA2c4etB",
+          "https://www.theinformation.com/briefings/space-stocks-rally-report-spacex-ipo-filing",
+          "https://www.livemint.com/companies/news/anthropic-picks-nasdaq-for-potential-ipo-report-says-october-listing-in-focus-11789316902621.html",
+          "https://www.techrepublic.com/article/news-anthropic-ipo-mid-october-2-trillion-valuation/",
+          "https://www.msn.com/en-in/news/other/nvidia-weighs-10-billion-investment-in-anthropic-s-mega-ipo-report/ar-AA2c3AUv"
+        ]
+      }
+    },
+    {
+      "ts": 1789842652636,
+      "event": "scan_read",
+      "detail": {
+        "read": 5,
+        "unread": [
+          {
+            "url": "https://www.msn.com/en-in/news/other/anthropic-pushes-back-ipo-plans-marketing-may-begin-in-mid-october-report/ar-AA2bBDdh",
+            "error": "page had no readable text"
+          },
+          {
+            "url": "https://www.msn.com/en-in/news/other/anthropic-in-talks-to-bring-nvidia-as-anchor-investor-in-potential-100-billion-ipo-report/ar-AA2c4etB",
+            "error": "page had no readable text"
+          },
+          {
+            "url": "https://www.msn.com/en-in/news/other/nvidia-weighs-10-billion-investment-in-anthropic-s-mega-ipo-report/ar-AA2c3AUv",
+            "error": "page had no readable text"
+          }
+        ]
+      }
+    },
+    {
+      "ts": 1789842680508,
+      "event": "scan_findings",
+      "detail": {
+        "named": 8,
+        "verified": 6,
+        "unverified": [
+          "Nasdaq",
+          "Nvidia"
+        ]
+      }
+    },
+    {
+      "ts": 1789842711302,
+      "event": "scan_done",
+      "detail": {
+        "sources_read": 5,
+        "verified": 6,
+        "drafts": 6,
+        "cost_micros": 0,
+        "written_by": "Llama 3.3 70B (Workers AI) — DEGRADED TIER via Workers AI"
+      }
+    },
+    {
+      "ts": 1789842711304,
+      "event": "completed",
+      "detail": {
+        "firm_scan_id": "fsc_m2xeyvem35zfja26",
+        "verified": 6,
+        "drafts": 6
+      }
+    }
+  ]
+}

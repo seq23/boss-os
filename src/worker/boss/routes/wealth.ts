@@ -14,7 +14,8 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
-import { composeOutreach, isRefusal, type CandidateRow, type CrossmatchFact } from "../wealth/outreach";
+import { composeOutreach, isRefusal, type CandidateRow, type CrossmatchFact, type Draft } from "../wealth/outreach";
+import { materialiseRewrites, rewriteProgress } from "../wealth/rewrite";
 import {
   recommendBuyers, type CandidateFacts, type CrossmatchFacts,
 } from "../../../shared/wealth/recommend";
@@ -230,6 +231,25 @@ export async function draftOutreachFor(
     };
   }
 
+  return raiseLetterFor(env, candidate, composed, note, now);
+}
+
+/**
+ * Put ONE composed letter in her Inbox: the judgement card and the `buyer_outreach_drafts` row,
+ * superseding any letter still awaiting for the same firm.
+ *
+ * Shared by the deterministic composer above and by the rewrite that answers her note
+ * (`wealth/rewrite.ts`), so a letter written by a model reaches the Inbox through exactly the same
+ * door, with the same address check, as one composed from the row. NEVER throws: a refusal is an
+ * answer she needs on the screen.
+ */
+export async function raiseLetterFor(
+  env: Env,
+  candidate: CandidateRow,
+  composed: Draft,
+  note: string | null,
+  now = Date.now(),
+): Promise<{ drafted: boolean; detail: string; judgement_id?: string; draft_id?: string }> {
   /*
    * NO ADDRESS MAY REACH THIS TABLE, and the check is here rather than trusted upstream for the
    * same reason the relationship sync refuses one: the composer works from public institution rows
@@ -245,13 +265,14 @@ export async function draftOutreachFor(
     };
   }
 
+  const writtenBy = typeof (composed.built_from as any)?.written_by === "string" ? (composed.built_from as any).written_by as string : null;
   try {
     const raised = await raiseJudgementCall(
       env,
       {
         title: `A letter to ${candidate.name}`,
         question:
-          `You reviewed ${candidate.name}. Camille wrote the approach below from what is on their row — ` +
+          `You reviewed ${candidate.name}. Camille wrote the approach below ${writtenBy ? `with ${writtenBy}, answering your note` : "from what is on their row"} — ` +
           `${(composed.built_from as any).history_label}. The green button puts it in your Gmail drafts, ` +
           "under your own address, for you to read once more and send yourself. Send it back with a sentence " +
           "and it comes off your desk with your note on the record. Nothing here can send it.",
@@ -262,28 +283,29 @@ export async function draftOutreachFor(
         // A second attempt at THIS candidate replaces the first on her screen. Two live letters to
         // one firm is a way to approve the wrong one.
         supersedeKind: null,
-        resumeDetail: { ...composed, candidate_id: candidateId },
+        resumeDetail: { ...composed, candidate_id: candidate.id },
       },
       now,
     );
 
     const prior = await env.DB
       .prepare(`SELECT MAX(attempt) AS n FROM buyer_outreach_drafts WHERE candidate_id = ?`)
-      .bind(candidateId)
+      .bind(candidate.id)
       .first<{ n: number | null }>();
     const attempt = (prior?.n ?? 0) + 1;
+    const draftId = newId("bod");
 
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE buyer_outreach_drafts SET state = 'superseded', updated_at = ?
           WHERE candidate_id = ? AND state = 'awaiting'`,
-      ).bind(now, candidateId),
+      ).bind(now, candidate.id),
       env.DB.prepare(
         `INSERT INTO buyer_outreach_drafts
            (id, candidate_id, judgement_id, attempt, subject, body, to_hint, built_from, state, her_note, created_at, updated_at)
          VALUES (?,?,?,?,?,?,?,?, 'awaiting', ?, ?, ?)`,
       ).bind(
-        newId("bod"), candidateId, raised.id, attempt,
+        draftId, candidate.id, raised.id, attempt,
         composed.subject, composed.body, composed.to_hint,
         JSON.stringify(composed.built_from), note, now, now,
       ),
@@ -292,6 +314,7 @@ export async function draftOutreachFor(
     return {
       drafted: true,
       judgement_id: raised.id,
+      draft_id: draftId,
       detail: `Camille drafted an approach to ${candidate.name}. It is in your Inbox for approval — nothing has been sent.`,
     };
   } catch (err) {
@@ -323,7 +346,9 @@ export async function draftOutreachFor(
 wealth.get("/recommendations", async (c) => {
   const now = Date.now();
   const [cands, matches, live] = await Promise.all([
-    c.env.DB.prepare(`SELECT * FROM sourcing_candidates ORDER BY created_at DESC LIMIT 200`).all<CandidateRow & CandidateFacts>(),
+    // Firms found by an instruction ("find firms that did X") are kind 'ask' and never enter the
+    // buyer recommendation: they are written to for HER ask, not ranked as buyers of her supply.
+    c.env.DB.prepare(`SELECT * FROM sourcing_candidates WHERE kind <> 'ask' ORDER BY created_at DESC LIMIT 200`).all<CandidateRow & CandidateFacts>(),
     c.env.DB.prepare(`SELECT id, candidate_id, lp_firm, lp_list, confidence, why FROM counterparty_crossmatches WHERE status <> 'rejected'`)
       .all<CrossmatchFacts>(),
     c.env.DB.prepare(`SELECT DISTINCT candidate_id FROM buyer_outreach_drafts WHERE state IN ('awaiting','approved','sent')`)
@@ -549,35 +574,29 @@ wealth.get("/outreach/sent-back", async (c) => {
 });
 
 /**
- * Redraft every sent-back letter that the current opening would actually change.
+ * "Rewrite the N with my notes" — one press, and every sent-back letter that carries a note is
+ * queued for the rewrite that answers it (`wealth/rewrite.ts`). The route cannot re-raise the
+ * letter she sent back: the rewrite is checked against every rejected body before it is raised.
  *
- * One press after the opening changes, rather than thirteen. Each firm goes through
- * `draftOutreachFor`, which refuses any letter identical to one she rejected, so this can never
- * re-raise the boomerang: it raises exactly the letters that differ and names the ones it left.
+ * It answers with the same progress object the desk polls, so the press and the poll cannot
+ * disagree about what is in motion.
  */
 wealth.post("/outreach/redraft-sent-back", async (c) => {
-  const rows = await c.env.DB
-    .prepare(
-      `SELECT DISTINCT d.candidate_id, s.name
-         FROM buyer_outreach_drafts d JOIN sourcing_candidates s ON s.id = d.candidate_id
-        WHERE d.state = 'try_again' AND s.status <> 'rejected'
-          AND NOT EXISTS (SELECT 1 FROM buyer_outreach_drafts later
-                           WHERE later.candidate_id = d.candidate_id AND later.attempt > d.attempt)
-        LIMIT 50`,
-    )
-    .all<{ candidate_id: string; name: string }>();
-  const raised: string[] = [];
-  const left: { name: string; why: string }[] = [];
-  for (const r of rows.results ?? []) {
-    const latestNote = await c.env.DB
-      .prepare(`SELECT her_note FROM buyer_outreach_drafts WHERE candidate_id = ? AND state = 'try_again' ORDER BY attempt DESC LIMIT 1`)
-      .bind(r.candidate_id)
-      .first<{ her_note: string | null }>();
-    const out = await draftOutreachFor(c.env, r.candidate_id, latestNote?.her_note ?? null);
-    if (out.drafted) raised.push(r.name);
-    else left.push({ name: r.name, why: out.detail });
-  }
-  return ok(c, { considered: (rows.results ?? []).length, raised, left });
+  const m = await materialiseRewrites(c.env, Date.now(), { retryFailed: true });
+  const progress = await rewriteProgress(c.env);
+  return ok(c, { ...progress, queued_now: m.queued, requeued_now: m.requeued });
+});
+
+/**
+ * THE PROGRESS SHE COULD NOT SEE. "13 sent back with your note · rewriting now · 4 of 13 ready",
+ * from real rows: `outreach_rewrites` joined to the letters they produced. The read materialises
+ * first — a sent-back letter with a note that no rewrite has picked up is queued here — so the
+ * moment either tab opens, the work she is owed is in motion. `src/worker/index.ts` drains the
+ * queue after this GET as it does after a POST, for the same reason.
+ */
+wealth.get("/outreach/rewrites", async (c) => {
+  await materialiseRewrites(c.env);
+  return ok(c, await rewriteProgress(c.env));
 });
 
 // ─── The return-on-effort ledger ──────────────────────────────────────────────

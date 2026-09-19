@@ -45,9 +45,12 @@ async function briefingTask(): Promise<{ taskId: string; input: Record<string, a
   await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
   const out = await materialiseDueDuties(env as any, NOW, "duty_exec_intel");
   expect(out.fired, `the duty did not fire: ${JSON.stringify(out.skipped)}`).toHaveLength(1);
+  // An `agent` duty ALWAYS materialises a task. `task_id` is null only for a `worker` duty (0263),
+  // and the briefing is not one; a null here would mean the briefing ran nowhere.
   const taskId = out.fired[0]!.task_id;
-  const t = await row<any>(`SELECT input, status FROM tasks WHERE id = ?`, taskId);
-  return { taskId, input: JSON.parse(t.input) };
+  expect(taskId, "an agent duty fired without a task").toBeTypeOf("string");
+  const t = await row<any>(`SELECT input, status FROM tasks WHERE id = ?`, taskId!);
+  return { taskId: taskId!, input: JSON.parse(t.input) };
 }
 
 describe("the ordered candidate list, from the rows as migrated", () => {

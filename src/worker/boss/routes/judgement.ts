@@ -85,7 +85,7 @@ async function assetsFor(env: Env, judgementId: string) {
  * Anything else parses to null and the card is unchanged, so this can never turn an ordinary
  * judgement into a broken one.
  */
-function letterOn(resumeDetail: string | null): { subject: string; body: string; to_hint: string | null; her_note: string | null } | null {
+function letterOn(resumeDetail: string | null): { subject: string; body: string; to_hint: string | null; her_note: string | null; written_by: string | null } | null {
   if (!resumeDetail) return null;
   let parsed: any;
   try { parsed = JSON.parse(resumeDetail); } catch { return null; }
@@ -96,6 +96,9 @@ function letterOn(resumeDetail: string | null): { subject: string; body: string;
     to_hint: typeof parsed.to_hint === "string" ? parsed.to_hint : null,
     // The note a redraft answers, so the card can show what changed and why (Inbox overhaul).
     her_note: typeof parsed.built_from?.her_note === "string" ? parsed.built_from.her_note : null,
+    // Which rung rewrote it (Job 1), so the card says "rewritten by Llama 3.3 70B (Workers AI)"
+    // rather than implying Camille's fixed opening produced it. Null for a composed letter.
+    written_by: typeof parsed.built_from?.written_by === "string" ? parsed.built_from.written_by : null,
   };
 }
 

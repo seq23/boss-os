@@ -27,7 +27,6 @@
 import { createSign } from "node:crypto";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
-const LP_SHEET = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
 const DRY = process.argv.includes("--dry-run");
 const monthArg = process.argv.indexOf("--month");
 const TARGET_MONTH = monthArg !== -1 ? process.argv[monthArg + 1] : null;
@@ -54,29 +53,6 @@ async function accessToken(creds, scope) {
   if (!res.ok) throw new Error(`token exchange failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
   return (await res.json()).access_token;
 }
-
-async function tab(token, sheet, name) {
-  const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${sheet}/values/${encodeURIComponent(name)}`,
-    { headers: { authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) return null;
-  return (await res.json()).values ?? [];
-}
-
-/**
- * 'YYYY-MM' out of whatever the sheet happens to hold in its date column.
- *
- * THE COLUMN IS NOT CONSISTENT AND THAT IS NOT A BUG TO FIX HERE. The Sent Log's first row reads
- * `2026-07-23T12:08:57Z` and its last reads `2026-09-07 12:41:00` — two writers, two formats, one
- * column. Both start with an ISO date, so the first seven characters are the month in every row
- * that has one, and anything that does not match is dropped rather than guessed at. Guessing a
- * month is how a send lands in the wrong one for ever.
- */
-const monthOf = (value) => {
-  const m = /^(\d{4}-\d{2})/.exec(String(value ?? "").trim());
-  return m ? m[1] : null;
-};
 
 const local = (offsetDays) => new Date(Date.now() - offsetDays * 86_400_000).toISOString().slice(0, 10);
 
@@ -105,57 +81,17 @@ async function main() {
   const failures = [];
   const gaps = [];
 
-  // ─── West Peek: LP sends against LP replies ────────────────────────────────
-  const sheetToken = await accessToken(creds, "https://www.googleapis.com/auth/spreadsheets");
-  const sent = await tab(sheetToken, LP_SHEET, "Sent Log");
-  const replies = await tab(sheetToken, LP_SHEET, "Reply Log");
-
-  if (!sent || !replies) {
-    failures.push(
-      "The LP tracker could not be read in full, so nothing was contributed for the raise. A send " +
-      "count without a reply count is the vanity number this ledger exists to refuse.",
-    );
-  } else {
-    const sentRows = sent.slice(1).filter((r) => (r[0] ?? "").trim());
-    const replyRows = replies.slice(1).filter((r) => (r[0] ?? "").trim());
-
-    const sentByMonth = new Map();
-    for (const r of sentRows) {
-      const m = monthOf(r[0]);
-      if (m) sentByMonth.set(m, (sentByMonth.get(m) ?? 0) + 1);
-    }
-    const repliesByMonth = new Map();
-    for (const r of replyRows) {
-      const m = monthOf(r[0]);
-      if (m) repliesByMonth.set(m, (repliesByMonth.get(m) ?? 0) + 1);
-    }
-
-    /*
-     * A REPLY IS COUNTED IN THE MONTH IT ARRIVED, not the month the email that produced it was
-     * sent, and that is a real distortion at these volumes — an August send answered in September
-     * appears as September effort it did not cause. It is stated rather than corrected, because
-     * correcting it needs a thread id the sheet does not carry, and a silently wrong attribution
-     * would be worse than a labelled approximate one.
-     */
-    const note = "Replies are counted in the month they arrived, not the month of the send that earned them.";
-
-    for (const m of new Set([...sentByMonth.keys(), ...repliesByMonth.keys()])) {
-      measurements.push({
-        line: "west_peek_raise", period: m, source: "lp_tracker",
-        effort_label: "LP emails sent", effort_count: sentByMonth.get(m) ?? 0,
-        outcome_label: "replies", outcome_count: repliesByMonth.get(m) ?? 0,
-        note,
-      });
-    }
-
-    // The lifetime pair, which is the one she already knows and the one the ledger is judged by.
-    measurements.push({
-      line: "west_peek_raise", period: "all", source: "lp_tracker",
-      effort_label: "LP emails sent, all time", effort_count: sentRows.length,
-      outcome_label: "replies", outcome_count: replyRows.length,
-      note,
-    });
-  }
+  /*
+   * ─── WEST PEEK'S RAISE IS NOT CONTRIBUTED, AND THAT IS THE OWNER'S DECISION ───
+   *
+   * 19 September 2026: "I don't want it to track the LP stuff for West Peek on that tab — that's
+   * irrelevant here … the overall amount of money raised and all that is not for Boss OS." This
+   * block used to read the LP tracker's Sent Log and Reply Log and contribute "LP emails sent /
+   * replies" as the `west_peek_raise` line. The Worker now refuses that line by name
+   * (`RETURN_LINES` in today/returns.ts), so the read is gone rather than sent and rejected.
+   * Monique's LP-reply duties (lp-replies.sh, lp-positive.mjs) are her personal LP search and are
+   * untouched by this.
+   */
 
   // ─── Spry: Search Console impressions against clicks, per line ─────────────
   //

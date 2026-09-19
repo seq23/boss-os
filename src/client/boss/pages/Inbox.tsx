@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api";
+import { api, type RewriteProgress } from "../api";
 import { Docket } from "../components/Docket";
 import { JudgementDocket } from "../components/JudgementDocket";
 import { Empty, Loading } from "../components/Shell";
@@ -91,6 +91,16 @@ export function Inbox({ onCountChange, onOpen }: {
    */
   const [notices, setNotices] = useState<any[] | null>(null);
   /*
+   * ─── "LATER" MUST GO SOMEWHERE SHE CAN SEE ────────────────────────────────
+   *
+   * CONFIRMED in a browser, 19 September 2026 (hostile sweep): Later wrote `status = 'deferred'`,
+   * the list reads `status = 'pending'`, and the flash said "It stays on the list until it
+   * expires" while the card left the screen for good — no surface read deferred rows, so a
+   * put-off decision was a lost decision until the expiry sweep marked it expired. This list is
+   * the deferred rows, read from the same table, shown under the decisions, decidable from there.
+   */
+  const [putOff, setPutOff] = useState<any[] | null>(null);
+  /*
    * The judgement calls, by their approval id. Fetched alongside the dockets so a judgement card
    * can render the actual work — the covers, the letter — rather than a sentence describing them.
    */
@@ -105,8 +115,15 @@ export function Inbox({ onCountChange, onOpen }: {
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const [confirming, setConfirming] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; failed: number; total: number; redrafted: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; failed: number; total: number; rewriting: number } | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  /*
+   * THE REWRITE LINE — the same sentence the Capital desk prints, from the same Worker read:
+   * "13 sent back with your note · rewriting now · 4 of 13 ready". Polled while anything is
+   * rewriting; the poll also drains the queue, and each letter that lands reloads the list so it
+   * appears here as it is ready. `null` means not read, never none.
+   */
+  const [rewrites, setRewrites] = useState<RewriteProgress | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -118,14 +135,17 @@ export function Inbox({ onCountChange, onOpen }: {
        * covers missing and nothing saying they were missing. It now fails with the rest of the
        * load, and the list says so.
        */
-      const [approvals, sys, judged, told] = await Promise.all([
+      const [approvals, sys, judged, told, deferred] = await Promise.all([
         api.approvals("pending"),
         api.status(),
         api.judgementPending(),
         api.notices(),
+        api.approvals("deferred"),
       ]);
       setItems(approvals);
       setNotices(told);
+      api.rewriteProgress().then(setRewrites).catch(() => setRewrites(null));
+      setPutOff(deferred);
       setJudgements(Object.fromEntries((judged.items ?? []).map((j: any) => [j.approval_id, j])));
       setStatus(sys);
       /*
@@ -142,10 +162,23 @@ export function Inbox({ onCountChange, onOpen }: {
       // NOT `[]`. A failed fetch and an empty inbox are opposite facts, and the section below says
       // which one it is looking at rather than rendering both as silence.
       setNotices((prev) => prev ?? null);
+      setPutOff((prev) => prev ?? null);
     }
   }, [onCountChange]);
 
   useEffect(() => { load(); }, [load]);
+
+  // While a rewrite is in motion, keep reading; a letter that lands reloads the list.
+  useEffect(() => {
+    if (!rewrites || rewrites.rewriting === 0) return;
+    const t = setInterval(() => {
+      api.rewriteProgress().then((p) => {
+        setRewrites(p);
+        if (p.ready !== rewrites.ready || p.rewriting !== rewrites.rewriting) load();
+      }).catch(() => {});
+    }, 4000);
+    return () => clearInterval(t);
+  }, [rewrites, load]);
 
   /**
    * Optimistic: the docket leaves the list the moment you decide. If the request
@@ -155,7 +188,22 @@ export function Inbox({ onCountChange, onOpen }: {
   async function decide(id: string, decision: string, note?: string) {
     const snapshot = items ?? [];
     const index = snapshot.findIndex((a) => a.id === id);
-    if (index === -1) return;
+    /*
+     * ─── A NOTICE IS NOT IN `items`, AND "GOT IT" USED TO DO NOTHING ──────────
+     *
+     * CONFIRMED in a browser, 19 September 2026 (hostile sweep): `approvals/pending.ts` splits the
+     * table into decisions (`rows` → `items`) and notices (`notices`), and this guard returned when
+     * the id was not among the decisions — which is every notice. The "Got it" press fired no
+     * request, the card stayed, and nothing said so. A dead button on the one card that exists to
+     * be dismissed teaches her the Inbox is decorative. So a notice is looked up in its own list,
+     * and the early return is only for an id that is on NEITHER list.
+     */
+    const noticeSnapshot = notices ?? [];
+    const noticeIndex = noticeSnapshot.findIndex((n) => n.id === id);
+    const putOffSnapshot = putOff ?? [];
+    const putOffIndex = putOffSnapshot.findIndex((n) => n.id === id);
+    if (index === -1 && noticeIndex === -1 && putOffIndex === -1) return;
+    setPutOff((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
 
     const optimistic = snapshot.filter((a) => a.id !== id);
     setNotices((prev) => (prev ? prev.filter((n) => n.id !== id) : prev));
@@ -176,10 +224,10 @@ export function Inbox({ onCountChange, onOpen }: {
         if (exec.detail?.still_awaiting) load();
       } else if (exec?.status === "executed" && exec.detail?.resumed) {
         setFlash(exec.detail.resumed as string);
-        // A different letter came back for this firm; show it rather than leaving a stale list.
-        if (exec.detail?.redrafted) load();
+        // A rewrite was queued for this firm; the progress line shows it and the list reloads as it lands.
+        if (exec.detail?.rewrite_queued) api.rewriteProgress().then(setRewrites).catch(() => {});
       } else if (decision === "deferred") {
-        setFlash("Deferred. It stays on the list until it expires.");
+        setFlash("Put off. It waits under \"Put off\" below until it expires, and you can decide it from there.");
       } else {
         setFlash(null);
       }
@@ -192,11 +240,19 @@ export function Inbox({ onCountChange, onOpen }: {
         .catch(() => setStatus(null));
       if (decision === "deferred") load();
     } catch (e) {
-      // Roll back to exactly where the card was.
-      const rolled = [...optimistic];
-      rolled.splice(index, 0, snapshot[index]);
-      setItems(rolled);
-      onCountChange(rolled.length);
+      // Roll back to exactly where the card was — on whichever list it came from.
+      if (index !== -1) {
+        const rolled = [...optimistic];
+        rolled.splice(index, 0, snapshot[index]);
+        setItems(rolled);
+        onCountChange(rolled.length);
+      } else if (noticeIndex !== -1) {
+        const rolledNotices = [...noticeSnapshot.filter((n) => n.id !== id)];
+        rolledNotices.splice(noticeIndex, 0, noticeSnapshot[noticeIndex]);
+        setNotices(rolledNotices);
+      } else {
+        setPutOff(putOffSnapshot);
+      }
       setError(e);
     }
   }
@@ -249,7 +305,7 @@ export function Inbox({ onCountChange, onOpen }: {
     setConfirming(false);
     setError(null);
     setResult(null);
-    setProgress({ done: 0, failed: 0, total: ids.length, redrafted: 0 });
+    setProgress({ done: 0, failed: 0, total: ids.length, rewriting: 0 });
 
     let batchId: string;
     try {
@@ -261,13 +317,13 @@ export function Inbox({ onCountChange, onOpen }: {
       return;
     }
 
-    let done = 0, failed = 0, redrafted = 0;
+    let done = 0, failed = 0, rewriting = 0;
     const failures: string[] = [];
     for (const id of ids) {
       try {
         const r = await api.decide(id, "rejected", reason.trim(), batchId);
         done += 1;
-        if (r.execution?.detail?.redrafted) redrafted += 1;
+        if (r.execution?.detail?.rewrite_queued) rewriting += 1;
         setItems((prev) => (prev ? prev.filter((a) => a.id !== id) : prev));
       } catch (e) {
         failed += 1;
@@ -275,7 +331,7 @@ export function Inbox({ onCountChange, onOpen }: {
         failures.push(`${(items ?? []).find((a) => a.id === id)?.title ?? id}: ${message}`);
         api.batchItemFailed(batchId, id, message).catch(() => { /* counted locally regardless */ });
       }
-      setProgress({ done, failed, total: ids.length, redrafted });
+      setProgress({ done, failed, total: ids.length, rewriting });
     }
 
     setSelected(new Set());
@@ -284,7 +340,7 @@ export function Inbox({ onCountChange, onOpen }: {
     setProgress(null);
     setResult(
       `${done} rejected · ${failed} failed` +
-        (redrafted > 0 ? ` · ${redrafted} came back rewritten to your note and ${redrafted === 1 ? "is" : "are"} below` : "") +
+        (rewriting > 0 ? ` · ${rewriting} sent to Camille to rewrite with your note — each lands below as it is ready` : "") +
         (failures.length ? ` — ${failures.join("; ")}` : ""),
     );
     await load();
@@ -350,6 +406,17 @@ export function Inbox({ onCountChange, onOpen }: {
           {oldest !== null && waiting !== 0 ? ` · oldest ${ageWords(Date.now() - oldest)}` : ""}
         </div>
       </div>
+
+      {rewrites?.sentence && (
+        <div className="notice" data-testid="rewrite-progress" style={{ borderColor: "var(--gold)" }}>
+          <strong>{rewrites.sentence}</strong>
+          {rewrites.failed.length > 0 && (
+            <ul className="row-sub" style={{ marginTop: 6, paddingLeft: 18 }}>
+              {rewrites.failed.map((f) => <li key={f.candidate_name}><strong>{f.candidate_name}:</strong> {f.why}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="stats">
         <div className="stat">
@@ -526,6 +593,21 @@ export function Inbox({ onCountChange, onOpen }: {
             )}
           </section>
         ))
+      )}
+
+      {/* Below the decisions: what she put off. See `putOff` above for why this section exists. */}
+      {(putOff?.length ?? 0) > 0 && (
+        <section className="inbox-group" data-testid="inbox-put-off">
+          <p className="eyebrow">Put off · {putOff!.length} — still yours to decide; gone only when it expires</p>
+          {putOff!.map((a) => (
+            <Docket key={a.id} approval={a} onDecide={decide} onOpen={onOpen} />
+          ))}
+        </section>
+      )}
+      {putOff === null && !error && (
+        <div className="row-sub">
+          What you put off could not be read just now, so this is not saying there is nothing put off.
+        </div>
       )}
     </>
   );

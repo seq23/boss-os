@@ -22,9 +22,21 @@ async function promptFor(input: Record<string, unknown>, task: Record<string, un
 }
 
 describe("firmwide notices", () => {
-  it("seeds twelve notices, each with a title, a body and an author", async () => {
+  /*
+   * NINE, NOT TWELVE. 0254 seeded twelve; 0262 removed the three that were West Peek's law — the
+   * Managing Partners, West Peek Live, West Peek Productions — after the hostile sweep of 19 Sep
+   * 2026 found them on Boss OS's Governance panel and in front of every employee run. Boss OS has
+   * one principal and no fund; the two businesses never blend. The count is pinned so a re-seed
+   * cannot put them back quietly.
+   */
+  it("seeds nine notices, each with a title, a body and an author — and none of West Peek's", async () => {
     const notices = await all(`SELECT * FROM boss_notices ORDER BY created_at ASC, id ASC`);
-    expect(notices.length).toBe(12);
+    expect(notices.length).toBe(9);
+    const text = notices.map((n: any) => `${n.title}\n${n.body}`).join("\n").toLowerCase();
+    expect(text).not.toContain("managing partners");
+    expect(text).not.toContain("scooter");
+    expect(text).not.toContain("west peek live");
+    expect(text).not.toContain("west peek productions");
     for (const n of notices) {
       expect(n.title.trim().length).toBeGreaterThan(10);
       // Long enough to be actionable prose rather than a slogan.
@@ -34,15 +46,12 @@ describe("firmwide notices", () => {
     }
   });
 
-  it("states the twelve things the firm already does", async () => {
+  it("states the nine things this firm already does", async () => {
     const text = (await all(`SELECT * FROM boss_notices`))
       .map((n: any) => `${n.title}\n${n.body}`).join("\n").toLowerCase();
     for (const phrase of [
-      "scooter@westpeek.ventures",
-      "west peek live",
       "a person sends",
       "training",
-      "west peek productions",
       "plausible number",
       "claim",
       "employees propose",
@@ -84,7 +93,9 @@ describe("firmwide notices", () => {
 
   it("puts them in front of an api-supplied prompt too", async () => {
     const prompt = await promptFor({ prompt: "Summarise the Thursday note in three sentences." });
-    expect(prompt).toContain("The Managing Partners are Sequoia Taylor and Scooter Taylor");
+    expect(prompt).toContain("Nothing is ever sent to a candidate, prospect, journalist or LP from the OS");
+    expect(prompt).toContain("how this firm works");
+    expect(prompt).not.toContain("West Peek");
     expect(prompt).toContain("Summarise the Thursday note in three sentences.");
   });
 

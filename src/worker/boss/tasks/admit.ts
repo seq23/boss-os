@@ -121,6 +121,26 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     model_access: b.model_access ?? undefined, audience: b.audience ?? undefined,
   });
 
+  /*
+   * ─── "FIND FIRMS THAT DID X AND DRAFT THE ASK" IS ONE SHAPE OF WORK, ON EVERY DOOR ─────────
+   *
+   * Her instruction of 19 Sep 2026 — "find me a list of firms that have reported IPO participation
+   * … and draft an email for me to ask if I can send investors to them" — used to reach a cloud
+   * rung as free text and come back as a paragraph promising to look. `parseFirmScan` is a grammar
+   * that recognises the shape here, at the one point every door passes through, so Team → New
+   * task, the mail intake and the API all produce the same work: a `ask_scans` row owned by
+   * Camille, run by `research/firmScan.ts`. A sentence the grammar cannot read is untouched.
+   */
+  const { parseFirmScan } = await import("../research/firmScan");
+  const firmScan = input.firm_scan && typeof input.firm_scan === "object"
+    ? null
+    : parseFirmScan([b.title, input.prompt as string | undefined, input.body as string | undefined]);
+  const scanId = firmScan ? newId("fsc") : null;
+  if (firmScan && scanId) {
+    (input as Record<string, unknown>).firm_scan = { scan_id: scanId, find: firmScan.find, ask: firmScan.ask };
+    if (!employeeHint) employeeHint = "emp_research";
+  }
+
   const employeeId: string | null =
     employeeHint ?? (await suggestOwner(env, classification.intakeKind, lane))?.id ?? null;
 
@@ -176,6 +196,16 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'intake',?)`)
       .bind(newId("tev"), id, now, JSON.stringify(classification)),
   ]);
+
+  if (firmScan && scanId) {
+    await env.DB
+      .prepare(
+        `INSERT INTO ask_scans (id, task_id, instruction, find_text, ask_text, state, requested_at, updated_at)
+         VALUES (?,?,?,?,?,'queued',?,?)`,
+      )
+      .bind(scanId, id, firmScan.raw, firmScan.find, firmScan.ask, now, now)
+      .run();
+  }
 
   const envelope = await buildEnvelope(env.DB, { taskId: id, lane, employeeId, classification, costMode });
   await env.DB.prepare(`UPDATE tasks SET envelope_id = ? WHERE id = ?`).bind(envelope.id, id).run();

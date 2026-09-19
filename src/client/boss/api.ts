@@ -4,6 +4,20 @@ export class ApiError extends Error {
   }
 }
 
+/** The rewrite wave the desk and the Inbox both print. ONE sentence, computed on the Worker. */
+export interface RewriteProgress {
+  total: number;
+  rewriting: number;
+  ready: number;
+  failed: { candidate_name: string; why: string }[];
+  items: {
+    id: string; candidate_id: string; candidate_name: string; state: string; her_note: string;
+    result_draft_id: string | null; written_by: string | null; failure: string | null; updated_at: number;
+  }[];
+  latest_batch: { id: string; reason: string; requested_count: number; created_at: number } | null;
+  sentence: string | null;
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -357,7 +371,15 @@ export const api = {
   /* Inbox overhaul, 19 Sep 2026: the letters she sent back, the redraft-all press, the Gmail draft
    * retry from the desk, and her position sizes typed as a list. */
   outreachSentBack: () => call<{ items: any[] }>("/wealth/outreach/sent-back"),
-  redraftSentBack: () => call<{ considered: number; raised: string[]; left: { name: string; why: string }[] }>("/wealth/outreach/redraft-sent-back", post("")),
+  redraftSentBack: () => call<RewriteProgress & { queued_now: number; requeued_now: number }>("/wealth/outreach/redraft-sent-back", post("")),
+  /** "13 sent back with your note · rewriting now · 4 of 13 ready" — from real rows; polling this also drains the queue. */
+  rewriteProgress: () => call<RewriteProgress>("/wealth/outreach/rewrites"),
+  /** "Find firms that did X and draft the ask" — the scans her instructions started. Polling drains the queue. */
+  /** Monique's reads of her personal LP search — the daily digest (kept by her word, 19 Sep 2026). */
+  lpDigests: () => call<{ digests: any[]; duty: any | null }>("/lp"),
+  firmScans: () => call<{ items: any[] }>("/research/firm-scans"),
+  firmScan: (id: string) => call<any>(`/research/firm-scans/${id}`),
+  startFirmScan: (instruction: string) => call<{ task_id: string; scan_id: string | null; find: string; ask: string; queued: boolean }>("/research/firm-scans", post("", { instruction })),
   gmailDraft: (outreachDraftId: string) => call<any>(`/wealth/outreach/${outreachDraftId}/gmail-draft`, post("")),
   setWorkingPositions: (text: string) =>
     call<{ positions_usd: number[]; largest_usd: number }>("/wealth/working-positions", { method: "PUT", body: JSON.stringify({ text }) }),
@@ -579,4 +601,7 @@ export const api = {
   watchList: () => call<any[]>("/governance/watch-list"),
 
   incidents: () => call<any[]>("/trading/incidents"),
+
+  // ── Her jobs, 19 Sep 2026 — Job 3: the health of every grid property, per reader. ──
+  propertyHealth: () => call<any>("/grid/health"),
 };

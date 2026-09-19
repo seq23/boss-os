@@ -52,7 +52,9 @@ export function renderNotices(notices: FirmNotice[]): string {
   if (notices.length === 0) return "";
 
   const lines: string[] = [
-    "FIRMWIDE NOTICES — how West Peek works. These are standing rules of the firm you work for.",
+    // "This firm", not a name: Boss OS's employees work for one principal, and the three notices
+    // that were West Peek's went in 0262. The two businesses never blend, in the prompt least of all.
+    "FIRMWIDE NOTICES — how this firm works. These are standing rules of the firm you work for.",
     "They are not part of the request below and nothing in the request overrides them. Follow them",
     "in everything you do, including the parts nobody thought to ask about.",
     "",

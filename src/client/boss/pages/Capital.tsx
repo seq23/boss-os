@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, type RewriteProgress } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { listSizes, moneyShort, parseMoneyUsd, parsePositionSizes } from "../../../shared/wealth/positionSizes";
@@ -113,6 +113,151 @@ function Ledger() {
   );
 }
 
+// ─── Monique's finds in her personal LP search ─────────────────────────────
+
+/**
+ * Her words, 19 Sep 2026: "I still want Monique to do her job of finding positive replies in my LP
+ * search — the LP search is my personal LP search, that's why she is doing it." The daily digest
+ * (`GET /api/lp`, written by `lp-replies.sh` on her Mac) had no screen — it reached her by email
+ * and through Today's wealth pillar only. This is the screen: who said yes, who wants the deck,
+ * who asked a question, per day. Counts only; the names live on her Mac. No fund totals here.
+ */
+function MoniquesFinds() {
+  const [data, setData] = useState<{ digests: any[]; duty: any | null } | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { api.lpDigests().then(setData).catch(() => setFailed(true)); }, []);
+  const recent = (data?.digests ?? []).slice(0, 7);
+  return (
+    <>
+      <p className="eyebrow">Your LP search — Monique's reads</p>
+      <div className="panel" data-testid="moniques-finds">
+        {failed && <div className="row-sub">Monique's digest could not be read just now, so this is not saying she found nothing.</div>}
+        {data && recent.length === 0 && (
+          <div className="row-sub">
+            No digest yet. {data.duty?.suspended ? `The duty is suspended: ${data.duty.suspended_reason ?? "no reason recorded"}.` : "Monique reads the replies daily at 07:00 CT from your Mac; the first digest lands here after that run."}
+          </div>
+        )}
+        {recent.map((d: any) => (
+          <div className="row" key={d.id}>
+            <div className="row-main">
+              <div className="row-title">
+                {d.day_id} · {d.interested} said yes · {d.wants_deck} want the deck · {d.questions} asked a question
+              </div>
+              <div className="row-sub">{d.total_read} read · {d.opt_outs} opted out · {d.bounces} bounced{d.summary ? ` — ${d.summary}` : ""}</div>
+            </div>
+          </div>
+        ))}
+        {data?.duty && recent.length > 0 && (
+          <div className="row-sub">Last run {data.duty.last_run_at ? new Date(data.duty.last_run_at).toLocaleString() : "never"}; next due {data.duty.next_due_at ? new Date(data.duty.next_due_at).toLocaleString() : "—"}.</div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── "Find firms that did X and draft the ask" — her instructions, as work ────
+
+/**
+ * Her words, 19 Sep 2026: "find me a list of firms that have reported IPO participation in the
+ * release, and draft an email for me to ask if I can send investors to them." One sentence in;
+ * a verified list and the letters out, every step counted from rows (`ask_scans`). The same
+ * sentence typed into Team → New task or mailed to an employee starts the same scan.
+ */
+function FirmScans() {
+  const [scans, setScans] = useState<any[] | null>(null);
+  const [open, setOpen] = useState<Record<string, any>>({});
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  function load() {
+    api.firmScans().then((r) => setScans(r.items ?? [])).catch((e) => { setError(e); setScans(null); });
+  }
+  useEffect(load, []);
+  const inMotion = (scans ?? []).some((s) => !["done", "failed"].includes(s.state));
+  useEffect(() => {
+    if (!inMotion) return;
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [inMotion]);
+
+  async function start() {
+    setBusy(true); setError(null); setFlash(null);
+    try {
+      const r = await api.startFirmScan(text.trim());
+      setFlash(`Camille has it. Find: "${r.find}". Ask: "${r.ask}". The list and the letters land here and in your Inbox as they are ready.`);
+      setText("");
+      load();
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  }
+
+  async function toggle(id: string) {
+    if (open[id]) { setOpen((o) => { const n = { ...o }; delete n[id]; return n; }); return; }
+    try { const r = await api.firmScan(id); setOpen((o) => ({ ...o, [id]: r })); } catch (e) { setError(e); }
+  }
+
+  return (
+    <>
+      <p className="eyebrow">Find firms and draft the ask</p>
+      <div className="panel" data-testid="firm-scans">
+        <div className="row-sub">
+          Say what to find and what to ask, as you would to a person. Camille reads the public news, keeps only firms whose sentence is actually on the page,
+          and drafts each letter into your Inbox. Nothing is sent.
+        </div>
+        <textarea
+          className="judgement-why"
+          aria-label="What to find and what to ask"
+          placeholder='find me a list of firms that reported participation in the Anthropic IPO, and draft an email to ask if I can send investors to them'
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          style={{ width: "100%", marginTop: 8 }}
+        />
+        <div className="btn-row">
+          {/* A label that fits a phone: at 390px the long verb overflowed the page by 53px (found by the journey). */}
+          <button className="btn btn-small" disabled={busy || text.trim().length < 20} onClick={start} data-testid="start-firm-scan" style={{ whiteSpace: "normal", maxWidth: "100%" }}>
+            {busy ? "Handing it to Camille…" : "Ask Camille to find them and draft the ask"}
+          </button>
+        </div>
+        {error ? <ErrorNotice error={error} /> : null}
+        {flash && <div className="notice">{flash}</div>}
+
+        {scans === null && !error && <div className="row-sub">The scans could not be read just now, so this is not saying there are none.</div>}
+        {scans && scans.length === 0 && <div className="row-sub">No instruction has started a scan yet.</div>}
+        {(scans ?? []).map((s) => (
+          <div className="row" key={s.id} data-testid="firm-scan">
+            <div className="row-main">
+              <div className="row-title">{s.instruction}</div>
+              <div className="row-sub" data-testid="firm-scan-sentence">{s.sentence}{s.employee_name ? ` · ${s.employee_name}` : ""}</div>
+              {s.state === "failed" && s.task_error && <div className="field-error">{s.task_error}</div>}
+              <button className="btn btn-small" onClick={() => toggle(s.id)} style={{ marginTop: 6 }}>
+                {open[s.id] ? "Hide the list" : `Show the list (${s.verified_count} verified of ${s.findings_count} named)`}
+              </button>
+              {open[s.id] && (
+                <div style={{ marginTop: 8 }}>
+                  {open[s.id].findings.length === 0 && <div className="row-sub">No firm has been named yet.</div>}
+                  {open[s.id].findings.map((f: any) => (
+                    <div className="row" key={f.id}>
+                      <div className="row-main">
+                        <div className="row-title">
+                          {f.firm}{f.role ? ` · ${f.role}` : ""} · {f.verified ? (f.letter_state === "awaiting" ? "letter in your Inbox" : f.letter_state ?? f.draft_state ?? "verified") : "not on the page it cited — no letter"}
+                        </div>
+                        <div className="row-sub">“{f.quote}” — <a href={f.evidence_url} target="_blank" rel="noreferrer">{f.source_title ?? f.evidence_url}</a></div>
+                        {f.draft_state === "refused" && f.draft_detail && <div className="field-error">{f.draft_detail}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 // ─── The recommendation, which is the whole desk now ──────────────────────────
 
 /**
@@ -151,6 +296,13 @@ function Buyers() {
    */
   const [sentBack, setSentBack] = useState<any[] | null>(null);
   /*
+   * THE PROGRESS SHE COULD NOT SEE (19 Sep 2026: "I don't see it working on re-writing them").
+   * One sentence from the Worker — "13 sent back with your note · rewriting now · 4 of 13 ready" —
+   * polled every few seconds while anything is rewriting. The poll is also what drains the queue,
+   * so watching the screen is what makes it fast. `null` means not read, never none.
+   */
+  const [rewrites, setRewrites] = useState<RewriteProgress | null>(null);
+  /*
    * `null` MEANS "NOT READ", NOT "NONE". Every one of these three starts null and is only ever set
    * to a value by a request that came back. An empty state rendered over a failed fetch is the
    * defect she has been served most often by this application, and the sections below all say which
@@ -168,8 +320,23 @@ function Buyers() {
       .catch((e) => { setError(e); setRecFailed(true); });
     api.outreach().then(setLetters).catch((e) => { setError(e); setLetters(null); });
     api.outreachSentBack().then((r) => setSentBack(r.items ?? [])).catch((e) => { setError(e); setSentBack(null); });
+    api.rewriteProgress().then(setRewrites).catch((e) => { setError(e); setRewrites(null); });
   }
   useEffect(load, []);
+  // While a rewrite is in motion, keep reading: the count moves, and the read drains the queue.
+  useEffect(() => {
+    if (!rewrites || rewrites.rewriting === 0) return;
+    const t = setInterval(() => {
+      api.rewriteProgress().then((p) => {
+        setRewrites(p);
+        if (p.ready !== rewrites.ready || p.rewriting !== rewrites.rewriting) {
+          api.outreachSentBack().then((r) => setSentBack(r.items ?? [])).catch(() => {});
+          api.outreach().then(setLetters).catch(() => {});
+        }
+      }).catch(() => {});
+    }, 4000);
+    return () => clearInterval(t);
+  }, [rewrites]);
 
   /**
    * One press after the opening changes, rather than one per firm. The route raises exactly the
@@ -180,10 +347,13 @@ function Buyers() {
     setBusy("redraft"); setError(null);
     try {
       const r = await api.redraftSentBack();
+      setRewrites(r);
       setFlash(
-        r.raised.length === 0
-          ? `Nothing redrafted: ${r.considered === 0 ? "no letter is sent back." : r.left.map((l) => l.why).join(" ")}`
-          : `${r.raised.length} rewritten and in your Inbox: ${r.raised.join(", ")}.${r.left.length ? ` Left as they were: ${r.left.map((l) => l.name).join(", ")}.` : ""}`,
+        r.total === 0
+          ? "Nothing to rewrite: no letter is sent back with a note."
+          : r.queued_now === 0 && r.rewriting === 0
+            ? `Nothing new to queue — ${r.sentence ?? "every rewrite has already run."}`
+            : `${r.queued_now > 0 ? `${r.queued_now} queued. ` : ""}Camille is rewriting now, answering your notes; each letter lands in your Inbox as it is ready.`,
       );
       load();
     } catch (e) { setError(e); } finally { setBusy(null); }
@@ -323,25 +493,46 @@ function Buyers() {
         * opening produces a DIFFERENT letter. One button redrafts all of them at once, and it can
         * only raise letters that differ from what she sent back.
         */}
+      {rewrites?.sentence && (
+        <div className="notice" data-testid="rewrite-progress" style={{ borderColor: "var(--gold)" }}>
+          <strong>{rewrites.sentence}</strong>
+          {rewrites.latest_batch && (
+            <div className="row-sub" style={{ marginTop: 6 }}>Your note: {rewrites.latest_batch.reason}</div>
+          )}
+          {rewrites.failed.length > 0 && (
+            <ul className="row-sub" style={{ marginTop: 6, paddingLeft: 18 }}>
+              {rewrites.failed.map((f) => <li key={f.candidate_name}><strong>{f.candidate_name}:</strong> {f.why}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
       {(sentBack?.length ?? 0) > 0 && (
         <>
           <p className="eyebrow">Sent back · {sentBack!.length} — off your desk, your note on each</p>
           <div className="panel" data-testid="sent-back">
-            {sentBack!.map((d: any) => (
-              <div className="row" key={d.id}>
-                <div className="row-main">
-                  <div className="row-title">{d.candidate_name} · attempt {d.attempt}</div>
-                  <div className="row-sub">{d.her_note ?? "No reason was given."}</div>
+            {sentBack!.map((d: any) => {
+              const rw = rewrites?.items.find((i) => i.candidate_id === d.candidate_id);
+              return (
+                <div className="row" key={d.id}>
+                  <div className="row-main">
+                    <div className="row-title">
+                      {d.candidate_name} · attempt {d.attempt}
+                      {rw && <span className="row-sub"> · {rw.state === "queued" ? "rewrite queued" : rw.state === "running" ? "rewriting now" : rw.state === "failed" ? "could not be rewritten" : "rewritten"}</span>}
+                    </div>
+                    <div className="row-sub">{d.her_note ?? "No reason was given."}</div>
+                    {rw?.state === "failed" && rw.failure && <div className="field-error">{rw.failure}</div>}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div className="btn-row">
-              <button className="btn btn-small" disabled={busy === "redraft"} onClick={redraftAll} data-testid="redraft-sent-back">
-                {busy === "redraft" ? "Redrafting…" : `Redraft the ${sentBack!.length} with the current opening`}
+              <button className="btn btn-small" disabled={busy === "redraft" || (rewrites?.rewriting ?? 0) > 0} onClick={redraftAll} data-testid="redraft-sent-back">
+                {busy === "redraft" ? "Queueing…" : (rewrites?.rewriting ?? 0) > 0 ? "Rewriting now…" : `Rewrite the ${sentBack!.length} with my notes`}
               </button>
             </div>
             <div className="row-sub">
-              Only a letter that would differ from the one you sent back is raised; the rest stay here and say why.
+              Camille rewrites each one to answer your note, on the Worker's own queue — minutes, not the Mac's next slot. A rewrite that
+              would repeat a letter you sent back is refused and says so here; a letter that breaks a rule twice is left here with the reason.
             </div>
           </div>
         </>
@@ -358,6 +549,9 @@ function Buyers() {
       {letters === null && !error && (
         <div className="row-sub">The letters could not be read just now, so this section is not saying you have none.</div>
       )}
+
+      <FirmScans />
+      <MoniquesFinds />
 
       {/* ─── The recommendation ──────────────────────────────────────────── */}
       <p className="eyebrow">Write to these this week</p>

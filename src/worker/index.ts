@@ -1309,7 +1309,16 @@ export async function handleRequest(
      * a failure here cannot turn a successful submission into an error the caller sees. Read-only
      * verbs are skipped because they cannot have queued anything.
      */
-    if (ctx && request.method !== "GET" && request.method !== "HEAD") {
+    /*
+     * AND AFTER THE ONE READ THAT IS A PROGRESS POLL. `GET /api/boss/wealth/outreach/rewrites`
+     * materialises the rewrites she is owed (a sent-back letter with a note = queued work) and is
+     * polled by the desk and the Inbox while they say "rewriting now"; draining after it is what
+     * makes "in minutes" true when the request that queued the work has already returned and the
+     * hourly tick is fifty minutes away. Every other GET is skipped, as before.
+     */
+    const drainsOnRead = request.method === "GET" &&
+      (url.pathname === "/api/boss/wealth/outreach/rewrites" || url.pathname.startsWith("/api/boss/research/firm-scans"));
+    if (ctx && ((request.method !== "GET" && request.method !== "HEAD") || drainsOnRead)) {
       ctx.waitUntil(
         drainBossTasks(env, new Date()).catch((err) => {
           console.error("boss task drain (on request) failed", err);

@@ -791,7 +791,7 @@ async function handleJudgementCall(
 
   let resumed;
   try {
-    resumed = await runResume(env, j, verdict, note ?? null, now);
+    resumed = await runResume(env, { ...j, batch_id: (approval as { batch_id?: string | null }).batch_id ?? null } as JudgementRow, verdict, note ?? null, now);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // LEFT AWAITING ON PURPOSE. See the header: an item that vanished having started nothing is the
@@ -814,7 +814,8 @@ async function handleJudgementCall(
       judgement_id: j.id, verdict, resume_kind: j.resume_kind, resumed: resumed.detail,
       // Inbox overhaul: whether a DIFFERENT attempt came back (so the list reloads), and what
       // happened in her Gmail on an approval (so the card can say "in your drafts" or the stop).
-      redrafted: resumed.redrafted ?? false,
+      rewrite_queued: resumed.rewrite_queued ?? false,
+      rewrite_id: resumed.rewrite_id ?? null,
       gmail_draft: resumed.gmail_draft ?? null,
     },
   };

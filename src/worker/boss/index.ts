@@ -46,6 +46,8 @@ import { backends, spendLeverRoutes } from "./routes/backends";
 import { runSentinel } from "./governance/sentinel";
 import { investor } from "./routes/investor";
 import { wealth } from "./routes/wealth";
+import { research } from "./routes/research";
+import { gridHealth } from "./routes/gridHealth";
 import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
 import { ensureAlmanac } from "./spirit/day";
 import { handleTask, handleDeadLetter } from "./queue/consumer";
@@ -195,6 +197,27 @@ app.route("/api/backends", backends);
  * `/api/system` rather than debugging the lever.
  */
 app.route("/api/system/spend-lever", spendLeverRoutes);
+
+// === Her jobs ===
+//
+// Her report of 19 September 2026, ~13:00 CT — five jobs, one PR. Every route the PR adds mounts
+// here, in one block, so the next reader finds them together rather than scattered among the
+// chassis mounts above: the letter rewrite that answers her note (Job 1), the Capital tab scoped
+// to her own business (Job 2), the grid health readers (Job 3), and the "find firms that did X and
+// draft the ask" path (Job 5). Sub-paths that live on an existing mount (/api/wealth/…) are in that
+// route file and named in this block's comment rather than mounted twice.
+//
+// Job 5 — "find firms that did X and draft the ask": the scans, their findings, and the desk's door.
+app.route("/api/research", research);
+// Job 1 — the rewrite that answers her note lives on the wealth mount:
+//   GET  /api/wealth/outreach/rewrites          the progress both tabs print (and drains the queue)
+//   POST /api/wealth/outreach/redraft-sent-back "Rewrite the N with my notes"
+// Job 3 — the grid health readers: uptime and Search Console from the Worker, GitHub and
+// Cloudflare posted from her Mac. `/api/grid` declares only `/` and `/examination`, so this is
+// never shadowed by it.
+app.route("/api/grid/health", gridHealth);
+//
+// === end Her jobs ===
 
 app.all("/api/*", (c) => c.json({ ok: false, error: "No such endpoint" }, 404));
 
@@ -346,6 +369,13 @@ export async function runScheduled(env: Env, now = Date.now()): Promise<CronOutc
  * maintenance, and neither of them can swallow this.
  */
 export async function runDuties(env: Env, now = Date.now()) {
+  /*
+   * THE REWRITES SHE IS OWED RIDE THE SAME TICK. A letter sent back with a note is queued work
+   * whether or not anybody opens the app; the tick is the safety net for a rewrite queued while
+   * the Worker was mid-deploy or cut off mid-run (`wealth/rewrite.ts` re-queues a stale one).
+   */
+  const { materialiseRewrites } = await import("./wealth/rewrite");
+  await materialiseRewrites(env, now).catch(() => ({ queued: 0, requeued: 0 }));
   return materialiseDueDuties(env, now);
 }
 

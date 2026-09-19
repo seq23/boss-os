@@ -71,6 +71,8 @@ const read = (p) => readFileSync(join(ROOT, p), "utf8");
 const DELIVER = "src/worker/boss/duties/deliverReport.ts";
 const CALLER = "src/worker/boss/routes/backends.ts";
 const INSTALLER = "scripts/ops/install-agent-launchd.sh";
+const READERS = "src/worker/boss/health/readers.ts";
+const MATERIALISE = "src/worker/boss/duties/materialise.ts";
 
 // ─── Parsing ──────────────────────────────────────────────────────────────────
 
@@ -151,6 +153,20 @@ export function deliversKey(text) {
 export function localJobScript(text) {
   const m = /'local_job'\s*,\s*'([A-Za-z0-9_.-]+\.(?:sh|mjs))'/.exec(text)
     ?? /"local_job"\s*:\s*"([A-Za-z0-9_.-]+\.(?:sh|mjs))"/.exec(text);
+  return m ? m[1] : null;
+}
+
+/**
+ * The Worker-side reader a `worker` duty names, if it is one (0263).
+ *
+ * A third executor beside `agent` and `local_job`: the duty runs INSIDE `materialiseDueDuties` on
+ * the tick it comes due, and its chain is reader module → invoked by materialise → writes INTO
+ * the delivered table → a route reads it. Same shape rule as `localJobScript`: the value must look
+ * like a reader name, so the json_object key cannot be confused with a column.
+ */
+export function workerReader(text) {
+  const m = /'worker_reader'\s*,\s*'([a-z][a-z0-9_]*)'/.exec(text)
+    ?? /"worker_reader"\s*:\s*"([a-z][a-z0-9_]*)"/.exec(text);
   return m ? m[1] : null;
 }
 
@@ -267,7 +283,19 @@ function scan() {
       .split("\n")
       .filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line))
       .join("\n");
-    const reachesAModel = jobScript === null || /\bclaude\b|run_ai|api\.anthropic|CLAUDE_/.test(jobCode);
+    /*
+     * A WORKER READER REACHES NO MODEL BY CONSTRUCTION: it is a GET to a domain or a Search Console
+     * query, and `health/readers.ts` holds no router call. Its code is checked the same way a local
+     * job's is, rather than assumed, so a reader that grows a `run_ai` call would be asked to name
+     * its model like everyone else.
+     */
+    const readerName = workerReader(duty.text);
+    const readerCode = readerName && existsSync(join(ROOT, READERS))
+      ? read(READERS).split("\n").filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line)).join("\n")
+      : null;
+    const reachesAModel = readerCode !== null
+      ? /\bclaude\b|run_ai|routeCompletion|api\.anthropic|CLAUDE_/.test(readerCode)
+      : jobScript === null || /\bclaude\b|run_ai|api\.anthropic|CLAUDE_/.test(jobCode);
 
     if (reachesAModel && !namesAModel(duty.id, duty.text)) {
       problems.push(
@@ -286,6 +314,47 @@ function scan() {
 
     const key = deliversKey(duty.text);
     const job = localJobScript(duty.text);
+    const reader = workerReader(duty.text);
+
+    /*
+     * A WORKER DUTY'S CHAIN (0263): the reader is registered in `health/readers.ts`
+     * (`WORKER_READERS`), materialise actually invokes `runWorkerReader`, the module writes INTO
+     * the delivered table, and a route reads that table. Each link is its own named failure — a
+     * duty naming a reader that the registry lacks would "run", record ok, and write nothing.
+     */
+    if (reader) {
+      const readersSrc = existsSync(join(ROOT, READERS)) ? read(READERS) : "";
+      const materialiseSrc = read(MATERIALISE);
+      if (!readersSrc) {
+        problems.push(`${duty.id} (${duty.file}): names worker reader '${reader}' and ${READERS} does not exist.`);
+        continue;
+      }
+      if (!new RegExp(`^\\s*${reader}\\s*:`, "m").test(readersSrc)) {
+        problems.push(
+          `${duty.id} (${duty.file}): names worker reader '${reader}' and WORKER_READERS in ${READERS} does not register it.\n` +
+          `      materialise would call runWorkerReader("${reader}"), which throws by name — a duty that fails every morning.`,
+        );
+      }
+      if (!/runWorkerReader\s*\(/.test(materialiseSrc) || !/executor === "worker"/.test(materialiseSrc)) {
+        problems.push(`${duty.id} (${duty.file}): is a worker duty and ${MATERIALISE} never runs a worker reader. It would be admitted as a task nobody can claim.`);
+      }
+      if (!key) {
+        problems.push(`${duty.id} (${duty.file}): is a worker duty and declares no \`delivers\` table.`);
+        continue;
+      }
+      if (!new RegExp(`INTO\\s+${key}\\b`, "i").test(readersSrc)) {
+        problems.push(`${duty.id} (${duty.file}): delivers '${key}' and ${READERS} writes to no table of that name.`);
+      }
+      if (!tables.has(key)) {
+        problems.push(`${duty.id} (${duty.file}): delivers '${key}' and no migration creates a table called '${key}'.`);
+      }
+      const routeFiles = readdirSync(join(ROOT, "src/worker/boss/routes")).filter((f) => f.endsWith(".ts"));
+      const routeSrc = routeFiles.map((f) => read(`src/worker/boss/routes/${f}`)).join("\n");
+      if (!new RegExp(`FROM\\s+${key}\\b`, "i").test(routeSrc)) {
+        problems.push(`${duty.id} (${duty.file}): delivers '${key}' and no route reads it, so the reading lands where no screen can see it.`);
+      }
+      continue;
+    }
 
     if (!key && !job) {
       problems.push(
@@ -453,11 +522,25 @@ function selfTest() {
     failed += 1;
   }
 
+  // A worker duty's reader is read in both shapes, and the executor literal is never mistaken for it.
+  if (workerReader(`'worker', 'ops', json_object('worker_reader', 'uptime', 'delivers', 'x')`) !== "uptime"
+    || workerReader(`'{"worker_reader":"gsc"}'`) !== "gsc"
+    || workerReader(`'worker', 'ops', json_object('delivers', 'x')`) !== null) {
+    console.error("  ✗ worker_reader not parsed");
+    failed += 1;
+  }
+  // And a reader the registry lacks is a named failure, not a pass: the shape check the scan uses.
+  const registry = read(READERS);
+  if (!/^\s*uptime\s*:/m.test(registry) || /^\s*moon_phase\s*:/m.test(registry)) {
+    console.error("  ✗ WORKER_READERS shape check would not distinguish a registered reader from an unregistered one");
+    failed += 1;
+  }
+
   if (failed) {
     console.error(`\nSELF-TEST FAILED: ${failed} case(s)`);
     process.exit(1);
   }
-  console.log(`SELF-TEST PASSED: ${FIXTURES.length + 2}/${FIXTURES.length + 2} cases.`);
+  console.log(`SELF-TEST PASSED: ${FIXTURES.length + 4}/${FIXTURES.length + 4} cases.`);
 }
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
@@ -492,10 +575,11 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-const delivering = duties.filter((d) => deliversKey(d.text)).length;
+const worker = duties.filter((d) => workerReader(d.text)).length;
+const delivering = duties.filter((d) => deliversKey(d.text) && !workerReader(d.text)).length;
 const local = duties.filter((d) => localJobScript(d.text)).length;
 console.log(
   `DUTY DELIVERY SCAN PASSED: ${duties.length} standing duties — ${delivering} deliver to a handled ` +
-  `table, ${local} to an installed local job, and none into nothing.`,
+  `table, ${local} to an installed local job, ${worker} run a Worker reader into a read table, and none into nothing.`,
 );
 selfTest();

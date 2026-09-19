@@ -177,7 +177,17 @@ export async function drainBossTasks(
 
   for (const row of due.results ?? []) {
     const msg: TaskMessage = { taskId: row.task_id, lane: row.lane, attempt: row.attempt };
-    await db.prepare(`UPDATE boss_task_queue SET state = 'running' WHERE id = ?`).bind(row.id).run();
+    /*
+     * CLAIMED ATOMICALLY. Two drains can now overlap — the request that queued a rewrite and the
+     * progress poll that kicks the queue two seconds later — and before this a plain UPDATE let both
+     * run the same task. The conditional write means exactly one of them proceeds; the other sees
+     * zero rows changed and moves on.
+     */
+    const claimed = await db
+      .prepare(`UPDATE boss_task_queue SET state = 'running' WHERE id = ? AND state = 'pending'`)
+      .bind(row.id)
+      .run();
+    if (!claimed.meta || claimed.meta.changes === 0) continue;
     try {
       await handleTask(bossEnv, msg);
       await db

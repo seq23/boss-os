@@ -76,9 +76,17 @@ export const workersAi: ProviderAdapter = {
     }
 
     const json = raw as any;
-    const text: string = json?.response ?? json?.result?.response ?? "";
+    let text: unknown = json?.response ?? json?.result?.response ?? "";
+    /*
+     * A STRUCTURED REPLY IS STILL A REPLY. Seen on 19 Sep 2026 with Llama 3.3 70B asked for a bare
+     * JSON array of search queries: the binding handed back `response` already parsed (an array,
+     * not a string), and this adapter threw "returned no text" over a perfectly good answer. The
+     * caller asked for JSON and parses JSON, so the honest thing is to hand it the JSON text.
+     */
+    if (text !== null && typeof text === "object") text = JSON.stringify(text);
     if (typeof text !== "string" || text.length === 0) {
-      throw new ProviderCallError("Workers AI returned no text", null, false);
+      const keys = json && typeof json === "object" ? Object.keys(json).join(",") : typeof json;
+      throw new ProviderCallError(`Workers AI returned no text (reply keys: ${keys || "none"})`, null, false);
     }
     // Workers AI reports usage on newer models and omits it on older ones. An
     // omitted count is reported as 0 rather than estimated — the ledger's job is
