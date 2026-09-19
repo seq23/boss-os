@@ -94,6 +94,8 @@ export function toBossEnv(env: Env): BossEnv {
     BOSS_PASSCODE: env.BOSS_PASSCODE ?? "",
     SESSION_SECRET: env.BOSS_SESSION_SECRET ?? "",
     FIREWORKS_API_KEY: env.FIREWORKS_API_KEY,
+    // The Gmail draft's key. Omitting it here is how `AI` sat declared-and-unreachable for a week.
+    GSC_SERVICE_ACCOUNT_JSON: env.GSC_SERVICE_ACCOUNT_JSON,
   };
 }
 

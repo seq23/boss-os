@@ -249,11 +249,12 @@ export async function draftOutreachFor(
     const raised = await raiseJudgementCall(
       env,
       {
-        title: `Send this to ${candidate.name}?`,
+        title: `A letter to ${candidate.name}`,
         question:
           `You reviewed ${candidate.name}. Camille wrote the approach below from what is on their row — ` +
-          `${(composed.built_from as any).history_label}. Approve it and it is ready for you to send, ` +
-          "or send it back with a sentence and she writes another. Nothing goes anywhere without you.",
+          `${(composed.built_from as any).history_label}. The green button puts it in your Gmail drafts, ` +
+          "under your own address, for you to read once more and send yourself. Send it back with a sentence " +
+          "and it comes off your desk with your note on the record. Nothing here can send it.",
         resumeKind: "buyer_outreach_email",
         employeeId: "emp_research",
         lane: "ops",
@@ -390,22 +391,58 @@ wealth.post("/recommendations/:id/draft", async (c) => {
   return ok(c, result);
 });
 
-/** Every letter and its state, so the desk can show what is approved and ready to go. */
+/**
+ * Every letter and its state, so the desk can show what is approved and where its Gmail draft is.
+ *
+ * `gmail` on an approved letter is the newest `gmail_drafts` row: `created` with the draft id,
+ * `blocked` with the named stop, `failed` with the reason, or null when nothing has been tried.
+ */
 wealth.get("/outreach", async (c) => {
   const rows = await c.env.DB
     .prepare(
-      `SELECT d.*, s.name AS candidate_name, s.source_url, s.status AS candidate_status
+      `SELECT d.*, s.name AS candidate_name, s.source_url, s.status AS candidate_status,
+              g.state AS gmail_state, g.gmail_draft_id, g.failure_code AS gmail_failure_code,
+              g.failure_detail AS gmail_failure_detail, g.created_at AS gmail_created_at, g.mailbox AS gmail_mailbox
          FROM buyer_outreach_drafts d
          JOIN sourcing_candidates s ON s.id = d.candidate_id
+         LEFT JOIN gmail_drafts g ON g.id = (
+           SELECT id FROM gmail_drafts WHERE outreach_draft_id = d.id ORDER BY updated_at DESC LIMIT 1
+         )
         WHERE d.state IN ('awaiting','approved')
         ORDER BY d.state, d.updated_at DESC LIMIT 100`,
     )
     .all<any>();
-  const all = rows.results ?? [];
+  const all = (rows.results ?? []).map((r) => ({
+    ...r,
+    gmail: r.gmail_state
+      ? {
+        state: r.gmail_state, gmail_draft_id: r.gmail_draft_id, failure_code: r.gmail_failure_code,
+        failure_detail: r.gmail_failure_detail, created_at: r.gmail_created_at, mailbox: r.gmail_mailbox,
+      }
+      : null,
+  }));
   return ok(c, {
     approved: all.filter((r) => r.state === "approved"),
     awaiting: all.filter((r) => r.state === "awaiting"),
   });
+});
+
+/**
+ * Create (or re-try) the Gmail draft for an approved letter, from the desk.
+ *
+ * Her approval in the Inbox is the authorization, and the module refuses any other state. This
+ * exists for the day the Inbox press was blocked — no key, grant not propagated — so the letter
+ * does not need re-approving to reach her drafts.
+ */
+wealth.post("/outreach/:id/gmail-draft", async (c) => {
+  const { createDraftForOutreach } = await import("../wealth/gmailDraft");
+  let out;
+  try {
+    out = await createDraftForOutreach(c.env, c.req.param("id"));
+  } catch (err) {
+    throw badRequest((err as Error).message, "Approve the letter in the Inbox first; approving is what authorizes the draft.");
+  }
+  return ok(c, out);
 });
 
 /**

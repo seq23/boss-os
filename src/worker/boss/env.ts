@@ -20,6 +20,14 @@ export interface Env {
    * the point of use, and "the key is not set" is a better error than "the Worker would not start".
    */
   OPENAI_API_KEY?: string;
+  /**
+   * The gsc-bot service account, as the vault holds it, so the Worker can create a Gmail DRAFT in
+   * her own mailbox on the green button (`wealth/gmailDraft.ts`). One scope, `gmail.compose`, and
+   * one endpoint, `drafts.create`; the validators refuse a send scope or a send endpoint on that
+   * path. Optional for the reason every other key here is: its absence is a NAMED STOP on the card
+   * ("the Worker holds no Google key"), never a Worker that will not start.
+   */
+  GSC_SERVICE_ACCOUNT_JSON?: string;
 
   /**
    * Workers AI. A BINDING, not an HTTP client — which is why it needs no key, no hostname, and no
