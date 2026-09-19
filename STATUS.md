@@ -4,7 +4,7 @@
 what version it is, and whether it was finished. Everything here is written to be read cold, by
 someone — or something — with no memory of the conversation that produced it.
 
-Last verified against the code and against production: **16 September 2026.**
+Last verified against the code and against production: **19 September 2026.**
 
 ---
 
@@ -170,8 +170,41 @@ can never be read as the other's. That is the whole of the constraint (ADR-026).
 
 ### Camille's standing duty
 
-**06:30 America/Chicago, daily** — half an hour before the owner looks, because research takes
-minutes and she asked for the report to BE there at seven.
+**06:00 America/Chicago, daily** (was 06:30 until 19 September 2026) — an hour before the owner
+looks, because a Sonnet run at the file's depth takes 20–25 minutes and she asked for the report to
+BE there at seven.
+
+**Why the half-hour moved.** The cron is hourly on the hour, so a 06:30 duty was not due at the
+06:00 tick and fired at 07:00; the Mac's next launchd slot was 07:10; the report landed at
+07:18–07:25 — measured across fourteen days of `backend_runs`, never once by seven. 06:00 is on the
+tick every day of the year; the Mac now has a 06:05 slot.
+
+**The specification is code (19 September 2026).** Her brief: *"the executive briefing [in my OpenAI
+app] is far superior ... fix Boss OS's daily executive briefing to be just like the one in my txt
+file."* `src/worker/boss/duties/briefingSpec.ts` is the file's production prompt ported (astrology
+removed), plus the source tiers, the market watchlist, the section shapes and the grader.
+`materialise.ts` composes the prompt from it every morning; `$.prompt` is no longer in the duty row.
+The dashboard is **built by the system** from `MARKETS.json`, which `scripts/ops/market-snapshot.mjs`
+writes on the Mac before the claim (Yahoo Finance chart API + the Treasury's par-yield CSV; free,
+keyless, probed) — on 19 Sep the model-typed dashboard had three of three index figures wrong, each
+cited. SPCX is on the watchlist, so the feed answers SpaceX's listing status daily instead of the
+prompt asserting it. The runner removes a stale `delivers.json` before every run (15 Sep's report was
+14 Sep's, refiled). Model rung: **Sonnet 4.5** on her Claude Code session — $0.00 API dollars against
+the $2.50/day posture; the CLI's notional figure accrues to `bk_claude_code`'s $50/month Claude Max
+proxy. Guard: `validate:briefing-on-par`, which runs the shipped code over the live fixture in
+`tests/fixtures/briefing/`.
+
+**The ladder (0258).** Her question: *"the Boss OS briefing is run using my two $0 lanes first,
+right — Claude and OpenAI?"* It was not — one seat, a refusal failed the task, `/claim` handed a run
+only to the seat it was parked for. Now `backend_ladder = [bk_claude_code, bk_codex]` on the duty:
+the consumer walks it (`ladder_step` events), a seat may claim a run parked for a seat above it
+that failed preflight (`fallback_from`, `ladder_handoff`), each seat gets its own model, and when
+both refuse the walk continues into the cloud router. **The `:free` OpenRouter rungs are refused for
+this content by the router's LP/deal-terms scan** (they train on prompts; the briefing's wording
+reads as deal material; nothing a caller declares lowers that) — so below the seats the first rung
+that can take it is the cheapest non-training one. `written_by` on the row and on Today says who
+wrote each morning. `node scripts/ops/briefing-ladder.mjs` prints the ladder as the migrations
+leave it.
 
 **A wall-clock time and a zone, never a UTC hour.** `0 12 * * *` is correct in September and an hour
 early from November; nobody files a bug for that, the report is just quietly stale for five months a

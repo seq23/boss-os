@@ -56,6 +56,11 @@ export interface EvidencePacket {
   cost_micros: number;
   started_at: number | null;
   finished_at: number | null;
+  /** Structured output the run wrote to `delivers.json`; null for every ordinary run. */
+  delivers: Record<string, unknown> | null;
+  /** MARKETS.json as this process observed it before the run started; null when absent. */
+  market_data: Record<string, unknown> | null;
+  materials_placed: string[];
 }
 
 export interface GitState {
@@ -94,6 +99,10 @@ export interface RunDeps {
   gitProbe?: (cwd: string) => Promise<GitState>;
   /** Copies read-only materials into the run's own directory. Returns the base names placed. */
   placeMaterials?: (cwd: string, materials: string[]) => Promise<string[]>;
+  /** Removes a delivers.json left by an earlier run. Returns true when one was there. */
+  clearStaleDelivers?: (cwd: string) => Promise<boolean>;
+  /** Reads a JSON material (MARKETS.json) from the workspace, or null. Observed evidence, not the run's claim. */
+  readMaterialJson?: (cwd: string, name: string) => Promise<Record<string, unknown> | null>;
   now?: () => number;
   backend?: { allowed_kinds?: string[]; capabilities?: string[]; credential_ref?: string };
 }
@@ -102,6 +111,8 @@ export interface WorkDeps extends RunDeps {
   origin: string;
   deviceId: string;
   backendId?: string;
+  /** Seats on this machine that failed preflight this cycle; the cloud may hand their ladder-successor's work to this seat. */
+  fallbackFrom?: string[];
   fetchImpl?: typeof fetch;
   cookie?: string;
 }

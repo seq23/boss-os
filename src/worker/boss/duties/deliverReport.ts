@@ -4,7 +4,12 @@ import {
 } from "../today/briefing";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
-import { dayIdInZone, weekIdInZone } from "@shared/boss/timezone";
+import { dayIdInZone, wallClock, weekIdInZone } from "@shared/boss/timezone";
+import { materialiseDueDuties } from "./materialise";
+import {
+  applyMarketData, assessBriefing, checkedThrough, stripExcludedSections,
+  type MarketData,
+} from "./briefingSpec";
 
 /**
  * WRITING THE EXECUTIVE INTELLIGENCE REPORT, WHICH NOTHING ANYWHERE USED TO DO.
@@ -388,9 +393,73 @@ export async function deliverPracticeWeek(
   return id;
 }
 
+/**
+ * Re-queue the briefing after a failed delivery, at most three attempts a morning and none after
+ * noon Central. Returns whether it did and the sentence her screen carries either way.
+ */
+export async function retryFailedBriefing(env: Env, forDay: string, now: number): Promise<{ queued: boolean; why: string }> {
+  const wc = wallClock(now);
+  if (wc.h >= 12) return { queued: false, why: "No retry: it is past noon Central; tomorrow's 06:00 run is the next attempt." };
+  const dayStart = now - ((wc.h * 60 + wc.min) * 60_000);
+  const attempts = await env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM tasks WHERE created_at >= ? AND input LIKE '%"delivers":"executive_reports"%'`)
+    .bind(dayStart)
+    .first<{ n: number }>()
+    .catch(() => ({ n: 0 }));
+  if ((attempts?.n ?? 0) >= 3) return { queued: false, why: `No retry: ${attempts?.n} attempts already today; tomorrow's 06:00 run is the next.` };
+  try {
+    const out = await materialiseDueDuties(env, now, "duty_exec_intel");
+    if (out.fired.length > 0) {
+      await logEvent(env.DB, { level: "warn", scope: "duties", event: "executive_report_retry_queued", entityId: "duty_exec_intel", detail: { day_id: forDay, attempt: (attempts?.n ?? 0) + 1, task_id: out.fired[0]!.task_id } }).catch(() => {});
+      return { queued: true, why: "A retry is queued for your Mac's next slot." };
+    }
+    return { queued: false, why: `No retry could be queued: ${out.skipped.map((x) => x.reason).join("; ") || "the duty did not fire"}.` };
+  } catch (err) {
+    return { queued: false, why: `No retry could be queued: ${err instanceof Error ? err.message : String(err)}.` };
+  }
+}
+
+export interface WrittenBy {
+  kind: "seat" | "cloud_rung";
+  backend_id: string;
+  model: string | null;
+  label: string;
+  /** Seats that refused before this one wrote it, in ladder order. */
+  refused_seats?: string[];
+}
+
+/** Which seat wrote a run, from its row. Null when the run is not on record. */
+export async function writtenByFromRun(env: Env, runId: string): Promise<WrittenBy | null> {
+  const run = await env.DB
+    .prepare(`SELECT backend_id, requested FROM backend_runs WHERE id = ?`).bind(runId)
+    .first<{ backend_id: string; requested: string | null }>()
+    .catch(() => null);
+  if (!run) return null;
+  let requested: Record<string, unknown> = {};
+  try { requested = run.requested ? (JSON.parse(run.requested) as Record<string, unknown>) : {}; } catch { requested = {}; }
+  const model = typeof requested.model === "string" ? requested.model : null;
+  const label = run.backend_id === "bk_claude_code"
+    ? `Claude Code on her Max seat${model ? ` (${model})` : ""}`
+    : run.backend_id === "bk_codex"
+      ? `Codex CLI on her ChatGPT Plus seat${model ? ` (${model})` : ""}`
+      : run.backend_id;
+  const ladder = Array.isArray(requested.backend_ladder) ? (requested.backend_ladder as string[]) : [];
+  const at = ladder.indexOf(run.backend_id);
+  return { kind: "seat", backend_id: run.backend_id, model, label, refused_seats: at > 0 ? ladder.slice(0, at) : [] };
+}
+
 export async function deliverExecutiveReport(
   env: Env,
-  args: { taskId: string; runId: string; report: DeliveredReport | null; runStatus: string; now?: number },
+  args: {
+    taskId: string; runId: string; report: DeliveredReport | null; runStatus: string; now?: number;
+    /** MARKETS.json as the runner observed it in the workspace before the run. */
+    marketData?: MarketData | null;
+    /**
+     * Who wrote it, when it was not a seat on her Mac. A seat's identity is read off `backend_runs`
+     * (backend and requested model); a cloud rung has no run row and names itself here.
+     */
+    writtenBy?: WrittenBy | null;
+  },
 ): Promise<string | null> {
   const now = args.now ?? Date.now();
 
@@ -402,6 +471,7 @@ export async function deliverExecutiveReport(
   let input: Record<string, unknown> = {};
   try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
   if (input.delivers !== "executive_reports") return null;
+  const promptVersion = typeof input.prompt_version === "string" ? input.prompt_version : null;
 
   /*
    * THE DAY IT IS FOR, IN HER ZONE, NOT THE DAY IT WAS WRITTEN. A report generated at 06:30 for the
@@ -451,7 +521,39 @@ export async function deliverExecutiveReport(
 
   const gaps = asArray(args.report?.gaps);
   const watching = asArray(args.report?.watching);
-  const sections = asArray(args.report?.sections);
+  const filedSections = asArray(args.report?.sections);
+
+  /*
+   * ── THE SPIRIT PAGE'S CONTENT IS REMOVED, NAMED, AND NEVER RENDERED ─────
+   */
+  const excluded = stripExcludedSections(filedSections);
+
+  /*
+   * ── THE DASHBOARD FROM THE FEED, THE SPACEX ANSWER FROM THE FEED ────────
+   */
+  const market = args.marketData && typeof args.marketData === "object" ? args.marketData : null;
+  const applied = applyMarketData(
+    excluded.kept.filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === "object"),
+    asArray(args.report?.sources),
+    market,
+    now,
+  );
+  const sections = applied.sections;
+  const reportSources = applied.sources;
+
+  /*
+   * ── GRADED AGAINST THE FILE'S SHAPE ─────────────────────────────────────
+   * Uncited summary figures, dangling [n] references, thin sections, unusable sources. Each is a
+   * shortfall she can read; none is silently fixed.
+   */
+  const run = await env.DB
+    .prepare(`SELECT started_at, finished_at FROM backend_runs WHERE id = ?`).bind(args.runId)
+    .first<{ started_at: number | null; finished_at: number | null }>()
+    .catch(() => null);
+  const assessment = assessBriefing(
+    { sections, sources: reportSources },
+    { dayId: forDay, finishedAt: run?.finished_at ?? now },
+  );
 
   /*
    * ── "partial" IS DERIVED, AND IT NO LONGER MEANS "WANTS TOMORROW'S NEWS" ──
@@ -471,7 +573,7 @@ export async function deliverExecutiveReport(
    * still taken on the run's word is which gaps are forward-looking, and the prompt draws that line
    * explicitly.
    */
-  const sourcing = withheldForSourcing(sections, { sources: asArray(args.report?.sources) });
+  const sourcing = withheldForSourcing(sections, { sources: reportSources });
   const missing = missingSections(sourcing.kept, gaps);
   const insight = groundInsight({
     headline: args.report?.headline,
@@ -489,12 +591,43 @@ export async function deliverExecutiveReport(
     insightWithheld: !insight.grounded,
     insightAttempted: attemptedInsight,
   });
-  const honest = standing.status;
+  const extraShortfalls = [
+    ...excluded.removed.map((r) => `A section carried ${r.rule} content and was removed; that belongs on the Spirit page.`),
+    ...(applied.dashboard_built && applied.unavailable > 0
+      ? [`${applied.unavailable} dashboard figure${applied.unavailable === 1 ? " was" : "s were"} not available from the feed and read${applied.unavailable === 1 ? "s" : ""} so.`]
+      : []),
+    ...(!applied.dashboard_built && status !== "failed" ? ["No live market snapshot reached this run; the dashboard is the run's own, cited figures."] : []),
+    ...assessment.problems.filter((p) => !/is not in the report\.$/.test(p)),
+  ];
+  const shortfalls = [...standing.shortfalls, ...extraShortfalls];
+  const honest: "complete" | "partial" | "failed" =
+    standing.status === "failed" ? "failed" : shortfalls.length === 0 ? "complete" : "partial";
+
+  const stamp = checkedThrough({ sources: reportSources, market, finishedAt: now });
+  const writtenBy = args.writtenBy ?? (await writtenByFromRun(env, args.runId));
+  const consulted = [
+    ...(market?.consulted ?? []).map((c) => ({ url: c.url, status: c.status, fetched_at: c.fetched_at, kind: "market_feed" })),
+    ...reportSources
+      .filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === "object")
+      .map((s) => ({ url: String(s.url ?? ""), status: "cited", fetched_at: String(s.read_at ?? ""), kind: "web" })),
+  ];
+
+  /*
+   * ── A FAILED MORNING RETRIES ITSELF, BOUNDED, AND SAYS SO ─────────────────
+   *
+   * Her brief: "the run must never exit silent — a failed run delivers a named notice with the
+   * reason and the retry time." On 9 September the run failed at 12:07Z and that was the day's
+   * report: nothing re-queued it, and the block read "failed" until the next morning. Now a failed
+   * delivery re-materialises the duty once, and the Mac's next slot (06:35 / 06:50 / 07:10 Central)
+   * claims the new task. Three attempts a morning, none after noon Central — a retry that costs a
+   * run each time must not turn a broken feed into six runs a day.
+   */
+  const retry = honest === "failed" ? await retryFailedBriefing(env, forDay, now) : { queued: false, why: "" };
 
   const summary =
     asText(args.report?.summary) ??
     (honest === "failed"
-      ? "The research run did not produce a usable report. Nothing here is a finding."
+      ? `The research run did not produce a usable report. Nothing here is a finding. ${retry.why}`.trim()
       : null);
 
   /*
@@ -528,8 +661,9 @@ export async function deliverExecutiveReport(
   await env.DB
     .prepare(
       `INSERT INTO executive_reports
-         (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections, watching, shortfalls)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         (id, day_id, generated_at, task_id, backend_run_id, status, headline, summary, sections, gaps, sources, corrections, watching, shortfalls,
+          checked_through, prompt_version, market_data, consulted, written_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(day_id) DO UPDATE SET
          generated_at = excluded.generated_at,
          task_id = excluded.task_id,
@@ -542,16 +676,26 @@ export async function deliverExecutiveReport(
          sources = excluded.sources,
          watching = excluded.watching,
          shortfalls = excluded.shortfalls,
-         corrections = excluded.corrections`,
+         corrections = excluded.corrections,
+         checked_through = excluded.checked_through,
+         prompt_version = excluded.prompt_version,
+         market_data = excluded.market_data,
+         consulted = excluded.consulted,
+         written_by = excluded.written_by`,
     )
     .bind(
       id, forDay, now, args.taskId, args.runId, honest, headline, summary,
       JSON.stringify(sections),
       JSON.stringify(gaps),
-      JSON.stringify(asArray(args.report?.sources)),
+      JSON.stringify(reportSources),
       JSON.stringify(asArray(args.report?.corrections)),
       JSON.stringify(watching),
-      JSON.stringify(standing.shortfalls),
+      JSON.stringify(shortfalls),
+      stamp.at,
+      promptVersion,
+      market ? JSON.stringify(market) : null,
+      JSON.stringify(consulted),
+      writtenBy ? JSON.stringify(writtenBy) : null,
     )
     .run();
 
@@ -584,7 +728,10 @@ export async function deliverExecutiveReport(
       day_id: forDay, status: honest, sections: sourcing.kept.length,
       missing: missing.length, withheld_for_sourcing: sourcing.withheld.length,
       gaps: gaps.length, watching: watching.length,
-      shortfalls: standing.shortfalls, run_id: args.runId,
+      shortfalls, run_id: args.runId,
+      dashboard_built: applied.dashboard_built, excluded_removed: excluded.removed.length,
+      checked_through: stamp.label, prompt_version: promptVersion,
+      written_by: writtenBy?.label ?? null,
     },
   });
 

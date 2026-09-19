@@ -11,6 +11,38 @@
 > Her charter carries the same rules in short form, so they bind the employee even if this file is
 > never opened. This is the long form, and it wins where the two differ.
 
+> **AMENDED 19 September 2026 — the production prompt is code now, and the bar is the file on her
+> desk.** Her brief: *"I keep opening my OpenAI app and the executive briefing there is far superior
+> to anything in Boss OS ... Fix Boss OS's daily executive briefing to be just like the one in my
+> txt file. Delivered automatically daily to me only ... Leave astrology and travel-map colours out."*
+>
+> The file (`~/Desktop/executive intelligence briefing v2.txt`) holds a full report, its source
+> stack and the reproducible production prompt it was made with. That prompt — the astrology-free
+> version — is ported into **`src/worker/boss/duties/briefingSpec.ts`**, and that module is now the
+> specification the lane reads: `materialise.ts` composes the run's prompt from it every morning,
+> `deliverReport.ts` grades what comes back against its section shapes, and
+> `scripts/validate/the-briefing-is-on-par.mjs` runs both over the report the live run produced.
+> **§13 below no longer governs; the module does.** A rule written here that the module does not
+> carry is a wish, per the repository's own standing rule, and this document now points at the code
+> rather than restating it.
+>
+> What the module adds to §5, in the file's terms: an edition stamp *"Information checked through
+> HH:MM CT"* derived from the evidence; a One-Minute Summary of 3–5 items each with a figure and an
+> inline `[n]` citation; five headlines each with a data block; a Markets & Macro Dashboard **built by
+> the system from a live market snapshot** (`scripts/ops/market-snapshot.mjs` — Yahoo Finance's chart
+> API and the U.S. Treasury's par-yield CSV, free and keyless) so no model types a price, with a row
+> the feed did not answer reading *"not available at HH:MM CT"*; SpaceX's listing status answered by
+> that same feed every morning; the file's source tiers; a numbered source list of article-level
+> URLs; and the final line appended by the system. §2.1, §2.5, §9 and the exclusion of astrology and
+> the map stand exactly as written and are enforced in the module.
+>
+> **Why the bar was not being met (CONFIRMED from fourteen days of production):** every run was Haiku
+> on a 900 s leash with four bullets a section; the 19 Sep dashboard had three of three index figures
+> wrong, each cited; the prompt hard-coded "SpaceX is not publicly listed" while SPCX quoted $152.71;
+> 15 Sep's report was 14 Sep's refiled from a stale `delivers.json`; and a 06:30 duty on an hourly
+> cron fired at 07:00 and landed at 07:20. The duty is 06:00 Central now, the run is Sonnet 4.5 on
+> her Claude Code session, and the leash is 1500 s.
+
 # Executive Intelligence Report — Daily Intelligence Brain Install Spec
 
 ## Purpose
@@ -997,6 +1029,11 @@ If this system is implemented in code, gather research into a structured object 
 
 # 13. Generation Prompt
 
+> **SUPERSEDED 19 September 2026.** The generation prompt is `composeBriefingPrompt()` in
+> `src/worker/boss/duties/briefingSpec.ts`, versioned as `BRIEFING_PROMPT_VERSION`, composed on every
+> firing and recorded on every report row. The text below is kept as the history of what the run
+> was told before that; it is not what the run is told now.
+
 Use the following as the system-level daily generation instruction after current data are gathered:
 
 ```text
@@ -1050,6 +1087,12 @@ Get your agenda from your coach.
 ---
 
 # 14. Optional Automation Behavior
+
+> **DECIDED 19 September 2026: 06:00 Central.** The Worker's cron is hourly on the hour and Central
+> is a whole-hour offset, so a 06:00 duty fires at 06:00 on every day of the year; the Mac claims it
+> at 06:05, a 20–25 minute run lands by ~06:30, and the stamp reads *"Information checked through
+> ~6:25 AM CT"*. The 06:30 it replaced fired at 07:00 and landed at 07:20 — measured, never once by
+> seven.
 
 If the system supports scheduling:
 

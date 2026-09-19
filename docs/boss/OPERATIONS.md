@@ -67,10 +67,17 @@ All times America/Chicago.
 
 | Time | What | Who | Where it runs |
 |---|---|---|---|
-| 06:30 | Executive Intelligence Report | Camille | agent |
-| 06:35 | The Mac claims and executes pending runs | — | launchd |
-| 06:50, 07:10 | Two more claim attempts, in case the first missed | — | launchd |
+| 06:00 | Executive Intelligence Report fires (was 06:30 — see below) | Camille | agent |
+| 06:05 | The Mac writes SKY.json and MARKETS.json, then claims and executes the run | — | launchd |
+| 06:35, 06:50, 07:10 | Three more claim attempts, in case the first missed | — | launchd |
 | 12:35, 18:35 | Later claim attempts, for anything dispatched by hand | — | launchd |
+
+**Why 06:00 and not 06:30 (19 September 2026).** The Worker's cron is hourly on the hour. A 06:30
+duty is not due at the 06:00 tick and so fired at 07:00; the Mac's next slot was 07:10; the report
+landed at 07:18–07:25 every single morning, against a success criterion that says "by 07:00". Central
+is a whole-hour offset from UTC, so 06:00 fires AT 06:00 on every day of the year; the Mac claims it
+at 06:05; a 20–25 minute Sonnet run is on your screen by ~06:30 with the stamp *"Information checked
+through ~6:25 AM CT"*.
 
 ### Mondays, Wednesdays, Fridays
 
@@ -182,7 +189,32 @@ agent tick — five ticks a day, so a small backlog drains within a day rather t
   chains corrections to the previous day, so deleting the last link would break the one feature that
   depends on it.
 
-### The briefing, written for your eyes
+### The briefing, on par with the one you pay for (19 September 2026)
+
+> "I keep opening my OpenAI app and the executive briefing there is far superior to anything in Boss
+>  OS ... Fix Boss OS's daily executive briefing to be just like the one in my txt file. Delivered
+>  automatically daily to me only. ... Leave astrology and travel-map colours out."
+
+The file on your desk is the specification now, ported into `src/worker/boss/duties/briefingSpec.ts`
+and read by the materialiser, the delivery and a validator. What arrives each morning:
+
+| | Was (through 19 Sep) | Is |
+|---|---|---|
+| Edition | A headline | *Saturday, September 19, 2026 • Morning Edition • Central Time* and *Information checked through 6:2x AM CT*, derived from the evidence |
+| One-Minute Summary | Up to four one-sentence bullets, no numbers allowed to open one | 3–5 items, each two or three sentences with the figures and an inline `[n]` citation |
+| Top 5 Headlines | Headline, summary, why, score | Headline, summary, a **data block** of cited numbers, a why-it-matters of two to four paragraphs, a score on the file's weights |
+| Markets dashboard | A table the model typed — three of three index figures wrong on 19 Sep, each cited | **Built by the system** from a live snapshot (Yahoo Finance chart API + the Treasury's par-yield CSV, free, keyless); a row the feed did not answer reads *not available at HH:MM CT* |
+| SpaceX Watch | The prompt said "not publicly listed" | The feed answers public/private every morning; SPCX leads the section with close, move, prior close; then the reference map, Starship, Starlink, supply |
+| Depth elsewhere | Four bullets a section | Up to six two-sentence bullets, the file's questions asked of each |
+| Sources | Behind a toggle | Numbered, open by default, article-level URLs, each `[n]` in the text an anchor to its row |
+| Final line | None | *Get your agenda from your coach.*, appended by the system |
+| Model | Haiku 4.5, 900 s | **Sonnet 4.5**, 1500 s, on your Claude Code session — $0.00 in API dollars; the CLI's notional figure accrues to the $50/month Claude Max proxy |
+| A stale report | 15 Sep's was 14 Sep's, refiled from a `delivers.json` left in the workspace | The runner removes any `delivers.json` before the run starts and says so |
+
+Astrology and the Money / Career / Travel Map are stripped on delivery if a run files them, and the
+section is named on your screen. They live on Spirit.
+
+### The briefing, written for your eyes (13 September 2026)
 
 > "the way it is formmated now is for a machine not for a human eyes. it needs to be synthesized and
 >  summarized and formatted properly"
