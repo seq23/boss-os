@@ -374,6 +374,10 @@ export const api = {
   redraftSentBack: () => call<RewriteProgress & { queued_now: number; requeued_now: number }>("/wealth/outreach/redraft-sent-back", post("")),
   /** "13 sent back with your note · rewriting now · 4 of 13 ready" — from real rows; polling this also drains the queue. */
   rewriteProgress: () => call<RewriteProgress>("/wealth/outreach/rewrites"),
+  /** "Find firms that did X and draft the ask" — the scans her instructions started. Polling drains the queue. */
+  firmScans: () => call<{ items: any[] }>("/research/firm-scans"),
+  firmScan: (id: string) => call<any>(`/research/firm-scans/${id}`),
+  startFirmScan: (instruction: string) => call<{ task_id: string; scan_id: string | null; find: string; ask: string; queued: boolean }>("/research/firm-scans", post("", { instruction })),
   gmailDraft: (outreachDraftId: string) => call<any>(`/wealth/outreach/${outreachDraftId}/gmail-draft`, post("")),
   setWorkingPositions: (text: string) =>
     call<{ positions_usd: number[]; largest_usd: number }>("/wealth/working-positions", { method: "PUT", body: JSON.stringify({ text }) }),

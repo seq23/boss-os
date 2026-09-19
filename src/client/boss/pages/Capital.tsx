@@ -113,6 +113,108 @@ function Ledger() {
   );
 }
 
+// ─── "Find firms that did X and draft the ask" — her instructions, as work ────
+
+/**
+ * Her words, 19 Sep 2026: "find me a list of firms that have reported IPO participation in the
+ * release, and draft an email for me to ask if I can send investors to them." One sentence in;
+ * a verified list and the letters out, every step counted from rows (`firm_scans`). The same
+ * sentence typed into Team → New task or mailed to an employee starts the same scan.
+ */
+function FirmScans() {
+  const [scans, setScans] = useState<any[] | null>(null);
+  const [open, setOpen] = useState<Record<string, any>>({});
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  function load() {
+    api.firmScans().then((r) => setScans(r.items ?? [])).catch((e) => { setError(e); setScans(null); });
+  }
+  useEffect(load, []);
+  const inMotion = (scans ?? []).some((s) => !["done", "failed"].includes(s.state));
+  useEffect(() => {
+    if (!inMotion) return;
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [inMotion]);
+
+  async function start() {
+    setBusy(true); setError(null); setFlash(null);
+    try {
+      const r = await api.startFirmScan(text.trim());
+      setFlash(`Camille has it. Find: "${r.find}". Ask: "${r.ask}". The list and the letters land here and in your Inbox as they are ready.`);
+      setText("");
+      load();
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  }
+
+  async function toggle(id: string) {
+    if (open[id]) { setOpen((o) => { const n = { ...o }; delete n[id]; return n; }); return; }
+    try { const r = await api.firmScan(id); setOpen((o) => ({ ...o, [id]: r })); } catch (e) { setError(e); }
+  }
+
+  return (
+    <>
+      <p className="eyebrow">Find firms and draft the ask</p>
+      <div className="panel" data-testid="firm-scans">
+        <div className="row-sub">
+          Say what to find and what to ask, as you would to a person. Camille reads the public news, keeps only firms whose sentence is actually on the page,
+          and drafts each letter into your Inbox. Nothing is sent.
+        </div>
+        <textarea
+          className="judgement-why"
+          aria-label="What to find and what to ask"
+          placeholder='find me a list of firms that reported participation in the Anthropic IPO, and draft an email to ask if I can send investors to them'
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          style={{ width: "100%", marginTop: 8 }}
+        />
+        <div className="btn-row">
+          <button className="btn btn-small" disabled={busy || text.trim().length < 20} onClick={start} data-testid="start-firm-scan">
+            {busy ? "Handing it to Camille…" : "Ask Camille to find them and draft the ask"}
+          </button>
+        </div>
+        {error ? <ErrorNotice error={error} /> : null}
+        {flash && <div className="notice">{flash}</div>}
+
+        {scans === null && !error && <div className="row-sub">The scans could not be read just now, so this is not saying there are none.</div>}
+        {scans && scans.length === 0 && <div className="row-sub">No instruction has started a scan yet.</div>}
+        {(scans ?? []).map((s) => (
+          <div className="row" key={s.id} data-testid="firm-scan">
+            <div className="row-main">
+              <div className="row-title">{s.instruction}</div>
+              <div className="row-sub" data-testid="firm-scan-sentence">{s.sentence}{s.employee_name ? ` · ${s.employee_name}` : ""}</div>
+              {s.state === "failed" && s.task_error && <div className="field-error">{s.task_error}</div>}
+              <button className="btn btn-small" onClick={() => toggle(s.id)} style={{ marginTop: 6 }}>
+                {open[s.id] ? "Hide the list" : `Show the list (${s.verified_count} verified of ${s.findings_count} named)`}
+              </button>
+              {open[s.id] && (
+                <div style={{ marginTop: 8 }}>
+                  {open[s.id].findings.length === 0 && <div className="row-sub">No firm has been named yet.</div>}
+                  {open[s.id].findings.map((f: any) => (
+                    <div className="row" key={f.id}>
+                      <div className="row-main">
+                        <div className="row-title">
+                          {f.firm}{f.role ? ` · ${f.role}` : ""} · {f.verified ? (f.letter_state === "awaiting" ? "letter in your Inbox" : f.letter_state ?? f.draft_state ?? "verified") : "not on the page it cited — no letter"}
+                        </div>
+                        <div className="row-sub">“{f.quote}” — <a href={f.evidence_url} target="_blank" rel="noreferrer">{f.source_title ?? f.evidence_url}</a></div>
+                        {f.draft_state === "refused" && f.draft_detail && <div className="field-error">{f.draft_detail}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 // ─── The recommendation, which is the whole desk now ──────────────────────────
 
 /**
@@ -404,6 +506,8 @@ function Buyers() {
       {letters === null && !error && (
         <div className="row-sub">The letters could not be read just now, so this section is not saying you have none.</div>
       )}
+
+      <FirmScans />
 
       {/* ─── The recommendation ──────────────────────────────────────────── */}
       <p className="eyebrow">Write to these this week</p>

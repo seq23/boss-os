@@ -321,8 +321,11 @@ function NewTask({ templates, onDone }: { templates: any[]; onDone: () => void }
       if (res.created === false) {
         setResult(`Boss OS declined this one: ${res.reason}`);
       } else {
+        const scan = (() => { try { return JSON.parse(res.task.input ?? "null")?.firm_scan; } catch { return null; } })();
         setResult(
-          res.task.status === "queued"
+          scan
+            ? `Camille has it: find firms that ${scan.find}, and draft the ask "${scan.ask}". The list and the letters land on the Capital desk and in your Inbox as they are ready.`
+            : res.task.status === "queued"
             ? "Queued. It will raise an approval when it has something to show."
             : `Held for you: intake assigned it ${res.classification.executionAssignment.replace(/_/g, " ")}.`,
         );

@@ -1316,7 +1316,8 @@ export async function handleRequest(
      * makes "in minutes" true when the request that queued the work has already returned and the
      * hourly tick is fifty minutes away. Every other GET is skipped, as before.
      */
-    const drainsOnRead = request.method === "GET" && url.pathname === "/api/boss/wealth/outreach/rewrites";
+    const drainsOnRead = request.method === "GET" &&
+      (url.pathname === "/api/boss/wealth/outreach/rewrites" || url.pathname.startsWith("/api/boss/research/firm-scans"));
     if (ctx && ((request.method !== "GET" && request.method !== "HEAD") || drainsOnRead)) {
       ctx.waitUntil(
         drainBossTasks(env, new Date()).catch((err) => {
