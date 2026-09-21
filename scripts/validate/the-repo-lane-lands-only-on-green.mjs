@@ -60,6 +60,11 @@
  *      path; the finding names the phrase; the plan route refuses a pre-approved plan that asks
  *      and files it as approved BY HER; and `canLand` is RUN on a pre-approved not-ready row: refused
  *      without a preview approval or a force. The tests prove the three paths and the stranger.
+ *   K. THE CLI RUNS ON HER SEAT (21 Sep 2026 live defect). The runner never spawns `claude` with
+ *      `env: process.env`; every spawn passes `seatEnv(process.env)`, and `seatEnv` is RUN: given
+ *      a parent carrying ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL and CLAUDE_CODE_OAUTH_TOKEN, the
+ *      child env has none of them and still has PATH and HOME. The same for the other two
+ *      vault-run CLI callers (credential-check, interest-extract).
  *   G. RULE 0 AND THE CAPS. The runner exits non-zero with NAMED STOP [NOTHING_CLAIMABLE] on a
  *      quiet tick; the executor maps that code to a named line; every `claude -p` carries
  *      `--max-turns`; and the model per phase is read from `PHASE_MODELS` — no `claude-…` literal
@@ -84,6 +89,8 @@ const FILES = {
   mail: "src/worker/boss/intake/inboundMail.ts",
   answer: "src/worker/boss/repoChange/answer.ts",
   admit: "src/worker/boss/tasks/admit.ts",
+  credcheck: "scripts/ops/credential-check.mjs",
+  extract: "scripts/ops/interest-extract.mjs",
   executor: "scripts/ops/repo-change.sh",
   runner: "scripts/ops/repo-change.mjs",
   prompt: "scripts/ops/repo-change-prompt.md",
@@ -176,7 +183,15 @@ export function guardProblems(lane) {
   if (lane.canLand(preNotReady).ok) bad.push("preview gate: a pre-approved NOT-ready row lands with neither a preview approval nor a force");
   if (!lane.canLand({ ...preNotReady, forced_by: "seq.taylor@gmail.com", forced_at: 3 }).ok) bad.push("preview gate: a pre-approved not-ready row forced by her does not land");
   if (!lane.canLand({ ...preNotReady, preview_sent_at: 10, land_approved_at: 11, land_approval_text: "approved" }).ok) bad.push("preview gate: a pre-approved not-ready row with her preview approval does not land");
-  return { problems: bad, cases: cases.length + 5 + replies.length + previewCases.length + forceReplies.length + preCases.length + 3 };
+  // K. seatEnv, run: the key never reaches the child; the plumbing does.
+  const seat = lane.__seat;
+  if (typeof seat?.seatEnv !== "function") bad.push("scripts/ops/lib/seat-env.mjs: seatEnv() is missing.");
+  else {
+    const child = seat.seatEnv({ PATH: "/usr/bin", HOME: "/Users/x", ANTHROPIC_API_KEY: "sk-ant-x", ANTHROPIC_BASE_URL: "https://x", ANTHROPIC_AUTH_TOKEN: "t", CLAUDE_CODE_OAUTH_TOKEN: "o", CLAUDE_BIN: "/opt/claude", BOSS_PASSCODE: "p" });
+    for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"]) if (k in child) bad.push(`seatEnv leaves ${k} in the child's environment — the CLI would take it over her login.`);
+    for (const k of ["PATH", "HOME", "CLAUDE_BIN", "BOSS_PASSCODE"]) if (!(k in child)) bad.push(`seatEnv strips ${k}, which the child needs.`);
+  }
+  return { problems: bad, cases: cases.length + 5 + replies.length + previewCases.length + forceReplies.length + preCases.length + 3 + 8 };
 }
 
 // ─── B–G. The files, read ─────────────────────────────────────────────────────
@@ -250,6 +265,11 @@ export function fileProblems(f) {
   if (!/A pre-approved plan may not ask/.test(f.routes)) bad.push(`${FILES.routes}: the plan route accepts a pre-approved plan that still asks.`);
   if (!/pre-approved in the request/.test(f.routes)) bad.push(`${FILES.routes}: a pre-approved plan is not filed as approved by her (plan_approved_by).`);
   if (!/you pre-approved this/.test(f.runner) || !/Reply \\?`stop\\?` within the build/.test(f.runner)) bad.push(`${FILES.runner}: the FYI email does not say she pre-approved it and how to stop it.`);
+  // K. no spawn of the CLI inherits the vault's environment
+  for (const [name, src] of [["runner", f.runner], ["credential-check", f.credcheck ?? ""], ["interest-extract", f.extract ?? ""]]) {
+    if (/spawn(?:Sync)?\(\s*(?:CLAUDE|claude|"claude"|'claude')[\s\S]{0,400}?env:\s*(?:process\.env|\{\s*\.\.\.process\.env\s*\})/.test(code(src))) bad.push(`${name}: spawns claude with process.env — under vault:run that hands the CLI ANTHROPIC_API_KEY and it drops her seat.`);
+    if (src && /spawn(?:Sync)?\(\s*(?:CLAUDE|claude|"claude"|'claude')/.test(code(src)) && !/seatEnv\(process\.env\)/.test(code(src))) bad.push(`${name}: spawns claude without seatEnv(process.env).`);
+  }
   for (const proof of ["PATH 1", "PATH 3", "THE FORCE", "A STRANGER'S FORCE", "PRE-APPROVED + READY", "PRE-APPROVED + NOT READY", "PRE-APPROVED + FORCED", "A STRANGER'S PRE-APPROVAL"]) {
     if (!f.test.includes(proof)) bad.push(`${FILES.test}: no test named "${proof}…" — the preview/force paths are not proven.`);
   }
@@ -292,7 +312,7 @@ async function scan() {
   f.migrations = migrations.map((m) => read(`migrations/${m}`)).join("\n");
   const walk = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(`${dir}/${e.name}`) : e.name.endsWith(".ts") ? [`${dir}/${e.name}`] : []);
   f.src = walk("src/worker/boss").map((p) => read(p)).join("\n");
-  const lane = await import(join(ROOT, FILES.lane));
+  const lane = { ...(await import(join(ROOT, FILES.lane))), __seat: await import(join(ROOT, "scripts/ops/lib/seat-env.mjs")).catch(() => null) };
   const guards = guardProblems(lane);
   return { problems: [...guards.problems, ...fileProblems(f)], cases: guards.cases, files: Object.keys(f).length };
 }
@@ -314,7 +334,8 @@ function selfTest() {
   const expect = (name, ok) => { if (!ok) { console.error(`  ✗ ${name}`); failed += 1; } };
 
   // A. a guard that forgot the green must be caught by running it.
-  const loose = { readReply: lane_readReply_stub, preApprovalIn: (t) => /your call|you decide|no need to ask|just do it|pick everything|no options/.exec(String(t).toLowerCase())?.[0] ?? null, canEnterBuild: () => ({ ok: true }), canLand: (r) => ({ ok: Boolean(r?.pr_url) }), claimablePhase: (r) => (r?.phase === "plan" ? "plan" : r?.phase === "build" ? "build" : r?.phase === "land" ? "land" : null) };
+  const seatOk = { seatEnv: (e) => Object.fromEntries(Object.entries(e).filter(([k]) => !/^ANTHROPIC_|OAUTH_TOKEN/.test(k))) };
+  const loose = { __seat: seatOk, readReply: lane_readReply_stub, preApprovalIn: (t) => /your call|you decide|no need to ask|just do it|pick everything|no options/.exec(String(t).toLowerCase())?.[0] ?? null, canEnterBuild: () => ({ ok: true }), canLand: (r) => ({ ok: Boolean(r?.pr_url) }), claimablePhase: (r) => (r?.phase === "plan" ? "plan" : r?.phase === "build" ? "build" : r?.phase === "land" ? "land" : null) };
   expect("a canLand that ignores the green is caught", guardProblems(loose).problems.some((p) => p.includes("no green")));
   expect("a canEnterBuild that ignores the answer is caught", guardProblems(loose).problems.some((p) => p.includes("no answer")));
 
@@ -326,7 +347,7 @@ function selfTest() {
     mail: "if (!authorised) { return refused; }\nconst planAnswer = await answerFromMail(env, {});\nadmitTask(env, {});",
     answer: "async function recordForce() { db(`UPDATE repo_changes SET forced_by = ? WHERE id = ?`); taskEvent('repo_change_forced') }\nif (reply.mode === \"forced\") { await recordForce(); }\nif (reply.mode === \"preview\") { note(); }\nconst reply = readReply(text); if (reply.mode === \"held\") { db(`UPDATE repo_changes SET held_at = ? WHERE id = ?`) }\nUPDATE repo_changes SET phase = 'build', answered_at = ? WHERE id = ? AND phase = 'asking'",
     executor: "NOTHING_CLAIMABLE=7\ncaffeinate timeout 3h node repo-change.mjs\ncase $RC in $NOTHING_CLAIMABLE) say quiet ;; esac",
-    runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst line = `My recommended default: ${a.default}`; const word = 'reply approved'; const top = 'NOT PUBLISH-READY'; const done = 'Landed to production with'; const pl = 'POST-LAND STEP'; const plf = 'POST_LAND_STEP_FAILED'; const fyi = 'you pre-approved this'; const stop = 'Reply `stop` within the build';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5']);\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
+    runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst line = `My recommended default: ${a.default}`; const word = 'reply approved'; const top = 'NOT PUBLISH-READY'; const done = 'Landed to production with'; const pl = 'POST-LAND STEP'; const plf = 'POST_LAND_STEP_FAILED'; const fyi = 'you pre-approved this'; const stop = 'Reply `stop` within the build';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5'], { env: seatEnv(process.env) });\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
     prompt: "RUNBOOK_FORBIDS\n## PHASE: PLAN\nplan with a \"default\" per ask and publish_ready\n## PHASE: BUILD\nNever `gh pr merge`.\n## PHASE: LAND\nrun {{LAND}} {{PR_NUMBER}}; Only a step the instruction or the plan named goes under post_land",
     test: 'it("SCOOTER CANNOT USE THIS LANE", async () => { expect(res.outcome).toBe("REFUSED_SENDER"); });\nit("a reply of exactly \\"approved\\" advances", () => {});\nit("\\"no\\" HOLDS the task", () => {});\nit("PATH 1", () => {}); it("PATH 3", () => {}); it("THE FORCE", () => {}); it("A STRANGER\'S FORCE", () => {}); it("PRE-APPROVED + READY"); it("PRE-APPROVED + NOT READY"); it("PRE-APPROVED + FORCED"); it("A STRANGER\'S PRE-APPROVAL");',
     ahrefs: 'const RUNNER = "scripts/ops/ahrefs-audit-fix.sh";\nfor (const forbidden of [/\\bgh\\s+pr\\s+merge\\b/]) {}',
@@ -365,11 +386,16 @@ function selfTest() {
   expect("a preApprovalIn that misses a phrase is caught", guardProblems({ ...loose, preApprovalIn: () => null }).problems.some((p) => p.includes('preApprovalIn("your call')));
   expect("a canLand that lands a pre-approved not-ready row is caught", guardProblems({ ...loose, preApprovalIn: (t) => /your call|you decide|no need to ask|just do it|pick everything|no options/.exec(String(t).toLowerCase())?.[0] ?? null, canLand: (r) => ({ ok: Boolean(r?.pr_url && r?.checks_green_at && (r?.answered_at || r?.plan_approved_by)) }) }).problems.some((p) => p.includes("pre-approved NOT-ready row lands")));
   expect("a finding that drops the phrase is caught", fileProblems({ ...good, admit: good.admit.replace("{ phrase: change.pre_approved_phrase }", "{ by }") }).some((p) => p.includes("does not name the phrase")));
+  // K. the seat
+  expect("a runner that spawns claude with process.env is caught", fileProblems({ ...good, runner: good.runner.replace("{ env: seatEnv(process.env) }", "{ env: process.env }") }).some((p) => p.includes("drops her seat")));
+  expect("a runner that spawns claude with no seatEnv is caught", fileProblems({ ...good, runner: good.runner.replace(", { env: seatEnv(process.env) }", "") }).some((p) => p.includes("without seatEnv")));
+  expect("a seatEnv that leaks the key is caught", guardProblems({ ...loose, __seat: { seatEnv: (e) => ({ ...e }) } }).problems.some((p) => p.includes("leaves ANTHROPIC_API_KEY")));
+  expect("a seatEnv that strips PATH is caught", guardProblems({ ...loose, __seat: { seatEnv: () => ({}) } }).problems.some((p) => p.includes("strips PATH")));
   expect("a LAND section with an unbounded post-land step is caught", fileProblems({ ...good, prompt: good.prompt.replace("Only a step the instruction or the plan named", "any step") }).some((p) => p.includes("post-land step")));
   expect("a build route that skips the preview is caught", fileProblems({ ...good, routes: good.routes.replace('needsPreview(row) && !isForced(row) ? "preview" : "landing"', '"landing"') }).some((p) => p.includes("preview step")));
 
   if (failed) { console.error(`\nSELF-TEST FAILED: ${failed} case(s)`); process.exit(1); }
-  console.log("SELF-TEST PASSED: 34/34 cases.");
+  console.log("SELF-TEST PASSED: 38/38 cases.");
 }
 
 if (process.argv.includes("--self-test")) { selfTest(); process.exit(0); }

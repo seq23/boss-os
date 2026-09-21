@@ -42,6 +42,7 @@ import {
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { sendersFor } from "./notify.mjs";
+import { seatEnv } from "./lib/seat-env.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -127,8 +128,14 @@ function runClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
   return new Promise((resolve) => {
     appendFileSync(log, `\n=== ${phase} starting ${new Date().toISOString()} model=${model} max-turns=${maxTurns} timeout=${timeoutMin}m cwd=${cwd}\n`);
     if (DRY) { appendFileSync(log, "DRY RUN — claude not invoked\n"); return resolve({ rc: 0, timedOut: false }); }
+    /*
+     * ON HER SEAT, NEVER ON AN API KEY. This process runs under `vault:run`, so `process.env` carries
+     * ANTHROPIC_API_KEY; handed to the CLI it overrides her login, disables the claude.ai connectors,
+     * and bills an account with no credit ("Credit balance is too low", 21 Sep 2026 — both of her
+     * first jobs died in 3 s). `seatEnv` strips every ANTHROPIC_* / CLAUDE_* auth override.
+     */
     const child = spawn(CLAUDE, ["-p", prompt, "--model", model, "--max-turns", String(maxTurns), "--dangerously-skip-permissions"], {
-      cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"],
+      cwd, env: seatEnv(process.env), stdio: ["ignore", "pipe", "pipe"],
     });
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); setTimeout(() => child.kill("SIGKILL"), 10_000); }, timeoutMin * 60_000);
