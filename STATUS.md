@@ -293,9 +293,24 @@ default beside it. `approved` (also approve / yes / go / land it / ok) takes eve
 BUILD; a reply starting `no` / `not approved` / `stop` / `changes:` holds the task in `asking` with
 her note on the row; anything else is her answers. `readReply` in `lane.mjs` is the one reader.
 
-**Phases.** `plan` (Opus) → `asking` (her inbox) → `build` (Sonnet) → `landing` (the Mac records
-what `gh pr checks` says) → `land` (Haiku runs `~/bin/land` and the live curls) → `done`; `failed`
-is a NAMED STOP she was emailed. The plan ALWAYS goes to her, even with zero questions — her reply
+**Not publish-ready ships as a preview (21 Sep 2026).** Every plan says `publish_ready`; false
+whenever a placeholder or TODO would ship, with the placeholders named. The plan email says so at
+the top; her `approved` then means build → PR → **preview email** (the Pages branch URL, or "no
+preview deployment" for a Workers repo — PR + screenshots + validators instead) → a task that holds
+until her **second `approved`**, recorded after the preview email. `preview` on a ready plan forces
+the same. **The named force**: `approved to production` (also `force production`, `ship it anyway`,
+`land anyway`) on a not-ready plan or on the preview skips the gate and lands on green — who, when
+and which placeholders on the row, a `warn` finding, the DONE email leads with it, the screen shows
+the badge. Plain `approved` never forces. Pinned by `validate:repo-lane` (48 guard cases) and
+proven by `tests/boss/repoChange.test.ts` (four paths, the force, a stranger's force).
+
+**The grid gained `creator-network` (21 Sep 2026)** — one list, `src/shared/boss/grid.mjs`, with
+the validator's fixture copy in step; a `#danielle` mail naming it is admitted.
+
+**Phases.** `plan` (Opus) → `asking` (her inbox) → `build` (Sonnet) → [`preview` (the Mac finds the
+URL and emails it) → `previewing` (her second word)] → `landing` (the Mac records what `gh pr
+checks` says) → `land` (Haiku runs `~/bin/land` and the live curls) → `done`; `failed` is a NAMED
+STOP she was emailed. The plan ALWAYS goes to her, even with zero questions — her reply
 is the recorded approval, and a task with an unanswered ask cannot enter BUILD.
 
 **Guards.** `validate:repo-lane` RUNS `canEnterBuild`/`canLand` over fixtures, pins that the claim
