@@ -305,7 +305,11 @@ the badge. Plain `approved` never forces. Pinned by `validate:repo-lane` (48 gua
 proven by `tests/boss/repoChange.test.ts` (four paths, the force, a stranger's force).
 
 **The grid gained `creator-network` (21 Sep 2026)** — one list, `src/shared/boss/grid.mjs`, with
-the validator's fixture copy in step; a `#danielle` mail naming it is admitted.
+the validator's fixture copy in step; a `#danielle` mail naming it is admitted (`how-we-know` was
+already on it under `youtube`). **A post-land step she names** ("after landing, run bin/<script>
+and attach the proof") runs in LAND after `~/bin/land`, bounded to what she or the plan named,
+and its proof rides the DONE email; a failed step is `POST_LAND_STEP_FAILED`. A runbook rule that
+forbids the instruction is `RUNBOOK_FORBIDS`, quoting the sentence.
 
 **Phases.** `plan` (Opus) → `asking` (her inbox) → `build` (Sonnet) → [`preview` (the Mac finds the
 URL and emails it) → `previewing` (her second word)] → `landing` (the Mac records what `gh pr
