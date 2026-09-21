@@ -71,6 +71,15 @@ Pre-approved in the request: {{PRE_APPROVED}}
    not-ready plan is built and opened as a PR and she sees a preview; it lands only on her second
    word. Never call a plan ready to avoid the preview.
 6. Do not edit the repo in this phase. No branch, no commit.
+7. **A post-land step is a recorded command, or it does not exist.** If her instruction or your
+   plan names anything to run AFTER landing — "push the About text", "run bin/<script>", "attach
+   the proof" — `post_land_step` is REQUIRED: the exact command with its arguments, run from the
+   repo's main checkout after `land`, through the repo's own wrapper (`.venv/bin/python
+   loop/x.py`, `bin/y`), and `proof`: what it must produce to count. The runner refuses a plan
+   whose text names a step and carries no command — a stop before anything is built. If nothing
+   runs after land, omit the field and do not describe a step in prose. (21 Sep 2026: a plan said
+   "After land: loop/channel_about.py pushed from the Mac", recorded nothing, and the row failed
+   after the merge on `undefined exited undefined`.)
 
 Result file shape:
 
@@ -78,6 +87,7 @@ Result file shape:
 {
   "repo": "WPP-llm",
   "publish_ready": false,
+  "post_land_step": { "command": ".venv/bin/python loop/channel_about.py", "proof": "channels.list shows the new About text; a public fetch of the channel page contains the new paragraph" },
   "placeholders": ["Team section: bios for two of the four people are not in the package"],
   "plan_text": "markdown — the plan as she will read it",
   "decided": ["CSS: reuse the existing tile class rather than a new one — the runbook freezes the visual system"],
@@ -122,9 +132,9 @@ What you already decided:
 {{DECIDED}}
 ```
 
-1. In `{{REPO_PATH}}`: `git fetch origin` and create a worktree `work/<slug>` off `origin/main`
-   (`git worktree add ../<repo>--<slug> -b work/<slug> origin/main`, or the repo's runbook's own
-   branch convention). Work in the worktree, never on `main`.
+1. You are in `{{REPO_PATH}}` — a worktree the runner made off `origin/main` on branch
+   `{{BRANCH}}` (the main checkout is `{{MAIN_CHECKOUT}}`; its dirtiness is not your concern and
+   you never touch it). Do not create another worktree or branch. Work here, never on `main`.
 2. Make the change as planned. Follow the runbook's "how to make a change" step by step.
 3. Run the repo's validation — `npm run validate` or whatever the runbook names. Every guard must
    pass. If a guard is legitimately wrong, strengthen it, never weaken it.
@@ -158,6 +168,8 @@ Result file shape:
 The PR's checks are recorded green and her approval is on the record. Land it and prove it live.
 
 - Pull request: {{PR_URL}} (#{{PR_NUMBER}}), branch `{{BRANCH}}`, repository `{{REPO_PATH}}`.
+- Already landed on a previous tick: {{ALREADY_LANDED}}
+- The recorded post-land step: `{{POST_LAND_COMMAND}}` — proof expected: {{POST_LAND_PROOF}}
 - The build's proof:
 
 ```
@@ -173,15 +185,16 @@ The PR's checks are recorded green and her approval is on the record. Land it an
    and check the change is present (`curl -sS <url> | grep -c '<something the change added>'`).
    Record each URL and what you saw. A repo with no public page (a channel, a Worker) is proven by
    what its runbook names as the proof.
-4. **The post-land step she asked for.** If her instruction or the plan names a step to run AFTER
-   landing — "after landing, run bin/<script>", "push the banner to the channel", "attach the
-   proof" — run exactly that, from `main` in `{{REPO_PATH}}` after `{{LAND}}` has finished, through
-   the repo's own wrappers (its vault runner, its `bin/` script), and put the command, its exit
-   code, the tail of its output and any proof it produced (a URL, a file, an API response id)
-   under `post_land`. **Only a step the instruction or the plan named** — never one you thought of
-   here; if the step needs a credential the runbook says only she holds, BLOCK with
-   `POST_LAND_NEEDS_HER` and say which. A post-land step that fails is a block with its output as
-   the reason: the land stands, the proof does not, and she is told exactly that.
+4. **The post-land step she asked for is the recorded command above, exactly.** If it is
+   `(none …)`, `post_land` MUST be `null` — never a status object, never a step you thought of
+   here. Otherwise run exactly `{{POST_LAND_COMMAND}}` from `main` in `{{REPO_PATH}}` after
+   `{{LAND}}` has finished (or at once, if already landed), and put the command as run, its
+   integer exit code `rc`, the tail of its output and the proof it produced (a URL, a file, an
+   API response id) under `post_land`. The runner refuses a `post_land` whose command differs
+   from the recorded one or whose `rc` is not an integer. If the step needs a credential the
+   runbook says only she holds, run it anyway and report its own named stop as the output — the
+   runner tells her with the exact line. A post-land step that fails is a block with its output
+   as the reason: the land stands, the proof does not, and she is told exactly that. **Only a step the instruction or the plan named** is ever recorded, and the plan phase is where it was named.
 
 Result file shape:
 

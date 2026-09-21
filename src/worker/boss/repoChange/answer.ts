@@ -16,7 +16,7 @@ import { tokenIn, readReply, needsPreview, isForced, REPO_CHANGE_SEAT } from "..
 export interface RepoChangeRow {
   id: string; task_id: string; mail_id: string | null;
   repo: string | null; property_key: string | null; drive_folder: string | null; drive_url: string | null;
-  instruction: string; phase: string;
+  instruction: string; phase: string; post_land_command?: string | null; post_land_proof?: string | null;
   plan_text: string | null; decided_json: string | null; asks_json: string | null; planned_at: number | null; plan_written_by: string | null;
   asked_at: number | null; ask_message_id: string | null; answered_at: number | null; answers_text: string | null; answers_mode: string | null; answer_mail_id: string | null;
   held_at: number | null; held_text: string | null;
@@ -85,11 +85,11 @@ export async function answerFromMail(
       await taskEvent(env, row.task_id, "repo_change_note", { repo_change_id: row.id, mail_id: input.mailId, phase: "failed", text: reply.text.slice(0, 2000) });
       return { changeId, resumed: false, note: `Noted on ${row.id}: "${reply.text.slice(0, 300)}". It stays stopped; reply "try again" when you want it retried.` };
     }
-    await retryRow(env, row, { now: input.now, reason: `her reply on the thread: "${input.text.trim().slice(0, 200)}"`, mailId: input.mailId, followUp: ["approved", "preview", "forced"].includes(reply.mode) ? null : input.text, by: input.sender });
+    const { phase: resumedAt } = await retryRow(env, row, { now: input.now, reason: `her reply on the thread: "${input.text.trim().slice(0, 200)}"`, mailId: input.mailId, followUp: ["approved", "preview", "forced"].includes(reply.mode) ? null : input.text, by: input.sender });
     return {
       changeId, resumed: true,
-      note: `Retrying ${row.id} (${row.repo ?? "the package"}) with your original instruction${row.pre_approved_phrase ? ` and your pre-approval ("${row.pre_approved_phrase}")` : ""}${row.force_phrase ? ` and your "${row.force_phrase}"` : ""} — it was stopped with: ${(row.failure ?? "").slice(0, 200)}. ` +
-        "Danielle plans it again at the next tick; nothing new was opened.",
+      note: `Retrying ${row.id} (${row.repo ?? "the package"}) from ${resumedAt} with your original instruction${row.pre_approved_phrase ? ` and your pre-approval ("${row.pre_approved_phrase}")` : ""}${row.force_phrase ? ` and your "${row.force_phrase}"` : ""} — it was stopped with: ${(row.failure ?? "").slice(0, 200)}. ` +
+        (resumedAt === "plan" ? "Danielle plans it again at the next tick; nothing new was opened." : `Danielle picks it up at ${resumedAt} on the next tick — your approval and everything before that stop are kept; nothing new was opened.`),
     };
   }
 
@@ -270,25 +270,49 @@ export async function recordForce(env: Env, row: RepoChangeRow, input: { mailId:
  */
 export async function retryRow(
   env: Env, row: RepoChangeRow, input: { now: number; reason: string | null; mailId?: string | null; followUp?: string | null; by: string },
-): Promise<void> {
+): Promise<{ phase: string }> {
   const followUp = (input.followUp ?? "").trim();
   const instruction = followUp && !/^(try again|retry|again|go again|resume|run it again|please try again)[.!]?$/i.test(followUp)
     ? `${row.instruction}\n\nHer follow-up on retry (${new Date(input.now).toISOString().slice(0, 10)}): ${followUp}`.slice(0, 20_000)
     : row.instruction;
+  /*
+   * RESUME WHERE IT STOPPED, NOT AT THE BEGINNING. A build that stopped on a dirty checkout has an
+   * approved plan on the record; a land that stopped on its post-land step has a merged PR. Putting
+   * either back to `plan` would throw away her approval (and, on a row with no pre-approval, ask
+   * her the same questions again — 21 Sep 2026, rc_m32h946mv0eybxhj). So the phase to resume is
+   * read from what the row already holds, and only what that phase produced is cleared.
+   */
+  const phase = resumePhase(row);
+  const clear = phase === "plan"
+    ? `plan_text = NULL, decided_json = NULL, asks_json = NULL, planned_at = NULL, plan_written_by = NULL, publish_ready = NULL, placeholders_json = NULL,
+       asked_at = NULL, ask_message_id = NULL, answered_at = NULL, answers_text = NULL, answers_mode = NULL, answer_mail_id = NULL, plan_approved_by = NULL,
+       held_at = NULL, held_text = NULL, post_land_command = NULL, post_land_proof = NULL,
+       branch = NULL, pr_url = NULL, pr_number = NULL, built_at = NULL, build_written_by = NULL, proof_json = NULL,
+       checks_state = NULL, checks_detail = NULL, checks_green_at = NULL, preview_url = NULL, preview_sent_at = NULL, preview_message_id = NULL,
+       land_approved_at = NULL, land_approval_text = NULL, land_approval_mail_id = NULL, done_message_id = NULL,`
+    : phase === "build"
+      ? `branch = NULL, pr_url = NULL, pr_number = NULL, built_at = NULL, build_written_by = NULL, proof_json = NULL,
+         checks_state = NULL, checks_detail = NULL, checks_green_at = NULL, preview_url = NULL, preview_sent_at = NULL, preview_message_id = NULL,
+         land_approved_at = NULL, land_approval_text = NULL, land_approval_mail_id = NULL, done_message_id = NULL,`
+      : `done_message_id = NULL,`;
   await env.DB.batch([
     env.DB.prepare(
-      `UPDATE repo_changes SET phase = 'plan', instruction = ?, failure = NULL, claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL,
-              plan_text = NULL, decided_json = NULL, asks_json = NULL, planned_at = NULL, plan_written_by = NULL, publish_ready = NULL, placeholders_json = NULL,
-              asked_at = NULL, ask_message_id = NULL, answered_at = NULL, answers_text = NULL, answers_mode = NULL, answer_mail_id = NULL, plan_approved_by = NULL,
-              held_at = NULL, held_text = NULL, branch = NULL, pr_url = NULL, pr_number = NULL, built_at = NULL, build_written_by = NULL, proof_json = NULL,
-              checks_state = NULL, checks_detail = NULL, checks_green_at = NULL, preview_url = NULL, preview_sent_at = NULL, preview_message_id = NULL,
-              land_approved_at = NULL, land_approval_text = NULL, land_approval_mail_id = NULL, done_message_id = NULL, updated_at = ?
+      `UPDATE repo_changes SET phase = ?, instruction = ?, failure = NULL, claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, ${clear} updated_at = ?
         WHERE id = ? AND phase = 'failed'`,
-    ).bind(instruction, input.now, row.id),
+    ).bind(phase, instruction, input.now, row.id),
     env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, finished_at = NULL WHERE id = ?`).bind(row.task_id),
   ]);
-  await taskEvent(env, row.task_id, "repo_change_retried", { repo_change_id: row.id, previous_failure: row.failure, reason: input.reason, mail_id: input.mailId ?? null, by: input.by, pre_approved_phrase: row.pre_approved_phrase, follow_up: followUp ? followUp.slice(0, 2000) : null });
-  await audit(env.DB, { actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id, action: "retried", detail: { task_id: row.task_id, previous_failure: row.failure, reason: input.reason, by: input.by } });
+  await taskEvent(env, row.task_id, "repo_change_retried", { repo_change_id: row.id, resumed_at: phase, previous_failure: row.failure, reason: input.reason, mail_id: input.mailId ?? null, by: input.by, pre_approved_phrase: row.pre_approved_phrase, follow_up: followUp ? followUp.slice(0, 2000) : null });
+  await audit(env.DB, { actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id, action: "retried", detail: { task_id: row.task_id, resumed_at: phase, previous_failure: row.failure, reason: input.reason, by: input.by } });
+  return { phase };
+}
+
+/** The phase a failed row resumes at: land if it has a green PR and her approval, landing if it has a PR, build if her reply is on the record, else plan. */
+export function resumePhase(row: RepoChangeRow): "plan" | "build" | "landing" | "land" {
+  if (row.pr_url && row.pr_number && row.checks_green_at && row.answered_at) return "land";
+  if (row.pr_url && row.pr_number) return "landing";
+  if (row.plan_text && row.answered_at && row.answers_text) return "build";
+  return "plan";
 }
 
 /**
