@@ -287,6 +287,12 @@ PR, the merge commit and the proof.
 | Installed by | `install-agent-launchd.sh` (`com.seq.boss-repo-change`, every 20 min 06:00–22:00 CT) |
 | The screen | Systems → Properties → **Repo changes** |
 
+**Her reply is one word (21 Sep 2026: "the approval step must have zero friction").** The plan
+email carries the whole plan and every ask as a numbered question with Danielle's recommended
+default beside it. `approved` (also approve / yes / go / land it / ok) takes every default and starts
+BUILD; a reply starting `no` / `not approved` / `stop` / `changes:` holds the task in `asking` with
+her note on the row; anything else is her answers. `readReply` in `lane.mjs` is the one reader.
+
 **Phases.** `plan` (Opus) → `asking` (her inbox) → `build` (Sonnet) → `landing` (the Mac records
 what `gh pr checks` says) → `land` (Haiku runs `~/bin/land` and the live curls) → `done`; `failed`
 is a NAMED STOP she was emailed. The plan ALWAYS goes to her, even with zero questions — her reply
