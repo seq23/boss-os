@@ -71,9 +71,31 @@ export function findings(sh) {
   return { strings, bad };
 }
 
+/**
+ * EVERY LABEL THE INSTALLER LOADS IS ON ITS OWN VERIFIER.
+ *
+ * The installer's tail calls `require_loaded "$X_LABEL"` per job and prints "Verified: launchd
+ * lists …". Its own comments record the job being added without the verifier line FOUR times
+ * (grid, buyers, audit, and on 21 Sep 2026 the repo-change lane): the job loads, the installer
+ * exits 0, and the line that exists to prove it never names it. So: every `X_LABEL="com.seq…"`
+ * the file defines must appear in a `require_loaded "$X_LABEL"` call, unless the file explicitly
+ * retires it (`!` in the verified list, as kdp-watch is).
+ */
+export function unverifiedLabels(sh) {
+  const defined = [...sh.matchAll(/^([A-Z_]+_LABEL)="com\.seq\.[a-z0-9.-]+"/gm)].map((m) => m[1]);
+  const verified = new Set([...sh.matchAll(/require_loaded\s+"\$([A-Z_]+_LABEL)"/g)].map((m) => m[1]));
+  const retired = new Set([...sh.matchAll(/require_gone\s+"\$([A-Z_]+_LABEL)"|mv\s+"\$([A-Z_]+_PLIST)"/g)].flatMap((m) => [m[1], (m[2] ?? "").replace(/_PLIST$/, "_LABEL")]).filter(Boolean));
+  return defined.filter((l) => !verified.has(l) && !retired.has(l));
+}
+
 function run() {
   const sh = readFileSync(join(ROOT, INSTALLER), "utf8");
   const { strings, bad } = findings(sh);
+  const unverified = unverifiedLabels(sh);
+  if (unverified.length) {
+    console.error(`FAIL: ${INSTALLER} defines ${unverified.join(", ")} and never require_loaded()s it — the job would load and the "Verified" line would not name it. That has happened four times.`);
+    process.exit(1);
+  }
   if (strings.length === 0) {
     console.error(`FAIL: no <string> lines found inside any plist heredoc in ${INSTALLER}. That is a lost file, not a clean one.`);
     process.exit(1);
@@ -111,7 +133,13 @@ function selfTest() {
   const real = findings(readFileSync(join(ROOT, INSTALLER), "utf8"));
   if (real.strings.length < 10) { console.error(`self-test: the real installer should carry many <string> lines, found ${real.strings.length}`); process.exit(1); }
 
-  console.log("self-test OK: the well-formed stanza passes, the 15 September shape fails, shell is ignored, and the real file is populated.");
+  // A label defined and never verified is caught; a verified one and a retired one are not.
+  const labels = 'A_LABEL="com.seq.a"\nB_LABEL="com.seq.b"\nKDP_LABEL="com.seq.kdp-watch"\nKDP_PLIST="x"\nmv "$KDP_PLIST" "$KDP_PLIST.retired"\nrequire_loaded "$A_LABEL"\n';
+  const u = unverifiedLabels(labels);
+  if (JSON.stringify(u) !== JSON.stringify(["B_LABEL"])) { console.error(`self-test: expected B_LABEL unverified, got ${JSON.stringify(u)}`); process.exit(1); }
+  if (unverifiedLabels(readFileSync(join(ROOT, INSTALLER), "utf8")).length !== 0) { console.error("self-test: the real installer has an unverified label"); process.exit(1); }
+
+  console.log("self-test OK: the well-formed stanza passes, the 15 September shape fails, shell is ignored, the real file is populated, and every label is verified.");
 }
 
 if (process.argv.includes("--self-test")) selfTest(); else run();
