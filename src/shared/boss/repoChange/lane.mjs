@@ -70,7 +70,9 @@ export const PHASE_MODELS = {
   build: "claude-sonnet-5",
   land: "claude-haiku-4-5",
 };
-export const PHASE_MAX_TURNS = { plan: 60, build: 150, land: 40 };
+/* build 150 → 220 (21 Sep 2026): the hashtags backfill across every video finished its commit
+ * and ran out of turns before the push and the PR. */
+export const PHASE_MAX_TURNS = { plan: 60, build: 220, land: 40 };
 /** A hard wall-clock cap per phase, in minutes. `timeout` in the shell wrapper enforces it. */
 export const PHASE_TIMEOUT_MIN = { plan: 25, build: 90, land: 30 };
 

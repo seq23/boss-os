@@ -135,6 +135,11 @@ What you already decided:
 1. You are in `{{REPO_PATH}}` — a worktree the runner made off `origin/main` on branch
    `{{BRANCH}}` (the main checkout is `{{MAIN_CHECKOUT}}`; its dirtiness is not your concern and
    you never touch it). Do not create another worktree or branch. Work here, never on `main`.
+   **First: `git log --oneline origin/main..HEAD` and `git status`.** A previous attempt may have
+   left commits here (21 Sep 2026: the whole change was committed and the attempt ran out of turns
+   before the push). If so, do not redo the work — verify it against the plan, run the validation,
+   push, open the PR, and write the result. If `gh pr view {{BRANCH}}` already shows an open PR,
+   report that PR; never open a second one.
 2. Make the change as planned. Follow the runbook's "how to make a change" step by step.
 3. Run the repo's validation — `npm run validate` or whatever the runbook names. Every guard must
    pass. If a guard is legitimately wrong, strengthen it, never weaken it.

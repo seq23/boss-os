@@ -274,9 +274,17 @@ async function runPhase(claim) {
    */
   const outFile = join(dir, `${phase}.json`);
   const reportedMark = outFile + ".reported";
+  if (phase === "land" && existsSync(join(dir, "landed-post-land-failed.json")) && existsSync(outFile) && !existsSync(reportedMark)) markReported();
   const unreported = existsSync(outFile) && !existsSync(reportedMark);
   if (existsSync(outFile) && !unreported) { writeFileSync(outFile + ".previous", readFileSync(outFile)); spawnSync("rm", ["-f", outFile, reportedMark]); }
   const markReported = () => writeFileSync(reportedMark, new Date().toISOString());
+  /*
+   * A FAILED PHASE'S OUTPUT IS CONSUMED. 21 Sep 2026, rc_m32h8ze2a4hk37pc retried after
+   * POST_LAND_STEP_FAILED: the previous land.json (post_land not_invoked) was still on disk with
+   * no .reported marker, so "never reported is reused" reused it, claude never ran, and the row
+   * failed again on the same stale file. A named stop IS the report of that output.
+   */
+  const failOut = async (tag, why) => { await fail(row, tag, why, log); markReported(); };
   const vars = {
     CHANGE_ID: row.id, TOKEN: changeToken(row.id), REPO: repo ?? "(not named — read the package)", REPO_PATH: (phase === "build" ? buildPath : repoPath) ?? "(none yet)",
     MAIN_CHECKOUT: repoPath ?? "(none yet)",
@@ -315,7 +323,7 @@ async function runPhase(claim) {
 
   if (phase === "plan") {
     const chosen = out.repo ?? repo;
-    if (!chosen || !gridRepoNames().includes(chosen)) { await fail(row, "NO_GRID_REPO", `the plan names "${chosen ?? "nothing"}" as the repository, and that is not a grid repo. Grid: ${gridRepoNames().join(", ")}.`, log); return; }
+    if (!chosen || !gridRepoNames().includes(chosen)) { await failOut("NO_GRID_REPO", `the plan names "${chosen ?? "nothing"}" as the repository, and that is not a grid repo. Grid: ${gridRepoNames().join(", ")}.`, log); return; }
     if (!repoPathFor(chosen)) { await fail(row, "NO_WORKING_COPY", `${GITHUB_DIR}/${chosen} is not a git checkout on this Mac.`, log); return; }
     if (!existsSync(join(repoPathFor(chosen), "RUNBOOK.md"))) { await fail(row, "NO_RUNBOOK", `${chosen} has no RUNBOOK.md; the lane will not plan against a repo without one.`, log); return; }
     const asks = Array.isArray(out.asks) ? out.asks : [];
@@ -330,10 +338,10 @@ async function runPhase(claim) {
     const step = out.post_land_step && typeof out.post_land_step === "object" ? out.post_land_step : null;
     const namesStep = /(after (the )?land(ing)?|post[- ]land|once (it|this) (is )?(landed|merged)|after (it|this) (is )?(landed|merged))\b/i.test(`${out.plan_text ?? ""}\n${row.instruction}`);
     if (namesStep && !(step && typeof step.command === "string" && step.command.trim())) {
-      await fail(row, "POST_LAND_STEP_UNRESOLVED", `the plan (or her instruction) names a step to run after landing and resolves no command for it. Name it exactly in plan.json as post_land_step: { command, proof } — or state in the plan that nothing runs after land. Nothing was built.`, log);
+      await failOut("POST_LAND_STEP_UNRESOLVED", `the plan (or her instruction) names a step to run after landing and resolves no command for it. Name it exactly in plan.json as post_land_step: { command, proof } — or state in the plan that nothing runs after land. Nothing was built.`, log);
       return;
     }
-    if (step && !namesStep) { await fail(row, "POST_LAND_STEP_UNNAMED", `plan.json carries a post_land_step (\`${String(step.command).slice(0, 120)}\`) that neither her instruction nor the plan text names. Only a step she or the plan named runs after land.`, log); return; }
+    if (step && !namesStep) { await failOut("POST_LAND_STEP_UNNAMED", `plan.json carries a post_land_step (\`${String(step.command).slice(0, 120)}\`) that neither her instruction nor the plan text names. Only a step she or the plan named runs after land.`, log); return; }
     /*
      * ZERO-FRICTION APPROVAL (owner, 21 Sep 2026). The whole plan is IN the email, every ask is a
      * numbered question with the recommended default beside it, and one word back — "approved" —
@@ -401,7 +409,7 @@ async function runPhase(claim) {
   }
 
   if (phase === "build") {
-    if (!out.pr_url || !out.pr_number) { await fail(row, "NO_PULL_REQUEST", "the build phase ended without a pull request; a build with no PR is not a build.", log); return; }
+    if (!out.pr_url || !out.pr_number) { await failOut("NO_PULL_REQUEST", "the build phase ended without a pull request; a build with no PR is not a build.", log); return; }
     const r = await api(`/${row.id}/build`, { device_id: DEVICE, branch: out.branch ?? branch ?? null, pr_url: out.pr_url, pr_number: Number(out.pr_number), proof: out.proof ?? null, written_by: claim.model ?? PHASE_MODELS.build, run_log: log });
     if (!r.ok) { say(`NAMED STOP [BUILD_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the PR is open; the next tick reports it without building again.`); return; }
     markReported();
@@ -418,7 +426,7 @@ async function runPhase(claim) {
   }
 
   if (phase === "land") {
-    if (!out.merge_sha) { await fail(row, "NO_MERGE_COMMIT", `the land phase wrote no merge_sha; ${LAND} did not report a merge.`, log); return; }
+    if (!out.merge_sha) { await failOut("NO_MERGE_COMMIT", `the land phase wrote no merge_sha; ${LAND} did not report a merge.`, log); return; }
     const proof = out.live_proof ?? {};
     const forcedList = Array.isArray(row.forced_placeholders) ? row.forced_placeholders.map(String) : [];
     /*
@@ -431,17 +439,17 @@ async function runPhase(claim) {
     const postLand = wanted && out.post_land && typeof out.post_land === "object" && typeof out.post_land.command === "string" ? out.post_land : null;
     if (wanted && (!postLand || !Number.isInteger(Number(postLand.rc)))) {
       writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
-      await fail(row, "POST_LAND_STEP_NOT_RUN", `${repo} landed as ${out.merge_sha}, and the recorded post-land step \`${wanted}\` was not run (the land phase reported ${out.post_land ? JSON.stringify(out.post_land).slice(0, 200) : "no post_land"}). The merge stands; reply "try again" and only the step runs.`, log);
+      await failOut("POST_LAND_STEP_NOT_RUN", `${repo} landed as ${out.merge_sha}, and the recorded post-land step \`${wanted}\` was not run (the land phase reported ${out.post_land ? JSON.stringify(out.post_land).slice(0, 200) : "no post_land"}). The merge stands; reply "try again" and only the step runs.`, log);
       return;
     }
     if (postLand && postLand.command.trim() !== wanted) {
       writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
-      await fail(row, "POST_LAND_STEP_DIFFERS", `${repo} landed as ${out.merge_sha}; the post-land step run was \`${postLand.command}\` and the recorded one is \`${wanted}\`. Only the recorded step counts.`, log);
+      await failOut("POST_LAND_STEP_DIFFERS", `${repo} landed as ${out.merge_sha}; the post-land step run was \`${postLand.command}\` and the recorded one is \`${wanted}\`. Only the recorded step counts.`, log);
       return;
     }
     if (postLand && Number(postLand.rc) !== 0) {
       writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
-      await fail(row, "POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${String(postLand.output_tail ?? "").slice(0, 600)}`, log);
+      await failOut("POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${String(postLand.output_tail ?? "").slice(0, 600)}`, log);
       return;
     }
     const subject = `#danielle DONE: ${repo} ${changeToken(row.id)} — landed and live${isForced(row) ? ` (to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"}, by your instruction)` : ""}${postLand ? " · post-land step done" : ""}`;
