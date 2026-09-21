@@ -2,7 +2,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
-import { tokenIn, REPO_CHANGE_SEAT } from "../../../shared/boss/repoChange/lane.mjs";
+import { tokenIn, readReply, REPO_CHANGE_SEAT } from "../../../shared/boss/repoChange/lane.mjs";
 
 /**
  * THE REPO-CHANGE LANE'S WORKER HALF — the pieces the mail intake and the claim routes share.
@@ -18,7 +18,8 @@ export interface RepoChangeRow {
   repo: string | null; property_key: string | null; drive_folder: string | null; drive_url: string | null;
   instruction: string; phase: string;
   plan_text: string | null; decided_json: string | null; asks_json: string | null; planned_at: number | null; plan_written_by: string | null;
-  asked_at: number | null; ask_message_id: string | null; answered_at: number | null; answers_text: string | null; answer_mail_id: string | null;
+  asked_at: number | null; ask_message_id: string | null; answered_at: number | null; answers_text: string | null; answers_mode: string | null; answer_mail_id: string | null;
+  held_at: number | null; held_text: string | null;
   branch: string | null; pr_url: string | null; pr_number: number | null; built_at: number | null; build_written_by: string | null; proof_json: string | null;
   checks_state: string | null; checks_detail: string | null; checks_green_at: number | null;
   merge_sha: string | null; landed_at: number | null; live_proof_json: string | null;
@@ -73,15 +74,35 @@ export async function answerFromMail(
     };
   }
 
-  const answers = input.text.trim();
-  if (!answers) {
+  /*
+   * ONE WORD IS THE WHOLE APPROVAL. "approved" (approve / yes / go / land it) means every ask takes
+   * the recommended default the plan email printed beside it; a reply that starts "no" / "not
+   * approved" / "stop" / "changes:" HOLDS the task exactly where it is; anything else is her
+   * answers. `readReply` is the one reader, and the validator runs it over fixtures.
+   */
+  const reply = readReply(input.text);
+  if (reply.mode === "empty") {
     return { changeId, resumed: false, note: `Your reply to ${row.id} carried no readable text, so nothing was recorded and the change is still waiting on you.` };
   }
+  if (reply.mode === "held") {
+    await env.DB
+      .prepare(`UPDATE repo_changes SET held_at = ?, held_text = ?, updated_at = ? WHERE id = ? AND phase = 'asking'`)
+      .bind(input.now, reply.text.slice(0, 20_000), input.now, row.id)
+      .run();
+    await taskEvent(env, row.task_id, "repo_change_held", { repo_change_id: row.id, mail_id: input.mailId, text: reply.text.slice(0, 2000) });
+    await audit(env.DB, { actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id, action: "plan_held", detail: { task_id: row.task_id, mail_id: input.mailId } });
+    return {
+      changeId, resumed: false,
+      note: `Held. ${row.id} (${row.repo ?? "the package"}) stays where it is and nothing builds. Your note is on the record: "${reply.text.slice(0, 300)}". ` +
+        `When you want it to go, reply "approved" to this thread to take every recommended default, or reply with your answers.`,
+    };
+  }
+  const answers = reply.text;
   await env.DB
-    .prepare(`UPDATE repo_changes SET phase = 'build', answered_at = ?, answers_text = ?, answer_mail_id = ?, updated_at = ? WHERE id = ? AND phase = 'asking'`)
-    .bind(input.now, answers.slice(0, 20_000), input.mailId, input.now, row.id)
+    .prepare(`UPDATE repo_changes SET phase = 'build', answered_at = ?, answers_text = ?, answers_mode = ?, answer_mail_id = ?, updated_at = ? WHERE id = ? AND phase = 'asking'`)
+    .bind(input.now, answers.slice(0, 20_000), reply.mode, input.mailId, input.now, row.id)
     .run();
-  await taskEvent(env, row.task_id, "repo_change_answered", { repo_change_id: row.id, mail_id: input.mailId, chars: answers.length, seat: input.seatId, on_danielles_desk: input.seatId === REPO_CHANGE_SEAT });
+  await taskEvent(env, row.task_id, "repo_change_answered", { repo_change_id: row.id, mail_id: input.mailId, mode: reply.mode, chars: answers.length, seat: input.seatId, on_danielles_desk: input.seatId === REPO_CHANGE_SEAT });
   await audit(env.DB, {
     actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id,
     action: "plan_approved", detail: { task_id: row.task_id, mail_id: input.mailId, repo: row.repo },
@@ -93,7 +114,8 @@ export async function answerFromMail(
   const asks = safeList(row.asks_json).length;
   return {
     changeId, resumed: true,
-    note: `Got it — your reply is on the record as the plan approval for ${row.id} (${row.repo ?? "the package"})${asks ? `, answering ${asks} question${asks === 1 ? "" : "s"}` : ""}. ` +
+    note: `Got it — your reply is on the record as the plan approval for ${row.id} (${row.repo ?? "the package"})` +
+      `${reply.mode === "approved" ? (asks ? `, and every one of the ${asks} question${asks === 1 ? "" : "s"} takes the recommended default` : "") : asks ? `, answering ${asks} question${asks === 1 ? "" : "s"}` : ""}. ` +
       "Danielle builds it on your Mac at the next tick, opens the pull request, and lands it once the checks are green. You will get one more email with the PR, the merge commit and the live proof.",
   };
 }
