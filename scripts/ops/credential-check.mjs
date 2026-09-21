@@ -33,6 +33,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { seatEnv } from "./lib/seat-env.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const SUBJECT = process.env.BROKERAGE_MAILBOX ?? "staylor@spry.vc";
@@ -280,10 +281,12 @@ export function connectorStartFailure(error) {
 
 function probeConnector() {
   const claude = process.env.CLAUDE_BIN ?? "claude";
+  // Under vault:run the parent carries ANTHROPIC_API_KEY; the CLI would take it over her login and
+  // disable the very connector this probes. `seatEnv` strips it — see scripts/ops/lib/seat-env.mjs.
   const run = spawnSync(
     claude,
     ["-p", CONNECTOR_PROMPT, "--model", MODEL, "--dangerously-skip-permissions"],
-    { encoding: "utf8", timeout: 180_000 },
+    { encoding: "utf8", timeout: 180_000, env: seatEnv(process.env) },
   );
 
   if (run.error) return connectorStartFailure(run.error);

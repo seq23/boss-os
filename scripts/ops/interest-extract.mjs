@@ -47,6 +47,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { seatEnv } from "./lib/seat-env.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -232,7 +233,7 @@ function runClaude(input) {
     const child = spawn("claude", ["-p", "--model", MODEL, "--max-turns", "1"], {
       cwd: os.homedir(),
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+      env: seatEnv(process.env), // her seat, never an API key — scripts/ops/lib/seat-env.mjs
       detached: true, // its own process group, so the kill below reaches grandchildren
     });
     let out = "", err = "", settled = false;

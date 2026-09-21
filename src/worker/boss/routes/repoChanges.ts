@@ -341,6 +341,37 @@ repoChanges.post("/:id/failed", async (c) => {
   return ok(c, { id: row.id, phase: "failed" });
 });
 
+/**
+ * RETRY — HER DOOR FOR A FAILED ROW, WITHOUT A REPLY. A named stop that was the lane's own fault
+ * (21 Sep 2026: an API key overriding her seat) should not cost her an email. From her session, a
+ * `failed` row goes back to `plan`: the claim, the failure and the plan's own outputs are cleared,
+ * the task is queued again, and the next tick starts fresh — her instruction, her pre-approval and
+ * her force phrase are hers and stay. Anything past `plan` (an answer, a PR) belongs to the run
+ * that failed and is cleared with it; the fresh plan email will ask again.
+ */
+repoChanges.post("/:id/retry", async (c) => {
+  const b = await c.req.json<any>().catch(() => ({}));
+  const row = await repoChangeById(c.env, c.req.param("id"));
+  if (!row) throw notFound("No repo change with that id");
+  if (row.phase !== "failed") throw conflict(`${row.id} is ${describePhase(row)}; only a failed change can be retried`);
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE repo_changes SET phase = 'plan', failure = NULL, claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL,
+              plan_text = NULL, decided_json = NULL, asks_json = NULL, planned_at = NULL, plan_written_by = NULL, publish_ready = NULL, placeholders_json = NULL,
+              asked_at = NULL, ask_message_id = NULL, answered_at = NULL, answers_text = NULL, answers_mode = NULL, answer_mail_id = NULL, plan_approved_by = NULL,
+              held_at = NULL, held_text = NULL, branch = NULL, pr_url = NULL, pr_number = NULL, built_at = NULL, build_written_by = NULL, proof_json = NULL,
+              checks_state = NULL, checks_detail = NULL, checks_green_at = NULL, preview_url = NULL, preview_sent_at = NULL, preview_message_id = NULL,
+              land_approved_at = NULL, land_approval_text = NULL, land_approval_mail_id = NULL, done_message_id = NULL, updated_at = ?
+        WHERE id = ? AND phase = 'failed'`,
+    ).bind(now, row.id),
+    c.env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, finished_at = NULL WHERE id = ?`).bind(row.task_id),
+  ]);
+  await taskEvent(c.env, row.task_id, "repo_change_retried", { repo_change_id: row.id, previous_failure: row.failure, reason: text(b?.reason, 500), by: "owner session" });
+  await audit(c.env.DB, { actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id, action: "retried", detail: { task_id: row.task_id, previous_failure: row.failure, reason: text(b?.reason, 500) } });
+  return ok(c, { id: row.id, phase: "plan", previous_failure: row.failure });
+});
+
 /** The row must be claimed by the reporting device, for the phase the report closes. */
 async function mustBeClaimed(env: Env, id: string, b: any, phase?: (typeof RUNNABLE_PHASES)[number]): Promise<RepoChangeRow> {
   const row = await repoChangeById(env, id);
