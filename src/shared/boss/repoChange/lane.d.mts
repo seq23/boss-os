@@ -3,6 +3,7 @@
 export const TASK_KIND: "repo_change";
 export const EXECUTOR_SCRIPT: "repo-change.sh";
 export const REPO_CHANGE_SEAT: "emp_repo";
+export const MAC_LANE: { kind: string; executor: string; runner: string; prompt: string; route: string; seat: string };
 export const PHASES: readonly string[];
 export const RUNNABLE_PHASES: readonly ("plan" | "build" | "land")[];
 export const PHASE_MODELS: { plan: string; build: string; land: string };

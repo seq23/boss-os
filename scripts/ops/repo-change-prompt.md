@@ -34,8 +34,8 @@ needs no further reply from her. Her plan approval is her reply to the plan emai
 {{DECIDE_LIST}}
 3. **Never touch built output** (`dist/`, `build/`, `_site/`…) except by running the repo's own
    build as its runbook says. Fix sources.
-4. **Never merge outside `{{LAND}}`. Never `gh pr merge`. Never `gh workflow run`. Never a bare
-   `wrangler deploy`.** The LAND phase runs `{{LAND}} <pr>` and nothing else lands anything.
+4. **Never merge outside `{{LAND}}`. Never `gh pr merge`. Never `gh workflow run`.**
+   **Never a bare `wrangler deploy`.** The LAND phase runs `{{LAND}} <pr>`; nothing else lands.
 5. **Prove, don't claim.** A validator you did not run did not pass. A page you did not fetch is
    not live. Say what you ran and what it said.
 6. **A block is a named stop, not a quiet exit.** When you cannot go on, write the result file with

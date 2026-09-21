@@ -37,6 +37,21 @@ export const EXECUTOR_SCRIPT = "repo-change.sh";
 export const REPO_CHANGE_SEAT = "emp_repo";
 
 /**
+ * THE ON-DEMAND LANE, AS ONE RECORD. A standing duty names its executor in its row and
+ * `validate:duty-delivery` walks the chain; an on-demand lane has no duty row, so this is the
+ * record that validator walks instead: the kind, the shell executor the installer names, the
+ * runner the executor runs, the route the runner reports to, and the consumer that parks the kind.
+ */
+export const MAC_LANE = {
+  kind: TASK_KIND,
+  executor: EXECUTOR_SCRIPT,
+  runner: "repo-change.mjs",
+  prompt: "repo-change-prompt.md",
+  route: "/api/repo-changes",
+  seat: REPO_CHANGE_SEAT,
+};
+
+/**
  * The phases, in order. `asking` and `landing` are waiting states the Mac cannot claim: one waits on
  * her reply, the other on the PR's checks. `plan`, `build` and `land` are the three `claude -p` runs.
  */
