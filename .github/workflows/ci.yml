@@ -3,6 +3,20 @@
 # Runs the repo's real gate (typecheck, unit/integration tests, every static validator, the
 # client build, and the Playwright journeys) on every push and pull request against `main`.
 #
+# ─── THE SHAPE (21 Sep 2026) ────────────────────────────────────────────────
+#
+# The MERGE GATE — what a pull request waits on — is the fast half, run as parallel jobs:
+# typecheck + every registered scan + the client build in one job, the unit/integration suite in
+# four vitest shards, the Boss suites in two. Measured on run 35648912898 the single serial job took
+# 15m02s (unit 7m55s, Boss 5m00s, scans 0m57s, install+typecheck 0m42s); sharded, the longest
+# job is a quarter of the unit suite plus setup, so the gate finishes in about 3–4 minutes. The
+# Playwright journeys — 15–17 minutes, one worker, one shared local D1 — run AFTER the merge, on
+# `main` (and on demand), in the same workflow run so `Deploy` still fires only when everything
+# including the journeys is green, and `land` still watches one run to one terminal state.
+#
+# Every job carries `timeout-minutes` at about twice its normal wall time, so a hang is reported as
+# a hang inside the hour rather than as a six-hour default.
+#
 # Deliberately NOT in this workflow: a deploy step. BACKLOG.md records the decision already made
 # here — Cloudflare Workers Builds was connected on 14 Aug 2026 and switched off on 18 Aug 2026,
 # on purpose, because auto-deploy-on-push cannot run the safe migrate-then-deploy sequence
@@ -28,9 +42,10 @@ concurrency:
 
 jobs:
   validate:
-    name: Typecheck, tests, and boundary validators
+    name: Typecheck, scans, and client build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Normal: ~2m30s (install 0m16s, typecheck 0m26s, scans 0m57s, named scans ~0m15s, build 0m04s).
+    timeout-minutes: 6
     permissions:
       contents: read
 
@@ -49,36 +64,6 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
-
-      - name: Unit and integration tests
-        run: npx vitest run --no-file-parallelism
-
-      # THE BOSS SUITE WAS OUTSIDE THE GATE. `vitest.config.ts` excludes `tests/boss/**` because
-      # those suites need the workers pool, and no step here ran the other config - so 25 files
-      # and 461 tests covering approvals, the airlock, the router, sync, leakage and the vault
-      # never ran in CI, while `vitest.boss.config.ts` claimed "Both run under npm run validate."
-      # They take 28 seconds.
-      # THE POOL'S OWN RACE, RETRIED BY NAME — never a failing assertion. `@cloudflare/vitest-pool-workers`
-      # snapshots isolated storage between suites and asserts every file under the D1 directory ends in
-      # `.sqlite`; on a slow runner SQLite's WAL sidecar (`…sqlite-shm`) is sometimes still on disk
-      # at that instant and the pool aborts the run with "Isolated storage failed" — a message
-      # about the harness, not about any test. It hit PR #29 and PR #31 on 21 Sep 2026 on runs whose
-      # test failures were 0, and never once locally. So: if the run died on EXACTLY that signature,
-      # it is run once more; any other failure is reported as it is. The same shape as the
-      # `wrangler dev` retry on the Playwright job below, for the same reason.
-      - name: Boss OS suites (workerd, real D1/R2/KV)
-        run: |
-          npx vitest run --config vitest.boss.config.ts 2>&1 | tee boss-suites.log
-          rc=${PIPESTATUS[0]}
-          # Only the harness's signature, and no real assertion beside it: a test that failed on its
-          # own prints "AssertionError: expected …" (or a TypeError/ReferenceError), and that is reported.
-          if [ "$rc" -ne 0 ] && grep -q "Isolated storage failed" boss-suites.log \
-             && ! grep -qE "AssertionError: expected|TypeError|ReferenceError|Test timed out" boss-suites.log; then
-            echo "::warning::the pool's isolated-storage snapshot raced a SQLite WAL sidecar — retrying the Boss suites once"
-            npx vitest run --config vitest.boss.config.ts
-          else
-            exit "$rc"
-          fi
 
       # The governance boundary scans are part of the gate, not optional extras: they are what
       # keep authority, the AI boundary, cross-repo isolation, brand, design tokens, CSS
@@ -198,10 +183,102 @@ jobs:
       - name: Build client
         run: npm run build
 
+  unit:
+    name: Unit and integration tests (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    # Normal: ~2m30s a shard (7m55s serial on 21 Sep 2026, split four ways, plus install).
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install (reproducible, from package-lock)
+        run: npm ci
+
+      # `--shard` splits the FILE list across the matrix; `--no-file-parallelism` keeps each shard
+      # serial inside, because these suites share a miniflare per file and were never written to
+      # run beside each other. Four shards, one runner each: the parallelism is between jobs.
+      - name: Unit and integration tests
+        run: npx vitest run --no-file-parallelism --shard=${{ matrix.shard }}/4
+
+  boss:
+    name: Boss OS suites (shard ${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    # Normal: ~3m a shard (5m00s serial on 21 Sep 2026, split two ways, plus install).
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install (reproducible, from package-lock)
+        run: npm ci
+
+      # THE BOSS SUITE WAS OUTSIDE THE GATE. `vitest.config.ts` excludes `tests/boss/**` because
+      # those suites need the workers pool, and no step here ran the other config - so 25 files
+      # and 461 tests covering approvals, the airlock, the router, sync, leakage and the vault
+      # never ran in CI, while `vitest.boss.config.ts` claimed "Both run under npm run validate."
+      # THE POOL'S OWN RACE, RETRIED BY NAME — never a failing assertion. `@cloudflare/vitest-pool-workers`
+      # snapshots isolated storage between suites and asserts every file under the D1 directory ends in
+      # `.sqlite`; on a slow runner SQLite's WAL sidecar (`…sqlite-shm`) is sometimes still on disk
+      # at that instant and the pool aborts the run with "Isolated storage failed" — a message
+      # about the harness, not about any test. It hit PR #29 and PR #31 on 21 Sep 2026 on runs whose
+      # test failures were 0, and never once locally. So: if the run died on EXACTLY that signature,
+      # it is run once more; any other failure is reported as it is. The same shape as the
+      # `wrangler dev` retry on the Playwright job below, for the same reason.
+      - name: Boss OS suites (workerd, real D1/R2/KV)
+        run: |
+          npx vitest run --config vitest.boss.config.ts --shard=${{ matrix.shard }}/2 2>&1 | tee boss-suites.log
+          rc=${PIPESTATUS[0]}
+          # Only the harness's signature, and no real assertion beside it: a test that failed on its
+          # own prints "AssertionError: expected …" (or a TypeError/ReferenceError), and that is reported.
+          if [ "$rc" -ne 0 ] && grep -q "Isolated storage failed" boss-suites.log \
+             && ! grep -qE "AssertionError: expected|TypeError|ReferenceError|Test timed out" boss-suites.log; then
+            echo "::warning::the pool's isolated-storage snapshot raced a SQLite WAL sidecar — retrying the Boss suites once"
+            npx vitest run --config vitest.boss.config.ts --shard=${{ matrix.shard }}/2
+          else
+            exit "$rc"
+          fi
+
   e2e:
     name: Playwright journeys
+    # POST-MERGE, NOT THE MERGE GATE. 217 journeys on one worker against one shared local D1 take
+    # 15–17 minutes, and the whole-suite retry below can double that: on PR #35 (21 Sep 2026) one
+    # journey lost a 5-second visibility race on the runner, the retry ran, and the job hit the
+    # 30-minute cap having passed 214 of 217 — a fifty-minute wait to learn nothing about the change.
+    # So a pull request waits on the fast jobs above; the journeys run on `main` after the merge and
+    # on demand, in this same run, so `Deploy` (workflow_run on CI success) still ships only a commit
+    # the journeys have passed, and `land` still watches one run to one terminal state.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Normal: ~17m; the whole-suite retry makes a real failure cost twice that, so this is 2× the
+    # normal plus the retry, not 2× the retry.
+    timeout-minutes: 40
     permissions:
       contents: read
 
