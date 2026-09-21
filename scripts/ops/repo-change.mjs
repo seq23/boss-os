@@ -135,15 +135,103 @@ function runClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
      * and bills an account with no credit ("Credit balance is too low", 21 Sep 2026 — both of her
      * first jobs died in 3 s). `seatEnv` strips every ANTHROPIC_* / CLAUDE_* auth override.
      */
-    const child = spawn(CLAUDE, ["-p", prompt, "--model", model, "--max-turns", String(maxTurns), "--dangerously-skip-permissions"], {
+    /*
+     * THE LOG CARRIES THE TRANSCRIPT. 21 Sep 2026: a build that had committed, pushed and opened
+     * how-we-know #103 died on "Reached max turns (150)" and its log was five lines, so nobody
+     * could see she was done. stream-json in, one readable line per assistant paragraph, tool call
+     * and tool result tail out.
+     */
+    const child = spawn(CLAUDE, ["-p", prompt, "--model", model, "--max-turns", String(maxTurns), "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"], {
       cwd, env: seatEnv(process.env), stdio: ["ignore", "pipe", "pipe"],
     });
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); setTimeout(() => child.kill("SIGKILL"), 10_000); }, timeoutMin * 60_000);
-    child.stdout.on("data", (d) => appendFileSync(log, d));
+    let buf = "";
+    child.stdout.on("data", (d) => {
+      buf += d.toString();
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        for (const t of transcriptLines(line)) appendFileSync(log, t + "\n");
+      }
+    });
     child.stderr.on("data", (d) => appendFileSync(log, d));
-    child.on("close", (rc) => { clearTimeout(timer); appendFileSync(log, `\n=== ${phase} exited rc=${rc} timedOut=${timedOut}\n`); resolve({ rc, timedOut }); });
+    child.on("close", (rc) => { clearTimeout(timer); for (const t of transcriptLines(buf)) appendFileSync(log, t + "\n"); appendFileSync(log, `\n=== ${phase} exited rc=${rc} timedOut=${timedOut}\n`); resolve({ rc, timedOut }); });
   });
+}
+
+/** One stream-json event → the readable lines it deserves. Exported for the validator's self-test. */
+export function transcriptLines(line) {
+  let ev; try { ev = JSON.parse(line); } catch { return line.trim() ? [line] : []; }
+  const out = [];
+  const stamp = new Date().toISOString().slice(11, 19);
+  if (ev.type === "assistant" && Array.isArray(ev.message?.content)) {
+    for (const c of ev.message.content) {
+      if (c.type === "text" && c.text?.trim()) out.push(`[${stamp}] ${c.text.trim().replace(/\n+/g, " ").slice(0, 600)}`);
+      if (c.type === "tool_use") out.push(`[${stamp}] → ${c.name} ${JSON.stringify(c.input ?? {}).slice(0, 220)}`);
+    }
+  } else if (ev.type === "user" && Array.isArray(ev.message?.content)) {
+    for (const c of ev.message.content) {
+      if (c.type === "tool_result") {
+        const body = typeof c.content === "string" ? c.content : Array.isArray(c.content) ? c.content.map((x) => x.text ?? "").join(" ") : "";
+        const tail = body.trim().split("\n").filter(Boolean).slice(-2).join(" | ");
+        out.push(`[${stamp}] ← ${c.is_error ? "ERROR " : ""}${tail.slice(0, 300)}`);
+      }
+    }
+  } else if (ev.type === "result") {
+    out.push(`[${stamp}] === result: ${ev.subtype ?? ""} turns=${ev.num_turns ?? "?"} cost=$${Number(ev.total_cost_usd ?? 0).toFixed(2)} ${ev.is_error ? "ERROR" : ""} ${String(ev.result ?? "").replace(/\n+/g, " ").slice(0, 300)}`);
+  }
+  return out;
+}
+
+/**
+ * ─── A RECOVERABLE STOP RESUMES ITSELF ──────────────────────────────────────
+ *
+ * What a phase leaves behind decides whether its death is a stop for her or a continuation for
+ * the lane. A commit on the branch, a pushed branch, an open PR, a plan draft: state. Max-turns
+ * exhaustion, a timeout with state behind it, a missing result file — all resume the SAME phase
+ * on the next tick with a continuation note, up to three times; only then, or with no state at
+ * all, is she emailed a stop, and it says what she can do. Detected from the worktree and gh,
+ * never from the exit code.
+ */
+export const MAX_CONTINUATIONS = 3;
+
+function stateBehind({ phase, dir, repo, repoPath, buildPath, branch }) {
+  const facts = [];
+  if (phase === "build" && buildPath && existsSync(buildPath)) {
+    const ahead = spawnSync("git", ["log", "--oneline", "origin/main..HEAD"], { cwd: buildPath, encoding: "utf8" }).stdout.trim();
+    if (ahead) facts.push(`commits on ${branch}: ${ahead.split("\n").length} (${ahead.split("\n")[0].slice(0, 80)})`);
+    const dirty = spawnSync("git", ["status", "--porcelain"], { cwd: buildPath, encoding: "utf8" }).stdout.trim();
+    if (dirty) facts.push(`uncommitted changes in the worktree: ${dirty.split("\n").length} file(s)`);
+    const pushed = branch ? spawnSync("git", ["ls-remote", "--heads", "origin", branch], { cwd: buildPath, encoding: "utf8" }).stdout.trim() : "";
+    if (pushed) facts.push(`branch ${branch} is pushed`);
+    const pr = prForBranch(repo, branch);
+    if (pr) facts.push(`PR #${pr.number} is ${pr.state} (${pr.url})`);
+    return { facts, pr };
+  }
+  if (phase === "land") {
+    const landed = readJson(join(dir, "landed-post-land-failed.json"));
+    if (landed?.merge_sha) facts.push(`already merged as ${landed.merge_sha}; only the post-land step is outstanding`);
+    return { facts, pr: null };
+  }
+  if (phase === "plan") {
+    if (existsSync(join(dir, "plan-draft.md"))) facts.push("a plan draft exists (plan-draft.md)");
+    return { facts, pr: null };
+  }
+  return { facts, pr: null };
+}
+
+function prForBranch(repo, branch) {
+  if (!repo || !branch) return null;
+  const r = spawnSync("gh", ["pr", "view", branch, "--repo", `seq23/${repo}`, "--json", "url,number,state,headRefName"], { encoding: "utf8" });
+  if (r.status !== 0) return null;
+  try { const j = JSON.parse(r.stdout); return j?.url ? { url: j.url, number: Number(j.number), state: j.state } : null; } catch { return null; }
+}
+
+function continuationCount(dir, phase) {
+  const f = join(dir, `continuations-${phase}.json`);
+  const j = readJson(f) ?? { count: 0, notes: [] };
+  return { file: f, ...j };
 }
 
 function readJson(path) {
@@ -302,6 +390,7 @@ async function runPhase(claim) {
     PR_URL: row.pr_url ?? "", PR_NUMBER: row.pr_number ?? "", BRANCH: branch ?? "", OUT_FILE: outFile, WORK_DIR: dir,
     ASK_LIST: ASK_POLICY.ask.map((a) => `- ${a}`).join("\n"), DECIDE_LIST: ASK_POLICY.decide.map((d) => `- ${d}`).join("\n"),
     LAND: LAND, PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
+    CONTINUATION: (() => { const c = continuationCount(dir, phase); if (!c.count) return "no — a fresh start."; const b = stateBehind({ phase, dir, repo, repoPath, buildPath, branch }); return `YES — continuation ${c.count}/${MAX_CONTINUATIONS}. The previous attempt: ${c.notes?.at(-1)?.note ?? "(no note)"}. What is already there: ${b.facts.join("; ") || "(nothing readable)"}. Do not redo it; verify it and FINISH — write ${outFile} first if the result already exists.`; })(),
     PRE_APPROVED: row.pre_approved_phrase
       ? `YES — she wrote "${row.pre_approved_phrase}" in the request. Every decision is yours: put what you would have asked under "decided" with your recommended default AS the decision and the reason. "asks" MUST be an empty list; the Worker refuses a pre-approved plan that asks.`
       : "no — ask what policy says to ask.",
@@ -313,11 +402,30 @@ async function runPhase(claim) {
       phase, prompt, cwd: (phase === "build" ? buildPath : repoPath) ?? dir, log,
       model: claim.model ?? PHASE_MODELS[phase], maxTurns: claim.max_turns ?? PHASE_MAX_TURNS[phase], timeoutMin: PHASE_TIMEOUT_MIN[phase],
     });
-  const out = readJson(outFile);
+  let out = readJson(outFile);
   if (!out) {
     const why = timedOut ? `the ${phase} phase hit its ${PHASE_TIMEOUT_MIN[phase]}-minute wall and was stopped` : `claude exited ${rc} and wrote no ${phase}.json`;
-    await fail(row, "PHASE_DID_NOT_COMPLETE", `${why}. Its silence is not a result. Log: ${log}`, log);
-    return;
+    const behind = stateBehind({ phase, dir, repo, repoPath, buildPath, branch });
+    // A build whose PR already exists needs no more model turns: the result is on GitHub.
+    if (phase === "build" && behind.pr && behind.pr.state === "OPEN") {
+      out = { branch, pr_url: behind.pr.url, pr_number: behind.pr.number, proof: { continuation: `build.json written by the runner from GitHub's state after ${why}: ${behind.facts.join("; ")}` } };
+      writeFileSync(outFile, JSON.stringify(out, null, 2));
+      appendFileSync(log, `=== build.json synthesised from state: ${behind.facts.join("; ")}\n`);
+    } else if (behind.facts.length) {
+      const c = continuationCount(dir, phase);
+      if (c.count < MAX_CONTINUATIONS) {
+        const note = `${why}; state behind it: ${behind.facts.join("; ")}`;
+        writeFileSync(c.file, JSON.stringify({ count: c.count + 1, notes: [...(c.notes ?? []), { at: new Date().toISOString(), note }] }, null, 2));
+        await release(row, `continuation ${c.count + 1}/${MAX_CONTINUATIONS}: ${note}`, log);
+        say(`continuation ${c.count + 1}/${MAX_CONTINUATIONS} for ${row.id} ${phase}: ${note.slice(0, 200)} — the next tick finishes it.`);
+        return;
+      }
+      await fail(row, "PHASE_STUCK", `${why}, after ${MAX_CONTINUATIONS} continuations. State behind it: ${behind.facts.join("; ")}. What you can do: open the log (${log}) — the transcript shows the last step; reply "try again" to give it three more, or finish the last step by hand and reply "try again".`, log);
+      return;
+    } else {
+      await fail(row, "PHASE_DID_NOT_COMPLETE", `${why}, and nothing was left behind — no commit, no branch, no PR, no draft. Its silence is not a result. What you can do: read the log (${log}); reply "try again" to run it once more, or send the instruction again with more detail.`, log);
+      return;
+    }
   }
   if (out.blocked) { await fail(row, String(out.blocked.tag ?? "BLOCKED").replace(/[^A-Z_]/g, "_"), String(out.blocked.why ?? "the phase named a block without a reason"), log); markReported(); return; }
 
