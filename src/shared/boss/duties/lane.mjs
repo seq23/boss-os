@@ -36,21 +36,14 @@
  */
 
 import { seatTag } from "../intake/mail.mjs";
-import { readReply, APPROVAL_WORDS } from "../repoChange/lane.mjs";
-
-export { APPROVAL_WORDS };
+import { readReply, APPROVAL_WORDS, PRE_APPROVAL_PHRASES, preApprovalIn } from "../repoChange/lane.mjs";
 
 /**
  * PRE-APPROVAL IN THE REQUEST. "your call" in her ORIGINAL message creates the duty without waiting
  * for a reply, and the row records the phrase. Read from the request only, never from a later
- * message. The same six phrases the repo lane honours.
+ * message. The repo lane's six phrases and its reader, imported — one list, two lanes.
  */
-export const PRE_APPROVAL_PHRASES = ["your call", "you decide", "no need to ask", "just do it", "pick everything", "no options"];
-
-export function preApprovalIn(text) {
-  const t = String(text ?? "").toLowerCase();
-  return PRE_APPROVAL_PHRASES.find((p) => new RegExp(`(?:^|[^a-z])${p.replace(/ /g, "\\s+")}(?![a-z])`).test(t)) ?? null;
-}
+export { APPROVAL_WORDS, PRE_APPROVAL_PHRASES, preApprovalIn };
 
 /** The verb. `#<seat> new duty` — the tag she already knows, plus two words. */
 export const NEW_DUTY_RE = /#([a-z0-9]+)[\s:,-]+new\s+duty\b/i;
