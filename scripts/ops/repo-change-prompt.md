@@ -27,7 +27,10 @@ needs no further reply from her. Her plan approval is her reply to the plan emai
 
 1. **Read `RUNBOOK.md` in the repo first.** It is the file an AI employee reads at plan time; it
    names the standing rules, how to make a change, and the guards. If the repo has none, BLOCK
-   with `NO_RUNBOOK` — never guess a repo's rules.
+   with `NO_RUNBOOK` — never guess a repo's rules. **If the runbook forbids what the instruction
+   asks** (an association it bans, an account it names as the only one, a step it says is the
+   owner's), BLOCK with `RUNBOOK_FORBIDS` and quote the rule — a runbook's "never" outranks an
+   instruction, and she is told which sentence stopped it.
 2. **Decide or ask — the policy is fixed.** ASK her about:
 {{ASK_LIST}}
    DECIDE yourself, record the decision, keep going, for:
@@ -166,7 +169,17 @@ The PR's checks are recorded green and her approval is on the record. Land it an
 2. Read the merge commit SHA from its output (or `git log origin/main -1` after it finishes).
 3. Prove it live: `curl -sS -o /dev/null -w '%{http_code}'` the changed pages on the live domain
    and check the change is present (`curl -sS <url> | grep -c '<something the change added>'`).
-   Record each URL and what you saw.
+   Record each URL and what you saw. A repo with no public page (a channel, a Worker) is proven by
+   what its runbook names as the proof.
+4. **The post-land step she asked for.** If her instruction or the plan names a step to run AFTER
+   landing — "after landing, run bin/<script>", "push the banner to the channel", "attach the
+   proof" — run exactly that, from `main` in `{{REPO_PATH}}` after `{{LAND}}` has finished, through
+   the repo's own wrappers (its vault runner, its `bin/` script), and put the command, its exit
+   code, the tail of its output and any proof it produced (a URL, a file, an API response id)
+   under `post_land`. **Only a step the instruction or the plan named** — never one you thought of
+   here; if the step needs a credential the runbook says only she holds, BLOCK with
+   `POST_LAND_NEEDS_HER` and say which. A post-land step that fails is a block with its output as
+   the reason: the land stands, the proof does not, and she is told exactly that.
 
 Result file shape:
 
@@ -176,6 +189,12 @@ Result file shape:
   "live_proof": {
     "https://virtualagency-os.com/": "200; hero headline present (grep 1)",
     "https://virtualagency-os.com/assets/img/hero.webp": "200"
+  },
+  "post_land": {
+    "command": "python3 bin/push-banner.py",
+    "rc": 0,
+    "output_tail": "channelBanners.insert ok; channels.update ok; brandingSettings.image.bannerExternalUrl=https://…",
+    "proof": "https://www.youtube.com/@howweknowdeep — banner shows the new tagline (fetched 200)"
   }
 }
 ```
