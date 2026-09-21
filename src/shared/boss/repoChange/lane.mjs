@@ -188,6 +188,41 @@ export function parseRepoChange(text) {
 }
 
 /**
+ * ─── HER REPLY, READ AS ONE OF THREE THINGS ────────────────────────────────
+ *
+ * Owner, 21 Sep 2026: the approval step must have zero friction. The plan email carries the whole
+ * plan and every ask with a recommended default, and she replies with ONE WORD.
+ *
+ *   approved   — "approved", "approve", "yes", "go", "land it", "ok" (the whole reply, case and
+ *                punctuation aside): every ask takes its recommended default; BUILD starts.
+ *   held       — a reply that STARTS with "no", "not approved", "stop" or "changes:": the task
+ *                stays in `asking`, her words are kept, nothing builds until she writes again.
+ *   answers    — anything else: recorded as her answers; BUILD starts and reads them.
+ *
+ * The quoted reply below her words is stripped by the mailbox before this sees the text, so
+ * "approved" above a quoted plan is still exactly "approved".
+ */
+export const APPROVAL_WORDS = ["approved", "approve", "yes", "go", "land it", "ok", "okay", "lgtm"];
+export const HOLD_PREFIXES = ["not approved", "no", "stop", "changes:", "change:", "hold"];
+export const APPROVED_DEFAULTS_TEXT = "approved — every ask takes the recommended default";
+
+export function readReply(text) {
+  const raw = String(text ?? "").trim();
+  const first = raw.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  const norm = first.toLowerCase().replace(/[\s.!,;:'"“”‘’-]+$/g, "").replace(/^[\s"“'‘-]+/g, "").trim();
+  if (!raw) return { mode: "empty", text: raw };
+  if (APPROVAL_WORDS.includes(norm) && raw.split(/\r?\n/).filter((l) => l.trim()).length === 1) return { mode: "approved", text: APPROVED_DEFAULTS_TEXT };
+  const lower = first.toLowerCase();
+  for (const p of HOLD_PREFIXES) {
+    if (lower === p || lower.startsWith(p + " ") || lower.startsWith(p + ",") || lower.startsWith(p + ".") || lower.startsWith(p + "!") || (p.endsWith(":") && lower.startsWith(p))) {
+      // "no" as a prefix must not swallow "note:" / "now use B"; the separators above make sure of it.
+      return { mode: "held", text: raw };
+    }
+  }
+  return { mode: "answers", text: raw };
+}
+
+/**
  * ─── THE GUARDS ─────────────────────────────────────────────────────────────
  *
  * A row may enter BUILD only when a plan exists AND her reply is on the record. "No asks" is not an
