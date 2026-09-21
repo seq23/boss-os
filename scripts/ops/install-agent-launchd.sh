@@ -1075,6 +1075,10 @@ require_loaded "$GRID_LABEL"
 # installed at all, because nobody ran the installer after writing it. Measured on 15 September.
 require_loaded "$BUYERS_LABEL"
 require_loaded "$AHREFS_LABEL"
+# A FIFTH TIME, on 21 September: the repo-change lane was installed, loaded, and the "Verified" line
+# did not name it. `validate:plists-well-formed` now fails the build when a label the installer
+# defines is missing from this list, so a sixth time cannot happen through this file.
+require_loaded "$RC_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
@@ -1088,6 +1092,9 @@ require_loaded "$AHREFS_LABEL"
 [ -f "$REPO/scripts/ops/ahrefs-audit-fix-prompt.md" ] || missing="$missing scripts/ops/ahrefs-audit-fix-prompt.md"
 [ -L "$HOME/bin/lp-replies-prompt.md" ] || missing="$missing ~/bin/lp-replies-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/lp-replies-prompt.md" ] || missing="$missing scripts/ops/lp-replies-prompt.md"
+[ -L "$HOME/bin/repo-change.sh" ] || missing="$missing ~/bin/repo-change.sh(symlink)"
+[ -L "$HOME/bin/repo-change-prompt.md" ] || missing="$missing ~/bin/repo-change-prompt.md(symlink)"
+[ -f "$REPO/scripts/ops/repo-change-prompt.md" ] || missing="$missing scripts/ops/repo-change-prompt.md"
 [ -L "$HOME/bin/kdp-surface-prompt.md" ] || missing="$missing ~/bin/kdp-surface-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/kdp-surface-prompt.md" ] || missing="$missing scripts/ops/kdp-surface-prompt.md"
 

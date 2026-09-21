@@ -297,6 +297,15 @@ test.describe("Boss OS surface", () => {
 
   test("offline reads are not served from a cache pretending to be current", async ({ page, context }) => {
     await unlock(page);
+    /*
+     * THE SHELL IS ONLY OFFLINE-OPENABLE ONCE THE WORKER CONTROLS THE PAGE. `sw.js` precaches the
+     * shell at install and claims clients at activate; until then a reload with the connection
+     * cut is `net::ERR_INTERNET_DISCONNECTED` — which is what this journey threw on two CI runs
+     * out of three on 21 Sep 2026 (PRs #29 and #30, neither touching the shell), because the
+     * runner was slower than the race. The journey's claim is about what the shell SERVES
+     * offline, not about how fast the worker installs, so the install is waited for by name.
+     */
+    await page.waitForFunction(() => navigator.serviceWorker?.controller != null, null, { timeout: 20_000 });
     await context.setOffline(true);
     await page.reload();
     // The shell still opens — that part is cached and is allowed to be.
