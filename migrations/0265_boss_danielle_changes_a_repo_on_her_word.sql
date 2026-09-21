@@ -26,7 +26,10 @@
 --   done     → the DONE email went, with the PR, the merge commit and the live proof
 --   failed   → a named stop; the reason is on the row and in her inbox
 --
--- `canEnterBuild` and `canLand` in src/shared/boss/repoChange/lane.mjs are the only rules for
+-- Her reply is ONE WORD (21 Sep 2026: "the approval step must have zero friction"): "approved"
+-- (or approve / yes / go / land it) takes the recommended default for every ask and starts BUILD;
+-- a reply starting "no" / "not approved" / "stop" / "changes:" holds; anything else is her answers.
+-- `readReply`, `canEnterBuild` and `canLand` in src/shared/boss/repoChange/lane.mjs are the only rules for
 -- moving between them; `validate:repo-lane` proves them against fixture rows and against the code
 -- that hands out claims.
 
@@ -52,7 +55,11 @@ CREATE TABLE repo_changes (
   ask_message_id   TEXT,                       -- the provider's id for that email
   answered_at      INTEGER,                    -- when her reply arrived; THE plan approval
   answers_text     TEXT,                       -- her reply, readable text
+  answers_mode     TEXT CHECK (answers_mode IN ('approved','answers')),  -- one word = every default; else her answers
   answer_mail_id   TEXT,                       -- the boss_inbound_mail row of her reply
+  -- A reply that starts "no" / "not approved" / "stop" / "changes:" HOLDS the task in `asking`.
+  held_at          INTEGER,
+  held_text        TEXT,
   -- BUILD
   branch           TEXT,
   pr_url           TEXT,

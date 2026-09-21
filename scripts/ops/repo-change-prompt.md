@@ -55,8 +55,11 @@ Read the package, the runbook, and the repository. Then write the plan.
 3. Write the plan: what changes, file by file; what the runbook requires (validators, build,
    lastmod, screenshots, redirects); how it will be proven; what the live proof will be.
 4. Split every decision. `decided`: the ones policy says are yours — one line each, with the
-   reason. `asks`: the ones policy says are hers — one clear question each, with the options you
-   see and your recommendation. If the package answers a question, it is not an ask.
+   reason. `asks`: the ones policy says are hers — one clear question each, as an object with
+   `question`, `options` (the choices you see), `default` (YOUR RECOMMENDED ANSWER, concrete
+   enough to build from with no further word from her) and `why`. **She approves with one word,
+   and that word means "take every default"** — so a default that is vague is a question she
+   never answered. If the package answers a question, it is not an ask.
 5. Do not edit the repo in this phase. No branch, no commit.
 
 Result file shape:
@@ -66,7 +69,14 @@ Result file shape:
   "repo": "WPP-llm",
   "plan_text": "markdown — the plan as she will read it",
   "decided": ["CSS: reuse the existing tile class rather than a new one — the runbook freezes the visual system"],
-  "asks": ["Headline for the hero: the package gives two — 'A' (my recommendation, it matches the thesis page) or 'B'?"]
+  "asks": [
+    {
+      "question": "Which hero headline?",
+      "options": ["A: 'Agencies, on autopilot.'", "B: 'Your agency, run by software.'"],
+      "default": "A: 'Agencies, on autopilot.'",
+      "why": "it matches the thesis page and the package leads with it"
+    }
+  ]
 }
 ```
 
@@ -86,7 +96,9 @@ The questions you asked:
 {{ASKS}}
 ```
 
-Her reply — treat it as the answers to those questions and as the approval of the plan:
+Her reply — the approval of the plan. If it is the single word of approval, EVERY question above
+takes its recommended default, verbatim; otherwise her words are the answers, and any question she
+did not address takes its default:
 
 ```
 {{ANSWERS}}

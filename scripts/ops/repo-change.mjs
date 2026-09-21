@@ -39,7 +39,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
-  canEnterBuild, canLand, changeToken, gridRepoNames,
+  canEnterBuild, canLand, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { sendersFor } from "./notify.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
@@ -242,8 +242,11 @@ async function runPhase(claim) {
     CHANGE_ID: row.id, TOKEN: changeToken(row.id), REPO: repo ?? "(not named — read the package)", REPO_PATH: repoPath ?? "(none yet)",
     GRID_REPOS: gridRepoNames().join(", "), GITHUB_DIR,
     PACKAGE_DIR: row.drive_folder ? packageDir : "(no Drive package was linked)", DRIVE_URL: row.drive_url ?? "",
-    INSTRUCTION: row.instruction, PLAN: row.plan_text ?? "", ANSWERS: row.answers_text ?? "",
-    ASKS: (row.asks ?? []).map((a, i) => `${i + 1}. ${typeof a === "string" ? a : JSON.stringify(a)}`).join("\n") || "(none)",
+    INSTRUCTION: row.instruction, PLAN: row.plan_text ?? "",
+    ANSWERS: row.answers_mode === "approved" || row.answers_text === APPROVED_DEFAULTS_TEXT
+      ? `${APPROVED_DEFAULTS_TEXT}. She replied with the single word of approval: take the recommended default on EVERY question below, exactly as written in its "default" field.`
+      : row.answers_text ?? "",
+    ASKS: (row.asks ?? []).map((a, i) => `${i + 1}. ${typeof a === "string" ? a : `${a.question ?? JSON.stringify(a)} — default: ${a.default ?? "(none)"}`}`).join("\n") || "(none)",
     DECIDED: (row.decided ?? []).map((d) => `- ${typeof d === "string" ? d : JSON.stringify(d)}`).join("\n") || "(none)",
     PR_URL: row.pr_url ?? "", PR_NUMBER: row.pr_number ?? "", BRANCH: row.branch ?? "", OUT_FILE: outFile, WORK_DIR: dir,
     ASK_LIST: ASK_POLICY.ask.map((a) => `- ${a}`).join("\n"), DECIDE_LIST: ASK_POLICY.decide.map((d) => `- ${d}`).join("\n"),
@@ -271,13 +274,29 @@ async function runPhase(claim) {
     if (!existsSync(join(repoPathFor(chosen), "RUNBOOK.md"))) { await fail(row, "NO_RUNBOOK", `${chosen} has no RUNBOOK.md; the lane will not plan against a repo without one.`, log); return; }
     const asks = Array.isArray(out.asks) ? out.asks : [];
     const decided = Array.isArray(out.decided) ? out.decided : [];
-    const subject = `#danielle plan for ${chosen} ${changeToken(row.id)} — ${asks.length ? `${asks.length} question${asks.length === 1 ? "" : "s"}` : "reply go to build"}`;
+    /*
+     * ZERO-FRICTION APPROVAL (owner, 21 Sep 2026). The whole plan is IN the email, every ask is a
+     * numbered question with the recommended default beside it, and one word back — "approved" —
+     * takes every default and starts the build. Anything else she types is her answers; "no" /
+     * "changes:" holds. The Worker's `readReply` is the reader; this email just has to make the
+     * word obvious.
+     */
+    const askLine = (a, i) => {
+      if (typeof a === "string") return `${i + 1}. ${a}`;
+      const opts = Array.isArray(a.options) && a.options.length ? ` Options: ${a.options.join(" / ")}.` : "";
+      return `${i + 1}. ${a.question ?? JSON.stringify(a)}${opts}\n   → My recommended default: ${a.default ?? "(none given — say which)"}${a.why ? ` — ${a.why}` : ""}`;
+    };
+    const subject = `#danielle plan for ${chosen} ${changeToken(row.id)} — reply "approved" ${asks.length ? `(${asks.length} question${asks.length === 1 ? "" : "s"}, each with a default)` : "to build"}`;
     const text = [
       "Sequoia,", "",
-      `This is Danielle. Here is my plan for ${chosen} from your instruction${row.drive_url ? ` and the package at ${row.drive_url}` : ""}. Reply to THIS email — keep ${changeToken(row.id)} in the subject — and your reply is the approval. I build on it, open the PR, and land it once the checks are green; nothing else waits on you.`,
+      `This is Danielle. Here is my plan for ${chosen} from your instruction${row.drive_url ? ` and the package at ${row.drive_url}` : ""}.`,
       "",
-      asks.length ? "WHAT I NEED FROM YOU" : "NOTHING TO ASK — reply \"go\" (or anything) and I start.",
-      ...asks.map((a, i) => `${i + 1}. ${typeof a === "string" ? a : a.question ?? JSON.stringify(a)}`),
+      "REPLY WITH ONE WORD — approved — and I take the recommended default on every question below, build it, open the PR, land it once the checks are green, and email you the proof. Nothing else waits on you.",
+      "Reply with your own answers if you want something other than a default. Reply \"no\" or \"changes: …\" to hold it.",
+      `(Keep ${changeToken(row.id)} in the subject; replying keeps it.)`,
+      "",
+      asks.length ? "QUESTIONS, EACH WITH MY RECOMMENDED DEFAULT" : "NOTHING TO ASK — \"approved\" starts it.",
+      ...asks.map(askLine),
       "",
       "WHAT I DECIDED (recorded, no reply needed)",
       ...(decided.length ? decided.map((d) => `- ${typeof d === "string" ? d : d.decision ?? JSON.stringify(d)}`) : ["- nothing beyond the plan itself"]),

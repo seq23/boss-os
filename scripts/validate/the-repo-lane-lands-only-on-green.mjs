@@ -37,6 +37,12 @@
  *   F. THE AHREFS PIN IS NOT LOOSENED. `the-audit-fixer-cannot-touch-velocity.mjs` still targets
  *      `ahrefs-audit-fix.sh` and still forbids `gh pr merge` there. Land-on-green is THIS lane's
  *      rule; the weekly fixer still opens PRs and she merges.
+ *   H. ONE WORD APPROVES, "NO" HOLDS (owner, 21 Sep 2026). `readReply` is RUN over fixtures:
+ *      "approved", "Approved.", "yes", "go", "land it" → approved; "no", "not approved", "stop",
+ *      "changes: …" → held; "Use B. Go." → answers. The Worker's answer path calls `readReply(`
+ *      and writes `held_at` on a hold without touching `answered_at`; the plan email prints a
+ *      recommended default per ask and the word "approved"; the test file proves "approved"
+ *      advances and "no" holds through the real handler.
  *   G. RULE 0 AND THE CAPS. The runner exits non-zero with NAMED STOP [NOTHING_CLAIMABLE] on a
  *      quiet tick; the executor maps that code to a named line; every `claude -p` carries
  *      `--max-turns`; and the model per phase is read from `PHASE_MODELS` — no `claude-…` literal
@@ -101,7 +107,18 @@ export function guardProblems(lane) {
   if (lane.claimablePhase({ ...full, phase: "build", answered_at: null, answers_text: null }) !== null) bad.push("claimablePhase: an unanswered build is claimable");
   if (lane.claimablePhase(full) !== "land") bad.push("claimablePhase: a green, approved row is not claimable for land");
   if (lane.claimablePhase({ phase: "plan" }) !== "plan") bad.push("claimablePhase: a fresh row is not claimable for plan");
-  return { problems: bad, cases: cases.length + 5 };
+
+  // H. one word approves, "no" holds — run, not read.
+  const replies = [
+    ["approved", "approved"], ["Approved.", "approved"], ["yes", "approved"], ["go", "approved"], ["Land it", "approved"],
+    ["no", "held"], ["No, not yet", "held"], ["not approved", "held"], ["stop", "held"], ["changes: use B", "held"],
+    ["Use B. Go.", "answers"], ["note: B please", "answers"], ["approved\nbut B", "answers"], ["", "empty"],
+  ];
+  for (const [text, want] of replies) {
+    const got = typeof lane.readReply === "function" ? lane.readReply(text)?.mode : "(no readReply)";
+    if (got !== want) bad.push(`readReply(${JSON.stringify(text)}): expected ${want}, got ${got}`);
+  }
+  return { problems: bad, cases: cases.length + 5 + replies.length };
 }
 
 // ─── B–G. The files, read ─────────────────────────────────────────────────────
@@ -135,6 +152,15 @@ export function fileProblems(f) {
   if (refusal !== -1 && admit !== -1 && admit < refusal) bad.push(`${FILES.mail}: admitTask() is called before the sender refusal.`);
   if (!/REFUSED_SENDER/.test(f.test) || !/scooter/i.test(f.test)) bad.push(`${FILES.test}: no test runs a stranger's (Scooter's) #danielle mail through the handler and asserts REFUSED_SENDER.`);
   if (!/phase = 'build'[\s\S]{0,200}WHERE id = \? AND phase = 'asking'/.test(f.answer)) bad.push(`${FILES.answer}: the answer must move a row from 'asking' to 'build' and nothing else.`);
+  if (!/readReply\s*\(/.test(f.answer)) bad.push(`${FILES.answer}: does not read her reply through readReply(); one word must mean the whole approval.`);
+  const heldAt = f.answer.indexOf('mode === "held"');
+  const buildAt = f.answer.indexOf("phase = 'build'");
+  const heldBranch = heldAt !== -1 && buildAt > heldAt ? f.answer.slice(heldAt, buildAt) : "";
+  if (!/SET held_at = \?/.test(heldBranch)) bad.push(`${FILES.answer}: a held reply does not write held_at (the hold branch must sit before the build update).`);
+  if (/answered_at = \?/.test(heldBranch)) bad.push(`${FILES.answer}: a held reply writes answered_at — a hold must not count as an approval.`);
+  if (!/recommended default/i.test(f.runner) || !/approved/.test(f.runner)) bad.push(`${FILES.runner}: the plan email does not print a recommended default per ask and the word "approved".`);
+  if (!/"default"/.test(f.prompt)) bad.push(`${FILES.prompt}: the PLAN section does not ask for a "default" on every ask.`);
+  if (!/exactly[\s\S]{0,80}approved/i.test(f.test) || !/HOLDS the task/.test(f.test)) bad.push(`${FILES.test}: no test proves a reply of exactly "approved" advances the task and "no" holds it.`);
 
   // E. nothing lands outside ~/bin/land
   for (const [name, src] of [["executor", f.executor], ["runner", f.runner]]) {
@@ -195,11 +221,11 @@ function selfTest() {
     lane: "export const PHASE_MODELS = { plan: 'a', build: 'b', land: 'c' };",
     routes: 'const phase = claimablePhase(row); const gate = canLand(row); if (state === "green") { db(`UPDATE repo_changes SET checks_green_at = ? WHERE id = ?`) }',
     mail: "if (!authorised) { return refused; }\nconst planAnswer = await answerFromMail(env, {});\nadmitTask(env, {});",
-    answer: "UPDATE repo_changes SET phase = 'build', answered_at = ? WHERE id = ? AND phase = 'asking'",
+    answer: "const reply = readReply(text); if (reply.mode === \"held\") { db(`UPDATE repo_changes SET held_at = ? WHERE id = ?`) }\nUPDATE repo_changes SET phase = 'build', answered_at = ? WHERE id = ? AND phase = 'asking'",
     executor: "NOTHING_CLAIMABLE=7\ncaffeinate timeout 3h node repo-change.mjs\ncase $RC in $NOTHING_CLAIMABLE) say quiet ;; esac",
-    runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5']);\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
-    prompt: "## PHASE: PLAN\nplan\n## PHASE: BUILD\nNever `gh pr merge`.\n## PHASE: LAND\nrun {{LAND}} {{PR_NUMBER}}",
-    test: 'it("SCOOTER CANNOT USE THIS LANE", async () => { expect(res.outcome).toBe("REFUSED_SENDER"); });',
+    runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst line = `My recommended default: ${a.default}`; const word = 'reply approved';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5']);\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
+    prompt: "## PHASE: PLAN\nplan with a \"default\" per ask\n## PHASE: BUILD\nNever `gh pr merge`.\n## PHASE: LAND\nrun {{LAND}} {{PR_NUMBER}}",
+    test: 'it("SCOOTER CANNOT USE THIS LANE", async () => { expect(res.outcome).toBe("REFUSED_SENDER"); });\nit("a reply of exactly \\"approved\\" advances", () => {});\nit("\\"no\\" HOLDS the task", () => {});',
     ahrefs: 'const RUNNER = "scripts/ops/ahrefs-audit-fix.sh";\nfor (const forbidden of [/\\bgh\\s+pr\\s+merge\\b/]) {}',
     migrations: "CREATE TABLE repo_changes (checks_green_at INTEGER)",
     src: "UPDATE repo_changes SET checks_green_at = ? WHERE",
@@ -217,9 +243,13 @@ function selfTest() {
   expect("the Ahrefs pin loosened is caught", fileProblems({ ...good, ahrefs: 'const RUNNER = "scripts/ops/ahrefs-audit-fix.sh";' }).some((p) => p.includes("must not be loosened")));
   expect("a test that stopped refusing Scooter is caught", fileProblems({ ...good, test: "it('x', () => {})" }).some((p) => p.includes("Scooter")));
   expect("no caffeinate is caught", fileProblems({ ...good, executor: good.executor.replace("caffeinate ", "") }).some((p) => p.includes("caffeinate")));
+  expect("a hold that counts as an approval is caught", fileProblems({ ...good, answer: good.answer.replace("SET held_at = ?", "SET held_at = ?, answered_at = ?") }).some((p) => p.includes("must not count as an approval")));
+  expect("an answer path that skips readReply is caught", fileProblems({ ...good, answer: good.answer.replace("readReply(text)", "text") }).some((p) => p.includes("readReply")));
+  expect("a reader that approves 'no' is caught", guardProblems({ ...loose, readReply: () => ({ mode: "approved" }) }).problems.some((p) => p.includes('readReply("no")')));
+  expect("a test file without the one-word proofs is caught", fileProblems({ ...good, test: good.test.split("\n")[0] }).some((p) => p.includes('exactly "approved"')));
 
   if (failed) { console.error(`\nSELF-TEST FAILED: ${failed} case(s)`); process.exit(1); }
-  console.log("SELF-TEST PASSED: 16/16 cases.");
+  console.log("SELF-TEST PASSED: 20/20 cases.");
 }
 
 if (process.argv.includes("--self-test")) { selfTest(); process.exit(0); }

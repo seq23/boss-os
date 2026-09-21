@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { handleTask } from "../../src/worker/boss/queue/consumer";
-import { canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken } from "../../src/shared/boss/repoChange/lane.mjs";
+import { canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken, readReply, APPROVED_DEFAULTS_TEXT } from "../../src/shared/boss/repoChange/lane.mjs";
 
 const FOLDER = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUv";
 
@@ -186,6 +186,51 @@ describe("the phases, and the two facts every landing rests on", () => {
     expect(build.status).toBe(201);
     expect(build.body.data.phase).toBe("build");
     expect(build.body.data.model).toBe("claude-sonnet-5");
+  });
+
+  it("ONE WORD IS THE APPROVAL: a reply of exactly \"approved\" advances the task with every default", async () => {
+    const { id } = await open();
+    await claim(id);
+    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [{ question: "Which headline?", options: ["A", "B"], default: "A" }], ask_message_id: "re_test_6" } });
+    const reply = await handleBossInboundMail(mail({ subject: `Re: #danielle plan for WPP-llm ${changeToken(id)} — reply "approved"`, body: "approved" }), env as never);
+    expect(reply.outcome).toBe("PLAN_ANSWERED");
+    expect(reply.reply).toMatch(/takes the recommended default/);
+    const rc = await row<any>(`SELECT phase, answers_mode, answers_text FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("build");
+    expect(rc.answers_mode).toBe("approved");
+    expect(rc.answers_text).toBe(APPROVED_DEFAULTS_TEXT);
+    expect((await claim(id)).status).toBe(201);
+  });
+
+  it("\"no\" HOLDS the task: phase stays asking, her note is kept, BUILD is not claimable, and a later \"approved\" still works", async () => {
+    const { id } = await open();
+    await claim(id);
+    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [{ question: "Which headline?", default: "A" }], ask_message_id: "re_test_7" } });
+    const held = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "no — the hero copy is wrong, I will send a new package" }), env as never);
+    expect(held.outcome).toBe("PLAN_ANSWERED");
+    expect(held.reply).toMatch(/^Held\./);
+    let rc = await row<any>(`SELECT phase, held_at, held_text, answered_at FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("asking");
+    expect(rc.held_at).toBeTruthy();
+    expect(rc.held_text).toMatch(/hero copy is wrong/);
+    expect(rc.answered_at).toBeNull();
+    expect((await claim(id)).status).toBe(409);
+
+    for (const word of ["Not approved.", "changes: swap A for B", "stop"]) {
+      await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: word }), env as never);
+      expect((await row<any>(`SELECT phase FROM repo_changes WHERE id = ?`, id)).phase).toBe("asking");
+    }
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "Approved." }), env as never);
+    rc = await row<any>(`SELECT phase, answers_mode FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("build");
+    expect(rc.answers_mode).toBe("approved");
+  });
+
+  it("readReply: the exact words, and the ones that must not be mistaken for them", () => {
+    for (const w of ["approved", "Approved.", "approve", "yes", "go", "Land it!", "ok"]) expect(readReply(w).mode, w).toBe("approved");
+    for (const w of ["no", "No thanks", "not approved", "stop", "changes: use B", "hold"]) expect(readReply(w).mode, w).toBe("held");
+    for (const w of ["Use B. Go.", "note: use B", "now use B, approved", "approved\nbut use B"]) expect(readReply(w).mode, w).toBe("answers");
+    expect(readReply("").mode).toBe("empty");
   });
 
   it("a stranger's reply carrying the token records nothing — the approval is hers alone", async () => {
