@@ -58,8 +58,27 @@ jobs:
       # and 461 tests covering approvals, the airlock, the router, sync, leakage and the vault
       # never ran in CI, while `vitest.boss.config.ts` claimed "Both run under npm run validate."
       # They take 28 seconds.
+      # THE POOL'S OWN RACE, RETRIED BY NAME — never a failing assertion. `@cloudflare/vitest-pool-workers`
+      # snapshots isolated storage between suites and asserts every file under the D1 directory ends in
+      # `.sqlite`; on a slow runner SQLite's WAL sidecar (`…sqlite-shm`) is sometimes still on disk
+      # at that instant and the pool aborts the run with "Isolated storage failed" — a message
+      # about the harness, not about any test. It hit PR #29 and PR #31 on 21 Sep 2026 on runs whose
+      # test failures were 0, and never once locally. So: if the run died on EXACTLY that signature,
+      # it is run once more; any other failure is reported as it is. The same shape as the
+      # `wrangler dev` retry on the Playwright job below, for the same reason.
       - name: Boss OS suites (workerd, real D1/R2/KV)
-        run: npx vitest run --config vitest.boss.config.ts
+        run: |
+          npx vitest run --config vitest.boss.config.ts 2>&1 | tee boss-suites.log
+          rc=${PIPESTATUS[0]}
+          # Only the harness's signature, and no real assertion beside it: a test that failed on its
+          # own prints "AssertionError: expected …" (or a TypeError/ReferenceError), and that is reported.
+          if [ "$rc" -ne 0 ] && grep -q "Isolated storage failed" boss-suites.log \
+             && ! grep -qE "AssertionError: expected|TypeError|ReferenceError|Test timed out" boss-suites.log; then
+            echo "::warning::the pool's isolated-storage snapshot raced a SQLite WAL sidecar — retrying the Boss suites once"
+            npx vitest run --config vitest.boss.config.ts
+          else
+            exit "$rc"
+          fi
 
       # The governance boundary scans are part of the gate, not optional extras: they are what
       # keep authority, the AI boundary, cross-repo isolation, brand, design tokens, CSS
