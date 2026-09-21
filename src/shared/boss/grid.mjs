@@ -202,6 +202,23 @@ export const GRID = [
       "not a line — never a day's work.\" It is watched because when it breaks the others go quiet, " +
       "and it never proposes work to her.",
   },
+  {
+    /*
+     * ADDED 21 SEPTEMBER 2026, ON HER INSTRUCTION, so Danielle's repo-change lane may work in it.
+     * Four virtual-employee creators, their social accounts and the state Worker that keeps their
+     * ledger. Private repo; no public domain of its own — the properties it drives are accounts,
+     * not sites. `~/bin/land` already carries its release route (`npm run deploy:state`).
+     */
+    key: "creator_network",
+    label: "Creator Network — four virtual-employee creators",
+    domains: [],
+    repos: ["creator-network"],
+    owner: "hers",
+    tier: "primary",
+    why_tier:
+      "A revenue lane she is building, with a fifteen-phase ledger and a signup kit landed. Not " +
+      "plumbing and not a client's — hers, and it proposes work to her like the others.",
+  },
 ];
 
 /**

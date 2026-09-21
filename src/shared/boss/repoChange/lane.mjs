@@ -55,8 +55,9 @@ export const MAC_LANE = {
  * The phases, in order. `asking` and `landing` are waiting states the Mac cannot claim: one waits on
  * her reply, the other on the PR's checks. `plan`, `build` and `land` are the three `claude -p` runs.
  */
-export const PHASES = ["plan", "asking", "build", "landing", "land", "done", "failed"];
-export const RUNNABLE_PHASES = ["plan", "build", "land"];
+export const PHASES = ["plan", "asking", "build", "preview", "previewing", "landing", "land", "done", "failed"];
+/** The three `claude -p` phases, plus `preview` — the Mac's own deterministic step (find the URL, email her). */
+export const RUNNABLE_PHASES = ["plan", "build", "preview", "land"];
 
 /**
  * THE MODEL PER PHASE, IN ONE PLACE. Judgement on the plan (Opus), the edit on Sonnet, the landing on
@@ -204,14 +205,27 @@ export function parseRepoChange(text) {
  */
 export const APPROVAL_WORDS = ["approved", "approve", "yes", "go", "land it", "ok", "okay", "lgtm"];
 export const HOLD_PREFIXES = ["not approved", "no", "stop", "changes:", "change:", "hold"];
+/** "preview" on a READY plan: approve it with every default, but hold the landing for a second word. */
+export const PREVIEW_WORDS = ["preview", "preview only", "preview first", "preview it"];
+/**
+ * THE FORCE-TO-PRODUCTION BYPASS, NAMED (owner, 21 Sep 2026). She may decide the placeholders do
+ * not matter. These exact phrases — and only these, never plain "approved" — take a not-ready plan
+ * (or a preview) straight to land-on-green, with who/when/what recorded and a finding raised.
+ */
+export const FORCE_WORDS = ["approved to production", "force production", "ship it anyway", "land anyway"];
+export const FORCED_TEXT = "approved to production — every ask takes the recommended default; the placeholders ship by her instruction";
 export const APPROVED_DEFAULTS_TEXT = "approved — every ask takes the recommended default";
+export const PREVIEW_DEFAULTS_TEXT = "preview — every ask takes the recommended default; land only after the preview is approved";
 
 export function readReply(text) {
   const raw = String(text ?? "").trim();
   const first = raw.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
   const norm = first.toLowerCase().replace(/[\s.!,;:'"“”‘’-]+$/g, "").replace(/^[\s"“'‘-]+/g, "").trim();
   if (!raw) return { mode: "empty", text: raw };
-  if (APPROVAL_WORDS.includes(norm) && raw.split(/\r?\n/).filter((l) => l.trim()).length === 1) return { mode: "approved", text: APPROVED_DEFAULTS_TEXT };
+  const oneLine = raw.split(/\r?\n/).filter((l) => l.trim()).length === 1;
+  if (APPROVAL_WORDS.includes(norm) && oneLine) return { mode: "approved", text: APPROVED_DEFAULTS_TEXT };
+  if (PREVIEW_WORDS.includes(norm) && oneLine) return { mode: "preview", text: PREVIEW_DEFAULTS_TEXT };
+  if (FORCE_WORDS.includes(norm) && oneLine) return { mode: "forced", text: FORCED_TEXT };
   const lower = first.toLowerCase();
   for (const p of HOLD_PREFIXES) {
     if (lower === p || lower.startsWith(p + " ") || lower.startsWith(p + ",") || lower.startsWith(p + ".") || lower.startsWith(p + "!") || (p.endsWith(":") && lower.startsWith(p))) {
@@ -239,9 +253,36 @@ export function canEnterBuild(row) {
 }
 
 /**
+ * ─── A CHANGE THAT IS NOT PUBLISH-READY LANDS ONLY AFTER SHE HAS SEEN THE PREVIEW ──
+ *
+ * Owner, 21 Sep 2026. `publish_ready` is the PLAN phase's verdict — false whenever a placeholder
+ * or a TODO would ship — and `preview_forced` is her word "preview" on a ready plan. Either one
+ * means land-on-green does not apply: the PR goes up, the preview email goes, and LAND waits for
+ * a SECOND "approved" recorded AFTER that email. `publish_ready` null (a plan that never said) is
+ * treated as not ready: the safe direction.
+ */
+export function needsPreview(row) {
+  if (!row) return true;
+  if (Number(row.preview_forced) === 1) return true;
+  return Number(row.publish_ready) !== 1;
+}
+
+/** Her explicit force to production: who and when, both on the row. */
+export function isForced(row) {
+  return Boolean(row?.forced_by && row?.forced_at);
+}
+
+/** The second approval: recorded, and recorded after the preview she was sent. */
+export function previewApproved(row) {
+  if (!row?.preview_sent_at || !row?.land_approved_at || !row?.land_approval_text) return false;
+  return Number(row.land_approved_at) >= Number(row.preview_sent_at);
+}
+
+/**
  * A row may LAND only when the PR exists, its checks were recorded green by the lane (not assumed),
  * AND her reply — the plan approval — is on the record. Land-on-green was her decision on 20 Sep
  * 2026; the two recorded facts are what make it a decision she made and not a default she fell into.
+ * A change that needs a preview ALSO needs her second "approved", after the preview email.
  */
 export function canLand(row) {
   if (!row) return { ok: false, why: "no row" };
@@ -249,7 +290,21 @@ export function canLand(row) {
   if (!row.pr_url || !row.pr_number) return { ok: false, why: "no pull request on the record" };
   if (!row.checks_green_at) return { ok: false, why: "no recorded green check — land on green needs the green to be on the record" };
   if (!row.answered_at || !row.answers_text) return { ok: false, why: "no recorded plan approval — her reply is the approval and it is not on the record" };
-  return { ok: true, why: "PR open, checks recorded green, her reply recorded" };
+  if (needsPreview(row) && !previewApproved(row) && !isForced(row)) {
+    return { ok: false, why: !row.preview_sent_at
+      ? "this change needs a preview (not publish-ready, or she asked for one) and no preview email is on the record"
+      : "this change needs a preview and her second approval — an \"approved\" after the preview email — is not on the record" };
+  }
+  return { ok: true, why: isForced(row) ? `PR open, checks recorded green, forced to production by ${row.forced_by}` : needsPreview(row) ? "PR open, checks recorded green, her plan approval and her preview approval recorded" : "PR open, checks recorded green, her reply recorded" };
+}
+
+/** The preview step may run once the PR exists and no preview email has gone yet. */
+export function canPreview(row) {
+  if (!row) return { ok: false, why: "no row" };
+  if (row.phase !== "preview") return { ok: false, why: `phase is ${row.phase}, not preview` };
+  if (!row.pr_url || !row.pr_number) return { ok: false, why: "no pull request on the record" };
+  if (row.preview_sent_at) return { ok: false, why: "the preview email already went" };
+  return { ok: true, why: "PR open, preview not yet sent" };
 }
 
 /** Which phase a claim may run, given the row. Null when the row is waiting on something. */
@@ -257,6 +312,7 @@ export function claimablePhase(row) {
   if (!row) return null;
   if (row.phase === "plan") return "plan";
   if (row.phase === "build") return canEnterBuild(row).ok ? "build" : null;
+  if (row.phase === "preview") return canPreview(row).ok ? "preview" : null;
   if (row.phase === "land") return canLand(row).ok ? "land" : null;
   return null;
 }

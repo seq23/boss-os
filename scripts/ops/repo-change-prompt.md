@@ -60,13 +60,20 @@ Read the package, the runbook, and the repository. Then write the plan.
    enough to build from with no further word from her) and `why`. **She approves with one word,
    and that word means "take every default"** — so a default that is vague is a question she
    never answered. If the package answers a question, it is not an ask.
-5. Do not edit the repo in this phase. No branch, no commit.
+5. **Say whether it is publish-ready.** `publish_ready: false` whenever ANY placeholder or TODO
+   would ship — a link the package did not give, an image not supplied, copy marked "TBD", or an
+   ask whose honest default is "placeholder until supplied". Name every one in `placeholders`. A
+   not-ready plan is built and opened as a PR and she sees a preview; it lands only on her second
+   word. Never call a plan ready to avoid the preview.
+6. Do not edit the repo in this phase. No branch, no commit.
 
 Result file shape:
 
 ```json
 {
   "repo": "WPP-llm",
+  "publish_ready": false,
+  "placeholders": ["Team section: bios for two of the four people are not in the package"],
   "plan_text": "markdown — the plan as she will read it",
   "decided": ["CSS: reuse the existing tile class rather than a new one — the runbook freezes the visual system"],
   "asks": [

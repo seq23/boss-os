@@ -78,6 +78,8 @@ export const HER_GRID = [
   // rather than something a later reader takes for an oversight.
   { repos: ["heygetonmylevel"], tier: "primary", owner: "hers", domains: ["heygetonmylevel.com", "time-2-read.com"] },
   { repos: ["authority-backlink-network", "p-n-p"], tier: "infrastructure", owner: "hers", domains: [] },
+  // Added 21 Sep 2026 on her instruction: "THE GRID GAINS creator-network". Private repo, no domain.
+  { repos: ["creator-network"], tier: "primary", owner: "hers", domains: [] },
 ];
 
 /**

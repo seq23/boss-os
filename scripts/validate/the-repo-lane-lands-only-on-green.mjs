@@ -43,6 +43,17 @@
  *      and writes `held_at` on a hold without touching `answered_at`; the plan email prints a
  *      recommended default per ask and the word "approved"; the test file proves "approved"
  *      advances and "no" holds through the real handler.
+ *   I. NOT PUBLISH-READY LANDS ONLY AFTER THE PREVIEW, OR BY HER NAMED FORCE (owner, 21 Sep 2026).
+ *      `canLand` is RUN: a not-ready row with green + plan approval is refused; with a preview
+ *      email and a second approval recorded AFTER it, allowed; with the approval BEFORE the email,
+ *      refused; with `forced_by` + `forced_at`, allowed; with neither, refused; `preview_forced`
+ *      on a ready plan behaves as not-ready. `readReply` is RUN: "preview" → preview (sets
+ *      neither the land approval nor the force); "approved to production" / "force production" /
+ *      "ship it anyway" / "land anyway" → forced; plain "approved" is never forced. In the Worker,
+ *      `forced_by` is written only inside `recordForce`, which is called only from the answer path
+ *      below the sender refusal; the plan route refuses a report without `publish_ready`; the
+ *      build route sends a not-ready row to `preview` unless forced; the runner's DONE email leads
+ *      with the force. The test file proves the four paths and the stranger's force.
  *   G. RULE 0 AND THE CAPS. The runner exits non-zero with NAMED STOP [NOTHING_CLAIMABLE] on a
  *      quiet tick; the executor maps that code to a named line; every `claude -p` carries
  *      `--max-turns`; and the model per phase is read from `PHASE_MODELS` — no `claude-…` literal
@@ -86,7 +97,8 @@ const FORBIDDEN = [
 
 export function guardProblems(lane) {
   const bad = [];
-  const full = { phase: "land", plan_text: "# plan", answered_at: 1, answers_text: "go", pr_url: "https://x/pull/1", pr_number: 1, checks_green_at: 2 };
+  // `publish_ready: 1` is part of "all four" now: a row that never said is treated as not ready.
+  const full = { phase: "land", plan_text: "# plan", answered_at: 1, answers_text: "go", pr_url: "https://x/pull/1", pr_number: 1, checks_green_at: 2, publish_ready: 1 };
   const cases = [
     ["build: no plan", lane.canEnterBuild({ ...full, phase: "build", plan_text: null }), false],
     ["build: no answer", lane.canEnterBuild({ ...full, phase: "build", answered_at: null, answers_text: null }), false],
@@ -118,7 +130,32 @@ export function guardProblems(lane) {
     const got = typeof lane.readReply === "function" ? lane.readReply(text)?.mode : "(no readReply)";
     if (got !== want) bad.push(`readReply(${JSON.stringify(text)}): expected ${want}, got ${got}`);
   }
-  return { problems: bad, cases: cases.length + 5 + replies.length };
+  // I. the preview gate and the named force — run, not read.
+  const notReady = { ...full, publish_ready: 0 };
+  const previewCases = [
+    ["not ready, green, approved, no preview", lane.canLand(notReady), false],
+    ["not ready, preview sent, no second word", lane.canLand({ ...notReady, preview_sent_at: 10 }), false],
+    ["not ready, second approved BEFORE the preview email", lane.canLand({ ...notReady, preview_sent_at: 10, land_approved_at: 9, land_approval_text: "approved" }), false],
+    ["not ready, second approved AFTER the preview email", lane.canLand({ ...notReady, preview_sent_at: 10, land_approved_at: 11, land_approval_text: "approved" }), true],
+    ["not ready, forced by her", lane.canLand({ ...notReady, forced_by: "seq.taylor@gmail.com", forced_at: 5 }), true],
+    ["not ready, forced_by without forced_at", lane.canLand({ ...notReady, forced_by: "seq.taylor@gmail.com" }), false],
+    ["ready but she asked for a preview", lane.canLand({ ...full, publish_ready: 1, preview_forced: 1 }), false],
+    ["publish_ready never said", lane.canLand({ ...full, publish_ready: null }), false],
+    ["ready, plain", lane.canLand({ ...full, publish_ready: 1 }), true],
+  ];
+  for (const [name, verdict, want] of previewCases) {
+    if (Boolean(verdict?.ok) !== want) bad.push(`preview gate ${name}: expected ok=${want}, got ${JSON.stringify(verdict)}`);
+  }
+  const forceReplies = [
+    ["preview", "preview"], ["Preview only.", "preview"], ["preview first", "preview"],
+    ["approved to production", "forced"], ["force production", "forced"], ["ship it anyway", "forced"], ["land anyway", "forced"],
+    ["approved", "approved"], ["approved to prod", "answers"], ["production", "answers"],
+  ];
+  for (const [text, want] of forceReplies) {
+    const got = typeof lane.readReply === "function" ? lane.readReply(text)?.mode : "(no readReply)";
+    if (got !== want) bad.push(`readReply(${JSON.stringify(text)}): expected ${want}, got ${got}`);
+  }
+  return { problems: bad, cases: cases.length + 5 + replies.length + previewCases.length + forceReplies.length };
 }
 
 // ─── B–G. The files, read ─────────────────────────────────────────────────────
@@ -136,9 +173,10 @@ export function fileProblems(f) {
   if (!/canEnterBuild\s*\(/.test(f.runner) || !/canLand\s*\(/.test(f.runner)) bad.push(`${FILES.runner}: the runner does not check canEnterBuild()/canLand() itself before running a phase.`);
 
   // C. the green has one writer
-  const writers = (f.src.match(/checks_green_at\s*=\s*\?/g) ?? []).length;
+  // One writer, in either spelling: `= ?` or `= COALESCE(checks_green_at, ?)` (a green recorded twice keeps the first).
+  const writers = (f.src.match(/checks_green_at\s*=\s*(?:\?|COALESCE\(checks_green_at,\s*\?\))/g) ?? []).length;
   if (writers !== 1) bad.push(`checks_green_at is assigned in ${writers} place(s) across src/worker/boss; it must be exactly one — the /checks route on a green.`);
-  const greenBranch = /state === "green"[\s\S]{0,600}checks_green_at = \?/.test(f.routes);
+  const greenBranch = /state === "green"[\s\S]{0,600}checks_green_at = (?:\?|COALESCE\(checks_green_at,\s*\?\))/.test(f.routes);
   if (!greenBranch) bad.push(`${FILES.routes}: checks_green_at is not set inside the state === "green" branch of /checks.`);
   if (/checks_green_at\s+INTEGER\s+(?:NOT NULL\s+)?DEFAULT/i.test(f.migrations)) bad.push("a migration gives checks_green_at a DEFAULT; green must be recorded, never assumed.");
 
@@ -161,6 +199,25 @@ export function fileProblems(f) {
   if (!/recommended default/i.test(f.runner) || !/approved/.test(f.runner)) bad.push(`${FILES.runner}: the plan email does not print a recommended default per ask and the word "approved".`);
   if (!/"default"/.test(f.prompt)) bad.push(`${FILES.prompt}: the PLAN section does not ask for a "default" on every ask.`);
   if (!/exactly[\s\S]{0,80}approved/i.test(f.test) || !/HOLDS the task/.test(f.test)) bad.push(`${FILES.test}: no test proves a reply of exactly "approved" advances the task and "no" holds it.`);
+
+  // I. the preview gate and the force, in the code that writes the rows
+  const forceWriters = (f.src.match(/SET forced_by = \?/g) ?? []).length;
+  if (forceWriters !== 1) bad.push(`forced_by is assigned in ${forceWriters} place(s) across src/worker/boss; it must be exactly one — recordForce in the answer path.`);
+  if (!/async function recordForce/.test(f.answer) || !/SET forced_by = \?/.test(f.answer)) bad.push(`${FILES.answer}: recordForce() is missing or no longer writes forced_by.`);
+  if (!/mode === "forced"[\s\S]{0,300}recordForce\(/.test(f.answer)) bad.push(`${FILES.answer}: the forced reply does not go through recordForce().`);
+  if (/mode === "approved"[\s\S]{0,600}recordForce\(/.test(f.answer.slice(0, f.answer.indexOf('mode === "forced"')))) bad.push(`${FILES.answer}: a plain "approved" reaches recordForce() — the force words are separate and explicit.`);
+  if (!/repo_change_forced/.test(f.answer)) bad.push(`${FILES.answer}: the force raises no finding (task event 'repo_change_forced').`);
+  const previewBranch = (() => { const a = f.answer.indexOf('mode === "preview"'); return a === -1 ? "" : f.answer.slice(a, a + 700); })();
+  if (/land_approved_at = \?|forced_by = \?/.test(previewBranch)) bad.push(`${FILES.answer}: the "preview" reply sets the land approval or the force — it must set neither.`);
+  if (!/typeof b\?\.publish_ready !== "boolean"/.test(f.routes)) bad.push(`${FILES.routes}: the plan route accepts a report without publish_ready.`);
+  if (!/needsPreview\(row\) && !isForced\(row\) \? "preview" : "landing"/.test(f.routes)) bad.push(`${FILES.routes}: the build route does not send a not-ready (unforced) row to the preview step.`);
+  if (!/preview_message_id/.test(f.routes)) bad.push(`${FILES.routes}: the preview report does not require the preview email's id.`);
+  if (!/Landed to production with/.test(f.runner)) bad.push(`${FILES.runner}: the DONE email does not lead with the force.`);
+  if (!/NOT PUBLISH-READY/.test(f.runner)) bad.push(`${FILES.runner}: the plan email does not say at the top that the change is not publish-ready.`);
+  if (!/publish_ready/.test(f.prompt)) bad.push(`${FILES.prompt}: the PLAN section does not ask for publish_ready.`);
+  for (const proof of ["PATH 1", "PATH 3", "THE FORCE", "A STRANGER'S FORCE"]) {
+    if (!f.test.includes(proof)) bad.push(`${FILES.test}: no test named "${proof}…" — the preview/force paths are not proven.`);
+  }
 
   // E. nothing lands outside ~/bin/land
   for (const [name, src] of [["executor", f.executor], ["runner", f.runner]]) {
@@ -207,28 +264,38 @@ async function scan() {
 
 // ─── Self-test ────────────────────────────────────────────────────────────────
 
+function lane_readReply_stub(t) {
+  const n = String(t).toLowerCase().replace(/[.!]+$/, "");
+  if (["approved", "yes", "go", "land it"].includes(n)) return { mode: "approved" };
+  if (["preview", "preview only", "preview first"].includes(n)) return { mode: "preview" };
+  if (["approved to production", "force production", "ship it anyway", "land anyway"].includes(n)) return { mode: "forced" };
+  if (n === "" ) return { mode: "empty" };
+  if (/^(no|not approved|stop|changes:)/.test(n)) return { mode: "held" };
+  return { mode: "answers" };
+}
+
 function selfTest() {
   let failed = 0;
   const expect = (name, ok) => { if (!ok) { console.error(`  ✗ ${name}`); failed += 1; } };
 
   // A. a guard that forgot the green must be caught by running it.
-  const loose = { canEnterBuild: () => ({ ok: true }), canLand: (r) => ({ ok: Boolean(r?.pr_url) }), claimablePhase: (r) => (r?.phase === "plan" ? "plan" : r?.phase === "build" ? "build" : r?.phase === "land" ? "land" : null) };
+  const loose = { readReply: lane_readReply_stub, canEnterBuild: () => ({ ok: true }), canLand: (r) => ({ ok: Boolean(r?.pr_url) }), claimablePhase: (r) => (r?.phase === "plan" ? "plan" : r?.phase === "build" ? "build" : r?.phase === "land" ? "land" : null) };
   expect("a canLand that ignores the green is caught", guardProblems(loose).problems.some((p) => p.includes("no green")));
   expect("a canEnterBuild that ignores the answer is caught", guardProblems(loose).problems.some((p) => p.includes("no answer")));
 
   // B–G over a fixture set that passes, then one break per rule.
   const good = {
     lane: "export const PHASE_MODELS = { plan: 'a', build: 'b', land: 'c' };",
-    routes: 'const phase = claimablePhase(row); const gate = canLand(row); if (state === "green") { db(`UPDATE repo_changes SET checks_green_at = ? WHERE id = ?`) }',
+    routes: 'const phase = claimablePhase(row); const gate = canLand(row); if (typeof b?.publish_ready !== "boolean") throw x; const next = needsPreview(row) && !isForced(row) ? "preview" : "landing"; preview_message_id; if (state === "green") { db(`UPDATE repo_changes SET checks_green_at = ? WHERE id = ?`) }',
     mail: "if (!authorised) { return refused; }\nconst planAnswer = await answerFromMail(env, {});\nadmitTask(env, {});",
-    answer: "const reply = readReply(text); if (reply.mode === \"held\") { db(`UPDATE repo_changes SET held_at = ? WHERE id = ?`) }\nUPDATE repo_changes SET phase = 'build', answered_at = ? WHERE id = ? AND phase = 'asking'",
+    answer: "async function recordForce() { db(`UPDATE repo_changes SET forced_by = ? WHERE id = ?`); taskEvent('repo_change_forced') }\nif (reply.mode === \"forced\") { await recordForce(); }\nif (reply.mode === \"preview\") { note(); }\nconst reply = readReply(text); if (reply.mode === \"held\") { db(`UPDATE repo_changes SET held_at = ? WHERE id = ?`) }\nUPDATE repo_changes SET phase = 'build', answered_at = ? WHERE id = ? AND phase = 'asking'",
     executor: "NOTHING_CLAIMABLE=7\ncaffeinate timeout 3h node repo-change.mjs\ncase $RC in $NOTHING_CLAIMABLE) say quiet ;; esac",
-    runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst line = `My recommended default: ${a.default}`; const word = 'reply approved';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5']);\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
-    prompt: "## PHASE: PLAN\nplan with a \"default\" per ask\n## PHASE: BUILD\nNever `gh pr merge`.\n## PHASE: LAND\nrun {{LAND}} {{PR_NUMBER}}",
-    test: 'it("SCOOTER CANNOT USE THIS LANE", async () => { expect(res.outcome).toBe("REFUSED_SENDER"); });\nit("a reply of exactly \\"approved\\" advances", () => {});\nit("\\"no\\" HOLDS the task", () => {});',
+    runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst line = `My recommended default: ${a.default}`; const word = 'reply approved'; const top = 'NOT PUBLISH-READY'; const done = 'Landed to production with';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5']);\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
+    prompt: "## PHASE: PLAN\nplan with a \"default\" per ask and publish_ready\n## PHASE: BUILD\nNever `gh pr merge`.\n## PHASE: LAND\nrun {{LAND}} {{PR_NUMBER}}",
+    test: 'it("SCOOTER CANNOT USE THIS LANE", async () => { expect(res.outcome).toBe("REFUSED_SENDER"); });\nit("a reply of exactly \\"approved\\" advances", () => {});\nit("\\"no\\" HOLDS the task", () => {});\nit("PATH 1", () => {}); it("PATH 3", () => {}); it("THE FORCE", () => {}); it("A STRANGER\'S FORCE", () => {});',
     ahrefs: 'const RUNNER = "scripts/ops/ahrefs-audit-fix.sh";\nfor (const forbidden of [/\\bgh\\s+pr\\s+merge\\b/]) {}',
     migrations: "CREATE TABLE repo_changes (checks_green_at INTEGER)",
-    src: "UPDATE repo_changes SET checks_green_at = ? WHERE",
+    src: "UPDATE repo_changes SET checks_green_at = ? WHERE\nUPDATE repo_changes SET forced_by = ? WHERE",
   };
   expect(`a complete lane passes: ${fileProblems(good).join(" | ")}`, fileProblems(good).length === 0);
   expect("a second writer of checks_green_at is caught", fileProblems({ ...good, src: good.src + "\nUPDATE repo_changes SET checks_green_at = ? WHERE phase" }).length > 0);
@@ -247,9 +314,18 @@ function selfTest() {
   expect("an answer path that skips readReply is caught", fileProblems({ ...good, answer: good.answer.replace("readReply(text)", "text") }).some((p) => p.includes("readReply")));
   expect("a reader that approves 'no' is caught", guardProblems({ ...loose, readReply: () => ({ mode: "approved" }) }).problems.some((p) => p.includes('readReply("no")')));
   expect("a test file without the one-word proofs is caught", fileProblems({ ...good, test: good.test.split("\n")[0] }).some((p) => p.includes('exactly "approved"')));
+  // I. the preview gate and the force
+  const noGate = { ...loose, readReply: lane_readReply_stub, canLand: (r) => ({ ok: Boolean(r?.pr_url && r?.checks_green_at && r?.answered_at) }) };
+  expect("a canLand that lands a not-ready row without the second approval is caught", guardProblems(noGate).problems.some((p) => p.includes("preview gate not ready, green, approved, no preview")));
+  expect("a canLand that accepts the approval before the preview email is caught", guardProblems({ ...noGate, canLand: (r) => ({ ok: Boolean(r?.pr_url && r?.checks_green_at && r?.answered_at && (r?.land_approved_at || r?.forced_at || r?.publish_ready === 1) && !r?.preview_forced) }) }).problems.some((p) => p.includes("BEFORE the preview email")));
+  expect("a readReply that forces on plain approved is caught", guardProblems({ ...loose, readReply: (t) => ({ mode: t === "approved" ? "forced" : lane_readReply_stub(t).mode }) }).problems.some((p) => p.includes('readReply("approved")')));
+  expect("a second writer of forced_by is caught", fileProblems({ ...good, src: good.src + "\nUPDATE repo_changes SET forced_by = ? WHERE phase" }).some((p) => p.includes("forced_by is assigned")));
+  expect("a preview reply that sets the land approval is caught", fileProblems({ ...good, answer: good.answer.replace('if (reply.mode === "preview") { note(); }', 'if (reply.mode === "preview") { db(`SET land_approved_at = ?`); }') }).some((p) => p.includes("must set neither")));
+  expect("a plan route without publish_ready is caught", fileProblems({ ...good, routes: good.routes.replace('if (typeof b?.publish_ready !== "boolean") throw x; ', "") }).some((p) => p.includes("publish_ready")));
+  expect("a build route that skips the preview is caught", fileProblems({ ...good, routes: good.routes.replace('needsPreview(row) && !isForced(row) ? "preview" : "landing"', '"landing"') }).some((p) => p.includes("preview step")));
 
   if (failed) { console.error(`\nSELF-TEST FAILED: ${failed} case(s)`); process.exit(1); }
-  console.log("SELF-TEST PASSED: 20/20 cases.");
+  console.log("SELF-TEST PASSED: 27/27 cases.");
 }
 
 if (process.argv.includes("--self-test")) { selfTest(); process.exit(0); }

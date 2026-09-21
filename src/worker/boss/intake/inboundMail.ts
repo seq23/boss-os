@@ -563,7 +563,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * `validate:repo-lane` pins that this call sits after the `!authorised` return.
    */
   const planAnswer = route.outcome !== "AMBIGUOUS"
-    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject, text: readable, mailId, now })
+    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject, text: readable, mailId, now, sender })
     : null;
 
   const question = bookFailure || closedNote || planAnswer ? null : clarificationFor({
