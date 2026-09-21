@@ -246,7 +246,7 @@ export function fileProblems(f) {
   if (preWriters !== 1) bad.push(`pre_approved_phrase is inserted in ${preWriters} place(s) across src/worker/boss; it must be exactly one — the repo_changes INSERT in tasks/admit.ts.`);
   if (/pre_approved_phrase\s*=/.test(f.src) || /pre_approved_by\s*=/.test(f.src)) bad.push("pre_approved_phrase / pre_approved_by is UPDATEd somewhere; it is written once at intake and never again.");
   if (/pre_approved_(?:phrase|by)\s*=\s*\?/.test(f.answer)) bad.push(`${FILES.answer}: the answer path writes pre-approval — a later message must never pre-approve.`);
-  if (!/repo_change_pre_approved/.test(f.admit) || !/phrase: change\.pre_approved_phrase/.test(f.admit)) bad.push("tasks/admit.ts: the pre-approval finding does not name the phrase.");
+  if (!/'repo_change_pre_approved'[\s\S]{0,400}\bphrase: change\.pre_approved_phrase/.test(f.admit)) bad.push("tasks/admit.ts: the pre-approval finding does not name the phrase.");
   if (!/A pre-approved plan may not ask/.test(f.routes)) bad.push(`${FILES.routes}: the plan route accepts a pre-approved plan that still asks.`);
   if (!/pre-approved in the request/.test(f.routes)) bad.push(`${FILES.routes}: a pre-approved plan is not filed as approved by her (plan_approved_by).`);
   if (!/you pre-approved this/.test(f.runner) || !/Reply \\?`stop\\?` within the build/.test(f.runner)) bad.push(`${FILES.runner}: the FYI email does not say she pre-approved it and how to stop it.`);
@@ -364,11 +364,12 @@ function selfTest() {
   expect("a plan route that lets a pre-approved plan ask is caught", fileProblems({ ...good, routes: good.routes.replace('if (pre && asks.length) throw badRequest("A pre-approved plan may not ask"); ', "") }).some((p) => p.includes("still asks")));
   expect("a preApprovalIn that misses a phrase is caught", guardProblems({ ...loose, preApprovalIn: () => null }).problems.some((p) => p.includes('preApprovalIn("your call')));
   expect("a canLand that lands a pre-approved not-ready row is caught", guardProblems({ ...loose, preApprovalIn: (t) => /your call|you decide|no need to ask|just do it|pick everything|no options/.exec(String(t).toLowerCase())?.[0] ?? null, canLand: (r) => ({ ok: Boolean(r?.pr_url && r?.checks_green_at && (r?.answered_at || r?.plan_approved_by)) }) }).problems.some((p) => p.includes("pre-approved NOT-ready row lands")));
+  expect("a finding that drops the phrase is caught", fileProblems({ ...good, admit: good.admit.replace("{ phrase: change.pre_approved_phrase }", "{ by }") }).some((p) => p.includes("does not name the phrase")));
   expect("a LAND section with an unbounded post-land step is caught", fileProblems({ ...good, prompt: good.prompt.replace("Only a step the instruction or the plan named", "any step") }).some((p) => p.includes("post-land step")));
   expect("a build route that skips the preview is caught", fileProblems({ ...good, routes: good.routes.replace('needsPreview(row) && !isForced(row) ? "preview" : "landing"', '"landing"') }).some((p) => p.includes("preview step")));
 
   if (failed) { console.error(`\nSELF-TEST FAILED: ${failed} case(s)`); process.exit(1); }
-  console.log("SELF-TEST PASSED: 33/33 cases.");
+  console.log("SELF-TEST PASSED: 34/34 cases.");
 }
 
 if (process.argv.includes("--self-test")) { selfTest(); process.exit(0); }
