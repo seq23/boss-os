@@ -304,6 +304,15 @@ and which placeholders on the row, a `warn` finding, the DONE email leads with i
 the badge. Plain `approved` never forces. Pinned by `validate:repo-lane` (48 guard cases) and
 proven by `tests/boss/repoChange.test.ts` (four paths, the force, a stranger's force).
 
+**Pre-approval in the request (21 Sep 2026).** `your call` / `you decide` / `no need to ask` /
+`just do it` / `pick everything` / `no options` in HER request: the plan decides everything (a
+pre-approved plan that asks is refused), is filed as approved — `plan_approved_by = <her address>
+(pre-approved in the request: "<phrase>")` — with a finding naming the phrase, the FYI email goes
+("you pre-approved this; no reply needed. Reply `stop` within the build to hold it"), and BUILD
+parks at once. Not publish-ready still stops at the preview unless the request also carries a
+force phrase. `stop` / `no` / `changes:` at build withdraws the approval; at landing it parks the PR
+until her `approved`. Written once, at intake, below the sender refusal; never from a later message.
+
 **The grid gained `creator-network` (21 Sep 2026)** — one list, `src/shared/boss/grid.mjs`, with
 the validator's fixture copy in step; a `#danielle` mail naming it is admitted (`how-we-know` was
 already on it under `youtube`). **A post-land step she names** ("after landing, run bin/<script>
