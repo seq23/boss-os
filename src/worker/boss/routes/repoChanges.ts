@@ -23,9 +23,9 @@ import type { Env, Vars } from "../env";
 import { ok, badRequest, conflict, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
-import { repoChangeById, taskEvent, describePhase, safeList, type RepoChangeRow } from "../repoChange/answer";
+import { repoChangeById, taskEvent, describePhase, safeList, recordForce, type RepoChangeRow } from "../repoChange/answer";
 import {
-  claimablePhase, claimIsLive, canLand, canEnterBuild, RUNNABLE_PHASES, PHASE_MODELS, PHASE_MAX_TURNS,
+  claimablePhase, claimIsLive, canLand, canEnterBuild, canPreview, needsPreview, isForced, RUNNABLE_PHASES, PHASE_MODELS, PHASE_MAX_TURNS,
   CLAIM_LEASE_MS, TASK_KIND, EXECUTOR_SCRIPT, gridRepoNames,
 } from "../../../shared/boss/repoChange/lane.mjs";
 import { propertyForRepo } from "../../../shared/boss/grid.mjs";
@@ -37,7 +37,9 @@ const text = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v
 function view(row: RepoChangeRow, now = Date.now()) {
   return {
     ...row,
-    decided: safeList(row.decided_json), asks: safeList(row.asks_json),
+    decided: safeList(row.decided_json), asks: safeList(row.asks_json), placeholders: safeList(row.placeholders_json),
+    needs_preview: needsPreview(row), forced: isForced(row), forced_placeholders: safeList(row.forced_placeholders),
+    pre_approved: Boolean(row.pre_approved_phrase),
     proof: parseObj(row.proof_json), live_proof: parseObj(row.live_proof_json),
     sentence: `${row.repo ?? "package"}: ${describePhase(row)}`,
     claim_live: claimIsLive(row, now),
@@ -72,7 +74,7 @@ repoChanges.get("/", async (c) => {
  */
 repoChanges.get("/claimable", async (c) => {
   const rows = await c.env.DB
-    .prepare(`SELECT * FROM repo_changes WHERE phase IN ('plan','build','landing','land') ORDER BY created_at`)
+    .prepare(`SELECT * FROM repo_changes WHERE phase IN ('plan','build','preview','previewing','landing','land') ORDER BY created_at`)
     .all<RepoChangeRow>();
   const now = Date.now();
   const claimable: unknown[] = [];
@@ -81,7 +83,7 @@ repoChanges.get("/claimable", async (c) => {
     const live = claimIsLive(r, now);
     const phase = live ? null : claimablePhase(r);
     if (phase) claimable.push({ id: r.id, task_id: r.task_id, repo: r.repo, phase, pr_number: r.pr_number, pr_url: r.pr_url });
-    else waiting.push({ id: r.id, repo: r.repo, phase: r.phase, why: live ? `claimed by ${r.claimed_by} ${Math.round((now - Number(r.claimed_at)) / 60000)} min ago` : r.phase === "landing" ? "checks not yet recorded green" : r.phase === "build" ? canEnterBuild(r).why : r.phase === "land" ? canLand(r).why : describePhase(r) });
+    else waiting.push({ id: r.id, repo: r.repo, phase: r.phase, pr_number: r.pr_number, pr_url: r.pr_url, why: live ? `claimed by ${r.claimed_by} ${Math.round((now - Number(r.claimed_at)) / 60000)} min ago` : r.phase === "landing" ? "checks not yet recorded green" : r.phase === "previewing" ? "waiting for her second approved after the preview" : r.phase === "build" ? canEnterBuild(r).why : r.phase === "preview" ? canPreview(r).why : r.phase === "land" ? canLand(r).why : describePhase(r) });
   }
   return ok(c, { claimable, waiting });
 });
@@ -109,8 +111,8 @@ repoChanges.post("/:id/claim", async (c) => {
   }
   const phase = claimablePhase(row);
   if (!phase) {
-    const why = row.phase === "build" ? canEnterBuild(row).why : row.phase === "land" ? canLand(row).why : describePhase(row);
-    throw conflict(`${row.id} cannot run now: ${why}`, "Only plan, an answered build, and a green land may be claimed.");
+    const why = row.phase === "build" ? canEnterBuild(row).why : row.phase === "land" ? canLand(row).why : row.phase === "preview" ? canPreview(row).why : describePhase(row);
+    throw conflict(`${row.id} cannot run now: ${why}`, "Only plan, an answered build, an unsent preview, and a green (and, if previewed, approved) land may be claimed.");
   }
   const claimed = await c.env.DB
     .prepare(`UPDATE repo_changes SET claimed_at = ?, claimed_by = ?, claimed_phase = ?, updated_at = ? WHERE id = ? AND (claimed_at IS NULL OR claimed_at < ?)`)
@@ -122,7 +124,8 @@ repoChanges.post("/:id/claim", async (c) => {
   return ok(c, {
     ...view({ ...row, claimed_at: now, claimed_by: device, claimed_phase: phase }, now),
     phase,
-    model: PHASE_MODELS[phase], max_turns: PHASE_MAX_TURNS[phase],
+    // The preview step is the Mac's own (no model): find the deployment URL, email her.
+    model: phase === "preview" ? null : PHASE_MODELS[phase], max_turns: phase === "preview" ? null : PHASE_MAX_TURNS[phase],
     task,
   }, 201);
 });
@@ -155,6 +158,14 @@ repoChanges.post("/:id/plan", async (c) => {
   const decided = Array.isArray(b?.decided) ? b.decided.slice(0, 100) : [];
   const asks = Array.isArray(b?.asks) ? b.asks.slice(0, 50) : [];
   /*
+   * EVERY PLAN SAYS WHETHER IT IS PUBLISH-READY (owner, 21 Sep 2026). A plan that does not say is
+   * refused — "did not say" would otherwise read as ready, and ready is the direction that ships a
+   * placeholder. Not ready must name what would ship as a placeholder.
+   */
+  if (typeof b?.publish_ready !== "boolean") throw badRequest("A plan report needs publish_ready (true|false)", "false whenever any placeholder or TODO would ship; then name them in placeholders[].");
+  const placeholders = Array.isArray(b?.placeholders) ? b.placeholders.map((x: unknown) => String(x).slice(0, 300)).slice(0, 50) : [];
+  if (!b.publish_ready && placeholders.length === 0) throw badRequest("A plan that is not publish-ready must name its placeholders", "placeholders[] — what would ship as a placeholder, by name.");
+  /*
    * THE PLAN MAY NAME THE REPO when the mail only linked a package. It must be a grid repo — the
    * same list intake reads — and it may not change a repo the mail already named: the message is
    * hers, the plan is a model's, and a model does not get to retarget her instruction.
@@ -165,18 +176,34 @@ repoChanges.post("/:id/plan", async (c) => {
   const repo = row.repo ?? named ?? null;
   const property = repo ? propertyForRepo(repo)?.key ?? null : null;
   const now = Date.now();
+  /*
+   * PRE-APPROVED IN THE REQUEST: the plan decides everything (a plan that still asks is refused),
+   * is filed as approved by her at filing time, and BUILD parks at once. The FYI email still went
+   * (`ask_message_id` is still required) so she can "stop" it. A force phrase in the request is
+   * recorded through the one force writer, with her as the actor.
+   */
+  const pre = Boolean(row.pre_approved_phrase && row.pre_approved_by);
+  if (pre && asks.length > 0) throw badRequest(`A pre-approved plan may not ask (${asks.length} ask${asks.length === 1 ? "" : "s"})`, `She wrote "${row.pre_approved_phrase}": every decision is Danielle's; move each ask into decided with its default as the decision.`);
+  const phase = pre ? "build" : "asking";
+  const approvedBy = pre ? `${row.pre_approved_by} (pre-approved in the request: "${row.pre_approved_phrase}")` : null;
   await c.env.DB
     .prepare(
-      `UPDATE repo_changes SET phase = 'asking', repo = ?, property_key = ?, plan_text = ?, decided_json = ?, asks_json = ?, planned_at = ?, plan_written_by = ?,
+      `UPDATE repo_changes SET phase = ?, repo = ?, property_key = ?, plan_text = ?, decided_json = ?, asks_json = ?, planned_at = ?, plan_written_by = ?,
+              publish_ready = ?, placeholders_json = ?,
               asked_at = ?, ask_message_id = ?, run_log = COALESCE(?, run_log),
+              answered_at = ?, answers_text = ?, answers_mode = ?, plan_approved_by = ?,
               claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ?
         WHERE id = ? AND phase = 'plan'`,
     )
-    .bind(repo, property, planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), now, askMessageId, text(b?.run_log, 500), now, row.id)
+    .bind(phase, repo, property, planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), b.publish_ready ? 1 : 0, JSON.stringify(placeholders), now, askMessageId, text(b?.run_log, 500),
+      pre ? now : null, pre ? `pre-approved in the request: "${row.pre_approved_phrase}" — every decision is Danielle's` : null, pre ? "approved" : null, approvedBy, now, row.id)
     .run();
-  await taskEvent(c.env, row.task_id, "repo_change_planned", { repo_change_id: row.id, decided: decided.length, asks: asks.length, ask_message_id: askMessageId });
-  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "planned", detail: { task_id: row.task_id, asks: asks.length } });
-  return ok(c, { id: row.id, phase: "asking", asks: asks.length });
+  if (pre && row.force_phrase) {
+    await recordForce(c.env, { ...row, placeholders_json: JSON.stringify(placeholders) }, { mailId: row.mail_id, now, sender: row.pre_approved_by! }, "request");
+  }
+  await taskEvent(c.env, row.task_id, "repo_change_planned", { repo_change_id: row.id, decided: decided.length, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, ask_message_id: askMessageId, pre_approved: pre, plan_approved_by: approvedBy });
+  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: pre ? "planned_pre_approved" : "planned", detail: { task_id: row.task_id, asks: asks.length, phrase: row.pre_approved_phrase ?? null } });
+  return ok(c, { id: row.id, phase, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, pre_approved: pre });
 });
 
 /** BUILD → LANDING. The PR exists; the checks are not yet recorded. */
@@ -187,18 +214,46 @@ repoChanges.post("/:id/build", async (c) => {
   const prNumber = Number.isInteger(b?.pr_number) ? Number(b.pr_number) : null;
   if (!prUrl || !prNumber) throw badRequest("A build report needs pr_url and pr_number", "A build with no pull request is not a build.");
   const now = Date.now();
+  // A change that needs a preview goes to the preview step, not to landing: the PR is up, and the
+  // next thing that happens is her preview email — never a landing.
+  const next = needsPreview(row) && !isForced(row) ? "preview" : "landing";
   await c.env.DB
     .prepare(
-      `UPDATE repo_changes SET phase = 'landing', branch = ?, pr_url = ?, pr_number = ?, built_at = ?, build_written_by = ?, proof_json = ?,
+      `UPDATE repo_changes SET phase = ?, branch = ?, pr_url = ?, pr_number = ?, built_at = ?, build_written_by = ?, proof_json = ?,
               checks_state = 'pending', run_log = COALESCE(?, run_log),
               claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ?
         WHERE id = ? AND phase = 'build'`,
     )
-    .bind(text(b?.branch, 200), prUrl, prNumber, now, text(b?.written_by, 120), b?.proof ? JSON.stringify(b.proof).slice(0, 60_000) : null, text(b?.run_log, 500), now, row.id)
+    .bind(next, text(b?.branch, 200), prUrl, prNumber, now, text(b?.written_by, 120), b?.proof ? JSON.stringify(b.proof).slice(0, 60_000) : null, text(b?.run_log, 500), now, row.id)
     .run();
-  await taskEvent(c.env, row.task_id, "repo_change_built", { repo_change_id: row.id, pr_url: prUrl, pr_number: prNumber });
-  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "pr_opened", detail: { task_id: row.task_id, pr_url: prUrl } });
-  return ok(c, { id: row.id, phase: "landing", pr_url: prUrl });
+  await taskEvent(c.env, row.task_id, "repo_change_built", { repo_change_id: row.id, pr_url: prUrl, pr_number: prNumber, next, needs_preview: needsPreview(row) });
+  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "pr_opened", detail: { task_id: row.task_id, pr_url: prUrl, next } });
+  return ok(c, { id: row.id, phase: next, pr_url: prUrl, needs_preview: needsPreview(row) });
+});
+
+/**
+ * PREVIEW → PREVIEWING. The preview email went (its id is required); the URL is the Pages branch
+ * deployment when there is one and null for a Workers repo, which the email says in words.
+ */
+repoChanges.post("/:id/preview", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const row = await mustBeClaimed(c.env, c.req.param("id"), b, "preview");
+  const gate = canPreview(row);
+  if (!gate.ok) throw conflict(`${row.id} may not preview: ${gate.why}`);
+  const messageId = text(b?.preview_message_id, 200);
+  if (!messageId) throw badRequest("A preview report needs preview_message_id", "The id the mail provider returned for the preview email; without it she was never sent the preview.");
+  const previewUrl = text(b?.preview_url, 500);
+  const now = Date.now();
+  await c.env.DB
+    .prepare(
+      `UPDATE repo_changes SET phase = 'previewing', preview_url = ?, preview_sent_at = ?, preview_message_id = ?, run_log = COALESCE(?, run_log),
+              claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ?
+        WHERE id = ? AND phase = 'preview'`,
+    )
+    .bind(previewUrl, now, messageId, text(b?.run_log, 500), now, row.id)
+    .run();
+  await taskEvent(c.env, row.task_id, "repo_change_previewed", { repo_change_id: row.id, preview_url: previewUrl, preview_message_id: messageId });
+  return ok(c, { id: row.id, phase: "previewing", preview_url: previewUrl });
 });
 
 /**
@@ -210,23 +265,26 @@ repoChanges.post("/:id/checks", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const row = await repoChangeById(c.env, c.req.param("id"));
   if (!row) throw notFound("No repo change with that id");
-  if (row.phase !== "landing") throw conflict(`${row.id} is ${describePhase(row)}; checks are recorded only while landing`);
+  // Recorded while landing, and while the preview is out or being sent — the green is a fact about
+  // the PR whichever word she is on. Only from `landing` does a green move the phase.
+  if (row.phase !== "landing" && row.phase !== "previewing" && row.phase !== "preview") throw conflict(`${row.id} is ${describePhase(row)}; checks are recorded only while landing or previewing`);
   const state = text(b?.state, 20);
   if (state !== "green" && state !== "pending" && state !== "red") throw badRequest("state must be green, pending or red");
   const detail = text(b?.detail, 4000);
   const now = Date.now();
   if (state === "green") {
+    const next = row.phase === "landing" ? "land" : row.phase;
     await c.env.DB
-      .prepare(`UPDATE repo_changes SET phase = 'land', checks_state = 'green', checks_detail = ?, checks_green_at = ?, updated_at = ? WHERE id = ? AND phase = 'landing'`)
-      .bind(detail, now, now, row.id).run();
-    await taskEvent(c.env, row.task_id, "repo_change_checks_green", { repo_change_id: row.id, pr_number: row.pr_number, detail });
-    return ok(c, { id: row.id, phase: "land", checks_green_at: now });
+      .prepare(`UPDATE repo_changes SET phase = ?, checks_state = 'green', checks_detail = ?, checks_green_at = COALESCE(checks_green_at, ?), updated_at = ? WHERE id = ?`)
+      .bind(next, detail, now, now, row.id).run();
+    await taskEvent(c.env, row.task_id, "repo_change_checks_green", { repo_change_id: row.id, pr_number: row.pr_number, detail, phase: next });
+    return ok(c, { id: row.id, phase: next, checks_green_at: row.checks_green_at ?? now });
   }
   if (state === "red") {
     const told = text(b?.notified_message_id, 200);
     if (!told) throw badRequest("A red check needs notified_message_id", "Email her first; the id proves she was told.");
     await c.env.DB
-      .prepare(`UPDATE repo_changes SET phase = 'failed', checks_state = 'red', checks_detail = ?, failure = ?, done_message_id = ?, updated_at = ? WHERE id = ? AND phase = 'landing'`)
+      .prepare(`UPDATE repo_changes SET phase = 'failed', checks_state = 'red', checks_detail = ?, failure = ?, done_message_id = ?, updated_at = ? WHERE id = ?`)
       .bind(detail, `The pull request's checks went red: ${detail ?? "no detail"}`, told, now, row.id).run();
     await taskEvent(c.env, row.task_id, "repo_change_failed", { repo_change_id: row.id, why: "checks red", detail, notified_message_id: told });
     return ok(c, { id: row.id, phase: "failed" });

@@ -76,6 +76,11 @@ export const CANNOT = {
     gsc: "No public site of its own, so no Search Console property.",
     cloudflare: "No public site of its own, so no deployment to read.",
   },
+  creator_network: {
+    uptime: "No canonical domain recorded — the property is four creators' social accounts and a state Worker, not a public site.",
+    gsc: "No public site of its own, so no Search Console property.",
+    cloudflare: "The state Worker deploys on land, but no domain is recorded for it in the grid, so no deployment can be matched by name.",
+  },
 };
 
 /**

@@ -39,7 +39,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
-  canEnterBuild, canLand, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT,
+  canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { sendersFor } from "./notify.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
@@ -204,6 +204,11 @@ async function runPhase(claim) {
   // Belt and braces: the Worker checked, and so does the runner.
   if (phase === "build" && !canEnterBuild(row).ok) { await release(row, `runner refused build: ${canEnterBuild(row).why}`, log); return; }
   if (phase === "land" && !canLand(row).ok) { await release(row, `runner refused land: ${canLand(row).why}`, log); return; }
+  if (phase === "preview") {
+    if (!canPreview(row).ok) { await release(row, `runner refused preview: ${canPreview(row).why}`, log); return; }
+    await sendPreview(row, log);
+    return;
+  }
 
   // The package, pulled fresh at PLAN time; reused after.
   const packageDir = join(dir, "package");
@@ -243,14 +248,17 @@ async function runPhase(claim) {
     GRID_REPOS: gridRepoNames().join(", "), GITHUB_DIR,
     PACKAGE_DIR: row.drive_folder ? packageDir : "(no Drive package was linked)", DRIVE_URL: row.drive_url ?? "",
     INSTRUCTION: row.instruction, PLAN: row.plan_text ?? "",
-    ANSWERS: row.answers_mode === "approved" || row.answers_text === APPROVED_DEFAULTS_TEXT
-      ? `${APPROVED_DEFAULTS_TEXT}. She replied with the single word of approval: take the recommended default on EVERY question below, exactly as written in its "default" field.`
+    ANSWERS: ["approved", "preview", "forced"].includes(row.answers_mode) || [APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT].includes(row.answers_text)
+      ? `${row.answers_text}. She replied with a single word of approval: take the recommended default on EVERY question below, exactly as written in its "default" field.`
       : row.answers_text ?? "",
     ASKS: (row.asks ?? []).map((a, i) => `${i + 1}. ${typeof a === "string" ? a : `${a.question ?? JSON.stringify(a)} — default: ${a.default ?? "(none)"}`}`).join("\n") || "(none)",
     DECIDED: (row.decided ?? []).map((d) => `- ${typeof d === "string" ? d : JSON.stringify(d)}`).join("\n") || "(none)",
     PR_URL: row.pr_url ?? "", PR_NUMBER: row.pr_number ?? "", BRANCH: row.branch ?? "", OUT_FILE: outFile, WORK_DIR: dir,
     ASK_LIST: ASK_POLICY.ask.map((a) => `- ${a}`).join("\n"), DECIDE_LIST: ASK_POLICY.decide.map((d) => `- ${d}`).join("\n"),
     LAND: LAND, PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
+    PRE_APPROVED: row.pre_approved_phrase
+      ? `YES — she wrote "${row.pre_approved_phrase}" in the request. Every decision is yours: put what you would have asked under "decided" with your recommended default AS the decision and the reason. "asks" MUST be an empty list; the Worker refuses a pre-approved plan that asks.`
+      : "no — ask what policy says to ask.",
   };
   const prompt = phasePrompt(phase, vars);
   const { rc, timedOut } = unreported
@@ -286,13 +294,39 @@ async function runPhase(claim) {
       const opts = Array.isArray(a.options) && a.options.length ? ` Options: ${a.options.join(" / ")}.` : "";
       return `${i + 1}. ${a.question ?? JSON.stringify(a)}${opts}\n   → My recommended default: ${a.default ?? "(none given — say which)"}${a.why ? ` — ${a.why}` : ""}`;
     };
-    const subject = `#danielle plan for ${chosen} ${changeToken(row.id)} — reply "approved" ${asks.length ? `(${asks.length} question${asks.length === 1 ? "" : "s"}, each with a default)` : "to build"}`;
+    /*
+     * NOT PUBLISH-READY IS SAID AT THE TOP. When a placeholder would ship, the plan says so first,
+     * names them, and says the landing waits for a second word after the preview. Her force phrase
+     * is named beside it so the bypass is a choice she can see, not one she has to know about.
+     */
+    const ready = out.publish_ready === true;
+    const placeholders = Array.isArray(out.placeholders) ? out.placeholders.map(String) : [];
+    if (!ready && placeholders.length === 0) placeholders.push("(the plan marked itself not publish-ready without naming what would ship as a placeholder)");
+    const pre = Boolean(row.pre_approved_phrase);
+    const subject = pre
+      ? `#danielle FYI — building ${chosen} ${changeToken(row.id)} (you pre-approved: "${row.pre_approved_phrase}")${ready ? "" : ` — NOT publish-ready, ${row.force_phrase ? "landing by your force" : "preview before landing"}`}`
+      : `#danielle plan for ${chosen} ${changeToken(row.id)} — ${ready ? 'reply "approved"' : `NOT publish-ready (${placeholders.length} placeholder${placeholders.length === 1 ? "" : "s"}) — reply "approved" for a preview`} ${asks.length ? `(${asks.length} question${asks.length === 1 ? "" : "s"}, each with a default)` : ""}`.trim();
     const text = [
       "Sequoia,", "",
+      ...(pre ? [
+        `FYI — you pre-approved this ("${row.pre_approved_phrase}"); no reply needed. Reply \`stop\` within the build to hold it.`,
+        ready ? "" : (row.force_phrase ? `It is NOT publish-ready and your request also said "${row.force_phrase}", so it lands on green with the placeholders below, recorded as your instruction.` : "It is NOT publish-ready, so it stops at the preview: you will get the preview email and it lands only after you reply \"approved\" to that."),
+        "",
+      ].filter((l) => l !== "") : []),
+      ...(ready ? [] : [
+        `NOT PUBLISH-READY — this ships with ${placeholders.length} placeholder${placeholders.length === 1 ? "" : "s"}: ${placeholders.join("; ")}.`,
+        "I will build it, open the PR and send you the preview; landing needs a second \"approved\" after you have seen it.",
+        "If the placeholders do not matter, reply exactly \"approved to production\" and it lands on green with them, recorded as your instruction.",
+        "",
+      ]),
       `This is Danielle. Here is my plan for ${chosen} from your instruction${row.drive_url ? ` and the package at ${row.drive_url}` : ""}.`,
       "",
-      "REPLY WITH ONE WORD — approved — and I take the recommended default on every question below, build it, open the PR, land it once the checks are green, and email you the proof. Nothing else waits on you.",
-      "Reply with your own answers if you want something other than a default. Reply \"no\" or \"changes: …\" to hold it.",
+      ready
+        ? "REPLY WITH ONE WORD — approved — and I take the recommended default on every question below, build it, open the PR, land it once the checks are green, and email you the proof. Nothing else waits on you."
+        : "REPLY WITH ONE WORD — approved — and I take the recommended default on every question below, build it, open the PR, and send you the preview. It lands only after you reply \"approved\" to the preview email.",
+      ready
+        ? "Reply \"preview\" to see it before it lands. Reply with your own answers if you want something other than a default. Reply \"no\" or \"changes: …\" to hold it."
+        : "Reply with your own answers if you want something other than a default. Reply \"no\" or \"changes: …\" to hold it.",
       `(Keep ${changeToken(row.id)} in the subject; replying keeps it.)`,
       "",
       asks.length ? "QUESTIONS, EACH WITH MY RECOMMENDED DEFAULT" : "NOTHING TO ASK — \"approved\" starts it.",
@@ -307,7 +341,7 @@ async function runPhase(claim) {
     ].join("\n");
     const messageId = await email(subject, text);
     if (!messageId) { await release(row, "plan written but the email could not be sent; will retry next tick", log); say("NAMED STOP [PLAN_NOT_SENT] Resend refused every sender; the plan is on disk and the claim is released."); return; }
-    const r = await api(`/${row.id}/plan`, { device_id: DEVICE, plan_text: String(out.plan_text ?? ""), decided, asks, ask_message_id: messageId, written_by: claim.model ?? PHASE_MODELS.plan, run_log: log, repo: chosen });
+    const r = await api(`/${row.id}/plan`, { device_id: DEVICE, plan_text: String(out.plan_text ?? ""), decided, asks, publish_ready: ready, placeholders, ask_message_id: messageId, written_by: claim.model ?? PHASE_MODELS.plan, run_log: log, repo: chosen });
     if (!r.ok) say(`NAMED STOP [PLAN_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the plan was emailed and Boss OS was not told.`);
     else { markReported(); say(`planned: ${asks.length} ask(s), ${decided.length} decided; waiting on her reply.`); }
     return;
@@ -318,6 +352,12 @@ async function runPhase(claim) {
     const r = await api(`/${row.id}/build`, { device_id: DEVICE, branch: out.branch ?? null, pr_url: out.pr_url, pr_number: Number(out.pr_number), proof: out.proof ?? null, written_by: claim.model ?? PHASE_MODELS.build, run_log: log });
     if (!r.ok) { say(`NAMED STOP [BUILD_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the PR is open; the next tick reports it without building again.`); return; }
     markReported();
+    if (r.data?.phase === "preview") {
+      say(`built: ${out.pr_url}; this change needs a preview — claiming the preview step now.`);
+      const claimed = await api(`/${row.id}/claim`, { device_id: DEVICE });
+      if (claimed.ok) await sendPreview(claimed.data, log); else say(`preview not claimed now: ${claimed.error ?? claimed.status}`);
+      return;
+    }
     say(`built: ${out.pr_url}; now watching its checks.`);
     // Watch the checks in this same run for a while, so a quick CI lands in the same tick.
     await watchChecks({ ...row, repo, pr_url: out.pr_url, pr_number: Number(out.pr_number), proof: out.proof ?? null }, log, 15);
@@ -327,13 +367,28 @@ async function runPhase(claim) {
   if (phase === "land") {
     if (!out.merge_sha) { await fail(row, "NO_MERGE_COMMIT", `the land phase wrote no merge_sha; ${LAND} did not report a merge.`, log); return; }
     const proof = out.live_proof ?? {};
-    const subject = `#danielle DONE: ${repo} ${changeToken(row.id)} — landed and live`;
+    const forcedList = Array.isArray(row.forced_placeholders) ? row.forced_placeholders.map(String) : [];
+    /*
+     * THE POST-LAND STEP SHE ASKED FOR (21 Sep 2026: "after landing, run bin/<script> and attach
+     * the proof"). The LAND phase runs only a step the instruction or the plan named, after
+     * ~/bin/land, and reports it under `post_land`. A step that failed is a named stop: the land
+     * stands, the proof does not, and the DONE email does not go until the proof exists.
+     */
+    const postLand = out.post_land && typeof out.post_land === "object" ? out.post_land : null;
+    if (postLand && Number(postLand.rc) !== 0) {
+      writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
+      await fail(row, "POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${String(postLand.output_tail ?? "").slice(0, 600)}`, log);
+      return;
+    }
+    const subject = `#danielle DONE: ${repo} ${changeToken(row.id)} — landed and live${isForced(row) ? ` (to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"}, by your instruction)` : ""}${postLand ? " · post-land step done" : ""}`;
     const text = [
       "Sequoia,", "",
+      ...(isForced(row) ? [`Landed to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"} by your instruction: ${forcedList.join("; ") || "(none named)"}. Forced by ${row.forced_by} on ${new Date(Number(row.forced_at)).toISOString()}.`, ""] : []),
       `This is Danielle. ${repo} is landed and proven live.`, "",
       `Pull request: ${row.pr_url}`, `Merge commit: ${out.merge_sha}`,
       "", "LIVE PROOF",
       ...Object.entries(proof).map(([k, v]) => `- ${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`),
+      ...(postLand ? ["", "POST-LAND STEP (as you asked)", `- ran: ${postLand.command} (exit ${postLand.rc})`, `- proof: ${postLand.proof ?? "(none recorded)"}`, `- output: ${String(postLand.output_tail ?? "").slice(0, 1200)}`] : []),
       "", "WHAT WAS PROVEN BEFORE THE PR", JSON.stringify(row.proof ?? {}, null, 2),
       "", `Checks: ${row.checks_detail ?? "recorded green"}`,
       "", `Run log on your Mac: ${log}`,
@@ -341,10 +396,69 @@ async function runPhase(claim) {
     ].join("\n");
     const messageId = await email(subject, text);
     if (!messageId) { say("NAMED STOP [DONE_NOT_SENT] landed, and the DONE email could not be sent; the row stays in land until it can."); await release(row, "landed; DONE email not sent — retry the email next tick", log); writeFileSync(join(dir, "landed-unreported.json"), JSON.stringify(out)); return; }
-    const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: proof, done_message_id: messageId, run_log: log });
+    const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: postLand ? { ...proof, post_land: postLand } : proof, done_message_id: messageId, run_log: log });
     if (!r.ok) say(`NAMED STOP [LAND_NOT_RECORDED] ${r.status} ${r.error ?? ""} — it landed and she was told; Boss OS was not.`);
     else { markReported(); say(`done: ${out.merge_sha}`); }
   }
+}
+
+/**
+ * ─── THE PREVIEW, FOUND AND SENT ──────────────────────────────────────────
+ *
+ * A Cloudflare Pages repo gets a branch deployment per PR; its URL is the `environment_url` on the
+ * GitHub deployment the Pages integration creates for the branch. A Workers repo (creator-network's
+ * state Worker) has no preview deployment at all — so the email says so in words and carries the
+ * PR, the screenshots and the validator output instead. Either way the email goes and the row moves
+ * to `previewing`; what never happens is a landing.
+ */
+function previewUrlFor(repo, branch, prNumber, waitMinutes) {
+  const deadline = Date.now() + waitMinutes * 60_000;
+  for (;;) {
+    const list = spawnSync("gh", ["api", `repos/seq23/${repo}/deployments?ref=${encodeURIComponent(branch)}&per_page=5`], { encoding: "utf8" });
+    let deployments = [];
+    try { deployments = JSON.parse(list.stdout || "[]"); } catch { deployments = []; }
+    for (const d of Array.isArray(deployments) ? deployments : []) {
+      const st = spawnSync("gh", ["api", `repos/seq23/${repo}/deployments/${d.id}/statuses?per_page=5`], { encoding: "utf8" });
+      let statuses = [];
+      try { statuses = JSON.parse(st.stdout || "[]"); } catch { statuses = []; }
+      const ok = (Array.isArray(statuses) ? statuses : []).find((x) => x.state === "success" && (x.environment_url || x.target_url));
+      if (ok) return { url: ok.environment_url || ok.target_url, how: `GitHub deployment ${d.id} (${d.environment ?? "preview"})` };
+    }
+    // A PR check whose details link is a *.pages.dev URL is the other shape the Pages app uses.
+    const checks = spawnSync("gh", ["pr", "view", String(prNumber), "--repo", `seq23/${repo}`, "--json", "statusCheckRollup"], { encoding: "utf8" });
+    try {
+      const roll = JSON.parse(checks.stdout || "{}").statusCheckRollup ?? [];
+      const hit = roll.find((c) => /pages\.dev/.test(String(c.detailsUrl ?? c.targetUrl ?? "")) && /success|completed/i.test(String(c.conclusion ?? c.state ?? "")));
+      if (hit) return { url: hit.detailsUrl ?? hit.targetUrl, how: `PR check "${hit.name ?? hit.context}"` };
+    } catch { /* no rollup yet */ }
+    if (Date.now() > deadline) return null;
+    spawnSync("sleep", ["30"]);
+  }
+}
+
+async function sendPreview(row, log) {
+  const proof = row.proof ?? {};
+  const found = previewUrlFor(row.repo, row.branch ?? `refs/pull/${row.pr_number}/head`, row.pr_number, 8);
+  const placeholders = Array.isArray(row.placeholders) ? row.placeholders.map(String) : [];
+  const subject = `#danielle preview ready: ${row.repo} ${changeToken(row.id)} — reply "approved" to land, or "changes: …"`;
+  const text = [
+    "Sequoia,", "",
+    `This is Danielle. ${row.repo} is built and the pull request is open: ${row.pr_url}`, "",
+    found
+      ? `PREVIEW: ${found.url}  (from ${found.how})`
+      : `NO PREVIEW DEPLOYMENT EXISTS FOR THIS REPO — ${row.repo} is not a Cloudflare Pages site (a Workers repo deploys only on land), so there is no branch URL to open. The PR, the screenshots and the validator output below are the preview.`,
+    "",
+    ...(placeholders.length ? [`It ships with ${placeholders.length} placeholder${placeholders.length === 1 ? "" : "s"}: ${placeholders.join("; ")}.`, ""] : []),
+    "SCREENSHOTS", ...((proof.screenshots ?? []).map((p) => `- ${p}`)), "",
+    "VALIDATORS", ...((proof.validators ?? []).map((v) => `- ${v}`)), `- passed: ${proof.validators_passed === true ? "yes" : "NOT RECORDED"}`, "",
+    "REPLY \"approved\" TO LAND IT (on green). Reply \"changes: …\" to hold it. Reply exactly \"approved to production\" only if you mean to ship the placeholders as they are — that is recorded as your instruction.",
+    "", "— Danielle, Technical Program Manager",
+  ].join("\n");
+  const messageId = await email(subject, text);
+  if (!messageId) { await release(row, "preview ready but the email could not be sent; will retry next tick", log); say("NAMED STOP [PREVIEW_NOT_SENT] Resend refused every sender; the claim is released."); return; }
+  const r = await api(`/${row.id}/preview`, { device_id: DEVICE, preview_url: found?.url ?? null, preview_message_id: messageId, run_log: log });
+  if (!r.ok) say(`NAMED STOP [PREVIEW_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the preview was emailed and Boss OS was not told.`);
+  else say(`previewed: ${found?.url ?? "(no deployment; PR + screenshots)"}; waiting on her second word.`);
 }
 
 /** Ask gh about a PR's checks, record the answer, and — on green — claim and run LAND now. */
@@ -359,6 +473,7 @@ async function watchChecks(row, log, waitMinutes) {
     if (verdict.state === "green") {
       const r = await api(`/${row.id}/checks`, { state: "green", detail: verdict.detail });
       if (!r.ok) { say(`NAMED STOP [GREEN_NOT_RECORDED] ${r.status} ${r.error ?? ""}`); return; }
+      if (r.data?.phase !== "land") { say(`green recorded on ${row.id}; ${r.data?.phase === "previewing" ? "waiting on her second word" : r.data?.phase}.`); return; }
       const claim = await api(`/${row.id}/claim`, { device_id: DEVICE });
       if (!claim.ok) { say(`land not claimed now: ${claim.error ?? claim.status}`); return; }
       await runPhase(claim.data);
@@ -400,7 +515,7 @@ async function main() {
   const { claimable, waiting } = list.data;
 
   // Landing rows: ask gh, record, and land on green in this tick.
-  for (const w of waiting.filter((x) => x.phase === "landing")) {
+  for (const w of waiting.filter((x) => x.phase === "landing" || x.phase === "previewing")) {
     const full = await api(`/${w.id}`);
     if (!full.ok || !full.data?.pr_number) continue;
     await watchChecks(full.data, null, 0);

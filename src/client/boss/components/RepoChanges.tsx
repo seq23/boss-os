@@ -14,7 +14,7 @@ function tone(phase: string): string {
   switch (phase) {
     case "done": return "state-good";
     case "failed": return "state-bad";
-    case "asking": return "state-live";
+    case "asking": case "previewing": return "state-live";
     default: return "state-quiet";
   }
 }
@@ -51,6 +51,18 @@ export function RepoChanges() {
             <div className="row-main" style={{ minWidth: 0 }}>
               <div className="row-title">{r.repo ?? "package only"} <span className="pill">{r.id}</span></div>
               <div className="row-sub">{r.sentence} · {age(now - Number(r.updated_at))}</div>
+              {r.publish_ready !== null && r.publish_ready !== undefined && (
+                <div className="row-sub" data-testid="repo-change-readiness">
+                  {Number(r.publish_ready) === 1 ? "Publish-ready." : `NOT publish-ready — ships with ${r.placeholders?.length ?? 0} placeholder${r.placeholders?.length === 1 ? "" : "s"}: ${(r.placeholders ?? []).join("; ")}`}
+                  {r.needs_preview && !r.forced ? " Lands only after her second approval of the preview." : ""}
+                </div>
+              )}
+              {r.forced && (
+                <div className="row-sub" data-testid="repo-change-forced">
+                  <span className="pill state-bad">FORCED TO PRODUCTION</span> by {r.forced_by} — {r.forced_placeholders?.length ?? 0} placeholder{r.forced_placeholders?.length === 1 ? "" : "s"} shipped by her instruction{r.forced_placeholders?.length ? `: ${r.forced_placeholders.join("; ")}` : ""}.
+                </div>
+              )}
+              {r.preview_url && <div className="row-sub" style={{ overflowWrap: "anywhere" }}>Preview: <a href={r.preview_url} target="_blank" rel="noreferrer">{r.preview_url}</a></div>}
               {r.asks?.length > 0 && r.phase === "asking" && (
                 <div className="row-sub">Waiting on {r.asks.length} question{r.asks.length === 1 ? "" : "s"} — reply to the plan email.</div>
               )}

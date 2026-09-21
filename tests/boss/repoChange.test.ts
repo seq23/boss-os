@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { handleTask } from "../../src/worker/boss/queue/consumer";
-import { canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken, readReply, APPROVED_DEFAULTS_TEXT } from "../../src/shared/boss/repoChange/lane.mjs";
+import { canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken, readReply, needsPreview, isForced, APPROVED_DEFAULTS_TEXT } from "../../src/shared/boss/repoChange/lane.mjs";
 
 const FOLDER = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUv";
 
@@ -146,11 +146,17 @@ describe("the phases, and the two facts every landing rests on", () => {
     const second = await claim(id);
     expect(second.status).toBe(409);
 
-    const noMail = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [] } });
+    const noMail = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], publish_ready: true } });
     expect(noMail.status).toBe(400);
     expect(noMail.body.error ?? JSON.stringify(noMail.body)).toMatch(/ask_message_id/);
+    // A plan that does not say whether it is publish-ready is refused: "did not say" must not read as ready.
+    const noVerdict = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], ask_message_id: "re_x" } });
+    expect(noVerdict.status).toBe(400);
+    expect(noVerdict.body.error ?? "").toMatch(/publish_ready/);
+    const notReadyUnnamed = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], publish_ready: false, ask_message_id: "re_x" } });
+    expect(notReadyUnnamed.status).toBe(400);
 
-    const planned = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan\n- swap hero", decided: ["CSS: reuse the existing tile"], asks: ["Which headline?"], ask_message_id: "re_test_1", written_by: "claude-opus-5" } });
+    const planned = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan\n- swap hero", decided: ["CSS: reuse the existing tile"], asks: ["Which headline?"], publish_ready: true, ask_message_id: "re_test_1", written_by: "claude-opus-5" } });
     expect(planned.status).toBe(200);
     expect((await row<any>(`SELECT phase, claimed_at FROM repo_changes WHERE id = ?`, id)).phase).toBe("asking");
     expect((await row<any>(`SELECT claimed_at FROM repo_changes WHERE id = ?`, id)).claimed_at).toBeNull();
@@ -164,7 +170,7 @@ describe("the phases, and the two facts every landing rests on", () => {
   it("her reply with the token is the approval: phase becomes build, no new task opens, and BUILD is claimable", async () => {
     const { id, taskId } = await open();
     await claim(id);
-    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: ["Which headline?"], ask_message_id: "re_test_2" } });
+    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: ["Which headline?"], publish_ready: true, ask_message_id: "re_test_2" } });
 
     const tasksBefore = (await row<any>(`SELECT COUNT(*) AS n FROM tasks`)).n;
     const reply = await handleBossInboundMail(mail({ subject: `Re: #danielle plan for WPP-llm ${changeToken(id)} — 1 question`, body: "Use 'Agencies, on autopilot.' Go." }), env as never);
@@ -191,7 +197,7 @@ describe("the phases, and the two facts every landing rests on", () => {
   it("ONE WORD IS THE APPROVAL: a reply of exactly \"approved\" advances the task with every default", async () => {
     const { id } = await open();
     await claim(id);
-    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [{ question: "Which headline?", options: ["A", "B"], default: "A" }], ask_message_id: "re_test_6" } });
+    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [{ question: "Which headline?", options: ["A", "B"], default: "A" }], publish_ready: true, ask_message_id: "re_test_6" } });
     const reply = await handleBossInboundMail(mail({ subject: `Re: #danielle plan for WPP-llm ${changeToken(id)} — reply "approved"`, body: "approved" }), env as never);
     expect(reply.outcome).toBe("PLAN_ANSWERED");
     expect(reply.reply).toMatch(/takes the recommended default/);
@@ -205,7 +211,7 @@ describe("the phases, and the two facts every landing rests on", () => {
   it("\"no\" HOLDS the task: phase stays asking, her note is kept, BUILD is not claimable, and a later \"approved\" still works", async () => {
     const { id } = await open();
     await claim(id);
-    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [{ question: "Which headline?", default: "A" }], ask_message_id: "re_test_7" } });
+    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [{ question: "Which headline?", default: "A" }], publish_ready: true, ask_message_id: "re_test_7" } });
     const held = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "no — the hero copy is wrong, I will send a new package" }), env as never);
     expect(held.outcome).toBe("PLAN_ANSWERED");
     expect(held.reply).toMatch(/^Held\./);
@@ -229,14 +235,16 @@ describe("the phases, and the two facts every landing rests on", () => {
   it("readReply: the exact words, and the ones that must not be mistaken for them", () => {
     for (const w of ["approved", "Approved.", "approve", "yes", "go", "Land it!", "ok"]) expect(readReply(w).mode, w).toBe("approved");
     for (const w of ["no", "No thanks", "not approved", "stop", "changes: use B", "hold"]) expect(readReply(w).mode, w).toBe("held");
-    for (const w of ["Use B. Go.", "note: use B", "now use B, approved", "approved\nbut use B"]) expect(readReply(w).mode, w).toBe("answers");
+    for (const w of ["Use B. Go.", "note: use B", "now use B, approved", "approved\nbut use B", "approved to prod"]) expect(readReply(w).mode, w).toBe("answers");
+    for (const w of ["preview", "Preview only", "preview first"]) expect(readReply(w).mode, w).toBe("preview");
+    for (const w of ["approved to production", "Approved to production.", "force production", "ship it anyway", "land anyway"]) expect(readReply(w).mode, w).toBe("forced");
     expect(readReply("").mode).toBe("empty");
   });
 
   it("a stranger's reply carrying the token records nothing — the approval is hers alone", async () => {
     const { id } = await open();
     await claim(id);
-    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: ["Which headline?"], ask_message_id: "re_test_3" } });
+    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: ["Which headline?"], publish_ready: true, ask_message_id: "re_test_3" } });
     const res = await handleBossInboundMail(mail({ from: "Scooter <scooter@example.com>", subject: `Re: #danielle plan ${changeToken(id)}`, body: "Go." }), env as never);
     expect(res.outcome).toBe("REFUSED_SENDER");
     const rc = await row<any>(`SELECT phase, answered_at FROM repo_changes WHERE id = ?`, id);
@@ -247,7 +255,7 @@ describe("the phases, and the two facts every landing rests on", () => {
   it("LAND ON GREEN: build → landing → green recorded → land claim → done; and never without the green", async () => {
     const { id, taskId } = await open();
     await claim(id);
-    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], ask_message_id: "re_test_4" } });
+    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], publish_ready: true, ask_message_id: "re_test_4" } });
     await handleBossInboundMail(mail({ subject: `Re: #danielle plan ${changeToken(id)}`, body: "Go." }), env as never);
     await claim(id);
     const built = await apiJson(`/api/repo-changes/${id}/build`, { method: "POST", body: { device_id: DEVICE, branch: "work/hero", pr_url: "https://github.com/seq23/WPP-llm/pull/99", pr_number: 99, proof: { validators: ["npm run validate"], screenshots: 2, links_checked: 3 } } });
@@ -290,7 +298,7 @@ describe("the phases, and the two facts every landing rests on", () => {
   it("a red check is a named stop, and only after she was told", async () => {
     const { id } = await open();
     await claim(id);
-    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], ask_message_id: "re_test_5" } });
+    await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], publish_ready: true, ask_message_id: "re_test_5" } });
     await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "Go." }), env as never);
     await claim(id);
     await apiJson(`/api/repo-changes/${id}/build`, { method: "POST", body: { device_id: DEVICE, pr_url: "https://github.com/seq23/WPP-llm/pull/100", pr_number: 100 } });
@@ -305,7 +313,336 @@ describe("the phases, and the two facts every landing rests on", () => {
 
   it("a report from a device that holds no claim is refused", async () => {
     const { id } = await open();
-    const res = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: "someone-else", plan_text: "# Plan", ask_message_id: "x" } });
+    const res = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: "someone-else", plan_text: "# Plan", publish_ready: true, ask_message_id: "x" } });
     expect(res.status).toBe(409);
+  });
+});
+
+
+describe("a package that is not publish-ready lands only after she has seen the preview", () => {
+  async function open() {
+    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. New team section.` }), env as never);
+    const rc = await row<any>(`SELECT id FROM repo_changes WHERE task_id = ?`, res.taskId);
+    return { taskId: res.taskId!, id: rc.id as string };
+  }
+  const NOT_READY = { publish_ready: false, placeholders: ["Team bios for two of four people are not in the package"] };
+  async function planned(id: string, verdict: Record<string, unknown> = NOT_READY) {
+    await claim(id);
+    const r = await apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [{ question: "Which headline?", default: "A" }], ...verdict, ask_message_id: "re_prev" } });
+    expect(r.status).toBe(200);
+  }
+  async function built(id: string) {
+    const c = await claim(id);
+    expect(c.status).toBe(201);
+    expect(c.body.data.phase).toBe("build");
+    return apiJson(`/api/repo-changes/${id}/build`, { method: "POST", body: { device_id: DEVICE, branch: "work/team", pr_url: "https://github.com/seq23/WPP-llm/pull/7", pr_number: 7, proof: { validators: ["npm run validate"], validators_passed: true, screenshots: ["a.png"] } } });
+  }
+
+  it("PATH 1 — not ready + plain approved: build → PR → preview → her second approved → land; never land before it", async () => {
+    const { id } = await open();
+    await planned(id);
+    let rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.publish_ready).toBe(0);
+    expect(JSON.parse(rc.placeholders_json)).toHaveLength(1);
+    expect(needsPreview(rc)).toBe(true);
+
+    // Plain "approved" on a not-ready plan means preview — the reply says so; nothing about production.
+    const reply = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "approved" }), env as never);
+    expect(reply.reply).toMatch(/lands only after you reply "approved" to that/);
+    expect(isForced(await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id))).toBe(false);
+
+    const b = await built(id);
+    expect(b.body.data.phase).toBe("preview");
+    expect((await claim(id)).body.data.phase).toBe("preview");
+    // Green arrives while the preview is being sent: recorded, and STILL no landing.
+    await apiJson(`/api/repo-changes/${id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("preview");
+    expect(rc.checks_green_at).toBeTruthy();
+    expect(canLand({ ...rc, phase: "land" }).ok).toBe(false);
+    expect(canLand({ ...rc, phase: "land" }).why).toMatch(/needs a preview/);
+
+    const noMail = await apiJson(`/api/repo-changes/${id}/preview`, { method: "POST", body: { device_id: DEVICE, preview_url: "https://abc.wpp-llm.pages.dev" } });
+    expect(noMail.status).toBe(400);
+    const previewed = await apiJson(`/api/repo-changes/${id}/preview`, { method: "POST", body: { device_id: DEVICE, preview_url: "https://abc.wpp-llm.pages.dev", preview_message_id: "re_preview_1" } });
+    expect(previewed.status).toBe(200);
+    rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("previewing");
+    expect(rc.preview_sent_at).toBeTruthy();
+    expect((await claim(id)).status).toBe(409);
+    // Her own words at the preview are a note; "preview" again sets nothing; only "approved" lands.
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "looks fine but the second bio is thin" }), env as never);
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "preview" }), env as never);
+    rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("previewing");
+    expect(rc.land_approved_at).toBeNull();
+    expect(rc.forced_at).toBeNull();
+
+    const second = await handleBossInboundMail(mail({ subject: `Re: #danielle preview ready ${changeToken(id)}`, body: "approved" }), env as never);
+    expect(second.reply).toMatch(/approval of the preview is on the record/);
+    rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("land");
+    expect(rc.land_approved_at).toBeGreaterThanOrEqual(rc.preview_sent_at);
+    expect(canLand(rc).ok).toBe(true);
+    expect(canLand({ ...rc, land_approved_at: rc.preview_sent_at - 1 }).ok).toBe(false);
+    const land = await claim(id);
+    expect(land.status).toBe(201);
+    expect(land.body.data.phase).toBe("land");
+    const done = await apiJson(`/api/repo-changes/${id}/land`, { method: "POST", body: { device_id: DEVICE, merge_sha: "deadbeef1", live_proof: {}, done_message_id: "re_done_p" } });
+    expect(done.status).toBe(200);
+  });
+
+  it("PATH 2 — not ready, preview sent, checks not yet green: her approved moves to landing, and green then lands", async () => {
+    const { id } = await open();
+    await planned(id);
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "approved" }), env as never);
+    await built(id);
+    await claim(id);
+    await apiJson(`/api/repo-changes/${id}/preview`, { method: "POST", body: { device_id: DEVICE, preview_url: null, preview_message_id: "re_preview_2" } });
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "approved" }), env as never);
+    let rc = await row<any>(`SELECT phase FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("landing");
+    await apiJson(`/api/repo-changes/${id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("land");
+    expect(canLand(rc).ok).toBe(true);
+  });
+
+  it("PATH 3 — a READY plan answered with \"preview\" is approved but previewed: no landing on green until her second word", async () => {
+    const { id } = await open();
+    await planned(id, { publish_ready: true });
+    const reply = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "preview only" }), env as never);
+    expect(reply.outcome).toBe("PLAN_ANSWERED");
+    let rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("build");
+    expect(rc.answers_mode).toBe("preview");
+    expect(rc.preview_forced).toBe(1);
+    expect(rc.land_approved_at).toBeNull();
+    expect(needsPreview(rc)).toBe(true);
+    const b = await built(id);
+    expect(b.body.data.phase).toBe("preview");
+    await apiJson(`/api/repo-changes/${id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("preview");
+    expect(canLand({ ...rc, phase: "land" }).ok).toBe(false);
+  });
+
+  it("PATH 4 — a READY plan answered with plain \"approved\" lands on green with no preview, exactly as before", async () => {
+    const { id } = await open();
+    await planned(id, { publish_ready: true });
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "approved" }), env as never);
+    const b = await built(id);
+    expect(b.body.data.phase).toBe("landing");
+    await apiJson(`/api/repo-changes/${id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    const rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("land");
+    expect(canLand(rc).ok).toBe(true);
+    expect(rc.preview_sent_at).toBeNull();
+  });
+
+  it("THE FORCE — \"approved to production\" on a not-ready plan lands on green with no preview, recorded and named", async () => {
+    const { id, taskId } = await open();
+    await planned(id);
+    const reply = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "approved to production" }), env as never);
+    expect(reply.outcome).toBe("PLAN_ANSWERED");
+    expect(reply.reply).toMatch(/TO PRODUCTION BY YOUR INSTRUCTION, with 1 placeholder/);
+    let rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("build");
+    expect(rc.answers_mode).toBe("forced");
+    expect(rc.forced_by).toBe("seq.taylor@gmail.com");
+    expect(rc.forced_at).toBeTruthy();
+    expect(JSON.parse(rc.forced_placeholders)).toEqual(["Team bios for two of four people are not in the package"]);
+    expect(rc.forced_mail_id).toBe(reply.mailId);
+    expect(isForced(rc)).toBe(true);
+    const finding = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'repo_change_forced'`, taskId);
+    expect(finding).toBeTruthy();
+    expect(JSON.parse(finding.detail).by).toBe("seq.taylor@gmail.com");
+    const auditRow = await row<any>(`SELECT COUNT(*) AS n FROM audit_log WHERE entity_id = ? AND action = 'forced_to_production'`, id);
+    expect(auditRow.n).toBe(1);
+
+    const b = await built(id);
+    expect(b.body.data.phase).toBe("landing");
+    await apiJson(`/api/repo-changes/${id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("land");
+    expect(rc.preview_sent_at).toBeNull();
+    expect(canLand(rc).ok).toBe(true);
+    expect(canLand(rc).why).toMatch(/forced to production by seq.taylor@gmail.com/);
+    expect((await claim(id)).status).toBe(201);
+  });
+
+  it("THE FORCE at the preview — \"ship it anyway\" after the preview email lands without the second approved", async () => {
+    const { id } = await open();
+    await planned(id);
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "approved" }), env as never);
+    await built(id);
+    await claim(id);
+    await apiJson(`/api/repo-changes/${id}/preview`, { method: "POST", body: { device_id: DEVICE, preview_url: null, preview_message_id: "re_preview_f" } });
+    await apiJson(`/api/repo-changes/${id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    const forced = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(id)}`, body: "ship it anyway" }), env as never);
+    expect(forced.reply).toMatch(/BY YOUR INSTRUCTION/);
+    const rc = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("land");
+    expect(rc.land_approved_at).toBeNull();
+    expect(isForced(rc)).toBe(true);
+    expect(canLand(rc).ok).toBe(true);
+  });
+
+  it("A STRANGER'S FORCE IS REFUSED: nothing on the row, nothing in the finding", async () => {
+    const { id, taskId } = await open();
+    await planned(id);
+    const res = await handleBossInboundMail(mail({ from: "Scooter <scooter@example.com>", subject: `Re: ${changeToken(id)}`, body: "approved to production" }), env as never);
+    expect(res.outcome).toBe("REFUSED_SENDER");
+    const rc = await row<any>(`SELECT phase, forced_by, forced_at, answered_at FROM repo_changes WHERE id = ?`, id);
+    expect(rc.phase).toBe("asking");
+    expect(rc.forced_by).toBeNull();
+    expect(rc.forced_at).toBeNull();
+    expect(rc.answered_at).toBeNull();
+    expect(await row<any>(`SELECT id FROM task_events WHERE task_id = ? AND event = 'repo_change_forced'`, taskId)).toBeNull();
+  });
+
+  it("how-we-know is on the grid: her first real job — the banner — is admitted as a repo change", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#danielle how-we-know banner", body: "In how-we-know, regenerate the YouTube banner in visuals/brand.py with the new tagline (deep sea + materials) and after landing push it to the channel and attach the proof." }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    const rc = await row<any>(`SELECT repo, property_key FROM repo_changes WHERE task_id = ?`, res.taskId);
+    expect(rc.repo).toBe("how-we-know");
+    expect(rc.property_key).toBe("youtube");
+  });
+
+  it("creator-network is on the grid: a #danielle mail naming it is admitted as a repo change", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#danielle creator-network", body: "In creator-network, add the runbook link to the README." }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    const rc = await row<any>(`SELECT repo, property_key FROM repo_changes WHERE task_id = ?`, res.taskId);
+    expect(rc.repo).toBe("creator-network");
+    expect(rc.property_key).toBe("creator_network");
+  });
+});
+
+describe("pre-approval in the request: she said pick everything", () => {
+  const READY = { publish_ready: true };
+  const NOT_READY = { publish_ready: false, placeholders: ["Team bios for two of four people are not in the package"] };
+  async function open(body: string, from?: string) {
+    const res = await handleBossInboundMail(mail({ from, subject: "#danielle refresh", body }), env as never);
+    const rc = res.taskId ? await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId) : null;
+    return { res, rc };
+  }
+  async function plan(id: string, verdict: Record<string, unknown>, asks: unknown[] = []) {
+    await claim(id);
+    return apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: ["Headline: A — it matches the thesis page"], asks, ...verdict, ask_message_id: "re_fyi" } });
+  }
+  async function build(id: string) {
+    const c = await claim(id);
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect(c.body.data.phase).toBe("build");
+    return apiJson(`/api/repo-changes/${id}/build`, { method: "POST", body: { device_id: DEVICE, branch: "work/x", pr_url: "https://github.com/seq23/WPP-llm/pull/8", pr_number: 8, proof: { validators: ["npm run validate"], validators_passed: true } } });
+  }
+
+  it("PRE-APPROVED + READY: the plan files as approved by her, BUILD parks with no reply, and it lands on green", async () => {
+    const { res, rc } = await open(`Update WPP-llm from ${FOLDER}. New hero — your call, no need to ask.`);
+    expect(res.outcome).toBe("ROUTED");
+    expect(rc.pre_approved_phrase).toBe("your call");
+    expect(rc.pre_approved_by).toBe("seq.taylor@gmail.com");
+    const finding = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'repo_change_pre_approved'`, res.taskId);
+    expect(JSON.parse(finding.detail).phrase).toBe("your call");
+    expect(JSON.parse(finding.detail).by).toBe("seq.taylor@gmail.com");
+
+    // A pre-approved plan that still asks is refused; one that decides everything files as approved.
+    const asking = await plan(rc.id, READY, [{ question: "Which headline?", default: "A" }]);
+    expect(asking.status).toBe(400);
+    await apiJson(`/api/repo-changes/${rc.id}/release`, { method: "POST", body: { device_id: DEVICE, reason: "test" } });
+    const filed = await plan(rc.id, READY);
+    expect(filed.status).toBe(200);
+    expect(filed.body.data.phase).toBe("build");
+    let r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("build");
+    expect(r.answered_at).toBeTruthy();
+    expect(r.plan_approved_by).toBe('seq.taylor@gmail.com (pre-approved in the request: "your call")');
+    expect(canEnterBuild(r).ok).toBe(true);
+
+    const b = await build(rc.id);
+    expect(b.body.data.phase).toBe("landing");
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("land");
+    expect(canLand(r).ok).toBe(true);
+    expect(isForced(r)).toBe(false);
+    expect((await claim(rc.id)).status).toBe(201);
+  });
+
+  it("PRE-APPROVED + NOT READY: parks BUILD, then stops at the preview gate exactly as an unforced task does", async () => {
+    const { rc } = await open(`Update WPP-llm from ${FOLDER}. Just do it.`);
+    expect(rc.pre_approved_phrase).toBe("just do it");
+    expect(rc.force_phrase).toBeNull();
+    const filed = await plan(rc.id, NOT_READY);
+    expect(filed.body.data.phase).toBe("build");
+    const b = await build(rc.id);
+    expect(b.body.data.phase).toBe("preview");
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    const r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("preview");
+    expect(isForced(r)).toBe(false);
+    expect(canLand({ ...r, phase: "land" }).ok).toBe(false);
+    expect(canLand({ ...r, phase: "land" }).why).toMatch(/needs a preview/);
+  });
+
+  it("PRE-APPROVED + FORCED + NOT READY: lands on green, named as forced by her from the request", async () => {
+    const { rc, res } = await open(`Update WPP-llm from ${FOLDER}. You decide everything — approved to production, the missing bios can ship.`);
+    expect(rc.pre_approved_phrase).toBe("you decide");
+    expect(rc.force_phrase).toBe("approved to production");
+    const filed = await plan(rc.id, NOT_READY);
+    expect(filed.body.data.phase).toBe("build");
+    let r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.forced_by).toBe("seq.taylor@gmail.com");
+    expect(JSON.parse(r.forced_placeholders)).toEqual(NOT_READY.placeholders);
+    const forcedFinding = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'repo_change_forced'`, res.taskId);
+    expect(JSON.parse(forcedFinding.detail).at).toBe("request");
+    const b = await build(rc.id);
+    expect(b.body.data.phase).toBe("landing");
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("land");
+    expect(canLand(r).ok).toBe(true);
+    expect(canLand(r).why).toMatch(/forced to production by seq.taylor@gmail.com/);
+  });
+
+  it("\"stop\" within the build withdraws the approval; \"stop\" while landing parks the PR unlanded", async () => {
+    const { rc } = await open(`Update WPP-llm from ${FOLDER}. Pick everything.`);
+    await plan(rc.id, READY);
+    const held = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "stop" }), env as never);
+    expect(held.reply).toMatch(/^Held\./);
+    let r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("asking");
+    expect(r.answered_at).toBeNull();
+    expect(r.plan_approved_by).toBeNull();
+    expect((await claim(rc.id)).status).toBe(409);
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "approved" }), env as never);
+    await build(rc.id);
+    const held2 = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "no — wait" }), env as never);
+    expect(held2.reply).toMatch(/will not land/);
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("previewing");
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("previewing");
+    expect(canLand({ ...r, phase: "land" }).ok).toBe(false);
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "approved" }), env as never);
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("land");
+    expect(canLand(r).ok).toBe(true);
+  });
+
+  it("A STRANGER'S PRE-APPROVAL IS REFUSED, and a later message by anyone never pre-approves", async () => {
+    const s = await open(`Update WPP-llm from ${FOLDER}. Your call.`, "Scooter <scooter@example.com>");
+    expect(s.res.outcome).toBe("REFUSED_SENDER");
+    expect(s.rc).toBeNull();
+    const { rc } = await open(`Update WPP-llm from ${FOLDER}. New hero.`);
+    expect(rc.pre_approved_phrase).toBeNull();
+    await plan(rc.id, READY, [{ question: "Which headline?", default: "A" }]);
+    const later = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "your call, just do it" }), env as never);
+    expect(later.outcome).toBe("PLAN_ANSWERED");
+    const r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.pre_approved_phrase).toBeNull();
+    expect(r.plan_approved_by).toBeNull();
+    expect(r.answers_mode).toBe("answers"); // her words are her answers; not a pre-approval, not a force
   });
 });
