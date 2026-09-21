@@ -239,6 +239,16 @@ export const api = {
 
   employees: () => call<any[]>("/employees"),
   employee: (id: string) => call<any>(`/employees/${id}`),
+  /** Every seat with every duty — cadence, executor, last run, next run, last outcome. Team → Duties. */
+  roster: () => call<any>("/employees/roster"),
+  /**
+   * THE DUTY LANE'S SCREEN DOOR. `preview: true` drafts without filing; without it the draft is
+   * filed exactly as the mail door files it — a duty_drafts row and a duty_created card in the
+   * Inbox whose Approve creates it. A phrase carrying "your call" creates at once.
+   */
+  draftDuty: (body: { employee_id: string; phrase: string; preview?: boolean; overrides?: Record<string, unknown> }) =>
+    call<any>("/employees/duties/draft", post("", body)),
+  dutyDrafts: () => call<any>("/employees/duties/drafts"),
   sprawl: () => call<any>("/employees/review/sprawl"),
   reviewEmployee: (id: string, outcome: string, note?: string) =>
     call(`/employees/${id}/review`, post("", { outcome, note })),

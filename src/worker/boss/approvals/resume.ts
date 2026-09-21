@@ -1,6 +1,6 @@
 import type { Env } from "../env";
 import { recordDeliverableActivity } from "../today/deliverables";
-import { DELIVERABLE_KEYS } from "../duties/author";
+import { createDutyFromDraft, DutyCannotRun } from "../duties/create";
 
 /**
  * WHAT HER "APPROVED" ACTUALLY SETS IN MOTION.
@@ -57,6 +57,9 @@ export interface ResumeResult {
   rewrite_id?: string | null;
   /** For an approved letter: what happened in her Gmail. */
   gmail_draft?: { state: string; gmail_draft_id: string | null; failure_code: string | null };
+  /** For an approved duty draft: the row that now exists and when it first fires. */
+  duty_id?: string;
+  first_run_at?: number;
 }
 
 export type ResumeHandler = (
@@ -419,6 +422,11 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
    */
   duty_created: async (env, j, verdict, note, now) => {
     if (verdict === "try_again") {
+      await env.DB
+        .prepare(`UPDATE duty_drafts SET state = 'held', held_note = ?, updated_at = ? WHERE judgement_id = ? AND state = 'drafted'`)
+        .bind(note ?? null, now, j.id)
+        .run()
+        .catch(() => undefined);
       return {
         detail: note
           ? "Sent back. Nothing was added to the schedule, and your note is on the draft for the next attempt."
@@ -438,54 +446,39 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
         "The draft this approval was for is missing, so there is nothing to create. It stays on your screen rather than recording a decision over a duty that was never written.",
       );
     }
-    if (Array.isArray(draft.refusals) && draft.refusals.length > 0) {
-      throw new Error(`This draft cannot be created: ${draft.refusals.join(" ")}`);
+    /*
+     * THE ONE WRITER. `duties/create.ts` re-runs the owner ↔ executor ↔ script check at this moment
+     * — a handler removed or a script unwired since the draft was raised is caught here, and the
+     * item stays on her screen with the reason rather than recording a yes over a duty that would
+     * never run. `validate:duty-birth` pins that this handler and the recorded pre-approval are
+     * the only two roads to that function.
+     */
+    // Who decided is on the approval row by now — the claim UPDATE wrote it before this ran. Her
+    // address when the yes came by mail, "boss" from the Inbox button.
+    const decided = await env.DB
+      .prepare(`SELECT decided_by FROM approvals WHERE id = ?`).bind(j.approval_id)
+      .first<{ decided_by: string | null }>();
+    let created: { id: string; first_run_at: number };
+    try {
+      created = await createDutyFromDraft(env, draft, {
+        approved_by: decided?.decided_by ?? "boss",
+        via: draft.door === "mail" ? "mail" : "inbox",
+        judgement_id: j.id,
+        draft_id: draft.draft_id ?? null,
+        mail_id: draft.mail_id ?? null,
+      }, now);
+    } catch (err) {
+      if (err instanceof DutyCannotRun) throw new Error(`This draft cannot be created: ${err.problems.join(" ")}`);
+      throw err;
     }
-    if (draft.executor === "agent" && !(DELIVERABLE_KEYS as readonly string[]).includes(draft.delivers)) {
-      /*
-       * RE-CHECKED AT CREATION. A `delivers` key with no handler is the defect that had
-       * `duty_practice_week` running every Sunday for eleven weeks into the floor while every signal
-       * said it worked. Checking only at draft time would let a handler removed in between produce
-       * exactly that.
-       */
-      throw new Error(
-        `"${draft.delivers}" is not a delivery route this system has, so the duty would run and its output would land nowhere. Nothing was created.`,
-      );
-    }
-
-    const id = `duty_${String(draft.name ?? "new").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40)}_${now.toString(36).slice(-4)}`;
-    await env.DB
-      .prepare(
-        `INSERT INTO standing_duties
-           (id, name, employee_id, lane, local_hour, local_minute, timezone, cadence, weekday,
-            next_due_at, executor, task_kind, task_title, task_input, success_criteria)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      )
-      .bind(
-        id, draft.name, draft.employee_id, "ops",
-        draft.local_hour, draft.local_minute, draft.timezone,
-        draft.cadence, draft.weekday,
-        // Tomorrow rather than 0: seeding 0 reads as permanently overdue from the moment it exists,
-        // which is a false alarm on day one.
-        now + 86_400_000,
-        draft.executor, "ops", draft.name,
-        JSON.stringify({
-          // NAMED, ALWAYS. A duty with no model runs the dearest one available.
-          requested: { model: draft.model, max_seconds: 600 },
-          ...(draft.delivers ? { delivers: draft.delivers } : {}),
-          ...(draft.local_job ? { local_job: draft.local_job } : {}),
-          prompt: draft.task_prompt,
-          authored_from: "her own words, drafted and approved in the Inbox",
-        }),
-        draft.success_criteria,
-      )
-      .run();
 
     return {
       detail:
         `Created. ${draft.employee_name} runs it ${draft.cadence} at ` +
-        `${String(draft.local_hour).padStart(2, "0")}:${String(draft.local_minute).padStart(2, "0")}, first time tomorrow. ` +
+        `${String(draft.local_hour).padStart(2, "0")}:${String(draft.local_minute).padStart(2, "0")} ${draft.timezone}; first run ${new Date(created.first_run_at).toISOString()} (${created.id}). ` +
         `About $${draft.estimated_per_month_usd} a month, taking the schedule to $${draft.monthly_total_after_usd} of $${draft.ceiling_usd}.`,
+      duty_id: created.id,
+      first_run_at: created.first_run_at,
     };
   },
 };

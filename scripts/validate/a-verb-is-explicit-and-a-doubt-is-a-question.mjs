@@ -209,9 +209,12 @@ export function nothingUnclearReachesAModel(source) {
   if (!/"NEEDS_CLARITY"/.test(source)) bad.push("a question is no longer recorded as its own outcome, so a week of unanswered questions is invisible.");
   // A close she asked for, and a close that had to be asked about, are stops of the same kind:
   // they lead the reply too. So is her answer to Danielle's plan (20 Sep 2026): the reply says
-  // "on the record as the approval" and nothing else opened. The regex admits exactly those three
-  // beside the original, in that order, and nothing else.
-  if (!/const stopped = question \? question\.ask : (?:planAnswer\?\.note \?\? )?(?:closeQuestion \?\? closedNote \?\? )?bookFailure;/.test(source)
+  // "on the record as the approval" and nothing else opened. So is the duty lane (21 Sep 2026):
+  // a draft, a refusal, or her `approved` IS the whole reply, and it sits directly after the plan
+  // answer so a message that is both is answered as a plan first. The regex admits exactly those
+  // four beside the original, in that order, and nothing else; the duty note is REQUIRED, because
+  // a draft appended under "Monique has it" is a draft she never reads to the end.
+  if (!/const stopped = question \? question\.ask : (?:planAnswer\?\.note \?\? )?dutyNote\?\.note \?\? (?:closeQuestion \?\? closedNote \?\? )?bookFailure;/.test(source)
     || !/const reply = stopped \?/.test(source)) {
     bad.push("a message that STOPPED no longer leads with the reason — the one sentence that matters is buried under the reassurance that it worked.");
   }
@@ -259,6 +262,12 @@ if (process.argv.includes("--self-test")) {
     handlerSource?.replace("const reply = stopped ?", "const reply = null ?") ?? null,
   ), true);
   expect("a handler that could not be read at all", nothingUnclearReachesAModel(null), true);
+  expect("a handler where the duty draft is appended below the routing reassurance instead of leading", nothingUnclearReachesAModel(
+    handlerSource?.replace("planAnswer?.note ?? dutyNote?.note ?? closeQuestion", "planAnswer?.note ?? closeQuestion") ?? null,
+  ), true);
+  expect("a handler where the duty draft outranks her plan answer", nothingUnclearReachesAModel(
+    handlerSource?.replace("planAnswer?.note ?? dutyNote?.note ?? closeQuestion", "dutyNote?.note ?? planAnswer?.note ?? closeQuestion") ?? null,
+  ), true);
 
   if (failed) { console.error(`VERB/CLARITY SELF-TEST FAILED (${failed})`); process.exit(1); }
   console.log("VERB/CLARITY SELF-TEST PASSED");

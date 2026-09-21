@@ -188,7 +188,9 @@ export function JudgementDocket({
           <button className="btn btn-approve" disabled={busy !== null} onClick={() => decide("approved")}>
             {busy === "approved"
               ? (judgement?.letter ? "Creating the draft…" : "Approving…")
-              : judgement?.letter ? "Create the draft in my Gmail" : "Approve — carry on and finish"}
+              : judgement?.letter ? "Create the draft in my Gmail"
+                : judgement?.resume_kind === "duty_created" ? "Approve — put it on the schedule"
+                  : "Approve — carry on and finish"}
           </button>
           <button className="btn btn-reject" disabled={busy !== null} onClick={() => setAsking(true)}>
             Try again
