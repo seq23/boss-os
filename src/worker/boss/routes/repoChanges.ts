@@ -26,8 +26,9 @@ import { logEvent } from "../lib/log";
 import { repoChangeById, taskEvent, describePhase, safeList, type RepoChangeRow } from "../repoChange/answer";
 import {
   claimablePhase, claimIsLive, canLand, canEnterBuild, RUNNABLE_PHASES, PHASE_MODELS, PHASE_MAX_TURNS,
-  CLAIM_LEASE_MS, TASK_KIND, EXECUTOR_SCRIPT,
+  CLAIM_LEASE_MS, TASK_KIND, EXECUTOR_SCRIPT, gridRepoNames,
 } from "../../../shared/boss/repoChange/lane.mjs";
+import { propertyForRepo } from "../../../shared/boss/grid.mjs";
 
 export const repoChanges = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -153,15 +154,25 @@ repoChanges.post("/:id/plan", async (c) => {
   if (!askMessageId) throw badRequest("A plan report needs ask_message_id", "The id the mail provider returned for the plan email. Without it the plan never reached her, so nothing here may move to `asking`.");
   const decided = Array.isArray(b?.decided) ? b.decided.slice(0, 100) : [];
   const asks = Array.isArray(b?.asks) ? b.asks.slice(0, 50) : [];
+  /*
+   * THE PLAN MAY NAME THE REPO when the mail only linked a package. It must be a grid repo — the
+   * same list intake reads — and it may not change a repo the mail already named: the message is
+   * hers, the plan is a model's, and a model does not get to retarget her instruction.
+   */
+  const named = text(b?.repo, 120);
+  if (named && row.repo && named !== row.repo) throw conflict(`The plan names ${named} but her message named ${row.repo}`, "A plan does not retarget her instruction.");
+  if (named && !row.repo && !gridRepoNames().includes(named)) throw badRequest(`${named} is not a grid repo`, `One of: ${gridRepoNames().join(", ")}.`);
+  const repo = row.repo ?? named ?? null;
+  const property = repo ? propertyForRepo(repo)?.key ?? null : null;
   const now = Date.now();
   await c.env.DB
     .prepare(
-      `UPDATE repo_changes SET phase = 'asking', plan_text = ?, decided_json = ?, asks_json = ?, planned_at = ?, plan_written_by = ?,
+      `UPDATE repo_changes SET phase = 'asking', repo = ?, property_key = ?, plan_text = ?, decided_json = ?, asks_json = ?, planned_at = ?, plan_written_by = ?,
               asked_at = ?, ask_message_id = ?, run_log = COALESCE(?, run_log),
               claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ?
         WHERE id = ? AND phase = 'plan'`,
     )
-    .bind(planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), now, askMessageId, text(b?.run_log, 500), now, row.id)
+    .bind(repo, property, planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), now, askMessageId, text(b?.run_log, 500), now, row.id)
     .run();
   await taskEvent(c.env, row.task_id, "repo_change_planned", { repo_change_id: row.id, decided: decided.length, asks: asks.length, ask_message_id: askMessageId });
   await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "planned", detail: { task_id: row.task_id, asks: asks.length } });

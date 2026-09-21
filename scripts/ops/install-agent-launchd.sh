@@ -749,6 +749,74 @@ lint_plist "$AHREFS_PLIST"
 launchctl load "$AHREFS_PLIST"
 echo "Installed $AHREFS_LABEL — daily 06:00 Central tick, weekly Thursday work (asks the duty row)."
 
+# ─── Danielle's on-demand repo-change lane ───────────────────────────────────
+#
+# Plan B, approved 20 September 2026. She emails boss@ with `#danielle`, a grid repo and/or a Drive
+# folder, and instructions; this job does the rest on her Mac — plan (Opus), ask her, build on her
+# answers (Sonnet), PR, land on green through ~/bin/land, prove it live, email the proof. Task kind
+# `repo_change`, executor `repo-change.sh`; `validate:duty-delivery` and `validate:repo-lane` pin
+# the pair and the landing rule.
+#
+# EVERY 20 MINUTES, 06:00–22:00 CENTRAL, AND WHY THAT IS NOT THE POLL SHE OBJECTED TO. The 96x/day
+# runaway she stopped was a Worker waking itself to drain a queue that receives one item a morning.
+# This is her Mac making ONE authenticated GET (~1 ms of Worker CPU) and exiting in about a second
+# when nothing is claimable — and the lane is a conversation: she emails, the plan comes back, she
+# replies, the build starts. A six-times-a-day cadence would make each of those legs wait hours;
+# twenty minutes is the longest wait that still feels like an employee answering. 49 ticks a day;
+# nothing at night, because a plan email at 03:00 is not a plan she reads at 03:00.
+#
+# IT IS NOT A STANDING DUTY AND NOT WRAPPED IN duty-run.sh, deliberately. A standing duty has a
+# cadence and goes stale against it; this lane has work only when she sends some, and its runs are
+# recorded on the task and the `repo_changes` row it claimed — the D1 link is per task, which is
+# the finer record. A duty row here would read "overdue" every quiet week and cry wolf.
+#
+# ONE LIVE RUN PER TASK is the Worker's rule at the claim; the lock in repo-change.sh is the
+# machine's — two ticks cannot overlap, and a build in progress makes the next tick step aside.
+RC_LABEL="com.seq.boss-repo-change"
+RC_PLIST="$HOME/Library/LaunchAgents/$RC_LABEL.plist"
+RC_LOGS="$HOME/Library/Logs/repo-change"
+
+mkdir -p "$RC_LOGS" "$HOME/.boss-os/repo-change"
+chmod +x "$REPO/scripts/ops/repo-change.sh" "$REPO/scripts/ops/repo-change.mjs" "$REPO/scripts/ops/drive-pull.mjs"
+ln -sfn "$REPO/scripts/ops/repo-change.sh" "$HOME/bin/repo-change.sh"
+ln -sfn "$REPO/scripts/ops/repo-change-prompt.md" "$HOME/bin/repo-change-prompt.md"
+
+RC_INTERVALS=""
+for H in 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22; do
+  for M in 0 20 40; do
+    RC_INTERVALS="$RC_INTERVALS    <dict><key>Hour</key><integer>$H</integer><key>Minute</key><integer>$M</integer></dict>
+"
+  done
+done
+
+cat > "$RC_PLIST" <<RCEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$RC_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>bash $REPO/scripts/ops/repo-change.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+$RC_INTERVALS  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string><key>BOSS_OS_DEVICE_ID</key><string>$DEVICE_ID</string></dict>
+  <key>StandardOutPath</key><string>$RC_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$RC_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+RCEOF
+
+launchctl unload "$RC_PLIST" 2>/dev/null || true
+lint_plist "$RC_PLIST"
+launchctl load "$RC_PLIST"
+echo "Installed $RC_LABEL — every 20 minutes 06:00–22:00 Central (repo-change.sh, task kind repo_change)."
+
 # ─── Monique's LP reply digest ───────────────────────────────────────────────
 #
 # "an employee can keep track of all the opt outs and replies and send me an inbox daily summary to
