@@ -17,6 +17,7 @@ import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
 import { closeDirectiveFor } from "../../../shared/boss/intake/close.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
 import { stopDeliverable } from "../today/deliverables";
+import { answerFromMail } from "../repoChange/answer";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -548,7 +549,24 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * — the R2 key is the handle — and asking "what would you like me to do?" about a message she
    * plainly wrote is the most insulting question this system can send.
    */
-  const question = bookFailure || closedNote ? null : clarificationFor({
+  /*
+   * ─── HER REPLY TO DANIELLE'S PLAN IS THE APPROVAL, AND IT OPENS NO NEW WORK ─
+   *
+   * Plan B, 20 Sep 2026. The plan email put `[rc_…]` in its subject; a message on Danielle's desk
+   * that carries the token is her answer to that plan. `answerFromMail` records the reply on the
+   * `repo_changes` row and moves it to `build` — the Mac lane claims it from there — and the reply
+   * she gets says so. Nothing is admitted: the task already exists, and a second card for "yes, go"
+   * is exactly the paragraph-in-the-approval-queue shape this mailbox keeps refusing.
+   *
+   * BELOW THE REFUSAL, DELIBERATELY. This runs only for a message that is hers and DMARC-proven,
+   * because the recorded answer is one of the two facts land-on-green rests on.
+   * `validate:repo-lane` pins that this call sits after the `!authorised` return.
+   */
+  const planAnswer = route.outcome !== "AMBIGUOUS"
+    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject, text: readable, mailId, now })
+    : null;
+
+  const question = bookFailure || closedNote || planAnswer ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
     seatName: route.seat.name, tag: route.tag, isReply, bookFiled: Boolean(bookNote),
     hasVerb: Boolean(directive), forwarded: Boolean(origin?.from), unread: oversize,
@@ -592,7 +610,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * be a book, and the message may well have been asking for something as well.
    */
   // A close she asked for, like a book verb that worked, is the whole job: nothing goes to a model.
-  const filedByVerb = Boolean(directive && bookNote) || Boolean(closedNote) || Boolean(closeQuestion);
+  const filedByVerb = Boolean(directive && bookNote) || Boolean(closedNote) || Boolean(closeQuestion) || Boolean(planAnswer);
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
     try {
       const admitted = await admitTask(env, {
@@ -663,11 +681,14 @@ function headline(text: string): string {
   // countable rather than hiding inside "routed".
   // CLOSED is a fifth outcome: the message arrived, was hers, named a commitment and stopped it.
   // Recorded as its own fact so a closure is countable rather than hiding inside "routed".
+  // PLAN_ANSWERED is its own outcome: her reply resumed (or annotated) a repo change and opened nothing.
   const outcome = bookFailure ? "BOOK_NOT_READ"
+    : planAnswer ? "PLAN_ANSWERED"
     : closedNote ? "CLOSED"
       : question || closeQuestion ? "NEEDS_CLARITY"
         : admitFailure ? "NOT_ADMITTED" : route.outcome;
   const why = [route.why,
+    ...(planAnswer ? [planAnswer.note] : []),
     ...(closedNote ? [closedNote] : []),
     ...(closeQuestion ? [closeQuestion] : []),
     ...(viaConsole ? ["Typed into Boss OS from her own authenticated session, not received over SMTP."] : []),
@@ -700,7 +721,7 @@ function headline(text: string): string {
    * verb both mean "nothing was started"; leading with "Monique has it." and eight lines of tag
    * directory buries the only sentence that matters under the reassurance that it worked.
    */
-  const stopped = question ? question.ask : closeQuestion ?? closedNote ?? bookFailure;
+  const stopped = question ? question.ask : planAnswer?.note ?? closeQuestion ?? closedNote ?? bookFailure;
   const reply = stopped ? [
     stopped,
     /*

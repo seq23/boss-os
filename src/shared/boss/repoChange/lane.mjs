@@ -1,0 +1,218 @@
+/**
+ * THE REPO-CHANGE LANE — Danielle changes a grid repository on the owner's word.
+ *
+ * ─── What this is ──────────────────────────────────────────────────────────
+ *
+ * Owner, 20 September 2026 ("Plan B"): she emails `boss@sequoiataylor.com` with `#danielle`, a repo
+ * name from the grid and/or a Google Drive folder, plus instructions. Danielle then does on her Mac
+ * what a Claude Code session did by hand that day for the westpeek.ventures site: reads the
+ * package, reads the target repo's RUNBOOK.md, writes a plan whose decisions are split into
+ * "decided" and "ask", emails the asks, waits for her answers, builds in a worktree, proves it with
+ * the repo's own validators plus screenshots and link checks, opens a PR, LANDS IT ON GREEN
+ * (her decision — no second reply), proves it live, and emails the proof.
+ *
+ * ─── ONE PLACE FOR EVERYTHING THE THREE COMPONENTS MUST AGREE ON ───────────
+ *
+ * The Worker (intake, the claim routes, the guards), the Mac runner (`scripts/ops/repo-change.mjs`)
+ * and the validator (`scripts/validate/the-repo-lane-lands-only-on-green.mjs`) all import THIS file.
+ * The task kind, the executor script, the phases, the model per phase, the turn caps, the parse of
+ * her sentence and the two guards live here and nowhere else — "two components each keeping their
+ * own list" is this repository's most-named defect and this is the shape that prevents it.
+ *
+ * ─── THE TWO GUARDS ARE PURE FUNCTIONS OVER THE ROW ─────────────────────────
+ *
+ * `canEnterBuild(row)` and `canLand(row)` decide from the `repo_changes` row alone, so the route
+ * that hands out a claim, the runner that would run the phase, and the validator that proves the
+ * rule all call the SAME function. A copy of the rule in any one of them is what the validator
+ * exists to catch.
+ */
+
+import { propertyForRepo, isExcluded, whyExcluded, GRID } from "../grid.mjs";
+
+/** The task-kind token. The Mac lane and `validate:duty-delivery` cross-check it against the script. */
+export const TASK_KIND = "repo_change";
+/** The executor on her Mac, named once. `install-agent-launchd.sh` must name it too. */
+export const EXECUTOR_SCRIPT = "repo-change.sh";
+/** Danielle's seat. The lane exists on this desk and no other. */
+export const REPO_CHANGE_SEAT = "emp_repo";
+
+/**
+ * The phases, in order. `asking` and `landing` are waiting states the Mac cannot claim: one waits on
+ * her reply, the other on the PR's checks. `plan`, `build` and `land` are the three `claude -p` runs.
+ */
+export const PHASES = ["plan", "asking", "build", "landing", "land", "done", "failed"];
+export const RUNNABLE_PHASES = ["plan", "build", "land"];
+
+/**
+ * THE MODEL PER PHASE, IN ONE PLACE. Judgement on the plan (Opus), the edit on Sonnet, the landing on
+ * the cheapest rung — `land` is `~/bin/land` plus a curl, and paying Opus prices to watch a script
+ * run is the $3.88 briefing again. All three run on her Claude Code seat, so the API bill is $0 and
+ * the posture ($2.50/day) is untouched; the caps below bound her Max plan's capacity instead.
+ */
+export const PHASE_MODELS = {
+  plan: "claude-opus-5",
+  build: "claude-sonnet-5",
+  land: "claude-haiku-4-5",
+};
+export const PHASE_MAX_TURNS = { plan: 60, build: 150, land: 40 };
+/** A hard wall-clock cap per phase, in minutes. `timeout` in the shell wrapper enforces it. */
+export const PHASE_TIMEOUT_MIN = { plan: 25, build: 90, land: 30 };
+
+/** How long a claim is honoured before the Worker treats the run as dead and lets another claim it. */
+export const CLAIM_LEASE_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * THE DECISIONS POLICY — what she is asked and what Danielle decides. Rendered into the PLAN prompt
+ * by the runner, and the same words the join-west-peek-main RUNBOOK carries under "Decisions an
+ * employee must ask, not make". Kept as data so the prompt cannot drift from the rule.
+ */
+export const ASK_POLICY = {
+  ask: [
+    "brand or colourway",
+    "the meaning of copy (what a sentence claims, promises or implies)",
+    "legal or regulatory wording",
+    "removing a public claim",
+    "image rights",
+    "anything about money",
+  ],
+  decide: [
+    "structure and layout",
+    "CSS and styling within the existing system",
+    "validators and guards",
+    "redirects",
+    "asset handling",
+    "build wiring and scripts",
+  ],
+};
+
+/** `[rc_…]` — the token every email about a change carries, so her reply can name it without headers. */
+export function changeToken(id) {
+  return `[${String(id).trim()}]`;
+}
+
+/** The change id in a subject or body, if it names one. */
+export function tokenIn(text) {
+  const m = /\[(rc_[a-z0-9]+)\]/i.exec(String(text ?? ""));
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** A Drive folder URL in the text, normalised to the folder id. */
+export function driveFolderIn(text) {
+  const t = String(text ?? "");
+  const m = /https?:\/\/drive\.google\.com\/(?:drive\/(?:u\/\d+\/)?folders\/|open\?id=)([A-Za-z0-9_-]{10,})/i.exec(t);
+  return m ? { id: m[1], url: m[0] } : null;
+}
+
+/** Every repo name the grid knows, bare. */
+export function gridRepoNames() {
+  return GRID.flatMap((p) => p.repos);
+}
+
+/**
+ * A grid repo named in the text. Bare name, `owner/name`, or a GitHub URL — the same three shapes
+ * `isExcluded` reads, for the same reason. The longest match wins so `local-guides-citation-velocity`
+ * is never read as `local-guides-generator`'s neighbour by prefix.
+ */
+export function repoIn(text) {
+  const t = String(text ?? "").toLowerCase();
+  const names = gridRepoNames().sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const re = new RegExp(`(?:^|[^a-z0-9_-])${name.replace(/[-]/g, "\\-")}(?![a-z0-9_-])`, "i");
+    if (re.test(t)) return name;
+  }
+  return null;
+}
+
+/**
+ * An EXCLUDED repo named in the text — West Peek, a client micro-site, anything the grid names as
+ * out of scope. Returned so intake can refuse with the reason instead of quietly opening ordinary
+ * work on a message that plainly asked for a repository change.
+ */
+export function excludedRepoIn(text) {
+  const t = String(text ?? "");
+  const m = /\b(?:github\.com\/[\w.-]+\/)?([a-z0-9][a-z0-9._-]{2,})\b/gi;
+  let hit;
+  while ((hit = m.exec(t)) !== null) {
+    const name = hit[1];
+    if (/[-_]/.test(name) && isExcluded(name) && whyExcluded(name)) return { repo: name, why: whyExcluded(name) };
+  }
+  return null;
+}
+
+/**
+ * ─── HER SENTENCE, READ AS A REPO CHANGE ───────────────────────────────────
+ *
+ * A repo change is a message on Danielle's desk that names a grid repo, a Drive folder, or both.
+ * Nothing else is inferred: no repo and no folder means an ordinary instruction, exactly as before.
+ * The instruction is the whole readable text — the plan phase reads it in full, and the parse does
+ * not try to be clever about which sentence is "the ask".
+ *
+ * Returns null when the text is not a repo change. Returns `{ excluded }` when it names a repo the
+ * grid says is out of scope, so the caller can refuse with the reason rather than guess.
+ */
+export function parseRepoChange(text) {
+  const t = String(text ?? "").trim();
+  if (!t) return null;
+  const repo = repoIn(t);
+  const folder = driveFolderIn(t);
+  if (!repo && !folder) {
+    const excluded = excludedRepoIn(t);
+    return excluded ? { excluded } : null;
+  }
+  if (!repo) {
+    const excluded = excludedRepoIn(t);
+    if (excluded) return { excluded };
+  }
+  return {
+    repo,
+    property: repo ? propertyForRepo(repo)?.key ?? null : null,
+    drive_folder: folder ? folder.id : null,
+    drive_url: folder ? folder.url : null,
+    instruction: t.slice(0, 20_000),
+  };
+}
+
+/**
+ * ─── THE GUARDS ─────────────────────────────────────────────────────────────
+ *
+ * A row may enter BUILD only when a plan exists AND her reply is on the record. "No asks" is not an
+ * exemption: the plan always goes to her and her reply is the approval, so a plan with zero
+ * questions still waits for "go". That is what makes "a recorded plan approval" a fact on the row
+ * rather than an inference from an empty list.
+ */
+export function canEnterBuild(row) {
+  if (!row) return { ok: false, why: "no row" };
+  if (row.phase !== "build") return { ok: false, why: `phase is ${row.phase}, not build` };
+  if (!row.plan_text) return { ok: false, why: "no plan on the record" };
+  if (!row.answered_at || !row.answers_text) return { ok: false, why: "her reply is not on the record — a task with an unanswered ask cannot enter BUILD" };
+  return { ok: true, why: "plan written, her reply recorded" };
+}
+
+/**
+ * A row may LAND only when the PR exists, its checks were recorded green by the lane (not assumed),
+ * AND her reply — the plan approval — is on the record. Land-on-green was her decision on 20 Sep
+ * 2026; the two recorded facts are what make it a decision she made and not a default she fell into.
+ */
+export function canLand(row) {
+  if (!row) return { ok: false, why: "no row" };
+  if (row.phase !== "land") return { ok: false, why: `phase is ${row.phase}, not land` };
+  if (!row.pr_url || !row.pr_number) return { ok: false, why: "no pull request on the record" };
+  if (!row.checks_green_at) return { ok: false, why: "no recorded green check — land on green needs the green to be on the record" };
+  if (!row.answered_at || !row.answers_text) return { ok: false, why: "no recorded plan approval — her reply is the approval and it is not on the record" };
+  return { ok: true, why: "PR open, checks recorded green, her reply recorded" };
+}
+
+/** Which phase a claim may run, given the row. Null when the row is waiting on something. */
+export function claimablePhase(row) {
+  if (!row) return null;
+  if (row.phase === "plan") return "plan";
+  if (row.phase === "build") return canEnterBuild(row).ok ? "build" : null;
+  if (row.phase === "land") return canLand(row).ok ? "land" : null;
+  return null;
+}
+
+/** Is the claim on this row still live? A lease that has run out is a dead run, not a live one. */
+export function claimIsLive(row, now = Date.now()) {
+  if (!row?.claimed_at) return false;
+  return now - Number(row.claimed_at) < CLAIM_LEASE_MS;
+}

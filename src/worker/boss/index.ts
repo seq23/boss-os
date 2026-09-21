@@ -47,6 +47,7 @@ import { runSentinel } from "./governance/sentinel";
 import { investor } from "./routes/investor";
 import { wealth } from "./routes/wealth";
 import { research } from "./routes/research";
+import { repoChanges } from "./routes/repoChanges";
 import { gridHealth } from "./routes/gridHealth";
 import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
 import { ensureAlmanac } from "./spirit/day";
@@ -209,6 +210,7 @@ app.route("/api/system/spend-lever", spendLeverRoutes);
 //
 // Job 5 — "find firms that did X and draft the ask": the scans, their findings, and the desk's door.
 app.route("/api/research", research);
+app.route("/api/repo-changes", repoChanges);
 // Job 1 — the rewrite that answers her note lives on the wealth mount:
 //   GET  /api/wealth/outreach/rewrites          the progress both tabs print (and drains the queue)
 //   POST /api/wealth/outreach/redraft-sent-back "Rewrite the N with my notes"

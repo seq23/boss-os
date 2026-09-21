@@ -28,6 +28,28 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   }
   if (task.status === "cancelled" || task.status === "done") return;
 
+  /*
+   * ─── A REPO CHANGE IS PARKED FOR HER MAC, NEVER SENT TO A CLOUD RUNG ────────
+   *
+   * `input.repo_change.change_id` names a `repo_changes` row (Plan B, 20 Sep 2026). The work is a
+   * worktree, the repo's own validators, screenshots, `gh`, `~/bin/land` and a curl against
+   * production — none of which a Worker has, and a cloud model asked to "do" it would return a
+   * paragraph shaped like a PR. So the task stays `queued`, the row stays in its phase, and
+   * `scripts/ops/repo-change.mjs` claims it from her Mac through `/api/repo-changes`. The event
+   * below is the trace that the queue saw it and chose, by rule, not to run it here.
+   */
+  const parkedInput = task.input ? safeJson(task.input) : {};
+  const changeRef = parkedInput.repo_change && typeof parkedInput.repo_change === "object"
+    ? (parkedInput.repo_change as { change_id?: unknown }).change_id
+    : null;
+  if (typeof changeRef === "string") {
+    await env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'parked_for_mac',?)`)
+      .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ repo_change_id: changeRef, lane: "repo_change", why: "runs on her Mac through /api/repo-changes; no cloud rung may take it" }))
+      .run();
+    return;
+  }
+
   const now = Date.now();
   await env.DB.batch([
     env.DB.prepare(`UPDATE tasks SET status = 'running', started_at = COALESCE(started_at, ?), attempts = attempts + 1 WHERE id = ?`)
