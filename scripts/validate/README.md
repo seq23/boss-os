@@ -154,3 +154,11 @@ violations) on breach and proves its own detection with a self-test fixture run.
   unverified figure or an ungrounded insight is PARTIAL and says which. Plus that the prompt and the
   spec carry all three decisions. **Rule 0: zero sourcing or zero status cases hard-fails.**
   16-fixture self-test.
+
+- `the-merge-gate-is-fast.mjs` (`npm run validate:merge-gate-fast`) — the shape of `ci.yml`
+  after 21 Sep 2026 (PR #35 waited 50 minutes on a serial 15-minute job plus a Playwright retry
+  that hit its cap): every job has `timeout-minutes`; the unit suite and the Boss suites are
+  sharded, the `--shard=i/N` denominator equals the matrix length and each unit shard stays
+  serial inside; the Playwright job is excluded from `pull_request` and keeps its own ceiling;
+  every job a pull request waits on has a ceiling of at most 10 minutes. **Rule 0: zero jobs,
+  fewer than two sharded jobs, or no Playwright job hard-fails.** 9-fixture self-test.
