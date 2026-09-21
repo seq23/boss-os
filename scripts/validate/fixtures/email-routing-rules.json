@@ -1,0 +1,191 @@
+{
+  "recorded_at": "2026-09-21T20:02:14.121Z",
+  "domain": "sequoiataylor.com",
+  "rules": [
+    {
+      "id": "5b74c877b2ac494a8b7f58439edb03dd",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "kendra@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "719360e4f91f488290131d2cc016214b",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "toni@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1feaa55a848c4a3391a62434f7e74899",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "camille@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "e245b94aecb247b6adebf0c3aae79879",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "monique@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bc79079973c243c7a4acf6cb45d6e921",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "zora@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f05ad0e6020b4151b5eedeadd5d82202",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "imani@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "8076bfc5af5143d1950699180ddc8d9f",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "simone@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "85bc3306dd3545d78aa1b6c3ebad90d3",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "danielle@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "8fdce285650744e2acf673c4c489e8e4",
+      "enabled": true,
+      "matchers": [
+        {
+          "type": "literal",
+          "field": "to",
+          "value": "boss@sequoiataylor.com"
+        }
+      ],
+      "actions": [
+        {
+          "type": "worker",
+          "value": [
+            "boss-os"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "5d48a617c4244f3c81e9b43036d35e64",
+      "enabled": false,
+      "matchers": [
+        {
+          "type": "all"
+        }
+      ],
+      "actions": [
+        {
+          "type": "drop"
+        }
+      ]
+    }
+  ]
+}

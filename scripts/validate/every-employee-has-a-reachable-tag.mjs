@@ -230,6 +230,13 @@ export function authorisationIsTheSender(handlerSource) {
 
 // ─── Self-test ───────────────────────────────────────────────────────────────
 
+// `--print-roster`: the replayed active roster as JSON, for a sibling scan that needs the same list
+// without running this one as a side effect (every-employee-address-receives.mjs).
+if (process.argv.includes("--print-roster")) {
+  console.log(JSON.stringify(rosterFromMigrations().roster));
+  process.exit(0);
+}
+
 if (process.argv.includes("--self-test")) {
   const good = [
     { id: "emp_chief", name: "Simone", role: "Chief of Staff", lane: "ops" },

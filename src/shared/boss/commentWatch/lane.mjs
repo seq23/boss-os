@@ -36,7 +36,9 @@ export const DUTY_ID = "duty_youtube_comment_watch";
 export const LOCAL_JOB = "youtube-comment-watch.sh";
 export const SEAT_TAG = "#monique";
 export const DELIVERS = "comment_watch_items";
-export const REPLY_TO = "boss@sequoiataylor.com";
+// Replies go to monique@sequoiataylor.com since 21 Sep 2026 (employeeMail sets reply_to; a routing
+// rule per employee delivers it; an untagged reply routes by its To: local part). boss@ still works.
+export const REPLY_TO = "monique@sequoiataylor.com";
 export const TOKEN_RE = /\[(cw_[a-z0-9]+)\]/i;
 
 export const ACTIONS = ["hide", "reply", "ignore"];

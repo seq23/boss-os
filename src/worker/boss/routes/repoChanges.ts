@@ -23,7 +23,7 @@ import type { Env, Vars } from "../env";
 import { ok, badRequest, conflict, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
-import { repoChangeById, taskEvent, describePhase, safeList, recordForce, type RepoChangeRow } from "../repoChange/answer";
+import { repoChangeById, taskEvent, describePhase, safeList, recordForce, retryRow, type RepoChangeRow } from "../repoChange/answer";
 import {
   claimablePhase, claimIsLive, canLand, canEnterBuild, canPreview, needsPreview, isForced, RUNNABLE_PHASES, PHASE_MODELS, PHASE_MAX_TURNS,
   CLAIM_LEASE_MS, TASK_KIND, EXECUTOR_SCRIPT, gridRepoNames,
@@ -354,21 +354,7 @@ repoChanges.post("/:id/retry", async (c) => {
   const row = await repoChangeById(c.env, c.req.param("id"));
   if (!row) throw notFound("No repo change with that id");
   if (row.phase !== "failed") throw conflict(`${row.id} is ${describePhase(row)}; only a failed change can be retried`);
-  const now = Date.now();
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      `UPDATE repo_changes SET phase = 'plan', failure = NULL, claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL,
-              plan_text = NULL, decided_json = NULL, asks_json = NULL, planned_at = NULL, plan_written_by = NULL, publish_ready = NULL, placeholders_json = NULL,
-              asked_at = NULL, ask_message_id = NULL, answered_at = NULL, answers_text = NULL, answers_mode = NULL, answer_mail_id = NULL, plan_approved_by = NULL,
-              held_at = NULL, held_text = NULL, branch = NULL, pr_url = NULL, pr_number = NULL, built_at = NULL, build_written_by = NULL, proof_json = NULL,
-              checks_state = NULL, checks_detail = NULL, checks_green_at = NULL, preview_url = NULL, preview_sent_at = NULL, preview_message_id = NULL,
-              land_approved_at = NULL, land_approval_text = NULL, land_approval_mail_id = NULL, done_message_id = NULL, updated_at = ?
-        WHERE id = ? AND phase = 'failed'`,
-    ).bind(now, row.id),
-    c.env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, finished_at = NULL WHERE id = ?`).bind(row.task_id),
-  ]);
-  await taskEvent(c.env, row.task_id, "repo_change_retried", { repo_change_id: row.id, previous_failure: row.failure, reason: text(b?.reason, 500), by: "owner session" });
-  await audit(c.env.DB, { actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id, action: "retried", detail: { task_id: row.task_id, previous_failure: row.failure, reason: text(b?.reason, 500) } });
+  await retryRow(c.env, row, { now: Date.now(), reason: text(b?.reason, 500), by: "owner session" });
   return ok(c, { id: row.id, phase: "plan", previous_failure: row.failure });
 });
 

@@ -17,14 +17,15 @@ import { canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, chang
 
 const FOLDER = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUv";
 
-function mail(opts: { from?: string; subject?: string; body?: string; dmarc?: string }) {
+function mail(opts: { from?: string; subject?: string; body?: string; dmarc?: string; messageId?: string; references?: string }) {
   const body = opts.body ?? "";
   const from = opts.from ?? "Sequoia <seq.taylor@gmail.com>";
   const headers = new Headers({
     from,
     subject: opts.subject ?? "",
     "authentication-results": opts.dmarc ?? "mx.cloudflare.net; spf=pass; dkim=pass; dmarc=pass header.from=gmail.com",
-    "message-id": `<${Math.random().toString(36).slice(2)}@mail.gmail.com>`,
+    "message-id": opts.messageId ?? `<${Math.random().toString(36).slice(2)}@mail.gmail.com>`,
+    ...(opts.references ? { references: opts.references, "in-reply-to": opts.references } : {}),
   });
   const raw = `From: ${from}\r\nSubject: ${opts.subject ?? ""}\r\n\r\n${body}`;
   return {
@@ -665,5 +666,65 @@ describe("retry is her door for a failed row", () => {
     expect(after.instruction).toContain("Your call");
     expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, rc.task_id)).status).toBe("queued");
     expect((await claim(rc.id)).status).toBe(201);
+  });
+});
+
+
+describe("a retry is a resume of her original instruction, never a new one", () => {
+  it("\"try again\" on the ORIGINAL thread of a failed pre-approved change keeps the row, its pre-approval, repo and folder; opens nothing; the fresh plan is FYI-only", async () => {
+    const originalId = `<orig-${Date.now()}@mail.gmail.com>`;
+    const res = await handleBossInboundMail(mail({ messageId: originalId, subject: "#danielle how-we-know banner", body: `In how-we-know, regenerate the YouTube banner with the new tagline. Your call, pick everything, no options. Package: ${FOLDER}` }), env as never);
+    const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
+    expect(rc.pre_approved_phrase).toBe("your call");
+    expect(rc.drive_folder).toBe("1AbCdEfGhIjKlMnOpQrStUv");
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [PHASE_DID_NOT_COMPLETE] claude exited 1", notified_message_id: "re_f" } });
+
+    const tasksBefore = (await row<any>(`SELECT COUNT(*) AS n FROM tasks`)).n;
+    const rowsBefore = (await row<any>(`SELECT COUNT(*) AS n FROM repo_changes`)).n;
+    // Her reply on her OWN original thread: subject "Re: #danielle how-we-know banner" (no token), References = her message-id.
+    const reply = await handleBossInboundMail(mail({ subject: "Re: #danielle how-we-know banner", body: "try again", references: originalId }), env as never);
+    expect(reply.outcome).toBe("PLAN_ANSWERED");
+    expect(reply.taskId).toBeNull();
+    expect(reply.reply).toMatch(/Retrying rc_/);
+    expect(reply.reply).toMatch(/your pre-approval \("your call"\)/);
+    expect((await row<any>(`SELECT COUNT(*) AS n FROM tasks`)).n).toBe(tasksBefore);
+    expect((await row<any>(`SELECT COUNT(*) AS n FROM repo_changes`)).n).toBe(rowsBefore);
+
+    const after = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(after.phase).toBe("plan");
+    expect(after.failure).toBeNull();
+    expect(after.pre_approved_phrase).toBe("your call");
+    expect(after.pre_approved_by).toBe("seq.taylor@gmail.com");
+    expect(after.repo).toBe("how-we-know");
+    expect(after.drive_folder).toBe("1AbCdEfGhIjKlMnOpQrStUv");
+    expect(after.instruction).toBe(rc.instruction); // "try again" adds nothing to it
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, rc.task_id)).status).toBe("queued");
+
+    // The fresh plan: asks are refused, a deciding plan files as approved by her and parks BUILD — FYI-only.
+    const c = await claim(rc.id);
+    expect(c.status).toBe(201);
+    const asking = await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [{ question: "Keep the handle?", default: "yes" }], publish_ready: true, ask_message_id: "re_x" } });
+    expect(asking.status).toBe(400);
+    const filed = await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: ["Keep the handle — yes"], asks: [], publish_ready: true, ask_message_id: "re_fyi_2" } });
+    expect(filed.status).toBe(200);
+    expect(filed.body.data.phase).toBe("build");
+    expect(filed.body.data.pre_approved).toBe(true);
+    expect((await row<any>(`SELECT plan_approved_by FROM repo_changes WHERE id = ?`, rc.id)).plan_approved_by).toMatch(/pre-approved in the request: "your call"/);
+  });
+
+  it("a reply that says MORE than try again is appended as her follow-up; a hold leaves it stopped", async () => {
+    const originalId = `<orig2-${Date.now()}@mail.gmail.com>`;
+    const res = await handleBossInboundMail(mail({ messageId: originalId, subject: "#danielle hero", body: `Update WPP-llm from ${FOLDER}. New hero.` }), env as never);
+    const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [X] y", notified_message_id: "re_f" } });
+    await handleBossInboundMail(mail({ subject: "Re: #danielle hero", body: "no, leave it", references: originalId }), env as never);
+    expect((await row<any>(`SELECT phase FROM repo_changes WHERE id = ?`, rc.id)).phase).toBe("failed");
+    const again = await handleBossInboundMail(mail({ subject: "Re: #danielle hero", body: "try again but use the second headline", references: originalId }), env as never);
+    expect(again.reply).toMatch(/Retrying/);
+    const after = await row<any>(`SELECT phase, instruction FROM repo_changes WHERE id = ?`, rc.id);
+    expect(after.phase).toBe("plan");
+    expect(after.instruction).toMatch(/Her follow-up on retry .*: try again but use the second headline/);
   });
 });

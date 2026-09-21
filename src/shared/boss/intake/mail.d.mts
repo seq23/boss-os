@@ -38,7 +38,8 @@ export declare const BOSS_DEFAULT_ROUTE_ROLE: string;
 
 export declare function seatTag(name: string): string;
 export declare function hashtagsIn(text: string): string[];
-export declare function routeToSeat(text: string, roster: readonly BossSeat[]): BossRoute | null;
+export declare function routeToSeat(text: string, roster: readonly BossSeat[], to?: string | null): BossRoute | null;
+export declare function seatByAddress(to: string | null | undefined, roster: readonly BossSeat[]): BossSeat | null;
 export declare function replyBody(route: BossRoute, roster: readonly BossSeat[], subject: string): string;
 export declare function decodeMimeHeader(value: string): string;
 export declare function extractAddress(header: string | null | undefined): string | null;

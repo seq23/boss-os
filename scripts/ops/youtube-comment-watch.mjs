@@ -24,9 +24,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sendersFor } from "./notify.mjs";
+import { sendersFor, employeeMail } from "./notify.mjs";
 import {
-  LOCAL_JOB, REPLY_TO, shouldEmail, digestEmail, confirmationEmail,
+  LOCAL_JOB, shouldEmail, digestEmail, confirmationEmail,
 } from "../../src/shared/boss/commentWatch/lane.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -69,11 +69,12 @@ async function email(subject, text) {
   const senders = sendersFor("Monique");
   if (senders.length === 0) stop(6, "NO_RESEND_KEY", "neither BOSS_OS_MAIL_KEY nor RESEND_API_KEY is set; run through the vault.");
   let last = "";
-  for (const { from, key } of senders) {
+  for (const sender of senders) {
+    const { from, key } = sender;
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ from, to: [TO], reply_to: REPLY_TO, subject: subject.slice(0, 200), text: text.slice(0, 60_000) }),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
     });
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";

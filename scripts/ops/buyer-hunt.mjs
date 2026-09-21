@@ -63,7 +63,7 @@ import path from "node:path";
 import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
-import { sendersFor } from "./notify.mjs";
+import { sendersFor, employeeMail } from "./notify.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { researchLot, renderFilings, renderReach } from "./filing-hunt.mjs";
 import { mirrorOrStop } from "./lib/book-mirror.mjs";
@@ -286,11 +286,12 @@ async function main() {
   const subject = total
     ? `${total} possible ${HUNTING}(s) — ${priced.map((p) => p.asset).join(", ")}`
     : `No ${HUNTING} clears the bar this week — ${priced.map((p) => p.asset).join(", ")}`;
-  for (const { from, key } of SENDERS) {
+  for (const sender of SENDERS) {
+    const { from, key } = sender;
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ from, to: [TO], subject: subject.slice(0, 200), text }),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
     });
     if (res.ok) { console.log(`\nEmailed ${TO} from ${from}.`); return; }
     console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);

@@ -52,7 +52,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor } from "./notify.mjs";
+import { sendersFor, employeeMail } from "./notify.mjs";
 
 const SOURCE_ID = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
 const SENT_TAB = process.env.LP_SOURCE_TAB ?? "Sent Log";
@@ -327,17 +327,12 @@ async function emailHer({ optedOut, replied, bounced, tally, scanned, sentRows }
   let lastErr = "";
   const attempts = [];
   for (const sx of SENDERS) for (const to of RECIPIENTS) attempts.push([sx, to]);
-  for (const [{ from, key }, TO] of attempts) {
+  for (const [sender, TO] of attempts) {
+    const { from, key } = sender;
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        from,
-        to: [TO],
-        reply_to: "sequoia@westpeek.ventures",
-        subject: `LP outcomes: ${optedOut.length} to suppress, ${replied.length} replied, ${bounced.length} bounced`,
-        text: body,
-      }),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject: `LP outcomes: ${optedOut.length} to suppress, ${replied.length} replied, ${bounced.length} bounced`, text: body })),
     });
     if (res.ok) {
       console.log(`Emailed ${TO} from ${from}: ${optedOut.length} to suppress, ${replied.length} replied, ${bounced.length} bounced.`);

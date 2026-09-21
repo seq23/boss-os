@@ -52,7 +52,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor } from "./notify.mjs";
+import { sendersFor, employeeMail } from "./notify.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 /** The campaign's first send was 23 July 2026. July 1 is a deliberate margin, not a guess. */
@@ -277,15 +277,12 @@ async function emailHer(list, counts) {
     "— Monique, Director of Relationships",
   ].join("\n");
 
-  for (const { from, key } of SENDERS) {
+  for (const sender of SENDERS) {
+    const { from, key } = sender;
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        from, to: [TO], reply_to: TO,
-        subject: `LP positive replies — ${calls.length} want a call, ${warm.length} to keep warm`,
-        text: body,
-      }),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject: `LP positive replies — ${calls.length} want a call, ${warm.length} to keep warm`, text: body })),
     });
     if (res.ok) { console.log(`Emailed ${TO} from ${from}.`); return true; }
     console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
