@@ -501,6 +501,14 @@ describe("a package that is not publish-ready lands only after she has seen the 
     expect(await row<any>(`SELECT id FROM task_events WHERE task_id = ? AND event = 'repo_change_forced'`, taskId)).toBeNull();
   });
 
+  it("how-we-know is on the grid: her first real job — the banner — is admitted as a repo change", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#danielle how-we-know banner", body: "In how-we-know, regenerate the YouTube banner in visuals/brand.py with the new tagline (deep sea + materials) and after landing push it to the channel and attach the proof." }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    const rc = await row<any>(`SELECT repo, property_key FROM repo_changes WHERE task_id = ?`, res.taskId);
+    expect(rc.repo).toBe("how-we-know");
+    expect(rc.property_key).toBe("youtube");
+  });
+
   it("creator-network is on the grid: a #danielle mail naming it is admitted as a repo change", async () => {
     const res = await handleBossInboundMail(mail({ subject: "#danielle creator-network", body: "In creator-network, add the runbook link to the README." }), env as never);
     expect(res.outcome).toBe("ROUTED");

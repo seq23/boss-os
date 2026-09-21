@@ -215,6 +215,11 @@ export function fileProblems(f) {
   if (!/Landed to production with/.test(f.runner)) bad.push(`${FILES.runner}: the DONE email does not lead with the force.`);
   if (!/NOT PUBLISH-READY/.test(f.runner)) bad.push(`${FILES.runner}: the plan email does not say at the top that the change is not publish-ready.`);
   if (!/publish_ready/.test(f.prompt)) bad.push(`${FILES.prompt}: the PLAN section does not ask for publish_ready.`);
+  // The post-land step (21 Sep 2026): only a step the instruction or the plan named, after ~/bin/land,
+  // reported as post_land; a failed step is a named stop and the DONE email carries the proof.
+  if (!/post_land/.test(f.prompt) || !/Only a step the instruction or the plan named/.test(f.prompt)) bad.push(`${FILES.prompt}: the LAND section does not bound the post-land step to what she or the plan named.`);
+  if (!/POST_LAND_STEP_FAILED/.test(f.runner) || !/POST-LAND STEP/.test(f.runner)) bad.push(`${FILES.runner}: a failed post-land step is not a named stop, or the DONE email does not carry its proof.`);
+  if (!/RUNBOOK_FORBIDS/.test(f.prompt)) bad.push(`${FILES.prompt}: the prompt no longer blocks on a runbook rule that forbids the instruction.`);
   for (const proof of ["PATH 1", "PATH 3", "THE FORCE", "A STRANGER'S FORCE"]) {
     if (!f.test.includes(proof)) bad.push(`${FILES.test}: no test named "${proof}…" — the preview/force paths are not proven.`);
   }
@@ -290,8 +295,8 @@ function selfTest() {
     mail: "if (!authorised) { return refused; }\nconst planAnswer = await answerFromMail(env, {});\nadmitTask(env, {});",
     answer: "async function recordForce() { db(`UPDATE repo_changes SET forced_by = ? WHERE id = ?`); taskEvent('repo_change_forced') }\nif (reply.mode === \"forced\") { await recordForce(); }\nif (reply.mode === \"preview\") { note(); }\nconst reply = readReply(text); if (reply.mode === \"held\") { db(`UPDATE repo_changes SET held_at = ? WHERE id = ?`) }\nUPDATE repo_changes SET phase = 'build', answered_at = ? WHERE id = ? AND phase = 'asking'",
     executor: "NOTHING_CLAIMABLE=7\ncaffeinate timeout 3h node repo-change.mjs\ncase $RC in $NOTHING_CLAIMABLE) say quiet ;; esac",
-    runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst line = `My recommended default: ${a.default}`; const word = 'reply approved'; const top = 'NOT PUBLISH-READY'; const done = 'Landed to production with';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5']);\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
-    prompt: "## PHASE: PLAN\nplan with a \"default\" per ask and publish_ready\n## PHASE: BUILD\nNever `gh pr merge`.\n## PHASE: LAND\nrun {{LAND}} {{PR_NUMBER}}",
+    runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst line = `My recommended default: ${a.default}`; const word = 'reply approved'; const top = 'NOT PUBLISH-READY'; const done = 'Landed to production with'; const pl = 'POST-LAND STEP'; const plf = 'POST_LAND_STEP_FAILED';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5']);\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
+    prompt: "RUNBOOK_FORBIDS\n## PHASE: PLAN\nplan with a \"default\" per ask and publish_ready\n## PHASE: BUILD\nNever `gh pr merge`.\n## PHASE: LAND\nrun {{LAND}} {{PR_NUMBER}}; Only a step the instruction or the plan named goes under post_land",
     test: 'it("SCOOTER CANNOT USE THIS LANE", async () => { expect(res.outcome).toBe("REFUSED_SENDER"); });\nit("a reply of exactly \\"approved\\" advances", () => {});\nit("\\"no\\" HOLDS the task", () => {});\nit("PATH 1", () => {}); it("PATH 3", () => {}); it("THE FORCE", () => {}); it("A STRANGER\'S FORCE", () => {});',
     ahrefs: 'const RUNNER = "scripts/ops/ahrefs-audit-fix.sh";\nfor (const forbidden of [/\\bgh\\s+pr\\s+merge\\b/]) {}',
     migrations: "CREATE TABLE repo_changes (checks_green_at INTEGER)",
@@ -322,10 +327,11 @@ function selfTest() {
   expect("a second writer of forced_by is caught", fileProblems({ ...good, src: good.src + "\nUPDATE repo_changes SET forced_by = ? WHERE phase" }).some((p) => p.includes("forced_by is assigned")));
   expect("a preview reply that sets the land approval is caught", fileProblems({ ...good, answer: good.answer.replace('if (reply.mode === "preview") { note(); }', 'if (reply.mode === "preview") { db(`SET land_approved_at = ?`); }') }).some((p) => p.includes("must set neither")));
   expect("a plan route without publish_ready is caught", fileProblems({ ...good, routes: good.routes.replace('if (typeof b?.publish_ready !== "boolean") throw x; ', "") }).some((p) => p.includes("publish_ready")));
+  expect("a LAND section with an unbounded post-land step is caught", fileProblems({ ...good, prompt: good.prompt.replace("Only a step the instruction or the plan named", "any step") }).some((p) => p.includes("post-land step")));
   expect("a build route that skips the preview is caught", fileProblems({ ...good, routes: good.routes.replace('needsPreview(row) && !isForced(row) ? "preview" : "landing"', '"landing"') }).some((p) => p.includes("preview step")));
 
   if (failed) { console.error(`\nSELF-TEST FAILED: ${failed} case(s)`); process.exit(1); }
-  console.log("SELF-TEST PASSED: 27/27 cases.");
+  console.log("SELF-TEST PASSED: 28/28 cases.");
 }
 
 if (process.argv.includes("--self-test")) { selfTest(); process.exit(0); }

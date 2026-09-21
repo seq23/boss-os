@@ -357,7 +357,19 @@ async function runPhase(claim) {
     if (!out.merge_sha) { await fail(row, "NO_MERGE_COMMIT", `the land phase wrote no merge_sha; ${LAND} did not report a merge.`, log); return; }
     const proof = out.live_proof ?? {};
     const forcedList = Array.isArray(row.forced_placeholders) ? row.forced_placeholders.map(String) : [];
-    const subject = `#danielle DONE: ${repo} ${changeToken(row.id)} — landed and live${isForced(row) ? ` (to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"}, by your instruction)` : ""}`;
+    /*
+     * THE POST-LAND STEP SHE ASKED FOR (21 Sep 2026: "after landing, run bin/<script> and attach
+     * the proof"). The LAND phase runs only a step the instruction or the plan named, after
+     * ~/bin/land, and reports it under `post_land`. A step that failed is a named stop: the land
+     * stands, the proof does not, and the DONE email does not go until the proof exists.
+     */
+    const postLand = out.post_land && typeof out.post_land === "object" ? out.post_land : null;
+    if (postLand && Number(postLand.rc) !== 0) {
+      writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
+      await fail(row, "POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${String(postLand.output_tail ?? "").slice(0, 600)}`, log);
+      return;
+    }
+    const subject = `#danielle DONE: ${repo} ${changeToken(row.id)} — landed and live${isForced(row) ? ` (to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"}, by your instruction)` : ""}${postLand ? " · post-land step done" : ""}`;
     const text = [
       "Sequoia,", "",
       ...(isForced(row) ? [`Landed to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"} by your instruction: ${forcedList.join("; ") || "(none named)"}. Forced by ${row.forced_by} on ${new Date(Number(row.forced_at)).toISOString()}.`, ""] : []),
@@ -365,6 +377,7 @@ async function runPhase(claim) {
       `Pull request: ${row.pr_url}`, `Merge commit: ${out.merge_sha}`,
       "", "LIVE PROOF",
       ...Object.entries(proof).map(([k, v]) => `- ${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`),
+      ...(postLand ? ["", "POST-LAND STEP (as you asked)", `- ran: ${postLand.command} (exit ${postLand.rc})`, `- proof: ${postLand.proof ?? "(none recorded)"}`, `- output: ${String(postLand.output_tail ?? "").slice(0, 1200)}`] : []),
       "", "WHAT WAS PROVEN BEFORE THE PR", JSON.stringify(row.proof ?? {}, null, 2),
       "", `Checks: ${row.checks_detail ?? "recorded green"}`,
       "", `Run log on your Mac: ${log}`,
@@ -372,7 +385,7 @@ async function runPhase(claim) {
     ].join("\n");
     const messageId = await email(subject, text);
     if (!messageId) { say("NAMED STOP [DONE_NOT_SENT] landed, and the DONE email could not be sent; the row stays in land until it can."); await release(row, "landed; DONE email not sent — retry the email next tick", log); writeFileSync(join(dir, "landed-unreported.json"), JSON.stringify(out)); return; }
-    const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: proof, done_message_id: messageId, run_log: log });
+    const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: postLand ? { ...proof, post_land: postLand } : proof, done_message_id: messageId, run_log: log });
     if (!r.ok) say(`NAMED STOP [LAND_NOT_RECORDED] ${r.status} ${r.error ?? ""} — it landed and she was told; Boss OS was not.`);
     else { markReported(); say(`done: ${out.merge_sha}`); }
   }

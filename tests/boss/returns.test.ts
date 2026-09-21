@@ -181,6 +181,9 @@ describe("return-on-effort ledger", () => {
       // vanish from — her returns ledger without someone saying so here.
       "youtube", "saas_apps",
       "authority_network",
+      // Added 21 Sep 2026 on her instruction ("THE GRID GAINS creator-network"): a revenue lane
+      // she is building, so it is a line on her returns ledger from the day it joined the grid.
+      "creator_network",
     ]);
     expect(body.data.ordering_note).toContain("Nothing here ranks them");
   });
