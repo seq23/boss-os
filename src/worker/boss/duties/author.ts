@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { dutyProblems, hourIn, pickSlot, scriptIn, weekdayIn } from "../../../shared/boss/duties/lane.mjs";
 
 /**
  * SHE DESCRIBES A DUTY IN HER OWN WORDS; THIS DRAFTS THE PROPER VERSION.
@@ -66,6 +67,8 @@ const NEEDS_JUDGEMENT = /\b(decide|judge|assess|evaluate|negotiat|recommend|matc
 export interface DutyDraft {
   employee_id: string;
   employee_name: string;
+  /** False when the seat is retired, merged or suspended — a duty cannot be given to her. */
+  employee_active: boolean;
   name: string;
   cadence: "daily" | "weekly";
   weekday: number | null;
@@ -128,9 +131,10 @@ export async function draftDuty(
   overrides: Partial<DutyDraft> = {},
 ): Promise<DutyDraft> {
   const employee = await env.DB
-    .prepare(`SELECT id, name, role, lane, charter FROM employees WHERE id = ?`)
+    .prepare(`SELECT id, name, role, lane, charter, status, lifecycle FROM employees WHERE id = ?`)
     .bind(employeeId)
-    .first<{ id: string; name: string; role: string; lane: string; charter: string | null }>();
+    .first<{ id: string; name: string; role: string; lane: string; charter: string | null; status: string; lifecycle: string }>();
+  const employeeActive = Boolean(employee && employee.status === "active" && ["active", "provisional"].includes(employee.lifecycle));
 
   const refusals: string[] = [];
   if (!employee) refusals.push(`There is no employee ${employeeId}, so nobody would own this.`);
@@ -177,9 +181,40 @@ export async function draftDuty(
    */
   const wantsDaily = /\b(daily|every day|each day|each morning|every morning)\b/i.test(text);
   const cadence: "daily" | "weekly" = overrides.cadence ?? (wantsDaily ? "daily" : "weekly");
-  const cadenceReason = wantsDaily
+  const namedDay = weekdayIn(text);
+  const weekday = cadence === "weekly" ? (overrides.weekday ?? namedDay ?? 1) : null;
+  const dayReason = cadence === "weekly"
+    ? (overrides.weekday !== undefined ? `On ${DAY_NAMES[weekday!]}, as you changed it.` : namedDay !== null ? `On ${DAY_NAMES[weekday!]}, because you said so.` : "On Monday, because you named no day; say one and it moves.")
+    : "";
+  const cadenceWhy = wantsDaily
     ? "You said daily, so daily."
     : "Weekly unless you say otherwise. A duty that fires more often than the work changes costs money and attention, and it is easier to make this daily now than to notice later that it should not have been.";
+
+  /*
+   * ── THE SLOT: AN EMPTY HOUR, NEVER A GUESS AT ONE ─────────────────────────
+   *
+   * Her phrase usually gives a day and not an hour. The hour is chosen against what already fires
+   * — every duty row in D1, which is where every launchd duty's time lives too — and against the
+   * hours that are hers (the briefing, the Mac's other jobs). The reason is on the draft so she
+   * can move it with one line.
+   */
+  const namedHour = hourIn(text);
+  const taken = await existingDuties(env);
+  let localHour: number;
+  let localMinute: number;
+  let slotReason: string;
+  if (overrides.local_hour !== undefined) {
+    localHour = overrides.local_hour; localMinute = overrides.local_minute ?? 0;
+    slotReason = `At ${pad(localHour)}:${pad(localMinute)}, as you changed it.`;
+  } else if (namedHour) {
+    localHour = namedHour.hour; localMinute = namedHour.minute;
+    slotReason = `At ${pad(localHour)}:${pad(localMinute)}, because you said so.`;
+  } else {
+    const slot = pickSlot(taken, { cadence, weekday });
+    localHour = slot.hour; localMinute = slot.minute;
+    slotReason = slot.why;
+  }
+  const cadenceReason = `${cadenceWhy} ${dayReason} ${slotReason}`.replace(/\s+/g, " ").trim();
 
   /*
    * ── DELIVERY: THE INVARIANT THAT MADE A DUTY RUN FOR ELEVEN WEEKS INTO NOTHING ──
@@ -192,23 +227,26 @@ export async function draftDuty(
   const delivers = overrides.delivers ?? (executor === "local_job" ? null : matchDeliverable(text));
   const deliversReason =
     executor === "local_job"
-      ? "A local job posts its own result to its own endpoint, so it needs no delivery key — but it does need a script and a reporter, and those are written by hand. This draft cannot create a working local job on its own; see the refusals."
+      ? "A local job posts its own result through duty-run.sh, so it needs no delivery key — it needs its script installed on your Mac. If it is not, the refusal below names the script and the steps."
       : delivers
         ? `Its output lands in \`${delivers}\`, which has a handler and a screen already.`
         : "Nothing here matches a delivery route this system has, so its output would land nowhere.";
 
-  if (executor === "agent" && !delivers) {
-    refusals.push(
-      "An agent duty must deliver into something that exists. None of " +
-        DELIVERABLE_KEYS.join(", ") +
-        " matches this, so the run would produce a file nothing reads — which is exactly what duty_practice_week did every Sunday for eleven weeks while reporting success.",
-    );
-  }
-  if (executor === "local_job") {
-    refusals.push(
-      "This has to run on your Mac, and a local job needs a shell script, a prompt file and a reporter that posts back — three files this screen cannot write. The draft is correct; someone has to build the job. Creating it now would put a duty on the schedule with nothing behind it.",
-    );
-  }
+  /*
+   * ── THE OWNER ↔ EXECUTOR ↔ SCRIPT CHECK, AT DRAFT TIME ──────────────────
+   *
+   * `dutyProblems` in the shared lane is the one rule: an active owner, a named model, an agent
+   * duty delivering into a handler that exists, a local job naming a script the installer knows
+   * that no other duty claims. `create.ts` runs the same function again at the moment of creation.
+   * Anything it returns is a refusal she reads verbatim — a NAMED STOP for a script that does not
+   * exist yet, never a duty created inert.
+   */
+  const localJob = executor === "local_job" ? (overrides.local_job ?? scriptIn(text) ?? `${slug(text)}.sh`) : null;
+  refusals.push(...dutyProblems(
+    { employee_id: employeeId, employee_name: employee?.name, employee_active: employeeActive, model, executor, delivers, local_job: localJob },
+    taken,
+    DELIVERABLE_KEYS,
+  ));
 
   /*
    * ── THE COST, BEFORE SHE CONFIRMS RATHER THAN AFTERWARDS ─────────────────
@@ -228,11 +266,12 @@ export async function draftDuty(
   return {
     employee_id: employeeId,
     employee_name: employee?.name ?? employeeId,
+    employee_active: employeeActive,
     name,
     cadence,
-    weekday: cadence === "weekly" ? (overrides.weekday ?? 1) : null,
-    local_hour: overrides.local_hour ?? 7,
-    local_minute: overrides.local_minute ?? 0,
+    weekday,
+    local_hour: localHour,
+    local_minute: localMinute,
     timezone: "America/Chicago",
     executor,
     model,
@@ -241,7 +280,7 @@ export async function draftDuty(
     cadence_reason: cadenceReason,
     delivers,
     delivers_reason: deliversReason,
-    local_job: executor === "local_job" ? `${slug(text)}.sh` : null,
+    local_job: localJob,
     task_prompt: composePrompt(employee?.name ?? employeeId, employee?.role ?? "", text, name),
     success_criteria: successFor(text),
     estimated_per_run_usd: perRun,
@@ -251,6 +290,18 @@ export async function draftDuty(
     over_ceiling: after > CEILING_USD,
     refusals,
   };
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** Every duty that exists, with its fire time and its script — what a slot and a script are checked against. */
+export async function existingDuties(env: Env): Promise<Array<{ id: string; name: string; cadence: string; weekday: number | null; local_hour: number; local_job: string | null }>> {
+  const rows = await env.DB
+    .prepare(`SELECT id, name, cadence, weekday, local_hour, json_extract(task_input, '$.local_job') AS local_job FROM standing_duties WHERE suspended = 0`)
+    .all<{ id: string; name: string; cadence: string; weekday: number | null; local_hour: number; local_job: string | null }>()
+    .catch(() => ({ results: [] as any[] }));
+  return ((rows as { results?: any[] }).results ?? []) as any;
 }
 
 /** What the schedule already commits to, from the duties that exist. */

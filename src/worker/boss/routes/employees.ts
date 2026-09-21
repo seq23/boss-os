@@ -4,6 +4,8 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { draftDuty } from "../duties/author";
+import { fileDraft, renderDraft } from "../duties/mailLane";
+import { preApprovalIn } from "../../../shared/boss/duties/lane.mjs";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { overlappingCharters, type RosterMember } from "@shared/boss/rosterOverlap";
 
@@ -40,7 +42,7 @@ employees.get("/roster", async (c) => {
       .prepare(
         `SELECT id, name, employee_id, cadence, weekday, weekdays, local_hour, local_minute,
                 timezone, executor, next_due_at, last_run_at, suspended, suspended_reason,
-                success_criteria, task_input
+                success_criteria, task_input, last_outcome, last_outcome_at, last_failure_reason
            FROM standing_duties ORDER BY employee_id, next_due_at`,
       )
       .all<any>(),
@@ -137,50 +139,62 @@ employees.post("/duties/draft", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const employeeId = String(b?.employee_id ?? "").trim();
   const phrase = String(b?.phrase ?? "").trim();
+  if (!employeeId) throw badRequest("Say who owns it", "Send employee_id — the seat this duty belongs to.");
+  if (phrase.length < 8) throw badRequest("Say what the duty is", "A phrase like \"every friday, check the LP replies sheet and tell me who went quiet\" is enough; two words is not.");
 
-  const draft = await draftDuty(c.env, employeeId, phrase, b?.overrides ?? {});
-  if (b?.preview === true) return ok(c, { draft });
+  const seat = await c.env.DB
+    .prepare(`SELECT id, name, role, lane, department FROM employees WHERE id = ?`).bind(employeeId)
+    .first<{ id: string; name: string; role: string; lane: string; department: string | null }>();
+  if (!seat) throw notFound("No employee with that id");
 
-  if (draft.refusals.length > 0) {
-    throw badRequest(
-      "This duty would not work, so it was not raised",
-      draft.refusals.join(" "),
-    );
+  if (b?.preview === true) {
+    const draft = await draftDuty(c.env, employeeId, phrase, b?.overrides ?? {});
+    const draftId = "dd_preview";
+    return ok(c, { draft, letter: renderDraft({ draft, draftId, signer: seat }), pre_approved: preApprovalIn(phrase) });
   }
 
-  const res = await fetch(new URL("/api/judgement", c.req.url), {
-    method: "POST",
-    headers: { "content-type": "application/json", cookie: c.req.header("cookie") ?? "" },
-    body: JSON.stringify({
-      employee_id: employeeId,
-      lane: "ops",
-      risk: draft.over_ceiling ? "high" : "medium",
-      title: `New duty for ${draft.employee_name} — ${draft.name}`,
-      question:
-        `${draft.cadence === "daily" ? "Daily" : "Weekly"} at ${String(draft.local_hour).padStart(2, "0")}:${String(draft.local_minute).padStart(2, "0")}, ` +
-        `on ${draft.model.includes("sonnet") ? "the better model" : "Haiku"}, about $${draft.estimated_per_month_usd} a month — ` +
-        `taking the schedule to $${draft.monthly_total_after_usd} of $${draft.ceiling_usd}. ` +
-        (draft.over_ceiling ? "THAT IS OVER THE CEILING. " : "") +
-        `${draft.cadence_reason} ${draft.model_reason} ${draft.executor_reason} ${draft.delivers_reason} ` +
-        "Approve and it goes on the schedule as drafted, or send it back with what to change.",
-      resume_kind: "duty_created",
-      supersedes_key: "duty_created",
-    }),
-  });
-  if (!res.ok) throw badRequest("The draft could not be raised", (await res.text()).slice(0, 300));
-  const raised = (await res.json()) as any;
-
   /*
-   * THE DRAFT ITSELF IS STORED ON THE JUDGEMENT so approving can create exactly what she saw. A
-   * resume that re-derived the draft could produce something different from what she approved,
-   * which is the one thing an approval must never do.
+   * THE SAME FILING AS THE MAIL DOOR. `fileDraft` writes the `duty_drafts` row, refuses a draft
+   * that cannot run (a NAMED STOP, nothing in the Inbox), creates at once on a pre-approval phrase
+   * in her words, and otherwise raises the `duty_created` judgement call whose Approve creates it
+   * — through `raiseJudgementCall`, not a fetch from the Worker to itself.
    */
-  await c.env.DB
-    .prepare(`UPDATE judgement_calls SET resume_detail = ? WHERE id = ?`)
-    .bind(JSON.stringify(draft), raised.data.id)
-    .run();
+  const filed = await fileDraft(c.env, {
+    employeeId, phrase, overrides: b?.overrides ?? {}, door: "screen", sender: "boss", now: Date.now(),
+    preApproved: preApprovalIn(phrase), signer: seat,
+  });
+  if (filed.state === "refused") {
+    throw badRequest("This duty would not work, so it was not raised", filed.draft.refusals.join(" "));
+  }
+  return ok(c, {
+    draft: filed.draft, draft_id: filed.draftId, state: filed.state, judgement_id: filed.judgementId,
+    duty_id: filed.created?.id ?? null, first_run_at: filed.created?.first_run_at ?? null, letter: filed.letter,
+  }, 201);
+});
 
-  return ok(c, { draft, judgement_id: raised.data.id }, 201);
+/**
+ * The lane's own record — every draft, whichever door, with its state and what it became. The
+ * Duties screen shows the ones waiting on her beside the schedule they would join.
+ */
+employees.get("/duties/drafts", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT d.id, d.door, d.employee_id, e.name AS employee_name, d.routed_by, d.tag, d.phrase, d.state,
+              d.judgement_id, d.approval_id, d.pre_approved_phrase, d.approved_by, d.approved_at, d.held_note,
+              d.supersedes, d.duty_id, d.first_run_at, d.refusals_json, d.created_at, d.updated_at
+         FROM duty_drafts d LEFT JOIN employees e ON e.id = d.employee_id
+        ORDER BY d.created_at DESC LIMIT 50`,
+    )
+    .all<any>();
+  return ok(c, {
+    intent: "What you asked for and what it became. A draft waiting on you is in your Inbox and your mail; a refused one names the stop.",
+    drafts: (rows.results ?? []).map((r: any) => {
+      let refusals: string[] = [];
+      try { refusals = JSON.parse(r.refusals_json ?? "[]"); } catch { refusals = []; }
+      return { ...r, refusals, refusals_json: undefined };
+    }),
+    how: "Email boss@sequoiataylor.com with `#<seat> new duty` and the duty in your words, or use Add a duty here. Reply `approved` to create it, `changes: …` to redraft.",
+  });
 });
 
 employees.get("/", async (c) => {

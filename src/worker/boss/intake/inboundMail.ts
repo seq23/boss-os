@@ -18,6 +18,7 @@ import { closeDirectiveFor } from "../../../shared/boss/intake/close.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
 import { stopDeliverable } from "../today/deliverables";
 import { answerFromMail } from "../repoChange/answer";
+import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -566,7 +567,32 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject, text: readable, mailId, now, sender })
     : null;
 
-  const question = bookFailure || closedNote || planAnswer ? null : clarificationFor({
+  /*
+   * ─── "#<SEAT> NEW DUTY …" IS A DRAFT, AND HER REPLY TO IT IS THE APPROVAL ──
+   *
+   * 21 Sep 2026: "is there a lane for me to ask for a new duty to my Boss OS agents?" There was a
+   * drafter and an Inbox card and nothing invoked either. Now the verb drafts through `author.ts`,
+   * files the SAME `duty_created` judgement call the Inbox shows, and the reply she gets IS the
+   * draft — every field with its reason, every refusal verbatim, and one line to answer with.
+   * `approved` on the thread decides that judgement call through `approvals/decide.ts`, the Inbox
+   * button's exact path; `changes: …` redrafts; `your call` in the original request creates it
+   * at once with the phrase on the record. A request that cannot run comes back as a NAMED STOP
+   * and creates nothing.
+   *
+   * BELOW THE REFUSAL, DELIBERATELY, like the plan answer above it: a draft a stranger could
+   * approve by knowing a token would make the schedule a door anyone could open.
+   * `validate:duty-birth` pins that both calls sit after the `!authorised` return.
+   */
+  const dutyAnswer = planAnswer ? null : await answerDutyFromMail(env, {
+    roster, subject: trueSubject, text: readable, mailId, now, sender,
+    inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
+  });
+  const dutyRequest = planAnswer || dutyAnswer ? null : await newDutyFromMail(env, {
+    roster, subject: trueSubject, text: readable, mailId, messageId, now, sender,
+  });
+  const dutyNote = dutyAnswer ?? dutyRequest;
+
+  const question = bookFailure || closedNote || planAnswer || dutyNote ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
     seatName: route.seat.name, tag: route.tag, isReply, bookFiled: Boolean(bookNote),
     hasVerb: Boolean(directive), forwarded: Boolean(origin?.from), unread: oversize,
@@ -610,7 +636,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * be a book, and the message may well have been asking for something as well.
    */
   // A close she asked for, like a book verb that worked, is the whole job: nothing goes to a model.
-  const filedByVerb = Boolean(directive && bookNote) || Boolean(closedNote) || Boolean(closeQuestion) || Boolean(planAnswer);
+  const filedByVerb = Boolean(directive && bookNote) || Boolean(closedNote) || Boolean(closeQuestion) || Boolean(planAnswer) || Boolean(dutyNote);
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
     try {
       const admitted = await admitTask(env, {
@@ -682,13 +708,17 @@ function headline(text: string): string {
   // CLOSED is a fifth outcome: the message arrived, was hers, named a commitment and stopped it.
   // Recorded as its own fact so a closure is countable rather than hiding inside "routed".
   // PLAN_ANSWERED is its own outcome: her reply resumed (or annotated) a repo change and opened nothing.
+  // DUTY_DRAFTED / DUTY_REFUSED / DUTY_CREATED / DUTY_ANSWERED / DUTY_NOT_UNDERSTOOD: the duty lane's
+  // own outcomes, so a draft and its answer are countable rather than hiding inside "routed".
   const outcome = bookFailure ? "BOOK_NOT_READ"
+    : dutyNote ? dutyNote.outcome
     : planAnswer ? "PLAN_ANSWERED"
     : closedNote ? "CLOSED"
       : question || closeQuestion ? "NEEDS_CLARITY"
         : admitFailure ? "NOT_ADMITTED" : route.outcome;
   const why = [route.why,
     ...(planAnswer ? [planAnswer.note] : []),
+    ...(dutyNote ? [headline(dutyNote.note)] : []),
     ...(closedNote ? [closedNote] : []),
     ...(closeQuestion ? [closeQuestion] : []),
     ...(viaConsole ? ["Typed into Boss OS from her own authenticated session, not received over SMTP."] : []),
@@ -721,7 +751,7 @@ function headline(text: string): string {
    * verb both mean "nothing was started"; leading with "Monique has it." and eight lines of tag
    * directory buries the only sentence that matters under the reassurance that it worked.
    */
-  const stopped = question ? question.ask : planAnswer?.note ?? closeQuestion ?? closedNote ?? bookFailure;
+  const stopped = question ? question.ask : planAnswer?.note ?? dutyNote?.note ?? closeQuestion ?? closedNote ?? bookFailure;
   const reply = stopped ? [
     stopped,
     /*
@@ -729,14 +759,14 @@ function headline(text: string): string {
      * she still has to be told which seats exist, or the question and the mis-routing become one
      * confusing message and she fixes neither. On a clean ROUTED message the roster block is noise.
      */
-    ...(route.outcome !== "ROUTED" ? ["", "—", "", replyBody(route, roster, trueSubject)] : []),
+    ...(route.outcome !== "ROUTED" && !dutyNote ? ["", "—", "", replyBody(route, roster, trueSubject)] : []),
   ].join("\n") : [replyBody(route, roster, trueSubject),
     ...(bookNote ? ["", bookNote] : []),
     ...(bookFailure ? ["", bookFailure] : []),
     ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
   ].join("\n");
 
-  await finish({ outcome, why, tag: route.tag, employeeId: route.seat.id, taskId, objectKey });
+  await finish({ outcome, why, tag: route.tag, employeeId: dutyNote?.employeeId ?? route.seat.id, taskId, objectKey });
   await audit(env.DB, {
     actor: "boss", lane: route.seat.lane, entityType: "inbound_mail", entityId: mailId,
     action: "routed",
@@ -757,5 +787,5 @@ function headline(text: string): string {
     },
   });
 
-  return { mailId, outcome, employeeId: route.seat.id, taskId, reply };
+  return { mailId, outcome, employeeId: dutyNote?.employeeId ?? route.seat.id, taskId, reply };
 }

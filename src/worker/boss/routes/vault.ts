@@ -155,6 +155,8 @@ const SNAPSHOT_TABLES = [
   "ask_scan_findings",
   // Danielle's repo changes (0265): her instruction, the plan, her reply, the PR and the proof.
   "repo_changes",
+  // The duty lane (0267): her phrase, the draft as she saw it, every refusal, how she approved it.
+  "duty_drafts",
   // 0263 — the latest health reading per grid property per reader: a status code and latency, a
   // workflow conclusion, a week of Search Console clicks, a deployment's age. RE-DERIVABLE only
   // going forward: the readers run again, but the history — when a site first went 5xx, which

@@ -1127,8 +1127,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: 14px;
 }
 
-.btn-row { display: flex; gap: 8px; margin: 12px 0; }
-.btn-row > * { flex: 1; }
+/*
+ * WRAPS RATHER THAN OVERFLOWS. Team gained a fifth view (Duties, 21 Sep 2026) and five uppercase
+ * mono labels do not fit 390px in one line: "Capabilities" ran 31px past the edge. A row of equal
+ * buttons that cannot fit breaks to a second line; at laptop width nothing changes.
+ */
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.btn-row > * { flex: 1 1 auto; }
 
 .btn-small {
   flex: 0 0 auto;

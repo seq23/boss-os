@@ -171,7 +171,7 @@ const RULES: Rule[] = [
     risk: "low",
     sensitivity: "internal",
     assignment: "AI_EXECUTE_WITH_NOTICE",
-    terms: /\b(recurring|each week|weekly|monthly|standing|routine|always)\b/i,
+    terms: /\b(recurring|each week|weekly|monthly|standing|routine|always|new duty|standing duty)\b/i,
     reason: "Recurring duty. Belongs to an existing employee, not a new one.",
   },
   {

@@ -5,7 +5,7 @@ import { ErrorNotice } from "../components/Notice";
 import { usd } from "../../../shared/boss/types";
 
 export function Team() {
-  const [view, setView] = useState<"team" | "owns" | "prompts" | "capabilities">("team");
+  const [view, setView] = useState<"team" | "duties" | "owns" | "prompts" | "capabilities">("team");
 
   return (
     <>
@@ -17,11 +17,18 @@ export function Team() {
           * in the world is true — and the register belongs next to the roster because the first
           * question about a stuck commitment is who is on the hook for it.
           */}
+        {/*
+          * WHEN THEY ACT WITHOUT BEING ASKED, and the door for giving them more. Owner, 21 Sep
+          * 2026: "is there a lane for me to ask for a new duty to my Boss OS agents? i still dont
+          * know how to create a job for them." The drafter existed and nothing invoked it.
+          */}
+        <button className="btn" aria-pressed={view === "duties"} onClick={() => setView("duties")}>Duties</button>
         <button className="btn" aria-pressed={view === "owns"} onClick={() => setView("owns")}>Owns</button>
         <button className="btn" aria-pressed={view === "prompts"} onClick={() => setView("prompts")}>Prompts</button>
         <button className="btn" aria-pressed={view === "capabilities"} onClick={() => setView("capabilities")}>Capabilities</button>
       </div>
       {view === "team" ? <Roster />
+        : view === "duties" ? <Duties />
         : view === "owns" ? <Owns />
         : view === "prompts" ? <Prompts /> : <Capabilities />}
     </>
@@ -792,3 +799,175 @@ function Owns() {
     </>
   );
 }
+
+
+/**
+ * ─── DUTIES: WHO ACTS WITHOUT BEING ASKED, AND THE DOOR FOR GIVING THEM MORE ───
+ *
+ * Owner, 21 September 2026: "is there a lane for me to ask for a new duty to my Boss OS agents?
+ * i still dont know how to create a job for them — if it's not user-friendly then make it so."
+ *
+ * Per employee, every duty with its cadence, executor, last run, next run and last outcome — the
+ * roster endpoint has carried all of that for a while and no screen showed it in one place. And
+ * "Add a duty": her phrase in, the draft previewed in full (the same letter the mail door sends),
+ * then Create files exactly what the mail door files — a card in the Inbox whose Approve creates
+ * it. A draft that cannot run is a NAMED STOP here, as it is by mail, and files nothing.
+ *
+ * The mail door is stated on the screen because it is the door she will actually use from her
+ * phone: `#<seat> new duty …` to boss@sequoiataylor.com, reply `approved`.
+ */
+function Duties() {
+  const [data, setData] = useState<any | null>(null);
+  const [drafts, setDrafts] = useState<any | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [employeeId, setEmployeeId] = useState("");
+  const [phrase, setPhrase] = useState("");
+  const [preview, setPreview] = useState<any | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [filed, setFiled] = useState<any | null>(null);
+
+  function load() {
+    Promise.all([api.roster(), api.dutyDrafts()])
+      .then(([r, d]) => { setData(r); setDrafts(d); if (!employeeId && r.roster?.[0]) setEmployeeId(r.roster[0].id); })
+      .catch(setError);
+  }
+  useEffect(load, []);
+
+  async function draft() {
+    setError(null); setPreview(null); setFiled(null); setBusy(true);
+    try { setPreview(await api.draftDuty({ employee_id: employeeId, phrase, preview: true })); }
+    catch (e) { setError(e); }
+    finally { setBusy(false); }
+  }
+  async function create() {
+    setError(null); setBusy(true);
+    try {
+      const r = await api.draftDuty({ employee_id: employeeId, phrase });
+      setFiled(r); setPreview(null); setPhrase(""); load();
+    } catch (e) { setError(e); }
+    finally { setBusy(false); }
+  }
+
+  const when = (d: any) => {
+    const t = `${String(d.local_hour).padStart(2, "0")}:${String(d.local_minute).padStart(2, "0")}`;
+    if (d.cadence === "daily") {
+      let days: number[] = [];
+      try { days = JSON.parse(d.weekdays ?? "null") ?? []; } catch { days = []; }
+      return days.length ? `${days.map((n) => DAY_SHORT[n]).join("/")} at ${t}` : `daily at ${t}`;
+    }
+    if (d.cadence === "weekly") return `${DAY_SHORT[d.weekday ?? 1]} at ${t}`;
+    return `${d.cadence} at ${t}`;
+  };
+  const executor = (d: any) => d.executor === "local_job" ? `your Mac · ${d.local_job ?? "?"}` : d.executor === "worker" ? "the Worker" : `agent · ${d.model ? (d.model.includes("sonnet") ? "Sonnet" : "Haiku") : "NO MODEL NAMED"}`;
+  const stamp = (ms: number | null) => ms ? new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+
+  return (
+    <>
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      <p className="eyebrow">Add a duty</p>
+      <div className="panel" data-testid="add-duty">
+        <p className="row-sub" style={{ marginTop: 0 }}>
+          Say it the way you would say it to her. The draft comes back in full — cadence with the slot, executor, model, delivery,
+          and anything that would stop it — before anything exists. From your phone: email boss@sequoiataylor.com with
+          <code> #&lt;seat&gt; new duty</code> and the same words; reply <code>approved</code> to the draft. Put <em>your call</em> in the
+          request and it is created without waiting.
+        </p>
+        <label className="field">
+          <span>Who owns it</span>
+          <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} data-testid="duty-owner">
+            {(data?.roster ?? []).map((e: any) => <option key={e.id} value={e.id}>{e.name} — {e.role}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>The duty, in your words</span>
+          <textarea rows={2} value={phrase} onChange={(e) => setPhrase(e.target.value)} data-testid="duty-phrase"
+                    placeholder="every friday, write me a short report on what changed in the private markets this week" />
+        </label>
+        <div className="btn-row">
+          <button className="btn btn-small" disabled={busy || !employeeId || phrase.trim().length < 8} onClick={draft} data-testid="preview-duty">Preview the draft</button>
+          {preview && preview.draft.refusals.length === 0 && (
+            <button className="btn btn-small btn-approve" disabled={busy} onClick={create} data-testid="create-duty">
+              {preview.pre_approved ? "Create it now" : "Create — it goes to your Inbox to approve"}
+            </button>
+          )}
+        </div>
+        {preview && (
+          <div data-testid="duty-preview" style={{ marginTop: 12 }}>
+            {preview.draft.refusals.length > 0 && (
+              <div className="notice notice-error">
+                This duty would not work, so it cannot be created. {preview.draft.refusals.join(" ")}
+              </div>
+            )}
+            <pre className="docket-full" style={{ whiteSpace: "pre-wrap" }}>{preview.letter}</pre>
+          </div>
+        )}
+        {filed && (
+          <div className="notice" data-testid="duty-filed">
+            {filed.state === "created"
+              ? `Created — ${filed.duty_id}. First run ${stamp(filed.first_run_at)}.`
+              : "Filed. It is in your Inbox as a card — Approve there creates it exactly as previewed."}
+          </div>
+        )}
+      </div>
+
+      {data && (
+        <div className="stats">
+          <div className="stat"><div className="stat-n">${data.monthly_estimate_usd}</div><div className="stat-l">a month, estimated, of ${data.ceiling_usd}</div></div>
+          <div className="stat"><div className="stat-n">{data.empty_seats?.length ?? 0}</div><div className="stat-l">empty seats</div></div>
+        </div>
+      )}
+
+      {data === null ? <Loading /> : (data.roster ?? []).map((e: any) => (
+        <section key={e.id} data-testid="duties-employee" aria-label={`${e.name}'s duties`}>
+          <p className="eyebrow">{e.name} — {e.role}</p>
+          {e.duties.length === 0 ? (
+            <Empty title="No standing duties" hint="An empty seat: give her one above." />
+          ) : e.duties.map((d: any) => (
+            <div className="row" key={d.id} data-testid="duty-row">
+              <div className="row-main">
+                <div className="row-title">
+                  {d.name}
+                  {d.suspended ? <span className="pill">suspended</span> : d.overdue ? <span className="pill pill-forbid">overdue</span> : null}
+                  {d.model_warning && <span className="pill pill-forbid">no model</span>}
+                </div>
+                <div className="row-sub">
+                  {when(d)} · {executor(d)} · about ${d.estimated_per_month_usd}/mo
+                </div>
+                <div className="row-sub">
+                  last run {stamp(d.last_run_at)}
+                  {d.last_outcome ? ` · ${d.last_outcome}${d.last_failure_reason ? ` — ${d.last_failure_reason}` : ""}` : d.last_run_at ? "" : " · never fired"}
+                </div>
+              </div>
+              <div className="row-val">{d.suspended ? "off" : `next ${stamp(d.next_due_at)}`}</div>
+            </div>
+          ))}
+        </section>
+      ))}
+
+      {drafts && drafts.drafts.length > 0 && (
+        <>
+          <p className="eyebrow">What you asked for</p>
+          {drafts.drafts.slice(0, 12).map((d: any) => (
+            <div className="row" key={d.id} data-testid="duty-draft">
+              <div className="row-main">
+                <div className="row-title">{d.employee_name} — {d.phrase.slice(0, 120)}</div>
+                <div className="row-sub">
+                  {d.state === "drafted" ? "waiting on you — approve it in the Inbox, or reply approved to the email"
+                    : d.state === "created" ? `created · ${d.duty_id} · first run ${stamp(d.first_run_at)}${d.pre_approved_phrase ? ` · pre-approved: "${d.pre_approved_phrase}"` : ""}`
+                    : d.state === "refused" ? `refused — ${(d.refusals ?? []).join(" ")}`
+                    : d.state === "redrafted" ? "replaced by a later draft"
+                    : `held${d.held_note ? ` — ${d.held_note}` : ""}`}
+                  {" · "}{d.door} · {stamp(d.created_at)}
+                </div>
+              </div>
+              <div className="row-val">{d.state}</div>
+            </div>
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

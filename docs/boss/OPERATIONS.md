@@ -270,6 +270,41 @@ somatic one comes up today, deterministically from `movement_log`, and says why.
 
 ---
 
+## How to give an employee a duty
+
+_21 September 2026. "is there a lane for me to ask for a new duty to my Boss OS agents? i still dont
+know how to create a job for them."_ There is now, and it is three steps.
+
+**1 · Email it.** To `boss@sequoiataylor.com`, from one of your addresses, subject or first line
+`#<seat> new duty`, then the duty in your words:
+
+```
+To:      boss@sequoiataylor.com
+Subject: #monique new duty
+Body:    every friday, check the LP replies sheet and tell me who went quiet
+```
+
+`#simone new duty monique …` lets the Chief of Staff route it. The same box is on **Team → Duties**
+("Add a duty"), with a Preview that shows the draft before anything exists.
+
+**2 · Read the draft.** The employee (or Simone) replies with the whole thing — name, owner, cadence
+with the concrete slot and why that hour (it avoids the briefing and the Mac's other jobs), executor
+and why (an agent, or a job on your Mac — anything touching your accounts has to be the Mac), model
+tier, delivery route, cost against the $25 ceiling, the prompt she will run from, and **every
+refusal verbatim**. A duty that cannot run — a script your Mac does not have, a delivery route that
+does not exist — comes back as a `NAMED STOP` and is not created. The same draft is a card in your
+Inbox.
+
+**3 · Reply `approved`.** One word on the thread creates it and the reply names the first run.
+`changes: make it daily at 3pm` redrafts with your text as overrides. `no` withdraws it. Put
+**`your call`** in the ORIGINAL request and it is created without waiting, recorded as pre-approved
+with that phrase. Approve on the Inbox card does exactly what `approved` by mail does.
+
+Every duty appears on **Team → Duties** with its cadence, executor, last run, next run and last
+outcome. Guards: `validate:duty-birth` (one writer, reached only through the approval loop or a
+recorded pre-approval, the owner ↔ executor ↔ script check above the write, the mail door below the
+sender refusal, the installed-script list pinned to the installer) and `tests/boss/dutiesByEmail.test.ts`.
+
 ## When you hand someone something to own
 
 **Your rule, and it is now a mechanism rather than an instruction:**
