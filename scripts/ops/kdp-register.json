@@ -1,0 +1,47 @@
+{
+  "_what": "The standing register of her Kindle titles: what each is meant to be, what is settled about it, and the facts a run must not re-derive from a single email. Simone's surface run reads this FIRST; kdp-surface-report.mjs validates every item against it.",
+  "_why": [
+    "21 Sep 2026: the prompt carried a memory that The Gift Letter was deliberately unpublished. Her words the same day:",
+    "'i have no idea why it was still in draft my goal is to make every book i have published and working'.",
+    "A run with a wrong standing fact will file the wrong disposition with complete confidence, so the facts live",
+    "here, in one file, machine-read, and a run that contradicts the register is refused before it reaches Boss OS."
+  ],
+  "owner_goal": "Every title published and working. target = LIVE for all seven; a title not Live is a problem until it is.",
+  "settled": {
+    "covers": {
+      "decided": "2026-09-09",
+      "her_words": "approved",
+      "detail": "Seven replacement covers approved (apr_m237hjk726ky3ekn) and on the books since 12 Sep. Never re-raise the covers.",
+      "do_not_re_raise": true
+    },
+    "case_51496198": {
+      "decided": "2026-09-14",
+      "detail": "KDP case #51496198 (the server-side cover flag) closed by her on 14 Sep; the case watch duty was retired (migration 0244). Mail on that thread is ordinary mail on this surface. Never reopen the case.",
+      "do_not_re_raise": true
+    }
+  },
+  "titles": [
+    { "title_ref": "A2C99P6JESFOP0", "title": "The Credit Dispute Letter", "author": "S. Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
+    {
+      "title_ref": "A1EYXUFGFV7CN6", "title": "The Gift Letter (Down Payment)", "author": "S. Taylor", "target": "LIVE", "status": "DRAFT", "status_as_of": "2026-09-21",
+      "open": {
+        "matter": "title",
+        "since": "2026-09-12",
+        "facts": [
+          "12 Sep and 14 Sep 2026: Amazon content review flagged the TITLE — 'title might cause a misleading customer experience'. The listing reads 'The Gift Letter (Down Payment): gift letter for mortgage', i.e. the repetitive-terms rule: 'gift letter' appears in both title and subtitle.",
+          "Amazon offered Option 1 (edit the details and resubmit) or Option 2 (documentation) within 5 days. Nothing was done: the 12 Sep needs_owner row sent no email and the 15/16 Sep 'assigned to Zora' was never a work_assignments row.",
+          "21 Sep 2026 20:46Z: Amazon wrote that it has not received a reply and will not make the book available; 'if you still want to publish … review our previous message and address the requests'. Still fixable by Option 1."
+        ],
+        "fix": "Option 1: a metadata edit — change the subtitle so no term repeats across title and subtitle, change nothing else, resubmit, and confirm Live on the bookshelf. No outward email to Amazon is needed.",
+        "her_decision": "The new subtitle wording. Propose it with a recommended default and ask for one word: approved.",
+        "recommended_subtitle": "A Template for Documenting Family Funds Toward a Home Purchase",
+        "execute_with": "npm run kdp:retitle -- --ref A1EYXUFGFV7CN6 --subtitle \"<the approved wording>\""
+      }
+    },
+    { "title_ref": "A3O8BGWQ63OSF0", "title": "The Landlord Reference Letter", "author": "S. Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
+    { "title_ref": "A746KSQA6VXQ8", "title": "Proof of Income When You're Self-Employed", "author": "S. Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
+    { "title_ref": "A14601U7XU2FCM", "title": "The Rental Application Packet", "author": "S. Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
+    { "title_ref": "AZUTRW0LN8GDM", "title": "The Wedding Seating Chart", "author": "Lanae Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
+    { "title_ref": "A12Z8RECXCYT3S", "title": "Questions to Ask Every Wedding Vendor", "author": "Lanae Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" }
+  ]
+}

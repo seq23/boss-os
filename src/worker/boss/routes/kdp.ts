@@ -649,6 +649,10 @@ const DISPOSITIONS = new Set(["promo", "update", "problem"]);
  */
 const OUTCOME_KINDS = new Set(["acted", "assigned", "noted"]);
 const SURFACE_DUTY = "duty_kdp_surface";
+/** What a problem is ABOUT, so the register's settled matters can be told from a new one without reading prose. */
+const MATTERS = new Set(["title", "subtitle", "cover", "content", "rights", "case", "account", "other"]);
+/** Simone. The surface duty's owner (`standing_duties.duty_kdp_surface.employee_id`). */
+const SURFACE_OWNER = "emp_chief";
 
 /**
  * What Amazon sent, and what Simone decided about it.
@@ -680,7 +684,7 @@ kdp.post("/mail", async (c) => {
   }
 
   const now = Date.now();
-  const recorded: { id: string; disposition: string }[] = [];
+  const recorded: { id: string; disposition: string; needs_owner: boolean; assignment_id: string | null }[] = [];
 
   for (const raw of items) {
     const disposition = String(raw?.disposition ?? "").trim();
@@ -745,12 +749,78 @@ kdp.post("/mail", async (c) => {
       }
     }
 
+    /*
+     * ── AN ASSIGNMENT IS A ROW, NOT A SENTENCE ────────────────────────────
+     *
+     * 15 and 16 Sep 2026: two rows read "Assigned to Zora for verification and metadata
+     * correction" and `work_assignments` was empty. Zora never had it, nobody worked it, and
+     * Amazon's five-day window lapsed. So `assigned` is refused unless the item carries a
+     * structured `assign` — helper, what, why — and the row is created HERE, in the same request,
+     * and its id is written on the log row. A colleague's queue is the record; prose about it is not.
+     */
+    const assign = raw?.assign && typeof raw.assign === "object" ? raw.assign : null;
+    if (outcome === "assigned" && !assign) {
+      throw badRequest(
+        "'assigned' needs an assign block — helper_employee_id, what, why",
+        "On 15 and 16 Sep 2026 an item said 'Assigned to Zora' and no assignment existed; Zora never had it. " +
+          "The assignment is the work_assignments row this request creates, not the sentence.",
+      );
+    }
+    if (assign && outcome !== "assigned") {
+      throw badRequest("An assign block belongs on an 'assigned' outcome", "Say the outcome is what it is.");
+    }
+    const matter = raw?.matter == null ? null : String(raw.matter).trim().toLowerCase();
+    if (matter !== null && !MATTERS.has(matter)) {
+      throw badRequest(`"${matter}" is not a matter`, `One of: ${[...MATTERS].join(", ")}.`);
+    }
+    if (disposition === "problem" && !matter) {
+      throw badRequest("A problem says what it is about", `matter is one of: ${[...MATTERS].join(", ")} — so a settled matter (the covers, the case) can be told from a new one.`);
+    }
+    const dueAt = raw?.due_at == null ? null : Number(raw.due_at);
+    if (dueAt !== null && (!Number.isFinite(dueAt) || dueAt < 1_600_000_000_000)) {
+      throw badRequest("due_at is a millisecond timestamp", "The sender's deadline, as a time, so a run can tell 'within five days' from 'whenever'.");
+    }
+    const ownerAsk = optionalText(raw?.owner_ask, 1200);
+    const needsOwner = disposition === "problem" && raw?.needs_owner === true;
+    if (needsOwner && !ownerAsk) {
+      throw badRequest(
+        "needs_owner needs an owner_ask — the one decision she is asked for, with a recommended default",
+        "An email that says 'something needs you' with no question in it is the wake-up she stops reading.",
+      );
+    }
+    if (ownerAsk && ownerAsk.includes("@")) throw badRequest("The owner_ask contains an '@' and was refused", "No addresses in the record.");
+
     const id = newId("kml");
+    let assignmentId: string | null = null;
+    if (assign) {
+      const helper = String(assign.helper_employee_id ?? "").trim();
+      const what = optionalText(assign.what, 300);
+      const why = optionalText(assign.why, 400);
+      if (!what || !why) throw badRequest("An assignment needs what and why", "A colleague handed a task with no reason has to guess at the outcome.");
+      const seat = await c.env.DB.prepare(`SELECT id, name FROM employees WHERE id = ?`).bind(helper).first<any>();
+      if (!seat) throw badRequest("That is not an employee", "Work can only be handed to a seat that exists, or nobody is accountable for it.");
+      if (helper === SURFACE_OWNER) throw badRequest("Simone cannot assign the work to herself", "That is the work she already owns; the outcome is 'acted'.");
+      assignmentId = newId("asg");
+      await c.env.DB
+        .prepare(
+          `INSERT INTO work_assignments
+             (id, owner_employee_id, helper_employee_id, deliverable_id, what, why, state, assigned_at, created_at, updated_at)
+           VALUES (?,?,?,?,?,?, 'open', ?,?,?)`,
+        )
+        .bind(assignmentId, SURFACE_OWNER, helper, null, what, why, now, now, now)
+        .run();
+      await audit(c.env.DB, {
+        actor: "system", lane: "ops", entityType: "work_assignment", entityId: assignmentId,
+        action: "assigned", detail: { owner: SURFACE_OWNER, helper, what, kdp_mail_log_id: id },
+      });
+    }
+
     await c.env.DB
       .prepare(
         `INSERT INTO kdp_mail_log
-           (id, seen_at, disposition, note, title_ref, action_taken, outcome_kind, needs_owner, source, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+           (id, seen_at, disposition, note, title_ref, action_taken, outcome_kind, needs_owner, source, created_at,
+            due_at, matter, owner_ask, assignment_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .bind(
         id, now, disposition, note,
@@ -758,12 +828,13 @@ kdp.post("/mail", async (c) => {
         action,
         outcome,
         // ONLY A PROBLEM MAY NEED HER. Enforced rather than trusted — see the header.
-        disposition === "problem" && raw?.needs_owner === true ? 1 : 0,
+        needsOwner ? 1 : 0,
         b?.source === "manual" ? "manual" : "launchd",
         now,
+        dueAt, matter, ownerAsk, assignmentId,
       )
       .run();
-    recorded.push({ id, disposition });
+    recorded.push({ id, disposition, needs_owner: needsOwner, assignment_id: assignmentId });
   }
 
   /*
@@ -805,7 +876,63 @@ kdp.post("/mail", async (c) => {
     detail: { total: recorded.length, problems },
   }).catch(() => {});
 
-  return ok(c, { recorded: recorded.length, problems }, 201);
+  return ok(c, { recorded: recorded.length, problems, items: recorded }, 201);
+});
+
+/**
+ * ─── AN OPEN PROBLEM IS NEVER "ALREADY REPORTED" ─────────────────────────────
+ *
+ * 17–20 Sep 2026: the runs said quiet or blocked while a flagged title sat two days from Amazon's
+ * deadline, because "newer_than:2d" found nothing new and nothing re-read what was still open. The
+ * wrapper reads this BEFORE the run and hands the list to the prompt; the report script reads it
+ * AFTER and chases anything within two days of `due_at` or past it, under Simone's name, every day
+ * until `resolved_at` is set. Her answer on the `[kml_…]` thread rides on the row too, so the run
+ * that executes it reads nothing else.
+ */
+kdp.get("/mail/open", async (c) => {
+  const rows = await c.env.DB
+    .prepare(
+      `SELECT id, seen_at, note, title_ref, action_taken, outcome_kind, needs_owner, due_at, matter, owner_ask,
+              owner_answer, answered_at, delivered_message_id, nagged_at, assignment_id
+         FROM kdp_mail_log WHERE disposition = 'problem' AND resolved_at IS NULL ORDER BY COALESCE(due_at, seen_at) ASC LIMIT 40`,
+    )
+    .all<any>();
+  return ok(c, { open: rows.results ?? [] });
+});
+
+/** The one email a needs_owner row sent her (kind=ask), or a chase (kind=nag) — recorded by its Resend id. */
+kdp.post("/mail/:id/delivered", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const kind = String(b?.kind ?? "ask");
+  const messageId = optionalText(b?.message_id, 120);
+  if (!messageId) throw badRequest("delivered needs the provider's message_id", "A delivery with no id is a claim; the id is the proof.");
+  if (kind !== "ask" && kind !== "nag") throw badRequest("kind is ask or nag", "");
+  const row = await c.env.DB.prepare(`SELECT id FROM kdp_mail_log WHERE id = ?`).bind(c.req.param("id")).first<any>();
+  if (!row) throw notFound("No KDP mail row with that id");
+  const now = Date.now();
+  if (kind === "ask") {
+    await c.env.DB.prepare(`UPDATE kdp_mail_log SET delivered_message_id = ? WHERE id = ?`).bind(messageId, row.id).run();
+  } else {
+    await c.env.DB.prepare(`UPDATE kdp_mail_log SET nagged_at = ? WHERE id = ?`).bind(now, row.id).run();
+  }
+  return ok(c, { id: row.id, kind, message_id: messageId });
+});
+
+/** A problem ends — with how. The only way `resolved_at` is set. */
+kdp.post("/mail/:id/resolve", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const resolution = optionalText(b?.resolution, 600);
+  if (!resolution) throw badRequest("A resolution says how the problem ended", "'Resolved' with no account of itself is the assignment-in-prose defect again.");
+  if (resolution.includes("@")) throw badRequest("The resolution contains an '@' and was refused", "No addresses in the record.");
+  const row = await c.env.DB.prepare(`SELECT id, resolved_at, assignment_id FROM kdp_mail_log WHERE id = ?`).bind(c.req.param("id")).first<any>();
+  if (!row) throw notFound("No KDP mail row with that id");
+  const now = Date.now();
+  await c.env.DB.prepare(`UPDATE kdp_mail_log SET resolved_at = ?, resolution = ? WHERE id = ? AND resolved_at IS NULL`).bind(now, resolution, row.id).run();
+  if (row.assignment_id) {
+    await c.env.DB.prepare(`UPDATE work_assignments SET state = 'done', outcome = ?, completed_at = ?, updated_at = ? WHERE id = ? AND state = 'open'`).bind(resolution, now, now, row.assignment_id).run();
+  }
+  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "kdp_mail_log", entityId: row.id, action: "resolved", detail: { resolution } });
+  return ok(c, { id: row.id, resolved_at: row.resolved_at ?? now });
 });
 
 /** What she can read back: the updates and the problems, newest first. Promo is not returned. */

@@ -22,14 +22,35 @@ today". A run that found only promotional mail ends in silence.
 
 ## What to do
 
-1. Load the Gmail tools with ToolSearch (`search_threads`, `get_thread`).
-2. Search `newer_than:2d (from:amazon.com OR from:kdp.amazon.com OR "Kindle Direct" OR kdp)` and read
-   what arrived since the last run.
-3. **Case #51496198 is closed.** The case watch that chased it (`duty_kdp_publication`) was retired
-   on 14 September 2026: six of the seven titles went Live on the 12th and she closed the commitment
-   herself. If Amazon writes on that thread again, it is ordinary mail on this surface — bucket it
-   like anything else. Do not reopen the case, and do not tell her the covers are waiting: she
-   approved them on 9 September and they are on the books.
+**YOU WRITE ONE FILE AND NOTHING ELSE LEAVES THIS RUN.** You have no vault: you cannot post to Boss
+OS and you cannot send email, and every run that tried ended on "NEEDS YOU: run the report command".
+The wrapper that started you posts the file, sends any email it earns, chases what is overdue and
+records the sentinel — derived from your file. Do not run `kdp-surface-report.mjs`. Do not run
+`npm run notify`. Do not print `KDP-SURFACE-COMPLETE`.
+
+0. **Read the register first: `~/GitHub/boss-os/scripts/ops/kdp-register.json`.** It is the standing
+   truth about her seven titles — what each is meant to be (`target`), what is settled about it
+   (the covers, case #51496198: never re-raised), and the facts already known about any open
+   matter. Her goal, in her words on 21 Sep 2026: *every book published and working*. A title that
+   is not Live is a problem until it is; nothing is "draft by her choice". The report step refuses a
+   file that contradicts the register, so read it before you decide anything.
+1. **Then read what is still open: `~/.boss-os/kdp/open.json`.** Every problem Boss OS has that is
+   not resolved, with Amazon's deadline (`due_at`), what was done, what she was asked
+   (`owner_ask`) and — if she replied — her answer (`owner_answer`). **An open problem is never
+   "already reported."** For each one:
+   - `owner_answer` is `approved` → **execute the fix now** (see "Executing on her word" below) and
+     file an `acted` item carrying `"resolves": "<its id>"` with what the bookshelf says.
+   - `owner_answer` is her own wording → execute with her wording instead of the recommended one.
+   - `owner_answer` starts with `held:` → leave it; file nothing for it.
+   - no answer yet → file nothing for it; the wrapper chases her on the deadline.
+   If the file is missing, say so in one line of `note` on a `problem` item with `matter: "account"`
+   — it means Boss OS could not be read before the run.
+2. Load the Gmail tools with ToolSearch (`search_threads`, `get_thread`).
+3. Search `newer_than:3d (from:amazon.com OR from:kdp.amazon.com OR "Kindle Direct" OR kdp)` and read
+   what arrived since the last run. A message on a thread that belongs to an open problem is new
+   facts about THAT problem: update it (an item with `"resolves"` if it ended, or a new `problem`
+   item naming the same `title_ref` and `matter` if it escalated — Amazon writing "we will not make
+   the book available" is an escalation, not a closure).
 4. Put each remaining message in exactly ONE bucket.
 
 | Bucket | What belongs in it | What you do |
@@ -79,8 +100,12 @@ Do not wait to be asked. In order:
    If the MCP tools ever turn out to be present, say so loudly — it means this file is out of date.
 2. **Do what is unambiguous and reversible yourself** — correcting metadata you can see is wrong,
    re-submitting something that failed for a stated reason you have fixed.
-3. **Assign help when the work is somebody else's speciality.** POST to
-   `/api/boss/kdp/assign` with `helper_employee_id`, `what` and `why`:
+3. **Assign help when the work is somebody else's speciality — as a field, never a sentence.** An
+   `assigned` item carries `"assign": { "helper_employee_id": "…", "what": "…", "why": "…" }` and
+   the endpoint creates the `work_assignments` row from it in the same request. On 15 and 16 Sep
+   2026 two items said "Assigned to Zora" in prose and no assignment existed — Zora never had it,
+   nobody worked it, and Amazon's five-day window lapsed. The report step refuses `assigned`
+   without the block.
 
    | Seat | Who | When |
    |---|---|---|
@@ -89,12 +114,46 @@ Do not wait to be asked. In order:
    | `emp_research` | Camille, Director of Research | Anything about category, keywords or search performance |
 
    **You stay accountable.** Assigning is not handing off: the assignment escalates under YOUR name
-   if it stalls, and only your report closes it. Say in `why` what a good outcome looks like — a
-   colleague handed a task with no reason has to guess.
-4. **Anything needing her hands or her judgement** — a decision about a title, money, or an outward
-   reply in her name — set `needs_owner: true` on that item and stop. Do not answer for her.
+   if it stalls, and only your report closes it. Say in `why` what a good outcome looks like.
+4. **Anything needing her hands or her judgement** — a decision about a title's wording, money, or
+   an outward reply in her name — set `"needs_owner": true` AND write `"owner_ask"`: the ONE
+   decision, with your recommended default, so she can answer with one word. The wrapper sends
+   her exactly one email from you with `#simone [kml_…]` in the subject; "approved" on that thread
+   lands on the row as `owner_answer` and your next run executes it. A `needs_owner` with no
+   `owner_ask` is refused: "something needs you" with no question in it is the wake-up she stops
+   reading.
+5. **A deadline from the sender is `due_at`** (a millisecond timestamp). "Within 5 days" from a
+   message dated the 14th is the 19th at 23:59 UTC. The wrapper chases her every day from two days
+   before it until the problem is resolved. A problem with no stated deadline gets `due_at` seven
+   days from the message.
+6. **`BROWSER: SESSION_EXPIRED` while working a problem is itself a problem** — `matter:
+   "account"`, `needs_owner: true`, `owner_ask` = the one-line fix
+   (`npm run browser:signin -- --profile simone --url https://kdp.amazon.com/bookshelf`), `due_at`
+   = tomorrow. Never a needs_owner that goes nowhere: she gets the line in her mail, and it is
+   chased until the sign-in exists.
 
-## Reporting back to Boss OS — every run, before your final line
+## Executing on her word
+
+The fix for a title flagged for repetitive terms (title and subtitle sharing a term) is a metadata
+edit — unambiguous, reversible, rule 2 above. When `open.json` carries `owner_answer: "approved"`
+(or her own wording) on such a problem:
+
+```
+cd ~/GitHub/boss-os && npm run kdp:retitle -- --ref <title_ref> --subtitle "<the approved wording>"
+```
+
+It opens the title's details page in your own Chrome profile, changes ONLY the subtitle, saves
+through to pricing, presses Publish, and prints one line — `RETITLE: <state>` — from the BOOKSHELF,
+never from the click. **Before you ask her for the wording, run it with `--dry-run`** (it types
+nothing that is saved): `still_repetitive` means your recommended wording would be flagged again —
+change it; `reauth_required` means the edit needs her sign-in — put that one line in the SAME
+`owner_ask` as the wording, so one email carries both and she does it once (21 Sep 2026: the
+saved session could read the bookshelf and could not edit a title). `live` or `in_review` ends the problem: file an `acted` item with
+`"resolves": "<kml id>"` and the state in `action_taken`. `reauth_required` is case 6 above.
+Anything else is a new `problem` item carrying Amazon's own message. Nothing here writes to Amazon
+in her name; Option 1 needs no reply to them.
+
+## The file — every run, before your final line
 
 Everything you read stays on this machine. Write `~/.boss-os/kdp/surface.json`:
 
@@ -107,14 +166,30 @@ Everything you read stays on this machine. Write `~/.boss-os/kdp/surface.json`:
     { "disposition": "update",  "note": "Royalty reporting moves to a new dashboard on 1 October.",
       "outcome_kind": "noted",
       "action_taken": "Nothing to do now. Notated so it can be read back; it changes nothing before 1 October." },
-    { "disposition": "problem", "note": "One title was flagged for a cover quality issue.",
-      "title_ref": "A2C99P6JESFOP0",
+    { "disposition": "problem", "matter": "title", "title_ref": "A1EYXUFGFV7CN6",
+      "note": "Amazon closed its review of one title's wording: the subtitle repeats a term from the title, and the book stays unpublished until the metadata is edited and resubmitted.",
+      "outcome_kind": "acted",
+      "action_taken": "Confirmed on the bookshelf the title is Draft. The fix is a subtitle edit, which I will make and resubmit the moment she approves the wording.",
+      "needs_owner": true,
+      "owner_ask": "Approve the new subtitle. Recommended: 'A Template for Documenting Family Funds Toward a Home Purchase' — no term repeats from the title, nothing else changes.",
+      "due_at": 1790380799000 },
+    { "disposition": "problem", "matter": "cover", "title_ref": "A2C99P6JESFOP0",
+      "note": "One title was flagged for a cover quality issue.",
       "outcome_kind": "assigned",
-      "action_taken": "Checked the bookshelf and confirmed it. Assigned the cover repair to Zora.",
-      "needs_owner": false }
+      "action_taken": "Checked the bookshelf and confirmed it. Zora repairs the asset.",
+      "assign": { "helper_employee_id": "emp_knowledge", "what": "Repair the cover for the flagged title and hand me the file", "why": "Amazon's processing rejects it; a clean export at 1600x2560 that passes their check is the outcome" },
+      "facts_changed": "Amazon raised a NEW cover flag on the 21st, after the approved covers went up.",
+      "due_at": 1790553600000 },
+    { "disposition": "problem", "matter": "title", "title_ref": "A1EYXUFGFV7CN6",
+      "note": "Resubmitted with the subtitle she approved; the bookshelf says In Review.",
+      "outcome_kind": "acted", "action_taken": "Ran kdp:retitle with her wording; Publish pressed; bookshelf: in_review.",
+      "resolves": "kml_m2xxxxxxxxxxxxxx" }
   ]
 }
 ```
+
+A run that could not read the mailbox writes `{ "blocked": "<one line why>", "items": [] }` — the
+wrapper records `blocked` and does NOT advance the duty's clock; the chase still runs.
 
 ### EVERY ITEM ENDS IN A NAMED OUTCOME. THIS IS NOT OPTIONAL AND THE ENDPOINT REFUSES OTHERWISE.
 
@@ -148,35 +223,16 @@ the screen as a missing one. Write it clean the first time.
 `needs_owner` may only be true on a `problem`, and the endpoint enforces that — a promotional email
 cannot wake her however the run feels about it.
 
-Then run `scripts/ops/kdp-surface-report.mjs`, which posts the file.
-
-## Telling her
-
-**Only for a `problem` that needs her, or for something that completed.** Use
-`npm run notify -- --from Simone --subject "..." --body "..."`, which sends through Resend rather than the Gmail
-
-
-**`--from Simone` is not optional.** Without it the mail goes out as a generic Boss OS
-address, and she cannot tell who is writing before she opens it — she names an owner for a
-reason, and the owner belongs on the envelope. A name not on the roster is refused rather
-than turned into an address.
-connector — the connector shares its credential with the mailbox you just read, so the day it matters
-most is the day it cannot send. Boss OS is the record; the email is only the nudge.
-
-**Send nothing for promo. Send nothing for a quiet day.**
+**You do not post it and you do not email her.** The wrapper does both through the vault, from
+your address, with `#simone [kml_…]` in the subject so her one-word reply routes back to the row.
+Send nothing for promo. Send nothing for a quiet day — and that is the wrapper's rule as much as
+yours: a `needs_owner` item is the only thing that produces an email.
 
 ## Required final line
 
-Your LAST line must be exactly one of:
+Your LAST line must be exactly:
 
-    KDP-SURFACE-COMPLETE: quiet
-    KDP-SURFACE-COMPLETE: noted
-    KDP-SURFACE-COMPLETE: acted
-    KDP-SURFACE-COMPLETE: needs-her
-    KDP-SURFACE-COMPLETE: blocked
+    KDP-SURFACE-FILE-WRITTEN
 
-`quiet` means nothing arrived. `noted` means updates were notated. `acted` means you did something
-about a title. `blocked` means you could not read the mailbox — say why in one line above it.
-
-The wrapper checks for this sentinel; without it the run is recorded as incomplete, because a run
-that died halfway and a run with nothing to report are otherwise indistinguishable.
+The wrapper checks that `~/.boss-os/kdp/surface.json` exists and derives the sentinel — `quiet`,
+`noted`, `acted`, `needs-her`, `blocked` — from what is in it, never from what you say about it.

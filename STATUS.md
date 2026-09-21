@@ -320,6 +320,24 @@ and which placeholders on the row, a `warn` finding, the DONE email leads with i
 the badge. Plain `approved` never forces. Pinned by `validate:repo-lane` (48 guard cases) and
 proven by `tests/boss/repoChange.test.ts` (four paths, the force, a stranger's force).
 
+**Seeing it produces something — the Kindle surface (21 Sep 2026).** Amazon flagged The Gift
+Letter's title on 12 and 14 Sep (repetitive terms, five days to fix); Simone's daily scan SAW it
+three times and nothing followed: the needs_owner row sent no email (the prompt told a vault-less
+model to send), "assigned to Zora" was a sentence with no `work_assignments` row, and four "quiet"
+runs never re-raised an open problem. On 21 Sep Amazon said it will not make the book available.
+The scan happened daily; what failed is that seeing it produced nothing. Now: the model writes
+`surface.json` and nothing else; `kdp-surface.sh` is the one poster (through the vault) and derives
+the sentinel from the file; `scripts/ops/kdp-register.json` is the standing truth (seven titles,
+all `target: LIVE` — her words: every book published and working; the covers and case #51496198
+settled, never re-raised) and the report script refuses a file that contradicts it; `assigned`
+requires an `assign` block and the endpoint creates the row in the same request; a problem carries
+`due_at`, `needs_owner` needs `owner_ask` and earns exactly one email from Simone (`#simone
+[kml_…]`, Resend id on the row, a NAMED STOP if it did not go), and every daily run chases any open
+problem within two days of its deadline or past it until `resolved_at`; her "approved" on the thread
+lands as `owner_answer` and the next run executes it with `npm run kdp:retitle` (subtitle only,
+state read from the bookshelf; `reauth_required` is a one-line ask in the same email). Pinned by
+`validate:kdp-seeing-produces-something` (11 fixtures) and `tests/boss/kdpSeeingProducesSomething.test.ts`.
+
 **Every employee address delivers (21 Sep 2026).** Her "approved" to `danielle@` bounced 550 —
 employees wrote from `<name>@sequoiataylor.com` and only `boss@` had an Email Routing rule. Now:
 one literal rule per name → worker `boss-os` (a catch-all cannot target a Worker); an untagged
