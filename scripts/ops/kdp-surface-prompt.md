@@ -130,7 +130,9 @@ Do not wait to be asked. In order:
    "account"`, `needs_owner: true`, `owner_ask` = the one-line fix
    (`npm run browser:signin -- --profile simone --url https://kdp.amazon.com/bookshelf`), `due_at`
    = tomorrow. Never a needs_owner that goes nowhere: she gets the line in her mail, and it is
-   chased until the sign-in exists.
+   chased until the sign-in exists. **Except** when a title/subtitle ask is going out in this same
+   file or is already open: the wrapper appends the sign-in line to THAT ask, so do not file the
+   sign-in as its own item — one email carries both.
 
 ## Executing on her word
 

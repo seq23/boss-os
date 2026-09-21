@@ -130,10 +130,22 @@ export function dueForChase(open, now) {
  */
 export function withoutDuplicates(items, open) {
   const dropped = [];
-  const kept = (items ?? []).filter((it) => {
+  const all = items ?? [];
+  const kept = all.filter((it) => {
     if (it.disposition !== "problem" || it.resolves || it.facts_changed) return true;
     const dup = (open ?? []).find((p) => p.title_ref && p.title_ref === it.title_ref && p.matter === it.matter);
     if (dup) { dropped.push({ id: dup.id, title_ref: it.title_ref, matter: it.matter }); return false; }
+    /*
+     * THE SIGN-IN IS ASKED ONCE. An `account` item whose ask is the browser:signin line is dropped
+     * when the line is already in front of her — on an open problem's ask, or on a title/subtitle
+     * ask going out in this same file (the report step appends the line to that one). Second
+     * hands-off run, 21 Sep 2026: the wording ask and a separate sign-in ask went as two rows.
+     */
+    if (it.matter === "account" && /browser:signin/.test(String(it.owner_ask ?? ""))) {
+      const already = (open ?? []).some((p) => /browser:signin/.test(String(p.owner_ask ?? "")))
+        || all.some((o) => o !== it && o.disposition === "problem" && o.needs_owner === true && ["title", "subtitle"].includes(o.matter));
+      if (already) { dropped.push({ id: "(the sign-in line already rides in another ask)", title_ref: it.title_ref ?? null, matter: "account" }); return false; }
+    }
     return true;
   });
   return { kept, dropped };
@@ -236,6 +248,9 @@ function selfTest() {
     ["dedupe: the same problem with facts_changed is kept", withoutDuplicates([{ ...ok.items[0], facts_changed: "Amazon escalated" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
     ["dedupe: a resolves item is kept", withoutDuplicates([{ ...ok.items[0], resolves: "kml_x" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
     ["dedupe: a different matter is a different problem", withoutDuplicates([{ ...ok.items[0], matter: "cover" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
+    ["sign-in once: an account item beside a title ask in the same file is dropped", withoutDuplicates([ok.items[0], { disposition: "problem", matter: "account", needs_owner: true, owner_ask: "run npm run browser:signin -- --profile simone" }], []).kept.length === 1],
+    ["sign-in once: an account item when an open ask already carries the line is dropped", withoutDuplicates([{ disposition: "problem", matter: "account", needs_owner: true, owner_ask: "npm run browser:signin" }], [{ id: "kml_x", matter: "title", owner_ask: "Approve … browser:signin …" }]).kept.length === 0],
+    ["sign-in once: an account item on its own, nothing open, is kept", withoutDuplicates([{ disposition: "problem", matter: "account", needs_owner: true, owner_ask: "npm run browser:signin" }], []).kept.length === 1],
     ["sign-in: reauth_required yields the one line", signInLineFor("RETITLE: reauth_required — x").includes("browser:signin")],
     ["sign-in: a dry run that can edit yields nothing", signInLineFor("RETITLE: dry_run — would change") === ""],
     ["chase: five days out is not chased", dueForChase([{ due_at: Date.now() + 5 * DAY_MS }], Date.now()).length === 0],
