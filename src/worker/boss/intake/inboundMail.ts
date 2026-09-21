@@ -20,6 +20,7 @@ import { stopDeliverable } from "../today/deliverables";
 import { answerFromMail } from "../repoChange/answer";
 import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
+import { answerKdpFromMail } from "../kdp/answer";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -581,6 +582,13 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const commentAnswer = !planAnswer
     ? await answerCommentWatchFromMail(env, { sender, subject: trueSubject, text: readable, mailId, now })
     : null;
+  /*
+   * HER WORD ON A KINDLE PROBLEM, the same way: `[kml_…]` names the item Simone asked about
+   * (`owner_ask`); "approved" — or her own wording — goes on the row and her next run executes it.
+   */
+  const kdpAnswer = !planAnswer && !commentAnswer
+    ? await answerKdpFromMail(env, { sender, subject: trueSubject, text: readable, mailId, now })
+    : null;
 
   /*
    * ─── "#<SEAT> NEW DUTY …" IS A DRAFT, AND HER REPLY TO IT IS THE APPROVAL ──
@@ -598,16 +606,16 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * approve by knowing a token would make the schedule a door anyone could open.
    * `validate:duty-birth` pins that both calls sit after the `!authorised` return.
    */
-  const dutyAnswer = planAnswer || commentAnswer ? null : await answerDutyFromMail(env, {
+  const dutyAnswer = planAnswer || commentAnswer || kdpAnswer ? null : await answerDutyFromMail(env, {
     roster, subject: trueSubject, text: readable, mailId, now, sender,
     inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
   });
-  const dutyRequest = planAnswer || commentAnswer || dutyAnswer ? null : await newDutyFromMail(env, {
+  const dutyRequest = planAnswer || commentAnswer || kdpAnswer || dutyAnswer ? null : await newDutyFromMail(env, {
     roster, subject: trueSubject, text: readable, mailId, messageId, now, sender,
   });
   const dutyNote = dutyAnswer ?? dutyRequest;
 
-  const question = bookFailure || closedNote || planAnswer || commentAnswer || dutyNote ? null : clarificationFor({
+  const question = bookFailure || closedNote || planAnswer || commentAnswer || kdpAnswer || dutyNote ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
     seatName: route.seat.name, tag: route.tag, isReply, bookFiled: Boolean(bookNote),
     hasVerb: Boolean(directive), forwarded: Boolean(origin?.from), unread: oversize,
@@ -651,7 +659,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * be a book, and the message may well have been asking for something as well.
    */
   // A close she asked for, like a book verb that worked, is the whole job: nothing goes to a model.
-  const filedByVerb = Boolean(directive && bookNote) || Boolean(closedNote) || Boolean(closeQuestion) || Boolean(planAnswer) || Boolean(commentAnswer) || Boolean(dutyNote);
+  const filedByVerb = Boolean(directive && bookNote) || Boolean(closedNote) || Boolean(closeQuestion) || Boolean(planAnswer) || Boolean(commentAnswer) || Boolean(kdpAnswer) || Boolean(dutyNote);
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
     try {
       const admitted = await admitTask(env, {
@@ -729,12 +737,14 @@ function headline(text: string): string {
     : dutyNote ? dutyNote.outcome
     : planAnswer ? "PLAN_ANSWERED"
     : commentAnswer ? "COMMENT_INSTRUCTED"
+    : kdpAnswer ? "KDP_ANSWERED"
     : closedNote ? "CLOSED"
       : question || closeQuestion ? "NEEDS_CLARITY"
         : admitFailure ? "NOT_ADMITTED" : route.outcome;
   const why = [route.why,
     ...(planAnswer ? [planAnswer.note] : []),
     ...(commentAnswer ? [commentAnswer.note] : []),
+    ...(kdpAnswer ? [kdpAnswer.note] : []),
     ...(dutyNote ? [headline(dutyNote.note)] : []),
     ...(closedNote ? [closedNote] : []),
     ...(closeQuestion ? [closeQuestion] : []),
@@ -768,7 +778,7 @@ function headline(text: string): string {
    * verb both mean "nothing was started"; leading with "Monique has it." and eight lines of tag
    * directory buries the only sentence that matters under the reassurance that it worked.
    */
-  const stopped = question ? question.ask : planAnswer?.note ?? commentAnswer?.note ?? dutyNote?.note ?? closeQuestion ?? closedNote ?? bookFailure;
+  const stopped = question ? question.ask : planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dutyNote?.note ?? closeQuestion ?? closedNote ?? bookFailure;
   const reply = stopped ? [
     stopped,
     /*

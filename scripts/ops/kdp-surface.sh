@@ -60,26 +60,49 @@ say "=== KDP surface triage starting ==="
 rm -f "$HOME/.boss-os/kdp/surface.json"
 cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 
+# ─── WHAT IS STILL OPEN, HANDED TO THE RUN BEFORE IT READS ANY MAIL ─────────
+#
+# 17–20 Sep 2026: four runs said quiet or blocked while a flagged title sat inside Amazon's five-day
+# window, because "newer_than:2d" found nothing new and nothing re-read what was still open. The
+# open problems — with her answer on them, if she replied — are written here through the vault, and
+# the prompt reads them FIRST. An open problem is never "already reported".
+OPEN_FILE="$HOME/.boss-os/kdp/open.json"
+rm -f "$OPEN_FILE"
+if [ -d "$REPO" ]; then
+  ( cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-open.mjs "$OPEN_FILE" ) >> "$RUN_LOG" 2>&1 \
+    || say "NAMED STOP [OPEN_LIST_UNREAD] could not read the open problems from Boss OS; the run proceeds on mail alone and the report step will still chase what is due."
+fi
+
 "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="
 
-if ! grep -q "KDP-SURFACE-COMPLETE:" "$RUN_LOG"; then
-  say "NAMED STOP [TRIAGE_DID_NOT_COMPLETE] no sentinel in the log — the run started and never reached its end, so its silence is not evidence that nothing arrived."
+# ─── ONE POSTER. THE SENTINEL COMES FROM THE FILE, NOT FROM THE MODEL ────────
+#
+# Until 21 Sep 2026 there were two: the prompt told the model to run the report script (it has no
+# vault, so it ended on "NEEDS YOU: run the report command" and no sentinel — or printed "blocked"
+# while the wrapper posted "nothing arrived"). The model's only product is the file; the wrapper is
+# the one thing that posts, emails, chases and records the sentinel — derived from the file's
+# contents (quiet / noted / acted / needs-her / blocked), never from the model's closing sentence.
+if [ ! -f "$HOME/.boss-os/kdp/surface.json" ]; then
+  say "NAMED STOP [TRIAGE_DID_NOT_COMPLETE] no surface.json — the run started and never wrote its file, so its silence is not evidence that nothing arrived."
+  ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
   exit 9
 fi
 
-say "sentinel: $(grep -o 'KDP-SURFACE-COMPLETE:.*' "$RUN_LOG" | tail -1)"
+if [ ! -d "$REPO" ]; then
+  say "NAMED STOP [NO_REPO] $REPO — the mail was read; Boss OS was not told."
+  ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
+  exit 8
+fi
+cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-surface-report.mjs >> "$RUN_LOG" 2>&1
+RRC=$?
+if [ $RRC -ne 0 ]; then
+  say "NAMED STOP [TRIAGE_NOT_DELIVERED] rc=$RRC — see above. The mail was read; something seeing it should have produced did not happen."
+fi
+SENTINEL="$(grep -o 'KDP-SURFACE-COMPLETE:.*' "$RUN_LOG" | tail -1)"
+[ -n "$SENTINEL" ] && say "sentinel: $SENTINEL" || say "NAMED STOP [NO_SENTINEL] the report step printed no sentinel."
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 
-# `;` NOT `&&`, AND THE EXIT CODE IS THE RUN'S. A Boss OS unreachable at 09:30 must not turn a
-# completed triage into a failed one — the mail was read either way.
-if [ -d "$REPO" ]; then
-  cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-surface-report.mjs >> "$RUN_LOG" 2>&1
-  RRC=$?
-  [ $RRC -eq 0 ] || say "NAMED STOP [TRIAGE_NOT_DELIVERED] rc=$RRC — the mail was read; Boss OS was not told. See above."
-else
-  say "NAMED STOP [NO_REPO] $REPO — the mail was read; Boss OS was not told."
-fi
-
-exit $RC
+[ $RC -eq 0 ] || exit $RC
+exit $RRC
