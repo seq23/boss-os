@@ -227,9 +227,17 @@ async function runPhase(claim) {
     if (dirty && phase !== "land") { await fail(row, "REPO_HAS_UNCOMMITTED_CHANGES", `${repo} has uncommitted changes on this Mac; somebody is working in there. Nothing was touched.`, log); return; }
   }
 
+  /*
+   * A RESULT THAT WAS NEVER REPORTED IS REUSED, NOT REDONE. A build that opened a PR and then could
+   * not reach Boss OS must not run again and open a second PR; a plan that was written and could
+   * not be emailed must not cost another Opus run. The result file stays until its report lands
+   * (`.reported` marker); a fresh run starts only when there is nothing unreported on disk.
+   */
   const outFile = join(dir, `${phase}.json`);
-  if (existsSync(outFile)) writeFileSync(outFile + ".previous", readFileSync(outFile));
-  spawnSync("rm", ["-f", outFile]);
+  const reportedMark = outFile + ".reported";
+  const unreported = existsSync(outFile) && !existsSync(reportedMark);
+  if (existsSync(outFile) && !unreported) { writeFileSync(outFile + ".previous", readFileSync(outFile)); spawnSync("rm", ["-f", outFile, reportedMark]); }
+  const markReported = () => writeFileSync(reportedMark, new Date().toISOString());
   const vars = {
     CHANGE_ID: row.id, TOKEN: changeToken(row.id), REPO: repo ?? "(not named — read the package)", REPO_PATH: repoPath ?? "(none yet)",
     GRID_REPOS: gridRepoNames().join(", "), GITHUB_DIR,
@@ -242,17 +250,19 @@ async function runPhase(claim) {
     LAND: LAND, PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
   };
   const prompt = phasePrompt(phase, vars);
-  const { rc, timedOut } = await runClaude({
-    phase, prompt, cwd: repoPath ?? dir, log,
-    model: claim.model ?? PHASE_MODELS[phase], maxTurns: claim.max_turns ?? PHASE_MAX_TURNS[phase], timeoutMin: PHASE_TIMEOUT_MIN[phase],
-  });
+  const { rc, timedOut } = unreported
+    ? (say(`reusing the unreported ${phase}.json from the previous tick; claude is not run again`), { rc: 0, timedOut: false })
+    : await runClaude({
+      phase, prompt, cwd: repoPath ?? dir, log,
+      model: claim.model ?? PHASE_MODELS[phase], maxTurns: claim.max_turns ?? PHASE_MAX_TURNS[phase], timeoutMin: PHASE_TIMEOUT_MIN[phase],
+    });
   const out = readJson(outFile);
   if (!out) {
     const why = timedOut ? `the ${phase} phase hit its ${PHASE_TIMEOUT_MIN[phase]}-minute wall and was stopped` : `claude exited ${rc} and wrote no ${phase}.json`;
     await fail(row, "PHASE_DID_NOT_COMPLETE", `${why}. Its silence is not a result. Log: ${log}`, log);
     return;
   }
-  if (out.blocked) { await fail(row, String(out.blocked.tag ?? "BLOCKED").replace(/[^A-Z_]/g, "_"), String(out.blocked.why ?? "the phase named a block without a reason"), log); return; }
+  if (out.blocked) { await fail(row, String(out.blocked.tag ?? "BLOCKED").replace(/[^A-Z_]/g, "_"), String(out.blocked.why ?? "the phase named a block without a reason"), log); markReported(); return; }
 
   if (phase === "plan") {
     const chosen = out.repo ?? repo;
@@ -280,14 +290,15 @@ async function runPhase(claim) {
     if (!messageId) { await release(row, "plan written but the email could not be sent; will retry next tick", log); say("NAMED STOP [PLAN_NOT_SENT] Resend refused every sender; the plan is on disk and the claim is released."); return; }
     const r = await api(`/${row.id}/plan`, { device_id: DEVICE, plan_text: String(out.plan_text ?? ""), decided, asks, ask_message_id: messageId, written_by: claim.model ?? PHASE_MODELS.plan, run_log: log, repo: chosen });
     if (!r.ok) say(`NAMED STOP [PLAN_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the plan was emailed and Boss OS was not told.`);
-    else say(`planned: ${asks.length} ask(s), ${decided.length} decided; waiting on her reply.`);
+    else { markReported(); say(`planned: ${asks.length} ask(s), ${decided.length} decided; waiting on her reply.`); }
     return;
   }
 
   if (phase === "build") {
     if (!out.pr_url || !out.pr_number) { await fail(row, "NO_PULL_REQUEST", "the build phase ended without a pull request; a build with no PR is not a build.", log); return; }
     const r = await api(`/${row.id}/build`, { device_id: DEVICE, branch: out.branch ?? null, pr_url: out.pr_url, pr_number: Number(out.pr_number), proof: out.proof ?? null, written_by: claim.model ?? PHASE_MODELS.build, run_log: log });
-    if (!r.ok) { say(`NAMED STOP [BUILD_NOT_RECORDED] ${r.status} ${r.error ?? ""}`); return; }
+    if (!r.ok) { say(`NAMED STOP [BUILD_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the PR is open; the next tick reports it without building again.`); return; }
+    markReported();
     say(`built: ${out.pr_url}; now watching its checks.`);
     // Watch the checks in this same run for a while, so a quick CI lands in the same tick.
     await watchChecks({ ...row, repo, pr_url: out.pr_url, pr_number: Number(out.pr_number), proof: out.proof ?? null }, log, 15);
@@ -313,7 +324,7 @@ async function runPhase(claim) {
     if (!messageId) { say("NAMED STOP [DONE_NOT_SENT] landed, and the DONE email could not be sent; the row stays in land until it can."); await release(row, "landed; DONE email not sent — retry the email next tick", log); writeFileSync(join(dir, "landed-unreported.json"), JSON.stringify(out)); return; }
     const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: proof, done_message_id: messageId, run_log: log });
     if (!r.ok) say(`NAMED STOP [LAND_NOT_RECORDED] ${r.status} ${r.error ?? ""} — it landed and she was told; Boss OS was not.`);
-    else say(`done: ${out.merge_sha}`);
+    else { markReported(); say(`done: ${out.merge_sha}`); }
   }
 }
 
