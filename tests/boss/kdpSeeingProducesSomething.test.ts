@@ -130,6 +130,19 @@ describe("her reply on the [kml_…] thread lands on the row", () => {
     expect(r.answer_mail_id).toMatch(/^iml_/);
     expect((await row<any>(`SELECT COUNT(*) AS n FROM tasks WHERE created_at >= ?`, r.answered_at - 5000)).n).toBe(0);
 
+    // HER REAL REPLY SHAPE (21 Sep 2026): "approved." above her signature and the quoted thread.
+    // Read as the whole message it was "her own wording" — and that would have been typed into a
+    // subtitle. Only her own words are judged.
+    const gmail = "approved.\r\n\r\n*- Sequoia Taylor*\r\n*www.sequoiataylor.com* <http://www.sequoiataylor.com/>\r\n*901-355-1050 <901-355-1050> (mobile)*\r\n\r\nOn Mon, Sep 21, 2026 at 5:32\u202fPM Simone · Boss OS <simone@sequoiataylor.com>\r\nwrote:\r\n\r\n> Amazon flagged The Gift Letter for repetitive terms.\r\n> What I need from you: Approve the new subtitle.\r\n";
+    await env.DB.prepare(`UPDATE kdp_mail_log SET owner_answer = NULL, answered_at = NULL WHERE id = ?`).bind(id).run();
+    const real = await handleBossInboundMail(mail({ subject: `Re: #simone [${id}] The Gift Letter — one decision`, body: gmail }), env as never);
+    expect(real.outcome).toBe("KDP_ANSWERED");
+    expect((await row<any>(`SELECT owner_answer FROM kdp_mail_log WHERE id = ?`, id)).owner_answer).toBe("approved");
+    await env.DB.prepare(`UPDATE kdp_mail_log SET owner_answer = NULL, answered_at = NULL WHERE id = ?`).bind(id).run();
+    const wording = await handleBossInboundMail(mail({ subject: `Re: [${id}]`, body: "Use: A Better Subtitle Here\n\nOn Mon, Sep 21, 2026 at 5:32 PM Simone <simone@sequoiataylor.com> wrote:\n> quoted" }), env as never);
+    expect(wording.outcome).toBe("KDP_ANSWERED");
+    expect((await row<any>(`SELECT owner_answer FROM kdp_mail_log WHERE id = ?`, id)).owner_answer).toBe("Use: A Better Subtitle Here");
+
     const held = await handleBossInboundMail(mail({ subject: `Re: [${id}]`, body: "hold - I want a different subtitle, let me think" }), env as never);
     expect(held.outcome).toBe("KDP_ANSWERED");
     expect((await row<any>(`SELECT owner_answer FROM kdp_mail_log WHERE id = ?`, id)).owner_answer).toMatch(/^held: /);

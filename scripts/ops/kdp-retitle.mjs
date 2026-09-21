@@ -66,7 +66,19 @@ async function main() {
   try {
     await page.goto(`https://kdp.amazon.com/en_US/title-setup/kindle/${ref}/details`, { waitUntil: "domcontentloaded", timeout: TIMEOUT_MS });
     await page.waitForTimeout(7000);
-    if (/\/ap\/signin|\/ap\/mfa/.test(page.url())) return out("reauth_required", `Amazon wants a fresh sign-in before it lets anything edit ${ref}. The one fix: npm run browser:signin -- --profile ${PROFILE} --url ${BOOKSHELF}`, 6);
+    if (/\/ap\/signin|\/ap\/mfa/.test(page.url())) return out("reauth_required", `Amazon wants a fresh sign-in before it lets anything edit ${ref}. Simone signs in herself: npm run kdp:signin:auto (through the vault); the headed window is the last resort.`, 6);
+    if (/\/bookshelf/.test(page.url())) {
+      /*
+       * A BLOCKED TITLE IS NOT EDITABLE ON KDP. Proven 21 Sep 2026: the bookshelf offers
+       * digital_edit_details-<ref> for every title except the blocked one, whose row offers only
+       * Archive; its title-setup URLs bounce here. Option 1 cannot be done from the bookshelf; the
+       * door is Amazon's review thread, and a reply on it is hers to approve.
+       */
+      const others = await page.locator('a[id^="digital_edit_details-"]').count().catch(() => 0);
+      const mine = await page.locator(`a[id="digital_edit_details-${ref}"]`).count().catch(() => 0);
+      if (others > 0 && mine === 0) return out("blocked_not_editable", `${ref} has no Edit eBook details entry on the bookshelf (${others} other titles do) — a BLOCKED title cannot be edited by the publisher. The door is a reply on Amazon's review thread, which is hers to approve; see kdp-register.json facts_about_kdp.`, 13);
+      return out("elsewhere", `landed on the bookshelf instead of the details page and it offers no edit entries at all — the session cannot edit.`, 7);
+    }
     if (!/kdp\.amazon\.com/.test(page.url())) return out("elsewhere", `landed on ${page.url().slice(0, 120)} instead of the details page.`, 7);
 
     // The fields KDP's details step uses for every format. Two selectors each: the id, then the label.

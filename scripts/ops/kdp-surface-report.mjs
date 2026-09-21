@@ -33,7 +33,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+
 import { sendersFor, employeeMail } from "./notify.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -140,20 +140,22 @@ export function withoutDuplicates(items, open) {
 }
 
 /**
- * THE SIGN-IN LINE RIDES IN THE SAME EMAIL AS THE WORDING. A needs_owner ask about a title's wording
- * is executed with kdp-retitle.mjs; if the saved session cannot edit (`reauth_required`), she must
- * sign in once, and asking for that in a SECOND email after her "approved" is a round trip nobody
- * needed. The dry run is deterministic and needs no vault, so it runs here — against the register's
- * recommended wording, which is what the ask proposes — and the line is appended to the ask.
+ * ─── ONE MESSAGE, ONE MEANING ─────────────────────────────────────────────
+ *
+ * Her ruling on the 22:54Z email, which said "run this command" AND "reply approved" AND claimed a
+ * wording "she approved": a message is either an ASK — one decision, a recommended default, "reply
+ * approved" — or a STOP — one thing only she can do, the exact line, and NO reply expected. Never
+ * both. The shape is chosen by what the item is: a needs_owner with `owner_ask` that names a
+ * command she must run is a stop; everything else is an ask. Pinned by the self-test.
  */
-export function signInLineFor(dryRunLine) {
-  return /^RETITLE: reauth_required/.test(String(dryRunLine ?? ""))
-    ? " Also, once, before I can edit anything: the saved sign-in can read the bookshelf but not edit a title — run `npm run browser:signin -- --profile simone --url https://kdp.amazon.com/en_US/bookshelf` in ~/GitHub/boss-os and sign in in the window that opens."
-    : "";
+export function messageShape(item) {
+  return /npm run |launchctl |open a Chrome window|sign in there/i.test(String(item?.owner_ask ?? "")) ? "stop" : "ask";
 }
-function dryRunRetitle(ref, subtitle) {
-  const r = spawnSync(process.execPath, [join(ROOT, "scripts/ops/kdp-retitle.mjs"), "--ref", ref, "--subtitle", subtitle, "--dry-run"], { encoding: "utf8", timeout: 120_000 });
-  return (r.stdout ?? "").split("\n").find((l) => l.startsWith("RETITLE:")) ?? "";
+
+/** The one sign-in line, from Simone's own sign-in attempt (signin.json), only when it is truly hers. */
+export function signInStopFrom(signin) {
+  if (!signin || !["challenge_needs_her", "otp_not_found", "wrong_password", "no_credentials", "browser_unavailable", "failed"].includes(signin.state)) return null;
+  return `${signin.detail}`;
 }
 
 async function api(path, cookie, body) {
@@ -186,13 +188,23 @@ async function sendAsSimone({ subject, text }) {
 function askEmail(row, item, register) {
   const t = (register.titles ?? []).find((x) => x.title_ref === item.title_ref);
   const due = row.due_at ? ` Amazon's deadline: ${new Date(row.due_at).toISOString().slice(0, 10)}.` : "";
+  if (messageShape(item) === "stop") {
+    return {
+      subject: `#simone [${row.id}] ${t ? t.title : "Kindle"} — one thing only you can do`,
+      text:
+        `${item.note}\n\n` +
+        `What I did: ${item.action_taken}\n\n` +
+        `What only you can do: ${item.owner_ask}${due}\n\n` +
+        `No reply is needed — once it is done my next run picks it up and carries on. I chase this every day until it is.\n\n— Simone`,
+    };
+  }
   return {
     subject: `#simone [${row.id}] ${t ? t.title : "a Kindle title"} — one decision, reply approved`,
     text:
       `${item.note}\n\n` +
       `What I did: ${item.action_taken}\n\n` +
       `What I need from you: ${item.owner_ask}${due}\n\n` +
-      `Reply with one word — approved — and I execute it on my next run and report Live-or-not from the bookshelf. ` +
+      `Reply with one word — approved — and I do it on my next run and report the result from the bookshelf. ` +
       `Reply with different wording and I use yours. Reply "hold" and I leave it.\n\n— Simone`,
   };
 }
@@ -236,8 +248,12 @@ function selfTest() {
     ["dedupe: the same problem with facts_changed is kept", withoutDuplicates([{ ...ok.items[0], facts_changed: "Amazon escalated" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
     ["dedupe: a resolves item is kept", withoutDuplicates([{ ...ok.items[0], resolves: "kml_x" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
     ["dedupe: a different matter is a different problem", withoutDuplicates([{ ...ok.items[0], matter: "cover" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
-    ["sign-in: reauth_required yields the one line", signInLineFor("RETITLE: reauth_required — x").includes("browser:signin")],
-    ["sign-in: a dry run that can edit yields nothing", signInLineFor("RETITLE: dry_run — would change") === ""],
+    ["shape: a wording ask is an ask", messageShape(ok.items[0]) === "ask"],
+    ["shape: an ask naming a command she must run is a stop", messageShape({ owner_ask: "Run once: npm run kdp:signin" }) === "stop"],
+    ["shape: the ask email says reply approved and names no command", (() => { const e = askEmail({ id: "kml_1", due_at: null }, ok.items[0], reg); return /Reply with one word — approved/.test(e.text) && !/npm run/.test(e.text); })()],
+    ["shape: the stop email expects no reply and never says approved", (() => { const e = askEmail({ id: "kml_1", due_at: null }, { ...ok.items[0], matter: "account", owner_ask: "Once: npm run kdp:signin (a Chrome window opens)" }, reg); return /No reply is needed/.test(e.text) && !/approv/i.test(e.text); })()],
+    ["sign-in state: a challenge is a stop line", typeof signInStopFrom({ state: "challenge_needs_her", detail: "CAPTCHA" }) === "string"],
+    ["sign-in state: ok is nothing", signInStopFrom({ state: "ok", detail: "x" }) === null],
     ["chase: five days out is not chased", dueForChase([{ due_at: Date.now() + 5 * DAY_MS }], Date.now()).length === 0],
     ["chase: answered is not chased", dueForChase([{ due_at: Date.now(), answered_at: Date.now() }], Date.now()).length === 0],
   ];
@@ -282,15 +298,11 @@ async function main() {
   const { open: openBefore } = await api("/api/boss/kdp/mail/open", cookie);
   const { kept: items, dropped } = withoutDuplicates(payload.items, openBefore);
   for (const d of dropped) console.log(`Already open as ${d.id} (${d.title_ref} / ${d.matter}); not filed again — the chase below keeps it loud.`);
+  // A needs_owner ask may not mix a command with an approval (one message, one meaning); refused here.
   for (const it of items) {
-    if (it.disposition !== "problem" || it.needs_owner !== true || !["title", "subtitle"].includes(it.matter) || !it.title_ref) continue;
-    const entry = (register.titles ?? []).find((t) => t.title_ref === it.title_ref);
-    const wording = entry?.open?.recommended_subtitle;
-    if (!wording || /browser:signin/.test(it.owner_ask)) continue;
-    const line = dryRunRetitle(it.title_ref, wording);
-    const extra = signInLineFor(line);
-    if (extra) { it.owner_ask = `${it.owner_ask}${extra}`.slice(0, 1200); console.log(`Dry run says the session cannot edit; the sign-in line rides in the ask for ${it.title_ref}.`); }
-    else console.log(`Dry run for ${it.title_ref}: ${line || "(no RETITLE line)"}`);
+    if (it.disposition !== "problem" || it.needs_owner !== true) continue;
+    const ask = String(it.owner_ask ?? "");
+    if (messageShape(it) === "stop" && /\bapprov/i.test(ask)) { stop("MIXED_MESSAGE", `${it.title_ref ?? it.matter}: the ask names a command she must run AND asks for approval — one message, one meaning. Split it.`); process.exit(18); }
   }
   if (payload.blocked) {
     // The mailbox could not be read. That is a fact about the run, and the duty's clock must NOT

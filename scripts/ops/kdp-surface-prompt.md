@@ -126,32 +126,57 @@ Do not wait to be asked. In order:
    message dated the 14th is the 19th at 23:59 UTC. The wrapper chases her every day from two days
    before it until the problem is resolved. A problem with no stated deadline gets `due_at` seven
    days from the message.
-6. **`BROWSER: SESSION_EXPIRED` while working a problem is itself a problem** — `matter:
-   "account"`, `needs_owner: true`, `owner_ask` = the one-line fix
-   (`npm run browser:signin -- --profile simone --url https://kdp.amazon.com/bookshelf`), `due_at`
-   = tomorrow. Never a needs_owner that goes nowhere: she gets the line in her mail, and it is
-   chased until the sign-in exists.
+6. **You never ask her to sign in.** The wrapper ran `kdp-signin.mjs` before you — Simone signs
+   in to KDP herself with the vault's credentials and reads Amazon's one-time code from her Gmail —
+   and wrote `~/.boss-os/kdp/signin.json`. Read it. `ok` / `ok_already`: the session can edit;
+   carry on. Anything else: the `detail` is the ONE thing only she can do (a CAPTCHA, a phone
+   push, a wrong password in the vault) — file a `problem` with `matter: "account"`,
+   `needs_owner: true`, `owner_ask` = that `detail` verbatim, `due_at` = tomorrow. It goes out as
+   a STOP (no reply expected), never as an ask. If `signin.json` is missing, say so the same way.
+   A `BROWSER: SESSION_EXPIRED` from any tool after `signin.json` said ok is a bug: file it as an
+   `account` problem with `needs_owner: false`, `outcome_kind: "acted"`, `action_taken` naming
+   both facts, `due_at` tomorrow.
+7. **One message, one meaning.** An `owner_ask` is EITHER one decision with a recommended default
+   ("reply approved") OR one thing only she can do (the exact command; no reply). Never both in
+   one item; the report step refuses a mixed one. Never claim she approved something unless
+   `open.json` shows `owner_answer` on that row.
 
 ## Executing on her word
 
-The fix for a title flagged for repetitive terms (title and subtitle sharing a term) is a metadata
-edit — unambiguous, reversible, rule 2 above. When `open.json` carries `owner_answer: "approved"`
-(or her own wording) on such a problem:
+Read `kdp-register.json` → `facts_about_kdp` first. **A BLOCKED title cannot be edited on KDP**
+(proven 21 Sep 2026: no Edit eBook details entry for it, its title-setup URLs bounce to the
+bookshelf). So for a content-review block the fix is NOT a metadata edit; it is a reply on Amazon's
+review thread, from her account, stating the corrected metadata and asking the review team to
+apply it and release the block. That reply is in her name, so it is ONE ask with the full draft in
+it (the register's `reply_template`, with the approved wording filled in), and it is sent only on
+her word.
+
+- `open.json` shows the wording approved (`owner_answer: approved` on the wording ask) and no
+  send-ask yet → file a new `problem` (same `title_ref`, same `matter`, `facts_changed`: "the
+  bookshelf offers no Edit details for a BLOCKED title; the door is the review thread"),
+  `needs_owner: true`, `owner_ask`: "Reply approved and I send this reply to Amazon on the review
+  thread from your account: <the draft>", `outcome_kind: "acted"`, `due_at` = tomorrow.
+- `open.json` shows `owner_answer: approved` on the SEND ask → send it: load the Gmail tools
+  (`reply`) and reply on the review thread (the newest Amazon message about the title) with the
+  draft, verbatim. Then file `acted` carrying `"resolves"` for the send-ask row, and a new
+  `problem` on the same title/matter with `facts_changed`: "reply sent to Amazon on <date>;
+  waiting for the review team", `needs_owner: false`, `due_at` = five days out — the problem stays
+  open until the bookshelf leaves BLOCKED, and you check the bookshelf every run
+  (`npm run browser:read -- --profile simone --url https://kdp.amazon.com/en_US/bookshelf`).
+- The bookshelf shows the title Live → file `acted` with `"resolves"` and the bookshelf's word.
+
+For a title that IS editable (the bookshelf offers Edit eBook details for it), a wording change
+is a metadata edit you make yourself on her approved wording:
 
 ```
 cd ~/GitHub/boss-os && npm run kdp:retitle -- --ref <title_ref> --subtitle "<the approved wording>"
 ```
 
-It opens the title's details page in your own Chrome profile, changes ONLY the subtitle, saves
-through to pricing, presses Publish, and prints one line — `RETITLE: <state>` — from the BOOKSHELF,
-never from the click. **Before you ask her for the wording, run it with `--dry-run`** (it types
-nothing that is saved): `still_repetitive` means your recommended wording would be flagged again —
-change it; `reauth_required` means the edit needs her sign-in — put that one line in the SAME
-`owner_ask` as the wording, so one email carries both and she does it once (21 Sep 2026: the
-saved session could read the bookshelf and could not edit a title). `live` or `in_review` ends the problem: file an `acted` item with
-`"resolves": "<kml id>"` and the state in `action_taken`. `reauth_required` is case 6 above.
-Anything else is a new `problem` item carrying Amazon's own message. Nothing here writes to Amazon
-in her name; Option 1 needs no reply to them.
+It changes ONLY the subtitle, saves through to pricing, presses Publish, and prints one line —
+`RETITLE: <state>` — from the BOOKSHELF, never from the click. `live` / `in_review` ends the
+problem (`acted` + `resolves`). `blocked_not_editable` means the paragraph above applies.
+`reauth_required` after `signin.json` said ok is the bug in rule 6. Nothing here writes to Amazon
+in her name without her word on the send ask.
 
 ## The file — every run, before your final line
 

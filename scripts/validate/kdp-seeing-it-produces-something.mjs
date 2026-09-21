@@ -38,6 +38,8 @@ const F = {
   coverMap: "scripts/ops/kdp-cover-map.json",
   route: "src/worker/boss/routes/kdp.ts",
   intake: "src/worker/boss/intake/inboundMail.ts",
+  retitle: "scripts/ops/kdp-retitle.mjs",
+  lane: "src/shared/boss/repoChange/lane.mjs",
   migrations: "migrations",
 };
 
@@ -94,7 +96,15 @@ export function check(files) {
   // One email per tick per problem (first hands-off run, 21 Sep 2026: ask 22:32:09, chase 22:32:10).
   if (!/Math\.max\(Number\(p\.nagged_at \?\? 0\), Number\(p\.seen_at \?\? 0\)\)/.test(report)) p.push("the chase does not count the ask itself (seen_at) as the last contact — a fresh row is chased in the same tick as its ask.");
   if (!/export function withoutDuplicates/.test(report) || !/withoutDuplicates\(payload\.items, openBefore\)/.test(report)) p.push("a problem already open on the same title and matter is filed (and emailed) again every day.");
-  if (!/export function signInLineFor/.test(report) || !/dryRunRetitle\(it\.title_ref, wording\)/.test(report)) p.push("the sign-in line does not ride in the same ask as the wording (the dry run is not run by the report script).");
+  // Simone signs in herself (her ruling, 21 Sep 2026); one message, one meaning.
+  if (!/kdp-signin\.mjs/.test(wrapper)) p.push("the wrapper does not run Simone's own sign-in (kdp-signin.mjs) before the triage.");
+  if (!/export function messageShape/.test(report) || !/MIXED_MESSAGE/.test(report)) p.push("the report script does not split ask from stop (messageShape) or refuse a mixed message.");
+  if (!/No reply is needed/.test(report) || !/Reply with one word — approved/.test(report)) p.push("the two email shapes are not both present.");
+  if (/npm run browser:signin -- --profile simone/.test(prompt) && !/signin\.json/.test(prompt)) p.push("the prompt still tells the model to ask her to sign in.");
+  if (!/signin\.json/.test(prompt)) p.push("the prompt does not read signin.json.");
+  if (!/blocked_titles_are_not_editable/.test(files.register)) p.push("the register does not carry the fact that a BLOCKED title cannot be edited.");
+  if (!/blocked_not_editable/.test(files.retitle)) p.push("the retitle tool does not name the blocked-not-editable case.");
+  if (!/export function herWords/.test(files.lane) || !/const raw = herWords\(text\)/.test(files.lane)) p.push("readReply does not judge her own words (quoted mail and signature stripped) — 'approved.' with a quoted thread was read as her own wording on 21 Sep.");
 
   // 5. Her reply lands.
   if (!/answerKdpFromMail/.test(intake)) p.push("the intake does not route a [kml_…] reply to answerKdpFromMail.");
@@ -118,12 +128,15 @@ function selfTest() {
     ["the prompt telling the model to post", { ...good, prompt: good.prompt + "\nThen run `scripts/ops/kdp-surface-report.mjs`, which posts the file." }, 1],
     ["the prompt telling the model to email", { ...good, prompt: good.prompt + "\nUse `npm run notify -- --from Simone --subject x --body y`." }, 1],
     ["a second poster in the wrapper", { ...good, wrapper: good.wrapper + "\nnode scripts/ops/kdp-surface-report.mjs\n" }, 1],
-    ["a title whose target is not LIVE", { ...good, register: good.register.replace('"target": "LIVE", "status": "DRAFT"', '"target": "DRAFT", "status": "DRAFT"') }, 1],
+        ["a title whose target is not LIVE", { ...good, register: good.register.replace(/"target": "LIVE",(\s*)"status": "BLOCKED"/, '"target": "DRAFT",$1"status": "BLOCKED"') }, 1],
     ["'draft by choice' back in the register", { ...good, register: good.register.replace('"owner_goal"', '"note": "Gift Letter is Draft by her choice", "owner_goal"') }, 1],
     ["the endpoint accepting assigned without a block", { ...good, route: good.route.replace('outcome === "assigned" && !assign', "false") }, 1],
     ["the chase removed", { ...good, report: good.report.replace("export function dueForChase", "function dueForChaseX") }, 1],
     ["the same-tick chase back", { ...good, report: good.report.replace("Math.max(Number(p.nagged_at ?? 0), Number(p.seen_at ?? 0))", "Number(p.nagged_at ?? 0)") }, 1],
     ["the dedupe removed", { ...good, report: good.report.replace("withoutDuplicates(payload.items, openBefore)", "{ kept: payload.items, dropped: [] }") }, 1],
+    ["the sign-in pre-step removed from the wrapper", { ...good, wrapper: good.wrapper.replace(/kdp-signin\.mjs/g, "x") }, 1],
+    ["the mixed-message refusal removed", { ...good, report: good.report.replace("MIXED_MESSAGE", "X") }, 1],
+    ["readReply judging the whole message again", { ...good, lane: good.lane.replace("const raw = herWords(text)", "const raw = String(text ?? \"\").trim()") }, 1],
     ["the reply path unwired", { ...good, intake: good.intake.replace(/answerKdpFromMail/g, "nothing") }, 1],
     ["RULE 0: an empty register", { ...good, register: JSON.stringify({ titles: [], settled: {} }) }, 1],
     ["the register read after Gmail", { ...good, prompt: good.prompt.replace(/kdp-register\.json/g, "x").concat("\nLoad the Gmail tools ... then read kdp-register.json") }, 1],

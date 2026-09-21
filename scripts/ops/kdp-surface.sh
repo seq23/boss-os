@@ -73,6 +73,19 @@ if [ -d "$REPO" ]; then
     || say "NAMED STOP [OPEN_LIST_UNREAD] could not read the open problems from Boss OS; the run proceeds on mail alone and the report step will still chase what is due."
 fi
 
+# ─── SIMONE SIGNS IN HERSELF, BEFORE SHE READS ANYTHING ───────────────────────
+#
+# Her ruling, 21 Sep 2026: "i shouldn't have to approve browser sign in — she should use browser
+# tools and sign in." The vault's KDP_ACCOUNT_EMAIL / KDP_ACCOUNT_PASSWORD reach kdp-signin.mjs
+# through the governed launch and nowhere else; the one-time code is read from her Gmail through
+# the connector; a CAPTCHA or phone push is the one case that stays hers (signin.json says so, and
+# the prompt turns it into a STOP email with the exact line). The model never asks her to sign in.
+rm -f "$HOME/.boss-os/kdp/signin.json"
+if [ -d "$REPO" ]; then
+  ( cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-signin.mjs ) >> "$RUN_LOG" 2>&1 \
+    || say "NAMED STOP [SIGNIN_NOT_OK] Simone could not sign in to KDP herself — see the KDP-SIGNIN line above; the run proceeds and the report step tells her only if it is truly hers."
+fi
+
 "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="
