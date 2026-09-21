@@ -646,3 +646,24 @@ describe("pre-approval in the request: she said pick everything", () => {
     expect(r.answers_mode).toBe("answers"); // her words are her answers; not a pre-approval, not a force
   });
 });
+
+
+describe("retry is her door for a failed row", () => {
+  it("a failed change goes back to plan, keeps her instruction and pre-approval, and is claimable again; a live one cannot be retried", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#danielle refresh", body: `Update WPP-llm from ${FOLDER}. Your call.` }), env as never);
+    const rc = await row<any>(`SELECT id, task_id FROM repo_changes WHERE task_id = ?`, res.taskId);
+    expect((await apiJson(`/api/repo-changes/${rc.id}/retry`, { method: "POST", body: {} })).status).toBe(409);
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [PHASE_DID_NOT_COMPLETE] claude exited 1", notified_message_id: "re_f" } });
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, rc.task_id)).status).toBe("failed");
+    const r = await apiJson(`/api/repo-changes/${rc.id}/retry`, { method: "POST", body: { reason: "the lane handed the CLI an API key; fixed" } });
+    expect(r.status).toBe(200);
+    const after = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(after.phase).toBe("plan");
+    expect(after.failure).toBeNull();
+    expect(after.pre_approved_phrase).toBe("your call");
+    expect(after.instruction).toContain("Your call");
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, rc.task_id)).status).toBe("queued");
+    expect((await claim(rc.id)).status).toBe(201);
+  });
+});
