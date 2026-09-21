@@ -817,6 +817,63 @@ lint_plist "$RC_PLIST"
 launchctl load "$RC_PLIST"
 echo "Installed $RC_LABEL — every 20 minutes 06:00–22:00 Central (repo-change.sh, task kind repo_change)."
 
+# ─── Monique's comment watch ─────────────────────────────────────────────────
+#
+# Owner, 21 Sep 2026. Weekly: read every new comment on the YouTube channel, propose what to do
+# about the negative ones and the questions, email her the numbered digest from monique@, and act
+# ONLY on her reply (`1 delete`, `2 reply as drafted`, `3 reply: <words>`, `4 ignore`, or `your
+# call`). The sweep and the act run in ~/GitHub/how-we-know (`loop/comments.py`) with that
+# channel's own credential; this job is the wrapper, the digest and the instruction record live in
+# Boss OS (`duty_youtube_comment_watch`, `comment_watch_items`).
+#
+# WEDNESDAY 14:00 CENTRAL, NOT 08:00. Her correction the same day: too much already fires at 08:00.
+# The inventory has this Mac busy 06:00–09:45, 10:07, 11:11, 12:35, 18:07–18:35 and 23:00, and
+# Wednesday carries only the 07:00 packet reminder; nothing fires 12:35–18:00 on any weekday. The
+# hourly tick marks the duty due at 14:00; this slot claims it at 14:05.
+#
+# TWO SLOTS A DAY. The runner asks the duty row whether the sweep is due (it is, on Wednesdays),
+# and runs the ACT half on every slot — so her reply to the digest is applied the same day, at
+# 14:05 or 19:05 (nothing else on the Mac at 19:xx), never a week later. A slot with nothing
+# pending prints NOTHING_PENDING and exits 0. `validate:launchd-duty-link` ties this token to the
+# duty row; `validate:comment-act-instructed` pins that act reads only instructed rows.
+CW_LABEL="com.seq.boss-comment-watch"
+CW_PLIST="$HOME/Library/LaunchAgents/$CW_LABEL.plist"
+CW_LOGS="$HOME/Library/Logs/youtube-comment-watch"
+
+mkdir -p "$CW_LOGS"
+chmod +x "$REPO/scripts/ops/youtube-comment-watch.sh"
+ln -sfn "$REPO/scripts/ops/youtube-comment-watch.sh" "$HOME/bin/youtube-comment-watch.sh"
+
+cat > "$CW_PLIST" <<CWEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$CW_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>bash $REPO/scripts/ops/duty-run.sh youtube-comment-watch.sh -- bash $REPO/scripts/ops/youtube-comment-watch.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>5</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$CW_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$CW_LOGS/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+CWEOF
+
+launchctl unload "$CW_PLIST" 2>/dev/null || true
+lint_plist "$CW_PLIST"
+launchctl load "$CW_PLIST"
+echo "Installed $CW_LABEL — daily 14:05 and 19:05 Central slots; the sweep runs when the duty is due (Wednesday 14:00), the act half every slot."
+
 # ─── Monique's LP reply digest ───────────────────────────────────────────────
 #
 # "an employee can keep track of all the opt outs and replies and send me an inbox daily summary to
@@ -1079,6 +1136,8 @@ require_loaded "$AHREFS_LABEL"
 # did not name it. `validate:plists-well-formed` now fails the build when a label the installer
 # defines is missing from this list, so a sixth time cannot happen through this file.
 require_loaded "$RC_LABEL"
+# WITH THE JOB, 21 September: the comment watch.
+require_loaded "$CW_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
@@ -1093,6 +1152,7 @@ require_loaded "$RC_LABEL"
 [ -L "$HOME/bin/lp-replies-prompt.md" ] || missing="$missing ~/bin/lp-replies-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/lp-replies-prompt.md" ] || missing="$missing scripts/ops/lp-replies-prompt.md"
 [ -L "$HOME/bin/repo-change.sh" ] || missing="$missing ~/bin/repo-change.sh(symlink)"
+[ -L "$HOME/bin/youtube-comment-watch.sh" ] || missing="$missing ~/bin/youtube-comment-watch.sh(symlink)"
 [ -L "$HOME/bin/repo-change-prompt.md" ] || missing="$missing ~/bin/repo-change-prompt.md(symlink)"
 [ -f "$REPO/scripts/ops/repo-change-prompt.md" ] || missing="$missing scripts/ops/repo-change-prompt.md"
 [ -L "$HOME/bin/kdp-surface-prompt.md" ] || missing="$missing ~/bin/kdp-surface-prompt.md(symlink)"
