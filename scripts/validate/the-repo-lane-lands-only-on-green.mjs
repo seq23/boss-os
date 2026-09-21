@@ -270,6 +270,16 @@ export function fileProblems(f) {
     if (/spawn(?:Sync)?\(\s*(?:CLAUDE|claude|"claude"|'claude')[\s\S]{0,400}?env:\s*(?:process\.env|\{\s*\.\.\.process\.env\s*\})/.test(code(src))) bad.push(`${name}: spawns claude with process.env — under vault:run that hands the CLI ANTHROPIC_API_KEY and it drops her seat.`);
     if (src && /spawn(?:Sync)?\(\s*(?:CLAUDE|claude|"claude"|'claude')/.test(code(src)) && !/seatEnv\(process\.env\)/.test(code(src))) bad.push(`${name}: spawns claude without seatEnv(process.env).`);
   }
+  // A retry is a resume: one retry writer (retryRow), used by the route and by the reply on a failed
+  // row; it never touches instruction-of-record fields it did not come to change (pre-approval, repo, folder).
+  if (!/export async function retryRow/.test(f.answer) || !/phase === "failed"[\s\S]{0,900}retryRow\(/.test(f.answer)) bad.push(`${FILES.answer}: a reply on a failed change does not retry it through retryRow() — a fresh row from the reply's words is the 21 Sep defect.`);
+  if (!/retryRow\(/.test(f.routes)) bad.push(`${FILES.routes}: the retry route does not use retryRow().`);
+  const retryFn = (() => { const a = f.answer.indexOf("export async function retryRow"); const b = f.answer.indexOf("export async function", a + 10); return a === -1 ? "" : f.answer.slice(a, b === -1 ? undefined : b); })();
+  for (const col of ["pre_approved_phrase", "pre_approved_by", "force_phrase", "repo =", "drive_folder", "mail_id ="]) {
+    if (new RegExp(`\\b${col.replace(" =", "\\s*=")}\\s*=\\s*(?:\\?|NULL)`).test(retryFn)) bad.push(`${FILES.answer}: retryRow() rewrites ${col.replace(" =", "")} — a retry keeps her original instruction of record.`);
+  }
+  if (!/changeFromReplyChain\(/.test(f.answer) || !/replyChain/.test(f.mail)) bad.push("a reply with no token is not matched to its change through the References chain.");
+  if (!/never a new one/.test(f.test)) bad.push(`${FILES.test}: no test proves a retry is a resume (a "try again" on the original thread keeps the row and its pre-approval).`);
   for (const proof of ["PATH 1", "PATH 3", "THE FORCE", "A STRANGER'S FORCE", "PRE-APPROVED + READY", "PRE-APPROVED + NOT READY", "PRE-APPROVED + FORCED", "A STRANGER'S PRE-APPROVAL"]) {
     if (!f.test.includes(proof)) bad.push(`${FILES.test}: no test named "${proof}…" — the preview/force paths are not proven.`);
   }
@@ -342,14 +352,14 @@ function selfTest() {
   // B–G over a fixture set that passes, then one break per rule.
   const good = {
     lane: "export const PHASE_MODELS = { plan: 'a', build: 'b', land: 'c' };",
-    routes: 'const phase = claimablePhase(row); const gate = canLand(row); if (typeof b?.publish_ready !== "boolean") throw x; if (pre && asks.length) throw badRequest("A pre-approved plan may not ask"); const approvedBy = "x (pre-approved in the request)"; const next = needsPreview(row) && !isForced(row) ? "preview" : "landing"; preview_message_id; if (state === "green") { db(`UPDATE repo_changes SET checks_green_at = ? WHERE id = ?`) }',
+    routes: 'retryRow(c.env, row, {}); const phase = claimablePhase(row); const gate = canLand(row); if (typeof b?.publish_ready !== "boolean") throw x; if (pre && asks.length) throw badRequest("A pre-approved plan may not ask"); const approvedBy = "x (pre-approved in the request)"; const next = needsPreview(row) && !isForced(row) ? "preview" : "landing"; preview_message_id; if (state === "green") { db(`UPDATE repo_changes SET checks_green_at = ? WHERE id = ?`) }',
     admit: "INSERT INTO repo_changes (…, pre_approved_phrase, pre_approved_by, force_phrase, …) VALUES; 'repo_change_pre_approved' { phrase: change.pre_approved_phrase }",
-    mail: "if (!authorised) { return refused; }\nconst planAnswer = await answerFromMail(env, {});\nadmitTask(env, {});",
-    answer: "async function recordForce() { db(`UPDATE repo_changes SET forced_by = ? WHERE id = ?`); taskEvent('repo_change_forced') }\nif (reply.mode === \"forced\") { await recordForce(); }\nif (reply.mode === \"preview\") { note(); }\nconst reply = readReply(text); if (reply.mode === \"held\") { db(`UPDATE repo_changes SET held_at = ? WHERE id = ?`) }\nUPDATE repo_changes SET phase = 'build', answered_at = ? WHERE id = ? AND phase = 'asking'",
+    mail: "if (!authorised) { return refused; }\nconst replyChain = [];\nconst planAnswer = await answerFromMail(env, { replyChain });\nadmitTask(env, {});",
+    answer: "export async function retryRow(env, row) { db(`UPDATE repo_changes SET phase = 'plan', failure = NULL WHERE id = ?`) }\nexport async function changeFromReplyChain() {}\nif (row.phase === \"failed\") { await retryRow(env, row, {}); }\nasync function recordForce() { db(`UPDATE repo_changes SET forced_by = ? WHERE id = ?`); taskEvent('repo_change_forced') }\nif (reply.mode === \"forced\") { await recordForce(); }\nif (reply.mode === \"preview\") { note(); }\nconst reply = readReply(text); if (reply.mode === \"held\") { db(`UPDATE repo_changes SET held_at = ? WHERE id = ?`) }\nUPDATE repo_changes SET phase = 'build', answered_at = ? WHERE id = ? AND phase = 'asking'",
     executor: "NOTHING_CLAIMABLE=7\ncaffeinate timeout 3h node repo-change.mjs\ncase $RC in $NOTHING_CLAIMABLE) say quiet ;; esac",
     runner: "import { PHASE_MODELS, canEnterBuild, canLand } from '../../src/shared/boss/repoChange/lane.mjs';\nconst line = `My recommended default: ${a.default}`; const word = 'reply approved'; const top = 'NOT PUBLISH-READY'; const done = 'Landed to production with'; const pl = 'POST-LAND STEP'; const plf = 'POST_LAND_STEP_FAILED'; const fyi = 'you pre-approved this'; const stop = 'Reply `stop` within the build';\nconst NOTHING_CLAIMABLE = 7;\nif (!canEnterBuild(row).ok) return; if (!canLand(row).ok) return;\nspawn('claude', ['-p', prompt, '--model', PHASE_MODELS[phase], '--max-turns', '5'], { env: seatEnv(process.env) });\nconsole.error('NAMED STOP [NOTHING_CLAIMABLE] nothing'); process.exit(NOTHING_CLAIMABLE);",
     prompt: "RUNBOOK_FORBIDS\n## PHASE: PLAN\nplan with a \"default\" per ask and publish_ready\n## PHASE: BUILD\nNever `gh pr merge`.\n## PHASE: LAND\nrun {{LAND}} {{PR_NUMBER}}; Only a step the instruction or the plan named goes under post_land",
-    test: 'it("SCOOTER CANNOT USE THIS LANE", async () => { expect(res.outcome).toBe("REFUSED_SENDER"); });\nit("a reply of exactly \\"approved\\" advances", () => {});\nit("\\"no\\" HOLDS the task", () => {});\nit("PATH 1", () => {}); it("PATH 3", () => {}); it("THE FORCE", () => {}); it("A STRANGER\'S FORCE", () => {}); it("PRE-APPROVED + READY"); it("PRE-APPROVED + NOT READY"); it("PRE-APPROVED + FORCED"); it("A STRANGER\'S PRE-APPROVAL");',
+    test: 'it("SCOOTER CANNOT USE THIS LANE", async () => { expect(res.outcome).toBe("REFUSED_SENDER"); });\nit("a reply of exactly \\"approved\\" advances", () => {});\nit("\\"no\\" HOLDS the task", () => {});\nit("PATH 1", () => {}); it("PATH 3", () => {}); it("THE FORCE", () => {}); it("A STRANGER\'S FORCE", () => {}); it("PRE-APPROVED + READY"); it("PRE-APPROVED + NOT READY"); it("PRE-APPROVED + FORCED"); it("A STRANGER\'S PRE-APPROVAL"); describe("a retry is a resume of her original instruction, never a new one");',
     ahrefs: 'const RUNNER = "scripts/ops/ahrefs-audit-fix.sh";\nfor (const forbidden of [/\\bgh\\s+pr\\s+merge\\b/]) {}',
     migrations: "CREATE TABLE repo_changes (checks_green_at INTEGER)",
     src: "UPDATE repo_changes SET checks_green_at = ? WHERE\nUPDATE repo_changes SET forced_by = ? WHERE\nINSERT INTO repo_changes (pre_approved_phrase, pre_approved_by, force_phrase)",
@@ -391,11 +401,13 @@ function selfTest() {
   expect("a runner that spawns claude with no seatEnv is caught", fileProblems({ ...good, runner: good.runner.replace(", { env: seatEnv(process.env) }", "") }).some((p) => p.includes("without seatEnv")));
   expect("a seatEnv that leaks the key is caught", guardProblems({ ...loose, __seat: { seatEnv: (e) => ({ ...e }) } }).problems.some((p) => p.includes("leaves ANTHROPIC_API_KEY")));
   expect("a seatEnv that strips PATH is caught", guardProblems({ ...loose, __seat: { seatEnv: () => ({}) } }).problems.some((p) => p.includes("strips PATH")));
+  expect("a retry that rewrites the pre-approval is caught", fileProblems({ ...good, answer: good.answer.replace("failure = NULL WHERE", "failure = NULL, pre_approved_phrase = NULL WHERE") }).some((p) => p.includes("keeps her original instruction of record")));
+  expect("a failed-row reply that does not retry is caught", fileProblems({ ...good, answer: good.answer.replace('if (row.phase === "failed") { await retryRow(env, row, {}); }', "") }).some((p) => p.includes("fresh row from the reply")));
   expect("a LAND section with an unbounded post-land step is caught", fileProblems({ ...good, prompt: good.prompt.replace("Only a step the instruction or the plan named", "any step") }).some((p) => p.includes("post-land step")));
   expect("a build route that skips the preview is caught", fileProblems({ ...good, routes: good.routes.replace('needsPreview(row) && !isForced(row) ? "preview" : "landing"', '"landing"') }).some((p) => p.includes("preview step")));
 
   if (failed) { console.error(`\nSELF-TEST FAILED: ${failed} case(s)`); process.exit(1); }
-  console.log("SELF-TEST PASSED: 38/38 cases.");
+  console.log("SELF-TEST PASSED: 40/40 cases.");
 }
 
 if (process.argv.includes("--self-test")) { selfTest(); process.exit(0); }

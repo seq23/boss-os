@@ -58,7 +58,7 @@ export async function taskEvent(env: Env, taskId: string, event: string, detail:
  * make land-on-green a door anyone who knew the token could open.
  */
 export async function answerFromMail(
-  env: Env, input: { seatId: string; subject: string; text: string; mailId: string; now: number; sender: string },
+  env: Env, input: { seatId: string; subject: string; text: string; mailId: string; now: number; sender: string; replyChain?: string[] },
 ): Promise<{ changeId: string; resumed: boolean; note: string } | null> {
   /*
    * THE TOKEN ROUTES, WHATEVER DESK THE TAG LANDED ON. `[rc_…]` names a change only Danielle's lane
@@ -66,10 +66,32 @@ export async function answerFromMail(
    * trimmed the subject, a forward) is still her answer to that plan. The seat is recorded on the
    * event so a reply that arrived on another desk is visible as such.
    */
-  const changeId = tokenIn(`${input.subject}\n${input.text}`);
-  if (!changeId) return null;
-  const row = await repoChangeById(env, changeId);
+  const token = tokenIn(`${input.subject}\n${input.text}`);
+  const row = token ? await repoChangeById(env, token) : await changeFromReplyChain(env, input.replyChain ?? []);
+  if (!token && !row) return null;
+  const changeId = token ?? row!.id;
   if (!row) return { changeId, resumed: false, note: `Your message names ${changeId}, and no repo change has that id. Nothing was changed.` };
+
+  /*
+   * A REPLY ON A FAILED CHANGE IS A RETRY OF THAT CHANGE. "try again" — or anything that is not a
+   * hold — puts the same row back to plan with her original instruction, repo, folder,
+   * pre-approval and force phrase intact; a hold leaves it failed with her note. A fresh row from
+   * the reply's words is exactly the defect this closes.
+   */
+  if (row.phase === "failed") {
+    const reply = readReply(input.text);
+    if (reply.mode === "empty") return { changeId, resumed: false, note: `Your reply to ${row.id} carried no readable text; it stays stopped.` };
+    if (reply.mode === "held") {
+      await taskEvent(env, row.task_id, "repo_change_note", { repo_change_id: row.id, mail_id: input.mailId, phase: "failed", text: reply.text.slice(0, 2000) });
+      return { changeId, resumed: false, note: `Noted on ${row.id}: "${reply.text.slice(0, 300)}". It stays stopped; reply "try again" when you want it retried.` };
+    }
+    await retryRow(env, row, { now: input.now, reason: `her reply on the thread: "${input.text.trim().slice(0, 200)}"`, mailId: input.mailId, followUp: ["approved", "preview", "forced"].includes(reply.mode) ? null : input.text, by: input.sender });
+    return {
+      changeId, resumed: true,
+      note: `Retrying ${row.id} (${row.repo ?? "the package"}) with your original instruction${row.pre_approved_phrase ? ` and your pre-approval ("${row.pre_approved_phrase}")` : ""}${row.force_phrase ? ` and your "${row.force_phrase}"` : ""} — it was stopped with: ${(row.failure ?? "").slice(0, 200)}. ` +
+        "Danielle plans it again at the next tick; nothing new was opened.",
+    };
+  }
 
   /*
    * ─── HER SECOND WORD, AFTER THE PREVIEW ─────────────────────────────────
@@ -232,6 +254,62 @@ export async function recordForce(env: Env, row: RepoChangeRow, input: { mailId:
   await audit(env.DB, { actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id, action: "forced_to_production", detail: { task_id: row.task_id, mail_id: input.mailId, by: input.sender, at, placeholders } });
   await logEvent(env.DB, { level: "warn", scope: "intake", event: "repo_change_forced_to_production", lane: "ops", entityId: row.id, detail: { by: input.sender, at, placeholders, repo: row.repo } });
   return placeholders;
+}
+
+/**
+ * ─── A RETRY IS A RESUME OF HER ORIGINAL INSTRUCTION, NEVER A NEW ONE ─────
+ *
+ * 21 Sep 2026, verified in production: her "try again" on the ORIGINAL threads of two failed
+ * changes was read as a fresh instruction — new rows from the reply text alone, so her "your call /
+ * pick everything / no options" pre-approval was gone and the plan stopped to ask three questions
+ * she had already waved through. The reply is a resume. So a retry keeps the row: the instruction,
+ * the repo, the Drive folder, the pre-approval and the force phrase are the original's; everything
+ * the failed run produced is cleared; her reply, if it said more than "try again", is appended to
+ * the instruction as her follow-up so the fresh plan reads it. The route and the mailbox both come
+ * through here — one retry, one meaning.
+ */
+export async function retryRow(
+  env: Env, row: RepoChangeRow, input: { now: number; reason: string | null; mailId?: string | null; followUp?: string | null; by: string },
+): Promise<void> {
+  const followUp = (input.followUp ?? "").trim();
+  const instruction = followUp && !/^(try again|retry|again|go again|resume|run it again|please try again)[.!]?$/i.test(followUp)
+    ? `${row.instruction}\n\nHer follow-up on retry (${new Date(input.now).toISOString().slice(0, 10)}): ${followUp}`.slice(0, 20_000)
+    : row.instruction;
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE repo_changes SET phase = 'plan', instruction = ?, failure = NULL, claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL,
+              plan_text = NULL, decided_json = NULL, asks_json = NULL, planned_at = NULL, plan_written_by = NULL, publish_ready = NULL, placeholders_json = NULL,
+              asked_at = NULL, ask_message_id = NULL, answered_at = NULL, answers_text = NULL, answers_mode = NULL, answer_mail_id = NULL, plan_approved_by = NULL,
+              held_at = NULL, held_text = NULL, branch = NULL, pr_url = NULL, pr_number = NULL, built_at = NULL, build_written_by = NULL, proof_json = NULL,
+              checks_state = NULL, checks_detail = NULL, checks_green_at = NULL, preview_url = NULL, preview_sent_at = NULL, preview_message_id = NULL,
+              land_approved_at = NULL, land_approval_text = NULL, land_approval_mail_id = NULL, done_message_id = NULL, updated_at = ?
+        WHERE id = ? AND phase = 'failed'`,
+    ).bind(instruction, input.now, row.id),
+    env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, finished_at = NULL WHERE id = ?`).bind(row.task_id),
+  ]);
+  await taskEvent(env, row.task_id, "repo_change_retried", { repo_change_id: row.id, previous_failure: row.failure, reason: input.reason, mail_id: input.mailId ?? null, by: input.by, pre_approved_phrase: row.pre_approved_phrase, follow_up: followUp ? followUp.slice(0, 2000) : null });
+  await audit(env.DB, { actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id, action: "retried", detail: { task_id: row.task_id, previous_failure: row.failure, reason: input.reason, by: input.by } });
+}
+
+/**
+ * The change a REPLY belongs to when it carries no `[rc_…]` token: the message it answers is one of
+ * hers that opened a change (`boss_inbound_mail.message_id` ↔ `repo_changes.mail_id`), or an
+ * earlier reply on that change. Her mail client keeps the chain in References, so "try again" on
+ * the original thread lands on the original row.
+ */
+export async function changeFromReplyChain(env: Env, messageIds: string[]): Promise<RepoChangeRow | null> {
+  if (messageIds.length === 0) return null;
+  const marks = messageIds.map(() => "?").join(",");
+  const row = await env.DB
+    .prepare(
+      `SELECT r.* FROM repo_changes r
+         JOIN boss_inbound_mail m ON m.id = r.mail_id OR m.id = r.answer_mail_id OR m.id = r.forced_mail_id OR m.id = r.land_approval_mail_id
+        WHERE m.message_id IN (${marks})
+        ORDER BY r.created_at DESC LIMIT 1`,
+    )
+    .bind(...messageIds)
+    .first<RepoChangeRow>();
+  return row ?? null;
 }
 
 export function describePhase(row: { phase: string; pr_url?: string | null; preview_url?: string | null }): string {

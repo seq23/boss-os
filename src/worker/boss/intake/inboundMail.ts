@@ -564,8 +564,12 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * because the recorded answer is one of the two facts land-on-green rests on.
    * `validate:repo-lane` pins that this call sits after the `!authorised` return.
    */
+  // The chain her client keeps: a reply with no token still lands on the change it answers.
+  const replyChain = isReply
+    ? ((`${message.headers.get("references") ?? ""} ${message.headers.get("in-reply-to") ?? ""}`).match(/<[^>]+>/g) ?? []).slice(0, 20)
+    : [];
   const planAnswer = route.outcome !== "AMBIGUOUS"
-    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject, text: readable, mailId, now, sender })
+    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject, text: readable, mailId, now, sender, replyChain })
     : null;
   /*
    * HER WORD ON A COMMENT DIGEST, the same way: `[cw_…]` in the subject names the digest Monique
