@@ -72,6 +72,7 @@
     "kdp:signin": "node scripts/ops/kdp-browser.mjs signin",
     "kdp:surface": "bash scripts/ops/kdp-surface.sh",
     "kdp:retitle": "node scripts/ops/kdp-retitle.mjs",
+    "kdp:signin:auto": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-signin.mjs",
     "kdp:open": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-open.mjs",
     "credentials:check": "node scripts/vault/vault.mjs run -- node scripts/ops/credential-check.mjs",
     "kdp:covers": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-covers-submit.mjs",

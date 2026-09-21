@@ -21,27 +21,81 @@
     }
   },
   "titles": [
-    { "title_ref": "A2C99P6JESFOP0", "title": "The Credit Dispute Letter", "author": "S. Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
     {
-      "title_ref": "A1EYXUFGFV7CN6", "title": "The Gift Letter (Down Payment)", "author": "S. Taylor", "target": "LIVE", "status": "DRAFT", "status_as_of": "2026-09-21",
+      "title_ref": "A2C99P6JESFOP0",
+      "title": "The Credit Dispute Letter",
+      "author": "S. Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-09-12"
+    },
+    {
+      "title_ref": "A1EYXUFGFV7CN6",
+      "title": "The Gift Letter (Down Payment)",
+      "author": "S. Taylor",
+      "target": "LIVE",
+      "status": "BLOCKED",
+      "status_as_of": "2026-09-21",
       "open": {
         "matter": "title",
         "since": "2026-09-12",
         "facts": [
           "12 Sep and 14 Sep 2026: Amazon content review flagged the TITLE — 'title might cause a misleading customer experience'. The listing reads 'The Gift Letter (Down Payment): gift letter for mortgage', i.e. the repetitive-terms rule: 'gift letter' appears in both title and subtitle.",
           "Amazon offered Option 1 (edit the details and resubmit) or Option 2 (documentation) within 5 days. Nothing was done: the 12 Sep needs_owner row sent no email and the 15/16 Sep 'assigned to Zora' was never a work_assignments row.",
-          "21 Sep 2026 20:46Z: Amazon wrote that it has not received a reply and will not make the book available; 'if you still want to publish … review our previous message and address the requests'. Still fixable by Option 1."
+          "21 Sep 2026 20:46Z: Amazon wrote that it has not received a reply and will not make the book available; 'if you still want to publish … review our previous message and address the requests'. Still fixable by Option 1.",
+          "21 Sep 2026 (bookshelf, signed in as Simone): the title shows BLOCKED and has NO edit entry — Option 1 cannot be done from the bookshelf. The corrected subtitle has to reach Amazon on the review thread."
         ],
-        "fix": "Option 1: a metadata edit — change the subtitle so no term repeats across title and subtitle, change nothing else, resubmit, and confirm Live on the bookshelf. No outward email to Amazon is needed.",
-        "her_decision": "The new subtitle wording. Propose it with a recommended default and ask for one word: approved.",
+        "fix": "Reply on Amazon's review thread (the 21 Sep alert, thread 1a0c5b811d5c434c, from her account) with the corrected subtitle and a request to apply it and release the block; then watch the bookshelf for the state to leave BLOCKED and confirm Live. No metadata edit is possible while BLOCKED.",
+        "her_decision": "Two things, asked ONCE each: the subtitle wording (approved 21 Sep 2026 22:36Z on kml_m331j7a4gqr6qz47: 'A Template for Documenting Family Funds Toward a Home Purchase'), and the reply to Amazon in her name — proposed with the full draft; 'approved' sends it.",
         "recommended_subtitle": "A Template for Documenting Family Funds Toward a Home Purchase",
-        "execute_with": "npm run kdp:retitle -- --ref A1EYXUFGFV7CN6 --subtitle \"<the approved wording>\""
+        "execute_with": "On her 'approved' to the send ask: Gmail connector reply on the review thread with the draft, then file acted with the sent message id; the problem stays open (due_at +5 days) until the bookshelf leaves BLOCKED.",
+        "approved_subtitle": "A Template for Documenting Family Funds Toward a Home Purchase",
+        "reply_template": "Hello,\n\nThank you for the review of \"The Gift Letter (Down Payment)\" (ASIN/title id A1EYXUFGFV7CN6). I would like to address the title concern with Option 1 and update the metadata so no term repeats between the title and subtitle.\n\nTitle (unchanged): The Gift Letter (Down Payment)\nNew subtitle: A Template for Documenting Family Funds Toward a Home Purchase\n\nThe book is currently shown as Blocked on my Bookshelf and the Edit eBook details option is not available, so I am not able to make this change myself. Please apply the updated subtitle (or restore edit access so I can) and release the title for publication. Everything else about the book is unchanged.\n\nThank you,\nS. Taylor"
       }
     },
-    { "title_ref": "A3O8BGWQ63OSF0", "title": "The Landlord Reference Letter", "author": "S. Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
-    { "title_ref": "A746KSQA6VXQ8", "title": "Proof of Income When You're Self-Employed", "author": "S. Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
-    { "title_ref": "A14601U7XU2FCM", "title": "The Rental Application Packet", "author": "S. Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
-    { "title_ref": "AZUTRW0LN8GDM", "title": "The Wedding Seating Chart", "author": "Lanae Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" },
-    { "title_ref": "A12Z8RECXCYT3S", "title": "Questions to Ask Every Wedding Vendor", "author": "Lanae Taylor", "target": "LIVE", "status": "LIVE", "status_as_of": "2026-09-12" }
-  ]
+    {
+      "title_ref": "A3O8BGWQ63OSF0",
+      "title": "The Landlord Reference Letter",
+      "author": "S. Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-09-12"
+    },
+    {
+      "title_ref": "A746KSQA6VXQ8",
+      "title": "Proof of Income When You're Self-Employed",
+      "author": "S. Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-09-12"
+    },
+    {
+      "title_ref": "A14601U7XU2FCM",
+      "title": "The Rental Application Packet",
+      "author": "S. Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-09-12"
+    },
+    {
+      "title_ref": "AZUTRW0LN8GDM",
+      "title": "The Wedding Seating Chart",
+      "author": "Lanae Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-09-12"
+    },
+    {
+      "title_ref": "A12Z8RECXCYT3S",
+      "title": "Questions to Ask Every Wedding Vendor",
+      "author": "Lanae Taylor",
+      "target": "LIVE",
+      "status": "LIVE",
+      "status_as_of": "2026-09-12"
+    }
+  ],
+  "facts_about_kdp": {
+    "blocked_titles_are_not_editable": "Proven on the bookshelf, 21 Sep 2026: a title in BLOCKED state has no 'Edit eBook details / content / pricing' entry (every other title has digital_edit_details-<ref>); its title-setup URLs redirect to the bookshelf; its row offers only Archive. The publisher cannot edit a blocked title. The door for a content-review block is Amazon's review thread: 'If you have any questions, please reply to this email' — a reply on the thread stating the corrected metadata and asking the review team to apply it and release the block.",
+    "an_outward_reply_is_hers": "A reply to Amazon goes from her account, in her name. Simone drafts it (reply_template below), proposes it as ONE ask with the draft in it, and sends it only on her word — through the Gmail connector's reply on the review thread, never from a Boss OS address."
+  }
 }

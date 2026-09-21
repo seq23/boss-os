@@ -62,6 +62,7 @@ export const HOLD_PREFIXES: readonly string[];
 export const APPROVED_DEFAULTS_TEXT: string;
 export const PREVIEW_WORDS: readonly string[];
 export const PREVIEW_DEFAULTS_TEXT: string;
+export function herWords(text: string | null | undefined): string;
 export function readReply(text: string | null | undefined): { mode: "approved" | "preview" | "forced" | "held" | "answers" | "empty"; text: string };
 export const FORCE_WORDS: readonly string[];
 export const FORCED_TEXT: string;

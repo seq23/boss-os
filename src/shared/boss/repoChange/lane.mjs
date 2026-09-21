@@ -236,8 +236,31 @@ export const FORCED_TEXT = "approved to production — every ask takes the recom
 export const APPROVED_DEFAULTS_TEXT = "approved — every ask takes the recommended default";
 export const PREVIEW_DEFAULTS_TEXT = "preview — every ask takes the recommended default; land only after the preview is approved";
 
+/**
+ * HER OWN WORDS, AND NOTHING SHE DID NOT TYPE. A Gmail reply carries the quoted thread ("On Mon,
+ * Sep 21 … wrote:" and every "> " line after it) and her signature block; on 21 Sep 2026 her
+ * one-word "approved." on Simone's ask was read as "her own wording" because the quoted mail made
+ * it more than one line — and that wording would have been typed into a subtitle. So a reply is
+ * judged on the text ABOVE the first quote marker and the signature, never on the whole message.
+ */
+export function herWords(text) {
+  const lines = String(text ?? "").replace(/\r/g, "").split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const l = lines[i];
+    const t = l.trim();
+    const next = (lines.slice(i + 1).find((x) => x.trim()) ?? "").trim();
+    // "On Mon, Sep 21, 2026 at 5:32 PM Simone <…> wrote:" — Gmail may wrap "wrote:" onto the next line.
+    if ((/^On .{6,200} wrote:\s*$/.test(t)) || (/^On .{6,200}$/.test(t) && /^wrote:\s*$/.test(next)) || /^-{2,3}\s*Original Message\s*-{2,3}$/i.test(t) || (/^From: .+$/.test(t) && out.length > 0)) break;
+    if (t.startsWith(">")) continue;
+    if (/^(--|—|\*?- )\s*$/.test(t) || /^\*- .+\*$/.test(t) || /^-- $/.test(l)) break; // signature block
+    out.push(l);
+  }
+  return out.join("\n").trim();
+}
+
 export function readReply(text) {
-  const raw = String(text ?? "").trim();
+  const raw = herWords(text);
   const first = raw.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? "";
   const norm = first.toLowerCase().replace(/[\s.!,;:'"“”‘’-]+$/g, "").replace(/^[\s"“'‘-]+/g, "").trim();
   if (!raw) return { mode: "empty", text: raw };
