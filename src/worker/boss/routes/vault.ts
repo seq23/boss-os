@@ -157,6 +157,10 @@ const SNAPSHOT_TABLES = [
   "repo_changes",
   // The duty lane (0267): her phrase, the draft as she saw it, every refusal, how she approved it.
   "duty_drafts",
+  // 0268 — Monique's comment digests and, on each row, HER instruction (who / when / via) and the
+  // result. The instruction rows are the audit trail for every comment hidden or answered as the
+  // channel; a rebuild without them could not say why a comment was hidden.
+  "comment_watch_digests", "comment_watch_items",
   // 0263 — the latest health reading per grid property per reader: a status code and latency, a
   // workflow conclusion, a week of Search Console clicks, a deployment's age. RE-DERIVABLE only
   // going forward: the readers run again, but the history — when a site first went 5xx, which

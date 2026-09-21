@@ -151,8 +151,16 @@ describe("the cron and a job it cannot do", () => {
     // Force it due: without the guard this would queue a task the agent would claim, fail at, or
     // invent an answer for — a run that never happened, reported as success.
     // `duty_kdp_surface` is Simone's standing local job now that the case chase is retired.
+    // ONLY THE SUBJECT IS DUE. Every other seeded duty is parked a year out first: this pin is
+    // about the local-job skip, and materialising the rest — the `worker` readers make real
+    // property fetches, the agent duties compose prompts — took 4.1 s on a laptop and 5.3 s on
+    // the CI runner on 21 Sep 2026, which read as this test failing on a 5 s cap. Twenty-plus
+    // unrelated duties running is not what the assertion below examines.
+    const parked = Date.now() + 365 * 86_400_000;
+    await env.DB.prepare(`UPDATE standing_duties SET next_due_at = ? WHERE id <> 'duty_kdp_surface'`).bind(parked).run();
     await env.DB.prepare(`UPDATE standing_duties SET next_due_at = 1 WHERE id = 'duty_kdp_surface'`).run();
     const out = await materialiseDueDuties(env as any);
+    expect(out.fired).toEqual([]);
     expect(out.fired.some((f) => f.duty === "duty_kdp_surface")).toBe(false);
     expect(out.skipped.some((s) => s.duty === "duty_kdp_surface" && s.reason === "local_job")).toBe(true);
 
