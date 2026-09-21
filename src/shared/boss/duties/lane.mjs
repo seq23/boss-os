@@ -251,6 +251,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "lp-tracker-sync.mjs",
   "mailbox-sweep.sh",
   "people-worth-a-call.mjs",
+  "youtube-comment-watch.sh",
 ];
 
 /** A script her phrase names outright — "run buyer-hunt.mjs every friday". */
