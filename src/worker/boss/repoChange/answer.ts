@@ -54,7 +54,12 @@ export async function taskEvent(env: Env, taskId: string, event: string, detail:
 export async function answerFromMail(
   env: Env, input: { seatId: string; subject: string; text: string; mailId: string; now: number },
 ): Promise<{ changeId: string; resumed: boolean; note: string } | null> {
-  if (input.seatId !== REPO_CHANGE_SEAT) return null;
+  /*
+   * THE TOKEN ROUTES, WHATEVER DESK THE TAG LANDED ON. `[rc_…]` names a change only Danielle's lane
+   * can have created, so a reply that kept the token but lost the `#danielle` (a phone client that
+   * trimmed the subject, a forward) is still her answer to that plan. The seat is recorded on the
+   * event so a reply that arrived on another desk is visible as such.
+   */
   const changeId = tokenIn(`${input.subject}\n${input.text}`);
   if (!changeId) return null;
   const row = await repoChangeById(env, changeId);
@@ -76,7 +81,7 @@ export async function answerFromMail(
     .prepare(`UPDATE repo_changes SET phase = 'build', answered_at = ?, answers_text = ?, answer_mail_id = ?, updated_at = ? WHERE id = ? AND phase = 'asking'`)
     .bind(input.now, answers.slice(0, 20_000), input.mailId, input.now, row.id)
     .run();
-  await taskEvent(env, row.task_id, "repo_change_answered", { repo_change_id: row.id, mail_id: input.mailId, chars: answers.length });
+  await taskEvent(env, row.task_id, "repo_change_answered", { repo_change_id: row.id, mail_id: input.mailId, chars: answers.length, seat: input.seatId, on_danielles_desk: input.seatId === REPO_CHANGE_SEAT });
   await audit(env.DB, {
     actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id,
     action: "plan_approved", detail: { task_id: row.task_id, mail_id: input.mailId, repo: row.repo },
