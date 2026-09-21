@@ -91,6 +91,10 @@ export function check(files) {
   if (!/OWNER_NOT_WOKEN/.test(report)) p.push("a needs_owner row whose email did not go is not a named stop.");
   if (!/kdp\.get\("\/mail\/open"/.test(route)) p.push("no open-problems endpoint.");
   if (!/REGISTER_CONTRADICTED/.test(report)) p.push("the report script does not refuse a file that contradicts the register's target.");
+  // One email per tick per problem (first hands-off run, 21 Sep 2026: ask 22:32:09, chase 22:32:10).
+  if (!/Math\.max\(Number\(p\.nagged_at \?\? 0\), Number\(p\.seen_at \?\? 0\)\)/.test(report)) p.push("the chase does not count the ask itself (seen_at) as the last contact — a fresh row is chased in the same tick as its ask.");
+  if (!/export function withoutDuplicates/.test(report) || !/withoutDuplicates\(payload\.items, openBefore\)/.test(report)) p.push("a problem already open on the same title and matter is filed (and emailed) again every day.");
+  if (!/export function signInLineFor/.test(report) || !/dryRunRetitle\(it\.title_ref, wording\)/.test(report)) p.push("the sign-in line does not ride in the same ask as the wording (the dry run is not run by the report script).");
 
   // 5. Her reply lands.
   if (!/answerKdpFromMail/.test(intake)) p.push("the intake does not route a [kml_…] reply to answerKdpFromMail.");
@@ -118,6 +122,8 @@ function selfTest() {
     ["'draft by choice' back in the register", { ...good, register: good.register.replace('"owner_goal"', '"note": "Gift Letter is Draft by her choice", "owner_goal"') }, 1],
     ["the endpoint accepting assigned without a block", { ...good, route: good.route.replace('outcome === "assigned" && !assign', "false") }, 1],
     ["the chase removed", { ...good, report: good.report.replace("export function dueForChase", "function dueForChaseX") }, 1],
+    ["the same-tick chase back", { ...good, report: good.report.replace("Math.max(Number(p.nagged_at ?? 0), Number(p.seen_at ?? 0))", "Number(p.nagged_at ?? 0)") }, 1],
+    ["the dedupe removed", { ...good, report: good.report.replace("withoutDuplicates(payload.items, openBefore)", "{ kept: payload.items, dropped: [] }") }, 1],
     ["the reply path unwired", { ...good, intake: good.intake.replace(/answerKdpFromMail/g, "nothing") }, 1],
     ["RULE 0: an empty register", { ...good, register: JSON.stringify({ titles: [], settled: {} }) }, 1],
     ["the register read after Gmail", { ...good, prompt: good.prompt.replace(/kdp-register\.json/g, "x").concat("\nLoad the Gmail tools ... then read kdp-register.json") }, 1],

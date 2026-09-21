@@ -33,6 +33,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { sendersFor, employeeMail } from "./notify.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -106,9 +107,53 @@ export function sentinelFor(payload) {
   return "quiet";
 }
 
-/** Which open problems are chased today: within two days of due, or past it, and not chased in the last 20 hours. */
+/**
+ * Which open problems are chased today: within two days of due, or past it, not answered, and not
+ * written to in the last 20 hours — where "written to" is the LAST of the ask itself (`seen_at`, the
+ * row's birth, which is when the ask email went) and any chase (`nagged_at`). 21 Sep 2026, first
+ * hands-off run: the ask went at 22:32:09 and the chase went at 22:32:10, because a fresh row had
+ * no nagged_at and was already inside its window. One email per tick, per problem.
+ */
 export function dueForChase(open, now) {
-  return (open ?? []).filter((p) => p.due_at != null && p.due_at - now <= NAG_WINDOW_MS && (!p.nagged_at || now - p.nagged_at >= NAG_EVERY_MS) && !p.answered_at);
+  return (open ?? []).filter((p) => {
+    if (p.due_at == null || p.due_at - now > NAG_WINDOW_MS || p.answered_at) return false;
+    const last = Math.max(Number(p.nagged_at ?? 0), Number(p.seen_at ?? 0));
+    return now - last >= NAG_EVERY_MS;
+  });
+}
+
+/**
+ * A NEW problem on a title and matter that is ALREADY OPEN is the same problem, not a second row:
+ * the daily search sees the same Amazon thread every day for three days, and the open list already
+ * carries it. It files again only when it says how the facts changed (`facts_changed`) or ends it
+ * (`resolves`). Everything else is dropped here, with a line, before it reaches Boss OS.
+ */
+export function withoutDuplicates(items, open) {
+  const dropped = [];
+  const kept = (items ?? []).filter((it) => {
+    if (it.disposition !== "problem" || it.resolves || it.facts_changed) return true;
+    const dup = (open ?? []).find((p) => p.title_ref && p.title_ref === it.title_ref && p.matter === it.matter);
+    if (dup) { dropped.push({ id: dup.id, title_ref: it.title_ref, matter: it.matter }); return false; }
+    return true;
+  });
+  return { kept, dropped };
+}
+
+/**
+ * THE SIGN-IN LINE RIDES IN THE SAME EMAIL AS THE WORDING. A needs_owner ask about a title's wording
+ * is executed with kdp-retitle.mjs; if the saved session cannot edit (`reauth_required`), she must
+ * sign in once, and asking for that in a SECOND email after her "approved" is a round trip nobody
+ * needed. The dry run is deterministic and needs no vault, so it runs here — against the register's
+ * recommended wording, which is what the ask proposes — and the line is appended to the ask.
+ */
+export function signInLineFor(dryRunLine) {
+  return /^RETITLE: reauth_required/.test(String(dryRunLine ?? ""))
+    ? " Also, once, before I can edit anything: the saved sign-in can read the bookshelf but not edit a title — run `npm run browser:signin -- --profile simone --url https://kdp.amazon.com/en_US/bookshelf` in ~/GitHub/boss-os and sign in in the window that opens."
+    : "";
+}
+function dryRunRetitle(ref, subtitle) {
+  const r = spawnSync(process.execPath, [join(ROOT, "scripts/ops/kdp-retitle.mjs"), "--ref", ref, "--subtitle", subtitle, "--dry-run"], { encoding: "utf8", timeout: 120_000 });
+  return (r.stdout ?? "").split("\n").find((l) => l.startsWith("RETITLE:")) ?? "";
 }
 
 async function api(path, cookie, body) {
@@ -185,6 +230,14 @@ function selfTest() {
     ["chase: within two days and never chased", dueForChase([{ due_at: Date.now() + DAY_MS }], Date.now()).length === 1],
     ["chase: past due is chased", dueForChase([{ due_at: Date.now() - 3 * DAY_MS }], Date.now()).length === 1],
     ["chase: chased an hour ago is not chased again", dueForChase([{ due_at: Date.now(), nagged_at: Date.now() - 3_600_000 }], Date.now()).length === 0],
+    ["chase: a row born this tick (the ask just went) is not chased in the same tick", dueForChase([{ due_at: Date.now() + DAY_MS, seen_at: Date.now() - 1000 }], Date.now()).length === 0],
+    ["chase: a row born yesterday, never chased, is chased", dueForChase([{ due_at: Date.now() + DAY_MS, seen_at: Date.now() - 25 * 3_600_000 }], Date.now()).length === 1],
+    ["dedupe: a problem already open on the same title and matter is dropped", withoutDuplicates([ok.items[0]], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 0],
+    ["dedupe: the same problem with facts_changed is kept", withoutDuplicates([{ ...ok.items[0], facts_changed: "Amazon escalated" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
+    ["dedupe: a resolves item is kept", withoutDuplicates([{ ...ok.items[0], resolves: "kml_x" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
+    ["dedupe: a different matter is a different problem", withoutDuplicates([{ ...ok.items[0], matter: "cover" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
+    ["sign-in: reauth_required yields the one line", signInLineFor("RETITLE: reauth_required — x").includes("browser:signin")],
+    ["sign-in: a dry run that can edit yields nothing", signInLineFor("RETITLE: dry_run — would change") === ""],
     ["chase: five days out is not chased", dueForChase([{ due_at: Date.now() + 5 * DAY_MS }], Date.now()).length === 0],
     ["chase: answered is not chased", dueForChase([{ due_at: Date.now(), answered_at: Date.now() }], Date.now()).length === 0],
   ];
@@ -225,7 +278,20 @@ async function main() {
   if (!unlock.ok) throw new Error(`unlock failed (${unlock.status})`);
   const cookie = (unlock.headers.get("set-cookie") ?? "").split(";")[0];
 
-  const items = payload.items;
+  // ── THE OPEN LIST FIRST: dedupe against it, then the ask gets its sign-in line ──────────
+  const { open: openBefore } = await api("/api/boss/kdp/mail/open", cookie);
+  const { kept: items, dropped } = withoutDuplicates(payload.items, openBefore);
+  for (const d of dropped) console.log(`Already open as ${d.id} (${d.title_ref} / ${d.matter}); not filed again — the chase below keeps it loud.`);
+  for (const it of items) {
+    if (it.disposition !== "problem" || it.needs_owner !== true || !["title", "subtitle"].includes(it.matter) || !it.title_ref) continue;
+    const entry = (register.titles ?? []).find((t) => t.title_ref === it.title_ref);
+    const wording = entry?.open?.recommended_subtitle;
+    if (!wording || /browser:signin/.test(it.owner_ask)) continue;
+    const line = dryRunRetitle(it.title_ref, wording);
+    const extra = signInLineFor(line);
+    if (extra) { it.owner_ask = `${it.owner_ask}${extra}`.slice(0, 1200); console.log(`Dry run says the session cannot edit; the sign-in line rides in the ask for ${it.title_ref}.`); }
+    else console.log(`Dry run for ${it.title_ref}: ${line || "(no RETITLE line)"}`);
+  }
   if (payload.blocked) {
     // The mailbox could not be read. That is a fact about the run, and the duty's clock must NOT
     // advance on it — so nothing is posted as a triage; the chase below still runs.
