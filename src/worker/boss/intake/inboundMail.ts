@@ -386,7 +386,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const origin = readable ? forwardedOrigin(readable) : null;
   const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
   const haystack = `${subject}\n${readable}`;
-  const route = routeToSeat(haystack, roster)!;
+  const route = routeToSeat(haystack, roster, to)!;
 
   /*
    * ─── "ROUTE THIS TO WHOMEVER SHOULD HANDLE THIS" ──────────────────────────

@@ -41,7 +41,7 @@ import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT,
 } from "../../src/shared/boss/repoChange/lane.mjs";
-import { sendersFor } from "./notify.mjs";
+import { sendersFor, employeeMail } from "./notify.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
 
@@ -91,11 +91,12 @@ async function email(subject, text) {
   if (DRY) { say(`DRY RUN — would email "${subject}"`); return "dry_run"; }
   const senders = sendersFor("Danielle");
   if (senders.length === 0) return null;
-  for (const { from, key } of senders) {
+  for (const sender of senders) {
+    const { from, key } = sender;
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ from, to: [TO], subject: subject.slice(0, 200), text: text.slice(0, 60_000) }),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
     });
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";

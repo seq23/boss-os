@@ -113,7 +113,19 @@ export function hashtagsIn(text) {
  * That is the seat whose charter already is "read what comes in and decide what the Boss actually
  * needs to see" — so an unrouted message is not a fallback, it is her actual job.
  */
-export function routeToSeat(text, roster) {
+/**
+ * The seat a To: address names — `danielle@sequoiataylor.com` is Danielle's desk. The local part is
+ * matched the way a tag is (`seatTag` without the `#`), so the address and the tag can never name
+ * different people. `boss@` names nobody: it is the mailbox, not a seat.
+ */
+export function seatByAddress(to, roster) {
+  const local = String(to ?? "").trim().toLowerCase().split("@")[0].replace(/\+.*$/, "");
+  if (!local || local === BOSS_INTAKE_MAILBOX.split("@")[0]) return null;
+  const hits = roster.filter((s) => s && s.id && s.name && seatTag(s.name) === `#${local}`);
+  return hits.length === 1 ? hits[0] : null;
+}
+
+export function routeToSeat(text, roster, to = null) {
   const active = roster.filter((s) => s && s.id && s.name);
   if (active.length === 0) return null;
 
@@ -151,6 +163,22 @@ export function routeToSeat(text, roster) {
     return {
       outcome: "ROUTED", seat: hit[0], tag: t, unknownTags, candidates: hit,
       why: `${t} is ${hit[0].name}, ${hit[0].role}.`,
+    };
+  }
+
+  /*
+   * ─── THE ADDRESS SHE WROTE TO IS A TAG SHE DID NOT HAVE TO TYPE ────────
+   *
+   * 21 Sep 2026: every employee email goes out from `<name>@sequoiataylor.com` and says "REPLY
+   * WITH ONE WORD" — her "approved" to danielle@ carried no `#danielle`, and before the routing
+   * rules existed it bounced 550. Now a message with NO tag routes by its To: local part; a typed
+   * tag still wins (it is a decision she made), and `boss@` still defaults to the Chief of Staff.
+   */
+  const addressed = typed.length === 0 ? seatByAddress(to, active) : null;
+  if (addressed) {
+    return {
+      outcome: "ROUTED", seat: addressed, tag: seatTag(addressed.name), unknownTags, candidates: [addressed],
+      why: `Sent to ${String(to).trim().toLowerCase()}, which is ${addressed.name}, ${addressed.role}.`,
     };
   }
 

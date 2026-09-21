@@ -68,7 +68,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor } from "./notify.mjs";
+import { sendersFor, employeeMail } from "./notify.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -731,11 +731,12 @@ async function main() {
   const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
   const text = ["Sequoia,", "", "This is Monique. Both sides of this were already in your mailbox.", "", body, "",
     "— Monique, Director of Relationships"].join("\n");
-  for (const { from, key } of SENDERS) {
+  for (const sender of SENDERS) {
+    const { from, key } = sender;
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ from, to: [TO], subject: subject.slice(0, 200), text }),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
     });
     if (res.ok) {
       const sentAt = Date.now();

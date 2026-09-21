@@ -45,7 +45,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor } from "./notify.mjs";
+import { sendersFor, employeeMail } from "./notify.mjs";
 import { observedCadence } from "./lib/cadence.mjs";
 
 const IN_DIR = process.env.BOSS_OS_SOURCING_WORKSPACE ?? path.join(os.homedir(), ".boss-os", "sourcing");
@@ -249,16 +249,13 @@ async function emailHer(picks, examined, considered) {
   ].join("\n");
 
   let lastErr = "";
-  for (const { from, key } of SENDERS) {
+  for (const sender of SENDERS) {
+    const { from, key } = sender;
     for (const TO of RECIPIENTS) {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-        body: JSON.stringify({
-          from, to: [TO], reply_to: "seq.taylor@gmail.com",
-          subject: `${picks.length} people worth a conversation this week`,
-          text: body,
-        }),
+        body: JSON.stringify(employeeMail(sender, { to: TO, subject: `${picks.length} people worth a conversation this week`, text: body })),
       });
       if (res.ok) {
         console.log(`Emailed ${TO} from ${from}: ${picks.length} recommendation(s).`);

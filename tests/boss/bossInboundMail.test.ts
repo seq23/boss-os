@@ -105,6 +105,23 @@ describe("the tag routes and the sender authorises", () => {
   });
 });
 
+describe("the address she wrote to is a tag she did not have to type", () => {
+  it("an untagged reply to danielle@ routes to Danielle; a typed tag still wins; boss@ still defaults", async () => {
+    const roster = await activeRoster(env as never);
+    const danielle = roster.find((s) => s.name === "Danielle")!;
+    const simone = roster.find((s) => s.name === "Simone")!;
+    expect(routeToSeat("approved", roster, "danielle@sequoiataylor.com")!.seat.id).toBe(danielle.id);
+    expect(routeToSeat("approved", roster, "Danielle@SequoiaTaylor.com")!.outcome).toBe("ROUTED");
+    expect(routeToSeat("#simone take this", roster, "danielle@sequoiataylor.com")!.seat.id).toBe(simone.id);
+    expect(routeToSeat("approved", roster, "boss@sequoiataylor.com")!.outcome).toBe("DEFAULTED");
+    expect(routeToSeat("approved", roster, "nobody@sequoiataylor.com")!.outcome).toBe("DEFAULTED");
+    // Through the real handler: her one-word reply to Danielle's address is Danielle's, not the Chief of Staff's.
+    const res = await handleBossInboundMail(mail({ to: "danielle@sequoiataylor.com", subject: "Re: plan for WPP-llm", body: "approved" }), env as never);
+    expect(res.employeeId).toBe(danielle.id);
+    expect(res.outcome).toBe("ROUTED");
+  });
+});
+
 describe("an unknown tag is never guessed and never dropped", () => {
   it("sends it to the Chief of Staff and says so", async () => {
     const roster = await activeRoster(env as never);

@@ -112,11 +112,37 @@ export function sendersFor(who) {
     process.exit(6);
   }
   const label = local === "boss" ? "Boss OS" : `${who.trim()} · Boss OS`;
+  /*
+   * REPLY-TO IS THE EMPLOYEE'S OWN ADDRESS, AND THE TAG RIDES THE SUBJECT (21 Sep 2026). Her
+   * "approved" to danielle@ bounced 550 three times: the mail said "REPLY WITH ONE WORD" from an
+   * address no Email Routing rule delivered. The rules exist now (`validate:employee-addresses-receive`
+   * proves one per local part), and belt-and-braces: every employee message carries `reply_to` =
+   * its own sequoiataylor.com address and a subject that starts with the employee's `#tag`, so a
+   * reply routes by tag even if a client drops the address. `employeeMail()` below is the one place
+   * that builds the payload; every sender uses it.
+   */
+  const tag = local === "boss" ? null : `#${local}`;
   return [
-    { from: `${label} <${local}@sequoiataylor.com>`, key: process.env.BOSS_OS_MAIL_KEY },
-    { from: `${label} <${local}@westpeek.ventures>`, key: process.env.RESEND_API_KEY },
+    { from: `${label} <${local}@sequoiataylor.com>`, key: process.env.BOSS_OS_MAIL_KEY, reply_to: `${local}@sequoiataylor.com`, tag },
+    { from: `${label} <${local}@westpeek.ventures>`, key: process.env.RESEND_API_KEY, reply_to: `${local}@sequoiataylor.com`, tag },
   ].filter((s) => Boolean(s.key));
 }
+
+/** The Resend payload for an employee's message: from, reply-to the same desk, tag-led subject. */
+export function employeeMail(sender, { to, subject, text, html }) {
+  const tagged = sender.tag && !String(subject).toLowerCase().includes(sender.tag) ? `${sender.tag} ${subject}` : String(subject);
+  return {
+    from: sender.from,
+    to: Array.isArray(to) ? to : [to],
+    reply_to: sender.reply_to,
+    subject: tagged.slice(0, 200),
+    text: String(text ?? "").slice(0, 60_000),
+    ...(html ? { html } : {}),
+  };
+}
+
+/** The roster's local parts — what `validate:employee-addresses-receive` checks routing rules for. */
+export const EMPLOYEE_LOCAL_PARTS = Object.values(ROSTER).filter((l) => l !== "boss");
 
 async function main() {
   const subject = (arg("subject") ?? "").trim();
@@ -141,12 +167,7 @@ async function main() {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        from,
-        to: [TO],
-        subject: subject.slice(0, 200),
-        text: body.slice(0, 4000),
-      }),
+      body: JSON.stringify(employeeMail({ from, key, reply_to: SENDERS.find((x) => x.from === from)?.reply_to, tag: SENDERS.find((x) => x.from === from)?.tag }, { to: TO, subject, text: body.slice(0, 4000) })),
     });
     if (res.ok) {
       console.log(`Notified from ${from}: ${subject}`);
