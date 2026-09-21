@@ -320,6 +320,21 @@ and which placeholders on the row, a `warn` finding, the DONE email leads with i
 the badge. Plain `approved` never forces. Pinned by `validate:repo-lane` (48 guard cases) and
 proven by `tests/boss/repoChange.test.ts` (four paths, the force, a stranger's force).
 
+**Every employee address delivers (21 Sep 2026).** Her "approved" to `danielle@` bounced 550 —
+employees wrote from `<name>@sequoiataylor.com` and only `boss@` had an Email Routing rule. Now:
+one literal rule per name → worker `boss-os` (a catch-all cannot target a Worker); an untagged
+message routes by its To: local part (`seatByAddress`), a typed tag still wins, `boss@` still
+defaults to the Chief of Staff; every employee email is built by `employeeMail()` in
+`scripts/ops/notify.mjs` — `reply_to` = her own address, subject led by her `#tag`.
+`validate:employee-addresses-receive` (offline in CI against `scripts/validate/fixtures/
+email-routing-rules.json`, live through the vault with `npm run employee:addresses:live`) proves an
+enabled rule per roster local part and that the sender ROSTER equals the active D1 roster; a ninth
+hire fails the build until `npm run employee:address -- <name>` has made her rule. **A retry is a
+resume**: "try again" on a failed change's thread — token or References — keeps the row with her
+instruction, repo, folder, pre-approval and force phrase; nothing new opens. **The CLI runs on her
+seat**: every vault-run `claude` spawn passes `seatEnv()`, which strips `ANTHROPIC_*` / `CLAUDE_*`
+auth (both of her first jobs died on an API key with no credit).
+
 **Pre-approval in the request (21 Sep 2026).** `your call` / `you decide` / `no need to ask` /
 `just do it` / `pick everything` / `no options` in HER request: the plan decides everything (a
 pre-approved plan that asks is refused), is filed as approved — `plan_approved_by = <her address>
