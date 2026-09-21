@@ -116,6 +116,8 @@ export function sentinelFor(payload) {
  */
 export function dueForChase(open, now) {
   return (open ?? []).filter((p) => {
+    // Only a row that asked HER something is chased with her; Simone's own acted problems are hers to finish.
+    if (!p.needs_owner) return false;
     if (p.due_at == null || p.due_at - now > NAG_WINDOW_MS || p.answered_at) return false;
     const last = Math.max(Number(p.nagged_at ?? 0), Number(p.seen_at ?? 0));
     return now - last >= NAG_EVERY_MS;
@@ -132,7 +134,7 @@ export function withoutDuplicates(items, open) {
   const dropped = [];
   const kept = (items ?? []).filter((it) => {
     if (it.disposition !== "problem" || it.resolves || it.facts_changed) return true;
-    const dup = (open ?? []).find((p) => p.title_ref && p.title_ref === it.title_ref && p.matter === it.matter);
+    const dup = (open ?? []).find((p) => p.matter === it.matter && (it.matter === "account" ? true : p.title_ref && p.title_ref === it.title_ref));
     // A NEW question for her on an open problem is new facts by definition (23:36Z, 21 Sep 2026:
     // the send-ask with Amazon's draft was dropped because the model left out facts_changed).
     const newAsk = it.needs_owner === true && String(it.owner_ask ?? "").trim() && !(open ?? []).some((p) => String(p.owner_ask ?? "").trim() === String(it.owner_ask).trim());
@@ -242,11 +244,13 @@ function selfTest() {
     ["sentinel: needs_owner is needs-her", sentinelFor(ok) === "needs-her"],
     ["sentinel: a problem acted is acted", sentinelFor({ items: [{ ...ok.items[0], needs_owner: false }] }) === "acted"],
     ["sentinel: blocked comes from the file", sentinelFor({ blocked: "mailbox unreadable", items: [] }) === "blocked"],
-    ["chase: within two days and never chased", dueForChase([{ due_at: Date.now() + DAY_MS }], Date.now()).length === 1],
-    ["chase: past due is chased", dueForChase([{ due_at: Date.now() - 3 * DAY_MS }], Date.now()).length === 1],
-    ["chase: chased an hour ago is not chased again", dueForChase([{ due_at: Date.now(), nagged_at: Date.now() - 3_600_000 }], Date.now()).length === 0],
-    ["chase: a row born this tick (the ask just went) is not chased in the same tick", dueForChase([{ due_at: Date.now() + DAY_MS, seen_at: Date.now() - 1000 }], Date.now()).length === 0],
-    ["chase: a row born yesterday, never chased, is chased", dueForChase([{ due_at: Date.now() + DAY_MS, seen_at: Date.now() - 25 * 3_600_000 }], Date.now()).length === 1],
+    ["chase: within two days and never chased", dueForChase([{ needs_owner: 1, due_at: Date.now() + DAY_MS }], Date.now()).length === 1],
+    ["chase: past due is chased", dueForChase([{ needs_owner: 1, due_at: Date.now() - 3 * DAY_MS }], Date.now()).length === 1],
+    ["chase: chased an hour ago is not chased again", dueForChase([{ needs_owner: 1, due_at: Date.now(), nagged_at: Date.now() - 3_600_000 }], Date.now()).length === 0],
+    ["chase: a row born this tick (the ask just went) is not chased in the same tick", dueForChase([{ needs_owner: 1, due_at: Date.now() + DAY_MS, seen_at: Date.now() - 1000 }], Date.now()).length === 0],
+    ["chase: a row born yesterday, never chased, is chased", dueForChase([{ needs_owner: 1, due_at: Date.now() + DAY_MS, seen_at: Date.now() - 25 * 3_600_000 }], Date.now()).length === 1],
+    ["chase: a row that asked her nothing is never chased with her", dueForChase([{ needs_owner: 0, due_at: Date.now() - DAY_MS, seen_at: Date.now() - 2 * DAY_MS }], Date.now()).length === 0],
+    ["dedupe: an account problem already open is dropped even with no title", withoutDuplicates([{ disposition: "problem", matter: "account", note: "x" }], [{ id: "kml_a", matter: "account" }]).kept.length === 0],
     ["dedupe: a problem already open on the same title and matter, same ask, is dropped", withoutDuplicates([ok.items[0]], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title", owner_ask: ok.items[0].owner_ask }]).kept.length === 0],
     ["dedupe: a problem already open, no ask on either side, is dropped", withoutDuplicates([{ ...ok.items[0], needs_owner: false, owner_ask: undefined, due_at: 1790160000000 }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 0],
     ["dedupe: the same problem with facts_changed is kept", withoutDuplicates([{ ...ok.items[0], facts_changed: "Amazon escalated" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
@@ -260,8 +264,8 @@ function selfTest() {
     ["shape: the stop email expects no reply and never says approved", (() => { const e = askEmail({ id: "kml_1", due_at: null }, { ...ok.items[0], matter: "account", owner_ask: "Once: npm run kdp:signin (a Chrome window opens)" }, reg); return /No reply is needed/.test(e.text) && !/approv/i.test(e.text); })()],
     ["sign-in state: a challenge is a stop line", typeof signInStopFrom({ state: "challenge_needs_her", detail: "CAPTCHA" }) === "string"],
     ["sign-in state: ok is nothing", signInStopFrom({ state: "ok", detail: "x" }) === null],
-    ["chase: five days out is not chased", dueForChase([{ due_at: Date.now() + 5 * DAY_MS }], Date.now()).length === 0],
-    ["chase: answered is not chased", dueForChase([{ due_at: Date.now(), answered_at: Date.now() }], Date.now()).length === 0],
+    ["chase: five days out is not chased", dueForChase([{ needs_owner: 1, due_at: Date.now() + 5 * DAY_MS }], Date.now()).length === 0],
+    ["chase: answered is not chased", dueForChase([{ needs_owner: 1, due_at: Date.now(), answered_at: Date.now() }], Date.now()).length === 0],
   ];
   const failed = cases.filter(([, c]) => !c);
   for (const [n] of failed) console.error(`  ✗ ${n}`);
