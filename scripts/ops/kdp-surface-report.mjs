@@ -133,7 +133,10 @@ export function withoutDuplicates(items, open) {
   const kept = (items ?? []).filter((it) => {
     if (it.disposition !== "problem" || it.resolves || it.facts_changed) return true;
     const dup = (open ?? []).find((p) => p.title_ref && p.title_ref === it.title_ref && p.matter === it.matter);
-    if (dup) { dropped.push({ id: dup.id, title_ref: it.title_ref, matter: it.matter }); return false; }
+    // A NEW question for her on an open problem is new facts by definition (23:36Z, 21 Sep 2026:
+    // the send-ask with Amazon's draft was dropped because the model left out facts_changed).
+    const newAsk = it.needs_owner === true && String(it.owner_ask ?? "").trim() && !(open ?? []).some((p) => String(p.owner_ask ?? "").trim() === String(it.owner_ask).trim());
+    if (dup && !newAsk) { dropped.push({ id: dup.id, title_ref: it.title_ref, matter: it.matter }); return false; }
     return true;
   });
   return { kept, dropped };
@@ -244,8 +247,11 @@ function selfTest() {
     ["chase: chased an hour ago is not chased again", dueForChase([{ due_at: Date.now(), nagged_at: Date.now() - 3_600_000 }], Date.now()).length === 0],
     ["chase: a row born this tick (the ask just went) is not chased in the same tick", dueForChase([{ due_at: Date.now() + DAY_MS, seen_at: Date.now() - 1000 }], Date.now()).length === 0],
     ["chase: a row born yesterday, never chased, is chased", dueForChase([{ due_at: Date.now() + DAY_MS, seen_at: Date.now() - 25 * 3_600_000 }], Date.now()).length === 1],
-    ["dedupe: a problem already open on the same title and matter is dropped", withoutDuplicates([ok.items[0]], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 0],
+    ["dedupe: a problem already open on the same title and matter, same ask, is dropped", withoutDuplicates([ok.items[0]], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title", owner_ask: ok.items[0].owner_ask }]).kept.length === 0],
+    ["dedupe: a problem already open, no ask on either side, is dropped", withoutDuplicates([{ ...ok.items[0], needs_owner: false, owner_ask: undefined, due_at: 1790160000000 }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 0],
     ["dedupe: the same problem with facts_changed is kept", withoutDuplicates([{ ...ok.items[0], facts_changed: "Amazon escalated" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
+    ["dedupe: a NEW ask on an open problem is kept", withoutDuplicates([{ ...ok.items[0], owner_ask: "Reply approved and I send this reply to Amazon: …" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title", owner_ask: "Approve the subtitle." }]).kept.length === 1],
+    ["dedupe: the SAME ask on an open problem is dropped", withoutDuplicates([ok.items[0]], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title", owner_ask: ok.items[0].owner_ask }]).kept.length === 0],
     ["dedupe: a resolves item is kept", withoutDuplicates([{ ...ok.items[0], resolves: "kml_x" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
     ["dedupe: a different matter is a different problem", withoutDuplicates([{ ...ok.items[0], matter: "cover" }], [{ id: "kml_x", title_ref: "A1EYXUFGFV7CN6", matter: "title" }]).kept.length === 1],
     ["shape: a wording ask is an ask", messageShape(ok.items[0]) === "ask"],
