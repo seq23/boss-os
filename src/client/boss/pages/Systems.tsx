@@ -5,6 +5,7 @@ import { ErrorNotice } from "../components/Notice";
 import { Panel, Row, asList, text, usePanel } from "../components/panels";
 import { BackendRegistry, Launch, Watch } from "./Backends";
 import { PropertyHealth } from "../components/PropertyHealth";
+import { RepoChanges } from "../components/RepoChanges";
 
 /**
  * The seven subsystems that had an API and no screen.
@@ -90,7 +91,7 @@ export function Systems() {
       </div>
       {section === "launch" && <Launch />}
       {section === "watch" && <Watch />}
-      {section === "properties" && <PropertyHealth />}
+      {section === "properties" && <><PropertyHealth /><RepoChanges /></>}
       {section === "backends" && <BackendRegistry />}
       {section === "costs" && <Costs />}
       {section === "publishing" && <Publishing />}
