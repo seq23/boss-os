@@ -4,7 +4,7 @@
 what version it is, and whether it was finished. Everything here is written to be read cold, by
 someone — or something — with no memory of the conversation that produced it.
 
-Last verified against the code and against production: **19 September 2026.**
+Last verified against the code and against production: **20 September 2026.**
 
 ---
 
@@ -260,6 +260,60 @@ would arrive a full day late.
 **Nothing runs until two deliberate acts:** commission the `bk_claude_code` backend, and run the Mac
 agent so it can claim the task. Until then the duty fires, the task queues, and Today's block says so
 plainly.
+
+### Danielle's repo-change lane — Plan B (20 September 2026)
+
+**What she does now.** She emails `boss@sequoiataylor.com` with `#danielle`, a grid repo name and/or
+a Google Drive folder link, and what she wants. Danielle, on her Mac, reads the package
+(`scripts/ops/drive-pull.mjs`, service account from the vault) and the repo's **`RUNBOOK.md`**
+(BLOCKS if there is none — `join-west-peek-main/RUNBOOK.md` is the model), writes a plan whose
+decisions are split into *decided* (structure, CSS, validators, redirects, assets, build wiring) and
+*ask* (brand/colourway, copy meaning, legal wording, removing a public claim, image rights, money),
+emails the plan and the asks, waits, builds on her reply in a worktree, proves it with the repo's own
+validators plus screenshots at desktop and 390px and a curl of every new link, opens a PR, **lands
+it on green through `~/bin/land`** (her decision: no second reply), proves it live, and emails the
+PR, the merge commit and the proof.
+
+**Where each piece lives.**
+
+| | |
+|---|---|
+| The one record: kind, executor, phases, **model per phase**, turn caps, timeouts, the parse, the two guards | `src/shared/boss/repoChange/lane.mjs` |
+| Intake — every door, Danielle's desk only | `tasks/admit.ts` → `input.repo_change` + a `repo_changes` row (0265), `intake_kind = repository` |
+| The queue parks it for the Mac (`parked_for_mac`), never a cloud rung | `queue/consumer.ts` |
+| Her reply = the plan approval; matched on `[rc_…]` in the subject, below the sender refusal | `intake/inboundMail.ts` → `repoChange/answer.ts` |
+| The claim (one live run per task) and the phase reports | `routes/repoChanges.ts` at `/api/repo-changes` |
+| The Mac: lock, caffeinate, hard timeout, vault, one fresh `claude -p` per phase | `scripts/ops/repo-change.sh` → `repo-change.mjs` → `repo-change-prompt.md` |
+| Installed by | `install-agent-launchd.sh` (`com.seq.boss-repo-change`, every 20 min 06:00–22:00 CT) |
+| The screen | Systems → Properties → **Repo changes** |
+
+**Her reply is one word (21 Sep 2026: "the approval step must have zero friction").** The plan
+email carries the whole plan and every ask as a numbered question with Danielle's recommended
+default beside it. `approved` (also approve / yes / go / land it / ok) takes every default and starts
+BUILD; a reply starting `no` / `not approved` / `stop` / `changes:` holds the task in `asking` with
+her note on the row; anything else is her answers. `readReply` in `lane.mjs` is the one reader.
+
+**Phases.** `plan` (Opus) → `asking` (her inbox) → `build` (Sonnet) → `landing` (the Mac records
+what `gh pr checks` says) → `land` (Haiku runs `~/bin/land` and the live curls) → `done`; `failed`
+is a NAMED STOP she was emailed. The plan ALWAYS goes to her, even with zero questions — her reply
+is the recorded approval, and a task with an unanswered ask cannot enter BUILD.
+
+**Guards.** `validate:repo-lane` RUNS `canEnterBuild`/`canLand` over fixtures, pins that the claim
+route calls them, that `checks_green_at` has exactly one writer (the `/checks` route on a green),
+that `answerFromMail()` sits below `if (!authorised)` in the mailbox, that the lane's code carries no
+`gh pr merge` / `gh workflow run` / `wrangler deploy`, that the Ahrefs fixer's "acquires no merge"
+pin is untouched, that a quiet tick exits 7 with `NAMED STOP [NOTHING_CLAIMABLE]`, that every
+`claude -p` carries `--max-turns`, and that no model id is typed outside `PHASE_MODELS`.
+`validate:duty-delivery` walks the on-demand lane's chain (kind ↔ script ↔ installer ↔ runner ↔
+route ↔ consumer). `tests/boss/repoChange.test.ts` runs the whole arc through the real handler and
+routes, including Scooter's identical mail being refused with no row.
+
+**Not a standing duty, on purpose.** It has work only when she sends some; a duty row would read
+"overdue" every quiet week. Runs are recorded on the task and the row it claimed.
+
+**Named stops the first real run can hit:** a grid repo with no `RUNBOOK.md` (add one); a repo
+`~/bin/land` has no deploy route for (add the case to `~/bin/land`); a PR with no CI and no recorded
+validator pass (no green to land on). Each is emailed with its tag.
 
 ### The spend lever, and the $0 rule
 

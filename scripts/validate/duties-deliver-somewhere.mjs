@@ -54,6 +54,16 @@
  *      `scripts/ops` actually POSTS to it. That last one is the link that broke for Simone: the KDP
  *      watcher ran correctly for five days and reported into a log file nobody opens.
  *
+ * And for an ON-DEMAND LANE — work with no duty row, because it happens only when she sends it
+ * (Plan B, 20 Sep 2026: `#danielle <repo> <package>` becomes a `repo_change` task her Mac runs):
+ *
+ *  10. `src/shared/boss/repoChange/lane.mjs` is the one record of the lane. The shell executor it
+ *      names exists, NAMES THE KIND, and is named by the installer; the runner it names exists and
+ *      names the kind; the prompt exists with a section per runnable phase; a route file mounts the
+ *      route it names; the queue consumer parks the kind instead of sending it to a cloud rung. Any
+ *      one of those missing is a task that is opened, queued, and never picked up — the executive
+ *      report's original defect, one lane over.
+ *
  * RULE 0: examining zero duties is a failure, not a pass. A loop over an empty set is how a
  * validator ends up green for ever while the thing it guards rots.
  *
@@ -464,6 +474,59 @@ function scan() {
   return { duties, problems };
 }
 
+// ─── The on-demand lane (check 10) ────────────────────────────────────────────
+
+const LANE_MODULE = "src/shared/boss/repoChange/lane.mjs";
+const CONSUMER = "src/worker/boss/queue/consumer.ts";
+
+/**
+ * The lane's chain, link by link. Reads the shared record rather than a copy of it, so the
+ * validator asks about the lane the code actually runs.
+ */
+export function laneProblems(lane, files) {
+  const problems = [];
+  const code = (src) => src.split("\n").filter((line) => !/^\s*(#|\/\/|\*|\/\*)/.test(line)).join("\n");
+  if (!lane?.kind || !lane?.executor || !lane?.runner || !lane?.route) {
+    problems.push(`${LANE_MODULE}: MAC_LANE must name kind, executor, runner and route.`);
+    return problems;
+  }
+  const exec = files[`scripts/ops/${lane.executor}`];
+  if (exec === undefined) problems.push(`${lane.kind}: executor scripts/ops/${lane.executor} does not exist.`);
+  else {
+    if (!code(exec).includes(lane.kind)) problems.push(`${lane.kind}: scripts/ops/${lane.executor} never names the task kind '${lane.kind}' in code — the script and the kind must name each other.`);
+    if (!code(exec).includes(lane.runner)) problems.push(`${lane.kind}: scripts/ops/${lane.executor} never runs ${lane.runner}.`);
+  }
+  const runner = files[`scripts/ops/${lane.runner}`];
+  if (runner === undefined) problems.push(`${lane.kind}: runner scripts/ops/${lane.runner} does not exist.`);
+  else {
+    if (!code(runner).includes(`TASK_KIND`) && !code(runner).includes(lane.kind)) problems.push(`${lane.kind}: scripts/ops/${lane.runner} never names the task kind.`);
+    if (!code(runner).includes(lane.route.replace(/^\/api/, "/api/boss"))) problems.push(`${lane.kind}: scripts/ops/${lane.runner} never posts to ${lane.route} — the run would report to nobody.`);
+  }
+  const installer = files[INSTALLER] ?? "";
+  if (!installer.includes(lane.executor)) problems.push(`${lane.kind}: ${INSTALLER} does not name ${lane.executor}; nothing installs the lane.`);
+  const prompt = files[`scripts/ops/${lane.prompt}`];
+  if (prompt === undefined) problems.push(`${lane.kind}: prompt scripts/ops/${lane.prompt} does not exist.`);
+  else for (const phase of ["PLAN", "BUILD", "LAND"]) {
+    if (!prompt.includes(`## PHASE: ${phase}`)) problems.push(`${lane.kind}: ${lane.prompt} has no "## PHASE: ${phase}" section.`);
+  }
+  const routes = files.__routes ?? "";
+  const mountPath = lane.route;
+  if (!routes.includes(`app.route("${mountPath}"`)) problems.push(`${lane.kind}: no route is mounted at ${mountPath} in src/worker/boss/index.ts.`);
+  const consumer = files[CONSUMER] ?? "";
+  if (!/parked_for_mac/.test(consumer) || !/input\.repo_change/.test(consumer)) problems.push(`${lane.kind}: ${CONSUMER} does not park '${lane.kind}' tasks; the queue would hand them to a cloud rung.`);
+  return problems;
+}
+
+async function laneScan() {
+  const lane = (await import(join(ROOT, LANE_MODULE))).MAC_LANE;
+  const files = {};
+  for (const f of [`scripts/ops/${lane.executor}`, `scripts/ops/${lane.runner}`, `scripts/ops/${lane.prompt}`, INSTALLER, CONSUMER]) {
+    if (existsSync(join(ROOT, f))) files[f] = read(f);
+  }
+  files.__routes = read("src/worker/boss/index.ts");
+  return { lane, problems: laneProblems(lane, files) };
+}
+
 // ─── Self-test ────────────────────────────────────────────────────────────────
 
 const FIXTURES = [
@@ -536,11 +599,27 @@ function selfTest() {
     failed += 1;
   }
 
+  // The on-demand lane: a whole chain passes; a script that forgets the kind fails; a missing
+  // installer line fails; a consumer that stopped parking fails.
+  const good = {
+    "scripts/ops/x.sh": "node x.mjs # repo_change\nKIND=repo_change\nnode scripts/ops/x.mjs",
+    "scripts/ops/x.mjs": "import { TASK_KIND } from '../../src/shared/boss/repoChange/lane.mjs';\nfetch('/api/boss/repo-changes/claimable')",
+    "scripts/ops/x.md": "## PHASE: PLAN\n## PHASE: BUILD\n## PHASE: LAND",
+    [INSTALLER]: "bash $REPO/scripts/ops/x.sh",
+    [CONSUMER]: "if (input.repo_change) { 'parked_for_mac' }",
+    __routes: 'app.route("/api/repo-changes", repoChanges);',
+  };
+  const lane = { kind: "repo_change", executor: "x.sh", runner: "x.mjs", prompt: "x.md", route: "/api/repo-changes" };
+  if (laneProblems(lane, good).length !== 0) { console.error(`  ✗ a complete lane chain reports problems: ${laneProblems(lane, good).join(" | ")}`); failed += 1; }
+  if (laneProblems(lane, { ...good, "scripts/ops/x.sh": "# repo_change only in a comment\nnode scripts/ops/x.mjs" }).length === 0) { console.error("  ✗ an executor that names the kind only in a comment passes"); failed += 1; }
+  if (laneProblems(lane, { ...good, [INSTALLER]: "nothing" }).length === 0) { console.error("  ✗ a lane the installer does not name passes"); failed += 1; }
+  if (laneProblems(lane, { ...good, [CONSUMER]: "routeCompletion(everything)" }).length === 0) { console.error("  ✗ a consumer that no longer parks the kind passes"); failed += 1; }
+
   if (failed) {
     console.error(`\nSELF-TEST FAILED: ${failed} case(s)`);
     process.exit(1);
   }
-  console.log(`SELF-TEST PASSED: ${FIXTURES.length + 4}/${FIXTURES.length + 4} cases.`);
+  console.log(`SELF-TEST PASSED: ${FIXTURES.length + 8}/${FIXTURES.length + 8} cases.`);
 }
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
@@ -551,6 +630,8 @@ if (process.argv.includes("--self-test")) {
 }
 
 const { duties, problems } = scan();
+const laneResult = await laneScan();
+problems.push(...laneResult.problems);
 
 /*
  * RULE 0. A scan that found no duties has not proved anything about this repo — it has proved that
@@ -580,6 +661,7 @@ const delivering = duties.filter((d) => deliversKey(d.text) && !workerReader(d.t
 const local = duties.filter((d) => localJobScript(d.text)).length;
 console.log(
   `DUTY DELIVERY SCAN PASSED: ${duties.length} standing duties — ${delivering} deliver to a handled ` +
-  `table, ${local} to an installed local job, ${worker} run a Worker reader into a read table, and none into nothing.`,
+  `table, ${local} to an installed local job, ${worker} run a Worker reader into a read table, and none into nothing; ` +
+  `1 on-demand lane (${laneResult.lane.kind} ↔ ${laneResult.lane.executor}) with every link present.`,
 );
 selfTest();

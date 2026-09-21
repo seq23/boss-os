@@ -153,6 +153,8 @@ const SNAPSHOT_TABLES = [
   // evidence for why each firm got one lives only here.
   "ask_scans",
   "ask_scan_findings",
+  // Danielle's repo changes (0265): her instruction, the plan, her reply, the PR and the proof.
+  "repo_changes",
   // 0263 — the latest health reading per grid property per reader: a status code and latency, a
   // workflow conclusion, a week of Search Console clicks, a deployment's age. RE-DERIVABLE only
   // going forward: the readers run again, but the history — when a site first went 5xx, which

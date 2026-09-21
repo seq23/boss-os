@@ -12,7 +12,16 @@ import { unlock, tab, expectNoSidewaysScroll, expectNear, PHONE, LAPTOP } from "
  * report, never say "nothing to report").
  */
 
-const DAY = new Date().toISOString().slice(0, 10);
+import { dayIdInZone } from "../src/shared/boss/timezone";
+
+/*
+ * HER DAY, NOT UTC'S. This was `new Date().toISOString().slice(0, 10)`, which is tomorrow's date in
+ * Chicago from 19:00 every evening — so a CI run after seven at night cleaned the wrong day, read
+ * gates off the wrong row and found "carried onto a later day" false (the loop was carried to the
+ * date the spec already called today). Six journeys went red on PR #29 at 20:40 CT with no change
+ * anywhere near Today. The app keys `days` by `dayIdInZone`; so does the spec now.
+ */
+const DAY = dayIdInZone(Date.now());
 
 function cleanSql(): string {
   return [

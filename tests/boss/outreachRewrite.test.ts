@@ -9,8 +9,8 @@
  * letter she already sent back.
  */
 import { env } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
-import { apiJson, uid } from "./helpers";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { apiJson, uid, stubFetch } from "./helpers";
 import { runResume } from "../../src/worker/boss/approvals/resume";
 import { handleTask } from "../../src/worker/boss/queue/consumer";
 import { runDuties } from "../../src/worker/boss/index";
@@ -311,6 +311,17 @@ describe("a send-back with a note becomes a different letter, in her Inbox, with
 
 describe("what she is owed is materialised without her pressing anything", () => {
   beforeEach(seedCandidate);
+  /*
+   * HERMETIC. `runDuties` is the whole hourly tick, and since 0263 the tick runs the `worker`
+   * readers when they are due — twelve real GETs to the grid's live domains, 10 s timeout each.
+   * On 21 Sep 2026 that put this test at 4.1 s on an M2 and past the 5 s default on the CI runner,
+   * twice in a row, on a PR that never touched a rewrite: a unit test whose duration was the
+   * internet's. The same stub `duties.test.ts` uses; the readers' own behaviour is
+   * `propertyReaders.test.ts`'s to prove, not this file's.
+   */
+  let restoreFetch: (() => void) | null = null;
+  beforeEach(() => { restoreFetch = stubFetch(() => new Response("ok")); });
+  afterEach(() => { restoreFetch?.(); restoreFetch = null; });
 
   it("a sent-back letter with a note and no rewrite row (production's thirteen) is queued by the progress read and by the tick", async () => {
     const { draft } = await sendBack(NOTE_2);

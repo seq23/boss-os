@@ -604,4 +604,5 @@ export const api = {
 
   // ── Her jobs, 19 Sep 2026 — Job 3: the health of every grid property, per reader. ──
   propertyHealth: () => call<any>("/grid/health"),
+  repoChanges: () => call<{ items: any[]; lane: any }>("/repo-changes"),
 };

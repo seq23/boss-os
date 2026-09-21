@@ -115,6 +115,39 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     if (!employeeHint) employeeHint = tpl.owner_employee_id;
   }
 
+  /*
+   * ─── "#danielle <grid repo> <drive folder> <instructions>" IS A REPO CHANGE ────────────
+   *
+   * Plan B, 20 Sep 2026. On Danielle's desk only, and only when the words name a grid repo or a
+   * Drive folder: the task becomes a repo change — `input.repo_change` on the card, a `repo_changes`
+   * row for the lane's state — and its kind is `repository`, the kind the classifier already keeps
+   * behind approval. Her reply to the plan is that approval. A message naming a repo the grid
+   * EXCLUDES (West Peek, a client micro-site) is refused here with the grid's own reason, so the
+   * mailbox tells her why instead of quietly opening ordinary work on a request that plainly
+   * asked for a change to a repository this desk may not touch.
+   *
+   * Every door passes through here — mail, Team → New task, the API — so the shape is one shape.
+   */
+  const { parseRepoChange, REPO_CHANGE_SEAT } = await import("../../../shared/boss/repoChange/lane.mjs");
+  const repoChange = employeeHint === REPO_CHANGE_SEAT && !(input.repo_change && typeof input.repo_change === "object")
+    ? parseRepoChange([b.title, input.body as string | undefined, input.prompt as string | undefined].filter(Boolean).join("\n"))
+    : null;
+  if (repoChange && "excluded" in repoChange) {
+    throw badRequest(
+      `${repoChange.excluded.repo} is out of scope for Danielle: ${repoChange.excluded.why}`,
+      "Name a repository from the grid, or a Drive folder for one of them.",
+    );
+  }
+  const change = repoChange && !("excluded" in repoChange) ? repoChange : null;
+  const changeId = change ? newId("rc") : null;
+  if (change && changeId) {
+    (input as Record<string, unknown>).repo_change = {
+      change_id: changeId, repo: change.repo, property: change.property,
+      drive_folder: change.drive_folder, drive_url: change.drive_url,
+    };
+    if (!intakeKind) intakeKind = "repository";
+  }
+
   const classification = classify({
     title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
     intakeKind: intakeKind ?? undefined, risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
@@ -204,6 +237,20 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
          VALUES (?,?,?,?,?,'queued',?,?)`,
       )
       .bind(scanId, id, firmScan.raw, firmScan.find, firmScan.ask, now, now)
+      .run();
+  }
+
+  if (change && changeId) {
+    await env.DB
+      .prepare(
+        `INSERT INTO repo_changes (id, task_id, mail_id, repo, property_key, drive_folder, drive_url, instruction, phase, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,'plan',?,?)`,
+      )
+      .bind(
+        changeId, id, typeof input.mail_id === "string" ? input.mail_id : null,
+        change.repo, change.property, change.drive_folder, change.drive_url,
+        change.instruction, now, now,
+      )
       .run();
   }
 
