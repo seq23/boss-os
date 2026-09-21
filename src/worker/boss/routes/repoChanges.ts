@@ -177,6 +177,17 @@ repoChanges.post("/:id/plan", async (c) => {
   const property = repo ? propertyForRepo(repo)?.key ?? null : null;
   const now = Date.now();
   /*
+   * A POST-LAND STEP IS A RECORDED COMMAND (21 Sep 2026, rc_m32h8ze2a4hk37pc: the plan said
+   * "After land: loop/channel_about.py pushed from the Mac", nothing recorded it, and the LAND phase
+   * reported `undefined exited undefined` after the merge). The plan names it here as the exact
+   * command, or it names none; the runner refuses a plan whose text names a step this field does
+   * not carry, so the stop is before the build, never after the merge.
+   */
+  const step = b?.post_land_step && typeof b.post_land_step === "object" ? b.post_land_step : null;
+  const postLandCommand = step ? text(step.command, 400) : null;
+  const postLandProof = step ? text(step.proof, 600) : null;
+  if (step && !postLandCommand) throw badRequest("post_land_step needs command", "The exact command, with its arguments, run from the repo's main checkout after land. Prose is not a step.");
+  /*
    * PRE-APPROVED IN THE REQUEST: the plan decides everything (a plan that still asks is refused),
    * is filed as approved by her at filing time, and BUILD parks at once. The FYI email still went
    * (`ask_message_id` is still required) so she can "stop" it. A force phrase in the request is
@@ -189,13 +200,13 @@ repoChanges.post("/:id/plan", async (c) => {
   await c.env.DB
     .prepare(
       `UPDATE repo_changes SET phase = ?, repo = ?, property_key = ?, plan_text = ?, decided_json = ?, asks_json = ?, planned_at = ?, plan_written_by = ?,
-              publish_ready = ?, placeholders_json = ?,
+              publish_ready = ?, placeholders_json = ?, post_land_command = ?, post_land_proof = ?,
               asked_at = ?, ask_message_id = ?, run_log = COALESCE(?, run_log),
               answered_at = ?, answers_text = ?, answers_mode = ?, plan_approved_by = ?,
               claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ?
         WHERE id = ? AND phase = 'plan'`,
     )
-    .bind(phase, repo, property, planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), b.publish_ready ? 1 : 0, JSON.stringify(placeholders), now, askMessageId, text(b?.run_log, 500),
+    .bind(phase, repo, property, planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), b.publish_ready ? 1 : 0, JSON.stringify(placeholders), postLandCommand, postLandProof, now, askMessageId, text(b?.run_log, 500),
       pre ? now : null, pre ? `pre-approved in the request: "${row.pre_approved_phrase}" — every decision is Danielle's` : null, pre ? "approved" : null, approvedBy, now, row.id)
     .run();
   if (pre && row.force_phrase) {
@@ -354,8 +365,8 @@ repoChanges.post("/:id/retry", async (c) => {
   const row = await repoChangeById(c.env, c.req.param("id"));
   if (!row) throw notFound("No repo change with that id");
   if (row.phase !== "failed") throw conflict(`${row.id} is ${describePhase(row)}; only a failed change can be retried`);
-  await retryRow(c.env, row, { now: Date.now(), reason: text(b?.reason, 500), by: "owner session" });
-  return ok(c, { id: row.id, phase: "plan", previous_failure: row.failure });
+  const { phase } = await retryRow(c.env, row, { now: Date.now(), reason: text(b?.reason, 500), by: "owner session" });
+  return ok(c, { id: row.id, phase, previous_failure: row.failure });
 });
 
 /** The row must be claimed by the reporting device, for the phase the report closes. */

@@ -727,4 +727,64 @@ describe("a retry is a resume of her original instruction, never a new one", () 
     expect(after.phase).toBe("plan");
     expect(after.instruction).toMatch(/Her follow-up on retry .*: try again but use the second headline/);
   });
+
+  it("A RETRY RESUMES WHERE IT STOPPED, never at plan when her approval is on the record: a failed BUILD goes back to build with the plan and her answer kept", async () => {
+    /*
+     * 21 Sep 2026, rc_m32h946mv0eybxhj: approved 20:00Z with defaults, then stopped in BUILD on a
+     * dirty checkout. A retry that re-plans throws her approval away and — on a row with no
+     * pre-approval — asks the same questions again. So a failed build resumes at build.
+     */
+    const originalId = `<orig3-${Date.now()}@mail.gmail.com>`;
+    const res = await handleBossInboundMail(mail({ messageId: originalId, subject: "#danielle tags", body: `In how-we-know, add hashtags per episode. Package: ${FOLDER}` }), env as never);
+    const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan\nAfter landing, push the About text.", decided: ["x"], asks: [{ question: "Both domains?", default: "yes" }], publish_ready: true, ask_message_id: "re_p", post_land_step: { command: ".venv/bin/python loop/channel_about.py", proof: "channels.list shows the new text" } } });
+    const approved = await handleBossInboundMail(mail({ subject: `Re: #danielle tags [${rc.id}]`, body: "approved" }), env as never);
+    expect(approved.outcome).toBe("PLAN_ANSWERED");
+    const built = await row<any>(`SELECT phase, answered_at, answers_text, post_land_command, post_land_proof FROM repo_changes WHERE id = ?`, rc.id);
+    expect(built.phase).toBe("build");
+    expect(built.post_land_command).toBe(".venv/bin/python loop/channel_about.py");
+    expect(built.post_land_proof).toMatch(/channels\.list/);
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [WORKTREE_NOT_MADE] x", notified_message_id: "re_f" } });
+
+    const reply = await handleBossInboundMail(mail({ subject: "Re: #danielle tags", body: "try again", references: originalId }), env as never);
+    expect(reply.reply).toMatch(/Retrying rc_.* from build/);
+    const after = await row<any>(`SELECT phase, plan_text, answered_at, answers_text, answers_mode, post_land_command, pr_url, failure FROM repo_changes WHERE id = ?`, rc.id);
+    expect(after.phase).toBe("build");
+    expect(after.failure).toBeNull();
+    expect(after.plan_text).toMatch(/# Plan/);
+    expect(after.answered_at).toBe(built.answered_at);
+    expect(after.answers_text).toBe(built.answers_text);
+    expect(after.answers_mode).toBe("approved");
+    expect(after.post_land_command).toBe(".venv/bin/python loop/channel_about.py");
+    expect(after.pr_url).toBeNull();
+    const c = await claim(rc.id);
+    expect(c.status).toBe(201);
+    expect(c.body.data.phase).toBe("build");
+  });
+
+  it("a failed LAND with a green PR and her approval resumes at land — the merge is not redone and nothing is re-asked; a plan step without a command is refused", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#danielle widen", body: `In how-we-know, widen the channel. Package: ${FOLDER}` }), env as never);
+    const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
+    await claim(rc.id);
+    const prose = await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: ["x"], asks: [], publish_ready: true, ask_message_id: "re_p", post_land_step: { proof: "the About text" } } });
+    expect(prose.status).toBe(400);
+    expect(JSON.stringify(prose.body)).toMatch(/needs command/);
+    await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: ["x"], asks: [], publish_ready: true, ask_message_id: "re_p" } });
+    await handleBossInboundMail(mail({ subject: `Re: [${rc.id}]`, body: "approved" }), env as never);
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/build`, { method: "POST", body: { device_id: DEVICE, branch: "work/rc-x", pr_url: "https://github.com/seq23/how-we-know/pull/102", pr_number: 102, proof: { a: 1 } } });
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { device_id: DEVICE, state: "green", detail: "all green" } });
+    const landing = await row<any>(`SELECT phase, checks_green_at FROM repo_changes WHERE id = ?`, rc.id);
+    expect(landing.phase).toBe("land");
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [POST_LAND_STEP_NOT_RUN] landed as abc", notified_message_id: "re_f" } });
+    const r = await apiJson(`/api/repo-changes/${rc.id}/retry`, { method: "POST", body: { reason: "the step" } });
+    expect(r.status).toBe(200);
+    expect(r.body.data.phase).toBe("land");
+    const after = await row<any>(`SELECT phase, pr_url, pr_number, checks_green_at, answered_at, failure FROM repo_changes WHERE id = ?`, rc.id);
+    expect(after).toMatchObject({ phase: "land", pr_url: "https://github.com/seq23/how-we-know/pull/102", pr_number: 102, checks_green_at: landing.checks_green_at, failure: null });
+    expect(after.answered_at).toBeGreaterThan(0);
+  });
 });

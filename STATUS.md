@@ -320,6 +320,21 @@ and which placeholders on the row, a `warn` finding, the DONE email leads with i
 the badge. Plain `approved` never forces. Pinned by `validate:repo-lane` (48 guard cases) and
 proven by `tests/boss/repoChange.test.ts` (four paths, the force, a stranger's force).
 
+**A post-land step is a recorded command; the lane builds in its own worktree; a retry resumes
+where it stopped (21 Sep 2026).** `rc_m32h8ze2a4hk37pc` landed how-we-know #102 and then failed on
+"`undefined` exited undefined": the plan named the About push in prose and nothing recorded a
+command. Now the PLAN phase files `post_land_step: {command, proof}` (stored as
+`post_land_command` / `post_land_proof`); a plan whose text names a step and resolves no command is
+refused BEFORE the build (`POST_LAND_STEP_UNRESOLVED`); the LAND phase runs exactly the recorded
+command and the runner refuses a `post_land` that differs or has no integer `rc`; a row that already
+merged resumes on the step alone (`ALREADY_LANDED`). `rc_m32h946mv0eybxhj` stopped on
+`REPO_HAS_UNCOMMITTED_CHANGES` because how-we-know's main checkout carries loop state the repo's own
+lanes rewrite — that stop is retired: BUILD runs in `~/.boss-os/repo-change/wt-<id>`, a worktree the
+runner makes off `origin/main` with `node_modules` symlinked (Porter's shape), removed at DONE.
+`retryRow()` resumes at `resumePhase(row)` — land / landing / build / plan by what the row holds — so
+a failed build keeps the plan and her approval. Pinned by `validate:repo-lane` (140 guard cases,
+counted from the source now rather than a literal) and two tests in `repoChange.test.ts`.
+
 **Seeing it produces something — the Kindle surface (21 Sep 2026).** Amazon flagged The Gift
 Letter's title on 12 and 14 Sep (repetitive terms, five days to fix); Simone's daily scan SAW it
 three times and nothing followed: the needs_owner row sent no email (the prompt told a vault-less
