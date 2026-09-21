@@ -256,6 +256,9 @@ async function runPhase(claim) {
     PR_URL: row.pr_url ?? "", PR_NUMBER: row.pr_number ?? "", BRANCH: row.branch ?? "", OUT_FILE: outFile, WORK_DIR: dir,
     ASK_LIST: ASK_POLICY.ask.map((a) => `- ${a}`).join("\n"), DECIDE_LIST: ASK_POLICY.decide.map((d) => `- ${d}`).join("\n"),
     LAND: LAND, PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
+    PRE_APPROVED: row.pre_approved_phrase
+      ? `YES — she wrote "${row.pre_approved_phrase}" in the request. Every decision is yours: put what you would have asked under "decided" with your recommended default AS the decision and the reason. "asks" MUST be an empty list; the Worker refuses a pre-approved plan that asks.`
+      : "no — ask what policy says to ask.",
   };
   const prompt = phasePrompt(phase, vars);
   const { rc, timedOut } = unreported
@@ -299,9 +302,17 @@ async function runPhase(claim) {
     const ready = out.publish_ready === true;
     const placeholders = Array.isArray(out.placeholders) ? out.placeholders.map(String) : [];
     if (!ready && placeholders.length === 0) placeholders.push("(the plan marked itself not publish-ready without naming what would ship as a placeholder)");
-    const subject = `#danielle plan for ${chosen} ${changeToken(row.id)} — ${ready ? 'reply "approved"' : `NOT publish-ready (${placeholders.length} placeholder${placeholders.length === 1 ? "" : "s"}) — reply "approved" for a preview`} ${asks.length ? `(${asks.length} question${asks.length === 1 ? "" : "s"}, each with a default)` : ""}`.trim();
+    const pre = Boolean(row.pre_approved_phrase);
+    const subject = pre
+      ? `#danielle FYI — building ${chosen} ${changeToken(row.id)} (you pre-approved: "${row.pre_approved_phrase}")${ready ? "" : ` — NOT publish-ready, ${row.force_phrase ? "landing by your force" : "preview before landing"}`}`
+      : `#danielle plan for ${chosen} ${changeToken(row.id)} — ${ready ? 'reply "approved"' : `NOT publish-ready (${placeholders.length} placeholder${placeholders.length === 1 ? "" : "s"}) — reply "approved" for a preview`} ${asks.length ? `(${asks.length} question${asks.length === 1 ? "" : "s"}, each with a default)` : ""}`.trim();
     const text = [
       "Sequoia,", "",
+      ...(pre ? [
+        `FYI — you pre-approved this ("${row.pre_approved_phrase}"); no reply needed. Reply \`stop\` within the build to hold it.`,
+        ready ? "" : (row.force_phrase ? `It is NOT publish-ready and your request also said "${row.force_phrase}", so it lands on green with the placeholders below, recorded as your instruction.` : "It is NOT publish-ready, so it stops at the preview: you will get the preview email and it lands only after you reply \"approved\" to that."),
+        "",
+      ].filter((l) => l !== "") : []),
       ...(ready ? [] : [
         `NOT PUBLISH-READY — this ships with ${placeholders.length} placeholder${placeholders.length === 1 ? "" : "s"}: ${placeholders.join("; ")}.`,
         "I will build it, open the PR and send you the preview; landing needs a second \"approved\" after you have seen it.",

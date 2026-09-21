@@ -144,6 +144,8 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     (input as Record<string, unknown>).repo_change = {
       change_id: changeId, repo: change.repo, property: change.property,
       drive_folder: change.drive_folder, drive_url: change.drive_url,
+      ...(change.pre_approved_phrase ? { pre_approved_phrase: change.pre_approved_phrase } : {}),
+      ...(change.force_phrase ? { force_phrase: change.force_phrase } : {}),
     };
     if (!intakeKind) intakeKind = "repository";
   }
@@ -241,17 +243,31 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   }
 
   if (change && changeId) {
+    /*
+     * PRE-APPROVAL IS WRITTEN HERE AND NOWHERE ELSE. The phrase comes out of HER request text —
+     * this door is below the mailbox's sender refusal, and the console door is her own session —
+     * so `pre_approved_by` is the verified sender and never a later correspondent. The finding
+     * names the phrase, so "why did this build without asking me" has a one-line answer.
+     */
+    const preBy = change.pre_approved_phrase ? (typeof input.from === "string" ? input.from : "console") : null;
     await env.DB
       .prepare(
-        `INSERT INTO repo_changes (id, task_id, mail_id, repo, property_key, drive_folder, drive_url, instruction, phase, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,'plan',?,?)`,
+        `INSERT INTO repo_changes (id, task_id, mail_id, repo, property_key, drive_folder, drive_url, instruction, phase,
+                                   pre_approved_phrase, pre_approved_by, force_phrase, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,'plan',?,?,?,?,?)`,
       )
       .bind(
         changeId, id, typeof input.mail_id === "string" ? input.mail_id : null,
         change.repo, change.property, change.drive_folder, change.drive_url,
-        change.instruction, now, now,
+        change.instruction, change.pre_approved_phrase, preBy, change.force_phrase, now, now,
       )
       .run();
+    if (change.pre_approved_phrase) {
+      await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'repo_change_pre_approved',?)`)
+        .bind(newId("tev"), id, now, JSON.stringify({ repo_change_id: changeId, phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase }))
+        .run();
+      await logEvent(env.DB, { level: "warn", scope: "intake", event: "repo_change_pre_approved", lane, entityId: changeId, detail: { phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase, repo: change.repo } });
+    }
   }
 
   const envelope = await buildEnvelope(env.DB, { taskId: id, lane, employeeId, classification, costMode });

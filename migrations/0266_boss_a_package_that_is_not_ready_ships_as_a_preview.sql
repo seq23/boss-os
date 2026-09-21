@@ -76,7 +76,15 @@ CREATE TABLE repo_changes_new (
   forced_by        TEXT,
   forced_at        INTEGER,
   forced_placeholders TEXT,
-  forced_mail_id   TEXT
+  forced_mail_id   TEXT,
+  -- PRE-APPROVAL IN THE REQUEST (owner, 21 Sep 2026): "your call" / "you decide" / "no need to
+  -- ask" / "just do it" / "pick everything" / "no options" in HER request text. Written once, at
+  -- intake, from the verified sender's own words — never from a later message. The plan then
+  -- decides everything, is filed as approved (`plan_approved_by`), and BUILD parks at once.
+  pre_approved_phrase TEXT,
+  pre_approved_by  TEXT,
+  plan_approved_by TEXT,
+  force_phrase     TEXT                        -- a force phrase in the request itself, if any
 );
 INSERT INTO repo_changes_new (
   id, task_id, mail_id, repo, property_key, drive_folder, drive_url, instruction, phase,

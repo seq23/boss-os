@@ -101,6 +101,23 @@ export const ASK_POLICY = {
   ],
 };
 
+/**
+ * PRE-APPROVAL IN THE REQUEST (owner, 21 Sep 2026): "I do not care about the decisions — pick
+ * everything." Read from the request text only. The phrase is recorded so the finding can name it.
+ */
+export const PRE_APPROVAL_PHRASES = ["your call", "you decide", "no need to ask", "just do it", "pick everything", "no options"];
+
+export function preApprovalIn(text) {
+  const t = String(text ?? "").toLowerCase();
+  return PRE_APPROVAL_PHRASES.find((p) => new RegExp(`(?:^|[^a-z])${p.replace(/ /g, "\\s+")}(?![a-z])`).test(t)) ?? null;
+}
+
+/** A force phrase anywhere in the request text (not a one-word reply): "… approved to production". */
+export function forcePhraseIn(text) {
+  const t = String(text ?? "").toLowerCase();
+  return FORCE_WORDS.find((p) => new RegExp(`(?:^|[^a-z])${p.replace(/ /g, "\\s+")}(?![a-z])`).test(t)) ?? null;
+}
+
 /** `[rc_…]` — the token every email about a change carries, so her reply can name it without headers. */
 export function changeToken(id) {
   return `[${String(id).trim()}]`;
@@ -185,6 +202,8 @@ export function parseRepoChange(text) {
     drive_folder: folder ? folder.id : null,
     drive_url: folder ? folder.url : null,
     instruction: t.slice(0, 20_000),
+    pre_approved_phrase: preApprovalIn(t),
+    force_phrase: forcePhraseIn(t),
   };
 }
 

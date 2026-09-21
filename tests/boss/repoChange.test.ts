@@ -517,3 +517,132 @@ describe("a package that is not publish-ready lands only after she has seen the 
     expect(rc.property_key).toBe("creator_network");
   });
 });
+
+describe("pre-approval in the request: she said pick everything", () => {
+  const READY = { publish_ready: true };
+  const NOT_READY = { publish_ready: false, placeholders: ["Team bios for two of four people are not in the package"] };
+  async function open(body: string, from?: string) {
+    const res = await handleBossInboundMail(mail({ from, subject: "#danielle refresh", body }), env as never);
+    const rc = res.taskId ? await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId) : null;
+    return { res, rc };
+  }
+  async function plan(id: string, verdict: Record<string, unknown>, asks: unknown[] = []) {
+    await claim(id);
+    return apiJson(`/api/repo-changes/${id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: ["Headline: A — it matches the thesis page"], asks, ...verdict, ask_message_id: "re_fyi" } });
+  }
+  async function build(id: string) {
+    const c = await claim(id);
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect(c.body.data.phase).toBe("build");
+    return apiJson(`/api/repo-changes/${id}/build`, { method: "POST", body: { device_id: DEVICE, branch: "work/x", pr_url: "https://github.com/seq23/WPP-llm/pull/8", pr_number: 8, proof: { validators: ["npm run validate"], validators_passed: true } } });
+  }
+
+  it("PRE-APPROVED + READY: the plan files as approved by her, BUILD parks with no reply, and it lands on green", async () => {
+    const { res, rc } = await open(`Update WPP-llm from ${FOLDER}. New hero — your call, no need to ask.`);
+    expect(res.outcome).toBe("ROUTED");
+    expect(rc.pre_approved_phrase).toBe("your call");
+    expect(rc.pre_approved_by).toBe("seq.taylor@gmail.com");
+    const finding = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'repo_change_pre_approved'`, res.taskId);
+    expect(JSON.parse(finding.detail).phrase).toBe("your call");
+    expect(JSON.parse(finding.detail).by).toBe("seq.taylor@gmail.com");
+
+    // A pre-approved plan that still asks is refused; one that decides everything files as approved.
+    const asking = await plan(rc.id, READY, [{ question: "Which headline?", default: "A" }]);
+    expect(asking.status).toBe(400);
+    await apiJson(`/api/repo-changes/${rc.id}/release`, { method: "POST", body: { device_id: DEVICE, reason: "test" } });
+    const filed = await plan(rc.id, READY);
+    expect(filed.status).toBe(200);
+    expect(filed.body.data.phase).toBe("build");
+    let r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("build");
+    expect(r.answered_at).toBeTruthy();
+    expect(r.plan_approved_by).toBe('seq.taylor@gmail.com (pre-approved in the request: "your call")');
+    expect(canEnterBuild(r).ok).toBe(true);
+
+    const b = await build(rc.id);
+    expect(b.body.data.phase).toBe("landing");
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("land");
+    expect(canLand(r).ok).toBe(true);
+    expect(isForced(r)).toBe(false);
+    expect((await claim(rc.id)).status).toBe(201);
+  });
+
+  it("PRE-APPROVED + NOT READY: parks BUILD, then stops at the preview gate exactly as an unforced task does", async () => {
+    const { rc } = await open(`Update WPP-llm from ${FOLDER}. Just do it.`);
+    expect(rc.pre_approved_phrase).toBe("just do it");
+    expect(rc.force_phrase).toBeNull();
+    const filed = await plan(rc.id, NOT_READY);
+    expect(filed.body.data.phase).toBe("build");
+    const b = await build(rc.id);
+    expect(b.body.data.phase).toBe("preview");
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    const r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("preview");
+    expect(isForced(r)).toBe(false);
+    expect(canLand({ ...r, phase: "land" }).ok).toBe(false);
+    expect(canLand({ ...r, phase: "land" }).why).toMatch(/needs a preview/);
+  });
+
+  it("PRE-APPROVED + FORCED + NOT READY: lands on green, named as forced by her from the request", async () => {
+    const { rc, res } = await open(`Update WPP-llm from ${FOLDER}. You decide everything — approved to production, the missing bios can ship.`);
+    expect(rc.pre_approved_phrase).toBe("you decide");
+    expect(rc.force_phrase).toBe("approved to production");
+    const filed = await plan(rc.id, NOT_READY);
+    expect(filed.body.data.phase).toBe("build");
+    let r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.forced_by).toBe("seq.taylor@gmail.com");
+    expect(JSON.parse(r.forced_placeholders)).toEqual(NOT_READY.placeholders);
+    const forcedFinding = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'repo_change_forced'`, res.taskId);
+    expect(JSON.parse(forcedFinding.detail).at).toBe("request");
+    const b = await build(rc.id);
+    expect(b.body.data.phase).toBe("landing");
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("land");
+    expect(canLand(r).ok).toBe(true);
+    expect(canLand(r).why).toMatch(/forced to production by seq.taylor@gmail.com/);
+  });
+
+  it("\"stop\" within the build withdraws the approval; \"stop\" while landing parks the PR unlanded", async () => {
+    const { rc } = await open(`Update WPP-llm from ${FOLDER}. Pick everything.`);
+    await plan(rc.id, READY);
+    const held = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "stop" }), env as never);
+    expect(held.reply).toMatch(/^Held\./);
+    let r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("asking");
+    expect(r.answered_at).toBeNull();
+    expect(r.plan_approved_by).toBeNull();
+    expect((await claim(rc.id)).status).toBe(409);
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "approved" }), env as never);
+    await build(rc.id);
+    const held2 = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "no — wait" }), env as never);
+    expect(held2.reply).toMatch(/will not land/);
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("previewing");
+    await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { state: "green", detail: "ci: pass" } });
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("previewing");
+    expect(canLand({ ...r, phase: "land" }).ok).toBe(false);
+    await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "approved" }), env as never);
+    r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.phase).toBe("land");
+    expect(canLand(r).ok).toBe(true);
+  });
+
+  it("A STRANGER'S PRE-APPROVAL IS REFUSED, and a later message by anyone never pre-approves", async () => {
+    const s = await open(`Update WPP-llm from ${FOLDER}. Your call.`, "Scooter <scooter@example.com>");
+    expect(s.res.outcome).toBe("REFUSED_SENDER");
+    expect(s.rc).toBeNull();
+    const { rc } = await open(`Update WPP-llm from ${FOLDER}. New hero.`);
+    expect(rc.pre_approved_phrase).toBeNull();
+    await plan(rc.id, READY, [{ question: "Which headline?", default: "A" }]);
+    const later = await handleBossInboundMail(mail({ subject: `Re: ${changeToken(rc.id)}`, body: "your call, just do it" }), env as never);
+    expect(later.outcome).toBe("PLAN_ANSWERED");
+    const r = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(r.pre_approved_phrase).toBeNull();
+    expect(r.plan_approved_by).toBeNull();
+    expect(r.answers_mode).toBe("answers"); // her words are her answers; not a pre-approval, not a force
+  });
+});

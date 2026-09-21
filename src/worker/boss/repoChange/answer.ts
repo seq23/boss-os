@@ -30,6 +30,7 @@ export interface RepoChangeRow {
   preview_url: string | null; preview_sent_at: number | null; preview_message_id: string | null;
   land_approved_at: number | null; land_approval_text: string | null; land_approval_mail_id: string | null;
   forced_by: string | null; forced_at: number | null; forced_placeholders: string | null; forced_mail_id: string | null;
+  pre_approved_phrase: string | null; pre_approved_by: string | null; plan_approved_by: string | null; force_phrase: string | null;
 }
 
 export async function repoChangeById(env: Env, id: string): Promise<RepoChangeRow | null> {
@@ -120,6 +121,37 @@ export async function answerFromMail(
     return { changeId, resumed: false, note: `Noted on ${row.id}'s preview: "${reply.text.slice(0, 300)}". Nothing landed — only the single word "approved" lands a previewed change; "changes: …" holds it.` };
   }
 
+  /*
+   * ─── "STOP" BEFORE LAND HOLDS IT, WHEREVER IT IS ─────────────────────────
+   *
+   * A pre-approved task parks in BUILD with no reply from her; "Reply stop within the build to
+   * hold it" has to mean something, so a hold at `build` withdraws the approval (back to
+   * `asking`, her note on the record — "approved" re-arms it), and a hold at `landing` parks the
+   * PR as a preview she has not approved (`previewing`, with the hold as the preview moment), so
+   * `canLand` refuses until she writes "approved". Nothing lands on a hold.
+   */
+  if ((row.phase === "build" || row.phase === "landing") && readReply(input.text).mode === "held") {
+    const reply = readReply(input.text);
+    if (row.phase === "build") {
+      await env.DB
+        .prepare(`UPDATE repo_changes SET phase = 'asking', answered_at = NULL, answers_text = NULL, answers_mode = NULL, plan_approved_by = NULL, held_at = ?, held_text = ?, updated_at = ? WHERE id = ? AND phase = 'build'`)
+        .bind(input.now, reply.text.slice(0, 20_000), input.now, row.id).run();
+    } else {
+      await env.DB
+        // The hold IS a request to look before landing: `preview_forced` makes `canLand` demand her second word.
+        .prepare(`UPDATE repo_changes SET phase = 'previewing', preview_forced = 1, preview_sent_at = ?, preview_message_id = 'held-by-her', held_at = ?, held_text = ?, updated_at = ? WHERE id = ? AND phase = 'landing'`)
+        .bind(input.now, input.now, reply.text.slice(0, 20_000), input.now, row.id).run();
+    }
+    await taskEvent(env, row.task_id, "repo_change_held", { repo_change_id: row.id, mail_id: input.mailId, at: row.phase, text: reply.text.slice(0, 2000) });
+    await audit(env.DB, { actor: "boss", lane: "ops", entityType: "repo_change", entityId: row.id, action: "plan_held", detail: { task_id: row.task_id, mail_id: input.mailId, at: row.phase } });
+    return {
+      changeId, resumed: false,
+      note: row.phase === "build"
+        ? `Held. ${row.id} (${row.repo ?? "the package"}) will not build; the approval is withdrawn and your note is on the record: "${reply.text.slice(0, 300)}". Reply "approved" to re-arm it.`
+        : `Held. ${row.id} (${row.repo ?? "the package"}) will not land${row.pr_url ? ` — the PR stays open at ${row.pr_url}` : ""}; your note is on the record: "${reply.text.slice(0, 300)}". Reply "approved" when it should land.`,
+    };
+  }
+
   if (row.phase !== "asking") {
     await taskEvent(env, row.task_id, "repo_change_note", { repo_change_id: row.id, mail_id: input.mailId, phase: row.phase, text: input.text.slice(0, 4000) });
     return {
@@ -190,7 +222,7 @@ export async function answerFromMail(
  * routing), and the row carries who, when, what shipped, and which mail said so. The finding is a
  * `warn` event plus an audit row — a force that nobody could later find is a bypass, not a decision.
  */
-async function recordForce(env: Env, row: RepoChangeRow, input: { mailId: string; now: number; sender: string }, at: "plan" | "preview"): Promise<string[]> {
+export async function recordForce(env: Env, row: RepoChangeRow, input: { mailId: string | null; now: number; sender: string }, at: "plan" | "preview" | "request"): Promise<string[]> {
   const placeholders = safeList(row.placeholders_json).map(String);
   await env.DB
     .prepare(`UPDATE repo_changes SET forced_by = ?, forced_at = ?, forced_placeholders = ?, forced_mail_id = ?, updated_at = ? WHERE id = ?`)

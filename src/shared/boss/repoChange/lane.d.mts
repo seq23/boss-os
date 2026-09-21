@@ -20,6 +20,8 @@ export interface RepoChangeParse {
   drive_folder: string | null;
   drive_url: string | null;
   instruction: string;
+  pre_approved_phrase: string | null;
+  force_phrase: string | null;
 }
 export interface RepoChangeExcluded {
   excluded: { repo: string; why: string };
@@ -45,6 +47,9 @@ export interface RepoChangeRowLike {
 
 export interface GuardVerdict { ok: boolean; why: string }
 
+export const PRE_APPROVAL_PHRASES: readonly string[];
+export function preApprovalIn(text: string | null | undefined): string | null;
+export function forcePhraseIn(text: string | null | undefined): string | null;
 export function changeToken(id: string): string;
 export function tokenIn(text: string | null | undefined): string | null;
 export function driveFolderIn(text: string | null | undefined): { id: string; url: string } | null;

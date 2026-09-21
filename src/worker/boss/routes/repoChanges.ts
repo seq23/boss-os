@@ -23,7 +23,7 @@ import type { Env, Vars } from "../env";
 import { ok, badRequest, conflict, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
-import { repoChangeById, taskEvent, describePhase, safeList, type RepoChangeRow } from "../repoChange/answer";
+import { repoChangeById, taskEvent, describePhase, safeList, recordForce, type RepoChangeRow } from "../repoChange/answer";
 import {
   claimablePhase, claimIsLive, canLand, canEnterBuild, canPreview, needsPreview, isForced, RUNNABLE_PHASES, PHASE_MODELS, PHASE_MAX_TURNS,
   CLAIM_LEASE_MS, TASK_KIND, EXECUTOR_SCRIPT, gridRepoNames,
@@ -39,6 +39,7 @@ function view(row: RepoChangeRow, now = Date.now()) {
     ...row,
     decided: safeList(row.decided_json), asks: safeList(row.asks_json), placeholders: safeList(row.placeholders_json),
     needs_preview: needsPreview(row), forced: isForced(row), forced_placeholders: safeList(row.forced_placeholders),
+    pre_approved: Boolean(row.pre_approved_phrase),
     proof: parseObj(row.proof_json), live_proof: parseObj(row.live_proof_json),
     sentence: `${row.repo ?? "package"}: ${describePhase(row)}`,
     claim_live: claimIsLive(row, now),
@@ -175,19 +176,34 @@ repoChanges.post("/:id/plan", async (c) => {
   const repo = row.repo ?? named ?? null;
   const property = repo ? propertyForRepo(repo)?.key ?? null : null;
   const now = Date.now();
+  /*
+   * PRE-APPROVED IN THE REQUEST: the plan decides everything (a plan that still asks is refused),
+   * is filed as approved by her at filing time, and BUILD parks at once. The FYI email still went
+   * (`ask_message_id` is still required) so she can "stop" it. A force phrase in the request is
+   * recorded through the one force writer, with her as the actor.
+   */
+  const pre = Boolean(row.pre_approved_phrase && row.pre_approved_by);
+  if (pre && asks.length > 0) throw badRequest(`A pre-approved plan may not ask (${asks.length} ask${asks.length === 1 ? "" : "s"})`, `She wrote "${row.pre_approved_phrase}": every decision is Danielle's; move each ask into decided with its default as the decision.`);
+  const phase = pre ? "build" : "asking";
+  const approvedBy = pre ? `${row.pre_approved_by} (pre-approved in the request: "${row.pre_approved_phrase}")` : null;
   await c.env.DB
     .prepare(
-      `UPDATE repo_changes SET phase = 'asking', repo = ?, property_key = ?, plan_text = ?, decided_json = ?, asks_json = ?, planned_at = ?, plan_written_by = ?,
+      `UPDATE repo_changes SET phase = ?, repo = ?, property_key = ?, plan_text = ?, decided_json = ?, asks_json = ?, planned_at = ?, plan_written_by = ?,
               publish_ready = ?, placeholders_json = ?,
               asked_at = ?, ask_message_id = ?, run_log = COALESCE(?, run_log),
+              answered_at = ?, answers_text = ?, answers_mode = ?, plan_approved_by = ?,
               claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ?
         WHERE id = ? AND phase = 'plan'`,
     )
-    .bind(repo, property, planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), b.publish_ready ? 1 : 0, JSON.stringify(placeholders), now, askMessageId, text(b?.run_log, 500), now, row.id)
+    .bind(phase, repo, property, planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), b.publish_ready ? 1 : 0, JSON.stringify(placeholders), now, askMessageId, text(b?.run_log, 500),
+      pre ? now : null, pre ? `pre-approved in the request: "${row.pre_approved_phrase}" — every decision is Danielle's` : null, pre ? "approved" : null, approvedBy, now, row.id)
     .run();
-  await taskEvent(c.env, row.task_id, "repo_change_planned", { repo_change_id: row.id, decided: decided.length, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, ask_message_id: askMessageId });
-  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "planned", detail: { task_id: row.task_id, asks: asks.length } });
-  return ok(c, { id: row.id, phase: "asking", asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length });
+  if (pre && row.force_phrase) {
+    await recordForce(c.env, { ...row, placeholders_json: JSON.stringify(placeholders) }, { mailId: row.mail_id, now, sender: row.pre_approved_by! }, "request");
+  }
+  await taskEvent(c.env, row.task_id, "repo_change_planned", { repo_change_id: row.id, decided: decided.length, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, ask_message_id: askMessageId, pre_approved: pre, plan_approved_by: approvedBy });
+  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: pre ? "planned_pre_approved" : "planned", detail: { task_id: row.task_id, asks: asks.length, phrase: row.pre_approved_phrase ?? null } });
+  return ok(c, { id: row.id, phase, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, pre_approved: pre });
 });
 
 /** BUILD → LANDING. The PR exists; the checks are not yet recorded. */

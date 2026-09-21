@@ -57,6 +57,8 @@ Read the package, the runbook, and the repository. Then write the plan.
    change touches.
 3. Write the plan: what changes, file by file; what the runbook requires (validators, build,
    lastmod, screenshots, redirects); how it will be proven; what the live proof will be.
+Pre-approved in the request: {{PRE_APPROVED}}
+
 4. Split every decision. `decided`: the ones policy says are yours — one line each, with the
    reason. `asks`: the ones policy says are hers — one clear question each, as an object with
    `question`, `options` (the choices you see), `default` (YOUR RECOMMENDED ANSWER, concrete
