@@ -7,7 +7,7 @@
 #
 # The MERGE GATE — what a pull request waits on — is the fast half, run as parallel jobs:
 # typecheck + every registered scan + the client build in one job, the unit/integration suite in
-# four vitest shards, the Boss suites in two. Measured on run 35648912898 the single serial job took
+# four vitest shards, the Boss suites in three. Measured on run 35648912898 the single serial job took
 # 15m02s (unit 7m55s, Boss 5m00s, scans 0m57s, install+typecheck 0m42s); sharded, the longest
 # job is a quarter of the unit suite plus setup, so the gate finishes in about 3–4 minutes. The
 # Playwright journeys — 15–17 minutes, one worker, one shared local D1 — run AFTER the merge, on
@@ -215,16 +215,17 @@ jobs:
         run: npx vitest run --no-file-parallelism --shard=${{ matrix.shard }}/4
 
   boss:
-    name: Boss OS suites (shard ${{ matrix.shard }}/2)
+    name: Boss OS suites (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    # Normal: ~3m a shard (5m00s serial on 21 Sep 2026, split two ways, plus install).
+    # Normal: ~3–4m a shard. Two shards split 81 files 41/40 but 811/696 tests: shard 2 took 7m37s
+    # on run 35653650867 while shard 1 took 3m. Three shards keep the longest under the gate's target.
     timeout-minutes: 8
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
 
     steps:
       - name: Checkout
@@ -253,14 +254,14 @@ jobs:
       # `wrangler dev` retry on the Playwright job below, for the same reason.
       - name: Boss OS suites (workerd, real D1/R2/KV)
         run: |
-          npx vitest run --config vitest.boss.config.ts --shard=${{ matrix.shard }}/2 2>&1 | tee boss-suites.log
+          npx vitest run --config vitest.boss.config.ts --shard=${{ matrix.shard }}/3 2>&1 | tee boss-suites.log
           rc=${PIPESTATUS[0]}
           # Only the harness's signature, and no real assertion beside it: a test that failed on its
           # own prints "AssertionError: expected …" (or a TypeError/ReferenceError), and that is reported.
           if [ "$rc" -ne 0 ] && grep -q "Isolated storage failed" boss-suites.log \
              && ! grep -qE "AssertionError: expected|TypeError|ReferenceError|Test timed out" boss-suites.log; then
             echo "::warning::the pool's isolated-storage snapshot raced a SQLite WAL sidecar — retrying the Boss suites once"
-            npx vitest run --config vitest.boss.config.ts --shard=${{ matrix.shard }}/2
+            npx vitest run --config vitest.boss.config.ts --shard=${{ matrix.shard }}/3
           else
             exit "$rc"
           fi

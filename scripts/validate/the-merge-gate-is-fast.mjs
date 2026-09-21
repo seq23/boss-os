@@ -97,7 +97,7 @@ function selfTest() {
     ["a job with no ceiling is named", good.replace(/^    timeout-minutes: 6\n/m, ""), 1],
     ["the journeys back on pull requests", good.replace(/^    if: github\.event_name != 'pull_request'\n/m, ""), 1],
     ["a shard denominator that skips files", good.replace("--shard=${{ matrix.shard }}/4", "--shard=${{ matrix.shard }}/5"), 1],
-    ["a one-shard matrix", good.replace("shard: [1, 2]", "shard: [1]"), 1],
+    ["a one-shard matrix", good.replace("shard: [1, 2, 3]", "shard: [1]"), 1],
     ["the unit shard gone parallel inside", good.replace("npx vitest run --no-file-parallelism --shard", "npx vitest run --shard"), 1],
     ["a gate job whose ceiling is the old 30", good.replace(/^    timeout-minutes: 8\n/m, "    timeout-minutes: 30\n"), 1],
     ["RULE 0: no jobs at all", "name: CI\non: push\n", 1],
