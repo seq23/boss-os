@@ -362,10 +362,10 @@ async function runPhase(claim) {
    */
   const outFile = join(dir, `${phase}.json`);
   const reportedMark = outFile + ".reported";
+  const markReported = () => writeFileSync(reportedMark, new Date().toISOString());
   if (phase === "land" && existsSync(join(dir, "landed-post-land-failed.json")) && existsSync(outFile) && !existsSync(reportedMark)) markReported();
   const unreported = existsSync(outFile) && !existsSync(reportedMark);
   if (existsSync(outFile) && !unreported) { writeFileSync(outFile + ".previous", readFileSync(outFile)); spawnSync("rm", ["-f", outFile, reportedMark]); }
-  const markReported = () => writeFileSync(reportedMark, new Date().toISOString());
   /*
    * A FAILED PHASE'S OUTPUT IS CONSUMED. 21 Sep 2026, rc_m32h8ze2a4hk37pc retried after
    * POST_LAND_STEP_FAILED: the previous land.json (post_land not_invoked) was still on disk with
