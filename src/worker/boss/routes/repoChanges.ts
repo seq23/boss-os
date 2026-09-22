@@ -27,6 +27,7 @@ import { repoChangeById, taskEvent, describePhase, safeList, recordForce, retryR
 import {
   claimablePhase, claimIsLive, canLand, canEnterBuild, canPreview, needsPreview, isForced, RUNNABLE_PHASES, PHASE_MODELS, PHASE_MAX_TURNS,
   CLAIM_LEASE_MS, TASK_KIND, EXECUTOR_SCRIPT, gridRepoNames,
+  MAX_REWORKS,
 } from "../../../shared/boss/repoChange/lane.mjs";
 import { propertyForRepo } from "../../../shared/boss/grid.mjs";
 
@@ -330,6 +331,46 @@ repoChanges.post("/:id/land", async (c) => {
   await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "landed", detail: { task_id: row.task_id, merge_sha: mergeSha, pr_url: row.pr_url } });
   await logEvent(c.env.DB, { level: "info", scope: "duties", event: "repo_change_landed", lane: "ops", entityId: row.id, detail: { merge_sha: mergeSha, pr_url: row.pr_url } });
   return ok(c, { id: row.id, phase: "done", merge_sha: mergeSha });
+});
+
+/**
+ * REWORK — A FAILED POST-LAND STEP GOES BACK TO BUILD, TO THE EMPLOYEE WHO LANDED IT. The merge
+ * stands (its sha is kept under reworked_merge_shas); the PR, the checks and the build proof belong
+ * to the attempt that failed and are cleared; the plan, her answer, her pre-approval and the
+ * recorded post-land command are hers and stay. The failure output becomes the build's brief
+ * (rework_note). `MAX_REWORKS` (shared lane.mjs) is the whole budget: a row at the cap is refused
+ * here with 409, and the runner then — and only then — writes the owner a named stop that lists
+ * every attempt. 21 Sep 2026: "things she can fix herself" never reach the owner.
+ */
+repoChanges.post("/:id/rework", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const row = await mustBeClaimed(c.env, c.req.param("id"), b, "land");
+  if (row.phase !== "land") throw conflict(`${row.id} is ${describePhase(row)}; only a landed change whose post-land step failed can be reworked`);
+  const mergeSha = text(b?.merge_sha, 64);
+  if (!mergeSha || !/^[0-9a-f]{7,40}$/i.test(mergeSha)) throw badRequest("A rework needs merge_sha", "The merge whose post-land step failed; the merge stands.");
+  const reason = text(b?.reason, 4000);
+  if (!reason) throw badRequest("A rework needs a reason", "The post-land step's command, exit code and output — that is the brief for the fix.");
+  const count = Number(row.rework_count ?? 0);
+  if (count >= MAX_REWORKS) throw conflict(`${row.id} has been reworked ${count} time(s); the budget is ${MAX_REWORKS}`, "The next word is the owner's: report a named stop that lists every attempt.");
+  let shas: string[] = [];
+  try { shas = JSON.parse(row.reworked_merge_shas ?? "[]"); } catch { shas = []; }
+  if (!Array.isArray(shas)) shas = [];
+  shas.push(mergeSha);
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE repo_changes SET phase = 'build', rework_count = ?, rework_note = ?, reworked_merge_shas = ?,
+              branch = NULL, pr_url = NULL, pr_number = NULL, built_at = NULL, build_written_by = NULL, proof_json = NULL,
+              checks_state = NULL, checks_green_at = NULL, checks_detail = NULL, failure = NULL, run_log = COALESCE(?, run_log),
+              claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ?
+        WHERE id = ? AND phase = 'land'`,
+    ).bind(count + 1, reason, JSON.stringify(shas), text(b?.run_log, 500), now, row.id),
+    c.env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, finished_at = NULL WHERE id = ?`).bind(row.task_id),
+  ]);
+  await taskEvent(c.env, row.task_id, "repo_change_reworked", { repo_change_id: row.id, rework: count + 1, of: MAX_REWORKS, merge_sha: mergeSha, reason: reason.slice(0, 2000) });
+  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "reworked", detail: { task_id: row.task_id, rework: count + 1, of: MAX_REWORKS, merge_sha: mergeSha, reason: reason.slice(0, 300) } });
+  await logEvent(c.env.DB, { level: "warn", scope: "duties", event: "repo_change_reworked", lane: "ops", entityId: row.id, detail: { rework: count + 1, of: MAX_REWORKS, merge_sha: mergeSha, reason: reason.slice(0, 300) } });
+  return ok(c, { id: row.id, phase: "build", rework_count: count + 1, max_reworks: MAX_REWORKS });
 });
 
 /** A named stop from any runnable phase. She has been emailed; the id proves it. */

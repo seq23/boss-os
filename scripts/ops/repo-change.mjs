@@ -39,7 +39,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
-  canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT,
+  canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { sendersFor, employeeMail } from "./notify.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
@@ -337,7 +337,10 @@ async function runPhase(claim) {
   let buildPath = repoPath;
   let branch = row.branch ?? null;
   if (phase === "build" && repoPath) {
-    branch = branch ?? `work/rc-${row.id.replace(/^rc_/, "").slice(-8)}`;
+    // A rework builds on a fresh branch off origin/main: the first one is merged, and a worktree
+    // re-made on it would start from a tip that main already contains.
+    const fix = Number(row.rework_count ?? 0) > 0 ? `-fix${row.rework_count}` : "";
+    branch = branch ?? `work/rc-${row.id.replace(/^rc_/, "").slice(-8)}${fix}`;
     const wt = join(WORK_ROOT, `wt-${row.id}`);
     const fetch = spawnSync("git", ["fetch", "origin", "--prune", "-q"], { cwd: repoPath, encoding: "utf8" });
     if (fetch.status !== 0) { await fail(row, "REPO_UNREACHABLE", `git fetch in ${repo} failed: ${(fetch.stderr ?? "").trim().slice(0, 300)}`, log); return; }
@@ -390,6 +393,9 @@ async function runPhase(claim) {
     PR_URL: row.pr_url ?? "", PR_NUMBER: row.pr_number ?? "", BRANCH: branch ?? "", OUT_FILE: outFile, WORK_DIR: dir,
     ASK_LIST: ASK_POLICY.ask.map((a) => `- ${a}`).join("\n"), DECIDE_LIST: ASK_POLICY.decide.map((d) => `- ${d}`).join("\n"),
     LAND: LAND, PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
+    REWORK: Number(row.rework_count ?? 0) > 0
+      ? `YES — rework ${row.rework_count}/${MAX_REWORKS}. Your previous PR for this change LANDED (merge ${(() => { try { return JSON.parse(row.reworked_merge_shas ?? "[]").join(", "); } catch { return "?"; } })()}) and then the recorded post-land step \`${row.post_land_command ?? "?"}\` FAILED: ${String(row.rework_note ?? "").slice(0, 1500)}. That failure is yours to fix, in this repo, now: read the step's own output, find the cause in the script or the content it pushes (a limit, a format, a missing field — not a credential unless the output names one), fix it at source, add a guard that would have caught it before the request left the Mac, and open a NEW pull request on this branch. The step runs again after this PR lands; it must exit 0 then. Do not ask the owner anything the output already answers.`
+      : "no — a first build.",
     CONTINUATION: (() => { const c = continuationCount(dir, phase); if (!c.count) return "no — a fresh start."; const b = stateBehind({ phase, dir, repo, repoPath, buildPath, branch }); return `YES — continuation ${c.count}/${MAX_CONTINUATIONS}. The previous attempt: ${c.notes?.at(-1)?.note ?? "(no note)"}. What is already there: ${b.facts.join("; ") || "(nothing readable)"}. Do not redo it; verify it and FINISH — write ${outFile} first if the result already exists.`; })(),
     PRE_APPROVED: row.pre_approved_phrase
       ? `YES — she wrote "${row.pre_approved_phrase}" in the request. Every decision is yours: put what you would have asked under "decided" with your recommended default AS the decision and the reason. "asks" MUST be an empty list; the Worker refuses a pre-approved plan that asks.`
@@ -556,8 +562,32 @@ async function runPhase(claim) {
       return;
     }
     if (postLand && Number(postLand.rc) !== 0) {
+      /*
+       * HER EMPLOYEE'S REWORK, NOT HER EMAIL (21 Sep 2026, rc_m32h8ze2a4hk37pc). The step that
+       * failed is the employee's own script against the change she just landed: the fix is hers to
+       * make. The merge stands; the row goes back to BUILD with the failure as its brief, the next
+       * tick opens a fix PR on a fresh branch, lands it and runs the step again. Only past
+       * MAX_REWORKS is the owner written to, and that stop lists every attempt.
+       */
+      const tail = String(postLand.output_tail ?? "").slice(0, 1500);
+      const attempt = `\`${postLand.command}\` exited ${postLand.rc} after ${repo} landed as ${out.merge_sha}. Output: ${tail}`;
+      const reworks = Number(row.rework_count ?? 0);
+      if (reworks < MAX_REWORKS) {
+        const r = await api(`/${row.id}/rework`, { device_id: DEVICE, merge_sha: out.merge_sha, reason: attempt, run_log: log });
+        if (r.ok) {
+          markReported();
+          // The next build starts clean: the old worktree (on the merged branch) and this land's
+          // outputs would otherwise be reused as if they were the fix.
+          for (const f of ["build.json", "build.json.reported", "land.json", "land.json.reported", "landed-post-land-failed.json", "continuations-build.json", "continuations-land.json"]) spawnSync("rm", ["-f", join(dir, f)]);
+          if (repoPath) spawnSync("git", ["worktree", "remove", "--force", join(WORK_ROOT, `wt-${row.id}`)], { cwd: repoPath, encoding: "utf8" });
+          say(`REWORK ${reworks + 1}/${MAX_REWORKS} for ${row.id}: the post-land step failed and the fix is Danielle's — back to build with the output as the brief. ${attempt.slice(0, 200)}`);
+          return;
+        }
+        say(`rework not recorded (${r.status} ${r.error ?? ""}); stopping to the owner instead.`);
+      }
       writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
-      await failOut("POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${String(postLand.output_tail ?? "").slice(0, 600)}`, log);
+      let shas = []; try { shas = JSON.parse(row.reworked_merge_shas ?? "[]"); } catch { shas = []; }
+      await failOut("POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${tail.slice(0, 600)}${reworks ? ` Danielle reworked it ${reworks} time(s) already (${shas.join(", ")}) and the step still fails; the budget of ${MAX_REWORKS} is spent. Her note from the last rework: ${String(row.rework_note ?? "").slice(0, 400)}` : ""}`, log);
       return;
     }
     const subject = `#danielle DONE: ${repo} ${changeToken(row.id)} — landed and live${isForced(row) ? ` (to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"}, by your instruction)` : ""}${postLand ? " · post-land step done" : ""}`;
@@ -570,6 +600,7 @@ async function runPhase(claim) {
       ...Object.entries(proof).map(([k, v]) => `- ${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`),
       ...(postLand ? ["", "POST-LAND STEP (as you asked)", `- ran: ${postLand.command} (exit ${postLand.rc})`, `- proof: ${postLand.proof ?? "(none recorded)"}`, `- output: ${String(postLand.output_tail ?? "").slice(0, 1200)}`] : []),
       "", "WHAT WAS PROVEN BEFORE THE PR", JSON.stringify(row.proof ?? {}, null, 2),
+      ...(Number(row.rework_count ?? 0) > 0 ? ["", `REWORKED ${row.rework_count} time(s) before this landed clean: the post-land step failed on ${(() => { try { return JSON.parse(row.reworked_merge_shas ?? "[]").join(", "); } catch { return "?"; } })()} and I fixed my own script rather than write to you.`] : []),
       "", `Checks: ${row.checks_detail ?? "recorded green"}`,
       "", `Run log on your Mac: ${log}`,
       "", "— Danielle, Technical Program Manager",
