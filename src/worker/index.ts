@@ -7,7 +7,10 @@ import { INTAKE_MAILBOX } from "../shared/intake/emailTriggers";
  * from them and `validate:boss-intake-is-boss-only` fails the build if that ever changes.
  */
 import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
-import { BOSS_INTAKE_MAILBOX } from "../shared/boss/intake/mail.mjs";
+import { BOSS_INTAKE_MAILBOX, decodeMimeHeader } from "../shared/boss/intake/mail.mjs";
+// The structured event spine, for the one thing in this file that writes to it: a reply that did
+// not go. Everything else here logs through the handlers it calls.
+import { logEvent } from "./boss/lib/log";
 import { handleReadCompanyDeck } from "./services/deckReader";
 import {
   handleDraftLpReport,
@@ -1430,17 +1433,96 @@ export default {
        * case: answering would confirm the address is live and turn this into a way to make Boss OS
        * mail somebody. The refusal is recorded for HER instead.
        */
+      /*
+       * ─── A REPLY THAT DID NOT GO SAYS WHY, DURABLY ────────────────────────
+       *
+       * This used to end at `console.error("boss inbound reply failed", err)`. Workers Logs keep
+       * three days, so the reason for a failure was gone before anybody thought to ask for it, and
+       * the only surviving trace was a null `replied_at` — which, as migration 0272 sets out, also
+       * means "she typed it here and the answer went back on screen". Three different facts wearing
+       * one shape, and the one that mattered had no detail attached to it at all.
+       *
+       * So the outcome of the send is written to the arrival row and to the event log, on BOTH
+       * branches, with everything `err` carries plus the shape of the message that provoked it.
+       * The next failure is diagnosable from the table alone.
+       *
+       * WHAT CLOUDFLARE DOCUMENTS ABOUT `reply()` FAILING, checked 22 Sep 2026: the inbound message
+       * must have a valid DMARC result; a message may be replied to once per event; the reply's
+       * recipient must be the inbound sender; the outgoing sender domain must match the domain that
+       * received it; and a `References` header with more than 100 entries is refused as a loop.
+       * NONE of those explains `iml_m351xdg27p30hj5k` — DMARC passed, one reply, one References
+       * entry, same domain both ways. No exception text is documented for any failure mode. That is
+       * precisely why this capture exists rather than a fix asserting a cause nobody has evidence
+       * for.
+       */
       if (result?.reply) {
+        /*
+         * The reply text, captured once. `result.reply` is narrowed by the `if`, but the failure
+         * handler below is an async closure and TypeScript will not carry the narrowing into it —
+         * and it is exactly right not to, since `result` is a mutable object reference.
+         */
+        const replyText: string = result.reply;
+        /*
+         * THE SUBJECT IS DECODED, FLATTENED AND TRIMMED BEFORE IT GOES BACK OUT.
+         *
+         * It was the raw header. An RFC 2047 encoded-word subject (`=?utf-8?B?…?=`) would have been
+         * echoed back to her as those bytes — the intake decodes headers everywhere else and this
+         * one call did not. Worse, a header value is terminated by CRLF, so a subject carrying one
+         * puts whatever follows it into the reply's header block. Nothing observed has done that;
+         * it costs one line to make it impossible. The trailing space on
+         * "Fwd: Shorts lane #simone " — the one genuine failure in the table — is removed by the
+         * same line, which is a plausible contributor and is NOT claimed as the cause.
+         */
+        const subject = `Re: ${decodeMimeHeader(message.headers.get("subject") ?? "") || "your message"}`
+          .replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+        const recordReply = async (state: "sent" | "failed", error: string | null) => {
+          await env.WP_OS_DB.prepare(
+            `UPDATE boss_inbound_mail SET replied_at = ?, reply_state = ?, reply_error = ? WHERE id = ?`,
+          ).bind(state === "sent" ? Date.now() : null, state, error, result.mailId).run();
+        };
         await message.reply({
           from: BOSS_INTAKE_MAILBOX,
-          subject: `Re: ${message.headers.get("subject") ?? "your message"}`.slice(0, 200),
-          text: result.reply,
+          subject,
+          text: replyText,
         }).then(
-          () => env.WP_OS_DB.prepare(`UPDATE boss_inbound_mail SET replied_at = ? WHERE id = ?`)
-            .bind(Date.now(), result.mailId).run(),
+          () => recordReply("sent", null),
           // A failed reply must not also lose the work. The row and the task already exist; this
-          // records that she was not told, rather than pretending she was.
-          (err: unknown) => { console.error("boss inbound reply failed", err); },
+          // records that she was not told, AND what stopped it, rather than pretending she was.
+          async (err: unknown) => {
+            const e = err as { name?: unknown; message?: unknown; stack?: unknown };
+            const reason = [
+              typeof e?.name === "string" && e.name ? e.name : null,
+              err instanceof Error ? err.message : String(err),
+            ].filter(Boolean).join(": ").slice(0, 900);
+            console.error("boss inbound reply failed", err);
+            /*
+             * EACH WRITE IS INDEPENDENTLY GUARDED. A throw from the row update would take the event
+             * log down with it and we would be back to nothing at all — which is the exact failure
+             * being fixed, reintroduced in the handler that fixes it.
+             */
+            await recordReply("failed", reason).catch((e2) => console.error("reply_error not recorded", e2));
+            await logEvent(env.WP_OS_DB, {
+              level: "error", scope: "intake", event: "boss_mail_reply_failed", lane: "ops",
+              entityId: result.mailId,
+              detail: {
+                error: reason,
+                stack: typeof e?.stack === "string" ? e.stack.slice(0, 1200) : null,
+                outcome: result.outcome,
+                task_id: result.taskId,
+                reply_chars: replyText.length,
+                subject_sent: subject,
+                // The shape of the message, because the one real failure was a forward and nothing
+                // recorded that at the time. Two of these is a pattern; one is a note.
+                inbound_bytes: message.rawSize,
+                forwarded_subject: /^\s*fwd:/i.test(message.headers.get("subject") ?? ""),
+                has_in_reply_to: Boolean(message.headers.get("in-reply-to")),
+                references_count: (message.headers.get("references") ?? "").split(/\s+/).filter(Boolean).length,
+                message_id: (message.headers.get("message-id") ?? "").slice(0, 200) || null,
+                content_type: (message.headers.get("content-type") ?? "").slice(0, 120) || null,
+                mailer: (message.headers.get("x-mailer") ?? "").slice(0, 80) || null,
+              },
+            }).catch((e2) => console.error("reply failure event not logged", e2));
+          },
         );
       }
       return;

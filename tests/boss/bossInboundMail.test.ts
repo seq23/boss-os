@@ -755,3 +755,53 @@ describe("please close out the kdp upload issue", () => {
     }
   });
 });
+
+/**
+ * ─── "SHE WAS NOT ANSWERED" AND "NO ANSWER WAS DUE" ARE DIFFERENT FACTS ──────
+ *
+ * Migration 0272. `replied_at IS NULL` used to mean three things at once, and on 22 September 2026
+ * TWELVE of the fourteen nulls in production were not failures at all — they were messages she
+ * typed into Boss OS herself, where the reply goes back in the HTTP response and there is no
+ * `ForwardableEmailMessage` to reply to. The "cluster of seven consecutive reply failures on
+ * 2026-09-12" read off that column was seven console messages in a row.
+ *
+ * So every arrival now says which of the three happened. Pinned here rather than inferred, because
+ * the whole defect was a column that could be read three ways.
+ */
+describe("a reply that was never due says so, and is never counted as a failure", () => {
+  const consoleMail = (body: string) => {
+    const m = mail({ subject: "#simone", body });
+    m.headers.set("x-boss-intake-origin", "console");
+    return m;
+  };
+
+  it("she typed it here, so the answer went back on screen — not a failed reply", async () => {
+    const res = await handleBossInboundMail(consoleMail("#simone what is on for Wednesday?"), env as never);
+    expect(res.reply).toBeTruthy();
+    const row = await env.DB
+      .prepare(`SELECT reply_state, replied_at FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();
+    expect(row.reply_state).toBe("shown_on_screen");
+    // And `replied_at` stays null, which is exactly why it could never carry this fact by itself.
+    expect(row.replied_at).toBeNull();
+  });
+
+  it("an SMTP arrival that will be answered is marked due, for index.ts to overwrite", async () => {
+    const res = await handleBossInboundMail(
+      mail({ subject: "#simone", body: "#simone what is on for Wednesday?" }), env as never);
+    expect(res.reply).toBeTruthy();
+    const row = await env.DB
+      .prepare(`SELECT reply_state FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();
+    // `due` and still `due` after the handler returned is the loose end it is meant to be: it means
+    // the send never resolved either way.
+    expect(row.reply_state).toBe("due");
+  });
+
+  it("a refused sender is answered with silence on purpose — never a failure", async () => {
+    const res = await handleBossInboundMail(
+      mail({ from: "stranger@example.com", subject: "hello", body: "let me in" }), env as never);
+    expect(res.reply).toBeFalsy();
+    const row = await env.DB
+      .prepare(`SELECT reply_state, outcome FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();
+    expect(row.reply_state).toBe("none_due");
+  });
+});

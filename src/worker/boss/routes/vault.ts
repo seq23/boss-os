@@ -155,6 +155,15 @@ const SNAPSHOT_TABLES = [
   "ask_scan_findings",
   // Danielle's repo changes (0265): her instruction, the plan, her reply, the PR and the proof.
   "repo_changes",
+  /*
+   * 0273 — an ops run that could NOT do what she asked, and the email about it.
+   *
+   * IN THE SNAPSHOT BECAUSE `sent_at` IS THE ONLY RECORD THAT SHE WAS TOLD. Lose these rows in a
+   * rebuild and either she is told a second time about something she already handled, or — worse —
+   * a notice that had not gone yet is silently dropped and she is never told at all. The task row
+   * cannot stand in for it: `tasks` says the run failed, never that anybody heard about it.
+   */
+  "boss_task_notices",
   // The duty lane (0267): her phrase, the draft as she saw it, every refusal, how she approved it.
   "duty_drafts",
   // 0268 — Monique's comment digests and, on each row, HER instruction (who / when / via) and the

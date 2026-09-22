@@ -37,6 +37,19 @@ not_found_handling = "single-page-application"
 # D1 — relational operational truth. database_id below is a placeholder:
 # local `wrangler dev` / migrations work without a real id; remote use requires
 # operator-supplied Cloudflare account configuration (UNPROVEN — CREDENTIAL GATE).
+#
+# ─── THIS BLOCK IS THE LOCAL ONE. THE LIVE DATABASE IS UNDER [env.production]. ───
+#
+# `boss-os-db` here is NOT the live database and is not a route to it. A real database of that
+# name exists in the account (uuid 402c29ff-…, ~1.7 MB, created 10 Aug 2026 — the deprecated v20
+# build), and the name is kept only because `wrangler dev`, `migrate:local` and `e2e` key their
+# local sqlite file on it. It cannot reach the remote one: wrangler resolves a remote database by
+# ID, the id below is the all-zeroes placeholder, and a remote command against this block fails
+# `7404 could not be found`. Checked on 22 Sep 2026, not assumed — it fails CLOSED.
+#
+# The live database is `boss-os`, uuid c3bf7512-60f8-4bcb-83e7-8fd18fa97d30, declared under
+# [[env.production.d1_databases]] below. `scripts/deploy/production.mjs` passes `--env production`
+# to every remote command, which is what makes that the only database production ever touches.
 [[d1_databases]]
 binding = "WP_OS_DB"
 database_name = "boss-os-db"

@@ -48,6 +48,7 @@ import { investor } from "./routes/investor";
 import { wealth } from "./routes/wealth";
 import { research } from "./routes/research";
 import { repoChanges } from "./routes/repoChanges";
+import { taskNotices } from "./routes/taskNotices";
 import { commentWatch, COMMENT_WATCH_PATH } from "./routes/commentWatch";
 import { gridHealth } from "./routes/gridHealth";
 import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
@@ -212,6 +213,15 @@ app.route("/api/system/spend-lever", spendLeverRoutes);
 // Job 5 — "find firms that did X and draft the ask": the scans, their findings, and the desk's door.
 app.route("/api/research", research);
 app.route("/api/repo-changes", repoChanges);
+/*
+ * A finished ops task that could NOT do what she asked, waiting to be emailed.
+ *
+ * The Worker cannot send it — its only outbound mail is `message.reply()` on a live inbound event,
+ * and a queue consumer has none. So the run writes the message down and `scripts/ops/task-notices.mjs`
+ * drains this from her Mac through `notify.mjs`, the one module that holds the employee roster.
+ * Its own mount rather than a sub-path of `/api/tasks`, which declares a top-level `/:id`.
+ */
+app.route("/api/task-notices", taskNotices);
 // Monique's weekly comment digest and the instruction rows her reply writes; the Mac's `act` half reads only those.
 app.route(COMMENT_WATCH_PATH, commentWatch);
 // Job 1 — the rewrite that answers her note lives on the wealth mount:

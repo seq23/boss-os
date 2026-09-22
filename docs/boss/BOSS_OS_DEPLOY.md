@@ -1,5 +1,31 @@
 # Deploying and operating Boss OS
 
+> ### ⚠️ THIS DEPLOYMENT ALREADY EXISTS. Do not follow §1–§4 against her account.
+>
+> Boss OS is live at **boss.sequoiataylor.com** and its resources are provisioned. Sections 1–4
+> below are the FROM-SCRATCH instructions this build shipped with; they describe standing a second
+> one up, and running them against the live account creates duplicate resources rather than
+> reaching the real ones.
+>
+> **The live deployment, verified against `wrangler.toml` and `wrangler d1 list` on 22 Sep 2026:**
+>
+> | | |
+> |---|---|
+> | Deploy command | `npm run deploy:production` — and nothing else. A bare `wrangler deploy` ships a stale client and local dev bindings. |
+> | D1 database | **`boss-os`**, uuid `c3bf7512-60f8-4bcb-83e7-8fd18fa97d30`, bound as `WP_OS_DB` under `[env.production]` |
+> | Migrations | applied by `scripts/deploy/production.mjs`, `--env production --remote`, before the deploy |
+>
+> **`boss-os-db` IS NOT THIS PRODUCT'S DATABASE.** A database of that name exists in the account
+> (uuid `402c29ff-…`, ~1.7 MB, created 10 Aug 2026 — the deprecated v20 build, months before the
+> live `boss-os` was created on 6 Sep) and §2 below is where it came from. It is not read or
+> written by anything in this repository.
+>
+> The `database_name = "boss-os-db"` at the TOP level of `wrangler.toml` is not a route to it
+> either, and this was checked rather than assumed: that block's `database_id` is the all-zeroes
+> placeholder, wrangler resolves a remote database by **id**, and a remote command against it fails
+> with `7404 could not be found`. It fails closed. `[env.production]` overrides both fields, and
+> every remote command in the deploy script passes `--env production`.
+
 Everything below is free tier for a single user, except R2 once your snapshots
 get large. Expect a few cents a month at most, plus whatever your inference
 provider charges.
