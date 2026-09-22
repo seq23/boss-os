@@ -17,6 +17,7 @@ export interface RepoChangeRow {
   id: string; task_id: string; mail_id: string | null;
   repo: string | null; property_key: string | null; drive_folder: string | null; drive_url: string | null;
   instruction: string; phase: string; post_land_command?: string | null; post_land_proof?: string | null;
+  rework_count?: number | null; rework_note?: string | null; reworked_merge_shas?: string | null;
   plan_text: string | null; decided_json: string | null; asks_json: string | null; planned_at: number | null; plan_written_by: string | null;
   asked_at: number | null; ask_message_id: string | null; answered_at: number | null; answers_text: string | null; answers_mode: string | null; answer_mail_id: string | null;
   held_at: number | null; held_text: string | null;

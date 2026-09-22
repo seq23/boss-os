@@ -13,6 +13,7 @@ needs no further reply from her. Her plan approval is her reply to the plan emai
 
 - Repository: **{{REPO}}** — working copy `{{REPO_PATH}}`. Every grid repo lives under `{{GITHUB_DIR}}`.
 - Continuation: {{CONTINUATION}}
+- Rework: {{REWORK}}
   The grid (the only repos this lane may touch): {{GRID_REPOS}}. Anything else — West Peek, a client
   site — is off limits; if the package or the instruction points there, BLOCK.
 - Drive package (already pulled to disk, read it in full): `{{PACKAGE_DIR}}` {{DRIVE_URL}}
@@ -108,6 +109,12 @@ Result file shape:
 ## PHASE: BUILD
 
 Her reply is on the record. Build exactly the plan, with her answers.
+
+**If "Rework" above says YES, this build is the fix for YOUR OWN post-land step**, which ran after
+your previous PR landed and failed with the output quoted there. The plan and her answers stand; the
+scope is the fix and its guard. She is never asked about something the step's own output already
+says (21 Sep 2026: a 2,192-character About text against YouTube's 1,000-character limit went to her
+as a named stop; it should have come back here).
 
 The plan you wrote:
 

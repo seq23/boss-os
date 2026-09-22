@@ -9,6 +9,8 @@ export const RUNNABLE_PHASES: readonly ("plan" | "build" | "preview" | "land")[]
 export const PHASE_MODELS: { plan: string; build: string; land: string };
 export const PHASE_MAX_TURNS: { plan: number; build: number; land: number };
 export const PHASE_TIMEOUT_MIN: { plan: number; build: number; land: number };
+/** Reworks a failed post-land step gets before the owner is written to. One number for the Worker and the Mac runner. */
+export const MAX_REWORKS: number;
 export const CLAIM_LEASE_MS: number;
 export const ASK_POLICY: { ask: readonly string[]; decide: readonly string[] };
 

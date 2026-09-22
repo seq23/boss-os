@@ -76,6 +76,21 @@ export const PHASE_MAX_TURNS = { plan: 60, build: 220, land: 40 };
 /** A hard wall-clock cap per phase, in minutes. `timeout` in the shell wrapper enforces it. */
 export const PHASE_TIMEOUT_MIN = { plan: 25, build: 90, land: 30 };
 
+/**
+ * ─── A FAILED POST-LAND STEP IS HER EMPLOYEE'S REWORK, NOT HER EMAIL ───────
+ *
+ * 21 Sep 2026, rc_m32h8ze2a4hk37pc: Danielle's own channel_about.py (#102) pushed a 2,192-character
+ * About text to YouTube, which caps it at 1,000, and the lane emailed the owner a named stop with
+ * the 400 in it. Owner, the same evening: "did u fix danielle to stop sending me emails with
+ * things she can fix herself? could she not have realized the youtube about text limit and course
+ * corrected?" A post-land step's failure is a fact about the change just landed, in the repo the
+ * employee just worked in, so the row goes back to BUILD with that output as the brief — a fix
+ * PR, landed, the step run again — this many times. Only when the budget is spent is the owner
+ * told, and that email lists every attempt. One number, read by the Worker's `/rework` route and
+ * by the Mac runner, so neither can keep its own.
+ */
+export const MAX_REWORKS = 2;
+
 /** How long a claim is honoured before the Worker treats the run as dead and lets another claim it. */
 export const CLAIM_LEASE_MS = 2 * 60 * 60 * 1000;
 

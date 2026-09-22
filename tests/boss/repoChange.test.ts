@@ -787,4 +787,60 @@ describe("a retry is a resume of her original instruction, never a new one", () 
     expect(after).toMatchObject({ phase: "land", pr_url: "https://github.com/seq23/how-we-know/pull/102", pr_number: 102, checks_green_at: landing.checks_green_at, failure: null });
     expect(after.answered_at).toBeGreaterThan(0);
   });
+
+  it("A FAILED POST-LAND STEP IS DANIELLE'S REWORK, NOT HER EMAIL: the row goes back to build with the output as the brief, the plan and her answer kept, the merge recorded; past MAX_REWORKS it is refused and only then stops to the owner", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#danielle widen", body: `In how-we-know, widen the channel. After landing run the About push. Package: ${FOLDER}` }), env as never);
+    const rc = await row<any>(`SELECT * FROM repo_changes WHERE task_id = ?`, res.taskId);
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: ["x"], asks: [], publish_ready: true, ask_message_id: "re_p", post_land_step: { command: ".venv/bin/python loop/channel_about.py", proof: "the About text read back" } } });
+    await handleBossInboundMail(mail({ subject: `Re: [${rc.id}]`, body: "approved" }), env as never);
+    const buildAndGreen = async (pr: number) => {
+      await claim(rc.id);
+      const built = await apiJson(`/api/repo-changes/${rc.id}/build`, { method: "POST", body: { device_id: DEVICE, branch: `work/rc-x${pr}`, pr_url: `https://github.com/seq23/how-we-know/pull/${pr}`, pr_number: pr, proof: { pr } } });
+      expect(built.status).toBe(200);
+      await apiJson(`/api/repo-changes/${rc.id}/checks`, { method: "POST", body: { device_id: DEVICE, state: "green", detail: "all green" } });
+      expect((await row<any>(`SELECT phase FROM repo_changes WHERE id = ?`, rc.id)).phase).toBe("land");
+      await claim(rc.id);
+    };
+    await buildAndGreen(102);
+    const approved = await row<any>(`SELECT answered_at, answers_text, plan_text FROM repo_changes WHERE id = ?`, rc.id);
+
+    // A rework needs the claim for land, the merge that stands, and the failure as the brief.
+    const noSha = await apiJson(`/api/repo-changes/${rc.id}/rework`, { method: "POST", body: { device_id: DEVICE, reason: "HTTP 400" } });
+    expect(noSha.status).toBe(400);
+    const noWhy = await apiJson(`/api/repo-changes/${rc.id}/rework`, { method: "POST", body: { device_id: DEVICE, merge_sha: "4a4de65" } });
+    expect(noWhy.status).toBe(400);
+    const first = await apiJson(`/api/repo-changes/${rc.id}/rework`, { method: "POST", body: { device_id: DEVICE, merge_sha: "4a4de65", reason: "`.venv/bin/python loop/channel_about.py` exited 1: HTTP Error 400 at channels.update" } });
+    expect(first.status).toBe(200);
+    expect(first.body.data).toMatchObject({ phase: "build", rework_count: 1, max_reworks: 2 });
+    const back = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(back).toMatchObject({ phase: "build", rework_count: 1, pr_url: null, pr_number: null, branch: null, checks_green_at: null, claimed_at: null, failure: null, post_land_command: ".venv/bin/python loop/channel_about.py" });
+    expect(back.rework_note).toMatch(/HTTP Error 400/);
+    expect(JSON.parse(back.reworked_merge_shas)).toEqual(["4a4de65"]);
+    // Nothing of hers is lost: the plan, her answer, the recorded step. The task runs again.
+    expect(back).toMatchObject({ answered_at: approved.answered_at, answers_text: approved.answers_text, plan_text: approved.plan_text });
+    expect((await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, rc.task_id))).toMatchObject({ status: "queued", error: null });
+    expect(claimablePhase(back)).toBe("build");
+    expect((await row<any>(`SELECT COUNT(*) AS n FROM task_events WHERE task_id = ? AND event = 'repo_change_reworked'`, rc.task_id)).n).toBe(1);
+
+    // The fix lands, the step fails again: a second rework, the two merges on record.
+    await buildAndGreen(104);
+    const second = await apiJson(`/api/repo-changes/${rc.id}/rework`, { method: "POST", body: { device_id: DEVICE, merge_sha: "b2c3d4e", reason: "still 400" } });
+    expect(second.status).toBe(200);
+    expect(second.body.data.rework_count).toBe(2);
+    expect(JSON.parse((await row<any>(`SELECT reworked_merge_shas FROM repo_changes WHERE id = ?`, rc.id)).reworked_merge_shas)).toEqual(["4a4de65", "b2c3d4e"]);
+
+    // The budget is spent: the third is refused, and the row is still hers to stop to the owner.
+    await buildAndGreen(105);
+    const third = await apiJson(`/api/repo-changes/${rc.id}/rework`, { method: "POST", body: { device_id: DEVICE, merge_sha: "c3d4e5f", reason: "still 400" } });
+    expect(third.status).toBe(409);
+    expect(JSON.stringify(third.body)).toMatch(/budget is 2/);
+    expect((await row<any>(`SELECT phase, rework_count FROM repo_changes WHERE id = ?`, rc.id))).toMatchObject({ phase: "land", rework_count: 2 });
+    const stopped = await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [POST_LAND_STEP_FAILED] twice reworked", notified_message_id: "re_f" } });
+    expect(stopped.status).toBe(200);
+
+    // A rework is only ever from land: a failed row cannot be reworked.
+    const fromFailed = await apiJson(`/api/repo-changes/${rc.id}/rework`, { method: "POST", body: { device_id: DEVICE, merge_sha: "c3d4e5f", reason: "x" } });
+    expect(fromFailed.status).toBe(409);
+  });
 });
