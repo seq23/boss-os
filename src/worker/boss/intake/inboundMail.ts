@@ -247,28 +247,50 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const messageId = (message.headers.get("message-id") ?? "").trim().slice(0, 400)
     || (viaConsole ? consoleMessageId(mailId) : null);
+  /*
+   * ─── "SHE WAS NOT ANSWERED" AND "NO ANSWER WAS DUE" ARE DIFFERENT FACTS ───
+   *
+   * `replied_at IS NULL` used to mean three things at once, and on 22 September 2026 twelve of the
+   * fourteen nulls in production were not failures at all: they were messages SHE TYPED HERE,
+   * through `POST /api/boss/intake/mail`, where the reply goes back in the HTTP response because
+   * there is no `ForwardableEmailMessage` to reply to. Reading that table for outages produced a
+   * "cluster of seven consecutive reply failures on 2026-09-12" that never happened.
+   *
+   * So the disposition is written here, where `viaConsole` and the reply are both known:
+   *
+   *   none_due         — nothing was going to be sent (refused sender, or no reply text)
+   *   shown_on_screen  — she typed it here; the reply IS the response body she is already reading
+   *   due              — an SMTP reply is about to be attempted by `email()` in worker/index.ts,
+   *                      which overwrites this with `sent` or `failed` and the reason
+   *
+   * A row left saying `due` is therefore a handler that returned and a send that never resolved —
+   * a visible loose end, in the shape this file already uses for an outcome stuck at RECEIVED.
+   */
   const recordArrival = async (outcome: string, why: string) => {
     await env.DB.prepare(
       `INSERT INTO boss_inbound_mail
-         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400),
       outcome, why.slice(0, 1000), message.rawSize, messageId,
+      // An unauthorised sender is answered with silence on purpose; that is not a reply that failed.
+      authorised ? "due" : "none_due",
     ).run();
   };
 
   const finish = async (row: {
     outcome: string; why: string; tag?: string | null; employeeId?: string | null;
-    taskId?: string | null; objectKey?: string | null;
+    taskId?: string | null; objectKey?: string | null; reply?: string | null;
   }) => {
+    const replyState = !row.reply ? "none_due" : viaConsole ? "shown_on_screen" : "due";
     await env.DB.prepare(
       `UPDATE boss_inbound_mail
-          SET outcome = ?, why = ?, tag = ?, employee_id = ?, task_id = ?, object_key = ?
+          SET outcome = ?, why = ?, tag = ?, employee_id = ?, task_id = ?, object_key = ?, reply_state = ?
         WHERE id = ?`,
     ).bind(
       row.outcome, row.why.slice(0, 1000), row.tag ?? null, row.employeeId ?? null,
-      row.taskId ?? null, row.objectKey ?? null, mailId,
+      row.taskId ?? null, row.objectKey ?? null, replyState, mailId,
     ).run();
   };
 
@@ -793,7 +815,7 @@ function headline(text: string): string {
     ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
   ].join("\n");
 
-  await finish({ outcome, why, tag: route.tag, employeeId: dutyNote?.employeeId ?? route.seat.id, taskId, objectKey });
+  await finish({ outcome, why, tag: route.tag, employeeId: dutyNote?.employeeId ?? route.seat.id, taskId, objectKey, reply });
   await audit(env.DB, {
     actor: "boss", lane: route.seat.lane, entityType: "inbound_mail", entityId: mailId,
     action: "routed",

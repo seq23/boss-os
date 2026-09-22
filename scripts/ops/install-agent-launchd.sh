@@ -105,6 +105,13 @@ lint_plist() {
 # exits in about a second when none is configured, which is the state until she copies the secret
 # addresses in.
 #
+# `task-notices.mjs` drains `boss_task_notices` — the messages the Worker wrote down because it
+# CANNOT SEND MAIL ITSELF. Its only outbound capability is `message.reply()` on a live inbound
+# Email Routing event, which a queue consumer finishing a task twenty minutes later does not
+# have. So an ops task that could not do what she asked is written down there and posted from
+# here, through `notify.mjs`, signed by the employee who owned the work. On a normal day it makes
+# one request, finds nothing, and exits in about a second.
+#
 # `kdp-resume.mjs` asks Boss OS whether she has approved a cover batch that has not been acted on
 # yet, and starts the watch if so. On a normal day it makes one request, finds nothing, and exits in
 # about a second. `;` between the steps, not `&&`: a failing sky snapshot must not stop the resume,
@@ -120,7 +127,7 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO &amp;&amp; node scripts/ops/market-snapshot.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO &amp;&amp; node scripts/ops/market-snapshot.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/task-notices.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>

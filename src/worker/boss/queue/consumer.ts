@@ -9,6 +9,11 @@ import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure } from
 import { dispatchRunForTask } from "../backends/dispatch";
 import { deliverExecutiveReport } from "../duties/deliverReport";
 import { firmNoticeBlock } from "../prompt/notices";
+/*
+ * The rule that recognises a completion which is transparently a non-answer. Deterministic, and it
+ * reads the model's own reply rather than guessing from her request — see the module for why.
+ */
+import { cannotDoIn, cannotDoSummary, cannotDoHint } from "../../../shared/boss/execution/cannotDo.mjs";
 
 /**
  * Workers cap CPU per request, so employee work never runs inside an HTTP
@@ -280,6 +285,27 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     });
 
     const finishedAt = Date.now();
+
+    /*
+     * ─── A REPLY THAT SAYS "I COULD NOT DO THIS" IS NOT A DRAFT ────────────────
+     *
+     * Checked BEFORE the approval branch, because the approval branch is the bug: on 22 September
+     * 2026 `tsk_m351xejbtekke2cb` — "#simone … dig through the code and figure out what the entire
+     * loop is" for `how-we-know` — came back as "I do not have direct access to…" after thirteen
+     * seconds and was filed `awaiting_approval`, wearing the same card as work worth reviewing.
+     * The gate twenty lines up already refuses this for repo changes, in a comment that names the
+     * exact failure: "a cloud model asked to 'do' it would return a paragraph shaped like a PR."
+     * That gate was built for one lane. This is the same gate for the rest of the ops lane.
+     */
+    const nonAnswer = cannotDoIn(result.text);
+    if (nonAnswer) {
+      await cannotDoTask(env, task, employee, envelope, costMode, input, {
+        finding: nonAnswer, text: result.text, modelId: result.modelId,
+        modelName: result.modelName, costMicros: result.costMicros, finishedAt,
+      });
+      return;
+    }
+
     // The envelope decides, and the employee's own autonomy can only tighten it.
     const needsApproval =
       envelope ? envelope.approval_required === 1 : (!employee || employee.autonomy === "ask");
@@ -601,6 +627,189 @@ export function parseDeliversFromText(text: string): Record<string, unknown> | n
     }
   }
   return null;
+}
+
+/**
+ * ─── THE RUN THAT COULD NOT DO WHAT IT WAS ASKED ───────────────────────────
+ *
+ * Three things happen here, and the order is deliberate: the task stops pretending to be a draft,
+ * the work is moved to a desk that can actually do it where a rule says one exists, and she is told
+ * by email either way. The third is what makes the first two more than a tidier row in a table she
+ * would have to remember to open.
+ *
+ * ─── THE MODEL'S WORDS ARE KEPT IN FULL ────────────────────────────────────
+ *
+ * `output` is written exactly as the `awaiting_approval` branch would have written it. The status
+ * and the error line change what the run is CALLED; nothing is thrown away, so a false positive
+ * costs her one email and a task filed under the wrong heading with every word still on it.
+ *
+ * ─── THE HANDOFF GOES THROUGH THE ONE DOOR, NOT AROUND IT ──────────────────
+ *
+ * `admitTask` is where every task in this system is born — mail, Team → New task, the API — and it
+ * is the only place that reads a sentence as a repo change and mints the `repo_changes` row the Mac
+ * lane claims. So the handoff CALLS IT, with Danielle's seat as the hint, rather than writing a
+ * `tasks` row and a `repo_changes` row of its own. A second admission path for repo work would be
+ * "two components each keeping their own list", which is the defect this repository names most.
+ *
+ * WHAT DECIDES IS `repoIn()` — the grid's own repo-name reader, already the single authority on
+ * which names are repositories she owns. No new list, no model, no guess: either her sentence names
+ * a repository on the grid or it does not.
+ *
+ * AND IT CANNOT LOOP. The admitted task lands on `emp_repo` carrying `input.repo_change`, which
+ * `handleTask` parks for her Mac before a model is ever reached; and `handed_off_from` on the input
+ * refuses a second hop even if some future path gets it back to a cloud rung.
+ */
+async function cannotDoTask(
+  env: Env, task: any, employee: any, envelope: any, costMode: string, input: Record<string, any>,
+  run: { finding: { matched: string; why: string; at: number; chars: number }; text: string;
+         modelId: string; modelName: string; costMicros: number; finishedAt: number },
+): Promise<void> {
+  const { finding, finishedAt } = run;
+  const summary = cannotDoSummary(employee?.name ?? null, finding);
+
+  /*
+   * Her sentence, as the desk that takes it would read it: the title and whatever body or prompt
+   * came with it. The same three fields `admitTask` joins when it looks for a repo change, so the
+   * two can never disagree about what the request said.
+   */
+  const requestText = [task.title, input.body, input.prompt]
+    .filter((v: unknown): v is string => typeof v === "string" && Boolean(v.trim()))
+    .join("\n");
+
+  let handedTo: { employeeId: string; taskId: string; repo: string } | null = null;
+  const alreadyHandedOff = typeof input.handed_off_from === "string";
+  try {
+    const { repoIn, REPO_CHANGE_SEAT } = await import("../../../shared/boss/repoChange/lane.mjs");
+    const repo = repoIn(requestText);
+    if (repo && !alreadyHandedOff && task.employee_id !== REPO_CHANGE_SEAT) {
+      const { admitTask } = await import("../tasks/admit");
+      const admitted = await admitTask(env, {
+        title: task.title,
+        lane: task.lane,
+        employee_id: REPO_CHANGE_SEAT,
+        input: {
+          ...input,
+          body: requestText,
+          handed_off_from: task.id,
+          handed_off_why: `${employee?.name ?? "the first desk"} could not open ${repo}: ${finding.why}`,
+        },
+      });
+      if (admitted.created && admitted.task_id) {
+        handedTo = { employeeId: REPO_CHANGE_SEAT, taskId: admitted.task_id, repo };
+      }
+    }
+  } catch (err) {
+    /*
+     * A handoff that could not be admitted must not swallow the finding. The whole value here is
+     * that the failed run stops looking like a draft and she is told; the handoff is the bonus.
+     */
+    await logEvent(env.DB, {
+      level: "warn", scope: "queue", event: "cannot_do_handoff_failed", lane: task.lane, entityId: task.id,
+      detail: { error: err instanceof Error ? err.message : String(err) },
+    }).catch(() => {});
+  }
+
+  const handedName = handedTo
+    ? (await env.DB.prepare(`SELECT name FROM employees WHERE id = ?`).bind(handedTo.employeeId).first<{ name: string }>())?.name ?? null
+    : null;
+  const hint = cannotDoHint(handedName);
+
+  await env.DB.batch([
+    /*
+     * `failed`, not `awaiting_approval`, and not `done`. It is the one status in this system that
+     * already means "this run did not produce what it was for", and every surface that reads tasks
+     * already distinguishes it — so the fix needs no new vocabulary anywhere else.
+     */
+    env.DB.prepare(
+      `UPDATE tasks SET status = 'failed', output = ?, error = ?, cost_micros = cost_micros + ?, finished_at = ? WHERE id = ?`,
+    ).bind(
+      JSON.stringify({ text: run.text, model: run.modelName, could_not_do: finding }),
+      summary.slice(0, 500), run.costMicros, finishedAt, task.id,
+    ),
+    env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'could_not_do',?)`)
+      .bind(newId("tev"), task.id, finishedAt, JSON.stringify({
+        matched: finding.matched, why: finding.why, chars: finding.chars,
+        model: run.modelId, hint,
+        handed_to: handedTo ? { employee_id: handedTo.employeeId, task_id: handedTo.taskId, repo: handedTo.repo } : null,
+      })),
+  ]);
+
+  if (handedTo) {
+    await env.DB
+      .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'handed_off',?)`)
+      .bind(newId("tev"), handedTo.taskId, finishedAt, JSON.stringify({ from_task_id: task.id, from_employee_id: task.employee_id ?? null, repo: handedTo.repo }))
+      .run();
+  }
+
+  /*
+   * ─── AND SHE IS TOLD, BY EMAIL, WITHOUT HAVING TO OPEN ANYTHING ────────────
+   *
+   * Nothing in this codebase has ever sent a completion email for a generic ops one-off: the Worker
+   * has no outbound mail except `message.reply()` on a live inbound event, and there is none here.
+   * Migration 0273 is the queue; `scripts/ops/task-notices.mjs` on her Mac drains it through the
+   * same `notify.mjs` roster every other employee email uses.
+   *
+   * ONLY THE THINGS THAT COULD NOT BE DONE, deliberately. An email per finished ops task is a push
+   * she learns to ignore, and the channel of record is still Boss OS itself.
+   */
+  await env.DB
+    .prepare(
+      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at)
+       VALUES (?,?,?,?,'could_not_do',?,?,?)`,
+    )
+    .bind(
+      newId("tnt"), task.id, task.lane, employee?.name ?? "Boss OS",
+      `Could not do: ${String(task.title).slice(0, 120)}`,
+      [
+        summary,
+        "",
+        `What you asked: ${String(task.title).slice(0, 300)}`,
+        `What it said back: "${finding.matched}…" (${finding.chars} characters in total; the full text is on the task in Boss OS).`,
+        "",
+        handedTo
+          ? `Handed to ${handedName ?? handedTo.employeeId} as ${handedTo.taskId}, because your message names ${handedTo.repo} and that lane runs on your Mac with the repository actually open. Her plan email is the next thing you will get about it.`
+          : hint,
+        "",
+        `Task ${task.id} in Boss OS. Nothing was sent to anyone outside this system.`,
+      ].join("\n"),
+      finishedAt,
+    )
+    .run();
+
+  await writeEvidence(env.DB, {
+    taskId: task.id, lane: task.lane,
+    executionAssignment: task.execution_assignment, employeeId: employee?.id ?? null,
+    workerUsed: "model_router", modelId: run.modelId, costMode,
+    actualCostMicros: run.costMicros,
+    inputsUsed: { title: task.title, reply_chars: finding.chars },
+    actionsTaken: [
+      `Ran one completion on ${run.modelName} and it reported it could not do the work`,
+      handedTo ? `Handed the work to ${handedName ?? handedTo.employeeId} as ${handedTo.taskId}` : "No rule named another desk for this",
+      "Queued an email so she is told without opening a screen",
+    ],
+    artifactsCreated: [],
+    systemsTouched: ["model_router", "boss_task_notices", ...(handedTo ? ["tasks"] : [])],
+    recordsChanged: [{ table: "tasks", id: task.id }],
+    checksRun: ["budget", "cost_mode", "model_policy", "cannot_do"],
+    risksRemaining: [summary],
+    unknowns: ["Nothing was investigated: the run had no repository, no filesystem and no tools"],
+    approvalNeeded: false, rollbackAvailable: false,
+    nextHumanAction: hint,
+    finalStatus: "could_not_do",
+  });
+
+  await audit(env.DB, {
+    actor: "system", lane: task.lane, entityType: "task", entityId: task.id,
+    action: "could_not_do",
+    detail: { why: finding.why, matched: finding.matched, handed_to: handedTo?.taskId ?? null },
+  });
+  await logEvent(env.DB, {
+    level: "warn", scope: "queue", event: "task_could_not_do", lane: task.lane, entityId: task.id,
+    detail: {
+      why: finding.why, matched: finding.matched, chars: finding.chars, model: run.modelId,
+      handed_to: handedTo?.taskId ?? null, repo: handedTo?.repo ?? null,
+    },
+  });
 }
 
 async function failTask(
