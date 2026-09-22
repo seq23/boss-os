@@ -12,6 +12,7 @@ needs no further reply from her. Her plan approval is her reply to the plan emai
 ## The facts of this change
 
 - Repository: **{{REPO}}** — working copy `{{REPO_PATH}}`. Every grid repo lives under `{{GITHUB_DIR}}`.
+- Continuation: {{CONTINUATION}}
   The grid (the only repos this lane may touch): {{GRID_REPOS}}. Anything else — West Peek, a client
   site — is off limits; if the package or the instruction points there, BLOCK.
 - Drive package (already pulled to disk, read it in full): `{{PACKAGE_DIR}}` {{DRIVE_URL}}
@@ -71,6 +72,8 @@ Pre-approved in the request: {{PRE_APPROVED}}
    not-ready plan is built and opened as a PR and she sees a preview; it lands only on her second
    word. Never call a plan ready to avoid the preview.
 6. Do not edit the repo in this phase. No branch, no commit.
+   Write `{{WORK_DIR}}/plan-draft.md` as the plan takes shape (overwrite it as you go): a plan that
+   dies mid-way with a draft behind it is continued, not stopped.
 7. **A post-land step is a recorded command, or it does not exist.** If her instruction or your
    plan names anything to run AFTER landing — "push the About text", "run bin/<script>", "attach
    the proof" — `post_land_step` is REQUIRED: the exact command with its arguments, run from the
@@ -135,6 +138,11 @@ What you already decided:
 1. You are in `{{REPO_PATH}}` — a worktree the runner made off `origin/main` on branch
    `{{BRANCH}}` (the main checkout is `{{MAIN_CHECKOUT}}`; its dirtiness is not your concern and
    you never touch it). Do not create another worktree or branch. Work here, never on `main`.
+   **First: `git log --oneline origin/main..HEAD` and `git status`.** A previous attempt may have
+   left commits here (21 Sep 2026: the whole change was committed and the attempt ran out of turns
+   before the push). If so, do not redo the work — verify it against the plan, run the validation,
+   push, open the PR, and write the result. If `gh pr view {{BRANCH}}` already shows an open PR,
+   report that PR; never open a second one.
 2. Make the change as planned. Follow the runbook's "how to make a change" step by step.
 3. Run the repo's validation — `npm run validate` or whatever the runbook names. Every guard must
    pass. If a guard is legitimately wrong, strengthen it, never weaken it.
@@ -142,7 +150,10 @@ What you already decided:
    390px (drawer open and closed if there is one). Save them under `{{WORK_DIR}}/screenshots/`.
 5. `curl -sSIL` every new or changed external link; record the status of each.
 6. Commit with a clear message. Push the branch. Open the PR with `gh pr create` against the
-   default branch; the body names the change, the runbook steps you ran, every validator and what
+   default branch — **and write `{{OUT_FILE}}` the moment the PR exists** (`branch`, `pr_url`,
+   `pr_number`, `proof` so far), then update it as the proof grows. A result written only at the
+   very end is a result a turn limit can erase (21 Sep 2026: the whole build was done, #103 was
+   open and green, and the phase died with nothing on disk). The body names the change, the runbook steps you ran, every validator and what
    it said, the screenshots, and the links you checked. **Do not merge.**
 7. Record in the proof whether the repo's validators passed (`validators_passed: true` only if
    every one you ran passed).

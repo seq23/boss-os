@@ -43,6 +43,9 @@ records the sentinel — derived from your file. Do not run `kdp-surface-report.
    - `owner_answer` is her own wording → execute with her wording instead of the recommended one.
    - `owner_answer` starts with `held:` → leave it; file nothing for it.
    - no answer yet → file nothing for it; the wrapper chases her on the deadline.
+   - an open `account` problem whose ask was a sign-in, while `~/.boss-os/kdp/signin.json` now says
+     `ok` / `ok_already` → it is over: file `acted` with `"resolves": "<its id>"` and the sign-in
+     line's outcome in `action_taken`. Simone signed in herself; nothing is asked of her.
    If the file is missing, say so in one line of `note` on a `problem` item with `matter: "account"`
    — it means Boss OS could not be read before the run.
 2. Load the Gmail tools with ToolSearch (`search_threads`, `get_thread`).

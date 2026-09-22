@@ -135,15 +135,103 @@ function runClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
      * and bills an account with no credit ("Credit balance is too low", 21 Sep 2026 — both of her
      * first jobs died in 3 s). `seatEnv` strips every ANTHROPIC_* / CLAUDE_* auth override.
      */
-    const child = spawn(CLAUDE, ["-p", prompt, "--model", model, "--max-turns", String(maxTurns), "--dangerously-skip-permissions"], {
+    /*
+     * THE LOG CARRIES THE TRANSCRIPT. 21 Sep 2026: a build that had committed, pushed and opened
+     * how-we-know #103 died on "Reached max turns (150)" and its log was five lines, so nobody
+     * could see she was done. stream-json in, one readable line per assistant paragraph, tool call
+     * and tool result tail out.
+     */
+    const child = spawn(CLAUDE, ["-p", prompt, "--model", model, "--max-turns", String(maxTurns), "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"], {
       cwd, env: seatEnv(process.env), stdio: ["ignore", "pipe", "pipe"],
     });
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); setTimeout(() => child.kill("SIGKILL"), 10_000); }, timeoutMin * 60_000);
-    child.stdout.on("data", (d) => appendFileSync(log, d));
+    let buf = "";
+    child.stdout.on("data", (d) => {
+      buf += d.toString();
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        for (const t of transcriptLines(line)) appendFileSync(log, t + "\n");
+      }
+    });
     child.stderr.on("data", (d) => appendFileSync(log, d));
-    child.on("close", (rc) => { clearTimeout(timer); appendFileSync(log, `\n=== ${phase} exited rc=${rc} timedOut=${timedOut}\n`); resolve({ rc, timedOut }); });
+    child.on("close", (rc) => { clearTimeout(timer); for (const t of transcriptLines(buf)) appendFileSync(log, t + "\n"); appendFileSync(log, `\n=== ${phase} exited rc=${rc} timedOut=${timedOut}\n`); resolve({ rc, timedOut }); });
   });
+}
+
+/** One stream-json event → the readable lines it deserves. Exported for the validator's self-test. */
+export function transcriptLines(line) {
+  let ev; try { ev = JSON.parse(line); } catch { return line.trim() ? [line] : []; }
+  const out = [];
+  const stamp = new Date().toISOString().slice(11, 19);
+  if (ev.type === "assistant" && Array.isArray(ev.message?.content)) {
+    for (const c of ev.message.content) {
+      if (c.type === "text" && c.text?.trim()) out.push(`[${stamp}] ${c.text.trim().replace(/\n+/g, " ").slice(0, 600)}`);
+      if (c.type === "tool_use") out.push(`[${stamp}] → ${c.name} ${JSON.stringify(c.input ?? {}).slice(0, 220)}`);
+    }
+  } else if (ev.type === "user" && Array.isArray(ev.message?.content)) {
+    for (const c of ev.message.content) {
+      if (c.type === "tool_result") {
+        const body = typeof c.content === "string" ? c.content : Array.isArray(c.content) ? c.content.map((x) => x.text ?? "").join(" ") : "";
+        const tail = body.trim().split("\n").filter(Boolean).slice(-2).join(" | ");
+        out.push(`[${stamp}] ← ${c.is_error ? "ERROR " : ""}${tail.slice(0, 300)}`);
+      }
+    }
+  } else if (ev.type === "result") {
+    out.push(`[${stamp}] === result: ${ev.subtype ?? ""} turns=${ev.num_turns ?? "?"} cost=$${Number(ev.total_cost_usd ?? 0).toFixed(2)} ${ev.is_error ? "ERROR" : ""} ${String(ev.result ?? "").replace(/\n+/g, " ").slice(0, 300)}`);
+  }
+  return out;
+}
+
+/**
+ * ─── A RECOVERABLE STOP RESUMES ITSELF ──────────────────────────────────────
+ *
+ * What a phase leaves behind decides whether its death is a stop for her or a continuation for
+ * the lane. A commit on the branch, a pushed branch, an open PR, a plan draft: state. Max-turns
+ * exhaustion, a timeout with state behind it, a missing result file — all resume the SAME phase
+ * on the next tick with a continuation note, up to three times; only then, or with no state at
+ * all, is she emailed a stop, and it says what she can do. Detected from the worktree and gh,
+ * never from the exit code.
+ */
+export const MAX_CONTINUATIONS = 3;
+
+function stateBehind({ phase, dir, repo, repoPath, buildPath, branch }) {
+  const facts = [];
+  if (phase === "build" && buildPath && existsSync(buildPath)) {
+    const ahead = spawnSync("git", ["log", "--oneline", "origin/main..HEAD"], { cwd: buildPath, encoding: "utf8" }).stdout.trim();
+    if (ahead) facts.push(`commits on ${branch}: ${ahead.split("\n").length} (${ahead.split("\n")[0].slice(0, 80)})`);
+    const dirty = spawnSync("git", ["status", "--porcelain"], { cwd: buildPath, encoding: "utf8" }).stdout.trim();
+    if (dirty) facts.push(`uncommitted changes in the worktree: ${dirty.split("\n").length} file(s)`);
+    const pushed = branch ? spawnSync("git", ["ls-remote", "--heads", "origin", branch], { cwd: buildPath, encoding: "utf8" }).stdout.trim() : "";
+    if (pushed) facts.push(`branch ${branch} is pushed`);
+    const pr = prForBranch(repo, branch);
+    if (pr) facts.push(`PR #${pr.number} is ${pr.state} (${pr.url})`);
+    return { facts, pr };
+  }
+  if (phase === "land") {
+    const landed = readJson(join(dir, "landed-post-land-failed.json"));
+    if (landed?.merge_sha) facts.push(`already merged as ${landed.merge_sha}; only the post-land step is outstanding`);
+    return { facts, pr: null };
+  }
+  if (phase === "plan") {
+    if (existsSync(join(dir, "plan-draft.md"))) facts.push("a plan draft exists (plan-draft.md)");
+    return { facts, pr: null };
+  }
+  return { facts, pr: null };
+}
+
+function prForBranch(repo, branch) {
+  if (!repo || !branch) return null;
+  const r = spawnSync("gh", ["pr", "view", branch, "--repo", `seq23/${repo}`, "--json", "url,number,state,headRefName"], { encoding: "utf8" });
+  if (r.status !== 0) return null;
+  try { const j = JSON.parse(r.stdout); return j?.url ? { url: j.url, number: Number(j.number), state: j.state } : null; } catch { return null; }
+}
+
+function continuationCount(dir, phase) {
+  const f = join(dir, `continuations-${phase}.json`);
+  const j = readJson(f) ?? { count: 0, notes: [] };
+  return { file: f, ...j };
 }
 
 function readJson(path) {
@@ -274,9 +362,17 @@ async function runPhase(claim) {
    */
   const outFile = join(dir, `${phase}.json`);
   const reportedMark = outFile + ".reported";
+  if (phase === "land" && existsSync(join(dir, "landed-post-land-failed.json")) && existsSync(outFile) && !existsSync(reportedMark)) markReported();
   const unreported = existsSync(outFile) && !existsSync(reportedMark);
   if (existsSync(outFile) && !unreported) { writeFileSync(outFile + ".previous", readFileSync(outFile)); spawnSync("rm", ["-f", outFile, reportedMark]); }
   const markReported = () => writeFileSync(reportedMark, new Date().toISOString());
+  /*
+   * A FAILED PHASE'S OUTPUT IS CONSUMED. 21 Sep 2026, rc_m32h8ze2a4hk37pc retried after
+   * POST_LAND_STEP_FAILED: the previous land.json (post_land not_invoked) was still on disk with
+   * no .reported marker, so "never reported is reused" reused it, claude never ran, and the row
+   * failed again on the same stale file. A named stop IS the report of that output.
+   */
+  const failOut = async (tag, why) => { await fail(row, tag, why, log); markReported(); };
   const vars = {
     CHANGE_ID: row.id, TOKEN: changeToken(row.id), REPO: repo ?? "(not named — read the package)", REPO_PATH: (phase === "build" ? buildPath : repoPath) ?? "(none yet)",
     MAIN_CHECKOUT: repoPath ?? "(none yet)",
@@ -294,6 +390,7 @@ async function runPhase(claim) {
     PR_URL: row.pr_url ?? "", PR_NUMBER: row.pr_number ?? "", BRANCH: branch ?? "", OUT_FILE: outFile, WORK_DIR: dir,
     ASK_LIST: ASK_POLICY.ask.map((a) => `- ${a}`).join("\n"), DECIDE_LIST: ASK_POLICY.decide.map((d) => `- ${d}`).join("\n"),
     LAND: LAND, PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
+    CONTINUATION: (() => { const c = continuationCount(dir, phase); if (!c.count) return "no — a fresh start."; const b = stateBehind({ phase, dir, repo, repoPath, buildPath, branch }); return `YES — continuation ${c.count}/${MAX_CONTINUATIONS}. The previous attempt: ${c.notes?.at(-1)?.note ?? "(no note)"}. What is already there: ${b.facts.join("; ") || "(nothing readable)"}. Do not redo it; verify it and FINISH — write ${outFile} first if the result already exists.`; })(),
     PRE_APPROVED: row.pre_approved_phrase
       ? `YES — she wrote "${row.pre_approved_phrase}" in the request. Every decision is yours: put what you would have asked under "decided" with your recommended default AS the decision and the reason. "asks" MUST be an empty list; the Worker refuses a pre-approved plan that asks.`
       : "no — ask what policy says to ask.",
@@ -305,17 +402,36 @@ async function runPhase(claim) {
       phase, prompt, cwd: (phase === "build" ? buildPath : repoPath) ?? dir, log,
       model: claim.model ?? PHASE_MODELS[phase], maxTurns: claim.max_turns ?? PHASE_MAX_TURNS[phase], timeoutMin: PHASE_TIMEOUT_MIN[phase],
     });
-  const out = readJson(outFile);
+  let out = readJson(outFile);
   if (!out) {
     const why = timedOut ? `the ${phase} phase hit its ${PHASE_TIMEOUT_MIN[phase]}-minute wall and was stopped` : `claude exited ${rc} and wrote no ${phase}.json`;
-    await fail(row, "PHASE_DID_NOT_COMPLETE", `${why}. Its silence is not a result. Log: ${log}`, log);
-    return;
+    const behind = stateBehind({ phase, dir, repo, repoPath, buildPath, branch });
+    // A build whose PR already exists needs no more model turns: the result is on GitHub.
+    if (phase === "build" && behind.pr && behind.pr.state === "OPEN") {
+      out = { branch, pr_url: behind.pr.url, pr_number: behind.pr.number, proof: { continuation: `build.json written by the runner from GitHub's state after ${why}: ${behind.facts.join("; ")}` } };
+      writeFileSync(outFile, JSON.stringify(out, null, 2));
+      appendFileSync(log, `=== build.json synthesised from state: ${behind.facts.join("; ")}\n`);
+    } else if (behind.facts.length) {
+      const c = continuationCount(dir, phase);
+      if (c.count < MAX_CONTINUATIONS) {
+        const note = `${why}; state behind it: ${behind.facts.join("; ")}`;
+        writeFileSync(c.file, JSON.stringify({ count: c.count + 1, notes: [...(c.notes ?? []), { at: new Date().toISOString(), note }] }, null, 2));
+        await release(row, `continuation ${c.count + 1}/${MAX_CONTINUATIONS}: ${note}`, log);
+        say(`continuation ${c.count + 1}/${MAX_CONTINUATIONS} for ${row.id} ${phase}: ${note.slice(0, 200)} — the next tick finishes it.`);
+        return;
+      }
+      await fail(row, "PHASE_STUCK", `${why}, after ${MAX_CONTINUATIONS} continuations. State behind it: ${behind.facts.join("; ")}. What you can do: open the log (${log}) — the transcript shows the last step; reply "try again" to give it three more, or finish the last step by hand and reply "try again".`, log);
+      return;
+    } else {
+      await fail(row, "PHASE_DID_NOT_COMPLETE", `${why}, and nothing was left behind — no commit, no branch, no PR, no draft. Its silence is not a result. What you can do: read the log (${log}); reply "try again" to run it once more, or send the instruction again with more detail.`, log);
+      return;
+    }
   }
   if (out.blocked) { await fail(row, String(out.blocked.tag ?? "BLOCKED").replace(/[^A-Z_]/g, "_"), String(out.blocked.why ?? "the phase named a block without a reason"), log); markReported(); return; }
 
   if (phase === "plan") {
     const chosen = out.repo ?? repo;
-    if (!chosen || !gridRepoNames().includes(chosen)) { await fail(row, "NO_GRID_REPO", `the plan names "${chosen ?? "nothing"}" as the repository, and that is not a grid repo. Grid: ${gridRepoNames().join(", ")}.`, log); return; }
+    if (!chosen || !gridRepoNames().includes(chosen)) { await failOut("NO_GRID_REPO", `the plan names "${chosen ?? "nothing"}" as the repository, and that is not a grid repo. Grid: ${gridRepoNames().join(", ")}.`, log); return; }
     if (!repoPathFor(chosen)) { await fail(row, "NO_WORKING_COPY", `${GITHUB_DIR}/${chosen} is not a git checkout on this Mac.`, log); return; }
     if (!existsSync(join(repoPathFor(chosen), "RUNBOOK.md"))) { await fail(row, "NO_RUNBOOK", `${chosen} has no RUNBOOK.md; the lane will not plan against a repo without one.`, log); return; }
     const asks = Array.isArray(out.asks) ? out.asks : [];
@@ -330,10 +446,10 @@ async function runPhase(claim) {
     const step = out.post_land_step && typeof out.post_land_step === "object" ? out.post_land_step : null;
     const namesStep = /(after (the )?land(ing)?|post[- ]land|once (it|this) (is )?(landed|merged)|after (it|this) (is )?(landed|merged))\b/i.test(`${out.plan_text ?? ""}\n${row.instruction}`);
     if (namesStep && !(step && typeof step.command === "string" && step.command.trim())) {
-      await fail(row, "POST_LAND_STEP_UNRESOLVED", `the plan (or her instruction) names a step to run after landing and resolves no command for it. Name it exactly in plan.json as post_land_step: { command, proof } — or state in the plan that nothing runs after land. Nothing was built.`, log);
+      await failOut("POST_LAND_STEP_UNRESOLVED", `the plan (or her instruction) names a step to run after landing and resolves no command for it. Name it exactly in plan.json as post_land_step: { command, proof } — or state in the plan that nothing runs after land. Nothing was built.`, log);
       return;
     }
-    if (step && !namesStep) { await fail(row, "POST_LAND_STEP_UNNAMED", `plan.json carries a post_land_step (\`${String(step.command).slice(0, 120)}\`) that neither her instruction nor the plan text names. Only a step she or the plan named runs after land.`, log); return; }
+    if (step && !namesStep) { await failOut("POST_LAND_STEP_UNNAMED", `plan.json carries a post_land_step (\`${String(step.command).slice(0, 120)}\`) that neither her instruction nor the plan text names. Only a step she or the plan named runs after land.`, log); return; }
     /*
      * ZERO-FRICTION APPROVAL (owner, 21 Sep 2026). The whole plan is IN the email, every ask is a
      * numbered question with the recommended default beside it, and one word back — "approved" —
@@ -401,7 +517,7 @@ async function runPhase(claim) {
   }
 
   if (phase === "build") {
-    if (!out.pr_url || !out.pr_number) { await fail(row, "NO_PULL_REQUEST", "the build phase ended without a pull request; a build with no PR is not a build.", log); return; }
+    if (!out.pr_url || !out.pr_number) { await failOut("NO_PULL_REQUEST", "the build phase ended without a pull request; a build with no PR is not a build.", log); return; }
     const r = await api(`/${row.id}/build`, { device_id: DEVICE, branch: out.branch ?? branch ?? null, pr_url: out.pr_url, pr_number: Number(out.pr_number), proof: out.proof ?? null, written_by: claim.model ?? PHASE_MODELS.build, run_log: log });
     if (!r.ok) { say(`NAMED STOP [BUILD_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the PR is open; the next tick reports it without building again.`); return; }
     markReported();
@@ -418,7 +534,7 @@ async function runPhase(claim) {
   }
 
   if (phase === "land") {
-    if (!out.merge_sha) { await fail(row, "NO_MERGE_COMMIT", `the land phase wrote no merge_sha; ${LAND} did not report a merge.`, log); return; }
+    if (!out.merge_sha) { await failOut("NO_MERGE_COMMIT", `the land phase wrote no merge_sha; ${LAND} did not report a merge.`, log); return; }
     const proof = out.live_proof ?? {};
     const forcedList = Array.isArray(row.forced_placeholders) ? row.forced_placeholders.map(String) : [];
     /*
@@ -431,17 +547,17 @@ async function runPhase(claim) {
     const postLand = wanted && out.post_land && typeof out.post_land === "object" && typeof out.post_land.command === "string" ? out.post_land : null;
     if (wanted && (!postLand || !Number.isInteger(Number(postLand.rc)))) {
       writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
-      await fail(row, "POST_LAND_STEP_NOT_RUN", `${repo} landed as ${out.merge_sha}, and the recorded post-land step \`${wanted}\` was not run (the land phase reported ${out.post_land ? JSON.stringify(out.post_land).slice(0, 200) : "no post_land"}). The merge stands; reply "try again" and only the step runs.`, log);
+      await failOut("POST_LAND_STEP_NOT_RUN", `${repo} landed as ${out.merge_sha}, and the recorded post-land step \`${wanted}\` was not run (the land phase reported ${out.post_land ? JSON.stringify(out.post_land).slice(0, 200) : "no post_land"}). The merge stands; reply "try again" and only the step runs.`, log);
       return;
     }
     if (postLand && postLand.command.trim() !== wanted) {
       writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
-      await fail(row, "POST_LAND_STEP_DIFFERS", `${repo} landed as ${out.merge_sha}; the post-land step run was \`${postLand.command}\` and the recorded one is \`${wanted}\`. Only the recorded step counts.`, log);
+      await failOut("POST_LAND_STEP_DIFFERS", `${repo} landed as ${out.merge_sha}; the post-land step run was \`${postLand.command}\` and the recorded one is \`${wanted}\`. Only the recorded step counts.`, log);
       return;
     }
     if (postLand && Number(postLand.rc) !== 0) {
       writeFileSync(join(dir, "landed-post-land-failed.json"), JSON.stringify(out));
-      await fail(row, "POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${String(postLand.output_tail ?? "").slice(0, 600)}`, log);
+      await failOut("POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${String(postLand.output_tail ?? "").slice(0, 600)}`, log);
       return;
     }
     const subject = `#danielle DONE: ${repo} ${changeToken(row.id)} — landed and live${isForced(row) ? ` (to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"}, by your instruction)` : ""}${postLand ? " · post-land step done" : ""}`;
