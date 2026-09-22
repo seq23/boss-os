@@ -433,6 +433,21 @@ async function runPhase(claim) {
       return;
     }
   }
+  /*
+   * A BLOCK AFTER THE MERGE IS THE POST-LAND STEP FAILING, NOT A STOP TO HER (21 Sep 2026,
+   * rc_m33avf9cd0njg79t). The land prompt once said a failed step "is a block"; Danielle merged
+   * cleanly, her step failed, she wrote {blocked: {tag: "POST_LAND_PROOF_FAILED"}}, and that
+   * block-shaped result walked past the rework branch below straight to the owner's inbox — the
+   * rework guard could not reach what it governed. A land-phase block that carries a merge_sha on
+   * a row with a recorded post-land step IS that step's failure: it is reshaped into `post_land`
+   * here, and the rework branch (MAX_REWORKS, /rework) decides, exactly as for an honest rc.
+   */
+  if (phase === "land" && out.blocked && out.merge_sha && row.post_land_command && !out.post_land) {
+    const tag = String(out.blocked.tag ?? "BLOCKED").replace(/[^A-Z_]/g, "_");
+    out.post_land = { command: String(row.post_land_command).trim(), rc: 1, output_tail: `NAMED STOP [${tag}] ${String(out.blocked.why ?? "")}`.slice(0, 1500), proof: null };
+    delete out.blocked;
+    say(`land reported a block (${tag}) after merging ${out.merge_sha}: that is the post-land step failing, and it is routed as one.`);
+  }
   if (out.blocked) { await fail(row, String(out.blocked.tag ?? "BLOCKED").replace(/[^A-Z_]/g, "_"), String(out.blocked.why ?? "the phase named a block without a reason"), log); markReported(); return; }
 
   if (phase === "plan") {

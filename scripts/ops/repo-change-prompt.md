@@ -211,8 +211,13 @@ The PR's checks are recorded green and her approval is on the record. Land it an
    API response id) under `post_land`. The runner refuses a `post_land` whose command differs
    from the recorded one or whose `rc` is not an integer. If the step needs a credential the
    runbook says only she holds, run it anyway and report its own named stop as the output — the
-   runner tells her with the exact line. A post-land step that fails is a block with its output
-   as the reason: the land stands, the proof does not, and she is told exactly that. **Only a step the instruction or the plan named** is ever recorded, and the plan phase is where it was named.
+   runner tells her with the exact line. **A post-land step that fails is NOT a block.** Write
+   `merge_sha` and `post_land` with its non-zero `rc` and `output_tail` exactly as below; the runner
+   hands the failure back to you as a rework (your own fix PR on a fresh branch), and she is never
+   written to about a step you can fix yourself. Once `{{LAND}}` has landed the PR, `blocked` is
+   never the result: the land stands, only the proof is missing, and that is `post_land`, not a
+   stop (21 Sep 2026, rc_m33avf9cd0njg79t: a `blocked` after a clean merge went to her inbox).
+   **Only a step the instruction or the plan named** is ever recorded, and the plan phase is where it was named.
 
 Result file shape:
 
