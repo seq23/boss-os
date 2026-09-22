@@ -125,8 +125,9 @@ This is on Today under Critical Alerts, which is the record. This email is only 
 # NOT closed — a run that cannot read the register stops too, but says so and exits non-zero,
 # because "I could not check" and "there is nothing to do" must never render the same.
 if [ -d "$REPO" ]; then
+  # The exit code after `| tail -1` is tail's, not the register's, so nothing reads it: the
+  # register's answer is the LINE, and a line that matches nothing below is the failure case.
   CHASE_LINE="$(cd "$REPO" && npm run --silent vault:run -- node scripts/ops/kdp-chase-open.mjs 2>&1 | tail -1)"
-  CHASE_RC=$?
   say "register: $CHASE_LINE"
   case "$CHASE_LINE" in
     "KDP-CHASE: CLOSED"*)

@@ -25,7 +25,8 @@ set -uo pipefail
 
 REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
 PROMPT_FILE="${LP_REPLIES_PROMPT:-$REPO/scripts/ops/lp-replies-prompt.md}"
-ORIGIN="${BOSS_OS_ORIGIN:-https://boss.sequoiataylor.com}"
+# The origin is read by the Node step below straight from BOSS_OS_ORIGIN; a shell copy here was
+# never used by anything.
 OUT_DIR="${BOSS_OS_LP_DIR:-$HOME/.boss-os/lp}"
 
 # THE MODEL IS NAMED, AND IT MATCHES THE DUTY ROW.
