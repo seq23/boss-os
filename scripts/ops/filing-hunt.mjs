@@ -388,6 +388,20 @@ export async function researchLot(asset, size, SIDE = "buy", { offline = false }
  * A FINDING WITH NO URL IS NOT A FINDING. Same discipline as `assignedSearch`'s "no quote, no hit"
  * and `reachFor`'s "no source, no line" — dropped before it is ever rendered.
  *
+ * ─── THE LINKEDIN LINE, AND WHY IT IS SAFE HERE AND NOT ON THE ADV HALF ────
+ *
+ * Her words, 25 Sep 2026: "why the fuck can u not just search linkedin and give me the linkedin
+ * account of the person". For a press/podcast lead the answer is: it can, and does. Once a name is
+ * already identified by a dated, quoted article, ONE further public web search for that specific
+ * name plus organisation is enough to surface their actual profile URL from a search engine's own
+ * index — nothing here logs into LinkedIn, fetches the page, or automates a browser against it. The
+ * same boundary as the composed search link: no credential, no session, no scrape. This is not
+ * offered for `filing-hunt.mjs`'s OWN Form ADV people (`peopleFor`/`reachFor`) on purpose — a name
+ * off a regulatory filing has no independent corroboration, and a search engine confidently
+ * returning the WRONG "John Smith at Blue Chip Capital" is exactly the Forge Global Holdings mistake
+ * in a new costume. A press/podcast finding already carries a citation identifying the specific
+ * person; that is what makes one further targeted search safe to trust.
+ *
  * `spawnImpl` IS INJECTED, the same convention `claudeCodeExecutor` itself uses, defaulting to the
  * real process. A test passes a fake, so this whole function is exercised without spending anything
  * or invoking the CLI.
@@ -398,17 +412,26 @@ export async function pressPodcastLeads(asset, size, side, { model, maxSeconds =
   const cwd = mkdtempSync(path.join(os.tmpdir(), "ledger-hunt-"));
   const verb = side === "sell" ? "holding, dealing in, or having secondary-market exposure to" : "wanting to buy or add to a position in";
   const prompt = [
-    `Search press releases, news coverage, and podcast transcripts or show notes — NOT SEC filings,`,
-    `NOT LinkedIn — for named funds, family offices, or individuals who have PUBLICLY, ON THE RECORD,`,
-    `discussed ${verb} "${asset}" shares${size ? ` at a scale near ${money(size)}` : ""}.`,
+    `Search press releases, news coverage, and podcast transcripts or show notes — NOT SEC filings —`,
+    `for named funds, family offices, or individuals who have PUBLICLY, ON THE RECORD, discussed`,
+    `${verb} "${asset}" shares${size ? ` at a scale near ${money(size)}` : ""}.`,
     ``,
     `For EVERY finding, give: a name, an organisation, a one-sentence quote or close paraphrase of`,
-    `what they said, a working source URL, whether it is press or podcast, and a published date if`,
-    `you can find one. A finding with no working URL must be dropped, not printed — an invented`,
-    `citation is worse than no finding at all.`,
+    `what they said, a working source URL for that quote, whether it is press or podcast, and a`,
+    `published date if you can find one. A finding with no working URL must be dropped, not printed —`,
+    `an invented citation is worse than no finding at all.`,
+    ``,
+    `THEN, for each named person only (not organisations), do ONE further web search — their name plus`,
+    `their organisation — to see if a LinkedIn profile URL for that specific person appears in the`,
+    `search results. Do not log in to LinkedIn, fetch a LinkedIn page, or automate a browser against`,
+    `it — a plain web search only. Include the URL ONLY if a search result plainly names this exact`,
+    `person at this exact organisation — never a same-name person elsewhere, and never a URL you`,
+    `constructed by guessing a pattern. If you are not sure it is the same person, leave it out; a`,
+    `wrong profile handed to her as a fact is worse than no profile at all.`,
     ``,
     `Write your findings as JSON to ./delivers.json, nothing else in that file:`,
-    `{"status":"complete","leads":[{"name":"...","org":"...","role":"...","evidence_quote":"...","source_url":"...","kind":"press"|"podcast","published_date":"..."}]}`,
+    `{"status":"complete","leads":[{"name":"...","org":"...","role":"...","evidence_quote":"...","source_url":"...","kind":"press"|"podcast","published_date":"...","linkedin_url":"..."}]}`,
+    `Omit linkedin_url entirely (not an empty string) where you found no confident match.`,
     ``,
     `If you find nothing that clears this bar, write {"status":"complete","leads":[]} — that is a`,
     `valid, complete answer. Coming back empty is fine. A guess dressed up as a finding is not.`,
@@ -417,7 +440,11 @@ export async function pressPodcastLeads(asset, size, side, { model, maxSeconds =
     { envelope: { web_tools: ["WebSearch", "WebFetch"], model, max_seconds: maxSeconds }, prompt, cwd },
     { spawnImpl },
   );
-  const leads = (result.delivers?.leads ?? []).filter((l) => l && l.source_url);
+  const leads = (result.delivers?.leads ?? []).filter((l) => l && l.source_url)
+    // A linkedin_url must actually look like one — a hallucinated non-URL string is dropped rather
+    // than printed as though it were a link she could click.
+    .map((l) => (l.linkedin_url && /^https?:\/\/([a-z]{2,3}\.)?linkedin\.com\//i.test(l.linkedin_url)
+      ? l : { ...l, linkedin_url: undefined }));
   return {
     leads,
     note: result.error
@@ -440,6 +467,9 @@ export function renderPressPodcast(lines, press) {
     lines.push(`    [${l.kind}] ${l.name}${l.org ? ` — ${l.org}` : ""}${l.role ? ` (${l.role})` : ""}`);
     lines.push(`      "${l.evidence_quote}"`);
     lines.push(`      ${l.published_date ? `${l.published_date}  ` : ""}${l.source_url}`);
+    lines.push(l.linkedin_url
+      ? `      LinkedIn: ${l.linkedin_url}`
+      : `      LinkedIn: no confident match found by search — nothing was fetched or logged into`);
   }
 }
 
