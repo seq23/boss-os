@@ -246,6 +246,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "interest-match.mjs",
   "kdp-publish.sh",
   "kdp-surface.sh",
+  "ledger-hunt.mjs",
   "lp-positive.mjs",
   "lp-replies.sh",
   "lp-tracker-sync.mjs",

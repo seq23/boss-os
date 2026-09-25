@@ -305,7 +305,7 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh ledger-hunt.mjs -- npm run --silent capital:ledger-hunt -- --send</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -320,7 +320,7 @@ CAPEOF
 launchctl unload "$CAPITAL_PLIST" 2>/dev/null || true
 lint_plist "$CAPITAL_PLIST"
 launchctl load "$CAPITAL_PLIST"
-echo "Installed $CAPITAL_LABEL — daily 07:45 Central (interest-ledger.mjs, interest-extract.mjs, interest-match.mjs)."
+echo "Installed $CAPITAL_LABEL — daily 07:45 Central (interest-ledger.mjs, interest-extract.mjs, interest-match.mjs, ledger-hunt.mjs)."
 
 NUDGE_LABEL="com.seq.boss-capital-nudge"
 NUDGE_PLIST="$HOME/Library/LaunchAgents/$NUDGE_LABEL.plist"

@@ -121,6 +121,7 @@
     "capital:sellers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --side sell",
     "capital:hunts": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --from-boss",
     "capital:filings": "node scripts/vault/vault.mjs run -- node scripts/ops/filing-hunt.mjs",
+    "capital:ledger-hunt": "node scripts/vault/vault.mjs run -- node scripts/ops/ledger-hunt.mjs",
     "validate:book-verbs": "node scripts/validate/a-verb-is-explicit-and-a-doubt-is-a-question.mjs && node scripts/validate/a-verb-is-explicit-and-a-doubt-is-a-question.mjs --self-test",
     "validate:boss-intake": "node scripts/validate/boss-intake-is-boss-only.mjs && node scripts/validate/boss-intake-is-boss-only.mjs --self-test",
     "validate:employee-tags": "node scripts/validate/every-employee-has-a-reachable-tag.mjs && node scripts/validate/every-employee-has-a-reachable-tag.mjs --self-test",
