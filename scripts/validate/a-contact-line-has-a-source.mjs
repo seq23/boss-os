@@ -61,7 +61,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
  * calls it. A scan pinned to one file would have gone on approving a rule it could no longer see, in
  * whichever file it stopped looking at.
  */
-const HUNT_FILES = ["scripts/ops/buyer-hunt.mjs", "scripts/ops/filing-hunt.mjs"];
+const HUNT_FILES = ["scripts/ops/buyer-hunt.mjs", "scripts/ops/filing-hunt.mjs", "scripts/ops/ledger-hunt.mjs"];
 const HUNT = HUNT_FILES.join(" and ");
 
 /**

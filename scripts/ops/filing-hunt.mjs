@@ -370,6 +370,79 @@ export async function researchLot(asset, size, SIDE = "buy", { offline = false }
   return filings;
 }
 
+// ─── Press and podcast mentions ───────────────────────────────────────────────
+
+/**
+ * THE ONE SOURCE FILINGS AND FORM ADV CANNOT SEE: SOMEBODY SAYING IT OUT LOUD.
+ *
+ * A fund's N-PORT mark is a dollar figure with no story behind it. A press release naming who led a
+ * round, or a podcast guest describing a position they hold, is the same fact in the world's own
+ * words — and it is the one piece of `interest-ledger-hunt`'s brief filings and ADV cannot reach: no
+ * SEC form requires a fund to say why it holds something or when it said so out loud.
+ *
+ * NO NEW SPEND LANE. This calls `claudeCodeExecutor` directly, in-process — the same adapter every
+ * `agent_executed` duty already uses, authenticating as the owner's own Claude Code session (macOS
+ * keychain, never an API key). There is no Worker round trip and nothing crosses to D1: the prompt,
+ * the search, and the result all stay on this machine, exactly like the filings half.
+ *
+ * A FINDING WITH NO URL IS NOT A FINDING. Same discipline as `assignedSearch`'s "no quote, no hit"
+ * and `reachFor`'s "no source, no line" — dropped before it is ever rendered.
+ *
+ * `spawnImpl` IS INJECTED, the same convention `claudeCodeExecutor` itself uses, defaulting to the
+ * real process. A test passes a fake, so this whole function is exercised without spending anything
+ * or invoking the CLI.
+ */
+export async function pressPodcastLeads(asset, size, side, { model, maxSeconds = 180, spawnImpl } = {}) {
+  const { claudeCodeExecutor } = await import("../sync-agent/backends/claudeCode.mjs");
+  const { mkdtempSync } = await import("node:fs");
+  const cwd = mkdtempSync(path.join(os.tmpdir(), "ledger-hunt-"));
+  const verb = side === "sell" ? "holding, dealing in, or having secondary-market exposure to" : "wanting to buy or add to a position in";
+  const prompt = [
+    `Search press releases, news coverage, and podcast transcripts or show notes — NOT SEC filings,`,
+    `NOT LinkedIn — for named funds, family offices, or individuals who have PUBLICLY, ON THE RECORD,`,
+    `discussed ${verb} "${asset}" shares${size ? ` at a scale near ${money(size)}` : ""}.`,
+    ``,
+    `For EVERY finding, give: a name, an organisation, a one-sentence quote or close paraphrase of`,
+    `what they said, a working source URL, whether it is press or podcast, and a published date if`,
+    `you can find one. A finding with no working URL must be dropped, not printed — an invented`,
+    `citation is worse than no finding at all.`,
+    ``,
+    `Write your findings as JSON to ./delivers.json, nothing else in that file:`,
+    `{"status":"complete","leads":[{"name":"...","org":"...","role":"...","evidence_quote":"...","source_url":"...","kind":"press"|"podcast","published_date":"..."}]}`,
+    ``,
+    `If you find nothing that clears this bar, write {"status":"complete","leads":[]} — that is a`,
+    `valid, complete answer. Coming back empty is fine. A guess dressed up as a finding is not.`,
+  ].join("\n");
+  const result = await claudeCodeExecutor(
+    { envelope: { web_tools: ["WebSearch", "WebFetch"], model, max_seconds: maxSeconds }, prompt, cwd },
+    { spawnImpl },
+  );
+  const leads = (result.delivers?.leads ?? []).filter((l) => l && l.source_url);
+  return {
+    leads,
+    note: result.error
+      ? `the search could not complete: ${result.error}`
+      : leads.length ? null : "searched; nothing cleared the bar (a name with no working source URL is dropped, not printed)",
+  };
+}
+
+/**
+ * DANIELLE'S SECTION, PRESS AND PODCAST HALF. Rendered beside `renderFilings`, under its own byline,
+ * for the same reason the filings half is: the half she owns is the half she writes.
+ */
+export function renderPressPodcast(lines, press) {
+  lines.push("  FROM PRESS AND PODCAST MENTIONS — Danielle");
+  if (!press.leads.length) {
+    lines.push(`    ${press.note ?? "nobody named"}`);
+    return;
+  }
+  for (const l of press.leads) {
+    lines.push(`    [${l.kind}] ${l.name}${l.org ? ` — ${l.org}` : ""}${l.role ? ` (${l.role})` : ""}`);
+    lines.push(`      "${l.evidence_quote}"`);
+    lines.push(`      ${l.published_date ? `${l.published_date}  ` : ""}${l.source_url}`);
+  }
+}
+
 // ─── Standalone ──────────────────────────────────────────────────────────────
 
 /**
