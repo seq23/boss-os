@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * THE MERGE GATE IS FAST, THE SLOW SUITE IS POST-MERGE, AND EVERY JOB HAS A CEILING.
+ * THE MERGE GATE IS FAST, THE SLOW SUITE IS NIGHTLY, AND EVERY JOB HAS A CEILING.
  *
  * ─── The wait this closes ────────────────────────────────────────────────────
  *
@@ -8,8 +8,13 @@
  * Playwright journeys — 217 of them on one worker — lost a 5-second visibility race, retried the
  * whole suite, and hit the 30-minute cap with 214 passed. Fifty minutes to learn nothing about the
  * change, then a re-run. The shape that replaced it: the pull-request gate is typecheck + scans +
- * the unit suite in four vitest shards + the Boss suites in two, all parallel, about 3–4 minutes;
- * the journeys run after the merge on `main` with their own ceiling.
+ * the unit suite in four vitest shards + the Boss suites in three, all parallel, about 3–4 minutes;
+ * the journeys ran after the merge on `main` with their own ceiling.
+ *
+ * 26 Sep 2026, build first, test in batches: "after the merge" still meant every merge waited
+ * 15–17 minutes before `Deploy` would fire. The journeys moved out of `ci.yml` altogether into
+ * `e2e.yml`, which runs nightly and on dispatch and gates PRODUCTION (deploy.yml fires on its
+ * success; `land --promote` ships the newest green sha). The merge gate is `ci.yml` alone.
  *
  * ─── The rule, read from the YAML ────────────────────────────────────────────
  *
@@ -18,12 +23,14 @@
  *   2. The unit suite and the Boss suites are sharded: a matrix with ≥2 shards, and the vitest
  *      `--shard=i/N` denominator equals the matrix length, so no file is skipped and none runs twice.
  *   3. Each unit shard stays serial inside (`--no-file-parallelism`), the way the suites are written.
- *   4. The Playwright job does not run on `pull_request` — it is post-merge — and it keeps a ceiling.
- *   5. Every job the pull request waits on has a ceiling ≤ 10 minutes, so the gate cannot quietly
- *      drift back to the shape this replaced.
+ *   4. ci.yml runs NO Playwright step — the journeys are not per merge, on any event.
+ *   5. Every job in ci.yml has a ceiling ≤ 10 minutes, so the gate cannot quietly drift back to
+ *      the shape this replaced.
+ *   6. e2e.yml runs the Playwright journeys with a ceiling, and is triggered ONLY by `schedule`
+ *      and `workflow_dispatch` — never `push`, never `pull_request`.
  *
- * RULE 0: zero jobs, zero sharded jobs, or no Playwright job is a hard failure — an empty workflow
- * satisfies every "no job is…" rule and proves nothing.
+ * RULE 0: zero jobs in either file, zero sharded jobs, or no Playwright job in e2e.yml is a hard
+ * failure — an empty workflow satisfies every "no job is…" rule and proves nothing.
  *
  *   node scripts/validate/the-merge-gate-is-fast.mjs
  *   node scripts/validate/the-merge-gate-is-fast.mjs --self-test
@@ -34,7 +41,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CI = ".github/workflows/ci.yml";
+const E2E = ".github/workflows/e2e.yml";
 const GATE_CEILING_MIN = 10;
+const PLAYWRIGHT = /playwright test|npm run e2e\b/;
 
 /** Split the workflow's `jobs:` block into { id: text } without a YAML library. */
 export function jobsIn(yaml) {
@@ -51,16 +60,35 @@ export function jobsIn(yaml) {
   return jobs;
 }
 
-export function check(yaml) {
+/** The top-level `on:` block's trigger names (push, pull_request, schedule, …), comments stripped. */
+export function triggersIn(yaml) {
+  const lines = yaml.split("\n").map((l) => l.replace(/\s#.*$/, ""));
+  const start = lines.findIndex((l) => /^on:\s*$/.test(l));
+  if (start < 0) {
+    const inline = lines.find((l) => /^on:\s*\S/.test(l));
+    if (!inline) return [];
+    const v = inline.replace(/^on:\s*/, "").replace(/^\[|\]$/g, "");
+    return v.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  const out = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() === "") continue;
+    if (!line.startsWith(" ")) break;
+    const m = line.match(/^  ([A-Za-z_]+):/);
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
+
+const timeoutOf = (t) => { const m = t.match(/^\s+timeout-minutes:\s*(\d+)\s*$/m); return m ? Number(m[1]) : null; };
+
+export function check({ ci, e2e }) {
   const problems = [];
-  const jobs = jobsIn(yaml);
+  const jobs = jobsIn(ci);
   const ids = Object.keys(jobs);
   if (ids.length === 0) { problems.push(`${CI} declares no jobs — nothing here can be a gate.`); return problems; }
 
-  const timeoutOf = (t) => { const m = t.match(/^\s+timeout-minutes:\s*(\d+)\s*$/m); return m ? Number(m[1]) : null; };
-  const isPr = (t) => !/^\s+if:\s*.*github\.event_name\s*!=\s*'pull_request'/m.test(t);
-
-  let sharded = 0; let e2e = 0;
+  let sharded = 0;
   for (const id of ids) {
     const t = jobs[id];
     const ceiling = timeoutOf(t);
@@ -78,34 +106,48 @@ export function check(yaml) {
       const unitRuns = t.split("\n").filter((l) => /^\s+(run:|-\s*run:)?\s*npx vitest run(?! --config)/.test(l) || /^\s+run: npx vitest run(?! --config)/.test(l));
       if (unitRuns.some((l) => !l.includes("--no-file-parallelism"))) problems.push(`job "${id}" runs the unit suite in parallel inside a shard; these suites share a miniflare per file and were written to run serially.`);
     }
-    if (/playwright test|npm run e2e/.test(t)) {
-      e2e += 1;
-      if (isPr(t)) problems.push(`job "${id}" runs the Playwright journeys on pull requests — 15–17 minutes (double on a retry) back in the merge gate.`);
-    } else if (isPr(t) && ceiling !== null && ceiling > GATE_CEILING_MIN) {
-      problems.push(`job "${id}" gates pull requests with a ${ceiling}-minute ceiling; the merge gate is ≤ ${GATE_CEILING_MIN} minutes a job.`);
-    }
+    if (PLAYWRIGHT.test(t)) problems.push(`job "${id}" in ${CI} runs the Playwright journeys — 15–17 minutes (double on a retry) back on the merge path. They belong in ${E2E}.`);
+    else if (ceiling !== null && ceiling > GATE_CEILING_MIN) problems.push(`job "${id}" gates merges with a ${ceiling}-minute ceiling; the merge gate is ≤ ${GATE_CEILING_MIN} minutes a job.`);
   }
   if (sharded < 2) problems.push(`only ${sharded} sharded job(s) — both the unit suite and the Boss suites are sharded, or the serial 15-minute job is back.`);
-  if (e2e === 0) problems.push(`no job runs the Playwright journeys — post-merge means after the merge, not never.`);
+
+  // The journeys: nightly + dispatch in e2e.yml, with a ceiling, never on push or pull_request.
+  if (!e2e) { problems.push(`${E2E} is missing — the Playwright journeys run nowhere. Nightly means nightly, not never.`); return problems; }
+  const e2eJobs = jobsIn(e2e);
+  const e2eIds = Object.keys(e2eJobs).filter((id) => PLAYWRIGHT.test(e2eJobs[id]));
+  if (e2eIds.length === 0) problems.push(`no job in ${E2E} runs the Playwright journeys — the suite runs nowhere.`);
+  for (const id of e2eIds) if (timeoutOf(e2eJobs[id]) === null) problems.push(`job "${id}" in ${E2E} has no timeout-minutes — a hung nightly runs for six hours.`);
+  const triggers = triggersIn(e2e);
+  for (const bad of ["push", "pull_request", "pull_request_target"]) if (triggers.includes(bad)) problems.push(`${E2E} triggers on \`${bad}\` — the journeys are back on the merge path. Only schedule and workflow_dispatch.`);
+  if (!triggers.includes("schedule")) problems.push(`${E2E} has no \`schedule\` trigger — a suite nobody runs is not a gate for production.`);
+  if (!triggers.includes("workflow_dispatch")) problems.push(`${E2E} has no \`workflow_dispatch\` — \`land --promote --run-e2e\` cannot run it on demand.`);
   return problems;
 }
 
 function selfTest() {
-  const good = readFileSync(join(ROOT, CI), "utf8");
+  const ci = readFileSync(join(ROOT, CI), "utf8");
+  const e2e = readFileSync(join(ROOT, E2E), "utf8");
   const cases = [
-    ["the shipped shape passes", good, 0],
-    ["a job with no ceiling is named", good.replace(/^    timeout-minutes: 6\n/m, ""), 1],
-    ["the journeys back on pull requests", good.replace(/^    if: github\.event_name != 'pull_request'\n/m, ""), 1],
-    ["a shard denominator that skips files", good.replace("--shard=${{ matrix.shard }}/4", "--shard=${{ matrix.shard }}/5"), 1],
-    ["a one-shard matrix", good.replace("shard: [1, 2, 3]", "shard: [1]"), 1],
-    ["the unit shard gone parallel inside", good.replace("npx vitest run --no-file-parallelism --shard", "npx vitest run --shard"), 1],
-    ["a gate job whose ceiling is the old 30", good.replace(/^    timeout-minutes: 8\n/m, "    timeout-minutes: 30\n"), 1],
-    ["RULE 0: no jobs at all", "name: CI\non: push\n", 1],
-    ["RULE 0: the sharded jobs deleted", good.replace(/\n  unit:\n[\s\S]*?\n  e2e:\n/, "\n  e2e:\n"), 1],
+    ["the shipped shape passes", { ci, e2e }, 0],
+    ["a gate job with no ceiling is named", { ci: ci.replace(/^    timeout-minutes: 6\n/m, ""), e2e }, 1],
+    ["the journeys back in ci.yml (post-merge or not)", { ci: ci + "\n  e2e:\n    runs-on: ubuntu-latest\n    timeout-minutes: 40\n    if: github.event_name != 'pull_request'\n    steps:\n      - run: npm run e2e\n", e2e }, 1],
+    ["a shard denominator that skips files", { ci: ci.replace("--shard=${{ matrix.shard }}/4", "--shard=${{ matrix.shard }}/5"), e2e }, 1],
+    ["a one-shard matrix", { ci: ci.replace("shard: [1, 2, 3]", "shard: [1]"), e2e }, 1],
+    ["the unit shard gone parallel inside", { ci: ci.replace("npx vitest run --no-file-parallelism --shard", "npx vitest run --shard"), e2e }, 1],
+    ["a gate job whose ceiling is the old 30", { ci: ci.replace(/^    timeout-minutes: 8\n/m, "    timeout-minutes: 30\n"), e2e }, 1],
+    ["e2e.yml back on push", { ci, e2e: e2e.replace("\non:\n", "\non:\n  push:\n    branches: [main]\n") }, 1],
+    ["e2e.yml back on pull_request", { ci, e2e: e2e.replace("\non:\n", "\non:\n  pull_request:\n") }, 1],
+    ["e2e.yml with no schedule", { ci, e2e: e2e.replace(/^  schedule:\n(?:    .*\n)+/m, "") }, 1],
+    ["e2e.yml with no dispatch", { ci, e2e: e2e.replace(/^  workflow_dispatch:\n/m, "") }, 1],
+    ["the nightly job with no ceiling", { ci, e2e: e2e.replace(/^    timeout-minutes: \d+\n/m, "") }, 1],
+    ["RULE 0: no jobs at all in ci.yml", { ci: "name: CI\non: push\n", e2e }, 1],
+    ["RULE 0: e2e.yml missing", { ci, e2e: "" }, 1],
+    ["RULE 0: e2e.yml with no Playwright job", { ci, e2e: e2e.replace(/npm run e2e/g, "npm run typecheck") }, 1],
+    ["RULE 0: the sharded jobs deleted", { ci: ci.replace(/\n  unit:\n[\s\S]*$/, "\n"), e2e }, 1],
   ];
   let wrong = 0;
-  for (const [name, yaml, min] of cases) {
-    const p = check(yaml);
+  for (const [name, input, min] of cases) {
+    const p = check(input);
     const ok = min === 0 ? p.length === 0 : p.length >= min;
     if (!ok) { wrong += 1; console.error(`  ✗ ${name}: ${p.length} problem(s)\n    ${p.join("\n    ")}`); }
   }
@@ -114,11 +156,12 @@ function selfTest() {
 }
 
 if (process.argv.includes("--self-test")) { selfTest(); process.exit(0); }
-const problems = check(readFileSync(join(ROOT, CI), "utf8"));
+const read = (f) => { try { return readFileSync(join(ROOT, f), "utf8"); } catch { return ""; } };
+const problems = check({ ci: read(CI), e2e: read(E2E) });
 if (problems.length) {
   console.error("THE MERGE GATE IS NOT THE FAST SHAPE:");
   for (const p of problems) console.error(`  ✗ ${p}`);
   process.exit(1);
 }
-const jobs = jobsIn(readFileSync(join(ROOT, CI), "utf8"));
-console.log(`the-merge-gate-is-fast: ${Object.keys(jobs).length} jobs, every one with a ceiling; unit and Boss suites sharded; the journeys post-merge. OK.`);
+const jobs = jobsIn(read(CI));
+console.log(`the-merge-gate-is-fast: ${Object.keys(jobs).length} gate jobs, every one with a ceiling ≤ ${GATE_CEILING_MIN} min; unit and Boss suites sharded; the journeys nightly + dispatch in ${E2E}, never per merge. OK.`);

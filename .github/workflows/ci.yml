@@ -1,18 +1,22 @@
 # West Peek OS — continuous validation.
 #
-# Runs the repo's real gate (typecheck, unit/integration tests, every static validator, the
-# client build, and the Playwright journeys) on every push and pull request against `main`.
+# Runs the repo's FAST gate (typecheck, unit/integration tests, every static validator, the
+# client build) on every push and pull request against `main`. The Playwright journeys are not
+# here: they live in `e2e.yml` (nightly + on dispatch) and gate PRODUCTION, not the merge.
 #
-# ─── THE SHAPE (21 Sep 2026) ────────────────────────────────────────────────
+# ─── THE SHAPE (21 Sep 2026; build first, test in batches 26 Sep 2026) ─────────
 #
 # The MERGE GATE — what a pull request waits on — is the fast half, run as parallel jobs:
 # typecheck + every registered scan + the client build in one job, the unit/integration suite in
 # four vitest shards, the Boss suites in three. Measured on run 35648912898 the single serial job took
 # 15m02s (unit 7m55s, Boss 5m00s, scans 0m57s, install+typecheck 0m42s); sharded, the longest
-# job is a quarter of the unit suite plus setup, so the gate finishes in about 3–4 minutes. The
-# Playwright journeys — 15–17 minutes, one worker, one shared local D1 — run AFTER the merge, on
-# `main` (and on demand), in the same workflow run so `Deploy` still fires only when everything
-# including the journeys is green, and `land` still watches one run to one terminal state.
+# job is a quarter of the unit suite plus setup, so the gate finishes in about 3–4 minutes.
+#
+# The Playwright journeys — 15–17 minutes, one worker, one shared local D1 — used to run here on
+# `main` after every merge, and `Deploy` fired on this workflow. From 26 Sep 2026 they run once a
+# night (07:00 UTC) and on demand in `e2e.yml`, and `Deploy` fires on THAT workflow's success: a
+# merge lands on main at once, production moves only to a commit the journeys have passed
+# (`land --promote boss-os` ships the newest such commit by hand). `land <pr>` watches this run.
 #
 # Every job carries `timeout-minutes` at about twice its normal wall time, so a hang is reported as
 # a hang inside the hour rather than as a six-hour default.
@@ -265,51 +269,3 @@ jobs:
           else
             exit "$rc"
           fi
-
-  e2e:
-    name: Playwright journeys
-    # POST-MERGE, NOT THE MERGE GATE. 217 journeys on one worker against one shared local D1 take
-    # 15–17 minutes, and the whole-suite retry below can double that: on PR #35 (21 Sep 2026) one
-    # journey lost a 5-second visibility race on the runner, the retry ran, and the job hit the
-    # 30-minute cap having passed 214 of 217 — a fifty-minute wait to learn nothing about the change.
-    # So a pull request waits on the fast jobs above; the journeys run on `main` after the merge and
-    # on demand, in this same run, so `Deploy` (workflow_run on CI success) still ships only a commit
-    # the journeys have passed, and `land` still watches one run to one terminal state.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    # Normal: ~17m; the whole-suite retry makes a real failure cost twice that, so this is 2× the
-    # normal plus the retry, not 2× the retry.
-    timeout-minutes: 40
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install (reproducible, from package-lock)
-        run: npm ci
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
-      # `npm run e2e` resets the local D1 and starts its own `wrangler dev --local` — offline,
-      # no credentials, safe to re-run back to back (AGENTS.md: "that is a hard requirement, not
-      # a nicety"). The retry here is for `wrangler dev` itself, not for a failing assertion:
-      # observed twice on GitHub's Linux runners, never on macOS — `workerd` throws an internal,
-      # message-less error ("please create an issue at workers-sdk") and either drops the server
-      # outright or serves a stretch of requests before dying later, taking down every test after
-      # it with ECONNREFUSED. Neither occurrence traced to a real test failure once the retry ran
-      # clean. A single retry re-runs the WHOLE command, which is what actually resets state
-      # safely here — Playwright's own per-test retry would replay a test against a database a
-      # crashed server already half-mutated, which is unsafe for this suite's single shared D1
-      # (see playwright.config.ts). A journey that fails on its own merits fails the step: this
-      # tolerates the tool crashing, never a wrong assertion.
-      - name: Playwright journeys
-        run: npm run e2e || (echo "::warning::wrangler dev crashed or a journey failed — retrying the whole suite once" && npm run e2e)

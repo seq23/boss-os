@@ -1,0 +1,77 @@
+# Boss OS — the Playwright journeys, nightly and on demand. Never per merge.
+#
+# BUILD FIRST, TEST IN BATCHES (26 Sep 2026). 217 journeys on one worker against one shared local
+# D1 take 15–17 minutes, and from 21 Sep they ran on `main` after every merge inside `CI`, so every
+# merge paid that wait before `Deploy` would fire. Now the merge gate is `ci.yml` alone (3–4 min),
+# and this workflow runs the journeys once a night on main's head and whenever someone dispatches
+# it. `deploy.yml` fires on THIS workflow's success and ships exactly the sha it passed on, so
+# production only ever runs a commit the journeys have proven. `land <pr>` merges on a green fast
+# check and prints WAITING for production; `land --promote boss-os` ships the newest e2e-green
+# commit (`--run-e2e` dispatches this workflow on main's head first and waits for it).
+#
+# A red nightly blocks the next production deploy and is fixed first: bisect between the last
+# green sha (`gh run list --workflow e2e --status success`) and the red one.
+#
+# NOT `pull_request`, NOT `push`: scripts/validate/the-merge-gate-is-fast.mjs fails the build if
+# either trigger comes back, or if `ci.yml` grows a Playwright step again.
+name: e2e
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # nightly 07:00 UTC (02:00 CT), main's head
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright journeys
+    runs-on: ubuntu-latest
+    # Normal: ~15–17 min (runs 36151769145, 36146807613: 14m44s, 17m28s). 60 is a fault
+    # detector at ~4x normal, never a budget; the whole-suite retry below is inside it.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install (reproducible, from package-lock)
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # `npm run e2e` resets the local D1 and starts its own `wrangler dev --local` — offline,
+      # no credentials, safe to re-run back to back (AGENTS.md: "that is a hard requirement, not
+      # a nicety"). The retry here is for `wrangler dev` itself, not for a failing assertion:
+      # observed twice on GitHub's Linux runners, never on macOS — `workerd` throws an internal,
+      # message-less error ("please create an issue at workers-sdk") and either drops the server
+      # outright or serves a stretch of requests before dying later, taking down every test after
+      # it with ECONNREFUSED. Neither occurrence traced to a real test failure once the retry ran
+      # clean. A single retry re-runs the WHOLE command, which is what actually resets state
+      # safely here — Playwright's own per-test retry would replay a test against a database a
+      # crashed server already half-mutated, which is unsafe for this suite's single shared D1
+      # (see playwright.config.ts). A journey that fails on its own merits fails the step: this
+      # tolerates the tool crashing, never a wrong assertion.
+      - name: Playwright journeys
+        run: npm run e2e || (echo "::warning::wrangler dev crashed or a journey failed — retrying the whole suite once" && npm run e2e)
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+          if-no-files-found: ignore
