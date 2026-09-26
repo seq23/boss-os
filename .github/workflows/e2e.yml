@@ -1,24 +1,30 @@
-# Boss OS — the Playwright journeys, nightly and on demand. Never per merge.
+# Boss OS — the Playwright journeys, weekly (Sunday 08:00 UTC) and on demand. Never per merge.
 #
 # BUILD FIRST, TEST IN BATCHES (26 Sep 2026). 217 journeys on one worker against one shared local
 # D1 take 15–17 minutes, and from 21 Sep they ran on `main` after every merge inside `CI`, so every
 # merge paid that wait before `Deploy` would fire. Now the merge gate is `ci.yml` alone (3–4 min),
-# and this workflow runs the journeys once a night on main's head and whenever someone dispatches
+# and this workflow runs the journeys once a week on main's head and whenever someone dispatches
 # it. `deploy.yml` fires on THIS workflow's success and ships exactly the sha it passed on, so
 # production only ever runs a commit the journeys have proven. `land <pr>` merges on a green fast
 # check and prints WAITING for production; `land --promote boss-os` ships the newest e2e-green
 # commit (`--run-e2e` dispatches this workflow on main's head first and waits for it).
 #
-# A red nightly blocks the next production deploy and is fixed first: bisect between the last
+# WEEKLY, NOT NIGHTLY (owner, 26 Sep 2026). This repository is private, so every scheduled run
+# spends GitHub Actions minutes; the owner's rule is at most one scheduled run a week for private
+# repos. Production still promotes only from an e2e-green sha, so after a batch of merges the
+# path to production is `land --promote boss-os --run-e2e` — not waiting for Sunday.
+#
+# A red weekly run blocks the next production deploy and is fixed first: bisect between the last
 # green sha (`gh run list --workflow e2e --status success`) and the red one.
 #
 # NOT `pull_request`, NOT `push`: scripts/validate/the-merge-gate-is-fast.mjs fails the build if
-# either trigger comes back, or if `ci.yml` grows a Playwright step again.
+# either trigger comes back, if `ci.yml` grows a Playwright step again, or if this cron is ever
+# more frequent than the weekly one below.
 name: e2e
 
 on:
   schedule:
-    - cron: "0 7 * * *" # nightly 07:00 UTC (02:00 CT), main's head
+    - cron: "0 8 * * 0" # weekly, Sunday 08:00 UTC (03:00 CT), main's head
   workflow_dispatch:
 
 concurrency:
