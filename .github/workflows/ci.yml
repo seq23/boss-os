@@ -2,7 +2,8 @@
 #
 # Runs the repo's FAST gate (typecheck, unit/integration tests, every static validator, the
 # client build) on every push and pull request against `main`. The Playwright journeys are not
-# here: they live in `e2e.yml` (nightly + on dispatch) and gate PRODUCTION, not the merge.
+# here: they live in `e2e.yml` (weekly, Sunday 08:00 UTC + on dispatch) and gate PRODUCTION, not
+# the merge.
 #
 # ─── THE SHAPE (21 Sep 2026; build first, test in batches 26 Sep 2026) ─────────
 #
