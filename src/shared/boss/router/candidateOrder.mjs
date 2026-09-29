@@ -90,3 +90,24 @@ export function orderCandidates(models, costOf) {
     return String(a.display_name ?? "").localeCompare(String(b.display_name ?? ""));
   });
 }
+
+/**
+ * WHOSE PAID MODEL GOES FIRST, when the work needs a strong one and free has run out.
+ *
+ * She pays for Claude and for ChatGPT and wants them in that order whenever money is spent on work
+ * that needs a highly capable model: Claude family, then OpenAI, then anything else. The vendor is
+ * read from what the row IS — a direct Anthropic/OpenAI provider, or the `anthropic/` / `openai/`
+ * prefix OpenRouter gives their slugs — never from a display name.
+ *
+ * This is an ORDER over paid survivors and nothing more. The router applies it only to a billed
+ * route, so a free rung still beats every paid one, and it runs at Stage 5 after privacy,
+ * capability, availability and the spend lever have each refused what they refuse.
+ */
+export function vendorFamily(model) {
+  const provider = String(model?.provider_id ?? "");
+  const slug = String(model?.slug ?? "").toLowerCase();
+  if (provider === "prv_anthropic" || slug.startsWith("anthropic/") || slug.startsWith("claude")) return 0;
+  if (provider === "prv_openai" || slug.startsWith("openai/") || slug.startsWith("gpt-")) return 1;
+  return 2;
+}
+

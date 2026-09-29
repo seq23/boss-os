@@ -19,6 +19,7 @@
  * same logic applies to "where may this run".
  */
 
+import { isPlanSpent, untilWords } from "./spent";
 import type { AiProcessing } from "../policy/airlock";
 import type { Sensitivity } from "../../../shared/boss/governance";
 import type { Backend } from "./registry";
@@ -44,7 +45,8 @@ export type RefusalCode =
   | "cost_estimate_absent"
   | "lane_budget_absent"
   | "lane_budget_exhausted"
-  | "lever_free_only";
+  | "lever_free_only"
+  | "plan_spent";
 
 export interface Refusal {
   refused: true;
@@ -511,6 +513,23 @@ export function evaluateBackend(env: Env, backend: Backend, taskKind: string | n
       "backend_not_enabled",
       `${backend.display_name} is ${backend.status}, not enabled, so it may not take work. ${backend.status_reason ?? "No reason is recorded on the row."}`,
       { status: backend.status, status_reason: backend.status_reason },
+    );
+  }
+
+  /*
+   * A SEAT WHOSE PLAN IS OUT OF USAGE IS NOT A SEAT (0274, 29 Sep 2026). The runner reported that the
+   * CLI said so; the row carries the time it will be tried again. Refused HERE, before anything is
+   * parked, so a ladder walks to the next seat at dispatch instead of parking a run the seat will
+   * fail on. The owner's own instruction is exempt from budget refusals but not from this one: a
+   * spent plan cannot answer anybody, and parking her request on it would only make it wait.
+   */
+  if (isPlanSpent(backend, now)) {
+    return refuse(
+      backend.id,
+      "plan_spent",
+      `${backend.display_name} reported that its plan is out of usage, so it was skipped and will be tried again in about ` +
+        `${untilWords(backend.exhausted_until as number, now)}.${backend.exhausted_reason ? ` It said: ${backend.exhausted_reason.slice(0, 160)}` : ""}`,
+      { exhausted_until: backend.exhausted_until, exhausted_reason: backend.exhausted_reason ?? null },
     );
   }
 

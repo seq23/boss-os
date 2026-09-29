@@ -47,6 +47,7 @@
  * property. If that ever stops being true, this is the paragraph to revisit.
  */
 import { childEnv } from "../runner.mjs";
+import { detectUsageLimit } from "../../lib/seat-usage-limit.mjs";
 
 /**
  * The stderr line this CLI always emits and which means nothing.
@@ -245,7 +246,16 @@ export async function codexExecutor(
 
   const deliveredWhole = delivery.present && delivery.status === "complete";
 
+  /*
+   * A SPENT PLAN IS NOT AN ANSWER (29 Sep 2026) — the same rule as claudeCode.mjs, for the second
+   * seat. Codex on her ChatGPT Plus prints "You've hit your usage limit …" and may exit 0. The
+   * benign models-refresh line is filtered first so it can never be read as, or hide, a real notice.
+   */
+  const limit = deliveredWhole ? { limited: false } : detectUsageLimit({ stdout: parsed.summary, stderr: benign ? "" : stderr });
+  const seatExhausted = limit.limited ? { notice: limit.snippet, retry_after_seconds: limit.retryAfterSeconds } : null;
+
   return {
+    seat_exhausted: seatExhausted,
     summary: parsed.summary || (stderr && !benign ? `No answer. stderr tail: ${stderr}` : "No answer was produced."),
     delivers,
     delivery,
@@ -261,7 +271,9 @@ export async function codexExecutor(
     cost_micros: 0,
     remaining_risks: risks,
     error:
-      deliveredWhole
+      seatExhausted
+        ? `Codex has run out of usage and said: ${seatExhausted.notice}`
+        : deliveredWhole
         ? null
         : outcome.exit_code !== 0 || parsed.parse_error
           // TRAP 3. The benign "failed to refresh available models" line must never become the

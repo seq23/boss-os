@@ -299,7 +299,7 @@ describe("scenario (b): both seats unavailable → the walk continues down the f
     expect(by.kind).toBe("cloud_rung");
     expect(by.refused_seats).toEqual(["bk_claude_code", "bk_codex"]);
     // The label is the router's own honest name for the rung, degraded-tier wording included.
-    expect(by.label).toMatch(/Gemini 2\.5 Flash Lite \(OpenRouter\)/);
+    expect(by.label).toMatch(/Claude Haiku 4\.5 \(OpenRouter\)/); // paid rungs: Claude family first for strong-model work
     expect(by.model).toBe(decision.chosen_model_id);
     expect(stored.headline).toBe("A cloud rung wrote this morning.");
     expect(stored.status).toBe("partial");

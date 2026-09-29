@@ -11,6 +11,7 @@
  * screen gets to decide for itself that a deliberate decline is a failure.
  */
 
+import { spentCooldownSeconds } from "../backends/spent";
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound, conflict, AppError } from "../lib/http";
@@ -562,9 +563,9 @@ backends.post("/report", async (c) => {
   if (!runId) throw badRequest("The evidence names no run", "Every packet carries the run_id it came from.");
 
   const run = await c.env.DB
-    .prepare(`SELECT id, task_id, backend_id, status, finished_at FROM backend_runs WHERE id = ?`)
+    .prepare(`SELECT id, task_id, backend_id, status, finished_at, requested FROM backend_runs WHERE id = ?`)
     .bind(runId)
-    .first<{ id: string; task_id: string | null; backend_id: string; status: string; finished_at: number | null }>();
+    .first<{ id: string; task_id: string | null; backend_id: string; status: string; finished_at: number | null; requested: string | null }>();
   if (!run) throw notFound("No backend run with that id");
   if (run.finished_at !== null || run.status !== "running") {
     throw conflict(`That run is already ${run.status}`, "A finished run is not reported twice.");
@@ -577,6 +578,60 @@ backends.post("/report", async (c) => {
       `"${reported}" is not a run outcome`,
       "A packet ends succeeded, failed or refused. An unrecognised outcome is refused rather than stored.",
     );
+  }
+
+  /*
+   * ── A SPENT PLAN HANDS THE RUN TO THE NEXT SEAT, ONCE PER SEAT (29 Sep 2026) ──────────────────
+   *
+   * The seat that ran this said its plan is out of usage. If the run's OWN ladder names a later seat
+   * that has not already been tried, the run is put back in the queue rather than failed: the claim
+   * is cleared, the seat is recorded as tried in `requested.ladder_released`, and the next seat to
+   * claim it — this machine's other seat, which the agent now reports as `fallback_from` because
+   * the spent one is out — takes it, with its own model and a `ladder_handoff` event. Nothing was
+   * lost: a run that never produced an answer has nothing to file.
+   *
+   * BOUNDED BY CONSTRUCTION. A seat can appear in `ladder_released` once, and only seats LATER on
+   * the ladder qualify, so a run can move down the ladder and never back up or round: two seats, one
+   * release. A run with no ladder, or whose last seat is the one that ran it, is not released; it
+   * fails below with the seat's own sentence, as it always did, and both seats are marked spent so
+   * the NEXT dispatch walks to the cloud rungs at the door instead of parking on a spent seat.
+   *
+   * A run with violations is never released: something forbidden happened and a person looks.
+   */
+  const spentEvidence = ev.seat_exhausted && typeof ev.seat_exhausted === "object" ? (ev.seat_exhausted as Record<string, unknown>) : null;
+  if (spentEvidence && reported === "failed" && violations.length === 0) {
+    let req: Record<string, unknown> = {};
+    try { req = run.requested ? (JSON.parse(run.requested) as Record<string, unknown>) : {}; } catch { req = {}; }
+    const ladder: string[] = Array.isArray(req.backend_ladder) ? (req.backend_ladder as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    const tried: string[] = Array.isArray(req.ladder_released) ? (req.ladder_released as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    const at = ladder.indexOf(run.backend_id);
+    const next = at === -1 ? undefined : ladder.slice(at + 1).find((id) => !tried.includes(id) && id !== run.backend_id);
+    if (next) {
+      const releasedAt = Date.now();
+      const until = releasedAt + spentCooldownSeconds(spentEvidence.retry_after_seconds) * 1000;
+      const notice = (optionalText(spentEvidence.notice) ?? "").slice(0, 300) || null;
+      const released = await c.env.DB
+        .prepare(`UPDATE backend_runs SET claimed_at = NULL, claimed_by = NULL, requested = ? WHERE id = ? AND finished_at IS NULL AND status = 'running'`)
+        .bind(JSON.stringify({ ...req, ladder_released: [...tried, run.backend_id] }), run.id)
+        .run();
+      if ((released.meta.changes ?? 0) > 0) {
+        await c.env.DB
+          .prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = ? WHERE id = ?`)
+          .bind(until, notice, run.backend_id)
+          .run();
+        if (run.task_id) {
+          await c.env.DB
+            .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_release',?)`)
+            .bind(newId("tev"), run.task_id, releasedAt, JSON.stringify({ run_id: run.id, from: run.backend_id, next, why: `${run.backend_id} reported its plan is out of usage${notice ? `: ${notice}` : ""}`, exhausted_until: until }))
+            .run();
+        }
+        await logEvent(c.env.DB, {
+          level: "warn", scope: "backends", event: "ladder_release", entityId: run.task_id ?? run.id,
+          detail: { run_id: run.id, from: run.backend_id, next, exhausted_until: until },
+        });
+        return ok(c, { released: true, run_id: run.id, next_seat: next, outcome_class: "released", approval_id: null, exhausted_until: until });
+      }
+    }
   }
 
   const status = violations.length > 0 ? "failed" : reported;
@@ -618,6 +673,33 @@ backends.post("/report", async (c) => {
       runId,
     )
     .run();
+
+  /*
+   * A SEAT WHOSE PLAN IS OUT OF USAGE IS SKIPPED UNTIL IT RESETS (0274, 29 Sep 2026).
+   *
+   * The runner sets `seat_exhausted` on a packet when the CLI itself said its plan was spent. The
+   * fact is written to the backend the run was on, with the time it will be tried again, and the
+   * guard refuses that backend with `plan_spent` until then — so a ladder walks past it at dispatch.
+   * A run of the same backend that SUCCEEDS proves the plan has usage again and clears it at once,
+   * rather than making the seat wait out a cooldown it no longer needs.
+   */
+  const spentNotice = ev.seat_exhausted && typeof ev.seat_exhausted === "object" ? (ev.seat_exhausted as Record<string, unknown>) : null;
+  if (spentNotice) {
+    const until = now + spentCooldownSeconds(spentNotice.retry_after_seconds) * 1000;
+    await c.env.DB
+      .prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = ? WHERE id = ?`)
+      .bind(until, (optionalText(spentNotice.notice) ?? "").slice(0, 300) || null, run.backend_id)
+      .run();
+    await logEvent(c.env.DB, {
+      level: "warn", scope: "backends", event: "seat_plan_spent", entityId: run.task_id ?? run.id,
+      detail: { run_id: run.id, backend_id: run.backend_id, exhausted_until: until },
+    });
+  } else if (status === "succeeded") {
+    await c.env.DB
+      .prepare(`UPDATE execution_backends SET exhausted_until = NULL, exhausted_reason = NULL WHERE id = ? AND exhausted_until IS NOT NULL`)
+      .bind(run.backend_id)
+      .run();
+  }
 
   /*
    * SPEND ACCRUES AT EVERY LEVER POSITION, INCLUDING OPEN.

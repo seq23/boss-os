@@ -4,7 +4,7 @@ import { logEvent } from "../lib/log";
 import { getBool, getSetting } from "../lib/settings";
 import { AppError } from "../lib/http";
 import { costPolicy } from "../../../shared/boss/governance";
-import { orderCandidates } from "../../../shared/boss/router/candidateOrder.mjs";
+import { orderCandidates, vendorFamily } from "../../../shared/boss/router/candidateOrder.mjs";
 import { ATTEMPT_DEADLINE_MS, CHAIN_BUDGET_MS, nextAttemptDeadlineMs } from "./deadlines";
 import { ProviderCallError, type ChatMessage } from "./types";
 import { evaluateModel, estimateCostMicros, type ModelRow, type RouteStage } from "./policy";
@@ -175,6 +175,12 @@ export interface RouteRequest {
    * promote a model past privacy, capability, risk or budget — it can only take candidates away.
    */
   onlyProviderId?: string | null;
+  /**
+   * THIS WORK NEEDS A STRONG MODEL: when money is being spent on it, try the Claude family first,
+   * then OpenAI, then the rest. Free routes still come first and the spend lever still decides
+   * whether any paid route may run at all — this only orders the paid survivors.
+   */
+  preferStrongVendors?: boolean;
 }
 
 export interface RouteResult {
@@ -609,6 +615,8 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
    * matters. That is the guarantee stated as arithmetic rather than as a hope.
    */
   const RANK_WEIGHT = 1_000_000_000;
+  // Smaller than one experience step, larger than any price estimate (100,000,000 micros = $100).
+  const VENDOR_WEIGHT = 100_000_000;
   const continuity = orderCandidates(
     await loadContinuityModels(db, declaredIds),
     (m) => {
@@ -619,7 +627,9 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       const exp = experience.get(m.id);
       const promotable = protectedWork ? mayBePreferredForProtectedWork(exp) : true;
       const r = promotable ? experienceRank(exp) : Math.max(1, experienceRank(exp));
-      return r * RANK_WEIGHT + price;
+      // Billed routes only: a free route keeps its place above every paid one.
+      const vendor = opts.preferStrongVendors && price > 0 ? vendorFamily(m) * VENDOR_WEIGHT : 0;
+      return r * RANK_WEIGHT + vendor + price;
     },
   );
 

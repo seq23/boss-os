@@ -943,3 +943,38 @@ many at once. A test holds the active-push count at two.
 
 **What it deliberately does not do is invent a task.** Which lane owns a block is a rule she already
 wrote and should never re-derive at 6am; what to do inside it is hers.
+
+
+### ADR-034 — Her two subscription seats are walked in order, a spent one is skipped, and the lever still decides paid (29 Sep 2026)
+
+She pays for Claude Code and ChatGPT Plus and wants the agents to run on them, then on free lanes for
+work that is safe to send there, and to spend money only when she moves the one lever. Boss OS already
+had the ladder for the Executive Intelligence Report (ADR of 19 Sep); this extends it and closes the
+gaps found by inventory. Ported from the same change in West Peek OS (PR #213); the mechanism is Boss
+OS's own.
+
+- **A seat whose plan is out of usage is a fact the system stores** (`execution_backends.exhausted_until`,
+  migration 0274). The Mac agent recognises the notice (`scripts/lib/seat-usage-limit.mjs`, a deliberate
+  copy of West Peek's detector — the repos share no package), reports it, and the guard refuses the seat
+  with the sentence "…out of usage… tried again in about …" until the time passes. Only a run that
+  FAILED is read, and only short output, so a task that merely discusses limits is never mistaken.
+- **A run whose seat reports a spent plan moves to the next seat on its own ladder** (`ladder_released`,
+  bounded to one release per seat) instead of failing.
+- **The other four seat duties walk Claude Code then Codex** (migration 0275), each with its own model
+  (`model_by_backend`, null for Codex). No cloud fallback: they read the live web and a model recalling
+  the news would cite what it never read.
+- **Free only + private work + both seats spent stops at a budget hold**, names the lever, makes no
+  request, and no free lane sees the text (pinned end to end by a test that fails when the lever opens).
+- **Paid order for strong-model work is Claude family, then OpenAI, then the rest** (`vendorFamily`,
+  `RouteRequest.preferStrongVendors`, set for seat duties that reach the cloud). It orders paid survivors
+  only: free routes keep their place above every paid route, privacy/capability/availability/lever run
+  first, and a record of good or poor results still outranks it.
+- **Repo-change falls back to Codex only when Claude Code reports a spent plan**, in the same worktree with
+  the same prompt, with the repository's git directory made writable (a linked worktree commits into the
+  original repo's `.git`) and no `OPENAI_*` variable in the child's environment. Any other Claude failure is
+  the phase's failure, unchanged.
+
+**PROVEN by tests here:** spent-plan detection, skip and hand-off, the four duties' ladders, the Free-only
+stop, the paid vendor order, the fallback's trigger and git-directory handling. **UNPROVEN until she runs
+it:** the live Codex CLI flags on her Mac (`codexSupports` asks the binary before relying on any), a real
+usage-limit notice from either CLI, and a repo change with Claude Code out of usage.

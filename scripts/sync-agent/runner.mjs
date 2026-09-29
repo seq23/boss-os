@@ -331,6 +331,12 @@ function packet(envelope, over = {}) {
     rollback_ref: null,
     refusal_reason: null,
     error: null,
+    /**
+     * Set when the seat's own plan is out of usage (29 Sep 2026): `{ notice, retry_after_seconds }`.
+     * A fact about the seat, not about this task — it is what lets the agent stop claiming for the
+     * seat until it resets and the cloud hand the run to the next seat on its ladder.
+     */
+    seat_exhausted: null,
     cost_micros: 0,
     started_at: null,
     finished_at: null,
@@ -499,6 +505,7 @@ export async function executeRun(envelope, deps = {}) {
     checks_run: checks,
     rollback_ref: rollbackRef,
     cost_micros: result.cost_micros ?? 0,
+    seat_exhausted: result.seat_exhausted ?? null,
     started_at: startedAt,
     finished_at: finishedAt,
     violations,
@@ -562,7 +569,8 @@ export async function executeRun(envelope, deps = {}) {
    * nothing — `delivery_status` below is what stops a partial answer being presented as a whole one.
    */
   const delivered = result.delivery?.present === true;
-  const failed = checks.failed > 0 || (result.exit_code !== 0 && !delivered);
+  // A spent plan fails the run whatever the exit code said: the CLI can print its limit notice and exit 0.
+  const failed = checks.failed > 0 || (result.exit_code !== 0 && !delivered) || Boolean(result.seat_exhausted);
   return {
     ...base,
     status: failed ? "failed" : "succeeded",
