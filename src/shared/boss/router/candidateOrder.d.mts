@@ -17,3 +17,6 @@ export declare function orderCandidates<T extends OrderableModel>(
   models: readonly T[],
   costOf: (model: T) => number,
 ): T[];
+
+/** 0 = Claude family, 1 = OpenAI, 2 = everything else. */
+export declare function vendorFamily(model: { provider_id?: string | null; slug?: string | null }): 0 | 1 | 2;

@@ -43,6 +43,8 @@ import {
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { sendersFor, employeeMail } from "./notify.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
+import { detectUsageLimit } from "../lib/seat-usage-limit.mjs";
+import { codexExecArgs, codexSeatUsable, gitCommonDirs, helpMentions, runWithCodexFallback } from "../lib/codex-seat.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -125,10 +127,10 @@ function phasePrompt(phase, vars) {
   return render(`${header}\n## PHASE: ${own}`, vars);
 }
 
-function runClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
+function spawnClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
   return new Promise((resolve) => {
     appendFileSync(log, `\n=== ${phase} starting ${new Date().toISOString()} model=${model} max-turns=${maxTurns} timeout=${timeoutMin}m cwd=${cwd}\n`);
-    if (DRY) { appendFileSync(log, "DRY RUN — claude not invoked\n"); return resolve({ rc: 0, timedOut: false }); }
+    if (DRY) { appendFileSync(log, "DRY RUN — claude not invoked\n"); return resolve({ rc: 0, timedOut: false, code: 0, out: "", err: "", isError: false }); }
     /*
      * ON HER SEAT, NEVER ON AN API KEY. This process runs under `vault:run`, so `process.env` carries
      * ANTHROPIC_API_KEY; handed to the CLI it overrides her login, disables the claude.ai connectors,
@@ -147,16 +149,85 @@ function runClaude({ phase, prompt, cwd, log, model, maxTurns, timeoutMin }) {
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); setTimeout(() => child.kill("SIGKILL"), 10_000); }, timeoutMin * 60_000);
     let buf = "";
+    // What a spent plan needs to be recognised: the final `result` event's text and the stderr tail.
+    let resultText = "";
+    let isError = false;
+    let errTail = "";
+    const noteResult = (line) => { try { const ev = JSON.parse(line); if (ev.type === "result") { resultText = String(ev.result ?? ""); isError = Boolean(ev.is_error); } } catch { /* not JSON */ } };
     child.stdout.on("data", (d) => {
       buf += d.toString();
       let nl;
       while ((nl = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+        noteResult(line);
         for (const t of transcriptLines(line)) appendFileSync(log, t + "\n");
       }
     });
-    child.stderr.on("data", (d) => appendFileSync(log, d));
-    child.on("close", (rc) => { clearTimeout(timer); for (const t of transcriptLines(buf)) appendFileSync(log, t + "\n"); appendFileSync(log, `\n=== ${phase} exited rc=${rc} timedOut=${timedOut}\n`); resolve({ rc, timedOut }); });
+    child.stderr.on("data", (d) => { appendFileSync(log, d); errTail = (errTail + d.toString()).slice(-4000); });
+    child.on("close", (rc) => { clearTimeout(timer); noteResult(buf); for (const t of transcriptLines(buf)) appendFileSync(log, t + "\n"); appendFileSync(log, `\n=== ${phase} exited rc=${rc} timedOut=${timedOut}\n`); resolve({ rc, timedOut, code: rc, out: resultText, err: errTail, isError }); });
+  });
+}
+
+/**
+ * Did Claude Code stop because her plan's usage is spent? Returns the notice's own words, or null.
+ * A run that finished without error is never inspected, and `detectUsageLimit` never reads long
+ * output, so a build that merely DISCUSSES limits is not mistaken for one.
+ */
+export function claudeSpentUsage(r) {
+  if (!r || r.timedOut) return null;
+  if (r.code === 0 && !r.isError) return null;
+  const hit = detectUsageLimit({ stdout: r.out ?? "", stderr: r.err ?? "" });
+  return hit.limited ? hit.snippet : null;
+}
+
+/** The first flag the installed `codex exec --help` does not mention, or null when it supports them all. */
+async function codexLacks(flags) {
+  const r = spawnSync("codex", ["exec", "--help"], { encoding: "utf8", timeout: 20_000, env: seatEnv(process.env) });
+  const help = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
+  if (!help.trim()) return "`codex exec` (the codex command could not be run)";
+  return flags.find((f) => !helpMentions(help, f)) ?? null;
+}
+
+/** Run `codex exec` in the same working directory with the same prompt on stdin. */
+function spawnCodex({ phase, prompt, cwd, log, timeoutMin, addDirs }) {
+  // The worktree's commits are written into the ORIGINAL repository's .git, outside every folder the
+  // sandbox would otherwise let Codex write — so each repository's git directory is named too.
+  const dirs = [cwd, ...(addDirs ?? [])];
+  const found = new Map(dirs.map((d) => [d, spawnSync("git", ["-C", d, "rev-parse", "--git-common-dir"], { encoding: "utf8" }).stdout?.trim() || null]));
+  const writable = [...new Set([...(addDirs ?? []), ...gitCommonDirs(dirs, (d) => found.get(d) ?? null)])];
+  return new Promise((resolve) => {
+    appendFileSync(log, `\n=== ${phase} handed to Codex ${new Date().toISOString()} cwd=${cwd} writable=${writable.join(",")}\n`);
+    // No OPENAI_* either: Codex must use the ChatGPT Plus login in ~/.codex, never bill an API key.
+    const env = Object.fromEntries(Object.entries(seatEnv(process.env)).filter(([k]) => !/^OPENAI_/i.test(k)));
+    const child = spawn("codex", codexExecArgs(writable), { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); setTimeout(() => child.kill("SIGKILL"), 10_000); }, timeoutMin * 60_000);
+    let out = ""; let err = "";
+    child.stdout.on("data", (d) => { out += d.toString(); appendFileSync(log, d); });
+    child.stderr.on("data", (d) => { err += d.toString(); appendFileSync(log, d); });
+    child.on("error", (e) => { clearTimeout(timer); resolve({ code: -1, rc: -1, timedOut, out, err: `${err}\n${e.message}`, isError: true }); });
+    child.on("close", (code) => { clearTimeout(timer); appendFileSync(log, `\n=== ${phase} (Codex) exited rc=${code} timedOut=${timedOut}\n`); resolve({ code, rc: code, timedOut, out, err, isError: code !== 0 }); });
+    child.stdin.end(prompt);
+  });
+}
+
+/**
+ * Run the phase's model: Claude Code, and — ONLY when it reports her plan is out of usage — Codex on
+ * her ChatGPT Plus seat, same worktree, same prompt (29 Sep 2026). The phase reads its result from a
+ * FILE the model writes, so which model wrote it does not change how the phase is judged. Any other
+ * Claude failure is the phase's failure, unchanged; a hand-over is written to the job log.
+ * UNPROVEN against the live CLI until she runs a repo change with Claude Code out of usage.
+ */
+function runClaude(opts) {
+  if (DRY) return spawnClaude(opts);
+  return runWithCodexFallback({
+    runClaude: () => spawnClaude(opts),
+    runCodex: () => spawnCodex(opts),
+    limited: claudeSpentUsage,
+    usable: () => codexSeatUsable(homedir()),
+    supports: codexLacks,
+    addDirs: opts.addDirs ?? [],
+    onLine: (line) => appendFileSync(opts.log, `${line}\n`),
   });
 }
 
@@ -407,6 +478,7 @@ async function runPhase(claim) {
     : await runClaude({
       phase, prompt, cwd: (phase === "build" ? buildPath : repoPath) ?? dir, log,
       model: claim.model ?? PHASE_MODELS[phase], maxTurns: claim.max_turns ?? PHASE_MAX_TURNS[phase], timeoutMin: PHASE_TIMEOUT_MIN[phase],
+      addDirs: [dir],
     });
   let out = readJson(outFile);
   if (!out) {

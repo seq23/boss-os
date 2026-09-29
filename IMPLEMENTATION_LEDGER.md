@@ -5533,3 +5533,13 @@ of them `critical` by severity, all in the block called Critical Alerts, none of
 - Eight employees `active`, each owning work (`every-seat-owns-work`); the nightly ran complete
   every night 11–16 September; zero open dead letters.
 - The Today page, read fresh through the API after deploy: the alerts block is empty.
+
+## 2026-09-29 — Boss OS runs on her two seats first (see ADR-034)
+
+- Migrations 0274 (seat `exhausted_until`/`exhausted_reason`) and 0275 (four seat duties walk Claude Code → Codex).
+- Mac agent: usage-limit detection in both CLI backends, per-seat cooldown, hand-off to the next seat.
+- Worker: `plan_spent` guard refusal, released-run hand-off in `/backends/report`, Claude → OpenAI order for paid strong-model work, briefing ladder prints the same order.
+- Repo-change lane: Codex takes over a phase only when Claude Code's plan is spent.
+- Tests: `aSpentPlanIsSkippedUntilItResets`, `aSpentPlanHandsTheRunToTheNextSeat`, `afterBothSeatsAreSpentPrivateWorkStopsAtFreeOnly`, `paidStrongWorkTriesClaudeThenOpenAI`, `repoChangeCodexFallback`.
+- Not covered: live CLI behaviour on her Mac (UNPROVEN, see ADR-034).
+

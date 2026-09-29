@@ -24,6 +24,7 @@
  */
 import { createRequire } from "node:module";
 import { resolveDeviceId, missingDeviceIdMessage } from "../ops/device-id.mjs";
+import { createSeatExhaustion } from "./seatExhaustion.mjs";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -270,26 +271,43 @@ async function main() {
      */
     const childEnvironment = childEnv(process.env);
     const seats = [];
-    const unusable = [];
+    const unusableAtStart = [];
     for (const [backendId, load] of Object.entries(SEAT_PREFLIGHT)) {
       const describeAuth = await load();
       const auth = describeAuth(childEnvironment);
       if (auth.ok) seats.push(backendId);
-      else { unusable.push(backendId); console.error(`${backendId}: ${auth.detail}`); }
+      else { unusableAtStart.push(backendId); console.error(`${backendId}: ${auth.detail}`); }
     }
     if (seats.length === 0) {
       // A backend that cannot run says WHICH thing is wrong, rather than failing obscurely.
       console.error("No agent_executed seat can authenticate on this machine. Nothing was claimed.");
       process.exit(1);
     }
+    /*
+     * A SEAT WHOSE PLAN IS OUT OF USAGE IS SKIPPED UNTIL IT RESETS (29 Sep 2026). Remembered in the
+     * local database, so a restart in the middle of a window does not forget. It joins the seats that
+     * failed preflight — the SAME door, `fallback_from` — so the cloud can hand this machine's other
+     * seat the runs parked for the spent one, when the run's ladder names it.
+     */
+    const exhaustion = createSeatExhaustion({
+      load: () => { try { return JSON.parse(getState(db, "seat_exhausted", "{}")); } catch { return {}; } },
+      save: (state) => setState(db, "seat_exhausted", JSON.stringify(state)),
+    });
     const run = async () => {
+      const spentNow = seats.filter((id) => exhaustion.activeUntil(id) !== null);
+      const usableNow = seats.filter((id) => !spentNow.includes(id));
+      const unusable = [...unusableAtStart, ...spentNow];
+      if (usableNow.length === 0) {
+        console.error(`every seat is out of usage until ${new Date(Math.min(...spentNow.map((id) => exhaustion.activeUntil(id)))).toISOString()}; nothing claimed.`);
+        return { claimed: false, error: null, evidence: null };
+      }
       /*
        * ONE CYCLE TRIES EVERY SEAT AND STOPS AT THE FIRST CLAIM. Runs are parked per backend, so a
        * queue holding only Codex work must not look like an empty queue because Claude Code had
        * nothing.
        */
       let out = { claimed: false, error: null, evidence: null };
-      for (const backendId of seats) {
+      for (const backendId of usableNow) {
         /*
          * A USABLE SEAT MAY TAKE WORK PARKED FOR A SEAT THAT CANNOT AUTHENTICATE — when the run's
          * own ladder lists it as the next rung. That is the whole of "the ladder is working" on the
@@ -297,6 +315,20 @@ async function main() {
          */
         out = await workOnce({ origin, deviceId, cookie, backendId, fallbackFrom: unusable });
         if (out.claimed || out.error) break;
+      }
+      /*
+       * WHAT THE RUN SAID ABOUT THE SEAT. A spent plan marks the seat that ran it; a run that
+       * succeeded proves its plan has usage again. The seat is the one that CLAIMED (the packet's
+       * backend_id), which after a hand-off is not the seat the run was parked for.
+       */
+      if (out.evidence) {
+        const ranOn = out.evidence.backend_id ?? null;
+        if (ranOn && out.evidence.seat_exhausted) {
+          const until = exhaustion.mark(ranOn, out.evidence.seat_exhausted.retry_after_seconds);
+          console.error(`${ranOn}: plan out of usage (${String(out.evidence.seat_exhausted.notice ?? "").slice(0, 120)}); skipped until ${new Date(until).toISOString()}.`);
+        } else if (ranOn && out.evidence.status === "succeeded") {
+          exhaustion.clear(ranOn);
+        }
       }
       if (out.evidence && !out.reported) {
         /*

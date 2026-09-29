@@ -271,6 +271,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
        * conflation is the whole defect this axis was split to remove.
        */
       modelAccess: task.model_access ?? null,
+      // A seat duty that reached the cloud is strong-model work: Claude first, OpenAI second, when paid.
+      preferStrongVendors: ladder.length > 0,
       costMode,
       budgetMicros: envelope?.budget_micros ?? 0,
       cloudForRestrictedAllowed: Boolean(envelope?.cloud_for_restricted_allowed),

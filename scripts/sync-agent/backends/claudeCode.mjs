@@ -31,6 +31,7 @@
  * that reach outside the process. Tests pass a fake, so the whole of this adapter is exercised
  * without invoking the CLI, calling a model, or spending anything.
  */
+import { detectUsageLimit } from "../../lib/seat-usage-limit.mjs";
 import { childEnv } from "../runner.mjs";
 
 /** Tools this backend may never use, spelled the way the CLI spells them. */
@@ -275,7 +276,19 @@ export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl,
    */
   const deliveredWhole = delivery.present && delivery.status === "complete";
 
+  /*
+   * A SPENT PLAN IS NOT AN ANSWER (29 Sep 2026). When her Claude Max window is used up the CLI prints
+   * a sentence ("usage limit reached … resets …") and may exit 0, so the run would be graded a
+   * success with that sentence as its summary. Asked BEFORE the run is graded; a complete delivery
+   * is never a spent plan; long output is never inspected (see scripts/lib/seat-usage-limit.mjs).
+   * The packet carries `seat_exhausted`, the runner fails the run on it, and the agent stops
+   * claiming for this seat until it resets so the next seat on the ladder takes the work.
+   */
+  const limit = deliveredWhole ? { limited: false } : detectUsageLimit({ stdout: parsed.summary, stderr });
+  const seatExhausted = limit.limited ? { notice: limit.snippet, retry_after_seconds: limit.retryAfterSeconds } : null;
+
   return {
+    seat_exhausted: seatExhausted,
     // The CLI's own account of what it did — a claim, kept as a claim. executeRun() supplies the
     // file list and the check results from what it observed.
     summary: parsed.summary || (stderr ? `No summary. stderr tail: ${stderr}` : "No summary was produced."),
@@ -286,11 +299,13 @@ export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl,
     cost_micros: parsed.cost_micros,
     remaining_risks: risks,
     error:
-      deliveredWhole
-        ? null
-        : parsed.is_error || outcome.exit_code !== 0
-          ? (stderr || parsed.parse_error || `exit ${outcome.exit_code}`)
-          : null,
+      seatExhausted
+        ? `Claude Code has run out of usage and said: ${seatExhausted.notice}`
+        : deliveredWhole
+          ? null
+          : parsed.is_error || outcome.exit_code !== 0
+            ? (stderr || parsed.parse_error || `exit ${outcome.exit_code}`)
+            : null,
     session_id: parsed.session_id,
   };
 }

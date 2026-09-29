@@ -1,4 +1,5 @@
-import { orderCandidates } from "@shared/boss/router/candidateOrder.mjs";
+import { orderCandidates, vendorFamily } from "@shared/boss/router/candidateOrder.mjs";
+import { isPlanSpent, untilWords } from "../backends/spent";
 import { isPrivateModelRoute, privateLexicon, scanForModelAccess, type PrivateLexicon } from "../router/modelAccess";
 
 /**
@@ -66,6 +67,9 @@ export interface BackendRow {
   monthly_ceiling_micros: number | null;
   spent_micros?: number | null;
   window_started_at?: number | null;
+  /** 0274. A seat reported out of usage until this time. */
+  exhausted_until?: number | null;
+  exhausted_reason?: string | null;
 }
 
 export interface ModelRow {
@@ -131,6 +135,7 @@ export function orderBriefingCandidates(
     let why = "runs on her own subscription; this system is billed nothing";
     if (!b) { eligible = false; why = "no execution_backends row"; }
     else if (b.status !== "enabled") { eligible = false; why = `backend is ${b.status}`; }
+    else if (isPlanSpent(b, now)) { eligible = false; why = `plan reported out of usage; tried again in about ${untilWords(b.exhausted_until as number, now)}`; }
     else if ((b.monthly_ceiling_micros ?? 0) > 0) {
       const inWindow = (b.window_started_at ?? 0) >= monthStart;
       const spent = inWindow ? (b.spent_micros ?? 0) : 0;
@@ -141,7 +146,13 @@ export function orderBriefingCandidates(
   }
 
   const live = rows.models.filter((m) => Number(m.enabled) === 1 && Number(m.provider_enabled) === 1 && m.ladder_rung !== null && m.ladder_rung !== undefined);
-  const costOf = (m: ModelRow) => Number(m.in_micros_1k ?? 0) + Number(m.out_micros_1k ?? 0);
+  // The briefing is strong-model work, so among PAID rungs the Claude family goes first, then OpenAI —
+  // the same term the router adds (router/index.ts, `preferStrongVendors`). A free rung costs 0 and keeps its place.
+  const costOf = (m: ModelRow) => {
+    const price = Number(m.in_micros_1k ?? 0) + Number(m.out_micros_1k ?? 0);
+    const free = FREE_SLUG.test(m.slug) || m.provider_id === "prv_workers_ai";
+    return price > 0 && !free ? vendorFamily(m) * 100_000_000 + price : price;
+  };
   const ordered = orderCandidates(live as any, costOf as any) as unknown as ModelRow[];
   for (const m of ordered) {
     const free = FREE_SLUG.test(m.slug) || m.provider_id === "prv_workers_ai";
@@ -177,7 +188,7 @@ export async function briefingPrivacyVerdict(db: D1Database, prompt: string, lex
 
 /** The same list, read from D1; with a prompt, the router's privacy verdict is applied to the rungs. */
 export async function resolveBriefingCandidates(db: D1Database, now = Date.now(), prompt?: string | null): Promise<Candidate[]> {
-  const backends = (await db.prepare(`SELECT id, status, class, monthly_ceiling_micros, spent_micros, window_started_at FROM execution_backends`).all<BackendRow>()).results ?? [];
+  const backends = (await db.prepare(`SELECT id, status, class, monthly_ceiling_micros, spent_micros, window_started_at, exhausted_until, exhausted_reason FROM execution_backends`).all<BackendRow>()).results ?? [];
   const models = (await db.prepare(
     `SELECT m.id, m.provider_id, m.slug, m.display_name, m.capability_tier, m.enabled,
             m.in_micros_1k, m.out_micros_1k, m.ladder_rung, m.data_use, p.enabled AS provider_enabled

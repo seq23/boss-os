@@ -54,6 +54,9 @@ export interface BackendRow {
   status: BackendStatus;
   status_reason: string | null;
   created_at: number;
+  /** 0274. Epoch ms until which the seat's plan is reported out of usage; null when it is not. */
+  exhausted_until?: number | null;
+  exhausted_reason?: string | null;
   /**
    * free | capped | uncapped | off — what the ceiling MEANS on this row.
    *
@@ -134,7 +137,7 @@ export async function listBackends(db: D1Database): Promise<Backend[]> {
       `SELECT id, display_name, class, capabilities, allowed_kinds, forbidden_actions,
               credential_ref, security_notes, monthly_ceiling_micros, spent_micros,
               window_started_at, review_at, status, status_reason, created_at,
-              spend_kind, cost_basis, ceiling_source
+              spend_kind, cost_basis, ceiling_source, exhausted_until, exhausted_reason
          FROM execution_backends
         ORDER BY CASE status WHEN 'enabled' THEN 0 WHEN 'registered' THEN 1 ELSE 2 END, id`,
     )
@@ -148,7 +151,7 @@ export async function getBackend(db: D1Database, id: string): Promise<Backend | 
       `SELECT id, display_name, class, capabilities, allowed_kinds, forbidden_actions,
               credential_ref, security_notes, monthly_ceiling_micros, spent_micros,
               window_started_at, review_at, status, status_reason, created_at,
-              spend_kind, cost_basis, ceiling_source
+              spend_kind, cost_basis, ceiling_source, exhausted_until, exhausted_reason
          FROM execution_backends WHERE id = ?`,
     )
     .bind(id)
