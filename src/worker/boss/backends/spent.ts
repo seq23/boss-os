@@ -11,7 +11,7 @@
  */
 export const SEAT_SPENT_DEFAULT_COOLDOWN_S = 30 * 60;
 export const SEAT_SPENT_MIN_COOLDOWN_S = 60;
-export const SEAT_SPENT_MAX_COOLDOWN_S = 24 * 60 * 60;
+export const SEAT_SPENT_MAX_COOLDOWN_S = 7 * 24 * 60 * 60;
 
 /** Seconds to skip a spent seat: the notice's own reset time when it gave one, bounded; a default when not. */
 export function spentCooldownSeconds(requested: unknown): number {
@@ -33,5 +33,7 @@ export function untilWords(untilMs: number, now: number): string {
   const m = Math.round(s / 60);
   if (m < 90) return `${m} minute${m === 1 ? "" : "s"}`;
   const h = Math.round(m / 60);
-  return `${h} hour${h === 1 ? "" : "s"}`;
+  if (h < 48) return `${h} hour${h === 1 ? "" : "s"}`;
+  const d = Math.round(h / 24);
+  return `${d} days`;
 }
