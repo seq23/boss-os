@@ -150,44 +150,18 @@ launchctl unload "$PLIST" 2>/dev/null || true
 lint_plist "$PLIST"
 launchctl load "$PLIST"
 
-# ─── The Wednesday packet reminder ───────────────────────────────────────────
+# ─── The Wednesday packet reminder — REMOVED 30 Sep 2026 ────────────────────
 #
-# A SEPARATE JOB, because it runs on two weekdays rather than five times a day, and merging two
-# schedules into one plist means the packet either fires five times a day or the agent runs twice a
-# week. StartCalendarInterval takes a Weekday, so each job says plainly when it runs.
-#
-# WEDNESDAY 07:00 ONLY, WHICH WAS HER CALL. It also fired Tuesday at 17:00, on my reasoning that a
-# blocking item needs hours to act on. Asked directly, she wanted Wednesday morning alone — and that
-# follows from what the packet turned out to be FOR: showing him the week's work, which is read on
-# the way into the meeting rather than acted on the night before.
-PACKET_LABEL="com.seq.boss-packet"
-PACKET_PLIST="$HOME/Library/LaunchAgents/$PACKET_LABEL.plist"
-
-cat > "$PACKET_PLIST" <<PACKETEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>$PACKET_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent packet:remind</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-  </array>
-  <key>StandardOutPath</key><string>$LOGS/packet.log</string>
-  <key>StandardErrorPath</key><string>$LOGS/packet.err</string>
-  <key>RunAtLoad</key><false/>
-</dict></plist>
-PACKETEOF
-
-launchctl unload "$PACKET_PLIST" 2>/dev/null || true
-lint_plist "$PACKET_PLIST"
-launchctl load "$PACKET_PLIST"
+# Her instruction: "take away the wednesday meeting prep packet — it was a stupid ask". The job
+# (com.seq.boss-packet, Wednesday 07:00) and its script are gone. This block unloads and deletes the
+# plist an earlier install left on the machine, so a re-install removes the job rather than merely
+# no longer creating it; on a machine that never had it, it does nothing.
+OLD_PACKET_PLIST="$HOME/Library/LaunchAgents/com.seq.boss-packet.plist"
+if [ -f "$OLD_PACKET_PLIST" ]; then
+  launchctl unload "$OLD_PACKET_PLIST" 2>/dev/null || true
+  rm -f "$OLD_PACKET_PLIST"
+  echo "Removed the retired Wednesday packet job."
+fi
 
 # ─── The weekly network refresh ──────────────────────────────────────────────
 #
@@ -1087,7 +1061,7 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$PACKET_LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL" && loaded "$SURFACE_LABEL" && loaded "$GRID_LABEL" && loaded "$BUYERS_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL" && loaded "$SURFACE_LABEL" && loaded "$GRID_LABEL" && loaded "$BUYERS_LABEL"; then break; fi
   sleep 1
 done
 
@@ -1104,7 +1078,6 @@ missing=""
 checked=""
 require_loaded() { checked="$checked $1"; loaded "$1" || missing="$missing $1"; }
 require_loaded "$LABEL"
-require_loaded "$PACKET_LABEL"
 require_loaded "$NETWORK_LABEL"
 require_loaded "$PROPS_LABEL"
 # ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a

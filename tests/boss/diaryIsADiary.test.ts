@@ -57,30 +57,12 @@ describe("the collapsed line and the rows", () => {
 });
 
 describe("a row", () => {
-  it("carries a link when the meeting has a packet, and says so when it does not", async () => {
-    const rows = (await diary(env as any)).rows;
-    const standing = rows.find((r) => r.standing);
+  it("carries no packet link at all — the Wednesday packet was removed at the owner's instruction (30 Sep 2026)", async () => {
+    const standing = (await diary(env as any)).rows.find((r) => r.standing);
     expect(standing).toBeTruthy();
     expect(standing!.with).toBe("Scooter");
-
-    /*
-     * A PACKET BELONGS TO A COUNTERPART AND A DAY. Matching on the counterpart alone would put last
-     * week's document on next week's row — the ageing-item defect wearing a link.
-     */
-    const day = new Date(standing!.scheduled_at).toISOString().slice(0, 10);
-    await apiJson<any>("/api/packets", {
-      method: "POST",
-      body: { counterpart: "scooter", day_id: day, markdown: "# Test packet", headline: "Something", blocking: false },
-    });
-
-    const linked = (await diary(env as any)).rows.find((r) => r.standing)!;
-    expect(linked.packet_url).toBe("/api/boss/packets/page");
-    expect(linked.packet_day).toBe(day);
-
-    await env.DB.prepare(`DELETE FROM meeting_packets WHERE day_id = ?`).bind(day).run();
-    const unlinked = (await diary(env as any)).rows.find((r) => r.standing)!;
-    // Rendered as "No packet" rather than as an absent row.
-    expect(unlinked.packet_url).toBeNull();
+    expect(Object.keys(standing!)).not.toContain("packet_url");
+    expect(Object.keys(standing!)).not.toContain("packet_day");
   });
 
   it("keeps the standing Wednesday whether or not any job ran", async () => {
