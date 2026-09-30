@@ -117,6 +117,8 @@ if (def.baseUrl === "binding:AI") {
 const sql = [
   `INSERT OR IGNORE INTO providers (id, name, base_url, api_key_var, enabled)`,
   `VALUES (${q(def.providerId)}, ${q(def.providerName)}, ${q(def.baseUrl)}, ${q(def.credential.name)}, 1);`,
+  // The provider row may already exist, disabled (prv_openai, prv_anthropic); INSERT OR IGNORE would leave it off.
+  `UPDATE providers SET enabled = 1 WHERE id = ${q(def.providerId)};`,
   ...def.models.map(
     (m) =>
       `INSERT OR IGNORE INTO models (id, provider_id, slug, display_name, in_micros_1k, out_micros_1k,` +

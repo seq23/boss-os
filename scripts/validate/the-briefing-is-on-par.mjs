@@ -213,7 +213,6 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder 
       [/Tier 1 — primary \/ authoritative/, "the source tiers"],
       [/Reuters/, "Reuters in the source stack"],
       [/Information checked through HH:MM CT/, "the edition stamp"],
-      [new RegExp(spec.FINAL_LINE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the final line"],
       [/INVESTOR IMPORTANCE SCORE X\/10/, "the importance-score weights"],
     ];
     for (const [re, what] of must) if (!re.test(prompt)) problems.push(`The prompt does not carry ${what}.`);
@@ -235,7 +234,7 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder 
     if (!new RegExp(`\\b${fn}\\(`).test(F.deliver)) problems.push(`deliverReport.ts does not call ${fn}.`);
   }
   if (!/marketData: \(ev\.market_data/.test(F.route)) problems.push("routes/backends.ts does not pass the runner's market_data to the delivery.");
-  if (!/editionStamp\(/.test(F.today) || !/final_line: FINAL_LINE/.test(F.today)) problems.push("routes/today.ts does not expose the edition stamp and the final line.");
+  if (!/editionStamp\(/.test(F.today)) problems.push("routes/today.ts does not expose the edition stamp.");
   const clearIdx = F.runner.indexOf("await clearStaleDelivers(envelope.repo_path)");
   const runIdx = F.runner.indexOf("result = await runner({ envelope, prompt, sentinel, forbidden, cwd: envelope.repo_path })");
   if (clearIdx === -1 || runIdx === -1 || clearIdx > runIdx) problems.push("runner.mjs does not remove a stale delivers.json BEFORE the backend starts (15 Sep's report was 14 Sep's, refiled).");
@@ -259,7 +258,7 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder 
   if (!/'\$\.prompt'\s*\)/.test(F.migration) || !/json_remove/.test(F.migration)) problems.push("Migration 0257 does not remove $.prompt from the duty row.");
   if (!/'\$\.spec_module', 'executive_briefing'/.test(F.migration)) problems.push("Migration 0257 does not point the duty at the module.");
   for (const [re, what] of [
-    [/brief-edition/, "the edition stamp"], [/brief-src-\$\{/, "anchored numbered sources"], [/c\.final_line/, "the final line"],
+    [/brief-edition/, "the edition stamp"], [/brief-src-\$\{/, "anchored numbered sources"],
     [/it\.numbers/, "headline data blocks"], [/brief-ref/, "inline citation marks"],
   ]) if (!re.test(F.screen)) problems.push(`Today.tsx does not render ${what}.`);
 
@@ -309,7 +308,6 @@ async function selfTest() {
     { name: "a consumer that stopped walking the ladder is caught", input: { ...good, files: { ...good.files, consumer: good.files.consumer.replace("for (const backendId of ladder)", "for (const backendId of [ladder[0]])") } }, expect: 1 },
     { name: "a claim route that lost the hand-off is caught", input: { ...good, files: { ...good.files, route: good.files.route.replace(/fallback_from/g, "nothing") } }, expect: 1 },
     { name: "a Codex adapter back on read-only is caught", input: { ...good, files: { ...good.files, codex: good.files.codex.replace(/workspace-write/g, "read-only") } }, expect: 1 },
-    { name: "a screen that dropped the final line is caught", input: { ...good, files: { ...good.files, screen: good.files.screen.replace(/c\.final_line/g, "c.nothing") } }, expect: 1 },
   ];
 
   let ok = 0;

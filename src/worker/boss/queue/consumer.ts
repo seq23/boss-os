@@ -5,7 +5,7 @@ import { logEvent } from "../lib/log";
 import { writeEvidence } from "../lib/evidence";
 import { getSetting } from "../lib/settings";
 import { loadEnvelope } from "../intake/envelope";
-import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure } from "../router";
+import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure, type RouteRequest } from "../router";
 import { dispatchRunForTask } from "../backends/dispatch";
 import { deliverExecutiveReport } from "../duties/deliverReport";
 import { firmNoticeBlock } from "../prompt/notices";
@@ -256,8 +256,25 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       "A short honest brief beats an invented one; every uncited figure is removed before she sees it and the section that lost it is named."
     : "");
 
+  /*
+   * THE RESEARCH RUNG (30 Sep 2026). The plain cloud rungs cannot open a page, so a briefing that
+   * reached them was a short brief with no sources. When both seats are spent AND she has opened the
+   * spend lever, the briefing tries OpenAI with its own web-search tool first; the guard, the
+   * ceilings and the per-run cap all still apply, and at FREE_ONLY it is refused before any call and
+   * the walk continues to the free rungs exactly as before.
+   */
+  const researchPrompt = cloudDelivers === "executive_reports"
+    ? (await buildPrompt(env, task, input)) +
+      "\n\n==================================================\nYOU ARE A CLOUD RESEARCH RUNG, NOT A SEAT\n==================================================\n" +
+      "Both of her subscription seats declined this run, so you are answering from OpenAI with a web-search tool and NO filesystem. There is no MARKETS.json and no workspace: " +
+      "search for every current figure and cite only pages your searches returned. " +
+      "Return the delivers.json OBJECT as your ENTIRE reply — valid JSON, nothing before or after it, no code fence. " +
+      "List in `sources` exactly the article-level pages you used, in the order your [n] citations number them; the system stamps the read time. " +
+      "A figure you could not verify from a page you searched goes in `gaps` as \"not available\", never estimated. The markets dashboard table is not built for this run, so put the index, yield and oil figures you verified in the regime-read bullets, each cited."
+    : null;
+
   try {
-    const result = await routeCompletion(env, {
+    const routeRequest = (userPrompt: string): RouteRequest => ({
       routeId,
       lane: task.lane,
       taskId: task.id,
@@ -278,13 +295,30 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       cloudForRestrictedAllowed: Boolean(envelope?.cloud_for_restricted_allowed),
       messages: [
         {
-          role: "system",
+          role: "system" as const,
           content: employee?.charter ??
             "You are an operator inside a private executive OS. Be brief and concrete. Say what you do not know.",
         },
-        { role: "user", content: prompt },
+        { role: "user" as const, content: userPrompt },
       ],
     });
+
+    let researched = false;
+    let result: Awaited<ReturnType<typeof routeCompletion>> | null = null;
+    if (researchPrompt) {
+      try {
+        result = await routeCompletion(env, { ...routeRequest(researchPrompt), webSearch: true, maxOutputTokens: RESEARCH_MAX_OUTPUT_TOKENS });
+        researched = true;
+      } catch (e) {
+        // Refused (lever at FREE_ONLY, ceiling, no key, backend not enabled) or failed: say why, then
+        // take the ordinary walk. Nothing about a refusal here is a failure of the task.
+        await logEvent(env.DB, {
+          level: "warn", scope: "queue", event: "research_rung_unavailable", lane: task.lane, entityId: task.id,
+          detail: { message: e instanceof Error ? e.message : String(e) },
+        }).catch(() => {});
+      }
+    }
+    if (!result) result = await routeCompletion(env, routeRequest(prompt));
 
     const finishedAt = Date.now();
 
@@ -394,10 +428,10 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       await deliverExecutiveReport(env, {
         taskId: task.id,
         runId: result.decisionId,
-        report: parseDeliversFromText(result.text),
+        report: researched ? stampResearchSources(parseDeliversFromText(result.text), result.sources ?? [], finishedAt) : parseDeliversFromText(result.text),
         runStatus: "succeeded",
         marketData: null,
-        writtenBy: { kind: "cloud_rung", backend_id: result.providerId, model: result.modelId, label: result.modelName, refused_seats: refusals.map((r) => r.backend_id) },
+        writtenBy: { kind: "cloud_rung", backend_id: result.providerId, model: result.modelId, label: researched ? result.modelDisplayName : result.modelName, refused_seats: refusals.map((r) => r.backend_id) },
       }).catch(async (e) => {
         await logEvent(env.DB, { level: "error", scope: "duties", event: "report_delivery_failed", entityId: task.id, detail: { rung: result.modelId, error: e instanceof Error ? e.message : String(e) } }).catch(() => {});
       });
@@ -595,6 +629,54 @@ async function holdForApproval(
     level: "info", scope: "queue", event: "task_held", lane: task.lane, entityId: task.id,
     detail: { kind: card.kind, reason: card.summary },
   });
+}
+
+/** A whole briefing in JSON, with a search tool's pages in the prompt, is long; the route's default reply limit would cut it off. */
+export const RESEARCH_MAX_OUTPUT_TOKENS = 16_000;
+
+const pageKey = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+
+/**
+ * A SEARCH RUNG'S SOURCES, STAMPED BY THE SYSTEM AND CHECKED AGAINST THE PAGES IT WAS GIVEN.
+ *
+ * The model cannot observe the clock, so `read_at` is the moment the answer came back, not a time it
+ * typed — which is the rule the grader already applies to a seat's sources. A source the model lists
+ * that is NOT among the pages the search tool returned is kept in place (the [n] numbers would shift
+ * under every sentence that cites them) but gets NO read time, so it is unusable to the grader, and it
+ * is named in `gaps` so the report is partial and says which sources it cannot vouch for.
+ */
+export function stampResearchSources(
+  report: Record<string, unknown> | null,
+  cited: { title: string; url: string }[],
+  at: number,
+): Record<string, unknown> | null {
+  if (!report) return null;
+  const listed = Array.isArray(report.sources) ? report.sources : [];
+  const returned = new Set(cited.map((c) => pageKey(c.url)));
+  const readAt = new Date(at).toISOString();
+  const unverified: string[] = [];
+  const sources = listed.map((src) => {
+    const o: Record<string, unknown> = src && typeof src === "object" ? { ...(src as Record<string, unknown>) } : { name: String(src), url: "" };
+    const url = typeof o.url === "string" ? o.url : "";
+    if (url && !returned.has(pageKey(url))) {
+      // NO READ TIME FOR A PAGE THE SEARCH NEVER RETURNED: `usableSources` treats a parseable
+      // `read_at` as proof it was opened, so leaving one on would certify a hallucinated URL.
+      // Without it the source is unusable and the grader says so; the [n] numbering is unchanged.
+      unverified.push(url);
+      delete o.read_at;
+    } else {
+      o.read_at = readAt;
+    }
+    return o;
+  });
+  const gaps = Array.isArray(report.gaps) ? [...report.gaps] : [];
+  if (unverified.length > 0) {
+    gaps.push({
+      wanted: `${unverified.length} cited source${unverified.length === 1 ? "" : "s"} confirmed as opened`,
+      why: `The search tool did not return ${unverified.length === 1 ? "this page" : "these pages"}, so the model's claim to have read ${unverified.length === 1 ? "it" : "them"} is unverified: ${unverified.slice(0, 5).join(", ")}`,
+    });
+  }
+  return { ...report, sources, gaps };
 }
 
 /**

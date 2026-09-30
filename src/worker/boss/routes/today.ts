@@ -1,4 +1,4 @@
-import { editionStamp, FINAL_LINE } from "../duties/briefingSpec";
+import { editionStamp } from "../duties/briefingSpec";
 import { Hono, type Context } from "hono";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
@@ -1554,8 +1554,6 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
                * rather than typed by the run. Rows written before 0257 carry no stamp and say so.
                */
               edition: editionStamp({ dayId: shown.day_id, checkedThrough: shown.checked_through ?? null }),
-              /* The absolute final line, appended by the system. Nothing may render after it. */
-              final_line: FINAL_LINE,
               prompt_version: shown.prompt_version ?? null,
               /*
                * WHO WROTE IT. Her Claude seat first, her Codex seat second, a free cloud rung after

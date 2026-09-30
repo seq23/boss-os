@@ -31,12 +31,27 @@ export interface CompletionRequest {
    * the measurements behind them.
    */
   signal?: AbortSignal;
+  /**
+   * LET THE MODEL SEARCH THE WEB BEFORE IT ANSWERS (30 Sep 2026). Only an adapter that has a search
+   * tool of its own honours it — today that is OpenAI's, through the Responses API. An adapter that
+   * does not must ignore it and the router does not ask one to: `RouteRequest.webSearch` confines the
+   * run to the provider that can.
+   */
+  webSearch?: boolean;
 }
 
 export interface CompletionResult {
   text: string;
   inTokens: number;
   outTokens: number;
+  /** The pages a search-enabled call actually cited, as the provider reported them. */
+  sources?: { title: string; url: string }[];
+  /**
+   * Charges the token counts do not carry. OpenAI bills each web-search call separately from tokens,
+   * so a run that searched twenty times cost more than its tokens say; the router adds this to the
+   * figure it records.
+   */
+  extraCostMicros?: number;
 }
 
 /**
@@ -94,3 +109,10 @@ export interface ProviderAdapter {
   id: string;
   complete(req: CompletionRequest, ctx: AdapterContext): Promise<CompletionResult>;
 }
+
+/**
+ * OpenAI bills each web-search call at $10 per 1,000 calls, on top of tokens. Expressed in the
+ * micro-dollars the ledger uses: $0.01 = 10,000 micros. A list price; the ledger says so. Lives here,
+ * not in the adapter, so the router can allow for it without importing a provider.
+ */
+export const WEB_SEARCH_CALL_MICROS = 10_000;

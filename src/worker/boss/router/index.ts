@@ -5,8 +5,8 @@ import { getBool, getSetting } from "../lib/settings";
 import { AppError } from "../lib/http";
 import { costPolicy } from "../../../shared/boss/governance";
 import { orderCandidates, vendorFamily } from "../../../shared/boss/router/candidateOrder.mjs";
-import { ATTEMPT_DEADLINE_MS, CHAIN_BUDGET_MS, nextAttemptDeadlineMs } from "./deadlines";
-import { ProviderCallError, type ChatMessage } from "./types";
+import { ATTEMPT_DEADLINE_MS, CHAIN_BUDGET_MS, nextAttemptDeadlineMs, RESEARCH_ATTEMPT_DEADLINE_MS } from "./deadlines";
+import { ProviderCallError, WEB_SEARCH_CALL_MICROS, type ChatMessage } from "./types";
 import { evaluateModel, estimateCostMicros, type ModelRow, type RouteStage } from "./policy";
 import { rollBudgetWindows, laneBudgetState, employeeBudgetState } from "./budget";
 import { WIRING_BY_PROVIDER, adapterCredential, backendKindFor } from "./backends";
@@ -181,6 +181,14 @@ export interface RouteRequest {
    * whether any paid route may run at all — this only orders the paid survivors.
    */
   preferStrongVendors?: boolean;
+  /**
+   * THIS RUN MUST BE ABLE TO OPEN THE WEB. Confines it to OpenAI, whose Responses API has a search
+   * tool (see `openai.ts`), and calls it that way. Metered like any other paid route: the spend
+   * lever, the ceilings and the per-run cap all still decide whether it runs.
+   */
+  webSearch?: boolean;
+  /** Overrides the route's output limit. A briefing is far longer than the route's default reply. */
+  maxOutputTokens?: number;
 }
 
 export interface RouteResult {
@@ -204,6 +212,8 @@ export interface RouteResult {
    * more than the same promise inferred from the fact that a reply came back.
    */
   providerId: string;
+  /** The pages a search-enabled answer cited, as the provider reported them. */
+  sources?: { title: string; url: string }[];
   usedFallback: boolean;
   decisionId: string;
   backendId: string | null;
@@ -614,6 +624,9 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
    * lifts a candidate, so an absence of evidence can never carry a model up the order on work that
    * matters. That is the guarantee stated as arithmetic rather than as a hope.
    */
+  const effectiveOutputTokens = opts.maxOutputTokens ?? route.max_output_tokens;
+  // A search run is billed per search on top of tokens; allow for a generous thirty of them.
+  const searchAllowanceMicros = opts.webSearch ? 30 * WEB_SEARCH_CALL_MICROS : 0;
   const RANK_WEIGHT = 1_000_000_000;
   // Smaller than one experience step, larger than any price estimate (100,000,000 micros = $100).
   const VENDOR_WEIGHT = 100_000_000;
@@ -623,7 +636,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       const backendId = WIRING_BY_PROVIDER.get(m.provider_id)?.backendId;
       const price = backendId && !routeIsBilled(backendId, m.slug)
         ? 0
-        : estimateCostMicros(m, promptChars, route.max_output_tokens);
+        : estimateCostMicros(m, promptChars, effectiveOutputTokens) + searchAllowanceMicros;
       const exp = experience.get(m.id);
       const promotable = protectedWork ? mayBePreferredForProtectedWork(exp) : true;
       const r = promotable ? experienceRank(exp) : Math.max(1, experienceRank(exp));
@@ -651,13 +664,14 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
    * backend" is exactly the kind of answer that has to be findable rather than inferred from an
    * absence.
    */
+  const confinedTo = opts.onlyProviderId ?? (opts.webSearch ? "prv_openai" : null);
   const ordered = assembled.filter(({ model, tier }) => {
-    if (!opts.onlyProviderId || model.provider_id === opts.onlyProviderId) return true;
+    if (!confinedTo || model.provider_id === confinedTo) return true;
     considered.push({
       model_id: model.id,
       backend_id: WIRING_BY_PROVIDER.get(model.provider_id)?.backendId ?? null,
       tier, stage: "privacy", verdict: "skipped",
-      reason: `this run is confined to ${opts.onlyProviderId} and this model is on ${model.provider_id}`,
+      reason: `this run is confined to ${confinedTo} and this model is on ${model.provider_id}`,
     });
     return false;
   });
@@ -737,7 +751,9 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       note("availability", "skipped", `provider ${model.provider_id} has no registered execution backend`);
       continue;
     }
-    const estimate = estimateCostMicros(model, promptChars, route.max_output_tokens);
+    // The SAME output limit the call will send, plus what a search run may add, so the lever, the
+    // ceilings and the per-run cap are all checked against what this call can actually cost.
+    const estimate = estimateCostMicros(model, promptChars, effectiveOutputTokens) + searchAllowanceMicros;
     const verdictBackend = await checkBackend(env, def.backendId, backendKindFor(opts.intakeKind), {
       model: model.slug,
       sensitivity: sensitivity as never,
@@ -965,7 +981,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
      * ends here with a sentence saying so, rather than beginning a call the budget guarantees will
      * be cut off — which would spend her money and her time on an answer that cannot arrive.
      */
-    const attemptBudgetMs = nextAttemptDeadlineMs(chainStartedAt, Date.now());
+    const attemptBudgetMs = nextAttemptDeadlineMs(chainStartedAt, Date.now(), opts.webSearch ? RESEARCH_ATTEMPT_DEADLINE_MS : ATTEMPT_DEADLINE_MS);
     if (attemptBudgetMs === null) {
       note(
         "availability", "skipped",
@@ -980,7 +996,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     // Bounded retries: the same backend is tried again ONLY for an error the
     // provider itself marked as temporary. A 400 or a 500 fails identically on a
     // second call and spending a retry on it only delays the fallback.
-    let called: { text: string; inTokens: number; outTokens: number } | null = null;
+    let called: { text: string; inTokens: number; outTokens: number; sources?: { title: string; url: string }[]; extraCostMicros?: number } | null = null;
     let attempt = 0;
     let attemptError: Error | null = null;
     while (attempt < MAX_ATTEMPTS_PER_BACKEND) {
@@ -990,8 +1006,9 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
           {
             modelSlug: model.slug,
             messages: opts.messages,
-            maxOutputTokens: route.max_output_tokens,
+            maxOutputTokens: effectiveOutputTokens,
             temperature: route.temperature,
+            webSearch: opts.webSearch === true,
             /*
              * THE ROW'S PRIVACY CLAIM, SENT TO THE VENDOR TO HONOUR — see `openrouter.ts`.
              *
@@ -1049,7 +1066,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
     const costMicros = free
       ? 0
       : Math.round(
-          (called.inTokens / 1000) * model.in_micros_1k + (called.outTokens / 1000) * model.out_micros_1k,
+          (called.inTokens / 1000) * model.in_micros_1k + (called.outTokens / 1000) * model.out_micros_1k + (called.extraCostMicros ?? 0),
         );
 
     await recordSuccess(db, def.backendId);
@@ -1115,6 +1132,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
         : model.display_name,
       modelDisplayName: model.display_name,
       providerId: model.provider_id,
+      sources: called.sources,
       usedFallback: degraded,
       decisionId,
       backendId: def.backendId,
@@ -1201,9 +1219,9 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
    * policy", a reader would go looking through privacy and budget for a refusal that never
    * happened — the candidates were removed a stage earlier, by the caller's own promise.
    */
-  if (opts.onlyProviderId && !ordered.length) {
+  if (confinedTo && !ordered.length) {
     throw new RoutingBlocked(
-      `Nothing is available on ${opts.onlyProviderId}, which is the only provider this run was allowed to use`,
+      `Nothing is available on ${confinedTo}, which is the only provider this run was allowed to use`,
       "blocked_no_model",
       "Provision or enable a model on that backend, or approve a different one. Nothing was tried elsewhere on purpose.",
     );

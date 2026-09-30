@@ -43,6 +43,15 @@
 > cron fired at 07:00 and landed at 07:20. The duty is 06:00 Central now, the run is Sonnet 4.5 on
 > her Claude Code session, and the leash is 1500 s.
 
+> **AMENDED 30 September 2026 — no closing line, and the prompt is written to the shape of her OpenAI report.**
+> Her instruction: the briefing must not say *"Get your agenda from your coach."* at all. The
+> system no longer appends it and the prompt tells the run to write nothing about her agenda. Every
+> occurrence of that line below is superseded. The prompt (`briefingSpec.ts`, version 2026-09-30.1)
+> now asks for a bold claim opening each summary item, a bold defining figure opening each headline's
+> data block, Narrative A / Narrative B where a story splits the market, the secondaries frame
+> *quality without liquidity* and *what does the owner need?*, a SpaceX price map, and an AI
+> capability-versus-economics split. Astrology, the travel map and any agenda stay out.
+
 # Executive Intelligence Report — Daily Intelligence Brain Install Spec
 
 ## Purpose

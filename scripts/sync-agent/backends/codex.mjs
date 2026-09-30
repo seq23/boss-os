@@ -96,14 +96,27 @@ export function buildArgs(envelope, prompt, { model } = {}) {
    */
   const web = Array.isArray(envelope?.web_tools) ? envelope.web_tools : [];
   const writes = web.length > 0 || envelope?.kind === "research" || envelope?.kind === "document";
+  /*
+   * `--search` IS A FLAG OF `codex`, NOT OF `codex exec` (30 Sep 2026, CONFIRMED on @openai/codex
+   * 0.135.0 — the version on her Mac). `codex exec --search …` exits 2 with "error: unexpected
+   * argument '--search' found" before the model is ever reached, so every research run on this seat
+   * died in under a second. That is why the 30 Sep executive briefing failed the moment her Claude
+   * plan was spent and the ladder handed it to Codex: the flag had only ever been run through a
+   * plain generation, which takes no web tools. It is placed BEFORE the subcommand now.
+   *
+   * The sandbox also blocks the network by default, and a research run opens twenty to forty
+   * articles, so a web run gets `network_access=true` (the setting codex-seat.mjs already uses for
+   * repo work). Only a run that asked for web tools gets either.
+   */
   const args = [
+    ...(web.length > 0 ? ["--search"] : []),
     "exec",
     "--sandbox", writes ? "workspace-write" : "read-only",
     // Runs happen in a scratch workspace, not a repository. Without this the CLI refuses and
     // relocates the working directory out from under the run.
     "--skip-git-repo-check",
   ];
-  if (web.length > 0) args.push("--search");
+  if (web.length > 0) args.push("-c", "sandbox_workspace_write.network_access=true");
   if (model ?? envelope?.model) args.push("--model", String(model ?? envelope.model));
   // Last, and as ONE argv element. spawn() is called without a shell, so nothing inside it is
   // interpreted; it is text handed to a process, the same as a file would be.

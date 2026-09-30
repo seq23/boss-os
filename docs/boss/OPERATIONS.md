@@ -207,7 +207,7 @@ and read by the materialiser, the delivery and a validator. What arrives each mo
 | SpaceX Watch | The prompt said "not publicly listed" | The feed answers public/private every morning; SPCX leads the section with close, move, prior close; then the reference map, Starship, Starlink, supply |
 | Depth elsewhere | Four bullets a section | Up to six two-sentence bullets, the file's questions asked of each |
 | Sources | Behind a toggle | Numbered, open by default, article-level URLs, each `[n]` in the text an anchor to its row |
-| Final line | None | *Get your agenda from your coach.*, appended by the system |
+| Final line | None | None. The report ends with its last section (removed 30 Sep 2026 at her instruction) |
 | Model | Haiku 4.5, 900 s | **Sonnet 4.5**, 1500 s, on your Claude Code session — $0.00 in API dollars; the CLI's notional figure accrues to the $50/month Claude Max proxy |
 | A stale report | 15 Sep's was 14 Sep's, refiled from a `delivers.json` left in the workspace | The runner removes any `delivers.json` before the run starts and says so |
 

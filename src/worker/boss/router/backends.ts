@@ -259,6 +259,18 @@ export const CLOUD_BACKENDS: CloudBackendWiring[] = [
         displayName: "GPT-4.1 (OpenAI)", capabilityTier: "frontier",
         inMicros1k: 2000, outMicros1k: 8000, contextTokens: 1000000,
       },
+      /*
+       * THE ROW THE EXECUTIVE BRIEFING'S RESEARCH RUNG USES (30 Sep 2026). Same model, same price,
+       * but `general` — the `frontier` row above is refused in the NORMAL cost mode (it is reached
+       * directly by coaching, not by walking the ladder), so a search-enabled briefing routed to it
+       * would be refused every morning. It carries no `ladder_rung`, so it is not on the printed
+       * ladder; it is only reachable as a paid continuity candidate, which the spend lever governs.
+       */
+      {
+        id: "mdl_openai_research", slug: "gpt-4.1",
+        displayName: "GPT-4.1 with web search (OpenAI)", capabilityTier: "general",
+        inMicros1k: 2000, outMicros1k: 8000, contextTokens: 1000000,
+      },
     ],
   },
   {

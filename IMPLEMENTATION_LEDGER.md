@@ -5543,3 +5543,21 @@ of them `critical` by severity, all in the block called Critical Alerts, none of
 - Tests: `aSpentPlanIsSkippedUntilItResets`, `aSpentPlanHandsTheRunToTheNextSeat`, `afterBothSeatsAreSpentPrivateWorkStopsAtFreeOnly`, `paidStrongWorkTriesClaudeThenOpenAI`, `repoChangeCodexFallback`.
 - Not covered: live CLI behaviour on her Mac (UNPROVEN, see ADR-034).
 
+
+## 2026-09-30 — The executive briefing failed on the Codex seat; closing line removed; prompt reshaped
+
+- **Cause (CONFIRMED by running the same CLI version, @openai/codex 0.135.0):** `buildArgs` put `--search` after `exec`. `--search` is a flag of `codex`, not of `codex exec`, so every research run exited 2 with "unexpected argument '--search' found" before the model started. It stayed hidden while the Claude seat answered; the Claude plan reported its weekly limit (PR #53), the ladder reached Codex, and the briefing failed. PROVEN: the corrected argv (`codex --search exec …`) parses and reaches the model. UNPROVEN: a complete briefing on the Codex seat, which needs her Mac and her ChatGPT session.
+- Web runs also get `sandbox_workspace_write.network_access=true`, so the run can open the articles it cites.
+- The closing line is removed everywhere (spec, route, screen, validator, docs); the prompt forbids agenda text.
+- Prompt 2026-09-30.1: bold claim per summary item, bold defining figure per headline, competing narratives, secondaries "quality without liquidity", SpaceX price map, AI capability vs economics.
+- NOT implemented: an OpenAI API research rung (Responses API with web search) between the seats and the plain cloud rungs. The existing cloud rungs have no web tools and cannot research.
+
+## 2026-09-30 — The briefing's research rung on OpenAI (migration 0276)
+
+- When both seats are refused and the briefing falls to the cloud, `queue/consumer.ts` first tries OpenAI with its own web-search tool (`routeCompletion({ webSearch: true })` → Responses API, `router/openai.ts`). A refusal or failure is logged as `research_rung_unavailable` and the ordinary walk (free rungs, then paid) proceeds exactly as before. At FREE_ONLY the rung is refused before any call.
+- The report's sources are stamped by the system (`read_at`), and any listed source the search tool did not return is named in `gaps` (`stampResearchSources`); the block says it was written by "GPT-4.1 with web search (OpenAI)".
+- Web-search calls are added to the recorded cost ($10 per 1,000 calls, a list price). The per-attempt deadline for a search call is the chain budget (600 s), UNMEASURED.
+- Migration 0276 adds `mdl_openai_research` (gpt-4.1, tier `general`, because `frontier` is refused in the NORMAL cost mode). It is inert until she stores OPENAI_API_KEY, enables `bk_openai`, and provisions it. Both provisioners now also switch the provider row on, which they silently did not for a provider seeded disabled.
+- **`data_use` on that row is an OWNER INSTRUCTION, not a retrieved finding:** the build agent's network blocks openai.com, so OpenAI's API data policy was not read. The row says so and is withdrawable with one UPDATE. Without it the briefing's deal-flavoured wording makes the rung private-model-only and it would be refused every morning.
+- PROVEN: request shape, confinement to OpenAI, citation capture, per-search charge, FREE_ONLY refusal, fallback to the ordinary walk, end-to-end delivery through the grader (tests/boss/aSearchRung…, theBriefingWalksTheLadder scenario c). UNPROVEN: a live call with her key, the real latency of a search-enabled briefing, and whether gpt-4.1 writes a full report that passes the grader.
+- NOT included: the live market-snapshot dashboard on this path (the Worker has no MARKETS.json, so the dashboard is named missing and the regime bullets carry the verified figures).
