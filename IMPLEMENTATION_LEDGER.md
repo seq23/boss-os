@@ -5569,3 +5569,8 @@ of them `critical` by severity, all in the block called Critical Alerts, none of
 - Fix (approved by the owner): the research call carries a task budget of $0.70 (`RESEARCH_TASK_BUDGET_MICROS`), never lowering a larger one. The $5 OpenAI ceiling, the lever's allowance, the lane budgets and the $0.75 per-run cap all still apply. Scenario (c) now runs with the envelope below the estimate.
 - Also: `cloudflare-mapping.json` classifies five more vault keys (KDP email/password, three WP_ keys) as deliberately not synced; the sync aborts on any unclassified key.
 - UNPROVEN: the real cost of a search briefing (input tokens from search results are not in the estimate) and whether $0.70 is enough; the first live run measures it.
+
+## 2026-09-30 — No employee carries a daily cap (migration 0277)
+
+- Owner instruction: no per-employee caps; only the lane's daily and monthly budgets. `employees.budget_micros_day = 0` is the system's existing "lane budget only" (0154), honoured by `buildEnvelope` and `employeeBudgetState`, so this is data: every employee is set to 0. Found because the briefing's employee allowance sat below the cost of one cited briefing and would have refused the research rung (review finding on #55).
+- The Team screen says "No personal cap" instead of "$0.00 a day". Limits that remain: the ops lane ($1.75/day, $52.50/month on production at the time of writing), the spend lever, each backend's ceiling, and the $0.75 per-run cap. A hire through an approved proposal may still state its own figure.
