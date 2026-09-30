@@ -643,9 +643,11 @@ function EmployeeSheet({ id, onClose }: { id: string; onClose: () => void }) {
           <p className="eyebrow">Cost</p>
           <div className="row">
             <div className="row-main">
-              <div className="row-title">${((e.budget_micros_day ?? 0) / 1_000_000).toFixed(2)} a day</div>
+              <div className="row-title">{(e.budget_micros_day ?? 0) > 0 ? `$${((e.budget_micros_day ?? 0) / 1_000_000).toFixed(2)} a day` : "No personal cap"}</div>
               <div className="row-sub">
-                Her own ceiling. The lane budget and the spend lever bind first when either is tighter.
+                {(e.budget_micros_day ?? 0) > 0
+                  ? "Her own ceiling. The lane budget and the spend lever bind first when either is tighter."
+                  : "Only the lane's daily and monthly budgets and the spend lever limit her work."}
               </div>
             </div>
             <div className="row-val">${((data.lifetime_cost_micros ?? 0) / 1_000_000).toFixed(4)} ever</div>

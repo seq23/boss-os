@@ -358,9 +358,10 @@ describe("scenario (c): both seats unavailable and OpenAI provisioned → the re
     await seatCapped("bk_claude_code");
     await seatDisabled("bk_codex");
     const { taskId } = await briefingTask();
-    // A search run's honest estimate (tokens plus a search allowance) is about $0.45; the envelope is a
-    // share of what the ops lane has left, which this test database holds at $0.30.
-    await env.DB.prepare(`UPDATE permission_envelopes SET budget_micros = 2000000 WHERE task_id = ?`).bind(taskId).run();
+    // The task's own envelope is a share of the ops lane (about $0.26 in production, $0.30 here) — below the
+    // research estimate. The research call carries its own task budget, so nothing is raised by hand here.
+    const env0 = await row<any>(`SELECT budget_micros FROM permission_envelopes WHERE task_id = ?`, taskId);
+    expect(env0.budget_micros).toBeLessThan(450_000);
 
     const calls: { url: string; body: any }[] = [];
     restore = stubFetch(async (req) => {
