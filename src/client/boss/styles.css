@@ -373,7 +373,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .brief-absent { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 /* The edition stamp above the headline, and the final line below everything. */
 .brief-edition { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; line-height: 1.6; }
-.brief-final { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); margin: 12px 0 0; }
+.brief-keyfigure { font-size: 20px; line-height: 1.25; margin: 6px 0 4px; }
+.brief-keyfigure strong { font-weight: 700; }
 /* A headline's data block: the numbers that make it a story, set apart from the prose. */
 .brief-numbers { margin: 4px 0 6px; padding-left: 18px; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
 /* Inline [n] citations, and the numbered source list they point at. */

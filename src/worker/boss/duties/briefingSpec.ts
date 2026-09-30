@@ -44,10 +44,7 @@ import { dateTimeFormat, OWNER_TIMEZONE } from "@shared/boss/timezone";
  */
 
 /** Bumped on every material change to the prompt or schema. Recorded on each report row. */
-export const BRIEFING_PROMPT_VERSION = "2026-09-19.2";
-
-/** The absolute final line of every report. Appended by the system, never trusted to the run. */
-export const FINAL_LINE = "Get your agenda from your coach.";
+export const BRIEFING_PROMPT_VERSION = "2026-09-30.1";
 
 /** The file's edition framing, which the Worker renders from the evidence rather than the prose. */
 export const EDITION_LABEL = "Morning Edition • Central Time";
@@ -247,22 +244,22 @@ export const SECTION_SHAPES: SectionShape[] = [
   },
   {
     key: "top_5_headlines", heading: HEADING.get("top_5_headlines")!,
-    brief: "Exactly five unless fewer are genuinely material. Each item: headline; summary (what happened, versus prior expectations); numbers (a data block of 2–6 lines, each a labelled figure with [n]); why_it_matters (second-order effects, who benefits, who is exposed, what the market may be missing, what to monitor next); importance X/10 on the file's weights, never inflated.",
+    brief: "Exactly five unless fewer are genuinely material. Each item: headline (the claim, not the topic); summary (what happened, versus prior expectations); numbers (a data block of 2–6 lines, each a labelled figure with [n]; the FIRST line is the single figure that defines the story, written as a bold callout); why_it_matters (two to four short paragraphs: second-order effects, who benefits, who is exposed, what the market may be missing, what to monitor next; where the story splits the market, set the two competing readings side by side as Narrative A and Narrative B and say what each implies for rates, duration assets and private-market marks); importance X/10 on the file's weights, never inflated.",
     min_items: 3, max_items: 5, numbers_and_citations_required: true,
   },
   {
     key: "markets_dashboard", heading: HEADING.get("markets_dashboard")!,
-    brief: "The table is built BY THE SYSTEM from MARKETS.json — do not type figures into it. Your job here is the regime read: 3–6 bullets classifying equities, rates, oil, AI fundamentals, AI valuations, IPO market, private-market liquidity and the secondaries opportunity as 🟢 constructive / 🟡 mixed / 🔴 adverse, with one sentence each on what rates + inflation + growth + liquidity + earnings + risk appetite are doing to prices.",
+    brief: "The table is built BY THE SYSTEM from MARKETS.json — do not type figures into it. Your job here is the regime read: 3–6 bullets classifying equities, rates, oil, AI fundamentals, AI valuations, IPO market, private-market liquidity and the secondaries opportunity as 🟢 constructive / 🟡 mixed / 🔴 adverse, with one sentence each on what rates + inflation + growth + liquidity + earnings + risk appetite are doing to prices. Close with the single question the quarter turns on, in the form 'what if X is not temporary?', and what private-market pricing assumed about it.",
     min_items: 3, max_items: 8, numbers_and_citations_required: false,
   },
   {
     key: "spacex_watch", heading: HEADING.get("spacex_watch")!,
-    brief: "MANDATORY. MARKETS.json answers public/private for today: a SPCX quote means it trades; a null means say so and use verified private references. Items, each with bullets: 'SPCX' (close, % move, prior close, volume if notable, IPO price and % versus it, recent high/low — from MARKETS.json and cited sources); 'Technical / Reference Map' (real recent levels from actual trading history, why each matters — never invented); 'Starship Watch' (next flight, verified date, regulatory status, objectives, milestones); 'Starlink Watch'; 'Supply / Lockup Watch' (lockups, insider sales, index inclusion or rebalancing, ownership changes).",
+    brief: "MANDATORY. MARKETS.json answers public/private for today: a SPCX quote means it trades; a null means say so and use verified private references. Items, each with bullets: 'SPCX' (close, % move, prior close, volume if notable, IPO price and % versus it, market capitalisation where a cited source gives one, recent high/low and the session's open/high/low, after-hours if reported — from MARKETS.json and cited sources); 'Price Map' (real recent support and resistance zones from actual trading history, each with why it matters, closing with 'trading references, not forecasts' — never invented); 'Starship Watch' (next flight, verified date, regulatory status, objectives, milestones); 'Starlink Watch'; 'Supply / Lockup Watch' (lockups, insider sales, index inclusion or rebalancing, ownership changes).",
     min_items: 2, max_items: 5, numbers_and_citations_required: false,
   },
   {
     key: "ai_technology", heading: HEADING.get("ai_technology")!,
-    brief: "The most consequential AI/technology developments and what each changes in the investment thesis: frontier models, enterprise AI, agents, inference, chips, compute, data centres, power, robotics, AI security, model economics, hyperscaler capex, major funding and M&A. Not a roundup — the pattern.",
+    brief: "The most consequential AI/technology developments and what each changes in the investment thesis: frontier models, enterprise AI, agents, inference, chips, compute, data centres, power, robotics, AI security, model economics, hyperscaler capex, major funding and M&A. Not a roundup — the pattern. Separate AI CAPABILITY (moving fast) from AI ECONOMICS (compute and infrastructure commitments, hyperscaler dependency, distribution, unit economics, the cost of governance and assurance), and say what the moat is measured in beyond model quality.",
     min_items: 2, max_items: 6, numbers_and_citations_required: false,
   },
   {
@@ -272,27 +269,27 @@ export const SECTION_SHAPES: SectionShape[] = [
   },
   {
     key: "private_markets", heading: HEADING.get("private_markets")!,
-    brief: "HIGH PRIORITY — this is her business. GP-led and LP-led secondaries, continuation vehicles, tenders, employee liquidity, secondary pricing, late-stage resets, allocation changes, LP liquidity, DPI pressure, NAV financing, fund restructurings, secondary fundraises. Distinguish headline preferred valuation from common-equivalent economics; liquidity stress from asset impairment. Ask what each item says about liquidity, price discovery, buyer demand, seller motivation, duration and capital availability.",
+    brief: "HIGH PRIORITY — this is her business. GP-led and LP-led secondaries, continuation vehicles, tenders, employee liquidity, secondary pricing, late-stage resets, allocation changes, LP liquidity, DPI pressure, NAV financing, fund restructurings, secondary fundraises. Distinguish headline preferred valuation from common-equivalent economics; liquidity stress from asset impairment. Ask what each item says about liquidity, price discovery, buyer demand, seller motivation, duration and capital availability. Give one bullet on the secondaries setup of the moment in the file's frame: QUALITY WITHOUT LIQUIDITY, not distress — where a good company and a motivated owner (DPI need, exit slipping, ageing fund life, LPs preferring a liquid yield) produce a spread between ASSET VALUE and OWNER VALUE, and how the risk-free rate moves it.",
     min_items: 2, max_items: 6, numbers_and_citations_required: false,
   },
   {
     key: "government_legal", heading: HEADING.get("government_legal")!,
-    brief: "Only consequential items: White House, Congress, Supreme Court, SEC, FTC, DOJ, FCC, Treasury, Fed, major federal courts, state actions with national economic consequences. Investor consequences, never theatre; politically neutral; proposed vs enacted vs blocked vs litigated; emergency order vs injunction vs appellate vs merits vs final.",
+    brief: "Group under AI governance, courts, trade and regulation where the day has them. Only consequential items: White House, Congress, Supreme Court, SEC, FTC, DOJ, FCC, Treasury, Fed, major federal courts, state actions with national economic consequences. Investor consequences, never theatre; politically neutral; proposed vs enacted vs blocked vs litigated; emergency order vs injunction vs appellate vs merits vs final.",
     min_items: 1, max_items: 6, numbers_and_citations_required: false,
   },
   {
     key: "investor_insight", heading: HEADING.get("investor_insight")!,
-    brief: "ONE genuinely non-obvious insight joining several of today's developments: observation → mechanism → implication, good enough to repeat in an investment committee. Four parts (synthesis, how_reached, transferable_frame, falsified_by) and cites into this report's own sections. If today's material does not support one, say so and file none.",
+    brief: "ONE genuinely non-obvious insight joining several of today's developments — for example that counterparty concentration, not revenue concentration, is the hidden variable: who is simultaneously investor, supplier, distributor and competitor. Observation → mechanism → implication, good enough to repeat in an investment committee. Four parts (synthesis, how_reached, transferable_frame, falsified_by) and cites into this report's own sections. If today's material does not support one, say so and file none.",
     min_items: 1, max_items: 1, numbers_and_citations_required: false,
   },
   {
     key: "key_events", heading: HEADING.get("key_events")!,
-    brief: "Today's and this week's scheduled catalysts in Central Time — releases, Fed events, earnings, IPO pricings, decisions, launches, deadlines — each with WHAT TO WATCH. On a closed-market day, the questions heading into the next session: does the 10-year hold below 5%? does crude keep retreating? how is the filing digested?",
+    brief: "Today's and this week's scheduled catalysts in Central Time — releases, Fed events, earnings, IPO pricings, decisions, launches, deadlines — each with WHAT TO WATCH (for a print, name the lines that matter, e.g. headline vs core vs services inflation; for earnings, the signals that matter for the AI buildout). On a closed-market day, the questions heading into the next session: does the 10-year hold below 5%? does crude keep retreating? how is the filing digested?",
     min_items: 2, max_items: 8, numbers_and_citations_required: false,
   },
   {
     key: "one_thing_to_watch", heading: HEADING.get("one_thing_to_watch")!,
-    brief: "ONE emerging story that could matter more over days, weeks or months. What is happening; why investors may be underestimating it; what evidence would confirm it; what would invalidate it; the public and private-market implications. One of the most thoughtful sections.",
+    brief: "ONE emerging story that could matter more over days, weeks or months. What is happening; why investors may be underestimating it; what evidence would confirm it; what would invalidate it; the public and private-market implications, and — for secondaries — the underwriting questions: revenue quality, concentration, compute commitments, dependency, capital needs, exit timing, then WHAT DOES THE OWNER NEED? One of the most thoughtful sections, written as an argument with an analogy, not a list.",
     min_items: 3, max_items: 6, numbers_and_citations_required: false,
   },
 ];
@@ -429,7 +426,8 @@ ${tiers}
 
 For the private-markets section search specifically for: ${PRIVATE_MARKETS_QUERIES.join("; ")}.
 
-OPEN EVERYTHING YOU CITE. You have WebSearch and WebFetch. Use them generously — twenty to forty
+OPEN EVERYTHING YOU CITE. You have web search and page fetching (WebSearch and WebFetch; on the
+OpenAI seat, the native web_search tool and curl in the shell). Use them generously — twenty to forty
 fetches is normal for a report of this depth. A source you did not open is not a source. Every entry
 in your sources list is a REAL, ARTICLE-LEVEL URL (never a homepage or a category page) with the ISO
 time you actually opened it; a fabricated read_at is a fabricated source.
@@ -463,7 +461,7 @@ REPORT STRUCTURE — THE ELEVEN SECTIONS, THEIR KEYS, AND THE DEPTH EACH NEEDS
 ==================================================
 
 The system stamps the edition ("${EDITION_LABEL}", "Information checked through HH:MM CT") from
-your sources' read times and MARKETS.json, appends the final line, and numbers the sources. You file
+your sources' read times and MARKETS.json and numbers the sources. You file
 the sections, in this order, under these keys:
 
 ${sectionList}
@@ -489,7 +487,13 @@ WRITING RULES:
     skeptical about facts, comfortable saying "not verified."
   - Bullets are one to three sentences; a headline's why_it_matters may run two to four short
     paragraphs. Depth over brevity where the depth is evidence; never padding.
-  - Do NOT bold anything inside a bullet or sentence. Weight on her screen is hierarchy.
+  - BOLD IS FOR TWO THINGS ONLY, written **like this**: the one-sentence claim that opens each
+    one-minute-summary item, and the defining figure that opens a headline's data block. Nowhere else.
+  - A summary item is: the bold claim, then two or three sentences carrying the key numbers and why
+    the day moves because of it, each figure cited [n].
+  - A headline's why_it_matters opens by naming the lens in a few words ("Two competing narratives",
+    "Ecosystem concentration", "Geopolitical premium versus physical supply") and then argues it.
+    Short paragraphs, white space, one idea each. Lists of three to six parallel nouns are fine.
   - Say what changed, then the figure. Do not open a bullet with a bare number.
   - Never file a section that is a title, a date line, a cutoff note or a description of this report.
   - No fluff, no motivational language, no clickbait, no fake certainty, no unsupported claims.
@@ -562,7 +566,7 @@ kill at the leash leaves a real partial report rather than nothing. The system d
               make a report partial. A future event goes here and never in gaps.
   corrections [{ was, now, why }] — where today's verified reading contradicts a previous report.
 
-Do not write the final line yourself; the system appends "${FINAL_LINE}" and nothing may follow it.`,
+Write nothing about her agenda, her coach, her schedule or what to do next; the report ends with its last section.`,
   ].join("\n");
 }
 

@@ -5543,3 +5543,11 @@ of them `critical` by severity, all in the block called Critical Alerts, none of
 - Tests: `aSpentPlanIsSkippedUntilItResets`, `aSpentPlanHandsTheRunToTheNextSeat`, `afterBothSeatsAreSpentPrivateWorkStopsAtFreeOnly`, `paidStrongWorkTriesClaudeThenOpenAI`, `repoChangeCodexFallback`.
 - Not covered: live CLI behaviour on her Mac (UNPROVEN, see ADR-034).
 
+
+## 2026-09-30 — The executive briefing failed on the Codex seat; closing line removed; prompt reshaped
+
+- **Cause (CONFIRMED by running the same CLI version, @openai/codex 0.135.0):** `buildArgs` put `--search` after `exec`. `--search` is a flag of `codex`, not of `codex exec`, so every research run exited 2 with "unexpected argument '--search' found" before the model started. It stayed hidden while the Claude seat answered; the Claude plan reported its weekly limit (PR #53), the ladder reached Codex, and the briefing failed. PROVEN: the corrected argv (`codex --search exec …`) parses and reaches the model. UNPROVEN: a complete briefing on the Codex seat, which needs her Mac and her ChatGPT session.
+- Web runs also get `sandbox_workspace_write.network_access=true`, so the run can open the articles it cites.
+- The closing line is removed everywhere (spec, route, screen, validator, docs); the prompt forbids agenda text.
+- Prompt 2026-09-30.1: bold claim per summary item, bold defining figure per headline, competing narratives, secondaries "quality without liquidity", SpaceX price map, AI capability vs economics.
+- NOT implemented: an OpenAI API research rung (Responses API with web search) between the seats and the plain cloud rungs. The existing cloud rungs have no web tools and cannot research.

@@ -211,10 +211,16 @@ describe("scenario (a): Claude Code capped or unavailable → Codex serves the s
     const research = codexArgs({ kind: "research", web_tools: ["WebSearch", "WebFetch"], repo_path: "/x" } as any, "p");
     expect(research).toContain("workspace-write");
     expect(research).toContain("--search");
+    // `--search` belongs to `codex`, not `codex exec`: after the subcommand the CLI exits 2
+    // ("unexpected argument '--search' found") and the research run never starts. This killed the
+    // 30 Sep 2026 briefing the moment the Claude seat was spent and the ladder reached Codex.
+    expect(research.indexOf("--search")).toBeLessThan(research.indexOf("exec"));
+    expect(research.join(" ")).toContain("sandbox_workspace_write.network_access=true");
     expect(research).not.toContain("--model");
     const plain = codexArgs({ kind: "repo_work" } as any, "p");
     expect(plain).toContain("read-only");
     expect(plain).not.toContain("--search");
+    expect(plain.join(" ")).not.toContain("network_access");
   });
 });
 

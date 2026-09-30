@@ -496,7 +496,7 @@ function renderSection(sec: any, i: number, insight?: any) {
                 */}
               {typeof it === "object" && Array.isArray(it.numbers) && it.numbers.length > 0 && (
                 <ul className="brief-numbers">
-                  {it.numbers.map((n: string, k: number) => <li key={k}>{bold(String(n))}</li>)}
+                  {it.numbers.map((n: string, k: number) => <li key={k} className={k === 0 ? "brief-keyfigure" : undefined}>{bold(String(n))}</li>)}
                 </ul>
               )}
               {/* SpaceX Watch files its parts as items with bullets: SPCX, the reference map, Starship, Starlink, supply. */}
@@ -948,7 +948,6 @@ function renderDetail(
           )}
 
           {/* The absolute final line of every report, appended by the system. Nothing renders after it. */}
-          {c.final_line && <p className="brief-final">{c.final_line}</p>}
         </>
       );
     }
