@@ -93,7 +93,6 @@
     "calendar:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/calendar-sync.mjs",
     "notify": "node scripts/vault/vault.mjs run -- node scripts/ops/notify.mjs",
     "notices:send": "node scripts/vault/vault.mjs run -- node scripts/ops/task-notices.mjs",
-    "packet:remind": "node scripts/vault/vault.mjs run -- node scripts/ops/packet-remind.mjs",
     "app:install": "bash scripts/ops/install-desktop-app.sh",
     "local:pull": "node scripts/ops/pull-production.mjs",
     "local:restore": "node scripts/backup/restore.mjs",

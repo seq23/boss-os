@@ -44,7 +44,6 @@ const QUICK_REASONS = [
 const RESUME_LABEL: Record<string, string> = {
   buyer_outreach_email: "Letters to buyers",
   kdp_covers: "Kindle covers",
-  meeting_packet_raised: "Meeting packets",
   duty_created: "New duties",
 };
 const KIND_LABEL: Record<string, string> = {

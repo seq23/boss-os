@@ -47,7 +47,6 @@ import { dutyStaleness } from "../duties/staleness";
 import { roster, type EmployeeDutyRow, type EmployeeRow } from "../today/roster";
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
-import { weeklyPacket, packetIsDue } from "../today/packet";
 import { scoreDay, FLOORS } from "../today/verdict";
 
 export const today = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -429,33 +428,6 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
   const keys = new Set<BlockKey>(only ?? TODAY_BLOCKS.map((b) => b.key));
   const want = (...k: BlockKey[]) => k.some((x) => keys.has(x));
   /*
-   * THE MEETING PACKET, on the two days it is worth having and null on the other five.
-   *
-   * Computed rather than researched: every figure in it is already in her own record — anchors
-   * kept, deals advanced, candidates reviewed, touches logged — so an agent run would cost money
-   * and minutes to fetch what a query returns instantly, and could be wrong about facts the
-   * database holds exactly.
-   */
-  /*
-   * THE PACKET IS NO LONGER ASSEMBLED FOR THIS SCREEN. It is served whole at
-   * `/api/boss/packets/page` and fetched by the reminder at `/today/packet/:counterpart`; rendering
-   * it into the Meetings section was the thing she objected to. `packetIsDue` still governs the
-   * reminder's own day, and `weeklyPacket` still answers that route — this assembler just stopped
-   * doing work whose only consumer has been deleted.
-   */
-  /*
-   * THE COMPACT POINTER, WHICH IS WHAT SHE ASKED FOR.
-   *
-   * "or at least an artifact in the web page that seems to be more space efficient" — she does not
-   * want the whole packet dumped into Today, she wants a short line that opens the document. So the
-   * block carries the meeting, the date, the one blocking headline and a link; the page carries
-   * every agenda newest-first.
-   *
-   * `filed` NULL IS RENDERED, NOT HIDDEN. A Wednesday where the job did not run must look like a
-   * Wednesday where the job did not run — her rule from this morning is that the screen never shows
-   * an empty section for something that exists.
-   */
-  /*
    * ── THE DIARY, WHICH IS WHAT THIS SECTION IS FOR ──────────────────────────
    *
    * "this tab is suppose to show what meetings i have upcoming."
@@ -470,11 +442,6 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
   const reads = batchReads(db);
 
   const theDiaryP = want("meetings") ? diary(env, Date.now()).catch(() => null) : Promise.resolve(null);
-  const filedPacketP = reads.first<any>(want("meetings"), () => env.DB
-    .prepare(
-      `SELECT id, counterpart, day_id, headline, blocking, published_at
-         FROM meeting_packets ORDER BY day_id DESC, published_at DESC LIMIT 1`,
-    )).catch(() => null);
 
   /*
    * Today's report, and the last good one.
@@ -699,8 +666,8 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
     // Sends every read recorded above as one batch; nothing above resolves until it runs.
     reads.flush(),
   ]);
-  const [theDiary, filedPacket, report, lastReport, reportDuty] = await Promise.all([
-    theDiaryP, filedPacketP, reportP, lastReportP, reportDutyP,
+  const [theDiary, report, lastReport, reportDuty] = await Promise.all([
+    theDiaryP, reportP, lastReportP, reportDutyP,
   ]);
 
   const byStatus = (rows: { status: string; n: number }[] | undefined) =>
@@ -1603,43 +1570,15 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
     }),
     meetings: () => ({
       content: {
-        /*
-         * THE WEDNESDAY PACKET LIVES HERE RATHER THAN IN A FOURTEENTH BLOCK. This file states that
-         * canon fixes thirteen elements and the build plan adds no fourteenth, and a meeting brief
-         * is a meeting — this block was empty every day while the one recurring meeting she has was
-         * prepared for out of memory.
-         *
-         * Present on Tuesday as well as Wednesday. Seeing "ask him for the Google grant" at 6am on
-         * the day is seeing it as the meeting starts; seeing it on Tuesday is time to act first.
-         */
-        /*
-         * THE PACKET IS NO LONGER RENDERED HERE. It was dumped inline — "Your week", the grant
-         * steps, the whole document — into a section she opens to see what is on today. Her words:
-         * "this stuff is unnecessary... if there is a packet or deliverable for a meeting i should
-         * see that in a link". The document lives at one permanent URL and the row carries the link.
-         */
         diary: theDiary?.rows ?? [],
         diary_summary: theDiary?.summary ?? "The diary could not be read, which is a fault rather than an empty week.",
         calendar: theDiary?.calendar ?? null,
         /*
          * WHAT THIS SECTION IS FOR, ON THE SECTION. She had to ask what her own gates were, and the
-         * answer was in a source comment. The same defect was one step away here: a packet is
-         * obvious to whoever built it and not to whoever opens it at 6am.
+         * answer was in a source comment.
          */
         intent:
-          "What you have coming up. Add anything that is not here — a diary you cannot write in is not a diary — " +
-          "and where a meeting has a packet, the link opens it rather than the whole document landing on this screen.",
-        agenda_page: "/api/boss/packets/page",
-        filed_packet: filedPacket
-          ? {
-              ...filedPacket,
-              download: `/api/boss/packets/${filedPacket.id}/download`,
-              stale: filedPacket.day_id !== day.id,
-            }
-          : null,
-        packet_absent_reason: filedPacket
-          ? null
-          : "No packet has been filed to the agenda page yet. The Wednesday job writes one at 07:00 and posts it — an empty page on a Wednesday afternoon is a job that did not run, not a quiet week.",
+          "What you have coming up. Add anything that is not here — a diary you cannot write in is not a diary.",
         meetings: meetingsToday,
         total: meetingsToday.length,
         unbriefed: unbriefed.length,
@@ -1655,7 +1594,6 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
        */
       isEmpty:
         (theDiary?.rows.length ?? 0) === 0 &&
-        filedPacket === null &&
         meetingsToday.length === 0 &&
         (heldNotCaptured.results?.length ?? 0) === 0 &&
         (overdueFollowUps?.n ?? 0) === 0 &&
@@ -2547,22 +2485,6 @@ today.post("/alerts/dismiss", async (c) => {
     action: "dismissed", detail: { reason: reason.slice(0, 120), days },
   });
   return ok(c, { dismissed_until: now + days * 86_400_000, days }, 201);
-});
-
-/**
- * The packet on its own, so something outside the browser can deliver it.
- *
- * IT LIVES INSIDE THE MEETINGS BLOCK TOO, and that was the whole problem: a finished thing whose
- * only route to her is a page she has to remember to open is the same defect this system keeps
- * producing. `scripts/ops/packet-remind.mjs` reads this and puts it in front of her.
- *
- * Available on any day, unlike the block. A reminder that could only fetch the packet on the two
- * days it renders could not be tested on a Thursday, and a delivery path nobody can exercise is one
- * that silently breaks.
- */
-today.get("/packet/:counterpart", async (c) => {
-  const day = await ensureDay(c.env.DB, c.req.query("day_id") ?? dayId(Date.now()));
-  return ok(c, await weeklyPacket(c.env, day.id, c.req.param("counterpart")));
 });
 
 today.get("/agenda/:counterpart", async (c) => {

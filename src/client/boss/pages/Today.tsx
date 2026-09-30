@@ -1545,12 +1545,6 @@ function Diary({ content, onChanged, onError }: {
                 {r.location ? ` · ${r.location}` : ""}
               </div>
               <div className="row-sub">
-                {r.packet_url ? (
-                  <a href={r.packet_url} target="_blank" rel="noreferrer">Packet →</a>
-                ) : (
-                  "No packet"
-                )}
-                {" · "}
                 {r.source === "recurring" ? "standing" : r.source === "calendar" ? "from your calendar" : r.source === "crm" ? "from your people" : "you added this"}
               </div>
             </div>
@@ -1592,9 +1586,6 @@ function Diary({ content, onChanged, onError }: {
       ) : (
         <div className="decide">
           <button className="btn" onClick={() => setAdding(true)}>Add a meeting</button>
-          <a className="btn" href={content.agenda_page ?? "/api/boss/packets/page"} target="_blank" rel="noreferrer">
-            All agendas
-          </a>
         </div>
       )}
 

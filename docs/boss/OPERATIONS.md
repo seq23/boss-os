@@ -92,7 +92,7 @@ through ~6:25 AM CT"*.
 |---|---|---|---|
 | Monday | 07:00 | Shipping heartbeat + Search Console read | Danielle, Camille |
 | Monday | 07:30 | Backlink prospecting | Monique |
-| Wednesday | 07:00 | The packet reminder — notification + a markdown file | — |
+| Wednesday | 07:00 | — (the packet reminder was removed 30 Sep 2026) | — |
 | Thursday | 08:00 | Tool scouting | Kendra |
 | Sunday | 17:00 | The week's practice | Imani |
 | Sunday | 18:00 | Network refresh — re-read the mailbox, update the touch list | Monique |
@@ -102,7 +102,6 @@ through ~6:25 AM CT"*.
 
 ```
 com.seq.boss-agent       claims and runs agent work        5×/day
-com.seq.boss-packet      the Wednesday packet reminder     Wed 07:00
 com.seq.boss-network     mailbox → touch list              Sun 18:00
 com.seq.boss-properties  heartbeat + Search Console        Mon 07:00
 com.seq.kdp-watch        the KDP case, read and chased      Mon/Wed/Fri 09:23
@@ -429,7 +428,7 @@ could destroy the real thing.
 | Code-name → real address mapping | `~/.boss-os/contacts/MAP.json` | **Never** |
 | Correspondents and dates | `~/.boss-os/sourcing/CONTACTS.json` | No |
 | Computed sky, natal chart | `~/.boss-os/reports/SKY.json` | No |
-| Wednesday packets | `~/.boss-os/packets/*.md` | No |
+| Wednesday packets (retired 30 Sep 2026; past files only) | `~/.boss-os/packets/*.md` | No |
 | Local database copy | `.wrangler/state` (~92 MB) | No |
 | Production snapshots | `backups/*.json` (~2 MB each, gitignored) | No |
 
@@ -836,3 +835,16 @@ Real, and named rather than quietly absent.
    earn it. Either they are lines and should be declared, or they are not and the decision should be
    written down. `time-2-read.com` and `heygetonmylevel.com` are a separate case: they are not in
    Search Console at all, which is why the SaaS line reads as unmeasured rather than zero.
+
+
+---
+
+## Removed 30 September 2026: the Wednesday meeting-prep packet
+
+Her instruction: "take away the wednesday meeting prep packet — it was a stupid ask." Gone: the Mac job
+`com.seq.boss-packet` and `scripts/ops/packet-remind.mjs`, the `packets` routes and the packet builder in
+the Worker, the "Packet →" link and "All agendas" button on the Meetings tab, and the packet's tests.
+Kept: the `meeting_packets` table and its backups (past packets stay on record), the diary and the
+standing Wednesday meeting with Scooter, and the agenda items. A machine that still has the old job
+loaded loses it the next time `install-agent-launchd.sh` runs, or by hand:
+`launchctl unload ~/Library/LaunchAgents/com.seq.boss-packet.plist && rm ~/Library/LaunchAgents/com.seq.boss-packet.plist`.
