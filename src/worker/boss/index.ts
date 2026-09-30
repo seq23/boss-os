@@ -26,7 +26,6 @@ import { kdp } from "./routes/kdp";
 import { duties } from "./routes/duties";
 import { credentials } from "./routes/credentials";
 import { judgement } from "./routes/judgement";
-import { packets } from "./routes/packets";
 import { lp } from "./routes/lp";
 import { diaryRoutes } from "./routes/diary";
 import { deliverables } from "./routes/deliverables";
@@ -112,24 +111,6 @@ app.get("/api/health", async (c) => {
 // Explicit skip list, so this stays correct no matter how routes get reordered.
 app.use("/api/*", async (c, next) => {
   if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health") return next();
-  /*
-   * ── THE TWO PATHS A BROWSER NAVIGATES TO DIRECTLY ─────────────────────────
-   *
-   * "this artifact is NOTHING it routes back to the today page and the download is nothing either."
-   *
-   * The agenda page renders correctly WITH a session and returned a bare JSON 401 without one — and
-   * a cold click on a bookmark, or opening the link from the desktop app into the system browser,
-   * carries no session at all. A 401 body is not something a browser can do anything with, so the
-   * shell bounced her to Today and the one permanent link the design rests on was unusable.
-   *
-   * THE AUTHENTICATION IS NOT WEAKENED BY ONE CHARACTER. These two routes still require the same
-   * passcode and the same session; what changes is that they answer an unauthenticated browser with
-   * an HTML unlock form instead of a JSON error, exactly as the app itself does. Everything else on
-   * `/api/*` keeps the JSON 401, which is right for a fetch and wrong for a navigation.
-   */
-  if (c.req.method === "GET" && /^\/api\/packets\/(page$|[A-Za-z0-9_]+\/download$)/.test(c.req.path)) {
-    return next();
-  }
   return requireSession(c, next);
 });
 
@@ -153,7 +134,6 @@ app.route("/api/credentials", credentials);
 app.route("/api/judgement", judgement);
 // One link, every meeting agenda, newest first. A page rather than a client screen — her call:
 // "i dont need a real page in boss OS that is stupid".
-app.route("/api/packets", packets);
 // Monique's LP reply digest. Dormant until Scooter grants the West Peek delegation; the credential
 // prober is what wakes it, not a person remembering.
 app.route("/api/lp", lp);

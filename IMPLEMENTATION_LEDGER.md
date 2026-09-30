@@ -5574,3 +5574,9 @@ of them `critical` by severity, all in the block called Critical Alerts, none of
 
 - Owner instruction: no per-employee caps; only the lane's daily and monthly budgets. `employees.budget_micros_day = 0` is the system's existing "lane budget only" (0154), honoured by `buildEnvelope` and `employeeBudgetState`, so this is data: every employee is set to 0. Found because the briefing's employee allowance sat below the cost of one cited briefing and would have refused the research rung (review finding on #55).
 - The Team screen says "No personal cap" instead of "$0.00 a day". Limits that remain: the ops lane ($1.75/day, $52.50/month on production at the time of writing), the spend lever, each backend's ceiling, and the $0.75 per-run cap. A hire through an approved proposal may still state its own figure.
+
+## 2026-09-30 — The Wednesday meeting-prep packet is removed (migration 0278)
+
+- Owner instruction: "take away the wednesday meeting prep packet — it was a stupid ask." No employee owned it; it was a system feature, so the feature is gone: the Mac job `com.seq.boss-packet` and `packet-remind.mjs` (the installer now unloads and deletes a stale plist), the packet builder and the `packets` routes (including their session-bypass for the agenda page), the Meetings tab's "Packet →" link and "All agendas" button, the Inbox's `meeting_packet_raised` decision (pending ones are expired by 0278), and the packet's tests.
+- Kept: the `meeting_packets` table and its backups, the diary and the standing Wednesday meeting with Scooter, the agenda items and the `/api/today/agenda/:counterpart` route. The West Peek reply-path item no longer says it is carried on the packet.
+- NOT done by the repo: an already-installed Mac job stays loaded until the installer is re-run or the two `launchctl`/`rm` commands in docs/boss/OPERATIONS.md are run.

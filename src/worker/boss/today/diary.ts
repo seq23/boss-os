@@ -38,9 +38,6 @@ export interface DiaryRow {
   location: string | null;
   /** manual · calendar · recurring · crm — so she can tell what she typed from what was read. */
   source: string;
-  /** The agenda page, when this meeting has a packet on it. Null is rendered as "no packet". */
-  packet_url: string | null;
-  packet_day: string | null;
   /** True only for the derived standing fixture, which has no row and cannot be edited or deleted. */
   standing: boolean;
 }
@@ -75,13 +72,12 @@ function occurrences(startAt: number, from: number, until: number, recurUntil: n
 export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promise<{
   rows: DiaryRow[];
   summary: string;
-  agenda_page: string;
   calendar: { connected: string[]; unreadable: string[]; note: string };
 }> {
   const until = now + horizonDays * DAY_MS;
   const from = now - DAY_MS;
 
-  const [entries, crm, packets, calProbes] = await Promise.all([
+  const [entries, crm, calProbes] = await Promise.all([
     /*
      * A WEEKLY ROW IS NOT FILTERED BY ITS OWN START DATE. The standing Wednesday was entered once,
      * so its `scheduled_at` recedes into the past for ever; a `BETWEEN` on it would drop the one
@@ -108,28 +104,12 @@ export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promi
       .bind(from, until)
       .all<any>(),
     env.DB
-      .prepare(`SELECT id, counterpart, day_id FROM meeting_packets ORDER BY day_id DESC`)
-      .all<any>(),
-    env.DB
       .prepare(
         `SELECT id, label, state, detail FROM credential_probes WHERE id LIKE 'cred_cal_%' ORDER BY id`,
       )
       .all<{ id: string; label: string; state: string; detail: string | null }>()
       .catch(() => ({ results: [] as any[] })),
   ]);
-
-  /*
-   * A PACKET BELONGS TO A COUNTERPART AND A DAY. Matching on the counterpart alone would put last
-   * week's document on next week's row, which is the ageing-item defect wearing a link.
-   */
-  const packetFor = (counterpart: string | null, at: number): { id: string; day: string } | null => {
-    if (!counterpart) return null;
-    const day = new Date(at).toISOString().slice(0, 10);
-    const hit = (packets.results ?? []).find(
-      (p: any) => String(p.counterpart).toLowerCase() === counterpart.toLowerCase() && p.day_id === day,
-    );
-    return hit ? { id: hit.id, day: hit.day_id } : null;
-  };
 
   const rows: DiaryRow[] = [];
 
@@ -147,7 +127,6 @@ export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promi
         ? occurrences(e.scheduled_at, from, until, e.recur_until ?? null)
         : [e.scheduled_at];
     for (const at of times) {
-      const p = packetFor(e.counterpart, at);
       rows.push({
         // The row id stays the entry's for a one-off so Cancel works, and carries the date for a
         // repeat so two occurrences are not the same key on the screen.
@@ -158,8 +137,6 @@ export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promi
         duration_min: e.duration_min,
         location: e.location,
         source: e.recurrence === "weekly" ? "recurring" : e.source,
-        packet_url: p ? "/api/boss/packets/page" : null,
-        packet_day: p?.day ?? null,
         standing: e.recurrence === "weekly",
       });
     }
@@ -174,8 +151,6 @@ export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promi
       duration_min: m.duration_min,
       location: m.location,
       source: "crm",
-      packet_url: null,
-      packet_day: null,
       standing: false,
     });
   }
@@ -266,7 +241,7 @@ export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promi
     rows.length === 0
       ? "Nothing in the next three weeks. Add one below."
       : todays.length > 0
-        ? `${todays.length} today${next && next.packet_url ? ", packet ready" : ""}. ${rows.length} in the next three weeks.`
+        ? `${todays.length} today. ${rows.length} in the next three weeks.`
         : `Nothing today. Next: ${next?.title ?? "—"} on ${new Date(next?.scheduled_at ?? now).toISOString().slice(0, 10)}. ${rows.length} in the next three weeks.`;
 
   /*
@@ -295,7 +270,6 @@ export async function diary(env: Env, now = Date.now(), horizonDays = 21): Promi
   return {
     rows,
     summary,
-    agenda_page: "/api/boss/packets/page",
     calendar: {
       connected: connected.map((p) => p.label),
       unreadable: notConnected.map((p) => `${p.label} — ${p.detail ?? "not connected yet"}`),
