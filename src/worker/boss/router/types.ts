@@ -109,3 +109,10 @@ export interface ProviderAdapter {
   id: string;
   complete(req: CompletionRequest, ctx: AdapterContext): Promise<CompletionResult>;
 }
+
+/**
+ * OpenAI bills each web-search call at $10 per 1,000 calls, on top of tokens. Expressed in the
+ * micro-dollars the ledger uses: $0.01 = 10,000 micros. A list price; the ledger says so. Lives here,
+ * not in the adapter, so the router can allow for it without importing a provider.
+ */
+export const WEB_SEARCH_CALL_MICROS = 10_000;

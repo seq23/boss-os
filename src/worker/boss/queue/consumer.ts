@@ -640,10 +640,10 @@ const pageKey = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLo
  * A SEARCH RUNG'S SOURCES, STAMPED BY THE SYSTEM AND CHECKED AGAINST THE PAGES IT WAS GIVEN.
  *
  * The model cannot observe the clock, so `read_at` is the moment the answer came back, not a time it
- * typed — which is the rule the grader already applies to a seat's sources. And a source the model
- * lists that is NOT among the pages the search tool returned is not removed (the [n] numbers would
- * shift under every sentence that cites them) but is named in `gaps`, so the report is partial and
- * says which sources it cannot vouch for.
+ * typed — which is the rule the grader already applies to a seat's sources. A source the model lists
+ * that is NOT among the pages the search tool returned is kept in place (the [n] numbers would shift
+ * under every sentence that cites them) but gets NO read time, so it is unusable to the grader, and it
+ * is named in `gaps` so the report is partial and says which sources it cannot vouch for.
  */
 export function stampResearchSources(
   report: Record<string, unknown> | null,
@@ -658,8 +658,15 @@ export function stampResearchSources(
   const sources = listed.map((src) => {
     const o: Record<string, unknown> = src && typeof src === "object" ? { ...(src as Record<string, unknown>) } : { name: String(src), url: "" };
     const url = typeof o.url === "string" ? o.url : "";
-    if (url && !returned.has(pageKey(url))) unverified.push(url);
-    o.read_at = readAt;
+    if (url && !returned.has(pageKey(url))) {
+      // NO READ TIME FOR A PAGE THE SEARCH NEVER RETURNED: `usableSources` treats a parseable
+      // `read_at` as proof it was opened, so leaving one on would certify a hallucinated URL.
+      // Without it the source is unusable and the grader says so; the [n] numbering is unchanged.
+      unverified.push(url);
+      delete o.read_at;
+    } else {
+      o.read_at = readAt;
+    }
     return o;
   });
   const gaps = Array.isArray(report.gaps) ? [...report.gaps] : [];

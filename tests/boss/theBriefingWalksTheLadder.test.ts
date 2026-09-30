@@ -358,6 +358,9 @@ describe("scenario (c): both seats unavailable and OpenAI provisioned → the re
     await seatCapped("bk_claude_code");
     await seatDisabled("bk_codex");
     const { taskId } = await briefingTask();
+    // A search run's honest estimate (tokens plus a search allowance) is about $0.45; the envelope is a
+    // share of what the ops lane has left, which this test database holds at $0.30.
+    await env.DB.prepare(`UPDATE permission_envelopes SET budget_micros = 2000000 WHERE task_id = ?`).bind(taskId).run();
 
     const calls: { url: string; body: any }[] = [];
     restore = stubFetch(async (req) => {
@@ -388,7 +391,9 @@ describe("scenario (c): both seats unavailable and OpenAI provisioned → the re
     expect(by.label).toBe("GPT-4.1 with web search (OpenAI)");
     expect(by.refused_seats).toEqual(["bk_claude_code", "bk_codex"]);
     const sources = JSON.parse(stored.sources);
-    expect(sources.every((s: any) => Date.parse(s.read_at) > Date.parse("2026-01-01"))).toBe(true);
+    // The page the search returned is stamped by the system; the one it never returned is NOT certified.
+    expect(Date.parse(sources[0].read_at)).toBeGreaterThan(Date.parse("2026-01-01"));
+    expect(sources[1].read_at ?? null).toBeNull();
     expect(JSON.stringify(JSON.parse(stored.gaps))).toContain("https://example.com/never-searched");
   });
 

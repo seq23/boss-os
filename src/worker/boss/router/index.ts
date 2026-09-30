@@ -6,7 +6,7 @@ import { AppError } from "../lib/http";
 import { costPolicy } from "../../../shared/boss/governance";
 import { orderCandidates, vendorFamily } from "../../../shared/boss/router/candidateOrder.mjs";
 import { ATTEMPT_DEADLINE_MS, CHAIN_BUDGET_MS, nextAttemptDeadlineMs, RESEARCH_ATTEMPT_DEADLINE_MS } from "./deadlines";
-import { ProviderCallError, type ChatMessage } from "./types";
+import { ProviderCallError, WEB_SEARCH_CALL_MICROS, type ChatMessage } from "./types";
 import { evaluateModel, estimateCostMicros, type ModelRow, type RouteStage } from "./policy";
 import { rollBudgetWindows, laneBudgetState, employeeBudgetState } from "./budget";
 import { WIRING_BY_PROVIDER, adapterCredential, backendKindFor } from "./backends";
@@ -624,6 +624,9 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
    * lifts a candidate, so an absence of evidence can never carry a model up the order on work that
    * matters. That is the guarantee stated as arithmetic rather than as a hope.
    */
+  const effectiveOutputTokens = opts.maxOutputTokens ?? route.max_output_tokens;
+  // A search run is billed per search on top of tokens; allow for a generous thirty of them.
+  const searchAllowanceMicros = opts.webSearch ? 30 * WEB_SEARCH_CALL_MICROS : 0;
   const RANK_WEIGHT = 1_000_000_000;
   // Smaller than one experience step, larger than any price estimate (100,000,000 micros = $100).
   const VENDOR_WEIGHT = 100_000_000;
@@ -633,7 +636,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       const backendId = WIRING_BY_PROVIDER.get(m.provider_id)?.backendId;
       const price = backendId && !routeIsBilled(backendId, m.slug)
         ? 0
-        : estimateCostMicros(m, promptChars, route.max_output_tokens);
+        : estimateCostMicros(m, promptChars, effectiveOutputTokens) + searchAllowanceMicros;
       const exp = experience.get(m.id);
       const promotable = protectedWork ? mayBePreferredForProtectedWork(exp) : true;
       const r = promotable ? experienceRank(exp) : Math.max(1, experienceRank(exp));
@@ -748,7 +751,9 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
       note("availability", "skipped", `provider ${model.provider_id} has no registered execution backend`);
       continue;
     }
-    const estimate = estimateCostMicros(model, promptChars, route.max_output_tokens);
+    // The SAME output limit the call will send, plus what a search run may add, so the lever, the
+    // ceilings and the per-run cap are all checked against what this call can actually cost.
+    const estimate = estimateCostMicros(model, promptChars, effectiveOutputTokens) + searchAllowanceMicros;
     const verdictBackend = await checkBackend(env, def.backendId, backendKindFor(opts.intakeKind), {
       model: model.slug,
       sensitivity: sensitivity as never,
@@ -1001,7 +1006,7 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
           {
             modelSlug: model.slug,
             messages: opts.messages,
-            maxOutputTokens: opts.maxOutputTokens ?? route.max_output_tokens,
+            maxOutputTokens: effectiveOutputTokens,
             temperature: route.temperature,
             webSearch: opts.webSearch === true,
             /*

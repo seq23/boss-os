@@ -115,11 +115,31 @@ describe("stampResearchSources", () => {
   it("names a listed source the search never returned, without renumbering the rest", () => {
     const out = stampResearchSources({ sources: [{ name: "A", url: "https://www.reuters.com/markets/a" }, { name: "Made up", url: "https://example.com/x" }] }, cited, at) as any;
     expect(out.sources).toHaveLength(2);
+    // The unreturned page gets no read time, so the grader cannot count it as a source that was opened.
+    expect(out.sources[0].read_at).toBe("2026-09-30T12:00:00.000Z");
+    expect(out.sources[1].read_at).toBeUndefined();
     expect(out.gaps).toHaveLength(1);
     expect(out.gaps[0].why).toContain("https://example.com/x");
   });
 
   it("returns null for a reply with no report", () => {
     expect(stampResearchSources(null, cited, at)).toBeNull();
+  });
+});
+
+describe("the spend checks use the limit the call will send", () => {
+  it("refuses a search run whose real estimate is over the per-run cap, before any call", async () => {
+    await openOpenAI(); await setLever("OPEN");
+    await env.DB.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('per_run_cap_micros','100000',?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(Date.now()).run();
+    let called = false;
+    restore = stubFetch(() => { called = true; return new Response("{}", { status: 200 }); });
+    const e = Object.create(env) as any; e.OPENAI_API_KEY = "sk-test";
+    try {
+      // 16,000 output tokens at 8000 micros/1k is 128,000 before any search charge: over a 100,000 cap.
+      await expect(routeCompletion(e, request() as any)).rejects.toThrow();
+      expect(called).toBe(false);
+    } finally {
+      await env.DB.prepare(`DELETE FROM settings WHERE key = 'per_run_cap_micros'`).run();
+    }
   });
 });

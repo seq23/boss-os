@@ -1,4 +1,4 @@
-import { ProviderCallError, statusIsRetryable, type AdapterContext, type CompletionRequest, type ProviderAdapter } from "./types";
+import { ProviderCallError, statusIsRetryable, WEB_SEARCH_CALL_MICROS, type AdapterContext, type CompletionRequest, type ProviderAdapter } from "./types";
 
 /**
  * OpenAI, called directly.
@@ -66,12 +66,6 @@ export const openai: ProviderAdapter = {
     };
   },
 };
-
-/**
- * OpenAI bills each web-search call at $10 per 1,000 calls, on top of tokens. Expressed in the
- * micro-dollars the ledger uses: $0.01 = 10,000 micros. A list price; the ledger says so.
- */
-export const WEB_SEARCH_CALL_MICROS = 10_000;
 
 /**
  * A generation that may search the web first — the Responses API with its built-in `web_search`
