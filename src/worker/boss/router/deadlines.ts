@@ -79,8 +79,16 @@ export function chainRemainingMs(startedAt: number, now: number): number {
  * walking the ladder — which is a different and far more useful sentence than the silence that
  * preceded it.
  */
-export function nextAttemptDeadlineMs(startedAt: number, now: number): number | null {
+export function nextAttemptDeadlineMs(startedAt: number, now: number, ceilingMs = ATTEMPT_DEADLINE_MS): number | null {
   const remaining = chainRemainingMs(startedAt, now);
   if (remaining <= 0) return null;
-  return Math.min(ATTEMPT_DEADLINE_MS, remaining);
+  return Math.min(ceilingMs, remaining);
 }
+
+/**
+ * A SEARCH-ENABLED CALL MAY TAKE THE WHOLE CHAIN. A research answer opens twenty to forty pages and
+ * writes a long report; five minutes is the ceiling for a plain generation and is not measured
+ * against this. UNMEASURED — there has been no production run of it — so it is bounded by the chain
+ * budget, which still ends the walk, rather than by a number chosen to look reasonable.
+ */
+export const RESEARCH_ATTEMPT_DEADLINE_MS = CHAIN_BUDGET_MS;

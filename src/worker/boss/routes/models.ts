@@ -379,6 +379,13 @@ models.post("/provision/:backendId", async (c) => {
     .prepare(`INSERT OR IGNORE INTO providers (id, name, base_url, api_key_var, enabled) VALUES (?,?,?,?,1)`)
     .bind(def.providerId, def.providerName, def.baseUrl, def.credential.name)
     .run();
+  /*
+   * THE PROVIDER ROW MAY ALREADY EXIST, DISABLED (`prv_openai` and `prv_anthropic` are seeded off by
+   * 0211/0153 until a key exists), and INSERT OR IGNORE leaves it that way — so a provisioned,
+   * key-holding backend would still never be routed to. Provisioning is only reachable for a backend
+   * she has already enabled, so turning its provider on is the same decision, not a new one.
+   */
+  await c.env.DB.prepare(`UPDATE providers SET enabled = 1 WHERE id = ?`).bind(def.providerId).run();
 
   const written: string[] = [];
   for (const m of def.models) {

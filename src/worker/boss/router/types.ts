@@ -31,12 +31,27 @@ export interface CompletionRequest {
    * the measurements behind them.
    */
   signal?: AbortSignal;
+  /**
+   * LET THE MODEL SEARCH THE WEB BEFORE IT ANSWERS (30 Sep 2026). Only an adapter that has a search
+   * tool of its own honours it — today that is OpenAI's, through the Responses API. An adapter that
+   * does not must ignore it and the router does not ask one to: `RouteRequest.webSearch` confines the
+   * run to the provider that can.
+   */
+  webSearch?: boolean;
 }
 
 export interface CompletionResult {
   text: string;
   inTokens: number;
   outTokens: number;
+  /** The pages a search-enabled call actually cited, as the provider reported them. */
+  sources?: { title: string; url: string }[];
+  /**
+   * Charges the token counts do not carry. OpenAI bills each web-search call separately from tokens,
+   * so a run that searched twenty times cost more than its tokens say; the router adds this to the
+   * figure it records.
+   */
+  extraCostMicros?: number;
 }
 
 /**

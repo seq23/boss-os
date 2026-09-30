@@ -324,3 +324,87 @@ describe("scenario (b): both seats unavailable → the walk continues down the f
     expect(parseDeliversFromText('[1,2]')).toBeNull();
   });
 });
+
+describe("scenario (c): both seats unavailable and OpenAI provisioned → the research rung writes it, with web search and sources", () => {
+  beforeEach(async () => {
+    await seatsReset();
+    await env.DB.prepare(`UPDATE execution_backends SET status = 'enabled', exhausted_until = NULL WHERE id = 'bk_openai'`).run();
+    await env.DB.prepare(`UPDATE providers SET enabled = 1 WHERE id = 'prv_openai'`).run();
+    await env.DB.prepare(`UPDATE models SET enabled = 1 WHERE id = 'mdl_openai_research'`).run();
+    await env.DB.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('spend_lever','OPEN',?) ON CONFLICT(key) DO UPDATE SET value = 'OPEN'`).bind(Date.now()).run();
+  });
+  afterEach(async () => {
+    await seatsReset();
+    await env.DB.prepare(`UPDATE providers SET enabled = 0 WHERE id = 'prv_openai'`).run();
+    await env.DB.prepare(`UPDATE execution_backends SET status = 'registered' WHERE id = 'bk_openai'`).run();
+    await env.DB.prepare(`DELETE FROM settings WHERE key = 'spend_lever'`).run();
+  });
+
+  const report = {
+    status: "complete",
+    headline: "Yields and the Fed decide the week.",
+    summary: "A research rung searched and wrote this.",
+    sections: [
+      { key: "key_events", heading: "Key Events Today", so_what: "Watch PCE.", bullets: ["PCE inflation prints at 7:30 AM CT [1].", "ADP payrolls follow [1]."], sources: [1] },
+    ],
+    sources: [
+      { name: "Reuters", url: "https://www.reuters.com/markets/a", read_at: "1999-01-01T00:00:00Z" },
+      { name: "Invented", url: "https://example.com/never-searched", read_at: "1999-01-01T00:00:00Z" },
+    ],
+    gaps: [],
+  };
+
+  it("calls the Responses API with web_search, stamps the sources itself, names what it could not verify, and says who wrote it", async () => {
+    await seatCapped("bk_claude_code");
+    await seatDisabled("bk_codex");
+    const { taskId } = await briefingTask();
+
+    const calls: { url: string; body: any }[] = [];
+    restore = stubFetch(async (req) => {
+      calls.push({ url: req.url, body: await req.json() });
+      return new Response(JSON.stringify({
+        output: [
+          { type: "web_search_call", id: "ws_1" },
+          { type: "message", content: [{ type: "output_text", text: JSON.stringify(report), annotations: [{ type: "url_citation", url: "https://www.reuters.com/markets/a", title: "Reuters" }] }] },
+        ],
+        usage: { input_tokens: 20000, output_tokens: 4000 },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const withKey = Object.create(env) as typeof env;
+    (withKey as any).OPENAI_API_KEY = "sk-test";
+    (withKey as any).OPENROUTER_API_KEY = "test-key";
+
+    await handleTask(withKey as any, { taskId, lane: "ops" });
+
+    const why = await all<any>(`SELECT detail FROM system_events WHERE entity_id = ? AND event = 'research_rung_unavailable'`, taskId);
+    expect(calls.map((c) => c.url), `the research rung was never called: ${JSON.stringify(why)}`).toEqual(["https://api.openai.com/v1/responses"]);
+    expect(calls[0]!.body.tools).toEqual([{ type: "web_search" }]);
+    expect(calls[0]!.body.input[0].content).toContain("CLOUD RESEARCH RUNG");
+
+    const stored = await row<any>(`SELECT written_by, sources, gaps FROM executive_reports WHERE task_id = ?`, taskId);
+    expect(stored, "the research rung's reply never reached executive_reports").not.toBeNull();
+    const by = JSON.parse(stored.written_by);
+    expect(by.kind).toBe("cloud_rung");
+    expect(by.label).toBe("GPT-4.1 with web search (OpenAI)");
+    expect(by.refused_seats).toEqual(["bk_claude_code", "bk_codex"]);
+    const sources = JSON.parse(stored.sources);
+    expect(sources.every((s: any) => Date.parse(s.read_at) > Date.parse("2026-01-01"))).toBe(true);
+    expect(JSON.stringify(JSON.parse(stored.gaps))).toContain("https://example.com/never-searched");
+  });
+
+  it("falls back to the ordinary walk when the research rung is refused at FREE_ONLY", async () => {
+    await env.DB.prepare(`UPDATE settings SET value = 'FREE_ONLY' WHERE key = 'spend_lever'`).run();
+    await seatCapped("bk_claude_code");
+    await seatDisabled("bk_codex");
+    const { taskId } = await briefingTask();
+    const hosts: string[] = [];
+    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("{}", 10, 10); });
+    const withKey = Object.create(env) as typeof env;
+    (withKey as any).OPENAI_API_KEY = "sk-test";
+    (withKey as any).OPENROUTER_API_KEY = "test-key";
+    await handleTask(withKey as any, { taskId, lane: "ops" });
+    expect(hosts).not.toContain("api.openai.com");
+    const ev = await all<any>(`SELECT event FROM system_events WHERE entity_id = ?`, taskId);
+    expect(ev.map((e) => e.event)).toContain("research_rung_unavailable");
+  });
+});
