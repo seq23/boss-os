@@ -307,7 +307,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     let result: Awaited<ReturnType<typeof routeCompletion>> | null = null;
     if (researchPrompt) {
       try {
-        result = await routeCompletion(env, { ...routeRequest(researchPrompt), webSearch: true, maxOutputTokens: RESEARCH_MAX_OUTPUT_TOKENS });
+        result = await routeCompletion(env, { ...routeRequest(researchPrompt), webSearch: true, maxOutputTokens: RESEARCH_MAX_OUTPUT_TOKENS, budgetMicros: researchTaskBudgetMicros(envelope?.budget_micros ?? 0) });
         researched = true;
       } catch (e) {
         // Refused (lever at FREE_ONLY, ceiling, no key, backend not enabled) or failed: say why, then
@@ -633,6 +633,20 @@ async function holdForApproval(
 
 /** A whole briefing in JSON, with a search tool's pages in the prompt, is long; the route's default reply limit would cut it off. */
 export const RESEARCH_MAX_OUTPUT_TOKENS = 16_000;
+
+/**
+ * WHAT ONE SEARCH BRIEFING MAY BE ESTIMATED AT, FOR THE TASK'S OWN BUDGET ($0.70, approved by the owner
+ * 30 Sep 2026). A task's budget is a share of what its lane has left — in the normal cost mode 15% of
+ * the ops day's $1.75, about $0.26 — and a search briefing's honest estimate (16,000 output tokens plus
+ * an allowance for searches) is about $0.45, so without this the research rung is refused every morning
+ * and the briefing drops to the rungs that cannot cite anything.
+ *
+ * IT RAISES ONE NUMBER FOR ONE CALL AND LOWERS NOTHING. The backend ceiling ($5 a month on OpenAI), the
+ * spend lever's allowance, the lane's own daily and monthly budgets and the per-run cap ($0.75) are all
+ * still checked by the router against the same estimate. It never lowers a budget the task already had.
+ */
+export const RESEARCH_TASK_BUDGET_MICROS = 700_000;
+export const researchTaskBudgetMicros = (taskBudgetMicros: number): number => Math.max(taskBudgetMicros, RESEARCH_TASK_BUDGET_MICROS);
 
 const pageKey = (u: string) => u.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
 

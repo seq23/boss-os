@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { routeCompletion } from "../../src/worker/boss/router";
-import { stampResearchSources } from "../../src/worker/boss/queue/consumer";
+import { researchTaskBudgetMicros, RESEARCH_TASK_BUDGET_MICROS, stampResearchSources } from "../../src/worker/boss/queue/consumer";
 import { stubFetch } from "./helpers";
 
 /**
@@ -141,5 +141,16 @@ describe("the spend checks use the limit the call will send", () => {
     } finally {
       await env.DB.prepare(`DELETE FROM settings WHERE key = 'per_run_cap_micros'`).run();
     }
+  });
+});
+
+describe("the research call's task budget", () => {
+  it("lifts a normal-mode task budget (15% of a $1.75 day) to cover the honest estimate, and never lowers a larger one", () => {
+    expect(researchTaskBudgetMicros(262_500)).toBe(RESEARCH_TASK_BUDGET_MICROS);
+    expect(researchTaskBudgetMicros(0)).toBe(RESEARCH_TASK_BUDGET_MICROS);
+    expect(researchTaskBudgetMicros(2_000_000)).toBe(2_000_000);
+    // $0.70 covers a 16,000-token reply plus thirty searches, and stays under the $0.75 per-run cap.
+    expect(RESEARCH_TASK_BUDGET_MICROS).toBeGreaterThanOrEqual(16 * 8000 + 30 * 10_000);
+    expect(RESEARCH_TASK_BUDGET_MICROS).toBeLessThanOrEqual(750_000);
   });
 });
