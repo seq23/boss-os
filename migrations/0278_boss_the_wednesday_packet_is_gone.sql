@@ -14,9 +14,18 @@ UPDATE owned_deliverables SET
 WHERE id = 'del_westpeek_reply_path';
 
 -- A packet decision still waiting in the Inbox can no longer be acted on (its resume kind,
--- `meeting_packet_raised`, is gone), so it is expired rather than left to fail when she presses it.
+-- `meeting_packet_raised`, is gone), so it is retired rather than left to fail when she presses it.
+-- BOTH ROWS MOVE TOGETHER. The docket (`approvals`) is expired, and the judgement call that owns it is
+-- marked `superseded` — left `awaiting`, Today's deliverable alerts would keep raising a "nothing left
+-- to click" alert about a docket that can never be decided. The docket is found through the judgement
+-- call's own `approval_id` and, for any docket raised some other way, through its payload.
 UPDATE approvals SET status = 'expired', decided_at = unixepoch() * 1000,
   decision_note = 'The Wednesday packet was removed at the owner''s instruction (30 Sep 2026).'
-WHERE status = 'pending' AND payload LIKE '%meeting_packet_raised%';
+WHERE status = 'pending'
+  AND (id IN (SELECT approval_id FROM judgement_calls WHERE resume_kind = 'meeting_packet_raised' AND state = 'awaiting')
+       OR payload LIKE '%meeting_packet_raised%');
+
+UPDATE judgement_calls SET state = 'superseded', updated_at = unixepoch() * 1000
+WHERE resume_kind = 'meeting_packet_raised' AND state = 'awaiting';
 
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0278_boss_the_wednesday_packet_is_gone');
