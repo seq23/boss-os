@@ -5580,3 +5580,25 @@ of them `critical` by severity, all in the block called Critical Alerts, none of
 - Owner instruction: "take away the wednesday meeting prep packet — it was a stupid ask." No employee owned it; it was a system feature, so the feature is gone: the Mac job `com.seq.boss-packet` and `packet-remind.mjs` (the installer now unloads and deletes a stale plist), the packet builder and the `packets` routes (including their session-bypass for the agenda page), the Meetings tab's "Packet →" link and "All agendas" button, the Inbox's `meeting_packet_raised` decision (pending ones are expired by 0278), and the packet's tests.
 - Kept: the `meeting_packets` table and its backups, the diary and the standing Wednesday meeting with Scooter, the agenda items and the `/api/today/agenda/:counterpart` route. The West Peek reply-path item no longer says it is carried on the packet.
 - NOT done by the repo: an already-installed Mac job stays loaded until the installer is re-run or the two `launchctl`/`rm` commands in docs/boss/OPERATIONS.md are run.
+
+## 2026-10-01 — A research run that never searched is not a report (Codex seat; ported from West Peek OS)
+
+**Asked (owner):** the daily briefing's research still was not done by OpenAI, and today's West Peek OS fixes should exist here in this repo's own shape.
+
+**What was found by reading the code (no production record was read — none is reachable from the build session):**
+- The briefing's second seat is Codex on her ChatGPT plan (`bk_codex`). `codex.mjs` graded a research run on a file the model wrote (`delivers.json`) and the LAST LINE of stdout. Neither says whether a single web search ran, so a briefing written from memory was filed exactly like one written from twenty pages.
+- Its search switch was `codex --search exec …`. That form parses (30 Sep) but had never been run through to a finished briefing; the form West Peek OS captured on her Mac on 1 Oct is `codex exec --json -c web_search=live`, which writes one `web_search` event per search and per page opened (`tests/fixtures/codex-search-probe.jsonl`, verbatim).
+- The OpenAI API research rung (0276) is a separate path and a PAID one: it needs her API key, an enabled backend and a lever above FREE_ONLY, and the lever fails closed to FREE_ONLY when unset. It is not what a seat does and was not changed.
+
+**Built (agent-side only; no migration, no Worker change).**
+- `scripts/lib/codex-search.mjs` — a deliberate copy of West Peek OS's Codex stream parser: counts `web_search` events, reads the last agent message as the answer, reads `turn.failed`.
+- `codex.mjs`: a run that asked for web tools now uses `exec --json … -c web_search=live` (a run with no web tools keeps its argv byte for byte). If the stream shows zero searches, or a failed turn, the report is SET ASIDE and the run FAILS with a sentence ("Codex answered without running a single web search…") instead of delivering; a spent-plan notice inside the stream is still recognised. A stream that is not JSON is not judged — the packet says nothing could be counted.
+- `runner.mjs`: `search_refused` fails the run whatever the exit code; `web_searches` (the CLI's own count) travels on the packet.
+- `the-briefing-is-on-par.mjs` and `theBriefingWalksTheLadder.test.ts` now assert the new form.
+- **Tests:** `tests/boss/aResearchRunThatNeverSearchedIsNotAReport.test.ts` (9) — the real captured stream is counted; a report with the searches removed is set aside and the run fails; a failed-turn spent-plan notice still marks the seat spent; non-JSON output is not refused; a no-web run is untouched; through `executeRun`, a never-searched run is FAILED and a searched one SUCCEEDED with the count.
+
+**Owner step:** `cd ~/GitHub/boss-os && git pull` on the Mac. The agent is a one-shot launchd job that runs from that checkout, so there is no daemon to restart.
+
+**PROVEN:** the parser against the real captured stream; the adapter and runner behaviour above, with a faked spawn.
+**UNPROVEN:** a complete briefing on a live Codex seat; that the new argv (West Peek's probe ran read-only; this adds `--sandbox workspace-write` and the network setting) behaves on her Mac as the probe did; the Claude Code seat's search count (its `--output-format json` may carry `usage.server_tool_use`, but no capture exists, so the Claude seat is NOT judged by this rule); the stored/shown search count (carried on the packet, not yet written to `backend_runs` or shown on Today).
+**NOT BUILT (West Peek fixes with no counterpart here yet):** holding a both-seats-spent briefing until the earlier plan resets; a step-by-step "what has happened" timeline on a task; a quality note on a briefing written by a free rung (the Today block already names the rung via `written_by`); retry-from-the-UI for a failed run.

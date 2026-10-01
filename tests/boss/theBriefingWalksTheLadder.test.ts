@@ -210,16 +210,18 @@ describe("scenario (a): Claude Code capped or unavailable → Codex serves the s
   it("gives Codex a sandbox it can write the report in and the web it was asked to open", () => {
     const research = codexArgs({ kind: "research", web_tools: ["WebSearch", "WebFetch"], repo_path: "/x" } as any, "p");
     expect(research).toContain("workspace-write");
-    expect(research).toContain("--search");
-    // `--search` belongs to `codex`, not `codex exec`: after the subcommand the CLI exits 2
-    // ("unexpected argument '--search' found") and the research run never starts. This killed the
-    // 30 Sep 2026 briefing the moment the Claude seat was spent and the ladder reached Codex.
-    expect(research.indexOf("--search")).toBeLessThan(research.indexOf("exec"));
+    // The form proven on her Mac (1 Oct 2026): JSON events, so the searches can be counted, and web_search=live.
+    // `--search` is not used: it is a flag of `codex`, not `codex exec`, and was never run through to a finished briefing.
+    expect(research.slice(0, 2)).toEqual(["exec", "--json"]);
+    expect(research.join(" ")).toContain("-c web_search=live");
+    expect(research).not.toContain("--search");
     expect(research.join(" ")).toContain("sandbox_workspace_write.network_access=true");
     expect(research).not.toContain("--model");
     const plain = codexArgs({ kind: "repo_work" } as any, "p");
     expect(plain).toContain("read-only");
     expect(plain).not.toContain("--search");
+    expect(plain).not.toContain("--json");
+    expect(plain.join(" ")).not.toContain("web_search");
     expect(plain.join(" ")).not.toContain("network_access");
   });
 });
