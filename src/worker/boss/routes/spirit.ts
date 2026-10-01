@@ -84,7 +84,9 @@ function positiveInt(value: unknown, what: string): number {
 /** Everything the daily Spirit screen shows, computed and read from real rows. */
 spirit.get("/day", async (c) => {
   const requested = c.req.query("date");
-  const id = requested ? String(requested) : dayId(Date.now());
+  // THE DEFAULT DAY IS THE OWNER'S DAY (review of #58). `dayId` here is the UTC floor, which from about 7pm Central names TOMORROW,
+  // so on the evening of a month's last day the screen asked for next month's day while records were filed under this one.
+  const id = requested ? String(requested) : dayIdInZone(Date.now());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(id)) throw badRequest("A day is YYYY-MM-DD in UTC");
 
   const signal = await spiritSignal(c.env.DB, id);
@@ -126,7 +128,7 @@ spirit.get("/day", async (c) => {
    * write history for last Tuesday and reshuffle everything after it. `logSomatic` is idempotent
    * per day, so re-reading today changes nothing.
    */
-  if (id === dayId(Date.now()) && !bodyState.somatic_logged) await logSomatic(c.env, id, body.somatic);
+  if (id === dayIdInZone(Date.now()) && !bodyState.somatic_logged) await logSomatic(c.env, id, body.somatic);
 
   /*
    * TRANSITS, FILTERED TO THE ONES THAT ACTUALLY TOUCH HER.

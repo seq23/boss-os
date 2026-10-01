@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
 import { all, api, apiJson, insertApproval, insertTask, row } from "./helpers";
 import {
   moonPhase, moonPosition, buildAlmanac, ZODIAC, NO_EPHEMERIS, AWAITING_ALMANAC, AWAITING_OWNER, CANON_WINDOW_TYPES,
@@ -899,5 +899,20 @@ describe("the month of a day is the month in its own id", () => {
     // The last day of the month before it does not borrow from the 1st.
     const before = await spiritSignal(env.DB, "2026-10-31", Date.parse("2026-10-31T18:00:00Z"));
     expect(before.contribution.entries.every((e: any) => !/neighbour/.test(String(e.note)))).toBe(true);
+  });
+});
+
+describe("the default day is the owner's day (review of #58)", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("at 8:30pm Central on the last day of a month the screen still shows THAT month, including what was just recorded", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-12-01T02:30:00Z")); // 8:30pm Central on 30 Nov; 1 Dec in UTC
+    const made = await apiJson("/api/spirit/contributions", { method: "POST", body: { kind: "time", note: "Drove a friend to the airport" } });
+    expect(made.status).toBe(201);
+    expect(made.body.data.month_count).toBe(1);
+    const day = await apiJson("/api/spirit/day");
+    expect(day.body.data.contribution.count).toBe(1);
+    expect(day.body.data.contribution.met).toBe(true);
   });
 });
