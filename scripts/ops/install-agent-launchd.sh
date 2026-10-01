@@ -155,11 +155,12 @@ launchctl load "$PLIST"
 # "why is there a 18:35 check? if i press the button to run on demand?" — the Run-now button queues a task in the
 # cloud and this Mac has to ask for it. The six fixed slots above are when WORK APPEARS on its own schedule; a run
 # she asks for by hand appears at any minute, so this job asks every five minutes in the waking day (06:00 to 22:00,
-# decided inside agent-claim.sh) and nothing else. It does NOT run the sky, market, mail, calendar or notice steps:
-# those stay on the fixed slots.
+# decided inside agent-claim.sh). It first PEEKS (one read, nothing fetched); only when a run is waiting does it refresh the
+# sky and market files, as the fixed chain does before every claim, and claim. The mail, calendar and notice steps stay on the
+# fixed slots.
 #
 # WHY THIS IS NOT THE RUNAWAY THE COMMENT ABOVE WARNS ABOUT. That was a cron that wrote a snapshot on every tick
-# (migration 0172). An idle check here makes three requests and writes nothing, it is bounded to the waking day, and
+# (migration 0172). An idle check here is one unlock and one read, writes nothing and fetches nothing from any feed, it is bounded to the waking day, and
 # agent-claim.sh takes a lock shared with the fixed job so two agents never run at once. `StartInterval`, not
 # `StartCalendarInterval`: the slot list the screen names (MAC_CLAIM_SLOTS_CT) is the fixed job's and stays so.
 POLL_LABEL="com.seq.boss-agent-poll"
@@ -175,7 +176,7 @@ cat > "$POLL_PLIST" <<POLLEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>$REPO/scripts/ops/agent-claim.sh --waking-hours-only</string>
+    <string>$REPO/scripts/ops/agent-claim.sh --poll</string>
   </array>
   <key>StartInterval</key><integer>300</integer>
   <key>EnvironmentVariables</key>
