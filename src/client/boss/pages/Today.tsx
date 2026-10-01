@@ -184,7 +184,7 @@ export function Today() {
  */
 const BRIEFING_DUTY_ID = "duty_exec_intel";
 
-function RunBriefingNow({ hasReport }: { hasReport: boolean }) {
+function RunBriefingNow({ hasReport, runStatus, onChanged }: { hasReport: boolean; runStatus: string | null; onChanged: () => void | Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
   const run = async () => {
@@ -201,10 +201,13 @@ function RunBriefingNow({ hasReport }: { hasReport: boolean }) {
       setSaid(e instanceof Error ? `Could not queue it: ${e.message}` : "Could not queue it.");
     } finally {
       setBusy(false);
+      // Re-read the day so the status line above the button shows the run just queued, without a reload.
+      try { await onChanged(); } catch { /* the sentence above already said what happened */ }
     }
   };
   return (
     <div style={{ marginTop: 8 }}>
+      {runStatus && <div className="row-sub" style={{ marginBottom: 6 }} data-testid="briefing-run-status">{runStatus}</div>}
       <button type="button" className="btn" data-testid="run-briefing-now" disabled={busy} onClick={run}>
         {busy ? "Queuing…" : hasReport ? "Run the briefing again" : "Run the briefing now"}
       </button>
@@ -243,7 +246,7 @@ function BlockCard({ block, onChanged, onError }: {
         * if a block is ever added without one.
         */}
       <p style={{ marginTop: 6 }}>{summary}</p>
-      {block.key === "executive_briefing" && <RunBriefingNow hasReport={Boolean(block.content?.sections || block.content?.summary)} />}
+      {block.key === "executive_briefing" && <RunBriefingNow hasReport={Boolean(block.content?.sections || block.content?.summary)} runStatus={block.content?.run_status ?? null} onChanged={onChanged} />}
       {detail && (
         <details>
           <summary className="docket-more" style={{ cursor: "pointer" }}>Open</summary>
