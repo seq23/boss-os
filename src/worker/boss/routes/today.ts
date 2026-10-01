@@ -343,25 +343,39 @@ export function briefingRunLine(
     task_status: string | null; task_error: string | null;
     task_created_at: number | null; task_finished_at: number | null;
     run_claimed_at: number | null;
+    /** A backend run linked to this task exists (a real hand-off to a seat). Seat refusals are recorded WITHOUT that link. */
+    run_exists: number | boolean | null;
   } | null,
   now: number,
 ): string | null {
   if (!run || !run.task_status) return null;
   const queuedAt = run.task_created_at;
   const queuedWords = queuedAt ? ` at ${clockWords(queuedAt)}` : "";
+  const waitingOnMac = `Queued${queuedWords}. Your Mac has not picked it up yet; it checks a few times a day, and its next check is ${nextClaimSlot(now)}.`;
   switch (run.task_status) {
     case "queued":
-      return `Queued${queuedWords}. Your Mac has not picked it up yet; it checks a few times a day, and its next check is ${nextClaimSlot(now)}.`;
+      // Created, and the queue has not started it: it is not on anyone's Mac yet.
+      return `Queued${queuedWords}. It has not started yet.`;
     case "running":
+      /*
+       * THREE DIFFERENT THINGS ARE 'running' (review of #60). A task handed to a seat stays 'running' while it waits for her Mac, and
+       * while the Mac works on it; and a task that both seats refused falls to the cloud rungs and is 'running' while a cloud model
+       * writes it, with NO run linked to it (the seats' refusals are recorded without the task id). The linked run is what tells the
+       * cloud case from the Mac cases, and its `claimed_at` tells the two Mac cases apart.
+       */
+      if (!run.run_exists) return `Running in the cloud: no run is waiting on your Mac, so a cloud model is writing it now. It has not finished yet.`;
       return run.run_claimed_at
         ? `Your Mac picked it up at ${clockWords(run.run_claimed_at)} and is working on it. It has not reported back yet.`
-        : `Queued${queuedWords}. Your Mac has not picked it up yet; it checks a few times a day, and its next check is ${nextClaimSlot(now)}.`;
+        : waitingOnMac;
+    case "awaiting_approval":
+      // Held at a budget or routing gate, waiting for a person: not finished, and the reason is on the task.
+      return `Not finished: it is held for your decision${run.task_error ? ` — ${run.task_error}` : ""}.`;
     case "failed":
       return `The last run failed${run.task_finished_at ? ` at ${clockWords(run.task_finished_at)}` : ""}: ${run.task_error ?? "no reason was recorded"}. You can run it again.`;
     case "cancelled":
       return `The last run was cancelled${run.task_finished_at ? ` at ${clockWords(run.task_finished_at)}` : ""}: ${run.task_error ?? "no reason was recorded"}. You can run it again.`;
     default:
-      // done / awaiting_approval and anything else that is not in flight: the run is over.
+      // done and anything else that is not in flight: the run is over.
       return `The last run finished${run.task_finished_at ? ` at ${clockWords(run.task_finished_at)}` : ""}.`;
   }
 }
@@ -519,14 +533,15 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
         next_due_at: number | null; last_task_id: string | null;
         local_hour: number | null; local_minute: number | null;
         task_status: string | null; task_error: string | null;
-        task_created_at: number | null; task_finished_at: number | null; run_claimed_at: number | null;
+        task_created_at: number | null; task_finished_at: number | null; run_claimed_at: number | null; run_exists: number | null;
       }>(B, () => env.DB
       .prepare(
         `SELECT d.id, d.name, d.suspended, d.last_run_at, d.next_due_at, d.last_task_id,
                 d.local_hour, d.local_minute,
                 t.status AS task_status, t.error AS task_error,
                 t.created_at AS task_created_at, t.finished_at AS task_finished_at,
-                (SELECT r.claimed_at FROM backend_runs r WHERE r.task_id = d.last_task_id ORDER BY r.started_at DESC LIMIT 1) AS run_claimed_at
+                (SELECT r.claimed_at FROM backend_runs r WHERE r.task_id = d.last_task_id ORDER BY r.started_at DESC LIMIT 1) AS run_claimed_at,
+                EXISTS (SELECT 1 FROM backend_runs r WHERE r.task_id = d.last_task_id) AS run_exists
            FROM standing_duties d
            LEFT JOIN tasks t ON t.id = d.last_task_id
           WHERE d.id = 'duty_exec_intel'`,
