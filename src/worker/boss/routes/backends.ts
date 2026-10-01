@@ -95,11 +95,17 @@ backends.get("/runs", async (c) => {
   const where: string[] = [];
   if (status) { where.push(`r.status = ?`); params.push(status); }
   if (backendId) { where.push(`r.backend_id = ?`); params.push(backendId); }
+  /*
+   * `unclaimed=1` — RUNS THAT ARE PARKED AND WAITING FOR A MACHINE (1 Oct 2026). The five-minute poll on her Mac asks this, read-only,
+   * BEFORE it refreshes the market and sky data and claims: an idle poll then costs one read and fetches nothing from any feed. Not
+   * finished and not claimed is exactly what `/claim` takes; `claimed_at` is returned so a caller can tell the listing honours the filter.
+   */
+  if (c.req.query("unclaimed") === "1") where.push(`r.claimed_at IS NULL AND r.finished_at IS NULL`);
 
   const rows = await c.env.DB
     .prepare(
       `SELECT r.id, r.task_id, r.backend_id, r.envelope_id, r.requested, r.summary,
-              r.cost_micros, r.started_at, r.finished_at, r.status, r.refusal_reason, r.error,
+              r.cost_micros, r.started_at, r.claimed_at, r.finished_at, r.status, r.refusal_reason, r.error,
               b.display_name AS backend_name
          FROM backend_runs r
          JOIN execution_backends b ON b.id = r.backend_id

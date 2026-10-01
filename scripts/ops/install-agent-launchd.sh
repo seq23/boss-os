@@ -127,7 +127,7 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO &amp;&amp; node scripts/ops/market-snapshot.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/task-notices.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/sync-agent/agent.mjs work-once</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/sky-snapshot.mjs; cd $REPO &amp;&amp; node scripts/ops/market-snapshot.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/gmail-metadata.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/calendar-sync.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/kdp-resume.mjs; cd $REPO &amp;&amp; npm run --silent vault:run -- node scripts/ops/task-notices.mjs; $REPO/scripts/ops/agent-claim.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -149,6 +149,47 @@ PLISTEOF
 launchctl unload "$PLIST" 2>/dev/null || true
 lint_plist "$PLIST"
 launchctl load "$PLIST"
+
+# ─── The five-minute poll — added 1 Oct 2026 ─────────────────────────────────
+#
+# "why is there a 18:35 check? if i press the button to run on demand?" — the Run-now button queues a task in the
+# cloud and this Mac has to ask for it. The six fixed slots above are when WORK APPEARS on its own schedule; a run
+# she asks for by hand appears at any minute, so this job asks every five minutes in the waking day (06:00 to 22:00,
+# decided inside agent-claim.sh). It first PEEKS (one read, nothing fetched); only when a run is waiting does it refresh the
+# sky and market files, as the fixed chain does before every claim, and claim. The mail, calendar and notice steps stay on the
+# fixed slots.
+#
+# WHY THIS IS NOT THE RUNAWAY THE COMMENT ABOVE WARNS ABOUT. That was a cron that wrote a snapshot on every tick
+# (migration 0172). An idle check here is one unlock and one read, writes nothing and fetches nothing from any feed, it is bounded to the waking day, and
+# agent-claim.sh takes a lock shared with the fixed job so two agents never run at once. `StartInterval`, not
+# `StartCalendarInterval`: the slot list the screen names (MAC_CLAIM_SLOTS_CT) is the fixed job's and stays so.
+POLL_LABEL="com.seq.boss-agent-poll"
+POLL_PLIST="$HOME/Library/LaunchAgents/$POLL_LABEL.plist"
+
+cat > "$POLL_PLIST" <<POLLEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$POLL_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>$REPO/scripts/ops/agent-claim.sh --poll</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_DEVICE_ID</key><string>$DEVICE_ID</string></dict>
+  <key>StandardOutPath</key><string>$LOGS/agent-poll.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/agent-poll.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+POLLEOF
+
+launchctl unload "$POLL_PLIST" 2>/dev/null || true
+lint_plist "$POLL_PLIST"
+launchctl load "$POLL_PLIST"
 
 # ─── The Wednesday packet reminder — REMOVED 30 Sep 2026 ────────────────────
 #
@@ -1078,6 +1119,7 @@ missing=""
 checked=""
 require_loaded() { checked="$checked $1"; loaded "$1" || missing="$missing $1"; }
 require_loaded "$LABEL"
+require_loaded "$POLL_LABEL"
 require_loaded "$NETWORK_LABEL"
 require_loaded "$PROPS_LABEL"
 # ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a

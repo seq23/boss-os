@@ -240,7 +240,8 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder 
   if (clearIdx === -1 || runIdx === -1 || clearIdx > runIdx) problems.push("runner.mjs does not remove a stale delivers.json BEFORE the backend starts (15 Sep's report was 14 Sep's, refiled).");
   if (!/readMaterialJson\(envelope\.repo_path, "MARKETS\.json"\)/.test(F.runner) || !/market_data: marketData/.test(F.runner)) problems.push("runner.mjs does not carry MARKETS.json as observed evidence.");
   if (!/MARKET_WATCHLIST/.test(F.snapshot) || !/MARKET_FEEDS/.test(F.snapshot)) problems.push("market-snapshot.mjs does not read the watchlist and feeds from the module (two lists).");
-  const chain = /market-snapshot\.mjs;[\s\S]*?agent\.mjs work-once/.test(F.launchd);
+  // The claim step is the shared wrapper since 1 Oct 2026 (it takes the lock the five-minute poll also takes); it runs `agent.mjs work-once`.
+  const chain = /market-snapshot\.mjs;[\s\S]*?scripts\/ops\/agent-claim\.sh/.test(F.launchd);
   if (!chain) problems.push("The launchd chain does not run the market snapshot before the claim.");
   if (!/<key>Hour<\/key><integer>6<\/integer><key>Minute<\/key><integer>5<\/integer>/.test(F.launchd)) problems.push("The launchd job has no 06:05 slot to claim a 06:00 duty.");
   /*

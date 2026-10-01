@@ -31,7 +31,8 @@ describe("briefingRunLine, every state", () => {
   it("running with a run waiting and NOT claimed reads as waiting for the Mac, with its next check", () => {
     const line = briefingRunLine({ ...base, task_status: "running", run_claimed_at: null, run_exists: 1 }, NOW)!;
     expect(line).toMatch(/^Queued at 2:05 PM\. Your Mac has not picked it up yet/);
-    expect(line).toMatch(/next check is \d\d:\d\d Central/);
+    expect(line).toMatch(/next scheduled check is \d\d:\d\d Central/);
+    expect(line).toMatch(/within five minutes if the polling job is installed/);
     expect(line).not.toMatch(/working on it/);
   });
 
@@ -39,7 +40,7 @@ describe("briefingRunLine, every state", () => {
     const line = briefingRunLine({ ...base, task_status: "running", run_exists: 0 }, NOW)!;
     expect(line).toMatch(/^Running in the cloud/);
     expect(line).toMatch(/no run is waiting on your Mac/);
-    expect(line).not.toMatch(/next check/);
+    expect(line).not.toMatch(/scheduled check/);
   });
 
   it("held for approval is NOT finished, and carries the hold's reason (review of #60)", () => {

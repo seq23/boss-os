@@ -240,6 +240,27 @@ async function main() {
     return;
   }
   /*
+   * `peek` — IS A RUN WAITING FOR A MACHINE? READ-ONLY, CLAIMS NOTHING (1 Oct 2026). The five-minute poll asks this before it does
+   * anything costly: refreshing the market and sky files and starting a claim. Exit 0 = something is waiting; 4 = nothing is; 5 = the
+   * Worker did not honour the filter (an older deploy), so waiting cannot be told from not, and the poll does nothing rather than guess.
+   */
+  if (cmd === "peek") {
+    const res = await fetch(`${origin}/api/boss/backends/runs?status=running&unclaimed=1`, { headers: { cookie } });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.ok) {
+      console.error(`peek failed: ${body?.error ?? `HTTP ${res.status}`}`);
+      process.exit(1);
+    }
+    const runs = Array.isArray(body.data?.runs) ? body.data.runs : [];
+    if (runs.length > 0 && !runs.every((r) => Object.prototype.hasOwnProperty.call(r, "claimed_at") && r.claimed_at === null)) {
+      console.error("peek: the Worker returned runs that are not all unclaimed, so it does not honour the filter; not guessing.");
+      console.log(JSON.stringify({ waiting: null }));
+      process.exit(5);
+    }
+    console.log(JSON.stringify({ waiting: runs.length }));
+    process.exit(runs.length > 0 ? 0 : 4);
+  }
+  /*
    * THE SECOND JOB (Stage 2). Claim one approved `agent_executed` run, execute it here, report the
    * evidence back. It is a separate command rather than part of a sync cycle because the two jobs
    * fail differently: a sync outage is routine and retried, while a run that cannot be reported has

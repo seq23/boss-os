@@ -71,6 +71,7 @@ All times America/Chicago.
 | 06:05 | The Mac writes SKY.json and MARKETS.json, then claims and executes the run | — | launchd |
 | 06:35, 06:50, 07:10 | Three more claim attempts, in case the first missed | — | launchd |
 | 12:35, 18:35 | Later claim attempts, for anything dispatched by hand | — | launchd |
+| every 5 min, 06:00–22:00 | The poll (`com.seq.boss-agent-poll`): asks whether a run is waiting, takes it if so, writes nothing when idle. This is what makes the Run-now button mean "now" (1 Oct 2026). Install or repair with `bash scripts/ops/install-agent-launchd.sh`. | — | launchd |
 
 **Why 06:00 and not 06:30 (19 September 2026).** The Worker's cron is hourly on the hour. A 06:30
 duty is not due at the 06:00 tick and so fired at 07:00; the Mac's next slot was 07:10; the report

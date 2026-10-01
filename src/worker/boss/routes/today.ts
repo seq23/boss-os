@@ -351,7 +351,7 @@ export function briefingRunLine(
   if (!run || !run.task_status) return null;
   const queuedAt = run.task_created_at;
   const queuedWords = queuedAt ? ` at ${clockWords(queuedAt)}` : "";
-  const waitingOnMac = `Queued${queuedWords}. Your Mac has not picked it up yet; it checks a few times a day, and its next check is ${nextClaimSlot(now)}.`;
+  const waitingOnMac = `Queued${queuedWords}. Your Mac has not picked it up yet. Its next scheduled check is ${nextClaimSlot(now)}, or within five minutes if the polling job is installed (daytime, 06:00 to 22:00).`;
   switch (run.task_status) {
     case "queued":
       // Created, and the queue has not started it: it is not on anyone's Mac yet.
