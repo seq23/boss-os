@@ -176,6 +176,43 @@ export function Today() {
  * element that vanishes when empty makes it impossible to tell "nothing today"
  * from "the screen forgot".
  */
+/**
+ * THE BRIEFING HAS A BUTTON (1 Oct 2026). "There is no button to retry or re-run briefing in Boss OS." A briefing that failed, never
+ * searched, or was written by a lane she did not want could only be fixed by waiting for 06:00 tomorrow. This fires the Executive
+ * Intelligence Report duty now, through the route that already existed, and says in words what happened: queued, or why not. It sits
+ * on the card itself rather than behind "Open", because the card with NO report is exactly the one that has nothing to open.
+ */
+const BRIEFING_DUTY_ID = "duty_exec_intel";
+
+function RunBriefingNow({ hasReport }: { hasReport: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setSaid(null);
+    try {
+      const r = await api.runDutyNow(BRIEFING_DUTY_ID);
+      setSaid(
+        r.fired
+          ? "Queued. Your Mac picks it up on its next check; reload Today when it lands. If it fails, this card will say why."
+          : (r.note ?? `Not queued: ${r.reason ?? "no reason recorded"}.`),
+      );
+    } catch (e) {
+      setSaid(e instanceof Error ? `Could not queue it: ${e.message}` : "Could not queue it.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button type="button" className="btn" data-testid="run-briefing-now" disabled={busy} onClick={run}>
+        {busy ? "Queuing…" : hasReport ? "Run the briefing again" : "Run the briefing now"}
+      </button>
+      {said && <div className="row-sub" style={{ marginTop: 6 }} data-testid="run-briefing-now-said">{said}</div>}
+    </div>
+  );
+}
+
 function BlockCard({ block, onChanged, onError }: {
   block: Block;
   onChanged: () => void | Promise<void>;
@@ -206,6 +243,7 @@ function BlockCard({ block, onChanged, onError }: {
         * if a block is ever added without one.
         */}
       <p style={{ marginTop: 6 }}>{summary}</p>
+      {block.key === "executive_briefing" && <RunBriefingNow hasReport={Boolean(block.content?.sections || block.content?.summary)} />}
       {detail && (
         <details>
           <summary className="docket-more" style={{ cursor: "pointer" }}>Open</summary>

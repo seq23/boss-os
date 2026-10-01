@@ -92,6 +92,13 @@ async function captureOffline<T>(
 
 export const api = {
   authState: () => call<{ unlocked: boolean }>("/auth/state"),
+  /**
+   * Fire a standing duty now, outside its clock. The Worker route (`POST /api/duties/:id/run-now`) has existed since the briefing
+   * prompt was rewritten and nothing on screen called it, so the only way to re-run a briefing was to wait for 06:00. The answer says
+   * whether it was queued and, when it was not, why in a person's words (`note`).
+   */
+  runDutyNow: (id: string) =>
+    call<{ fired: boolean; duty: string; reason?: string; note?: string; task_id?: string }>(`/duties/${id}/run-now`, post("")),
   unlock: (passcode: string) => call<{ unlocked: boolean }>("/auth/unlock", post("", { passcode })),
   lock: () => call("/auth/lock", post("")),
 
