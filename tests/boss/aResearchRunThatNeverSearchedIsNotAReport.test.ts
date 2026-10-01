@@ -108,6 +108,36 @@ describe("the Codex adapter on a research run", () => {
     expect(out.remaining_risks.join(" ")).toMatch(/did not search, so it was set aside/);
   });
 
+  it("a run killed on its time limit after writing a report with NO search on the record is refused too (review of #57)", async () => {
+    // A spawn whose `close` never fires: the adapter's own leash (max_seconds) kills it and reports a timeout.
+    const hung = (_b?: string, _a?: string[], _o?: unknown) => {
+      const stream = (text: string) => ({ on(ev: string, cb: (c: string) => void) { if (ev === "data" && text) queueMicrotask(() => cb(text)); return this; } });
+      return { stdout: stream(withoutSearches), stderr: stream(""), stdin: { end(_v: string) { return true; } }, kill() { return true; }, on(_e: string, _cb: (...a: any[]) => void) { return this; } };
+    };
+    const out = await codexExecutor(
+      { envelope: envelope({ max_seconds: 1 } as any), prompt: "p", cwd: "/work" },
+      { spawnImpl: hung, readDelivers: async () => JSON.stringify(REPORT) },
+    ) as any;
+    expect(out.exit_code).toBe(124);
+    expect(out.search_refused).toBe(true);
+    expect(out.delivers).toBeNull();
+    expect(out.error).toMatch(/without running a single web search/);
+  });
+
+  it("a run killed on its time limit that DID search keeps its report", async () => {
+    const hung = (_b?: string, _a?: string[], _o?: unknown) => {
+      const stream = (text: string) => ({ on(ev: string, cb: (c: string) => void) { if (ev === "data" && text) queueMicrotask(() => cb(text)); return this; } });
+      return { stdout: stream(FIXTURE as string), stderr: stream(""), stdin: { end(_v: string) { return true; } }, kill() { return true; }, on(_e: string, _cb: (...a: any[]) => void) { return this; } };
+    };
+    const out = await codexExecutor(
+      { envelope: envelope({ max_seconds: 1 } as any), prompt: "p", cwd: "/work" },
+      { spawnImpl: hung, readDelivers: async () => JSON.stringify(REPORT) },
+    ) as any;
+    expect(out.exit_code).toBe(124);
+    expect(out.search_refused).toBe(false);
+    expect(out.delivers).toEqual(REPORT);
+  });
+
   it("a spent plan reported as a failed turn is still read as a spent plan", async () => {
     const out = await run('{"type":"turn.failed","error":{"message":"You\'ve hit your usage limit. Try again in 3 hours."}}', { delivers: null, code: 1 });
     expect(out.seat_exhausted?.retry_after_seconds).toBe(3 * 3600);

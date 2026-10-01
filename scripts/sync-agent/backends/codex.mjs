@@ -255,7 +255,9 @@ export async function codexExecutor(
    */
   const seen = stream ? researchWasSeen(stream) : { ok: true, searches: null };
   let searchRefusal = null;
-  if (stream && !seen.ok && !outcome.timed_out) {
+  // A TIMEOUT DOES NOT EXCUSE IT (review of #57): a run killed on its leash after writing a `complete` report with no search on
+  // the record would otherwise be filed as a success, because the runner lets a finished deliverable outrank exit 124.
+  if (stream && !seen.ok) {
     searchRefusal = seen.reason;
     if (delivers !== null) risks.push("A delivers.json was on disk but the run's own record shows it did not search, so it was set aside.");
     delivers = null;
