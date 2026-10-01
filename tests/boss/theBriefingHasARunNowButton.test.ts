@@ -70,6 +70,33 @@ describe("the briefing's run-now button", () => {
     }
   });
 
+  it("a task queued HOURS ago still blocks a second press: her Mac claims a few times a day, so age is not the test (review of #59)", async () => {
+    const taskId = await insertTask({ status: "queued", title: "Executive Intelligence Report", input: JSON.stringify({ delivers: "executive_reports" }), intake_kind: "research" });
+    await env.DB.prepare(`UPDATE tasks SET created_at = ? WHERE id = ?`).bind(Date.now() - 6 * 60 * 60 * 1000, taskId).run();
+    await env.DB.prepare(`UPDATE standing_duties SET last_task_id = ? WHERE id = ?`).bind(taskId, BUTTON_ID).run();
+    const res = await apiJson(`/api/duties/${BUTTON_ID}/run-now`, { method: "POST", body: {} });
+    expect(res.body.data.fired).toBe(false);
+    expect(res.body.data.reason).toBe("already_in_flight");
+    expect(res.body.data.task_id).toBe(taskId);
+  });
+
+  it("two presses at the same instant queue at most ONE run: the press is reserved before it is checked (review of #59)", async () => {
+    await env.DB.prepare(`UPDATE standing_duties SET suspended = 0, last_task_id = NULL WHERE id = ?`).bind(BUTTON_ID).run();
+    await env.DB.prepare(`DELETE FROM settings WHERE key = ?`).bind(`run_now_claim:${BUTTON_ID}`).run();
+    const before = await row<any>(`SELECT COUNT(*) AS n FROM tasks WHERE input LIKE '%"delivers":"executive_reports"%'`);
+    const both = await Promise.all([
+      apiJson(`/api/duties/${BUTTON_ID}/run-now`, { method: "POST", body: {} }),
+      apiJson(`/api/duties/${BUTTON_ID}/run-now`, { method: "POST", body: {} }),
+    ]);
+    const fired = both.filter((r) => r.body.data.fired === true).length;
+    const after = await row<any>(`SELECT COUNT(*) AS n FROM tasks WHERE input LIKE '%"delivers":"executive_reports"%'`);
+    expect(fired).toBeLessThanOrEqual(1);
+    expect(after.n - before.n).toBe(fired);
+    // The claim is released once the presses are done, so the next press is judged on the task, not on a stale hold.
+    const held = await row<any>(`SELECT value FROM settings WHERE key = ?`, `run_now_claim:${BUTTON_ID}`);
+    expect(Number(held?.value ?? 0)).toBe(0);
+  });
+
   it("an unknown duty is a 404, not a queued task", async () => {
     const res = await apiJson(`/api/duties/no_such_duty/run-now`, { method: "POST", body: {} });
     expect(res.status).toBe(404);

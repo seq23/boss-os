@@ -311,8 +311,23 @@ duties.get("/due/:local_job", async (c) => {
  * next occurrence from the schedule rather than from now, so an on-demand run cannot drag a duty
  * off its own timetable.
  */
-/** How long a queued/running task blocks another run-now: past the 15-minute leash, with slack. */
-const RUN_NOW_IN_FLIGHT_MS = 45 * 60 * 1000;
+/** One settings row per duty serialises presses. It holds for at most this long if the Worker dies mid-press. */
+const RUN_NOW_CLAIM_PREFIX = "run_now_claim:";
+const RUN_NOW_CLAIM_MS = 30_000;
+
+/** Take the press for this duty with a conditional write: exactly one concurrent caller gets `true`. */
+async function takeRunNowClaim(db: D1Database, key: string, now: number): Promise<boolean> {
+  await db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, '0', ?)`).bind(key, now).run();
+  const taken = await db
+    .prepare(`UPDATE settings SET value = ?, updated_at = ? WHERE key = ? AND CAST(value AS INTEGER) < ?`)
+    .bind(String(now + RUN_NOW_CLAIM_MS), now, key, now)
+    .run();
+  return (taken.meta.changes ?? 0) > 0;
+}
+
+async function releaseRunNowClaim(db: D1Database, key: string): Promise<void> {
+  await db.prepare(`UPDATE settings SET value = '0', updated_at = ? WHERE key = ?`).bind(Date.now(), key).run();
+}
 
 duties.post("/:id/run-now", async (c) => {
   const id = c.req.param("id");
@@ -322,17 +337,34 @@ duties.post("/:id/run-now", async (c) => {
   if (!duty) throw notFound("No standing duty with that id");
 
   /*
+   * A PRESS IS RESERVED BEFORE IT IS CHECKED (review of #59). The in-flight read and the task creation are separate operations, so two
+   * presses (two tabs) — or a press overlapping another — could both see nothing in flight and both queue a run. One row per duty in
+   * `settings` is taken with a conditional write, so only one caller holds it; the other is answered at once. It expires on its own
+   * after 30 seconds so a Worker that dies mid-press cannot hold a duty for ever, and it is released as soon as the press is done.
+   */
+  const claimKey = `${RUN_NOW_CLAIM_PREFIX}${id}`;
+  if (!(await takeRunNowClaim(c.env.DB, claimKey, Date.now()))) {
+    return ok(c, {
+      fired: false,
+      duty: duty.id,
+      reason: "already_in_flight",
+      note: `Another press for "${duty.name}" is being handled right now. Give it a moment, then check Today.`,
+    });
+  }
+  try {
+  /*
    * A RUN ALREADY IN FLIGHT IS ANSWERED, NOT DOUBLED (1 Oct 2026). The briefing now has a button, and a second press while the first
-   * is queued or running would queue a second run: two spends of her plan, the second overwriting the first's report. Only a QUEUED or
-   * RUNNING task blocks it, and only for the length of the longest leash plus slack — a finished or failed run never blocks a retry,
-   * which is the whole point of the button, and a run that never reported cannot block it for ever.
+   * is queued or running would queue a second run: two spends of her plan, the second overwriting the first's report. ONLY STATUS
+   * DECIDES, not age (review of #59): her Mac claims a few times a day, so a task queued at 15:00 legitimately waits until 18:35, and
+   * the reaper (`backends/reap.ts`) is what turns a run that never reports into a failed task after `UNCLAIMED_ALLOWED_MS`. A finished
+   * or failed run never blocks a retry, which is the whole point of the button.
    */
   const inFlight = await c.env.DB
     .prepare(
       `SELECT t.id, t.status, t.created_at FROM standing_duties d JOIN tasks t ON t.id = d.last_task_id
-        WHERE d.id = ? AND t.status IN ('queued','running') AND t.created_at > ?`,
+        WHERE d.id = ? AND t.status IN ('queued','running')`,
     )
-    .bind(id, Date.now() - RUN_NOW_IN_FLIGHT_MS)
+    .bind(id)
     .first<{ id: string; status: string; created_at: number }>();
   if (inFlight) {
     await audit(c.env.DB, {
@@ -383,6 +415,9 @@ duties.post("/:id/run-now", async (c) => {
     next_due_at: fired.next_due_at,
     note: `"${duty.name}" is queued. A runner claims it next; its result lands wherever the duty delivers.`,
   }, 201);
+  } finally {
+    await releaseRunNowClaim(c.env.DB, claimKey);
+  }
 });
 
 duties.get("/runs", async (c) => {
