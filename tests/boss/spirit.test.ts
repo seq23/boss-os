@@ -1,9 +1,10 @@
 import { env } from "cloudflare:test";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
 import { all, api, apiJson, insertApproval, insertTask, row } from "./helpers";
 import {
   moonPhase, moonPosition, buildAlmanac, ZODIAC, NO_EPHEMERIS, AWAITING_ALMANAC, AWAITING_OWNER, CANON_WINDOW_TYPES,
 } from "../../src/worker/boss/spirit/astro";
+import { spiritSignal } from "../../src/worker/boss/spirit/day";
 
 /**
  * Phase 16 — Spirit OS, astrology, contribution, ancestors.
@@ -875,5 +876,43 @@ describe("the ancestor hour is a reminder that only completion clears", () => {
       method: "POST", body: { who: "The line", minutes: 60, ts: lateSeptember },
     });
     expect(body.data.month).toBe("2026-09");
+  });
+});
+
+/**
+ * THE FIRST OF A MONTH (1 Oct 2026). `spiritSignal` read the month from the day's UTC midnight, which on the 1st is still the
+ * evening of the previous month in Chicago — so on every 1st the contribution floor and the ancestor hour were counted from
+ * LAST month while new records were filed under THIS one. The tests above hit it only when they happened to run on a 1st; this
+ * pins the date.
+ */
+describe("the month of a day is the month in its own id", () => {
+  it("counts a contribution and an ancestor hour logged on the 1st under THAT month, not the one before", async () => {
+    const noon = Date.parse("2026-11-01T18:00:00Z"); // 1 Nov, 12:00 in Chicago
+    const made = await apiJson("/api/spirit/contributions", { method: "POST", body: { kind: "time", note: "Helped a neighbour move", ts: noon } });
+    expect(made.status).toBe(201);
+    await apiJson("/api/spirit/ancestors", { method: "POST", body: { who: "Grandmother", minutes: 45, ts: noon } });
+
+    const signal = await spiritSignal(env.DB, "2026-11-01", noon);
+    expect(signal.contribution.count).toBe(1);
+    expect(signal.contribution.met).toBe(true);
+    expect(signal.ancestors.minutes).toBe(45);
+    // The last day of the month before it does not borrow from the 1st.
+    const before = await spiritSignal(env.DB, "2026-10-31", Date.parse("2026-10-31T18:00:00Z"));
+    expect(before.contribution.entries.every((e: any) => !/neighbour/.test(String(e.note)))).toBe(true);
+  });
+});
+
+describe("the default day is the owner's day (review of #58)", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("at 8:30pm Central on the last day of a month the screen still shows THAT month, including what was just recorded", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-12-01T02:30:00Z")); // 8:30pm Central on 30 Nov; 1 Dec in UTC
+    const made = await apiJson("/api/spirit/contributions", { method: "POST", body: { kind: "time", note: "Drove a friend to the airport" } });
+    expect(made.status).toBe(201);
+    expect(made.body.data.month_count).toBe(1);
+    const day = await apiJson("/api/spirit/day");
+    expect(day.body.data.contribution.count).toBe(1);
+    expect(day.body.data.contribution.met).toBe(true);
   });
 });
