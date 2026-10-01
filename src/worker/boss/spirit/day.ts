@@ -419,7 +419,13 @@ export async function spiritSignal(db: D1Database, id: string, now = Date.now())
   if (Number.isFinite(requested)) await ensureAlmanacAround(db, requested, now, { near, withTotal: false });
   const astro = await ensureAstroDay(db, id, now, astroPre);
   const dayStart = astro.date_ts;
-  const month = monthId(dayStart);
+  /*
+   * THE MONTH IS THE MONTH OF THE DAY ASKED FOR, read from its own id (1 Oct 2026). `dayStart` is that day's UTC midnight, which
+   * on the 1st of a month is still the evening of the LAST day of the previous month in Chicago — so `monthId(dayStart)` read
+   * September all of 1 October, while a contribution or ancestor hour logged that day was filed under October. The contribution
+   * floor and the ancestor hour were counted from the wrong month on the first of every month.
+   */
+  const month = /^\d{4}-\d{2}-\d{2}$/.test(id) ? id.slice(0, 7) : monthId(dayStart);
 
   // Twelve reads, one batch: the signal's own six, the reality-priority counts, and the horizon
   // scan for a major event. On the Free plan's 10 ms this is the difference — lib/batchReads.ts.
