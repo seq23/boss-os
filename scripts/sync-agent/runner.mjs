@@ -337,6 +337,8 @@ function packet(envelope, over = {}) {
      * seat until it resets and the cloud hand the run to the next seat on its ladder.
      */
     seat_exhausted: null,
+    /** How many web searches the seat's own record shows (null: not counted). Observed, never the model's claim. */
+    web_searches: null,
     cost_micros: 0,
     started_at: null,
     finished_at: null,
@@ -506,6 +508,7 @@ export async function executeRun(envelope, deps = {}) {
     rollback_ref: rollbackRef,
     cost_micros: result.cost_micros ?? 0,
     seat_exhausted: result.seat_exhausted ?? null,
+    web_searches: result.web_searches ?? null,
     started_at: startedAt,
     finished_at: finishedAt,
     violations,
@@ -570,7 +573,8 @@ export async function executeRun(envelope, deps = {}) {
    */
   const delivered = result.delivery?.present === true;
   // A spent plan fails the run whatever the exit code said: the CLI can print its limit notice and exit 0.
-  const failed = checks.failed > 0 || (result.exit_code !== 0 && !delivered) || Boolean(result.seat_exhausted);
+  // A run sent to read the web that the CLI's own record shows never searched is a failure whatever its exit code said.
+  const failed = checks.failed > 0 || (result.exit_code !== 0 && !delivered) || Boolean(result.seat_exhausted) || result.search_refused === true;
   return {
     ...base,
     status: failed ? "failed" : "succeeded",

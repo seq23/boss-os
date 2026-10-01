@@ -48,6 +48,7 @@
  */
 import { childEnv } from "../runner.mjs";
 import { detectUsageLimit } from "../../lib/seat-usage-limit.mjs";
+import { parseCodexSearch, researchWasSeen } from "../../lib/codex-search.mjs";
 
 /**
  * The stderr line this CLI always emits and which means nothing.
@@ -97,26 +98,27 @@ export function buildArgs(envelope, prompt, { model } = {}) {
   const web = Array.isArray(envelope?.web_tools) ? envelope.web_tools : [];
   const writes = web.length > 0 || envelope?.kind === "research" || envelope?.kind === "document";
   /*
-   * `--search` IS A FLAG OF `codex`, NOT OF `codex exec` (30 Sep 2026, CONFIRMED on @openai/codex
-   * 0.135.0 — the version on her Mac). `codex exec --search …` exits 2 with "error: unexpected
-   * argument '--search' found" before the model is ever reached, so every research run on this seat
-   * died in under a second. That is why the 30 Sep executive briefing failed the moment her Claude
-   * plan was spent and the ladder handed it to Codex: the flag had only ever been run through a
-   * plain generation, which takes no web tools. It is placed BEFORE the subcommand now.
+   * A RESEARCH RUN USES THE FORM PROVEN ON HER MAC, AND ASKS FOR THE CLI'S OWN RECORD (1 Oct 2026).
    *
-   * The sandbox also blocks the network by default, and a research run opens twenty to forty
-   * articles, so a web run gets `network_access=true` (the setting codex-seat.mjs already uses for
-   * repo work). Only a run that asked for web tools gets either.
+   * Until now this was `codex --search exec …`. That parses (30 Sep, CONFIRMED on @openai/codex 0.135.0: `--search`
+   * belongs to `codex`, not `codex exec`), but it had never been run through to a finished briefing, it printed no
+   * record of what it searched, and this adapter graded the run on a file the model wrote and the last line of stdout
+   * — so a briefing written from memory looked exactly like one written from twenty pages.
+   *
+   * West Peek OS ran `codex exec --json -c web_search=live` on the same Mac on 1 Oct 2026 and captured the stream
+   * (tests/fixtures/codex-search-probe.jsonl): one `web_search` item per search and per page opened. That is the form
+   * used here, and `--json` is what lets `scripts/lib/codex-search.mjs` count them. A run with no web tools keeps the
+   * old argv byte for byte, so nothing that worked changes.
+   *
+   * The sandbox also blocks the network by default, and a research run opens twenty to forty articles, so a web run
+   * gets `network_access=true` (the setting codex-seat.mjs already uses for repo work).
    */
-  const args = [
-    ...(web.length > 0 ? ["--search"] : []),
-    "exec",
-    "--sandbox", writes ? "workspace-write" : "read-only",
-    // Runs happen in a scratch workspace, not a repository. Without this the CLI refuses and
-    // relocates the working directory out from under the run.
-    "--skip-git-repo-check",
-  ];
-  if (web.length > 0) args.push("-c", "sandbox_workspace_write.network_access=true");
+  const args = web.length > 0
+    ? ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "-c", "sandbox_workspace_write.network_access=true", "-c", "web_search=live"]
+    : ["exec", "--sandbox", writes ? "workspace-write" : "read-only",
+       // Runs happen in a scratch workspace, not a repository. Without this the CLI refuses and
+       // relocates the working directory out from under the run.
+       "--skip-git-repo-check"];
   if (model ?? envelope?.model) args.push("--model", String(model ?? envelope.model));
   // Last, and as ONE argv element. spawn() is called without a shell, so nothing inside it is
   // interpreted; it is text handed to a process, the same as a file would be.
@@ -197,7 +199,16 @@ export async function codexExecutor(
    */
   const shown = `${binary} ${args.slice(0, -1).join(" ")} <prompt ${String(prompt ?? "").length} chars>`;
 
-  const parsed = parseCodexStdout(stdout);
+  /*
+   * A WEB RUN'S STDOUT IS A JSON EVENT STREAM, NOT PROSE. Its answer is the last agent message, its failures are
+   * `turn.failed` / `error` rows, and its searches are `web_search` rows — all read by `parseCodexSearch`. A run with
+   * no web tools is read exactly as before.
+   */
+  const wantsWeb = Array.isArray(envelope?.web_tools) && envelope.web_tools.length > 0;
+  const stream = wantsWeb ? parseCodexSearch(stdout) : null;
+  const parsed = stream?.jsonl
+    ? { summary: stream.answer || stream.errorText, parse_error: stream.answer || stream.errorText ? null : "stdout held no answer" }
+    : parseCodexStdout(stdout);
   const benign = isBenignStderr(stderr);
 
   const risks = [];
@@ -236,6 +247,24 @@ export async function codexExecutor(
     risks.push(`delivers.json could not be read: ${err?.code ?? err?.message ?? "unreadable"}`);
   }
 
+  /*
+   * A REPORT FROM A RUN THAT NEVER SEARCHED IS NOT A REPORT (1 Oct 2026). The run was sent to read the web; the CLI's
+   * own record says whether it did. Zero counted searches, or a turn that failed, and the deliverable is set aside:
+   * the run FAILS with the sentence below, so the Today screen says what happened instead of showing figures nothing
+   * read. A stream that could not be read as JSON is not judged (the caller is told nothing was counted).
+   */
+  const seen = stream ? researchWasSeen(stream) : { ok: true, searches: null };
+  let searchRefusal = null;
+  // A TIMEOUT DOES NOT EXCUSE IT (review of #57): a run killed on its leash after writing a `complete` report with no search on
+  // the record would otherwise be filed as a success, because the runner lets a finished deliverable outrank exit 124.
+  if (stream && !seen.ok) {
+    searchRefusal = seen.reason;
+    if (delivers !== null) risks.push("A delivers.json was on disk but the run's own record shows it did not search, so it was set aside.");
+    delivers = null;
+  } else if (stream && seen.ok && seen.searches === null) {
+    risks.push("Codex's output was not the JSON event stream, so the number of searches it ran could not be counted.");
+  }
+
   const claimed = typeof delivers?.status === "string" ? delivers.status : null;
   const delivery = delivers === null
     ? { present: false, status: null }
@@ -264,7 +293,7 @@ export async function codexExecutor(
    * seat. Codex on her ChatGPT Plus prints "You've hit your usage limit …" and may exit 0. The
    * benign models-refresh line is filtered first so it can never be read as, or hide, a real notice.
    */
-  const limit = deliveredWhole ? { limited: false } : detectUsageLimit({ stdout: parsed.summary, stderr: benign ? "" : stderr });
+  const limit = deliveredWhole ? { limited: false } : detectUsageLimit({ stdout: stream?.jsonl ? (stream.errorText || stream.answer) : parsed.summary, stderr: benign ? "" : stderr });
   const seatExhausted = limit.limited ? { notice: limit.snippet, retry_after_seconds: limit.retryAfterSeconds } : null;
 
   return {
@@ -283,9 +312,15 @@ export async function codexExecutor(
      */
     cost_micros: 0,
     remaining_risks: risks,
+    // How many searches the CLI's own record shows (null: not counted). Evidence beside the answer, never inside it.
+    web_searches: stream ? seen.searches ?? null : null,
+    // Tells the runner this run FAILS even on exit 0: it was sent to read the web and the CLI's record says it did not.
+    search_refused: searchRefusal !== null,
     error:
       seatExhausted
         ? `Codex has run out of usage and said: ${seatExhausted.notice}`
+        : searchRefusal
+        ? searchRefusal
         : deliveredWhole
         ? null
         : outcome.exit_code !== 0 || parsed.parse_error

@@ -111,7 +111,7 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder 
   if (!/fallback_from/.test(F0.route) || !/'ladder_handoff'/.test(F0.route)) problems.push("routes/backends.ts /claim cannot hand a run to the next seat on its ladder.");
   if (!/model_by_backend/.test(F0.route)) problems.push("routes/backends.ts /claim does not give each seat its own model.");
   if (!/fallbackFrom: unusable/.test(F0.agent)) problems.push("agent.mjs does not tell the cloud which seats failed preflight.");
-  if (!/"--search"/.test(F0.codex) || !/workspace-write/.test(F0.codex)) problems.push("codex.mjs cannot write delivers.json or open the web for a research run.");
+  if (!/web_search=live/.test(F0.codex) || !/"--json"/.test(F0.codex) || !/workspace-write/.test(F0.codex)) problems.push("codex.mjs cannot write delivers.json or open the web for a research run.");
   if (!/backend_ladder: BRIEFING_LADDER_IDS/.test(F0.materialise) || !/BRIEFING_CLASSIFICATION/.test(F0.materialise)) problems.push("materialise.ts does not stamp the ladder and the declared axes from the module.");
   if (!/'\$\.backend_ladder'/.test(F0.ladderMigration) || !/'\$\.cloud_fallback'/.test(F0.ladderMigration)) problems.push("Migration 0258 does not put the ladder on the duty row.");
   if (!/written_by/.test(F0.today) || !/c\.written_by/.test(F0.screen)) problems.push("The Today block does not name who wrote the briefing.");

@@ -54,6 +54,8 @@ export interface EvidencePacket {
   refusal_reason: string | null;
   error: string | null;
   cost_micros: number;
+  /** Web searches the seat's own record shows for this run; null when not counted. Observed, never the model's claim. */
+  web_searches?: number | null;
   started_at: number | null;
   finished_at: number | null;
   /** Structured output the run wrote to `delivers.json`; null for every ordinary run. */
