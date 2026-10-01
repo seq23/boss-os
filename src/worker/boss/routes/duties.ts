@@ -311,12 +311,42 @@ duties.get("/due/:local_job", async (c) => {
  * next occurrence from the schedule rather than from now, so an on-demand run cannot drag a duty
  * off its own timetable.
  */
+/** How long a queued/running task blocks another run-now: past the 15-minute leash, with slack. */
+const RUN_NOW_IN_FLIGHT_MS = 45 * 60 * 1000;
+
 duties.post("/:id/run-now", async (c) => {
   const id = c.req.param("id");
   const duty = await c.env.DB
     .prepare(`SELECT id, name, suspended, executor FROM standing_duties WHERE id = ?`).bind(id)
     .first<{ id: string; name: string; suspended: number; executor: string | null }>();
   if (!duty) throw notFound("No standing duty with that id");
+
+  /*
+   * A RUN ALREADY IN FLIGHT IS ANSWERED, NOT DOUBLED (1 Oct 2026). The briefing now has a button, and a second press while the first
+   * is queued or running would queue a second run: two spends of her plan, the second overwriting the first's report. Only a QUEUED or
+   * RUNNING task blocks it, and only for the length of the longest leash plus slack — a finished or failed run never blocks a retry,
+   * which is the whole point of the button, and a run that never reported cannot block it for ever.
+   */
+  const inFlight = await c.env.DB
+    .prepare(
+      `SELECT t.id, t.status, t.created_at FROM standing_duties d JOIN tasks t ON t.id = d.last_task_id
+        WHERE d.id = ? AND t.status IN ('queued','running') AND t.created_at > ?`,
+    )
+    .bind(id, Date.now() - RUN_NOW_IN_FLIGHT_MS)
+    .first<{ id: string; status: string; created_at: number }>();
+  if (inFlight) {
+    await audit(c.env.DB, {
+      actor: "boss", lane: "ops", entityType: "standing_duty", entityId: id,
+      action: "run_now", detail: { fired: false, reason: "already_in_flight", task_id: inFlight.id },
+    });
+    return ok(c, {
+      fired: false,
+      duty: duty.id,
+      reason: "already_in_flight",
+      task_id: inFlight.id,
+      note: `"${duty.name}" already has a run ${inFlight.status === "queued" ? "waiting for your Mac to pick it up" : "in progress"}. Let it finish; if it fails, the Today card says why and you can run it again.`,
+    });
+  }
 
   const result = await materialiseDueDuties(c.env, Date.now(), id);
   const fired = result.fired.find((f: { duty: string }) => f.duty === id) ?? null;
