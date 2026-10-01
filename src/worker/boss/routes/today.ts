@@ -321,6 +321,51 @@ export function nextClaimSlot(now: number): string {
   return `${String(next.h).padStart(2, "0")}:${String(next.m).padStart(2, "0")} Central${tomorrow ? " tomorrow" : ""}`;
 }
 
+/** "2:05 PM" in the owner's zone. */
+function clockWords(ts: number): string {
+  const w = wallClock(ts);
+  const h12 = w.h % 12 === 0 ? 12 : w.h % 12;
+  return `${h12}:${String(w.min).padStart(2, "0")} ${w.h < 12 ? "AM" : "PM"}`;
+}
+
+/**
+ * WHERE THE LATEST BRIEFING RUN IS, IN ONE SENTENCE (1 Oct 2026). "i cant tell if its done or not." The card had a button and a report and
+ * nothing between them: pressing it queued a run, and the only sign it was still going was the button refusing a second press. This reads
+ * the duty's last task and its run record and says which of four things is true — queued and not yet picked up, picked up and being worked,
+ * finished, or failed and why. `null` when the duty has never had a task, so a fresh system says nothing rather than something invented.
+ *
+ * A TASK DISPATCHED TO A SEAT IS 'running' FROM THE MOMENT OF HAND-OFF, whether or not her Mac has claimed it, so `task_status` alone cannot
+ * tell "waiting for the Mac" from "the Mac is working on it" — the run's own `claimed_at` does. Pure over its inputs, so every state is
+ * testable without a database.
+ */
+export function briefingRunLine(
+  run: {
+    task_status: string | null; task_error: string | null;
+    task_created_at: number | null; task_finished_at: number | null;
+    run_claimed_at: number | null;
+  } | null,
+  now: number,
+): string | null {
+  if (!run || !run.task_status) return null;
+  const queuedAt = run.task_created_at;
+  const queuedWords = queuedAt ? ` at ${clockWords(queuedAt)}` : "";
+  switch (run.task_status) {
+    case "queued":
+      return `Queued${queuedWords}. Your Mac has not picked it up yet; it checks a few times a day, and its next check is ${nextClaimSlot(now)}.`;
+    case "running":
+      return run.run_claimed_at
+        ? `Your Mac picked it up at ${clockWords(run.run_claimed_at)} and is working on it. It has not reported back yet.`
+        : `Queued${queuedWords}. Your Mac has not picked it up yet; it checks a few times a day, and its next check is ${nextClaimSlot(now)}.`;
+    case "failed":
+      return `The last run failed${run.task_finished_at ? ` at ${clockWords(run.task_finished_at)}` : ""}: ${run.task_error ?? "no reason was recorded"}. You can run it again.`;
+    case "cancelled":
+      return `The last run was cancelled${run.task_finished_at ? ` at ${clockWords(run.task_finished_at)}` : ""}: ${run.task_error ?? "no reason was recorded"}. You can run it again.`;
+    default:
+      // done / awaiting_approval and anything else that is not in flight: the run is over.
+      return `The last run finished${run.task_finished_at ? ` at ${clockWords(run.task_finished_at)}` : ""}.`;
+  }
+}
+
 export function reportStaleness(
   duty: {
     suspended: number; last_run_at: number | null; next_due_at: number | null;
@@ -474,11 +519,14 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
         next_due_at: number | null; last_task_id: string | null;
         local_hour: number | null; local_minute: number | null;
         task_status: string | null; task_error: string | null;
+        task_created_at: number | null; task_finished_at: number | null; run_claimed_at: number | null;
       }>(B, () => env.DB
       .prepare(
         `SELECT d.id, d.name, d.suspended, d.last_run_at, d.next_due_at, d.last_task_id,
                 d.local_hour, d.local_minute,
-                t.status AS task_status, t.error AS task_error
+                t.status AS task_status, t.error AS task_error,
+                t.created_at AS task_created_at, t.finished_at AS task_finished_at,
+                (SELECT r.claimed_at FROM backend_runs r WHERE r.task_id = d.last_task_id ORDER BY r.started_at DESC LIMIT 1) AS run_claimed_at
            FROM standing_duties d
            LEFT JOIN tasks t ON t.id = d.last_task_id
           WHERE d.id = 'duty_exec_intel'`,
@@ -1532,10 +1580,13 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
               /* True when this is yesterday's briefing standing in for one that has not arrived. */
               carried_over: carried,
               staleness: carried ? reportStaleness(reportDuty, shown.day_id, day.id, now) : null,
+              // Where the latest run is, whether or not a report is on show — the button's other half.
+              run_status: briefingRunLine(reportDuty, now),
             }
           : {
               reason: reportStaleness(reportDuty, null, day.id, now),
               last_report_at: null,
+              run_status: briefingRunLine(reportDuty, now),
             },
         isEmpty: !shown,
       };
