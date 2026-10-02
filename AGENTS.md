@@ -82,8 +82,8 @@ Parent authorities (IMMUTABLE — never modify, move, or rewrite):
 - `npm test` — vitest unit/integration, must be green.
 - `npm run e2e` — Playwright (resets the local D1, then starts its own `wrangler dev`; no
   credentials). Safe to re-run back to back; that is a hard requirement, not a nicety. In CI it
-  runs weekly (Sunday 08:00 UTC) + on demand (`e2e.yml`), never per merge, and gates production,
-  not the merge; production still promotes only from an e2e-green sha, so
+  runs on demand only (`e2e.yml`, `workflow_dispatch`; owner, 2 Oct 2026), never per merge and
+  never on a schedule, and gates production, not the merge; production still promotes only from an e2e-green sha, so
   `land --promote boss-os --run-e2e` is the path after a batch (`docs/DEPLOYING.md`, "When
   production moves"). Do not run it locally unless your change touches what the journeys cover.
 - `npm run migrate:local` — apply D1 migrations to local miniflare sqlite.

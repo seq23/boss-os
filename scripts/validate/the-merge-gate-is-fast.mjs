@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * THE MERGE GATE IS FAST, THE SLOW SUITE IS WEEKLY + ON DEMAND, AND EVERY JOB HAS A CEILING.
+ * THE MERGE GATE IS FAST, THE SLOW SUITE IS ON DEMAND ONLY, AND EVERY JOB HAS A CEILING.
  *
  * ─── The wait this closes ────────────────────────────────────────────────────
  *
@@ -17,11 +17,13 @@
  * success; `land --promote` ships the newest green sha). The merge gate is `ci.yml` alone.
  *
  * 26 Sep 2026, later the same day: the repo is PRIVATE, so every scheduled run spends GitHub
- * Actions minutes, and the owner's rule is at most one scheduled run a week for private repos.
- * The schedule is weekly — Sunday 08:00 UTC, `0 8 * * 0` — plus `workflow_dispatch`. Production
- * still promotes only from an e2e-green sha, so `land --promote boss-os --run-e2e` is the path
- * after a batch. Rule 7 below pins the cron itself, so a "helpful" return to nightly (or hourly)
- * fails the build instead of quietly spending the minutes again.
+ * Actions minutes, and the schedule went from nightly to weekly (Sunday 08:00 UTC, `0 8 * * 0`).
+ *
+ * 2 Oct 2026, the owner: ON DEMAND ONLY. No schedule at all. The suite runs when a person
+ * dispatches it, when `land --promote boss-os --run-e2e` does, or when `land` dispatches it after
+ * a large change. Production still promotes only from an e2e-green sha. Rules 6–7 below pin the
+ * trigger list to exactly `workflow_dispatch`, so a "helpful" return to weekly, nightly, hourly —
+ * any cron — fails the build instead of quietly spending the minutes again.
  *
  * ─── The rule, read from the YAML ────────────────────────────────────────────
  *
@@ -33,11 +35,11 @@
  *   4. ci.yml runs NO Playwright step — the journeys are not per merge, on any event.
  *   5. Every job in ci.yml has a ceiling ≤ 10 minutes, so the gate cannot quietly drift back to
  *      the shape this replaced.
- *   6. e2e.yml runs the Playwright journeys with a ceiling, and is triggered ONLY by `schedule`
- *      and `workflow_dispatch` — never `push`, never `pull_request`.
- *   7. e2e.yml's `schedule` is exactly ONE cron and it is the weekly one, `0 8 * * 0` — a private
- *      repo's scheduled suite runs at most once a week. Nightly, hourly, or a second cron line
- *      fails the build.
+ *   6. e2e.yml runs the Playwright journeys with a ceiling, and its trigger list is EXACTLY
+ *      `[workflow_dispatch]` — never `push`, never `pull_request`, never `workflow_run`, nothing
+ *      else beside it, and `workflow_dispatch` itself may not go.
+ *   7. e2e.yml has NO `schedule` trigger. Any cron line — weekly, nightly, hourly, monthly, one or
+ *      several, or a `schedule:` with no cron under it — fails the build (owner, 2 Oct 2026).
  *
  * RULE 0: zero jobs in either file, zero sharded jobs, or no Playwright job in e2e.yml is a hard
  * failure — an empty workflow satisfies every "no job is…" rule and proves nothing.
@@ -54,8 +56,10 @@ const CI = ".github/workflows/ci.yml";
 const E2E = ".github/workflows/e2e.yml";
 const GATE_CEILING_MIN = 10;
 const PLAYWRIGHT = /playwright test|npm run e2e\b/;
-/** Sunday 08:00 UTC. The one scheduled run a week a private repo's Playwright suite is allowed. */
-const WEEKLY_CRON = "0 8 * * 0";
+/** The ONLY trigger e2e.yml may carry (owner, 2 Oct 2026: on demand only, never on a schedule). */
+const ONLY_TRIGGER = "workflow_dispatch";
+/** The weekly cron this replaced (26 Sep – 2 Oct 2026). Self-test fixtures only: it must FAIL now. */
+const FORMER_WEEKLY_CRON = "0 8 * * 0";
 
 /** Split the workflow's `jobs:` block into { id: text } without a YAML library. */
 export function jobsIn(yaml) {
@@ -138,29 +142,35 @@ export function check({ ci, e2e }) {
   }
   if (sharded < 2) problems.push(`only ${sharded} sharded job(s) — both the unit suite and the Boss suites are sharded, or the serial 15-minute job is back.`);
 
-  // The journeys: weekly + dispatch in e2e.yml, with a ceiling, never on push or pull_request.
-  if (!e2e) { problems.push(`${E2E} is missing — the Playwright journeys run nowhere. Weekly means weekly, not never.`); return problems; }
+  // The journeys: dispatch ONLY in e2e.yml, with a ceiling. Never on push, pull_request, or a schedule.
+  if (!e2e) { problems.push(`${E2E} is missing — the Playwright journeys run nowhere. On demand means on demand, not never.`); return problems; }
   const e2eJobs = jobsIn(e2e);
   const e2eIds = Object.keys(e2eJobs).filter((id) => PLAYWRIGHT.test(e2eJobs[id]));
   if (e2eIds.length === 0) problems.push(`no job in ${E2E} runs the Playwright journeys — the suite runs nowhere.`);
-  for (const id of e2eIds) if (timeoutOf(e2eJobs[id]) === null) problems.push(`job "${id}" in ${E2E} has no timeout-minutes — a hung weekly run runs for six hours.`);
+  for (const id of e2eIds) if (timeoutOf(e2eJobs[id]) === null) problems.push(`job "${id}" in ${E2E} has no timeout-minutes — a hung dispatched run runs for six hours.`);
   const triggers = triggersIn(e2e);
-  for (const bad of ["push", "pull_request", "pull_request_target"]) if (triggers.includes(bad)) problems.push(`${E2E} triggers on \`${bad}\` — the journeys are back on the merge path. Only schedule and workflow_dispatch.`);
-  if (!triggers.includes("schedule")) problems.push(`${E2E} has no \`schedule\` trigger — a suite nobody runs is not a gate for production.`);
-  else {
-    // Rule 7: one cron, and it is the weekly one. A private repo pays Actions minutes for every run.
+  if (triggers.length === 0) problems.push(`${E2E} has no \`on:\` triggers at all — a suite nothing can start is not a gate for production.`);
+  for (const bad of ["push", "pull_request", "pull_request_target"]) if (triggers.includes(bad)) problems.push(`${E2E} triggers on \`${bad}\` — the journeys are back on the merge path. Only \`${ONLY_TRIGGER}\`.`);
+  // Rule 7: no schedule of any kind. The weekly cron of 26 Sep was retired 2 Oct 2026 — on demand only.
+  if (triggers.includes("schedule")) {
     const crons = cronsIn(e2e);
-    if (crons.length === 0) problems.push(`${E2E} has a \`schedule\` trigger with no \`- cron:\` line — the suite is scheduled for never.`);
-    else if (crons.length > 1) problems.push(`${E2E} schedules ${crons.length} crons (${crons.join(", ")}) — a private repo's suite runs at most once a week: exactly one cron, "${WEEKLY_CRON}".`);
-    else if (crons[0] !== WEEKLY_CRON) problems.push(`${E2E} cron is "${crons[0]}" — the schedule is weekly, Sunday 08:00 UTC ("${WEEKLY_CRON}"), because this private repo spends Actions minutes on every run (owner, 26 Sep 2026). After a batch, \`land --promote boss-os --run-e2e\`, not a denser cron.`);
+    const named = crons.length ? ` (${crons.map((c) => `"${c}"`).join(", ")})` : " with no \`- cron:\` line under it";
+    problems.push(`${E2E} has a \`schedule\` trigger${named} — the journeys run ON DEMAND ONLY (owner, 2 Oct 2026): a person, \`land --promote boss-os --run-e2e\`, or \`land\` after a large change dispatches them. No cron, at any cadence; the weekly "${FORMER_WEEKLY_CRON}" is retired too.`);
   }
-  if (!triggers.includes("workflow_dispatch")) problems.push(`${E2E} has no \`workflow_dispatch\` — \`land --promote --run-e2e\` cannot run it on demand.`);
+  if (!triggers.includes(ONLY_TRIGGER)) problems.push(`${E2E} has no \`${ONLY_TRIGGER}\` — \`land --promote --run-e2e\` cannot run it on demand.`);
+  // Rule 6: exactly [workflow_dispatch]. Anything else beside it (workflow_run, repository_dispatch,
+  // a cron) is a way for the suite to run without anyone asking for it.
+  const extra = triggers.filter((t) => t !== ONLY_TRIGGER && !["push", "pull_request", "pull_request_target", "schedule"].includes(t));
+  if (extra.length) problems.push(`${E2E} also triggers on ${extra.map((t) => `\`${t}\``).join(", ")} — the trigger list is exactly [${ONLY_TRIGGER}]; the journeys run only when asked for.`);
   return problems;
 }
 
 function selfTest() {
   const ci = readFileSync(join(ROOT, CI), "utf8");
   const e2e = readFileSync(join(ROOT, E2E), "utf8");
+  if (!/^on:\n  workflow_dispatch:\n/m.test(e2e)) { console.error(`the-merge-gate-is-fast self-test: ${E2E} does not carry the dispatch-only trigger block the fixtures are built from.`); process.exit(1); }
+  /** The shipped e2e.yml with a `schedule:` trigger put back beside `workflow_dispatch`. */
+  const scheduled = (cronLines) => e2e.replace("\non:\n", `\non:\n  schedule:\n    ${cronLines}\n`);
   const cases = [
     ["the shipped shape passes", { ci, e2e }, 0],
     ["a gate job with no ceiling is named", { ci: ci.replace(/^    timeout-minutes: 6\n/m, ""), e2e }, 1],
@@ -171,14 +181,20 @@ function selfTest() {
     ["a gate job whose ceiling is the old 30", { ci: ci.replace(/^    timeout-minutes: 8\n/m, "    timeout-minutes: 30\n"), e2e }, 1],
     ["e2e.yml back on push", { ci, e2e: e2e.replace("\non:\n", "\non:\n  push:\n    branches: [main]\n") }, 1],
     ["e2e.yml back on pull_request", { ci, e2e: e2e.replace("\non:\n", "\non:\n  pull_request:\n") }, 1],
-    ["e2e.yml with no schedule", { ci, e2e: e2e.replace(/^  schedule:\n(?:    .*\n)+/m, "") }, 1],
+    ["e2e.yml with a schedule trigger (the retired weekly cron of 26 Sep)", { ci, e2e: scheduled(`- cron: "${FORMER_WEEKLY_CRON}"`) }, 1],
+    ["e2e.yml with the weekly cron unquoted", { ci, e2e: scheduled(`- cron: ${FORMER_WEEKLY_CRON}`) }, 1],
+    ["e2e.yml back to nightly", { ci, e2e: scheduled('- cron: "0 7 * * *"') }, 1],
+    ["e2e.yml hourly", { ci, e2e: scheduled('- cron: "0 * * * *"') }, 1],
+    ["e2e.yml monthly (west-peek-os's former shape)", { ci, e2e: scheduled('- cron: "30 10 1 * *"') }, 1],
+    ["e2e.yml with two crons", { ci, e2e: scheduled(`- cron: "${FORMER_WEEKLY_CRON}"\n    - cron: "0 7 * * 3"`) }, 1],
+    ["e2e.yml scheduled with no cron line", { ci, e2e: e2e.replace("\non:\n", "\non:\n  schedule:\n") }, 1],
+    ["e2e.yml with a schedule and the dispatch removed", { ci, e2e: scheduled(`- cron: "${FORMER_WEEKLY_CRON}"`).replace(/^  workflow_dispatch:\n/m, "") }, 2],
     ["e2e.yml with no dispatch", { ci, e2e: e2e.replace(/^  workflow_dispatch:\n/m, "") }, 1],
-    ["the weekly job with no ceiling", { ci, e2e: e2e.replace(/^    timeout-minutes: \d+\n/m, "") }, 1],
-    ["e2e.yml back to nightly", { ci, e2e: e2e.replace(`- cron: "${WEEKLY_CRON}"`, '- cron: "0 7 * * *"') }, 1],
-    ["e2e.yml hourly", { ci, e2e: e2e.replace(`- cron: "${WEEKLY_CRON}"`, '- cron: "0 * * * *"') }, 1],
-    ["e2e.yml with a second cron beside the weekly one", { ci, e2e: e2e.replace(`- cron: "${WEEKLY_CRON}"`, `- cron: "${WEEKLY_CRON}"\n    - cron: "0 7 * * 3"`) }, 1],
-    ["e2e.yml scheduled with no cron line", { ci, e2e: e2e.replace(/^    - cron: .*\n/m, "") }, 1],
-    ["e2e.yml weekly cron unquoted still passes", { ci, e2e: e2e.replace(`- cron: "${WEEKLY_CRON}"`, `- cron: ${WEEKLY_CRON}`) }, 0],
+    ["e2e.yml with no triggers at all", { ci, e2e: e2e.replace(/^on:\n  workflow_dispatch:\n/m, "on:\n") }, 1],
+    ["e2e.yml also on workflow_run", { ci, e2e: e2e.replace("\non:\n", "\non:\n  workflow_run:\n    workflows: [CI]\n    types: [completed]\n") }, 1],
+    ["e2e.yml also on repository_dispatch", { ci, e2e: e2e.replace("\non:\n", "\non:\n  repository_dispatch:\n") }, 1],
+    ["the dispatched job with no ceiling", { ci, e2e: e2e.replace(/^    timeout-minutes: \d+\n/m, "") }, 1],
+    ["dispatch only, written inline, passes", { ci, e2e: e2e.replace(/^on:\n  workflow_dispatch:\n/m, "on: [workflow_dispatch]\n") }, 0],
     ["RULE 0: no jobs at all in ci.yml", { ci: "name: CI\non: push\n", e2e }, 1],
     ["RULE 0: e2e.yml missing", { ci, e2e: "" }, 1],
     ["RULE 0: e2e.yml with no Playwright job", { ci, e2e: e2e.replace(/npm run e2e/g, "npm run typecheck") }, 1],
@@ -203,4 +219,4 @@ if (problems.length) {
   process.exit(1);
 }
 const jobs = jobsIn(read(CI));
-console.log(`the-merge-gate-is-fast: ${Object.keys(jobs).length} gate jobs, every one with a ceiling ≤ ${GATE_CEILING_MIN} min; unit and Boss suites sharded; the journeys weekly ("${WEEKLY_CRON}") + dispatch in ${E2E}, never per merge. OK.`);
+console.log(`the-merge-gate-is-fast: ${Object.keys(jobs).length} gate jobs, every one with a ceiling ≤ ${GATE_CEILING_MIN} min; unit and Boss suites sharded; the journeys on demand only ([${ONLY_TRIGGER}], no schedule) in ${E2E}, never per merge. OK.`);
