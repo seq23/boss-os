@@ -15,17 +15,17 @@
 #
 # BUILD FIRST, TEST IN BATCHES (26 Sep 2026). Until now this fired on `CI`, whose run on main
 # included the 15–17-minute Playwright journeys, so every merge waited on them before shipping.
-# The journeys moved to `e2e.yml` (weekly, Sunday 08:00 UTC + workflow_dispatch; private-repo
-# Actions minutes, owner 26 Sep 2026) and this workflow now fires on THAT run's success, checking
-# out the exact sha it passed on. A merge lands on main at once; production moves once a week to
-# the newest commit the journeys have proven, or sooner when someone runs `land --promote boss-os
-# --run-e2e` / dispatches e2e then this — the path after a batch of merges. Every deploy
-# here is recorded as a GitHub Deployment (environment `production`), which is what `land
-# --promote` reads to know what production runs.
+# The journeys moved to `e2e.yml` (workflow_dispatch ONLY — owner, 2 Oct 2026; the weekly Sunday
+# cron of 26 Sep is retired) and this workflow fires on THAT run's success, checking out the exact
+# sha it passed on. A merge lands on main at once; production moves when someone, or `land` after
+# a large change, dispatches e2e on main's head and it goes green — `land --promote boss-os
+# --run-e2e` is the path after a batch of merges. Every deploy here is recorded as a GitHub
+# Deployment (environment `production`), which is what `land --promote` reads to know what
+# production runs.
 #
 # WHAT MAKES THIS SAFE ENOUGH TO BE WORTH IT:
 #   · It runs ONLY after `e2e` has completed successfully, and ONLY on `main`. A red
-#     weekly run deploys nothing and is fixed first (bisect from the last green sha).
+#     e2e run deploys nothing and is fixed first (bisect from the last green sha).
 #   · It runs `npm run deploy:production`, which applies migrations, verifies none
 #     are pending, builds, deploys, and probes the worker. Never a bare
 #     `wrangler deploy`: that ships a stale client and the LOCAL DEV bindings, and

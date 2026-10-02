@@ -11,16 +11,17 @@ obvious alternative looks like it works and does not.
 
 - **Merge gate** = `ci.yml` (typecheck, scans, sharded unit + Boss suites, client build; ~4 min).
   `land <pr>` merges on green and prints **WAITING** for production — it does not deploy.
-- **Full e2e** = `e2e.yml` (217 Playwright journeys), weekly (Sunday 08:00 UTC) + on demand
-  (`workflow_dispatch`), never per merge. Weekly rather than nightly because this repo is private
-  and every scheduled run spends Actions minutes (owner, 26 Sep 2026). `deploy.yml` fires on its
-  success and runs `npm run deploy:production` at exactly the sha it passed, then records a GitHub
-  Deployment (environment `production`).
+- **Full e2e** = `e2e.yml` (217 Playwright journeys), **on demand only** (`workflow_dispatch`;
+  owner, 2 Oct 2026 — supersedes the weekly Sunday 08:00 UTC cron of 26 Sep), never per merge and
+  never on a schedule. It is dispatched by a person, by `land --promote boss-os --run-e2e`, or by
+  `land` after a large change. `deploy.yml` fires on its success and runs `npm run
+  deploy:production` at exactly the sha it passed, then records a GitHub Deployment (environment
+  `production`).
 - **Promote by hand**: production still promotes only from an e2e-green sha, so
   `land --promote boss-os --run-e2e` is the path after a batch — it dispatches the suite on main's
   head first and waits. `land --promote boss-os` alone ships the newest already-e2e-green main commit
   newer than production.
-- **A red weekly run** blocks the next production deploy and is fixed first (bisect from the last
+- **A red e2e run** blocks the next production deploy and is fixed first (bisect from the last
   green sha). `gh workflow run deploy.yml` is break-glass only: it ships main's head with no e2e
   verdict.
 
