@@ -7,23 +7,39 @@ npm run deploy:production
 That is the whole answer. The rest of this file explains why there is only one answer, because the
 obvious alternative looks like it works and does not.
 
-## When production moves (build first, test in batches — 26 Sep 2026)
+## When production moves (build first, test in batches — 26 Sep 2026; small changes ship on the fast check — 2 Oct 2026)
 
 - **Merge gate** = `ci.yml` (typecheck, scans, sharded unit + Boss suites, client build; ~4 min).
-  `land <pr>` merges on green and prints **WAITING** for production — it does not deploy.
+  `land <pr>` merges on green, watches `main` to a terminal state, then ships production by the
+  size of the change.
+- **A small change ships on the fast check** (owner, 2 Oct 2026, asked and answered). `land`
+  deploys it at once — `npm run deploy:production` in a clean worktree at the merge sha — and
+  records a GitHub Deployment whose description says why: "small change: N lines, M files; shipped
+  on the fast check, e2e on demand". It used to print WAITING for an e2e run nothing would start.
+- **A large change needs green journeys.** `land` measures the change — and every commit production
+  has not seen — and, when one is large, dispatches `e2e.yml` on main's head itself. `deploy.yml`
+  fires on that run's success and runs `npm run deploy:production` at exactly the sha it passed,
+  then records the GitHub Deployment; `land` waits for that run rather than deploying beside it.
+  **"Large" is defined once, in the `large` block of `land` (seq23/seq-bin, `~/bin/land`); nothing
+  in this repo restates it.**
+- **Known red blocks.** If the newest e2e run on `main` that reached a verdict (cancelled and
+  skipped runs do not count) is not `success`, no small change ships until a green run is newer:
+  `land` stops with `NAMED STOP [E2E_KNOWN_RED]`. Fix main, then `land <pr> --run-e2e`.
 - **Full e2e** = `e2e.yml` (217 Playwright journeys), **on demand only** (`workflow_dispatch`;
   owner, 2 Oct 2026 — supersedes the weekly Sunday 08:00 UTC cron of 26 Sep), never per merge and
-  never on a schedule. It is dispatched by a person, by `land --promote boss-os --run-e2e`, or by
-  `land` after a large change. `deploy.yml` fires on its success and runs `npm run
-  deploy:production` at exactly the sha it passed, then records a GitHub Deployment (environment
-  `production`).
-- **Promote by hand**: production still promotes only from an e2e-green sha, so
-  `land --promote boss-os --run-e2e` is the path after a batch — it dispatches the suite on main's
-  head first and waits. `land --promote boss-os` alone ships the newest already-e2e-green main commit
-  newer than production.
-- **A red e2e run** blocks the next production deploy and is fixed first (bisect from the last
-  green sha). `gh workflow run deploy.yml` is break-glass only: it ships main's head with no e2e
-  verdict.
+  never on a schedule. It is dispatched by a person, by `land <pr> --run-e2e`, by
+  `land --promote boss-os --run-e2e`, or by `land` after a large change.
+- **The rule is code**: `scripts/deploy/production-gate.mjs` (a green e2e on the sha; or a reason
+  + `CI` green on exactly that sha + the journeys not known red; anything unread is refused).
+  `deploy.yml` runs it on every path, and `npm run validate:production-gate` fails the build if a
+  path stops going through it.
+- **By hand, without a laptop**: `gh workflow run e2e.yml --ref main` (green → `deploy.yml`
+  fires), or `gh workflow run deploy.yml -f sha=<sha>` for a sha that already has a green run.
+  Without one, `deploy.yml` refuses unless it is given `-f reason=` — that is `land`'s call to
+  make. It no longer ships main's head with no verdict. `land --promote boss-os` ships the newest
+  already-e2e-green main commit newer than production.
+- **A red e2e run** deploys nothing and is fixed first (bisect from the last green sha).
+  Break-glass is `npm run deploy:production` from the laptop.
 
 ---
 

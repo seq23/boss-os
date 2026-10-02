@@ -163,3 +163,18 @@ violations) on breach and proves its own detection with a self-test fixture run.
   `workflow_dispatch` ONLY — any `schedule` cron, `push` or `pull_request` fails (owner, 2 Oct
   2026); every job a pull request waits on has a ceiling of at most 10 minutes. **Rule 0: zero
   jobs, fewer than two sharded jobs, or no Playwright job hard-fails.** 27-fixture self-test.
+
+- `production-moves-only-through-the-gate.mjs` (`npm run validate:production-gate`) — 2 Oct 2026,
+  the owner: a small change ships to production on the fast check; e2e gates production only
+  after a large change or when asked (`land` defines "large", in seq23/seq-bin). The old rule —
+  no green e2e, no production — is replaced by one decision in one file,
+  `scripts/deploy/production-gate.mjs`: a green e2e on the sha; or a reason + `CI` green on
+  exactly that sha + the journeys not known red; anything unread refused. Reads `deploy.yml`:
+  triggers exactly `workflow_run` of e2e + `workflow_dispatch`, a red run turned away, the gate
+  run unconditionally before the deploy on every path (the dispatch used to ship main's head
+  with no verdict), `sha` + `reason` inputs, the sha on main and checked out exactly,
+  `deploy:production` and never a bare `wrangler deploy`, no cancel-in-progress, a recorded
+  GitHub Deployment. Reads the gate: the decision, the known-red rule, both API reads, the
+  pointer to land, no restated threshold — and runs its table (17 cases, 5 broken gates).
+  `docs/DEPLOYING.md` must name the gate. **Rule 0: a missing deploy.yml, a missing gate or an
+  empty table hard-fails.** 29-fixture self-test.

@@ -1,4 +1,5 @@
-# Boss OS — production deploy, on a green FULL E2E run of `main`, without a person in the loop.
+# Boss OS — production deploy from CI: on a green FULL E2E run of `main`, or on a dispatch the
+# production gate passes. Without a person in the loop.
 #
 # WHY THIS EXISTS, AND WHY IT REVERSES A DELIBERATE DECISION.
 #
@@ -17,15 +18,29 @@
 # included the 15–17-minute Playwright journeys, so every merge waited on them before shipping.
 # The journeys moved to `e2e.yml` (workflow_dispatch ONLY — owner, 2 Oct 2026; the weekly Sunday
 # cron of 26 Sep is retired) and this workflow fires on THAT run's success, checking out the exact
-# sha it passed on. A merge lands on main at once; production moves when someone, or `land` after
-# a large change, dispatches e2e on main's head and it goes green — `land --promote boss-os
-# --run-e2e` is the path after a batch of merges. Every deploy here is recorded as a GitHub
-# Deployment (environment `production`), which is what `land --promote` reads to know what
-# production runs.
+# sha it passed on. Every deploy here is recorded as a GitHub Deployment (environment
+# `production`), which is what `land` reads to know what production runs.
+#
+# SMALL CHANGES SHIP ON THE FAST CHECK (owner, 2 Oct 2026, asked and answered). With the journeys
+# on demand only, a small change waited for a 17-minute suite nothing would start. Now:
+#   · A SMALL change is deployed by `land <pr>` from the laptop as soon as `CI` is green on the
+#     merge commit (`npm run deploy:production` in a clean worktree at that sha, recorded as
+#     "small change: N lines, M files; shipped on the fast check, e2e on demand").
+#   · After a LARGE change `land` dispatches e2e on main's head, and this workflow fires on that
+#     run's success; `land` waits for this run instead of deploying the same sha beside it.
+#   · "Large" is defined once, in the `large` block of `land` (seq23/seq-bin) — not here.
+#   · workflow_dispatch is the same rule without a laptop, and NO LONGER a way round it: it used
+#     to deploy main's head with no verdict at all. Now it takes a `sha` and a `reason` and is
+#     REFUSED unless that sha has a green e2e run, or — with a reason, land's small-change
+#     verdict — `CI` is green on exactly that sha and the journeys are not known red on main.
+# The rule is `scripts/deploy/production-gate.mjs`, run below for EVERY path; this file restates
+# none of it, and `scripts/validate/production-moves-only-through-the-gate.mjs` fails the build
+# if a path stops going through it. Break-glass is `npm run deploy:production` from the laptop.
 #
 # WHAT MAKES THIS SAFE ENOUGH TO BE WORTH IT:
-#   · It runs ONLY after `e2e` has completed successfully, and ONLY on `main`. A red
-#     e2e run deploys nothing and is fixed first (bisect from the last green sha).
+#   · It runs ONLY for a sha the production gate passes, and ONLY on `main`. A red
+#     e2e run deploys nothing, blocks every small change until a green run is newer, and is fixed
+#     first (bisect from the last green sha).
 #   · It runs `npm run deploy:production`, which applies migrations, verifies none
 #     are pending, builds, deploys, and probes the worker. Never a bare
 #     `wrangler deploy`: that ships a stale client and the LOCAL DEV bindings, and
@@ -43,7 +58,16 @@ on:
     workflows: [e2e]
     types: [completed]
     branches: [main]
-  workflow_dispatch: # break-glass: deploys main's head WITHOUT the e2e verdict; prefer `land --promote boss-os --run-e2e`
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to deploy to production (default: main's head)."
+        required: false
+        default: ""
+      reason:
+        description: "Why it may ship without a green e2e run on it: land's small-change verdict. Empty = a green e2e run on the sha is required."
+        required: false
+        default: ""
 
 concurrency:
   group: deploy-production
@@ -61,16 +85,46 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      deployments: write # the production record `land --promote` reads
+      actions: read # the gate reads e2e and CI runs
+      deployments: write # the production record `land` reads
 
     steps:
-      - name: Checkout the exact commit the e2e run proved
+      - name: Checkout main (the gate script, and the history the sha must be on)
         uses: actions/checkout@v4
         with:
-          # Deploy what was validated, not whatever `main` has drifted to since.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Pick the sha and pass the production gate (every path)
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SHA: ${{ github.event.inputs.sha }}
+          REASON: ${{ github.event.inputs.reason }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_run ]; then sha="$RUN_SHA"; else sha="$(git rev-parse "${INPUT_SHA:-origin/main}")"; fi
+          git merge-base --is-ancestor "$sha" origin/main || { echo "::error::$sha is not on main"; exit 1; }
+          SHA="$sha" node scripts/deploy/production-gate.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+          # `land` deploys a small change from the laptop and records it; a later green e2e on that
+          # same sha must not migrate-and-deploy it a second time.
+          live="$(gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=production&per_page=1" --jq '.[0].sha // empty')"
+          if [ "$live" = "$sha" ]; then
+            echo "production already runs $sha (GitHub deployment record); nothing to deploy" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # Deploy what the gate passed, not whatever `main` has drifted to since.
+      - name: Check out exactly that sha
+        if: steps.pick.outputs.skip != 'true'
+        run: git checkout -q "${{ steps.pick.outputs.sha }}"
 
       - name: Set up Node
+        if: steps.pick.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           # 24, to match ci.yml and `engines`. NOT 22: `validate:ci-npm-parity`
@@ -82,9 +136,11 @@ jobs:
           cache: npm
 
       - name: Install (reproducible, from package-lock)
+        if: steps.pick.outputs.skip != 'true'
         run: npm ci
 
       - name: Deploy
+        if: steps.pick.outputs.skip != 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           # Without this, wrangler returns a 7403 that reads like a revoked token
@@ -96,11 +152,17 @@ jobs:
       # `land` writes from a laptop. `land --promote` reads the newest one to know what production
       # runs; without it a scheduled deploy here would be invisible to the operator path.
       - name: Record the production deployment
+        if: steps.pick.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-          NOTE: ${{ github.event_name == 'workflow_dispatch' && 'deploy.yml workflow_dispatch (no e2e verdict)' || 'deploy.yml on green e2e' }}
+          SHA: ${{ steps.pick.outputs.sha }}
+          GATE: ${{ steps.pick.outputs.note }}
         run: |
+          set -euo pipefail
+          # The gate's own sentence is the note (which path let this sha through). The gate emits it
+          # as one line of plain ASCII with no quotes or backslashes, so it is safe inside the JSON
+          # below; cut here to stay inside GitHub's 140-character description.
+          NOTE="deploy.yml: ${GATE:0:110}"
           id="$(printf '{"ref":"%s","environment":"production","auto_merge":false,"required_contexts":[],"description":"%s","production_environment":true}' "$SHA" "$NOTE" \
                  | gh api -X POST "repos/${GITHUB_REPOSITORY}/deployments" --input - --jq .id)"
           printf '{"state":"success","environment":"production","description":"%s","environment_url":"https://boss.sequoiataylor.com"}' "$NOTE" \
