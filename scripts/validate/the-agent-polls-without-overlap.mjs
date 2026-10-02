@@ -176,11 +176,21 @@ export async function wrapperProblems(wrapperPath) {
   {
     const root = fresh();
     const first = spawn("bash", [wrapperPath], { env: envFor(root, { STUB_HOLD: "3" }), stdio: "ignore" });
-    for (let i = 0; i < 60 && !existsSync(join(lockOf(root), "holder")); i++) await new Promise((r) => setTimeout(r, 50));
+    // The close listener is attached HERE, in the same tick as the spawn. 2 Oct 2026, CI run
+    // 37017877746: it was attached after the holder wait below, and a mutant that never writes
+    // `holder` (the "nolock" self-test) ran its 3 s hold and closed while that wait was still
+    // polling; the close event fired with nobody listening, the later await never settled, and
+    // Node exited 13 ("unsettled top-level await") — main red on a workflow-only merge.
+    const firstClosed = new Promise((r) => first.on("close", r));
+    // Wait until `first` has RECORDED its claim (the stub logs `work-once`, then holds STUB_HOLD seconds), so the
+    // second tick below provably runs inside the hold. Waiting for `holder` alone (as before 2 Oct 2026) left a
+    // window — holder written, the two snapshot stubs still starting, claim not yet logged — in which a loaded
+    // machine read "0 claims recorded (expected 1)" against the real, correct wrapper.
+    for (let i = 0; i < 100 && claimsIn(logOf(root)) < 1; i++) await new Promise((r) => setTimeout(r, 50));
     const second = runWrapper(wrapperPath, root, ["--poll"], { BOSS_OS_CLAIM_HOUR: "14" });
     if (claimsIn(logOf(root)) !== 1) out.push(`While one claim was running, a second tick started another: ${claimsIn(logOf(root))} claims recorded (expected 1).`);
     if (second.status !== 0) out.push(`A tick that finds a live holder should exit 0 silently, exited ${second.status}.`);
-    await new Promise((r) => first.on("close", r));
+    await firstClosed;
     if (existsSync(lockOf(root))) out.push("The lock was not released when the holder finished.");
     rmSync(root, { recursive: true, force: true });
   }
