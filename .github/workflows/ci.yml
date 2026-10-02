@@ -15,9 +15,11 @@
 #
 # The Playwright journeys — 15–17 minutes, one worker, one shared local D1 — used to run here on
 # `main` after every merge, and `Deploy` fired on this workflow. From 26 Sep 2026 they run once a
-# night (07:00 UTC) and on demand in `e2e.yml`, and `Deploy` fires on THAT workflow's success: a
-# merge lands on main at once, production moves only to a commit the journeys have passed
-# (`land --promote boss-os` ships the newest such commit by hand). `land <pr>` watches this run.
+# night (07:00 UTC) and on demand in `e2e.yml`, and `Deploy` fires on THAT workflow's success.
+# From 2 Oct 2026 they run on demand only, and THIS run is what a small change ships on: `land
+# <pr>` watches it on `main` and, green, deploys a small change to production at once; after a
+# large change (land defines "large", in seq23/seq-bin) it runs the journeys first
+# (scripts/deploy/production-gate.mjs; docs/DEPLOYING.md, "When production moves").
 #
 # Every job carries `timeout-minutes` at about twice its normal wall time, so a hang is reported as
 # a hang inside the hour rather than as a six-hour default.

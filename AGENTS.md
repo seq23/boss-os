@@ -83,9 +83,10 @@ Parent authorities (IMMUTABLE — never modify, move, or rewrite):
 - `npm run e2e` — Playwright (resets the local D1, then starts its own `wrangler dev`; no
   credentials). Safe to re-run back to back; that is a hard requirement, not a nicety. In CI it
   runs on demand only (`e2e.yml`, `workflow_dispatch`; owner, 2 Oct 2026), never per merge and
-  never on a schedule, and gates production, not the merge; production still promotes only from an e2e-green sha, so
-  `land --promote boss-os --run-e2e` is the path after a batch (`docs/DEPLOYING.md`, "When
-  production moves"). Do not run it locally unless your change touches what the journeys cover.
+  never on a schedule. A small change ships to production on the fast check (`land <pr>` deploys it); the journeys
+  gate production only after a large change — `land` measures it and runs them, and "large" is defined once, in
+  `land` (seq23/seq-bin) — or when asked (`land <pr> --run-e2e`); a known-red e2e blocks every small change
+  (`docs/DEPLOYING.md`, "When production moves"; `scripts/deploy/production-gate.mjs`). Do not run it locally unless your change touches what the journeys cover.
 - `npm run migrate:local` — apply D1 migrations to local miniflare sqlite.
 - `npm run backup:local` / `npm run restore:local` — D1 export/restore proof path.
 - `npm run vault:*` — encrypted secret vault operations (values never printed).

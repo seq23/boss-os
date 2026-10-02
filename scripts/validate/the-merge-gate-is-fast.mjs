@@ -21,7 +21,8 @@
  *
  * 2 Oct 2026, the owner: ON DEMAND ONLY. No schedule at all. The suite runs when a person
  * dispatches it, when `land --promote boss-os --run-e2e` does, or when `land` dispatches it after
- * a large change. Production still promotes only from an e2e-green sha. Rules 6–7 below pin the
+ * a large change. A small change ships on the fast check this file keeps fast (what may reach
+ * production is production-moves-only-through-the-gate.mjs's rule). Rules 6–7 below pin the
  * trigger list to exactly `workflow_dispatch`, so a "helpful" return to weekly, nightly, hourly —
  * any cron — fails the build instead of quietly spending the minutes again.
  *

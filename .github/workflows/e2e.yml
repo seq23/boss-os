@@ -3,10 +3,11 @@
 # BUILD FIRST, TEST IN BATCHES. This suite runs only when dispatched by a person, by
 # `land --promote boss-os --run-e2e`, or by `land` after a large change (`land` dispatches it when
 # the PR it just merged is large; the `land` PR in seq23/seq-bin defines "large"). The merge gate
-# is ci.yml, and `land <pr>` deploys STAGING on every merge. Production deploys only from a commit
-# this workflow has passed on: `deploy.yml` fires on THIS workflow's success and ships exactly the
-# sha it passed on. A successful dispatch on main triggers deploy.yml; `land --promote boss-os` can
-# also ship the newest already-green commit.
+# is ci.yml. After a LARGE change production deploys only from a commit this workflow has passed
+# on: `deploy.yml` fires on THIS workflow's success and ships exactly the sha it passed on;
+# `land --promote boss-os` can also ship the newest already-green commit. A SMALL change ships on
+# the fast check without this suite (owner, 2 Oct 2026; `land <pr>` deploys it,
+# scripts/deploy/production-gate.mjs is the rule).
 #
 # WHY NOT PER MERGE (26 Sep 2026): 217 journeys on one worker against one shared local D1 take
 # 15–17 minutes, and from 21 Sep they ran on `main` after every merge inside `CI`, so every merge
@@ -16,8 +17,9 @@
 # 2026: no cron at all, so a scheduled run never spends this private repo's Actions minutes on a
 # head nobody changed. A run happens because someone, or `land`, asked for one.
 #
-# A red run blocks the next production deploy and is fixed first: bisect between the last green
-# sha (`gh run list --workflow e2e --status success`) and the red one.
+# A red run deploys nothing, blocks every small change until a green run is newer (known red), and
+# is fixed first: bisect between the last green sha (`gh run list --workflow e2e --status
+# success`) and the red one.
 #
 # NOT `schedule`, NOT `pull_request`, NOT `push`: scripts/validate/the-merge-gate-is-fast.mjs
 # fails the build if any of those triggers comes back (any cron, at any cadence), if
