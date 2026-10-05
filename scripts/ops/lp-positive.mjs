@@ -425,6 +425,14 @@ async function main() {
     if (r.drop) {
       drops[r.reason] = (drops[r.reason] ?? 0) + 1;
       if (r.address && !accepted.has(r.address)) rejected.set(r.address, r.reason);
+      /*
+       * RECALL IS A TEST OF THE SEARCH, NOT OF THE SCREEN. Three of her twelve known replies are
+       * autoresponders — Twin's Reply Log counts them as replies, and so does she. The screen is
+       * right to keep them off the list; `--verify` must still see that the search FOUND them, so a
+       * screened-out message is recorded under its drop reason. A message the search never reached
+       * is the failure that check exists for, and this keeps it meaning exactly that.
+       */
+      if (r.address && !seenAddresses.has(r.address)) seenAddresses.set(r.address, { bucket: r.reason, when });
       continue;
     }
     counts.replies += 1;
