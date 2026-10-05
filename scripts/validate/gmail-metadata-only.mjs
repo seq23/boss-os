@@ -211,7 +211,32 @@ const CONTENT_EXCEPTIONS = new Map([
         // warm LP is worse than no scan, and every other check this file could run is marking its
         // own homework.
         [(src) => /KNOWN_REPLIES/.test(src) && /RECALL_FAILED/.test(src),
-         "it must carry the owner-supplied list of known replies and fail loudly when it cannot find one"],
+         "it must check recall against the owner-supplied list of known replies and fail loudly when it cannot find one"],
+        // THE GROUND TRUTH IS NOT IN THE REPOSITORY. Until 5 Oct 2026 the twelve known replies —
+        // real LP names and addresses — sat in this file as a literal, in a repository made public
+        // the day before. The list is read from her Mac, and no address at a domain outside our
+        // own may appear in this file, in code or in comment. A name in a comment is still a name.
+        [(src) => /known-replies\.json/.test(src),
+         "the owner-supplied list of known replies must be read from her Mac, never carried in the source"],
+        [(src) => (src.match(/[\w.+'-]+@[\w.-]+\.\w+/g) ?? [])
+          .every((a) => /@(?:[\w.-]+\.)?(westpeek\.ventures|sequoiataylor\.com|joinwestpeek\.com|spry\.vc)$/i.test(a)),
+         "it must carry no email address at a domain outside our own — LP identities are confidential and this repository is public"],
+        /*
+         * STRUCTURE BEFORE WORDING. On 5 Oct 2026 seven of thirteen names on the running list were a
+         * sales drip, a vendor, two newsletters, an autoresponder and two of our own addresses —
+         * every one classified positive on its wording alone. The structural screen is the ONE
+         * shared module the brokerage reader uses; a second copy here would be the drift this
+         * repository names by name. And a message that is not a REPLY to our outreach cannot be a
+         * positive reply, however friendly its wording.
+         */
+        [(src) => /from "\.\/mail-bulk\.mjs"/.test(src) && /\bbulkReason\b/.test(src) && /\bownDomainReason\b/.test(src),
+         "it must screen bulk and our own domains through the shared mail-bulk.mjs, not a copy of the filter"],
+        [(src) => /\breplyEvidence\b/.test(src) && /not_a_reply/.test(src),
+         "it must require that a candidate is a reply to our outreach — threads onto a message we sent, or quotes the mailbox"],
+        [(src) => /\breconcileList\b/.test(src) && /REMOVED \[/.test(src),
+         "it must reclassify the running list on every run and print each removal with its reason"],
+        [(src) => /NAMED STOP \[SCREEN_DISCARDED_EVERYTHING\]/.test(src),
+         "screening out every inbound message must be a named stop — a 100% discard is a broken screen, not a quiet mailbox"],
       ],
     },
   ],

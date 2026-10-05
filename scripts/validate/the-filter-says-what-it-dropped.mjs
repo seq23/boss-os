@@ -44,6 +44,9 @@ import os from "node:os";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FILTER = "scripts/ops/interest-ledger.mjs";
 const EXTRACTOR = "scripts/ops/interest-extract.mjs";
+/** Stage 1 moved here on 5 Oct 2026 so the LP reader could share it. The checks follow the import. */
+const BULK = "scripts/ops/mail-bulk.mjs";
+const LP = "scripts/ops/lp-positive.mjs";
 
 /**
  * COMPANY NAMES THAT MUST NOT APPEAR IN THE FILTER.
@@ -54,9 +57,29 @@ const EXTRACTOR = "scripts/ops/interest-extract.mjs";
  */
 const NAME_TRIPWIRE = /\b(spacex|bytedance|stripe|anthropic|openai|databricks|neuralink|anduril|canva|figma|revolut|klarna)\b/i;
 
-/** Pure over { path: source } so the self-test drives the same code the real scan does. */
-export function checkFilter(src) {
+/**
+ * Pure over sources so the self-test drives the same code the real scan does.
+ *
+ * `bulkSrc` is the shared stage-1 module and `lpSrc` the LP reader. STAGE 1 IS ONE FUNCTION IN ONE
+ * FILE: the ledger must import it from there rather than define its own, and so must the LP reader
+ * — two readers with two filters is how a sales drip became an LP who wants a call (5 Oct 2026).
+ */
+export function checkFilter(src, bulkSrc = "", lpSrc = "") {
   const bad = [];
+  const stage1 = [
+    [/return "bulk_/, "stage 1 must return NAMED structural reasons"],
+    [/list-unsubscribe/i,
+     "stage 1 must key on List-Unsubscribe — a header is a fact about the message; wording is a guess"],
+  ];
+  for (const [re, why] of stage1) if (!re.test(bulkSrc)) bad.push(`${BULK}: MISSING — ${why}`);
+  if (!/import \{[^}]*\bbulkReason\b[^}]*\} from "\.\/mail-bulk\.mjs"/.test(src)) {
+    bad.push(`${FILTER}: stage 1 must be imported from ${BULK}, not defined here — one filter, two readers`);
+  }
+  if (/function bulkReason\s*\(/.test(src)) bad.push(`${FILTER}: defines its own bulkReason — a second copy of the filter`);
+  if (!/import \{[^}]*\bbulkReason\b[^}]*\} from "\.\/mail-bulk\.mjs"/.test(lpSrc)) {
+    bad.push(`${LP}: the LP reader must screen through the same ${BULK} the ledger uses`);
+  }
+  if (/function bulkReason\s*\(/.test(lpSrc)) bad.push(`${LP}: defines its own bulkReason — a second copy of the filter`);
   const must = [
     [/dropped \+ neverRead \+ kept\.length !== census/,
      "it must reconcile dropped + never-read + kept against the census and stop when they disagree"],
@@ -78,10 +101,7 @@ export function checkFilter(src) {
      "keeping nothing from a non-empty mailbox must exit non-zero — a 100% discard is a bug, not efficiency"],
     [/NAMED STOP \[EMPTY_CENSUS\]/,
      "a census of zero must be a named stop; a revoked delegation reads identically to a quiet week"],
-    [/return "bulk_/, "stage 1 must return NAMED structural reasons"],
     [/return "shape_/, "stage 2 must return NAMED shape reasons"],
-    [/list-unsubscribe/i,
-     "stage 1 must key on List-Unsubscribe — a header is a fact about the message; wording is a guess"],
     [/shares\?/,
      "SIZE must accept a share count as well as a dollar figure: \"40k shares of X available\" is inbound supply with no dollars in it"],
   ];
@@ -153,33 +173,44 @@ export function checkSeparation(filterSrc, extractSrc) {
 
 if (process.argv.includes("--self-test")) {
   const real = readFileSync(join(ROOT, FILTER), "utf8");
+  const bulk = readFileSync(join(ROOT, BULK), "utf8");
+  const lp = readFileSync(join(ROOT, LP), "utf8");
+  const checkFilterReal = (s) => checkFilter(s, bulk, lp);
   let failed = 0;
   const expect = (name, cond) => { if (cond) console.log(`  ✓ ${name}`); else { console.error(`  ✗ self-test: ${name}`); failed += 1; } };
 
-  expect("the real filter passes", checkFilter(real).length === 0);
+  expect("the real filter passes", checkFilterReal(real).length === 0);
+  expect("a shared stage 1 that stops naming its reasons is caught",
+    checkFilter(real, bulk.replace(/return "bulk_/g, 'return "x_'), lp).length > 0);
+  expect("a shared stage 1 that stops keying on List-Unsubscribe is caught",
+    checkFilter(real, bulk.replace(/list-unsubscribe/gi, "x-nothing"), lp).length > 0);
+  expect("a ledger that grows its own copy of stage 1 is caught",
+    checkFilterReal(real.replace(/import \{ bulkReason \} from "\.\/mail-bulk\.mjs";/, "function bulkReason(h) { return null; }")).length > 0);
+  expect("an LP reader that stops using the shared stage 1 is caught",
+    checkFilter(real, bulk, lp.replace(/from "\.\/mail-bulk\.mjs"/g, 'from "./elsewhere.mjs"')).length > 0);
   /*
    * BOTH SPELLINGS ARE REMOVED, because the check accepts either. Removing only one left the file
    * passing and the self-test claiming a catch that had not happened — a self-test that proves the
    * validator works when it does not is worse than none at all.
    */
   expect("a filter that stops reconciling is caught",
-    checkFilter(real.replace(/dropped \+ neverRead \+ kept\.length !== census/g, "false")).length > 0);
+    checkFilterReal(real.replace(/dropped \+ neverRead \+ kept\.length !== census/g, "false")).length > 0);
   expect("a filter that folds unread messages back into its drop counts is caught",
-    checkFilter(real.replace(/NAMED STOP \[MAILBOX_NOT_FULLY_READ\]/g, "note")).length > 0);
+    checkFilterReal(real.replace(/NAMED STOP \[MAILBOX_NOT_FULLY_READ\]/g, "note")).length > 0);
   expect("a filter that stops retrying Gmail's 403 rate limit is caught",
-    checkFilter(real.replace(/r\.status === 403 \|\| /g, "")).length > 0);
+    checkFilterReal(real.replace(/r\.status === 403 \|\| /g, "")).length > 0);
   expect("a filter that stops re-minting an expired credential is caught",
-    checkFilter(real.replace(/r\.status === 401/g, "false")).length > 0);
+    checkFilterReal(real.replace(/r\.status === 401/g, "false")).length > 0);
   expect("a filter that captures its token once is caught",
-    checkFilter(real.replace(/TOKEN_MAX_AGE_MS/g, "X")).length > 0);
+    checkFilterReal(real.replace(/TOKEN_MAX_AGE_MS/g, "X")).length > 0);
   expect("a filter that stops naming its drops is caught",
-    checkFilter(real.replace(/WHAT THE FILTER DISCARDED/g, "done")).length > 0);
+    checkFilterReal(real.replace(/WHAT THE FILTER DISCARDED/g, "done")).length > 0);
   expect("a filter that would pass on a 100% discard is caught",
-    checkFilter(real.replace(/NAMED STOP \[FILTER_DISCARDED_EVERYTHING\]/g, "note")).length > 0);
+    checkFilterReal(real.replace(/NAMED STOP \[FILTER_DISCARDED_EVERYTHING\]/g, "note")).length > 0);
   expect("a company name entering the filter's code is caught",
-    checkFilter(`${real}\nconst NAMES = /spacex|bytedance/i;`).length > 0);
+    checkFilterReal(`${real}\nconst NAMES = /spacex|bytedance/i;`).length > 0);
   expect("the same names in a comment are not a violation",
-    checkFilter(`${real}\n// SpaceX and ByteDance are deliberately absent from the code below.`).length === 0);
+    checkFilterReal(`${real}\n// SpaceX and ByteDance are deliberately absent from the code below.`).length === 0);
   expect("a reader that acquires a model call is caught",
     checkSeparation(`${real}\nspawn("claude", []);`, readFileSync(join(ROOT, EXTRACTOR), "utf8")).length > 0);
   const extract = readFileSync(join(ROOT, EXTRACTOR), "utf8");
@@ -200,7 +231,7 @@ if (process.argv.includes("--self-test")) {
 
 // ─── The real scan ───────────────────────────────────────────────────────────
 
-for (const f of [FILTER, EXTRACTOR]) {
+for (const f of [FILTER, EXTRACTOR, BULK, LP]) {
   if (!existsSync(join(ROOT, f))) {
     console.error(`FILTER ACCOUNTING SCAN FAILED — ${f} does not exist.`);
     console.error("  The interest ledger has been renamed or removed. A scan with no subject is not a");
@@ -211,7 +242,10 @@ for (const f of [FILTER, EXTRACTOR]) {
 const filterSrc = readFileSync(join(ROOT, FILTER), "utf8");
 const extractSrc = readFileSync(join(ROOT, EXTRACTOR), "utf8");
 
-const bad = [...checkFilter(filterSrc), ...checkSeparation(filterSrc, extractSrc)];
+const bad = [
+  ...checkFilter(filterSrc, readFileSync(join(ROOT, BULK), "utf8"), readFileSync(join(ROOT, LP), "utf8")),
+  ...checkSeparation(filterSrc, extractSrc),
+];
 
 /*
  * AND THE LIVE RUN, WHEN THERE IS ONE. The checks above are about the code; this is about what the

@@ -26,7 +26,8 @@
  * marketing send is a HEADER: every legitimate bulk sender sets `List-Unsubscribe`, and a person
  * writing to her does not. Same for `List-Id`, `Precedence: bulk`, `Auto-Submitted`, no-reply
  * senders and out-of-office subjects. These are facts about the message, not judgements about it,
- * and they are read from headers alone — this stage never asks for a body.
+ * and they are read from headers alone — this stage never asks for a body. The function itself
+ * is `bulkReason` in `mail-bulk.mjs`, shared with the LP reader (5 Oct 2026); it is re-exported here.
  *
  * STAGE 2 REQUIRES THE SHAPE OF A TRADE: a SIZE and a SIDE.
  *   · SIZE is a dollar figure OR A SHARE COUNT. The share count is not an embellishment — "I have
@@ -77,6 +78,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { bulkReason } from "./mail-bulk.mjs";
 
 /**
  * THE MAILBOX IS A NAMED CONSTANT AND IT IS PUT IN THE JWT's `sub` CLAIM, so it cannot silently
@@ -132,31 +134,14 @@ async function accessToken(creds) {
 // ─── The two stages, as pure functions so the validator's self-test can reach them ───
 
 /**
- * STAGE 1 — structural bulk. Facts about the message, never a judgement about its wording.
+ * STAGE 1 — structural bulk — LIVES IN `mail-bulk.mjs` AND IS SHARED WITH `lp-positive.mjs`.
  *
- * Returns a NAMED REASON or null. The name is what lets the run report what it dropped: "99.9%
- * discarded" is only a bug you can see if the discard is itemised.
+ * It was defined here first. On 5 October 2026 the LP reader was found bucketing a Google Cloud
+ * sales drip and two newsletters as LPs who want a call, because it had no structural filter at
+ * all. The fix moved this function out rather than copying it: one definition, two readers, and
+ * one place to strengthen it. Re-exported so nothing that imports it from here changes.
  */
-export function bulkReason(headers) {
-  const h = (name) => headers[name.toLowerCase()] ?? "";
-  if (h("list-unsubscribe")) return "bulk_list_unsubscribe";
-  if (h("list-id")) return "bulk_list_id";
-  if (/\bbulk\b|\blist\b|\bjunk\b/i.test(h("precedence"))) return "bulk_precedence";
-  if (h("auto-submitted") && !/^no$/i.test(h("auto-submitted").trim())) return "bulk_auto_submitted";
-  if (h("x-autoreply") || h("x-autorespond")) return "bulk_autoresponder";
-  const from = h("from").toLowerCase();
-  if (/(^|<)\s*(no-?reply|do-?not-?reply|donotreply|notifications?|mailer-daemon|postmaster|bounce)[.\-+_a-z0-9]*@/i.test(from)) {
-    return "bulk_noreply_sender";
-  }
-  if (/@(mailchimp|sendgrid|substack|beehiiv|hubspot|constantcontact|mailgun|salesforce|marketo)\b/i.test(from)) {
-    return "bulk_marketing_platform";
-  }
-  const subject = h("subject");
-  if (/\b(out of (the )?office|automatic reply|auto.?reply|autoresponder|undeliverable|delivery status notification|undelivered mail|returned mail|failure notice)\b/i.test(subject)) {
-    return "bulk_auto_subject";
-  }
-  return null;
-}
+export { bulkReason };
 
 /**
  * SIZE — a dollar figure OR a share count.
