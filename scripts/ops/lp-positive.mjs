@@ -34,9 +34,24 @@
  *
  * ─── A running list, because a monthly email is not a record ───────────────
  *
- * `positive.json` on her Mac accumulates. Each run adds who is new and never drops anyone: a warm LP
- * that fell off a list because a later scan windowed differently is a lost LP, and she would have no
- * way to know. The monthly email is a VIEW of that file, not the file itself.
+ * `positive.json` on her Mac accumulates. Each run adds who is new and never drops anyone for a
+ * WINDOWING reason: a warm LP that fell off a list because a later scan windowed differently is a
+ * lost LP, and she would have no way to know. The monthly email is a VIEW of that file, not the
+ * file itself.
+ *
+ * ─── But a name that was never an LP is removed, out loud ──────────────────
+ *
+ * On 5 October 2026 seven of the thirteen names on the list were not LPs: a Google Cloud sales
+ * drip, a vendor selling a raise-capital programme, two newsletters, a school's autoresponder, and
+ * Monique's and Porter's own addresses. Every one of them contained a positive phrase, because
+ * "book a meeting" is what a drip says and Monique's monthly note quotes every positive line there
+ * is. None of them was a REPLY to anything we sent.
+ *
+ * So three structural questions now run before any wording is read — is it bulk, is it our own
+ * domain, is it a reply to our outreach (threads onto a message we sent, or quotes the mailbox) —
+ * shared with the brokerage reader in `mail-bulk.mjs` rather than copied. And each run RECLASSIFIES
+ * the running list against them: an entry the filter rejects is removed and the removal is printed
+ * with its reason. "Never drops anyone" protects LPs from windowing, not drips from scrutiny.
  *
  * ─── Addresses stay here ───────────────────────────────────────────────────
  *
@@ -53,6 +68,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { sendersFor, employeeMail } from "./notify.mjs";
+import { addressIn, bulkReason, headersFromRaw, ownDomainReason, replyEvidence } from "./mail-bulk.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 /** The campaign's first send was 23 July 2026. July 1 is a deliberate margin, not a guess. */
@@ -63,54 +79,42 @@ const SEND = process.argv.includes("--email");
 const VERIFY = process.argv.includes("--verify");
 
 /**
- * GROUND TRUTH, SUPPLIED BY THE OWNER FROM HER OWN RECORDS ON 2026-09-09.
+ * GROUND TRUTH, SUPPLIED BY THE OWNER FROM HER OWN RECORDS ON 2026-09-09 — KEPT ON HER MAC.
  *
  * Twelve replies she knows exist. This is a RECALL TEST, and it is the only honest way to answer
  * "did the search actually find everything" — every other check this script could run would be
  * marking its own homework. A scan that finds eleven of twelve is not 92% correct; it is a scan
  * that lost a warm LP, and the whole point of the list is that nobody falls off it.
  *
- * `--verify` fails LOUDLY on a miss rather than reporting a percentage. If this list ever goes
+ * `--verify` fails LOUDLY on a miss rather than reporting a percentage. If the list ever goes
  * stale, that is a reason to update it from her records, never a reason to soften the check.
+ *
+ * THE LIST LIVES IN `~/.boss-os/lp/known-replies.json`, NOT HERE. LP names and addresses are
+ * confidential and this repository is public (4 Oct 2026); until 5 October the twelve sat in this
+ * file as a literal. `validate:gmail` now refuses any address in this file at a domain that is not
+ * our own. Shape of the file: { known: [[address, who, date], …], unreachable: { address: why } }.
+ *
+ * Two of the twelve are not in any mailbox we can read — CONFIRMED by method: a Gmail search for
+ * each returns zero messages in both readable mailboxes while Twin's own Reply Log records them.
+ * That is a COVERAGE GAP, not a search bug, and the difference matters: no regex finds a message
+ * that is not there. They are the `unreachable` entries, a NAMED STOP — green and self-explaining —
+ * rather than a permanent red, so that a REAL miss still means something. The check is not
+ * weakened: a miss that is not on that list still fails hard.
  */
-const KNOWN_REPLIES = [
-  ["ccrow@trinity.edu", "Craig Crow, Trinity University Endowment", "2026-07-25"],
-  ["amartin@wesleyan.edu", "Anne Martin, Wesleyan University Endowment", "2026-08-02"],
-  ["wes@astera.org", "Wes Panek, Astera Institute", "2026-08-12"],
-  ["trecker@irvine.org", "Tim Recker, The James Irvine Foundation", "2026-08-15"],
-  ["lcenter@rockefeller.edu", "Rockefeller University", "2026-08-20"],
-  ["jun.yang@rockefeller.edu", "Jun Yang, Rockefeller University Endowment", "2026-08-20"],
-  ["award@inv.uchicago.edu", "Andy Ward, University of Chicago Office of Investments", "2026-08-21"],
-  ["kirk.sims@trs.texas.gov", "Kirk Sims, Teacher Retirement System of Texas", "2026-08-26"],
-  ["breay@bushfoundation.org", "Brendon Reay, Bush Foundation", "2026-08-30"],
-  ["ksimpson@globalendowment.com", "Kate Simpson, Global Endowment Management", "2026-09-01"],
-  ["regina@catalyze.community", "Regina Green, Catalyze", "2026-09-01"],
-  ["lisa@screendoor.co", "Lisa Cawley, Screendoor Partners", "2026-09-09"],
-];
-
-/**
- * ─── TWO OF THE TWELVE ARE NOT IN ANY MAILBOX WE CAN READ ──────────────────
- *
- * CONFIRMED, by method rather than by assertion: a Gmail search for each of these addresses returns
- * ZERO messages in `sequoia@westpeek.ventures` and zero in `staylor@spry.vc`, while Twin's own
- * "Reply Log" tab records both — 2026-08-20 and 2026-08-21, "Reply received — suppressed from all
- * future sends". So the replies exist and they are somewhere neither readable mailbox contains.
- *
- * THAT IS A COVERAGE GAP, NOT A SEARCH BUG, AND THE DIFFERENCE MATTERS. A search bug is fixed by
- * widening the query; a coverage gap is fixed by gaining access to a mailbox, and no amount of
- * regex will ever find a message that is not there. Reporting them as a plain recall failure every
- * week would train her to ignore the one alarm that is supposed to mean something.
- *
- * SO THEY ARE A NAMED STOP — green and self-explaining — RATHER THAN A PERMANENT RED. The check is
- * NOT weakened: a miss that is not on this list still fails hard, and the run says out loud, every
- * time, which two it cannot see and where the evidence that they exist actually lives.
- */
-const UNREACHABLE = new Map([
-  ["jun.yang@rockefeller.edu",
-   "In Twin's Reply Log 2026-08-20. Zero messages in westpeek.ventures and zero in spry.vc — it landed in a mailbox neither credential can read."],
-  ["award@inv.uchicago.edu",
-   "In Twin's Reply Log 2026-08-21. Zero messages in westpeek.ventures and zero in spry.vc — it landed in a mailbox neither credential can read."],
-]);
+const KNOWN_FILE = path.join(OUT_DIR, "known-replies.json");
+function loadKnownReplies() {
+  if (!fs.existsSync(KNOWN_FILE)) {
+    console.error(`NAMED STOP [NO_KNOWN_REPLIES] --verify needs her ground truth at ${KNOWN_FILE}; it is not in the repo by design.`);
+    process.exit(10);
+  }
+  const j = JSON.parse(fs.readFileSync(KNOWN_FILE, "utf8"));
+  const KNOWN_REPLIES = Array.isArray(j.known) ? j.known : [];
+  if (KNOWN_REPLIES.length === 0) {
+    console.error(`NAMED STOP [NO_KNOWN_REPLIES] ${KNOWN_FILE} holds no known replies; a recall test over nothing proves nothing.`);
+    process.exit(10);
+  }
+  return { KNOWN_REPLIES, UNREACHABLE: new Map(Object.entries(j.unreachable ?? {})) };
+}
 
 const GMAIL = "https://www.googleapis.com/auth/gmail.readonly";
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -136,13 +140,14 @@ async function accessToken(creds, scope, sub) {
 }
 
 /**
- * The readable text of a message, whatever a corporate gateway did to it on the way out.
+ * The decoded body of a message, QUOTED TEXT INCLUDED, whatever a corporate gateway did to it.
  *
  * Walks the MIME tree, prefers text/plain over text/html, and decodes per the part's own
  * Content-Transfer-Encoding. Falls back to stripping tags out of HTML when there is no plain part,
- * because a reply that exists only as HTML is still a reply.
+ * because a reply that exists only as HTML is still a reply. The quoted original stays in: it is
+ * the evidence that this is a reply to us at all (see `replyEvidence`).
  */
-export function readableText(raw) {
+export function decodedBody(raw) {
   const decodePart = (headers, body) => {
     const enc = (headers.match(/^content-transfer-encoding:\s*(\S+)/mi) ?? ["", ""])[1].toLowerCase();
     if (enc === "base64") {
@@ -187,9 +192,16 @@ export function readableText(raw) {
     text = text.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"');
   }
-  // Drop the quoted original: her own email is quoted underneath most replies, and matching intent
-  // against her own copy would mark every replier as enthusiastic about her own pitch.
-  return text
+  return text;
+}
+
+/**
+ * The replier's OWN words: the decoded body with the quoted original dropped. Her own email is
+ * quoted underneath most replies, and matching intent against her own copy would mark every
+ * replier as enthusiastic about her own pitch.
+ */
+export function readableText(raw) {
+  return decodedBody(raw)
     .split(/\r?\n/).filter((l) => !/^\s*>/.test(l)).join("\n")
     .split(/^\s*(on .{0,90}wrote:|-+\s*original message\s*-+|from:\s)/im)[0]
     .replace(/\s+/g, " ")
@@ -228,6 +240,69 @@ const quoteOf = (text) => {
   const best = sentences.find((s) => WANTS_CALL.test(s)) ?? sentences.find((s) => KEEP_WARM.test(s)) ?? sentences[0] ?? "";
   return best.replace(/^(hi|hello|hey|dear)\b[^,]{0,40},\s*/i, "").slice(0, 220).trim();
 };
+
+/**
+ * ONE MESSAGE, SCREENED — the structural questions first, the wording last.
+ *
+ * Returns { drop, address, reason } when the message cannot be an LP reply, or the classified
+ * candidate. `sentByUs(messageId)` says whether a message-id is one of ours; the run answers it
+ * with a Gmail search scoped to the mailbox, the test with a fixed set.
+ *
+ *   1. From one of OUR domains      → own_domain    (Monique's note, Porter's mail, her own sends)
+ *   2. Bulk by header or subject    → bulk_*        (drips, newsletters, autoresponders, bounces)
+ *   3. Not a reply to our outreach  → not_a_reply   (threads onto nothing of ours, quotes nothing of ours)
+ *
+ * Only then is the wording read. A drip saying "book a meeting" never reaches the regex.
+ */
+export async function screenMessage(raw, { mailbox = MAILBOX, sentByUs }) {
+  const headers = headersFromRaw(raw);
+  const fromLine = headers.from ?? "";
+  const address = addressIn(fromLine);
+  if (!address) return { drop: true, address: "", reason: "no_sender" };
+  const own = ownDomainReason(address);
+  if (own) return { drop: true, address, reason: own };
+  const bulk = bulkReason(headers);
+  if (bulk) return { drop: true, address, reason: bulk };
+  const body = decodedBody(raw);
+  const reply = await replyEvidence({ headers, bodyText: body, mailbox, sentByUs });
+  if (reply.reason) return { drop: true, address, reason: reply.reason };
+  const text = readableText(raw);
+  if (text.length < 8) return { drop: true, address, reason: "empty_body" };
+  const { bucket, why } = classify(text);
+  const name = (fromLine.match(/^\s*"?([^"<@]{2,60}?)"?\s*</) ?? ["", ""])[1].trim();
+  return { drop: false, address, name, bucket, why, text, evidence: reply.evidence };
+}
+
+/**
+ * THE RUNNING LIST, RECONCILED AGAINST THIS RUN.
+ *
+ *   · an entry this run found positive again is kept (and promoted warm→call if it earned it);
+ *   · an entry whose address this run saw and REJECTED on every message — bulk, our own domain,
+ *     not a reply — is removed, with the reason, out loud;
+ *   · an entry at one of our own domains is removed whether or not this run saw it;
+ *   · an entry this run did not see at all is kept: that is the windowing protection, and it is
+ *     the only sense in which "nobody drops off".
+ *
+ * Pure, so the test can prove it removes the seven shapes and keeps the two real ones.
+ */
+export function reconcileList(existing, { found, accepted, rejected }) {
+  const byAddress = new Map((existing ?? []).map((p) => [p.address, p]));
+  const removed = [];
+  let added = 0;
+  let promoted = 0;
+  for (const [address, was] of [...byAddress]) {
+    const own = ownDomainReason(address);
+    const reason = own ?? (!accepted.has(address) && rejected.get(address)) ?? null;
+    if (reason) { byAddress.delete(address); removed.push({ ...was, reason }); }
+  }
+  for (const [address, p] of found) {
+    const was = byAddress.get(address);
+    if (!was) { byAddress.set(address, p); added += 1; continue; }
+    if (was.bucket === "warm" && p.bucket === "call") { byAddress.set(address, { ...was, bucket: "call", quote: p.quote }); promoted += 1; }
+  }
+  const people = [...byAddress.values()].sort((a, b) => String(a.first_seen).localeCompare(String(b.first_seen)));
+  return { people, removed, added, promoted };
+}
 
 const api = async (url, token) => {
   const r = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
@@ -316,8 +391,26 @@ async function main() {
   console.log(`${ids.length} inbound message(s) in ${MAILBOX} since ${SINCE}.`);
 
   const counts = { scanned: 0, replies: 0, call: 0, warm: 0, auto: 0, departed: 0, negative: 0, other: 0 };
+  const drops = {};
   const found = new Map();
   const seenAddresses = new Map();
+  /** Every address this run accepted as a reply (any bucket), and every one it rejected, by reason. */
+  const accepted = new Set();
+  const rejected = new Map();
+
+  /**
+   * IS THIS MESSAGE-ID ONE OF OURS? One Gmail search, scoped to the mailbox as sender, no body and
+   * no header read — a hit means the id names a message she sent. Cached: a long thread repeats
+   * the same ids on every reply.
+   */
+  const ours = new Map();
+  const sentByUs = async (id) => {
+    if (!ours.has(id)) {
+      const j = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1&q=${encodeURIComponent(`from:${MAILBOX} rfc822msgid:${id}`)}`, token).catch(() => ({}));
+      ours.set(id, (j.messages ?? []).length > 0);
+    }
+    return ours.get(id);
+  };
 
   for (const id of ids) {
     const msg = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=raw`, token).catch(() => null);
@@ -326,26 +419,31 @@ async function main() {
     // BOUNDED. A mailbox holding a multi-megabyte deck must not be read whole into memory, and a
     // reply saying "happy to connect" ends long before this. Same bound lp-outcomes.mjs carries.
     const raw = Buffer.from(msg.raw, "base64").toString("utf8").slice(0, 200_000);
-    const fromLine = (raw.match(/^From:.*$/mi) ?? [""])[0];
-    const address = (fromLine.match(/[\w.+-]+@[\w.-]+\.\w+/) ?? [""])[0].toLowerCase();
-    if (!address || address.includes("westpeek.ventures")) continue;
-    // Bounces are not replies. A delivery failure names the address it failed for, so it would
-    // otherwise enter the list as if that person had written back.
-    if (/(mailer-daemon|postmaster|no-?reply|do-?not-?reply)/i.test(fromLine)) continue;
-    if (/(delivery status notification|undelivered mail|delivery has failed|returned mail|failure notice|address not found)/i
-      .test((raw.match(/^Subject:.*$/mi) ?? [""])[0])) continue;
+    const when = new Date(Number(msg.internalDate ?? Date.now())).toISOString().slice(0, 10);
 
-    const text = readableText(raw);
-    if (text.length < 8) continue;
+    const r = await screenMessage(raw, { mailbox: MAILBOX, sentByUs });
+    if (r.drop) {
+      drops[r.reason] = (drops[r.reason] ?? 0) + 1;
+      if (r.address && !accepted.has(r.address)) rejected.set(r.address, r.reason);
+      /*
+       * RECALL IS A TEST OF THE SEARCH, NOT OF THE SCREEN. Three of her twelve known replies are
+       * autoresponders — Twin's Reply Log counts them as replies, and so does she. The screen is
+       * right to keep them off the list; `--verify` must still see that the search FOUND them, so a
+       * screened-out message is recorded under its drop reason. A message the search never reached
+       * is the failure that check exists for, and this keeps it meaning exactly that.
+       */
+      if (r.address && !seenAddresses.has(r.address)) seenAddresses.set(r.address, { bucket: r.reason, when });
+      continue;
+    }
     counts.replies += 1;
+    accepted.add(r.address);
+    rejected.delete(r.address);
 
-    const { bucket } = classify(text);
+    const { address, name, bucket, text } = r;
     counts[bucket] += 1;
-    seenAddresses.set(address, { bucket, when: new Date(Number(msg.internalDate ?? Date.now())).toISOString().slice(0, 10) });
+    seenAddresses.set(address, { bucket, when });
     if (bucket !== "call" && bucket !== "warm") continue;
 
-    const name = (fromLine.match(/From:\s*"?([^"<@]{2,60}?)"?\s*</i) ?? ["", ""])[1].trim();
-    const when = new Date(Number(msg.internalDate ?? Date.now())).toISOString().slice(0, 10);
     const prior = found.get(address);
     // The strongest signal a person ever gave is the one that matters: someone who asked for
     // materials in July and offered a call in September is a call.
@@ -354,26 +452,28 @@ async function main() {
     }
   }
 
-  // ─── The running list: added to, never trimmed ────────────────────────────
+  // ─── WHAT THE SCREEN DISCARDED, by reason ─────────────────────────────────
+  const dropped = Object.values(drops).reduce((a, b) => a + b, 0);
+  console.log(`screened out ${dropped} of ${counts.scanned}: ${Object.entries(drops).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}=${v}`).join("  ") || "nothing"}`);
+  if (counts.scanned > 0 && counts.replies === 0) {
+    console.error("NAMED STOP [SCREEN_DISCARDED_EVERYTHING] every inbound message was screened out. 571 emails went out and real replies exist; this is a broken screen, not a quiet mailbox.");
+    process.exit(7);
+  }
+
+  // ─── The running list: added to, reconciled, never trimmed for a windowing reason ──
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const existing = fs.existsSync(LIST) ? JSON.parse(fs.readFileSync(LIST, "utf8")) : { people: [] };
-  const byAddress = new Map((existing.people ?? []).map((p) => [p.address, p]));
-  let added = 0;
-  let promoted = 0;
-  for (const [address, p] of found) {
-    const was = byAddress.get(address);
-    if (!was) { byAddress.set(address, p); added += 1; continue; }
-    if (was.bucket === "warm" && p.bucket === "call") { byAddress.set(address, { ...was, bucket: "call", quote: p.quote }); promoted += 1; }
-  }
-  const people = [...byAddress.values()].sort((a, b) => String(a.first_seen).localeCompare(String(b.first_seen)));
-  fs.writeFileSync(LIST, JSON.stringify({ updated_at: new Date().toISOString(), counts, people }, null, 2), "utf8");
+  const { people, removed, added, promoted } = reconcileList(existing.people ?? [], { found, accepted, rejected });
+  for (const r of removed) console.log(`  REMOVED [${r.bucket}] ${r.name || r.address} — ${r.reason}`);
+  fs.writeFileSync(LIST, JSON.stringify({ updated_at: new Date().toISOString(), counts, drops, removed: removed.map((r) => ({ address: r.address, reason: r.reason, removed_at: new Date().toISOString().slice(0, 10) })), people }, null, 2), "utf8");
 
   console.log(`replies read: ${counts.replies}  |  call: ${counts.call}  warm: ${counts.warm}  auto: ${counts.auto}  departed: ${counts.departed}  declined: ${counts.negative}  other: ${counts.other}`);
-  console.log(`running list: ${people.length} positive (${added} new this run, ${promoted} promoted warm->call)`);
+  console.log(`running list: ${people.length} positive (${added} new this run, ${promoted} promoted warm->call, ${removed.length} removed as not an LP reply)`);
   for (const p of people) console.log(`  [${p.bucket === "call" ? "CALL" : "warm"}] ${p.name || p.address} — ${p.quote.slice(0, 90)}`);
 
   if (VERIFY) {
-    console.log("\n=== RECALL AGAINST HER OWN LIST OF 12 KNOWN REPLIES ===");
+    const { KNOWN_REPLIES, UNREACHABLE } = loadKnownReplies();
+    console.log(`\n=== RECALL AGAINST HER OWN LIST OF ${KNOWN_REPLIES.length} KNOWN REPLIES ===`);
     const missed = [];
     for (const [addr, who, when] of KNOWN_REPLIES) {
       const hit = seenAddresses.get(addr.toLowerCase());
