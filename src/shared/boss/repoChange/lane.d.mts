@@ -18,6 +18,10 @@ export type RepoChangePhase = "plan" | "asking" | "build" | "preview" | "preview
 
 export interface RepoChangeParse {
   repo: string | null;
+  /** owner/name on GitHub — the grid owner for a grid repo, the address she wrote for a registered one. */
+  github_repo: string | null;
+  /** True when the repo is not on the grid and registered from her GitHub address (R24). */
+  registered: boolean;
   property: string | null;
   drive_folder: string | null;
   drive_url: string | null;
@@ -58,6 +62,7 @@ export function driveFolderIn(text: string | null | undefined): { id: string; ur
 export function gridRepoNames(): string[];
 export function repoIn(text: string | null | undefined): string | null;
 export function excludedRepoIn(text: string | null | undefined): { repo: string; why: string } | null;
+export function registeredRepoIn(text: string | null | undefined): { repo: string; github_repo: string } | null;
 export function parseRepoChange(text: string | null | undefined): RepoChangeParse | RepoChangeExcluded | null;
 export const APPROVAL_WORDS: readonly string[];
 export const HOLD_PREFIXES: readonly string[];

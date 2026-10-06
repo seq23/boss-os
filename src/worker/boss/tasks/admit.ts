@@ -49,6 +49,8 @@ export interface AdmitInput {
   /** `internal` or `external`. WHO MAY RECEIVE THE OUTPUT. It never reaches the router. */
   audience?: string | null;
   cost_mode?: string | null;
+  /** R14: epoch ms before which the task must not run — a dated deferred item. Enqueued with that delay. */
+  not_before?: number | null;
 }
 
 export interface AdmitResult {
@@ -135,14 +137,14 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   if (repoChange && "excluded" in repoChange) {
     throw badRequest(
       `${repoChange.excluded.repo} is out of scope for Danielle: ${repoChange.excluded.why}`,
-      "Name a repository from the grid, or a Drive folder for one of them.",
+      "Name a repository from the grid, any other repository by its GitHub address (github.com/owner/name), or a Drive folder for one of them.",
     );
   }
   const change = repoChange && !("excluded" in repoChange) ? repoChange : null;
   const changeId = change ? newId("rc") : null;
   if (change && changeId) {
     (input as Record<string, unknown>).repo_change = {
-      change_id: changeId, repo: change.repo, property: change.property,
+      change_id: changeId, repo: change.repo, property: change.property, github_repo: change.github_repo,
       drive_folder: change.drive_folder, drive_url: change.drive_url,
       ...(change.pre_approved_phrase ? { pre_approved_phrase: change.pre_approved_phrase } : {}),
       ...(change.force_phrase ? { force_phrase: change.force_phrase } : {}),
@@ -253,15 +255,25 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     await env.DB
       .prepare(
         `INSERT INTO repo_changes (id, task_id, mail_id, repo, property_key, drive_folder, drive_url, instruction, phase,
-                                   pre_approved_phrase, pre_approved_by, force_phrase, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,'plan',?,?,?,?,?)`,
+                                   pre_approved_phrase, pre_approved_by, force_phrase, created_at, updated_at, github_repo)
+         VALUES (?,?,?,?,?,?,?,?,'plan',?,?,?,?,?,?)`,
       )
       .bind(
         changeId, id, typeof input.mail_id === "string" ? input.mail_id : null,
         change.repo, change.property, change.drive_folder, change.drive_url,
-        change.instruction, change.pre_approved_phrase, preBy, change.force_phrase, now, now,
+        change.instruction, change.pre_approved_phrase, preBy, change.force_phrase, now, now, change.github_repo,
       )
       .run();
+    /*
+     * R24 (docs/SERVICE_RULES.md): a repo she named by its GitHub address that is not on the grid is
+     * REGISTERED here, beside the grid, and the job proceeds. The named exclusions were refused above.
+     */
+    if (change.registered && change.repo && change.github_repo) {
+      await env.DB
+        .prepare(`INSERT INTO boss_repo_registry (name, github_repo, mail_id, registered_at) VALUES (?,?,?,?) ON CONFLICT(name) DO NOTHING`)
+        .bind(change.repo, change.github_repo, typeof input.mail_id === "string" ? input.mail_id : null, now)
+        .run();
+    }
     if (change.pre_approved_phrase) {
       await env.DB.prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'repo_change_pre_approved',?)`)
         .bind(newId("tev"), id, now, JSON.stringify({ repo_change_id: changeId, phrase: change.pre_approved_phrase, by: preBy, force_phrase: change.force_phrase }))
@@ -274,7 +286,8 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   await env.DB.prepare(`UPDATE tasks SET envelope_id = ? WHERE id = ?`).bind(envelope.id, id).run();
 
   if (queued) {
-    await env.TASKS.send({ taskId: id, lane });
+    const delayMs = b.not_before && b.not_before > now ? b.not_before - now : 0;
+    await env.TASKS.send({ taskId: id, lane }, delayMs ? { delaySeconds: Math.ceil(delayMs / 1000) } : undefined);
   } else {
     // USER_ONLY, HUMAN_CONTRACTOR, and DEFER surface as a decision, not a run.
     const aprId = newId("apr");

@@ -45,9 +45,19 @@ import {
   type BackendRequest,
 } from "../backends/guard";
 import { eligibleFor } from "../backends/registry";
+import { afterResult } from "../service/afterResult";
 import type { AiProcessing } from "../policy/airlock";
 import type { Sensitivity } from "../../../shared/boss/governance";
 
+/** R6/R14 for a seat's run: the shared follow-through (`service/afterResult.ts`), never a second copy. */
+async function afterResultOf(env: Env, task: { id: string; lane: string; title: string; input: string | null }, text: string, done: boolean): Promise<void> {
+  if (!text) return;
+  const row = await env.DB.prepare(`SELECT employee_id, attempts FROM tasks WHERE id = ?`).bind(task.id).first<{ employee_id: string | null; attempts: number }>();
+  const name = row?.employee_id ? (await env.DB.prepare(`SELECT name FROM employees WHERE id = ?`).bind(row.employee_id).first<{ name: string }>())?.name : null;
+  let input: Record<string, unknown> = {};
+  try { input = task.input ? JSON.parse(task.input) : {}; } catch { input = {}; }
+  await afterResult(env, { id: task.id, lane: task.lane, title: task.title, employee_id: row?.employee_id ?? null, input, attempts: row?.attempts ?? 0 }, text, { done, fromName: name ?? "Boss OS" });
+}
 export const backends = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const STATUSES: BackendStatus[] = ["registered", "enabled", "disabled"];
@@ -757,6 +767,8 @@ backends.post("/report", async (c) => {
                 JSON.stringify({ backend_run_id: runId, backend_id: run.backend_id, reason: decision.reason }),
               ),
           ]);
+          // The same follow-through the cloud path runs (deferred lines, missing keys, the done email): one list.
+          await afterResultOf(c.env, task, optionalText(ev.summary) ?? "", true);
           await audit(c.env.DB, {
             actor: "system", lane: task.lane, entityType: "backend_run", entityId: runId,
             action: "backend_run_auto_accepted",
@@ -779,6 +791,7 @@ backends.post("/report", async (c) => {
             c.env.DB.prepare(`UPDATE tasks SET status = 'awaiting_approval', approval_id = ?, cost_micros = cost_micros + ? WHERE id = ?`)
               .bind(approvalId, costMicros, task.id),
           ]);
+          await afterResultOf(c.env, task, optionalText(ev.summary) ?? "", false);
         }
       } else {
         await c.env.DB

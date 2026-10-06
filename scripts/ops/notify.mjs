@@ -32,7 +32,13 @@
  * only for system mail that no employee owns.
  */
 
+import { readFileSync, statSync } from "node:fs";
+import { basename } from "node:path";
+import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
+
 const ARGS = process.argv.slice(2);
+/** Every value of a repeatable flag (`--file a.csv --file b.png`). */
+const args = (name) => ARGS.flatMap((a, i) => (a === `--${name}` && ARGS[i + 1] ? [ARGS[i + 1]] : []));
 const arg = (name) => {
   const i = ARGS.indexOf(`--${name}`);
   return i === -1 ? null : (ARGS[i + 1] ?? null);
@@ -129,16 +135,32 @@ export function sendersFor(who) {
 }
 
 /** The Resend payload for an employee's message: from, reply-to the same desk, tag-led subject. */
-export function employeeMail(sender, { to, subject, text, html }) {
+export function employeeMail(sender, { to, subject, text, html, files }) {
   const tagged = sender.tag && !String(subject).toLowerCase().includes(sender.tag) ? `${sender.tag} ${subject}` : String(subject);
+  /*
+   * R18 (docs/SERVICE_RULES.md) — FILES FOR HER RIDE ON THE EMAIL. Every Mac lane sends through this
+   * one function, so every lane can hand her a file: listed by name always, attached up to 10 MB in
+   * total, and a file too large to attach says where it is on her Mac. `outboundFilesPlan` decides.
+   */
+  const plan = outboundFilesPlan(files ?? []);
+  const attachments = plan.attach.map((i) => ({ filename: files[i].name, content: readFileSync(files[i].path).toString("base64") }));
+  const body = String(text ?? "").slice(0, 60_000) + (plan.lines.length ? `\n\nFiles:\n${plan.lines.map((l) => `- ${l}`).join("\n")}` : "");
   return {
     from: sender.from,
     to: Array.isArray(to) ? to : [to],
     reply_to: sender.reply_to,
     subject: tagged.slice(0, 200),
-    text: String(text ?? "").slice(0, 60_000),
+    text: body,
     ...(html ? { html } : {}),
+    ...(attachments.length ? { attachments } : {}),
   };
+}
+
+/** `{ name, bytes, path }` for each readable file path; an unreadable one is listed as such. */
+export function filesAt(paths) {
+  return (paths ?? []).map((p) => {
+    try { return { name: basename(p), bytes: statSync(p).size, path: p }; } catch { return { name: basename(String(p)), bytes: 0, path: null }; }
+  });
 }
 
 /** The roster's local parts — what `validate:employee-addresses-receive` checks routing rules for. */
@@ -167,7 +189,7 @@ async function main() {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail({ from, key, reply_to: SENDERS.find((x) => x.from === from)?.reply_to, tag: SENDERS.find((x) => x.from === from)?.tag }, { to: TO, subject, text: body.slice(0, 4000) })),
+      body: JSON.stringify(employeeMail({ from, key, reply_to: SENDERS.find((x) => x.from === from)?.reply_to, tag: SENDERS.find((x) => x.from === from)?.tag }, { to: TO, subject, text: body.slice(0, 4000), files: filesAt(args("file")) })),
     });
     if (res.ok) {
       console.log(`Notified from ${from}: ${subject}`);

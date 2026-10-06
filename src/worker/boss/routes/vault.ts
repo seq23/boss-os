@@ -170,6 +170,11 @@ const SNAPSHOT_TABLES = [
   // result. The instruction rows are the audit trail for every comment hidden or answered as the
   // channel; a rebuild without them could not say why a comment was hidden.
   "comment_watch_digests", "comment_watch_items",
+  // 0279 — the service rules (docs/SERVICE_RULES.md): her standing constraints and registered repos
+  // are hers and not re-derivable; the waits (keys, DNS, Drive) are what resume work when they clear,
+  // and a rebuild without them would leave that work waiting forever. A hand-off row is ciphertext
+  // only, expires in seven days, and is deleted the moment her Mac vaults it.
+  "boss_operator_constraint", "boss_repo_registry", "boss_secret_wait", "boss_dns_wait", "boss_drive_watch", "boss_secret_handoff",
   // 0263 — the latest health reading per grid property per reader: a status code and latency, a
   // workflow conclusion, a week of Search Console clicks, a deployment's age. RE-DERIVABLE only
   // going forward: the readers run again, but the history — when a site first went 5xx, which

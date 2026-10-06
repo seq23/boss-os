@@ -21,6 +21,12 @@ import { answerFromMail } from "../repoChange/answer";
 import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
+import { secretDoor } from "../service/secretHandoff";
+import { answerBlockFromMail } from "../service/blockReply";
+import { recordConstraints } from "../service/constraints";
+import { recordDriveWatches } from "../service/macWaits";
+import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
+import { dueTimeIn, dueLine } from "../../../shared/boss/service/dueTime.mjs";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -350,6 +356,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
 
   let objectKey: string | null = null;
   let rawMessage = "";
+  let secrets: Awaited<ReturnType<typeof secretDoor>> | null = null;
   if (oversize) {
     objectKey = objectKeyFor();
     try {
@@ -366,6 +373,17 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     }
   } else {
     rawMessage = await new Response(message.raw).text();
+    /*
+     * R3 — THE SECRET DOOR RUNS BEFORE THE MESSAGE IS KEPT ANYWHERE. A `SECRET NAME=value` line is
+     * encrypted into `boss_secret_handoff` and the value is scrubbed out of the raw MIME here, so the
+     * copy written to R2 below, the task body and the reply all carry `[secret redacted]` instead.
+     * (A message over MAX_BODY_BYTES is streamed to R2 unread above; its lines are never read, so no
+     * key is stored from it.)
+     */
+    secrets = await secretDoor(env, {
+      raw: rawMessage, readable: taskBodyFrom(rawMessage)?.readable ?? "", subject, sender, mailId,
+    });
+    rawMessage = secrets.raw;
     /*
      * ─── THE RAW MESSAGE IS KEPT, AND THE CARD GETS THE WORDS ────────────────
      *
@@ -405,6 +423,35 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const read = rawMessage ? taskBodyFrom(rawMessage) : null;
   const readable = read?.readable ?? "";
   const taskBody = read?.body ?? "";
+
+  if (secrets?.line && secrets.onlySecrets) {
+    await finish({ outcome: "SECRET_STORED", why: secrets.line, objectKey, reply: secrets.line });
+    await logEvent(env.DB, { level: "info", scope: "intake", event: "boss_mail_secret", lane: "ops", entityId: mailId, detail: { stored: secrets.stored.map((x) => x.name), refused: secrets.refused.map((x) => x.name), resumed: secrets.resumed.length } });
+    return { mailId, outcome: "SECRET_STORED", employeeId: null, taskId: null, reply: secrets.line };
+  }
+
+  /*
+   * R8/R20 — A REPLY TO A STOPPED TASK TAKES THE DOOR IT NAMES, FIRST. The notice's subject carries
+   * `[tsk_…]`; "try again", "drop it", a short yes, or her answer act on that task whoever owns it.
+   */
+  const blockAnswer = readable || subject
+    ? await answerBlockFromMail(env, { subject, text: readable, mailId, now })
+    : null;
+  if (blockAnswer) {
+    const blockReply = [blockAnswer.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    await finish({ outcome: "BLOCK_ANSWERED", why: blockAnswer.note, taskId: blockAnswer.taskId, objectKey, reply: blockReply });
+    await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "block_answered", detail: { task_id: blockAnswer.taskId, door: blockAnswer.door } });
+    return { mailId, outcome: "BLOCK_ANSWERED", employeeId: null, taskId: blockAnswer.taskId, reply: blockReply };
+  }
+
+  // R19 — a line she marks `Always:` / `Never:` / `Standing rule:` / `Constraint:` is registered once and rides on every run.
+  const constraints = standingConstraintsIn(readable);
+  const constraintsAdded = constraints.length ? await recordConstraints(env, constraints, "email", mailId) : 0;
+  const constraintNote = constraints.length
+    ? `Standing rule${constraints.length === 1 ? "" : "s"} noted for every employee from now on: ${constraints.join(" · ")}${constraintsAdded < constraints.length ? " (some were already on record)" : ""}.`
+    : null;
+  // R12 — a deadline in her words rides on the task and is stated to the employee.
+  const due = dueTimeIn(`${subject}\n${readable}`, new Date(now));
 
   const origin = readable ? forwardedOrigin(readable) : null;
   const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
@@ -699,6 +746,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           ...(handoffNote ? { handed_off: handoffNote } : {}),
           ...(hunt ? { hunt } : {}),
           ...(bookNote ? { live_book: bookNote } : {}),
+          ...(due ? { due } : {}),
           /*
            * `body` IS THE INSTRUCTION. Not the message, not the headers, not the markup — the words.
            * Guarded by `scripts/validate/a-task-body-is-not-a-mime-message.mjs`, which fails on a
@@ -714,6 +762,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       });
       taskId = admitted.task_id;
       if (!admitted.created) admitFailure = admitted.reason ?? "intake refused it";
+      // R21 — a Drive folder named in the ask is watched; files that arrive later load with no new email.
+      if (admitted.created && taskId) await recordDriveWatches(env, { text: readable, taskId });
     } catch (err) {
       /*
        * A THROW HERE MUST NOT EAT THE MESSAGE. `admitTask` legitimately throws on a lane mismatch or
@@ -801,8 +851,14 @@ function headline(text: string): string {
    * directory buries the only sentence that matters under the reassurance that it worked.
    */
   const stopped = question ? question.ask : planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dutyNote?.note ?? closeQuestion ?? closedNote ?? bookFailure;
+  const serviceLines = [
+    ...(secrets?.line ? [secrets.line] : []),
+    ...(constraintNote ? [constraintNote] : []),
+    ...(due && taskId ? [`Deadline read from your words: ${dueLine(due)}.`] : []),
+  ];
   const reply = stopped ? [
     stopped,
+    ...(serviceLines.length ? ["", ...serviceLines] : []),
     /*
      * A QUESTION DOES NOT REPLACE "I DID NOT KNOW WHO THIS WAS FOR". When the tag was unrecognised
      * she still has to be told which seats exist, or the question and the mis-routing become one
@@ -813,6 +869,7 @@ function headline(text: string): string {
     ...(bookNote ? ["", bookNote] : []),
     ...(bookFailure ? ["", bookFailure] : []),
     ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
+    ...(serviceLines.length ? ["", ...serviceLines] : []),
   ].join("\n");
 
   await finish({ outcome, why, tag: route.tag, employeeId: dutyNote?.employeeId ?? route.seat.id, taskId, objectKey, reply });

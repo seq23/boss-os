@@ -146,9 +146,13 @@ models.patch("/:id", async (c) => {
         .prepare(
           `SELECT id FROM approvals
             WHERE kind = 'model_promotion' AND status = 'approved'
-              AND payload LIKE ? AND payload LIKE ? AND payload LIKE ?`,
+              AND json_extract(payload, '$.model_id') = ? AND json_extract(payload, '$.change') = 'max_risk'
+              AND json_extract(payload, '$.to') = ?`,
         )
-        .bind(`%"model_id":"${id}"%`, `%"change":"max_risk"%`, `%"to":"${want}"%`)
+        // EQUALITY ON JSON FIELDS, NEVER LIKE (6 Oct 2026). `LIKE '%"model_id":"<id>"%'` built a pattern
+        // longer than D1 allows for a long model id ("LIKE or GLOB pattern too complex") — the defect
+        // West Peek OS #228 found in its deferrals. The payload is JSON, so it is read as JSON.
+        .bind(id, want)
         .first<{ id: string }>();
       if (!card) {
         throw conflict(
@@ -284,9 +288,9 @@ models.patch("/routes/:id", async (c) => {
         .prepare(
           `SELECT id FROM approvals
             WHERE kind = 'model_promotion' AND status = 'approved'
-              AND payload LIKE ? AND payload LIKE ?`,
+              AND json_extract(payload, '$.model_id') = ? AND json_extract(payload, '$.route_id') = ?`,
         )
-        .bind(`%"model_id":"${model.id}"%`, `%"route_id":"${id}"%`)
+        .bind(model.id, id)
         .first<{ id: string }>();
       if (!card) {
         throw conflict(

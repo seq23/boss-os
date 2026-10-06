@@ -3,6 +3,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { tokenIn, readReply, needsPreview, isForced, REPO_CHANGE_SEAT } from "../../../shared/boss/repoChange/lane.mjs";
+import { blockReplyDoor } from "../../../shared/boss/service/waits.mjs";
 
 /**
  * THE REPO-CHANGE LANE'S WORKER HALF — the pieces the mail intake and the claim routes share.
@@ -82,6 +83,8 @@ export async function answerFromMail(
   if (row.phase === "failed") {
     const reply = readReply(input.text);
     if (reply.mode === "empty") return { changeId, resumed: false, note: `Your reply to ${row.id} carried no readable text; it stays stopped.` };
+    const dropped = await dropIfAsked(env, row, input, changeId);
+    if (dropped) return dropped;
     if (reply.mode === "held") {
       await taskEvent(env, row.task_id, "repo_change_note", { repo_change_id: row.id, mail_id: input.mailId, phase: "failed", text: reply.text.slice(0, 2000) });
       return { changeId, resumed: false, note: `Noted on ${row.id}: "${reply.text.slice(0, 300)}". It stays stopped; reply "try again" when you want it retried.` };
@@ -355,4 +358,22 @@ export function describePhase(row: { phase: string; pr_url?: string | null; prev
 export function safeList(json: string | null | undefined): unknown[] {
   if (!json) return [];
   try { const v = JSON.parse(json); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+/**
+ * "DROP IT" CLOSES A STOPPED CHANGE (R8, docs/SERVICE_RULES.md; 6 Oct 2026). Every stop email offers
+ * "try again", "changes: …" or "drop it"; until now "drop it" read as an answer and RETRIED the
+ * change — the opposite of what she said. It now cancels the task for good; the row stays failed
+ * with her words on it.
+ */
+async function dropIfAsked(
+  env: Env,
+  row: RepoChangeRow,
+  input: { text: string; mailId: string; now: number },
+  changeId: string,
+): Promise<{ changeId: string; resumed: boolean; note: string } | null> {
+  if (blockReplyDoor(input.text) !== "DROP") return null;
+  await env.DB.prepare(`UPDATE tasks SET status = 'cancelled', finished_at = ? WHERE id = ? AND status <> 'done'`).bind(input.now, row.task_id).run();
+  await taskEvent(env, row.task_id, "repo_change_dropped", { repo_change_id: row.id, mail_id: input.mailId, text: input.text.trim().slice(0, 500) });
+  return { changeId, resumed: false, note: `Dropped ${row.id} (${row.repo ?? "the package"}) on your word. Nothing more will be tried or sent about it.` };
 }

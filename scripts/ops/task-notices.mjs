@@ -34,6 +34,7 @@
  */
 
 import { sendersFor, employeeMail } from "./notify.mjs";
+import { vaultLookup } from "../lib/vault-env.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
@@ -95,6 +96,25 @@ export async function sendNotice(notice, { fetchImpl = fetch, to = TO } = {}) {
   return last || "every sender was refused with no message";
 }
 
+/** For a `missing_secret` notice: resolve from the vault, or return the body with the search stated. */
+export async function askOrResolve(notice, { lookup = vaultLookup, resolve = resolveFromVault } = {}) {
+  if (notice?.kind !== "missing_secret" || !notice?.secret_name) return { resolved: false, body: null };
+  const look = lookup([notice.secret_name]);
+  const searched = look.searched.join(", ");
+  if (!look.missing.length) {
+    const ok = await resolve(notice.secret_name);
+    if (ok) return { resolved: true, searched, body: null };
+  }
+  return { resolved: false, body: `${notice.body}\n\nThe vault on your Mac was checked first — looked for: ${searched}. Nothing there.` };
+}
+
+async function resolveFromVault(name) {
+  const res = await fetch(`${ORIGIN}/api/boss/service/secret-waits/resolve`, {
+    method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ name }),
+  }).catch(() => null);
+  return Boolean(res?.ok);
+}
+
 async function main() {
   await unlock();
   const pending = await api("/pending");
@@ -116,6 +136,20 @@ async function main() {
   let failed = 0;
   for (const notice of items) {
     if (DRY) { say(`DRY RUN — would send "${notice.subject}" as ${notice.from_name}`); continue; }
+    /*
+     * R5 — THE VAULT IS CHECKED BEFORE SHE IS ASKED FOR A KEY (docs/SERVICE_RULES.md). A run that
+     * wrote `Missing key: NAME` could not see this Mac's vault; this can. Held by exact name or by
+     * vendor prefix → the work that waited resumes and she is never asked. Absent → the ask goes,
+     * carrying every name and prefix the vault was searched for.
+     */
+    const ask = await askOrResolve(notice);
+    if (ask.resolved) {
+      const report = await api(`/${notice.id}/sent`, { from: `vault: ${ask.searched}` });
+      if (!report.ok) say(`could not record the vault resolution of ${notice.id}: ${report.status}`);
+      say(`${notice.secret_name} is in the vault (${ask.searched}); the work resumed and she was not asked`);
+      continue;
+    }
+    if (ask.body) notice.body = ask.body;
     const error = await sendNotice(notice);
     const report = error ? await api(`/${notice.id}/failed`, { error }) : await api(`/${notice.id}/sent`, { from: notice.from_name });
     if (!report.ok) say(`could not record the outcome of ${notice.id}: ${report.status} ${report.error ?? ""}`);

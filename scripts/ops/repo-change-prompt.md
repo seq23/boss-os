@@ -12,10 +12,14 @@ needs no further reply from her. Her plan approval is her reply to the plan emai
 ## The facts of this change
 
 - Repository: **{{REPO}}** — working copy `{{REPO_PATH}}`. Every grid repo lives under `{{GITHUB_DIR}}`.
+- Runbook: {{RUNBOOK_NOTE}}
+- The repo's own scripts you may ask the runner to run (`## Danielle may run`): {{MAY_RUN}}
+- Secrets (the vault was checked first, by name then by vendor prefix): {{SECRETS}}
 - Continuation: {{CONTINUATION}}
 - Rework: {{REWORK}}
-  The grid (the only repos this lane may touch): {{GRID_REPOS}}. Anything else — West Peek, a client
-  site — is off limits; if the package or the instruction points there, BLOCK.
+  The grid: {{GRID_REPOS}} — plus the one repository her email named by its GitHub address, which
+  was registered at the door (it is the Repository above). West Peek's repos and the client sites stay
+  off limits by her standing rule; if the package or the instruction points there, BLOCK.
 - Drive package (already pulled to disk, read it in full): `{{PACKAGE_DIR}}` {{DRIVE_URL}}
 - Her instruction, verbatim:
 
@@ -25,11 +29,16 @@ needs no further reply from her. Her plan approval is her reply to the plan emai
 
 - Work directory for this change: `{{WORK_DIR}}`. Your result file: `{{OUT_FILE}}`.
 
+## Standing service practices (every Boss OS employee keeps these; docs/SERVICE_RULES.md)
+
+{{PRACTICES}}
+
 ## Standing rules, every phase
 
-1. **Read `RUNBOOK.md` in the repo first.** It is the file an AI employee reads at plan time; it
-   names the standing rules, how to make a change, and the guards. If the repo has none, BLOCK
-   with `NO_RUNBOOK` — never guess a repo's rules. **If the runbook forbids what the instruction
+1. **Read the runbook first** (see "Runbook" above). It is the file an AI employee reads at plan
+   time; it names the standing rules, how to make a change, and the guards. A repo that had none
+   has one generated from its own package.json and wrangler config — read that one, and in BUILD
+   copy it to the repo root and commit it with the change. **If the runbook forbids what the instruction
    asks** (an association it bans, an account it names as the only one, a step it says is the
    owner's), BLOCK with `RUNBOOK_FORBIDS` and quote the rule — a runbook's "never" outranks an
    instruction, and she is told which sentence stopped it.
@@ -45,7 +54,21 @@ needs no further reply from her. Her plan approval is her reply to the plan emai
    not live. Say what you ran and what it said.
 6. **A block is a named stop, not a quiet exit.** When you cannot go on, write the result file with
    `{"blocked": {"tag": "UPPER_SNAKE", "why": "one plain sentence"}}` and stop.
-7. **Write the result file LAST, as valid JSON, and print `REPO-CHANGE-PHASE-COMPLETE` as your final
+7. **Ask the runner, don't run production yourself (R26).** To run one of the scripts named above
+   against preview or production, put `"needs_runs": [{"script": "<name>", "env": "preview"|"production", "args": []}]`
+   in your result; the runner runs exactly those, with the vault keys the runbook names, and records
+   each. Never a bare `wrangler deploy`; schema only through migrations.
+8. **A DNS record she must add (R27).** If the host is not a Cloudflare zone this account can edit,
+   read the record Cloudflare requires back from its API (never guess it) and put
+   `"dns_records": [{"host", "type", "name", "target", "live_at"}]` in your result; she is emailed it
+   once in three parts and her Mac re-checks it until it is live. The site stays live on its
+   `pages.dev` / `workers.dev` address meanwhile.
+9. **Copy, events and redirects (R29–R31).** A copy edit is applied verbatim, from the repo's one
+   editable copy file when the runbook names one; links are https only. A post-event operation
+   (promote, close-of-vote export or tally, moderation) is a runbook-named script she asks for, and a
+   refusal is relayed in plain English. A redirect she controls is flipped on her word: a safe shell
+   first, the safe-to-flip moment stated; a live redirect to an empty page is top priority.
+10. **Write the result file LAST, as valid JSON, and print `REPO-CHANGE-PHASE-COMPLETE` as your final
    line.** The runner reads the file; a missing file is a run that did not finish.
 
 ## PHASE: PLAN

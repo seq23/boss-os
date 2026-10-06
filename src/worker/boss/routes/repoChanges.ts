@@ -30,6 +30,7 @@ import {
   MAX_REWORKS,
 } from "../../../shared/boss/repoChange/lane.mjs";
 import { propertyForRepo } from "../../../shared/boss/grid.mjs";
+import { constraintsOnRecord } from "../service/constraints";
 
 export const repoChanges = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -128,6 +129,9 @@ repoChanges.post("/:id/claim", async (c) => {
     // The preview step is the Mac's own (no model): find the deployment URL, email her.
     model: phase === "preview" ? null : PHASE_MODELS[phase], max_turns: phase === "preview" ? null : PHASE_MAX_TURNS[phase],
     task,
+    // R19: her standing constraints ride on the claim — the Mac script imports nothing from D1 — and
+    // `repo-change.mjs` puts them in the same practices block every cloud run carries.
+    constraints: await constraintsOnRecord(c.env.DB),
   }, 201);
 });
 

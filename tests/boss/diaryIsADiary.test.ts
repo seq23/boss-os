@@ -94,9 +94,18 @@ describe("writing in it", () => {
   });
 
   it("cancels rather than deletes, so a moved meeting is distinguishable from one that never was", async () => {
+    /*
+     * NEVER ON A WEDNESDAY. The diary merges two rows on the same day within two hours when either
+     * has no counterpart — that is how her standing Wednesday, typed once and also in two calendar
+     * feeds, shows once. "Tomorrow" on a Tuesday lands beside that standing row and was merged into
+     * it, so this test failed every Tuesday around midday (found 6 Oct 2026). The row is placed on
+     * a day the standing meeting never occupies; the assertion is unchanged.
+     */
+    const tomorrow = Date.now() + 86_400_000;
+    const at = new Date(tomorrow).getUTCDay() === 3 ? tomorrow + 86_400_000 : tomorrow;
     const added = await apiJson<any>("/api/diary", {
       method: "POST",
-      body: { title: "A thing", scheduled_at: Date.now() + 86_400_000 },
+      body: { title: "A thing", scheduled_at: at },
     });
     const row = added.body.data.rows.find((r: any) => r.title === "A thing");
     await apiJson<any>(`/api/diary/${row.id}/cancel`, { method: "POST", body: {} });
