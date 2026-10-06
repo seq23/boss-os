@@ -134,9 +134,10 @@ describe("schema", () => {
         .prepare(
           `SELECT id FROM approvals
             WHERE kind = 'model_promotion' AND status = 'approved'
-              AND payload LIKE ? AND payload LIKE ? AND payload LIKE ?`,
+              AND json_extract(payload, '$.model_id') = ? AND json_extract(payload, '$.change') = 'max_risk'
+              AND json_extract(payload, '$.to') = ?`,
         )
-        .bind(`%"model_id":"${m.id}"%`, `%"change":"max_risk"%`, `%"to":"${m.max_risk}"%`)
+        .bind(m.id, m.max_risk)
         .first<{ id: string }>();
       expect(card?.id, `${m.display_name} is cleared to ${m.max_risk} with no approved card`).toBeTruthy();
     }

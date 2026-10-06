@@ -41,7 +41,8 @@ function d1Queue(db: D1Database): Queue<TaskMessage> {
       .run();
   };
   return {
-    send: (body: TaskMessage) => enqueue(body),
+    // `delaySeconds` is honoured as the real Queue does: a dated deferred task (R14) waits for its date.
+    send: (body: TaskMessage, opts?: { delaySeconds?: number }) => enqueue(body, Math.max(0, Number(opts?.delaySeconds ?? 0)) * 1000),
     sendBatch: async (batch: Iterable<{ body: TaskMessage }>) => {
       for (const m of batch) await enqueue(m.body);
     },
@@ -96,6 +97,8 @@ export function toBossEnv(env: Env): BossEnv {
     FIREWORKS_API_KEY: env.FIREWORKS_API_KEY,
     // The Gmail draft's key. Omitting it here is how `AI` sat declared-and-unreachable for a week.
     GSC_SERVICE_ACCOUNT_JSON: env.GSC_SERVICE_ACCOUNT_JSON,
+    // R3: the secret door's key. Omitted here, the door would be declared and fail closed forever.
+    BOSS_OS_SECRET_HANDOFF_KEY: env.BOSS_OS_SECRET_HANDOFF_KEY,
   };
 }
 

@@ -9,6 +9,11 @@ import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure, type 
 import { dispatchRunForTask } from "../backends/dispatch";
 import { deliverExecutiveReport } from "../duties/deliverReport";
 import { firmNoticeBlock } from "../prompt/notices";
+import { practicesBlock } from "../service/constraints";
+import { afterResult } from "../service/afterResult";
+import { noticeOnce } from "../service/notices";
+import { taskToken, threeParts, bossWait } from "../../../shared/boss/service/waits.mjs";
+import { dueLine } from "../../../shared/boss/service/dueTime.mjs";
 /*
  * The rule that recognises a completion which is transparently a non-answer. Deterministic, and it
  * reads the model's own reply rather than guessing from her request — see the module for why.
@@ -346,6 +351,10 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     const needsApproval =
       envelope ? envelope.approval_required === 1 : (!employee || employee.autonomy === "ask");
 
+    const afterOf = (done: boolean) => afterResult(env, {
+      id: task.id, lane: task.lane, title: String(task.title), employee_id: task.employee_id ?? null, input, attempts: task.attempts ?? 0,
+    }, result!.text, { done, fromName: employee?.name ?? "Boss OS" });
+
     if (needsApproval) {
       const aprId = newId("apr");
       // The approval row is inserted before the task points at it: tasks.approval_id
@@ -385,6 +394,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
         nextHumanAction: "Review the draft in the Approval Inbox",
         finalStatus: "awaiting_approval",
       });
+      await afterOf(false);
     } else {
       await env.DB.batch([
         env.DB.prepare(
@@ -410,6 +420,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
         nextHumanAction: "None. Executed under notice.",
         finalStatus: "done",
       });
+      await afterOf(true);
     }
 
     await logEvent(env.DB, {
@@ -468,7 +479,8 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     const hint = err instanceof ProviderFailure
       ? err.hint
       : "Check Diagnostics for the failure, then requeue the task.";
-    await failTask(env, task, employee, envelope, costMode, `Run failed: ${(err as Error).message}`, hint);
+    // NOT final: the drain retries this (MAX_ATTEMPTS), and only the dead letter tells her — once (R10).
+    await failTask(env, task, employee, envelope, costMode, `Run failed: ${(err as Error).message}`, hint, false);
     throw err; // let the queue retry genuine transient failures
   }
 }
@@ -500,8 +512,17 @@ export async function buildPrompt(env: Env, task: any, input: Record<string, any
    */
   const notices = await firmNoticeBlock(env.DB);
   const withNotices = (instruction: string) => (notices ? `${notices}\n\n${instruction}` : instruction);
+  /*
+   * THE SERVICE PRACTICES GO IN FRONT OF EVERY EMPLOYEE RUN TOO, AT THE SAME ONE POINT (6 Oct 2026,
+   * docs/SERVICE_RULES.md): how to report back — three-part waits, email-only clearing, one done-line
+   * per ask, dated deferrals, `Missing key:` lines — plus her standing constraints (R19). Not in a
+   * try/catch, for the same reason as the notices. `validate:service-rules` proves this call runs.
+   */
+  const practices = await practicesBlock(env.DB);
+  const due = input.due && typeof input.due === "object" ? dueLine(input.due as { due_at: string; due_words: string }) : null;
+  const deadline = due ? `DEADLINE: this is ${due}. Say in your reply if anything could make it late.\n\n` : "";
 
-  return withNotices(await buildInstruction(env, task, input));
+  return withNotices(`${practices}\n\n${deadline}${await buildInstruction(env, task, input)}`);
 }
 
 /** The task's own words: its template, its prompt, or the body she mailed in. */
@@ -777,8 +798,8 @@ async function cannotDoTask(
   let handedTo: { employeeId: string; taskId: string; repo: string } | null = null;
   const alreadyHandedOff = typeof input.handed_off_from === "string";
   try {
-    const { repoIn, REPO_CHANGE_SEAT } = await import("../../../shared/boss/repoChange/lane.mjs");
-    const repo = repoIn(requestText);
+    const { repoIn, registeredRepoIn, REPO_CHANGE_SEAT } = await import("../../../shared/boss/repoChange/lane.mjs");
+    const repo = repoIn(requestText) ?? registeredRepoIn(requestText)?.repo ?? null;
     if (repo && !alreadyHandedOff && task.employee_id !== REPO_CHANGE_SEAT) {
       const { admitTask } = await import("../tasks/admit");
       const admitted = await admitTask(env, {
@@ -857,18 +878,18 @@ async function cannotDoTask(
     )
     .bind(
       newId("tnt"), task.id, task.lane, employee?.name ?? "Boss OS",
-      `Could not do: ${String(task.title).slice(0, 120)}`,
+      `Could not do: ${String(task.title).slice(0, 120)} ${taskToken(task.id)}`,
       [
         summary,
         "",
         `What you asked: ${String(task.title).slice(0, 300)}`,
-        `What it said back: "${finding.matched}…" (${finding.chars} characters in total; the full text is on the task in Boss OS).`,
+        `What it said back: "${finding.matched}…" (${finding.chars} characters in total; the full reply is kept with the task).`,
         "",
         handedTo
           ? `Handed to ${handedName ?? handedTo.employeeId} as ${handedTo.taskId}, because your message names ${handedTo.repo} and that lane runs on your Mac with the repository actually open. Her plan email is the next thing you will get about it.`
-          : hint,
+          : `${hint}\n\n${threeParts({ ...bossWait("TRIED_AND_STOPPED", { what: "once", why: finding.why }), waiting: "a narrower ask, or a desk that can open what this needs" })}`,
         "",
-        `Task ${task.id} in Boss OS. Nothing was sent to anyone outside this system.`,
+        `Task ${task.id}. Reply to this email; the token in the subject tells Boss OS which task you mean. Nothing was sent to anyone outside this system.`,
       ].join("\n"),
       finishedAt,
     )
@@ -912,7 +933,7 @@ async function cannotDoTask(
 
 async function failTask(
   env: Env, task: any, employee: any, envelope: any, costMode: string,
-  message: string, hint: string,
+  message: string, hint: string, final = true,
 ): Promise<void> {
   const now = Date.now();
   await env.DB.batch([
@@ -938,6 +959,28 @@ async function failTask(
   await logEvent(env.DB, {
     level: "error", scope: "queue", event: "task_failed", lane: task.lane, entityId: task.id,
     detail: { message },
+  });
+
+  /*
+   * R7/R8/R10 — A STOP THAT WILL NOT BE RETRIED IS TOLD TO HER ONCE, BY EMAIL, IN THREE PARTS. Until
+   * 6 Oct 2026 a failed task said "Check Diagnostics" or "Reassign it in Team" on the evidence row
+   * and told her nothing. The hint stays on the record for the screen; the email carries the reply
+   * that clears it, and `service/blockReply.ts` makes that reply work.
+   */
+  if (final) await tellHerItStopped(env, task, employee, message, "once");
+}
+
+/** The one stopped-notice, for a final failure or a dead letter. */
+async function tellHerItStopped(env: Env, task: any, employee: any, why: string, tried: string): Promise<void> {
+  await noticeOnce(env, {
+    task: { id: task.id, lane: task.lane, title: String(task.title ?? task.id) },
+    fromName: employee?.name ?? "Boss OS",
+    kind: "stopped",
+    subject: `Stopped: ${String(task.title ?? task.id).slice(0, 140)}`,
+    lines: [`"${task.title ?? task.id}" stopped and did not finish.`],
+    wait: { kind: "TRIED_AND_STOPPED", fill: { what: tried, why } },
+  }).catch(async (e) => {
+    await logEvent(env.DB, { level: "error", scope: "queue", event: "stopped_notice_failed", lane: task.lane, entityId: task.id, detail: { message: e instanceof Error ? e.message : String(e) } }).catch(() => {});
   });
 }
 
@@ -976,6 +1019,10 @@ export async function handleDeadLetter(env: Env, msg: TaskMessage, error?: strin
       .prepare(`UPDATE tasks SET status = 'failed', error = COALESCE(error, ?) WHERE id = ? AND status != 'done'`)
       .bind("Retries exhausted; see dead letters", task.id)
       .run();
+    // R10: the retries are spent — now, and only now, she hears it. Once, with the reply that restarts it.
+    const full = await env.DB.prepare(`SELECT id, lane, title, employee_id FROM tasks WHERE id = ?`).bind(task.id).first<any>();
+    const employee = full?.employee_id ? await env.DB.prepare(`SELECT name FROM employees WHERE id = ?`).bind(full.employee_id).first<any>() : null;
+    await tellHerItStopped(env, full ?? task, employee, String(error ?? task.error ?? "the run kept failing on our side").slice(0, 300), `${task.attempts ?? msg.attempt ?? 3} times`);
   }
 
   await logEvent(env.DB, {

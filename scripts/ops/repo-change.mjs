@@ -41,7 +41,12 @@ import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
 } from "../../src/shared/boss/repoChange/lane.mjs";
-import { sendersFor, employeeMail } from "./notify.mjs";
+import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
+import { sendersFor, employeeMail, filesAt } from "./notify.mjs";
+import { generateRunbook, readWranglerToml, readWranglerJson, mayRunFromRunbook, runbookSecretNames, secretNamesInSource, vendorPageFor } from "./lib/runbook.mjs";
+import { vaultLookup, envForRepoRun } from "../lib/vault-env.mjs";
+import { servicePracticesBlock } from "../../src/shared/boss/service/practices.mjs";
+import { waitDetail, threeParts, missingSecretLine } from "../../src/shared/boss/service/waits.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
 import { detectUsageLimit } from "../lib/seat-usage-limit.mjs";
 import { codexExecArgs, codexSeatUsable, gitCommonDirs, helpMentions, runWithCodexFallback } from "../lib/codex-seat.mjs";
@@ -89,7 +94,7 @@ async function api(path, body) {
 
 // ─── Email, as Danielle ───────────────────────────────────────────────────────
 
-async function email(subject, text) {
+async function email(subject, text, files = []) {
   if (DRY) { say(`DRY RUN — would email "${subject}"`); return "dry_run"; }
   const senders = sendersFor("Danielle");
   if (senders.length === 0) return null;
@@ -98,7 +103,7 @@ async function email(subject, text) {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text, files })),
     });
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
@@ -334,6 +339,96 @@ function checksFor(repo, prNumber) {
   return { state: "pending", detail };
 }
 
+// ─── The service rules, for this lane (docs/SERVICE_RULES.md) ──────────────────
+
+async function serviceApi(path, body) {
+  const res = await fetch(`${ORIGIN}/api/boss/service${path}`, {
+    method: body ? "POST" : "GET",
+    headers: { cookie, ...(body ? { "content-type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  }).catch(() => null);
+  return { ok: Boolean(res?.ok), status: res?.status ?? 0 };
+}
+
+/** R24/R25 — a repo with no checkout on this Mac is cloned from GitHub, never a stop for her. */
+export function cloneRepo(githubRepo, name, log, run = spawnSync) {
+  if (!githubRepo || !/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(githubRepo)) return null;
+  const target = join(GITHUB_DIR, name);
+  const r = run("gh", ["repo", "clone", githubRepo, target], { encoding: "utf8", timeout: 300_000 });
+  if (log) appendFileSync(log, `=== gh repo clone ${githubRepo} rc=${r.status}\n${(r.stderr ?? "").slice(0, 2000)}\n`);
+  return r.status === 0 && existsSync(join(target, ".git")) ? target : null;
+}
+
+/**
+ * R25/R26/R28 — THE REPO'S RUNBOOK, OR ONE GENERATED FROM ITS OWN FILES. Until 6 Oct 2026 a repo with
+ * no RUNBOOK.md was a NO_RUNBOOK stop only she could clear; now the lane reads package.json and the
+ * wrangler config (the deploy route is read, never guessed), writes RUNBOOK.generated.md into the
+ * change's work dir, and the build commits it. Returns what the lane needs from it.
+ */
+export function runbookFor(repo, githubRepo, repoPath, workDir) {
+  const own = join(repoPath, "RUNBOOK.md");
+  let text;
+  let generated = false;
+  let path = own;
+  if (existsSync(own)) {
+    text = readFileSync(own, "utf8");
+  } else {
+    const pkg = readJson(join(repoPath, "package.json"));
+    const toml = existsSync(join(repoPath, "wrangler.toml")) ? readWranglerToml(readFileSync(join(repoPath, "wrangler.toml"), "utf8")) : null;
+    const jsonc = ["wrangler.jsonc", "wrangler.json"].map((f) => join(repoPath, f)).find((f) => existsSync(f));
+    const wrangler = toml ?? (jsonc ? readWranglerJson(readFileSync(jsonc, "utf8")) : null);
+    const sources = ["src/index.ts", "src/index.js", "src/worker.ts", "worker.js", "functions/_middleware.ts"].map((f) => join(repoPath, f)).filter((f) => existsSync(f)).map((f) => readFileSync(f, "utf8"));
+    text = generateRunbook({ repo, githubRepo, pkg, wrangler, sourceNames: sources }).text;
+    path = join(workDir, "RUNBOOK.generated.md");
+    writeFileSync(path, text);
+    generated = true;
+  }
+  const secrets = [...new Set([...runbookSecretNames(text)])];
+  return { text, path, generated, mayRun: mayRunFromRunbook(text), secrets };
+}
+
+/**
+ * R26 — THE MODEL ASKS, THE RUNNER RUNS. `needs_runs: [{ script, env, args }]` in a phase's result is
+ * run here as `npm run <script> -- <args>`, only for a script the runbook names under
+ * `## Danielle may run`, with exactly the vault names the lookup allowed (`envForRepoRun`) — the
+ * model never sees a value. Each run is recorded: script, env, exit, one line.
+ */
+export function runRequested(needs, { mayRun, allowed, cwd, log, run = spawnSync }) {
+  const out = [];
+  for (const n of (Array.isArray(needs) ? needs : []).slice(0, 10)) {
+    const script = String(n?.script ?? "");
+    const env = n?.env === "production" ? "production" : "preview";
+    if (!mayRun.includes(script)) { out.push({ script, env, exit: null, line: "refused: not under ## Danielle may run in the runbook" }); continue; }
+    const args = Array.isArray(n?.args) ? n.args.map(String).slice(0, 20) : [];
+    const r = run("npm", ["run", script, "--", ...args], { cwd, encoding: "utf8", timeout: 600_000, env: { ...envForRepoRun(process.env, allowed), BOSS_RUN_ENV: env } });
+    const line = `${(r.stdout ?? "").trim().split("\n").pop() ?? ""}`.slice(0, 300) || `${(r.stderr ?? "").trim().split("\n").pop() ?? ""}`.slice(0, 300);
+    if (log) appendFileSync(log, `=== may-run ${script} (${env}) rc=${r.status}\n${(r.stdout ?? "").slice(-4000)}${(r.stderr ?? "").slice(-2000)}\n`);
+    out.push({ script, env, exit: r.status, line });
+  }
+  return out;
+}
+
+/** R27 — the record Cloudflare asked for, recorded and emailed ONCE in three parts; her Mac re-checks it. */
+async function askForDns(row, repo, records, log) {
+  const r = await serviceApi("/dns-waits", { change_id: row.id, repo, records });
+  if (!r.ok) { say(`dns waits not recorded (${r.status})`); return; }
+  for (const rec of records.slice(0, 5)) {
+    await email(`#danielle needs a DNS record for ${rec.host} ${changeToken(row.id)}`, [
+      "Sequoia,", "",
+      `This is Danielle. ${repo} is built; one thing at your DNS provider makes ${rec.host} reach it.`, "",
+      waitDetail("DNS_RECORD", { record: { host: rec.host, type: rec.type, name: rec.name, target: rec.target, txtName: rec.txt_name ?? null, txtValue: rec.txt_value ?? null, liveAt: rec.live_at ?? null } }),
+      "", `Run log on your Mac: ${log}`, "", "— Danielle, Technical Program Manager",
+    ].join("\n"));
+  }
+}
+
+/** Screenshot paths from a proof, made absolute against the change's worktree or work dir. */
+export function screenshotPaths(proof, row) {
+  const list = Array.isArray(proof?.screenshots) ? proof.screenshots : [];
+  return list.map(String).filter((p) => /\.(png|jpe?g|webp|gif|pdf)$/i.test(p)).slice(0, 12)
+    .map((p) => (p.startsWith("/") ? p : join(WORK_ROOT, `wt-${row.id}`, p)));
+}
+
 // ─── The arc ─────────────────────────────────────────────────────────────────
 
 async function fail(row, tag, why, log) {
@@ -344,7 +439,9 @@ async function fail(row, tag, why, log) {
     `NAMED STOP [${tag}] ${why}`, "",
     row.pr_url ? `Pull request: ${row.pr_url}` : null,
     log ? `Run log on your Mac: ${log}` : null,
-    "", "Send a new #danielle instruction when you want me to try again, or fix the thing named above and reply here.",
+    // R7/R8 (docs/SERVICE_RULES.md): every stop ends in three parts, and the clearing step is a reply
+    // that `repoChange/answer.ts` acts on — "try again" retries the same change, "drop it" closes it.
+    "", waitDetail(tag === "DRIVE_EMPTY" ? "DRIVE_EMPTY" : "TRIED_AND_STOPPED", { what: tag === "DRIVE_EMPTY" ? row.drive_url : "once", why }),
     "", "— Danielle, Technical Program Manager",
   ].filter((l) => l !== null).join("\n");
   const id = await email(subject, text);
@@ -383,17 +480,20 @@ async function runPhase(claim) {
     if (!process.env.GSC_SERVICE_ACCOUNT_JSON) { await fail(row, "NO_DRIVE_CREDENTIAL", "GSC_SERVICE_ACCOUNT_JSON is not in the vault, so the Drive package cannot be read.", log); return; }
     const pull = spawnSync(process.execPath, [join(HERE, "drive-pull.mjs"), row.drive_folder, packageDir], { encoding: "utf8", env: process.env });
     appendFileSync(log, `=== drive pull rc=${pull.status}\n${pull.stdout ?? ""}${pull.stderr ?? ""}\n`);
+    if (pull.status === 3) {
+      // R21: an empty folder is watched, not a dead end — the Mac's pass sends this change back to PLAN when files land.
+      await serviceApi("/drive-watches", { change_id: row.id, text: row.drive_url ?? `https://drive.google.com/drive/folders/${row.drive_folder}` });
+      await fail(row, "DRIVE_EMPTY", `the Drive folder is still empty, or not yet shared with the account your Mac reads (${row.drive_url ?? row.drive_folder})`, log);
+      return;
+    }
     if (pull.status !== 0) { await fail(row, "PACKAGE_UNREADABLE", `drive-pull.mjs exited ${pull.status}: ${(pull.stderr ?? "").trim().split("\n").pop() ?? ""}`, log); return; }
   }
 
   // The repo and its RUNBOOK. At PLAN time the package may name the repo; the phase output says which.
   let repo = row.repo;
-  let repoPath = repoPathFor(repo);
-  if (repo && !repoPath) { await fail(row, "NO_WORKING_COPY", `${GITHUB_DIR}/${repo} is not a git checkout on this Mac.`, log); return; }
-  if (repoPath && !existsSync(join(repoPath, "RUNBOOK.md"))) {
-    await fail(row, "NO_RUNBOOK", `${repo} has no RUNBOOK.md. The lane reads the repo's runbook at plan time and will not guess at a repo's rules; add one (join-west-peek-main/RUNBOOK.md is the model) and send the instruction again.`, log);
-    return;
-  }
+  let repoPath = repoPathFor(repo) ?? (repo ? cloneRepo(row.github_repo ?? `${GRID_OWNER}/${repo}`, repo, log) : null);
+  if (repo && !repoPath) { await fail(row, "REPO_UNREACHABLE", `${GITHUB_DIR}/${repo} is not on this Mac and \`gh repo clone ${row.github_repo ?? `${GRID_OWNER}/${repo}`}\` failed — the address may be wrong or the repo private to another account.`, log); return; }
+  const runbook = repoPath ? runbookFor(repo, row.github_repo ?? `${GRID_OWNER}/${repo}`, repoPath, dir) : null;
   /*
    * ─── THE LANE BUILDS IN ITS OWN WORKTREE, SO A DIRTY MAIN CHECKOUT IS NEVER HER PROBLEM ──
    *
@@ -447,7 +547,24 @@ async function runPhase(claim) {
    * failed again on the same stale file. A named stop IS the report of that output.
    */
   const failOut = async (tag, why) => { await fail(row, tag, why, log); markReported(); };
+  /*
+   * R5/R6/R28 — THE VAULT FIRST. The runbook's `## Secrets` (and the names the source reads) are
+   * looked up by exact name, then by vendor prefix. Found → injected by NAME into the repo's own
+   * runs below, never into the model. Missing → recorded as a wait (the key's arrival resumes this
+   * change) and named once, with the SECRET line that sends it; everything else goes ahead.
+   */
+  const lookup = vaultLookup(runbook?.secrets ?? []);
+  if (lookup.missing.length) await serviceApi("/secret-waits", { change_id: row.id, names: lookup.missing });
+  const missingLines = lookup.missing.map((n) => missingSecretLine(n, vendorPageFor(n), lookup.searched.join(", ")));
   const vars = {
+    PRACTICES: servicePracticesBlock(Array.isArray(claim.constraints) ? claim.constraints : []),
+    RUNBOOK_NOTE: runbook?.generated ? `GENERATED — the repo had no RUNBOOK.md, so the lane read one out of its package.json and wrangler config: ${runbook.path}. Read it; in BUILD, copy it to the repo root and commit it on the change's branch.` : "the repo's own RUNBOOK.md.",
+    MAY_RUN: (runbook?.mayRun ?? []).map((k) => `\`${k}\``).join(", ") || "(none declared)",
+    SECRETS: [
+      lookup.found.length ? `In the vault and injected by name into the repo's own runs: ${lookup.found.join(", ")}.` : null,
+      Object.keys(lookup.by_vendor).length ? `Found by vendor prefix: ${Object.entries(lookup.by_vendor).map(([w, h]) => `${w} → ${h.join(" / ")}`).join("; ")}.` : null,
+      missingLines.length ? `MISSING — copy each line below verbatim into plan_text (and into the done email), and build everything that does not need it:\n${missingLines.join("\n")}` : null,
+    ].filter(Boolean).join("\n") || "none needed (the runbook names no secrets).",
     CHANGE_ID: row.id, TOKEN: changeToken(row.id), REPO: repo ?? "(not named — read the package)", REPO_PATH: (phase === "build" ? buildPath : repoPath) ?? "(none yet)",
     MAIN_CHECKOUT: repoPath ?? "(none yet)",
     POST_LAND_COMMAND: row.post_land_command ?? "(none — the plan named no post-land step; post_land MUST be null)",
@@ -522,11 +639,19 @@ async function runPhase(claim) {
   }
   if (out.blocked) { await fail(row, String(out.blocked.tag ?? "BLOCKED").replace(/[^A-Z_]/g, "_"), String(out.blocked.why ?? "the phase named a block without a reason"), log); markReported(); return; }
 
+  // R26 — the repo's own `## Danielle may run` scripts, run here on the model's request, each recorded.
+  const runs = runRequested(out.needs_runs, { mayRun: runbook?.mayRun ?? [], allowed: lookup.allowed, cwd: (phase === "build" ? buildPath : repoPath) ?? dir, log });
+  if (runs.length) out.proof = { ...(out.proof ?? {}), runs };
+  // R27 — a record she must add at a registrar: recorded (read back, never guessed) and emailed once in three parts.
+  if (Array.isArray(out.dns_records) && out.dns_records.length) await askForDns(row, repo, out.dns_records, log);
+
   if (phase === "plan") {
     const chosen = out.repo ?? repo;
-    if (!chosen || !gridRepoNames().includes(chosen)) { await failOut("NO_GRID_REPO", `the plan names "${chosen ?? "nothing"}" as the repository, and that is not a grid repo. Grid: ${gridRepoNames().join(", ")}.`, log); return; }
-    if (!repoPathFor(chosen)) { await fail(row, "NO_WORKING_COPY", `${GITHUB_DIR}/${chosen} is not a git checkout on this Mac.`, log); return; }
-    if (!existsSync(join(repoPathFor(chosen), "RUNBOOK.md"))) { await fail(row, "NO_RUNBOOK", `${chosen} has no RUNBOOK.md; the lane will not plan against a repo without one.`, log); return; }
+    // R24: the grid, or the repo she named by its GitHub address (registered at the door, row.repo).
+    if (!chosen || (!gridRepoNames().includes(chosen) && chosen !== row.repo)) { await failOut("NOT_HER_REPO", `the plan names "${chosen ?? "nothing"}" as the repository; that is neither on the grid nor the repo your email named. Grid: ${gridRepoNames().join(", ")}. Reply with the GitHub address (github.com/owner/name) and it is registered and planned.`, log); return; }
+    const chosenPath = repoPathFor(chosen) ?? cloneRepo(row.github_repo && chosen === row.repo ? row.github_repo : `${GRID_OWNER}/${chosen}`, chosen, log);
+    if (!chosenPath) { await fail(row, "REPO_UNREACHABLE", `${GITHUB_DIR}/${chosen} is not on this Mac and could not be cloned from GitHub.`, log); return; }
+    runbookFor(chosen, `${GRID_OWNER}/${chosen}`, chosenPath, dir);
     const asks = Array.isArray(out.asks) ? out.asks : [];
     const decided = Array.isArray(out.decided) ? out.decided : [];
     /*
@@ -588,6 +713,7 @@ async function runPhase(claim) {
       ready
         ? "Reply \"preview\" to see it before it lands. Reply with your own answers if you want something other than a default. Reply \"no\" or \"changes: …\" to hold it."
         : "Reply with your own answers if you want something other than a default. Reply \"no\" or \"changes: …\" to hold it.",
+      ...(asks.length ? ["", waitDetail("PLAN_APPROVAL")] : []),
       `(Keep ${changeToken(row.id)} in the subject; replying keeps it.)`,
       "",
       asks.length ? "QUESTIONS, EACH WITH MY RECOMMENDED DEFAULT" : "NOTHING TO ASK — \"approved\" starts it.",
@@ -689,10 +815,11 @@ async function runPhase(claim) {
       "", "WHAT WAS PROVEN BEFORE THE PR", JSON.stringify(row.proof ?? {}, null, 2),
       ...(Number(row.rework_count ?? 0) > 0 ? ["", `REWORKED ${row.rework_count} time(s) before this landed clean: the post-land step failed on ${(() => { try { return JSON.parse(row.reworked_merge_shas ?? "[]").join(", "); } catch { return "?"; } })()} and I fixed my own script rather than write to you.`] : []),
       "", `Checks: ${row.checks_detail ?? "recorded green"}`,
+      ...(missingLines.length ? ["", ...missingLines] : []),
       "", `Run log on your Mac: ${log}`,
       "", "— Danielle, Technical Program Manager",
     ].join("\n");
-    const messageId = await email(subject, text);
+    const messageId = await email(subject, text, filesAt(screenshotPaths(row.proof ?? {}, row)));
     if (!messageId) { say("NAMED STOP [DONE_NOT_SENT] landed, and the DONE email could not be sent; the row stays in land until it can."); await release(row, "landed; DONE email not sent — retry the email next tick", log); writeFileSync(join(dir, "landed-unreported.json"), JSON.stringify(out)); return; }
     const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: postLand ? { ...proof, post_land: postLand } : proof, done_message_id: messageId, run_log: log });
     if (!r.ok) say(`NAMED STOP [LAND_NOT_RECORDED] ${r.status} ${r.error ?? ""} — it landed and she was told; Boss OS was not.`);
@@ -754,9 +881,11 @@ async function sendPreview(row, log) {
     "SCREENSHOTS", ...((proof.screenshots ?? []).map((p) => `- ${p}`)), "",
     "VALIDATORS", ...((proof.validators ?? []).map((v) => `- ${v}`)), `- passed: ${proof.validators_passed === true ? "yes" : "NOT RECORDED"}`, "",
     "REPLY \"approved\" TO LAND IT (on green). Reply \"changes: …\" to hold it. Reply exactly \"approved to production\" only if you mean to ship the placeholders as they are — that is recorded as your instruction.",
+    "", waitDetail("PREVIEW_APPROVAL", { what: found?.url ?? row.pr_url }),
     "", "— Danielle, Technical Program Manager",
   ].join("\n");
-  const messageId = await email(subject, text);
+  // R18: the screenshots ride on the email (attached up to 10 MB, the rest named with where they are).
+  const messageId = await email(subject, text, filesAt(screenshotPaths(proof, row)));
   if (!messageId) { await release(row, "preview ready but the email could not be sent; will retry next tick", log); say("NAMED STOP [PREVIEW_NOT_SENT] Resend refused every sender; the claim is released."); return; }
   const r = await api(`/${row.id}/preview`, { device_id: DEVICE, preview_url: found?.url ?? null, preview_message_id: messageId, run_log: log });
   if (!r.ok) say(`NAMED STOP [PREVIEW_NOT_RECORDED] ${r.status} ${r.error ?? ""} — the preview was emailed and Boss OS was not told.`);

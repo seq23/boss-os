@@ -15,7 +15,8 @@
     "GOOGLE_OAUTH_CLIENT_ID",
     "GOOGLE_OAUTH_CLIENT_SECRET",
     "RUNWARE_API_KEY",
-    "GSC_SERVICE_ACCOUNT_JSON"
+    "GSC_SERVICE_ACCOUNT_JSON",
+    "BOSS_OS_SECRET_HANDOFF_KEY"
   ],
   "not_synced": {
     "CLOUDFLARE_API_TOKEN": "The credential this sync authenticates WITH. Uploading it to the Worker would put the key that can rewrite every secret inside the thing it rewrites.",
@@ -31,9 +32,11 @@
     "KDP_ACCOUNT_PASSWORD": "Amazon KDP sign-in, used only by the Mac-side KDP scripts (scripts/ops/kdp-signin.mjs, kdp-surface.sh). No Worker route reads it.",
     "WP_NETWORK_OS_INTAKE_SECRET": "West Peek OS credential (WP_ prefix); nothing in Boss OS reads it. Boss OS must never hold another application's credentials.",
     "WP_OS_MAC_ACCESS_CLIENT_ID": "West Peek OS credential (WP_ prefix); nothing in Boss OS reads it. Boss OS must never hold another application's credentials.",
-    "WP_OS_MAC_ACCESS_CLIENT_SECRET": "West Peek OS credential (WP_ prefix); nothing in Boss OS reads it. Boss OS must never hold another application's credentials."
+    "WP_OS_MAC_ACCESS_CLIENT_SECRET": "West Peek OS credential (WP_ prefix); nothing in Boss OS reads it. Boss OS must never hold another application's credentials.",
+    "WP_OS_SECRET_HANDOFF_KEY": "West Peek OS credential (WP_ prefix): its own secret door's key, in the shared Mac vault since 6 Oct 2026. Nothing in Boss OS reads it; Boss OS has its own, BOSS_OS_SECRET_HANDOFF_KEY. Unclassified, it made every Boss OS sync abort."
   },
   "synced_reasons": {
-    "GSC_SERVICE_ACCOUNT_JSON": "Moved from not_synced on 19 Sep 2026. Owner: \"it should never send \u2014 the green button should be to create the draft.\" The Worker creates a Gmail DRAFT in her own mailbox on her press (src/worker/boss/wealth/gmailDraft.ts), which needs the gsc-bot service account under the gmail.compose scope she granted the same day. One scope, one endpoint (drafts.create); spry-vc-never-sends.mjs and the-inbox-draft-never-sends.mjs fail the build if a send scope or send endpoint appears on that path. Until this is synced the card prints the NAMED STOP \"the Worker holds no Google key\"."
+    "GSC_SERVICE_ACCOUNT_JSON": "Moved from not_synced on 19 Sep 2026. Owner: \"it should never send — the green button should be to create the draft.\" The Worker creates a Gmail DRAFT in her own mailbox on her press (src/worker/boss/wealth/gmailDraft.ts), which needs the gsc-bot service account under the gmail.compose scope she granted the same day. One scope, one endpoint (drafts.create); spry-vc-never-sends.mjs and the-inbox-draft-never-sends.mjs fail the build if a send scope or send endpoint appears on that path. Until this is synced the card prints the NAMED STOP \"the Worker holds no Google key\".",
+    "BOSS_OS_SECRET_HANDOFF_KEY": "Added 6 Oct 2026 (docs/SERVICE_RULES.md R3). The AES-256 key the Worker encrypts a key she emails as `SECRET NAME=value` under, until her Mac moves it into the vault. Without it on the Worker the secret door fails closed."
   }
 }

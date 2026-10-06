@@ -59,6 +59,8 @@ export default defineWorkersConfig(async () => {
               BOSS_PASSCODE: "test-passcode",
               SESSION_SECRET: "test-session-secret",
               FIREWORKS_API_KEY: "test-key-not-a-real-credential",
+              // R3: a fixed 32-byte TEST key (base64) so the secret door runs in tests. Not a credential.
+              BOSS_OS_SECRET_HANDOFF_KEY: "dGVzdC1rZXktMzItYnl0ZXMtbm90LWEtc2VjcmV0ISE=",
             },
           },
         },

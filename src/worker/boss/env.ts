@@ -28,6 +28,8 @@ export interface Env {
    * ("the Worker holds no Google key"), never a Worker that will not start.
    */
   GSC_SERVICE_ACCOUNT_JSON?: string;
+  /** R3: AES-256 key (base64, 32 bytes) for keys she emails as `SECRET NAME=value`. Absent → the door fails closed. */
+  BOSS_OS_SECRET_HANDOFF_KEY?: string;
 
   /**
    * Workers AI. A BINDING, not an HTTP client — which is why it needs no key, no hostname, and no

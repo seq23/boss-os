@@ -117,6 +117,11 @@ cd "$REPO" || exit 0
 
 if [ "$mode" = "poll" ]; then
   # Is anything waiting? 0 = yes. Anything else (nothing waiting, an older Worker, an error) = do nothing this tick.
+  # THE SERVICE PASS (docs/SERVICE_RULES.md, 6 Oct 2026): keys she emailed into the vault, DNS records
+  # re-checked, Drive folders loaded. Cheap (a few HTTP calls), so it runs on every poll tick BEFORE the
+  # peek, whether or not a run is waiting, and its outcome never stops the claim. Logged, never silent.
+  npm run --silent vault:run -- node scripts/ops/service-tick.mjs >>"${BOSS_OS_HOME:-$HOME/.boss-os}/service-tick.log" 2>&1 || true
+
   npm run --silent vault:run -- node scripts/sync-agent/agent.mjs peek >/dev/null 2>&1 || exit 0
 
   # Something is waiting: refresh the briefing's data before the claim, as the fixed-time chain does. A file written in the last

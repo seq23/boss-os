@@ -373,7 +373,14 @@ async function main() {
       const held = Object.keys(secrets).sort();
       if (held.length === 0) fail("the vault holds no keys, so this sync would examine nothing.");
 
-      const unclassified = held.filter((n) => !names.includes(n) && !(n in notSynced));
+      /*
+       * A KEY SHE EMAILED (docs/SERVICE_RULES.md R3) is classified by her Mac when it vaults it: it is
+       * injected by name into one repo's own runs and never belongs on this Worker. Without this, the
+       * first `SECRET NAME=value` she sent would make every later sync abort on an unclassified name.
+       */
+      const { handedOffNames } = await import("../lib/vault-env.mjs");
+      const emailed = handedOffNames();
+      const unclassified = held.filter((n) => !names.includes(n) && !(n in notSynced) && !emailed.has(n));
       if (unclassified.length) {
         fail(
           `the vault holds ${unclassified.length} key(s) the mapping does not classify: ` +

@@ -27,7 +27,7 @@
  * exists to catch.
  */
 
-import { propertyForRepo, isExcluded, whyExcluded, GRID } from "../grid.mjs";
+import { propertyForRepo, isExcluded, whyExcluded, GRID, GRID_OWNER } from "../grid.mjs";
 
 /** The task-kind token. The Mac lane and `validate:duty-delivery` cross-check it against the script. */
 export const TASK_KIND = "repo_change";
@@ -190,6 +190,36 @@ export function excludedRepoIn(text) {
 }
 
 /**
+ * ─── ANY REPO SHE NAMES BY ITS GITHUB ADDRESS (R24, 6 Oct 2026) ────────────
+ *
+ * West Peek OS, 6 Oct 2026: "'registered west peek repos only' is a problem … any new repo we request
+ * is allowed." The same for Danielle: `github.com/<owner>/<name>` (any owner) or `seq23/<name>` names
+ * a repository the lane may work in even when it is not on the grid. The grid itself is untouched —
+ * it is her twelve properties, pinned by `validate:the-grid-is-her-twelve-properties` — and a
+ * registered repo is recorded beside it (`boss_repo_registry`), never added to it.
+ *
+ * THE NAMED EXCLUSIONS STILL WIN. West Peek's repos and the client repos are out of Boss OS by her
+ * standing rule, and a GitHub link does not change that: `excludedRepoIn` runs first and refuses.
+ */
+export function registeredRepoIn(text) {
+  const t = String(text ?? "");
+  const patterns = [
+    /github\.com\/([A-Za-z0-9][A-Za-z0-9-]{0,38})\/([A-Za-z0-9._-]{2,100}?)(?:\.git)?(?=[\s/#?)\]>"',.;:]|$)/gi,
+    new RegExp(`(?:^|[\\s(])(${GRID_OWNER})\\/([A-Za-z0-9._-]{2,100})(?=[\\s)#?,.;:]|$)`, "gi"),
+  ];
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(t)) !== null) {
+      const owner = m[1];
+      const name = m[2].replace(/\.git$/i, "");
+      if (!name || isExcluded(name)) continue;
+      return { repo: name, github_repo: `${owner}/${name}` };
+    }
+  }
+  return null;
+}
+
+/**
  * ─── HER SENTENCE, READ AS A REPO CHANGE ───────────────────────────────────
  *
  * A repo change is a message on Danielle's desk that names a grid repo, a Drive folder, or both.
@@ -203,19 +233,21 @@ export function excludedRepoIn(text) {
 export function parseRepoChange(text) {
   const t = String(text ?? "").trim();
   if (!t) return null;
-  const repo = repoIn(t);
+  const gridRepo = repoIn(t);
   const folder = driveFolderIn(t);
-  if (!repo && !folder) {
-    const excluded = excludedRepoIn(t);
-    return excluded ? { excluded } : null;
-  }
-  if (!repo) {
+  if (!gridRepo) {
     const excluded = excludedRepoIn(t);
     if (excluded) return { excluded };
   }
+  // R24 (docs/SERVICE_RULES.md): a repo she names by its GitHub address registers at the door.
+  const registered = gridRepo ? null : registeredRepoIn(t);
+  const repo = gridRepo ?? registered?.repo ?? null;
+  if (!repo && !folder) return null;
   return {
     repo,
-    property: repo ? propertyForRepo(repo)?.key ?? null : null,
+    github_repo: gridRepo ? `${GRID_OWNER}/${gridRepo}` : registered?.github_repo ?? null,
+    registered: Boolean(registered),
+    property: gridRepo ? propertyForRepo(gridRepo)?.key ?? null : null,
     drive_folder: folder ? folder.id : null,
     drive_url: folder ? folder.url : null,
     instruction: t.slice(0, 20_000),

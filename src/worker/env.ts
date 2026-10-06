@@ -96,6 +96,8 @@ export interface Env {
   // Both are Worker secrets; absent means Boss OS stays locked rather than open.
   BOSS_PASSCODE?: string;
   BOSS_SESSION_SECRET?: string;
+  /** R3 (docs/SERVICE_RULES.md): the Worker secret that encrypts a key she emails. Set from the vault. */
+  BOSS_OS_SECRET_HANDOFF_KEY?: string;
   BOSS_OS_VERSION?: string;
   BOSS_DEFAULT_PROVIDER?: string;
 }

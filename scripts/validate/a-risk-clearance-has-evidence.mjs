@@ -260,7 +260,12 @@ export function theApiGatesTheRaise(source) {
       + "without approval is an implementation deciding what she runs on.",
     );
   }
-  if (!/"change":"max_risk"/.test(body)) {
+  /*
+   * The card must be read for `change = max_risk` — as an equality on the JSON field since 6 Oct
+   * 2026 (docs/SERVICE_RULES.md: a `LIKE '%"change":"max_risk"%'` pattern built from data is what D1
+   * refuses as "too complex"). Either spelling of the comparison satisfies the pin; neither is absent.
+   */
+  if (!/json_extract\(payload,\s*'\$\.change'\)\s*=\s*'max_risk'/.test(body) && !/"change":"max_risk"/.test(body)) {
     bad.push(
       "PATCH /api/models/:id does not require the card to name `max_risk` as what it changes, so a "
       + "route-default promotion card could be reused to raise a risk clearance.",
@@ -348,7 +353,7 @@ if (process.argv.includes("--self-test")) {
     `models.patch("/:id", async (c) => {\n  const allowed = ["display_name", "max_risk"];\n  await update();\n  return ok(c);\n});`,
   ), true);
   expect("a handler that checks evidence but takes any promotion card", theApiGatesTheRaise(
-    modelsRouteSource?.replace(/"change":"max_risk"/g, '"route_id":"rt_ops_default"') ?? null,
+    modelsRouteSource?.replace(/"change":"max_risk"/g, '"route_id":"rt_ops_default"').replace(/json_extract\(payload, '\$\.change'\) = 'max_risk'/g, "json_extract(payload, '$.route_id') = 'rt_ops_default'") ?? null,
   ), true);
   expect("a handler that demands a card but no benchmark rows", theApiGatesTheRaise(
     modelsRouteSource?.replace(/model_benchmarks/g, "some_other_table") ?? null,
