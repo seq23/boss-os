@@ -104,10 +104,11 @@ describe("the grid proposes one thing, and only when it needs her", () => {
   });
 
   /*
-   * THE FEATURE, NOT A FILTER ON IT. A red build is work; it goes to Danielle as a task and never
-   * reaches her contract. "A slot that lists five red builds is a dashboard she will scroll past."
+   * THE FEATURE, NOT A FILTER ON IT. A red build is work and never reaches her contract. Since
+   * 7 Oct 2026 it is not a task either: lane health is what the CI sweep's probe reads itself, and a
+   * task for it was a copy nothing claimed — 48 of them piled up from 16 Sep.
    */
-  it("dispatches a red build to Danielle and never shows it to her", async () => {
+  it("records a red build for the CI sweep's probe, files NO task, and never shows it to her", async () => {
     const { status, body } = await file([
       observation({
         kind: "ci_red", disposition: "dispatch", needs_her_why: null,
@@ -115,17 +116,91 @@ describe("the grid proposes one thing, and only when it needs her", () => {
       }),
     ]);
     expect(status).toBe(200);
-    expect(body.data.dispatched).toBe(1);
-
+    expect(body.data.dispatched).toBe(0);
+    expect(body.data.handoff).toEqual([]);
     expect(await humanTouch(env as any)).toBeNull();
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>())!.n).toBe(0);
+    const obs = await env.DB.prepare(`SELECT state, task_id FROM grid_observations`).first<{ state: string; task_id: string | null }>();
+    expect(obs).toEqual({ state: "open", task_id: null });
+  });
 
-    const task = await env.DB
-      .prepare(`SELECT employee_id, input, status FROM tasks WHERE input LIKE '%grid_fix%'`)
-      .first<{ employee_id: string; input: string; status: string }>();
-    expect(task!.employee_id).toBe("emp_repo");
-    // Never handed to a model: `bossMount`'s drain excludes a task carrying `input.grid_fix`,
-    // because fixing one means working inside one of her repos and her rule is one agent per repo.
-    expect(JSON.parse(task!.input).grid_fix).toBeTruthy();
+  const stale = (repo: string, n: number) =>
+    observation({
+      repo, kind: "pr_stale", disposition: "dispatch", needs_her_why: null,
+      headline: `PR #${n} has been open 5 days in ${repo}.`, evidence: `https://github.com/${repo}/pull/${n}`,
+    });
+
+  it("files ONE task per repo for stale PRs, claimed by the CI sweep through the handoff", async () => {
+    const { status, body } = await file([stale("seq23/alpha", 1), stale("seq23/alpha", 2), stale("seq23/beta", 7)]);
+    expect(status).toBe(200);
+    expect(body.data.dispatched).toBe(2);
+
+    const tasks = await env.DB
+      .prepare(`SELECT id, employee_id, input, status FROM tasks ORDER BY json_extract(input, '$.grid_fix.repo')`)
+      .all<{ id: string; employee_id: string; input: string; status: string }>();
+    expect(tasks.results.length).toBe(2);
+    for (const t of tasks.results) {
+      expect(t.employee_id).toBe("emp_repo");
+      expect(t.status).toBe("queued");
+      // Kept off the model drain by `grid_fix`, and claimed by the sweep instead.
+      expect(JSON.parse(t.input).executor).toBe("ci-sweep");
+    }
+    const alpha = tasks.results[0]!.id;
+    expect(JSON.parse(tasks.results[0]!.input).grid_fix.repo).toBe("seq23/alpha");
+
+    const handoff = body.data.handoff as Array<{ task_id: string; repo: string; kind: string; evidence: string }>;
+    expect(handoff.map((h) => [h.repo, h.evidence, h.task_id === alpha])).toEqual([
+      ["seq23/alpha", "https://github.com/seq23/alpha/pull/1", true],
+      ["seq23/alpha", "https://github.com/seq23/alpha/pull/2", true],
+      ["seq23/beta", "https://github.com/seq23/beta/pull/7", false],
+    ]);
+
+    // The next day the same PRs are still open: touched, not duplicated.
+    const again = await file([stale("seq23/alpha", 1), stale("seq23/alpha", 2), stale("seq23/beta", 7)]);
+    expect(again.body.data.dispatched).toBe(0);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks`).first<{ n: number }>())!.n).toBe(2);
+  });
+
+  it("closes a grid task when its condition clears, with the examination as evidence", async () => {
+    await file([stale("seq23/alpha", 1), stale("seq23/alpha", 2)]);
+    const task = await env.DB.prepare(`SELECT id FROM tasks`).first<{ id: string }>();
+
+    // One of the two PRs landed: the task stays, the handoff shrinks.
+    const one = await file([stale("seq23/alpha", 2)]);
+    expect(one.body.data.closed).toBe(0);
+    expect(one.body.data.handoff.map((h: { evidence: string }) => h.evidence)).toEqual(["https://github.com/seq23/alpha/pull/2"]);
+
+    // Both gone: closed as done (not cancelled), the evidence on the row and in its events.
+    const none = await file([]);
+    expect(none.body.data.closed).toBe(1);
+    expect(none.body.data.handoff).toEqual([]);
+    const row = await env.DB.prepare(`SELECT status, output FROM tasks WHERE id = ?`).bind(task!.id).first<{ status: string; output: string }>();
+    expect(row!.status).toBe("done");
+    expect(JSON.parse(row!.output).grid_cleared).toMatch(/^cleared: examination gex/);
+    const ev = await env.DB.prepare(`SELECT event FROM task_events WHERE task_id = ?`).bind(task!.id).first<{ event: string }>();
+    expect(ev!.event).toBe("grid_cleared");
+  });
+
+  it("a partial run closes nothing — not found is not the same as not looked for", async () => {
+    await file([stale("seq23/alpha", 1)]);
+    const partial = await file([], { properties_examined: GRID.length - 1 });
+    expect(partial.body.data.closed).toBe(0);
+    expect((await env.DB.prepare(`SELECT status FROM tasks`).first<{ status: string }>())!.status).toBe("queued");
+  });
+
+  it("closes a grid task by hand only with evidence", async () => {
+    await file([stale("seq23/alpha", 1)]);
+    const task = await env.DB.prepare(`SELECT id FROM tasks`).first<{ id: string }>();
+    const bare = await apiJson(`/api/grid/tasks/${task!.id}/cleared`, { method: "POST", body: { evidence: "fine now" } });
+    expect(bare.status).toBe(400);
+    const good = await apiJson(`/api/grid/tasks/${task!.id}/cleared`, { method: "POST", body: { evidence: "PR #1 merged 2026-10-07" } });
+    expect(good.status).toBe(200);
+    const row = await env.DB.prepare(`SELECT status, output FROM tasks WHERE id = ?`).bind(task!.id).first<{ status: string; output: string }>();
+    expect(row).toEqual({ status: "done", output: JSON.stringify({ grid_cleared: "PR #1 merged 2026-10-07" }) });
+    const twice = await apiJson(`/api/grid/tasks/${task!.id}/cleared`, { method: "POST", body: { evidence: "PR #1 merged 2026-10-07" } });
+    expect(twice.status).toBe(400);
+    const obs = await env.DB.prepare(`SELECT task_id, state FROM grid_observations`).first<{ task_id: string | null; state: string }>();
+    expect(obs).toEqual({ task_id: null, state: "open" });
   });
 
   it("refuses a needs_her observation that cannot say what only she can do", async () => {

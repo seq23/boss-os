@@ -32,8 +32,9 @@
  * repositories and started editing them would break that rule twelve times in a single run.
  *
  * So the dispatch is real and it is bounded: the work is named, owned by Danielle, on the board, and
- * escalating through the stale-task alert like any other. Who actually opens the branch is a
- * decision a person makes, one repo at a time.
+ * CLAIMED BY THE CI SWEEP (7 Oct 2026): grid-watch writes every open grid task into the sweep's inbox,
+ * and the sweep's probe works it as a lane, one agent per repo, until it is gone. Before that nothing
+ * claimed these and 48 piled up; see `TASK_EXECUTORS.grid_fix` in `shared/boss/duties/executors.mjs`.
  */
 
 import { Hono } from "hono";
@@ -42,6 +43,9 @@ import { ok, badRequest } from "../lib/http";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { GRID, propertyFor } from "../../../shared/boss/grid.mjs";
+import { gridDispatchGoesTo, GRID_KINDS_FOR_THE_INBOX } from "../../../shared/boss/duties/executors.mjs";
+
+const INBOX_KINDS_SQL = GRID_KINDS_FOR_THE_INBOX.map(() => "?").join(",");
 
 export const grid = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -229,26 +233,46 @@ grid.post("/examination", async (c) => {
     fresh += 1;
     let taskId: string | null = null;
 
-    if (r.disposition === "dispatch") {
-      taskId = newId("tsk");
-      await c.env.DB
+    /*
+     * ─── A TASK ONLY FOR WHAT THE CI SWEEP CANNOT SEE, AND ONE PER REPO (7 Oct 2026) ──
+     *
+     * Before this, every dispatch observation filed its own `queued` task, and nothing claimed any
+     * of them: 48 by 7 Oct, 44 of which had cleared on their own. Lane health (a red build, a quiet
+     * schedule, an unreadable repo) is what the CI sweep's probe reads itself, so it is recorded as
+     * an observation and no task. A stale pull request is the one thing the probe cannot see: it gets
+     * ONE open task per repository — a second stale PR in the same repo joins it — and grid-watch
+     * hands the open set to the sweep's inbox. `TASK_EXECUTORS.grid_fix` names that claim.
+     */
+    if (r.disposition === "dispatch" && gridDispatchGoesTo(r.kind) === "inbox") {
+      const open = await c.env.DB
         .prepare(
-          `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at,
-                              intake_kind, execution_assignment, risk, sensitivity, cost_mode)
-           VALUES (?,'ops',?,?,?,'queued',?,'one_off','USER_ONLY','low','private','NORMAL')`,
+          `SELECT id FROM tasks WHERE status = 'queued' AND json_extract(input, '$.grid_fix.repo') = ?
+            ORDER BY created_at LIMIT 1`,
         )
-        .bind(
-          taskId, REPO_SEAT, r.headline.slice(0, 200),
-          /*
-           * `grid_fix` IS THE TOKEN THAT KEEPS A MODEL OFF IT. `bossMount.ts` excludes a task
-           * carrying it from the queue drain, exactly as it does `input.hunt`. Fixing this means
-           * working inside one of her repositories, and one agent per repo is her rule.
-           */
-          JSON.stringify({ grid_fix: { property: r.property_key, repo: r.repo, kind: r.kind, evidence: r.evidence } }),
-          now,
-        )
-        .run();
-      dispatched += 1;
+        .bind(r.repo)
+        .first<{ id: string }>();
+      if (open) {
+        taskId = open.id;
+      } else {
+        taskId = newId("tsk");
+        await c.env.DB
+          .prepare(
+            `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at,
+                                intake_kind, execution_assignment, risk, sensitivity, cost_mode)
+             VALUES (?,'ops',?,?,?,'queued',?,'one_off','USER_ONLY','low','private','NORMAL')`,
+          )
+          .bind(
+            taskId, REPO_SEAT, r.headline.slice(0, 200),
+            /*
+             * `grid_fix` keeps the model drain off it (`bossMount.ts`), and `executor` says what
+             * claims it instead: the CI sweep, one agent per repo, through its inbox.
+             */
+            JSON.stringify({ grid_fix: { property: r.property_key, repo: r.repo, kind: r.kind, evidence: r.evidence }, executor: "ci-sweep" }),
+            now,
+          )
+          .run();
+        dispatched += 1;
+      }
     }
 
     await c.env.DB
@@ -261,7 +285,7 @@ grid.post("/examination", async (c) => {
       .bind(
         r.id, examId, r.property_key, r.repo, r.kind, r.disposition, r.needs_her_why,
         r.headline, r.evidence, r.observed_at,
-        r.disposition === "dispatch" ? "dispatched" : "open",
+        r.disposition === "dispatch" && taskId ? "dispatched" : "open",
         taskId, now,
       )
       .run();
@@ -295,10 +319,49 @@ grid.post("/examination", async (c) => {
     }
   }
 
+  /*
+   * ─── A TASK WHOSE CONDITION CLEARED IS CLOSED, WITH THE EXAMINATION AS EVIDENCE ──
+   *
+   * The resolution above closed the observation and left its task queued forever — which is how 44
+   * of the 48 tasks of 7 Oct were about builds that had been green for days. A grid task closes when
+   * no open observation points at it any more. Only on a complete run, for the same reason as above.
+   */
+  let closed = 0;
+  if (outcome === "ok") {
+    const orphans = await c.env.DB
+      .prepare(
+        `SELECT t.id FROM tasks t
+          WHERE t.status = 'queued' AND json_extract(t.input, '$.grid_fix') IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM grid_observations o WHERE o.task_id = t.id AND o.state IN ('open','dispatched','shown')
+                              AND o.kind IN (${INBOX_KINDS_SQL}))`,
+      )
+      .bind(...GRID_KINDS_FOR_THE_INBOX)
+      .all<{ id: string }>();
+    for (const t of orphans.results ?? []) {
+      closed += await closeGridTask(c.env, t.id, `cleared: examination ${examId} no longer finds it`, now);
+    }
+  }
+
+  /*
+   * THE HANDOFF. Every open grid task, for grid-watch to write into the CI sweep's inbox. The file is
+   * rewritten from this list on every run, so a fix that cleared leaves the inbox the same day.
+   */
+  const handoff = await c.env.DB
+    .prepare(
+      `SELECT t.id AS task_id, json_extract(t.input, '$.grid_fix.repo') AS repo,
+              o.kind, o.evidence, o.headline
+         FROM tasks t JOIN grid_observations o ON o.task_id = t.id AND o.state IN ('open','dispatched','shown')
+                                          AND o.kind IN (${INBOX_KINDS_SQL})
+        WHERE t.status = 'queued' AND json_extract(t.input, '$.grid_fix') IS NOT NULL
+        ORDER BY repo, o.observed_at`,
+    )
+    .bind(...GRID_KINDS_FOR_THE_INBOX)
+    .all<{ task_id: string; repo: string; kind: string; evidence: string; headline: string }>();
+
   await audit(c.env.DB, {
     actor: "grid-watch", lane: "ops", entityType: "grid_examinations", entityId: examId,
     action: "examined",
-    detail: { expected, examined, outcome, observations: rows.length, dispatched, resolved },
+    detail: { expected, examined, outcome, observations: rows.length, dispatched, resolved, closed, handoff: (handoff.results ?? []).length },
   });
 
   return ok(c, {
@@ -308,5 +371,51 @@ grid.post("/examination", async (c) => {
     new: fresh,
     dispatched,
     resolved,
+    closed,
+    handoff: handoff.results ?? [],
   });
+});
+
+/**
+ * Closes one grid task as cleared, with the evidence that says so. Returns 1 when it closed, 0 when
+ * it was already finished. The task is `done` (the condition is gone), never `cancelled` — nobody
+ * decided against the work; the work stopped being needed, and the evidence says why.
+ */
+async function closeGridTask(env: Env, taskId: string, evidence: string, now: number): Promise<number> {
+  const res = await env.DB
+    .prepare(
+      `UPDATE tasks SET status = 'done', finished_at = ?, output = ?
+        WHERE id = ? AND status = 'queued' AND json_extract(input, '$.grid_fix') IS NOT NULL`,
+    )
+    .bind(now, JSON.stringify({ grid_cleared: evidence.slice(0, 1000) }), taskId)
+    .run();
+  if (!res.meta.changes) return 0;
+  await env.DB
+    .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'grid_cleared',?)`)
+    .bind(newId("tev"), taskId, now, JSON.stringify({ evidence }))
+    .run();
+  await env.DB
+    // Detached, not resolved: an observation that is still true stays on the grid card; whether it
+    // is still true is the next examination's call, not this one's.
+    .prepare(`UPDATE grid_observations SET task_id = NULL, state = CASE WHEN state = 'dispatched' THEN 'open' ELSE state END WHERE task_id = ?`)
+    .bind(taskId)
+    .run();
+  return 1;
+}
+
+/**
+ * A grid task whose condition was checked by hand and found cleared — closed with the run, pull
+ * request or count that proves it. Refused without evidence: "it's fine now" is a claim.
+ */
+grid.post("/tasks/:id/cleared", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const evidence = String(b?.evidence ?? "").trim();
+  if (evidence.length < 12) {
+    throw badRequest("Closing a grid task needs its evidence", "The green run, the merged or closed pull request, or the count that shows the condition is gone.");
+  }
+  const id = c.req.param("id");
+  const n = await closeGridTask(c.env, id, evidence, Date.now());
+  if (!n) throw badRequest(`${id} is not an open grid task`);
+  await audit(c.env.DB, { actor: "grid-watch", lane: "ops", entityType: "tasks", entityId: id, action: "grid_cleared", detail: { evidence } });
+  return ok(c, { closed: id, evidence });
 });

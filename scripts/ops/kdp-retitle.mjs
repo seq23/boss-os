@@ -58,12 +58,46 @@ export function repeatedTerms(title, subtitle) {
  * `data-title` / `data-subtitle`. The owner was then asked to make the edit by hand, and the edit
  * went to Zora, who cannot open a browser. So: eBook ids first, print ids second, and the visible
  * label ("Book Title", "Subtitle") last, so a renamed id degrades to the label instead of a stop.
+ *
+ * 7 Oct 2026, CONFIRMED in the live Kindle eBook details page (title-setup/kindle/<ASIN>/details):
+ * the inputs are `input[name="data[title]"]` and `input[name="data[subtitle]"]`, type text. There is
+ * NO `data-title` / `data-subtitle` id or attribute — the 27 Sep guess was wrong. So the NAME
+ * selectors come first; the old ids stay behind them only as a harmless fallback, then print, then
+ * the label. `tests/kdpRetitleFields.test.ts` pins this order against a fixture of that page.
  */
 export const FIELD_SELECTORS = Object.freeze({
-  title: ['#data-title', 'input[name="data[title]"]', '#data-print-book-title', 'input[name="data[print_book][title]"]', 'input[id*="book-title"]'],
-  subtitle: ['#data-subtitle', 'input[name="data[subtitle]"]', '#data-print-book-subtitle', 'input[name="data[print_book][subtitle]"]', 'input[id*="book-subtitle"]'],
+  title: Object.freeze(['input[name="data[title]"]', '#data-title', 'input[name="data[print_book][title]"]', '#data-print-book-title', 'input[id*="book-title"]']),
+  subtitle: Object.freeze(['input[name="data[subtitle]"]', '#data-subtitle', 'input[name="data[print_book][subtitle]"]', '#data-print-book-subtitle', 'input[id*="book-subtitle"]']),
 });
-const FIELD_LABELS = { title: /^\s*Book Title\s*$/i, subtitle: /^\s*Subtitle/i };
+export const FIELD_LABELS = Object.freeze({ title: /^\s*Book Title\s*$/i, subtitle: /^\s*Subtitle/i });
+
+/**
+ * THE AI-DISCLOSURE ANSWERS ON THE CONTENT STEP MUST STILL READ WHAT SHE FILED (7 Oct 2026).
+ * Text "Entire work, with extensive editing", images "None", translations "None". Saving Details can
+ * carry the Content step forward, and publishing over a changed disclosure is a statement to Amazon
+ * she did not make — so the run stops rather than publishing. Pure: the selected answers in page order.
+ */
+export const AI_ANSWERS = Object.freeze(["Entire work, with extensive editing", "None", "None"]);
+export function aiAnswersOk(selected) {
+  const norm = (x) => String(x ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  const got = (selected ?? []).map(norm).filter(Boolean);
+  const i = got.indexOf(norm(AI_ANSWERS[0]));
+  return i >= 0 && got[i + 1] === norm(AI_ANSWERS[1]) && got[i + 2] === norm(AI_ANSWERS[2]);
+}
+
+/**
+ * A PROGRAMMATIC VALUE SET DOES NOT STICK on this page (confirmed 7 Oct 2026): KDP's form keeps its
+ * own model and saves the old subtitle. What works is what a person does — a real click on the input,
+ * select what is there, type the text — and then reading `.value` back. Returns the value read back.
+ */
+export async function typeLikeAPerson(page, field, text) {
+  await field.click({ timeout: 15_000 });
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type(text, { delay: 35 });
+  await page.keyboard.press("Tab");
+  return (await field.evaluate((el) => el.value)).trim();
+}
 
 async function findField(page, which) {
   for (const sel of FIELD_SELECTORS[which]) {
@@ -116,16 +150,23 @@ async function main() {
     const liveTitle = (await titleField.inputValue()).trim();
     if (liveTitle !== entry.title) return out("title_mismatch", `the page's title is "${liveTitle}" and the register says "${entry.title}" — refusing to edit a book that is not the one recorded.`, 9);
     const before = (await subtitleField.inputValue()).trim();
-    await subtitleField.fill(subtitle);
     if (DRY_RUN) return out("dry_run", `would change the subtitle of "${entry.title}" from "${before}" to "${subtitle}"; Save and Publish deliberately not clicked.`, 0);
+    const typed = await typeLikeAPerson(page, subtitleField, subtitle);
+    if (typed !== subtitle) return out("value_did_not_stick", `typed "${subtitle}" into the subtitle and the field reads "${typed}" — nothing was saved.`, 14);
 
-    // Save & Continue: details → content → pricing.
+    // Save & Continue: details → content (AI answers checked) → pricing.
     for (let step = 0; step < 2; step += 1) {
       const save = page.locator('#save-and-continue-announce, button:has-text("Save and Continue"), text=/Save and Continue/i').first();
       if (!(await save.count())) return out("no_save", `no Save and Continue on ${page.url().slice(0, 100)} — the subtitle was typed and not saved.`, 10);
       await save.click({ timeout: 15_000 });
       await page.waitForTimeout(9000);
       if (/\/ap\/signin|\/ap\/mfa/.test(page.url())) return out("reauth_required", `the session lost edit access mid-save. Fix: npm run browser:signin -- --profile ${PROFILE} --url ${BOOKSHELF}`, 6);
+      if (step === 0) {
+        // On Content now. The disclosure must still read what she filed before anything goes further.
+        const selected = await page.evaluate(() => [...document.querySelectorAll("select, [role=combobox], .a-dropdown-prompt")]
+          .map((e) => (e.tagName === "SELECT" ? e.options[e.selectedIndex]?.text : e.innerText) || "")).catch(() => []);
+        if (!aiAnswersOk(selected)) return out("ai_answers_changed", `the Content step's AI answers read "${selected.filter(Boolean).join(" / ").slice(0, 200)}", not "${AI_ANSWERS.join(" / ")}" — the subtitle is saved, nothing was published.`, 15);
+      }
     }
     let clicked = false;
     for (const s of ['text=/Publish Your Kindle eBook/i', '#save-and-publish-announce', 'text=/^Publish$/i']) {
