@@ -18,6 +18,11 @@
       "decided": "2026-09-14",
       "detail": "KDP case #51496198 (the server-side cover flag) closed by her on 14 Sep; the case watch duty was retired (migration 0244). Mail on that thread is ordinary mail on this surface. Never reopen the case.",
       "do_not_re_raise": true
+    },
+    "gift_letter_subtitle": {
+      "decided": "2026-10-07",
+      "detail": "The Gift Letter's subtitle edit is DONE and published (7 Oct 2026); the bookshelf reads In review. In review is progress: no item about this title may wake her unless Amazon asks for more (facts_changed says what).",
+      "do_not_re_raise": true
     }
   },
   "titles": [
@@ -34,23 +39,34 @@
       "title": "The Gift Letter (Down Payment)",
       "author": "S. Taylor",
       "target": "LIVE",
-      "status": "BLOCKED",
-      "status_as_of": "2026-09-21",
-      "open": {
-        "matter": "title",
-        "since": "2026-09-12",
+      "status": "IN_REVIEW",
+      "status_as_of": "2026-10-07",
+      "in_review": {
+        "since": "2026-10-07",
         "facts": [
-          "12 Sep and 14 Sep 2026: Amazon content review flagged the TITLE — 'title might cause a misleading customer experience'. The listing reads 'The Gift Letter (Down Payment): gift letter for mortgage', i.e. the repetitive-terms rule: 'gift letter' appears in both title and subtitle.",
-          "Amazon offered Option 1 (edit the details and resubmit) or Option 2 (documentation) within 5 days. Nothing was done: the 12 Sep needs_owner row sent no email and the 15/16 Sep 'assigned to Zora' was never a work_assignments row.",
-          "21 Sep 2026 20:46Z: Amazon wrote that it has not received a reply and will not make the book available; 'if you still want to publish … review our previous message and address the requests'. Still fixable by Option 1.",
-          "21 Sep 2026 (bookshelf, signed in as Simone): the title shows BLOCKED and has NO edit entry — Option 1 cannot be done from the bookshelf. The corrected subtitle has to reach Amazon on the review thread."
+          "22 Sep 2026: Amazon released the block after the reply with the corrected subtitle; the title went to Draft.",
+          "27 Sep 2026: npm run kdp:retitle stopped at no_fields — it only knew the PRINT field ids; the title is a Kindle eBook (fixed 7 Oct: data-title / data-subtitle, then the label).",
+          "4 Oct 2026: the edit was assigned to Zora, who has no browser or executor; it went overdue and on 7 Oct was bounced to the owner. Assignment asg_m43n6p5k3vkjrsmt is closed by the outcome.",
+          "7 Oct 2026: subtitle changed to 'A Template for Documenting Family Funds Toward a Home Purchase', AI-content answers intact, Publish pressed. Bookshelf: In review, last modified October 7, 2026."
         ],
-        "fix": "Reply on Amazon's review thread (the 21 Sep alert, thread 1a0c5b811d5c434c, from her account) with the corrected subtitle and a request to apply it and release the block; then watch the bookshelf for the state to leave BLOCKED and confirm Live. No metadata edit is possible while BLOCKED.",
-        "her_decision": "Two things, asked ONCE each: the subtitle wording (approved 21 Sep 2026 22:36Z on kml_m331j7a4gqr6qz47: 'A Template for Documenting Family Funds Toward a Home Purchase'), and the reply to Amazon in her name — proposed with the full draft; 'approved' sends it.",
-        "recommended_subtitle": "A Template for Documenting Family Funds Toward a Home Purchase",
-        "execute_with": "On her 'approved' to the send ask: Gmail connector reply on the review thread with the draft, then file acted with the sent message id; the problem stays open (due_at +5 days) until the bookshelf leaves BLOCKED.",
+        "next": "Nothing to do. Check the bookshelf each run; file acted when it reads Live. Wake her ONLY if Amazon asks for more or refuses — and say what changed in facts_changed.",
         "approved_subtitle": "A Template for Documenting Family Funds Toward a Home Purchase",
-        "reply_template": "Hello,\n\nThank you for the review of \"The Gift Letter (Down Payment)\" (ASIN/title id A1EYXUFGFV7CN6). I would like to address the title concern with Option 1 and update the metadata so no term repeats between the title and subtitle.\n\nTitle (unchanged): The Gift Letter (Down Payment)\nNew subtitle: A Template for Documenting Family Funds Toward a Home Purchase\n\nThe book is currently shown as Blocked on my Bookshelf and the Edit eBook details option is not available, so I am not able to make this change myself. Please apply the updated subtitle (or restore edit access so I can) and release the title for publication. Everything else about the book is unchanged.\n\nThank you,\nS. Taylor"
+        "history": {
+          "matter": "title",
+          "since": "2026-09-12",
+          "facts": [
+            "12 Sep and 14 Sep 2026: Amazon content review flagged the TITLE — 'title might cause a misleading customer experience'. The listing reads 'The Gift Letter (Down Payment): gift letter for mortgage', i.e. the repetitive-terms rule: 'gift letter' appears in both title and subtitle.",
+            "Amazon offered Option 1 (edit the details and resubmit) or Option 2 (documentation) within 5 days. Nothing was done: the 12 Sep needs_owner row sent no email and the 15/16 Sep 'assigned to Zora' was never a work_assignments row.",
+            "21 Sep 2026 20:46Z: Amazon wrote that it has not received a reply and will not make the book available; 'if you still want to publish … review our previous message and address the requests'. Still fixable by Option 1.",
+            "21 Sep 2026 (bookshelf, signed in as Simone): the title shows BLOCKED and has NO edit entry — Option 1 cannot be done from the bookshelf. The corrected subtitle has to reach Amazon on the review thread."
+          ],
+          "fix": "Reply on Amazon's review thread (the 21 Sep alert, thread 1a0c5b811d5c434c, from her account) with the corrected subtitle and a request to apply it and release the block; then watch the bookshelf for the state to leave BLOCKED and confirm Live. No metadata edit is possible while BLOCKED.",
+          "her_decision": "Two things, asked ONCE each: the subtitle wording (approved 21 Sep 2026 22:36Z on kml_m331j7a4gqr6qz47: 'A Template for Documenting Family Funds Toward a Home Purchase'), and the reply to Amazon in her name — proposed with the full draft; 'approved' sends it.",
+          "recommended_subtitle": "A Template for Documenting Family Funds Toward a Home Purchase",
+          "execute_with": "On her 'approved' to the send ask: Gmail connector reply on the review thread with the draft, then file acted with the sent message id; the problem stays open (due_at +5 days) until the bookshelf leaves BLOCKED.",
+          "approved_subtitle": "A Template for Documenting Family Funds Toward a Home Purchase",
+          "reply_template": "Hello,\n\nThank you for the review of \"The Gift Letter (Down Payment)\" (ASIN/title id A1EYXUFGFV7CN6). I would like to address the title concern with Option 1 and update the metadata so no term repeats between the title and subtitle.\n\nTitle (unchanged): The Gift Letter (Down Payment)\nNew subtitle: A Template for Documenting Family Funds Toward a Home Purchase\n\nThe book is currently shown as Blocked on my Bookshelf and the Edit eBook details option is not available, so I am not able to make this change myself. Please apply the updated subtitle (or restore edit access so I can) and release the title for publication. Everything else about the book is unchanged.\n\nThank you,\nS. Taylor"
+        }
       }
     },
     {

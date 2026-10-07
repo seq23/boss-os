@@ -128,7 +128,7 @@ function selfTest() {
     ["the prompt telling the model to post", { ...good, prompt: good.prompt + "\nThen run `scripts/ops/kdp-surface-report.mjs`, which posts the file." }, 1],
     ["the prompt telling the model to email", { ...good, prompt: good.prompt + "\nUse `npm run notify -- --from Simone --subject x --body y`." }, 1],
     ["a second poster in the wrapper", { ...good, wrapper: good.wrapper + "\nnode scripts/ops/kdp-surface-report.mjs\n" }, 1],
-        ["a title whose target is not LIVE", { ...good, register: good.register.replace(/"target": "LIVE",(\s*)"status": "BLOCKED"/, '"target": "DRAFT",$1"status": "BLOCKED"') }, 1],
+        ["a title whose target is not LIVE", { ...good, register: good.register.replace(/"target": "LIVE",(\s*)"status": "IN_REVIEW"/, '"target": "DRAFT",$1"status": "IN_REVIEW"') }, 1],
     ["'draft by choice' back in the register", { ...good, register: good.register.replace('"owner_goal"', '"note": "Gift Letter is Draft by her choice", "owner_goal"') }, 1],
     ["the endpoint accepting assigned without a block", { ...good, route: good.route.replace('outcome === "assigned" && !assign', "false") }, 1],
     ["the chase removed", { ...good, report: good.report.replace("export function dueForChase", "function dueForChaseX") }, 1],
