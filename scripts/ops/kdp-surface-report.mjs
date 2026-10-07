@@ -35,6 +35,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { sendersFor, employeeMail } from "./notify.mjs";
+import { checkAssignment, ownerAskIsATask } from "../../src/shared/boss/duties/executors.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -76,6 +77,14 @@ export function refusals(payload, register) {
     if (it.outcome_kind === "assigned" && !(it.assign && typeof it.assign === "object" && it.assign.helper_employee_id && it.assign.what && it.assign.why)) {
       out.push("ASSIGNMENT_IS_A_SENTENCE: an 'assigned' item has no assign block {helper_employee_id, what, why}. On 15–16 Sep 'Assigned to Zora' was written and no assignment existed.");
     }
+    // 4 Oct 2026: a KDP edit was assigned to Zora, who has no browser and no executor. Existing is not being able to act.
+    if (it.outcome_kind === "assigned" && it.assign?.helper_employee_id) {
+      const can = checkAssignment({ helper: it.assign.helper_employee_id, what: it.assign.what, why: it.assign.why, requires: it.assign.requires ?? null });
+      if (!can.ok) out.push(`ASSIGNMENT_CANNOT_REACH: ${can.error}. ${can.why}`);
+    }
+    // 7 Oct 2026: "check the status with Zora or complete the manual edit yourself". She decides; she is never handed the task.
+    const askTask = typeof it.owner_ask === "string" ? ownerAskIsATask(it.owner_ask) : null;
+    if (askTask) out.push(`OWNER_ASK_IS_A_TASK: ${askTask}`);
     if (it.disposition === "problem") {
       if (!MATTERS.has(it.matter)) out.push(`NO_MATTER: a problem says what it is about — one of ${[...MATTERS].join(", ")}.`);
       if (it.needs_owner === true && !(typeof it.owner_ask === "string" && it.owner_ask.trim())) out.push("NO_OWNER_ASK: needs_owner without the one decision she is asked for (with a recommended default).");
@@ -85,6 +94,10 @@ export function refusals(payload, register) {
       if (it.matter === "case" && settled.case_51496198?.do_not_re_raise && it.needs_owner === true && !it.facts_changed) out.push("SETTLED_MATTER_RE_RAISED: case #51496198 closed 14 Sep; mail on that thread is ordinary mail and may not reopen it.");
       // The register's target is the truth about what she wants: a title not Live is a problem, never a preference.
       const t = it.title_ref ? titles.get(it.title_ref) : null;
+      // IN REVIEW IS PROGRESS: edited and published, Amazon is looking. Only Live, or Amazon asking for more, is news.
+      if (t && t.status === "IN_REVIEW" && it.needs_owner === true && !it.facts_changed) {
+        out.push(`IN_REVIEW_IS_PROGRESS: "${t.title}" is In review (since ${t.status_as_of}). File acted when the bookshelf reads Live; wake her only if Amazon asks for more, and say what changed in facts_changed.`);
+      }
       if (t && t.target === "LIVE" && /draft by (her )?choice|deliberately (left )?unpublished|by her decision/i.test(`${it.note} ${it.action_taken}`)) {
         out.push(`REGISTER_CONTRADICTED: "${t.title}" has target LIVE in the register (her words, 21 Sep: every book published and working); nothing about it is 'draft by choice'.`);
       }
@@ -228,10 +241,18 @@ function chaseEmail(p, register) {
 }
 
 function selfTest() {
-  const reg = JSON.parse(require_fs().readFileSync(REGISTER, "utf8"));
+  const real = JSON.parse(require_fs().readFileSync(REGISTER, "utf8"));
+  // The rule cases below run against a register where the fixture title is still BLOCKED, so each
+  // rule is tested on its own; the in-review cases run against the REAL register.
+  const reg = { ...real, titles: real.titles.map((t) => (t.title_ref === "A1EYXUFGFV7CN6" ? { ...t, status: "BLOCKED" } : t)) };
   const ok = { items: [{ disposition: "problem", matter: "title", title_ref: "A1EYXUFGFV7CN6", note: "Title flagged.", outcome_kind: "acted", action_taken: "Proposed a subtitle.", needs_owner: true, owner_ask: "Approve the subtitle." }] };
   const cases = [
     ["a valid needs_owner problem passes", refusals(ok, reg).length === 0],
+    ["in review: a needs_owner item on the In review title is refused (real register)", refusals(ok, real).some((r) => r.startsWith("IN_REVIEW_IS_PROGRESS"))],
+    ["in review: Amazon asking for more (facts_changed) may wake her", !refusals({ items: [{ ...ok.items[0], facts_changed: "Amazon asked for documentation" }] }, real).some((r) => r.startsWith("IN_REVIEW_IS_PROGRESS"))],
+    ["in review: an acted item with no ask is fine", !refusals({ items: [{ ...ok.items[0], needs_owner: false, owner_ask: undefined, due_at: Date.now() + DAY_MS }] }, real).some((r) => r.startsWith("IN_REVIEW_IS_PROGRESS"))],
+    ["a KDP edit assigned to Zora is refused — 4 Oct 2026", refusals({ items: [{ ...ok.items[0], outcome_kind: "assigned", needs_owner: false, owner_ask: undefined, assign: { helper_employee_id: "emp_knowledge", what: "Edit The Gift Letter KDP Details tab: change subtitle, save, and publish", why: "moves Draft to Live" } }] }, reg).some((r) => r.startsWith("ASSIGNMENT_CANNOT_REACH"))],
+    ["an ask to chase Zora is refused — 7 Oct 2026", refusals({ items: [{ ...ok.items[0], owner_ask: "Zora's assignment is overdue. Can you check the status with Zora or complete the manual edit yourself?" }] }, reg).some((r) => r.startsWith("OWNER_ASK_IS_A_TASK"))],
     ["assigned without an assign block is refused", refusals({ items: [{ ...ok.items[0], outcome_kind: "assigned", needs_owner: false }] }, reg).some((r) => r.startsWith("ASSIGNMENT_IS_A_SENTENCE"))],
     ["assigned with an assign block passes", refusals({ items: [{ ...ok.items[0], outcome_kind: "assigned", needs_owner: false, assign: { helper_employee_id: "emp_knowledge", what: "x", why: "y" } }] }, reg).length === 0],
     ["a problem with no matter is refused", refusals({ items: [{ ...ok.items[0], matter: undefined }] }, reg).some((r) => r.startsWith("NO_MATTER"))],

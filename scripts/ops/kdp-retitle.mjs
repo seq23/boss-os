@@ -50,6 +50,31 @@ export function repeatedTerms(title, subtitle) {
   return [...a].filter((w) => b.has(w) && !["with", "your", "from", "that", "this", "when"].includes(w));
 }
 
+/**
+ * WHERE THE TITLE AND SUBTITLE LIVE, PER FORMAT.
+ *
+ * 27 Sep 2026 this script stopped at `no_fields` on The Gift Letter: it only knew the PRINT book's
+ * ids (`data-print-book-*`), and the title is a Kindle eBook, whose details step names them
+ * `data-title` / `data-subtitle`. The owner was then asked to make the edit by hand, and the edit
+ * went to Zora, who cannot open a browser. So: eBook ids first, print ids second, and the visible
+ * label ("Book Title", "Subtitle") last, so a renamed id degrades to the label instead of a stop.
+ */
+export const FIELD_SELECTORS = Object.freeze({
+  title: ['#data-title', 'input[name="data[title]"]', '#data-print-book-title', 'input[name="data[print_book][title]"]', 'input[id*="book-title"]'],
+  subtitle: ['#data-subtitle', 'input[name="data[subtitle]"]', '#data-print-book-subtitle', 'input[name="data[print_book][subtitle]"]', 'input[id*="book-subtitle"]'],
+});
+const FIELD_LABELS = { title: /^\s*Book Title\s*$/i, subtitle: /^\s*Subtitle/i };
+
+async function findField(page, which) {
+  for (const sel of FIELD_SELECTORS[which]) {
+    const el = page.locator(sel).first();
+    if (await el.count().catch(() => 0)) return el;
+  }
+  const byLabel = page.getByLabel(FIELD_LABELS[which]).first();
+  if (await byLabel.count().catch(() => 0)) return byLabel;
+  return null;
+}
+
 async function main() {
   const ref = flag("ref"); const subtitle = (flag("subtitle") ?? "").trim();
   if (!ref || !subtitle) return out("usage", "--ref <title_ref> --subtitle \"<wording>\" are both required. Nothing was opened.", 2);
@@ -81,10 +106,13 @@ async function main() {
     }
     if (!/kdp\.amazon\.com/.test(page.url())) return out("elsewhere", `landed on ${page.url().slice(0, 120)} instead of the details page.`, 7);
 
-    // The fields KDP's details step uses for every format. Two selectors each: the id, then the label.
-    const titleField = page.locator('#data-print-book-title, input[name="data[print_book][title]"], input[id*="book-title"]').first();
-    const subtitleField = page.locator('#data-print-book-subtitle, input[name="data[print_book][subtitle]"], input[id*="book-subtitle"]').first();
-    if (!(await titleField.count()) || !(await subtitleField.count())) return out("no_fields", `the details page has no title/subtitle fields where expected (${page.url().slice(0, 100)}); the page shape changed — nothing was edited.`, 8);
+    // The Kindle eBook ids first, the print ids second, then the visible label. See FIELD_SELECTORS.
+    const titleField = await findField(page, "title");
+    const subtitleField = await findField(page, "subtitle");
+    if (!titleField || !subtitleField) {
+      const ids = await page.evaluate(() => [...document.querySelectorAll("input[id], input[name]")].map((e) => e.id || e.getAttribute("name")).filter((x) => /title/i.test(x)).slice(0, 12).join(", ")).catch(() => "");
+      return out("no_fields", `the details page has no title/subtitle fields where expected (${page.url().slice(0, 100)}); title-like inputs on the page: ${ids || "none"} — nothing was edited.`, 8);
+    }
     const liveTitle = (await titleField.inputValue()).trim();
     if (liveTitle !== entry.title) return out("title_mismatch", `the page's title is "${liveTitle}" and the register says "${entry.title}" — refusing to edit a book that is not the one recorded.`, 9);
     const before = (await subtitleField.inputValue()).trim();

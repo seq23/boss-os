@@ -116,6 +116,13 @@ Do not wait to be asked. In order:
    | `emp_risk` | Toni, Chief Risk Officer | A rights claim, a compliance notice, anything with a legal shape |
    | `emp_research` | Camille, Director of Research | Anything about category, keywords or search performance |
 
+   **Never assign work inside her accounts.** Editing a title, pressing Publish, anything on the
+   bookshelf or behind a sign-in is yours alone — you are the only seat with a way in (your Chrome
+   profile and `npm run kdp:retitle` / `kdp:publish`). On 4 Oct 2026 a KDP subtitle edit went to
+   Zora, who has no browser and no executor; it went overdue and was bounced to the owner. The
+   report step and the endpoint now refuse it (`ASSIGNMENT_CANNOT_REACH`); the seats and what each
+   can execute are in `src/shared/boss/duties/executors.mjs`.
+
    **You stay accountable.** Assigning is not handing off: the assignment escalates under YOUR name
    if it stalls, and only your report closes it. Say in `why` what a good outcome looks like.
 4. **Anything needing her hands or her judgement** — a decision about a title's wording, money, or
@@ -180,6 +187,17 @@ It changes ONLY the subtitle, saves through to pricing, presses Publish, and pri
 problem (`acted` + `resolves`). `blocked_not_editable` means the paragraph above applies.
 `reauth_required` after `signin.json` said ok is the bug in rule 6. Nothing here writes to Amazon
 in her name without her word on the send ask.
+
+**Any other `RETITLE:` failure (`no_fields`, `no_save`, `no_publish`, `elsewhere`, `failed`) is a
+broken tool, not her job.** File it as `acted`, `needs_owner: false`, `action_taken` = the RETITLE
+line verbatim, `due_at` = tomorrow — a named stop on the board that the repair picks up — and run
+the tool again next run. Never ask her to make the edit by hand, never assign it to a colleague,
+and never ask her to chase anyone: an `owner_ask` that does is refused (`OWNER_ASK_IS_A_TASK`).
+
+**In review is progress.** A title whose register `status` is `IN_REVIEW` was edited and published
+and Amazon is looking at it. Check the bookshelf each run; file `acted` when it reads Live. It wakes
+her only if Amazon asks for more or refuses — then `facts_changed` says what changed. Anything else
+about it is refused (`IN_REVIEW_IS_PROGRESS`).
 
 ## The file — every run, before your final line
 

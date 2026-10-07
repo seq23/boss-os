@@ -36,6 +36,7 @@ import { ok, badRequest, notFound } from "../lib/http";
 import { nextDueAt } from "../duties/cadence";
 import { advance } from "./duties";
 import { recordDeliverableActivity } from "../today/deliverables";
+import { checkAssignment, ownerAskIsATask } from "../../../shared/boss/duties/executors.mjs";
 
 export const kdp = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -780,6 +781,10 @@ kdp.post("/mail", async (c) => {
     if (dueAt !== null && (!Number.isFinite(dueAt) || dueAt < 1_600_000_000_000)) {
       throw badRequest("due_at is a millisecond timestamp", "The sender's deadline, as a time, so a run can tell 'within five days' from 'whenever'.");
     }
+    // 27 Sep 2026 a row was filed due 30 Sep 2024 — the wrong YEAR, so it read as two years overdue.
+    if (dueAt !== null && dueAt < now - 30 * 86_400_000) {
+      throw badRequest("due_at is more than 30 days in the past", "A deadline that far gone is a wrong year or a wrong unit, not a deadline. Recompute it from the message's date.");
+    }
     const ownerAsk = optionalText(raw?.owner_ask, 1200);
     const needsOwner = disposition === "problem" && raw?.needs_owner === true;
     if (needsOwner && !ownerAsk) {
@@ -789,6 +794,36 @@ kdp.post("/mail", async (c) => {
       );
     }
     if (ownerAsk && ownerAsk.includes("@")) throw badRequest("The owner_ask contains an '@' and was refused", "No addresses in the record.");
+    /*
+     * ── AN ASK IS A DECISION, NEVER A TASK ───────────────────────────────
+     *
+     * 7 Oct 2026: "Can you check the status with Zora or complete the manual edit yourself?" Both
+     * halves are tasks. She decides; employees and their runs execute. See executors.mjs.
+     */
+    const askTask = ownerAsk ? ownerAskIsATask(ownerAsk) : null;
+    if (askTask) {
+      throw badRequest(
+        `The owner_ask was refused: ${askTask}`,
+        "An ask is ONE decision with a recommended default, or ONE thing only she holds (a secret, a CAPTCHA on her account). Never a chase, never a manual edit.",
+      );
+    }
+    /*
+     * ── IN REVIEW IS PROGRESS ────────────────────────────────────────────
+     *
+     * A title the register says is `in_review` has been edited and published; Amazon is looking at
+     * it. That wakes her only when the facts change — Amazon asks for more, or refuses — and the
+     * item says so in `facts_changed`. Otherwise the next report is the bookshelf reading Live.
+     */
+    const titleRef = optionalText(raw?.title_ref, 32);
+    if (needsOwner && titleRef && !optionalText(raw?.facts_changed, 400)) {
+      const t = await c.env.DB.prepare(`SELECT state FROM kdp_titles WHERE title_ref = ?`).bind(titleRef).first<{ state: string }>();
+      if (t?.state === "in_review") {
+        throw badRequest(
+          `${titleRef} is In review — that is progress, not a problem for her`,
+          "Report it when the bookshelf reads Live, or when Amazon asks for more (then say what changed in facts_changed).",
+        );
+      }
+    }
 
     const id = newId("kml");
     let assignmentId: string | null = null;
@@ -800,6 +835,8 @@ kdp.post("/mail", async (c) => {
       const seat = await c.env.DB.prepare(`SELECT id, name FROM employees WHERE id = ?`).bind(helper).first<any>();
       if (!seat) throw badRequest("That is not an employee", "Work can only be handed to a seat that exists, or nobody is accountable for it.");
       if (helper === SURFACE_OWNER) throw badRequest("Simone cannot assign the work to herself", "That is the work she already owns; the outcome is 'acted'.");
+      const can = checkAssignment({ helper, what, why, requires: assign.requires ?? null });
+      if (!can.ok) throw badRequest(can.error, can.why);
       assignmentId = newId("asg");
       await c.env.DB
         .prepare(
@@ -986,6 +1023,9 @@ kdp.post("/assign", async (c) => {
   if (helper === owner) {
     throw badRequest("An employee cannot assign work to themselves", "That is not delegation; it is the work they already own.");
   }
+  // EXISTING IS NOT BEING ABLE TO ACT. 4 Oct 2026: a KDP edit went to Zora, who has no executor. See executors.mjs.
+  const can = checkAssignment({ helper, what, why, requires: b?.requires ?? null });
+  if (!can.ok) throw badRequest(can.error, can.why);
 
   const now = Date.now();
   const id = newId("asg");

@@ -148,3 +148,57 @@ describe("her reply on the [kml_…] thread lands on the row", () => {
     expect((await row<any>(`SELECT owner_answer FROM kdp_mail_log WHERE id = ?`, id)).owner_answer).toMatch(/^held: /);
   });
 });
+
+describe("work goes only to a seat that can do it, and an ask is never a task (7 Oct 2026)", () => {
+  const KDP_EDIT = {
+    helper_employee_id: "emp_knowledge",
+    what: "Edit The Gift Letter (Down Payment) KDP Details tab: change subtitle to the approved wording, save, and publish",
+    why: "The fix moves the title from Draft to Live",
+  };
+
+  it("refuses the 4 Oct assignment of a KDP edit to Zora — on /mail and on /assign — and creates no row", async () => {
+    const viaMail = await apiJson<any>("/api/kdp/mail", { method: "POST", body: { items: [{ ...PROBLEM, needs_owner: false, owner_ask: undefined, outcome_kind: "assigned", action_taken: "Assigned to Zora.", assign: KDP_EDIT }] } });
+    expect(viaMail.status).toBe(400);
+    expect(JSON.stringify(viaMail.body)).toMatch(/only Simone's own run can do it/);
+    const viaAssign = await apiJson<any>("/api/kdp/assign", { method: "POST", body: KDP_EDIT });
+    expect(viaAssign.status).toBe(400);
+    expect(JSON.stringify(viaAssign.body)).toMatch(/kdp:retitle/);
+    expect((await all(`SELECT id FROM work_assignments`)).length).toBe(0);
+    expect((await all(`SELECT id FROM kdp_mail_log`)).length).toBe(0);
+  });
+
+  it("still lets Simone hand a colleague an asset job", async () => {
+    const res = await apiJson<any>("/api/kdp/assign", { method: "POST", body: { helper_employee_id: "emp_knowledge", what: "Repair the cover export and hand me the file", why: "Amazon rejects the current one" } });
+    expect(res.status).toBe(201);
+  });
+
+  it("refuses an owner_ask that tells her to chase an employee or do the edit herself", async () => {
+    for (const ask of [
+      "Zora's assignment to edit The Gift Letter is overdue. Can you check the status with Zora or complete the manual edit yourself?",
+      "Go to KDP Bookshelf, click Manage title, change the subtitle, save and publish.",
+    ]) {
+      const res = await apiJson<any>("/api/kdp/mail", { method: "POST", body: { items: [{ ...PROBLEM, owner_ask: ask }] } });
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).toMatch(/owner_ask was refused/);
+    }
+    expect((await all(`SELECT id FROM kdp_mail_log`)).length).toBe(0);
+  });
+
+  it("treats In review as progress: no ask about it unless the facts changed", async () => {
+    const now = Date.now();
+    await env.DB.prepare(`DELETE FROM kdp_titles WHERE title_ref = ?`).bind("A1EYXUFGFV7CN6").run();
+    await env.DB.prepare(`INSERT INTO kdp_titles (id, title_ref, label, state, first_seen_at, state_changed_at, updated_at) VALUES (?,?,?,?,?,?,?)`)
+      .bind("kdp_A1EYXUFGFV7CN6", "A1EYXUFGFV7CN6", "The Gift Letter (Down Payment)", "in_review", now, now, now).run();
+    const quiet = await apiJson<any>("/api/kdp/mail", { method: "POST", body: { items: [PROBLEM] } });
+    expect(quiet.status).toBe(400);
+    expect(JSON.stringify(quiet.body)).toMatch(/In review/);
+    const changed = await apiJson<any>("/api/kdp/mail", { method: "POST", body: { items: [{ ...PROBLEM, facts_changed: "Amazon asked for documentation of the content" }] } });
+    expect(changed.status).toBe(201);
+  });
+
+  it("refuses a deadline in the wrong year (27 Sep 2026 filed one due 30 Sep 2024)", async () => {
+    const res = await apiJson<any>("/api/kdp/mail", { method: "POST", body: { items: [{ ...PROBLEM, due_at: 1727740799000 }] } });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/30 days in the past/);
+  });
+});
