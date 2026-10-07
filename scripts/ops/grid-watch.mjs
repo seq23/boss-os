@@ -63,6 +63,7 @@
  */
 
 import { GRID, EXCLUDED, GRID_OWNER, isExcluded, whyExcluded } from "../../src/shared/boss/grid.mjs";
+import { mkdirSync, writeFileSync, renameSync } from "node:fs";
 
 const ARGS = process.argv.slice(2);
 const POST = ARGS.includes("--post");
@@ -74,6 +75,25 @@ const PR_STALE_DAYS = Number(process.env.GRID_PR_STALE_DAYS ?? 3);
 const HER_REVIEW_DAYS = Number(process.env.GRID_HER_REVIEW_DAYS ?? 2);
 /** Green is not shipping. How long a property may go without a successful run. */
 const QUIET_DAYS = Number(process.env.GRID_QUIET_DAYS ?? 14);
+
+/** The CI sweep's inbox. Its probe reads the same path (CI_SWEEP_GRID_INBOX overrides both). */
+export const GRID_INBOX = process.env.CI_SWEEP_GRID_INBOX
+  ?? `${process.env.HOME}/Library/Logs/ci-sweep/state/grid-inbox.tsv`;
+
+/** Pure: the inbox lines for a handoff list. repo \t kind \t evidence \t task_id \t headline */
+export function inboxLines(handoff) {
+  const clean = (v) => String(v ?? "").replace(/[\t\r\n]+/g, " ").trim();
+  return handoff
+    .filter((h) => h && h.repo && h.kind && h.evidence && h.task_id)
+    .map((h) => [h.repo, h.kind, h.evidence, h.task_id, h.headline].map(clean).join("\t"));
+}
+
+function writeInbox(path, handoff) {
+  mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
+  const lines = inboxLines(handoff);
+  writeFileSync(`${path}.tmp`, lines.length ? lines.join("\n") + "\n" : "");
+  renameSync(`${path}.tmp`, path);
+}
 
 const DAY = 86_400_000;
 const days = (ts) => Math.floor((Date.now() - ts) / DAY);
@@ -469,6 +489,23 @@ async function main() {
   }
   const filed = await res.json().catch(() => ({}));
   console.log(`\nFiled: ${filed?.data?.observations ?? "?"} observation(s), ${filed?.data?.dispatched ?? 0} dispatched.`);
+
+  /*
+   * ─── THE CI SWEEP'S INBOX: WHERE A GRID TASK GETS CLAIMED (7 Oct 2026) ────
+   *
+   * Every open `grid_fix` task, as Boss OS returned it, rewritten into the file the CI sweep's probe
+   * reads (`~/bin/ci-sweep-probe.sh`). The probe re-checks each line live — a stale pull request is a
+   * RED lane while it is still open — so the sweep dispatches one agent per repo to land or close it,
+   * and a line whose PR is gone stops being red without anyone editing this file. Rewritten whole
+   * every run: a task Boss OS closed leaves the inbox the same day.
+   */
+  const handoff = Array.isArray(filed?.data?.handoff) ? filed.data.handoff : null;
+  if (!handoff) {
+    console.error("\nNAMED STOP [NO_HANDOFF] Boss OS filed the examination but returned no grid_fix handoff list; the CI sweep's inbox was left as it was.");
+    process.exit(10);
+  }
+  writeInbox(GRID_INBOX, handoff);
+  console.log(`CI sweep inbox: ${handoff.length} open grid_fix line(s) → ${GRID_INBOX}`);
 
   /*
    * ─── THE TWO MAC-SIDE HEALTH READERS, POSTED TOGETHER (19 Sep 2026) ───────

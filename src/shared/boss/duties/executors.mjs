@@ -106,3 +106,69 @@ export function ownerAskIsATask(text) {
   }
   return null;
 }
+
+/**
+ * ─── EVERY KIND OF TASK HAS SOMETHING THAT CLAIMS IT (7 Oct 2026) ──────────
+ *
+ * Same defect class, second instance. From 16 Sep the grid watcher filed a `queued` task for Danielle
+ * on every red build, stuck pull request and quiet lane it saw — 48 of them by 7 Oct — each carrying
+ * `input.grid_fix`, which the queue drain in `bossMount.ts` deliberately refuses. Nothing else read
+ * them. 44 of the 48 had cleared on their own by the time anyone looked; the other 4 sat unowned.
+ *
+ * The rule: a task is created only for a kind listed here, and every kind names the thing that
+ * claims it — a file in this repository and the line in it that does the claiming, plus the `npm run`
+ * command when it runs on her Mac. `validate:work-reaches-executor` reads this record against the
+ * code: every site that inserts a `tasks` row must be in TASK_CREATORS, every kind a creator makes must be
+ * here, every token the drain refuses must be here, and every claim marker must be in its file.
+ */
+export const TASK_EXECUTORS = Object.freeze({
+  drain: Object.freeze({
+    who: "the Worker's queue drain (drainBossTasks in bossMount.ts)",
+    file: "src/worker/bossMount.ts", marker: "FROM boss_task_queue",
+  }),
+  inline_run: Object.freeze({
+    who: "the runtime call that creates it, in the same request (status 'running' at birth)",
+    file: "src/worker/boss/runtimes/run.ts", marker: "VALUES (?,?,?,?,'running'",
+  }),
+  backend_run: Object.freeze({
+    who: "the Mac's sync agent, through POST /backends/claim",
+    file: "scripts/sync-agent/runner.mjs", marker: "backends/claim",
+  }),
+  her_answer: Object.freeze({
+    who: "her reply to the comment digest, applied through POST /comment-watch/applied",
+    file: "src/worker/boss/routes/commentWatch.ts", marker: 'commentWatch.post("/applied"',
+  }),
+  hunt: Object.freeze({
+    who: "the on-demand hunter on her Mac (launchd com.seq.boss-hunt-ondemand)",
+    file: "scripts/ops/buyer-hunt.mjs", marker: "--from-boss", command: "npm run capital:hunts",
+  }),
+  grid_fix: Object.freeze({
+    who: "the CI sweep (~/bin/ci-sweep.sh, Mon+Fri 08:00): grid-watch writes each open fix to its inbox, and the sweep's probe works it as a lane until it is gone",
+    file: "scripts/ops/grid-watch.mjs", marker: "GRID_INBOX", command: "npm run grid:post",
+  }),
+});
+
+/** Every file that inserts a `tasks` row, and the kinds of task it creates. */
+export const TASK_CREATORS = Object.freeze({
+  "src/worker/boss/tasks/admit.ts": Object.freeze(["drain", "hunt"]),
+  "src/worker/boss/runtimes/run.ts": Object.freeze(["inline_run"]),
+  "src/worker/boss/routes/backends.ts": Object.freeze(["backend_run"]),
+  "src/worker/boss/routes/commentWatch.ts": Object.freeze(["her_answer"]),
+  "src/worker/boss/routes/grid.ts": Object.freeze(["grid_fix"]),
+});
+
+/**
+ * Which grid observations become a task at all. A red build, a quiet lane, an unreadable repo and a
+ * repo with no green run are LANE health: the CI sweep's own probe reads every seq23 repo's default
+ * branch twice a week and works exactly those, with her calibrated rules (QUIET and NOCI do not
+ * block). Filing a task for them hands the sweep a copy of what it already sees, to a board nothing
+ * claims from. Only a stale pull request is invisible to the probe — so only that becomes a task,
+ * one open per repo, and goes to the sweep through its inbox.
+ */
+export const GRID_KINDS_THE_PROBE_SEES = Object.freeze(["ci_red", "schedule_stopped", "unreachable", "no_release"]);
+export const GRID_KINDS_FOR_THE_INBOX = Object.freeze(["pr_stale"]);
+export function gridDispatchGoesTo(kind) {
+  if (GRID_KINDS_FOR_THE_INBOX.includes(kind)) return "inbox";
+  if (GRID_KINDS_THE_PROBE_SEES.includes(kind)) return "probe";
+  return null;
+}

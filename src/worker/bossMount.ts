@@ -159,8 +159,9 @@ export async function drainBossTasks(
    * it would produce is the same paragraph promising the work that the hunt exclusion above exists
    * to prevent.
    *
-   * So a grid fix is named, owned by Danielle and visible on the board, and who opens the branch is
-   * a decision a person makes, one repository at a time.
+   * So a grid fix is named, owned by Danielle and visible on the board, and it is CLAIMED BY THE CI
+   * SWEEP — one agent per repo, through the inbox grid-watch writes (`TASK_EXECUTORS.grid_fix`).
+   * A token this drain refuses with no entry in TASK_EXECUTORS fails `validate:work-reaches-executor`.
    */
   const due = await db
     .prepare(

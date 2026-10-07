@@ -211,7 +211,7 @@ app.route(COMMENT_WATCH_PATH, commentWatch);
 //   GET  /api/wealth/outreach/rewrites          the progress both tabs print (and drains the queue)
 //   POST /api/wealth/outreach/redraft-sent-back "Rewrite the N with my notes"
 // Job 3 — the grid health readers: uptime and Search Console from the Worker, GitHub and
-// Cloudflare posted from her Mac. `/api/grid` declares only `/` and `/examination`, so this is
+// Cloudflare posted from her Mac. `/api/grid` declares only `/`, `/examination` and `/tasks/:id/cleared`, so this is
 // never shadowed by it.
 app.route("/api/grid/health", gridHealth);
 //
