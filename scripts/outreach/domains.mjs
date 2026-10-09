@@ -194,3 +194,13 @@ if (usersAfter !== usersBefore) {
   process.exit(1);
 }
 console.log(`Workspace users after: ${usersAfter} (unchanged — $0 added).`);
+// Rule 0: a run that left any domain unfinished never exits 0. Re-running is safe (every step is idempotent).
+if (!CHECK_ONLY) {
+  const done = (r) => !r.error && (r.verified === undefined || r.verified === "yes") && ["added", "present"].includes(r.alias) && /^(present|added)/.test(r.sendAs ?? "");
+  const unfinished = report.filter((r) => !done(r)).map((r) => r.domain);
+  if (unfinished.length) {
+    console.error(`UNFINISHED [OUTREACH_DOMAINS_PENDING]: ${unfinished.length}/${report.length} domain(s) not yet verified/aliased/send-as: ${unfinished.join(", ")}. DNS verification can take minutes; re-run.`);
+    process.exit(2);
+  }
+  console.log(`All ${report.length} outreach domains verified, aliased on ${OUTREACH_MAILBOX} and send-as ready.`);
+}
