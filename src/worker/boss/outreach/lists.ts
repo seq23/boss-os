@@ -16,18 +16,22 @@ import { isBusinessEmail, isSuppressed, normaliseEmail } from "./suppression";
 
 /** Public Overpass instances, tried in order (the main one refuses some clients with a 406). */
 export const OVERPASS = [
-  "https://overpass.private.coffee/api/interpreter",
-  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   "https://overpass-api.de/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
 ];
+/** Public instances answer a city-sized query in 10–25 s when busy (measured 9 Oct 2026). */
+const OVERPASS_TIMEOUT_MS = 40_000;
+/** A slice whose read failed is tried again after this, never parked for the 30-day refresh. */
+export const SLICE_RETRY_MS = 2 * 3_600_000;
 const UA = "BossOS-Outreach/1.0 (+https://time-2-read.com)";
 const PAGE_LIMIT = 400_000;
 const TIMEOUT_MS = 10_000;
 const CRAWL_PER_TICK = 8;
 
-async function timed(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<Response> {
+async function timed(fetchImpl: typeof fetch, url: string, init: RequestInit = {}, ms = TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), ms);
   try {
     return await fetchImpl(url, { ...init, signal: controller.signal, headers: { "user-agent": UA, ...(init.headers ?? {}) } });
   } finally {
@@ -37,7 +41,8 @@ async function timed(fetchImpl: typeof fetch, url: string, init: RequestInit = {
 
 export function overpassQuery(seg: Segment, bbox: [number, number, number, number]): string {
   const box = `(${bbox.join(",")})`;
-  const parts = seg.osm.flatMap((f) => [`nwr${f}["website"]${box};`, `nwr${f}["contact:website"]${box};`]);
+  // `website` only: adding `contact:website` doubled the work on servers that were already timing out.
+  const parts = seg.osm.map((f) => `nwr${f}["website"]${box};`);
   return `[out:json][timeout:25];(${parts.join("")});out tags 150;`;
 }
 
@@ -141,8 +146,12 @@ async function page(fetchImpl: typeof fetch, url: string): Promise<string> {
 
 /** Step 1: read one public listing slice that has not been read in 30 days. */
 export async function readNextSlice(db: D1Database, fetchImpl: typeof fetch, now: number, only?: string[]): Promise<{ slice: string; found: number } | null> {
-  const done = await db.prepare(`SELECT business_key, segment, metro, fetched_at FROM outreach_slices`).all<any>();
-  const fresh = new Set((done.results ?? []).filter((r) => now - r.fetched_at < 30 * 86_400_000).map((r) => `${r.business_key}|${r.segment}|${r.metro}`));
+  const done = await db.prepare(`SELECT business_key, segment, metro, fetched_at, found FROM outreach_slices`).all<any>();
+  // Fresh = read successfully in the last 30 days, or failed in the last two hours. A failure is
+  // never parked for a month: the public servers are busy at times and fine an hour later.
+  const fresh = new Set((done.results ?? [])
+    .filter((r) => (r.found >= 0 ? now - r.fetched_at < 30 * 86_400_000 : now - r.fetched_at < SLICE_RETRY_MS))
+    .map((r) => `${r.business_key}|${r.segment}|${r.metro}`));
   for (const b of BUSINESSES) {
     if (only && !only.includes(b.key)) continue;
     for (const seg of b.segments) {
@@ -161,7 +170,7 @@ export async function readNextSlice(db: D1Database, fetchImpl: typeof fetch, now
         await db.prepare(
           `INSERT INTO outreach_slices (business_key, segment, metro, fetched_at, found, detail) VALUES (?,?,?,?,?,?)
            ON CONFLICT(business_key, segment, metro) DO UPDATE SET fetched_at = excluded.fetched_at, found = excluded.found, detail = excluded.detail`,
-        ).bind(b.key, seg.key, metro.key, now, found, listed.detail).run();
+        ).bind(b.key, seg.key, metro.key, now, listed.ok ? found : -1, listed.detail).run();
         return { slice: id, found };
       }
     }
@@ -169,23 +178,24 @@ export async function readNextSlice(db: D1Database, fetchImpl: typeof fetch, now
   return null;
 }
 
-async function queryOverpass(fetchImpl: typeof fetch, q: string): Promise<{ items: Listed[]; detail: string }> {
+async function queryOverpass(fetchImpl: typeof fetch, q: string): Promise<{ ok: boolean; items: Listed[]; detail: string }> {
   const errors: string[] = [];
   for (const url of OVERPASS) {
     try {
+      // No `accept: application/json`: overpass-api.de answers that header with a 406.
       const res = await timed(fetchImpl, url, {
         method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+        headers: { "content-type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ data: q }).toString(),
-      });
+      }, OVERPASS_TIMEOUT_MS);
       if (!res.ok) { errors.push(`${new URL(url).hostname} ${res.status}`); continue; }
       const items = parseOverpass(await res.json());
-      return { items, detail: `${new URL(url).hostname}: ${items.length} listed with a website` };
+      return { ok: true, items, detail: `${new URL(url).hostname}: ${items.length} listed with a website` };
     } catch (err) {
       errors.push(`${new URL(url).hostname} ${(err as Error).message}`);
     }
   }
-  return { items: [], detail: `every Overpass instance failed: ${errors.join("; ")}` };
+  return { ok: false, items: [], detail: `every Overpass instance failed: ${errors.join("; ")}` };
 }
 
 /** Step 2: crawl a few pending candidates, qualify them, and admit verified business addresses. */
