@@ -21,8 +21,8 @@ import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { BUSINESSES, TEST_RECIPIENTS, businessByKey } from "../outreach/catalog";
-import { dailyCap } from "../outreach/brakes";
-import { domainState, healthOf, readSettings, runOutreachTick, sendTest, sentToday } from "../outreach/engine";
+import { BOUNCE_WINDOW_MS, chicagoParts, dailyCap } from "../outreach/brakes";
+import { domainState, readSettings, runOutreachTick, sendTest } from "../outreach/engine";
 import { GmailSession } from "../outreach/gmail";
 import { suppress } from "../outreach/suppression";
 import { recordConversion } from "../outreach/referrals";
@@ -30,38 +30,47 @@ import { recordConversion } from "../outreach/referrals";
 export const outreach = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 outreach.get("/", async (c) => {
+  /*
+   * READ-ONLY AND A HANDFUL OF QUERIES. The Team roster calls this on every load to print the
+   * brake line on Monique's card, so it must not write (it used to upsert a state row per business)
+   * or fan out per business (it used to run ~50 queries) — on 9 Oct 2026 that competed with the
+   * task drain in local wrangler dev and a phone journey timed out waiting for its row.
+   */
   const db = c.env.DB;
   const now = Date.now();
-  const settings = await readSettings(db);
-  const counts = await db.prepare(
-    `SELECT business_key, state, COUNT(*) AS n FROM outreach_prospects WHERE source != 'test_recipient' GROUP BY business_key, state`,
-  ).all<{ business_key: string; state: string; n: number }>();
-  const replies = await db.prepare(
-    `SELECT business_key, classification, COUNT(*) AS n FROM outreach_replies GROUP BY business_key, classification`,
-  ).all<{ business_key: string; classification: string; n: number }>();
-  const businesses = [];
-  for (const b of BUSINESSES) {
-    const st = await domainState(db, b.key, now);
+  const today = chicagoParts(now).day;
+  const [settings, states, counts, replies, sends, recent, lastTick] = await Promise.all([
+    readSettings(db),
+    db.prepare(`SELECT * FROM outreach_domain_state`).all<any>(),
+    db.prepare(`SELECT business_key, state, COUNT(*) AS n FROM outreach_prospects WHERE source != 'test_recipient' GROUP BY business_key, state`).all<{ business_key: string; state: string; n: number }>(),
+    db.prepare(`SELECT business_key, classification, COUNT(*) AS n FROM outreach_replies GROUP BY business_key, classification`).all<{ business_key: string; classification: string; n: number }>(),
+    db.prepare(`SELECT business_key, status, sent_at FROM outreach_sends WHERE is_test = 0 AND status != 'failed' AND sent_at >= ?`).bind(now - BOUNCE_WINDOW_MS).all<{ business_key: string; status: string; sent_at: number }>(),
+    db.prepare(`SELECT business_key, from_email, classification, excerpt, received_at FROM outreach_replies ORDER BY received_at DESC LIMIT 20`).all(),
+    db.prepare(`SELECT ts, detail FROM system_events WHERE scope = 'outreach' AND event = 'tick' ORDER BY ts DESC LIMIT 1`).first<{ ts: number; detail: string }>().catch(() => null),
+  ]);
+  const stateOf = new Map((states.results ?? []).map((r) => [r.business_key, r]));
+  const businesses = BUSINESSES.map((b) => {
+    const st = stateOf.get(b.key) ?? { route_state: "awaiting_route" };
     const prospects: Record<string, number> = {};
     for (const r of counts.results ?? []) if (r.business_key === b.key) prospects[r.state] = r.n;
     const rep: Record<string, number> = {};
     for (const r of replies.results ?? []) if (r.business_key === b.key) rep[r.classification] = r.n;
-    businesses.push({
+    const mine = (sends.results ?? []).filter((x) => x.business_key === b.key);
+    return {
       key: b.key, brand: b.brand, domain: b.domain, sender: b.sender, kind: b.kind, offer: b.offer,
-      route_state: st.route_state, route_detail: st.route_detail, route_proven_at: st.route_proven_at,
+      route_state: st.route_state, route_detail: st.route_detail ?? null, route_proven_at: st.route_proven_at ?? null,
       postal_address_set: Boolean(st.postal_address),
-      paused: Boolean(st.paused_at), pause_reason: st.pause_reason,
-      daily_cap: dailyCap(st.ramp_started_at, now), sent_today: await sentToday(db, b.key, now),
-      health_14d: await healthOf(db, b.key, now),
+      paused: Boolean(st.paused_at), pause_reason: st.pause_reason ?? null,
+      daily_cap: dailyCap(st.ramp_started_at ?? null, now),
+      sent_today: mine.filter((x) => chicagoParts(x.sent_at).day === today).length,
+      health_14d: {
+        sent: mine.length,
+        bounced: mine.filter((x) => x.status === "bounced").length,
+        complaints: mine.filter((x) => x.status === "complaint").length,
+      },
       prospects, replies: rep,
-    });
-  }
-  const recent = await db.prepare(
-    `SELECT business_key, from_email, classification, excerpt, received_at FROM outreach_replies ORDER BY received_at DESC LIMIT 20`,
-  ).all();
-  const lastTick = await db.prepare(
-    `SELECT ts, detail FROM system_events WHERE scope = 'outreach' AND event = 'tick' ORDER BY ts DESC LIMIT 1`,
-  ).first<{ ts: number; detail: string }>().catch(() => null);
+    };
+  });
   return ok(c, {
     settings, test_recipients: TEST_RECIPIENTS, businesses, recent_replies: recent.results ?? [],
     last_tick: lastTick ? { at: lastTick.ts, detail: safeJson(lastTick.detail) } : null,
