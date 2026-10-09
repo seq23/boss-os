@@ -409,6 +409,18 @@ describe("the tick", () => {
   });
 });
 
+describe("the desk is read-only", () => {
+  beforeEach(reset);
+
+  it("GET /outreach writes nothing — the roster calls it on every load", async () => {
+    const before = await row<any>(`SELECT COUNT(*) AS n FROM outreach_domain_state`);
+    const res = await apiJson("/api/outreach");
+    expect(res.status).toBe(200);
+    expect(res.body.data.businesses).toHaveLength(BUSINESSES.length);
+    expect((await row<any>(`SELECT COUNT(*) AS n FROM outreach_domain_state`)).n).toBe(before.n);
+  });
+});
+
 describe("referral ledger", () => {
   beforeEach(reset);
 
