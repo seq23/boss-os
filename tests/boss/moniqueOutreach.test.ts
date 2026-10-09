@@ -516,6 +516,8 @@ describe("outreach rules (owner, 9 Oct 2026)", () => {
     expect(guard, WP).toBeGreaterThan(-1);
     expect(guard < DOMAINS_SCRIPT.indexOf("process.env.GSC_SERVICE_ACCOUNT_JSON"), WP).toBe(true);
     expect(/workspaceDomains:/.test(DOMAINS_SCRIPT), WP).toBe(true);
+    // A send-as that already exists (409, seen 9 Oct 2026 when the list lagged the insert) is present, not unfinished.
+    expect(DOMAINS_SCRIPT).toMatch(/s\.status === 409 \? "present"/);
   });
 
   it("both rules are written where everyone reads them", () => {

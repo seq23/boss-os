@@ -170,7 +170,7 @@ for (const b of BUSINESSES) {
     if (haveSendAs.has(b.sender)) row.sendAs = "present";
     else if (!CHECK_ONLY) {
       const s = await g(tokens.sendas, "POST", "https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs", { sendAsEmail: b.sender, displayName: b.brand, treatAsAlias: true });
-      row.sendAs = s.status === 200 ? `added (${s.j.verificationStatus ?? "accepted"})` : `sendAs ${s.status}: ${JSON.stringify(s.j).slice(0, 120)}`;
+      row.sendAs = s.status === 200 ? `added (${s.j.verificationStatus ?? "accepted"})` : s.status === 409 ? "present" : `sendAs ${s.status}: ${JSON.stringify(s.j).slice(0, 120)}`;
     } else row.sendAs = "would add";
     // 5. SPF keeps what is there and adds Google.
     if (zone) {
