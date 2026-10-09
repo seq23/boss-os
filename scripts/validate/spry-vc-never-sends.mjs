@@ -63,6 +63,17 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const DOMAIN = "spry.vc";
 /** The one module that may hold gmail.compose. See the header. */
 const DRAFT_MODULE = "src/worker/boss/wealth/gmailDraft.ts";
+/**
+ * THE SECOND AND LAST EXCEPTION (owner, 9 Oct 2026: fully automatic outreach for her side
+ * businesses, "u do it all"). `outreach/gmail.ts` may compose AND send, but only as ONE pinned
+ * mailbox — `OUTREACH_MAILBOX` in the catalog, which must be st@time-2-read.com — with no scope
+ * wider than compose, no forbidden domain anywhere in its code, and `assertSenderAllowed` called
+ * before the send endpoint. Each is its own named failure below.
+ */
+const OUTREACH_MODULE = "src/worker/boss/outreach/gmail.ts";
+const OUTREACH_CATALOG = "src/worker/boss/outreach/catalog.ts";
+const OUTREACH_MAILBOX = "st@time-2-read.com";
+const NEVER_A_SENDER = /spry\.vc|westpeek\.ventures|sequoiataylor\.com/i;
 
 /** Drop comments and doc prose so a rule can be DESCRIBED in a file without the scan reading it as code. */
 function stripProse(src) {
@@ -150,6 +161,24 @@ export function violations(files) {
       if (!/gmail\.compose/.test(code)) bad.push(`${rel}: is the draft module and no longer asks for gmail.compose — the grant this file exists to use is gone from it.`);
       if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose. Compose is the whole grant; anything wider can send.`);
       if (SEND_ENDPOINT.test(code)) bad.push(`${rel}: names a send endpoint. The green button creates a draft; it never sends.`);
+    } else if (rel === OUTREACH_MODULE) {
+      if (!impersonates) bad.push(`${rel}: is the outreach sender and no longer impersonates its mailbox — this guard is watching an empty room.`);
+      const subs = [...code.matchAll(/\bsub\s*:\s*([^,\n}]+)/g)].map((m) => m[1].trim());
+      if (subs.length === 0 || subs.some((v) => v !== "OUTREACH_MAILBOX")) {
+        bad.push(`${rel}: impersonates something other than the pinned OUTREACH_MAILBOX (${subs.join(", ") || "nothing"}). The mailbox is a constant, never a parameter.`);
+      }
+      const catalog = stripProse(files[OUTREACH_CATALOG] ?? "");
+      const pinned = /OUTREACH_MAILBOX\s*=\s*["'`]([^"'`]+)["'`]/.exec(catalog)?.[1];
+      if (pinned !== OUTREACH_MAILBOX) bad.push(`${OUTREACH_CATALOG}: OUTREACH_MAILBOX is ${pinned ?? "missing"}; outreach may send only as ${OUTREACH_MAILBOX}.`);
+      if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose.`);
+      if (NEVER_A_SENDER.test(code)) bad.push(`${rel}: names spry.vc, westpeek.ventures or sequoiataylor.com in code. Outreach never sends from those.`);
+      const sendAt = code.search(/messages\/send/);
+      const assertAt = code.search(/assertSenderAllowed\s*\(/);
+      if (sendAt !== -1 && (assertAt === -1 || assertAt > sendAt)) bad.push(`${rel}: reaches messages/send without calling assertSenderAllowed first.`);
+    } else if (/\bmintComposeToken\b/.test(code) && SEND_ENDPOINT.test(code) && rel !== DRAFT_MODULE) {
+      // THE LAUNDERING ROUTE: borrow the draft module's compose token and send with it from a file
+      // that never says GSC_SERVICE_ACCOUNT_JSON or `sub`, so the impersonation check above cannot see it.
+      bad.push(`${rel}: takes the draft module's compose token and names a send endpoint. That is sending as a delegated mailbox by another door.`);
     } else if (impersonates && WRITE_SCOPE.test(code)) {
       bad.push(`${rel}: impersonates a Workspace user AND asks for a Gmail scope that can WRITE. `
         + `Reading ${DOMAIN} is permitted; sending from it never is.`);
@@ -194,6 +223,12 @@ export function rosterViolations(notify) {
 // ─── Self-test ───────────────────────────────────────────────────────────────
 
 if (process.argv.includes("--self-test")) {
+  const CAT_OK = 'export const OUTREACH_MAILBOX = "st@time-2-read.com";';
+  const OUT_OK = [
+    'const SCOPE_COMPOSE = "https://www.googleapis.com/auth/gmail.compose";',
+    'const claims = { iss, sub: OUTREACH_MAILBOX, aud: "https://oauth2.googleapis.com/token" };',
+    'async function send(business, raw) { assertSenderAllowed(business); await f(`${GMAIL}/messages/send`); }',
+  ].join("\n");
   const cases = [
     ["a from field on the domain",
      { "scripts/ops/x.mjs": 'const payload = { from: "Monique <monique@spry.vc>", to };' }, true],
@@ -219,6 +254,20 @@ if (process.argv.includes("--self-test")) {
      { "src/worker/boss/wealth/gmailDraft.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.send";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };' }, true],
     ["the draft module whose prose mentions send is still clean — only code counts",
      { "src/worker/boss/wealth/gmailDraft.ts": '/* no users.messages.send here, and no drafts.send */\nconst S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };' }, false],
+    ["the outreach sender, pinned and asserting, which is allowed",
+     { "src/worker/boss/outreach/gmail.ts": OUT_OK, "src/worker/boss/outreach/catalog.ts": CAT_OK }, false],
+    ["the outreach sender impersonating a parameter instead of the pinned mailbox",
+     { "src/worker/boss/outreach/gmail.ts": OUT_OK.replace("sub: OUTREACH_MAILBOX", "sub: mailbox"), "src/worker/boss/outreach/catalog.ts": CAT_OK }, true],
+    ["the catalog re-pointing the outreach mailbox at spry.vc",
+     { "src/worker/boss/outreach/gmail.ts": OUT_OK, "src/worker/boss/outreach/catalog.ts": 'export const OUTREACH_MAILBOX = "staylor@spry.vc";' }, true],
+    ["the outreach sender asking for gmail.send",
+     { "src/worker/boss/outreach/gmail.ts": OUT_OK + '\nconst X = "https://www.googleapis.com/auth/gmail.send";', "src/worker/boss/outreach/catalog.ts": CAT_OK }, true],
+    ["the outreach sender sending without asserting the sender first",
+     { "src/worker/boss/outreach/gmail.ts": OUT_OK.replace("assertSenderAllowed(business);", ""), "src/worker/boss/outreach/catalog.ts": CAT_OK }, true],
+    ["the outreach sender naming westpeek.ventures in code",
+     { "src/worker/boss/outreach/gmail.ts": OUT_OK + '\nconst FROM = "x@westpeek.ventures";', "src/worker/boss/outreach/catalog.ts": CAT_OK }, true],
+    ["another file borrowing the compose token to send",
+     { "src/worker/boss/routes/x.ts": 'import { mintComposeToken } from "../wealth/gmailDraft";\nawait fetchImpl("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");' }, true],
     ["ANY OTHER impersonating file asking for compose",
      { "src/worker/boss/routes/wealth.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };' }, true],
   ];

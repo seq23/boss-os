@@ -1,6 +1,8 @@
 import type { Env } from "../env";
 import { recordDeliverableActivity } from "../today/deliverables";
 import { createDutyFromDraft, DutyCannotRun } from "../duties/create";
+import { createGmailDraft } from "../wealth/gmailDraft";
+import { OUTREACH_MAILBOX } from "../outreach/catalog";
 
 /**
  * WHAT HER "APPROVED" ACTUALLY SETS IN MOTION.
@@ -305,6 +307,34 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
    * wrong, and the alternative is a commitment closed against her judgement with no way back. It
    * returns to `blocked`, with her sentence as its current status, and starts escalating again.
    */
+  /**
+   * A business answered Monique's outreach with interest (9 Oct 2026). The card carries the
+   * suggested reply; approving puts it in st@time-2-read.com's DRAFTS, addressed to them. Like every
+   * other green button here it makes a draft and never sends.
+   */
+  outreach_interested: async (env, j, verdict, note, now) => {
+    const row = await env.DB.prepare(`SELECT resume_detail FROM judgement_calls WHERE id = ?`).bind(j.id).first<{ resume_detail: string | null }>();
+    let d: { to?: string; subject?: string; body?: string; prospect_id?: string } | null = null;
+    try { d = row?.resume_detail ? JSON.parse(row.resume_detail) : null; } catch { d = null; }
+    if (verdict === "try_again") {
+      return { detail: note ? `Left with you. Monique will not write to them again; your note is on the card: ${note}` : "Left with you. Monique will not write to them again." };
+    }
+    if (!d?.to || !d.body) throw new Error("This card carries no reply to draft. It stays on your screen rather than recording a decision over nothing.");
+    const outcome = await createGmailDraft(env, { subject: d.subject ?? "Re:", body: d.body, to: d.to }, fetch, OUTREACH_MAILBOX);
+    return {
+      detail: outcome.state === "created" ? `The reply to ${d.to} is in your drafts in ${OUTREACH_MAILBOX}.` : outcome.detail,
+      gmail_draft: { state: outcome.state, gmail_draft_id: outcome.gmail_draft_id, failure_code: outcome.failure_code },
+    };
+  },
+
+  /** The first affiliate payout run. Nothing is ever paid by code; approving records that she saw it. */
+  outreach_first_payout: async (env, j, verdict, note, now) => {
+    if (verdict === "try_again") {
+      return { detail: note ? `Noted on the run: ${note}. Nothing was paid.` : "Nothing was paid. The ledger stays as computed." };
+    }
+    return { detail: "Recorded as reviewed. Nothing was paid by Boss OS; pay partners from the business account." };
+  },
+
   completion_acknowledged: async (env, j, verdict, note, now) => {
     if (verdict === "approved") {
       return { detail: "Acknowledged. It stays finished, and the record of it stays in the register." };

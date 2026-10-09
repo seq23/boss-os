@@ -1,0 +1,244 @@
+{
+  "generated": "2026-10-09",
+  "note": "Etsy listing files for when the owner opens a shop. No Etsy account action has been taken. Titles <=140 chars, 13 tags <=20 chars each (Etsy limits). Prices match each product's own site.",
+  "listings": [
+    {
+      "shop": "Wedding Checklist PDF",
+      "source": "dream-wedding-builder/data/products/product_catalog.json#seating-chart-maker",
+      "title": "Wedding Seating Chart Maker | Printable & Editable Wedding Planner | Instant Download",
+      "description": "Build a venue-ready plan that tracks tables, households, meals, allergies, accessibility needs, children, and every unassigned guest.\n\nWhat you get:\n- Editable guest-master and table-capacity worksheets\n- Household and social-group planning fields\n- Meal, allergy, accessibility, and child tracking\n- Manual RSVP-to-table reconciliation views\n- Printable venue, caterer, escort-card, and late-change worksheets\n\nInstant digital download. Printable and editable. No physical item is shipped.",
+      "price_usd": 19.0,
+      "type": "digital",
+      "tags": [
+        "seating chart maker",
+        "wedding planner",
+        "wedding checklist",
+        "bride to be",
+        "wedding printable",
+        "engagement gift",
+        "wedding organizer",
+        "digital download",
+        "editable planner"
+      ],
+      "images": [
+        "https://weddingchecklistpdf.com/product-images/merch/seating-chart-maker-card.png"
+      ]
+    },
+    {
+      "shop": "Wedding Checklist PDF",
+      "source": "dream-wedding-builder/data/products/product_catalog.json#budget-spreadsheet",
+      "title": "Wedding Budget Spreadsheet | Printable & Editable Wedding Planner | Instant Download",
+      "description": "Track estimates, contracts, deposits, due dates, taxes, gratuities, family contributions, and cash needed by month.\n\nWhat you get:\n- Fields for estimated, contracted, paid, remaining, and variance amounts\n- Deposit and final-payment tracking worksheet\n- Taxes, service fees, gratuities, and hidden-cost prompts\n- Printable monthly cash-flow and scenario worksheets\n- Editable XLSX workbook plus printable PDF packet\n\nInstant digital download. Printable and editable. No physical item is shipped.",
+      "price_usd": 12.0,
+      "type": "digital",
+      "tags": [
+        "wedding planner",
+        "wedding checklist",
+        "bride to be",
+        "wedding printable",
+        "engagement gift",
+        "wedding organizer",
+        "digital download",
+        "editable planner"
+      ],
+      "images": [
+        "https://weddingchecklistpdf.com/product-images/merch/budget-spreadsheet-card.png"
+      ]
+    },
+    {
+      "shop": "Wedding Checklist PDF",
+      "source": "dream-wedding-builder/data/products/product_catalog.json#timeline-template",
+      "title": "Wedding Timeline Template | Printable & Editable Wedding Planner | Instant Download",
+      "description": "Create coordinated timelines for the couple, family, wedding party, photographer, vendors, and venue.\n\nWhat you get:\n- Master timeline with owners, locations, dependencies, and buffers\n- Vendor arrival, setup, breakdown, and departure worksheet\n- Printable couple, wedding-party, photography, and family views\n- Role handoffs, emergency contacts, and change-control prompts\n- Editable XLSX workbook plus printable PDF packet\n\nInstant digital download. Printable and editable. No physical item is shipped.",
+      "price_usd": 12.0,
+      "type": "digital",
+      "tags": [
+        "wedding day timeline",
+        "wedding planner",
+        "wedding checklist",
+        "bride to be",
+        "wedding printable",
+        "engagement gift",
+        "wedding organizer",
+        "digital download",
+        "editable planner"
+      ],
+      "images": [
+        "https://weddingchecklistpdf.com/product-images/merch/timeline-template-card.png"
+      ]
+    },
+    {
+      "shop": "Wedding Checklist PDF",
+      "source": "dream-wedding-builder/data/products/product_catalog.json#checklist-pdf",
+      "title": "Wedding Checklist PDF | Printable & Editable Wedding Planner | Instant Download",
+      "description": "Use a 104-row editable checklist and printable planning packet to assign target dates, responsibilities, dependencies, priorities, wedding-week handoffs, and final payments.\n\nWhat you get:\n- 104-row editable master checklist\n- Planning-window worksheets from 12+ months through wedding week\n- Responsibility, dependency, priority, and status fields\n- Separate wedding-week and final-payment trackers\n- 13-page printable PDF plus editable XLSX and setup CSV\n\nInstant digital download. Printable and editable. No physical item is shipped.",
+      "price_usd": 9.0,
+      "type": "digital",
+      "tags": [
+        "wedding tick list",
+        "wedding planner",
+        "wedding checklist",
+        "bride to be",
+        "wedding printable",
+        "engagement gift",
+        "wedding organizer",
+        "digital download",
+        "editable planner"
+      ],
+      "images": [
+        "https://weddingchecklistpdf.com/product-images/merch/checklist-pdf-card.png"
+      ]
+    },
+    {
+      "shop": "Wedding Checklist PDF",
+      "source": "dream-wedding-builder/data/products/product_catalog.json#operations-suite",
+      "title": "Dream Wedding Operations Suite | Printable & Editable Wedding Planner | Instant Download",
+      "description": "Dream Wedding Operations Suite\n\nWhat you get:\n- Wedding Seating Chart Maker\n- Wedding Budget Spreadsheet\n- Wedding Timeline Template\n- Wedding Checklist PDF\n- Venue comparison worksheet\n- Vendor contact and payment trackers\n- Wedding-week handoff packet\n- Emergency contacts and responsibility matrix\n\nInstant digital download. Printable and editable. No physical item is shipped.",
+      "price_usd": 39.0,
+      "type": "digital",
+      "tags": [
+        "wedding planner",
+        "wedding checklist",
+        "bride to be",
+        "wedding printable",
+        "engagement gift",
+        "wedding organizer",
+        "digital download",
+        "editable planner"
+      ],
+      "images": [
+        "https://weddingchecklistpdf.com/product-images/merch/operations-suite-hero.png"
+      ]
+    },
+    {
+      "shop": "ApprovalPrep",
+      "source": "approvalprep/src/data/content.ts productComparison#letter-of-explanation",
+      "title": "Letter of Explanation | Editable Letter Templates | Instant Download",
+      "description": "Best for: One clear explanation letter.\n\nIncludes: Letter structure, prompts, examples, self-review checklist.\n\nSelf-service templates you edit and send yourself. Instant digital download; no physical item is shipped. ApprovalPrep provides templates and education only, not legal, credit or financial advice, and cannot guarantee any approval.",
+      "price_usd": 15.0,
+      "type": "digital",
+      "tags": [
+        "letter template",
+        "credit repair",
+        "rental application",
+        "apartment ready",
+        "proof of income",
+        "explanation letter",
+        "loan ready",
+        "editable template",
+        "digital download",
+        "goodwill letter",
+        "dispute letter",
+        "first apartment",
+        "renter checklist"
+      ],
+      "images": [
+        "https://approvalprep.com/assets/products/letter-of-explanation.png"
+      ]
+    },
+    {
+      "shop": "ApprovalPrep",
+      "source": "approvalprep/src/data/content.ts productComparison#income-employment-letter-kit",
+      "title": "Income + Employment Letter Kit | Editable Letter Templates | Instant Download",
+      "description": "Best for: Work, income, employment gaps, job changes.\n\nIncludes: Employment verification, proof of income, self-employment, gap letters.\n\nSelf-service templates you edit and send yourself. Instant digital download; no physical item is shipped. ApprovalPrep provides templates and education only, not legal, credit or financial advice, and cannot guarantee any approval.",
+      "price_usd": 19.0,
+      "type": "digital",
+      "tags": [
+        "letter template",
+        "credit repair",
+        "rental application",
+        "apartment ready",
+        "proof of income",
+        "explanation letter",
+        "loan ready",
+        "editable template",
+        "digital download",
+        "goodwill letter",
+        "dispute letter",
+        "first apartment",
+        "renter checklist"
+      ],
+      "images": [
+        "https://approvalprep.com/assets/products/income-employment-letter-kit.png"
+      ]
+    },
+    {
+      "shop": "ApprovalPrep",
+      "source": "approvalprep/src/data/content.ts productComparison#credit-letter-kit",
+      "title": "Credit Letter Kit | Editable Letter Templates | Instant Download",
+      "description": "Best for: DIY credit letters and follow-up.\n\nIncludes: Dispute, goodwill, late payment, validation, follow-up letters.\n\nSelf-service templates you edit and send yourself. Instant digital download; no physical item is shipped. ApprovalPrep provides templates and education only, not legal, credit or financial advice, and cannot guarantee any approval.",
+      "price_usd": 19.0,
+      "type": "digital",
+      "tags": [
+        "letter template",
+        "credit repair",
+        "rental application",
+        "apartment ready",
+        "proof of income",
+        "explanation letter",
+        "loan ready",
+        "editable template",
+        "digital download",
+        "goodwill letter",
+        "dispute letter",
+        "first apartment",
+        "renter checklist"
+      ],
+      "images": [
+        "https://approvalprep.com/assets/products/credit-letter-kit.png"
+      ]
+    },
+    {
+      "shop": "ApprovalPrep",
+      "source": "approvalprep/src/data/content.ts productComparison#rental-application-kit",
+      "title": "Rental Application Kit | Editable Letter Templates | Instant Download",
+      "description": "Best for: Apartment and rental applications.\n\nIncludes: Rental checklist, cover letter, income/rental history explanations.\n\nSelf-service templates you edit and send yourself. Instant digital download; no physical item is shipped. ApprovalPrep provides templates and education only, not legal, credit or financial advice, and cannot guarantee any approval.",
+      "price_usd": 29.0,
+      "type": "digital",
+      "tags": [
+        "letter template",
+        "credit repair",
+        "rental application",
+        "apartment ready",
+        "proof of income",
+        "explanation letter",
+        "loan ready",
+        "editable template",
+        "digital download",
+        "goodwill letter",
+        "dispute letter",
+        "first apartment",
+        "renter checklist"
+      ],
+      "images": [
+        "https://approvalprep.com/assets/products/rental-application-kit.png"
+      ]
+    },
+    {
+      "shop": "ApprovalPrep",
+      "source": "approvalprep/src/data/content.ts productComparison#complete-approvalprep-bundle",
+      "title": "Complete ApprovalPrep Bundle | Editable Letter Templates | Instant Download",
+      "description": "Best for: The full self-service library.\n\nIncludes: Every current kit, checklist, guide, and letter packet.\n\nSelf-service templates you edit and send yourself. Instant digital download; no physical item is shipped. ApprovalPrep provides templates and education only, not legal, credit or financial advice, and cannot guarantee any approval.",
+      "price_usd": 49.0,
+      "type": "digital",
+      "tags": [
+        "letter template",
+        "credit repair",
+        "rental application",
+        "apartment ready",
+        "proof of income",
+        "explanation letter",
+        "loan ready",
+        "editable template",
+        "digital download",
+        "goodwill letter",
+        "dispute letter",
+        "first apartment",
+        "renter checklist"
+      ],
+      "images": [
+        "https://approvalprep.com/assets/products/complete-approvalprep-bundle.png"
+      ]
+    }
+  ]
+}

@@ -257,6 +257,15 @@ export const api = {
     call<any>("/employees/duties/draft", post("", body)),
   dutyDrafts: () => call<any>("/employees/duties/drafts"),
   sprawl: () => call<any>("/employees/review/sprawl"),
+  /** Monique's outreach desk (9 Oct 2026): every business, the brakes, the two switches. */
+  moniqueOutreach: () => call<any>("/outreach"),
+  moniqueOutreachSettings: (body: { kill_switch?: "on" | "off"; sending?: "off" | "test_only" | "live" }) =>
+    call<any>("/outreach/settings", post("", body)),
+  moniqueOutreachBusiness: (key: string, body: { postal_address?: string; resume?: boolean }) =>
+    call<any>(`/outreach/business/${key}`, { method: "PUT", body: JSON.stringify(body) }),
+  moniqueOutreachTestSend: (business_key: string, step: number) => call<any>("/outreach/test-send", post("", { business_key, step })),
+  moniqueOutreachTick: () => call<any>("/outreach/tick", post("")),
+  moniqueOutreachReferrals: () => call<any>("/outreach/referrals"),
   reviewEmployee: (id: string, outcome: string, note?: string) =>
     call(`/employees/${id}/review`, post("", { outcome, note })),
 

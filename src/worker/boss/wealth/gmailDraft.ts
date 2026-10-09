@@ -142,9 +142,12 @@ export async function mintComposeToken(
 }
 
 /** RFC 5322, plain text, UTF-8. No From (Gmail sets it), no To (she puts the address in). */
-export function draftMime(subject: string, body: string): string {
+export function draftMime(subject: string, body: string, to?: string | null): string {
   const encodedSubject = `=?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`;
   return [
+    // A To line only when the caller names one (an outreach reply to a business that wrote back).
+    // The brokerage letters still carry none: she puts that address in herself.
+    ...(to ? [`To: ${to}`] : []),
     `Subject: ${encodedSubject}`,
     `Content-Type: text/plain; charset="UTF-8"`,
     `Content-Transfer-Encoding: base64`,
@@ -158,7 +161,7 @@ export function draftMime(subject: string, body: string): string {
  */
 export async function createGmailDraft(
   env: Env,
-  letter: { subject: string; body: string },
+  letter: { subject: string; body: string; to?: string | null },
   fetchImpl: typeof fetch = fetch,
   mailbox: string = BROKERAGE_MAILBOX,
 ): Promise<GmailDraftOutcome> {
@@ -182,7 +185,7 @@ export async function createGmailDraft(
         failure_code: grant ? "grant_missing" : "gmail_refused",
         failure_detail: `token ${minted.status}: ${minted.detail}`,
         detail: grant
-          ? "Waiting for the gmail.compose grant: Google refused the token for staylor@spry.vc. The delegation for `https://www.googleapis.com/auth/gmail.compose` on client 109529914046573753934 is missing or has not propagated. The letter is approved and on the desk."
+          ? "Waiting for the gmail.compose grant: Google refused the token for ${mailbox}. The delegation for `https://www.googleapis.com/auth/gmail.compose` on client 109529914046573753934 is missing or has not propagated. The letter is approved and on the desk."
           : `Gmail refused the token (HTTP ${minted.status}). The letter is approved and on the desk; press "Create the draft" there to try again.`,
       };
     }
@@ -201,7 +204,7 @@ export async function createGmailDraft(
     const res = await fetchImpl(DRAFTS_ENDPOINT, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ message: { raw: b64url(draftMime(letter.subject, letter.body)) } }),
+      body: JSON.stringify({ message: { raw: b64url(draftMime(letter.subject, letter.body, letter.to)) } }),
       signal: controller.signal,
     });
     const text = await res.text();

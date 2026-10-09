@@ -277,6 +277,39 @@ below the sender refusal, and `INSTALLED_LOCAL_JOBS` equal to the installer. A l
 script is not installed is a `NAMED STOP [NO_SUCH_SCRIPT]`, never a row. Operator steps:
 `docs/boss/OPERATIONS.md` → "How to give an employee a duty". Migration `0267`.
 
+### Monique's outreach — fully automatic, braked in code (9 October 2026)
+
+**Owner: "u do it all".** Monique writes to businesses for ten side businesses (five local guides,
+five consumer products; how-we-know has none until ~1,000 subscribers) with **no human review**.
+`src/worker/boss/outreach/catalog.ts` is the one list: sender, offer, segments, the three emails.
+The hourly tick (`runOutreach`) reads replies first, then the brakes, then sends, then builds lists.
+
+| Brake | Where | Test |
+|---|---|---|
+| 10/day per domain, ramping to a hard 40 | `brakes.ts` `dailyCap` | `moniqueOutreach.test.ts` |
+| Pause on bounce > 3% or any complaint, reason on Monique's card | `pauseReason`, `engine.ts` | same |
+| Kill switch, sending flag (`off`/`test_only`/`live`) | `outreach_settings`, `refusal` | same |
+| No postal address → no business email (CAN-SPAM) | `refusal`, `composeEmail` | same |
+| Unsubscribe link + one-click header; suppression global, at once | `compose.ts`, `routes/outreach.ts` `/u/:token` | same |
+| Stop on any reply; unsubscribes honoured even with the kill switch on | `processReplies` | same |
+| Sends only as st@time-2-read.com aliases, never spry.vc/West Peek | `gmail.ts`, `validate:no-spry-sender` | self-test |
+
+**The route.** The Workspace that owns st@time-2-read.com is reachable by the existing service
+account with `gmail.compose`, which permits `messages.send` (proven 9 Oct 2026, message
+`1a11f4e4ed7306ac` to the test inbox). Each other business sends as `hello@<domain>`, an alias of
+that one user on a free secondary domain. `npm run outreach:domains` adds the domains, aliases,
+send-as entries and SPF, and counts Workspace users before and after so it can never add a licence;
+until the delegation scopes it needs are granted it prints **NAMED STOP [OUTREACH_DOMAINS_SCOPES]**
+with the click path. A business sends only after the Worker sees its alias in the send-as list and
+proves it with one email to the test inbox.
+
+**Lists** come from OpenStreetMap (public Overpass) and each business's own website, qualified by
+what the site says, business addresses only, MX-verified. **Interested** replies become an Inbox
+card whose green button drafts the suggested reply in st@time-2-read.com. **Affiliates** get a code
+(`T2R-…`, `AP-…`); sales arrive at `POST /api/boss/outreach/referrals/conversions` as Stripe
+`metadata[ref]`; payouts are computed monthly and never paid by code. **Etsy** listing files:
+`docs/boss/etsy/listings.json`.
+
 ### Danielle's repo-change lane — Plan B (20 September 2026)
 
 **What she does now.** She emails `boss@sequoiataylor.com` with `#danielle`, a grid repo name and/or

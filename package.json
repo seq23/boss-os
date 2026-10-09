@@ -53,6 +53,7 @@
     "vault:init": "node scripts/vault/vault.mjs init",
     "vault:remove": "node scripts/vault/vault.mjs remove",
     "vault:run": "node scripts/vault/vault.mjs run --",
+    "outreach:domains": "node scripts/vault/vault.mjs run -- node scripts/outreach/domains.mjs",
     "vault:set": "node scripts/vault/vault.mjs set",
     "vault:status": "node scripts/vault/vault.mjs status",
     "vault:sync:cloudflare": "node scripts/vault/vault.mjs sync:cloudflare",
