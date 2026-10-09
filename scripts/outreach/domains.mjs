@@ -25,7 +25,7 @@
  * GSC_SERVICE_ACCOUNT_JSON and CLOUDFLARE_API_TOKEN. Nothing is printed from either.
  */
 import { createSign } from "node:crypto";
-import { BUSINESSES, OUTREACH_MAILBOX } from "../../src/worker/boss/outreach/catalog.ts";
+import { BUSINESSES, OUTREACH_MAILBOX, assertOutreachSetupTarget } from "../../src/worker/boss/outreach/catalog.ts";
 
 const CHECK_ONLY = process.argv.includes("--check");
 const ADMIN = process.env.OUTREACH_WORKSPACE_ADMIN ?? OUTREACH_MAILBOX;
@@ -38,6 +38,14 @@ const SCOPES = {
   sendas: `${G}gmail.settings.sharing`,
 };
 const CLIENT_ID = "109529914046573753934";
+
+// NEVER West Peek's Workspace (owner, 9 Oct 2026): refused before a credential is read.
+try {
+  assertOutreachSetupTarget({ admin: ADMIN, mailbox: OUTREACH_MAILBOX, domains: BUSINESSES.flatMap((b) => [b.domain, b.sender]) });
+} catch (err) {
+  console.error(`REFUSED [OUTREACH_NOT_WEST_PEEK]: ${err.message}`);
+  process.exit(4);
+}
 
 const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
 const CF = process.env.CLOUDFLARE_API_TOKEN;
@@ -82,6 +90,18 @@ if (missing.length) {
   Then run:  npm run vault:run -- node scripts/outreach/domains.mjs
   (If the super admin is not ${ADMIN}, set OUTREACH_WORKSPACE_ADMIN to that address.) Adds $0: no user, no licence.`);
   process.exit(3);
+}
+
+// The Workspace actually reached must not be West Peek's either, whoever the admin turned out to be.
+{
+  const r = await g(tokens.domain, "GET", "https://admin.googleapis.com/admin/directory/v1/customer/my_customer/domains");
+  if (r.status !== 200) { console.error(`NAMED STOP [OUTREACH_WORKSPACE_UNKNOWN]: domains.list ${r.status}; cannot prove this is not West Peek's Workspace.`); process.exit(3); }
+  try {
+    assertOutreachSetupTarget({ admin: ADMIN, mailbox: OUTREACH_MAILBOX, domains: [], workspaceDomains: (r.j.domains ?? []).map((d) => d.domainName) });
+  } catch (err) {
+    console.error(`REFUSED [OUTREACH_NOT_WEST_PEEK]: ${err.message}`);
+    process.exit(4);
+  }
 }
 
 const countUsers = async () => {
@@ -174,3 +194,13 @@ if (usersAfter !== usersBefore) {
   process.exit(1);
 }
 console.log(`Workspace users after: ${usersAfter} (unchanged — $0 added).`);
+// Rule 0: a run that left any domain unfinished never exits 0. Re-running is safe (every step is idempotent).
+if (!CHECK_ONLY) {
+  const done = (r) => !r.error && (r.verified === undefined || r.verified === "yes") && ["added", "present"].includes(r.alias) && /^(present|added)/.test(r.sendAs ?? "");
+  const unfinished = report.filter((r) => !done(r)).map((r) => r.domain);
+  if (unfinished.length) {
+    console.error(`UNFINISHED [OUTREACH_DOMAINS_PENDING]: ${unfinished.length}/${report.length} domain(s) not yet verified/aliased/send-as: ${unfinished.join(", ")}. DNS verification can take minutes; re-run.`);
+    process.exit(2);
+  }
+  console.log(`All ${report.length} outreach domains verified, aliased on ${OUTREACH_MAILBOX} and send-as ready.`);
+}

@@ -658,6 +658,26 @@ in its stock.
 
 ---
 
+## Monique's outreach — and its two standing rules
+
+Monique sends cold outreach for the side businesses on her own (owner, 9 Oct 2026: "u do it all").
+The businesses, senders, offers and emails are one list, `src/worker/boss/outreach/catalog.ts`;
+every send goes through one mailbox, st@time-2-read.com, and `npm run outreach:domains` puts each
+business domain on that Workspace as an alias. The brakes (daily cap, bounce and complaint pauses,
+suppression, stop-on-reply) are pinned in `tests/boss/moniqueOutreach.test.ts`.
+
+- **heygetonmylevel.com is NEVER an outreach target** (owner, 9 Oct 2026: "skip this for
+  outreach"). It is a free bonus for Time2Read subscribers, not a product sold on its own: no
+  business entry, no sender, no referral code, no domain setup. Its grid, health and heartbeat
+  monitoring carry on as before.
+- **Outreach never sends through, or needs a permission in, West Peek's Google Workspace
+  (westpeek.ventures)** (owner, 9 Oct 2026). The side businesses are Spry's. The sender refuses a
+  westpeek.ventures `sub` or From, and the domain setup script refuses to run against that domain.
+  As of 9 Oct 2026, st@time-2-read.com's delegation grants match spry.vc's exactly and lack the
+  Meet scopes only westpeek.ventures holds, so West Peek's Workspace grants it nothing.
+
+Both rules are also in `CLAUDE.md` ("Outreach rules") and are read by the test.
+
 ## Commands worth knowing
 
 ```bash

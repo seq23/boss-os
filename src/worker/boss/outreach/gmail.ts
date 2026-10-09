@@ -15,7 +15,7 @@
  */
 import type { Env } from "../env";
 import { serviceAccountFrom, type ServiceAccount } from "../wealth/gmailDraft";
-import { OUTREACH_MAILBOX, assertSenderAllowed, type Business } from "./catalog";
+import { OUTREACH_MAILBOX, assertOutreachMailboxAllowed, assertSenderAllowed, type Business } from "./catalog";
 import { base64url } from "./compose";
 
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -50,6 +50,8 @@ async function timed(fetchImpl: typeof fetch, url: string, init: RequestInit = {
 }
 
 async function mintToken(creds: ServiceAccount, scope: string, fetchImpl: typeof fetch): Promise<string> {
+  // Never West Peek's Workspace (owner, 9 Oct 2026): refused before any key is used.
+  assertOutreachMailboxAllowed(OUTREACH_MAILBOX);
   const iat = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claims = b64url(JSON.stringify({

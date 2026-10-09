@@ -6,10 +6,18 @@ import { dailyCap, pauseReason, refusal, DAY_MS } from "../../src/worker/boss/ou
 import { bouncedAddress, classifyReply } from "../../src/worker/boss/outreach/classify";
 import { composeEmail } from "../../src/worker/boss/outreach/compose";
 import { isSuppressed, suppress, isBusinessEmail } from "../../src/worker/boss/outreach/suppression";
-import { assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX } from "../../src/worker/boss/outreach/catalog";
+import {
+  assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
+} from "../../src/worker/boss/outreach/catalog";
+import CATALOG_SOURCE from "../../src/worker/boss/outreach/catalog.ts?raw";
+import REFERRALS_SOURCE from "../../src/worker/boss/outreach/referrals.ts?raw";
+import GMAIL_SOURCE from "../../src/worker/boss/outreach/gmail.ts?raw";
+import DOMAINS_SCRIPT from "../../scripts/outreach/domains.mjs?raw";
+import CLAUDE_MD from "../../CLAUDE.md?raw";
+import OPERATIONS_MD from "../../docs/boss/OPERATIONS.md?raw";
 import { pickEmail, parseOverpass } from "../../src/worker/boss/outreach/lists";
 import { runOutreachTick } from "../../src/worker/boss/outreach/engine";
-import { computePeriod, recordConversion, ensurePartner } from "../../src/worker/boss/outreach/referrals";
+import { computePeriod, recordConversion, ensurePartner, makeCode } from "../../src/worker/boss/outreach/referrals";
 
 /**
  * MONIQUE'S OUTREACH: THE BRAKES ARE THE REVIEW (owner, 9 Oct 2026: "u do it all").
@@ -196,6 +204,27 @@ describe("every email carries the unsubscribe link and the postal address", () =
     expect(m.raw).toMatch(/^List-Unsubscribe: <https:\/\/boss\.sequoiataylor\.com\/api\/boss\/outreach\/u\/tok123>/m);
     expect(m.raw).toMatch(/^List-Unsubscribe-Post: List-Unsubscribe=One-Click/m);
     expect(m.raw).toMatch(/^From: Time2Read <st@time-2-read\.com>/m);
+  });
+
+  it("the HTML footer keeps the address and the unsubscribe link, in 10px muted type (CAN-SPAM)", () => {
+    const addr = "PO Box 1, Houston, TX 77002";
+    const m = composeEmail({ business: T2R, step: 0, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr });
+    expect(m.raw).toMatch(/^Content-Type: multipart\/alternative; boundary="/m);
+    const parts = [...m.raw.matchAll(/Content-Type: (text\/(?:plain|html)); charset="UTF-8"\r\nContent-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+)/g)]
+      .map((x) => [x[1], decodeURIComponent(escape(atob(x[2]!.replace(/\r\n/g, ""))))] as const);
+    expect(parts.map((p) => p[0])).toEqual(["text/plain", "text/html"]);
+    const [plain, html] = [parts[0]![1], parts[1]![1]];
+    // Plain text: the address on one short line, and the unsubscribe link.
+    expect(plain.split("\n")).toContain(`Time2Read, ${addr}`);
+    expect(plain).toContain("https://boss.sequoiataylor.com/api/boss/outreach/u/tok123");
+    // HTML: the footer paragraph carries both, at 10px muted grey.
+    const footer = /<p style="([^"]*)"[^>]*>([\s\S]*?)<\/p>\s*<\/body>/.exec(html);
+    expect(footer, "the HTML part has a footer paragraph").not.toBeNull();
+    expect(footer![1]).toContain("font-size:10px");
+    expect(footer![1]).toMatch(/color:#8a8a8a/);
+    expect(footer![2]).toContain(addr);
+    expect(footer![2]).toContain('href="https://boss.sequoiataylor.com/api/boss/outreach/u/tok123"');
+    expect(m.html).toBe(html);
   });
 
   it("refuses to compose without a postal address or an unsubscribe token", () => {
@@ -436,5 +465,79 @@ describe("referral ledger", () => {
     await computePeriod(env.DB, "2027-09", TUESDAY_10AM);
     const rows = await env.DB.prepare(`SELECT period, amount_cents FROM referral_payouts ORDER BY period`).all<any>();
     expect(rows.results).toEqual([{ period: "2026-09", amount_cents: 300 }]);
+  });
+});
+
+describe("outreach rules (owner, 9 Oct 2026)", () => {
+  const HGO = "RULE (owner, 9 Oct 2026): heygetonmylevel.com is NEVER an outreach target. It is a free bonus for Time2Read subscribers, not a product sold on its own — no business, no sender, no domain setup, no referral code.";
+  const WP = "RULE (owner, 9 Oct 2026): outreach never sends through, or needs a permission in, West Peek's Google Workspace (westpeek.ventures). The side businesses are Spry's.";
+
+  it("heygetonmylevel is never an outreach business, sender or domain", () => {
+    const hit = (s: string) => /heygetonmylevel/i.test(s);
+    for (const b of BUSINESSES) {
+      expect(hit(b.key) || hit(b.domain) || hit(b.sender) || hit(b.brand) || hit(b.offerUrl), `${HGO} Found: ${b.key}`).toBe(false);
+      for (const step of b.steps) expect(hit(step.body) || hit(step.subject), `${HGO} Found in ${b.key}'s email.`).toBe(false);
+    }
+    expect(businessByKey("heygetonmylevel"), HGO).toBeUndefined();
+    expect(makeCode("heygetonmylevel").startsWith("HGO-"), `${HGO} referrals.ts still carries its code prefix.`).toBe(false);
+    expect(/heygetonmylevel/i.test(REFERRALS_SOURCE), `${HGO} referrals.ts names it.`).toBe(false);
+    // The only place the catalog may name it is the never-list itself.
+    const mentions = CATALOG_SOURCE.split("\n").filter((l) => /heygetonmylevel/i.test(l) && !/^\s*(\*|\/\/|\/\*)/.test(l));
+    expect(mentions, HGO).toEqual(['export const NEVER_OUTREACH_DOMAINS = ["heygetonmylevel.com"] as const;']);
+    // Put it back and the send-time guard and the setup guard both refuse it.
+    const smuggled = { ...BUSINESSES[0]!, key: "heygetonmylevel", domain: "heygetonmylevel.com", sender: "hello@heygetonmylevel.com" };
+    expect(() => assertSenderAllowed(smuggled), HGO).toThrow(/never an outreach business/);
+    expect(() => assertOutreachSetupTarget({ admin: OUTREACH_MAILBOX, mailbox: OUTREACH_MAILBOX, domains: ["heygetonmylevel.com"] }), HGO).toThrow(/never an outreach domain/);
+  });
+
+  it("the outreach sender never impersonates or sends from West Peek's Workspace", () => {
+    expect(assertOutreachMailboxAllowed(OUTREACH_MAILBOX), WP).toBe(OUTREACH_MAILBOX);
+    for (const sub of ["sequoia@westpeek.ventures", "ST@WestPeek.Ventures", "x@mail.westpeek.ventures"]) {
+      expect(() => assertOutreachMailboxAllowed(sub), WP).toThrow(/West Peek's Google Workspace/);
+    }
+    for (const b of BUSINESSES) {
+      expect(/westpeek\.ventures/i.test(b.sender) || /westpeek\.ventures/i.test(b.domain), `${WP} ${b.key}`).toBe(false);
+      expect(() => assertSenderAllowed({ ...b, sender: "hello@westpeek.ventures" }), WP).toThrow(/Refused/);
+    }
+    // The token mint checks the subject before any key is used, and impersonates only the pinned mailbox.
+    const mint = GMAIL_SOURCE.slice(GMAIL_SOURCE.indexOf("async function mintToken"));
+    expect(mint.indexOf("assertOutreachMailboxAllowed(OUTREACH_MAILBOX)"), WP).toBeGreaterThan(-1);
+    expect(mint.indexOf("assertOutreachMailboxAllowed(OUTREACH_MAILBOX)") < mint.indexOf("importKey"), WP).toBe(true);
+  });
+
+  it("the domain setup script refuses to run against westpeek.ventures", () => {
+    expect(() => assertOutreachSetupTarget({ admin: "admin@westpeek.ventures", mailbox: OUTREACH_MAILBOX, domains: [] }), WP).toThrow(/West Peek/);
+    expect(() => assertOutreachSetupTarget({ admin: OUTREACH_MAILBOX, mailbox: "st@westpeek.ventures", domains: [] }), WP).toThrow(/West Peek/);
+    expect(() => assertOutreachSetupTarget({ admin: OUTREACH_MAILBOX, mailbox: OUTREACH_MAILBOX, domains: ["westpeek.ventures"] }), WP).toThrow(/West Peek/);
+    expect(() => assertOutreachSetupTarget({ admin: OUTREACH_MAILBOX, mailbox: OUTREACH_MAILBOX, domains: [], workspaceDomains: ["time-2-read.com", "westpeek.ventures"] }), WP).toThrow(/West Peek/);
+    expect(() => assertOutreachSetupTarget({ admin: OUTREACH_MAILBOX, mailbox: OUTREACH_MAILBOX, domains: BUSINESSES.flatMap((b) => [b.domain, b.sender]) }), WP).not.toThrow();
+    // Wired: the guard runs before the service account is read, and again on the Workspace reached.
+    const guard = DOMAINS_SCRIPT.indexOf("assertOutreachSetupTarget({ admin: ADMIN");
+    expect(guard, WP).toBeGreaterThan(-1);
+    expect(guard < DOMAINS_SCRIPT.indexOf("process.env.GSC_SERVICE_ACCOUNT_JSON"), WP).toBe(true);
+    expect(/workspaceDomains:/.test(DOMAINS_SCRIPT), WP).toBe(true);
+  });
+
+  it("both rules are written where everyone reads them", () => {
+    for (const [name, doc] of [["CLAUDE.md", CLAUDE_MD], ["docs/boss/OPERATIONS.md", OPERATIONS_MD]] as const) {
+      expect(/heygetonmylevel\.com is NEVER an outreach target/i.test(doc), `${HGO} Missing from ${name}.`).toBe(true);
+      expect(/never sends? through, or needs? (a )?permissions? in, West Peek's Google Workspace/i.test(doc), `${WP} Missing from ${name}.`).toBe(true);
+    }
+    expect(/^## Outreach rules$/m.test(CLAUDE_MD), "CLAUDE.md carries an \"Outreach rules\" section.").toBe(true);
+  });
+});
+
+describe("the owner's private postal address never enters the repo (owner, 9 Oct 2026)", () => {
+  // Runtime data only (Team → Outreach, outreach_domain_state.postal_address). The repo is public.
+  const sources = import.meta.glob(
+    ["../../**/*.{ts,tsx,mjs,js,cjs,json,md,sql,toml,yml,yaml,html,css,txt,sh}", "!../../node_modules/**", "!../../dist/**", "!../../.claude/**", "!../../test-results/**", "!../../.wrangler/**", "!../../backups/**"],
+    { query: "?raw", import: "default", eager: true },
+  ) as Record<string, string>;
+  it("no file carries the street name or the ZIP", () => {
+    const files = Object.keys(sources);
+    expect(files.length, "the scan reached the repo").toBeGreaterThan(200);
+    const needles = [["Fox", "Hunt"].join(" "), ["381", "15"].join("")];
+    const hits = files.filter((f) => needles.some((n) => sources[f]!.includes(n)));
+    expect(hits, "RULE (owner, 9 Oct 2026): the outreach postal address is private runtime data, never a git file.").toEqual([]);
   });
 });

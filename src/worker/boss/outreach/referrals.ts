@@ -18,7 +18,7 @@ import type { Business } from "./catalog";
 import { chicagoParts, DAY_MS } from "./brakes";
 
 const PREFIX: Record<string, string> = {
-  time2read: "T2R", aplayermode: "APM", approvalprep: "AP", weddingchecklist: "WED", heygetonmylevel: "HGO",
+  time2read: "T2R", aplayermode: "APM", approvalprep: "AP", weddingchecklist: "WED",
 };
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 

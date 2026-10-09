@@ -1,7 +1,8 @@
 /**
  * ONE OUTREACH EMAIL, AS RFC 5322. CAN-SPAM is built into the shape rather than the copy:
  *   · a working unsubscribe link in the body AND a one-click List-Unsubscribe header;
- *   · the business's physical postal address in the footer;
+ *   · the business's physical postal address in the footer — one short line in the plain-text
+ *     part, and in the HTML part in very small muted type (10px grey) beside the unsubscribe line;
  *   · an honest From (the business's own address) and a subject that describes the email.
  * `composeEmail` throws rather than produce a message without the unsubscribe link or the address.
  */
@@ -27,7 +28,16 @@ export interface ComposeInput {
 export interface Composed {
   subject: string;
   body: string;
+  /** The HTML alternative: the same words, with the CAN-SPAM footer in 10px muted grey. */
+  html: string;
   raw: string;
+}
+
+/** The footer's type: the smallest that still reads, muted. Pinned by the test. */
+export const FOOTER_STYLE = "font-size:10px;line-height:14px;color:#8a8a8a;";
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function fill(t: string, v: Record<string, string>): string {
@@ -58,10 +68,18 @@ export function composeEmail(i: ComposeInput): Composed {
   };
   const subject = fill(step.subject, vars).trim();
   const unsub = unsubscribeUrl(i.unsubToken);
+  const message = `${fill(step.body, vars)}\n\n— The ${i.business.brand} team\n${i.business.domain}`;
+  const why = `You are receiving this because ${vars.org} is publicly listed as a business we think we can help.`;
   const body =
-    `${fill(step.body, vars)}\n\n— The ${i.business.brand} team\n${i.business.domain}\n\n` +
-    `--\nYou are receiving this because ${vars.org} is publicly listed as a business we think we can help. ` +
-    `Unsubscribe with one click: ${unsub}\n${i.business.brand}, ${address}\n`;
+    `${message}\n\n--\n${why} Unsubscribe with one click: ${unsub}\n${i.business.brand}, ${address}\n`;
+  const html =
+    `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#222222;">` +
+    `<div>${esc(message).replace(/\n/g, "<br>")}</div>` +
+    `<p style="${FOOTER_STYLE}margin-top:24px;">${esc(why)} ` +
+    `<a href="${esc(unsub)}" style="color:#8a8a8a;">Unsubscribe with one click</a>.<br>` +
+    `${esc(i.business.brand)}, ${esc(address)}</p></body></html>`;
+  const boundary = `=_outreach_${crypto.randomUUID().replace(/-/g, "")}`;
+  const b64 = (t: string) => btoa(unescape(encodeURIComponent(t))).replace(/(.{76})/g, "$1\r\n");
 
   const headers = [
     `From: ${i.business.brand} <${i.business.sender}>`,
@@ -70,12 +88,13 @@ export function composeEmail(i: ComposeInput): Composed {
     `List-Unsubscribe: <${unsub}>, <mailto:${i.business.sender}?subject=unsubscribe>`,
     `List-Unsubscribe-Post: List-Unsubscribe=One-Click`,
     `MIME-Version: 1.0`,
-    `Content-Type: text/plain; charset="UTF-8"`,
-    `Content-Transfer-Encoding: base64`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
   ];
   if (i.inReplyTo) headers.push(`In-Reply-To: ${i.inReplyTo}`, `References: ${i.inReplyTo}`);
-  const raw = `${headers.join("\r\n")}\r\n\r\n${btoa(unescape(encodeURIComponent(body)))}`;
-  return { subject, body, raw };
+  const part = (type: string, content: string) =>
+    `--${boundary}\r\nContent-Type: ${type}; charset="UTF-8"\r\nContent-Transfer-Encoding: base64\r\n\r\n${b64(content)}\r\n`;
+  const raw = `${headers.join("\r\n")}\r\n\r\n${part("text/plain", body)}${part("text/html", html)}--${boundary}--\r\n`;
+  return { subject, body, html, raw };
 }
 
 export function base64url(s: string): string {
