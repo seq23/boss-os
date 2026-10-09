@@ -223,6 +223,28 @@ describe("lists: business addresses only", () => {
   });
 });
 
+describe("list building survives busy public servers", () => {
+  beforeEach(reset);
+
+  it("a failed listing read is retried within hours, never parked for the 30-day refresh", async () => {
+    await env.DB.prepare(`DELETE FROM outreach_prospects`).run();
+    const { readNextSlice, SLICE_RETRY_MS } = await import("../../src/worker/boss/outreach/lists");
+    let calls = 0;
+    const busy = (async () => { calls += 1; return new Response("busy", { status: 504 }); }) as typeof fetch;
+    const first = await readNextSlice(env.DB, busy, TUESDAY_10AM, ["uscisexam"]);
+    expect(first?.found).toBe(0);
+    const row1 = await row<any>(`SELECT found FROM outreach_slices WHERE metro = 'nyc' AND business_key = 'uscisexam'`);
+    expect(row1.found).toBe(-1);
+    const ok = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("accept")).toBeNull();
+      return Response.json({ elements: [{ type: "node", id: 9, tags: { name: "Clinic", website: "https://clinic.example" } }] });
+    }) as typeof fetch;
+    const later = await readNextSlice(env.DB, ok, TUESDAY_10AM + SLICE_RETRY_MS + 1, ["uscisexam"]);
+    expect(later?.slice).toBe("uscisexam|civil_surgeons|nyc");
+    expect(later?.found).toBe(1);
+  });
+});
+
 describe("suppression and the unsubscribe door", () => {
   beforeEach(reset);
 
