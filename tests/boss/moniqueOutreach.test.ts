@@ -17,6 +17,7 @@ import CLAUDE_MD from "../../CLAUDE.md?raw";
 import OPERATIONS_MD from "../../docs/boss/OPERATIONS.md?raw";
 import { pickEmail, parseOverpass } from "../../src/worker/boss/outreach/lists";
 import { runOutreachTick } from "../../src/worker/boss/outreach/engine";
+import { mailAuthGaps } from "../../src/worker/boss/outreach/mailauth";
 import { computePeriod, recordConversion, ensurePartner, makeCode } from "../../src/worker/boss/outreach/referrals";
 
 /**
@@ -44,12 +45,26 @@ async function fakeServiceAccount(): Promise<string> {
 interface Inbound { id: string; threadId: string; from: string; subject: string; body: string; headers?: Record<string, string> }
 
 /** A Gmail that sends, lists inbound mail we give it, and records every send. */
-function fakeGmail(opts: { sendAs?: string[]; inbound?: Inbound[] } = {}) {
+const GOOD_DKIM = `v=DKIM1; k=rsa; p=${"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA".repeat(4)}`;
+/** DNS that authenticates every domain, unless a test overrides a name (or says the lookup fails). */
+function goodDns(name: string): string[] {
+  if (name.startsWith("google._domainkey.")) return [GOOD_DKIM];
+  if (name.startsWith("_dmarc.")) return ["v=DMARC1; p=none;"];
+  return ["v=spf1 include:_spf.google.com ~all"];
+}
+
+function fakeGmail(opts: { sendAs?: string[]; inbound?: Inbound[]; dns?: Record<string, string[]>; dnsFails?: boolean } = {}) {
   const sends: { from: string; to: string; raw: string; threadId?: string }[] = [];
   let n = 0;
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.startsWith("https://oauth2.googleapis.com/token")) return Response.json({ access_token: "ya29.fake" });
+    if (url.startsWith("https://cloudflare-dns.com/dns-query")) {
+      if (opts.dnsFails) return new Response("upstream down", { status: 502 });
+      const name = decodeURIComponent(/name=([^&]+)/.exec(url)?.[1] ?? "");
+      const data = opts.dns?.[name] ?? goodDns(name);
+      return Response.json({ Status: 0, Answer: data.map((d) => ({ name, type: 16, data: `"${d}"` })) });
+    }
     if (url.endsWith("/messages/send")) {
       const body = JSON.parse(String(init?.body));
       const raw = atob(body.raw.replace(/-/g, "+").replace(/_/g, "/"));
@@ -143,7 +158,7 @@ describe("the brakes, as pure functions", () => {
   });
 
   it("refuses by the kill switch, the flag, the route, the postal address and the pause", () => {
-    const go = { killSwitch: false, sending: "live" as const, routeReady: true, hasPostalAddress: true, pausedReason: null, isTestRecipient: false };
+    const go = { killSwitch: false, sending: "live" as const, routeReady: true, hasPostalAddress: true, pausedReason: null, mailAuthMissing: null, isTestRecipient: false };
     expect(refusal(go)).toBeNull();
     expect(refusal({ ...go, killSwitch: true })).toMatch(/kill switch/);
     expect(refusal({ ...go, killSwitch: true, isTestRecipient: true })).toMatch(/kill switch/);
@@ -153,6 +168,21 @@ describe("the brakes, as pure functions", () => {
     expect(refusal({ ...go, routeReady: false })).toMatch(/not proven/);
     expect(refusal({ ...go, hasPostalAddress: false })).toMatch(/postal address/);
     expect(refusal({ ...go, pausedReason: "Paused automatically" })).toMatch(/Paused/);
+  });
+
+  it("refuses a live send when the sender's domain lacks SPF, Google DKIM or DMARC (9 Oct 2026 DMARC blocks)", () => {
+    const go = { killSwitch: false, sending: "live" as const, routeReady: true, hasPostalAddress: true, pausedReason: null, mailAuthMissing: null, isTestRecipient: false };
+    expect(refusal({ ...go, mailAuthMissing: "x.com mail authentication is incomplete: no DMARC record." })).toMatch(/authentication/);
+    // A test send still goes, so a fixed domain can be proven against the test inbox.
+    expect(refusal({ ...go, mailAuthMissing: "x.com mail authentication is incomplete.", isTestRecipient: true })).toBeNull();
+    const spf = ["v=spf1 include:_spf.google.com ~all"];
+    expect(mailAuthGaps({ root: spf, dkim: [GOOD_DKIM], dmarc: ["v=DMARC1; p=reject;"] })).toEqual([]);
+    // The exact shape Gmail rejected on aplayermode.com: a revoked (empty) DKIM key under DMARC p=reject.
+    expect(mailAuthGaps({ root: spf, dkim: ["v=DKIM1; p="], dmarc: ["v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s;"] })).toEqual(["the Google DKIM key at google._domainkey is empty or revoked"]);
+    expect(mailAuthGaps({ root: spf, dkim: [], dmarc: [] })).toEqual(["no Google DKIM key at google._domainkey", "no DMARC record"]);
+    expect(mailAuthGaps({ root: [], dkim: [GOOD_DKIM], dmarc: ["v=DMARC1; p=none;"] })).toEqual(["no SPF record"]);
+    expect(mailAuthGaps({ root: ["v=spf1 include:mailgun.org ~all"], dkim: [GOOD_DKIM], dmarc: ["v=DMARC1; p=none;"] })).toEqual(["SPF does not include _spf.google.com"]);
+    expect(mailAuthGaps({ root: [...spf, "v=spf1 -all"], dkim: [GOOD_DKIM], dmarc: ["v=DMARC1; p=none;"] })).toEqual(["more than one SPF record"]);
   });
 
   it("never sends from West Peek, spry.vc or her own domain, nor off the business's domain", () => {
@@ -351,6 +381,22 @@ describe("the tick", () => {
     // Run the rest of the day: the cap holds at 10.
     for (let h = 1; h <= 7; h++) await runOutreachTick(await tickEnv(), TUESDAY_10AM + h * 3_600_000, g.fetchImpl);
     expect(g.sends.filter((s) => !s.to.startsWith("cryptoclearr")).length).toBe(10);
+  });
+
+  it("a domain without SPF, Google DKIM and DMARC sends nothing live — and a failed DNS lookup fails closed", async () => {
+    await readyWithAddress("time2read");
+    await addProspect("time2read", "a@school.example");
+    const noDkim = fakeGmail({ dns: { "google._domainkey.time-2-read.com": ["v=DKIM1; p="] } });
+    const r = await runOutreachTick(await tickEnv(), TUESDAY_10AM, noDkim.fetchImpl);
+    expect(noDkim.sends.filter((s) => !s.to.startsWith("cryptoclearr"))).toHaveLength(0);
+    expect(r.refused.time2read).toMatch(/time-2-read\.com mail authentication is incomplete: the Google DKIM key/);
+    const down = fakeGmail({ dnsFails: true });
+    const r2 = await runOutreachTick(await tickEnv(), TUESDAY_10AM, down.fetchImpl);
+    expect(down.sends.filter((s) => !s.to.startsWith("cryptoclearr"))).toHaveLength(0);
+    expect(r2.refused.time2read).toMatch(/could not be checked/);
+    const ok = fakeGmail();
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM, ok.fetchImpl);
+    expect(ok.sends.filter((s) => !s.to.startsWith("cryptoclearr")).length).toBe(1);
   });
 
   it("the kill switch stops every send", async () => {

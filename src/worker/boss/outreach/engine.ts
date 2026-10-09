@@ -22,6 +22,7 @@ import {
 } from "./brakes";
 import { bouncedAddress, classifyReply, ownWords, type ReplyClass } from "./classify";
 import { composeEmail } from "./compose";
+import { mailAuthRefusal } from "./mailauth";
 import { GmailSession, addressOf } from "./gmail";
 import { crawlCandidates, randomToken, readNextSlice } from "./lists";
 import { isSuppressed, suppress } from "./suppression";
@@ -111,7 +112,7 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
     }
     for (const b of BUSINESSES) {
       try {
-        out.sent += await sendForBusiness(env, mailbox, b, settings, now, out.refused);
+        out.sent += await sendForBusiness(env, mailbox, b, settings, now, out.refused, fetchImpl);
       } catch (err) {
         out.refused[b.key] = (err as Error).message;
       }
@@ -233,6 +234,7 @@ async function recordSend(
 
 async function sendForBusiness(
   env: Env, mailbox: GmailSession, b: Business, settings: OutreachSettings, now: number, refused: Record<string, string>,
+  fetchImpl: typeof fetch,
 ): Promise<number> {
   const db = env.DB;
   const st = await domainState(db, b.key, now);
@@ -243,7 +245,9 @@ async function sendForBusiness(
     hasPostalAddress: Boolean(st.postal_address && String(st.postal_address).trim().length >= 10),
     pausedReason: st.paused_at ? st.pause_reason : null,
   };
-  const no = refusal({ ...gateBase, isTestRecipient: false });
+  // DNS is read only once every other brake would let a live send through; a gap refuses it.
+  const no = refusal({ ...gateBase, mailAuthMissing: null, isTestRecipient: false })
+    ?? refusal({ ...gateBase, mailAuthMissing: await mailAuthRefusal(b.sender.split("@")[1]!, fetchImpl), isTestRecipient: false });
   if (no) { refused[b.key] = no; return 0; }
 
   const cap = dailyCap(st.ramp_started_at, now);
