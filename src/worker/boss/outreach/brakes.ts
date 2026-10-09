@@ -74,6 +74,8 @@ export interface Gate {
   routeReady: boolean;
   hasPostalAddress: boolean;
   pausedReason: string | null;
+  /** null when SPF, Google DKIM and DMARC all exist for the sender's domain (see mailauth.ts). */
+  mailAuthMissing: string | null;
   isTestRecipient: boolean;
 }
 
@@ -87,6 +89,7 @@ export function refusal(g: Gate): string | null {
   if (!g.routeReady) return "This domain's sending address is not proven yet.";
   if (g.isTestRecipient) return null;
   if (g.sending === "test_only") return "Sending is test-only: only the test recipients may be written to.";
+  if (g.mailAuthMissing) return g.mailAuthMissing;
   if (!g.hasPostalAddress) return "No postal address is set for this business, and CAN-SPAM requires one in every email.";
   if (g.pausedReason) return g.pausedReason;
   return null;
