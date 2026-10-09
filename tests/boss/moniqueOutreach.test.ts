@@ -213,6 +213,27 @@ describe("lists: business addresses only", () => {
     expect(isBusinessEmail("hello@acme.example")).toBe(true);
   });
 
+  it("never takes a scraped address on another domain — only one the public listing names", () => {
+    expect(pickEmail(["justin@dds.cloud"], "https://www.rifkinraanan.com")).toBeNull();
+    expect(pickEmail(["justin@dds.cloud", "office@rifkinraanan.com"], "https://www.rifkinraanan.com")).toBe("office@rifkinraanan.com");
+    expect(pickEmail(["front@practicemail.example"], "https://clinic.example", "front@practicemail.example")).toBe("front@practicemail.example");
+    expect(pickEmail(["owner@gmail.com"], "https://clinic.example", "owner@gmail.com")).toBeNull();
+  });
+
+  it("reads each metro as four quadrants that cover it exactly", async () => {
+    const { quadrants } = await import("../../src/worker/boss/outreach/lists");
+    const q = quadrants([29.52, -95.79, 30.11, -95.01]);
+    expect(q).toHaveLength(4);
+    expect(Math.min(...q.map((b) => b[0]))).toBe(29.52);
+    expect(Math.max(...q.map((b) => b[2]))).toBe(30.11);
+    expect(Math.min(...q.map((b) => b[1]))).toBe(-95.79);
+    expect(Math.max(...q.map((b) => b[3]))).toBe(-95.01);
+  });
+
+  it("takes the real name from a multi-valued listing", () => {
+    expect(parseOverpass({ elements: [{ type: "node", id: 1, tags: { name: "Guess;Rifkin Raanan Cosmetic Dentistry", website: "https://r.example" } }] })[0]!.name).toBe("Rifkin Raanan Cosmetic Dentistry");
+  });
+
   it("reads a public listing into websites, deduped, without social pages", () => {
     const listed = parseOverpass({ elements: [
       { type: "node", id: 1, tags: { name: "A", website: "https://a.example/path" } },
@@ -233,14 +254,14 @@ describe("list building survives busy public servers", () => {
     const busy = (async () => { calls += 1; return new Response("busy", { status: 504 }); }) as typeof fetch;
     const first = await readNextSlice(env.DB, busy, TUESDAY_10AM, ["uscisexam"]);
     expect(first?.found).toBe(0);
-    const row1 = await row<any>(`SELECT found FROM outreach_slices WHERE metro = 'nyc' AND business_key = 'uscisexam'`);
+    const row1 = await row<any>(`SELECT found FROM outreach_slices WHERE metro = 'nyc:q1' AND business_key = 'uscisexam'`);
     expect(row1.found).toBe(-1);
     const ok = (async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(new Headers(init?.headers).get("accept")).toBeNull();
       return Response.json({ elements: [{ type: "node", id: 9, tags: { name: "Clinic", website: "https://clinic.example" } }] });
     }) as typeof fetch;
     const later = await readNextSlice(env.DB, ok, TUESDAY_10AM + SLICE_RETRY_MS + 1, ["uscisexam"]);
-    expect(later?.slice).toBe("uscisexam|civil_surgeons|nyc");
+    expect(later?.slice).toBe("uscisexam|civil_surgeons|nyc:q1");
     expect(later?.found).toBe(1);
   });
 });

@@ -39,6 +39,18 @@ async function timed(fetchImpl: typeof fetch, url: string, init: RequestInit = {
   }
 }
 
+/**
+ * A metro read whole is too big for the public instances that answer Cloudflare (measured 9 Oct
+ * 2026: 504s and 40 s timeouts on a city, while overpass-api.de refuses Workers outright with a
+ * 521). Each metro is read as four quadrants, each a quarter of the work.
+ */
+export function quadrants(bbox: [number, number, number, number]): [number, number, number, number][] {
+  const [s, w, n, e] = bbox;
+  const mLat = +((s + n) / 2).toFixed(4);
+  const mLon = +((w + e) / 2).toFixed(4);
+  return [[s, w, mLat, mLon], [s, mLon, mLat, e], [mLat, w, n, mLon], [mLat, mLon, n, e]];
+}
+
 export function overpassQuery(seg: Segment, bbox: [number, number, number, number]): string {
   const box = `(${bbox.join(",")})`;
   // `website` only: adding `contact:website` doubled the work on servers that were already timing out.
@@ -63,7 +75,8 @@ export function parseOverpass(json: unknown): Listed[] {
     seen.add(site);
     const email = t.email ?? t["contact:email"] ?? null;
     out.push({
-      name: t.name ?? null,
+      // OSM multi-values are ";"-separated ("Guess;Rifkin Raanan …"); the longest part is the name.
+      name: t.name ? String(t.name).split(";").map((x: string) => x.trim()).sort((a: string, b: string) => b.length - a.length)[0] ?? null : null,
       website: site,
       email: email ? normaliseEmail(String(email).split(/[;,]/)[0] ?? "") : null,
       sourceUrl: `https://www.openstreetmap.org/${e.type}/${e.id}`,
@@ -106,14 +119,17 @@ const ROLE_ORDER = ["info", "contact", "hello", "office", "frontdesk", "admin", 
 
 /**
  * The address to write to: a business address on the site's own domain, role addresses first.
- * An address on another domain is accepted only when it is not free mail and the site lists no
- * address of its own.
+ * An address on ANOTHER domain is used only when the public listing itself names it for this
+ * business (`listed`). Scraped off-domain addresses are refused: on 9 Oct 2026 the first production
+ * run picked a dental website vendor's address (…@dds.cloud) from a practice's footer.
  */
-export function pickEmail(emails: string[], website: string): string | null {
+export function pickEmail(emails: string[], website: string, listed?: string | null): string | null {
   const site = baseDomain(new URL(website).hostname);
-  const valid = emails.filter(isBusinessEmail);
+  const junk = /noreply|no-reply|donotreply|privacy|abuse|webmaster|careers|jobs|billing/i;
+  const valid = emails.filter((e) => isBusinessEmail(e) && !junk.test(e));
   const own = valid.filter((e) => baseDomain(e.split("@")[1] ?? "") === site);
-  const pool = own.length ? own : valid.filter((e) => !/noreply|no-reply|donotreply|privacy|abuse|webmaster|careers|jobs|billing/i.test(e));
+  const listedOk = listed && isBusinessEmail(listed) && !junk.test(listed) ? [listed] : [];
+  const pool = own.length ? own : listedOk;
   if (!pool.length) return null;
   pool.sort((a, b) => {
     const ra = ROLE_ORDER.indexOf(a.split("@")[0] ?? "");
@@ -155,10 +171,11 @@ export async function readNextSlice(db: D1Database, fetchImpl: typeof fetch, now
   for (const b of BUSINESSES) {
     if (only && !only.includes(b.key)) continue;
     for (const seg of b.segments) {
-      for (const metro of METROS) {
-        const id = `${b.key}|${seg.key}|${metro.key}`;
+      for (const metro of METROS) for (const [qi, box] of quadrants(metro.bbox).entries()) {
+        const part = `${metro.key}:q${qi + 1}`;
+        const id = `${b.key}|${seg.key}|${part}`;
         if (fresh.has(id)) continue;
-        const listed = await queryOverpass(fetchImpl, overpassQuery(seg, metro.bbox));
+        const listed = await queryOverpass(fetchImpl, overpassQuery(seg, box));
         let found = 0;
         for (const l of listed.items) {
           const r = await db.prepare(
@@ -170,7 +187,7 @@ export async function readNextSlice(db: D1Database, fetchImpl: typeof fetch, now
         await db.prepare(
           `INSERT INTO outreach_slices (business_key, segment, metro, fetched_at, found, detail) VALUES (?,?,?,?,?,?)
            ON CONFLICT(business_key, segment, metro) DO UPDATE SET fetched_at = excluded.fetched_at, found = excluded.found, detail = excluded.detail`,
-        ).bind(b.key, seg.key, metro.key, now, listed.ok ? found : -1, listed.detail).run();
+        ).bind(b.key, seg.key, part, now, listed.ok ? found : -1, listed.detail).run();
         return { slice: id, found };
       }
     }
@@ -207,7 +224,7 @@ export async function crawlCandidates(db: D1Database, fetchImpl: typeof fetch, n
   for (const c of rows.results ?? []) {
     const b = businessByKey(c.business_key);
     const seg = b?.segments.find((s) => s.key === c.segment);
-    const metro = METROS.find((m) => m.key === c.metro);
+    const metro = METROS.find((m) => m.key === String(c.metro).split(":")[0]);
     if (!b || !seg || !metro) {
       await mark(db, c.id, "failed", "business, segment or metro no longer in the catalog", now);
       continue;
@@ -236,8 +253,7 @@ async function admitCandidate(
     await mark(db, c.id, "unqualified", `the website does not say ${seg.qualify.source.slice(0, 60)}`, now);
     return "unqualified";
   }
-  const listed = c.listed_email ? [c.listed_email] : [];
-  const email = pickEmail([...listed, ...emailsIn(html)], c.website);
+  const email = pickEmail([...(c.listed_email ? [c.listed_email] : []), ...emailsIn(html)], c.website, c.listed_email);
   if (!email) { await mark(db, c.id, "no_email", "no business address published on the site", now); return "no_email"; }
   if (await isSuppressed(db, email)) { await mark(db, c.id, "no_email", "the address is on the do-not-contact list", now); return "suppressed"; }
   const domain = email.split("@")[1] ?? "";
