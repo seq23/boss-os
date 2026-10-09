@@ -3,9 +3,10 @@ import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { usd } from "../../../shared/boss/types";
+import { OutreachDesk } from "../components/Outreach";
 
 export function Team() {
-  const [view, setView] = useState<"team" | "duties" | "owns" | "prompts" | "capabilities">("team");
+  const [view, setView] = useState<"team" | "duties" | "owns" | "outreach" | "prompts" | "capabilities">("team");
 
   return (
     <>
@@ -24,12 +25,15 @@ export function Team() {
           */}
         <button className="btn" aria-pressed={view === "duties"} onClick={() => setView("duties")}>Duties</button>
         <button className="btn" aria-pressed={view === "owns"} onClick={() => setView("owns")}>Owns</button>
+        {/* Monique's fully automatic outreach for the side businesses (9 Oct 2026): the brakes, never a review queue. */}
+        <button className="btn" aria-pressed={view === "outreach"} onClick={() => setView("outreach")}>Outreach</button>
         <button className="btn" aria-pressed={view === "prompts"} onClick={() => setView("prompts")}>Prompts</button>
         <button className="btn" aria-pressed={view === "capabilities"} onClick={() => setView("capabilities")}>Capabilities</button>
       </div>
       {view === "team" ? <Roster />
         : view === "duties" ? <Duties />
         : view === "owns" ? <Owns />
+        : view === "outreach" ? <OutreachDesk />
         : view === "prompts" ? <Prompts /> : <Capabilities />}
     </>
   );
@@ -174,8 +178,10 @@ function Roster() {
   const [error, setError] = useState<unknown>(null);
   const [open, setOpen] = useState(false);
   const [openEmployee, setOpenEmployee] = useState<string | null>(null);
+  const [outreach, setOutreach] = useState<any>(null);
 
   function load() {
+    api.moniqueOutreach().then(setOutreach).catch(() => setOutreach(null));
     Promise.all([api.employees(), api.tasks(), api.templates(), api.sprawl()])
       .then(([e, t, tp, s]) => { setEmployees(e); setTasks(t); setTemplates(tp); setSprawl(s); })
       .catch((e) => { setError(e); setEmployees([]); });
@@ -260,6 +266,15 @@ function Roster() {
                 {e.role} · {e.department ?? "unassigned"} ·{" "}
                 {e.autonomy === "auto" ? "acts alone" : "asks before acting"}
               </div>
+              {/* An automatic pause is shown ON HER CARD, not only on the desk: the brake is visible where she looks. */}
+              {e.id === "emp_relationship" && outreach && (
+                <div className="row-sub">
+                  Outreach: {outreach.businesses.filter((b: any) => b.route_state === "ready" && !b.paused).length} sending ·{" "}
+                  {outreach.businesses.filter((b: any) => b.paused).length} paused
+                  {outreach.settings.killSwitch ? " · kill switch ON" : ""}
+                  {outreach.businesses.filter((b: any) => b.paused).map((b: any) => ` · ${b.brand}: ${b.pause_reason}`).join("")}
+                </div>
+              )}
             </div>
             <div className="row-val">{e.open_tasks} open</div>
           </button>

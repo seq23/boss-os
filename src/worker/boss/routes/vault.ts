@@ -283,6 +283,11 @@ const SNAPSHOT_TABLES = [
   "trading_accounts", "trading_strategies", "trading_signals", "trading_orders",
   "trading_positions", "trading_fills", "trading_authority", "trading_incidents",
   "audit_log", "system_events", "cron_runs", "dead_letters",
+  // Monique's outreach (0280). Suppression above all must survive a restore: a restored database
+  // that forgot an unsubscribe would write to someone who asked us to stop.
+  "outreach_settings", "outreach_domain_state", "outreach_slices", "outreach_candidates",
+  "outreach_prospects", "outreach_suppression", "outreach_sends", "outreach_replies",
+  "referral_partners", "referral_conversions", "referral_payouts",
 ] as const;
 
 const SNAPSHOT_VERSION = 2;

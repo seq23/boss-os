@@ -27,7 +27,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1592,6 +1592,14 @@ export default {
         if (r.reaped.length) console.log("boss silent runs reaped", JSON.stringify(r.reaped));
       }).catch((err) => {
         console.error("boss reaper failed", err);
+      }),
+    );
+    // Monique's outreach: replies, brakes, sends inside the cap and window, list building.
+    ctx.waitUntil(
+      runBossOutreach(toBossEnvForCron(env), now.getTime()).then((r) => {
+        console.log("boss outreach tick", JSON.stringify({ sent: r.sent, replies: r.replies, paused: r.paused, stop: r.stop ?? null }));
+      }).catch((err) => {
+        console.error("boss outreach failed", err);
       }),
     );
     ctx.waitUntil(

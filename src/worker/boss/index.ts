@@ -51,6 +51,7 @@ import { taskNotices } from "./routes/taskNotices";
 import { service } from "./routes/service";
 import { commentWatch, COMMENT_WATCH_PATH } from "./routes/commentWatch";
 import { gridHealth } from "./routes/gridHealth";
+import { outreach, unsubscribe } from "./routes/outreach";
 import { surfaceOverdueFollowUps } from "./relationships/follow_ups";
 import { ensureAlmanac } from "./spirit/day";
 import { handleTask, handleDeadLetter } from "./queue/consumer";
@@ -110,8 +111,14 @@ app.get("/api/health", async (c) => {
 
 // ─── Everything below needs a session ────────────────────────────────────────
 // Explicit skip list, so this stays correct no matter how routes get reordered.
+/**
+ * THE UNSUBSCRIBE LINK IN MONIQUE'S OUTREACH (CAN-SPAM). Ungated because the person clicking it has
+ * no passcode; it can do one thing only — suppress the address its random token belongs to.
+ */
+app.route("/api/outreach/u", unsubscribe);
+
 app.use("/api/*", async (c, next) => {
-  if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health") return next();
+  if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health" || c.req.path.startsWith("/api/outreach/u/")) return next();
   return requireSession(c, next);
 });
 
@@ -163,6 +170,7 @@ app.route("/api/system", system);
 app.route("/api/sync", sync);
 app.route("/api/policy", policy);
 app.route("/api/backends", backends);
+app.route("/api/outreach", outreach);
 /*
  * The spend lever, at the exact path the client is already written against.
  *
@@ -383,6 +391,15 @@ export async function runDuties(env: Env, now = Date.now()) {
  * `running` for two and a half days. Its own `waitUntil` at the call site, for the same reason the
  * duties have theirs.
  */
+/**
+ * MONIQUE'S OUTREACH, EVERY TICK (9 Oct 2026). Replies first, then the brakes, then sends inside
+ * the cap and window, then a small slice of list building. Its own waitUntil at the call site.
+ */
+export async function runOutreach(env: Env, now = Date.now()) {
+  const { runOutreachTick } = await import("./outreach/engine");
+  return runOutreachTick(env, now);
+}
+
 export async function runReaper(env: Env, now = Date.now()) {
   return reapSilentRuns(env, now);
 }
