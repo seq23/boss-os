@@ -8,6 +8,14 @@
  *
  * Rules carried here, not remembered:
  *   · how-we-know is absent on purpose: no outreach until about 1,000 subscribers.
+ *   · heygetonmylevel.com is NEVER an outreach business (owner, 9 Oct 2026: "skip this for
+ *     outreach"). It is a free bonus for Time2Read subscribers, not a product sold on its own, so
+ *     it has no sender, no domain setup and no referral code. `NEVER_OUTREACH_DOMAINS` below, and
+ *     `assertSenderAllowed` refuses it. Its grid, health and heartbeat monitoring are unaffected.
+ *   · Outreach never sends through, or needs a permission in, West Peek's Google Workspace
+ *     (westpeek.ventures; owner, 9 Oct 2026). The side businesses are Spry's.
+ *     `assertOutreachMailboxAllowed` guards the impersonated `sub`; `assertOutreachSetupTarget`
+ *     guards `npm run outreach:domains`.
  *   · Spry and West Peek stay separate: no sender below is on westpeek.ventures, spry.vc or
  *     sequoiataylor.com, and `assertSenderAllowed` refuses one at send time.
  *   · Sources are PUBLIC listings and the businesses' own websites. Never her network, never
@@ -260,50 +268,6 @@ export const BUSINESSES: Business[] = [
     nextStep: "Reply with their referral code and link (30% of first-year revenue).",
   },
   {
-    key: "heygetonmylevel",
-    domain: "heygetonmylevel.com",
-    brand: "HeyGetOnMyLevel",
-    kind: "direct",
-    sender: "hello@heygetonmylevel.com",
-    offerUrl: "https://heygetonmylevel.com/",
-    offer: "Direct: $49/month per site for adult-ed, ESL programmes and libraries",
-    segments: [
-      {
-        key: "libraries",
-        label: "Public libraries",
-        osm: ['["amenity"="library"]'],
-        qualify: /library/i,
-      },
-      {
-        key: "adult_ed",
-        label: "Adult-ed and ESL programmes",
-        osm: ['["amenity"~"^(school|college|language_school)$"]'],
-        qualify: /adult education|\bESL\b|English as a second language|\bGED\b|adult literacy/i,
-      },
-    ],
-    steps: [
-      {
-        afterDays: 0,
-        subject: "Reading practice for your adult learners",
-        body:
-          "Hi {org} team,\n\nHeyGetOnMyLevel is AI-powered reading practice that meets adult and ESL " +
-          "learners at their level. A site licence is $49/month.\n\nSee it: {offer_url}\n\n" +
-          "Reply \"yes\" and we will set up a free look for your staff.",
-      },
-      {
-        afterDays: 4,
-        subject: "Re: {subject}",
-        body: "Hi {org} team,\n\nA quick follow-up: $49/month per site, no long contract. Reply \"yes\" for a free look.",
-      },
-      {
-        afterDays: 7,
-        subject: "Re: {subject}",
-        body: "Hi {org} team,\n\nLast note from us. If it helps later, it is here: {offer_url}",
-      },
-    ],
-    nextStep: "Reply with a trial link and the $49/month site price.",
-  },
-  {
     key: "aplayermode",
     domain: "aplayermode.com",
     brand: "A Player Mode",
@@ -430,6 +394,46 @@ export const OUTREACH_MAILBOX = "st@time-2-read.com";
 /** Never a sender, never a mailbox: the owner's other businesses and her own domain. */
 export const FORBIDDEN_SENDER_DOMAINS = ["westpeek.ventures", "spry.vc", "sequoiataylor.com", "joinwestpeek.com"];
 
+/**
+ * Never an outreach business, sender or domain (owner, 9 Oct 2026: heygetonmylevel.com is a free
+ * bonus for Time2Read subscribers, not a product sold on its own: "skip this for outreach").
+ */
+export const NEVER_OUTREACH_DOMAINS = ["heygetonmylevel.com"] as const;
+
+/** West Peek's Google Workspace. Outreach never impersonates, sends from or administers it. */
+export const WEST_PEEK_WORKSPACE_DOMAINS = ["westpeek.ventures"] as const;
+
+const onDomain = (address: string, domains: readonly string[]): string | null => {
+  const host = (address.includes("@") ? address.split("@")[1] : address)?.trim().toLowerCase() ?? "";
+  return domains.find((d) => host === d || host.endsWith(`.${d}`)) ?? null;
+};
+
+/** The impersonated `sub` for every outreach token. Throws by name on West Peek or a forbidden domain. */
+export function assertOutreachMailboxAllowed(mailbox: string): string {
+  const wp = onDomain(mailbox, WEST_PEEK_WORKSPACE_DOMAINS);
+  if (wp) throw new Error(`Refused: outreach may never impersonate ${mailbox} — ${wp} is West Peek's Google Workspace, and the side businesses are Spry's.`);
+  const bad = onDomain(mailbox, FORBIDDEN_SENDER_DOMAINS);
+  if (bad) throw new Error(`Refused: outreach may never impersonate ${mailbox} on ${bad}.`);
+  return mailbox;
+}
+
+/**
+ * `npm run outreach:domains` refuses to run against West Peek's Workspace: not as its admin, not as
+ * its mailbox, not for any business domain, and not when the Workspace it reached lists that domain.
+ */
+export function assertOutreachSetupTarget(t: { admin: string; mailbox: string; domains: readonly string[]; workspaceDomains?: readonly string[] }): void {
+  for (const [what, value] of [["admin", t.admin], ["mailbox", t.mailbox]] as const) {
+    const wp = onDomain(value, WEST_PEEK_WORKSPACE_DOMAINS);
+    if (wp) throw new Error(`Refused: the outreach domain setup may never run as ${what} ${value} — ${wp} is West Peek's Google Workspace.`);
+  }
+  for (const d of [...t.domains, ...(t.workspaceDomains ?? [])]) {
+    const wp = onDomain(d, WEST_PEEK_WORKSPACE_DOMAINS);
+    if (wp) throw new Error(`Refused: the outreach domain setup reached ${d} — that is West Peek's Google Workspace; outreach belongs on Spry's.`);
+    const never = onDomain(d, NEVER_OUTREACH_DOMAINS);
+    if (never) throw new Error(`Refused: ${d} is never an outreach domain (owner, 9 Oct 2026).`);
+  }
+}
+
 export function businessByKey(key: string): Business | undefined {
   return BUSINESSES.find((b) => b.key === key);
 }
@@ -437,6 +441,9 @@ export function businessByKey(key: string): Business | undefined {
 /** The sender must be on its own business domain and never on a forbidden one. Throws by name. */
 export function assertSenderAllowed(b: Business): void {
   const domain = b.sender.split("@")[1]?.toLowerCase() ?? "";
+  if (onDomain(b.sender, NEVER_OUTREACH_DOMAINS) || onDomain(b.domain, NEVER_OUTREACH_DOMAINS)) {
+    throw new Error(`Refused: ${b.domain} is never an outreach business (owner, 9 Oct 2026: a free Time2Read bonus, not sold on its own).`);
+  }
   if (FORBIDDEN_SENDER_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
     throw new Error(`Refused: ${b.sender} is on ${domain}, which outreach may never send from.`);
   }
