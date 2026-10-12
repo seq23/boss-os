@@ -4,12 +4,13 @@ import worker from "../../src/worker/boss/index";
 import { apiJson, row } from "./helpers";
 import { dailyCap, pauseReason, refusal, DAY_MS } from "../../src/worker/boss/outreach/brakes";
 import { bouncedAddress, classifyReply } from "../../src/worker/boss/outreach/classify";
-import { composeEmail } from "../../src/worker/boss/outreach/compose";
+import { composeEmail, footerCompany, UMBRELLA_COMPANY, UMBRELLA_CONTACT } from "../../src/worker/boss/outreach/compose";
 import { isSuppressed, suppress, isBusinessEmail } from "../../src/worker/boss/outreach/suppression";
 import {
   assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
 } from "../../src/worker/boss/outreach/catalog";
 import CATALOG_SOURCE from "../../src/worker/boss/outreach/catalog.ts?raw";
+const OUTREACH_SOURCES = import.meta.glob("../../src/worker/boss/outreach/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 import REFERRALS_SOURCE from "../../src/worker/boss/outreach/referrals.ts?raw";
 import GMAIL_SOURCE from "../../src/worker/boss/outreach/gmail.ts?raw";
 import DOMAINS_SCRIPT from "../../scripts/outreach/domains.mjs?raw";
@@ -255,6 +256,52 @@ describe("every email carries the unsubscribe link and the postal address", () =
     expect(footer![2]).toContain(addr);
     expect(footer![2]).toContain('href="https://boss.sequoiataylor.com/api/boss/outreach/u/tok123"');
     expect(m.html).toBe(html);
+  });
+
+  it("every Industry Guides email names The Industry Guides and the address in both footers (owner, 12 Oct 2026)", () => {
+    const addr = "PO Box 1, Houston, TX 77002";
+    const guides = BUSINESSES.filter((b) => b.kind === "local_guide");
+    // Hard-fail on zero, and pin the five properties the owner named exactly.
+    expect(guides.length).toBeGreaterThan(0);
+    expect(guides.map((b) => b.brand).sort()).toEqual(
+      ["Hormone Optimization Guides", "Neuro Evaluation Guides", "The Accident Guides", "The Dentistry Guides", "USCIS Exam Guides"],
+    );
+    expect(UMBRELLA_COMPANY).toBe("The Industry Guides");
+    expect(UMBRELLA_CONTACT).toBe("hello@theindustryguides.com");
+    // The name lives in ONE constant: no second copy anywhere in the outreach source.
+    expect(Object.keys(OUTREACH_SOURCES).some((f) => f.endsWith("/compose.ts"))).toBe(true);
+    for (const [file, src] of Object.entries(OUTREACH_SOURCES)) {
+      const copies = (src.match(/The Industry Guides/g) ?? []).length;
+      expect(copies, file).toBe(file.endsWith("/compose.ts") ? 2 : 0); // the constant + its doc comment
+      expect((src.match(/hello@theindustryguides\.com/g) ?? []).length, file).toBe(file.endsWith("/compose.ts") ? 1 : 0);
+    }
+    expect(BUSINESSES.length).toBeGreaterThan(0);
+    for (const b of BUSINESSES) {
+      for (const step of [0, 1, 2] as const) {
+        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello" });
+        const plainFooter = m.body.slice(m.body.lastIndexOf("\n--\n"));
+        const htmlFooter = /<p style="([^"]*)"[^>]*>([\s\S]*?)<\/p>\s*<\/body>/.exec(m.html)![2]!;
+        // The sender's voice stays the brand's own team.
+        expect(m.body).toContain(`— The ${b.brand} team\n${b.domain}`);
+        expect(m.raw).toMatch(new RegExp(`^From: ${b.brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} <${b.sender}>`, "m"));
+        expect(plainFooter).toContain("https://boss.sequoiataylor.com/api/boss/outreach/u/tok123");
+        expect(htmlFooter).toContain('href="https://boss.sequoiataylor.com/api/boss/outreach/u/tok123"');
+        if (b.kind === "local_guide") {
+          expect(footerCompany(b), b.key).toBe("The Industry Guides");
+          expect(plainFooter.split("\n"), b.key).toContain(`The Industry Guides, ${addr} · hello@theindustryguides.com`);
+          expect(plainFooter.split("\n"), b.key).toContain(`${b.brand} is a property of The Industry Guides.`);
+          expect(htmlFooter, b.key).toContain(`The Industry Guides, ${addr} · hello@theindustryguides.com`);
+          expect(htmlFooter, b.key).toContain(`${b.brand} is a property of The Industry Guides.`);
+          // Named once as a property, never as the company on the address line.
+          expect(plainFooter, b.key).not.toContain(`${b.brand}, ${addr}`);
+        } else {
+          // Spry's other businesses are not Industry Guides properties.
+          expect(m.body + m.html, b.key).not.toContain("The Industry Guides");
+          expect(m.body + m.html, b.key).not.toContain("hello@theindustryguides.com");
+          expect(plainFooter.split("\n"), b.key).toContain(`${b.brand}, ${addr}`);
+        }
+      }
+    }
   });
 
   it("refuses to compose without a postal address or an unsubscribe token", () => {

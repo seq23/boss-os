@@ -8,6 +8,27 @@
  */
 import type { Business } from "./catalog";
 
+/**
+ * THE COMPANY BEHIND THE INDUSTRY GUIDES (owner, 12 Oct 2026). The five local-guide businesses in
+ * the catalog (USCIS Exam Guides, The Dentistry Guides, Hormone Optimization Guides, Neuro
+ * Evaluation Guides, The Accident Guides) are properties of ONE company, and the CAN-SPAM footer
+ * names it. The only copy of the name in the code; pinned by tests/boss/moniqueOutreach.test.ts.
+ */
+export const UMBRELLA_COMPANY = "The Industry Guides";
+/** The one contact for the whole company, printed on the footer's company line (owner, 12 Oct 2026). */
+export const UMBRELLA_CONTACT = "hello@theindustryguides.com";
+
+/** The company the footer names: the umbrella for a local guide, otherwise the brand itself. */
+export function footerCompany(b: Business): string {
+  return b.kind === "local_guide" ? UMBRELLA_COMPANY : b.brand;
+}
+
+/** The footer's company line, e.g. "USCIS Exam Guides is a property of The Industry Guides." + address. */
+function companyLines(b: Business, address: string): string[] {
+  const company = footerCompany(b);
+  return company === b.brand ? [`${b.brand}, ${address}`] : [`${b.brand} is a property of ${company}.`, `${company}, ${address} · ${UMBRELLA_CONTACT}`];
+}
+
 export const UNSUBSCRIBE_BASE = "https://boss.sequoiataylor.com/api/boss/outreach/u/";
 
 export interface ComposeInput {
@@ -71,13 +92,13 @@ export function composeEmail(i: ComposeInput): Composed {
   const message = `${fill(step.body, vars)}\n\n— The ${i.business.brand} team\n${i.business.domain}`;
   const why = `You are receiving this because ${vars.org} is publicly listed as a business we think we can help.`;
   const body =
-    `${message}\n\n--\n${why} Unsubscribe with one click: ${unsub}\n${i.business.brand}, ${address}\n`;
+    `${message}\n\n--\n${why} Unsubscribe with one click: ${unsub}\n${companyLines(i.business, address).join("\n")}\n`;
   const html =
     `<!doctype html><html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#222222;">` +
     `<div>${esc(message).replace(/\n/g, "<br>")}</div>` +
     `<p style="${FOOTER_STYLE}margin-top:24px;">${esc(why)} ` +
     `<a href="${esc(unsub)}" style="color:#8a8a8a;">Unsubscribe with one click</a>.<br>` +
-    `${esc(i.business.brand)}, ${esc(address)}</p></body></html>`;
+    `${companyLines(i.business, address).map(esc).join("<br>")}</p></body></html>`;
   const boundary = `=_outreach_${crypto.randomUUID().replace(/-/g, "")}`;
   const b64 = (t: string) => btoa(unescape(encodeURIComponent(t))).replace(/(.{76})/g, "$1\r\n");
 
