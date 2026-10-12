@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { buildOperations } from "../operationsSource";
 import { Coaching } from "./Coaching";
 import { BodyContractView } from "./BodyContract";
 import { Empty, Loading } from "../components/Shell";
@@ -51,7 +52,7 @@ export const TODAY_GROUPS: readonly (readonly string[])[] = [
 const time = (ms: number) =>
   new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
-export function Today() {
+export function Today({ onOpenOperations }: { onOpenOperations?: () => void } = {}) {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -162,6 +163,8 @@ export function Today() {
       {gate === "night" && (
         <NightForm max={limits.night_review_prompts} maxSeed={limits.morning_priorities} onRun={(b) => run("night", b)} />
       )}
+
+      <OperationsLine onOpen={onOpenOperations} />
 
       {blocks.map((b) => (
         <BlockCard key={b.key} block={b} onChanged={load} onError={setError} />
@@ -1928,5 +1931,29 @@ function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRu
         <button className="btn btn-approve" disabled={usable.length === 0 || allocated > 100}>Close the day</button>
       </div>
     </form>
+  );
+}
+
+/**
+ * OPERATIONS, ONE LINE (owner, 12 Oct 2026). The synopsis from Team → Duties — what runs today, what
+ * went out, what needs her — and the way there. Its own requests, so a failure here never touches
+ * the day's blocks; it says so in words instead.
+ */
+function OperationsLine({ onOpen }: { onOpen?: () => void }) {
+  const [line, setLine] = useState<string | null>(null);
+  useEffect(() => {
+    Promise.all([api.roster(), api.operations().catch(() => null)])
+      .then(([roster, ledgers]) => {
+        const s = buildOperations(roster, ledgers).synopsis;
+        setLine(`${s.running} · ${s.sent} · ${s.needs}`);
+      })
+      .catch(() => setLine("Operations could not be read just now; Team → Duties has the full view."));
+  }, []);
+  return (
+    <div className="panel" data-testid="today-operations">
+      <p className="eyebrow" style={{ marginTop: 0 }}>Operations</p>
+      <div className="row-sub">{line ?? "Reading the schedule and today’s ledgers…"}</div>
+      {onOpen && <button className="btn btn-small" onClick={onOpen} data-testid="open-operations">Team → Duties</button>}
+    </div>
   );
 }

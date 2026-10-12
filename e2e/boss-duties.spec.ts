@@ -148,4 +148,30 @@ test.describe("Team → Duties", () => {
     const bb = (await page.getByTestId("duty-phrase").boundingBox())!;
     expect(bb.x + bb.width).toBeLessThanOrEqual(390);
   });
+
+  /*
+   * THE OPERATIONS VIEW (owner, 12 Oct 2026): Duties is also where every machine-run sending path
+   * from docs/OUTBOUND_EMAIL_MAP.md lives, beside the duties, each under the seat that owns it, with
+   * a three-line synopsis at the top. Today carries the synopsis in one line and the way there.
+   */
+  test("the operations synopsis and the map's sending paths sit beside the duties, each under its owner", async ({ page }) => {
+    await unlock(page);
+    await expect(page.getByTestId("today-operations")).toContainText(/Running today: \d+ duties/);
+    await page.getByTestId("open-operations").click();
+    await expect(page.getByTestId("ops-running")).toContainText(/Running today: \d+ duties · \d+ scheduled email paths · \d+ off/);
+    await expect(page.getByTestId("ops-sent")).toContainText(/Sent today: outreach \d+/);
+    await expect(page.getByTestId("ops-needs")).toContainText(/Needs you: 0 unassigned · \d+ failed runs · \d+ named stops/);
+    await expect(page.getByTestId("ops-unassigned")).toHaveCount(0);
+    expect(await page.getByTestId("path-row").count()).toBeGreaterThanOrEqual(30);
+    // Monique's outreach sits in her section, with the one in-app switch that exists.
+    const outreach = page.getByRole("region", { name: "Monique's duties" }).locator('[data-path-id="monique-outreach"]');
+    await expect(outreach).toContainText(/Cloudflare cron/);
+    await expect(outreach).toContainText(/From hello@/);
+    await expect(outreach).toContainText(/next /);
+    // Porter's partner email is shown as his, outside Boss OS; a key-removal is "no switch".
+    await expect(page.getByRole("region", { name: "Porter (West Peek OS)'s paths" }).locator('[data-path-id="porter-partner-email"]')).toBeVisible();
+    await expect(page.locator('[data-path-id="approvalprep-download-email"]')).toContainText("no switch");
+    await outreach.getByTestId("path-pause").click();
+    await expect(page.getByRole("button", { name: "Outreach", exact: true })).toHaveAttribute("aria-pressed", "true");
+  });
 });

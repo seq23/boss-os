@@ -8,7 +8,7 @@ import { Inbox } from "./pages/Inbox";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { Capital } from "./pages/Capital";
 import { Spirit } from "./pages/Spirit";
-import { Team } from "./pages/Team";
+import { Team, type TeamView } from "./pages/Team";
 import { Memory } from "./pages/Memory";
 import { Trading } from "./pages/Trading";
 import { Vault } from "./pages/Vault";
@@ -43,6 +43,8 @@ export default function App() {
   const [unlocked, setUnlocked] = useState<boolean | null>(null);
   // Canon §15: Today is the default operating screen.
   const [tab, setTab] = useState<TabId>("today");
+  // Today's Operations line opens Team on Duties; any other way in opens it on the roster.
+  const [teamStart, setTeamStart] = useState<TeamView>("team");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pending, setPending] = useState(0);
   const [openApproval, setOpenApproval] = useState<string | null>(null);
@@ -152,7 +154,7 @@ export default function App() {
   return (
     <Shell
       tab={tab}
-      onTab={(t) => { setTab(t); setSettingsOpen(false); setOpenApproval(null); }}
+      onTab={(t) => { setTab(t); setTeamStart("team"); setSettingsOpen(false); setOpenApproval(null); }}
       title={title}
       lane={lane}
       pending={pending}
@@ -175,7 +177,7 @@ export default function App() {
               setSettingsOpen(false);
             }} />
       ) : tab === "today" ? (
-        <Today />
+        <Today onOpenOperations={() => { setTeamStart("duties"); setTab("team"); }} />
       ) : tab === "inbox" ? (
         openApproval ? (
           <ApprovalDetail
@@ -191,7 +193,7 @@ export default function App() {
       ) : tab === "spirit" ? (
         <Spirit />
       ) : tab === "team" ? (
-        <Team />
+        <Team key={teamStart} start={teamStart} />
       ) : tab === "memory" ? (
         <Memory />
       ) : tab === "trading" ? (
