@@ -42,7 +42,7 @@ import {
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
-import { sendersFor, employeeMail, filesAt } from "./notify.mjs";
+import { sendersFor, employeeMail, filesAt, FALLBACK_STOP } from "./notify.mjs";
 import { generateRunbook, readWranglerToml, readWranglerJson, mayRunFromRunbook, runbookSecretNames, secretNamesInSource, vendorPageFor } from "./lib/runbook.mjs";
 import { vaultLookup, envForRepoRun } from "../lib/vault-env.mjs";
 import { servicePracticesBlock } from "../../src/shared/boss/service/practices.mjs";
@@ -108,7 +108,7 @@ async function email(subject, text, files = []) {
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
       say(`emailed ${TO} from ${from}: ${subject}`);
-      if (from.includes("westpeek.ventures")) say("NAMED STOP [WRONG_SENDING_IDENTITY] the Boss OS sender was refused; the message went from a West Peek domain.");
+      if (sender.fallback) say(FALLBACK_STOP);
       return String(id);
     }
     say(`${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);

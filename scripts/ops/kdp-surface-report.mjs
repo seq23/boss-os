@@ -34,7 +34,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { sendersFor, employeeMail } from "./notify.mjs";
+import { sendersFor, employeeMail, FALLBACK_STOP } from "./notify.mjs";
 import { checkAssignment, ownerAskIsATask } from "../../src/shared/boss/duties/executors.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -197,7 +197,11 @@ async function sendAsSimone({ subject, text }) {
       headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
       body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
     });
-    if (res.ok) { const j = await res.json().catch(() => ({})); return { id: j.id ?? null, from: sender.from }; }
+    if (res.ok) {
+      const j = await res.json().catch(() => ({}));
+      if (sender.fallback) console.log(FALLBACK_STOP);
+      return { id: j.id ?? null, from: sender.from };
+    }
     lastErr = `${res.status} ${(await res.text()).slice(0, 200)}`;
   }
   return { id: null, error: lastErr };

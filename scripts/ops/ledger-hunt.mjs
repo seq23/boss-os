@@ -49,6 +49,7 @@ import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
 import { researchLot, renderFilings, renderReach, pressPodcastLeads, renderPressPodcast, money } from "./filing-hunt.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { sendersFor, employeeMail } from "./notify.mjs";
+import { westPeekFallback } from "./fund-side-chassis.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -213,7 +214,7 @@ async function main() {
     return;
   }
 
-  const SENDERS = sendersFor("Monique");
+  const SENDERS = sendersFor("Monique", { fallback: westPeekFallback });
   if (SENDERS.length === 0) {
     console.error("NAMED STOP [NO_MAIL_KEY] the list is above and no email could be sent. Nothing was marked as hunted.");
     process.exit(8);

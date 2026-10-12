@@ -68,6 +68,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { sendersFor, employeeMail } from "./notify.mjs";
+import { westPeekFallback } from "./fund-side-chassis.mjs";
 import { addressIn, bulkReason, headersFromRaw, ownDomainReason, replyEvidence } from "./mail-bulk.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
@@ -313,7 +314,7 @@ const api = async (url, token) => {
 
 async function emailHer(list, counts) {
   const TO = process.env.LP_POSITIVE_TO ?? "sequoia@westpeek.ventures";
-  const SENDERS = sendersFor("Monique");
+  const SENDERS = sendersFor("Monique", { fallback: westPeekFallback });
   if (SENDERS.length === 0) {
     console.error("NAMED STOP [NO_MAIL_KEY] the list is written but no email could be sent.");
     return false;

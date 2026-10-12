@@ -69,6 +69,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { sendersFor, employeeMail } from "./notify.mjs";
+import { westPeekFallback } from "./fund-side-chassis.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -723,7 +724,7 @@ async function main() {
 
   if (!SEND) { console.log("\nRe-run with --send to email it."); return; }
 
-  const SENDERS = sendersFor("Monique");
+  const SENDERS = sendersFor("Monique", { fallback: westPeekFallback });
   if (SENDERS.length === 0) {
     console.error("NAMED STOP [NO_MAIL_KEY] the matches are above and no email could be sent.");
     process.exit(8);

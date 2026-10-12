@@ -33,7 +33,7 @@
  *   node scripts/ops/task-notices.mjs --dry-run
  */
 
-import { sendersFor, employeeMail } from "./notify.mjs";
+import { sendersFor, employeeMail, FALLBACK_STOP } from "./notify.mjs";
 import { vaultLookup } from "../lib/vault-env.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -71,11 +71,11 @@ async function api(path, body) {
  * One notice, sent as the employee who owns the work.
  *
  * Returns the refusal text, or null when it went. Every sender on the roster's list is tried before
- * it is called a failure — the second is the West Peek fallback, and using it is itself reported.
+ * it is called a failure — the second is The Industry Guides fallback, and using it is itself reported.
  */
 export async function sendNotice(notice, { fetchImpl = fetch, to = TO } = {}) {
   const senders = sendersFor(notice.from_name);
-  if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / RESEND_API_KEY)";
+  if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
   let last = "";
   for (const sender of senders) {
     const res = await fetchImpl("https://api.resend.com/emails", {
@@ -85,9 +85,7 @@ export async function sendNotice(notice, { fetchImpl = fetch, to = TO } = {}) {
     });
     if (res.ok) {
       say(`sent "${notice.subject}" from ${sender.from}`);
-      if (sender.from.includes("westpeek.ventures")) {
-        say("NAMED STOP [WRONG_SENDING_IDENTITY] the Boss OS sender was refused; this went from a West Peek domain.");
-      }
+      if (sender.fallback) say(FALLBACK_STOP);
       return null;
     }
     last = `${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`;

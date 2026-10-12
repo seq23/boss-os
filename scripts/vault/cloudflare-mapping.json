@@ -33,7 +33,8 @@
     "WP_NETWORK_OS_INTAKE_SECRET": "West Peek OS credential (WP_ prefix); nothing in Boss OS reads it. Boss OS must never hold another application's credentials.",
     "WP_OS_MAC_ACCESS_CLIENT_ID": "West Peek OS credential (WP_ prefix); nothing in Boss OS reads it. Boss OS must never hold another application's credentials.",
     "WP_OS_MAC_ACCESS_CLIENT_SECRET": "West Peek OS credential (WP_ prefix); nothing in Boss OS reads it. Boss OS must never hold another application's credentials.",
-    "WP_OS_SECRET_HANDOFF_KEY": "West Peek OS credential (WP_ prefix): its own secret door's key, in the shared Mac vault since 6 Oct 2026. Nothing in Boss OS reads it; Boss OS has its own, BOSS_OS_SECRET_HANDOFF_KEY. Unclassified, it made every Boss OS sync abort."
+    "WP_OS_SECRET_HANDOFF_KEY": "West Peek OS credential (WP_ prefix): its own secret door's key, in the shared Mac vault since 6 Oct 2026. Nothing in Boss OS reads it; Boss OS has its own, BOSS_OS_SECRET_HANDOFF_KEY. Unclassified, it made every Boss OS sync abort.",
+    "BOSS_OS_FALLBACK_MAIL_KEY": "The Industry Guides Resend key, the fallback sender for Boss OS employee mail. Read only by the Mac lanes through notify.mjs sendersFor; no Worker code path sends with it (the Worker has no Boss OS fallback sender)."
   },
   "synced_reasons": {
     "GSC_SERVICE_ACCOUNT_JSON": "Moved from not_synced on 19 Sep 2026. Owner: \"it should never send — the green button should be to create the draft.\" The Worker creates a Gmail DRAFT in her own mailbox on her press (src/worker/boss/wealth/gmailDraft.ts), which needs the gsc-bot service account under the gmail.compose scope she granted the same day. One scope, one endpoint (drafts.create); spry-vc-never-sends.mjs and the-inbox-draft-never-sends.mjs fail the build if a send scope or send endpoint appears on that path. Until this is synced the card prints the NAMED STOP \"the Worker holds no Google key\".",
