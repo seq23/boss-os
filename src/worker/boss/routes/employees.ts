@@ -7,6 +7,7 @@ import { draftDuty } from "../duties/author";
 import { fileDraft, renderDraft } from "../duties/mailLane";
 import { preApprovalIn } from "../../../shared/boss/duties/lane.mjs";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
+import { dayIdInZone, wallClock, zonedTime } from "../../../shared/boss/timezone";
 import { overlappingCharters, type RosterMember } from "@shared/boss/rosterOverlap";
 
 export const employees = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -118,6 +119,72 @@ employees.get("/roster", async (c) => {
     monthly_estimate_usd: Math.round(monthly * 100) / 100,
     ceiling_usd: 25,
     empty_seats: roster.filter((e: any) => e.empty_seat).map((e: any) => e.name),
+  });
+});
+
+/**
+ * ── WHAT WENT OUT TODAY, FROM THE LEDGERS THAT EXIST ──────────────────────
+ *
+ * Owner, 12 Oct 2026: Team → Duties is the single operations view. The schedule half comes from the
+ * roster above and docs/OUTBOUND_EMAIL_MAP.md (built into the client); this is the other half — the
+ * numbers only the database knows. Counted from her midnight (Chicago), never UTC's. Porter's sends
+ * live in West Peek OS's database, which this Worker cannot read, and the screen says so.
+ */
+employees.get("/operations", async (c) => {
+  const now = Date.now();
+  const d = wallClock(now);
+  const since = zonedTime(d.y, d.m, d.d, 0);
+  const db = c.env.DB;
+  const [sends, lastSend, settings, paused, notices, lastNotice, dutyFails, cronFails, stops, jobs] = await db.batch<any>([
+    db.prepare(
+      `SELECT SUM(CASE WHEN status = 'sent' AND is_test = 0 THEN 1 ELSE 0 END) AS sent,
+              SUM(CASE WHEN status <> 'sent' THEN 1 ELSE 0 END) AS failed,
+              SUM(CASE WHEN is_test = 1 THEN 1 ELSE 0 END) AS test
+         FROM outreach_sends WHERE sent_at >= ?`,
+    ).bind(since),
+    db.prepare(`SELECT status, sent_at FROM outreach_sends ORDER BY sent_at DESC LIMIT 1`),
+    db.prepare(`SELECT key, value FROM outreach_settings WHERE key IN ('kill_switch','sending')`),
+    db.prepare(`SELECT COUNT(*) AS n FROM outreach_domain_state WHERE paused_at IS NOT NULL`),
+    db.prepare(
+      `SELECT SUM(CASE WHEN sent_at >= ? THEN 1 ELSE 0 END) AS sent,
+              SUM(CASE WHEN sent_at IS NULL AND error IS NOT NULL AND created_at >= ? THEN 1 ELSE 0 END) AS failed
+         FROM boss_task_notices`,
+    ).bind(since, since),
+    db.prepare(`SELECT sent_at, error, created_at FROM boss_task_notices ORDER BY COALESCE(sent_at, created_at) DESC LIMIT 1`),
+    db.prepare(`SELECT COUNT(*) AS n FROM duty_runs WHERE outcome = 'failed' AND finished_at >= ?`).bind(since),
+    db.prepare(`SELECT COUNT(*) AS n FROM cron_runs WHERE status = 'failed' AND started_at >= ?`).bind(since),
+    db.prepare(`SELECT COUNT(*) AS n FROM owned_deliverables WHERE needs_owner = 1 AND state IN ('open','blocked')`),
+    db.prepare(
+      `SELECT r.local_job, r.outcome, r.finished_at, r.reason FROM duty_runs r
+         JOIN (SELECT local_job, MAX(finished_at) AS f FROM duty_runs GROUP BY local_job) m
+           ON m.local_job = r.local_job AND m.f = r.finished_at`,
+    ),
+  ]);
+  const one = (r: any) => (r?.results ?? [])[0] ?? {};
+  const flags = Object.fromEntries((settings?.results ?? []).map((s: any) => [s.key, s.value]));
+  const ls = one(lastSend);
+  const ln = one(lastNotice);
+  return ok(c, {
+    day: dayIdInZone(now),
+    since,
+    outreach: {
+      sent: Number(one(sends).sent ?? 0),
+      failed: Number(one(sends).failed ?? 0),
+      test: Number(one(sends).test ?? 0),
+      kill_switch: flags.kill_switch ?? "off",
+      sending: flags.sending ?? "test_only",
+      paused_domains: Number(one(paused).n ?? 0),
+      last: ls.sent_at ? { status: ls.status, at: ls.sent_at } : null,
+    },
+    task_notices: {
+      sent: Number(one(notices).sent ?? 0),
+      failed: Number(one(notices).failed ?? 0),
+      last: ln.created_at ? { status: ln.sent_at ? "sent" : ln.error ? "failed" : "waiting", at: ln.sent_at ?? ln.created_at } : null,
+    },
+    runs: { duty_failed_today: Number(one(dutyFails).n ?? 0), cron_failed_today: Number(one(cronFails).n ?? 0) },
+    named_stops: Number(one(stops).n ?? 0),
+    local_jobs: (jobs?.results ?? []).map((j: any) => ({ local_job: j.local_job, outcome: j.outcome, finished_at: j.finished_at, reason: j.reason ?? null })),
+    porter: "Porter's sends are recorded in West Peek OS, not here.",
   });
 });
 

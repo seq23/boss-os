@@ -4,9 +4,13 @@ import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { usd } from "../../../shared/boss/types";
 import { OutreachDesk } from "../components/Outreach";
+import { buildOperations } from "../operationsSource";
+import type { OperationsRow } from "../../../shared/boss/operations";
 
-export function Team() {
-  const [view, setView] = useState<"team" | "duties" | "owns" | "outreach" | "prompts" | "capabilities">("team");
+export type TeamView = "team" | "duties" | "owns" | "outreach" | "prompts" | "capabilities";
+
+export function Team({ start = "team" }: { start?: TeamView } = {}) {
+  const [view, setView] = useState<TeamView>(start);
 
   return (
     <>
@@ -31,7 +35,7 @@ export function Team() {
         <button className="btn" aria-pressed={view === "capabilities"} onClick={() => setView("capabilities")}>Capabilities</button>
       </div>
       {view === "team" ? <Roster />
-        : view === "duties" ? <Duties />
+        : view === "duties" ? <Duties onOpenOutreach={() => setView("outreach")} />
         : view === "owns" ? <Owns />
         : view === "outreach" ? <OutreachDesk />
         : view === "prompts" ? <Prompts /> : <Capabilities />}
@@ -833,8 +837,9 @@ function Owns() {
  * The mail door is stated on the screen because it is the door she will actually use from her
  * phone: `#<seat> new duty …` to boss@sequoiataylor.com, reply `approved`.
  */
-function Duties() {
+function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
   const [data, setData] = useState<any | null>(null);
+  const [ledgers, setLedgers] = useState<any | null>(null);
   const [drafts, setDrafts] = useState<any | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [employeeId, setEmployeeId] = useState("");
@@ -847,8 +852,11 @@ function Duties() {
     Promise.all([api.roster(), api.dutyDrafts()])
       .then(([r, d]) => { setData(r); setDrafts(d); if (!employeeId && r.roster?.[0]) setEmployeeId(r.roster[0].id); })
       .catch(setError);
+    // The ledgers are their own request: a failure there leaves the schedule readable and says so.
+    api.operations().then(setLedgers).catch((e) => { setLedgers(null); setError(e); });
   }
   useEffect(load, []);
+  const ops = data ? buildOperations(data, ledgers) : null;
 
   async function draft() {
     setError(null); setPreview(null); setFiled(null); setBusy(true);
@@ -881,6 +889,28 @@ function Duties() {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
+
+      {/*
+        * THE OPERATIONS VIEW (owner, 12 Oct 2026: no separate Operations page). Numbers, one line
+        * each: what runs today, what went out, what needs her. Then any path with no owner, at the
+        * top, never hidden. The rows below merge every duty with every sending path on the map.
+        */}
+      <p className="eyebrow">Operations</p>
+      <div className="panel" data-testid="ops-synopsis">
+        {ops === null ? <p className="row-sub" style={{ margin: 0 }}>Reading the schedule and today&apos;s ledgers…</p> : (
+          <>
+            <div className="row-title" data-testid="ops-running">{ops.synopsis.running}</div>
+            <div className="row-title" data-testid="ops-sent">{ops.synopsis.sent}</div>
+            <div className="row-title" data-testid="ops-needs">{ops.synopsis.needs}</div>
+          </>
+        )}
+      </div>
+      {ops && ops.unassigned.length > 0 && (
+        <section data-testid="ops-unassigned" aria-label="Unassigned paths">
+          <p className="eyebrow">Unassigned — no seat owns these</p>
+          {ops.unassigned.map((r) => <PathRow key={r.id} row={r} stamp={stamp} onOpenOutreach={onOpenOutreach} />)}
+        </section>
+      )}
 
       <p className="eyebrow">Add a duty</p>
       <div className="panel" data-testid="add-duty">
@@ -938,7 +968,7 @@ function Duties() {
       {data === null ? <Loading /> : (data.roster ?? []).map((e: any) => (
         <section key={e.id} data-testid="duties-employee" aria-label={`${e.name}'s duties`}>
           <p className="eyebrow">{e.name} — {e.role}</p>
-          {e.duties.length === 0 ? (
+          {e.duties.length === 0 && !(ops?.bySeat.get(e.name)?.length) ? (
             <Empty title="No standing duties" hint="An empty seat: give her one above." />
           ) : e.duties.map((d: any) => (
             <div className="row" key={d.id} data-testid="duty-row">
@@ -959,6 +989,14 @@ function Duties() {
               <div className="row-val">{d.suspended ? "off" : `next ${stamp(d.next_due_at)}`}</div>
             </div>
           ))}
+          {(ops?.bySeat.get(e.name) ?? []).map((r) => <PathRow key={r.id} row={r} stamp={stamp} onOpenOutreach={onOpenOutreach} />)}
+        </section>
+      ))}
+
+      {ops && OUTSIDE(ops).map(([owner, rows]) => (
+        <section key={owner} data-testid="duties-outside" aria-label={`${owner}'s paths`}>
+          <p className="eyebrow">{owner} — outside Boss OS</p>
+          {rows.map((r) => <PathRow key={r.id} row={r} stamp={stamp} onOpenOutreach={onOpenOutreach} />)}
         </section>
       ))}
 
@@ -988,3 +1026,41 @@ function Duties() {
 }
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Owners who are not Boss OS seats (Porter in West Peek OS, a client), each with their paths. */
+const OUTSIDE = (ops: ReturnType<typeof buildOperations>) =>
+  [...ops.bySeat.entries()].filter(([, rows]) => rows[0]?.ownerKind === "outside");
+
+/**
+ * One machine-run sending path from docs/OUTBOUND_EMAIL_MAP.md, as a duty row: what it is, when it
+ * fires next, where it runs, the From address and footer it carries, the last outcome where a
+ * ledger exists, and a pause control only where a real switch exists — otherwise "no switch".
+ */
+function PathRow({ row, stamp, onOpenOutreach }: { row: OperationsRow; stamp: (ms: number | null) => string; onOpenOutreach: () => void }) {
+  const p = row.pause;
+  return (
+    <div className="row" data-testid="path-row" data-path-id={row.id}>
+      <div className="row-main">
+        <div className="row-title">
+          {row.what}
+          <span className="pill">{row.where}</span>
+          {row.inert && <span className="pill">off</span>}
+          {row.ownerKind === "unassigned" && <span className="pill pill-forbid">unassigned</span>}
+        </div>
+        <div className="row-sub">{row.business} · {row.cadence}</div>
+        <div className="row-sub">From {row.from} · footer: {row.footer}</div>
+        <div className="row-sub">{row.lastOutcome ? `last ${row.lastOutcome}` : "no ledger in Boss OS"}</div>
+      </div>
+      <div className="row-val">
+        <div>{row.next.at ? `next ${stamp(row.next.at)}` : row.next.label}</div>
+        {p.kind === "action" ? (
+          <button className="btn btn-small" onClick={onOpenOutreach} data-testid="path-pause">{p.label}</button>
+        ) : p.kind === "command" ? (
+          <code title="Run on the machine that runs it">{p.command}</code>
+        ) : (
+          <span>{p.label}</span>
+        )}
+      </div>
+    </div>
+  );
+}

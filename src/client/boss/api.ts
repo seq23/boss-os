@@ -256,6 +256,8 @@ export const api = {
   draftDuty: (body: { employee_id: string; phrase: string; preview?: boolean; overrides?: Record<string, unknown> }) =>
     call<any>("/employees/duties/draft", post("", body)),
   dutyDrafts: () => call<any>("/employees/duties/drafts"),
+  /** Team → Duties as the operations view: what went out today, from the ledgers that exist. */
+  operations: () => call<any>("/employees/operations"),
   sprawl: () => call<any>("/employees/review/sprawl"),
   /** Monique's outreach desk (9 Oct 2026): every business, the brakes, the two switches. */
   moniqueOutreach: () => call<any>("/outreach"),

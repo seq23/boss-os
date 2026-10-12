@@ -176,3 +176,52 @@ describe("the map and the side-business review are linked where people look", ()
     }
   });
 });
+
+/**
+ * EVERY PATH HAS AN OWNER (owner, 12 Oct 2026: Team → Duties is the single operations view). The
+ * owner of each map row lives in ONE file beside the map, and the page is compiled from the map and
+ * that file, so a path with no owner fails here, by name, before it can reach the screen.
+ */
+describe("every path on the map has an owner, and Team → Duties is built from the map", () => {
+  const OWNERS_PATH = "docs/outbound_email_owners.json";
+  const ownersFile = JSON.parse(readFileSync(path.join(ROOT, OWNERS_PATH), "utf8")) as {
+    outside: string[];
+    owners: Record<string, { seat?: string; why?: string }>;
+  };
+  const castNames = (
+    JSON.parse(readFileSync(path.join(ROOT, "src/client/public/employees-boss/CASTING.json"), "utf8")).cast as Array<{ name: string }>
+  ).map((c) => c.name);
+  const ids = inventoryRows(MAP).map((r) => r.id);
+
+  it("reads rows and seats (hard fail on zero)", () => {
+    expect(ids.length, "no rows parsed from the map").toBeGreaterThan(0);
+    expect(castNames.length, "no seats parsed from CASTING.json").toBeGreaterThan(0);
+  });
+
+  it("every map row has an owner entry with a seat and a reason", () => {
+    const missing = ids.filter((id) => !ownersFile.owners[id]?.seat?.trim() || !ownersFile.owners[id]?.why?.trim());
+    expect(
+      missing,
+      `These paths on ${MAP_PATH} have no owner. Add each to ${OWNERS_PATH} with the seat that owns it and why, in the same PR:\n  ${missing.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
+  it("every owner entry names a row still on the map", () => {
+    const stale = Object.keys(ownersFile.owners).filter((id) => !ids.includes(id));
+    expect(stale, `${OWNERS_PATH} names paths the map no longer has; remove them:\n  ${stale.join("\n  ")}`).toEqual([]);
+  });
+
+  it("every owner is a seat on the roster or a named outside owner", () => {
+    const allowed = new Set([...castNames, ...ownersFile.outside]);
+    const bad = Object.entries(ownersFile.owners)
+      .filter(([, o]) => !allowed.has(o.seat ?? ""))
+      .map(([id, o]) => `${id}: "${o.seat}" is not a seat in CASTING.json or listed in "outside"`);
+    expect(bad).toEqual([]);
+  });
+
+  it("the page imports the map and the owners file themselves, never a copy", () => {
+    const src = readFileSync(path.join(ROOT, "src/client/boss/operationsSource.ts"), "utf8");
+    expect(src).toContain('from "../../../docs/OUTBOUND_EMAIL_MAP.md?raw"');
+    expect(src).toContain('from "../../../docs/outbound_email_owners.json"');
+  });
+});
