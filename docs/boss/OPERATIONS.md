@@ -691,6 +691,16 @@ map (the doc here and its page) in the same PR. `tests/outboundEmailMap.test.ts`
 repo: it checks every boss-os row's files exist, every Id appears once, and fails, by file name, on
 any file here that calls an email transport without being cited by a row.
 
+**Which key sends employee mail.** Every Mac lane (notify, task notices, repo changes, the comment
+watch, the Kindle report, service-tick) sends through `sendersFor` in `scripts/ops/notify.mjs`:
+first `BOSS_OS_MAIL_KEY` (the Boss OS Resend team, `<name>@sequoiataylor.com`), and only if that is
+refused, `BOSS_OS_FALLBACK_MAIL_KEY` (The Industry Guides team, `Boss OS <hello@theindustryguides.com>`,
+reply-to still the employee). A fallback send raises `WRONG_SENDING_IDENTITY`. Both keys live in the
+vault (`npm run vault:run`); neither is a Worker secret, because no Worker path sends employee mail.
+The fallback name is prefixed rather than reusing `RESEND_API_KEY`, which already means the fund's
+team in this repo (reserved-name rule). `tests/bossMailFallback.test.ts` fails if Boss OS mail ever
+names a fund domain as its From again.
+
 ---
 
 ## Commands worth knowing

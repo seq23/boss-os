@@ -61,9 +61,25 @@ const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
  * key.
  *
  * BOSS OS IS PERSONAL, SO ITS EMPLOYEES WRITE FROM sequoiataylor.com. West Peek is a separate
- * business with its own OS. The West Peek sender remains only as a last resort, and if it is ever
- * used the run says so instead of letting a wrong identity pass unnoticed.
+ * business with its own OS, and Boss OS's own mail never goes through a West Peek account or domain
+ * (owner, 12 Oct 2026). When the Boss OS sender is refused, the last resort is The Industry Guides
+ * team (cryptoclearr's Resend: theindustryguides.com) as `Boss OS <hello@theindustryguides.com>`,
+ * keyed by BOSS_OS_FALLBACK_MAIL_KEY, and the run raises WRONG_SENDING_IDENTITY so the fallback
+ * never passes unnoticed. The fund-side chassis scripts pass their own West Peek fallback instead
+ * (scripts/ops/fund-side-chassis.mjs); tests/bossMailFallback.test.ts pins both halves.
+ *
+ * The env name is prefixed (BOSS_OS_FALLBACK_MAIL_KEY, not a bare RESEND_API_KEY) because
+ * RESEND_API_KEY already means the West Peek team here, and one name must never mean two accounts.
  */
+export const FALLBACK_FROM = "Boss OS <hello@theindustryguides.com>";
+export const FALLBACK_STOP =
+  "NAMED STOP [WRONG_SENDING_IDENTITY] sent as The Industry Guides because the Boss OS sender was refused. " +
+  "Check BOSS_OS_MAIL_KEY and that sequoiataylor.com is verified on the Boss OS Resend team.";
+
+/** Boss OS's own last resort: The Industry Guides team, reply-to unchanged, marked as a fallback. */
+function industryGuidesFallback({ local, tag }) {
+  return { from: FALLBACK_FROM, key: process.env.BOSS_OS_FALLBACK_MAIL_KEY, reply_to: `${local}@sequoiataylor.com`, tag, fallback: true };
+}
 /**
  * EVERY EMPLOYEE SIGNS HER OWN MAIL.
  *
@@ -86,7 +102,7 @@ const ROSTER = {
   monique: "monique", camille: "camille", toni: "toni", kendra: "kendra",
 };
 
-export function sendersFor(who) {
+export function sendersFor(who, { fallback = industryGuidesFallback } = {}) {
   /*
    * `--from` IS REQUIRED. There is no anonymous sender.
    *
@@ -130,7 +146,7 @@ export function sendersFor(who) {
   const tag = local === "boss" ? null : `#${local}`;
   return [
     { from: `${label} <${local}@sequoiataylor.com>`, key: process.env.BOSS_OS_MAIL_KEY, reply_to: `${local}@sequoiataylor.com`, tag },
-    { from: `${label} <${local}@westpeek.ventures>`, key: process.env.RESEND_API_KEY, reply_to: `${local}@sequoiataylor.com`, tag },
+    fallback({ label, local, tag }),
   ].filter((s) => Boolean(s.key));
 }
 
@@ -179,26 +195,23 @@ async function main() {
   const SENDERS = sendersFor(arg("from") ?? process.env.BOSS_NOTIFY_AS ?? null);
 
   if (SENDERS.length === 0) {
-    console.error("NAMED STOP [NO_RESEND_KEY] neither BOSS_OS_MAIL_KEY nor RESEND_API_KEY is set.");
+    console.error("NAMED STOP [NO_RESEND_KEY] neither BOSS_OS_MAIL_KEY nor BOSS_OS_FALLBACK_MAIL_KEY is set.");
     console.error("  Run this through the vault: npm run notify -- --subject ... --body ...");
     process.exit(4);
   }
 
   let lastErr = "";
-  for (const { from, key } of SENDERS) {
+  for (const sender of SENDERS) {
+    const { from, key } = sender;
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail({ from, key, reply_to: SENDERS.find((x) => x.from === from)?.reply_to, tag: SENDERS.find((x) => x.from === from)?.tag }, { to: TO, subject, text: body.slice(0, 4000), files: filesAt(args("file")) })),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text: body.slice(0, 4000), files: filesAt(args("file")) })),
     });
     if (res.ok) {
-      console.log(`Notified from ${from}: ${subject}`);
-      if (from.includes("westpeek.ventures")) {
-        console.log("  NAMED STOP [WRONG_SENDING_IDENTITY] this is a Boss OS message sent from a West");
-        console.log("  Peek domain, because the Boss OS sender was refused. Check BOSS_OS_MAIL_KEY and");
-        console.log("  that sequoiataylor.com is verified on that account. The message went; the");
-        console.log("  identity on it is wrong.");
-      }
+      const id = (await res.json().catch(() => ({})))?.id ?? "";
+      console.log(`Notified from ${from}: ${subject}${id ? ` (${id})` : ""}`);
+      if (sender.fallback) console.log(`  ${FALLBACK_STOP} The message went; the identity on it is the fallback.`);
       return;
     }
     lastErr = `${res.status} ${(await res.text()).slice(0, 200)}`;

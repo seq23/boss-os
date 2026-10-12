@@ -24,7 +24,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sendersFor, employeeMail } from "./notify.mjs";
+import { sendersFor, employeeMail, FALLBACK_STOP } from "./notify.mjs";
 import {
   LOCAL_JOB, shouldEmail, digestEmail, confirmationEmail,
 } from "../../src/shared/boss/commentWatch/lane.mjs";
@@ -67,7 +67,7 @@ async function api(path, body) {
 async function email(subject, text) {
   if (DRY) { say(`DRY RUN — would email "${subject}"`); return "dry_run"; }
   const senders = sendersFor("Monique");
-  if (senders.length === 0) stop(6, "NO_RESEND_KEY", "neither BOSS_OS_MAIL_KEY nor RESEND_API_KEY is set; run through the vault.");
+  if (senders.length === 0) stop(6, "NO_RESEND_KEY", "neither BOSS_OS_MAIL_KEY nor BOSS_OS_FALLBACK_MAIL_KEY is set; run through the vault.");
   let last = "";
   for (const sender of senders) {
     const { from, key } = sender;
@@ -79,7 +79,7 @@ async function email(subject, text) {
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
       say(`emailed ${TO} from ${from}: ${subject} (${id})`);
-      if (from.includes("westpeek.ventures")) say("NAMED STOP [WRONG_SENDING_IDENTITY] Monique just emailed from a West Peek domain; check BOSS_OS_MAIL_KEY.");
+      if (sender.fallback) say(FALLBACK_STOP);
       return id;
     }
     last = `${res.status} ${await res.text().catch(() => "")}`;

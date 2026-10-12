@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/fund-side-chassis.mjs";
 
 /**
  * docs/OUTBOUND_EMAIL_MAP.md is read by code, so it is a rule and not a wish (owner, 12 Oct 2026:
@@ -94,14 +95,7 @@ export function uncitedSenders(files: Array<{ file: string; source: string }>, c
  * the fund's own map, never on this one. ONE closed list: a file here must still exist and still
  * send, or the exemption is stale and fails by name.
  */
-const FUND_SIDE_CHASSIS_SENDERS = [
-  "scripts/ops/buyer-hunt.mjs",
-  "scripts/ops/interest-match.mjs",
-  "scripts/ops/ledger-hunt.mjs",
-  "scripts/ops/lp-outcomes.mjs",
-  "scripts/ops/lp-positive.mjs",
-  "scripts/ops/people-worth-a-call.mjs",
-];
+// The list lives in scripts/ops/fund-side-chassis.mjs so the From guard reads the same one.
 
 const exists = (p: string) => existsSync(path.join(ROOT, p));
 const bossRows = inventoryRows(MAP).filter((r) => /^boss-os\b/.test(r.code));

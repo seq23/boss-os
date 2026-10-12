@@ -53,6 +53,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { sendersFor, employeeMail } from "./notify.mjs";
+import { westPeekFallback } from "./fund-side-chassis.mjs";
 
 const SOURCE_ID = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
 const SENT_TAB = process.env.LP_SOURCE_TAB ?? "Sent Log";
@@ -256,7 +257,7 @@ async function emailHer({ optedOut, replied, bounced, tally, scanned, sentRows }
    * problem rather than a wrong-key problem — so the key travels with the sender rather than being
    * ambient. The West Peek address stays only as a last resort, and says so loudly if ever used.
    */
-  const SENDERS = sendersFor("Monique");
+  const SENDERS = sendersFor("Monique", { fallback: westPeekFallback });
   //
   // `onboarding@resend.dev` WAS a third fallback and has been removed on purpose.
   //

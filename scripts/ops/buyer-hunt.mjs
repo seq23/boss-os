@@ -64,6 +64,7 @@ import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
 import { sendersFor, employeeMail } from "./notify.mjs";
+import { westPeekFallback } from "./fund-side-chassis.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { researchLot, renderFilings, renderReach } from "./filing-hunt.mjs";
 import { mirrorOrStop } from "./lib/book-mirror.mjs";
@@ -275,7 +276,7 @@ async function main() {
   console.log(body);
 
   if (!SEND) { console.log("\nRe-run with --send to email it."); return; }
-  const SENDERS = sendersFor("Monique");
+  const SENDERS = sendersFor("Monique", { fallback: westPeekFallback });
   if (SENDERS.length === 0) {
     console.error("NAMED STOP [NO_MAIL_KEY] the list is above and no email could be sent.");
     process.exit(8);
