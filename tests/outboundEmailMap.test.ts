@@ -87,6 +87,22 @@ export function uncitedSenders(files: Array<{ file: string; source: string }>, c
     .filter((file) => !cited.has(file));
 }
 
+/**
+ * CHASSIS COPIES WHOSE FUNCTION IS THE FUND'S (owner, 12 Oct 2026: Boss OS and the fund are two
+ * businesses and never cross). These files were copied in with the chassis and still send, but what
+ * they send is the fund's (capital matches, buyer hunts, people, LP digests), so their rows live on
+ * the fund's own map, never on this one. ONE closed list: a file here must still exist and still
+ * send, or the exemption is stale and fails by name.
+ */
+const FUND_SIDE_CHASSIS_SENDERS = [
+  "scripts/ops/buyer-hunt.mjs",
+  "scripts/ops/interest-match.mjs",
+  "scripts/ops/ledger-hunt.mjs",
+  "scripts/ops/lp-outcomes.mjs",
+  "scripts/ops/lp-positive.mjs",
+  "scripts/ops/people-worth-a-call.mjs",
+];
+
 const exists = (p: string) => existsSync(path.join(ROOT, p));
 const bossRows = inventoryRows(MAP).filter((r) => /^boss-os\b/.test(r.code));
 
@@ -116,7 +132,7 @@ describe("docs/OUTBOUND_EMAIL_MAP.md is read by code", () => {
   });
 
   it("every file here that calls an email transport is cited by a boss-os row", () => {
-    const cited = new Set(bossRows.flatMap((r) => citedPaths(r.code, exists).found));
+    const cited = new Set([...bossRows.flatMap((r) => citedPaths(r.code, exists).found), ...FUND_SIDE_CHASSIS_SENDERS]);
     const files = execFileSync("git", ["ls-files"], { cwd: ROOT, encoding: "utf8" })
       .split("\n")
       .filter((f) => f && isScanned(f) && existsSync(path.join(ROOT, f)))
@@ -128,6 +144,13 @@ describe("docs/OUTBOUND_EMAIL_MAP.md is read by code", () => {
       uncited,
       `These files send email but are not on the map. Add each to ${MAP_PATH} (and its page) in the same PR:\n  ${uncited.join("\n  ")}`,
     ).toEqual([]);
+  });
+
+  it("every fund-side chassis exemption still exists and still sends (no stale exemption)", () => {
+    const stale = FUND_SIDE_CHASSIS_SENDERS.filter(
+      (f) => !exists(f) || !TRANSPORT.some((re) => re.test(readFileSync(path.join(ROOT, f), "utf8"))),
+    );
+    expect(stale, `Remove these from FUND_SIDE_CHASSIS_SENDERS: they no longer exist or no longer send:\n  ${stale.join("\n  ")}`).toEqual([]);
   });
 
   it("the scan catches a new sender and the parser reads bare names against the previous path", () => {
@@ -223,5 +246,68 @@ describe("every path on the map has an owner, and Team → Duties is built from 
     const src = readFileSync(path.join(ROOT, "src/client/boss/operationsSource.ts"), "utf8");
     expect(src).toContain('from "../../../docs/OUTBOUND_EMAIL_MAP.md?raw"');
     expect(src).toContain('from "../../../docs/outbound_email_owners.json"');
+  });
+});
+
+/**
+ * BOSS OS AND THE FUND NEVER CROSS (owner, 12 Oct 2026). #77 and #78 put the fund's sending paths
+ * and a fund seat onto this map and onto Team -> Duties, in a public repo. This fails, by Id and by
+ * the term found, on any map row, any owner entry, or the map document itself naming the fund's
+ * repos, its senders, its people or its investors. Their rows belong on the fund's own map.
+ */
+export const FUND_TERMS: Array<[string, RegExp]> = [
+  ["a west-peek-* repo", /\bwest-?peek-[a-z]/i],
+  ["a westpeek domain", /@?\bwestpeek\.[a-z]+/i],
+  ["a joinwestpeek.com sender", /joinwestpeek\.com/i],
+  ["West Peek", /west\s*peek/i],
+  ["Porter", /\bporter\b/i],
+  ["Scooter", /\bscooter\b/i],
+  ["LP", /\bLPs?\b/],
+  ["investor", /\binvestors?\b/i],
+];
+
+export function fundCrossings(entries: Array<[string, string]>): string[] {
+  const hits: string[] = [];
+  for (const [where, text] of entries) {
+    for (const [name, re] of FUND_TERMS) if (re.test(text)) hits.push(`${where}: names ${name}`);
+  }
+  return hits;
+}
+
+describe("Boss OS and the fund never cross on the map", () => {
+  const ownersRaw = JSON.parse(readFileSync(path.join(ROOT, "docs/outbound_email_owners.json"), "utf8")) as {
+    outside: string[];
+    owners: Record<string, { seat?: string; why?: string }>;
+  };
+  const rowLines = MAP.split("\n").filter((l) => /^\|\s*`[^`]+`\s*\|/.test(l));
+
+  it("reads rows and owners (hard fail on zero)", () => {
+    expect(rowLines.length).toBeGreaterThan(0);
+    expect(Object.keys(ownersRaw.owners).length).toBeGreaterThan(0);
+  });
+
+  it("no map row, no owner entry, no outside seat and no line of the map names the fund", () => {
+    const entries: Array<[string, string]> = [
+      ...rowLines.map((l): [string, string] => [`map row ${(l.match(/`([^`]+)`/) ?? [])[1]}`, l]),
+      ...Object.entries(ownersRaw.owners).map(([id, o]): [string, string] => [`owner ${id}`, `${id} ${o.seat ?? ""} ${o.why ?? ""}`]),
+      ...ownersRaw.outside.map((s): [string, string] => [`outside seat "${s}"`, s]),
+      ...MAP.split("\n").map((l, i): [string, string] => [`${MAP_PATH}:${i + 1}`, l]),
+    ];
+    const hits = fundCrossings(entries);
+    expect(hits, `The fund's paths and seats never go on the Boss OS map; move them to the fund's own map:\n  ${hits.join("\n  ")}`).toEqual([]);
+  });
+
+  it("the guard catches each term (it is not watching an empty room)", () => {
+    const probes = [
+      "| `x` | West Peek | e | os@westpeek.ventures | t |",
+      "| `x` | b | e | hello@joinwestpeek.com | t |",
+      "| `x` | b | e | f | t | west-peek-os src/a.ts |",
+      "Porter (West Peek OS)",
+      "replies to Scooter",
+      "LPs who replied",
+      "an investor update",
+    ];
+    for (const p of probes) expect(fundCrossings([["probe", p]]), p).not.toEqual([]);
+    expect(fundCrossings([["clean", "| `monique-outreach` | The Industry Guides | Reporter of help | hello@uscisexam.com |"]])).toEqual([]);
   });
 });

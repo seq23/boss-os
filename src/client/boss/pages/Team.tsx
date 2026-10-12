@@ -1027,7 +1027,7 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** Owners who are not Boss OS seats (Porter in West Peek OS, a client), each with their paths. */
+/** Owners who are not Boss OS seats (a client), each with their paths. */
 const OUTSIDE = (ops: ReturnType<typeof buildOperations>) =>
   [...ops.bySeat.entries()].filter(([, rows]) => rows[0]?.ownerKind === "outside");
 
