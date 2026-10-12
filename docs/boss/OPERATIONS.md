@@ -678,6 +678,21 @@ suppression, stop-on-reply) are pinned in `tests/boss/moniqueOutreach.test.ts`.
 
 Both rules are also in `CLAUDE.md` ("Outreach rules") and are read by the test.
 
+## Email the businesses send
+
+Every email any of the businesses sends — who sends it, to whom, on what schedule, from which code,
+and how to pause it — is listed in [OUTBOUND_EMAIL_MAP.md](../OUTBOUND_EMAIL_MAP.md) (living page:
+https://claude.ai/artifact/8wsHZmD7QJEuNnZEPideCr). The side businesses themselves are reviewed in
+[SIDE_BUSINESS_REVIEW.md](../SIDE_BUSINESS_REVIEW.md) (living page:
+https://claude.ai/artifact/2XkmYNmppidkqr4SU8xwiv). Both are repo copies; the page is the living version.
+
+**The rule:** any new or changed sender — in any repo, launchd job or Worker cron — is added to the
+map (the doc here and its page) in the same PR. `tests/outboundEmailMap.test.ts` enforces it for this
+repo: it checks every boss-os row's files exist, every Id appears once, and fails, by file name, on
+any file here that calls an email transport without being cited by a row.
+
+---
+
 ## Commands worth knowing
 
 ```bash
