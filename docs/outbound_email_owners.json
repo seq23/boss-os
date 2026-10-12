@@ -14,6 +14,8 @@
     "boss-worker-mail": { "seat": "Kendra", "why": "Systems Manager: the Worker's own (switched off) mail effects." },
     "ci-sweep-issues": { "seat": "Danielle", "why": "Technical Program Manager: shipping and red CI across the repos." },
     "guides-lead-notification": { "seat": "Camille", "why": "The Industry Guides' lead forms; property performance is Camille's duty." },
+    "lgcv-search-outcomes-weekly": { "seat": "Camille", "why": "The Industry Guides' weekly search-outcome report on the portfolio sites; property performance is Camille's duty." },
+    "industryguides-lead-notification": { "seat": "Camille", "why": "The Industry Guides hub's lead function; property performance is Camille's duty." },
     "approvalprep-download-email": { "seat": "Danielle", "why": "Product delivery email in a repo Danielle ships." },
     "approvalprep-notification-dispatch": { "seat": "Danielle", "why": "Product repo; inert on schedule." },
     "wedding-delivery-email": { "seat": "Danielle", "why": "Product delivery email in a repo Danielle ships." },
