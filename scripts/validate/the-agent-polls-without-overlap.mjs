@@ -62,7 +62,14 @@ function stubEnv(root) {
   // `npm` stands in for `npm run --silent vault:run -- node scripts/...` (peek, work-once, sky-snapshot), `node` for the market snapshot.
   // Every call is logged in order. `peek` answers STUB_PEEK_RC (0 = something is waiting); `work-once` can hold for STUB_HOLD seconds,
   // standing in for a run in progress, and can overwrite the lock's record (STUB_REWRITE_HOLDER) to prove the release is ownership-safe.
-  writeFileSync(
+  /*
+   * WRITE ONCE, NEVER OVER A RUNNING STUB (main red on #78, 12 Oct 2026: ETXTBSY on
+   * the stub npm under /tmp/boss-claim-XXXX/bin). The eight simultaneous contenders each built their env here, so a
+   * later spawn rewrote `npm` while an earlier one was executing it, and Linux refuses to open a
+   * running executable for writing. The stubs are identical every time, so an existing one is kept.
+   */
+  const stub = (file, body) => { if (!existsSync(file) || readFileSync(file, "utf8") !== body) writeFileSync(file, body); };
+  stub(
     join(bin, "npm"),
     `#!/bin/bash
 echo "npm $*" >> "${log}"
@@ -75,7 +82,7 @@ esac
 exit 0
 `,
   );
-  writeFileSync(join(bin, "node"), `#!/bin/bash
+  stub(join(bin, "node"), `#!/bin/bash
 echo "node $*" >> "${log}"
 exit 0
 `);
@@ -217,7 +224,9 @@ export async function wrapperProblems(wrapperPath) {
   ]) {
     const root = fresh();
     prepare(root);
-    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env: envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_HOLD: "1" }), stdio: "ignore" }));
+    // One env, built BEFORE any contender starts: building it per spawn rewrote a stub a sibling was running.
+    const env = envFor(root, { BOSS_OS_CLAIM_HOUR: "14", STUB_HOLD: "1" });
+    const procs = Array.from({ length: 8 }, () => spawn("bash", [wrapperPath, "--poll"], { env, stdio: "ignore" }));
     await Promise.all(procs.map((p) => new Promise((r) => p.on("close", r))));
     const n = claimsIn(logOf(root));
     if (n !== 1) out.push(`Eight simultaneous ticks on ${label} produced ${n} claims (expected exactly 1): two agents ran at once.`);
