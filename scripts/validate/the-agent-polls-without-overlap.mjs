@@ -22,7 +22,7 @@
  *   node scripts/validate/the-agent-polls-without-overlap.mjs
  *   node scripts/validate/the-agent-polls-without-overlap.mjs --self-test
  */
-import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync, chmodSync, utimesSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync, chmodSync, utimesSync, statSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -59,6 +59,13 @@ function stubEnv(root) {
   const bin = join(root, "bin");
   mkdirSync(bin, { recursive: true });
   const log = join(root, "calls.log");
+  const out = { bin, log, home: join(root, "home"), workspace: join(root, "reports") };
+  // WRITTEN ONCE PER ROOT, never rewritten. envFor() runs for every spawn, and the overlap cases start a
+  // second wrapper (or eight) in the same root while the first is still executing bin/npm. Rewriting a
+  // file the kernel is executing fails with ETXTBSY on Linux (12 Oct 2026, CI run 38282874761 on c4bcdea:
+  // "ETXTBSY: text file is busy, open '/tmp/boss-claim-…/bin/npm'"). The stub's text depends only on the
+  // root, so the first write is the only one needed.
+  if (existsSync(join(bin, "npm")) && existsSync(join(bin, "node"))) return out;
   // `npm` stands in for `npm run --silent vault:run -- node scripts/...` (peek, work-once, sky-snapshot), `node` for the market snapshot.
   // Every call is logged in order. `peek` answers STUB_PEEK_RC (0 = something is waiting); `work-once` can hold for STUB_HOLD seconds,
   // standing in for a run in progress, and can overwrite the lock's record (STUB_REWRITE_HOLDER) to prove the release is ownership-safe.
@@ -81,7 +88,7 @@ exit 0
 `);
   chmodSync(join(bin, "npm"), 0o755);
   chmodSync(join(bin, "node"), 0o755);
-  return { bin, log, home: join(root, "home"), workspace: join(root, "reports") };
+  return out;
 }
 const calls = (log) => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : []);
 const claimsIn = (log) => calls(log).filter((l) => /agent\.mjs work-once/.test(l)).length;
@@ -98,6 +105,19 @@ function runWrapper(wrapperPath, root, args, extraEnv = {}) {
 /** Problems in the wrapper's behaviour, over the file at `wrapperPath`. */
 export async function wrapperProblems(wrapperPath) {
   const out = [];
+  {
+    // The harness itself: a stub rewritten while a spawned wrapper executes it is ETXTBSY on Linux.
+    const root = mkdtempSync(join(tmpdir(), "boss-claim-stub-"));
+    try {
+      const npm = join(stubEnv(root).bin, "npm");
+      const t = new Date(Date.now() - 3_600_000);
+      utimesSync(npm, t, t);
+      stubEnv(root);
+      if (statSync(npm).mtimeMs > t.getTime() + 1000) out.push("harness: stubEnv rewrote bin/npm on a second call in the same root (ETXTBSY while a wrapper runs it).");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
   const fresh = () => mkdtempSync(join(tmpdir(), "boss-claim-"));
   const lockOf = (root) => join(root, "home", "agent-claim.lock");
   const logOf = (root) => join(root, "calls.log");
