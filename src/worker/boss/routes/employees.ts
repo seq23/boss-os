@@ -127,8 +127,7 @@ employees.get("/roster", async (c) => {
  *
  * Owner, 12 Oct 2026: Team → Duties is the single operations view. The schedule half comes from the
  * roster above and docs/OUTBOUND_EMAIL_MAP.md (built into the client); this is the other half — the
- * numbers only the database knows. Counted from her midnight (Chicago), never UTC's. Porter's sends
- * live in West Peek OS's database, which this Worker cannot read, and the screen says so.
+ * numbers only the database knows. Counted from her midnight (Chicago), never UTC's.
  */
 employees.get("/operations", async (c) => {
   const now = Date.now();
@@ -184,7 +183,6 @@ employees.get("/operations", async (c) => {
     runs: { duty_failed_today: Number(one(dutyFails).n ?? 0), cron_failed_today: Number(one(cronFails).n ?? 0) },
     named_stops: Number(one(stops).n ?? 0),
     local_jobs: (jobs?.results ?? []).map((j: any) => ({ local_job: j.local_job, outcome: j.outcome, finished_at: j.finished_at, reason: j.reason ?? null })),
-    porter: "Porter's sends are recorded in West Peek OS, not here.",
   });
 });
 

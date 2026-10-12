@@ -40,13 +40,14 @@ describe("the operations merge", () => {
     expect(m.rows.length).toBeGreaterThan(0);
     expect(m.unassigned.map((r) => r.id)).toEqual([]);
     expect(m.bySeat.get("Monique")?.map((r) => r.id)).toContain("monique-outreach");
-    expect(m.bySeat.get("Porter (West Peek OS)")?.map((r) => r.id)).toContain("porter-partner-email");
+    expect(m.bySeat.get("The client")?.map((r) => r.id).sort()).toEqual(["client-dashboards-mail", "client-publication-mail"]);
+    expect([...m.bySeat.keys()].filter((k) => !ROSTER.includes(k))).toEqual(["The client"]);
     expect(m.bySeat.get("Danielle")?.find((r) => r.id === "repo-change")?.lastOutcome).toMatch(/^failed .* — exit 1$/);
     expect(m.bySeat.get("Monique")?.find((r) => r.id === "monique-outreach")?.lastOutcome).toMatch(/^sent .* · sending live$/);
   });
 
   it("a path with no owner entry, or a seat no longer on the roster, is unassigned and returned on its own", () => {
-    const owners: OwnersFile = { outside: ["Porter (West Peek OS)"], owners: { a: { seat: "Monique", why: "" }, b: { seat: "Retired Rita", why: "" } } };
+    const owners: OwnersFile = { outside: ["The client"], owners: { a: { seat: "Monique", why: "" }, b: { seat: "Retired Rita", why: "" } } };
     const m = mergeOperations({ mapRows: [row({ id: "a" }), row({ id: "b" }), row({ id: "c" })], owners, rosterNames: ROSTER, ledgers: null, now: NOW });
     expect(m.unassigned.map((r) => r.id)).toEqual(["b", "c"]);
     expect(m.rows.find((r) => r.id === "a")?.ownerKind).toBe("seat");
@@ -64,7 +65,7 @@ describe("the operations merge", () => {
     const s = synopsis({ rows: m.rows, unassigned: m.unassigned, dutiesToday: dutiesDueToday(duties, NOW), ledgers: LEDGERS });
     expect(s.counts).toEqual({ dutiesToday: 1, pathsScheduled: 1, pathsOff: 1, outreachSent: 12, outreachFailed: 1, noticesSent: 3, unassigned: 1, failedRuns: 4, namedStops: 4 });
     expect(s.running).toBe("Running today: 1 duties · 1 scheduled email paths · 1 off");
-    expect(s.sent).toBe("Sent today: outreach 12 (1 failed) · task notices 3 · Porter: no ledger in Boss OS");
+    expect(s.sent).toBe("Sent today: outreach 12 (1 failed) · task notices 3");
     expect(s.needs).toBe("Needs you: 1 unassigned · 4 failed runs · 4 named stops");
   });
 });

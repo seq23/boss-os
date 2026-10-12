@@ -307,7 +307,7 @@ export function synopsis(input: {
   return {
     running: `Running today: ${counts.dutiesToday} duties · ${counts.pathsScheduled} scheduled email paths · ${counts.pathsOff} off`,
     sent: l
-      ? `Sent today: outreach ${counts.outreachSent}${counts.outreachFailed ? ` (${counts.outreachFailed} failed)` : ""} · task notices ${counts.noticesSent} · Porter: no ledger in Boss OS`
+      ? `Sent today: outreach ${counts.outreachSent}${counts.outreachFailed ? ` (${counts.outreachFailed} failed)` : ""} · task notices ${counts.noticesSent}`
       : "Sent today: ledgers not loaded",
     needs: `Needs you: ${counts.unassigned} unassigned · ${counts.failedRuns} failed runs · ${counts.namedStops} named stops`,
     counts,

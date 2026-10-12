@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { provisionLocalD1, queryLocalD1 } from "./support/provision";
 
@@ -162,14 +164,21 @@ test.describe("Team → Duties", () => {
     await expect(page.getByTestId("ops-sent")).toContainText(/Sent today: outreach \d+/);
     await expect(page.getByTestId("ops-needs")).toContainText(/Needs you: 0 unassigned · \d+ failed runs · \d+ named stops/);
     await expect(page.getByTestId("ops-unassigned")).toHaveCount(0);
-    expect(await page.getByTestId("path-row").count()).toBeGreaterThanOrEqual(30);
+    // Exactly the map's rows: one path row per Id on docs/OUTBOUND_EMAIL_MAP.md.
+    const mapIds = readFileSync(path.join(process.cwd(), "docs/OUTBOUND_EMAIL_MAP.md"), "utf8").split("\n").filter((l) => /^\|\s*`[^`]+`\s*\|/.test(l)).length;
+    expect(mapIds).toBeGreaterThan(0);
+    expect(await page.getByTestId("path-row").count()).toBe(mapIds);
     // Monique's outreach sits in her section, with the one in-app switch that exists.
     const outreach = page.getByRole("region", { name: "Monique's duties" }).locator('[data-path-id="monique-outreach"]');
     await expect(outreach).toContainText(/Cloudflare cron/);
     await expect(outreach).toContainText(/From hello@/);
     await expect(outreach).toContainText(/next /);
-    // Porter's partner email is shown as his, outside Boss OS; a key-removal is "no switch".
-    await expect(page.getByRole("region", { name: "Porter (West Peek OS)'s paths" }).locator('[data-path-id="porter-partner-email"]')).toBeVisible();
+    // The only owner outside Boss OS is the client; the fund has no row and no seat here (owner, 12 Oct 2026).
+    await expect(page.getByTestId("duties-outside")).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "The client's paths" }).locator('[data-path-id="client-dashboards-mail"]')).toBeVisible();
+    for (const text of await page.getByTestId("path-row").allInnerTexts()) {
+      expect(text).not.toMatch(/west\s*peek|westpeek|\bporter\b|\bscooter\b|\bLPs?\b|\binvestors?\b/i);
+    }
     await expect(page.locator('[data-path-id="approvalprep-download-email"]')).toContainText("no switch");
     await outreach.getByTestId("path-pause").click();
     await expect(page.getByRole("button", { name: "Outreach", exact: true })).toHaveAttribute("aria-pressed", "true");
