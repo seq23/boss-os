@@ -1,0 +1,9 @@
+# INDUSTRY GUIDES MAIL FAN-OUT: a second, tiny Worker (owner, 13 Oct 2026). See src/mail-fanout/index.ts.
+# No bindings, no secrets, no routes, no workers.dev URL: it only receives email through the
+# hello@theindustryguides.com Email Routing rule. Deployed by `npm run deploy:mail-fanout`, which
+# `npm run deploy:production` runs after the main Worker. No account_id here (same rule as the main
+# wrangler.toml): CLOUDFLARE_ACCOUNT_ID comes from the environment.
+name = "industry-guides-mail-fanout"
+main = "../../src/mail-fanout/index.ts"
+compatibility_date = "2025-10-01"
+workers_dev = false
