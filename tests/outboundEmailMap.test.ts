@@ -335,7 +335,7 @@ describe("every outreach sender and every Memphis Senior Care Homes path is on t
   it("Memphis Senior Care Homes has its outreach row and its five site-email rows, each owned, unread ones SUSPECTED", () => {
     const outreach = byId.get("memphis-senior-outreach");
     expect(outreach, "memphis-senior-outreach row").toBeTruthy();
-    expect(outreach![fromAt]).toBe("hello@memphisseniorcarehomes.com");
+    expect(outreach![fromAt]).toBe("hello@theindustryguides.com");
     expect(outreach![statusAt]).toBe("CONFIRMED");
     const site = ["senior-lead-notification", "senior-facility-teaser", "senior-facility-release", "senior-pass-notice", "senior-family-followups"];
     for (const id of [...site, "memphis-senior-outreach"]) {

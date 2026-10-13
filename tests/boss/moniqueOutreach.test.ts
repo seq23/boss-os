@@ -7,7 +7,7 @@ import { bouncedAddress, classifyReply } from "../../src/worker/boss/outreach/cl
 import { composeEmail, footerCompany, UMBRELLA_COMPANY, UMBRELLA_CONTACT } from "../../src/worker/boss/outreach/compose";
 import { isSuppressed, suppress, isBusinessEmail } from "../../src/worker/boss/outreach/suppression";
 import {
-  assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
+  GUIDES_SENDER, assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
 } from "../../src/worker/boss/outreach/catalog";
 import CATALOG_SOURCE from "../../src/worker/boss/outreach/catalog.ts?raw";
 const OUTREACH_SOURCES = import.meta.glob("../../src/worker/boss/outreach/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
@@ -135,9 +135,9 @@ async function addProspect(key: string, email: string, over: Record<string, unkn
 
 async function readyWithAddress(key: string) {
   await env.DB.prepare(
-    `INSERT INTO outreach_domain_state (business_key, route_state, postal_address, updated_at) VALUES (?, 'ready', '100 Main St, Suite 1, Houston, TX 77002', ?)
-     ON CONFLICT(business_key) DO UPDATE SET route_state = 'ready', postal_address = excluded.postal_address`,
-  ).bind(key, TUESDAY_10AM).run();
+    `INSERT INTO outreach_domain_state (business_key, route_state, route_sender, postal_address, updated_at) VALUES (?, 'ready', ?, '100 Main St, Suite 1, Houston, TX 77002', ?)
+     ON CONFLICT(business_key) DO UPDATE SET route_state = 'ready', route_sender = excluded.route_sender, postal_address = excluded.postal_address`,
+  ).bind(key, businessByKey(key)!.sender, TUESDAY_10AM).run();
 }
 
 async function tickEnv() {
@@ -194,6 +194,28 @@ describe("the brakes, as pure functions", () => {
     expect(() => assertSenderAllowed({ ...T2R, sender: "hello@uscisexam.com" })).toThrow(/own domain/);
     for (const b of BUSINESSES) expect(() => assertSenderAllowed(b)).not.toThrow();
     expect(BUSINESSES.some((b) => /how-?we-?know/.test(b.domain))).toBe(false);
+  });
+
+  it("every guide sends from the one umbrella address; the side businesses keep their own (owner, 13 Oct 2026)", () => {
+    const guides = BUSINESSES.filter((b) => b.kind === "local_guide");
+    expect(guides.length).toBe(6);
+    expect(GUIDES_SENDER).toBe("hello@theindustryguides.com");
+    expect([...new Set(guides.map((b) => b.sender))]).toEqual(["hello@theindustryguides.com"]);
+    // The retired per-site aliases are never a sender again.
+    for (const old of ["uscisexam.com", "dentistryguides.com", "hormonesivhair.com", "neuroevalguides.com", "theaccidentguides.com", "memphisseniorcarehomes.com"]) {
+      expect(BUSINESSES.some((b) => b.sender === `hello@${old}`), old).toBe(false);
+    }
+    const uscis = businessByKey("uscisexam")!;
+    expect(() => assertSenderAllowed({ ...uscis, sender: "hello@uscisexam.com" })).toThrow(/every guide sends from/);
+    expect(Object.fromEntries(BUSINESSES.filter((b) => b.kind !== "local_guide").map((b) => [b.key, b.sender]))).toEqual({
+      time2read: "st@time-2-read.com", aplayermode: "hello@aplayermode.com", approvalprep: "hello@approvalprep.com", weddingchecklist: "hello@weddingchecklistpdf.com",
+    });
+    // Every guide email answers to the umbrella address; a side business's does not.
+    const m = composeEmail({ business: uscis, step: 0, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "t", postalAddress: "PO Box 1, Houston, TX 77002" });
+    expect(m.raw).toMatch(/^From: USCIS Exam Guides <hello@theindustryguides\.com>\r$/m);
+    expect(m.raw).toMatch(/^Reply-To: hello@theindustryguides\.com\r$/m);
+    const t = composeEmail({ business: T2R, step: 0, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "t", postalAddress: "PO Box 1, Houston, TX 77002" });
+    expect(t.raw).not.toMatch(/^Reply-To:/m);
   });
 });
 
@@ -271,12 +293,13 @@ describe("every email carries the unsubscribe link and the postal address", () =
     );
     expect(UMBRELLA_COMPANY).toBe("The Industry Guides");
     expect(UMBRELLA_CONTACT).toBe("hello@theindustryguides.com");
-    // The name lives in ONE constant: no second copy anywhere in the outreach source.
-    expect(Object.keys(OUTREACH_SOURCES).some((f) => f.endsWith("/compose.ts"))).toBe(true);
+    // The name and the address each live in ONE constant, in catalog.ts (the guides' sender uses the
+    // address since 13 Oct 2026): no second copy anywhere in the outreach source.
+    expect(Object.keys(OUTREACH_SOURCES).some((f) => f.endsWith("/catalog.ts"))).toBe(true);
     for (const [file, src] of Object.entries(OUTREACH_SOURCES)) {
       const copies = (src.match(/The Industry Guides/g) ?? []).length;
-      expect(copies, file).toBe(file.endsWith("/compose.ts") ? 2 : 0); // the constant + its doc comment
-      expect((src.match(/hello@theindustryguides\.com/g) ?? []).length, file).toBe(file.endsWith("/compose.ts") ? 1 : 0);
+      expect(copies, file).toBe(file.endsWith("/catalog.ts") ? 1 : 0); // the constant
+      expect((src.match(/hello@theindustryguides\.com/g) ?? []).length, file).toBe(file.endsWith("/catalog.ts") ? 1 : 0);
     }
     expect(BUSINESSES.length).toBeGreaterThan(0);
     for (const b of BUSINESSES) {
@@ -472,19 +495,38 @@ describe("the tick", () => {
     expect(g.sends).toHaveLength(0);
   });
 
-  it("an unproven route sends nothing to a business; a send-as alias is proven to the test inbox first", async () => {
+  it("an unproven route sends nothing to a business; the guides' one sender is proven ONCE and all six share it", async () => {
     await env.DB.prepare(`UPDATE outreach_settings SET value = 'live' WHERE key = 'sending'`).run();
     await addProspect("uscisexam", "doc@clinic.example");
     await env.DB.prepare(`INSERT INTO outreach_domain_state (business_key, postal_address, updated_at) VALUES ('uscisexam','100 Main St, Houston, TX 77002',0)`).run();
-    const none = fakeGmail();
+    // A row proven for the OLD per-site alias (route_sender NULL or the retired alias) is not ready.
+    await env.DB.prepare(`INSERT INTO outreach_domain_state (business_key, route_state, route_sender, postal_address, updated_at) VALUES ('dentistryguides','ready','hello@dentistryguides.com','100 Main St, Houston, TX 77002',0)`).run();
+    await addProspect("dentistryguides", "dds@smile.example");
+    const none = fakeGmail({ sendAs: ["hello@uscisexam.com", "hello@dentistryguides.com"] });
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, none.fetchImpl);
-    expect(none.sends.filter((s) => s.from === "hello@uscisexam.com")).toHaveLength(0);
+    // Nothing From a guide, a retired alias, or to a business (time2read's own sender may prove itself).
+    expect(none.sends.filter((s) => s.from !== "st@time-2-read.com")).toHaveLength(0);
+    expect(none.sends.filter((s) => s.to !== "cryptoclearr@gmail.com")).toHaveLength(0);
+    expect((await row<any>(`SELECT route_state FROM outreach_domain_state WHERE business_key = 'dentistryguides'`))?.route_state).toBe("awaiting_route");
 
-    const alias = fakeGmail({ sendAs: ["hello@uscisexam.com"] });
+    const alias = fakeGmail({ sendAs: ["hello@theindustryguides.com"] });
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, alias.fetchImpl);
-    const proof = alias.sends.find((s) => s.from === "hello@uscisexam.com");
-    expect(proof?.to).toBe("cryptoclearr@gmail.com");
-    expect((await row<any>(`SELECT route_state FROM outreach_domain_state WHERE business_key = 'uscisexam'`))?.route_state).toBe("ready");
+    const proofs = alias.sends.filter((s) => s.to === "cryptoclearr@gmail.com");
+    expect(proofs).toHaveLength(1);
+    expect(proofs[0]!.from).toBe("hello@theindustryguides.com");
+    const guides = BUSINESSES.filter((b) => b.kind === "local_guide").map((b) => b.key);
+    const st = await env.DB.prepare(`SELECT business_key, route_state, route_sender FROM outreach_domain_state`).all<any>();
+    for (const k of guides) {
+      const r = (st.results ?? []).find((x: any) => x.business_key === k);
+      expect(r?.route_state, k).toBe("ready");
+      expect(r?.route_sender, k).toBe("hello@theindustryguides.com");
+    }
+    // The side businesses are not swept along: their own senders are not in the send-as list.
+    expect((st.results ?? []).find((x: any) => x.business_key === "aplayermode")?.route_state).toBe("awaiting_route");
+    // A later tick sends no second proof.
+    const again = fakeGmail({ sendAs: ["hello@theindustryguides.com"] });
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM + 3_600_000, again.fetchImpl);
+    expect(again.sends.filter((s) => s.to === "cryptoclearr@gmail.com")).toHaveLength(0);
   });
 
   it("stops on any reply, suppresses an unsubscribe even with the kill switch on, and cards an interested one", async () => {
@@ -670,10 +712,10 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     return decodeURIComponent(escape(atob((m?.[1] ?? "").replace(/\r\n/g, ""))));
   };
 
-  it("is a local guide on its own domain, with a seat URL and both pitches", () => {
+  it("is a local guide sending from the umbrella address, with a seat URL and both pitches", () => {
     expect(MSCH).toBeTruthy();
     expect(MSCH.kind).toBe("local_guide");
-    expect(MSCH.sender).toBe("hello@memphisseniorcarehomes.com");
+    expect(MSCH.sender).toBe("hello@theindustryguides.com");
     expect(MSCH.offerUrl).toBe("https://memphisseniorcarehomes.com/for-providers/");
     expect(MSCH.seat?.url).toBe(SEAT_URL);
     expect(() => assertSenderAllowed(MSCH)).not.toThrow();

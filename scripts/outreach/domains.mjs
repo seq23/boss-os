@@ -5,7 +5,8 @@
  *   npm run vault:run -- node scripts/outreach/domains.mjs           # do it
  *   npm run vault:run -- node scripts/outreach/domains.mjs --check   # read-only: what is missing
  *
- * For each business in `src/worker/boss/outreach/catalog.ts` whose sender is not the mailbox itself:
+ * For each SENDER in `src/worker/boss/outreach/catalog.ts` that is not the mailbox itself (once per
+ * sender, on the sender's domain; every guide shares the umbrella address since 13 Oct 2026):
  *   1. Site Verification token for the domain → TXT record in Cloudflare DNS → verify;
  *   2. the domain added to the Workspace as a SECONDARY domain (free; no licence);
  *   3. the sender (hello@<domain>) added as an ALIAS of st@time-2-read.com (free; no new user);
@@ -25,7 +26,7 @@
  * GSC_SERVICE_ACCOUNT_JSON and CLOUDFLARE_API_TOKEN. Nothing is printed from either.
  */
 import { createSign } from "node:crypto";
-import { BUSINESSES, OUTREACH_MAILBOX, assertOutreachSetupTarget } from "../../src/worker/boss/outreach/catalog.ts";
+import { BUSINESSES, OUTREACH_MAILBOX, UMBRELLA_COMPANY, assertOutreachSetupTarget } from "../../src/worker/boss/outreach/catalog.ts";
 
 const CHECK_ONLY = process.argv.includes("--check");
 const ADMIN = process.env.OUTREACH_WORKSPACE_ADMIN ?? OUTREACH_MAILBOX;
@@ -140,8 +141,15 @@ const report = [];
 const sendAs = await g(tokens.sendas, "GET", "https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs");
 const haveSendAs = new Set((sendAs.j.sendAs ?? []).map((s) => s.sendAsEmail.toLowerCase()));
 
-for (const b of BUSINESSES) {
-  if (b.sender === OUTREACH_MAILBOX) continue;
+// ONE ENTRY PER SENDER, on the sender's own domain (owner, 13 Oct 2026: every guide sends from the
+// umbrella address, so its domain is set up once, and a guide's site domain needs no mail setup).
+const SENDERS = [];
+for (const biz of BUSINESSES) {
+  if (biz.sender === OUTREACH_MAILBOX || SENDERS.some((s) => s.sender === biz.sender)) continue;
+  const sharing = BUSINESSES.filter((x) => x.sender === biz.sender);
+  SENDERS.push({ sender: biz.sender, domain: biz.sender.split("@")[1], brand: sharing.length > 1 ? UMBRELLA_COMPANY : biz.brand });
+}
+for (const b of SENDERS) {
   const row = { domain: b.domain };
   try {
     const zone = await cfZone(b.domain);

@@ -24,7 +24,7 @@ import { ok, badRequest, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { BUSINESSES, TEST_RECIPIENTS, businessByKey } from "../outreach/catalog";
 import { BOUNCE_WINDOW_MS, chicagoParts, dailyCap } from "../outreach/brakes";
-import { domainState, readSettings, runOutreachTick, sendTest } from "../outreach/engine";
+import { domainState, readSettings, routeReadyFor, runOutreachTick, sendTest } from "../outreach/engine";
 import { GmailSession } from "../outreach/gmail";
 import { suppress } from "../outreach/suppression";
 import { normaliseHolderDomain } from "../outreach/seat";
@@ -61,7 +61,7 @@ outreach.get("/", async (c) => {
     const mine = (sends.results ?? []).filter((x) => x.business_key === b.key);
     return {
       key: b.key, brand: b.brand, domain: b.domain, sender: b.sender, kind: b.kind, offer: b.offer,
-      route_state: st.route_state, route_detail: st.route_detail ?? null, route_proven_at: st.route_proven_at ?? null,
+      route_state: routeReadyFor(b, st) ? "ready" : "awaiting_route", route_sender: st.route_sender ?? null, route_detail: st.route_detail ?? null, route_proven_at: st.route_proven_at ?? null,
       postal_address_set: Boolean(st.postal_address),
       paused: Boolean(st.paused_at), pause_reason: st.pause_reason ?? null,
       daily_cap: dailyCap(st.ramp_started_at ?? null, now),
@@ -138,7 +138,7 @@ outreach.post("/test-send", async (c) => {
   const settings = await readSettings(c.env.DB);
   if (settings.killSwitch) throw badRequest("The kill switch is on.");
   const st = await domainState(c.env.DB, b.key, Date.now());
-  if (st.route_state !== "ready") throw badRequest(`${b.sender} is not proven yet: ${st.route_detail ?? "awaiting the route"}.`);
+  if (!routeReadyFor(b, st)) throw badRequest(`${b.sender} is not proven yet: ${st.route_detail ?? "awaiting the route"}.`);
   const mailbox = GmailSession.from(c.env);
   if (!mailbox) throw badRequest("The Worker holds no Google key (GSC_SERVICE_ACCOUNT_JSON).");
   return ok(c, await sendTest(c.env, mailbox, b, step, Date.now(), `test step ${step + 1}`));

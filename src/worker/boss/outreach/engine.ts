@@ -164,36 +164,57 @@ async function businessesShortOfProspects(db: D1Database): Promise<string[]> {
   return BUSINESSES.filter((b) => (have.get(b.key) ?? 0) < 50).map((b) => b.key);
 }
 
+/** A business's route is ready only when it was proven for the sender it uses NOW. */
+export function routeReadyFor(b: Business, st: { route_state?: string | null; route_sender?: string | null } | null | undefined): boolean {
+  return st?.route_state === "ready" && st.route_sender === b.sender;
+}
+
 /**
- * A ROUTE IS PROVEN, NOT ASSUMED. The sending address must be in the mailbox's send-as list (so
- * Gmail will not rewrite the From), and then one email to the test recipient must go out and come
- * back from Gmail's Sent copy with that From. Only then is the business 'ready'.
+ * A ROUTE IS PROVEN, NOT ASSUMED — ONCE PER SENDER. The sending address must be in the mailbox's
+ * send-as list (so Gmail will not rewrite the From), and then one email to the test recipient must
+ * go out and come back from Gmail's Sent copy with that From. Every business that sends from that
+ * address is then 'ready' on the same proof: the six guides share one route (owner, 13 Oct 2026).
+ * A business whose sender changed is not ready until its new sender is proven.
  */
 async function proveRoutes(env: Env, mailbox: GmailSession, now: number): Promise<string[]> {
   const db = env.DB;
   const proven: string[] = [];
-  const pending = await db.prepare(
-    `SELECT business_key FROM outreach_domain_state WHERE route_state = 'awaiting_route'`,
-  ).all<{ business_key: string }>();
-  if (!(pending.results ?? []).length) return proven;
-  const sendAs = await mailbox.sendAsAddresses();
-  for (const row of pending.results ?? []) {
-    const b = businessByKey(row.business_key);
-    if (!b) continue;
-    if (!sendAs.has(b.sender)) {
-      await db.prepare(`UPDATE outreach_domain_state SET route_detail = ?, updated_at = ? WHERE business_key = ?`)
-        .bind(`${b.sender} is not yet a send-as address of the mailbox.`, now, b.key).run();
+  const rows = await db.prepare(`SELECT business_key, route_state, route_sender, route_detail FROM outreach_domain_state`).all<any>();
+  const stateOf = new Map((rows.results ?? []).map((r) => [r.business_key, r]));
+  const pending = BUSINESSES.filter((b) => stateOf.has(b.key) && !routeReadyFor(b, stateOf.get(b.key)));
+  if (!pending.length) return proven;
+  const markReady = async (keys: string[], sender: string, detail: string) => {
+    for (const k of keys) {
+      await db.prepare(
+        `UPDATE outreach_domain_state SET route_state = 'ready', route_sender = ?, route_proven_at = ?, route_detail = ?, updated_at = ? WHERE business_key = ?`,
+      ).bind(sender, now, detail, now, k).run();
+      proven.push(k);
+    }
+  };
+  let sendAs: Set<string> | null = null;
+  for (const sender of [...new Set(pending.map((b) => b.sender))]) {
+    const waiting = pending.filter((b) => b.sender === sender);
+    const already = BUSINESSES.find((b) => b.sender === sender && routeReadyFor(b, stateOf.get(b.key)));
+    if (already) {
+      await markReady(waiting.map((b) => b.key), sender, `Shares the route proven for ${sender} (${already.key}): ${stateOf.get(already.key)?.route_detail ?? ""}`);
       continue;
     }
-    const sent = await sendTest(env, mailbox, b, 0, now, "route proof");
+    sendAs ??= await mailbox.sendAsAddresses();
+    if (!sendAs.has(sender)) {
+      for (const b of waiting) {
+        await db.prepare(`UPDATE outreach_domain_state SET route_state = 'awaiting_route', route_detail = ?, updated_at = ? WHERE business_key = ?`)
+          .bind(`${sender} is not yet a send-as address of the mailbox.`, now, b.key).run();
+      }
+      continue;
+    }
+    const sent = await sendTest(env, mailbox, waiting[0]!, 0, now, "route proof");
     if (sent.ok) {
-      await db.prepare(
-        `UPDATE outreach_domain_state SET route_state = 'ready', route_proven_at = ?, route_detail = ?, updated_at = ? WHERE business_key = ?`,
-      ).bind(now, `Proven ${new Date(now).toISOString()}: Gmail sent ${sent.id} From ${b.sender}.`, now, b.key).run();
-      proven.push(b.key);
+      await markReady(waiting.map((b) => b.key), sender, `Proven ${new Date(now).toISOString()}: Gmail sent ${sent.id} From ${sender}.`);
     } else {
-      await db.prepare(`UPDATE outreach_domain_state SET route_detail = ?, updated_at = ? WHERE business_key = ?`)
-        .bind(`Route proof failed: ${sent.detail}`, now, b.key).run();
+      for (const b of waiting) {
+        await db.prepare(`UPDATE outreach_domain_state SET route_state = 'awaiting_route', route_detail = ?, updated_at = ? WHERE business_key = ?`)
+          .bind(`Route proof failed: ${sent.detail}`, now, b.key).run();
+      }
     }
   }
   return proven;
@@ -250,7 +271,7 @@ async function sendForBusiness(
   const gateBase = {
     killSwitch: settings.killSwitch,
     sending: settings.sending,
-    routeReady: st.route_state === "ready",
+    routeReady: routeReadyFor(b, st),
     hasPostalAddress: Boolean(st.postal_address && String(st.postal_address).trim().length >= 10),
     pausedReason: st.paused_at ? st.pause_reason : null,
   };

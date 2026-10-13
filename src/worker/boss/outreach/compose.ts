@@ -6,25 +6,18 @@
  *   · an honest From (the business's own address) and a subject that describes the email.
  * `composeEmail` throws rather than produce a message without the unsubscribe link or the address.
  */
-import type { Business } from "./catalog";
+import { UMBRELLA_COMPANY, UMBRELLA_CONTACT, type Business } from "./catalog";
 import { seatEndMonth, type Pitch } from "./seat";
 
-/**
- * THE COMPANY BEHIND THE INDUSTRY GUIDES (owner, 12 Oct 2026). The local-guide businesses in the
- * catalog (USCIS Exam Guides, The Dentistry Guides, Hormone Optimization Guides, Neuro Evaluation
- * Guides, The Accident Guides and, since 13 Oct 2026, Memphis Senior Care Homes) are properties of ONE company, and the CAN-SPAM footer
- * names it. The only copy of the name in the code; pinned by tests/boss/moniqueOutreach.test.ts.
- */
-export const UMBRELLA_COMPANY = "The Industry Guides";
-/** The one contact for the whole company, printed on the footer's company line (owner, 12 Oct 2026). */
-export const UMBRELLA_CONTACT = "hello@theindustryguides.com";
+/** The umbrella company and its one address live in catalog.ts (the senders use it); re-exported here. */
+export { UMBRELLA_COMPANY, UMBRELLA_CONTACT } from "./catalog";
 
 /** The company the footer names: the umbrella for a local guide, otherwise the brand itself. */
 export function footerCompany(b: Business): string {
   return b.kind === "local_guide" ? UMBRELLA_COMPANY : b.brand;
 }
 
-/** The footer's company line, e.g. "USCIS Exam Guides is a property of The Industry Guides." + address. */
+/** The footer's company line, e.g. "USCIS Exam Guides is a property of <the umbrella company>." + address. */
 function companyLines(b: Business, address: string): string[] {
   const company = footerCompany(b);
   return company === b.brand ? [`${b.brand}, ${address}`] : [`${b.brand} is a property of ${company}.`, `${company}, ${address} · ${UMBRELLA_CONTACT}`];
@@ -134,6 +127,8 @@ export function composeEmail(i: ComposeInput): Composed {
     `MIME-Version: 1.0`,
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
   ];
+  // Every Industry Guides email answers to the umbrella address (owner, 13 Oct 2026).
+  if (i.business.kind === "local_guide") headers.splice(2, 0, `Reply-To: ${UMBRELLA_CONTACT}`);
   if (i.inReplyTo) headers.push(`In-Reply-To: ${i.inReplyTo}`, `References: ${i.inReplyTo}`);
   const part = (type: string, content: string) =>
     `--${boundary}\r\nContent-Type: ${type}; charset="UTF-8"\r\nContent-Transfer-Encoding: base64\r\n\r\n${b64(content)}\r\n`;

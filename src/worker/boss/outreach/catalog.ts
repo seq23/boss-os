@@ -23,6 +23,24 @@
  *   · Signed by the brand, never by a person (the Kindle front-door rule).
  */
 
+/**
+ * THE COMPANY BEHIND THE INDUSTRY GUIDES (owner, 12 Oct 2026). The local-guide businesses in this
+ * catalog (USCIS Exam Guides, The Dentistry Guides, Hormone Optimization Guides, Neuro Evaluation
+ * Guides, The Accident Guides and, since 13 Oct 2026, Memphis Senior Care Homes) are properties of ONE company, and the CAN-SPAM footer
+ * names it. The only copy of the name in the code; pinned by tests/boss/moniqueOutreach.test.ts.
+ */
+export const UMBRELLA_COMPANY = "The Industry Guides";
+/** The one contact for the whole company, printed on the footer's company line (owner, 12 Oct 2026). */
+export const UMBRELLA_CONTACT = "hello@theindustryguides.com";
+/**
+ * ONE SENDER FOR EVERY GUIDE (owner, 13 Oct 2026). Every local guide sends From the umbrella
+ * address with Reply-To the same, so the Worker proves ONE route that all of them share. The five
+ * per-site hello@ aliases are retired from outreach (they stay in the Workspace, unused). A future
+ * guide sends from here too; `assertSenderAllowed` refuses anything else. Side businesses keep their own.
+ */
+export const GUIDES_SENDER = UMBRELLA_CONTACT;
+
+
 export type BusinessKind = "local_guide" | "affiliate" | "direct";
 
 export interface Metro {
@@ -127,7 +145,7 @@ export const BUSINESSES: Business[] = [
     domain: "uscisexam.com",
     brand: "USCIS Exam Guides",
     kind: "local_guide",
-    sender: "hello@uscisexam.com",
+    sender: GUIDES_SENDER,
     offerUrl: "https://uscisexam.com/for-providers/",
     offer: "Featured civil-surgeon listing, 2 months free, then $249/month per metro",
     segments: [{
@@ -155,7 +173,7 @@ export const BUSINESSES: Business[] = [
     domain: "dentistryguides.com",
     brand: "The Dentistry Guides",
     kind: "local_guide",
-    sender: "hello@dentistryguides.com",
+    sender: GUIDES_SENDER,
     offerUrl: "https://dentistryguides.com/for-providers/",
     offer: "Featured implant/cosmetic listing, 2 months free, then $249/month per metro",
     segments: [{
@@ -182,7 +200,7 @@ export const BUSINESSES: Business[] = [
     domain: "hormonesivhair.com",
     brand: "Hormone Optimization Guides",
     kind: "local_guide",
-    sender: "hello@hormonesivhair.com",
+    sender: GUIDES_SENDER,
     offerUrl: "https://hormonesivhair.com/for-providers/",
     offer: "Featured TRT/IV/hair listing, 2 months free, then $249/month per metro",
     segments: [{
@@ -209,7 +227,7 @@ export const BUSINESSES: Business[] = [
     domain: "neuroevalguides.com",
     brand: "Neuro Evaluation Guides",
     kind: "local_guide",
-    sender: "hello@neuroevalguides.com",
+    sender: GUIDES_SENDER,
     offerUrl: "https://neuroevalguides.com/for-providers/",
     offer: "Featured evaluator listing, 2 months free, then $249/month per metro",
     segments: [{
@@ -236,7 +254,7 @@ export const BUSINESSES: Business[] = [
     domain: "theaccidentguides.com",
     brand: "The Accident Guides",
     kind: "local_guide",
-    sender: "hello@theaccidentguides.com",
+    sender: GUIDES_SENDER,
     offerUrl: "https://theaccidentguides.com/for-providers/",
     offer: "Featured injury-firm listing, 2 months free, then $499/month per state",
     segments: [{
@@ -264,7 +282,7 @@ export const BUSINESSES: Business[] = [
     domain: "memphisseniorcarehomes.com",
     brand: "Memphis Senior Care Homes",
     kind: "local_guide",
-    sender: "hello@memphisseniorcarehomes.com",
+    sender: GUIDES_SENDER,
     offerUrl: "https://memphisseniorcarehomes.com/for-providers/",
     offer: "Exclusive lead routing, 2 months free, then $249/month + one month's rent per move-in; or the open round ($800 or one month's rent per family)",
     metros: ["memphis"],
@@ -553,7 +571,7 @@ export function businessByKey(key: string): Business | undefined {
   return BUSINESSES.find((b) => b.key === key);
 }
 
-/** The sender must be on its own business domain and never on a forbidden one. Throws by name. */
+/** A guide sends from the umbrella address; any other business from its own domain; never a forbidden one. Throws by name. */
 export function assertSenderAllowed(b: Business): void {
   const domain = b.sender.split("@")[1]?.toLowerCase() ?? "";
   if (onDomain(b.sender, NEVER_OUTREACH_DOMAINS) || onDomain(b.domain, NEVER_OUTREACH_DOMAINS)) {
@@ -561,6 +579,10 @@ export function assertSenderAllowed(b: Business): void {
   }
   if (FORBIDDEN_SENDER_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`))) {
     throw new Error(`Refused: ${b.sender} is on ${domain}, which outreach may never send from.`);
+  }
+  if (b.kind === "local_guide") {
+    if (b.sender !== GUIDES_SENDER) throw new Error(`Refused: ${b.brand} is a guide, and every guide sends from ${GUIDES_SENDER} (owner, 13 Oct 2026), not ${b.sender}.`);
+    return;
   }
   if (domain !== b.domain) {
     throw new Error(`Refused: ${b.sender} is not on ${b.brand}'s own domain (${b.domain}).`);
