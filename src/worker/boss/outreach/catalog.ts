@@ -38,7 +38,21 @@ export const METROS: Metro[] = [
   { key: "chicago", label: "Chicago", bbox: [41.64, -87.94, 42.02, -87.52] },
   { key: "dallas", label: "Dallas", bbox: [32.62, -97.0, 33.02, -96.55] },
   { key: "houston", label: "Houston", bbox: [29.52, -95.79, 30.11, -95.01] },
+  /*
+   * Memphis: Shelby County TN, plus the second ring, DeSoto County MS (south) and Crittenden County
+   * AR (west, across the river). Read ONLY for the businesses that name it in `metros`.
+   */
+  { key: "memphis", label: "Memphis", bbox: [34.75, -90.5, 35.45, -89.63] },
 ];
+
+/** The metros a business reads when it names none: the five national metros, never a regional one. */
+export const NATIONAL_METROS = ["nyc", "la", "chicago", "dallas", "houston"] as const;
+
+/** The metros this business's public listings are read in. */
+export function metrosFor(b: Business): Metro[] {
+  const keys: readonly string[] = b.metros ?? NATIONAL_METROS;
+  return METROS.filter((m) => keys.includes(m.key));
+}
 
 export interface Segment {
   key: string;
@@ -47,6 +61,8 @@ export interface Segment {
   osm: string[];
   /** The business's own website must say this, or it is not who we are writing to. */
   qualify: RegExp;
+  /** Role mailboxes to write to first, ahead of the shared role order (e.g. "admissions"). */
+  preferRoles?: string[];
 }
 
 export interface Step {
@@ -70,6 +86,15 @@ export interface Business {
   steps: [Step, Step, Step];
   /** What the owner's card suggests when someone says yes. */
   nextStep: string;
+  /** Metro keys whose listings are read for this business. Absent = the five national metros. */
+  metros?: string[];
+  /**
+   * TWO PITCHES, CHOSEN AT SEND TIME (seat.ts). The site publishes whether its one exclusive seat
+   * is taken at `url` ({"active": false} or {"active": true, "end": "YYYY-MM-DD"}). Seat open →
+   * `steps` (pitch A, the seat). Seat taken → `taken` (pitch B, the open round). Placeholder
+   * {seat_end_month} is the seat's end, e.g. "March 2027".
+   */
+  seat?: { url: string; taken: [Step, Step, Step] };
 }
 
 const LOCAL_FOLLOW_UPS = (what: string, price: string): [Step, Step] => [
@@ -227,6 +252,89 @@ export const BUSINESSES: Business[] = [
       ...LOCAL_FOLLOW_UPS("injury-firm", "$499/month for the state"),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months (state-wide, $499 after).",
+  },
+  {
+    key: "memphisseniorcarehomes",
+    domain: "memphisseniorcarehomes.com",
+    brand: "Memphis Senior Care Homes",
+    kind: "local_guide",
+    sender: "hello@memphisseniorcarehomes.com",
+    offerUrl: "https://memphisseniorcarehomes.com/for-providers/",
+    offer: "Exclusive lead routing, 2 months free, then $249/month + one month's rent per move-in; or the open round ($800 or one month's rent per family)",
+    metros: ["memphis"],
+    segments: [{
+      key: "senior_living",
+      label: "Assisted living and memory care communities",
+      osm: [
+        '["social_facility"~"^(assisted_living|nursing_home)$"]',
+        '["amenity"="social_facility"]["social_facility:for"~"senior"]',
+        '["amenity"="nursing_home"]',
+        '["healthcare"="nursing_home"]',
+        // Many communities are mapped by name only (measured 13 Oct 2026: 7 → 10 sites with a website).
+        '["name"~"[Aa]ssisted [Ll]iving|[Mm]emory [Cc]are|[Ss]enior [Ll]iving|[Rr]etirement"]',
+      ],
+      qualify: /assisted living|memory care|senior living|alzheimer|dementia care/i,
+      // Executive director, admissions and community relations, by their role mailboxes.
+      preferRoles: ["admissions", "communityrelations", "executivedirector", "director", "sales", "marketing"],
+    }],
+    steps: [
+      {
+        afterDays: 0,
+        subject: "Exclusive lead routing for {org}",
+        body:
+          "Hi {org} team,\n\nMemphis Senior Care Homes is a free guide for families choosing assisted living or " +
+          "memory care in the Memphis area. One community at a time receives every qualified family we hear " +
+          "from — first, with full details. It's $249/month, the first 2 months are free, 6-month term, plus " +
+          "one month's rent when a family we send moves in. Families who don't fit you go to the open round.\n\n" +
+          "How it works: {offer_url}\n\nReply \"yes\" and we will set it up.",
+      },
+      {
+        afterDays: 4,
+        subject: "Re: {subject}",
+        body:
+          "Hi {org} team,\n\nA quick follow-up on exclusive lead routing. The first 2 months are free, then " +
+          "$249/month, plus one month's rent when a family we send moves in. You can see exactly how it works " +
+          "here: {offer_url}\n\nReply \"yes\" and we will set it up for you.",
+      },
+      {
+        afterDays: 7,
+        subject: "Re: {subject}",
+        body:
+          "Hi {org} team,\n\nLast note from us on this. If exclusive lead routing is not a fit right now, no " +
+          "problem, and you will not hear from us again about it. If it is, the details are here: {offer_url}",
+      },
+    ],
+    seat: {
+      url: "https://memphisseniorcarehomes.com/_seat.json",
+      taken: [
+        {
+          afterDays: 0,
+          subject: "Qualified Memphis families, pay only when you take one",
+          body:
+            "Hi {org} team,\n\nMemphis has an exclusive routing partner through {seat_end_month}. You can still " +
+            "receive every qualified family that fits you: we send a teaser with care level, budget and " +
+            "timeline, no names. Take it for a flat $800, or accept it and pay one month's rent only if they " +
+            "move in. First five communities to accept get the family. Nothing to sign, nothing monthly.\n\n" +
+            "How it works: {offer_url}.",
+        },
+        {
+          afterDays: 4,
+          subject: "Re: {subject}",
+          body:
+            "Hi {org} team,\n\nA quick follow-up on qualified Memphis families. Each teaser shows care level, " +
+            "budget and timeline, no names. Take a family for a flat $800, or pay one month's rent only if they " +
+            "move in. Nothing to sign, nothing monthly: {offer_url}\n\nReply \"yes\" and we will start sending teasers.",
+        },
+        {
+          afterDays: 7,
+          subject: "Re: {subject}",
+          body:
+            "Hi {org} team,\n\nLast note from us on this. If family referrals are not a fit right now, no " +
+            "problem, and you will not hear from us again about it. If they are, the details are here: {offer_url}",
+        },
+      ],
+    },
+    nextStep: "Reply with the setup link from /for-providers/: the exclusive seat (2 free months, then $249/month) if it is open, otherwise the open round (teasers, $800 or one month's rent).",
   },
   {
     key: "time2read",

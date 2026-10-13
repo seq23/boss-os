@@ -4,8 +4,10 @@
  *   GET  /                      every business: route, pause, cap, today's sends, 14-day health,
  *                               prospects waiting, replies — and the two switches.
  *   POST /settings              { kill_switch?: "on"|"off", sending?: "off"|"test_only"|"live" }
- *   PUT  /business/:key         { postal_address?, resume?: true } — set the CAN-SPAM footer
- *                               address, or lift an automatic pause.
+ *   PUT  /business/:key         { postal_address?, resume?: true, seat_holder_domain? } — set the
+ *                               CAN-SPAM footer address, lift an automatic pause, or (a business
+ *                               with an exclusive seat only) name the seat holder's domain, which
+ *                               outreach never writes to; "" clears it. Empty by default.
  *   POST /test-send             { business_key, step } — one sample to the test recipient only.
  *   POST /tick                  run one outreach tick now (what the hourly cron runs).
  *   GET  /referrals             partners, codes and the payout ledger.
@@ -25,6 +27,7 @@ import { BOUNCE_WINDOW_MS, chicagoParts, dailyCap } from "../outreach/brakes";
 import { domainState, readSettings, runOutreachTick, sendTest } from "../outreach/engine";
 import { GmailSession } from "../outreach/gmail";
 import { suppress } from "../outreach/suppression";
+import { normaliseHolderDomain } from "../outreach/seat";
 import { recordConversion } from "../outreach/referrals";
 
 export const outreach = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -69,6 +72,9 @@ outreach.get("/", async (c) => {
         complaints: mine.filter((x) => x.status === "complaint").length,
       },
       prospects, replies: rep,
+      seat: b.seat
+        ? { url: b.seat.url, active: st.seat_active === 1, end: st.seat_end ?? null, read_at: st.seat_read_at ?? null, detail: st.seat_detail ?? null, holder_domain: st.seat_holder_domain ?? null }
+        : null,
     };
   });
   return ok(c, {
@@ -99,9 +105,19 @@ outreach.post("/settings", async (c) => {
 outreach.put("/business/:key", async (c) => {
   const b = businessByKey(c.req.param("key"));
   if (!b) throw notFound("No business with that key.");
-  const body = await c.req.json<{ postal_address?: string; resume?: boolean }>().catch(() => ({} as any));
+  const body = await c.req.json<{ postal_address?: string; resume?: boolean; seat_holder_domain?: string }>().catch(() => ({} as any));
   const now = Date.now();
+  let holder: string | null | undefined;
+  if (body.seat_holder_domain !== undefined) {
+    if (!b.seat) throw badRequest(`${b.brand} has no exclusive seat, so it has no seat holder.`);
+    if (typeof body.seat_holder_domain !== "string") throw badRequest("seat_holder_domain is a domain such as example.com, or \"\" to clear it.");
+    holder = normaliseHolderDomain(body.seat_holder_domain);
+    if (holder === null && body.seat_holder_domain.trim() !== "") throw badRequest("seat_holder_domain is a domain such as example.com, or \"\" to clear it.");
+  }
   await domainState(c.env.DB, b.key, now);
+  if (holder !== undefined) {
+    await c.env.DB.prepare(`UPDATE outreach_domain_state SET seat_holder_domain = ?, updated_at = ? WHERE business_key = ?`).bind(holder, now, b.key).run();
+  }
   if (typeof body.postal_address === "string") {
     const a = body.postal_address.trim();
     if (a.length < 10) throw badRequest("A postal address is a full street or PO Box address with city, state and ZIP.");
@@ -110,7 +126,7 @@ outreach.put("/business/:key", async (c) => {
   if (body.resume === true) {
     await c.env.DB.prepare(`UPDATE outreach_domain_state SET paused_at = NULL, pause_reason = NULL, updated_at = ? WHERE business_key = ?`).bind(now, b.key).run();
   }
-  await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "outreach_domain_state", entityId: b.key, action: "changed", detail: { postal_address_set: typeof body.postal_address === "string", resume: body.resume === true } });
+  await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "outreach_domain_state", entityId: b.key, action: "changed", detail: { postal_address_set: typeof body.postal_address === "string", resume: body.resume === true, seat_holder_domain: holder } });
   return ok(c, await domainState(c.env.DB, b.key, now));
 });
 

@@ -6,7 +6,9 @@
  *   2. BRAKES: per business, a bounce rate over 3% or any complaint in 14 days pauses it.
  *   3. ROUTES: a business whose sending address appears in the mailbox's send-as list is proven
  *      with one email to the test recipient, then marked ready. Nothing else sends before that.
- *   4. SENDS: within the cap, the window, the flag and the kill switch.
+ *   4. SENDS: within the cap, the window, the flag and the kill switch. A business with an exclusive
+ *      seat reads the site's public seat JSON first (short timeout, last value on failure) and
+ *      picks its pitch from it; its seat holder is never written to.
  *   5. LISTS: one public-listing slice and a few website reads, while a business is short of
  *      prospects.
  *   6. PAYOUTS: on the 1st (Chicago), last month's referral ledger.
@@ -27,6 +29,7 @@ import { GmailSession, addressOf } from "./gmail";
 import { crawlCandidates, randomToken, readNextSlice } from "./lists";
 import { isSuppressed, suppress } from "./suppression";
 import { ensurePartner, runMonthlyPayouts } from "./referrals";
+import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Seat } from "./seat";
 
 export interface OutreachSettings {
   killSwitch: boolean;
@@ -254,6 +257,18 @@ async function sendForBusiness(
   const n = sendsThisTick(cap, await sentToday(db, b.key, now), now);
   if (n === 0) { refused[b.key] = "Outside the sending window, or today's cap is reached."; return 0; }
 
+  // THE SEAT, read at send time and never allowed to block the tick (seat.ts).
+  let seat: Seat = SEAT_OPEN;
+  if (b.seat) {
+    const last: Seat | null = st.seat_read_at ? { active: st.seat_active === 1, end: st.seat_end ?? null } : null;
+    const read = await readSeat(b.seat.url, last, fetchImpl);
+    seat = read.seat;
+    await db.prepare(
+      `UPDATE outreach_domain_state SET seat_active = ?, seat_end = ?, seat_read_at = COALESCE(?, seat_read_at), seat_detail = ?, updated_at = ? WHERE business_key = ?`,
+    ).bind(seat.active ? 1 : 0, seat.end, read.source === "fetched" ? now : null, read.detail, now, b.key).run();
+  }
+  const pitch = pitchFor(b, seat);
+
   const due = await db.prepare(
     `SELECT * FROM outreach_prospects
       WHERE business_key = ? AND source != 'test_recipient'
@@ -267,10 +282,16 @@ async function sendForBusiness(
       await db.prepare(`UPDATE outreach_prospects SET state = 'suppressed', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
       continue;
     }
+    // The seat holder is the business's paying partner: never cold-pitched, pitch A least of all.
+    if (b.seat && isSeatHolder(p, st.seat_holder_domain)) {
+      await db.prepare(`UPDATE outreach_prospects SET state = 'done', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
+      continue;
+    }
     const step = Math.min(p.step, 2) as 0 | 1 | 2;
     const mail = composeEmail({
       business: b, step, to: p.email, org: p.org_name ?? "", metro: p.metro ?? "", unsubToken: p.unsub_token,
       postalAddress: st.postal_address, firstSubject: p.last_subject, inReplyTo: p.last_message_id,
+      pitch, seatEnd: seat.end,
     });
     const res = await mailbox.send(b, mail.raw, p.thread_id);
     const messageId = step === 0 ? await mailbox.messageIdOf(res.id).catch(() => null) : p.last_message_id;
@@ -279,7 +300,7 @@ async function sendForBusiness(
       `UPDATE outreach_prospects SET state = ?, step = ?, next_due_at = ?, thread_id = ?, last_message_id = COALESCE(?, last_message_id),
               last_subject = COALESCE(last_subject, ?), updated_at = ? WHERE id = ?`,
     ).bind(step < 2 ? "in_sequence" : "done", step + 1, next, res.threadId, messageId, mail.subject, now, p.id).run();
-    await recordSend(db, b.key, p.id, p.email, step, false, res, "sent", null, now);
+    await recordSend(db, b.key, p.id, p.email, step, false, res, "sent", b.seat ? `pitch ${pitch}` : null, now);
     sent += 1;
   }
   if (sent > 0 && !st.ramp_started_at) {
@@ -362,7 +383,9 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
   if (b.kind === "affiliate") code = (await ensurePartner(env.DB, b, p, now)).code;
   const link = code ? `${b.offerUrl}?ref=${code}` : b.offerUrl;
   const reply =
-    b.kind === "local_guide"
+    b.seat
+      ? `Thank you! Everything about how it works, and how to start, is here: ${b.offerUrl}\n\nReply with the best contact for family referrals and we will set you up this week.\n\n— The ${b.brand} team`
+      : b.kind === "local_guide"
       ? `Thank you! Here is how the featured listing works and how to start your 2 free months: ${b.offerUrl}\n\nReply with the best contact for the listing and we will have it live this week.\n\n— The ${b.brand} team`
       : b.kind === "affiliate"
         ? `Great to have you. Your personal referral link is ${link} (code ${code}). You earn 30% of the first year's revenue from everyone who buys through it; payouts are monthly.\n\n— The ${b.brand} team`

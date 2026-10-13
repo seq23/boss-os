@@ -11,7 +11,7 @@
  * Never her network, never client data: nothing here reads a mailbox, a contact list or a sheet.
  */
 import { newId } from "../lib/id";
-import { BUSINESSES, METROS, businessByKey, type Business, type Segment } from "./catalog";
+import { BUSINESSES, METROS, businessByKey, metrosFor, type Business, type Segment } from "./catalog";
 import { isBusinessEmail, isSuppressed, normaliseEmail } from "./suppression";
 
 /** Public Overpass instances, tried in order (the main one refuses some clients with a 406). */
@@ -123,7 +123,7 @@ const ROLE_ORDER = ["info", "contact", "hello", "office", "frontdesk", "admin", 
  * business (`listed`). Scraped off-domain addresses are refused: on 9 Oct 2026 the first production
  * run picked a dental website vendor's address (…@dds.cloud) from a practice's footer.
  */
-export function pickEmail(emails: string[], website: string, listed?: string | null): string | null {
+export function pickEmail(emails: string[], website: string, listed?: string | null, preferRoles: readonly string[] = []): string | null {
   const site = baseDomain(new URL(website).hostname);
   const junk = /noreply|no-reply|donotreply|privacy|abuse|webmaster|careers|jobs|billing/i;
   const valid = emails.filter((e) => isBusinessEmail(e) && !junk.test(e));
@@ -131,9 +131,10 @@ export function pickEmail(emails: string[], website: string, listed?: string | n
   const listedOk = listed && isBusinessEmail(listed) && !junk.test(listed) ? [listed] : [];
   const pool = own.length ? own : listedOk;
   if (!pool.length) return null;
+  const order = [...preferRoles, ...ROLE_ORDER];
   pool.sort((a, b) => {
-    const ra = ROLE_ORDER.indexOf(a.split("@")[0] ?? "");
-    const rb = ROLE_ORDER.indexOf(b.split("@")[0] ?? "");
+    const ra = order.indexOf(a.split("@")[0] ?? "");
+    const rb = order.indexOf(b.split("@")[0] ?? "");
     return (ra === -1 ? 99 : ra) - (rb === -1 ? 99 : rb);
   });
   return pool[0] ?? null;
@@ -171,7 +172,7 @@ export async function readNextSlice(db: D1Database, fetchImpl: typeof fetch, now
   for (const b of BUSINESSES) {
     if (only && !only.includes(b.key)) continue;
     for (const seg of b.segments) {
-      for (const metro of METROS) for (const [qi, box] of quadrants(metro.bbox).entries()) {
+      for (const metro of metrosFor(b)) for (const [qi, box] of quadrants(metro.bbox).entries()) {
         const part = `${metro.key}:q${qi + 1}`;
         const id = `${b.key}|${seg.key}|${part}`;
         if (fresh.has(id)) continue;
@@ -253,7 +254,7 @@ async function admitCandidate(
     await mark(db, c.id, "unqualified", `the website does not say ${seg.qualify.source.slice(0, 60)}`, now);
     return "unqualified";
   }
-  const email = pickEmail([...(c.listed_email ? [c.listed_email] : []), ...emailsIn(html)], c.website, c.listed_email);
+  const email = pickEmail([...(c.listed_email ? [c.listed_email] : []), ...emailsIn(html)], c.website, c.listed_email, seg.preferRoles);
   if (!email) { await mark(db, c.id, "no_email", "no business address published on the site", now); return "no_email"; }
   if (await isSuppressed(db, email)) { await mark(db, c.id, "no_email", "the address is on the do-not-contact list", now); return "suppressed"; }
   const domain = email.split("@")[1] ?? "";

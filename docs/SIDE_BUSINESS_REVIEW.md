@@ -161,6 +161,16 @@ Not shown: spryexecutiveos.com and thedentistryguides.com (their sitemaps live o
 - **Live now:** $249/month listing with 2 months free; $499 per state for injury firms on theaccidentguides.com. Lead form proven: a test lead reached the inbox. Five uscisexam metros enriched (NYC, LA, Chicago, Dallas, Houston). Dentistry: safety-net clinic sections live and indexed in 6 metros, every entry sourced from an official site. Hub analytics fixed; validators and citation work kept running.
 - **Next:** Two new guides on theindustryguides.com ("free dental clinics", "dental school clinics") link to all six metro pages; a validator keeps those links intact. Watch lead-form submissions on the canonicals. **11 Oct:** 1,477 impressions a month across the six sites and 2 clicks; none of the 240 target queries appear. Plan A hygiene in flight; Plan B rebuilds the targets from what Google shows.
 
+### Memphis Senior Care Homes
+*local-guides-generator · memphisseniorcarehomes.com · a property of The Industry Guides · added 13 October 2026*
+
+| Price | Checkout | Outreach |
+|---|---|---|
+| Exclusive routing seat: $249/month, first 2 months free, 6-month term, plus one month's rent per move-in. Open round: $800 per family, or one month's rent only if they move in | Stripe on the site (https://memphisseniorcarehomes.com/for-providers/) | Monique, hourly, from hello@memphisseniorcarehomes.com (Outbound Email Map: memphis-senior-outreach); pitch chosen per send from the site's public seat file |
+
+- **Who it writes to:** assisted living and memory care communities in Shelby County TN, then DeSoto County MS and Crittenden County AR; admissions and community-relations mailboxes first. Public listings and the communities' own websites only.
+- **Not sending yet:** the alias has to be added to the outreach mailbox first (npm run outreach:domains, then the automatic route proof). The site's own emails (lead notice, teasers, releases, pass notices, family follow-ups) are on the email map as not yet sending.
+
 ### ApprovalPrep
 *approvalprep.com · one-off kits*
 

@@ -7,11 +7,12 @@
  * `composeEmail` throws rather than produce a message without the unsubscribe link or the address.
  */
 import type { Business } from "./catalog";
+import { seatEndMonth, type Pitch } from "./seat";
 
 /**
- * THE COMPANY BEHIND THE INDUSTRY GUIDES (owner, 12 Oct 2026). The five local-guide businesses in
- * the catalog (USCIS Exam Guides, The Dentistry Guides, Hormone Optimization Guides, Neuro
- * Evaluation Guides, The Accident Guides) are properties of ONE company, and the CAN-SPAM footer
+ * THE COMPANY BEHIND THE INDUSTRY GUIDES (owner, 12 Oct 2026). The local-guide businesses in the
+ * catalog (USCIS Exam Guides, The Dentistry Guides, Hormone Optimization Guides, Neuro Evaluation
+ * Guides, The Accident Guides and, since 13 Oct 2026, Memphis Senior Care Homes) are properties of ONE company, and the CAN-SPAM footer
  * names it. The only copy of the name in the code; pinned by tests/boss/moniqueOutreach.test.ts.
  */
 export const UMBRELLA_COMPANY = "The Industry Guides";
@@ -44,6 +45,10 @@ export interface ComposeInput {
   /** Threading for follow-ups. */
   inReplyTo?: string | null;
   refLink?: string | null;
+  /** A seat business's pitch (seat.ts): A = the seat is open (default), B = it is taken. */
+  pitch?: Pitch;
+  /** The taken seat's end, YYYY-MM-DD. Pitch B names its month and refuses without it. */
+  seatEnd?: string | null;
 }
 
 export interface Composed {
@@ -62,7 +67,8 @@ function esc(s: string): string {
 }
 
 function fill(t: string, v: Record<string, string>): string {
-  return t.replace(/\{(\w+)\}/g, (_, k: string) => v[k] ?? "");
+  // An unknown placeholder is left in place, so the refusal below catches it rather than sending a gap.
+  return t.replace(/\{(\w+)\}/g, (m, k: string) => v[k] ?? m);
 }
 
 function encodeHeader(s: string): string {
@@ -78,14 +84,20 @@ export function composeEmail(i: ComposeInput): Composed {
   const address = (i.postalAddress ?? "").trim();
   if (address.length < 10) throw new Error("Refused: no postal address for this business. CAN-SPAM requires one in every email.");
 
-  const step = i.business.steps[i.step];
-  const vars = {
+  if (i.pitch === "B" && !i.business.seat) throw new Error(`Refused: ${i.business.brand} has no seat, so it has no pitch B.`);
+  if (i.pitch === "B" && !(i.seatEnd && /^\d{4}-\d{2}-\d{2}$/.test(i.seatEnd))) {
+    throw new Error("Refused: pitch B names the month the exclusive seat ends, and no end date was given.");
+  }
+  const steps = i.pitch === "B" && i.business.seat ? i.business.seat.taken : i.business.steps;
+  const step = steps[i.step];
+  const vars: Record<string, string> = {
     org: i.org || "there",
     metro: i.metro,
     brand: i.business.brand,
     offer_url: i.refLink || i.business.offerUrl,
     ref_link: i.refLink ?? "",
     subject: i.firstSubject ?? "",
+    seat_end_month: i.seatEnd ? seatEndMonth(i.seatEnd) : "",
   };
   const subject = fill(step.subject, vars).trim();
   const unsub = unsubscribeUrl(i.unsubToken);
@@ -99,6 +111,17 @@ export function composeEmail(i: ComposeInput): Composed {
     `<p style="${FOOTER_STYLE}margin-top:24px;">${esc(why)} ` +
     `<a href="${esc(unsub)}" style="color:#8a8a8a;">Unsubscribe with one click</a>.<br>` +
     `${companyLines(i.business, address).map(esc).join("<br>")}</p></body></html>`;
+  // THE REFUSAL, CHECKED ON WHAT WAS BUILT: no unfilled placeholder, and both footers carry the
+  // unsubscribe link and the company lines (for a local guide, the umbrella company and its contact).
+  const left = /\{\w+\}/.exec(`${subject}\n${message}`);
+  if (left) throw new Error(`Refused: ${left[0]} was left unfilled in ${i.business.brand}'s email.`);
+  const footerLines = companyLines(i.business, address);
+  if (!body.includes(unsub) || !html.includes(`href="${esc(unsub)}"`) || footerLines.some((l) => !body.includes(l) || !html.includes(esc(l)))) {
+    throw new Error(`Refused: ${i.business.brand}'s email is missing its unsubscribe link or footer company line.`);
+  }
+  if (i.business.kind === "local_guide" && !footerLines.some((l) => l.includes(UMBRELLA_CONTACT))) {
+    throw new Error(`Refused: a local guide's email must name its company and ${UMBRELLA_CONTACT} in the footer.`);
+  }
   const boundary = `=_outreach_${crypto.randomUUID().replace(/-/g, "")}`;
   const b64 = (t: string) => btoa(unescape(encodeURIComponent(t))).replace(/(.{76})/g, "$1\r\n");
 

@@ -263,7 +263,7 @@ export const api = {
   moniqueOutreach: () => call<any>("/outreach"),
   moniqueOutreachSettings: (body: { kill_switch?: "on" | "off"; sending?: "off" | "test_only" | "live" }) =>
     call<any>("/outreach/settings", post("", body)),
-  moniqueOutreachBusiness: (key: string, body: { postal_address?: string; resume?: boolean }) =>
+  moniqueOutreachBusiness: (key: string, body: { postal_address?: string; resume?: boolean; seat_holder_domain?: string }) =>
     call<any>(`/outreach/business/${key}`, { method: "PUT", body: JSON.stringify(body) }),
   moniqueOutreachTestSend: (business_key: string, step: number) => call<any>("/outreach/test-send", post("", { business_key, step })),
   moniqueOutreachTick: () => call<any>("/outreach/tick", post("")),
