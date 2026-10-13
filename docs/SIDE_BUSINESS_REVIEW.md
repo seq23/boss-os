@@ -168,8 +168,8 @@ Not shown: spryexecutiveos.com and thedentistryguides.com (their sitemaps live o
 |---|---|---|
 | Exclusive routing seat: $249/month, first 2 months free, 6-month term, plus one month's rent per move-in. Open round: $800 per family, or one month's rent only if they move in | Stripe on the site (https://memphisseniorcarehomes.com/for-providers/) | Monique, hourly, from hello@memphisseniorcarehomes.com (Outbound Email Map: memphis-senior-outreach); pitch chosen per send from the site's public seat file |
 
-- **Who it writes to:** assisted living and memory care communities in Shelby County TN, then DeSoto County MS and Crittenden County AR; admissions and community-relations mailboxes first. Public listings and the communities' own websites only.
-- **Not sending yet:** the alias has to be added to the outreach mailbox first (npm run outreach:domains, then the automatic route proof). The site's own emails (lead notice, teasers, releases, pass notices, family follow-ups) are on the email map as not yet sending.
+- **Who it writes to:** assisted living and memory care communities in Shelby County TN, then DeSoto County MS and Crittenden County AR; admissions and community-relations mailboxes first. The list is the site's own licensed directory (https://memphisseniorcarehomes.com/data/facilities.json, from the state licensure registries), read daily: a facility with a public business email becomes a prospect, one with only a website has its site read for a role mailbox. Public sources only, $0.
+- **Not sending yet:** SPF, DMARC and Google verification are in place (13 Oct); the domain still has to be added to the outreach Workspace with the hello@ alias, its send-as and DKIM, then the automatic route proof runs. The site's own emails (lead notice, teasers, releases, pass notices, family follow-ups) are on the email map as not yet sending.
 
 ### ApprovalPrep
 *approvalprep.com · one-off kits*

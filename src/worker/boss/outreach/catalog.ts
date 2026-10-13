@@ -95,6 +95,12 @@ export interface Business {
    * {seat_end_month} is the seat's end, e.g. "March 2027".
    */
   seat?: { url: string; taken: [Step, Step, Step] };
+  /**
+   * A licensed-facility directory the business's own site publishes (public JSON, $0): ONE list,
+   * kept in one place. Read daily by lists.ts: a row with a public business email becomes a
+   * prospect; a row with only a website goes to the usual website read.
+   */
+  directory?: string;
 }
 
 const LOCAL_FOLLOW_UPS = (what: string, price: string): [Step, Step] => [
@@ -262,6 +268,7 @@ export const BUSINESSES: Business[] = [
     offerUrl: "https://memphisseniorcarehomes.com/for-providers/",
     offer: "Exclusive lead routing, 2 months free, then $249/month + one month's rent per move-in; or the open round ($800 or one month's rent per family)",
     metros: ["memphis"],
+    directory: "https://memphisseniorcarehomes.com/data/facilities.json",
     segments: [{
       key: "senior_living",
       label: "Assisted living and memory care communities",

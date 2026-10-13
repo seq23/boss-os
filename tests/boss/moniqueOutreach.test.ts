@@ -16,7 +16,7 @@ import GMAIL_SOURCE from "../../src/worker/boss/outreach/gmail.ts?raw";
 import DOMAINS_SCRIPT from "../../scripts/outreach/domains.mjs?raw";
 import CLAUDE_MD from "../../CLAUDE.md?raw";
 import OPERATIONS_MD from "../../docs/boss/OPERATIONS.md?raw";
-import { pickEmail, parseOverpass } from "../../src/worker/boss/outreach/lists";
+import { pickEmail, parseOverpass, parseDirectory, readDirectories } from "../../src/worker/boss/outreach/lists";
 import { METROS, NATIONAL_METROS, metrosFor } from "../../src/worker/boss/outreach/catalog";
 import { isSeatHolder, normaliseHolderDomain, parseSeat, pitchFor, readSeat, seatEndMonth, SEAT_OPEN } from "../../src/worker/boss/outreach/seat";
 import { runOutreachTick } from "../../src/worker/boss/outreach/engine";
@@ -848,5 +848,97 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     expect(seg.qualify.test("Family dentistry")).toBe(false);
     expect(pickEmail(["info@oakcourt.example", "admissions@oakcourt.example"], "https://oakcourt.example", null, seg.preferRoles)).toBe("admissions@oakcourt.example");
     expect(pickEmail(["info@oakcourt.example", "admissions@vendor.example"], "https://oakcourt.example", null, seg.preferRoles)).toBe("info@oakcourt.example");
+  });
+});
+
+/**
+ * THE LICENSED DIRECTORY IS THE LIST (13 Oct 2026). memphisseniorcarehomes.com publishes every
+ * licensed facility at /data/facilities.json; rows with a public business email become prospects,
+ * rows with only a website go to the website read. Fixture rows keep the file's real shape.
+ */
+describe("Memphis Senior Care Homes: the licensed directory feeds prospects", () => {
+  beforeEach(reset);
+  const DIR_URL = "https://memphisseniorcarehomes.com/data/facilities.json";
+  const facility = (over: Record<string, unknown>) => ({
+    name: "American House Bartlett", address: "3345 Kirby Whitten Road", city: "Bartlett", state: "TN", zip: "38134",
+    phone: "901-383-6901", phone_source: "HFC registry", license_type: "Assisted Care Living Facility", license_number: "62",
+    license_status: "Licensed", total_beds: 116, secured_beds: 0, memory_care: false,
+    website: "https://www.americanhouse.example/bartlett", email: "", lat: 35.187575, lng: -89.867415, ...over,
+  });
+  const FIXTURE = {
+    source: "Tennessee HFC registry; Mississippi MSDH", fetched_at: "2026-10-13", county: "Shelby",
+    facilities: [
+      facility({ name: "Oak Court Assisted Living", license_number: "101", website: "https://oakcourt.example", email: "admissions@oakcourt.example" }),
+      facility({ name: "Riverbend Memory Care", license_number: "102", website: "https://www.riverbend.example/", email: "" }),
+      facility({ name: "Magnolia Home", license_number: "MS-7", state: "MS", city: "Southaven", website: "", email: "owner@gmail.com" }),
+      facility({ name: "Cedar Place", license_number: "103", website: "https://cedar.example", email: "owner@gmail.com" }),
+      facility({ name: "", license_number: "104" }),
+      facility({ name: "No Contact Home", license_number: "105", website: "", email: "" }),
+    ],
+  };
+
+  function dirFetch(body: unknown, opts: { status?: number; reads?: string[] } = {}): typeof fetch {
+    return (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === DIR_URL) { opts.reads?.push(url); return Response.json(body, { status: opts.status ?? 200 }); }
+      if (url.startsWith("https://cloudflare-dns.com/dns-query")) {
+        return Response.json({ Status: 0, Answer: [{ type: 15, data: "10 mx.oakcourt.example." }] });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+  }
+
+  it("is the business's directory, on its own site", () => {
+    expect(businessByKey("memphisseniorcarehomes")!.directory).toBe(DIR_URL);
+    expect(BUSINESSES.filter((b) => b.directory).map((b) => b.key)).toEqual(["memphisseniorcarehomes"]);
+  });
+
+  it("parses the file: named rows with a website or an email, normalised", () => {
+    const rows = parseDirectory(FIXTURE);
+    expect(rows.map((r) => r.name)).toEqual(["Oak Court Assisted Living", "Riverbend Memory Care", "Magnolia Home", "Cedar Place"]);
+    expect(rows[0]).toMatchObject({ email: "admissions@oakcourt.example", website: "https://oakcourt.example", licence: "101" });
+    expect(rows[1]).toMatchObject({ email: null, website: "https://www.riverbend.example" });
+    expect(parseDirectory(FIXTURE.facilities).length).toBe(4);
+    expect(parseDirectory({ nope: 1 })).toEqual([]);
+  });
+
+  it("yields prospects from emails and website reads from the rest, once a day", async () => {
+    const reads: string[] = [];
+    const r = await readDirectories(env.DB, dirFetch(FIXTURE, { reads }), TUESDAY_10AM);
+    expect(r.read).toEqual(["memphisseniorcarehomes"]);
+    expect(r.prospects).toBe(1);
+    expect(r.candidates).toBe(2);
+    const p = await row<any>(`SELECT * FROM outreach_prospects WHERE business_key = 'memphisseniorcarehomes' AND source = 'licensed_directory'`);
+    expect(p).toMatchObject({ email: "admissions@oakcourt.example", org_name: "Oak Court Assisted Living", segment: "senior_living", metro: "Memphis", state: "new" });
+    expect(p.source_url).toBe(`${DIR_URL}#licence-101`);
+    expect(p.unsub_token).toBeTruthy();
+    const cands = await env.DB.prepare(`SELECT website, metro FROM outreach_candidates WHERE business_key = 'memphisseniorcarehomes' ORDER BY website`).all<any>();
+    // Free mail is never a prospect: Cedar Place goes to the website read instead; Magnolia (no site) is dropped.
+    expect((cands.results ?? []).map((c: any) => c.website)).toEqual(["https://cedar.example", "https://www.riverbend.example"]);
+    expect((cands.results ?? []).every((c: any) => c.metro === "memphis")).toBe(true);
+    // Within the day: not read again.
+    await readDirectories(env.DB, dirFetch(FIXTURE, { reads }), TUESDAY_10AM + 3_600_000);
+    expect(reads.length).toBe(1);
+    // Next day: read again, nothing duplicated.
+    const again = await readDirectories(env.DB, dirFetch(FIXTURE, { reads }), TUESDAY_10AM + DAY_MS + 1);
+    expect(reads.length).toBe(2);
+    expect(again.prospects + again.candidates).toBe(0);
+  });
+
+  it("a failed read is recorded and retried within hours, and the tick reads the directory", async () => {
+    const reads: string[] = [];
+    const r = await readDirectories(env.DB, dirFetch({}, { status: 503, reads }), TUESDAY_10AM);
+    expect(r.read).toEqual(["memphisseniorcarehomes"]);
+    const slice = await row<any>(`SELECT found, detail FROM outreach_slices WHERE business_key = 'memphisseniorcarehomes' AND metro = 'directory'`);
+    expect(slice.found).toBe(-1);
+    expect(slice.detail).toMatch(/503/);
+    await readDirectories(env.DB, dirFetch(FIXTURE, { reads }), TUESDAY_10AM + 3 * 3_600_000);
+    expect(reads.length).toBe(2);
+    await env.DB.prepare(`DELETE FROM outreach_slices`).run();
+    const g = fakeGmail();
+    const base = g.fetchImpl;
+    const tick = await runOutreachTick(await tickEnv(), TUESDAY_10AM, (async (i: RequestInfo | URL, init?: RequestInit) =>
+      String(i) === DIR_URL ? Response.json(FIXTURE) : base(i, init)) as typeof fetch);
+    expect(tick.lists.directories?.read).toEqual(["memphisseniorcarehomes"]);
   });
 });

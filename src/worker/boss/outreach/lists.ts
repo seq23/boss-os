@@ -278,3 +278,109 @@ export function randomToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(18));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+
+/**
+ * THE LICENSED DIRECTORY (13 Oct 2026). A business with `directory` publishes every licensed
+ * facility it lists (state licensure registries, the facilities' own sites) as public JSON:
+ * `{ facilities: [{ name, city, phone, website, email, license_number, … }] }`. Read once a day
+ * (a failed read is retried after SLICE_RETRY_MS, like a listing slice):
+ *   · a row whose email is a business address with an MX record becomes a prospect at once;
+ *   · a row with only a website (or a free-mail address) goes to the website read, which finds the
+ *     role mailbox the way it does for every other listing.
+ */
+export const DIRECTORY_REFRESH_MS = 86_400_000;
+const DIRECTORY_SLICE = "directory";
+
+export interface DirectoryRow {
+  name: string;
+  website: string | null;
+  email: string | null;
+  licence: string | null;
+  city: string | null;
+}
+
+export function parseDirectory(json: unknown): DirectoryRow[] {
+  const rows = Array.isArray(json) ? json : (json as { facilities?: unknown })?.facilities;
+  if (!Array.isArray(rows)) return [];
+  const out: DirectoryRow[] = [];
+  for (const r of rows as any[]) {
+    const name = typeof r?.name === "string" ? r.name.trim() : "";
+    if (!name) continue;
+    const website = r.website ? normaliseWebsite(String(r.website)) : null;
+    const email = r.email ? normaliseEmail(String(r.email).split(/[;,]/)[0] ?? "") : null;
+    if (!website && !email) continue;
+    out.push({
+      name, website, email: email || null,
+      licence: r.license_number != null && String(r.license_number).trim() ? String(r.license_number).trim() : null,
+      city: typeof r.city === "string" ? r.city : null,
+    });
+  }
+  return out;
+}
+
+/** Read every due directory. Never throws for one business's failure. */
+export async function readDirectories(db: D1Database, fetchImpl: typeof fetch, now: number): Promise<{ read: string[]; prospects: number; candidates: number; detail: Record<string, string> }> {
+  const res = { read: [] as string[], prospects: 0, candidates: 0, detail: {} as Record<string, string> };
+  for (const b of BUSINESSES) {
+    if (!b.directory) continue;
+    const seg = b.segments[0]!;
+    const last = await db.prepare(`SELECT fetched_at, found FROM outreach_slices WHERE business_key = ? AND segment = ? AND metro = ?`)
+      .bind(b.key, seg.key, DIRECTORY_SLICE).first<{ fetched_at: number; found: number }>();
+    if (last && now - last.fetched_at < (last.found >= 0 ? DIRECTORY_REFRESH_MS : SLICE_RETRY_MS)) continue;
+    const r = await readDirectory(db, fetchImpl, now, b, seg);
+    res.read.push(b.key);
+    res.prospects += r.prospects;
+    res.candidates += r.candidates;
+    res.detail[b.key] = r.detail;
+    await db.prepare(
+      `INSERT INTO outreach_slices (business_key, segment, metro, fetched_at, found, detail) VALUES (?,?,?,?,?,?)
+       ON CONFLICT(business_key, segment, metro) DO UPDATE SET fetched_at = excluded.fetched_at, found = excluded.found, detail = excluded.detail`,
+    ).bind(b.key, seg.key, DIRECTORY_SLICE, now, r.ok ? r.prospects + r.candidates : -1, r.detail).run();
+  }
+  return res;
+}
+
+export async function readDirectory(
+  db: D1Database, fetchImpl: typeof fetch, now: number, b: Business, seg: Segment,
+): Promise<{ ok: boolean; prospects: number; candidates: number; detail: string }> {
+  let rows: DirectoryRow[];
+  try {
+    const r = await timed(fetchImpl, b.directory!, { headers: { accept: "application/json" } });
+    if (!r.ok) return { ok: false, prospects: 0, candidates: 0, detail: `${b.directory} answered ${r.status}` };
+    rows = parseDirectory(await r.json());
+  } catch (err) {
+    return { ok: false, prospects: 0, candidates: 0, detail: `${b.directory} failed: ${(err as Error).message}` };
+  }
+  if (!rows.length) return { ok: false, prospects: 0, candidates: 0, detail: `${b.directory} listed no facility with a website or email` };
+  const metro = metrosFor(b)[0];
+  const mx = new Map<string, boolean>();
+  let prospects = 0;
+  let candidates = 0;
+  for (const row of rows) {
+    const sourceUrl = `${b.directory}#licence-${row.licence ?? encodeURIComponent(row.name)}`;
+    const email = row.email && isBusinessEmail(row.email) ? row.email : null;
+    if (email && !(await isSuppressed(db, email))) {
+      const domain = email.split("@")[1] ?? "";
+      if (!mx.has(domain)) mx.set(domain, await hasMx(domain, fetchImpl).catch(() => false));
+      if (mx.get(domain)) {
+        const ins = await db.prepare(
+          `INSERT INTO outreach_prospects
+             (id, business_key, email, email_domain, org_name, segment, metro, website, source, source_url,
+              mx_verified_at, state, step, next_due_at, unsub_token, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,'licensed_directory',?,?,'new',0,?,?,?,?)
+           ON CONFLICT(business_key, email) DO NOTHING`,
+        ).bind(newId("opr"), b.key, email, domain, row.name, seg.key, metro?.label ?? null, row.website, sourceUrl, now, now, randomToken(), now, now).run();
+        prospects += ins.meta?.changes ?? 0;
+        continue;
+      }
+    }
+    if (row.website) {
+      const ins = await db.prepare(
+        `INSERT INTO outreach_candidates (id, business_key, segment, metro, org_name, website, listed_email, source_url, state, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,'pending',?,?) ON CONFLICT(business_key, website) DO NOTHING`,
+      ).bind(newId("ocd"), b.key, seg.key, metro?.key ?? "", row.name, row.website, null, sourceUrl, now, now).run();
+      candidates += ins.meta?.changes ?? 0;
+    }
+  }
+  return { ok: true, prospects, candidates, detail: `${rows.length} facilities: ${prospects} new prospects, ${candidates} websites to read` };
+}

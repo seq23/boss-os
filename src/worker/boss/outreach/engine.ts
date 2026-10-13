@@ -9,8 +9,8 @@
  *   4. SENDS: within the cap, the window, the flag and the kill switch. A business with an exclusive
  *      seat reads the site's public seat JSON first (short timeout, last value on failure) and
  *      picks its pitch from it; its seat holder is never written to.
- *   5. LISTS: one public-listing slice and a few website reads, while a business is short of
- *      prospects.
+ *   5. LISTS: a business's own licensed directory once a day, one public-listing slice and a few
+ *      website reads, while a business is short of prospects.
  *   6. PAYOUTS: on the 1st (Chicago), last month's referral ledger.
  *
  * Every refusal is recorded with its reason. A tick that did nothing says why.
@@ -26,7 +26,7 @@ import { bouncedAddress, classifyReply, ownWords, type ReplyClass } from "./clas
 import { composeEmail } from "./compose";
 import { mailAuthRefusal } from "./mailauth";
 import { GmailSession, addressOf } from "./gmail";
-import { crawlCandidates, randomToken, readNextSlice } from "./lists";
+import { crawlCandidates, randomToken, readDirectories, readNextSlice } from "./lists";
 import { isSuppressed, suppress } from "./suppression";
 import { ensurePartner, runMonthlyPayouts } from "./referrals";
 import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Seat } from "./seat";
@@ -75,7 +75,7 @@ export interface TickResult {
   routesProven: string[];
   sent: number;
   refused: Record<string, string>;
-  lists: { slice: string | null; crawled: number; admitted: number };
+  lists: { slice: string | null; crawled: number; admitted: number; directories?: { read: string[]; prospects: number; candidates: number } };
   payouts: unknown;
   stop?: string;
 }
@@ -126,6 +126,12 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
     out.refused.all = "Sending is off.";
   }
 
+  try {
+    const dir = await readDirectories(db, fetchImpl, now);
+    out.lists.directories = { read: dir.read, prospects: dir.prospects, candidates: dir.candidates };
+  } catch (err) {
+    out.refused.directories = (err as Error).message;
+  }
   try {
     const short = await businessesShortOfProspects(db);
     if (short.length) {
