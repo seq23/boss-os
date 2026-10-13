@@ -3,7 +3,9 @@
  *
  * There is no human review of outreach (owner, 9 Oct 2026). These are what stands in its place:
  *   · a per-domain daily cap that starts at 10 and ramps slowly;
- *   · an automatic pause on a bounce rate over 3% or on ANY complaint;
+ *   · an automatic pause on a bounce rate over 3% (once 20 sends are in the window; 3 bounces
+ *     before that) or on ANY complaint; a bounce pause lifts itself when the window no longer
+ *     justifies it, a complaint pause never does;
  *   · a global kill switch and a sending flag, checked before every send;
  *   · a sending window (weekdays, 09:00–16:59 America/Chicago) so mail lands in working hours.
  */
@@ -14,6 +16,13 @@ export const DAY_MS = 86_400_000;
 export const RAMP = [10, 15, 20, 30, 40] as const;
 export const MAX_DAILY = 40;
 export const BOUNCE_PAUSE_RATE = 0.03;
+/**
+ * The rate is only meaningful on a sample. Below this many sends in the window, one bounce is
+ * 20% or 50% and paused a whole domain (uscisexam 1 of 5, dentistryguides 1 of 2 on 13 Oct 2026).
+ * Under the floor, an absolute count pauses instead, so a dead list still stops.
+ */
+export const BOUNCE_MIN_SAMPLE = 20;
+export const BOUNCE_ABSOLUTE_PAUSE = 3;
 /** Bounce rate is judged over this window of sends. */
 export const BOUNCE_WINDOW_MS = 14 * DAY_MS;
 
@@ -34,9 +43,12 @@ export function pauseReason(h: Health): string | null {
   if (h.complaints > 0) {
     return `Paused automatically: ${h.complaints} spam complaint${h.complaints === 1 ? "" : "s"}. Any complaint pauses the domain.`;
   }
-  if (h.sent > 0 && h.bounced / h.sent > BOUNCE_PAUSE_RATE) {
+  if (h.sent >= BOUNCE_MIN_SAMPLE && h.bounced / h.sent > BOUNCE_PAUSE_RATE) {
     const pct = ((h.bounced / h.sent) * 100).toFixed(1);
     return `Paused automatically: bounce rate ${pct}% (${h.bounced} of ${h.sent} in 14 days) is over 3%.`;
+  }
+  if (h.sent < BOUNCE_MIN_SAMPLE && h.bounced >= BOUNCE_ABSOLUTE_PAUSE) {
+    return `Paused automatically: ${h.bounced} bounces in ${h.sent} sends (14 days); ${BOUNCE_ABSOLUTE_PAUSE} or more pause the domain before the ${BOUNCE_MIN_SAMPLE}-send sample is reached.`;
   }
   return null;
 }

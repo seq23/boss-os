@@ -153,9 +153,15 @@ describe("the brakes, as pure functions", () => {
     expect(dailyCap(TUESDAY_10AM, TUESDAY_10AM + 400 * DAY_MS)).toBe(40);
   });
 
-  it("pauses on a bounce rate OVER 3% and on any single complaint", () => {
+  it("pauses on a bounce rate OVER 3% once 20 sends are in the window, on 3 bounces before that, and on any single complaint", () => {
     expect(pauseReason({ sent: 100, bounced: 3, complaints: 0 })).toBeNull();
     expect(pauseReason({ sent: 100, bounced: 4, complaints: 0 })).toMatch(/bounce rate 4\.0%/);
+    expect(pauseReason({ sent: 20, bounced: 1, complaints: 0 })).toMatch(/bounce rate 5\.0%/);
+    // 13 Oct 2026: 1 of 5 and 1 of 2 had paused two guides; a rate on that sample is noise.
+    expect(pauseReason({ sent: 5, bounced: 1, complaints: 0 })).toBeNull();
+    expect(pauseReason({ sent: 2, bounced: 1, complaints: 0 })).toBeNull();
+    expect(pauseReason({ sent: 19, bounced: 2, complaints: 0 })).toBeNull();
+    expect(pauseReason({ sent: 4, bounced: 3, complaints: 0 })).toMatch(/3 bounces in 4 sends/);
     expect(pauseReason({ sent: 1000, bounced: 0, complaints: 1 })).toMatch(/complaint/);
     expect(pauseReason({ sent: 0, bounced: 0, complaints: 0 })).toBeNull();
   });
@@ -572,7 +578,24 @@ describe("the tick", () => {
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
     expect(await isSuppressed(env.DB, "gone@school.example")).toBe(true);
     expect((await row<any>(`SELECT status FROM outreach_sends WHERE id = 's2'`)).status).toBe("bounced");
-    expect((await row<any>(`SELECT pause_reason FROM outreach_domain_state WHERE business_key = 'time2read'`)).pause_reason).toMatch(/bounce rate/);
+    // One bounce in a two-send window is not a rate; the domain keeps sending.
+    expect((await row<any>(`SELECT paused_at FROM outreach_domain_state WHERE business_key = 'time2read'`)).paused_at).toBeNull();
+  });
+
+  it("three bounces before the 20-send sample pause the domain, and the pause lifts itself when the window rolls", async () => {
+    await readyWithAddress("time2read");
+    for (const n of [1, 2, 3]) {
+      await addProspect("time2read", `gone${n}@school.example`, { state: "in_sequence", step: 1, thread_id: `th-gone${n}` });
+      await env.DB.prepare(`INSERT INTO outreach_sends (id, business_key, prospect_id, to_email, step, is_test, status, sent_at) VALUES (?,'time2read',?,?,0,0,'sent',?)`).bind(`sb${n}`, `opr_time2read_gone${n}@school.example`, `gone${n}@school.example`, TUESDAY_10AM - DAY_MS).run();
+    }
+    const g = fakeGmail({ inbound: [1, 2, 3].map((n) => ({ id: `bb${n}`, threadId: `th-gone${n}`, from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", subject: "Delivery Status Notification (Failure)", body: `Final-Recipient: rfc822; gone${n}@school.example` })) });
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
+    const st = await row<any>(`SELECT paused_at, pause_reason FROM outreach_domain_state WHERE business_key = 'time2read'`);
+    expect(st.paused_at).toBeTruthy();
+    expect(st.pause_reason).toMatch(/3 bounces in 3 sends/);
+    // 15 days later the bounces have left the window: the pause lifts without a human.
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM + 15 * DAY_MS, fakeGmail({ inbound: [] }).fetchImpl);
+    expect((await row<any>(`SELECT paused_at FROM outreach_domain_state WHERE business_key = 'time2read'`)).paused_at).toBeNull();
   });
 });
 

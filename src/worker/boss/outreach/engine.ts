@@ -105,6 +105,13 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
       out.paused.push(b.key);
       await logEvent(db, { level: "warn", scope: "outreach", event: "domain_paused", entityId: b.key, detail: { reason } }).catch(() => {});
     }
+    if (!reason && st.paused_at && /^Paused automatically: (bounce rate|\d+ bounces)/.test(st.pause_reason ?? "")) {
+      // A bounce pause is a verdict on a 14-day window; when the window no longer supports it the
+      // pause lifts itself. A complaint pause is never lifted here.
+      await db.prepare(`UPDATE outreach_domain_state SET paused_at = NULL, pause_reason = NULL, updated_at = ? WHERE business_key = ?`)
+        .bind(now, b.key).run();
+      st.paused_at = null; st.pause_reason = null;
+    }
   }
 
   if (mailbox && !settings.killSwitch && settings.sending !== "off") {
