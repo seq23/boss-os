@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/fund-side-chassis.mjs";
+import { BUSINESSES } from "../src/worker/boss/outreach/catalog";
 
 /**
  * docs/OUTBOUND_EMAIL_MAP.md is read by code, so it is a rule and not a wish (owner, 12 Oct 2026:
@@ -303,5 +304,51 @@ describe("Boss OS and the fund never cross on the map", () => {
     ];
     for (const p of probes) expect(fundCrossings([["probe", p]]), p).not.toEqual([]);
     expect(fundCrossings([["clean", "| `monique-outreach` | The Industry Guides | Reporter of help | hello@uscisexam.com |"]])).toEqual([]);
+  });
+});
+
+/**
+ * EVERY OUTREACH SENDER IS ON THE MAP (13 Oct 2026, Memphis Senior Care Homes). A business added to
+ * the outreach catalog sends from a new address; the map must name that address in a boss-os row's
+ * From cell, and the vertical's own site emails each have their row and owner, so a new vertical
+ * cannot start sending unseen.
+ */
+describe("every outreach sender and every Memphis Senior Care Homes path is on the map", () => {
+  const header = cells(MAP.split("\n").find((l) => /^\|\s*Id\s*\|/.test(l)) ?? "");
+  const fromAt = header.indexOf("From");
+  const statusAt = header.indexOf("Status");
+  const lines = MAP.split("\n").filter((l) => /^\|\s*`[^`]+`\s*\|/.test(l));
+  const byId = new Map(lines.map((l) => [(l.match(/`([^`]+)`/) ?? [])[1] ?? "", cells(l)]));
+  const owners = JSON.parse(readFileSync(path.join(ROOT, "docs/outbound_email_owners.json"), "utf8")).owners as Record<string, { seat?: string }>;
+
+  it("reads the From column and the catalog (hard fail on zero)", () => {
+    expect(fromAt).toBeGreaterThan(0);
+    expect(BUSINESSES.length).toBeGreaterThan(0);
+  });
+
+  it("every catalog sender appears in the From cell of a boss-os row", () => {
+    const froms = lines.filter((l) => /^boss-os\b/.test(cells(l)[header.indexOf("Code")] ?? "")).map((l) => cells(l)[fromAt] ?? "");
+    const missing = BUSINESSES.map((b) => b.sender).filter((sender) => !froms.some((f) => f.split(/[\s,<>]+/).includes(sender)));
+    expect(missing, `Outreach senders with no row on ${MAP_PATH}:\n  ${missing.join("\n  ")}`).toEqual([]);
+  });
+
+  it("Memphis Senior Care Homes has its outreach row and its five site-email rows, each owned, unread ones SUSPECTED", () => {
+    const outreach = byId.get("memphis-senior-outreach");
+    expect(outreach, "memphis-senior-outreach row").toBeTruthy();
+    expect(outreach![fromAt]).toBe("hello@theindustryguides.com");
+    expect(outreach![statusAt]).toBe("CONFIRMED");
+    const site = ["senior-lead-notification", "senior-facility-teaser", "senior-facility-release", "senior-pass-notice", "senior-family-followups"];
+    for (const id of [...site, "memphis-senior-outreach"]) {
+      expect(byId.has(id), `${id} is not on the map`).toBe(true);
+      expect(owners[id]?.seat, `${id} has no owner`).toBeTruthy();
+    }
+    for (const id of site) {
+      const row = byId.get(id)!;
+      expect(row[fromAt], id).toBe("The Industry Guides <hello@theindustryguides.com>");
+      expect(row.join(" "), id).toContain("local-guides-generator-senior-living");
+      expect(row.join(" "), id).toContain("RESEND_API_KEY");
+      // Nobody read these functions on main, so the row may not claim CONFIRMED.
+      expect(row[statusAt], id).toBe("SUSPECTED");
+    }
   });
 });

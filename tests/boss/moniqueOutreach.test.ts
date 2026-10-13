@@ -7,7 +7,7 @@ import { bouncedAddress, classifyReply } from "../../src/worker/boss/outreach/cl
 import { composeEmail, footerCompany, UMBRELLA_COMPANY, UMBRELLA_CONTACT } from "../../src/worker/boss/outreach/compose";
 import { isSuppressed, suppress, isBusinessEmail } from "../../src/worker/boss/outreach/suppression";
 import {
-  assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
+  GUIDES_SENDER, assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
 } from "../../src/worker/boss/outreach/catalog";
 import CATALOG_SOURCE from "../../src/worker/boss/outreach/catalog.ts?raw";
 const OUTREACH_SOURCES = import.meta.glob("../../src/worker/boss/outreach/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
@@ -16,7 +16,9 @@ import GMAIL_SOURCE from "../../src/worker/boss/outreach/gmail.ts?raw";
 import DOMAINS_SCRIPT from "../../scripts/outreach/domains.mjs?raw";
 import CLAUDE_MD from "../../CLAUDE.md?raw";
 import OPERATIONS_MD from "../../docs/boss/OPERATIONS.md?raw";
-import { pickEmail, parseOverpass } from "../../src/worker/boss/outreach/lists";
+import { pickEmail, parseOverpass, parseDirectory, readDirectories } from "../../src/worker/boss/outreach/lists";
+import { METROS, NATIONAL_METROS, metrosFor } from "../../src/worker/boss/outreach/catalog";
+import { isSeatHolder, normaliseHolderDomain, parseSeat, pitchFor, readSeat, seatEndMonth, SEAT_OPEN } from "../../src/worker/boss/outreach/seat";
 import { runOutreachTick } from "../../src/worker/boss/outreach/engine";
 import { mailAuthGaps } from "../../src/worker/boss/outreach/mailauth";
 import { computePeriod, recordConversion, ensurePartner, makeCode } from "../../src/worker/boss/outreach/referrals";
@@ -133,9 +135,9 @@ async function addProspect(key: string, email: string, over: Record<string, unkn
 
 async function readyWithAddress(key: string) {
   await env.DB.prepare(
-    `INSERT INTO outreach_domain_state (business_key, route_state, postal_address, updated_at) VALUES (?, 'ready', '100 Main St, Suite 1, Houston, TX 77002', ?)
-     ON CONFLICT(business_key) DO UPDATE SET route_state = 'ready', postal_address = excluded.postal_address`,
-  ).bind(key, TUESDAY_10AM).run();
+    `INSERT INTO outreach_domain_state (business_key, route_state, route_sender, postal_address, updated_at) VALUES (?, 'ready', ?, '100 Main St, Suite 1, Houston, TX 77002', ?)
+     ON CONFLICT(business_key) DO UPDATE SET route_state = 'ready', route_sender = excluded.route_sender, postal_address = excluded.postal_address`,
+  ).bind(key, businessByKey(key)!.sender, TUESDAY_10AM).run();
 }
 
 async function tickEnv() {
@@ -192,6 +194,28 @@ describe("the brakes, as pure functions", () => {
     expect(() => assertSenderAllowed({ ...T2R, sender: "hello@uscisexam.com" })).toThrow(/own domain/);
     for (const b of BUSINESSES) expect(() => assertSenderAllowed(b)).not.toThrow();
     expect(BUSINESSES.some((b) => /how-?we-?know/.test(b.domain))).toBe(false);
+  });
+
+  it("every guide sends from the one umbrella address; the side businesses keep their own (owner, 13 Oct 2026)", () => {
+    const guides = BUSINESSES.filter((b) => b.kind === "local_guide");
+    expect(guides.length).toBe(6);
+    expect(GUIDES_SENDER).toBe("hello@theindustryguides.com");
+    expect([...new Set(guides.map((b) => b.sender))]).toEqual(["hello@theindustryguides.com"]);
+    // The retired per-site aliases are never a sender again.
+    for (const old of ["uscisexam.com", "dentistryguides.com", "hormonesivhair.com", "neuroevalguides.com", "theaccidentguides.com", "memphisseniorcarehomes.com"]) {
+      expect(BUSINESSES.some((b) => b.sender === `hello@${old}`), old).toBe(false);
+    }
+    const uscis = businessByKey("uscisexam")!;
+    expect(() => assertSenderAllowed({ ...uscis, sender: "hello@uscisexam.com" })).toThrow(/every guide sends from/);
+    expect(Object.fromEntries(BUSINESSES.filter((b) => b.kind !== "local_guide").map((b) => [b.key, b.sender]))).toEqual({
+      time2read: "st@time-2-read.com", aplayermode: "hello@aplayermode.com", approvalprep: "hello@approvalprep.com", weddingchecklist: "hello@weddingchecklistpdf.com",
+    });
+    // Every guide email answers to the umbrella address; a side business's does not.
+    const m = composeEmail({ business: uscis, step: 0, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "t", postalAddress: "PO Box 1, Houston, TX 77002" });
+    expect(m.raw).toMatch(/^From: USCIS Exam Guides <hello@theindustryguides\.com>\r$/m);
+    expect(m.raw).toMatch(/^Reply-To: hello@theindustryguides\.com\r$/m);
+    const t = composeEmail({ business: T2R, step: 0, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "t", postalAddress: "PO Box 1, Houston, TX 77002" });
+    expect(t.raw).not.toMatch(/^Reply-To:/m);
   });
 });
 
@@ -261,19 +285,21 @@ describe("every email carries the unsubscribe link and the postal address", () =
   it("every Industry Guides email names The Industry Guides and the address in both footers (owner, 12 Oct 2026)", () => {
     const addr = "PO Box 1, Houston, TX 77002";
     const guides = BUSINESSES.filter((b) => b.kind === "local_guide");
-    // Hard-fail on zero, and pin the five properties the owner named exactly.
-    expect(guides.length).toBeGreaterThan(0);
+    // Hard-fail on zero, and pin the six properties the owner named exactly (Memphis Senior Care
+    // Homes joined 13 Oct 2026).
+    expect(guides.length).toBe(6);
     expect(guides.map((b) => b.brand).sort()).toEqual(
-      ["Hormone Optimization Guides", "Neuro Evaluation Guides", "The Accident Guides", "The Dentistry Guides", "USCIS Exam Guides"],
+      ["Hormone Optimization Guides", "Memphis Senior Care Homes", "Neuro Evaluation Guides", "The Accident Guides", "The Dentistry Guides", "USCIS Exam Guides"],
     );
     expect(UMBRELLA_COMPANY).toBe("The Industry Guides");
     expect(UMBRELLA_CONTACT).toBe("hello@theindustryguides.com");
-    // The name lives in ONE constant: no second copy anywhere in the outreach source.
-    expect(Object.keys(OUTREACH_SOURCES).some((f) => f.endsWith("/compose.ts"))).toBe(true);
+    // The name and the address each live in ONE constant, in catalog.ts (the guides' sender uses the
+    // address since 13 Oct 2026): no second copy anywhere in the outreach source.
+    expect(Object.keys(OUTREACH_SOURCES).some((f) => f.endsWith("/catalog.ts"))).toBe(true);
     for (const [file, src] of Object.entries(OUTREACH_SOURCES)) {
       const copies = (src.match(/The Industry Guides/g) ?? []).length;
-      expect(copies, file).toBe(file.endsWith("/compose.ts") ? 2 : 0); // the constant + its doc comment
-      expect((src.match(/hello@theindustryguides\.com/g) ?? []).length, file).toBe(file.endsWith("/compose.ts") ? 1 : 0);
+      expect(copies, file).toBe(file.endsWith("/catalog.ts") ? 1 : 0); // the constant
+      expect((src.match(/hello@theindustryguides\.com/g) ?? []).length, file).toBe(file.endsWith("/catalog.ts") ? 1 : 0);
     }
     expect(BUSINESSES.length).toBeGreaterThan(0);
     for (const b of BUSINESSES) {
@@ -469,19 +495,38 @@ describe("the tick", () => {
     expect(g.sends).toHaveLength(0);
   });
 
-  it("an unproven route sends nothing to a business; a send-as alias is proven to the test inbox first", async () => {
+  it("an unproven route sends nothing to a business; the guides' one sender is proven ONCE and all six share it", async () => {
     await env.DB.prepare(`UPDATE outreach_settings SET value = 'live' WHERE key = 'sending'`).run();
     await addProspect("uscisexam", "doc@clinic.example");
     await env.DB.prepare(`INSERT INTO outreach_domain_state (business_key, postal_address, updated_at) VALUES ('uscisexam','100 Main St, Houston, TX 77002',0)`).run();
-    const none = fakeGmail();
+    // A row proven for the OLD per-site alias (route_sender NULL or the retired alias) is not ready.
+    await env.DB.prepare(`INSERT INTO outreach_domain_state (business_key, route_state, route_sender, postal_address, updated_at) VALUES ('dentistryguides','ready','hello@dentistryguides.com','100 Main St, Houston, TX 77002',0)`).run();
+    await addProspect("dentistryguides", "dds@smile.example");
+    const none = fakeGmail({ sendAs: ["hello@uscisexam.com", "hello@dentistryguides.com"] });
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, none.fetchImpl);
-    expect(none.sends.filter((s) => s.from === "hello@uscisexam.com")).toHaveLength(0);
+    // Nothing From a guide, a retired alias, or to a business (time2read's own sender may prove itself).
+    expect(none.sends.filter((s) => s.from !== "st@time-2-read.com")).toHaveLength(0);
+    expect(none.sends.filter((s) => s.to !== "cryptoclearr@gmail.com")).toHaveLength(0);
+    expect((await row<any>(`SELECT route_state FROM outreach_domain_state WHERE business_key = 'dentistryguides'`))?.route_state).toBe("awaiting_route");
 
-    const alias = fakeGmail({ sendAs: ["hello@uscisexam.com"] });
+    const alias = fakeGmail({ sendAs: ["hello@theindustryguides.com"] });
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, alias.fetchImpl);
-    const proof = alias.sends.find((s) => s.from === "hello@uscisexam.com");
-    expect(proof?.to).toBe("cryptoclearr@gmail.com");
-    expect((await row<any>(`SELECT route_state FROM outreach_domain_state WHERE business_key = 'uscisexam'`))?.route_state).toBe("ready");
+    const proofs = alias.sends.filter((s) => s.to === "cryptoclearr@gmail.com");
+    expect(proofs).toHaveLength(1);
+    expect(proofs[0]!.from).toBe("hello@theindustryguides.com");
+    const guides = BUSINESSES.filter((b) => b.kind === "local_guide").map((b) => b.key);
+    const st = await env.DB.prepare(`SELECT business_key, route_state, route_sender FROM outreach_domain_state`).all<any>();
+    for (const k of guides) {
+      const r = (st.results ?? []).find((x: any) => x.business_key === k);
+      expect(r?.route_state, k).toBe("ready");
+      expect(r?.route_sender, k).toBe("hello@theindustryguides.com");
+    }
+    // The side businesses are not swept along: their own senders are not in the send-as list.
+    expect((st.results ?? []).find((x: any) => x.business_key === "aplayermode")?.route_state).toBe("awaiting_route");
+    // A later tick sends no second proof.
+    const again = fakeGmail({ sendAs: ["hello@theindustryguides.com"] });
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM + 3_600_000, again.fetchImpl);
+    expect(again.sends.filter((s) => s.to === "cryptoclearr@gmail.com")).toHaveLength(0);
   });
 
   it("stops on any reply, suppresses an unsubscribe even with the kill switch on, and cards an interested one", async () => {
@@ -634,5 +679,308 @@ describe("the owner's private postal address never enters the repo (owner, 9 Oct
     const needles = [["Fox", "Hunt"].join(" "), ["381", "15"].join("")];
     const hits = files.filter((f) => needles.some((n) => sources[f]!.includes(n)));
     expect(hits, "RULE (owner, 9 Oct 2026): the outreach postal address is private runtime data, never a git file.").toEqual([]);
+  });
+});
+
+/**
+ * MEMPHIS SENIOR CARE HOMES (13 Oct 2026): one exclusive routing seat, two pitches chosen at send
+ * time from the site's public seat JSON, the seat holder never written to, the guides' footer on
+ * every email, and a Memphis metro read only for this business.
+ */
+describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
+  beforeEach(reset);
+  const MSCH = businessByKey("memphisseniorcarehomes")!;
+  const SEAT_URL = "https://memphisseniorcarehomes.com/_seat.json";
+  const ADDR = "PO Box 1, Houston, TX 77002";
+
+  /** The fake Gmail, plus the site's seat JSON: a body, a status, or a network failure. */
+  function withSeat(base: typeof fetch, seat: { body?: unknown; status?: number; fail?: boolean }, reads: string[] = []): typeof fetch {
+    return (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === SEAT_URL) {
+        reads.push(String(input));
+        if (seat.fail) throw new Error("network down");
+        return Response.json(seat.body ?? {}, { status: seat.status ?? 200 });
+      }
+      return base(input, init);
+    }) as typeof fetch;
+  }
+
+  const realSends = (g: { sends: { to: string; raw: string }[] }) => g.sends.filter((s) => !s.to.startsWith("cryptoclearr"));
+  const subjectOf = (raw: string) => /^Subject: (.+)$/m.exec(raw)?.[1]?.trim() ?? "";
+  const plainOf = (raw: string) => {
+    const m = /Content-Type: text\/plain; charset="UTF-8"\r\nContent-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--/.exec(raw);
+    return decodeURIComponent(escape(atob((m?.[1] ?? "").replace(/\r\n/g, ""))));
+  };
+
+  it("is a local guide sending from the umbrella address, with a seat URL and both pitches", () => {
+    expect(MSCH).toBeTruthy();
+    expect(MSCH.kind).toBe("local_guide");
+    expect(MSCH.sender).toBe("hello@theindustryguides.com");
+    expect(MSCH.offerUrl).toBe("https://memphisseniorcarehomes.com/for-providers/");
+    expect(MSCH.seat?.url).toBe(SEAT_URL);
+    expect(() => assertSenderAllowed(MSCH)).not.toThrow();
+    expect(MSCH.steps[0].subject).toBe("Exclusive lead routing for {org}");
+    expect(MSCH.seat!.taken[0].subject).toBe("Qualified Memphis families, pay only when you take one");
+    expect(MSCH.steps.map((s) => s.body).join(" ")).toContain("$249/month");
+    // No business but this one has a seat, and no other business says the seat's words.
+    expect(BUSINESSES.filter((b) => b.seat).map((b) => b.key)).toEqual(["memphisseniorcarehomes"]);
+  });
+
+  it("reads the seat JSON: inactive → A, active → B naming the end month, anything else is a failed read", async () => {
+    expect(parseSeat({ active: false })).toEqual({ active: false, end: null });
+    expect(parseSeat({ active: true, end: "2027-03-31" })).toEqual({ active: true, end: "2027-03-31" });
+    for (const bad of [null, "x", {}, { active: true }, { active: true, end: "March" }, { active: "yes", end: "2027-03-31" }]) {
+      expect(parseSeat(bad), JSON.stringify(bad)).toBeNull();
+    }
+    expect(pitchFor(MSCH, { active: false, end: null })).toBe("A");
+    expect(pitchFor(MSCH, { active: true, end: "2027-03-31" })).toBe("B");
+    expect(pitchFor(T2R, { active: true, end: "2027-03-31" })).toBe("A");
+    expect(seatEndMonth("2027-03-31")).toBe("March 2027");
+
+    const notFound = (async () => new Response("no", { status: 404 })) as unknown as typeof fetch;
+    const throws = (async () => { throw new Error("down"); }) as unknown as typeof fetch;
+    const hangs = ((_: unknown, init?: RequestInit) => new Promise((_r, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))) as unknown as typeof fetch;
+    const taken = { active: true, end: "2027-03-31" };
+    // A failure with a last value keeps it; with none, the seat counts as open (pitch A).
+    expect((await readSeat(SEAT_URL, taken, notFound)).seat).toEqual(taken);
+    expect((await readSeat(SEAT_URL, taken, throws)).source).toBe("last");
+    expect((await readSeat(SEAT_URL, null, throws))).toMatchObject({ seat: SEAT_OPEN, source: "default" });
+    // A hung server never blocks the tick: the short timeout gives up and the last value stands.
+    const t0 = Date.now();
+    expect((await readSeat(SEAT_URL, taken, hangs, 50)).seat).toEqual(taken);
+    expect(Date.now() - t0).toBeLessThan(2_000);
+  });
+
+  it("the tick sends pitch A while the seat is open, B once it is taken, and keeps B when the read then fails", async () => {
+    await readyWithAddress("memphisseniorcarehomes");
+    await addProspect("memphisseniorcarehomes", "admissions@oakcourt.example");
+    const g = fakeGmail();
+    const reads: string[] = [];
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM, withSeat(g.fetchImpl, { body: { active: false } }, reads));
+    expect(reads.length).toBe(1);
+    const a = realSends(g);
+    expect(a.length).toBe(1);
+    expect(subjectOf(a[0]!.raw)).toBe("Exclusive lead routing for Acme Reading");
+    expect(plainOf(a[0]!.raw)).toContain("One community at a time receives every qualified family");
+
+    await addProspect("memphisseniorcarehomes", "admissions@riverbend.example");
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM + 3_600_000, withSeat(g.fetchImpl, { body: { active: true, end: "2027-03-31" } }));
+    const b = realSends(g).filter((s) => s.to === "admissions@riverbend.example");
+    expect(b.length).toBe(1);
+    expect(subjectOf(b[0]!.raw)).toBe("Qualified Memphis families, pay only when you take one");
+    expect(plainOf(b[0]!.raw)).toContain("Memphis has an exclusive routing partner through March 2027.");
+    expect(plainOf(b[0]!.raw)).not.toContain("One community at a time");
+    const st = await row<any>(`SELECT * FROM outreach_domain_state WHERE business_key = 'memphisseniorcarehomes'`);
+    expect(st.seat_active).toBe(1);
+    expect(st.seat_end).toBe("2027-03-31");
+
+    // The site is down: the last value read (taken) stands, so it is still pitch B, never A.
+    await addProspect("memphisseniorcarehomes", "admissions@magnolia.example");
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM + 2 * 3_600_000, withSeat(g.fetchImpl, { fail: true }));
+    const c = realSends(g).filter((s) => s.to === "admissions@magnolia.example");
+    expect(c.length).toBe(1);
+    expect(subjectOf(c[0]!.raw)).toBe("Qualified Memphis families, pay only when you take one");
+    const sent = await env.DB.prepare(`SELECT to_email, detail FROM outreach_sends WHERE business_key = 'memphisseniorcarehomes' AND is_test = 0 ORDER BY sent_at`).all<any>();
+    expect((sent.results ?? []).map((r: any) => r.detail)).toEqual(["pitch A", "pitch B", "pitch B"]);
+  });
+
+  it("a seat never read and a failed read sends pitch A (the default is open)", async () => {
+    await readyWithAddress("memphisseniorcarehomes");
+    await addProspect("memphisseniorcarehomes", "admissions@oakcourt.example");
+    const g = fakeGmail();
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM, withSeat(g.fetchImpl, { fail: true }));
+    const a = realSends(g);
+    expect(a.length).toBe(1);
+    expect(subjectOf(a[0]!.raw)).toBe("Exclusive lead routing for Acme Reading");
+  });
+
+  it("never writes to the seat holder (pitch A least of all), set by domain on PUT /business/:key", async () => {
+    expect(normaliseHolderDomain("https://www.Holder-Community.example/about")).toBe("holder-community.example");
+    expect(normaliseHolderDomain("ed@holder-community.example")).toBe("holder-community.example");
+    expect(normaliseHolderDomain("")).toBeNull();
+    expect(isSeatHolder({ email: "ed@holder-community.example" }, "holder-community.example")).toBe(true);
+    expect(isSeatHolder({ email: "x@other.example", website: "https://www.holder-community.example" }, "holder-community.example")).toBe(true);
+    expect(isSeatHolder({ email: "x@other.example", website: "https://other.example" }, "holder-community.example")).toBe(false);
+    expect(isSeatHolder({ email: "ed@holder-community.example" }, null)).toBe(false);
+
+    // Empty by default; set through the desk; refused for a business with no seat.
+    const fresh = await apiJson<any>("/api/outreach");
+    expect(fresh.body.data.businesses.find((b: any) => b.key === "memphisseniorcarehomes").seat.holder_domain).toBeNull();
+    const put = await apiJson<any>("/api/outreach/business/memphisseniorcarehomes", { method: "PUT", body: { seat_holder_domain: "www.holder-community.example" } });
+    expect(put.status).toBe(200);
+    expect(put.body.data.seat_holder_domain).toBe("holder-community.example");
+    expect((await apiJson<any>("/api/outreach/business/time2read", { method: "PUT", body: { seat_holder_domain: "x.example" } })).status).toBe(400);
+    expect((await apiJson<any>("/api/outreach/business/memphisseniorcarehomes", { method: "PUT", body: { seat_holder_domain: "not a domain" } })).status).toBe(400);
+
+    await readyWithAddress("memphisseniorcarehomes");
+    const holderId = await addProspect("memphisseniorcarehomes", "ed@holder-community.example");
+    await addProspect("memphisseniorcarehomes", "admissions@oakcourt.example");
+    const g = fakeGmail();
+    // The read fails, so the seat counts as open and this is pitch A: the holder still gets nothing.
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM, withSeat(g.fetchImpl, { fail: true }));
+    const sent = realSends(g);
+    expect(sent.map((s) => s.to)).toEqual(["admissions@oakcourt.example"]);
+    expect(subjectOf(sent[0]!.raw)).toBe("Exclusive lead routing for Acme Reading");
+    const holder = await row<any>(`SELECT state, next_due_at FROM outreach_prospects WHERE id = ?`, holderId);
+    expect(holder.state).toBe("done");
+    expect(holder.next_due_at).toBeNull();
+    // Cleared with "": back to empty.
+    const cleared = await apiJson<any>("/api/outreach/business/memphisseniorcarehomes", { method: "PUT", body: { seat_holder_domain: "" } });
+    expect(cleared.body.data.seat_holder_domain).toBeNull();
+  });
+
+  it("every email it composes, both pitches, carries the guides footer and the unsubscribe link — or is refused", () => {
+    for (const pitch of ["A", "B"] as const) {
+      for (const step of [0, 1, 2] as const) {
+        const m = composeEmail({
+          business: MSCH, step, to: "a@acme.example", org: "Oak Court", metro: "Memphis", unsubToken: "tok123",
+          postalAddress: ADDR, firstSubject: "Hello", pitch, seatEnd: pitch === "B" ? "2027-03-31" : null,
+        });
+        const plainFooter = m.body.slice(m.body.lastIndexOf("\n--\n"));
+        expect(plainFooter, `${pitch}${step}`).toContain("https://boss.sequoiataylor.com/api/boss/outreach/u/tok123");
+        expect(m.html, `${pitch}${step}`).toContain('href="https://boss.sequoiataylor.com/api/boss/outreach/u/tok123"');
+        expect(plainFooter.split("\n"), `${pitch}${step}`).toContain(`The Industry Guides, ${ADDR} · hello@theindustryguides.com`);
+        expect(plainFooter.split("\n"), `${pitch}${step}`).toContain("Memphis Senior Care Homes is a property of The Industry Guides.");
+        expect(m.raw).toMatch(/^List-Unsubscribe: <https:\/\/boss\.sequoiataylor\.com\/api\/boss\/outreach\/u\/tok123>/m);
+        expect(m.body + m.subject, `${pitch}${step}`).not.toMatch(/\{\w+\}/);
+        expect(m.body + m.html, `${pitch}${step}`).not.toMatch(/Spry/i);
+        expect(m.body, `${pitch}${step}`).toContain("https://memphisseniorcarehomes.com/for-providers/");
+      }
+    }
+    // Refusals: pitch B with no end month, pitch B for a business with no seat, an unfilled placeholder.
+    const base = { business: MSCH, step: 0 as const, to: "a@acme.example", org: "Oak Court", metro: "Memphis", unsubToken: "tok123", postalAddress: ADDR };
+    expect(() => composeEmail({ ...base, pitch: "B" })).toThrow(/end/);
+    expect(() => composeEmail({ ...base, business: T2R, pitch: "B", seatEnd: "2027-03-31" })).toThrow(/no pitch B/);
+    const broken = { ...MSCH, steps: [{ ...MSCH.steps[0], body: "Hi {org}, see {nope}." }, MSCH.steps[1], MSCH.steps[2]] as typeof MSCH.steps };
+    expect(() => composeEmail({ ...base, business: broken })).toThrow(/\{nope\} was left unfilled/);
+    expect(() => composeEmail({ ...base, unsubToken: "" })).toThrow(/unsubscribe/);
+  });
+
+  it("the Memphis metro is a valid box over Shelby, DeSoto and Crittenden, read only for this business", () => {
+    expect(METROS.length).toBeGreaterThan(0);
+    for (const m of METROS) {
+      const [s, w, n, e] = m.bbox;
+      expect(s, m.key).toBeLessThan(n);
+      expect(w, m.key).toBeLessThan(e);
+      expect(s >= -90 && n <= 90 && w >= -180 && e <= 180, m.key).toBe(true);
+      // City-sized: under 1.5 degrees on a side, so a quadrant stays a query the public servers answer.
+      expect(n - s, m.key).toBeLessThan(1.5);
+      expect(e - w, m.key).toBeLessThan(1.5);
+    }
+    expect(new Set(METROS.map((m) => m.key)).size).toBe(METROS.length);
+    const memphis = METROS.find((m) => m.key === "memphis")!;
+    expect(memphis).toBeTruthy();
+    const inside = ([lat, lon]: [number, number]) => lat > memphis.bbox[0] && lat < memphis.bbox[2] && lon > memphis.bbox[1] && lon < memphis.bbox[3];
+    // Downtown Memphis (Shelby TN), Germantown (Shelby), Southaven (DeSoto MS), Olive Branch (DeSoto), West Memphis (Crittenden AR).
+    for (const p of [[35.1495, -90.049], [35.0868, -89.81], [34.9889, -90.0126], [34.9618, -89.8295], [35.1465, -90.1845]] as [number, number][]) {
+      expect(inside(p), JSON.stringify(p)).toBe(true);
+    }
+    // Nashville and Little Rock are not Memphis.
+    expect(inside([36.1627, -86.7816])).toBe(false);
+    expect(inside([34.7465, -92.2896])).toBe(false);
+    expect(metrosFor(MSCH).map((m) => m.key)).toEqual(["memphis"]);
+    for (const b of BUSINESSES.filter((x) => x.key !== "memphisseniorcarehomes")) {
+      expect(metrosFor(b).map((m) => m.key), b.key).toEqual([...NATIONAL_METROS]);
+    }
+  });
+
+  it("writes to admissions and community relations first, on the community's own domain", () => {
+    const seg = MSCH.segments[0]!;
+    expect(seg.qualify.test("Assisted Living and Memory Care in Germantown")).toBe(true);
+    expect(seg.qualify.test("Family dentistry")).toBe(false);
+    expect(pickEmail(["info@oakcourt.example", "admissions@oakcourt.example"], "https://oakcourt.example", null, seg.preferRoles)).toBe("admissions@oakcourt.example");
+    expect(pickEmail(["info@oakcourt.example", "admissions@vendor.example"], "https://oakcourt.example", null, seg.preferRoles)).toBe("info@oakcourt.example");
+  });
+});
+
+/**
+ * THE LICENSED DIRECTORY IS THE LIST (13 Oct 2026). memphisseniorcarehomes.com publishes every
+ * licensed facility at /data/facilities.json; rows with a public business email become prospects,
+ * rows with only a website go to the website read. Fixture rows keep the file's real shape.
+ */
+describe("Memphis Senior Care Homes: the licensed directory feeds prospects", () => {
+  beforeEach(reset);
+  const DIR_URL = "https://memphisseniorcarehomes.com/data/facilities.json";
+  const facility = (over: Record<string, unknown>) => ({
+    name: "American House Bartlett", address: "3345 Kirby Whitten Road", city: "Bartlett", state: "TN", zip: "38134",
+    phone: "901-383-6901", phone_source: "HFC registry", license_type: "Assisted Care Living Facility", license_number: "62",
+    license_status: "Licensed", total_beds: 116, secured_beds: 0, memory_care: false,
+    website: "https://www.americanhouse.example/bartlett", email: "", lat: 35.187575, lng: -89.867415, ...over,
+  });
+  const FIXTURE = {
+    source: "Tennessee HFC registry; Mississippi MSDH", fetched_at: "2026-10-13", county: "Shelby",
+    facilities: [
+      facility({ name: "Oak Court Assisted Living", license_number: "101", website: "https://oakcourt.example", email: "admissions@oakcourt.example" }),
+      facility({ name: "Riverbend Memory Care", license_number: "102", website: "https://www.riverbend.example/", email: "" }),
+      facility({ name: "Magnolia Home", license_number: "MS-7", state: "MS", city: "Southaven", website: "", email: "owner@gmail.com" }),
+      facility({ name: "Cedar Place", license_number: "103", website: "https://cedar.example", email: "owner@gmail.com" }),
+      facility({ name: "", license_number: "104" }),
+      facility({ name: "No Contact Home", license_number: "105", website: "", email: "" }),
+    ],
+  };
+
+  function dirFetch(body: unknown, opts: { status?: number; reads?: string[] } = {}): typeof fetch {
+    return (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === DIR_URL) { opts.reads?.push(url); return Response.json(body, { status: opts.status ?? 200 }); }
+      if (url.startsWith("https://cloudflare-dns.com/dns-query")) {
+        return Response.json({ Status: 0, Answer: [{ type: 15, data: "10 mx.oakcourt.example." }] });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+  }
+
+  it("is the business's directory, on its own site", () => {
+    expect(businessByKey("memphisseniorcarehomes")!.directory).toBe(DIR_URL);
+    expect(BUSINESSES.filter((b) => b.directory).map((b) => b.key)).toEqual(["memphisseniorcarehomes"]);
+  });
+
+  it("parses the file: named rows with a website or an email, normalised", () => {
+    const rows = parseDirectory(FIXTURE);
+    expect(rows.map((r) => r.name)).toEqual(["Oak Court Assisted Living", "Riverbend Memory Care", "Magnolia Home", "Cedar Place"]);
+    expect(rows[0]).toMatchObject({ email: "admissions@oakcourt.example", website: "https://oakcourt.example", licence: "101" });
+    expect(rows[1]).toMatchObject({ email: null, website: "https://www.riverbend.example" });
+    expect(parseDirectory(FIXTURE.facilities).length).toBe(4);
+    expect(parseDirectory({ nope: 1 })).toEqual([]);
+  });
+
+  it("yields prospects from emails and website reads from the rest, once a day", async () => {
+    const reads: string[] = [];
+    const r = await readDirectories(env.DB, dirFetch(FIXTURE, { reads }), TUESDAY_10AM);
+    expect(r.read).toEqual(["memphisseniorcarehomes"]);
+    expect(r.prospects).toBe(1);
+    expect(r.candidates).toBe(2);
+    const p = await row<any>(`SELECT * FROM outreach_prospects WHERE business_key = 'memphisseniorcarehomes' AND source = 'licensed_directory'`);
+    expect(p).toMatchObject({ email: "admissions@oakcourt.example", org_name: "Oak Court Assisted Living", segment: "senior_living", metro: "Memphis", state: "new" });
+    expect(p.source_url).toBe(`${DIR_URL}#licence-101`);
+    expect(p.unsub_token).toBeTruthy();
+    const cands = await env.DB.prepare(`SELECT website, metro FROM outreach_candidates WHERE business_key = 'memphisseniorcarehomes' ORDER BY website`).all<any>();
+    // Free mail is never a prospect: Cedar Place goes to the website read instead; Magnolia (no site) is dropped.
+    expect((cands.results ?? []).map((c: any) => c.website)).toEqual(["https://cedar.example", "https://www.riverbend.example"]);
+    expect((cands.results ?? []).every((c: any) => c.metro === "memphis")).toBe(true);
+    // Within the day: not read again.
+    await readDirectories(env.DB, dirFetch(FIXTURE, { reads }), TUESDAY_10AM + 3_600_000);
+    expect(reads.length).toBe(1);
+    // Next day: read again, nothing duplicated.
+    const again = await readDirectories(env.DB, dirFetch(FIXTURE, { reads }), TUESDAY_10AM + DAY_MS + 1);
+    expect(reads.length).toBe(2);
+    expect(again.prospects + again.candidates).toBe(0);
+  });
+
+  it("a failed read is recorded and retried within hours, and the tick reads the directory", async () => {
+    const reads: string[] = [];
+    const r = await readDirectories(env.DB, dirFetch({}, { status: 503, reads }), TUESDAY_10AM);
+    expect(r.read).toEqual(["memphisseniorcarehomes"]);
+    const slice = await row<any>(`SELECT found, detail FROM outreach_slices WHERE business_key = 'memphisseniorcarehomes' AND metro = 'directory'`);
+    expect(slice.found).toBe(-1);
+    expect(slice.detail).toMatch(/503/);
+    await readDirectories(env.DB, dirFetch(FIXTURE, { reads }), TUESDAY_10AM + 3 * 3_600_000);
+    expect(reads.length).toBe(2);
+    await env.DB.prepare(`DELETE FROM outreach_slices`).run();
+    const g = fakeGmail();
+    const base = g.fetchImpl;
+    const tick = await runOutreachTick(await tickEnv(), TUESDAY_10AM, (async (i: RequestInfo | URL, init?: RequestInit) =>
+      String(i) === DIR_URL ? Response.json(FIXTURE) : base(i, init)) as typeof fetch);
+    expect(tick.lists.directories?.read).toEqual(["memphisseniorcarehomes"]);
   });
 });

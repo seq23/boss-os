@@ -5,6 +5,12 @@
   ],
   "owners": {
     "monique-outreach": { "seat": "Monique", "why": "Her outreach lane (9 Oct 2026, \"u do it all\")." },
+    "memphis-senior-outreach": { "seat": "Monique", "why": "Her outreach lane, for Memphis Senior Care Homes (13 Oct 2026)." },
+    "senior-lead-notification": { "seat": "Camille", "why": "Memphis Senior Care Homes' lead notification; The Industry Guides' lead paths and property performance are Camille's duty." },
+    "senior-facility-teaser": { "seat": "Camille", "why": "Memphis Senior Care Homes' teasers to communities; The Industry Guides' lead paths and property performance are Camille's duty." },
+    "senior-facility-release": { "seat": "Camille", "why": "Memphis Senior Care Homes' release emails to communities; The Industry Guides' lead paths and property performance are Camille's duty." },
+    "senior-pass-notice": { "seat": "Camille", "why": "Memphis Senior Care Homes' pass notices to communities; The Industry Guides' lead paths and property performance are Camille's duty." },
+    "senior-family-followups": { "seat": "Camille", "why": "Memphis Senior Care Homes' 30/60/90-day family follow-ups; The Industry Guides' lead paths and property performance are Camille's duty." },
     "exec-report": { "seat": "Camille", "why": "Camille delivers the Executive Intelligence Report." },
     "boss-task-notices": { "seat": "Simone", "why": "Chief of Staff: the notices every employee sends you drain through one lane." },
     "repo-change": { "seat": "Danielle", "why": "Danielle's repo-change lane (Plan B, 20 Sep 2026)." },

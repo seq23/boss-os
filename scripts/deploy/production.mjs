@@ -178,4 +178,16 @@ if (health === "200" || health === "302") {
   );
 }
 
+/*
+ * 5. THE MAIL FAN-OUT WORKER (13 Oct 2026): hello@theindustryguides.com reaches the owner's inbox AND
+ * the outreach mailbox through it. Deployed after the main Worker is verified; a failure here fails
+ * the deploy by name (the main Worker is already live and verified).
+ */
+say("5/5  deploying the Industry Guides mail fan-out worker…");
+try {
+  say(`     ${run("node scripts/deploy/mail-fanout.mjs").trim()}`);
+} catch (err) {
+  die(`the main Worker is deployed and verified, but the mail fan-out deploy failed:\n${err.stdout ?? ""}${err.stderr ?? err.message}`);
+}
+
 say("\n✓ deployed and verified");

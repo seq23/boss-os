@@ -6,9 +6,11 @@
  *   2. BRAKES: per business, a bounce rate over 3% or any complaint in 14 days pauses it.
  *   3. ROUTES: a business whose sending address appears in the mailbox's send-as list is proven
  *      with one email to the test recipient, then marked ready. Nothing else sends before that.
- *   4. SENDS: within the cap, the window, the flag and the kill switch.
- *   5. LISTS: one public-listing slice and a few website reads, while a business is short of
- *      prospects.
+ *   4. SENDS: within the cap, the window, the flag and the kill switch. A business with an exclusive
+ *      seat reads the site's public seat JSON first (short timeout, last value on failure) and
+ *      picks its pitch from it; its seat holder is never written to.
+ *   5. LISTS: a business's own licensed directory once a day, one public-listing slice and a few
+ *      website reads, while a business is short of prospects.
  *   6. PAYOUTS: on the 1st (Chicago), last month's referral ledger.
  *
  * Every refusal is recorded with its reason. A tick that did nothing says why.
@@ -24,9 +26,10 @@ import { bouncedAddress, classifyReply, ownWords, type ReplyClass } from "./clas
 import { composeEmail } from "./compose";
 import { mailAuthRefusal } from "./mailauth";
 import { GmailSession, addressOf } from "./gmail";
-import { crawlCandidates, randomToken, readNextSlice } from "./lists";
+import { crawlCandidates, randomToken, readDirectories, readNextSlice } from "./lists";
 import { isSuppressed, suppress } from "./suppression";
 import { ensurePartner, runMonthlyPayouts } from "./referrals";
+import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Seat } from "./seat";
 
 export interface OutreachSettings {
   killSwitch: boolean;
@@ -72,7 +75,7 @@ export interface TickResult {
   routesProven: string[];
   sent: number;
   refused: Record<string, string>;
-  lists: { slice: string | null; crawled: number; admitted: number };
+  lists: { slice: string | null; crawled: number; admitted: number; directories?: { read: string[]; prospects: number; candidates: number } };
   payouts: unknown;
   stop?: string;
 }
@@ -124,6 +127,12 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
   }
 
   try {
+    const dir = await readDirectories(db, fetchImpl, now);
+    out.lists.directories = { read: dir.read, prospects: dir.prospects, candidates: dir.candidates };
+  } catch (err) {
+    out.refused.directories = (err as Error).message;
+  }
+  try {
     const short = await businessesShortOfProspects(db);
     if (short.length) {
       const slice = await readNextSlice(db, fetchImpl, now, short);
@@ -155,36 +164,57 @@ async function businessesShortOfProspects(db: D1Database): Promise<string[]> {
   return BUSINESSES.filter((b) => (have.get(b.key) ?? 0) < 50).map((b) => b.key);
 }
 
+/** A business's route is ready only when it was proven for the sender it uses NOW. */
+export function routeReadyFor(b: Business, st: { route_state?: string | null; route_sender?: string | null } | null | undefined): boolean {
+  return st?.route_state === "ready" && st.route_sender === b.sender;
+}
+
 /**
- * A ROUTE IS PROVEN, NOT ASSUMED. The sending address must be in the mailbox's send-as list (so
- * Gmail will not rewrite the From), and then one email to the test recipient must go out and come
- * back from Gmail's Sent copy with that From. Only then is the business 'ready'.
+ * A ROUTE IS PROVEN, NOT ASSUMED — ONCE PER SENDER. The sending address must be in the mailbox's
+ * send-as list (so Gmail will not rewrite the From), and then one email to the test recipient must
+ * go out and come back from Gmail's Sent copy with that From. Every business that sends from that
+ * address is then 'ready' on the same proof: the six guides share one route (owner, 13 Oct 2026).
+ * A business whose sender changed is not ready until its new sender is proven.
  */
 async function proveRoutes(env: Env, mailbox: GmailSession, now: number): Promise<string[]> {
   const db = env.DB;
   const proven: string[] = [];
-  const pending = await db.prepare(
-    `SELECT business_key FROM outreach_domain_state WHERE route_state = 'awaiting_route'`,
-  ).all<{ business_key: string }>();
-  if (!(pending.results ?? []).length) return proven;
-  const sendAs = await mailbox.sendAsAddresses();
-  for (const row of pending.results ?? []) {
-    const b = businessByKey(row.business_key);
-    if (!b) continue;
-    if (!sendAs.has(b.sender)) {
-      await db.prepare(`UPDATE outreach_domain_state SET route_detail = ?, updated_at = ? WHERE business_key = ?`)
-        .bind(`${b.sender} is not yet a send-as address of the mailbox.`, now, b.key).run();
+  const rows = await db.prepare(`SELECT business_key, route_state, route_sender, route_detail FROM outreach_domain_state`).all<any>();
+  const stateOf = new Map((rows.results ?? []).map((r) => [r.business_key, r]));
+  const pending = BUSINESSES.filter((b) => stateOf.has(b.key) && !routeReadyFor(b, stateOf.get(b.key)));
+  if (!pending.length) return proven;
+  const markReady = async (keys: string[], sender: string, detail: string) => {
+    for (const k of keys) {
+      await db.prepare(
+        `UPDATE outreach_domain_state SET route_state = 'ready', route_sender = ?, route_proven_at = ?, route_detail = ?, updated_at = ? WHERE business_key = ?`,
+      ).bind(sender, now, detail, now, k).run();
+      proven.push(k);
+    }
+  };
+  let sendAs: Set<string> | null = null;
+  for (const sender of [...new Set(pending.map((b) => b.sender))]) {
+    const waiting = pending.filter((b) => b.sender === sender);
+    const already = BUSINESSES.find((b) => b.sender === sender && routeReadyFor(b, stateOf.get(b.key)));
+    if (already) {
+      await markReady(waiting.map((b) => b.key), sender, `Shares the route proven for ${sender} (${already.key}): ${stateOf.get(already.key)?.route_detail ?? ""}`);
       continue;
     }
-    const sent = await sendTest(env, mailbox, b, 0, now, "route proof");
+    sendAs ??= await mailbox.sendAsAddresses();
+    if (!sendAs.has(sender)) {
+      for (const b of waiting) {
+        await db.prepare(`UPDATE outreach_domain_state SET route_state = 'awaiting_route', route_detail = ?, updated_at = ? WHERE business_key = ?`)
+          .bind(`${sender} is not yet a send-as address of the mailbox.`, now, b.key).run();
+      }
+      continue;
+    }
+    const sent = await sendTest(env, mailbox, waiting[0]!, 0, now, "route proof");
     if (sent.ok) {
-      await db.prepare(
-        `UPDATE outreach_domain_state SET route_state = 'ready', route_proven_at = ?, route_detail = ?, updated_at = ? WHERE business_key = ?`,
-      ).bind(now, `Proven ${new Date(now).toISOString()}: Gmail sent ${sent.id} From ${b.sender}.`, now, b.key).run();
-      proven.push(b.key);
+      await markReady(waiting.map((b) => b.key), sender, `Proven ${new Date(now).toISOString()}: Gmail sent ${sent.id} From ${sender}.`);
     } else {
-      await db.prepare(`UPDATE outreach_domain_state SET route_detail = ?, updated_at = ? WHERE business_key = ?`)
-        .bind(`Route proof failed: ${sent.detail}`, now, b.key).run();
+      for (const b of waiting) {
+        await db.prepare(`UPDATE outreach_domain_state SET route_state = 'awaiting_route', route_detail = ?, updated_at = ? WHERE business_key = ?`)
+          .bind(`Route proof failed: ${sent.detail}`, now, b.key).run();
+      }
     }
   }
   return proven;
@@ -241,7 +271,7 @@ async function sendForBusiness(
   const gateBase = {
     killSwitch: settings.killSwitch,
     sending: settings.sending,
-    routeReady: st.route_state === "ready",
+    routeReady: routeReadyFor(b, st),
     hasPostalAddress: Boolean(st.postal_address && String(st.postal_address).trim().length >= 10),
     pausedReason: st.paused_at ? st.pause_reason : null,
   };
@@ -253,6 +283,18 @@ async function sendForBusiness(
   const cap = dailyCap(st.ramp_started_at, now);
   const n = sendsThisTick(cap, await sentToday(db, b.key, now), now);
   if (n === 0) { refused[b.key] = "Outside the sending window, or today's cap is reached."; return 0; }
+
+  // THE SEAT, read at send time and never allowed to block the tick (seat.ts).
+  let seat: Seat = SEAT_OPEN;
+  if (b.seat) {
+    const last: Seat | null = st.seat_read_at ? { active: st.seat_active === 1, end: st.seat_end ?? null } : null;
+    const read = await readSeat(b.seat.url, last, fetchImpl);
+    seat = read.seat;
+    await db.prepare(
+      `UPDATE outreach_domain_state SET seat_active = ?, seat_end = ?, seat_read_at = COALESCE(?, seat_read_at), seat_detail = ?, updated_at = ? WHERE business_key = ?`,
+    ).bind(seat.active ? 1 : 0, seat.end, read.source === "fetched" ? now : null, read.detail, now, b.key).run();
+  }
+  const pitch = pitchFor(b, seat);
 
   const due = await db.prepare(
     `SELECT * FROM outreach_prospects
@@ -267,10 +309,16 @@ async function sendForBusiness(
       await db.prepare(`UPDATE outreach_prospects SET state = 'suppressed', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
       continue;
     }
+    // The seat holder is the business's paying partner: never cold-pitched, pitch A least of all.
+    if (b.seat && isSeatHolder(p, st.seat_holder_domain)) {
+      await db.prepare(`UPDATE outreach_prospects SET state = 'done', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
+      continue;
+    }
     const step = Math.min(p.step, 2) as 0 | 1 | 2;
     const mail = composeEmail({
       business: b, step, to: p.email, org: p.org_name ?? "", metro: p.metro ?? "", unsubToken: p.unsub_token,
       postalAddress: st.postal_address, firstSubject: p.last_subject, inReplyTo: p.last_message_id,
+      pitch, seatEnd: seat.end,
     });
     const res = await mailbox.send(b, mail.raw, p.thread_id);
     const messageId = step === 0 ? await mailbox.messageIdOf(res.id).catch(() => null) : p.last_message_id;
@@ -279,7 +327,7 @@ async function sendForBusiness(
       `UPDATE outreach_prospects SET state = ?, step = ?, next_due_at = ?, thread_id = ?, last_message_id = COALESCE(?, last_message_id),
               last_subject = COALESCE(last_subject, ?), updated_at = ? WHERE id = ?`,
     ).bind(step < 2 ? "in_sequence" : "done", step + 1, next, res.threadId, messageId, mail.subject, now, p.id).run();
-    await recordSend(db, b.key, p.id, p.email, step, false, res, "sent", null, now);
+    await recordSend(db, b.key, p.id, p.email, step, false, res, "sent", b.seat ? `pitch ${pitch}` : null, now);
     sent += 1;
   }
   if (sent > 0 && !st.ramp_started_at) {
@@ -362,7 +410,9 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
   if (b.kind === "affiliate") code = (await ensurePartner(env.DB, b, p, now)).code;
   const link = code ? `${b.offerUrl}?ref=${code}` : b.offerUrl;
   const reply =
-    b.kind === "local_guide"
+    b.seat
+      ? `Thank you! Everything about how it works, and how to start, is here: ${b.offerUrl}\n\nReply with the best contact for family referrals and we will set you up this week.\n\n— The ${b.brand} team`
+      : b.kind === "local_guide"
       ? `Thank you! Here is how the featured listing works and how to start your 2 free months: ${b.offerUrl}\n\nReply with the best contact for the listing and we will have it live this week.\n\n— The ${b.brand} team`
       : b.kind === "affiliate"
         ? `Great to have you. Your personal referral link is ${link} (code ${code}). You earn 30% of the first year's revenue from everyone who buys through it; payouts are monthly.\n\n— The ${b.brand} team`
