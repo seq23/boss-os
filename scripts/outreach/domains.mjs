@@ -36,7 +36,8 @@ const SCOPES = {
   alias: `${G}admin.directory.user.alias`,
   users: `${G}admin.directory.user.readonly`,
   verify: `${G}siteverification`,
-  sendas: `${G}gmail.settings.sharing`,
+  // sendAs.list needs settings.basic; sendAs.create needs settings.sharing (measured 13 Oct 2026).
+  sendas: `${G}gmail.settings.basic ${G}gmail.settings.sharing`,
 };
 const CLIENT_ID = "109529914046573753934";
 
