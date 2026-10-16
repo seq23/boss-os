@@ -153,6 +153,8 @@ interface GuideVoice {
   yours: string;
   /** The day-4 price line. */
   price: string;
+  /** Optional sentence after the guide's description in day 4 and day 7 (e.g. what a listing shows). */
+  listing?: string;
 }
 
 const GUIDE_PRICE = "It's free for the first two months, then $249 a month.";
@@ -165,7 +167,7 @@ const GUIDE_FOLLOW_UPS = (g: GuideVoice): [Step, Step] => [
     body:
       "Hi {org} team,\n\nI wrote last week but know inboxes get busy, so here's the short version. I run " +
       `${g.brand} (${g.domain}), a digital guide built to come up when ${g.who} ask ChatGPT, Google and other AI ` +
-      `assistants about ${g.topic}, and it sends them to ${g.providers} in their area.\n\n` +
+      `assistants about ${g.topic}, and it sends them to ${g.providers} in their area.${g.listing ? ` ${g.listing}` : ""}\n\n` +
       `I'd like ${g.yours} on our {metro} pages. On a 15-minute call I'd show you what people are asking and where ` +
       `you'd appear. If you'd rather read first: {offer_url}. ${g.price}\n\nWould a quick call work? Or just reply here.`,
   },
@@ -175,7 +177,7 @@ const GUIDE_FOLLOW_UPS = (g: GuideVoice): [Step, Step] => [
     body:
       `Hi {org} team,\n\nLast note from me. ${g.brand} (${g.domain}) is a digital guide built to come up when ` +
       `${g.who} ask ChatGPT, Google and other AI assistants about ${g.short}, and I'd still like ${g.yours} on our ` +
-      "{metro} pages. If the timing is ever better, just reply and we'll find 15 minutes.\n\nThanks either way.",
+      `{metro} pages.${g.listing ? ` ${g.listing}` : ""} If the timing is ever better, just reply and we'll find 15 minutes.\n\nThanks either way.`,
   },
 ];
 
@@ -183,6 +185,20 @@ const SENIOR_VOICE = (topic: string, price: string, short = topic): GuideVoice =
   brand: "Memphis Senior Care Homes", domain: "memphisseniorcarehomes.com", who: "families", topic, short,
   providers: "communities", yours: "your community", price,
 });
+
+/*
+ * WHO NEURO EVALUATION GUIDES WRITES TO (owner, 16 Oct 2026): evaluators AND therapy practices.
+ * Qualifies a practice whose own website says it evaluates (neuropsych / psychological testing,
+ * ADHD or autism evaluation, testing, assessment, diagnosis) or treats (ADHD or autism therapy,
+ * counselling, treatment; ABA / applied behavior analysis / BCBA; behavioral therapy for autism or
+ * ADHD; ADHD coaching only when the site also names a licensed clinician). Bare "ABA" is not
+ * enough (the American Bar Association). Pinned by tests/boss/moniqueOutreach.test.ts.
+ */
+export const NEURO_QUALIFY =
+  /neuropsych|psycho-?educational (testing|evaluation|assessment)|psychological (testing|evaluation|assessment)|\b(ADHD|autism|autistic|ASD)\b[^.]{0,40}?\b(evaluations?|testing|assessments?|diagnos\w*|therap\w*|counsel\w*|treatment)\b|\b(therap\w*|counsel\w*|treatment|treating)\b[^.]{0,30}?\b(for|of|with)\b[^.]{0,30}?\b(ADHD|autism|autistic|ASD)\b|applied behaviou?r(al)? analysis|\bBCBAs?\b|\bABA (therapy|services|provider|program|clinic|center|centre)\b|^(?=[\s\S]*?\b(licensed|LCSW|LPC|LMFT|LMHC|LCPC|PsyD|psychologist|psychiatrist)\b)[\s\S]*?\bADHD coach/i;
+
+/** What every Neuro Evaluation Guides email says a listing shows (owner, 16 Oct 2026). */
+const NEURO_LISTING = "Listings show evaluation, therapy or both.";
 
 export const BUSINESSES: Business[] = [
   {
@@ -278,24 +294,44 @@ export const BUSINESSES: Business[] = [
     kind: "local_guide",
     sender: GUIDES_SENDER,
     offerUrl: "https://neuroevalguides.com/for-providers/",
-    offer: "Featured evaluator listing, 2 months free, then $249/month per metro",
-    segments: [{
-      key: "evaluators",
-      label: "Neuropsychologists and ADHD/autism evaluators",
-      osm: ['["healthcare"~"^(psychotherapist|psychologist|doctor|clinic)$"]', '["amenity"~"^(doctors|clinic)$"]'],
-      qualify: /neuropsych|ADHD (evaluation|testing|assessment)|autism (evaluation|testing|assessment)|psychological testing/i,
-    }],
+    offer: "Featured ADHD/autism evaluation and therapy listing, 2 months free, then $249/month per metro",
+    /*
+     * EVALUATION AND THERAPY (owner, 16 Oct 2026: "yes build it"). The guide serves people seeking
+     * ADHD/autism evaluations AND people seeking ongoing ADHD/autism therapy, and therapy practices
+     * (recurring clients) are the likeliest buyers. Both segments share NEURO_QUALIFY, so a practice
+     * is never dropped for being found under the "wrong" segment (a website is a candidate once per
+     * business, under the first segment that lists it).
+     * ORDER IS PRIORITY: readNextSlice (lists.ts) reads segments in array order, candidates are
+     * crawled oldest first and prospects are sent oldest first, so therapy practices go out first.
+     */
+    segments: [
+      {
+        key: "therapy",
+        label: "ADHD/autism therapy practices (incl. ABA), and practices that evaluate and treat",
+        osm: [
+          '["healthcare"~"^(psychotherapist|counselling|therapist|centre)$"]',
+          '["healthcare:speciality"~"behavio|autism|psychiatry|child_psychiatry|psychotherapy"]',
+        ],
+        qualify: NEURO_QUALIFY,
+      },
+      {
+        key: "evaluators",
+        label: "Neuropsychologists and ADHD/autism evaluators",
+        osm: ['["healthcare"~"^(psychotherapist|psychologist|doctor|clinic)$"]', '["amenity"~"^(doctors|clinic)$"]'],
+        qualify: NEURO_QUALIFY,
+      },
+    ],
     steps: [
       {
         afterDays: 0,
-        subject: "families looking for evaluations in {metro}",
+        subject: "families looking for ADHD and autism care in {metro}",
         body:
           "Hi {org} team,\n\nI run Neuro Evaluation Guides (neuroevalguides.com), a digital guide built to " +
-          "come up when parents and adults ask ChatGPT, Google and other AI assistants about ADHD, autism and " +
-          "neuropsych testing: how it works, what it costs, and who does it.\n\nWe're building out our {metro} " +
+          "come up when parents and adults ask ChatGPT, Google and other AI assistants about ADHD and autism: " +
+          "getting evaluated, and finding ongoing therapy once they have answers. " + NEURO_LISTING + "\n\nWe're building out our {metro} " +
           "pages and I'd like your practice on them. Would a quick 15-minute call work? Or just reply here.",
       },
-      ...GUIDE_FOLLOW_UPS({ brand: "Neuro Evaluation Guides", domain: "neuroevalguides.com", who: "parents and adults", topic: "ADHD, autism and neuropsych testing", short: "ADHD, autism and neuropsych testing", providers: "practices", yours: "your practice", price: GUIDE_PRICE }),
+      ...GUIDE_FOLLOW_UPS({ brand: "Neuro Evaluation Guides", domain: "neuroevalguides.com", who: "families", topic: "ADHD/autism evaluations and ongoing therapy", short: "ADHD/autism evaluations and ongoing therapy", providers: "practices", yours: "your practice", price: GUIDE_PRICE, listing: NEURO_LISTING }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },

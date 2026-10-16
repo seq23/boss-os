@@ -7,7 +7,7 @@ import { bouncedAddress, classifyReply } from "../../src/worker/boss/outreach/cl
 import { composeEmail, footerCompany, UMBRELLA_COMPANY, UMBRELLA_CONTACT } from "../../src/worker/boss/outreach/compose";
 import { isSuppressed, suppress, isBusinessEmail } from "../../src/worker/boss/outreach/suppression";
 import {
-  GUIDES_SENDER, assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
+  GUIDES_SENDER, NEURO_QUALIFY, assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
 } from "../../src/worker/boss/outreach/catalog";
 import CATALOG_SOURCE from "../../src/worker/boss/outreach/catalog.ts?raw";
 const OUTREACH_SOURCES = import.meta.glob("../../src/worker/boss/outreach/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
@@ -1148,5 +1148,68 @@ describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 
         expect(m.body, b.key).not.toContain("S.L. Taylor");
       }
     }
+  });
+});
+
+describe("Neuro Evaluation Guides writes to evaluators AND therapy practices (owner, 16 Oct 2026)", () => {
+  // The regex this replaced: evaluators only. Kept here to prove the widening negatively.
+  const OLD = /neuropsych|ADHD (evaluation|testing|assessment)|autism (evaluation|testing|assessment)|psychological testing/i;
+  const THERAPY_ONLY = [
+    "Bright Path Counseling offers ADHD therapy for children, teens and adults. Licensed therapists, in person and telehealth.",
+    "We provide ABA therapy for autistic children in home and clinic. Our BCBAs design every plan.",
+    "Applied Behavior Analysis services for kids on the spectrum.",
+    "Individual counseling for adults with ADHD and anxiety.",
+    "Autism therapy and parent coaching. Speech and occupational support.",
+    "ADHD coaching with Jane Doe, LCSW, a licensed clinical social worker.",
+    "Behavioral therapy and treatment for ADHD in Houston.",
+  ];
+  const BOTH = ["We do ADHD evaluations and ongoing ADHD therapy under one roof."];
+  const EVALUATORS = ["Comprehensive neuropsychological evaluations.", "Autism assessment for toddlers.", "Psychological testing for school accommodations."];
+  const NOT_CLINICAL = [
+    "Bright Kids Toy Store: sensory toys, fidget spinners and planners. Free shipping.",
+    "Smith & Jones LLP. Personal injury attorneys and proud ABA members since 1990.",
+    "Join our autism awareness 5K fun run on Saturday. Register online.",
+    "Add to cart. Massage therapy gift cards for the holidays.",
+    "ADHD coaching for entrepreneurs: productivity hacks and planners.",
+    "Dental cleanings, implants and veneers.",
+  ];
+
+  it("therapy-only and both-service practices qualify, the old regex dropped every therapy-only one", () => {
+    for (const t of [...THERAPY_ONLY, ...BOTH, ...EVALUATORS]) expect(NEURO_QUALIFY.test(t), t).toBe(true);
+    for (const t of THERAPY_ONLY) expect(OLD.test(t), `old regex: ${t}`).toBe(false);
+    expect(THERAPY_ONLY.length).toBeGreaterThan(0);
+  });
+
+  it("non-clinical businesses do not qualify", () => {
+    for (const t of NOT_CLINICAL) expect(NEURO_QUALIFY.test(t), t).toBe(false);
+  });
+
+  it("therapy is read first, and every segment qualifies with the one shared regex", () => {
+    const b = businessByKey("neuroevalguides")!;
+    expect(b.segments.map((s) => s.key)).toEqual(["therapy", "evaluators"]);
+    for (const s of b.segments) expect(s.qualify).toBe(NEURO_QUALIFY);
+    expect(b.offerUrl).toBe("https://neuroevalguides.com/for-providers/");
+    expect(b.offer).toMatch(/evaluation and therapy/);
+    expect(b.offer).toContain("2 months free, then $249/month per metro");
+  });
+
+  it("every step names both audiences and that a listing shows evaluation, therapy or both", () => {
+    const b = businessByKey("neuroevalguides")!;
+    let checked = 0;
+    for (const step of [0, 1, 2] as const) {
+      const m = composeEmail({
+        business: b, step, to: "a@acme.example", org: "Acme Therapy", metro: "Houston", unsubToken: "tok123",
+        postalAddress: "PO Box 1, Houston, TX 77002", firstSubject: "families looking for ADHD and autism care in Houston", pitch: "A", seatEnd: null,
+      });
+      expect(m.body, `step ${step}`).toMatch(/evaluat/i);
+      expect(m.body, `step ${step}`).toMatch(/ongoing therapy/);
+      expect(m.body, `step ${step}`).toContain("Listings show evaluation, therapy or both.");
+      if (step === 1) {
+        expect(m.body).toContain("https://neuroevalguides.com/for-providers/");
+        expect(m.body).toContain("It's free for the first two months, then $249 a month.");
+      }
+      checked++;
+    }
+    expect(checked).toBe(3);
   });
 });
