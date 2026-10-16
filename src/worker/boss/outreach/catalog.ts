@@ -20,7 +20,8 @@
  *     sequoiataylor.com, and `assertSenderAllowed` refuses one at send time.
  *   · Sources are PUBLIC listings and the businesses' own websites. Never her network, never
  *     client data (memory: client-data-never-feeds-west-peek).
- *   · Signed by the brand, never by a person (the Kindle front-door rule).
+ *   · Side businesses are signed by the brand's team, never by a person (the Kindle front-door rule).
+ *     The local guides are the exception: GUIDES_SIGNER signs them (owner, 16 Oct 2026).
  */
 
 /**
@@ -39,6 +40,12 @@ export const UMBRELLA_CONTACT = "hello@theindustryguides.com";
  * guide sends from here too; `assertSenderAllowed` refuses anything else. Side businesses keep their own.
  */
 export const GUIDES_SENDER = UMBRELLA_CONTACT;
+/**
+ * WHO SIGNS THE GUIDES' OUTREACH (owner, 16 Oct 2026: "it should always be S.L. Taylor"). Every
+ * local guide's email, every step and both seat pitches, is signed by this person over the umbrella
+ * company and the guide's domain (compose.ts `signatureFor`). Side businesses keep "— The {brand} team".
+ */
+export const GUIDES_SIGNER = "S.L. Taylor";
 
 
 export type BusinessKind = "local_guide" | "affiliate" | "direct";
@@ -121,23 +128,61 @@ export interface Business {
   directory?: string;
 }
 
-const LOCAL_FOLLOW_UPS = (what: string, price: string): [Step, Step] => [
+/*
+ * THE GUIDES' VOICE (owner, 16 Oct 2026: the old copy "read too salesy"; the wording below is the
+ * copy she approved that day, verbatim). A person picking up a conversation and offering a quick
+ * call, signed S.L. Taylor. Every step says plainly what the guide is (a digital guide built to come
+ * up when people ask ChatGPT, Google and other AI assistants) and names its domain, because people
+ * rarely read the first email: day 4 stands alone and re-explains everything, day 7 briefly. The
+ * first email names no price and has an honest subject (never a fake "Re:"), except the seat-taken
+ * pitch B, which keeps its price by her design. Pinned per guide, per step, per pitch by
+ * tests/boss/moniqueOutreach.test.ts.
+ */
+interface GuideVoice {
+  brand: string;
+  domain: string;
+  /** Who asks the AI assistants: "people", or "families" for senior care. */
+  who: string;
+  /** The topic phrase from that guide's first email. */
+  topic: string;
+  /** The short topic for the day-7 note. */
+  short: string;
+  /** "practices", "clinics", "firms", "communities". */
+  providers: string;
+  /** "your practice", "your clinic", "your firm", "your community". */
+  yours: string;
+  /** The day-4 price line. */
+  price: string;
+}
+
+const GUIDE_PRICE = "It's free for the first two months, then $249 a month.";
+
+/** Day 4 (stands alone) and day 7 (stands alone, briefly), in the approved wording. */
+const GUIDE_FOLLOW_UPS = (g: GuideVoice): [Step, Step] => [
   {
     afterDays: 4,
     subject: "Re: {subject}",
     body:
-      "Hi {org} team,\n\nA quick follow-up on the featured listing. The first 2 months are free, then " +
-      price + ". You can see exactly how a featured " + what + " listing looks here: {offer_url}\n\n" +
-      "Reply \"yes\" and we will set it up for you.",
+      "Hi {org} team,\n\nI wrote last week but know inboxes get busy, so here's the short version. I run " +
+      `${g.brand} (${g.domain}), a digital guide built to come up when ${g.who} ask ChatGPT, Google and other AI ` +
+      `assistants about ${g.topic}, and it sends them to ${g.providers} in their area.\n\n` +
+      `I'd like ${g.yours} on our {metro} pages. On a 15-minute call I'd show you what people are asking and where ` +
+      `you'd appear. If you'd rather read first: {offer_url}. ${g.price}\n\nWould a quick call work? Or just reply here.`,
   },
   {
     afterDays: 7,
     subject: "Re: {subject}",
     body:
-      "Hi {org} team,\n\nLast note from us on this. If a featured listing is not a fit right now, no " +
-      "problem, and you will not hear from us again about it. If it is, the details are here: {offer_url}",
+      `Hi {org} team,\n\nLast note from me. ${g.brand} (${g.domain}) is a digital guide built to come up when ` +
+      `${g.who} ask ChatGPT, Google and other AI assistants about ${g.short}, and I'd still like ${g.yours} on our ` +
+      "{metro} pages. If the timing is ever better, just reply and we'll find 15 minutes.\n\nThanks either way.",
   },
 ];
+
+const SENIOR_VOICE = (topic: string, price: string, short = topic): GuideVoice => ({
+  brand: "Memphis Senior Care Homes", domain: "memphisseniorcarehomes.com", who: "families", topic, short,
+  providers: "communities", yours: "your community", price,
+});
 
 export const BUSINESSES: Business[] = [
   {
@@ -157,14 +202,15 @@ export const BUSINESSES: Business[] = [
     steps: [
       {
         afterDays: 0,
-        subject: "Featured civil-surgeon listing in {metro}",
+        subject: "immigration medical exams in {metro}",
         body:
-          "Hi {org} team,\n\nUSCIS Exam Guides explains the Form I-693 medical exam to applicants in " +
-          "{metro}, and they use it to choose a civil surgeon. We would like to feature your practice. " +
-          "The first 2 months are free, then $249/month for the metro.\n\nHow it works: {offer_url}\n\n" +
-          "Reply \"yes\" and we will set it up.",
+          "Hi {org} team,\n\nI run USCIS Exam Guides (uscisexam.com), a digital guide for green-card " +
+          "applicants. It's built to come up when people ask ChatGPT, Google and other AI assistants about the " +
+          "I-693 medical exam, and it points them to civil surgeons in their city.\n\nWe're building out our " +
+          "{metro} pages and I'd like your practice on them. Would you have 15 minutes for a quick call? Or " +
+          "just reply here if that's easier.",
       },
-      ...LOCAL_FOLLOW_UPS("civil-surgeon", "$249/month for the metro"),
+      ...GUIDE_FOLLOW_UPS({ brand: "USCIS Exam Guides", domain: "uscisexam.com", who: "people", topic: "the I-693 medical exam", short: "the I-693 medical exam", providers: "civil surgeons", yours: "your practice", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -185,13 +231,15 @@ export const BUSINESSES: Business[] = [
     steps: [
       {
         afterDays: 0,
-        subject: "Featured implant listing in {metro}",
+        subject: "implant patients in {metro}",
         body:
-          "Hi {org} team,\n\nThe Dentistry Guides helps patients in {metro} compare implant and cosmetic " +
-          "dentists and what they cost. We would like to feature your practice. The first 2 months are " +
-          "free, then $249/month for the metro.\n\nHow it works: {offer_url}\n\nReply \"yes\" and we will set it up.",
+          "Hi {org} team,\n\nI run The Dentistry Guides (dentistryguides.com), a digital guide built to come " +
+          "up when people ask ChatGPT, Google and other AI assistants about implants, veneers and what they " +
+          "cost. It helps patients compare their options and find a dentist in their city.\n\nWe're building " +
+          "out our {metro} pages and I'd like your practice on them. Could we find 15 minutes for a quick " +
+          "call? Or just reply here.",
       },
-      ...LOCAL_FOLLOW_UPS("dental", "$249/month for the metro"),
+      ...GUIDE_FOLLOW_UPS({ brand: "The Dentistry Guides", domain: "dentistryguides.com", who: "people", topic: "implants, veneers and what they cost", short: "implants, veneers and what they cost", providers: "practices", yours: "your practice", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -212,13 +260,14 @@ export const BUSINESSES: Business[] = [
     steps: [
       {
         afterDays: 0,
-        subject: "Featured clinic listing in {metro}",
+        subject: "TRT and HRT patients in {metro}",
         body:
-          "Hi {org} team,\n\nHormone Optimization Guides helps people in {metro} compare TRT, IV and " +
-          "hair-restoration clinics. We would like to feature your clinic. The first 2 months are free, " +
-          "then $249/month for the metro.\n\nHow it works: {offer_url}\n\nReply \"yes\" and we will set it up.",
+          "Hi {org} team,\n\nI run Hormone Optimization Guides (hormonesivhair.com), a digital guide built to " +
+          "come up when people ask ChatGPT, Google and other AI assistants about TRT, HRT and IV therapy: " +
+          "what's safe, what it costs, and who to see.\n\nWe're building out our {metro} pages and your clinic " +
+          "is one I'd like to include. Open to a quick 15-minute call? Or just reply here.",
       },
-      ...LOCAL_FOLLOW_UPS("clinic", "$249/month for the metro"),
+      ...GUIDE_FOLLOW_UPS({ brand: "Hormone Optimization Guides", domain: "hormonesivhair.com", who: "people", topic: "TRT, HRT and IV therapy", short: "TRT, HRT and IV therapy", providers: "clinics", yours: "your clinic", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -239,13 +288,14 @@ export const BUSINESSES: Business[] = [
     steps: [
       {
         afterDays: 0,
-        subject: "Featured evaluator listing in {metro}",
+        subject: "families looking for evaluations in {metro}",
         body:
-          "Hi {org} team,\n\nNeuro Evaluation Guides helps families in {metro} find ADHD, autism and " +
-          "neuropsychological evaluations. We would like to feature your practice. The first 2 months are " +
-          "free, then $249/month for the metro.\n\nHow it works: {offer_url}\n\nReply \"yes\" and we will set it up.",
+          "Hi {org} team,\n\nI run Neuro Evaluation Guides (neuroevalguides.com), a digital guide built to " +
+          "come up when parents and adults ask ChatGPT, Google and other AI assistants about ADHD, autism and " +
+          "neuropsych testing: how it works, what it costs, and who does it.\n\nWe're building out our {metro} " +
+          "pages and I'd like your practice on them. Would a quick 15-minute call work? Or just reply here.",
       },
-      ...LOCAL_FOLLOW_UPS("evaluator", "$249/month for the metro"),
+      ...GUIDE_FOLLOW_UPS({ brand: "Neuro Evaluation Guides", domain: "neuroevalguides.com", who: "parents and adults", topic: "ADHD, autism and neuropsych testing", short: "ADHD, autism and neuropsych testing", providers: "practices", yours: "your practice", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -266,14 +316,14 @@ export const BUSINESSES: Business[] = [
     steps: [
       {
         afterDays: 0,
-        subject: "Featured injury-firm listing for {metro}",
+        subject: "injury questions in {metro}",
         body:
-          "Hi {org} team,\n\nThe Accident Guides explains personal-injury claims to people in {metro} " +
-          "right after an accident, and points them to a firm. We would like to feature yours. The first " +
-          "2 months are free, then $499/month for the state.\n\nHow it works: {offer_url}\n\n" +
-          "Reply \"yes\" and we will set it up.",
+          "Hi {org} team,\n\nI run The Accident Guides (theaccidentguides.com), a digital guide built to come " +
+          "up when people ask ChatGPT, Google and other AI assistants what to do after a car or work accident: " +
+          "deadlines, costs, and when to call a lawyer.\n\nWe're building out our {metro} pages and want one " +
+          "firm to point people to. Could we find 15 minutes for a quick call? Or just reply here.",
       },
-      ...LOCAL_FOLLOW_UPS("injury-firm", "$499/month for the state"),
+      ...GUIDE_FOLLOW_UPS({ brand: "The Accident Guides", domain: "theaccidentguides.com", who: "people", topic: "what to do after a car or work accident", short: "what to do after an accident", providers: "firms", yours: "your firm", price: "It's free for the first two months, then $499/month for the state." }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months (state-wide, $499 after).",
   },
@@ -305,58 +355,31 @@ export const BUSINESSES: Business[] = [
     steps: [
       {
         afterDays: 0,
-        subject: "Exclusive lead routing for {org}",
+        subject: "quick question for {org}",
         body:
-          "Hi {org} team,\n\nMemphis Senior Care Homes is a free guide for families choosing assisted living or " +
-          "memory care in the Memphis area. One community at a time receives every qualified family we hear " +
-          "from — first, with full details. It's $249/month, the first 2 months are free, 6-month term, plus " +
-          "one month's rent when a family we send moves in. Families who don't fit you go to the open round.\n\n" +
-          "How it works: {offer_url}\n\nReply \"yes\" and we will set it up.",
+          "Hi {org} team,\n\nI run Memphis Senior Care Homes (memphisseniorcarehomes.com), a digital guide " +
+          "built to come up when families ask ChatGPT, Google and other AI assistants about assisted living " +
+          "and memory care around Memphis. It walks them through care levels and costs, then connects them " +
+          "with communities.\n\nI'm looking for one community to work with closely on the families who fit. " +
+          "Could we find 15 minutes for a quick call? Or just reply here.",
       },
-      {
-        afterDays: 4,
-        subject: "Re: {subject}",
-        body:
-          "Hi {org} team,\n\nA quick follow-up on exclusive lead routing. The first 2 months are free, then " +
-          "$249/month, plus one month's rent when a family we send moves in. You can see exactly how it works " +
-          "here: {offer_url}\n\nReply \"yes\" and we will set it up for you.",
-      },
-      {
-        afterDays: 7,
-        subject: "Re: {subject}",
-        body:
-          "Hi {org} team,\n\nLast note from us on this. If exclusive lead routing is not a fit right now, no " +
-          "problem, and you will not hear from us again about it. If it is, the details are here: {offer_url}",
-      },
+      ...GUIDE_FOLLOW_UPS(SENIOR_VOICE("assisted living and memory care", "It's free for the first two months, then $249 a month on a six-month term, plus one month's rent when a family we send moves in.")),
     ],
     seat: {
       url: "https://memphisseniorcarehomes.com/_seat.json",
       taken: [
         {
           afterDays: 0,
-          subject: "Qualified Memphis families, pay only when you take one",
+          // Names its price in the first email by the owner's design (approved 16 Oct 2026).
+          subject: "Memphis families looking for care",
           body:
-            "Hi {org} team,\n\nMemphis has an exclusive routing partner through {seat_end_month}. You can still " +
-            "receive every qualified family that fits you: we send a teaser with care level, budget and " +
-            "timeline, no names. Take it for a flat $800, or accept it and pay one month's rent only if they " +
-            "move in. First five communities to accept get the family. Nothing to sign, nothing monthly.\n\n" +
-            "How it works: {offer_url}.",
+            "Hi {org} team,\n\nI run Memphis Senior Care Homes (memphisseniorcarehomes.com), a digital guide " +
+            "built to come up when families ask ChatGPT, Google and other AI assistants about senior care around " +
+            "Memphis.\n\nWhen a family fits your community, we can send a short note with their care level, " +
+            "budget and timeline, no names. Meeting them is a flat $800, or one month's rent only if they move " +
+            "in. Worth a quick call? Or just reply here.",
         },
-        {
-          afterDays: 4,
-          subject: "Re: {subject}",
-          body:
-            "Hi {org} team,\n\nA quick follow-up on qualified Memphis families. Each teaser shows care level, " +
-            "budget and timeline, no names. Take a family for a flat $800, or pay one month's rent only if they " +
-            "move in. Nothing to sign, nothing monthly: {offer_url}\n\nReply \"yes\" and we will start sending teasers.",
-        },
-        {
-          afterDays: 7,
-          subject: "Re: {subject}",
-          body:
-            "Hi {org} team,\n\nLast note from us on this. If family referrals are not a fit right now, no " +
-            "problem, and you will not hear from us again about it. If they are, the details are here: {offer_url}",
-        },
+        ...GUIDE_FOLLOW_UPS(SENIOR_VOICE("senior care", "Meeting a family is a flat $800, or one month's rent only if they move in. Nothing monthly.", "senior care around Memphis")),
       ],
     },
     nextStep: "Reply with the setup link from /for-providers/: the exclusive seat (2 free months, then $249/month) if it is open, otherwise the open round (teasers, $800 or one month's rent).",
