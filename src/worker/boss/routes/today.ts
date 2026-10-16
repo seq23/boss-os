@@ -24,6 +24,7 @@ import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from 
 import { coachingFocus, lensFor } from "../today/faculty";
 import { deliverableAlerts } from "../today/deliverables";
 import { bookNagAlerts } from "../capital/bookNag";
+import { outreachStopAlerts } from "../today/outreachStops";
 import { unansweredQuestionAlerts } from "../intake/questions";
 import { credentialAlerts } from "../today/credentials";
 import { diary } from "../today/diary";
@@ -1044,7 +1045,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
    * take the escalation with it, and the whole rule is that a commitment must outlive the machinery
    * meant to be keeping it. See `today/deliverables.ts`.
    */
-  // The four read-time producers run in parallel, and only when the alerts block is wanted: each
+  // The five read-time producers run in parallel, and only when the alerts block is wanted: each
   // is its own handful of reads, and in series they were the slowest stretch of the assembler.
   // The credential, question and dismissal reads ride in one batch with each other; the deliverable
   // producer keeps its own two (it writes between them) and the book nag reads no table.
@@ -1055,8 +1056,9 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
     credentialAlerts(env, now, alertReads).catch(() => []),
     bookNagAlerts(env, now).catch(() => []),
     unansweredQuestionAlerts(env, now, alertReads).catch(() => []),
+    outreachStopAlerts(env).catch(() => []),
     alertReads.flush(),
-  ])).slice(0, 4) as { severity: string; text: string; source_type: string; source_id: string | null }[][];
+  ])).slice(0, 5) as { severity: string; text: string; source_type: string; source_id: string | null }[][];
   for (const list of produced) alerts.push(...list);
 
   /*

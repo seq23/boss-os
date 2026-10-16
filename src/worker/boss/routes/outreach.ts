@@ -24,7 +24,7 @@ import { ok, badRequest, notFound } from "../lib/http";
 import { audit } from "../lib/audit";
 import { BUSINESSES, TEST_RECIPIENTS, businessByKey } from "../outreach/catalog";
 import { BOUNCE_WINDOW_MS, chicagoParts, dailyCap } from "../outreach/brakes";
-import { domainState, readSettings, routeReadyFor, runOutreachTick, sendTest } from "../outreach/engine";
+import { domainState, outreachStopText, readSettings, routeReadyFor, runOutreachTick, sendTest } from "../outreach/engine";
 import { GmailSession } from "../outreach/gmail";
 import { suppress } from "../outreach/suppression";
 import { normaliseHolderDomain } from "../outreach/seat";
@@ -52,6 +52,9 @@ outreach.get("/", async (c) => {
     db.prepare(`SELECT ts, detail FROM system_events WHERE scope = 'outreach' AND event = 'tick' ORDER BY ts DESC LIMIT 1`).first<{ ts: number; detail: string }>().catch(() => null),
   ]);
   const stateOf = new Map((states.results ?? []).map((r) => [r.business_key, r]));
+  // The address a business without its own would inherit at send time (engine.ts, effectivePostalAddress).
+  const addresses = new Set((states.results ?? []).map((r) => String(r.postal_address ?? "").trim()).filter((x) => x.length >= 10));
+  const shared = addresses.size === 1;
   const businesses = BUSINESSES.map((b) => {
     const st = stateOf.get(b.key) ?? { route_state: "awaiting_route" };
     const prospects: Record<string, number> = {};
@@ -62,7 +65,9 @@ outreach.get("/", async (c) => {
     return {
       key: b.key, brand: b.brand, domain: b.domain, sender: b.sender, kind: b.kind, offer: b.offer,
       route_state: routeReadyFor(b, st) ? "ready" : "awaiting_route", route_sender: st.route_sender ?? null, route_detail: st.route_detail ?? null, route_proven_at: st.route_proven_at ?? null,
-      postal_address_set: Boolean(st.postal_address),
+      postal_address_set: Boolean(st.postal_address) || Boolean(shared),
+      postal_address_inherited: !st.postal_address && Boolean(shared),
+      stop: st.stop_reason ? { text: outreachStopText(b, st.stop_reason), since: st.stop_at ?? null } : null,
       paused: Boolean(st.paused_at), pause_reason: st.pause_reason ?? null,
       daily_cap: dailyCap(st.ramp_started_at ?? null, now),
       sent_today: mine.filter((x) => chicagoParts(x.sent_at).day === today).length,
@@ -121,7 +126,8 @@ outreach.put("/business/:key", async (c) => {
   if (typeof body.postal_address === "string") {
     const a = body.postal_address.trim();
     if (a.length < 10) throw badRequest("A postal address is a full street or PO Box address with city, state and ZIP.");
-    await c.env.DB.prepare(`UPDATE outreach_domain_state SET postal_address = ?, updated_at = ? WHERE business_key = ?`).bind(a, now, b.key).run();
+    // The address was the stop's cause; the next tick re-raises it if anything else is still missing.
+    await c.env.DB.prepare(`UPDATE outreach_domain_state SET postal_address = ?, stop_reason = NULL, stop_at = NULL, updated_at = ? WHERE business_key = ?`).bind(a, now, b.key).run();
   }
   if (body.resume === true) {
     await c.env.DB.prepare(`UPDATE outreach_domain_state SET paused_at = NULL, pause_reason = NULL, updated_at = ? WHERE business_key = ?`).bind(now, b.key).run();
