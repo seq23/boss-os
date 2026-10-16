@@ -26,6 +26,10 @@ Two rules govern it. Both are enforced in code and pinned by `tests/boss/monique
    git file, fixture, commit, PR, log or report: the repo is public. Tests use a fake address, and a
    test in `moniqueOutreach.test.ts` scans the repo for the real one. Emails show it in the footer:
    one short line in plain text, 10px muted grey beside the unsubscribe link in HTML.
+   A business with no address of its own inherits the one every other business shares, read from
+   their rows at send time (`effectivePostalAddress`, engine.ts); a route-ready business refused in
+   the sending window for a missing precondition is a NAMED STOP on Today (`outreachStopAlerts`),
+   never a quiet skip (16 Oct 2026, Memphis Senior Care Homes sent nothing for two days).
 4. **No live send from a domain without SPF, Google DKIM and DMARC** (9 Oct 2026: Gmail blocked
    aplayermode.com and approvalprep.com test sends, `550 5.7.26` DMARC — empty DKIM key under
    `p=reject`). `mailAuthRefusal` (`src/worker/boss/outreach/mailauth.ts`) reads the sender domain's

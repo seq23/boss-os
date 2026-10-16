@@ -505,6 +505,70 @@ describe("the tick", () => {
     expect(g.sends).toHaveLength(0);
   });
 
+  /*
+   * 16 Oct 2026: Memphis Senior Care Homes joined the catalog route-proven but with no postal address,
+   * and the tick refused it every hour for two days with nobody told. A business added later inherits
+   * the address the others share; when there is none to inherit, it is a NAMED STOP on Today.
+   */
+  async function withNewBusiness(run: (key: string) => Promise<void>) {
+    const fresh = { ...T2R, key: "newbiz_test", brand: "New Biz Test" };
+    BUSINESSES.push(fresh);
+    try {
+      await env.DB.prepare(
+        `INSERT INTO outreach_domain_state (business_key, route_state, route_sender, updated_at) VALUES (?, 'ready', ?, ?)`,
+      ).bind(fresh.key, fresh.sender, TUESDAY_10AM).run();
+      await addProspect(fresh.key, "head@newschool.example");
+      await run(fresh.key);
+    } finally {
+      BUSINESSES.splice(BUSINESSES.indexOf(fresh), 1);
+    }
+  }
+
+  it("a business added with no postal address inherits the one the others share, and sends", async () => {
+    await readyWithAddress("time2read");
+    await withNewBusiness(async (key) => {
+      const g = fakeGmail();
+      const r = await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
+      const mine = g.sends.filter((s) => s.to === "head@newschool.example");
+      expect(mine, "the new business sent").toHaveLength(1);
+      const parts = [...mine[0]!.raw.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([^-]+?)\r\n--/g)]
+        .map((m) => decodeURIComponent(escape(atob(m[1]!.replace(/\s/g, "")))));
+      expect(parts.length).toBeGreaterThan(0);
+      for (const part of parts) expect(part).toContain("100 Main St, Suite 1, Houston, TX 77002");
+      expect(r.refused[key]).toBeUndefined();
+      expect(r.stops[key]).toBeUndefined();
+      // Read at send time, never copied onto the row; the desk says it is inherited.
+      expect(await row(`SELECT postal_address, stop_at FROM outreach_domain_state WHERE business_key = ?`, key))
+        .toMatchObject({ postal_address: null, stop_at: null });
+      const desk = await apiJson<any>("/api/outreach");
+      expect(desk.body.data.businesses.find((b: any) => b.key === key)).toMatchObject({ postal_address_set: true, postal_address_inherited: true, stop: null });
+    });
+  });
+
+  it("a route-ready business with no address to inherit is a NAMED STOP on Today, not a silent 0", async () => {
+    await readyWithAddress("time2read");
+    await env.DB.prepare(`UPDATE outreach_domain_state SET postal_address = NULL`).run();
+    await withNewBusiness(async (key) => {
+      const g = fakeGmail();
+      const r = await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
+      expect(g.sends.filter((s) => s.to === "head@newschool.example")).toHaveLength(0);
+      const text = "NAMED STOP: New Biz Test outreach is route-ready but sent nothing in the sending window: "
+        + "No postal address is set for this business, and CAN-SPAM requires one in every email. "
+        + `Set the CAN-SPAM address on Team → Outreach (PUT /api/boss/outreach/business/${key}).`;
+      expect(r.stops[key]).toBe(text);
+      // The owner's surface: the stop is on Today's critical alerts until it clears.
+      const today = await apiJson<any>(`/api/today?date=${new Date().toISOString().slice(0, 10)}`);
+      const block = (today.body.data.blocks as any[]).find((b) => b.key === "critical_alerts");
+      expect((block?.content?.alerts ?? []).map((a: any) => a.text)).toContain(text);
+      // Setting the address clears it; the next tick sends.
+      await apiJson(`/api/outreach/business/${key}`, { method: "PUT", body: { postal_address: "200 Elm St, Suite 2, Austin, TX 78701" } });
+      expect(await row(`SELECT stop_at FROM outreach_domain_state WHERE business_key = ?`, key)).toMatchObject({ stop_at: null });
+      const r2 = await runOutreachTick(await tickEnv(), TUESDAY_10AM + 3_600_000, g.fetchImpl);
+      expect(r2.stops[key]).toBeUndefined();
+      expect(g.sends.filter((s) => s.to === "head@newschool.example")).toHaveLength(1);
+    });
+  });
+
   it("an unproven route sends nothing to a business; the guides' one sender is proven ONCE and all six share it", async () => {
     await env.DB.prepare(`UPDATE outreach_settings SET value = 'live' WHERE key = 'sending'`).run();
     await addProspect("uscisexam", "doc@clinic.example");

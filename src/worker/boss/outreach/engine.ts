@@ -14,13 +14,21 @@
  *   6. PAYOUTS: on the 1st (Chicago), last month's referral ledger.
  *
  * Every refusal is recorded with its reason. A tick that did nothing says why.
+ *
+ * A ROUTE-READY BUSINESS THAT SENDS NOTHING IS A NAMED STOP, NOT A QUIET SKIP (16 Oct 2026). Memphis
+ * Senior Care Homes joined the catalog route-proven but with no postal address, and the tick refused
+ * it every hour for two days with nobody told. So: a business with no address inherits the one every
+ * other business shares (`effectivePostalAddress`), and a route-ready business refused inside the
+ * sending window for a missing precondition writes `stop_reason` on its row, which Today shows her
+ * (`outreachStopAlerts`) until a tick sends for it or the cause is fixed. A deliberate hold — the kill
+ * switch, sending off or test-only, a bounce or complaint pause, today's cap reached — is not a stop.
  */
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { BUSINESSES, TEST_RECIPIENTS, businessByKey, type Business } from "./catalog";
 import {
-  BOUNCE_WINDOW_MS, DAY_MS, chicagoParts, dailyCap, pauseReason, refusal, sendsThisTick, type Sending,
+  BOUNCE_WINDOW_MS, DAY_MS, chicagoParts, dailyCap, inSendWindow, pauseReason, refusal, sendsThisTick, type Sending,
 } from "./brakes";
 import { bouncedAddress, classifyReply, ownWords, type ReplyClass } from "./classify";
 import { composeEmail, signatureFor } from "./compose";
@@ -78,11 +86,49 @@ export interface TickResult {
   lists: { slice: string | null; crawled: number; admitted: number; directories?: { read: string[]; prospects: number; candidates: number } };
   payouts: unknown;
   stop?: string;
+  /** NAMED STOPs this tick: a route-ready business refused in the sending window for a missing precondition. */
+  stops: Record<string, string>;
+}
+
+export const NAMED_STOP_PREFIX = "NAMED STOP";
+
+/** The words she reads on Today for a business that is route-ready and sent nothing. */
+export function outreachStopText(b: Business, reason: string): string {
+  const fix = /postal address/i.test(reason)
+    ? ` Set the CAN-SPAM address on Team → Outreach (PUT /api/boss/outreach/business/${b.key}).`
+    : "";
+  return `${NAMED_STOP_PREFIX}: ${b.brand} outreach is route-ready but sent nothing in the sending window: ${reason}${fix}`;
+}
+
+/**
+ * THE ADDRESS A BUSINESS SENDS WITH. Its own when set; otherwise the one address every other business
+ * shares, read from their rows (never from source: the address is private runtime data). Two
+ * different addresses on the other rows is ambiguous, so nothing is inherited and the business stops.
+ */
+export async function effectivePostalAddress(db: D1Database, key: string, own: string | null | undefined): Promise<{ address: string | null; inherited: boolean }> {
+  if (own && String(own).trim().length >= 10) return { address: String(own).trim(), inherited: false };
+  const r = await db.prepare(
+    `SELECT DISTINCT TRIM(postal_address) AS a FROM outreach_domain_state
+      WHERE business_key != ? AND postal_address IS NOT NULL AND LENGTH(TRIM(postal_address)) >= 10 LIMIT 2`,
+  ).bind(key).all<{ a: string }>();
+  const found = r.results ?? [];
+  return found.length === 1 ? { address: found[0]!.a, inherited: true } : { address: null, inherited: false };
+}
+
+async function setStop(db: D1Database, b: Business, reason: string | null, now: number) {
+  if (reason === null) {
+    await db.prepare(`UPDATE outreach_domain_state SET stop_reason = NULL, stop_at = NULL WHERE business_key = ? AND stop_at IS NOT NULL`).bind(b.key).run();
+    return;
+  }
+  await db.prepare(
+    `UPDATE outreach_domain_state SET stop_reason = ?, stop_at = COALESCE(stop_at, ?), updated_at = ? WHERE business_key = ?`,
+  ).bind(reason, now, now, b.key).run();
+  await logEvent(db, { level: "warn", scope: "outreach", event: "named_stop", entityId: b.key, detail: { reason } }).catch(() => {});
 }
 
 export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typeof fetch = fetch): Promise<TickResult> {
   const db = env.DB;
-  const out: TickResult = { replies: 0, paused: [], routesProven: [], sent: 0, refused: {}, lists: { slice: null, crawled: 0, admitted: 0 }, payouts: null };
+  const out: TickResult = { replies: 0, paused: [], routesProven: [], sent: 0, refused: {}, stops: {}, lists: { slice: null, crawled: 0, admitted: 0 }, payouts: null };
   const settings = await readSettings(db);
   const mailbox = GmailSession.from(env, fetchImpl);
 
@@ -121,10 +167,22 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
       out.refused.routes = (err as Error).message;
     }
     for (const b of BUSINESSES) {
+      let r: SendOutcome;
       try {
-        out.sent += await sendForBusiness(env, mailbox, b, settings, now, out.refused, fetchImpl);
+        r = await sendForBusiness(env, mailbox, b, settings, now, out.refused, fetchImpl);
       } catch (err) {
         out.refused[b.key] = (err as Error).message;
+        r = { sent: 0, stop: (err as Error).message };
+      }
+      out.sent += r.sent;
+      // Outside the window nothing is expected to send, so a stop is neither raised nor cleared there.
+      if (r.sent > 0 || (r.stop === null && inSendWindow(now))) await setStop(db, b, null, now);
+      else if (r.stop && inSendWindow(now)) {
+        const st = await domainState(db, b.key, now);
+        if (routeReadyFor(b, st)) {
+          out.stops[b.key] = outreachStopText(b, r.stop);
+          await setStop(db, b, r.stop, now);
+        }
       }
     }
   } else if (settings.killSwitch) {
@@ -234,6 +292,7 @@ export async function sendTest(
   const db = env.DB;
   const to = TEST_RECIPIENTS[0];
   const st = await domainState(db, b.key, now);
+  const postal = await effectivePostalAddress(db, b.key, st?.postal_address);
   const token = randomToken();
   await db.prepare(
     `INSERT INTO outreach_prospects (id, business_key, email, email_domain, org_name, segment, metro, website, source, source_url,
@@ -245,7 +304,7 @@ export async function sendTest(
   try {
     const mail = composeEmail({
       business: b, step, to, org: "Test", metro: "New York City", unsubToken: p.unsub_token,
-      postalAddress: st?.postal_address || "(postal address not yet set — test send only)",
+      postalAddress: postal.address || "(postal address not yet set — test send only)",
       firstSubject: `[${why}] ${b.brand}`,
     });
     const sent = await mailbox.send(b, mail.raw, null);
@@ -269,27 +328,44 @@ async function recordSend(
   ).bind(newId("osd"), key, prospectId, to, step, isTest ? 1 : 0, sent?.id ?? null, sent?.threadId ?? null, status, detail, now).run();
 }
 
+/** `stop` is the missing precondition that refused a business, or null when nothing was missing. */
+interface SendOutcome { sent: number; stop: string | null }
+
 async function sendForBusiness(
   env: Env, mailbox: GmailSession, b: Business, settings: OutreachSettings, now: number, refused: Record<string, string>,
   fetchImpl: typeof fetch,
-): Promise<number> {
+): Promise<SendOutcome> {
   const db = env.DB;
   const st = await domainState(db, b.key, now);
+  // A business added after the address was set inherits the one the others share. Read at send
+  // time, not copied onto its row, so it never spreads to a row the owner left empty on purpose.
+  const postal = await effectivePostalAddress(db, b.key, st.postal_address);
   const gateBase = {
     killSwitch: settings.killSwitch,
     sending: settings.sending,
     routeReady: routeReadyFor(b, st),
-    hasPostalAddress: Boolean(st.postal_address && String(st.postal_address).trim().length >= 10),
+    hasPostalAddress: Boolean(postal.address),
     pausedReason: st.paused_at ? st.pause_reason : null,
   };
   // DNS is read only once every other brake would let a live send through; a gap refuses it.
-  const no = refusal({ ...gateBase, mailAuthMissing: null, isTestRecipient: false })
-    ?? refusal({ ...gateBase, mailAuthMissing: await mailAuthRefusal(b.sender.split("@")[1]!, fetchImpl), isTestRecipient: false });
-  if (no) { refused[b.key] = no; return 0; }
+  const hold = refusal({ ...gateBase, mailAuthMissing: null, isTestRecipient: false });
+  if (hold) {
+    refused[b.key] = hold;
+    // A deliberate hold (kill switch, flag, unproven route, a pause) is not a stop; a missing address is.
+    return { sent: 0, stop: gateBase.routeReady && !gateBase.hasPostalAddress && !gateBase.pausedReason && settings.sending === "live" ? hold : null };
+  }
+  const authGap = await mailAuthRefusal(b.sender.split("@")[1]!, fetchImpl);
+  const no = refusal({ ...gateBase, mailAuthMissing: authGap, isTestRecipient: false });
+  if (no) { refused[b.key] = no; return { sent: 0, stop: no }; }
 
   const cap = dailyCap(st.ramp_started_at, now);
-  const n = sendsThisTick(cap, await sentToday(db, b.key, now), now);
-  if (n === 0) { refused[b.key] = "Outside the sending window, or today's cap is reached."; return 0; }
+  const today = await sentToday(db, b.key, now);
+  const n = sendsThisTick(cap, today, now);
+  if (n === 0) {
+    refused[b.key] = "Outside the sending window, or today's cap is reached.";
+    // In the window with nothing sent today, a zero is no cap at all: that is a stop, not a hold.
+    return { sent: 0, stop: inSendWindow(now) && today === 0 ? `Today's cap reads ${cap}, so nothing can send.` : null };
+  }
 
   // THE SEAT, read at send time and never allowed to block the tick (seat.ts).
   let seat: Seat = SEAT_OPEN;
@@ -324,7 +400,7 @@ async function sendForBusiness(
     const step = Math.min(p.step, 2) as 0 | 1 | 2;
     const mail = composeEmail({
       business: b, step, to: p.email, org: p.org_name ?? "", metro: p.metro ?? "", unsubToken: p.unsub_token,
-      postalAddress: st.postal_address, firstSubject: p.last_subject, inReplyTo: p.last_message_id,
+      postalAddress: postal.address!, firstSubject: p.last_subject, inReplyTo: p.last_message_id,
       pitch, seatEnd: seat.end,
     });
     const res = await mailbox.send(b, mail.raw, p.thread_id);
@@ -340,7 +416,7 @@ async function sendForBusiness(
   if (sent > 0 && !st.ramp_started_at) {
     await db.prepare(`UPDATE outreach_domain_state SET ramp_started_at = ?, updated_at = ? WHERE business_key = ?`).bind(now, now, b.key).run();
   }
-  return sent;
+  return { sent, stop: null };
 }
 
 /**
