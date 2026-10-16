@@ -6,7 +6,7 @@
  *   · an honest From (the business's own address) and a subject that describes the email.
  * `composeEmail` throws rather than produce a message without the unsubscribe link or the address.
  */
-import { UMBRELLA_COMPANY, UMBRELLA_CONTACT, type Business } from "./catalog";
+import { GUIDES_SIGNER, UMBRELLA_COMPANY, UMBRELLA_CONTACT, type Business } from "./catalog";
 import { seatEndMonth, type Pitch } from "./seat";
 
 /** The umbrella company and its one address live in catalog.ts (the senders use it); re-exported here. */
@@ -21,6 +21,15 @@ export function footerCompany(b: Business): string {
 function companyLines(b: Business, address: string): string[] {
   const company = footerCompany(b);
   return company === b.brand ? [`${b.brand}, ${address}`] : [`${b.brand} is a property of ${company}.`, `${company}, ${address} · ${UMBRELLA_CONTACT}`];
+}
+
+/**
+ * The sign-off above the CAN-SPAM footer. A local guide is signed by a person over the umbrella
+ * company and the guide's domain (owner, 16 Oct 2026: "it should always be S.L. Taylor"); every
+ * other business by its brand's team.
+ */
+export function signatureFor(b: Business): string {
+  return b.kind === "local_guide" ? `${GUIDES_SIGNER}\n${UMBRELLA_COMPANY}\n${b.domain}` : `— The ${b.brand} team\n${b.domain}`;
 }
 
 export const UNSUBSCRIBE_BASE = "https://boss.sequoiataylor.com/api/boss/outreach/u/";
@@ -94,7 +103,7 @@ export function composeEmail(i: ComposeInput): Composed {
   };
   const subject = fill(step.subject, vars).trim();
   const unsub = unsubscribeUrl(i.unsubToken);
-  const message = `${fill(step.body, vars)}\n\n— The ${i.business.brand} team\n${i.business.domain}`;
+  const message = `${fill(step.body, vars)}\n\n${signatureFor(i.business)}`;
   const why = `You are receiving this because ${vars.org} is publicly listed as a business we think we can help.`;
   const body =
     `${message}\n\n--\n${why} Unsubscribe with one click: ${unsub}\n${companyLines(i.business, address).join("\n")}\n`;

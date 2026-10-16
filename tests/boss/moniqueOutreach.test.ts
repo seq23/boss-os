@@ -313,8 +313,12 @@ describe("every email carries the unsubscribe link and the postal address", () =
         const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello" });
         const plainFooter = m.body.slice(m.body.lastIndexOf("\n--\n"));
         const htmlFooter = /<p style="([^"]*)"[^>]*>([\s\S]*?)<\/p>\s*<\/body>/.exec(m.html)![2]!;
-        // The sender's voice stays the brand's own team.
-        expect(m.body).toContain(`— The ${b.brand} team\n${b.domain}`);
+        // The guides are signed by S.L. Taylor over the umbrella company and the guide's domain (owner,
+        // 16 Oct 2026); every other business stays the brand's own team, exactly as before.
+        const signature = b.kind === "local_guide" ? `\n\nS.L. Taylor\nThe Industry Guides\n${b.domain}\n\n--\n` : `\n\n— The ${b.brand} team\n${b.domain}\n\n--\n`;
+        expect(m.body, b.key).toContain(signature);
+        expect(m.body.indexOf(signature), b.key).toBe(m.body.lastIndexOf("\n\n--\n") - signature.length + "\n\n--\n".length);
+        if (b.kind === "local_guide") expect(m.body, b.key).not.toContain(`The ${b.brand} team`);
         expect(m.raw).toMatch(new RegExp(`^From: ${b.brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} <${b.sender}>`, "m"));
         expect(plainFooter).toContain("https://boss.sequoiataylor.com/api/boss/outreach/u/tok123");
         expect(htmlFooter).toContain('href="https://boss.sequoiataylor.com/api/boss/outreach/u/tok123"');
@@ -742,9 +746,9 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     expect(MSCH.offerUrl).toBe("https://memphisseniorcarehomes.com/for-providers/");
     expect(MSCH.seat?.url).toBe(SEAT_URL);
     expect(() => assertSenderAllowed(MSCH)).not.toThrow();
-    expect(MSCH.steps[0].subject).toBe("Exclusive lead routing for {org}");
-    expect(MSCH.seat!.taken[0].subject).toBe("Qualified Memphis families, pay only when you take one");
-    expect(MSCH.steps.map((s) => s.body).join(" ")).toContain("$249/month");
+    expect(MSCH.steps[0].subject).toBe("quick question for {org}");
+    expect(MSCH.seat!.taken[0].subject).toBe("Memphis families looking for care");
+    expect(MSCH.steps.map((s) => s.body).join(" ")).toContain("then $249 a month on a six-month term");
     // No business but this one has a seat, and no other business says the seat's words.
     expect(BUSINESSES.filter((b) => b.seat).map((b) => b.key)).toEqual(["memphisseniorcarehomes"]);
   });
@@ -783,15 +787,16 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     expect(reads.length).toBe(1);
     const a = realSends(g);
     expect(a.length).toBe(1);
-    expect(subjectOf(a[0]!.raw)).toBe("Exclusive lead routing for Acme Reading");
-    expect(plainOf(a[0]!.raw)).toContain("One community at a time receives every qualified family");
+    expect(subjectOf(a[0]!.raw)).toBe("quick question for Acme Reading");
+    expect(plainOf(a[0]!.raw)).toContain("I'm looking for one community to work with closely on the families who fit.");
+    expect(plainOf(a[0]!.raw)).not.toContain("$");
 
     await addProspect("memphisseniorcarehomes", "admissions@riverbend.example");
     await runOutreachTick(await tickEnv(), TUESDAY_10AM + 3_600_000, withSeat(g.fetchImpl, { body: { active: true, end: "2027-03-31" } }));
     const b = realSends(g).filter((s) => s.to === "admissions@riverbend.example");
     expect(b.length).toBe(1);
-    expect(subjectOf(b[0]!.raw)).toBe("Qualified Memphis families, pay only when you take one");
-    expect(plainOf(b[0]!.raw)).toContain("Memphis has an exclusive routing partner through March 2027.");
+    expect(subjectOf(b[0]!.raw)).toBe("Memphis families looking for care");
+    expect(plainOf(b[0]!.raw)).toContain("Meeting them is a flat $800, or one month's rent only if they move in.");
     expect(plainOf(b[0]!.raw)).not.toContain("One community at a time");
     const st = await row<any>(`SELECT * FROM outreach_domain_state WHERE business_key = 'memphisseniorcarehomes'`);
     expect(st.seat_active).toBe(1);
@@ -802,7 +807,7 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     await runOutreachTick(await tickEnv(), TUESDAY_10AM + 2 * 3_600_000, withSeat(g.fetchImpl, { fail: true }));
     const c = realSends(g).filter((s) => s.to === "admissions@magnolia.example");
     expect(c.length).toBe(1);
-    expect(subjectOf(c[0]!.raw)).toBe("Qualified Memphis families, pay only when you take one");
+    expect(subjectOf(c[0]!.raw)).toBe("Memphis families looking for care");
     const sent = await env.DB.prepare(`SELECT to_email, detail FROM outreach_sends WHERE business_key = 'memphisseniorcarehomes' AND is_test = 0 ORDER BY sent_at`).all<any>();
     expect((sent.results ?? []).map((r: any) => r.detail)).toEqual(["pitch A", "pitch B", "pitch B"]);
   });
@@ -814,7 +819,7 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, withSeat(g.fetchImpl, { fail: true }));
     const a = realSends(g);
     expect(a.length).toBe(1);
-    expect(subjectOf(a[0]!.raw)).toBe("Exclusive lead routing for Acme Reading");
+    expect(subjectOf(a[0]!.raw)).toBe("quick question for Acme Reading");
   });
 
   it("never writes to the seat holder (pitch A least of all), set by domain on PUT /business/:key", async () => {
@@ -843,7 +848,7 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     await runOutreachTick(await tickEnv(), TUESDAY_10AM, withSeat(g.fetchImpl, { fail: true }));
     const sent = realSends(g);
     expect(sent.map((s) => s.to)).toEqual(["admissions@oakcourt.example"]);
-    expect(subjectOf(sent[0]!.raw)).toBe("Exclusive lead routing for Acme Reading");
+    expect(subjectOf(sent[0]!.raw)).toBe("quick question for Acme Reading");
     const holder = await row<any>(`SELECT state, next_due_at FROM outreach_prospects WHERE id = ?`, holderId);
     expect(holder.state).toBe("done");
     expect(holder.next_due_at).toBeNull();
@@ -867,7 +872,10 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
         expect(m.raw).toMatch(/^List-Unsubscribe: <https:\/\/boss\.sequoiataylor\.com\/api\/boss\/outreach\/u\/tok123>/m);
         expect(m.body + m.subject, `${pitch}${step}`).not.toMatch(/\{\w+\}/);
         expect(m.body + m.html, `${pitch}${step}`).not.toMatch(/Spry/i);
-        expect(m.body, `${pitch}${step}`).toContain("https://memphisseniorcarehomes.com/for-providers/");
+        // Every step names the guide's domain; only day 4 links the offer page (owner, 16 Oct 2026).
+        const links = m.body.slice(0, m.body.lastIndexOf("\n--\n")).match(/https:\/\/memphisseniorcarehomes\.com\/\S*?(?=\.?(\s|$))/g) ?? [];
+        expect(links, `${pitch}${step}`).toEqual(step === 1 ? ["https://memphisseniorcarehomes.com/for-providers/"] : []);
+        expect(m.body, `${pitch}${step}`).toContain("(memphisseniorcarehomes.com)");
       }
     }
     // Refusals: pitch B with no end month, pitch B for a business with no seat, an unfilled placeholder.
@@ -1005,5 +1013,76 @@ describe("Memphis Senior Care Homes: the licensed directory feeds prospects", ()
     const tick = await runOutreachTick(await tickEnv(), TUESDAY_10AM, (async (i: RequestInfo | URL, init?: RequestInit) =>
       String(i) === DIR_URL ? Response.json(FIXTURE) : base(i, init)) as typeof fetch);
     expect(tick.lists.directories?.read).toEqual(["memphisseniorcarehomes"]);
+  });
+});
+
+describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 Oct 2026)", () => {
+  const addr = "PO Box 1, Houston, TX 77002";
+  const GUIDE_KEYS = ["uscisexam", "dentistryguides", "hormonesivhair", "neuroevalguides", "theaccidentguides", "memphisseniorcarehomes"];
+  const wordsBeforeSignature = (body: string, signature: string): number => {
+    const at = body.indexOf(`\n\n${signature}`);
+    expect(at).toBeGreaterThan(0);
+    return body.slice(0, at).split(/\s+/).filter(Boolean).length;
+  };
+
+  it("every guide, every step and both seat pitches: 60-110 words, stands alone, no hard sell, honest first subject, no first-email price, S.L. Taylor signs", () => {
+    const guides = BUSINESSES.filter((b) => b.kind === "local_guide");
+    expect(guides.map((b) => b.key).sort()).toEqual([...GUIDE_KEYS].sort());
+    let checked = 0;
+    for (const b of guides) {
+      const pitches: Array<"A" | "B"> = b.seat ? ["A", "B"] : ["A"];
+      for (const pitch of pitches) {
+        for (const step of [0, 1, 2] as const) {
+          const m = composeEmail({
+            business: b, step, to: "a@acme.example", org: "Acme Dental", metro: "Houston", unsubToken: "tok123",
+            postalAddress: addr, firstSubject: "quick question for Acme Dental", pitch, seatEnd: pitch === "B" ? "2027-03-31" : null,
+          });
+          const at = `${b.key} pitch ${pitch} step ${step}`;
+          const signature = `S.L. Taylor\nThe Industry Guides\n${b.domain}`;
+          expect(m.body, at).toContain(`\n\n${signature}\n\n--\n`);
+          const n = wordsBeforeSignature(m.body, signature);
+          expect(n, `${at}: ${n} words`).toBeGreaterThanOrEqual(60);
+          // The one longer step: the senior seat's day 4 carries the owner's approved price line verbatim
+          // (16 Oct 2026: term and move-in fee included), which the 110-word template cannot hold.
+          const ceiling = b.seat && pitch === "A" && step === 1 ? 125 : 110;
+          expect(n, `${at}: ${n} words`).toBeLessThanOrEqual(ceiling);
+          const message = m.body.slice(0, m.body.indexOf(`\n\n${signature}`));
+          expect(message, at).not.toMatch(/Reply\s+"yes"/i);
+          expect(message, at).not.toMatch(/featured listing/i);
+          expect(`${m.subject}\n${message}`, at).not.toContain("!");
+          // Every step stands alone: it says what the guide is and names its domain, because people
+          // rarely read the first email (owner, 16 Oct 2026).
+          expect(message, at).toContain(`(${b.domain})`);
+          expect(message, at).toContain("ChatGPT, Google and other AI assistants");
+          expect(message, at).toMatch(/digital guide[\s\S]{0,60}built to come up when/);
+          expect(message, at).not.toMatch(/\{\w+\}/);
+          if (step === 0) {
+            expect(m.subject, at).not.toMatch(/^\s*re:/i);
+            expect(m.subject, at).not.toMatch(/\$|\d+\s*\/\s*month|per month|month's rent|free/i);
+            // Pitch B (seat taken) names its price in the first email by the owner's design, approved
+            // 16 Oct 2026; it is the ONE exemption, and it is pinned to say exactly that price.
+            if (pitch === "B") expect(message, at).toContain("Meeting them is a flat $800, or one month's rent only if they move in.");
+            else expect(message, at).not.toContain("$");
+            expect(message, at).toMatch(/call( work)?\? Or just reply here/);
+          } else {
+            expect(m.subject, at).toBe("Re: quick question for Acme Dental");
+          }
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBe(GUIDE_KEYS.length * 3 + 3); // hard-fail on zero; pitch B counted
+  });
+
+  it("the other businesses keep their own team's signature, and never S.L. Taylor", () => {
+    const others = BUSINESSES.filter((b) => b.kind !== "local_guide");
+    expect(others.length).toBeGreaterThan(0);
+    for (const b of others) {
+      for (const step of [0, 1, 2] as const) {
+        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello" });
+        expect(m.body, b.key).toContain(`\n\n— The ${b.brand} team\n${b.domain}\n\n--\n`);
+        expect(m.body, b.key).not.toContain("S.L. Taylor");
+      }
+    }
   });
 });

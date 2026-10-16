@@ -23,7 +23,7 @@ import {
   BOUNCE_WINDOW_MS, DAY_MS, chicagoParts, dailyCap, pauseReason, refusal, sendsThisTick, type Sending,
 } from "./brakes";
 import { bouncedAddress, classifyReply, ownWords, type ReplyClass } from "./classify";
-import { composeEmail } from "./compose";
+import { composeEmail, signatureFor } from "./compose";
 import { mailAuthRefusal } from "./mailauth";
 import { GmailSession, addressOf } from "./gmail";
 import { crawlCandidates, randomToken, readDirectories, readNextSlice } from "./lists";
@@ -418,9 +418,9 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
   const link = code ? `${b.offerUrl}?ref=${code}` : b.offerUrl;
   const reply =
     b.seat
-      ? `Thank you! Everything about how it works, and how to start, is here: ${b.offerUrl}\n\nReply with the best contact for family referrals and we will set you up this week.\n\n— The ${b.brand} team`
+      ? `Thank you, glad to hear it. Everything about how it works, and how to start, is here: ${b.offerUrl}\n\nSend me the best contact for family referrals and I will get you set up this week.\n\n${signatureFor(b)}`
       : b.kind === "local_guide"
-      ? `Thank you! Here is how the featured listing works and how to start your 2 free months: ${b.offerUrl}\n\nReply with the best contact for the listing and we will have it live this week.\n\n— The ${b.brand} team`
+      ? `Thank you, glad to hear it. Here is how the listing works and how to start your 2 free months: ${b.offerUrl}\n\nSend me the best contact for the listing and I will have it live this week.\n\n${signatureFor(b)}`
       : b.kind === "affiliate"
         ? `Great to have you. Your personal referral link is ${link} (code ${code}). You earn 30% of the first year's revenue from everyone who buys through it; payouts are monthly.\n\n— The ${b.brand} team`
         : `Thank you! Here is a free look for your staff: ${b.offerUrl}. A site licence is $49/month when you are ready.\n\n— The ${b.brand} team`;
