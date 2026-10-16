@@ -555,7 +555,7 @@ cat > "$SURFACE_PLIST" <<SURFEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -611,7 +611,7 @@ cat > "$PUBLISH_PLIST" <<PUBEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
