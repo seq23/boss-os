@@ -7,12 +7,15 @@
 
 export interface NoAutoFixRepo {
   repo: string;
+  kind: "client" | "other";
   why: string;
 }
 
 export declare const NO_AUTO_FIX: ReadonlyArray<NoAutoFixRepo>;
 export declare const NO_AUTO_FIX_REPOS: readonly string[];
 export declare const DISPOSITIONS: readonly string[];
+export declare const QUIET_DISPOSITIONS: readonly string[];
+export declare function isClientRepo(repo: string | null | undefined): boolean;
 
 export declare function mayAutoFix(repo: string | null | undefined): boolean;
 export declare function whyNoAutoFix(repo: string | null | undefined): string | null;

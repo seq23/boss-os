@@ -1155,7 +1155,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
     } else if (f.disposition === "off_limits") {
       alerts.push({
         severity: "medium",
-        text: `Danielle found ${errs} on ${site}${many} in a repository she is not allowed to change while it is being worked on. Somebody working in it has to fix these by hand.`,
+        text: `Danielle found ${errs} on ${site}${many} in a repository on the fixer's off-limits list, so she changed nothing. Somebody has to fix these by hand or take the repository off that list.`,
         source_type: "tasks", source_id: "duty_site_audit_repair",
       });
     } else {

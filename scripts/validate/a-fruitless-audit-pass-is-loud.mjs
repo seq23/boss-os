@@ -51,7 +51,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { DISPOSITIONS } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
+import { DISPOSITIONS, QUIET_DISPOSITIONS } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (p) => (existsSync(join(ROOT, p)) ? readFileSync(join(ROOT, p), "utf8") : null);
@@ -70,7 +70,12 @@ const DUTY_ID = "duty_site_audit_repair";
  * sees in GitHub; the second is a correctly empty pass. Alerting on either is how a surface earns
  * the habit of being ignored, and this file has been corrected twice for exactly that.
  */
-export const NEEDS_A_PERSON = DISPOSITIONS.filter((d) => d !== "fixed_pr" && d !== "none");
+export const NEEDS_A_PERSON = DISPOSITIONS.filter((d) => !QUIET_DISPOSITIONS.includes(d));
+/*
+ * QUIET SINCE 16 OCT 2026, by name: ahrefs_side (the site is fine; Ahrefs failed), ahrefs_credits
+ * (the workspace ran out of crawl credits), client_repo (client repos are never raised) and
+ * in_flight (another PR already carries it). Each is a recorded fact, not work for her.
+ */
 
 /** Every migration, replayed in order, so the schema under test is the one that ships. */
 export function schemaFromMigrations(dir = join(ROOT, "migrations")) {
@@ -158,6 +163,9 @@ export function theQuerySurfacesWhatNeedsAPerson(db, sql) {
   if (got.has("fixed_pr")) {
     bad.push("the alert fires for 'fixed_pr'. That work is already a pull request she sees in GitHub, and an alert repeating it teaches her the surface is noise.");
   }
+  for (const d of ["ahrefs_side", "ahrefs_credits", "client_repo", "in_flight"]) {
+    if (got.has(d)) bad.push(`the alert fires for '${d}', which is a recorded fact and not work for her — it would teach her the surface is noise.`);
+  }
   if (got.has("none")) {
     bad.push("the alert fires for 'none'. An empty pass is a CORRECT outcome — her own bar is 'if she comes up empty handed its fine' — and alarming on it is a screen that cries wolf.");
   }
@@ -232,6 +240,10 @@ if (process.argv.includes("--self-test")) {
     theQuerySurfacesWhatNeedsAPerson(db, sql.replace(/IN \([^)]*\)/, "IN ('no_repo')")), true);
   expect("a query that also alarms on a correctly empty pass",
     theQuerySurfacesWhatNeedsAPerson(db, sql.replace(/IN \([^)]*\)/, "IN ('no_repo', 'surfaced', 'off_limits', 'none')")), true);
+  expect("a query that raises a client repo",
+    theQuerySurfacesWhatNeedsAPerson(db, sql.replace(/IN \([^)]*\)/, "IN ('no_repo', 'surfaced', 'off_limits', 'client_repo')")), true);
+  expect("a query that raises an Ahrefs-side crawl failure",
+    theQuerySurfacesWhatNeedsAPerson(db, sql.replace(/IN \([^)]*\)/, "IN ('no_repo', 'surfaced', 'off_limits', 'ahrefs_side')")), true);
   expect("a query that repeats work already opened as a PR",
     theQuerySurfacesWhatNeedsAPerson(db, sql.replace(/IN \([^)]*\)/, "IN ('no_repo', 'surfaced', 'fixed_pr')")), true);
   expect("a query that stopped hiding archived findings",

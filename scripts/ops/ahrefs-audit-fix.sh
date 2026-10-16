@@ -20,12 +20,31 @@
 # Running before the batch lands would grade last week's crawl and open PRs for findings already
 # fixed, which is how an automated fixer teaches its owner to stop reading it.
 #
-# IT MERGES NOTHING. No merge, no deploy, no release dispatch. She merges. That is a rule about what
-# this job is FOR, not a limitation: a fixer that lands its own work removes the one place a person
-# looks at what it did.
+# IT LANDS WHAT IT FIXES, THROUGH ~/bin/land AND NOTHING ELSE. This header used to say "IT MERGES
+# NOTHING. She merges." That was wrong about her, and it was changed on her word: owner, 16 Oct 2026,
+# "fix danielle's job so she can actually fix things". Her standing rules already said merge green
+# PRs without asking (14 Sep), merge and deploy are ONE action through ~/bin/land (18 Sep), nothing
+# waits on the owner (25 Sep), and repairs found in passing need no yes. A fixer that opens PRs and
+# leaves them for her is a fixer whose every fix waits on her. So after the pass, every `fixed_pr`
+# row goes through `site-audit-lib.mjs land`: `timeout 1800 gh pr checks <pr> --watch --fail-fast`,
+# then `~/bin/land <pr>`, which refuses rather than guesses (not green, head moved, main red),
+# watches main to a terminal state and deploys. No bare merge, no workflow dispatch, no deploy call
+# lives here — `validate:audit-fixer` fails the build if one appears. Client repos are never
+# branched at all (repoPolicy.mjs).
+#
+# WHY THE 15 AND 16 OCT PASSES FIXED NOTHING, AND WHAT CHANGED. projects=24 fixed=0 surfaced=10,
+# then projects=10 fixed=0 surfaced=9 off_limits=1. Every finding was surfaced because (a) the mail
+# carries no URLs and she cannot log into Ahrefs — now `site-crawl.py crawl` supplies them from her
+# own crawl of the live site; (b) a dirty working tree was refused — now `audit-worktree.sh` cuts a
+# fresh worktree off origin and never touches the owner's checkout; (c) LGCV was off limits as
+# "under active heavy change" — removed, collisions are caught as IN_FLIGHT instead; (d) a crawl
+# failure stopped at "check robots/DNS/origin" — now `site-crawl.py probe` checks from outside, and
+# out-of-credits crawls are AHREFS_CRAWL_CREDITS rows, not site defects.
 #
 # RULE 0: this script may not exit 0 having done nothing. Either it read the audits and reported, or
 # it exits non-zero with a NAMED reason. A quiet week is a report of one row saying so, never silence.
+# And a pass that surfaced fixable defects with fixed=0, or opened a PR that did not land, exits RED
+# with each reason named (`site-audit-lib.mjs verdict`, exit 12).
 
 set -uo pipefail
 
@@ -35,12 +54,12 @@ OUT_DIR="${BOSS_OS_SITE_AUDIT_DIR:-$HOME/.boss-os/site-audit}"
 
 # THE MODEL IS NAMED, AND IT MATCHES THE DUTY ROW.
 #
-# `claude -p` with no --model runs the default, which is the most expensive one available — the
-# thing that made one executive briefing cost $3.88. Deciding which source file causes a 404 across
-# somebody else's repository is judgement rather than classification, which is why this is Sonnet
-# and not Haiku, and `validate:duty-delivery` asserts this string equals the duty row's.
-MODEL="${AHREFS_AUDIT_MODEL:-claude-sonnet-4-5-20250929}"
-MAX_TURNS="${AHREFS_AUDIT_MAX_TURNS:-120}"
+# `claude -p` with no --model runs whatever the default is, so the model is always named. It was
+# Sonnet; the owner's rule since 6 Oct 2026 is Opus for every agent (Haiku and Sonnet stay out), and
+# this job is judgement over somebody else's repository. `validate:duty-delivery` and
+# `validate:audit-fixer` assert this string equals the duty row's (migration 0287).
+MODEL="${AHREFS_AUDIT_MODEL:-claude-opus-5}"
+MAX_TURNS="${AHREFS_AUDIT_MAX_TURNS:-250}"
 LOG_DIR="$HOME/Library/Logs/ahrefs-audit-fix"
 LOCK="$LOG_DIR/.lock"
 RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"
@@ -109,15 +128,23 @@ fi
 say "sentinel: $(grep -o 'AHREFS-AUDIT-COMPLETE:.*' "$RUN_LOG" | tail -1)"
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 
-# `;` NOT `&&`, AND THE EXIT CODE IS THE PASS'S. A Boss OS that is unreachable on a Thursday morning
-# must not turn a completed pass into a failed one — the audits were read and the PRs are open
-# either way. The report is a separate claim and fails separately, loudly, in this log.
+# LAND EVERY FIX. Deterministic, not left to the model: checks to green, then ~/bin/land.
+node "$REPO/scripts/ops/site-audit-lib.mjs" land "$OUT_DIR/findings.json" 2>&1 | tee -a "$RUN_LOG" | grep '^LAND ' || true
+
+# `;` NOT `&&`. A Boss OS that is unreachable must not turn a completed pass into a failed one — the
+# report is a separate claim and fails separately, loudly, in this log.
 if [ -d "$REPO" ]; then
-  cd "$REPO" && npm run --silent vault:run -- node scripts/ops/ahrefs-audit-report.mjs >> "$RUN_LOG" 2>&1
+  (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/ahrefs-audit-report.mjs >> "$RUN_LOG" 2>&1)
   REPORT_RC=$?
   [ $REPORT_RC -eq 0 ] || say "NAMED STOP [REPORT_NOT_DELIVERED] rc=$REPORT_RC — the pass ran; Boss OS was not told. See above."
 else
   say "NAMED STOP [NO_REPO] $REPO — the pass ran; Boss OS was not told."
 fi
 
-exit $RC
+# RULE 0, THE VERDICT. Fixable defects left with fixed=0, a PR that did not land, a row with no
+# crawl behind it: RED, every reason named.
+node "$REPO/scripts/ops/site-audit-lib.mjs" verdict "$OUT_DIR/findings.json" 2>&1 | tee -a "$RUN_LOG"
+VERDICT_RC=${PIPESTATUS[0]}
+[ $RC -ne 0 ] && exit $RC
+[ $VERDICT_RC -eq 0 ] || { say "NAMED STOP [AUDIT_PASS_RED] see the AUDIT-VERDICT lines above."; exit 12; }
+exit 0
