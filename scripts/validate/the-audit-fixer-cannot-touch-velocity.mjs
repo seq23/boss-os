@@ -325,7 +325,8 @@ export function velocityCannotBeAutoFixed(files) {
     if (!/\bmayAutoFix\s*\(/.test(files.reporter)) {
       bad.push(`${REPORTER} never checks the policy, so a forbidden fix would reach the endpoint and fail there with a 400 nobody reads at 06:00 on a Thursday.`);
     }
-    if (/NOT merged/.test(files.reporter) || !/f\.land === "landed"/.test(files.reporter)) {
+    const reporterCode = files.reporter.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    if (/NOT merged/.test(reporterCode) || !/f\.land === "landed"/.test(reporterCode)) {
       bad.push(`${REPORTER} does not report each PR's land result from the row, so it can call a landed fix unmerged — which its first run after 16 Oct did.`);
     }
     if (!files.reporter.includes("/site-audit-findings")) {
