@@ -18,7 +18,7 @@ Every site had been building search presence with nothing to sell and nobody bei
 | 8 | repos changed (local guides is two) |
 | 9 | sites sending outreach |
 | 10/day | outreach cap per site, auto-pause on bounces |
-| 1 live · 3 pending | affiliate programs |
+| 2 live · 0 pending | affiliate programs (Amazon, Bookshop) |
 
 ## Search update (10–11 October 2026)
 
@@ -176,14 +176,14 @@ Not shown: spryexecutiveos.com and thedentistryguides.com (their sitemaps live o
 
 - **Was:** Kits unpriced or inconsistent across pages. Auto-content churning daily. No About page; Search Console reporting broken.
 - **Live now:** Kits at $15, $19, $29, $39 and $49 everywhere, including the Amazon landing pages, with a validator on the prices. About page and editorial byline. Automatic content paused; Search Console fixed. Affiliate slots for Self and Kikoff built, hidden until there is a link.
-- **Next:** FlexOffers declined, so Self and Kikoff go through Impact once Zola approves the account. **11 Oct:** 10 impressions a month, landing on privacy and terms pages. Plan A noindexes the legal pages and completes the schema; Plan B finds the queries.
+- **Next:** **16 Oct, closed:** Self and Kikoff off the pending list (FlexOffers declined; the Impact route depended on a Zola approval that never arrived). Slots stay built and hidden. **11 Oct:** 10 impressions a month, landing on privacy and terms pages. Plan A noindexes the legal pages and completes the schema; Plan B finds the queries.
 
 ### Wedding checklist
 *dream-wedding-builder · weddingchecklistpdf.com · one-off PDF and bundle*
 
 - **Was:** A builder with no product on it. Download emails failing silently; the July order never arrived.
 - **Live now:** $9 PDF on the homepage, email-gated builder, $39 bundle. Delivery failures logged and alerted, retried hourly, with an admin Resend button; the July order delivered. Email from its own subdomain; Amazon registry tag and Zola verification live.
-- **Next:** Zola approval, then its tracking link goes in. **11 Oct:** 118 impressions a month across the four sites, 2 clicks; the niche checklists (elopement, courthouse) rank about 7, the money page 63. weddingchecklistpdf.com had no structured data at all while its siblings did; Plan A root-causes that and installs Clarity on all four.
+- **Next:** **16 Oct, closed:** Zola through Impact off the pending list; the plain Zola link keeps working, Amazon carries the registry commission. **11 Oct:** 118 impressions a month across the four sites, 2 clicks; the niche checklists (elopement, courthouse) rank about 7, the money page 63. weddingchecklistpdf.com had no structured data at all while its siblings did; Plan A root-causes that and installs Clarity on all four.
 
 ### A Player Mode
 *aplayer-mode · aplayermode.com · subscription*
@@ -197,7 +197,7 @@ Not shown: spryexecutiveos.com and thedentistryguides.com (their sitemaps live o
 
 - **Was:** Weak titles. Too few deep-sea Shorts. No way to earn from the descriptions.
 - **Live now:** Titles rewritten. Deep-sea Shorts 3:1 (about 6 a week), all three cuts of each episode published. Amazon tag and Bookshop ID in every description; book links kept.
-- **Next:** Bookshop verification pending.
+- **Next:** Bookshop affiliate #129693 active (16 Oct); connect Stripe on its dashboard once money is payable.
 
 ### Outreach
 *boss-os · Monique's lane · serves all of the above*
@@ -211,8 +211,9 @@ Not shown: spryexecutiveos.com and thedentistryguides.com (their sitemaps live o
 | Program | Status |
 |---|---|
 | Amazon Associates | live · seq23-20 |
-| Zola (Impact) | submitted, in review |
-| Bookshop.org | verifying · 129693 |
+| Bookshop.org | live · 129693 (dashboard read 16 Oct 2026, $0.00 payable) |
+| Zola (Impact) | no approval · closed 16 Oct 2026; plain Zola link stays |
+| Self, Kikoff (Impact) | closed with Zola 16 Oct 2026; slots built and hidden |
 | FlexOffers | declined · closed |
 
 ## Where the money would come from
