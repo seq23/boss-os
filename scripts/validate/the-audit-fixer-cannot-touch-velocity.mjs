@@ -285,6 +285,9 @@ export function velocityCannotBeAutoFixed(files) {
     if (!/site-audit-lib\.mjs"?\s+verdict\b/.test(code) || !/exit 12/.test(code)) {
       bad.push(`${RUNNER} never turns the verdict into a RED exit, so fixed=0 over fixable defects exits clean — the 15/16 Oct shape.`);
     }
+    if (files.prompt && files.prompt.includes("~/GitHub/boss-os") && !/sed "s#~\/GitHub\/boss-os#\$REPO#g"/.test(code)) {
+      bad.push(`${RUNNER} passes the prompt's ~/GitHub/boss-os paths through unchanged, so a run started from any other checkout (or with the owner's checkout on another branch) calls scripts that may not exist there.`);
+    }
     if (/IT MERGES NOTHING/.test(files.runner)) {
       bad.push(`${RUNNER} still says "IT MERGES NOTHING" — a header that contradicts the code is the next reader's wrong rule.`);
     }
@@ -501,6 +504,9 @@ if (process.argv.includes("--self-test")) {
   }), true);
   expect("a runner that stopped landing", velocityCannotBeAutoFixed({
     ...files, runner: (files.runner ?? "").replace(/site-audit-lib\.mjs" land/g, 'site-audit-lib.mjs" noop'),
+  }), true);
+  expect("a runner that stopped rewriting the prompt's paths", velocityCannotBeAutoFixed({
+    ...files, runner: (files.runner ?? "").replace(/sed "s#~\/GitHub\/boss-os#\$REPO#g" /, "cat "),
   }), true);
   expect("a runner whose verdict no longer goes red", velocityCannotBeAutoFixed({
     ...files, runner: (files.runner ?? "").replaceAll("exit 12", "exit 0"),
