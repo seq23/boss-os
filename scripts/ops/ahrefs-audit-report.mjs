@@ -168,11 +168,18 @@ async function main() {
   const refused = body?.data?.refused ?? [];
   console.log(`Reported to Boss OS: ${written} finding(s) written from ${findings.length} sent.`);
   for (const r of refused) console.log(`  refused: ${r}`);
+  if (refused.length) console.log(`NAMED STOP [ROWS_REFUSED] ${refused.length} row(s) did not reach Boss OS; each reason is above.`);
 
+  /*
+   * SAY WHAT HAPPENED TO EACH PR, FROM THE ROW. This used to print "opened and NOT merged" for every
+   * fix, which stopped being true on 16 Oct 2026 when the runner began landing green fixes through
+   * ~/bin/land — its first real run printed it beside a PR that had just landed. One line per PR.
+   */
   const fixes = findings.filter((f) => f.disposition === "fixed_pr");
-  if (fixes.length) {
-    console.log(`${fixes.length} pull request(s) opened and NOT merged:`);
-    for (const f of fixes) console.log(`  ${f.repo}: ${f.pr_url}`);
+  const byPr = new Map();
+  for (const f of fixes) if (!byPr.has(f.pr_url)) byPr.set(f.pr_url, f);
+  for (const f of byPr.values()) {
+    console.log(`  PR ${f.repo}: ${f.pr_url} — ${f.land === "landed" ? "LANDED (merged, main watched, deployed)" : `NOT landed (${f.land ?? "never attempted"})`}`);
   }
   if (findings.length === 1 && findings[0].disposition === "none") {
     console.log("Nothing to fix this week, and that is a report. Danielle's clock advanced and the screen will say the audits were read.");
