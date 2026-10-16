@@ -2,7 +2,7 @@ Source: https://claude.ai/artifact/2XkmYNmppidkqr4SU8xwiv
 
 Repo copy; the page is the living version; refreshed when it changes.
 
-Copied 16 Oct 2026 from the version cleaned up 16 Oct 2026 (current state first; dated updates folded into the build log).
+Copied 16 Oct 2026 (evening) from the version updated with the 16 Oct afternoon changes: neuro evaluation + therapy, hormone affiliates, dead-link fix, free AI route repair.
 
 # Side Business Review
 
@@ -16,7 +16,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - **6** Industry Guides, one sender (hello@theindustryguides.com)
 - **35 · 0** outreach emails sent on the old copy · human replies; new copy since 16 Oct
 - **3** Pinterest accounts, 1 new pin a day each
-- **2** affiliate programs live (Amazon, Bookshop)
+- **4** affiliate programs live (Amazon, Bookshop, Ulta Lab Tests, PrescribedRX)
 
 ## Business by business
 
@@ -58,6 +58,9 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - $249/month listing with 2 months free; $499 per state for injury firms on theaccidentguides.com.
 - **Memphis Senior Care Homes** (13 Oct): 37 licensed facilities, nine-screen intake, teaser leads at **$800 flat or one month’s rent** on move-in, a $249/month exclusive seat, 30/60/90-day family follow-ups, Stripe account "The Industry Guides".
 - Dentistry: sourced safety-net clinic sections in 6 metros.
+- **Neuro Evaluation Guides now serves evaluation AND therapy** (16 Oct, local-guides-generator \#74): headline “ADHD and autism: getting evaluated, and finding therapy — with or without a diagnosis”, two equal buttons, providers tagged Evaluation / Therapy / both, callback asks which. Therapy-only practices are being added to the city pages now.
+- **Hormone Optimization Guides: two affiliate programs approved 16 Oct**: Ulta Lab Tests at-home labs (up to 20%) and PrescribedRX online TRT ($100 per order). Links, disclosures and menopause/women’s HRT wording are being built now.
+- **Dead links found 16 Oct:** about 3,600 links from theindustryguides.com into the guide sites hit pages that were never built; fix in progress, and every other site is being audited.
 - **Outreach copy rewritten 16 Oct** in your voice: a conversation and a quick call, says it is a digital guide built to come up when people ask ChatGPT, Google and other AI assistants, with the link; every follow-up re-explains; signed S.L. Taylor (boss-os \#88).
 - Memphis outreach had sent nothing because its mailing address was missing; set 16 Oct, and a new guide now inherits the shared address, with a named stop if a ready guide stays silent (boss-os \#90).
 
@@ -106,9 +109,10 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 #### Live now
 
 - Founding 100 at $9.99/month with a live "N of 100 left" counter; checkout opens (no sale yet to prove payment end to end).
+- Pinterest visits per pin now counted (sprylabs-hpc-site \#139): 0 so far, as expected before the first pins post.
 - 18+ gate and health consent; purchase flows tested live by you.
 - Indexable since 10 Oct, Lighthouse SEO 100, Clarity, Search Console.
-- **Pinterest:** 5 launch pins, 35 queued one a day through 20 Nov, weekly refill (sprylabs-hpc-site \#138); the visit counter is being wired now.
+- **Pinterest:** 5 launch pins, 35 queued one a day through 20 Nov, weekly refill (sprylabs-hpc-site \#138).
 
 #### Next
 
@@ -140,6 +144,8 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - Fully automatic, no human review; the six guides send as hello@theindustryguides.com, the other businesses from their own aliases.
 - 10 a day per site; auto-pause on bounces over 3% or any complaint; suppression list, unsubscribe link, San Francisco mailbox in the footer.
 - 35 real emails went out on the old copy (dentistry 19, hormones 11, USCIS 5; 3 bounced; 0 human replies). Those prospects get the new standalone follow-ups; no restart.
+- **Neuro outreach targets therapy practices first** (boss-os \#93): ADHD/autism therapy, ABA and both-service practices now qualify; the pitch names evaluation and ongoing therapy. Deploy follows today’s browser-test run.
+- **Free AI route repaired 16 Oct:** a router bug made one model’s refusal look like a dead key, and slow answers looked empty. Fixed in four repos; free models answer again at $0.
 
 #### Next
 
@@ -163,7 +169,10 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 
 - Amazon Associates: live · seq23-20
 - Bookshop.org: live · 129693 · How We Know
+- Ulta Lab Tests: live 16 Oct · hormones · up to 20%
+- PrescribedRX: live 16 Oct · hormones · $100/order
 - Zola, Self, Kikoff (Impact): closed 16 Oct · slots hidden
+- MaxBounty (Winona): dropped 16 Oct
 - FlexOffers: declined · closed
 
 ## What to watch, 25 October numbers check
@@ -171,7 +180,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - **Search, per site:** 28-day impressions and clicks against the 11 Sep–8 Oct baseline (in the build log below), and the indexed share from each repo’s daily coverage file.
 - **Consolidation PRs where the data says merge:** Porch & Party 12 hubs, local guides 69, ApprovalPrep 15, wedding 21, WPP-llm 191, memphis library 11, horse legal 20; which host owns ai-executive-coach.
 - **Pinterest:** impressions and outbound clicks per account, visits per pin; the 1 → 3 pins decision.
-- **Money signals:** outreach replies, Founding 100 counter, time-2-read trial starts, guide intake starts and teaser accepts.
+- **Money signals:** outreach replies (neuro therapy practices now included), Founding 100 counter, time-2-read trial starts, guide intake starts and teaser accepts, neuro callbacks by evaluation/therapy/both, and Ulta/PrescribedRX clicks and earnings.
 - **Recoveries in flight:** virtualagency-os.com (149 redirected URLs), detoxdenver.org, the Hicks resources pages.
 - Any Monday-email RED issue open two weeks running is a defect, not volatility.
 
