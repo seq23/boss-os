@@ -206,6 +206,22 @@ Not shown: spryexecutiveos.com and thedentistryguides.com (their sitemaps live o
 - **Live now:** Fully automatic; no human review. Eight free hello@ aliases on st@time-2-read.com, Google signing keys on every domain. 10 emails a day per site, auto-pause on bounces over 3% or any complaint, suppression list, unsubscribe link, San Francisco mailbox in the footer. Sending live on 9 sites.
 - **Next:** Record `?ref=` on checkouts for affiliate credit. Creator and blogger list sources for the consumer products.
 
+## Pinterest loop (16 October 2026)
+
+Three side businesses have their own Pinterest account that fills itself. Each website publishes a free pin feed; Pinterest reads it and posts every item to the account's board within 24 hours (up to 200 a day). Nobody posts by hand. Cost: $0.
+
+| Account | Board | Feed | Pins at launch |
+|---|---|---|---|
+| pinterest.com/weddingchecklistpdf | Printable Wedding Checklists | weddingchecklistpdf.com/pinfeed.xml | 6 |
+| pinterest.com/approvalprep | Approval Kits & Checklists | approvalprep.com/pinfeed.xml | 11 |
+| pinterest.com/aplayermode | Weekly Planning & Focus Routines | aplayermode.com/pinfeed.xml | 5 |
+
+- Owner decisions: brand accounts, not personas; Spry became A Player Mode on Pinterest; feeds on each product's own domain.
+- Pins are 1000x1500 images from each product's own art. Each links to a product page with utm_source=pinterest, never to checkout.
+- Checkouts were verified first: approvalprep #50 (wrong kit on a buy button), dream-wedding-builder #33 (delivery-failure alerts).
+- Built in dream-wedding-builder #34, approvalprep #51 and sprylabs-hpc-site #136. Each site is claimed with a verification tag that a test keeps in place.
+- Watch: Pinterest analytics and utm_source=pinterest visits; first read at the 25 Oct numbers check.
+
 ## Affiliate programs
 
 | Program | Status |
