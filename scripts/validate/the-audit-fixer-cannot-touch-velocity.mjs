@@ -325,6 +325,9 @@ export function velocityCannotBeAutoFixed(files) {
     if (!/\bmayAutoFix\s*\(/.test(files.reporter)) {
       bad.push(`${REPORTER} never checks the policy, so a forbidden fix would reach the endpoint and fail there with a 400 nobody reads at 06:00 on a Thursday.`);
     }
+    if (/NOT merged/.test(files.reporter) || !/f\.land === "landed"/.test(files.reporter)) {
+      bad.push(`${REPORTER} does not report each PR's land result from the row, so it can call a landed fix unmerged — which its first run after 16 Oct did.`);
+    }
     if (!files.reporter.includes("/site-audit-findings")) {
       bad.push(`${REPORTER} posts nowhere. The job would read, decide, fix, write a file, and tell Boss OS nothing.`);
     }
@@ -521,6 +524,9 @@ if (process.argv.includes("--self-test")) {
     ...files, worktree: (files.worktree ?? "").replaceAll("CLIENT_REPO", "X"),
   }), true);
   expect("no crawler at all", velocityCannotBeAutoFixed({ ...files, crawler: null }), true);
+  expect("a reporter that calls every PR unmerged again", velocityCannotBeAutoFixed({
+    ...files, reporter: `${files.reporter ?? ""}\nconsole.log("opened and NOT merged");\n`,
+  }), true);
   expect("a reporter that posts nowhere", velocityCannotBeAutoFixed({
     ...files, reporter: (files.reporter ?? "").replaceAll("/site-audit-findings", "/nowhere"),
   }), true);
