@@ -114,7 +114,11 @@ rm -f "$OUT_DIR/findings.json"
 say "=== ahrefs audit pass starting (model $MODEL) ==="
 cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 
-"$CLAUDE" -p "$(cat "$PROMPT_FILE")" \
+# THE PROMPT'S PATHS FOLLOW $REPO. It names ~/GitHub/boss-os/scripts/ops/… for the crawler, the
+# worktree helper and the IN_FLIGHT check; on 16 Oct the owner's checkout there was on a docs branch
+# without those scripts, so the run would have called files that did not exist. Rewritten to the
+# checkout this runner was started from, which is the one that has them.
+"$CLAUDE" -p "$(sed "s#~/GitHub/boss-os#$REPO#g" "$PROMPT_FILE")" \
   --model "$MODEL" --max-turns "$MAX_TURNS" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="
