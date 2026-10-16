@@ -16,8 +16,8 @@
  *   1. NO ADDRESS EVER LANDS HERE. Same guard as the mailbox sweep, which caught a real leak on the
  *      contacts sync's first run. The whole batch is refused rather than the offending field
  *      dropped: a partial write would leave her looking at a list that silently lost rows.
- *   2. A FORBIDDEN REPOSITORY CANNOT BE RECORDED AS FIXED. `local-guides-citation-velocity` is off
- *      limits — see `shared/boss/siteAudit/repoPolicy.mjs` — and a row claiming `fixed_pr` against
+ *   2. A FORBIDDEN REPOSITORY CANNOT BE RECORDED AS FIXED. Client repositories are off limits
+ *      (local-guides-citation-velocity was until 16 Oct 2026) — see `shared/boss/siteAudit/repoPolicy.mjs` — and a row claiming `fixed_pr` against
  *      it is refused outright. If the script were ever changed to fix it anyway, the report of that
  *      fix does not land, and the discrepancy is loud instead of silent.
  *   3. A `fixed_pr` MUST NAME ITS PULL REQUEST. "I fixed it" with no link is an assertion nobody can
@@ -154,14 +154,14 @@ siteAudit.post("/site-audit-findings", async (c) => {
       /*
        * THE OFF-LIMITS RULE, ENFORCED WHERE THE SCRIPT CANNOT REACH IT.
        *
-       * `local-guides-citation-velocity` is under active heavy change. A PR from an automated fixer
-       * collides with work in flight. The job knows this; this refuses to believe it if it forgets.
+       * Client repositories are never branched by the fixer. The job knows this (and its worktree
+       * helper refuses them); this refuses to believe it if it forgets.
        */
       if (!mayAutoFix(repo)) {
         refused.push(
           `finding ${i + 1}: claims a fix in ${repo ?? "an unnamed repository"}, which the fixer may not change. `
           + `${whyNoAutoFix(repo) ?? "The repository could not be identified, and an unidentified repository is never fixable."} `
-          + "Report it as 'off_limits' or 'surfaced'.",
+          + "Report it as 'client_repo'.",
         );
         continue;
       }

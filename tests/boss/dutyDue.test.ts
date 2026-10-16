@@ -185,25 +185,32 @@ describe("duty_site_audit_repair after 0246", () => {
   /**
    * THE STANDING CONSTRAINT, ASSERTED RATHER THAN TRUSTED TO A MIGRATION'S GOOD MANNERS.
    *
-   * The repair lane may never auto-fix `local-guides-citation-velocity`. A migration that rebuilt
-   * `task_input` to change a cadence is the obvious way to drop that exclusion without anyone
-   * noticing, so the test checks the exclusion SURVIVED rather than checking that any particular
-   * migration was careful.
-   *
-   * TWO cadence changes have now passed through this row — 0232 and 0246 — and both touched only
-   * the schedule columns and said so in their own text. That is exactly the claim this test refuses
-   * to take on trust, and it gets stronger with each migration that leaves it standing: the risk is
-   * not one careless author, it is the third or fourth edit by someone who has stopped reading.
+   * Until 16 Oct 2026 this pinned "local-guides-citation-velocity is off limits". The owner reversed
+   * that exclusion that day ("fix danielle's job so she can actually fix things") and 0287 rewrote
+   * the row. The pin moves to the new truth and gets STRICTER, not looser: client repos are named as
+   * never touched, LGCV is named as no longer off limits (so the stale exclusion cannot quietly come
+   * back), fixes land only through ~/bin/land, the run crawls each site itself and goes red when it
+   * leaves fixable defects, and the model is Opus.
    */
-  it("still forbids the fixer from touching local-guides-citation-velocity", async () => {
+  it("forbids client repos, lands only through ~/bin/land, and runs on Opus", async () => {
     const duty = await env.DB
       .prepare(
-        `SELECT json_extract(task_input, '$.never') AS never, success_criteria
+        `SELECT json_extract(task_input, '$.never') AS never, json_extract(task_input, '$.model') AS model,
+                success_criteria
            FROM standing_duties WHERE id = 'duty_site_audit_repair'`,
       )
-      .first<{ never: string; success_criteria: string }>();
+      .first<{ never: string; model: string; success_criteria: string }>();
 
-    expect(duty?.never).toMatch(/local-guides-citation-velocity is off limits/i);
-    expect(duty?.success_criteria).toMatch(/local-guides-citation-velocity is surfaced and never touched/i);
+    expect(duty?.never).toMatch(/Client repos are off limits to the fixer entirely/);
+    expect(duty?.never).toMatch(/hicks-consulting-canonical/);
+    expect(duty?.never).toMatch(/dianne-place-recovery-services/);
+    expect(duty?.never).toMatch(/lands through ~\/bin\/land and nothing else/);
+    expect(duty?.never).toMatch(/local-guides-citation-velocity is no longer off limits/);
+    expect(duty?.never).not.toMatch(/she merges/i);
+    expect(duty?.model).toMatch(/^claude-opus-/);
+    expect(duty?.success_criteria).toMatch(/crawled by Danielle herself/);
+    expect(duty?.success_criteria).toMatch(/landed through ~\/bin\/land/);
+    expect(duty?.success_criteria).toMatch(/Client repos are reported and never touched/);
+    expect(duty?.success_criteria).toMatch(/exits red with each reason named/);
   });
 });

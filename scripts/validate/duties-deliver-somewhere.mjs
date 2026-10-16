@@ -180,6 +180,20 @@ export function workerReader(text) {
   return m ? m[1] : null;
 }
 
+/**
+ * The model a duty asks for after EVERY migration: the last statement that names both this duty and
+ * a model wins (`json_set(task_input, '$.model', …)` in a later UPDATE included), else its own text.
+ */
+export function effectiveModel(dutyId, ownText, statements = ALL_MIGRATION_STATEMENTS) {
+  let model = requestedModel(ownText);
+  for (const st of statements) {
+    if (!st.includes(`'${dutyId}'`)) continue;
+    const m = /'\$\.(?:requested\.)?model'\s*,\s*'([A-Za-z0-9._-]+)'/.exec(st);
+    if (m) model = m[1];
+  }
+  return model;
+}
+
 /** The model a duty asks for, if it names one. */
 export function requestedModel(text) {
   const m = /'\$\.requested\.model'\s*,\s*'([A-Za-z0-9._-]+)'/.exec(text)
@@ -460,7 +474,12 @@ function scan() {
           `      Nothing installs or repairs it, so the duty has an owner and no executor.`,
         );
       } else {
-        const model = requestedModel(duty.text);
+        /*
+         * THE MODEL THE DUTY ENDS UP WITH, NOT THE ONE IT WAS BORN WITH. A later migration can move a
+         * duty's model (0287 moved duty_site_audit_repair from Sonnet to Opus, her rule since 6 Oct);
+         * reading only the creating INSERT would pin the script to a model the row no longer asks for.
+         */
+        const model = effectiveModel(duty.id, duty.text);
         if (model && !read(`scripts/ops/${job}`).includes(model)) {
           problems.push(
             `${duty.id} (${duty.file}): asks for model '${model}' and scripts/ops/${job} does not name it.\n` +
@@ -567,6 +586,21 @@ function selfTest() {
       console.error(`  ✗ ${f.name}: expected key ${JSON.stringify(f.key)}, got ${JSON.stringify(key)}`);
       failed += 1;
     }
+  }
+
+  // A later UPDATE moving a duty's model wins over the creating INSERT; an unrelated duty's does not.
+  const born = `json_object('model', 'claude-sonnet-4-5-20250929')`;
+  const moved = effectiveModel("duty_x", born, [
+    `INSERT ... 'duty_x' ... ${born}`,
+    `UPDATE standing_duties SET task_input = json_set(task_input, '$.model', 'claude-opus-5') WHERE id = 'duty_y'`,
+    `UPDATE standing_duties SET task_input = json_set(task_input, '$.model', 'claude-opus-5') WHERE id = 'duty_x'`,
+  ]);
+  const unmoved = effectiveModel("duty_x", born, [
+    `UPDATE standing_duties SET task_input = json_set(task_input, '$.model', 'claude-opus-5') WHERE id = 'duty_y'`,
+  ]);
+  if (moved !== "claude-opus-5" || unmoved !== "claude-sonnet-4-5-20250929") {
+    console.error(`  ✗ effectiveModel: expected opus after the move and sonnet without it, got ${moved} / ${unmoved}`);
+    failed += 1;
   }
 
   // The handler splitter must not let one function's guard vouch for its neighbour's writer.

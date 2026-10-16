@@ -15,9 +15,17 @@
  *      renamed one, or a typo produces work with no owner, which is the same as no work — and the
  *      roster it points at is rebuilt by migrations, so it can go stale without anyone editing the
  *      duty.
- *   3. THE OFF-LIMITS RULE ROTS. `local-guides-citation-velocity` is under active heavy change and
- *      the fixer may not open a PR against it. That rule lives in ONE file and is enforced in three
- *      places; the failure mode is not somebody deleting it, it is somebody copying it.
+ *   3. THE OFF-LIMITS RULE ROTS. Client repositories are never branched (their findings are
+ *      `client_repo` rows). That rule lives in ONE file and is enforced in four places; the failure
+ *      mode is not somebody deleting it, it is somebody copying it.
+ *   4. THE FIXER STOPS FIXING. Owner, 16 Oct 2026: "fix danielle's job so she can actually fix
+ *      things" — two passes had read every mail and fixed nothing. So this now REQUIRES the pieces
+ *      that make her fix: her own crawl (site-crawl.py), a fresh worktree instead of refusing a dirty
+ *      checkout (audit-worktree.sh), the IN_FLIGHT check, the outside probe for crawl failures, a
+ *      green fix LANDED through ~/bin/land (it used to require that she merge — that contradicted
+ *      her standing rules and was reversed on her word), the RED verdict, and an Opus model.
+ *      `local-guides-citation-velocity` was on the off-limits list until that day; it is now
+ *      required to be FIXABLE, so the stale exclusion cannot quietly come back.
  *
  * ─── How it is proven ───────────────────────────────────────────────────────
  *
@@ -41,7 +49,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import {
-  NO_AUTO_FIX, NO_AUTO_FIX_REPOS, DISPOSITIONS, mayAutoFix, whyNoAutoFix,
+  NO_AUTO_FIX, NO_AUTO_FIX_REPOS, DISPOSITIONS, QUIET_DISPOSITIONS, mayAutoFix, whyNoAutoFix, isClientRepo,
 } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -54,6 +62,11 @@ const ROUTE = "src/worker/boss/routes/siteAudit.ts";
 const RUNNER = "scripts/ops/ahrefs-audit-fix.sh";
 const REPORTER = "scripts/ops/ahrefs-audit-report.mjs";
 const PROMPT = "scripts/ops/ahrefs-audit-fix-prompt.md";
+const LIB = "scripts/ops/site-audit-lib.mjs";
+const WORKTREE = "scripts/ops/audit-worktree.sh";
+const CRAWLER = "scripts/ops/site-crawl.py";
+/** Owner, 6 Oct 2026: Opus for every agent; Haiku and Sonnet stay out. */
+const OPUS = /^claude-opus-/;
 const INSTALLER = "scripts/ops/install-agent-launchd.sh";
 const MOUNT = "src/worker/boss/index.ts";
 const TODAY = "src/worker/boss/today/pillars.ts";
@@ -186,38 +199,40 @@ export function assignedToARealSeat(state) {
 }
 
 /**
- * Rule: `local-guides-citation-velocity` cannot be auto-fixed — asserted on BEHAVIOUR, then on the
- * three places that behaviour has to be enforced.
+ * Rule: client repositories cannot be auto-fixed and everything else can — asserted on BEHAVIOUR,
+ * then on the places that behaviour has to be enforced. (Name kept for `validate:repo-lane`, which
+ * reads this file by name.)
  */
 export function velocityCannotBeAutoFixed(files) {
   const bad = [];
 
   if (NO_AUTO_FIX.length === 0) return ["the off-limits list is EMPTY, so this guard would examine nothing and pass."];
-  if (!NO_AUTO_FIX_REPOS.includes("local-guides-citation-velocity")) {
-    bad.push("local-guides-citation-velocity is not on the off-limits list. It is under active heavy change and the fixer may not open a PR against it.");
+  for (const client of ["hicks-consulting-canonical", "dianne-place-recovery-services"]) {
+    if (!isClientRepo(client)) bad.push(`${client} is not on the list as a client repo. Client repos stay out of Boss OS; the fixer may never branch one.`);
+    if (mayAutoFix(client)) bad.push(`mayAutoFix() allowed the client repo ${client}.`);
+    if (mayAutoFix(`/Users/sequoiataylor/GitHub/${client}`)) bad.push(`mayAutoFix() allowed ${client} as a full path — the form the local job holds.`);
+    if (mayAutoFix(`seq23/${client}`)) bad.push(`mayAutoFix() allowed ${client} in owner/name form.`);
   }
   for (const entry of NO_AUTO_FIX) {
     if (!entry.why || entry.why.length < 40) {
-      bad.push(`${entry.repo} is excluded with no reason worth reading. A bare list decays into folklore nobody can tell from a stale entry.`);
+      bad.push(`${entry.repo} is excluded with no reason worth reading. A bare list decays into folklore nobody can tell from a stale entry — which is how LGCV sat on this list after its reason stopped holding.`);
     }
   }
-
-  // BEHAVIOURAL, through the function everything else calls.
-  if (mayAutoFix("local-guides-citation-velocity")) bad.push("mayAutoFix() allowed local-guides-citation-velocity.");
-  if (mayAutoFix("/Users/sequoiataylor/GitHub/local-guides-citation-velocity")) {
-    bad.push("mayAutoFix() allowed local-guides-citation-velocity when it arrived as a full path — and a path is the form the local job actually holds.");
-  }
-  if (mayAutoFix("seq23/local-guides-citation-velocity")) bad.push("mayAutoFix() allowed local-guides-citation-velocity in owner/name form.");
   if (mayAutoFix("")) bad.push("mayAutoFix() allowed an EMPTY repository name. 'I could not tell which repo this is' must never resolve to 'go ahead and commit'.");
   if (mayAutoFix(null)) bad.push("mayAutoFix() allowed a null repository name.");
-  if (!mayAutoFix("WPP-llm") || !mayAutoFix("sprylabs-hpc-site")) {
-    bad.push("mayAutoFix() refused a repository that IS fixable — a guard that blocks everything is a guard somebody removes.");
+  for (const fixable of ["WPP-llm", "sprylabs-hpc-site", "local-guides-citation-velocity", "local-guides-generator", "p-n-p"]) {
+    if (!mayAutoFix(fixable)) {
+      bad.push(`mayAutoFix() refused ${fixable}, which IS fixable. Owner, 16 Oct 2026: "fix danielle's job so she can actually fix things"; collisions are handled by the worktree and the IN_FLIGHT check, not by a ban.`);
+    }
   }
-  if (!whyNoAutoFix("local-guides-citation-velocity")) {
-    bad.push("whyNoAutoFix() gives no reason for the one repository on the list, so a refusal cannot explain itself.");
+  if (!whyNoAutoFix("hicks-consulting-canonical")) {
+    bad.push("whyNoAutoFix() gives no reason for a client repo, so a refusal cannot explain itself.");
   }
-  if (!DISPOSITIONS.includes("off_limits") || !DISPOSITIONS.includes("none")) {
-    bad.push("the disposition vocabulary cannot express 'off limits' or 'found nothing', so a refusal or an empty week has nowhere to be recorded.");
+  for (const d of ["off_limits", "none", "ahrefs_side", "client_repo", "in_flight", "ahrefs_credits"]) {
+    if (!DISPOSITIONS.includes(d)) bad.push(`the disposition vocabulary cannot express '${d}', so that outcome has nowhere to be recorded except as an unfixed defect.`);
+  }
+  for (const d of ["surfaced", "no_repo"]) {
+    if (QUIET_DISPOSITIONS.includes(d)) bad.push(`'${d}' is classed as quiet, so work left for a person would never alert.`);
   }
 
   /*
@@ -251,15 +266,55 @@ export function velocityCannotBeAutoFixed(files) {
       bad.push(`${RUNNER} does not read the off-limits list from the shared policy — a second copy of the rule is the defect this whole design avoids.`);
     }
     /*
-     * IT MERGES NOTHING. Her instruction, and the one thing an automated fixer must not learn to do:
-     * a fixer that lands its own work removes the only place a person looks at what it did.
+     * IT LANDS THROUGH ~/bin/land AND NOTHING ELSE. It used to merge nothing, on the reasoning that a
+     * fixer landing its own work removes the place a person looks. The owner reversed that on 16 Oct
+     * 2026 ("fix danielle's job so she can actually fix things"): merge without asking, merge and
+     * deploy as one action, nothing waits on the owner. What stays forbidden is every OTHER door — a
+     * bare merge, a workflow dispatch, a deploy — because ~/bin/land is the one that refuses rather
+     * than guesses and watches main to a terminal state.
      */
     for (const forbidden of [/\bgh\s+pr\s+merge\b/, /\bgh\s+workflow\s+run\b/, /\bgit\s+push\s+(?:\S+\s+)?(?:origin\s+)?main\b/, /\bwrangler\s+deploy\b/, /npm\s+run\s+deploy/]) {
       if (forbidden.test(files.runner)) {
-        bad.push(`${RUNNER} contains ${forbidden} — it opens pull requests and she merges. It never merges, deploys or dispatches a release.`);
+        bad.push(`${RUNNER} contains ${forbidden}. A fix lands through ~/bin/land only; it never merges, deploys or dispatches by any other door.`);
       }
     }
+    const code = files.runner.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+    if (!/site-audit-lib\.mjs"?\s+land\b/.test(code)) {
+      bad.push(`${RUNNER} never runs \`site-audit-lib.mjs land\`, so a green fix waits on her — the rule her 16 Oct instruction reversed.`);
+    }
+    if (!/site-audit-lib\.mjs"?\s+verdict\b/.test(code) || !/exit 12/.test(code)) {
+      bad.push(`${RUNNER} never turns the verdict into a RED exit, so fixed=0 over fixable defects exits clean — the 15/16 Oct shape.`);
+    }
+    if (/IT MERGES NOTHING/.test(files.runner)) {
+      bad.push(`${RUNNER} still says "IT MERGES NOTHING" — a header that contradicts the code is the next reader's wrong rule.`);
+    }
+    const model = /MODEL="\$\{AHREFS_AUDIT_MODEL:-([^}]+)\}"/.exec(files.runner)?.[1];
+    if (!model || !OPUS.test(model)) {
+      bad.push(`${RUNNER} runs '${model ?? "an unnamed model"}'. Her rule since 6 Oct 2026 is Opus for every agent; Haiku and Sonnet stay out.`);
+    }
   }
+
+  if (files.lib === null) {
+    bad.push(`${LIB} does not exist, so nothing lands a fix, detects IN_FLIGHT work or turns a fruitless pass red.`);
+  } else {
+    if (!/"gh",\s*\["pr",\s*"checks"/.test(files.lib) && !/"gh",\s*"pr",\s*"checks"/.test(files.lib)) bad.push(`${LIB} does not watch \`gh pr checks\` before landing.`);
+    if (!/--watch/.test(files.lib) || !/--fail-fast/.test(files.lib)) bad.push(`${LIB} does not watch checks with --watch --fail-fast.`);
+    if (!/bin\/land/.test(files.lib)) bad.push(`${LIB} does not land through ~/bin/land.`);
+    if (/"pr",\s*"merge"|gh\s+pr\s+merge|wrangler\s+deploy|"workflow",\s*"run"/.test(files.lib)) bad.push(`${LIB} reaches a merge, a deploy or a dispatch by a door other than ~/bin/land.`);
+    if (!/\bmayAutoFix\s*\(/.test(files.lib)) bad.push(`${LIB} never checks the policy before landing.`);
+    for (const reason of ["FIXABLE_LEFT_UNFIXED", "NOT_LANDED", "NOT_CRAWLED"]) {
+      if (!files.lib.includes(reason)) bad.push(`${LIB} has no ${reason} reason, so that failure exits clean.`);
+    }
+  }
+  if (files.worktree === null) {
+    bad.push(`${WORKTREE} does not exist, so a dirty owner checkout is a reason to stop again.`);
+  } else {
+    if (!/worktree add/.test(files.worktree)) bad.push(`${WORKTREE} cuts no worktree.`);
+    if (!/repoPolicy\.mjs/.test(files.worktree) || !/CLIENT_REPO/.test(files.worktree)) bad.push(`${WORKTREE} does not refuse client repos from the shared policy.`);
+    if (/\bgit\s+-C\s+"\$DIR"\s+(checkout|stash|reset|switch|clean|pull)\b/.test(files.worktree)) bad.push(`${WORKTREE} mutates the owner's checkout.`);
+  }
+  if (files.crawler === null) bad.push(`${CRAWLER} does not exist, so the run has no URLs beyond the mail's counts.`);
+  else if (!/AHREFS_SIDE_CRAWL_FAILURE/.test(files.crawler)) bad.push(`${CRAWLER} cannot name an Ahrefs-side crawl failure.`);
 
   if (files.reporter === null) {
     bad.push(`${REPORTER} does not exist, so the run has no way to tell Boss OS what it did.`);
@@ -275,8 +330,11 @@ export function velocityCannotBeAutoFixed(files) {
   if (files.prompt === null) {
     bad.push(`${PROMPT} does not exist, so the run has no instructions.`);
   } else {
-    if (!files.prompt.includes("local-guides-citation-velocity")) {
-      bad.push(`${PROMPT} never mentions local-guides-citation-velocity, so the run is not told to leave it alone before it starts.`);
+    for (const must of ["site-crawl.py", "audit-worktree.sh", "inflight", "AHREFS_SIDE_CRAWL_FAILURE", "AHREFS_CRAWL_CREDITS", "CLIENT_REPO", "IN_FLIGHT", "hicks-consulting-canonical"]) {
+      if (!files.prompt.includes(must)) bad.push(`${PROMPT} never mentions ${must}, so the run is not told how to do that part of the job.`);
+    }
+    if (/Merge nothing|She merges/i.test(files.prompt)) {
+      bad.push(`${PROMPT} still tells the run to leave merging to her. Owner, 16 Oct 2026: green fixes land.`);
     }
     if (!/REPO_IDENTITY/.test(files.prompt)) {
       bad.push(`${PROMPT} does not tell the run to map projects by REPO_IDENTITY.md, so a repository could be chosen by resemblance.`);
@@ -369,6 +427,7 @@ export function reachableAndEscalating(files) {
 const loadFiles = () => ({
   route: read(ROUTE), runner: read(RUNNER), reporter: read(REPORTER),
   prompt: read(PROMPT), installer: read(INSTALLER), mount: read(MOUNT), today: read(TODAY),
+  lib: read(LIB), worktree: read(WORKTREE), crawler: read(CRAWLER),
   alerts: read(ALERTS),
 });
 
@@ -386,7 +445,7 @@ if (process.argv.includes("--self-test")) {
 
   expect("the shipped duty is reachable", dutyIsReachable(state, files), false);
   expect("the shipped duty has a real, correct seat", assignedToARealSeat(state), false);
-  expect("velocity cannot be auto-fixed", velocityCannotBeAutoFixed(files), false);
+  expect("client repos cannot be auto-fixed and the fixer lands", velocityCannotBeAutoFixed(files), false);
   expect("the route is mounted and a missed week escalates", reachableAndEscalating(files), false);
 
   // ─── NEGATIVE PROOFS. Break each rule and require the guard to see it. ────
@@ -406,7 +465,7 @@ if (process.argv.includes("--self-test")) {
     ...files, installer: (files.installer ?? "").replaceAll("ahrefs-audit-fix.sh", "some-other-job.sh"),
   }), true);
   expect("a duty whose model disagrees with its script", dutyIsReachable(state, {
-    ...files, runner: (files.runner ?? "").replace("claude-sonnet-4-5-20250929", "claude-haiku-4-5"),
+    ...files, runner: (files.runner ?? "").replace("claude-opus-5", "claude-haiku-4-5"),
   }), true);
   // The cadence is hers; what must fail is one `duties/cadence.ts` cannot schedule at all.
   expect("a cadence the scheduler cannot schedule", dutyIsReachable({
@@ -431,9 +490,31 @@ if (process.argv.includes("--self-test")) {
   expect("a runner that learned to dispatch a deploy", velocityCannotBeAutoFixed({
     ...files, runner: `${files.runner ?? ""}\ngh workflow run deploy.yml\n`,
   }), true);
-  expect("a prompt that no longer names the forbidden repo", velocityCannotBeAutoFixed({
-    ...files, prompt: (files.prompt ?? "").replaceAll("local-guides-citation-velocity", "some-repo"),
+  expect("a prompt that no longer tells her to crawl", velocityCannotBeAutoFixed({
+    ...files, prompt: (files.prompt ?? "").replaceAll("site-crawl.py", "the mail"),
   }), true);
+  expect("a prompt that goes back to 'She merges'", velocityCannotBeAutoFixed({
+    ...files, prompt: `${files.prompt ?? ""}\nMerge nothing. She merges.\n`,
+  }), true);
+  expect("a runner back on Sonnet", velocityCannotBeAutoFixed({
+    ...files, runner: (files.runner ?? "").replace("claude-opus-5", "claude-sonnet-4-5-20250929"),
+  }), true);
+  expect("a runner that stopped landing", velocityCannotBeAutoFixed({
+    ...files, runner: (files.runner ?? "").replace(/site-audit-lib\.mjs" land/g, 'site-audit-lib.mjs" noop'),
+  }), true);
+  expect("a runner whose verdict no longer goes red", velocityCannotBeAutoFixed({
+    ...files, runner: (files.runner ?? "").replaceAll("exit 12", "exit 0"),
+  }), true);
+  expect("a lib that merges directly", velocityCannotBeAutoFixed({
+    ...files, lib: `${files.lib ?? ""}\nrun("gh", ["pr", "merge", "1"]);\n`,
+  }), true);
+  expect("a worktree helper that stashes the owner's checkout", velocityCannotBeAutoFixed({
+    ...files, worktree: `${files.worktree ?? ""}\ngit -C "$DIR" stash\n`,
+  }), true);
+  expect("a worktree helper that forgot client repos", velocityCannotBeAutoFixed({
+    ...files, worktree: (files.worktree ?? "").replaceAll("CLIENT_REPO", "X"),
+  }), true);
+  expect("no crawler at all", velocityCannotBeAutoFixed({ ...files, crawler: null }), true);
   expect("a reporter that posts nowhere", velocityCannotBeAutoFixed({
     ...files, reporter: (files.reporter ?? "").replaceAll("/site-audit-findings", "/nowhere"),
   }), true);
@@ -478,7 +559,7 @@ if (state.roster.length === 0) {
   process.exit(2);
 }
 if (NO_AUTO_FIX.length === 0) {
-  console.error("AUDIT FIXER SCAN FAILED — the off-limits list is empty, so this guard would examine zero repositories and pass.");
+  console.error("AUDIT FIXER SCAN FAILED — the client-repo list is empty, so this guard would examine zero repositories and pass.");
   process.exit(2);
 }
 
@@ -503,6 +584,7 @@ console.log(
   + `${state.duty.cadence === "weekly" ? `on ${DAYS[state.duty.weekday]} ` : state.duty.cadence === "monthly" ? "on the 1st " : ""}`
   + `at ${String(state.duty.local_hour).padStart(2, "0")}:${String(state.duty.local_minute).padStart(2, "0")} `
   + `${state.duty.timezone}, delivers into ${TABLE} through a mounted route, raises an ALERT rather than a contract line when it does not, `
-  + `and cannot open a pull request against ${NO_AUTO_FIX_REPOS.join(", ")} — refused in the policy, in the runner, `
-  + `in the reporter and again server-side. ${state.roster.length} active employees examined.`,
+  + `crawls each flagged site itself, fixes in a fresh worktree, lands green fixes through ~/bin/land, exits RED when it leaves fixable defects, `
+  + `and cannot open a pull request against ${NO_AUTO_FIX_REPOS.join(", ")} — refused in the policy, the worktree helper, the runner, `
+  + `the reporter and again server-side. ${state.roster.length} active employees examined.`,
 );
