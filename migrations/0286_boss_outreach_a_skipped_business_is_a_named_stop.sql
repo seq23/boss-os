@@ -9,3 +9,5 @@
 -- fixed. Additive only.
 ALTER TABLE outreach_domain_state ADD COLUMN stop_reason TEXT;
 ALTER TABLE outreach_domain_state ADD COLUMN stop_at INTEGER;
+
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0286_boss_outreach_a_skipped_business_is_a_named_stop');
