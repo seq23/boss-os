@@ -27,7 +27,8 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 #### Live now
 
 - Checkout repaired; deploys fail loudly on a dead key.
-- Paywall: 3 free stories, 7-day trial, $9.99/month or $79/year.
+- Paywall: 3 free stories, 7-day trial, $9.99/month or $79/year. **Actually published 16 Oct:** it had been merged but never published, because the site only goes live when someone clicks Publish in Lovable.
+- **16 Oct:** in Google Search Console (you are a verified owner), sitemap submitted, IndexNow live, homepage structured data added (dailystory \#69).
 - Outreach from its own mailbox, st@time-2-read.com (SPF, DKIM, DMARC set).
 - Supabase AI data sharing switched off.
 
@@ -43,6 +44,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 
 - Readable by search engines (homepage 8 → 265 words), 10-page sitemap, analytics.
 - Positioned as "included free with Time2Read Premium".
+- **16 Oct:** in Google Search Console, sitemap submitted, IndexNow live (heygetonmylevel \#2). Lovable flags one critical security issue, being checked now.
 
 #### Next
 
@@ -78,6 +80,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 #### Live now
 
 - Kits at $15, $19, $29, $39 and $49 everywhere, with a validator on the prices; About page and byline.
+- **16 Oct:** product details Google had rejected on 4 kit pages fixed (image, brand, real price), with a check (#53).
 - Checkout verified 16 Oct; the Life Admin Letter Kit button had been selling the $15 kit, fixed (#50).
 - **Pinterest:** 11 launch pins, then 1 a day queued through 21 Dec; visits from each pin counted.
 - Self and Kikoff affiliate slots built and hidden (programs closed 16 Oct).
@@ -111,7 +114,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - Founding 100 at $9.99/month with a live "N of 100 left" counter; checkout opens (no sale yet to prove payment end to end).
 - Pinterest visits per pin now counted (sprylabs-hpc-site \#139): 0 so far, as expected before the first pins post.
 - 18+ gate and health consent; purchase flows tested live by you.
-- Indexable since 10 Oct, Lighthouse SEO 100, Clarity, Search Console.
+- Indexable since 10 Oct, Lighthouse SEO 100, Clarity, Search Console. IndexNow and product-detail fixes in progress.
 - **Pinterest:** 5 launch pins, 35 queued one a day through 20 Nov, weekly refill (sprylabs-hpc-site \#138).
 
 #### Next
@@ -145,6 +148,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - 10 a day per site; auto-pause on bounces over 3% or any complaint; suppression list, unsubscribe link, San Francisco mailbox in the footer.
 - 35 real emails went out on the old copy (dentistry 19, hormones 11, USCIS 5; 3 bounced; 0 human replies). Those prospects get the new standalone follow-ups; no restart.
 - **Neuro outreach targets therapy practices first** (boss-os \#93): ADHD/autism therapy, ABA and both-service practices now qualify; the pitch names evaluation and ongoing therapy. Deploy follows today’s browser-test run.
+- **Site health, 16 Oct:** Search Console shows nothing blocks Google or AI crawlers on any site; the gap is how few pages Google indexes (10 sites), which is the 25 Oct consolidation decision. Ahrefs crawls had failed only because the free plan ran out of credits: all 24 projects are now capped and spread out after the 22 Oct reset. virtualagency-os: broken email link and 46 duplicate-page redirects fixed, sitemap dates now honest (#44, \#45). Danielle’s Ahrefs job is being rebuilt to crawl and fix sites herself and land the fixes.
 - **Free AI route repaired 16 Oct:** a router bug made one model’s refusal look like a dead key, and slow answers looked empty. Fixed in four repos; free models answer again at $0.
 
 #### Next
