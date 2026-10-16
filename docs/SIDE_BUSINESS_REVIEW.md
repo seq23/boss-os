@@ -44,7 +44,8 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 
 - Readable by search engines (homepage 8 → 265 words), 10-page sitemap, analytics.
 - Positioned as "included free with Time2Read Premium".
-- **16 Oct:** in Google Search Console, sitemap submitted, IndexNow live (heygetonmylevel \#2). Lovable flags one critical security issue, being checked now.
+- **16 Oct:** in Google Search Console, sitemap submitted, IndexNow live (heygetonmylevel \#2).
+- **16 Oct, security fixed:** the reading database was open to anyone with the site’s public key (254 sessions, passages, questions, answers, stats). Locked down (SQL in Lovable + \#3, published); checked from outside, nothing is readable and reading still works. Lovable’s critical warning is gone; one remaining warning (anyone could add text to the passage cache readers are shown) is being moved server-side now.
 
 #### Next
 
@@ -62,7 +63,8 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - Dentistry: sourced safety-net clinic sections in 6 metros.
 - **Neuro Evaluation Guides now serves evaluation AND therapy** (16 Oct, local-guides-generator \#74): headline “ADHD and autism: getting evaluated, and finding therapy — with or without a diagnosis”, two equal buttons, providers tagged Evaluation / Therapy / both, callback asks which. 83 verified therapy-only practices now listed on 50 of 56 city pages (#75; autism/ABA so far, ADHD therapists being added).
 - **Hormone Optimization Guides: two affiliate programs live 16 Oct** (local-guides-generator \#76). “Check your levels first” sends readers to Ulta Lab Tests at-home tests (testosterone, men’s panel, menopause; up to 20%) from the homepage, 9 guides and every city page. “Prefer to start online?” sends them to PrescribedRX online TRT ($100 per order) from the homepage and 8 guides, beside “find a local clinic”. Every block is labelled as an affiliate ad with the FTC disclosure, and clicks are counted per program. The headline now names TRT and menopause/perimenopause HRT, and the callback offers “Menopause / women’s HRT clinic”.
-- **Dead links found 16 Oct:** about 3,600 links from theindustryguides.com into the guide sites hit pages that were never built; fix in progress. An audit of the other 23 sites found no broken links between your own pages, only 14 dead outside links and a broken email link on 4 sites, all being fixed.
+- **Dead links fixed 16 Oct:** about 3,600 links from theindustryguides.com into the guide sites hit pages that were never built; they now go to the matching real guides (LGCV \#202–#205; 12 of 12 rechecked live). Across the other sites: 14 dead outside links, broken email links, orphan next-steps pages, uscisexam duplicate pages and tracking codes on internal links all fixed (local-guides-generator \#77–#80), each with a check that blocks it returning.
+- **Neuro: 34 ADHD therapy practices added in 27 cities** (#79), alongside the 83 autism/ABA practices.
 - **Outreach copy rewritten 16 Oct** in your voice: a conversation and a quick call, says it is a digital guide built to come up when people ask ChatGPT, Google and other AI assistants, with the link; every follow-up re-explains; signed S.L. Taylor (boss-os \#88).
 - Memphis outreach had sent nothing because its mailing address was missing; set 16 Oct, and a new guide now inherits the shared address, with a named stop if a ready guide stays silent (boss-os \#90).
 
@@ -114,7 +116,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - Founding 100 at $9.99/month with a live "N of 100 left" counter; checkout opens (no sale yet to prove payment end to end).
 - Pinterest visits per pin now counted (sprylabs-hpc-site \#139): 0 so far, as expected before the first pins post.
 - 18+ gate and health consent; purchase flows tested live by you.
-- Indexable since 10 Oct, Lighthouse SEO 100, Clarity, Search Console. IndexNow and product-detail fixes in progress.
+- Indexable since 10 Oct, Lighthouse SEO 100, Clarity, Search Console. **16 Oct:** IndexNow live; product details now show the real $49 Gumroad price (two places had a made-up $29); old index.html links redirect in one hop (sprylabs-hpc-site \#143, \#144).
 - **Pinterest:** 5 launch pins, 35 queued one a day through 20 Nov, weekly refill (sprylabs-hpc-site \#138).
 
 #### Next
@@ -148,7 +150,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - 10 a day per site; auto-pause on bounces over 3% or any complaint; suppression list, unsubscribe link, San Francisco mailbox in the footer.
 - 35 real emails went out on the old copy (dentistry 19, hormones 11, USCIS 5; 3 bounced; 0 human replies). Those prospects get the new standalone follow-ups; no restart.
 - **Neuro outreach targets therapy practices first** (boss-os \#93): ADHD/autism therapy, ABA and both-service practices now qualify; the pitch names evaluation and ongoing therapy. Deploy follows today’s browser-test run.
-- **Site health, 16 Oct:** Search Console shows nothing blocks Google or AI crawlers on any site; the gap is how few pages Google indexes (10 sites), which is the 25 Oct consolidation decision. Ahrefs crawls had failed only because the free plan ran out of credits: all 24 projects are now capped and spread out after the 22 Oct reset. virtualagency-os: broken email link and 46 duplicate-page redirects fixed, sitemap dates now honest (#44, \#45). Danielle’s Ahrefs job is being rebuilt to crawl and fix sites herself and land the fixes.
+- **Site health, 16 Oct:** Search Console shows nothing blocks Google or AI crawlers on any site; the gap is how few pages Google indexes (10 sites), which is the 25 Oct consolidation decision. Ahrefs crawls had failed only because the free plan ran out of credits: all 24 projects are now capped and spread out after the 22 Oct reset. virtualagency-os: broken email link and 46 duplicate-page redirects fixed, sitemap dates now honest (#44, \#45). **Danielle’s Ahrefs job rebuilt** (boss-os \#96, \#98, \#99): she now crawls flagged sites herself, fixes at source, and lands the fix; her first real run fixed and landed 2 issues. Porch & Party’s 5–6 MB images are now ~385 KB and www redirects to the main address (p-n-p \#46, \#47).
 - **Free AI route repaired 16 Oct:** a router bug made one model’s refusal look like a dead key, and slow answers looked empty. Fixed in four repos; free models answer again at $0.
 
 #### Next
