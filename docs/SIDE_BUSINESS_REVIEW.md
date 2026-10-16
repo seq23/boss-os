@@ -45,7 +45,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 - Readable by search engines (homepage 8 → 265 words), 10-page sitemap, analytics.
 - Positioned as "included free with Time2Read Premium".
 - **16 Oct:** in Google Search Console, sitemap submitted, IndexNow live (heygetonmylevel \#2).
-- **16 Oct, security fixed:** the reading database was open to anyone with the site’s public key (254 sessions, passages, questions, answers, stats). Locked down (SQL in Lovable + \#3, published); checked from outside, nothing is readable and reading still works. Lovable’s critical warning is gone; one remaining warning (anyone could add text to the passage cache readers are shown) is being moved server-side now.
+- **16 Oct, security fixed:** the reading database was open to anyone with the site’s public key (254 sessions, passages, questions, answers, stats). Locked down (SQL in Lovable + \#3, published); checked from outside, nothing is readable and reading still works. Lovable’s critical warning is gone. The passage cache readers are shown is now written only by the server (\#4, published, SQL run 16 Oct): an outside write attempt is refused, new passages still cache. Leaked-password check switched on. The only finding left is informational and intended: the shared reading passages are public to read.
 
 #### Next
 
