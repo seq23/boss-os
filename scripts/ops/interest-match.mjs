@@ -68,7 +68,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor, employeeMail } from "./notify.mjs";
+import { namesOnce, sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -459,7 +459,7 @@ function renderRevivals({ picked, considered }) {
   const lines = [`${picked.length} conversation${picked.length === 1 ? "" : "s"} that stopped, out of ${considered} still open.`, ""];
   for (const x of picked) {
     const r = x.row;
-    lines.push(`  ${r.asset.toUpperCase()}  —  ${r.principal}${r.principal_email ? ` <${r.principal_email}>` : ""}`);
+    lines.push(`  ${r.asset}  —  ${r.principal}${r.principal_email ? ` <${r.principal_email}>` : ""}`);
     lines.push(`     Wanted to ${r.side} ${r.size_text ?? ""}, ${ageWords(x.ageDays)}. Never filled.`);
     lines.push(`     "${r.quote ?? r.evidence}"`);
     if (x.sinceSheWrote !== null) lines.push(`     You have not written to them in ${x.sinceSheWrote} days.`);
@@ -579,22 +579,22 @@ const who = (r) => `${r.principal}${r.principal_email && r.principal_email !== r
  * a suppression she cannot correct.
  */
 const coBrokerLine = (n) => (n > 0
-  ? [`${n} pairing(s) were internal to ${HER_BROKERAGE_DOMAIN} on BOTH sides and are not shown — `
-     + "two brokers at your own firm can cross that themselves.", ""]
+  ? [`${n} more had brokers at your own firm on both sides, so I left them out — `
+     + "they can match those themselves.", ""]
   : []);
 
 function renderStanding(picked, considered, coBroker = 0) {
   if (picked.length === 0) {
-    return ["No cross worth a call today.",
-      `${considered} pairing(s) were considered and none cleared the bar. That is a real answer:`,
+    return ["No buyer and seller worth a call today.",
+      `I checked ${considered} possible matches and none cleared the bar. That is a real answer:`,
       "the ledger holds both sides of a market and today they do not meet on the same name.",
       ...coBrokerLine(coBroker),
     ].join("\n");
   }
-  const lines = [`${picked.length} cross${picked.length === 1 ? "" : "es"} worth a call, out of ${considered} pairing(s) considered.`,
+  const lines = [`${picked.length} buyer and seller pair${picked.length === 1 ? "" : "s"} worth a call today (I checked ${considered} possible matches).`,
     "", ...coBrokerLine(coBroker)];
   for (const m of picked) {
-    lines.push(`${m.asset.toUpperCase()}`);
+    lines.push(`${m.asset}`);
     lines.push(`  BUY   ${money(m.buy)}   ${who(m.buy)}   ${ageWords(m.buyAge)}${m.buy.durability === "transacted" ? " · has transacted" : ""}`);
     lines.push(`        "${m.buy.quote ?? m.buy.evidence}"${m.buy.intermediated_by ? `  — via ${m.buy.intermediated_by}` : ""}`);
     lines.push(`  SELL  ${money(m.sell)}   ${who(m.sell)}   ${ageWords(m.sellAge)}${m.sell.durability === "transacted" ? " · has transacted" : ""}`);
@@ -676,7 +676,7 @@ async function main() {
     const result = nudges(usable, contacts, suppressed);
     body = renderNudge(result);
     subject = result.picked.length
-      ? `${result.picked.length} worth a note — ${[...new Set(result.picked.map((n) => n.asset))].join(", ")}`
+      ? `${result.picked.length} worth a note — ${namesOnce(result.picked.map((n) => n.asset))}`
       : "Nobody worth a note this month";
   } else if (FIND) {
     const side = WANT_SIDE === "sell" ? "sell" : "buy";
@@ -700,7 +700,7 @@ async function main() {
     if (REVIVE) {
       body = renderRevivals(rev);
       subject = rev.picked.length
-        ? `${rev.picked.length} unfilled — ${[...new Set(rev.picked.map((x) => x.row.asset))].join(", ")}`
+        ? `${rev.picked.length} unfilled — ${namesOnce(rev.picked.map((x) => x.row.asset))}`
         : "No open interest worth reviving";
     } else {
       const { picked, considered, coBroker } = standingMatches(usable, suppressed);
@@ -709,8 +709,8 @@ async function main() {
         "", "WORTH GOING BACK TO — they said what they wanted and never got it", "",
         renderRevivals(rev)].join("\n");
       subject = picked.length
-        ? `${picked.length} cross${picked.length === 1 ? "" : "es"} in your inbox — ${picked.map((m) => m.asset).join(", ")}`
-        : (rev.picked.length ? `${rev.picked.length} conversation(s) worth restarting` : "No cross and no lead worth a call today");
+        ? `${picked.length} buyer-seller match${picked.length === 1 ? "" : "es"} in your inbox — ${namesOnce(picked.map((m) => m.asset))}`
+        : (rev.picked.length ? `${rev.picked.length} conversation${rev.picked.length === 1 ? "" : "s"} worth restarting` : "No match and no lead worth a call today");
       if (picked.length) { pointerKind = "cross"; pointerCount = picked.length; }
       else if (rev.picked.length) { pointerKind = "revival"; pointerCount = rev.picked.length; }
     }
@@ -733,11 +733,7 @@ async function main() {
     "— Monique, Director of Relationships"].join("\n");
   for (const sender of SENDERS) {
     const { from, key } = sender;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
     if (res.ok) {
       const sentAt = Date.now();
       console.log(`\nEmailed ${TO} from ${from}.`);

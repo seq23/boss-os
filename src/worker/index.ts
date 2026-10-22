@@ -8,6 +8,7 @@ import { INTAKE_MAILBOX } from "../shared/intake/emailTriggers";
  */
 import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
 import { BOSS_INTAKE_MAILBOX, decodeMimeHeader } from "../shared/boss/intake/mail.mjs";
+import { plainReply } from "./boss/intake/mailRefs";
 // The structured event spine, for the one thing in this file that writes to it: a reply that did
 // not go. Everything else here logs through the handlers it calls.
 import { logEvent } from "./boss/lib/log";
@@ -1480,10 +1481,17 @@ export default {
             `UPDATE boss_inbound_mail SET replied_at = ?, reply_state = ?, reply_error = ? WHERE id = ?`,
           ).bind(state === "sent" ? Date.now() : null, state, error, result.mailId).run();
         };
+        /*
+         * THE REPLY IN THE ONE PLAIN LAYOUT (owner, 22 Oct 2026). `fromLegacy` takes the job codes out
+         * of what she reads; they are recorded against HER message's Message-ID, which her next reply
+         * in this thread quotes in References, so "approved" still lands on the draft it answers.
+         */
+        const laid = await plainReply(env.WP_OS_DB, { text: replyText, subject, signer: result.signer, messageId: result.messageId, from: BOSS_INTAKE_MAILBOX });
         await message.reply({
           from: BOSS_INTAKE_MAILBOX,
           subject,
-          text: replyText,
+          text: laid.text,
+          html: laid.html,
         }).then(
           () => recordReply("sent", null),
           // A failed reply must not also lose the work. The row and the task already exist; this
@@ -1509,7 +1517,7 @@ export default {
                 stack: typeof e?.stack === "string" ? e.stack.slice(0, 1200) : null,
                 outcome: result.outcome,
                 task_id: result.taskId,
-                reply_chars: replyText.length,
+                reply_chars: laid.text.length,
                 subject_sent: subject,
                 // The shape of the message, because the one real failure was a forward and nothing
                 // recorded that at the time. Two of these is a pattern; one is a note.

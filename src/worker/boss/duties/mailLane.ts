@@ -11,6 +11,7 @@ import {
   draftToken, draftTokenIn, dutyRequestIn, overridesFrom, readDutyReply, NEW_DUTY_RE,
 } from "../../../shared/boss/duties/lane.mjs";
 import type { LaneSeat } from "../../../shared/boss/duties/lane.mjs";
+import { clockWords } from "../../../shared/boss/mail/plain.mjs";
 
 /**
  * THE DUTY LANE'S WORKER HALF — the two doors and the one filing.
@@ -46,25 +47,29 @@ export interface FiledDraft {
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const pad = (n: number) => String(n).padStart(2, "0");
 
+/** "Mondays at 1 pm" / "every day at 9:30 am" — never a cron string or a time zone (owner, 22 Oct 2026). */
 function whenText(d: DutyDraft): string {
-  const t = `${pad(d.local_hour)}:${pad(d.local_minute)} ${d.timezone}`;
-  return d.cadence === "daily" ? `daily at ${t}` : `every ${DAY_NAMES[d.weekday ?? 1]} at ${t}`;
+  const t = clockWords(d.local_hour, d.local_minute);
+  return d.cadence === "daily" ? `every day at ${t}` : `${DAY_NAMES[d.weekday ?? 1]}s at ${t}`;
 }
 
 function firstRunText(at: number, tz: string): string {
   try {
-    return new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(at));
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", hour12: false }).formatToParts(new Date(at));
+    const get = (k: string) => parts.find((p) => p.type === k)?.value ?? "";
+    return `${get("weekday")}, ${get("month")} ${get("day")} at ${clockWords(Number(get("hour")) % 24, Number(get("minute")))}`;
   } catch {
-    return new Date(at).toISOString();
+    return new Date(at).toUTCString();
   }
 }
 
 /**
- * THE DRAFT, IN WORDS SHE CAN ANSWER WITH ONE LINE.
+ * THE DRAFT, IN WORDS SHE CAN ANSWER WITH ONE LINE — and in plain words (owner, 22 Oct 2026: "lots
+ * of jargon not formatted well"). No cron string, no time zone, no route or model id; the job code
+ * rides at the end of the first line only so `fromLegacy` can lift it into the hidden refs.
  *
- * Every field the draft derived, with the reason beside it, and every refusal verbatim. The
- * refusals come first when there are any: a NAMED STOP is the only sentence that matters in that
- * reply, and it must not sit under eight lines of a draft that will not be created.
+ * The refusals come first when there are any: they are the only sentences that matter in that
+ * reply, and they must not sit under a draft that will not be created.
  */
 export function renderDraft(input: {
   draft: DutyDraft; draftId: string; signer: LaneSeat; routedBy?: LaneSeat | null;
@@ -76,48 +81,38 @@ export function renderDraft(input: {
   const token = draftToken(draftId);
 
   if (d.refusals.length > 0) {
-    lines.push(`I have NOT created this duty for ${who}, because it could not run as asked. ${token}`, "");
+    lines.push(`I did not set up this regular job for ${who}, because it could not run as asked. ${token}`, "");
     lines.push("Why not:");
-    for (const r of d.refusals) lines.push(`  · ${r}`);
-    lines.push("", "The draft, so you can see what would have been created:");
+    for (const r of d.refusals) lines.push(`- ${r}`);
+    lines.push("", "Nothing is waiting on you. Fix the problem above and send the same request again.", "");
+    lines.push("WHAT IT WOULD HAVE BEEN");
   } else if (input.created) {
     lines.push(
-      `Created — you said "${input.preApproved}", so it is on the schedule now. ${token}`,
+      `Done — you said "${input.preApproved}", so ${who}'s new regular job is set up. ${token}`,
       "",
-      `First run: ${firstRunText(input.created.first_run_at, d.timezone)} ${d.timezone} (${input.created.id}).`,
+      `First run: ${firstRunText(input.created.first_run_at, d.timezone)}.`,
+      "Nothing is waiting on you. You can see every run on Team → Duties.",
       "",
     );
   } else {
-    lines.push(`Here is the duty as I would create it for ${who}. ${token}`, "");
+    lines.push(`Here is the new regular job for ${who}, ready to set up. ${token}`, "");
+    lines.push("Reply approved to set it up, or reply changes: and what you want different.", "");
   }
 
   lines.push(
-    `Name:      ${d.name}`,
-    `Owner:     ${who}${input.routedBy ? ` (routed by ${input.routedBy.name})` : ""}`,
-    `Cadence:   ${whenText(d)}`,
-    `           ${d.cadence_reason}`,
-    `Executor:  ${d.executor === "agent" ? "an agent" : `a job on your Mac (${d.local_job})`}`,
-    `           ${d.executor_reason}`,
-    `Model:     ${d.model.includes("sonnet") ? "Sonnet (the better model)" : "Haiku"} — ${d.model}`,
-    `           ${d.model_reason}`,
-    `Delivery:  ${d.delivers ?? "posts its own result through duty-run.sh"}`,
-    `           ${d.delivers_reason}`,
-    `Cost:      about $${d.estimated_per_month_usd} a month, taking the schedule to $${d.monthly_total_after_usd} of $${d.ceiling_usd}${d.over_ceiling ? " — THAT IS OVER THE CEILING" : ""}`,
+    `What: ${d.name}`,
+    `Who: ${who}${input.routedBy ? ` (${input.routedBy.name} chose ${who})` : ""}`,
+    `When: ${whenText(d)} — ${d.cadence_reason}`,
+    `Runs on: ${d.executor === "agent" ? "an AI teammate" : "your Mac"} — ${d.executor_reason}`,
+    `Thinking: ${d.model.includes("sonnet") ? "the stronger model" : "the quick model"} — ${d.model_reason}`,
+    `Results go to: ${d.delivers ? d.delivers.replace(/_/g, " ") : "its own report"} — ${d.delivers_reason}`,
+    `Cost: about $${d.estimated_per_month_usd} a month, taking your total to $${d.monthly_total_after_usd} of your $${d.ceiling_usd} limit${d.over_ceiling ? " — that is over your limit" : ""}`,
     "",
-    "What she will be told, every run:",
-    "",
-    ...d.task_prompt.split("\n").map((l) => `    ${l}`),
+    "The full instructions it follows each time are on Team → Duties.",
     "",
   );
-
-  if (d.refusals.length > 0) {
-    lines.push("Nothing is waiting on you. Clear the stop above and send the same request again.");
-  } else if (input.created) {
-    lines.push("Nothing is waiting on you. It is also on Team → Duties, where you can see every run.");
-  } else {
-    lines.push("Reply `approved` to create it, `changes: …` to redraft.", "", "It is also in your Inbox as a card, if you would rather press the button there.");
-  }
-  lines.push("", `— ${signer.name}`);
+  if (!d.refusals.length && !input.created) lines.push("It is also in your Inbox as a card, if you would rather press the button there.", "");
+  lines.push(`— ${signer.name}`);
   return lines.join("\n");
 }
 
@@ -338,15 +333,15 @@ export async function answerDutyFromMail(env: Env, input: {
 
   if (row.state !== "drafted") {
     const what = row.state === "created" ? "already created" : row.state === "refused" ? "refused as a named stop" : row.state === "redrafted" ? "replaced by a newer draft" : "held";
-    return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `${token} was ${what} — a reply changes nothing now. Send a new \`#${seat.name.toLowerCase()} new duty\` request if you want something different.\n\n— ${signer.name}` };
+    return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `That draft was ${what}, so a reply changes nothing now. ${token} Send a new request for a regular job if you want something different.\n\n— ${signer.name}` };
   }
   if (reply.mode === "empty") {
-    return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Your reply to ${token} carried no readable text; the draft is still waiting on you. Reply \`approved\` to create it, \`changes: …\` to redraft.\n\n— ${signer.name}` };
+    return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `I could not read any words in your reply, so the draft is still waiting on you. ${token}\n\nReply approved to set it up, or reply changes: and what you want different.\n\n— ${signer.name}` };
   }
 
   if (reply.mode === "approved") {
     if (!row.approval_id) {
-      return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `${token} has no approval to decide — that is a fault on my side, not yours. It is in the audit log; nothing was created.\n\n— ${signer.name}` };
+      return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `I could not find the approval for that draft. That is a fault on my side, not yours, and nothing was created. ${token}\n\n— ${signer.name}` };
     }
     await env.DB
       .prepare(`UPDATE duty_drafts SET approved_by = ?, approved_at = ?, approval_mail_id = ?, updated_at = ? WHERE id = ? AND state = 'drafted'`)
@@ -357,11 +352,11 @@ export async function answerDutyFromMail(env: Env, input: {
       decided = await decideApproval(env, { id: row.approval_id, decision: "approved", note: null, decidedBy: input.sender });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Your \`approved\` for ${token} was recorded, and the approval could not be decided: ${message}. Nothing was created; it is still in your Inbox.\n\n— ${signer.name}` };
+      return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Your approved was recorded, but I could not finish setting it up: ${message}. Nothing was created; it is still in your Inbox. ${token}\n\n— ${signer.name}` };
     }
     const exec = decided.execution as { status?: string; detail?: { resumed?: string; error?: string } } | null;
     if (exec?.status !== "executed") {
-      return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Your \`approved\` for ${token} was recorded, and the duty was NOT created: ${exec?.detail?.error ?? "the resume did not run"}. It stays in your Inbox with that reason.\n\n— ${signer.name}` };
+      return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Your approved was recorded, but the regular job was not set up: ${exec?.detail?.error ?? "the set-up step did not run"}. It stays in your Inbox with that reason. ${token}\n\n— ${signer.name}` };
     }
     await audit(env.DB, { actor: "boss", lane: "ops", entityType: "duty_draft", entityId: row.id, action: "approved_by_mail", detail: { mail_id: input.mailId, approval_id: row.approval_id } });
     const after = await env.DB.prepare(`SELECT duty_id, first_run_at FROM duty_drafts WHERE id = ?`).bind(row.id).first<{ duty_id: string | null; first_run_at: number | null }>();
@@ -369,12 +364,11 @@ export async function answerDutyFromMail(env: Env, input: {
     return {
       draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED",
       note: [
-        `Created. ${token}`,
+        `Created. ${draft.employee_name} now does "${draft.name}" ${whenText(draft)}. ${token}`,
         "",
-        `${draft.employee_name} now runs "${draft.name}" ${whenText(draft)}.`,
-        after?.first_run_at ? `First run: ${firstRunText(after.first_run_at, draft.timezone)} ${draft.timezone} (${after.duty_id}).` : `Duty: ${after?.duty_id ?? "(see Team → Duties)"}.`,
+        after?.first_run_at ? `First run: ${firstRunText(after.first_run_at, draft.timezone)}.` : "It is on Team → Duties.",
         "",
-        "It is on Team → Duties, where you can see every run.",
+        "Nothing is waiting on you. You can see every run on Team → Duties.",
         "",
         `— ${signer.name}`,
       ].join("\n"),
@@ -392,7 +386,7 @@ export async function answerDutyFromMail(env: Env, input: {
     });
     // The old card leaves the Inbox: `supersedeKind` on the raise rejected its approval as superseded.
     await audit(env.DB, { actor: "boss", lane: "ops", entityType: "duty_draft", entityId: filed.draftId, action: "redrafted_by_mail", detail: { supersedes: row.id, mail_id: input.mailId, overrides, prior_name: prior.name } });
-    return { draftId: filed.draftId, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Redrafted with your changes ("${reply.text.slice(0, 200)}"). The earlier draft ${token} is withdrawn.\n\n${filed.letter}` };
+    return { draftId: filed.draftId, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Redrafted with your changes ("${reply.text.slice(0, 200)}"). The earlier draft is withdrawn.\n\n${filed.letter}` };
   }
 
   if (reply.mode === "held") {
@@ -400,7 +394,7 @@ export async function answerDutyFromMail(env: Env, input: {
       await decideApproval(env, { id: row.approval_id, decision: "rejected", note: reply.text.slice(0, 600), decidedBy: input.sender }).catch(() => null);
     }
     await env.DB.prepare(`UPDATE duty_drafts SET state = 'held', held_note = ?, updated_at = ? WHERE id = ? AND state = 'drafted'`).bind(reply.text.slice(0, 2000), input.now, row.id).run();
-    return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Held. ${token} is withdrawn and nothing was created; your note is on the record: "${reply.text.slice(0, 300)}". Send a new \`#${seat.name.toLowerCase()} new duty\` when you want it drafted again.\n\n— ${signer.name}` };
+    return { draftId: row.id, employeeId: row.employee_id, outcome: "DUTY_ANSWERED", note: `Held. The draft is withdrawn and nothing was created. ${token}\n\nYour note is on the record: "${reply.text.slice(0, 300)}". Send a new request when you want it drafted again.\n\n— ${signer.name}` };
   }
 
   await env.DB.prepare(`UPDATE duty_drafts SET held_note = ?, updated_at = ? WHERE id = ?`).bind(reply.text.slice(0, 2000), input.now, row.id).run();

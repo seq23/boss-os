@@ -887,10 +887,10 @@ async function cannotDoTask(
         `What it said back: "${finding.matched}…" (${finding.chars} characters in total; the full reply is kept with the task).`,
         "",
         handedTo
-          ? `Handed to ${handedName ?? handedTo.employeeId} as ${handedTo.taskId}, because your message names ${handedTo.repo} and that lane runs on your Mac with the repository actually open. Her plan email is the next thing you will get about it.`
+          ? `Handed to ${handedName ?? handedTo.employeeId} because your message names ${handedTo.repo} and that work runs on your Mac, where the code is. Her plan email is the next thing you will get about it.`
           : `${hint}\n\n${threeParts({ ...bossWait("TRIED_AND_STOPPED", { what: "once", why: finding.why }), waiting: "a narrower ask, or a desk that can open what this needs" })}`,
         "",
-        `Task ${task.id}. Reply to this email; the token in the subject tells Boss OS which task you mean. Nothing was sent to anyone outside this system.`,
+        `Reply to this email and your answer goes straight back to this job. Nothing was sent to anyone outside Boss OS. ${task.id}`,
       ].join("\n"),
       finishedAt,
     )

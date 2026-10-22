@@ -48,6 +48,7 @@ import { wealth } from "./routes/wealth";
 import { research } from "./routes/research";
 import { repoChanges } from "./routes/repoChanges";
 import { taskNotices } from "./routes/taskNotices";
+import { mailRefs } from "./intake/mailRefs";
 import { service } from "./routes/service";
 import { commentWatch, COMMENT_WATCH_PATH } from "./routes/commentWatch";
 import { gridHealth } from "./routes/gridHealth";
@@ -211,6 +212,8 @@ app.route("/api/repo-changes", repoChanges);
  * Its own mount rather than a sub-path of `/api/tasks`, which declares a top-level `/:id`.
  */
 app.route("/api/task-notices", taskNotices);
+// The job codes that left her email (0290): the Mac records the Message-ID of each send that carried one.
+app.route("/api/mail-refs", mailRefs);
 // The service rules (docs/SERVICE_RULES.md): emailed keys, key waits, DNS and Drive waits her Mac clears.
 app.route("/api/service", service);
 // Monique's weekly comment digest and the instruction rows her reply writes; the Mac's `act` half reads only those.

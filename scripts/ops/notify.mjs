@@ -35,6 +35,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
+import { layoutEmail, fromLegacy } from "../../src/shared/boss/mail/plain.mjs";
 
 const ARGS = process.argv.slice(2);
 /** Every value of a repeatable flag (`--file a.csv --file b.png`). */
@@ -170,15 +171,30 @@ export function sendersFor(who, { fallback = industryGuidesFallback } = {}) {
    * that builds the payload; every sender uses it.
    */
   const tag = local === "boss" ? null : `#${local}`;
+  // The name she sees under the email (plain.mjs signs it once); "Boss OS" for system mail.
+  const name = local === "boss" ? "Boss OS" : local.charAt(0).toUpperCase() + local.slice(1);
   return [
-    { from: `${label} <${local}@sequoiataylor.com>`, key: process.env.BOSS_OS_MAIL_KEY, reply_to: `${local}@sequoiataylor.com`, tag },
-    fallback({ label, local, tag }),
+    { from: `${label} <${local}@sequoiataylor.com>`, key: process.env.BOSS_OS_MAIL_KEY, reply_to: `${local}@sequoiataylor.com`, tag, name },
+    { ...fallback({ label, local, tag }), name },
   ].filter((s) => Boolean(s.key));
 }
 
-/** The Resend payload for an employee's message: from, reply-to the same desk, tag-led subject. */
-export function employeeMail(sender, { to, subject, text, html, files }) {
-  const tagged = sender.tag && !String(subject).toLowerCase().includes(sender.tag) ? `${sender.tag} ${subject}` : String(subject);
+/**
+ * The Resend payload for an employee's message, IN THE ONE PLAIN LAYOUT (owner, 22 Oct 2026).
+ *
+ * Every Mac email she gets is built here, so every one passes through `src/shared/boss/mail/plain.mjs`:
+ * a plain subject (no `#tag`, no brackets, no ids, no capitals, no repeated names), the first line
+ * saying what happened, "What I need from you:", short bullets, her employee's name once. A caller
+ * that has the parts passes `layout: { happened, needs, details, sections, footer }`; a caller that
+ * still writes one block of text is fitted to the layout by `fromLegacy`.
+ *
+ * THE TAG LEFT THE SUBJECT, AND REPLIES STILL ROUTE. Reply-To is the employee's own address, which
+ * Email Routing delivers to the Worker and `routeToSeat` reads (the `to` it is given), so the tag in
+ * the subject was the belt and the address is the braces. The job token (`[rc_…]`, `[tsk_…]` …) goes
+ * in the `X-Boss-Ref` header and, after the send, against the Message-ID her client will quote back
+ * (`postEmployeeMail` → `/api/boss/mail-refs`).
+ */
+export function employeeMail(sender, { to, subject, text, html: _html, files, layout = null, refs = [], prelaid = null }) {
   /*
    * R18 (docs/SERVICE_RULES.md) — FILES FOR HER RIDE ON THE EMAIL. Every Mac lane sends through this
    * one function, so every lane can hand her a file: listed by name always, attached up to 10 MB in
@@ -186,16 +202,114 @@ export function employeeMail(sender, { to, subject, text, html, files }) {
    */
   const plan = outboundFilesPlan(files ?? []);
   const attachments = plan.attach.map((i) => ({ filename: files[i].name, content: readFileSync(files[i].path).toString("base64") }));
-  const body = String(text ?? "").slice(0, 60_000) + (plan.lines.length ? `\n\nFiles:\n${plan.lines.map((l) => `- ${l}`).join("\n")}` : "");
+  const who = sender.name ?? "Simone";
+  const fileLines = plan.lines.length ? [{ heading: "Files" }, ...plan.lines] : [];
+  // `prelaid` is an email a caller already built with `layoutEmail` (Simone's daily): used as it is.
+  const laid = prelaid ?? (layout
+    ? layoutEmail({ who, subject, ...layout, details: [...(layout.details ?? []), ...fileLines], refs })
+    : fromLegacy({ who, subject, text: String(text ?? "").slice(0, 60_000) + (plan.lines.length ? `\n\nFiles:\n${plan.lines.map((l) => `- ${l}`).join("\n")}` : ""), refs }));
   return {
     from: sender.from,
     to: Array.isArray(to) ? to : [to],
     reply_to: sender.reply_to,
-    subject: tagged.slice(0, 200),
-    text: body,
-    ...(html ? { html } : {}),
+    subject: laid.subject.slice(0, 200),
+    text: laid.text,
+    html: laid.html,
+    ...(laid.refs.length ? { headers: { "X-Boss-Ref": laid.refs.join(" ") } } : {}),
     ...(attachments.length ? { attachments } : {}),
   };
+}
+
+const RESEND = "https://api.resend.com/emails";
+const BOSS_ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
+
+/**
+ * THE ONE POST TO RESEND. Every Mac sender calls this with an `employeeMail` payload, so no email
+ * can skip the layout (`tests/plainEmail.test.ts` fails if any other file posts to Resend).
+ *
+ * Returns Resend's own Response, unread, so callers keep their existing `res.ok` / `res.json()`.
+ * When the payload carries job refs, the sent message's Message-ID is read back from Resend and
+ * recorded in Boss OS, so her reply — which quotes that Message-ID in `References` — lands on the
+ * job without any code in the subject. A refs record that fails is said on stderr by name; the
+ * email itself has gone and is not retried.
+ */
+export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null } = {}) {
+  const res = await fetchImpl(RESEND, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
+    body: JSON.stringify(payload),
+  });
+  const refs = String(payload?.headers?.["X-Boss-Ref"] ?? "").split(/\s+/).filter(Boolean);
+  if (res.ok && refs.length) {
+    let why;
+    try {
+      if (!process.env.BOSS_PASSCODE) why = "no BOSS_PASSCODE in the environment (run through the vault)";
+      else {
+        const id = typeof res.clone === "function" ? ((await res.clone().json().catch(() => ({})))?.id ?? null) : null;
+        why = await recordMailRefs({ key: sender.key, id, refs, payload, context }, fetchImpl);
+      }
+    } catch (e) { why = String(e?.message ?? e); }
+    if (why) console.error(`NAMED STOP [REFS_NOT_RECORDED] ${why} — a reply to "${payload.subject}" will not find its job by its thread.`);
+  }
+  return res;
+}
+
+let bossCookie = null;
+async function bossCookieFor(fetchImpl) {
+  if (bossCookie) return bossCookie;
+  if (!process.env.BOSS_PASSCODE) throw new Error("no BOSS_PASSCODE in the environment (run through the vault)");
+  const r = await fetchImpl(`${BOSS_ORIGIN}/api/boss/auth/unlock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: process.env.BOSS_PASSCODE }) });
+  if (!r.ok) throw new Error(`Boss OS refused the passcode (${r.status})`);
+  bossCookie = (r.headers.get("set-cookie") ?? "").split(";")[0];
+  return bossCookie;
+}
+
+/** Message-ID from Resend (it is filled once the message is accepted), then the record in Boss OS. */
+export async function recordMailRefs({ key, id, refs, payload, context = null }, fetchImpl = fetch, { tries = 4, waitMs = 1500 } = {}) {
+  if (!id) return "Resend returned no email id";
+  let messageId = null;
+  for (let i = 0; i < tries && !messageId; i += 1) {
+    if (i) await new Promise((r) => setTimeout(r, waitMs));
+    const g = await fetchImpl(`${RESEND}/${id}`, { headers: { authorization: `Bearer ${key}` } }).catch(() => null);
+    messageId = g?.ok ? ((await g.json().catch(() => ({})))?.message_id ?? null) : null;
+  }
+  if (!messageId) return `Resend gave no Message-ID for ${id}`;
+  const cookie = await bossCookieFor(fetchImpl);
+  const r = await fetchImpl(`${BOSS_ORIGIN}/api/boss/mail-refs`, {
+    method: "POST", headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ message_id: messageId, refs, subject: payload.subject, sender: payload.reply_to, context: String(context ?? payload.text ?? "").slice(0, 6000) }),
+  });
+  return r.ok ? null : `Boss OS refused the refs record (${r.status})`;
+}
+
+/**
+ * Send as an employee, every sender on the roster's list in turn. `{ ok, id, from, fallback }` or
+ * `{ ok: false, error }`. The shape new callers use; older callers keep their own loop around
+ * `postEmployeeMail`.
+ */
+export async function sendAsEmployee(who, msg, fetchImpl = fetch) {
+  const senders = sendersFor(who);
+  if (senders.length === 0) return { ok: false, error: "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)" };
+  let last = "";
+  for (const sender of senders) {
+    const res = await postEmployeeMail(sender, employeeMail(sender, msg), fetchImpl, { context: msg.context ?? null });
+    if (res.ok) {
+      const id = (await res.json().catch(() => ({})))?.id ?? null;
+      if (sender.fallback) console.log(FALLBACK_STOP);
+      return { ok: true, id, from: sender.from, fallback: Boolean(sender.fallback) };
+    }
+    last = `${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`;
+    console.error(`  ${sender.from} refused: ${last}`);
+  }
+  return { ok: false, error: last || "every sender was refused" };
+}
+
+/** "OpenAI (4) and Blue Origin": each name once, with how many times it came up (owner, 22 Oct 2026). */
+export function namesOnce(names) {
+  const counts = new Map();
+  for (const n of names ?? []) { const k = String(n).trim(); if (k) counts.set(k, (counts.get(k) ?? 0) + 1); }
+  const parts = [...counts].map(([n, c]) => (c > 1 ? `${n} (${c})` : n));
+  return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 /** `{ name, bytes, path }` for each readable file path; an unreadable one is listed as such. */
@@ -229,11 +343,7 @@ async function main() {
   let lastErr = "";
   for (const sender of SENDERS) {
     const { from, key } = sender;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text: body.slice(0, 4000), files: filesAt(args("file")) })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text: body.slice(0, 4000), files: filesAt(args("file")) }));
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "";
       console.log(`Notified from ${from}: ${subject}${id ? ` (${id})` : ""}`);

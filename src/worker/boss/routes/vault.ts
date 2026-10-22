@@ -178,6 +178,9 @@ const SNAPSHOT_TABLES = [
   // 0288 — Camille's research pages and the one list of delivered work: a page is a document she asked
   // for and is not re-derivable without re-running the research; the list is Zora's filing.
   "research_pages", "delivered_work",
+  // 0290 — the job codes that left her email, keyed by the Message-ID her reply quotes. Lose them and
+  // a reply to an email sent before the restore no longer finds its job.
+  "boss_mail_refs",
   // 0263 — the latest health reading per grid property per reader: a status code and latency, a
   // workflow conclusion, a week of Search Console clicks, a deployment's age. RE-DERIVABLE only
   // going forward: the readers run again, but the history — when a site first went 5xx, which

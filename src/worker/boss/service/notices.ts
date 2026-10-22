@@ -33,7 +33,7 @@ export function noticeBody(lines: readonly string[], wait: { kind: BossWaitKind;
   return [
     ...lines,
     ...(wait ? ["", waitDetail(wait.kind, wait.fill ?? {})] : []),
-    "", `Task ${taskId}. Reply to this email; the token in the subject tells Boss OS which task you mean.`,
+    "", `Reply to this email and your answer goes straight back to this job. ${taskId}`,
   ].join("\n");
 }
 

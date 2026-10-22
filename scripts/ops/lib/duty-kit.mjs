@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createSign } from "node:crypto";
 import { seatEnv } from "./seat-env.mjs";
-import { sendersFor, employeeMail } from "../notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail } from "../notify.mjs";
 
 export const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 export const OWNER_TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
@@ -99,11 +99,7 @@ export async function bossApi(fetchImpl = fetch) {
 export async function sendAs(who, { subject, text, html, to = OWNER_TO }, fetchImpl = fetch) {
   const senders = sendersFor(who);
   for (const sender of senders) {
-    const res = await fetchImpl("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
-      body: JSON.stringify(employeeMail(sender, { to, subject, text, html })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject, text, html }), fetchImpl);
     if (res.ok) { console.log(`emailed ${to} as ${sender.from}`); return true; }
     console.error(`  ${sender.from} refused: ${res.status}`);
   }

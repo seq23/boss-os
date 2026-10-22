@@ -277,6 +277,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "people-worth-a-call.mjs",
   "risk-watch.mjs",
   "youtube-comment-watch.sh",
+  "your-day.mjs",
 ];
 
 /** A script her phrase names outright — "run buyer-hunt.mjs every friday". */

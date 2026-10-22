@@ -72,7 +72,7 @@ export async function answerBlockFromMail(
   return {
     taskId, door,
     note: door === "ANSWER"
-      ? `"${task.title}" (${task.id}) is running again with your reply added to it. The result comes to you by email.`
-      : `"${task.title}" (${task.id}) is running again on your word. The result comes to you by email.`,
+      ? `I'm working on "${task.title}" again, with your reply added. I'll email you the result. ${task.id}`
+      : `I'm working on "${task.title}" again, as you asked. I'll email you the result. ${task.id}`,
   };
 }

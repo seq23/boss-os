@@ -67,7 +67,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor, employeeMail } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 import { addressIn, bulkReason, headersFromRaw, ownDomainReason, replyEvidence } from "./mail-bulk.mjs";
 import { followUps } from "./lp-followups.mjs";
 
@@ -379,11 +379,7 @@ async function emailHer(list, counts, follow = null) {
 
   for (const sender of SENDERS) {
     const { from, key } = sender;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject: follow?.unanswered?.length ? `${follow.unanswered.length} positive repl${follow.unanswered.length === 1 ? "y" : "ies"} you haven't answered — oldest ${follow.unanswered[0].days ?? "?"} days` : `LP positive replies — ${calls.length} want a call, ${warm.length} to keep warm`, text: body })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: follow?.unanswered?.length ? `${follow.unanswered.length} positive repl${follow.unanswered.length === 1 ? "y" : "ies"} you haven't answered — oldest ${follow.unanswered[0].days ?? "?"} days` : `LP positive replies — ${calls.length} want a call, ${warm.length} to keep warm`, text: body }));
     if (res.ok) { console.log(`Emailed ${TO} from ${from}.`); return true; }
     console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
   }
