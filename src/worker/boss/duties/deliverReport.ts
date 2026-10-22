@@ -737,3 +737,54 @@ export async function deliverExecutiveReport(
 
   return id;
 }
+
+/**
+ * Camille's research page (22 Oct 2026) — one question, one page, filed where it can be found.
+ *
+ * The run's `delivers.json` carries `{ research_page: { title, summary, markdown, sources } }`;
+ * `readResearchDelivery` checks it in the shared module the tests run. A run that delivered no page
+ * is recorded as FAILED with the reason — never an empty page filed as done (Rule 0). A delivered
+ * page is also filed in `delivered_work`, the one list of everything the team has delivered, which
+ * Zora's Friday duty keeps whole.
+ */
+export async function deliverResearchPage(
+  env: Env,
+  args: { taskId: string; runId: string; payload: Record<string, unknown> | null; runStatus: string; now?: number },
+): Promise<{ state: "delivered" | "failed"; page_id: string; why?: string } | null> {
+  const now = args.now ?? Date.now();
+  const task = await env.DB.prepare(`SELECT id, input FROM tasks WHERE id = ?`).bind(args.taskId)
+    .first<{ id: string; input: string | null }>();
+  if (!task) return null;
+  let input: Record<string, unknown> = {};
+  try { input = task.input ? (JSON.parse(task.input) as Record<string, unknown>) : {}; } catch { input = {}; }
+  const { RESEARCH_PAGE_DELIVERS, readResearchDelivery, researchPageUrl } = await import("../../../shared/boss/research/page.mjs");
+  if (input.delivers !== RESEARCH_PAGE_DELIVERS) return null;
+  const ref = input.research_page && typeof input.research_page === "object" ? (input.research_page as { page_id?: unknown }) : null;
+  const pageId = typeof ref?.page_id === "string" ? ref.page_id : null;
+  if (!pageId) return null;
+
+  const read = args.runStatus === "succeeded"
+    ? readResearchDelivery(args.payload)
+    : { ok: false as const, why: `the run ended ${args.runStatus}` };
+  if (!read.ok) {
+    await env.DB
+      .prepare(`UPDATE research_pages SET state = 'failed', failure_reason = ?, run_id = ?, updated_at = ? WHERE id = ?`)
+      .bind(read.why, args.runId, now, pageId).run();
+    await logEvent(env.DB, { level: "error", scope: "duties", event: "research_page_failed", entityId: pageId, detail: { task_id: args.taskId, run_id: args.runId, why: read.why } });
+    return { state: "failed", page_id: pageId, why: read.why };
+  }
+  const p = read.page;
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE research_pages SET state = 'delivered', title = ?, summary = ?, markdown = ?, sources = ?, gaps = ?, status = ?,
+              run_id = ?, failure_reason = NULL, delivered_at = ?, updated_at = ? WHERE id = ?`,
+    ).bind(p.title, p.summary, p.markdown, JSON.stringify(p.sources), JSON.stringify(p.gaps), p.status, args.runId, now, now, pageId),
+    env.DB.prepare(
+      `INSERT INTO delivered_work (id, kind, title, location, owner_seat, delivered_at, filed_at, filed_by)
+       VALUES (?, 'research_page', ?, ?, 'emp_research', ?, ?, 'deliverResearchPage')
+       ON CONFLICT(location) DO UPDATE SET title = excluded.title, delivered_at = excluded.delivered_at`,
+    ).bind(newId("dlw"), p.title, researchPageUrl(pageId), now, now),
+  ]);
+  await logEvent(env.DB, { level: "info", scope: "duties", event: "research_page_delivered", entityId: pageId, detail: { task_id: args.taskId, run_id: args.runId, sources: p.sources.length, status: p.status } });
+  return { state: "delivered", page_id: pageId };
+}

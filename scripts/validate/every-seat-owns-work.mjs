@@ -167,9 +167,14 @@ function selfTest() {
   const owner = ownershipFrom(join(ROOT, MIGRATIONS));
   const seats = seatsFrom(join(ROOT, MIGRATIONS));
   const good = { owner, seats };
-  const without = (dutyId) => {
+  /*
+   * A SEAT LEFT WITH NO DUTY, by seat rather than by one duty id (22 Oct 2026). Toni and Zora each
+   * gained duties in 0288, so deleting the single duty they held in 0241 no longer leaves them with
+   * none — the fixture must remove every duty the seat owns, or it stops testing the defect.
+   */
+  const withoutSeat = (seat) => {
     const m = new Map(owner);
-    m.delete(dutyId);
+    for (const [duty, emp] of owner) if (emp === seat) m.delete(duty);
     return m;
   };
 
@@ -177,12 +182,12 @@ function selfTest() {
     { name: "the shipped shape passes", input: good, expect: 0 },
     {
       name: "THE ACTUAL DEFECT: Toni left with no duty",
-      input: { ...good, owner: without("duty_credentials") },
+      input: { ...good, owner: withoutSeat("emp_risk") },
       expect: 1,
     },
     {
       name: "Zora left with no duty",
-      input: { ...good, owner: without("duty_scooter_sheet") },
+      input: { ...good, owner: withoutSeat("emp_knowledge") },
       expect: 1,
     },
     {

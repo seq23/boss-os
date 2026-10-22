@@ -16,13 +16,13 @@ const markdown = readFileSync(DOC, "utf8");
 describe("the service rules document", () => {
   const { rules, problems } = parseRules(markdown);
 
-  it("holds R1–R31, contiguous, with no malformed line", () => {
+  it("holds R1–R32, contiguous, with no malformed line", () => {
     expect(problems).toEqual([]);
-    expect(rules.map((r) => r.n)).toEqual(Array.from({ length: 31 }, (_, i) => i + 1));
+    expect(rules.map((r) => r.n)).toEqual(Array.from({ length: 32 }, (_, i) => i + 1));
   });
 
-  it("tags R1–R23 ALL-KINDS and R24–R31 REPO-ONLY, as West Peek OS numbers them", () => {
-    expect(rules.filter((r) => r.tag === "ALL-KINDS").map((r) => r.n)).toEqual(Array.from({ length: 23 }, (_, i) => i + 1));
+  it("tags R1–R23 and R32 ALL-KINDS and R24–R31 REPO-ONLY, as West Peek OS numbers them (R32 is Boss OS's own)", () => {
+    expect(rules.filter((r) => r.tag === "ALL-KINDS").map((r) => r.n)).toEqual([...Array.from({ length: 23 }, (_, i) => i + 1), 32]);
     expect(rules.filter((r) => r.tag === "REPO-ONLY").map((r) => r.n)).toEqual([24, 25, 26, 27, 28, 29, 30, 31]);
   });
 

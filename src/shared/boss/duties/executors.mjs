@@ -39,7 +39,32 @@
 export const OWNER_ACCOUNT_WEB_RE =
   /\b(kdp|kindle direct|seller central|bookshelf|title-setup|details tab|(?:re)?publish(?:ing)?|press publish|sign[ -]?in|log[ -]?in|password|two[- ]factor|2fa)\b/i;
 
-export const CAPABILITIES = Object.freeze(["owner_account_web", "colleague_work"]);
+export const CAPABILITIES = Object.freeze(["owner_account_web", "colleague_work", "repo_change", "research_page", "owner_spend"]);
+
+/**
+ * ─── AGENTS NEVER SPEND MONEY (owner, 22 Oct 2026) ─────────────────────────
+ *
+ * No employee — on any lane, cloud rung or Mac seat — executes a purchase, a checkout, a payment, a
+ * subscription, a plan upgrade, a top-up or a renewal. They prepare everything up to the checkout
+ * (the cart, the price, the link, what it buys and why) and hand it to the owner as a DECISION. The
+ * capability `owner_spend` exists so the rule has a name, and it is held by NO seat in
+ * SEAT_EXECUTORS: `checkAssignment` refuses it for everyone, and `validate:work-reaches-executor`
+ * fails the build if any seat is ever given it. The same sentence reaches every employee run as R32
+ * in `src/shared/boss/service/practices.mjs` (docs/SERVICE_RULES.md), and the root CLAUDE.md
+ * carries it; `tests/agentsNeverSpend.test.ts` reads all three.
+ */
+export const NEVER_SPEND_RULE =
+  "Agents never spend money: no employee executes a purchase, checkout, payment, subscription, plan upgrade, top-up or renewal. Prepare everything up to the checkout — the cart or page link, the exact price, what it buys and why — and hand it to the Boss as a decision; she pays.";
+
+/** The words that make a piece of work a spend step. Matched on what is to be DONE, never on a topic. */
+export const SPEND_STEP_RE =
+  /\b(check ?out|complete (?:the )?(?:purchase|order|payment)|place (?:the |an )?order|buy(?:ing)?|purchas(?:e|ing)|pay (?:for|the|an?|her|our)|make (?:the |a )?payment|subscribe (?:to|for)|upgrade\b[^.\n]{0,30}?\b(?:plan|tier)|top[- ]?up|add (?:credits?|funds|a (?:credit )?card)|renew (?:the |her |our )?(?:domain|plan|subscription|licen[cs]e))\b/i;
+
+/** The spend phrase in a piece of work, or null. Pure. */
+export function spendStepIn(text) {
+  const m = SPEND_STEP_RE.exec(String(text ?? ""));
+  return m ? m[0] : null;
+}
 
 /**
  * Seat → capability → the executor that actually performs it. A capability with no command is not
@@ -49,10 +74,30 @@ export const SEAT_EXECUTORS = Object.freeze({
   emp_chief: Object.freeze({
     owner_account_web: "Simone's own run (kdp-surface.sh) in her Chrome profile: npm run kdp:retitle / npm run kdp:publish",
   }),
+  /*
+   * DANIELLE'S REPO-CHANGE LANE (22 Oct 2026: "give Danielle a real executor for repo work in
+   * seq23/creator-studios"). Her Mac claims `repo_changes` rows through /api/repo-changes every 20
+   * minutes (launchd com.seq.boss-repo-change); repos beside the grid are in REGISTERED_REPOS in
+   * src/shared/boss/repoChange/lane.mjs. Secrets reach a run by vault NAME only (R28).
+   */
+  emp_repo: Object.freeze({
+    repo_change: "Danielle's repo-change lane on her Mac (com.seq.boss-repo-change, claims /api/repo-changes): npm run repo-change",
+  }),
+  /*
+   * CAMILLE'S RESEARCH PAGES (22 Oct 2026). `#camille research: <question>` becomes a task carrying
+   * `input.research_page` and `delivers: research_page`, parked for her Claude Code seat on the Mac
+   * (bk_claude_code via /backends/claim); the run's delivers.json is filed by `deliverResearchPage`
+   * into `research_pages`, served as an HTML page at /api/boss/research-pages/:id.
+   */
+  emp_research: Object.freeze({
+    research_page: "Camille's Claude Code seat on her Mac (bk_claude_code, claimed through /backends/claim, delivers research_page): npm run agent:claim",
+  }),
 });
 
 /** The capability a piece of work needs. The text wins over the label. */
 export function requiredCapability({ what = "", why = "", requires = null } = {}) {
+  // A spend step wins over everything: no label routes money around the rule.
+  if (spendStepIn(what)) return "owner_spend";
   if (OWNER_ACCOUNT_WEB_RE.test(String(what))) return "owner_account_web";
   if (requires && CAPABILITIES.includes(String(requires))) return String(requires);
   return "colleague_work";
@@ -71,6 +116,13 @@ export function executorsFor(capability) {
  */
 export function checkAssignment({ helper, what, why, requires } = {}) {
   const capability = requiredCapability({ what, why, requires });
+  if (capability === "owner_spend") {
+    return {
+      ok: false, capability,
+      error: `No employee spends money — "${spendStepIn(what) ?? "a payment step"}" is a spend step and nobody but the owner executes it`,
+      why: `${NEVER_SPEND_RULE} File the prepared checkout as an owner decision (needs_owner true, the link and the price in owner_ask), never as an assignment.`,
+    };
+  }
   const held = SEAT_EXECUTORS[helper]?.[capability];
   if (held) return { ok: true, capability, executor: held };
   const who = executorsFor(capability);

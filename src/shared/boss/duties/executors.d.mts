@@ -1,5 +1,8 @@
 /** Types for the executor record. See executors.mjs for why it exists. */
-export type Capability = "owner_account_web" | "colleague_work";
+export type Capability = "owner_account_web" | "colleague_work" | "repo_change" | "research_page" | "owner_spend";
+export const NEVER_SPEND_RULE: string;
+export const SPEND_STEP_RE: RegExp;
+export function spendStepIn(text: unknown): string | null;
 export const OWNER_ACCOUNT_WEB_RE: RegExp;
 export const CAPABILITIES: readonly Capability[];
 export const SEAT_EXECUTORS: Readonly<Record<string, Readonly<Partial<Record<Capability, string>>>>>;

@@ -277,6 +277,22 @@ below the sender refusal, and `INSTALLED_LOCAL_JOBS` equal to the installer. A l
 script is not installed is a `NAMED STOP [NO_SUCH_SCRIPT]`, never a row. Operator steps:
 `docs/boss/OPERATIONS.md` → "How to give an employee a duty". Migration `0267`.
 
+### 22 October 2026 — executors, new duties, the spend rule, LP follow-ups
+
+- **Agents never spend money.** `owner_spend` is held by no seat (`src/shared/boss/duties/executors.mjs`);
+  R32 in every employee run; CLAUDE.md section; `tests/agentsNeverSpend.test.ts`.
+- **Danielle works in seq23/creator-studios** on a bare name: `REGISTERED_REPOS` in
+  `src/shared/boss/repoChange/lane.mjs` (beside the grid, not on it). Email `#danielle creator-studios: <what>`.
+- **Camille's research pages**: `#camille research: <question>` → task parked for her Claude Code seat,
+  delivers `research_page` → `research_pages` + `delivered_work`, page at `/api/boss/research/pages/<id>`.
+- **Zora** `duty_archive_audit` (Fri 08:40) and **Toni** `duty_risk_watch` (daily 08:20) +
+  `duty_outside_locks` (Mon 08:40): local jobs in the `ops` lane (migration 0288). Toni's trading lane is
+  untouched. Unreadable sources are named stops (Cloudflare billing needs a Billing Read token; Supabase
+  needs `SUPABASE_ACCESS_TOKEN`).
+- **Monique's Tuesday LP run** now lists positive replies Sequoia has not answered (oldest first) and
+  leaves one draft per reply in that mailbox's Drafts (`scripts/ops/lp-followups.mjs`): fixed template,
+  no model, never sends; label "pass" stops the reminder.
+
 ### Monique's outreach — fully automatic, braked in code (9 October 2026)
 
 **Owner: "u do it all".** Monique writes to businesses for ten side businesses (five local guides,

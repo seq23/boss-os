@@ -35,3 +35,17 @@ Two rules govern it. Both are enforced in code and pinned by `tests/boss/monique
    `p=reject`). `mailAuthRefusal` (`src/worker/boss/outreach/mailauth.ts`) reads the sender domain's
    TXT records over DNS-over-HTTPS before every live send; a gap or a failed lookup refuses it. Test
    sends to the test inbox still go, so a fixed domain can be proven first.
+
+## Agents never spend money
+
+Owner, 22 Oct 2026: **"AGENTS NEVER SPEND MONEY."** No Boss OS employee, on any lane, cloud rung or Mac
+seat, executes a purchase, checkout, payment, subscription, plan upgrade, top-up or renewal. Each one
+prepares everything up to the checkout (the link, the exact price, what it buys and why) and hands it to
+her as a decision; she pays. Enforced in code, three places, and pinned by
+`tests/agentsNeverSpend.test.ts`, which reads this section:
+1. `src/shared/boss/duties/executors.mjs` — `NEVER_SPEND_RULE`, `spendStepIn`, and the `owner_spend`
+   capability that no seat in `SEAT_EXECUTORS` holds; `checkAssignment` refuses a spend step for every
+   seat. `validate:work-reaches-executor` fails the build if a seat is ever given `owner_spend`.
+2. `src/shared/boss/service/practices.mjs` — R32 in `SERVICE_PRACTICES`, so the sentence is in front of
+   every employee run (cloud rungs, Mac seats, Danielle's repo lane through `{{PRACTICES}}`).
+3. `docs/SERVICE_RULES.md` — R32 [ALL-KINDS], read by `validate:service-rules`.
