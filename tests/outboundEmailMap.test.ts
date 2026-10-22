@@ -404,5 +404,9 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
     expect(tail).toContain('MT_LABEL="com.seq.boss-mail-tail"');
     // The tick exits at once; without this launchd kills the tail agent it just started.
     expect(tail).toContain("<key>AbandonProcessGroup</key><true/>");
+    // A finished agent is ended once its stream's result event lands, so the report never waits on it.
+    const run = readFileSync(path.join(ROOT, "scripts/ops/boss-mail-tail-run.sh"), "utf8");
+    expect(run).toMatch(/grep -q '"type":"result"' "\$TAIL_LOG"[\s\S]{0,120}pkill -TERM -P "\$AGENT"[\s\S]{0,40}kill "\$AGENT"/);
+    expect(run).toContain('exec "$CLAUDE" -p');
   });
 });
