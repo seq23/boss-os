@@ -156,15 +156,39 @@ export function fromDomain(from) {
  * One short `claude -p` on her seat (never an API key: `seatEnv` strips them), returning the JSON the
  * prompt asked for. `{ ok: true, json }` or `{ ok: false, why }` — the caller turns a failure into a
  * NAMED STOP reading for that source only.
+ *
+ * A MODEL WITHOUT THE TOOL WILL ANSWER ANYWAY (CONFIRMED 22 Oct 2026: asked to search Gmail, one run
+ * answered `"gmail_tool": true` and the next `false`, with the same prompt). So an answer is accepted
+ * only when the run's own event stream shows a call to a tool matching `requireTool` that came back
+ * without an error. "[]" from a run that never reached the mailbox is a stop, not an empty mailbox.
+ * Connector tools are deferred in headless runs; the prompt is prefixed with the ToolSearch step.
  */
-export function askClaudeJson(prompt, { model = "claude-haiku-4-5-20251001", maxTurns = 12, timeoutMs = 300_000, run = spawnSync } = {}) {
+export function askClaudeJson(prompt, { model = "claude-haiku-4-5-20251001", maxTurns = 12, timeoutMs = 300_000, requireTool = null, toolSearch = null, run = spawnSync } = {}) {
   const bin = process.env.CLAUDE_BIN ?? "claude";
-  const r = run(bin, ["-p", prompt, "--model", model, "--max-turns", String(maxTurns), "--output-format", "text"], {
-    encoding: "utf8", timeout: timeoutMs, env: seatEnv(process.env), cwd: homedir(),
+  const full = toolSearch ? `First call ToolSearch with query "${toolSearch}" to load the tool. ${prompt}` : prompt;
+  const r = run(bin, ["-p", full, "--model", model, "--max-turns", String(maxTurns), "--output-format", "stream-json", "--verbose"], {
+    encoding: "utf8", timeout: timeoutMs, env: seatEnv(process.env), cwd: homedir(), maxBuffer: 32 * 1024 * 1024,
   });
   if (r.error) return { ok: false, why: `the claude CLI could not start (${r.error.code ?? r.error.message})` };
   if (r.status !== 0) return { ok: false, why: `the claude run exited ${r.status}` };
-  const text = String(r.stdout ?? "");
+  return readClaudeStream(String(r.stdout ?? ""), requireTool);
+}
+
+/** Pure: the stream-json output of a run → `{ ok, json }` or `{ ok: false, why }`. */
+export function readClaudeStream(stdout, requireTool = null) {
+  const calls = new Map();
+  let text = "";
+  for (const line of stdout.split("\n")) {
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    const content = Array.isArray(e?.message?.content) ? e.message.content : [];
+    if (e.type === "assistant") for (const c of content) if (c?.type === "tool_use") calls.set(c.id, { name: String(c.name ?? ""), ok: null });
+    if (e.type === "user") for (const c of content) if (c?.type === "tool_result" && calls.has(c.tool_use_id)) calls.get(c.tool_use_id).ok = c.is_error !== true;
+    if (e.type === "result") text = String(e.result ?? "");
+  }
+  if (requireTool && ![...calls.values()].some((c) => requireTool.test(c.name) && c.ok === true)) {
+    return { ok: false, why: `the run never reached the tool (no successful ${requireTool} call in its own event stream) — an answer without it would be a guess` };
+  }
   const m = /```json\s*([\s\S]*?)```/.exec(text) ?? /(\{[\s\S]*\}|\[[\s\S]*\])\s*$/.exec(text.trim());
   if (!m) return { ok: false, why: "the claude run returned no JSON" };
   try { return { ok: true, json: JSON.parse(m[1]) }; } catch { return { ok: false, why: "the claude run returned JSON that does not parse" }; }

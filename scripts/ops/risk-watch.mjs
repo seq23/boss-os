@@ -93,6 +93,14 @@ export function senderPauseReason(b) {
   return null;
 }
 
+/** The RDAP server to ask for a domain. Pure. */
+export function rdapUrl(domain) {
+  const tld = String(domain).split(".").pop().toLowerCase();
+  if (tld === "com" || tld === "net") return `https://rdap.verisign.com/${tld}/v1/domain/${domain}`;
+  if (tld === "org") return `https://rdap.publicinterestregistry.org/rdap/domain/${domain}`;
+  return `https://rdap.org/domain/${domain}`;
+}
+
 /** Whether a TXT answer carries a DKIM key with a non-empty p=. */
 export function hasDkim(txts) {
   return (txts ?? []).some((t) => /v=DKIM1/i.test(t) && /\bp=[A-Za-z0-9+/]{20,}/.test(t.replace(/["\s]/g, "")));
@@ -139,7 +147,9 @@ async function readRenewals(domains, now) {
   const out = [];
   for (const d of domains) {
     try {
-      const r = await fetch(`https://rdap.org/domain/${d}`, { headers: { accept: "application/rdap+json" }, redirect: "follow" });
+      // rdap.org answers 403 to a request with no User-Agent (CONFIRMED 22 Oct 2026); the registries' own
+      // RDAP servers are asked directly for .com/.net and .org, rdap.org's bootstrap for the rest.
+      const r = await fetch(rdapUrl(d), { headers: { accept: "application/rdap+json", "user-agent": "boss-os-risk-watch/1.0 (+https://boss.sequoiataylor.com)" }, redirect: "follow" });
       out.push(r.ok ? renewalReading(d, rdapExpiry(await r.json()), now) : { key: `renewal:${d}`, state: "stop", line: `${d}: RDAP answered ${r.status}.` });
     } catch (e) {
       out.push({ key: `renewal:${d}`, state: "stop", line: `${d}: RDAP unreachable.` });
@@ -164,7 +174,7 @@ function readChargesPersonal() {
   const a = askClaudeJson(
     "Use the Gmail tool on my mailbox. Search: newer_than:2d (subject:(receipt OR invoice OR \"payment received\" OR \"your order\" OR \"you were charged\" OR \"renewal\")). " +
     "Do not open bodies. Reply with ONLY a JSON array, one object per message: {\"id\":\"<message id>\",\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 120 chars>\",\"date\":\"YYYY-MM-DD\"}. An empty mailbox result is [].",
-    { model: MODEL },
+    { model: MODEL, toolSearch: "gmail", requireTool: /gmail/i },
   );
   if (!a.ok || !Array.isArray(a.json)) return [{ key: "charges:personal", state: "stop", line: `Her personal Gmail could not be read for charge notices: ${a.ok ? "the answer was not a list" : a.why}.` }];
   return a.json.slice(0, 20).map((m) => ({ key: `charge:${String(m.id).slice(0, 40)}`, state: "notice", line: `Charge notice ${m.date ?? ""}: ${m.from_domain ?? "unknown"} — "${String(m.subject ?? "").slice(0, 120)}" (personal Gmail).` }))

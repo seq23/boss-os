@@ -7,3 +7,5 @@ export function daysSince(t: number, now: number): number;
 export function kindOf(title: unknown): string;
 export function handoffTodayDate(md: unknown): number | null;
 export function citedBossFiles(mapMd: unknown): string[];
+export const GALLERY_EXPORT: string;
+export function readGalleryExport(path?: string, now?: number): { ok: true; artifacts: unknown[] | null; loops: unknown[] | null } | { ok: false; why: string };
