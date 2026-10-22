@@ -400,6 +400,9 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
     expect(row).toContain("BOSS_OS_MAIL_KEY");
     expect(installer).toContain('bash "$REPO/scripts/ops/install-boss-mail-tail.sh"');
     expect(installer).toContain('require_loaded "$MAILTAIL_LABEL"');
-    expect(readFileSync(path.join(ROOT, "scripts/ops/install-boss-mail-tail.sh"), "utf8")).toContain('MT_LABEL="com.seq.boss-mail-tail"');
+    const tail = readFileSync(path.join(ROOT, "scripts/ops/install-boss-mail-tail.sh"), "utf8");
+    expect(tail).toContain('MT_LABEL="com.seq.boss-mail-tail"');
+    // The tick exits at once; without this launchd kills the tail agent it just started.
+    expect(tail).toContain("<key>AbandonProcessGroup</key><true/>");
   });
 });

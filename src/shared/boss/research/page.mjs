@@ -24,6 +24,22 @@
 export const RESEARCH_PAGE_DELIVERS = "research_page";
 export const RESEARCH_PAGE_SEAT = "emp_research";
 export const RESEARCH_PAGE_BACKEND = "bk_claude_code";
+
+/**
+ * THE SEAT'S SCOPE FOR A RESEARCH PAGE (22 Oct 2026). The Mac runner refuses any envelope without an
+ * absolute `repo_path` and a non-empty `allowed_paths` (scripts/sync-agent/runner.mjs) — and the first
+ * research page ever emailed was refused there ("repo_path must be an absolute path") because the
+ * page lane never said where the run works. A research run writes one file, delivers.json, in its own
+ * folder on her Mac, with the web tools and nothing else; the same shape her standing research duties
+ * carry (migrations 0182/0194). The installer creates the folder.
+ */
+export const RESEARCH_PAGE_DIR = "/Users/sequoiataylor/.boss-os/research";
+export const RESEARCH_PAGE_REQUESTED = Object.freeze({
+  repo_path: RESEARCH_PAGE_DIR,
+  allowed_paths: Object.freeze([RESEARCH_PAGE_DIR]),
+  web_tools: Object.freeze(["WebSearch", "WebFetch"]),
+  max_seconds: 1500,
+});
 export const RESEARCH_PAGE_ROUTE = "/api/boss/research/pages";
 export const BOSS_ORIGIN = "https://boss.sequoiataylor.com";
 

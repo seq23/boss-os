@@ -186,7 +186,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
    * her Mac (bk_claude_code, claimed through /backends/claim) and `deliverResearchPage` files the
    * page. A firm scan or a repo change keeps its own path; only Camille's desk (or no desk) reads it.
    */
-  const { parseResearchPage, composeResearchPrompt, RESEARCH_PAGE_DELIVERS, RESEARCH_PAGE_SEAT, RESEARCH_PAGE_BACKEND } =
+  const { parseResearchPage, composeResearchPrompt, RESEARCH_PAGE_DELIVERS, RESEARCH_PAGE_SEAT, RESEARCH_PAGE_BACKEND, RESEARCH_PAGE_REQUESTED } =
     await import("../../../shared/boss/research/page.mjs");
   // HER WORDS ONLY: the title and the mail body. A duty's composed prompt (the briefing is Camille's
   // too, and its prompt has lines that start "Research…") already names its own delivery and backend,
@@ -202,6 +202,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
       research_page: { page_id: researchId, question: researchAsk.question },
       delivers: RESEARCH_PAGE_DELIVERS,
       backend_id: RESEARCH_PAGE_BACKEND,
+      requested: { ...RESEARCH_PAGE_REQUESTED, allowed_paths: [...RESEARCH_PAGE_REQUESTED.allowed_paths], web_tools: [...RESEARCH_PAGE_REQUESTED.web_tools] },
       prompt: composeResearchPrompt({ id: researchId, question: researchAsk.question }),
     });
     employeeHint = RESEARCH_PAGE_SEAT;
