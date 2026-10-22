@@ -30,6 +30,8 @@ import {
 } from "./lib/duty-kit.mjs";
 
 const DRY = process.argv.includes("--dry");
+/** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
+export const MODEL = "claude-haiku-4-5-20251001";
 const DAY = 86_400_000;
 
 export const THRESHOLDS = Object.freeze({
@@ -162,6 +164,7 @@ function readChargesPersonal() {
   const a = askClaudeJson(
     "Use the Gmail tool on my mailbox. Search: newer_than:2d (subject:(receipt OR invoice OR \"payment received\" OR \"your order\" OR \"you were charged\" OR \"renewal\")). " +
     "Do not open bodies. Reply with ONLY a JSON array, one object per message: {\"id\":\"<message id>\",\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 120 chars>\",\"date\":\"YYYY-MM-DD\"}. An empty mailbox result is [].",
+    { model: MODEL },
   );
   if (!a.ok || !Array.isArray(a.json)) return [{ key: "charges:personal", state: "stop", line: `Her personal Gmail could not be read for charge notices: ${a.ok ? "the answer was not a list" : a.why}.` }];
   return a.json.slice(0, 20).map((m) => ({ key: `charge:${String(m.id).slice(0, 40)}`, state: "notice", line: `Charge notice ${m.date ?? ""}: ${m.from_domain ?? "unknown"} — "${String(m.subject ?? "").slice(0, 120)}" (personal Gmail).` }))

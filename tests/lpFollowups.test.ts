@@ -22,7 +22,7 @@ describe("follow-ups: who is waiting, oldest first", () => {
       { name: "Blake Example", address: "b@example.com", bucket: "call", first_seen: "2026-10-01", draft: "waiting" },
     ], NOW);
     expect(rows.map((r) => r.address)).toEqual(["b@example.com", "a@example.com"]);
-    expect(rows[0].days).toBe(26);
+    expect(rows[0]?.days).toBe(26);
   });
 
   it("the reminder leads with the count and says nothing is sent", () => {

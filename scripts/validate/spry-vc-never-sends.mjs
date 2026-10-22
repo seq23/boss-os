@@ -74,6 +74,13 @@ const OUTREACH_MODULE = "src/worker/boss/outreach/gmail.ts";
 const OUTREACH_CATALOG = "src/worker/boss/outreach/catalog.ts";
 const OUTREACH_MAILBOX = "st@time-2-read.com";
 const NEVER_A_SENDER = /spry\.vc|westpeek\.ventures|sequoiataylor\.com/i;
+/**
+ * THE THIRD EXCEPTION, DRAFTS ONLY (owner, 22 Oct 2026): Monique's follow-up drafts for the positive
+ * replies Sequoia has not answered, placed in that mailbox's Drafts — "Never sends." Held to the draft
+ * module's rule: compose and nothing wider, no send endpoint of any shape, and the mailbox a pinned
+ * constant that is never spry.vc.
+ */
+const LP_DRAFT_MODULE = "scripts/ops/lp-followups.mjs";
 
 /** Drop comments and doc prose so a rule can be DESCRIBED in a file without the scan reading it as code. */
 function stripProse(src) {
@@ -124,7 +131,9 @@ export function violations(files) {
   /** Wider than compose: the scopes the draft module may never ask for. */
   const WIDER_THAN_COMPOSE = /gmail\.send|gmail\.modify|mail\.google\.com|auth\/gmail\.insert/i;
   /** Every shape a Gmail send takes: the two REST endpoints and a client-library `.send(`. */
-  const SEND_ENDPOINT = /messages\/send|drafts\/[^"'`\s]*\/send|drafts\.send|messages\.send|\.send\s*\(/i;
+  // `drafts/send` is the REAL Gmail endpoint (POST users/me/drafts/send); until 22 Oct 2026 this
+  // pattern required a segment between them and could not see it.
+  const SEND_ENDPOINT = /messages\/send|drafts\/(?:[^"'`\s]*\/)?send|drafts\.send|messages\.send|\.send\s*\(/i;
   const DOMAIN_RE = new RegExp(DOMAIN.replace(".", "\\."), "i");
 
   for (const [rel, src] of Object.entries(files)) {
@@ -161,6 +170,12 @@ export function violations(files) {
       if (!/gmail\.compose/.test(code)) bad.push(`${rel}: is the draft module and no longer asks for gmail.compose — the grant this file exists to use is gone from it.`);
       if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose. Compose is the whole grant; anything wider can send.`);
       if (SEND_ENDPOINT.test(code)) bad.push(`${rel}: names a send endpoint. The green button creates a draft; it never sends.`);
+    } else if (rel === LP_DRAFT_MODULE) {
+      if (!impersonates) bad.push(`${rel}: is the follow-up draft module and no longer impersonates its mailbox — this guard is watching an empty room.`);
+      if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose. Drafts need compose and nothing more.`);
+      if (SEND_ENDPOINT.test(code)) bad.push(`${rel}: names a send endpoint. The follow-ups are drafts; she sends them.`);
+      const mailbox = /const MAILBOX = [^"'`]*["'`]([^"'`]+)["'`]/.exec(code)?.[1] ?? "";
+      if (!/\bsub: MAILBOX\b/.test(code) || !mailbox || new RegExp(DOMAIN.replace(".", "\\."), "i").test(mailbox)) bad.push(`${rel}: the drafts mailbox must be the pinned MAILBOX constant in the JWT's sub claim, and never ${DOMAIN} (it is "${mailbox || "missing"}").`);
     } else if (rel === OUTREACH_MODULE) {
       if (!impersonates) bad.push(`${rel}: is the outreach sender and no longer impersonates its mailbox — this guard is watching an empty room.`);
       const subs = [...code.matchAll(/\bsub\s*:\s*([^,\n}]+)/g)].map((m) => m[1].trim());
@@ -246,6 +261,12 @@ if (process.argv.includes("--self-test")) {
      { "scripts/ops/x.mjs": ' * NEVER SEND FROM spry.vc — she can read staylor@spry.vc and never write from it.\nconst MAILBOX = "staylor@spry.vc";' }, false],
     ["the draft module, composing and naming only drafts.create, which is allowed",
      { "src/worker/boss/wealth/gmailDraft.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };\nawait fetchImpl("https://gmail.googleapis.com/gmail/v1/users/me/drafts", { method: "POST" });' }, false],
+    ["the LP follow-up drafts, compose and drafts only, which is allowed",
+     { "scripts/ops/lp-followups.mjs": 'const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";\nconst S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: MAILBOX, aud: "https://oauth2.googleapis.com/token" };\nawait call(t, `${GMAIL}/drafts`, { method: "POST" });' }, false],
+    ["the LP follow-up drafts growing a drafts send",
+     { "scripts/ops/lp-followups.mjs": 'const MAILBOX = "sequoia@westpeek.ventures";\nconst S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: MAILBOX, aud: "https://oauth2.googleapis.com/token" };\nawait call(t, `${GMAIL}/drafts/send`);' }, true],
+    ["the LP follow-up drafts pointed at spry.vc",
+     { "scripts/ops/lp-followups.mjs": 'const MAILBOX = "staylor@spry.vc";\nconst S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: MAILBOX, aud: "https://oauth2.googleapis.com/token" };' }, true],
     ["the draft module growing a messages.send call",
      { "src/worker/boss/wealth/gmailDraft.ts": 'const S = "https://www.googleapis.com/auth/gmail.compose";\nconst claims = { iss, sub: mailbox, aud: "https://oauth2.googleapis.com/token" };\nawait fetchImpl("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", { method: "POST" });' }, true],
     ["the draft module growing a drafts.send call",

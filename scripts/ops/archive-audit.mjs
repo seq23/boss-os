@@ -31,6 +31,8 @@ import {
 } from "./lib/duty-kit.mjs";
 
 const DRY = process.argv.includes("--dry");
+/** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
+export const MODEL = "claude-haiku-4-5-20251001";
 const DAY = 86_400_000;
 export const STALE_DAYS = 14;
 const REPO = process.env.BOSS_OS_REPO ?? join(homedir(), "GitHub", "boss-os");
@@ -149,7 +151,7 @@ function readGalleryAndLoops() {
     "Use the Artifact tool. First call it with action \"list\", scope \"mine\", limit 200. Then call it with action \"read\" on " + OPEN_LOOPS_URL + ". " +
     "Reply with ONLY one JSON object: {\"artifacts\":[{\"title\":\"…\",\"url\":\"https://claude.ai/artifact/…\",\"updated\":\"YYYY-MM-DD\"}], " +
     "\"open_loops\":[{\"item\":\"<the item in at most 15 words>\",\"date\":\"YYYY-MM-DD or null\",\"owner\":\"<who owns it, or null>\"}]}. Include every artifact and every open item.",
-    { maxTurns: 8 },
+    { model: MODEL, maxTurns: 8 },
   );
   if (!a.ok || typeof a.json !== "object" || a.json === null) return { ok: false, why: a.ok ? "the answer was not an object" : a.why };
   return { ok: true, artifacts: Array.isArray(a.json.artifacts) ? a.json.artifacts : null, loops: Array.isArray(a.json.open_loops) ? a.json.open_loops : null };

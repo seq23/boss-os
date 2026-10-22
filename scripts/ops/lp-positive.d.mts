@@ -23,3 +23,4 @@ export function reconcileList(
   existing: Positive[],
   run: { found: Map<string, Positive>; accepted: Set<string>; rejected: Map<string, string> },
 ): { people: Positive[]; removed: Array<Positive & { reason: string }>; added: number; promoted: number };
+export function unansweredSection(f: { unanswered?: { name: string; address: string; bucket: string; draft: string; days?: number | null }[]; stops?: string[] } | null): string[];

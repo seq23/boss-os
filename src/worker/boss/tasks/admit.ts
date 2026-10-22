@@ -188,9 +188,13 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
    */
   const { parseResearchPage, composeResearchPrompt, RESEARCH_PAGE_DELIVERS, RESEARCH_PAGE_SEAT, RESEARCH_PAGE_BACKEND } =
     await import("../../../shared/boss/research/page.mjs");
+  // HER WORDS ONLY: the title and the mail body. A duty's composed prompt (the briefing is Camille's
+  // too, and its prompt has lines that start "Research…") already names its own delivery and backend,
+  // so any task that arrives carrying `delivers`, `backend_id` or a spec module is never re-read here.
   const researchAsk = !firmScan && !change && !(input.research_page && typeof input.research_page === "object") &&
+      input.delivers === undefined && input.backend_id === undefined && input.spec_module === undefined &&
       (employeeHint === null || employeeHint === RESEARCH_PAGE_SEAT)
-    ? parseResearchPage([b.title, input.body as string | undefined, input.prompt as string | undefined])
+    ? parseResearchPage([b.title, input.body as string | undefined])
     : null;
   const researchId = researchAsk ? newId("rpg") : null;
   if (researchAsk && researchId) {

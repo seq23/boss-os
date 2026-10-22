@@ -84,7 +84,8 @@ INSERT OR IGNORE INTO standing_duties
    'Risk watch: OpenRouter balance and spend, bills, domain renewals, sender health',
    json_object(
      'local_job', 'risk-watch.mjs',
-     'why_no_model', 'Balances, renewal dates, bounce rates and DNS records are numbers and records; reading them needs no model.',
+     'why_model', 'Balances, renewal dates, bounce rates and DNS records are read with no model. The one model call is a short Haiku run on her Claude seat that searches her personal Gmail for charge notices through the connector (headers only), because that mailbox has no other door.',
+     'requested', json_object('model', 'claude-haiku-4-5-20251001', 'max_seconds', 600),
      'why_local', 'The OpenRouter and Cloudflare keys and the Google service account live in the vault on her Mac.',
      'thresholds', json_object('openrouter_balance_floor_usd', 0, 'renewal_warn_days', 30, 'complaints', 0, 'bounce_rate', 0.03, 'unsubscribe_rate', 0.02),
      'sends', 'one email to her from toni@ only when a reading changes state; a sender over threshold is paused through PUT /api/boss/outreach/business/:key first'

@@ -22,6 +22,8 @@ import {
 } from "./lib/duty-kit.mjs";
 
 const DRY = process.argv.includes("--dry");
+/** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
+export const MODEL = "claude-haiku-4-5-20251001";
 
 /** The senders whose notices are locks, and the words that make one a lock. */
 export const LOCK_SENDERS = Object.freeze([
@@ -56,6 +58,7 @@ function readPersonal() {
   const a = askClaudeJson(
     `Use the Gmail tool on my mailbox. Search exactly: ${LOCK_QUERY}. Do not open bodies. ` +
     "Reply with ONLY a JSON array, one object per message: {\"from_domain\":\"<sender domain>\",\"subject\":\"<subject, max 140 chars>\",\"date\":\"YYYY-MM-DD\"}. No results is [].",
+    { model: MODEL },
   );
   if (!a.ok || !Array.isArray(a.json)) return [{ key: "mailbox:personal", state: "stop", line: `Her personal Gmail could not be read: ${a.ok ? "the answer was not a list" : a.why}.` }];
   return [{ key: "mailbox:personal", state: "ok", line: `Personal Gmail read: ${a.json.length} candidate notice(s).` }, ...a.json.map((m) => lockReading(m, "personal Gmail")).filter(Boolean)];

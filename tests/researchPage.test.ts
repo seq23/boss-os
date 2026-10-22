@@ -62,6 +62,9 @@ describe("research page: wired end to end", () => {
     expect(s).toContain("parseResearchPage(");
     expect(s).toContain("backend_id: RESEARCH_PAGE_BACKEND");
     expect(s).toContain("INSERT INTO research_pages");
+    // A duty's composed prompt is never re-read as her ask (the briefing is Camille's and has "Research…" lines).
+    expect(s).toContain("input.spec_module === undefined");
+    expect(s).toContain("parseResearchPage([b.title, input.body as string | undefined])");
   });
   it("the seat-run report files it, and the route serves it", () => {
     expect(read("src/worker/boss/routes/backends.ts")).toContain("await deliverResearchPage(c.env");
