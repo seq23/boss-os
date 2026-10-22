@@ -11,7 +11,7 @@ import {
   draftToken, draftTokenIn, dutyRequestIn, overridesFrom, readDutyReply, NEW_DUTY_RE,
 } from "../../../shared/boss/duties/lane.mjs";
 import type { LaneSeat } from "../../../shared/boss/duties/lane.mjs";
-import { clockWords } from "../../../shared/boss/mail/plain.mjs";
+import { clockWords, cleanText } from "../../../shared/boss/mail/plain.mjs";
 
 /**
  * THE DUTY LANE'S WORKER HALF — the two doors and the one filing.
@@ -102,10 +102,10 @@ export function renderDraft(input: {
   lines.push(
     `What: ${d.name}`,
     `Who: ${who}${input.routedBy ? ` (${input.routedBy.name} chose ${who})` : ""}`,
-    `When: ${whenText(d)} — ${d.cadence_reason}`,
-    `Runs on: ${d.executor === "agent" ? "an AI teammate" : "your Mac"} — ${d.executor_reason}`,
-    `Thinking: ${d.model.includes("sonnet") ? "the stronger model" : "the quick model"} — ${d.model_reason}`,
-    `Results go to: ${d.delivers ? d.delivers.replace(/_/g, " ") : "its own report"} — ${d.delivers_reason}`,
+    `When: ${whenText(d)} — ${cleanText(d.cadence_reason)}`,
+    `Runs on: ${d.executor === "agent" ? "an AI teammate" : "your Mac"} — ${cleanText(d.executor_reason)}`,
+    `Thinking: ${d.model.includes("sonnet") ? "the stronger model" : "the quick model"} — ${cleanText(d.model_reason)}`,
+    `Results go to: ${d.delivers ? d.delivers.replace(/_/g, " ") : "its own report"} — ${cleanText(d.delivers_reason)}`,
     `Cost: about $${d.estimated_per_month_usd} a month, taking your total to $${d.monthly_total_after_usd} of your $${d.ceiling_usd} limit${d.over_ceiling ? " — that is over your limit" : ""}`,
     "",
     "The full instructions it follows each time are on Team → Duties.",
