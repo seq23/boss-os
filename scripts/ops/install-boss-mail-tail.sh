@@ -28,6 +28,7 @@ cat > "$MT_PLIST" <<MTEOF
   <key>StandardOutPath</key><string>$MT_LOGS/launchd.log</string>
   <key>StandardErrorPath</key><string>$MT_LOGS/launchd.err</string>
   <key>RunAtLoad</key><true/>
+  <key>AbandonProcessGroup</key><true/>
 </dict></plist>
 MTEOF
 plutil -lint "$MT_PLIST" >/dev/null

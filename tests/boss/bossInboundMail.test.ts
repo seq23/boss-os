@@ -846,6 +846,11 @@ describe("Simone triages untagged mail (owner, 22 Oct 2026: \"i should not have 
     expect(q.employeeId).toBe("emp_research");
     // Camille's seat takes research only; a one_off kind here is what failed it on arrival.
     expect((await one<any>(`SELECT intake_kind FROM tasks WHERE id = ?`, q.taskId)).intake_kind).toBe("research");
+    // …and the Mac runner refuses an envelope with no absolute repo_path and no allowed_paths.
+    const req = JSON.parse((await one<any>(`SELECT input FROM tasks WHERE id = ?`, q.taskId)).input).requested;
+    expect(req.repo_path).toMatch(/^\//);
+    expect(req.allowed_paths).toEqual([req.repo_path]);
+    expect(req.web_tools).toContain("WebSearch");
   });
 
   it("a build that names no repo is still Danielle's repo change (the plan finds the repo)", async () => {

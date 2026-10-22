@@ -845,6 +845,8 @@ echo "Installed $RC_LABEL — every 20 minutes 06:00–22:00 Central (repo-chang
 # done, fixes friction at the root, and emails her a report from Simone. Its own installer, so it can
 # be (re)installed alone without reloading the lanes above.
 MAILTAIL_LABEL="com.seq.boss-mail-tail"
+# Camille's research pages run in their own folder (RESEARCH_PAGE_DIR in src/shared/boss/research/page.mjs).
+mkdir -p "$HOME/.boss-os/research"
 BOSS_OS_REPO="$REPO" bash "$REPO/scripts/ops/install-boss-mail-tail.sh"
 
 # ─── Monique's comment watch ─────────────────────────────────────────────────
