@@ -29,7 +29,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkAssignment, ownerAskIsATask, SEAT_EXECUTORS, TASK_EXECUTORS, TASK_CREATORS } from "../../src/shared/boss/duties/executors.mjs";
+import { checkAssignment, ownerAskIsATask, SEAT_EXECUTORS, TASK_EXECUTORS, TASK_CREATORS, spendStepIn } from "../../src/shared/boss/duties/executors.mjs";
 import { existsSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -84,7 +84,7 @@ function walk(dir, out = []) {
 }
 
 /** Pure: problems in a set of { path, text } sources. */
-export function problems({ sources, report, packageScripts }) {
+export function problems({ sources, report, packageScripts, seatExecutors = null }) {
   const p = [];
   let sites = 0;
   for (const { path, text } of sources) {
@@ -115,7 +115,26 @@ export function problems({ sources, report, packageScripts }) {
   if (ownerAskIsATask("Approve the subtitle. Recommended: A Template for Documenting Family Funds Toward a Home Purchase.")) {
     p.push("ownerAskIsATask refused a plain wording decision — that is exactly what an ask is for.");
   }
-  for (const [seat, caps] of Object.entries(SEAT_EXECUTORS)) {
+  /*
+   * AGENTS NEVER SPEND MONEY (owner, 22 Oct 2026). No seat may ever hold `owner_spend`, and a spend
+   * step is refused for every seat — including the one that holds owner-account web work, because a
+   * login is not a licence to pay.
+   */
+  const seats = seatExecutors ?? SEAT_EXECUTORS;
+  for (const [seat, caps] of Object.entries(seats)) {
+    if (caps && Object.prototype.hasOwnProperty.call(caps, "owner_spend")) p.push(`${seat} holds owner_spend — agents never spend money; prepare up to checkout and hand it to the owner.`);
+  }
+  for (const what of ["Buy the domain renewal for approvalprep.com", "Complete the checkout for the KDP proof copies", "Top up OpenRouter credits", "Upgrade to the paid plan on Supabase"]) {
+    if (!spendStepIn(what)) p.push(`spendStepIn missed a spend step: "${what}".`);
+    for (const seat of [...Object.keys(seats), "emp_knowledge"]) {
+      if (checkAssignment({ helper: seat, what }).ok) p.push(`checkAssignment let ${seat} take a spend step: "${what}".`);
+    }
+  }
+  if (spendStepIn("Fix the payment page CSS on approvalprep.com")) p.push("spendStepIn read a repo fix that mentions a payment page as a spend step — the rule is about doing, not topics.");
+  if (!checkAssignment({ helper: "emp_repo", what: "creator-studios: change the sign-up copy", requires: "repo_change" }).ok) p.push("checkAssignment refused Danielle a creator-studios repo change — her lane executes it.");
+  if (!checkAssignment({ helper: "emp_research", what: "Research senior-living referral fees in Memphis", requires: "research_page" }).ok) p.push("checkAssignment refused Camille a research page — her seat executes it.");
+  if (checkAssignment({ helper: "emp_knowledge", what: "Research senior-living referral fees", requires: "research_page" }).ok) p.push("checkAssignment let Zora take a research page — only Camille's seat executes it.");
+  for (const [seat, caps] of Object.entries(seats)) {
     for (const [cap, cmd] of Object.entries(caps)) {
       const scripts = [...String(cmd).matchAll(/npm run ([a-z:-]+)/g)].map((x) => x[1]);
       if (!scripts.length) p.push(`${seat}.${cap} names no npm run command.`);
@@ -144,6 +163,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       ["zero insert sites is a failure", problems({ ...real, sources: [] }).problems.some((x) => x.startsWith("RULE 0"))],
       ["a report without the refusal fails", problems({ ...real, report: real.report.replaceAll("ASSIGNMENT_CANNOT_REACH", "X") }).problems.length > 0],
       ["an executor naming a missing script fails", problems({ ...real, packageScripts: {} }).problems.some((x) => /package.json does not have/.test(x))],
+      ["a seat given owner_spend fails (agents never spend money)", problems({ ...real, seatExecutors: { ...SEAT_EXECUTORS, emp_risk: { owner_spend: "npm run notify" } } }).problems.some((x) => /emp_risk holds owner_spend/.test(x))],
       ["the real tree's tasks all have a claiming executor", taskProblems(real).problems.length === 0],
       ["grid_fix with no executor fails (the 48 tasks of 7 Oct)", (() => { const { grid_fix, ...rest } = real.taskExecutors; const r = taskProblems({ ...real, taskExecutors: rest }).problems; return r.some((x) => /creates "grid_fix" tasks/.test(x)) && r.some((x) => /input\.grid_fix/.test(x)); })()],
       ["a new tasks insert site nobody registered fails", taskProblems({ ...real, sources: [...real.sources, { path: "src/worker/boss/routes/newDoor.ts", text: "INSERT INTO tasks (id) VALUES (?)" }] }).problems.some((x) => /newDoor\.ts: inserts a tasks row and is not in TASK_CREATORS/.test(x))],

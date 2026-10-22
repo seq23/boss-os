@@ -62,10 +62,11 @@ Format of a rule line (the validator reads exactly this shape):
 - R29 [REPO-ONLY] Copy edits are applied verbatim from the repo's one editable copy file when the runbook names one; links https only. — owner: addendum item 13 (6 Oct 2026) — anchor: `scripts/ops/repo-change-prompt.md#Standing rules, every phase`
 - R30 [REPO-ONLY] Post-event operations (promote, close-of-vote export or tally, moderation) are runbook-named scripts run on request; a refusal is relayed in plain English. — owner: addendum item 15 (6 Oct 2026) — anchor: `scripts/ops/repo-change-prompt.md#Standing rules, every phase`
 - R31 [REPO-ONLY] A redirect she controls is flipped on her say: a safe shell first, the safe-to-flip moment stated; a live redirect to an empty page is top priority. — owner: addendum item 9 (6 Oct 2026) — anchor: `scripts/ops/repo-change-prompt.md#Standing rules, every phase`
+- R32 [ALL-KINDS] Agents never spend money: no employee executes a purchase, checkout, payment, subscription, plan upgrade, top-up or renewal; each prepares up to the checkout (link, exact price, what it buys and why) and hands it to her as a decision; a seat given the `owner_spend` capability fails the build. — owner: "AGENTS NEVER SPEND MONEY" (22 Oct 2026) — anchor: `src/shared/boss/service/practices.mjs#servicePracticesBlock`
 
 ## How the shared layer reaches every employee
 
-- **Prompt (R6, R7, R8, R13, R14, R15, R16, R17, R19, R21, R22, R23):** one line each in
+- **Prompt (R6, R7, R8, R13, R14, R15, R16, R17, R19, R21, R22, R23, R32):** one line each in
   `SERVICE_PRACTICES`, composed with her constraints register by `practicesBlock`, and put in front
   of every run by `buildPrompt` — the one function both the cloud rungs and the Mac seats' dispatch
   use (the same insertion point as the firm's notices). Danielle's Mac lane gets the same block through

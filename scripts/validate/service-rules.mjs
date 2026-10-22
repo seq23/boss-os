@@ -4,7 +4,7 @@
  *
  * The owner, 6 Oct 2026: "i need to make sure all of these things we just did for porter and west
  * peek OS agents — we need to apply it to boss os repo for all the boss os agents — same
- * capabilities and friction reduction." docs/SERVICE_RULES.md lists the 31 rules; this reads it.
+ * capabilities and friction reduction." docs/SERVICE_RULES.md lists the 32 rules; this reads it.
  *
  * It fails the build when:
  *   1. the document holds no rules (Rule 0), a rule line is malformed, or a number repeats;

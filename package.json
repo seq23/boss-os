@@ -139,6 +139,7 @@
     "employee:address": "node scripts/vault/vault.mjs run -- node scripts/ops/employee-address.mjs",
     "employee:addresses:live": "node scripts/vault/vault.mjs run -- node scripts/validate/every-employee-address-receives.mjs",
     "repo-change": "bash scripts/ops/repo-change.sh",
+    "agent:claim": "bash scripts/ops/agent-claim.sh",
     "drive:pull": "node scripts/vault/vault.mjs run -- node scripts/ops/drive-pull.mjs",
     "capital:book": "node scripts/vault/vault.mjs run -- node scripts/ops/capital-book.mjs",
     "validate:risk-clearance": "node scripts/validate/a-risk-clearance-has-evidence.mjs && node scripts/validate/a-risk-clearance-has-evidence.mjs --self-test",

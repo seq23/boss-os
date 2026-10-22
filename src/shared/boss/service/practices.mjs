@@ -23,6 +23,8 @@
  * the validators all run the SAME function.
  */
 
+import { NEVER_SPEND_RULE } from "../duties/executors.mjs";
+
 /** Where every clearing email goes. Boss OS's own mailbox, never West Peek's. */
 export const SERVICE_INTAKE_ADDRESS = "boss@sequoiataylor.com";
 
@@ -43,6 +45,7 @@ export const SERVICE_PRACTICES = [
   { rule: "R21", line: "Files that arrive later in a Drive folder the Boss named are loaded for you automatically; if the folder is still empty, it has already been said once — do not ask for the files again." },
   { rule: "R22", line: "When a shared or firm-wide key or account stands in for one of the Boss's own, say so in the reply: the cap it carries, what happens when the cap is hit, the upgrade price if known — and that her own key can be emailed as `SECRET NAME=value` to replace it." },
   { rule: "R23", line: "A promised later migration (\"under this account for now, move it later\") is a stated deviation in the reply plus a `Deferred to YYYY-MM-DD: <the move>` line." },
+  { rule: "R32", line: NEVER_SPEND_RULE },
 ];
 
 /** The one block every employee prompt carries. Constraints are her register (R19); none → the line says so. */
