@@ -257,7 +257,41 @@ export function registeredRepoIn(text) {
  * Returns null when the text is not a repo change. Returns `{ excluded }` when it names a repo the
  * grid says is out of scope, so the caller can refuse with the reason rather than guess.
  */
-export function parseRepoChange(text) {
+/**
+ * ─── A REPO SHE NAMES IN WORDS, NOT ON THE GRID (22 Oct 2026) ───────────────
+ *
+ * "in the topbarz-voting repo", "repo studio-site", "repository named foo-bar": a repository named
+ * in words that is neither on the grid nor already registered is REGISTERED as `seq23/<name>` — a
+ * step of the job, never a block (her Porter rule, carried to Boss OS: "any new repo we request is
+ * allowed"). The Mac's plan phase clones it; an address that does not exist comes back as the plan
+ * phase's own named stop with the exact reply that fixes it. The named exclusions still win.
+ */
+const NOT_A_REPO_NAME = /^(?:the|this|that|a|an|my|your|our|its|new|same|which|one|any|each|every|git|github|code|main|other|their|her|his)$/i;
+export function repoNamedIn(text) {
+  const t = String(text ?? "");
+  const patterns = [
+    /\b(?:in|to|on|for|into|from)\s+(?:the\s+|my\s+|our\s+)?[`"']?([a-z0-9][a-z0-9._-]{2,99})[`"']?\s+repo(?:sitory)?\b/gi,
+    /\brepo(?:sitory)?\s+(?:called\s+|named\s+)?[`"']([a-z0-9][a-z0-9._-]{2,99})[`"']/gi,
+    /\brepo(?:sitory)?\s+(?:called|named)\s+([a-z0-9][a-z0-9._-]{2,99})\b/gi,
+  ];
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(t)) !== null) {
+      const name = m[1].toLowerCase().replace(/\.git$/, "").replace(/[.]+$/, "");
+      if (!name || NOT_A_REPO_NAME.test(name) || isExcluded(name)) continue;
+      return { repo: name, github_repo: `${GRID_OWNER}/${name}` };
+    }
+  }
+  return null;
+}
+
+/**
+ * `opts.buildAsk`: Simone's triage gave this ask to Danielle as a build (22 Oct 2026). A build that
+ * names no repository and no folder is still a repo change — the plan phase finds the repository
+ * among the grid and the registered repos, and says which. Without the flag the old rule holds: no
+ * repo and no folder is an ordinary instruction.
+ */
+export function parseRepoChange(text, opts = {}) {
   const t = String(text ?? "").trim();
   if (!t) return null;
   const gridRepo = repoIn(t);
@@ -267,9 +301,9 @@ export function parseRepoChange(text) {
     if (excluded) return { excluded };
   }
   // R24 (docs/SERVICE_RULES.md): a repo she names by its GitHub address registers at the door.
-  const registered = gridRepo ? null : (registeredRepoIn(t) ?? registeredByNameIn(t));
+  const registered = gridRepo ? null : (registeredRepoIn(t) ?? registeredByNameIn(t) ?? repoNamedIn(t));
   const repo = gridRepo ?? registered?.repo ?? null;
-  if (!repo && !folder) return null;
+  if (!repo && !folder && !opts?.buildAsk) return null;
   return {
     repo,
     github_repo: gridRepo ? `${GRID_OWNER}/${gridRepo}` : registered?.github_repo ?? null,

@@ -839,6 +839,14 @@ lint_plist "$RC_PLIST"
 launchctl load "$RC_PLIST"
 echo "Installed $RC_LABEL — every 20 minutes 06:00–22:00 Central (repo-change.sh, task kind repo_change)."
 
+# ─── The tail on her Boss OS mail ────────────────────────────────────────────
+#
+# Owner, 22 Oct 2026: every job she emails Boss OS gets one bounded tail agent that follows it to
+# done, fixes friction at the root, and emails her a report from Simone. Its own installer, so it can
+# be (re)installed alone without reloading the lanes above.
+MAILTAIL_LABEL="com.seq.boss-mail-tail"
+BOSS_OS_REPO="$REPO" bash "$REPO/scripts/ops/install-boss-mail-tail.sh"
+
 # ─── Monique's comment watch ─────────────────────────────────────────────────
 #
 # Owner, 21 Sep 2026. Weekly: read every new comment on the YouTube channel, propose what to do
@@ -1231,6 +1239,7 @@ require_loaded "$PROPS_LABEL"
 # list of jobs, which is the defect this file's comments warn about, inside this file.
 require_loaded "$PEOPLE_LABEL"
 require_loaded "$ARCHIVE_LABEL"
+require_loaded "$MAILTAIL_LABEL"
 require_loaded "$RISK_LABEL"
 require_loaded "$LOCKS_LABEL"
 # THE RETIRED CASE WATCH MUST BE ABSENT, and its absence is checked the same way its presence was.

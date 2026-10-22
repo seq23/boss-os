@@ -132,7 +132,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
    */
   const { parseRepoChange, REPO_CHANGE_SEAT } = await import("../../../shared/boss/repoChange/lane.mjs");
   const repoChange = employeeHint === REPO_CHANGE_SEAT && !(input.repo_change && typeof input.repo_change === "object")
-    ? parseRepoChange([b.title, input.body as string | undefined, input.prompt as string | undefined].filter(Boolean).join("\n"))
+    ? parseRepoChange([b.title, input.body as string | undefined, input.prompt as string | undefined].filter(Boolean).join("\n"), { buildAsk: input.build_ask === true })
     : null;
   if (repoChange && "excluded" in repoChange) {
     throw badRequest(

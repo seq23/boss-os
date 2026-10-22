@@ -392,4 +392,14 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
     expect(rowOf("zora-archive-audit")).toContain("com.seq.boss-archive-audit");
     for (const label of ["com.seq.boss-risk-watch", "com.seq.boss-outside-locks", "com.seq.boss-archive-audit"]) expect(installer).toContain(label);
   });
+
+  it("the tail on her Boss OS mail is on the map, sends as Simone, and its label is installed", () => {
+    const row = rowOf("simone-mail-tail-report");
+    expect(row).toContain("Simone <simone@sequoiataylor.com>");
+    expect(row).toContain("com.seq.boss-mail-tail");
+    expect(row).toContain("BOSS_OS_MAIL_KEY");
+    expect(installer).toContain('bash "$REPO/scripts/ops/install-boss-mail-tail.sh"');
+    expect(installer).toContain('require_loaded "$MAILTAIL_LABEL"');
+    expect(readFileSync(path.join(ROOT, "scripts/ops/install-boss-mail-tail.sh"), "utf8")).toContain('MT_LABEL="com.seq.boss-mail-tail"');
+  });
 });

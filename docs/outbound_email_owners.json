@@ -41,6 +41,7 @@
     "pnp-customer-reminders": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
     "pnp-marketplace-renew": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
     "toni-risk-watch": { "seat": "Toni", "why": "Her daily risk watch and weekly outside-locks check (22 Oct 2026)." },
-    "zora-archive-audit": { "seat": "Zora", "why": "Her Friday archive audit (22 Oct 2026)." }
+    "zora-archive-audit": { "seat": "Zora", "why": "Her Friday archive audit (22 Oct 2026)." },
+    "simone-mail-tail-report": { "seat": "Simone", "why": "The tail on the jobs she emails Boss OS (22 Oct 2026)." }
   }
 }

@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { handleTask } from "../../src/worker/boss/queue/consumer";
-import { canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken, readReply, needsPreview, isForced, APPROVED_DEFAULTS_TEXT } from "../../src/shared/boss/repoChange/lane.mjs";
+import { repoNamedIn, canEnterBuild, canLand, claimablePhase, parseRepoChange, tokenIn, changeToken, readReply, needsPreview, isForced, APPROVED_DEFAULTS_TEXT } from "../../src/shared/boss/repoChange/lane.mjs";
 
 const FOLDER = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUv";
 
@@ -842,5 +842,21 @@ describe("a retry is a resume of her original instruction, never a new one", () 
     // A rework is only ever from land: a failed row cannot be reworked.
     const fromFailed = await apiJson(`/api/repo-changes/${rc.id}/rework`, { method: "POST", body: { device_id: DEVICE, merge_sha: "c3d4e5f", reason: "x" } });
     expect(fromFailed.status).toBe(409);
+  });
+});
+
+describe("a repo she names in words registers as a step of the job (22 Oct 2026)", () => {
+  it("reads 'in the X repo', 'repo called X' and 'repository named X', and refuses filler words", () => {
+    expect(repoNamedIn("please fix the footer in the studio-site repo")).toEqual({ repo: "studio-site", github_repo: "seq23/studio-site" });
+    expect(repoNamedIn("start a repo called launch-kit for it")).toEqual({ repo: "launch-kit", github_repo: "seq23/launch-kit" });
+    expect(repoNamedIn("the repository named `notes-app`")).toEqual({ repo: "notes-app", github_repo: "seq23/notes-app" });
+    expect(repoNamedIn("change it in the same repo")).toBeNull();
+    expect(repoNamedIn("build a landing page")).toBeNull();
+  });
+  it("parseRepoChange registers it instead of returning null, and a build ask with no repo is still a change", () => {
+    const r = parseRepoChange("fix the footer in the studio-site repo") as any;
+    expect(r).toMatchObject({ repo: "studio-site", github_repo: "seq23/studio-site", registered: true });
+    expect(parseRepoChange("build a landing page")).toBeNull();
+    expect(parseRepoChange("build a landing page", { buildAsk: true })).toMatchObject({ repo: null, drive_folder: null });
   });
 });

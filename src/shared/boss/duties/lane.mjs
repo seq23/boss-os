@@ -36,6 +36,7 @@
  */
 
 import { seatTag } from "../intake/mail.mjs";
+import { seatForAsk } from "../intake/triage.mjs";
 import { readReply, APPROVAL_WORDS, PRE_APPROVAL_PHRASES, preApprovalIn } from "../repoChange/lane.mjs";
 
 /**
@@ -47,6 +48,13 @@ export { APPROVAL_WORDS, PRE_APPROVAL_PHRASES, preApprovalIn };
 
 /** The verb. `#<seat> new duty` — the tag she already knows, plus two words. */
 export const NEW_DUTY_RE = /#([a-z0-9]+)[\s:,-]+new\s+duty\b/i;
+
+/**
+ * THE VERB WITHOUT A TAG (owner, 22 Oct 2026: "i should not have to put an employee name"). "new duty"
+ * opening the subject or a line, with no `#seat` in front of it: Simone routes it to the seat that can
+ * run it (`seatForAsk` in intake/triage.mjs), exactly as `#simone new duty <seat> …` would.
+ */
+export const UNTAGGED_NEW_DUTY_RE = /(?:^|\n)[^\S\n]*(?:re:\s*|fwd?:\s*)*(?:(?:a|one)\s+)?new\s+duty\b/i;
 
 /** The role that may route a duty to a colleague: `#simone new duty monique …`. */
 export const ROUTING_ROLE = "Chief of Staff";
@@ -78,10 +86,23 @@ export function draftTokenIn(text) {
 export function dutyRequestIn(subject, body, roster) {
   const haystack = `${String(subject ?? "")}\n${String(body ?? "")}`;
   const m = NEW_DUTY_RE.exec(haystack);
-  if (!m) return null;
-  const tag = `#${m[1].toLowerCase()}`;
   const active = (roster ?? []).filter((s) => s && s.id && s.name);
   const byTag = (t) => active.find((s) => seatTag(s.name) === t) ?? null;
+  if (!m) {
+    const u = UNTAGGED_NEW_DUTY_RE.exec(haystack);
+    if (!u) return null;
+    const after = haystack.slice(u.index + u[0].length).replace(/^[\s:,\-–—]+/, "");
+    const chief = active.find((s) => String(s.role ?? "").toLowerCase() === ROUTING_ROLE.toLowerCase()) ?? null;
+    const pick = seatForAsk(after, active);
+    if (!pick || !chief) return { error: "Nobody on the roster could take a new duty.", tag: null };
+    // An explicit seat name opening the phrase still wins ("new duty: monique, every friday …").
+    const named = /^\s*#?([a-z][a-z0-9'’]*)\b[\s:,\-–—]*/i.exec(after);
+    const target = named ? byTag(seatTag(named[1])) : null;
+    const seat = target ?? pick.seat;
+    const phrase = (target ? after.slice(named[0].length) : after).trim();
+    return { seat, tag: null, phrase, routedBy: seat.id !== chief.id ? chief : null, preApproved: preApprovalIn(haystack), why: target ? `named ${seat.name}` : pick.why };
+  }
+  const tag = `#${m[1].toLowerCase()}`;
 
   let seat = byTag(tag);
   if (!seat) return { error: `There is no employee with the tag ${tag}.`, tag };

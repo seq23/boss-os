@@ -80,6 +80,22 @@ describe("the grammar, pure", () => {
     expect(dutyRequestIn("#monique please add the Databricks buyers", "", roster)).toBeNull();
     expect((dutyRequestIn("#monique new duty every friday, your call on the details", "", roster) as any).preApproved).toBe("your call");
   });
+  it("NO TAG (22 Oct 2026): \"new duty\" opening a line is Simone's to route, to the seat that can run it", () => {
+    const wide = [...roster, { id: "emp_research", name: "Camille", role: "Director of Research" }];
+    const r = dutyRequestIn("new duty", "every friday, research what changed in the private markets", wide) as any;
+    expect(r.seat.id).toBe("emp_research");
+    expect(r.routedBy.id).toBe("emp_chief");
+    expect(r.tag).toBeNull();
+    expect(r.phrase).toBe("every friday, research what changed in the private markets");
+    // A seat she names after the verb still wins.
+    const named = dutyRequestIn("Re: new duty: monique, every friday check the sheet", "", wide) as any;
+    expect(named.seat.id).toBe("emp_relationship");
+    expect(named.phrase).toBe("every friday check the sheet");
+    // "your call" is read from the request, as with a tag.
+    expect((dutyRequestIn("new duty", "every friday research the markets, your call", wide) as any).preApproved).toBe("your call");
+    // The words in the middle of a sentence are not the verb.
+    expect(dutyRequestIn("thoughts", "I wonder whether a new duty would help", wide)).toBeNull();
+  });
   it("the reply reader: approved / changes / held / other", () => {
     expect(readDutyReply("approved").mode).toBe("approved");
     expect(readDutyReply("Approved!").mode).toBe("approved");
@@ -260,6 +276,18 @@ describe("the mail door", () => {
     expect(draft.judgement_id).toBeNull();
     expect(draft.approved_by).toBe("seq.taylor@gmail.com");
     expect((await row<any>(`SELECT COUNT(*) AS n FROM judgement_calls WHERE resume_kind = 'duty_created'`)).n).toBe(0);
+  });
+
+  it("NO TAG: \"new duty\" + `your call` is routed by Simone and created at once (22 Oct 2026)", async () => {
+    const { res } = await request("new duty", `${AGENT_PHRASE} — your call on the details`);
+    expect(res.outcome).toBe("DUTY_CREATED");
+    expect(res.reply).toMatch(/^Created — you said "your call"/);
+    expect(await dutyCount()).toBe(1);
+    const draft = await row<any>(`SELECT employee_id, routed_by, tag, state FROM duty_drafts`);
+    expect(draft.employee_id).toBe("emp_research");
+    expect(draft.routed_by).toBe("emp_chief");
+    expect(draft.tag).toBeNull();
+    expect(draft.state).toBe("created");
   });
 
   it("`your call` in a LATER message is not a pre-approval: it is a note, and nothing is created", async () => {
