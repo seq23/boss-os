@@ -11,12 +11,20 @@ STATE_DIR="$(dirname "$TAIL_LOG")"
 REPORT_LOG="$STATE_DIR/report.log"
 CAP_SECONDS="${BOSS_MAIL_TAIL_CAP_SECONDS:-7200}"
 
-(cd "$REPO" && "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model opus --output-format stream-json --verbose --dangerously-skip-permissions) >> "$TAIL_LOG" 2>&1 &
+(cd "$REPO" && exec "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model opus --output-format stream-json --verbose --dangerously-skip-permissions) >> "$TAIL_LOG" 2>&1 &
 AGENT=$!
-( sleep "$CAP_SECONDS"; kill -0 "$AGENT" 2>/dev/null && { kill "$AGENT"; echo "INCOMPLETE — stopped at the ${CAP_SECONDS}s cap" >> "$REPORT_FILE"; } ) &
+( sleep "$CAP_SECONDS"; kill -0 "$AGENT" 2>/dev/null && { pkill -TERM -P "$AGENT" 2>/dev/null; kill "$AGENT"; echo "INCOMPLETE — stopped at the ${CAP_SECONDS}s cap" >> "$REPORT_FILE"; } ) &
 WATCHDOG=$!
+# A FINISHED AGENT CAN OUTLIVE ITS ANSWER. The first live tail (22 Oct 2026) wrote its report and its
+# stream's final "result" event, then sat for 15 more minutes holding a background shell open, and the
+# report waited with it. So: once the result event is in the log, allow 60 s, then end the process.
+( while kill -0 "$AGENT" 2>/dev/null; do
+    if grep -q '"type":"result"' "$TAIL_LOG" 2>/dev/null; then sleep 60; pkill -TERM -P "$AGENT" 2>/dev/null; kill "$AGENT" 2>/dev/null; break; fi
+    sleep 15
+  done ) &
+FINISHER=$!
 wait "$AGENT"; RC=$?
-kill "$WATCHDOG" 2>/dev/null
+kill "$WATCHDOG" "$FINISHER" 2>/dev/null
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) agent rc=$RC log=$TAIL_LOG" >> "$REPORT_LOG"
 
 if [ ! -s "$REPORT_FILE" ] || ! grep -q "FRICTION_FIXED" "$REPORT_FILE"; then
