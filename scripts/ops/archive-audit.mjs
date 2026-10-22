@@ -26,6 +26,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { writeGalleryExport } from "./gallery-export.mjs";
 import {
   bossApi, loadState, movedReadings, readNothingStop, saveState, sendAs, stateMap,
 } from "./lib/duty-kit.mjs";
@@ -155,7 +156,7 @@ function auditHandoff(now) {
 export const GALLERY_EXPORT = process.env.BOSS_GALLERY_EXPORT ?? join(homedir(), ".boss-os", "archive", "gallery.json");
 
 export function readGalleryExport(path = GALLERY_EXPORT, now = Date.now()) {
-  if (!existsSync(path)) return { ok: false, why: `no gallery export at ${path} — headless runs on this Mac have no Artifact tool, so a Claude session that does must write it (shape in archive-audit.mjs)` };
+  if (!existsSync(path)) return { ok: false, why: `no gallery export at ${path} — scripts/ops/gallery-export.mjs writes it from the links on this Mac and found none` };
   let j;
   try { j = JSON.parse(readFileSync(path, "utf8")); } catch { return { ok: false, why: `${path} does not parse` }; }
   const at = Date.parse(j?.exported_at ?? "");
@@ -168,6 +169,13 @@ async function main() {
   const prev = loadState("archive-audit");
   const readings = [auditEmailMap(now), auditSideBusiness(now), auditHandoff(now)];
 
+  /*
+   * THE EXPORT IS WRITTEN HERE, EVERY RUN (22 Oct 2026). It used to wait for a chat session that
+   * holds the Artifact tool, and none ever wrote it, so this reading was a permanent stop. Now the
+   * links written down on this Mac (HANDOFF, repo docs, memory) are the gallery; zero links is a stop.
+   */
+  const wrote = writeGalleryExport();
+  if (!wrote.ok) console.error(`  [stop] gallery export not written: ${wrote.why}`);
   const g = readGalleryExport();
   let filed = 0;
   let toFile = [];

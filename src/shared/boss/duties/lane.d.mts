@@ -1,6 +1,7 @@
 /** Types for the duty lane. See lane.mjs for why every rule lives there. */
 
 export const NEW_DUTY_RE: RegExp;
+export const UNTAGGED_NEW_DUTY_RE: RegExp;
 export const ROUTING_ROLE: "Chief of Staff";
 export const APPROVAL_WORDS: readonly string[];
 export const PRE_APPROVAL_PHRASES: readonly string[];
@@ -12,12 +13,14 @@ export interface LaneSeat { id: string; name: string; role?: string | null; lane
 
 export interface DutyRequest {
   seat: LaneSeat;
-  tag: string;
+  /** Null when she wrote "new duty" with no tag and Simone routed it. */
+  tag: string | null;
   phrase: string;
   routedBy: LaneSeat | null;
   preApproved: string | null;
+  why?: string;
 }
-export interface DutyRequestError { error: string; tag: string }
+export interface DutyRequestError { error: string; tag: string | null }
 
 export function preApprovalIn(text: string): string | null;
 export function draftToken(id: string): string;

@@ -40,6 +40,7 @@ import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
+  REGISTERED_REPOS,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
 import { sendersFor, employeeMail, filesAt, FALLBACK_STOP } from "./notify.mjs";
@@ -570,7 +571,7 @@ async function runPhase(claim) {
     POST_LAND_COMMAND: row.post_land_command ?? "(none — the plan named no post-land step; post_land MUST be null)",
     POST_LAND_PROOF: row.post_land_proof ?? "(none)",
     ALREADY_LANDED: (() => { const f = join(dir, "landed-post-land-failed.json"); if (phase !== "land" || !existsSync(f)) return "no"; const j = readJson(f); return j?.merge_sha ? `YES — merged as ${j.merge_sha} on a previous tick. Do NOT run ${LAND} again; write that merge_sha, re-check the live proof, and run ONLY the post-land step.` : "no"; })(),
-    GRID_REPOS: gridRepoNames().join(", "), GITHUB_DIR,
+    GRID_REPOS: [...gridRepoNames(), ...REGISTERED_REPOS.map((r) => `${r.name} (${r.github_repo}, registered)`)].join(", "), GITHUB_DIR,
     PACKAGE_DIR: row.drive_folder ? packageDir : "(no Drive package was linked)", DRIVE_URL: row.drive_url ?? "",
     INSTRUCTION: row.instruction, PLAN: row.plan_text ?? "",
     ANSWERS: ["approved", "preview", "forced"].includes(row.answers_mode) || [APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT].includes(row.answers_text)
@@ -647,9 +648,11 @@ async function runPhase(claim) {
 
   if (phase === "plan") {
     const chosen = out.repo ?? repo;
-    // R24: the grid, or the repo she named by its GitHub address (registered at the door, row.repo).
-    if (!chosen || (!gridRepoNames().includes(chosen) && chosen !== row.repo)) { await failOut("NOT_HER_REPO", `the plan names "${chosen ?? "nothing"}" as the repository; that is neither on the grid nor the repo your email named. Grid: ${gridRepoNames().join(", ")}. Reply with the GitHub address (github.com/owner/name) and it is registered and planned.`, log); return; }
-    const chosenPath = repoPathFor(chosen) ?? cloneRepo(row.github_repo && chosen === row.repo ? row.github_repo : `${GRID_OWNER}/${chosen}`, chosen, log);
+    // R24: the grid, the repo she named (registered at the door, row.repo), or a repo registered for
+    // good beside the grid (REGISTERED_REPOS) — a triaged build that named no repo lands on one of these.
+    const standing = REGISTERED_REPOS.find((r) => r.name === chosen);
+    if (!chosen || (!gridRepoNames().includes(chosen) && chosen !== row.repo && !standing)) { await failOut("NOT_HER_REPO", `the plan names "${chosen ?? "nothing"}" as the repository; that is neither on the grid nor the repo your email named. Grid: ${gridRepoNames().join(", ")}. Reply with the GitHub address (github.com/owner/name) and it is registered and planned.`, log); return; }
+    const chosenPath = repoPathFor(chosen) ?? cloneRepo(row.github_repo && chosen === row.repo ? row.github_repo : standing?.github_repo ?? `${GRID_OWNER}/${chosen}`, chosen, log);
     if (!chosenPath) { await fail(row, "REPO_UNREACHABLE", `${GITHUB_DIR}/${chosen} is not on this Mac and could not be cloned from GitHub.`, log); return; }
     runbookFor(chosen, `${GRID_OWNER}/${chosen}`, chosenPath, dir);
     const asks = Array.isArray(out.asks) ? out.asks : [];

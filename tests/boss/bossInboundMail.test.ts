@@ -123,24 +123,33 @@ describe("the address she wrote to is a tag she did not have to type", () => {
 });
 
 describe("an unknown tag is never guessed and never dropped", () => {
-  it("sends it to the Chief of Staff and says so", async () => {
+  /*
+   * 22 Oct 2026 (her words: "i should not have to put an employee name"): untagged mail, and mail
+   * whose only tag names nobody, is TRIAGED by Simone to the seat that can do it. Nothing here
+   * scores for a specialist, so it is the Chief of Staff's own, flagged as the closest fit; the
+   * typo is still explained with the real roster, so it self-corrects.
+   */
+  it("sends it to the closest seat — the Chief of Staff here — and says so", async () => {
     const roster = await activeRoster(env as never);
     const chief = roster.find((s) => s.role === "Chief of Staff")!;
     const res = await handleBossInboundMail(
       mail({ subject: "#gertrude", body: "please have a look at the Q3 numbers today" }), env as never);
-    expect(res.outcome).toBe("DEFAULTED");
+    expect(res.outcome).toBe("TRIAGED");
     expect(res.employeeId).toBe(chief.id);
     expect(res.taskId).toBeTruthy();
     expect(res.reply).toContain("#gertrude");
+    expect(res.reply).toContain(`${chief.name} has: please have a look at the Q3 numbers today (closest fit`);
     // The reply advertises the real roster, so a typo is self-correcting.
     for (const s of roster) expect(res.reply).toContain(seatTag(s.name));
   });
 
-  it("does the same for no tag at all", async () => {
+  it("does the same for no tag at all, without a roster dump", async () => {
     const res = await handleBossInboundMail(
       mail({ subject: "a thought", body: "have a look at the Q3 numbers" }), env as never);
-    expect(res.outcome).toBe("DEFAULTED");
+    expect(res.outcome).toBe("TRIAGED");
     expect(res.taskId).toBeTruthy();
+    expect(res.reply).toMatch(/^Simone here\. Got it/);
+    expect(res.reply).not.toContain("Nobody here answers to");
   });
 
   it("still names the whole roster when it ALSO has to ask a question", async () => {
@@ -803,5 +812,63 @@ describe("a reply that was never due says so, and is never counted as a failure"
     const row = await env.DB
       .prepare(`SELECT reply_state, outcome FROM boss_inbound_mail WHERE id = ?`).bind(res.mailId).first<any>();
     expect(row.reply_state).toBe("none_due");
+  });
+});
+
+describe("Simone triages untagged mail (owner, 22 Oct 2026: \"i should not have to put an employee name\")", () => {
+  const one = async <T,>(sql: string, ...b: unknown[]) => env.DB.prepare(sql).bind(...b).first<T>();
+
+  it("splits a three-part email into three jobs on three desks, each started, one line each", async () => {
+    const res = await handleBossInboundMail(mail({
+      subject: "a few things",
+      body: "Hi, a few things:\n1. Build a one-page landing for a sample studio in seq23/creator-studios\n2. What are the three cheapest ways to host a static site?\n3. Schedule a call with the designer next Tuesday",
+      messageId: "<three@mail.gmail.com>",
+    }), env as never);
+    expect(res.outcome).toBe("TRIAGED");
+    expect(res.reply).toMatch(/^Simone here\. Got it — 3 jobs, all started:/);
+    expect(res.reply).toContain("Danielle has: Build a one-page landing for a sample studio in seq23/creator-studios");
+    expect(res.reply).toContain("Camille has: What are the three cheapest ways to host a static site?");
+    expect(res.reply).toContain("Simone has: Schedule a call with the designer next Tuesday");
+    const tasks = (await env.DB.prepare(`SELECT employee_id, title, input FROM tasks WHERE json_extract(input, '$.mail_id') = (SELECT id FROM boss_inbound_mail WHERE message_id = '<three@mail.gmail.com>') ORDER BY title`).all<any>()).results;
+    expect(tasks.map((t: any) => t.employee_id).sort()).toEqual(["emp_chief", "emp_repo", "emp_research"]);
+    // Danielle's is a real repo change in the named repo; Camille's is a real research page.
+    const rc = await one<any>(`SELECT repo, github_repo, phase FROM repo_changes WHERE task_id IN (SELECT id FROM tasks WHERE employee_id = 'emp_repo' AND json_extract(input, '$.triage.of') = 3)`);
+    expect(rc).toMatchObject({ repo: "creator-studios", github_repo: "seq23/creator-studios", phase: "plan" });
+    const rp = await one<any>(`SELECT question FROM research_pages WHERE task_id IN (SELECT id FROM tasks WHERE employee_id = 'emp_research' AND json_extract(input, '$.triage.of') = 3)`);
+    expect(rp?.question).toMatch(/cheapest ways to host a static site/);
+  });
+
+  it("a build that names no repo is still Danielle's repo change (the plan finds the repo)", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "studio", body: "Build a one-page studio-style landing for a sample studio" }), env as never);
+    expect(res.outcome).toBe("TRIAGED");
+    expect(res.employeeId).toBe("emp_repo");
+    const rc = await one<any>(`SELECT repo, phase FROM repo_changes WHERE task_id = ?`, res.taskId);
+    expect(rc).toMatchObject({ repo: null, phase: "plan" });
+  });
+
+  it("\"your call\" anywhere in the email pre-approves the build", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "studio", body: "Build a landing page in seq23/creator-studios. Your call on everything." }), env as never);
+    const rc = await one<any>(`SELECT pre_approved_phrase FROM repo_changes WHERE task_id = ?`, res.taskId);
+    expect(rc?.pre_approved_phrase).toBe("your call");
+  });
+
+  it("a reply on the thread goes back to the job it answers, not to a new pile", async () => {
+    const first = await handleBossInboundMail(mail({ subject: "hosting question", body: "What are the cheapest ways to host a static site?", messageId: "<q1@mail.gmail.com>" }), env as never);
+    expect(first.employeeId).toBe("emp_research");
+    const reply = await handleBossInboundMail(mail({
+      subject: "Re: hosting question", body: "also include what each costs per month",
+      inReplyTo: "<reply-q1@boss>", references: "<q1@mail.gmail.com> <reply-q1@boss>",
+    }), env as never);
+    expect(reply.outcome).toBe("FOLLOWED_UP");
+    expect(reply.employeeId).toBe("emp_research");
+    expect(reply.reply).toContain(`Camille has your reply — it went to the job it answers (${first.taskId})`);
+    const t = await one<any>(`SELECT json_extract(input, '$.follows_task') AS f FROM tasks WHERE id = ?`, reply.taskId);
+    expect(t.f).toBe(first.taskId);
+  });
+
+  it("a tag she types still wins — the triage never overrides her", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#zora", body: "Build a one-page landing for a sample studio in seq23/creator-studios" }), env as never);
+    expect(res.outcome).toBe("ROUTED");
+    expect(res.employeeId).toBe("emp_knowledge");
   });
 });

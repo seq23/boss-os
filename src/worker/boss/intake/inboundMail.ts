@@ -14,6 +14,9 @@ import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
 import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
 import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
+import { triage, triageLines, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
+import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
+import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
 import { closeDirectiveFor } from "../../../shared/boss/intake/close.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
 import { stopDeliverable } from "../today/deliverables";
@@ -729,8 +732,79 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   // A close she asked for, like a book verb that worked, is the whole job: nothing goes to a model.
   const filedByVerb = Boolean(directive && bookNote) || Boolean(closedNote) || Boolean(closeQuestion) || Boolean(planAnswer) || Boolean(commentAnswer) || Boolean(kdpAnswer) || Boolean(dutyNote);
+
+  /*
+   * ─── A REPLY GOES BACK TO THE JOB IT ANSWERS (22 Oct 2026) ────────────────
+   *
+   * "Every inbound email reaches its existing job or opens one." A reply with no tag, that none of
+   * the lanes above claimed, used to land on Simone as a brand-new task with no link to the work it
+   * answered. Now its thread is read — the References chain first (her client carries the Message-ID
+   * of the email that opened the job), then the subject without its Re: — and the reply goes to the
+   * seat that holds that job, linked to it.
+   */
+  let followed: { taskId: string; seat: BossSeat } | null = null;
+  if (isReply && route.outcome === "DEFAULTED" && !handoffNote && !filedByVerb && !bookFailure) {
+    followed = await jobThisAnswers(env, { replyChain, subject: trueSubject, roster, now });
+  }
+
+  /*
+   * ─── NO TAG IS THE NORMAL CASE: SIMONE TRIAGES IT (22 Oct 2026) ───────────
+   *
+   * "i should not have to put an employee name, my main assistant should find out who does it for
+   * me." An untagged email that is not a reply to a job is split into its asks and each ask goes to
+   * the seat that can execute it (`shared/boss/intake/triage.mjs`). A tag she typed, the name@
+   * address she wrote to, and a rule handoff all stay her decision and are never re-triaged.
+   */
+  const triaged: Array<TriageJob<BossSeat>> =
+    route.outcome === "DEFAULTED" && !handoffNote && !followed && !filedByVerb && !bookFailure && !question && Boolean(readable || subject)
+      ? triage({ subject: trueSubject, text: readable || trueSubject, roster })
+      : [];
+  const triageTasks: Array<{ job: TriageJob<BossSeat>; taskId: string | null; failure: string | null }> = [];
+  // Admitted INSIDE the one guarded admission branch below, never beside it (validate:book-verbs).
+  const admitTriaged = async () => {
+    const preApproved = preApprovalIn(`${subject}\n${readable}`);
+    for (const [i, job] of triaged.entries()) {
+      const title = (strippedSubject(trueSubject) || `Mail from ${sender}`) + (triaged.length > 1 ? ` (${i + 1} of ${triaged.length})` : "");
+      let body = job.text;
+      // "your call" anywhere in her email pre-approves every job in it.
+      if (preApproved && !preApprovalIn(body)) body = `${body}\n\n(Her email said "${preApproved}": pre-approved.)`;
+      // Camille's executor is the research page; a question she was handed IS one.
+      if (job.seat.id === "emp_research" && !parseResearchPage([title, body])) body = `research: ${body}`;
+      try {
+        const admitted = await admitTask(env, {
+          title, lane: job.seat.lane, employee_id: job.seat.id,
+          input: {
+            source: "boss_inbound_mail", mail_id: mailId, from: sender,
+            ...(origin?.from ? { forwarded_from: origin.from } : {}),
+            subject: trueSubject, tag: null,
+            routing: `Simone triaged it: ${job.why}`,
+            triage: { part: i + 1, of: triaged.length, closest: job.closest },
+            ...(job.seat.id === "emp_repo" ? { build_ask: true } : {}),
+            ...(due ? { due } : {}),
+            body,
+            ...(objectKey ? { raw_message: objectKey } : {}),
+          },
+        });
+        triageTasks.push({ job, taskId: admitted.created ? admitted.task_id : null, failure: admitted.created ? null : admitted.reason ?? "intake refused it" });
+        if (admitted.created && admitted.task_id) await recordDriveWatches(env, { text: job.text, taskId: admitted.task_id });
+      } catch (err) {
+        triageTasks.push({ job, taskId: null, failure: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    taskId = triageTasks.find((t) => t.taskId)?.taskId ?? null;
+    const failed = triageTasks.filter((t) => t.failure);
+    if (failed.length) admitFailure = failed.map((t) => `${t.job.seat.name}: ${t.failure}`).join("; ");
+    if (triaged[0]) route.seat = triaged[0].seat;
+    await audit(env.DB, {
+      actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "triaged",
+      detail: { jobs: triageTasks.map((t) => ({ employee: t.job.seat.id, task_id: t.taskId, closest: t.job.closest, failure: t.failure })) },
+    });
+  };
+  if (followed) route.seat = followed.seat;
+
   if (route.outcome !== "AMBIGUOUS" && !bookFailure && !question && !filedByVerb) {
-    try {
+    if (triaged.length) await admitTriaged();
+    else try {
       const admitted = await admitTask(env, {
         title: strippedSubject(trueSubject) || `Mail from ${sender}`,
         lane: route.seat.lane,
@@ -742,7 +816,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           ...(origin?.from ? { forwarded_from: origin.from } : {}),
           subject: trueSubject,
           tag: route.tag,
-          routing: route.why,
+          routing: followed ? `A reply on the thread of ${followed.taskId}, so it went back to ${followed.seat.name}, who holds that job.` : route.why,
+          ...(followed ? { follows_task: followed.taskId } : {}),
           ...(handoffNote ? { handed_off: handoffNote } : {}),
           ...(hunt ? { hunt } : {}),
           ...(bookNote ? { live_book: bookNote } : {}),
@@ -812,8 +887,10 @@ function headline(text: string): string {
     : kdpAnswer ? "KDP_ANSWERED"
     : closedNote ? "CLOSED"
       : question || closeQuestion ? "NEEDS_CLARITY"
-        : admitFailure ? "NOT_ADMITTED" : route.outcome;
-  const why = [route.why,
+        : triaged.length ? (taskId ? "TRIAGED" : "NOT_ADMITTED")
+          : followed ? (admitFailure ? "NOT_ADMITTED" : "FOLLOWED_UP")
+            : admitFailure ? "NOT_ADMITTED" : route.outcome;
+  const why = [triaged.length ? `Untagged, so Simone triaged it into ${triaged.length} job(s): ${triaged.map((j) => `${j.seat.name} — ${j.why}`).join(" ")}` : followed ? `A reply on the thread of ${followed.taskId}; back to ${followed.seat.name}.` : route.why,
     ...(planAnswer ? [planAnswer.note] : []),
     ...(commentAnswer ? [commentAnswer.note] : []),
     ...(kdpAnswer ? [kdpAnswer.note] : []),
@@ -865,7 +942,7 @@ function headline(text: string): string {
      * confusing message and she fixes neither. On a clean ROUTED message the roster block is noise.
      */
     ...(route.outcome !== "ROUTED" && !dutyNote ? ["", "—", "", replyBody(route, roster, trueSubject)] : []),
-  ].join("\n") : [replyBody(route, roster, trueSubject),
+  ].join("\n") : [triaged.length ? triageReply(triageTasks, { tags: route.unknownTags, roster }) : followed ? followReply(followed) : replyBody(route, roster, trueSubject),
     ...(bookNote ? ["", bookNote] : []),
     ...(bookFailure ? ["", bookFailure] : []),
     ...(admitFailure ? ["", `I did NOT open work for this: ${admitFailure}.`] : []),
@@ -894,4 +971,73 @@ function headline(text: string): string {
   });
 
   return { mailId, outcome, employeeId: dutyNote?.employeeId ?? route.seat.id, taskId, reply };
+}
+
+/**
+ * The reply to an untagged email: one line per job saying who has what, and how to steer it. Plain
+ * English, no roster dump — she did not ask who answers to which tag, she asked for work.
+ */
+export function triageReply(
+  tasks: Array<{ job: { seat: { id: string; name: string }; ask: string; closest: boolean }; taskId: string | null; failure: string | null }>,
+  unknown: { tags: string[]; roster: Array<{ name: string }> } = { tags: [], roster: [] },
+): string {
+  const started = tasks.filter((t) => t.taskId);
+  // A tag nobody answers to is a typo; the reply says so and names the real ones, so it self-corrects.
+  const typo = unknown.tags.length
+    ? ["", `Nobody here answers to ${unknown.tags.join(" or ")}. The tags are ${[...unknown.roster].map((r) => seatTag(r.name)).sort().join(", ")} — and you never need one.`]
+    : [];
+  const lines = triageLines(tasks.map((t) => t.job));
+  return [
+    started.length === tasks.length
+      ? `Simone here. Got it — ${tasks.length === 1 ? "it has started" : `${tasks.length} jobs, all started`}:`
+      : `Simone here. ${started.length} of ${tasks.length} started:`,
+    "",
+    ...tasks.map((t, i) => `  ${lines[i]}${t.failure ? ` — NOT STARTED: ${t.failure}` : ""}`),
+    "",
+    "Each one reports back by email when it is done, or if it needs a decision from you.",
+    "To steer: reply on this thread — \"changes: …\" to change it, \"stop\" to stop it. A tag (#danielle) is optional; you never need one.",
+    ...typo,
+    "",
+    "— Boss OS",
+  ].join("\n");
+}
+
+/** The reply to a reply that went back to its job. */
+export function followReply(f: { taskId: string; seat: { name: string } }): string {
+  return [`${f.seat.name} has your reply — it went to the job it answers (${f.taskId}), not a new pile.`, "", "— Boss OS"].join("\n");
+}
+
+/**
+ * The job a reply answers: the References chain against the Message-ID of the email that opened a
+ * job, then the subject (Re: stripped) against the last 30 days of jobs opened by email. Null when
+ * the thread names no job or names jobs on two desks — never a guess between them.
+ */
+export async function jobThisAnswers(env: Env, input: { replyChain: string[]; subject: string; roster: BossSeat[]; now: number }): Promise<{ taskId: string; seat: BossSeat } | null> {
+  const seatOf = (id: string | null) => input.roster.find((s) => s.id === id) ?? null;
+  if (input.replyChain.length) {
+    const marks = input.replyChain.map(() => "?").join(",");
+    const row = await env.DB
+      // A reply to an email that became SEVERAL jobs names no one job: it is triaged afresh instead.
+      .prepare(`SELECT task_id, employee_id FROM boss_inbound_mail WHERE message_id IN (${marks}) AND task_id IS NOT NULL
+                  AND NOT (outcome = 'TRIAGED' AND why NOT LIKE 'Untagged, so Simone triaged it into 1 job%')
+                ORDER BY received_at DESC LIMIT 1`)
+      .bind(...input.replyChain)
+      .first<{ task_id: string; employee_id: string | null }>();
+    const seat = seatOf(row?.employee_id ?? null);
+    if (row && seat) return { taskId: row.task_id, seat };
+  }
+  const bare = strippedSubject(input.subject).toLowerCase();
+  if (bare.length >= 6) {
+    const { results } = await env.DB
+      .prepare(`SELECT task_id, employee_id, subject FROM boss_inbound_mail WHERE task_id IS NOT NULL AND received_at > ?
+                  AND NOT (outcome = 'TRIAGED' AND why NOT LIKE 'Untagged, so Simone triaged it into 1 job%')
+                ORDER BY received_at DESC LIMIT 200`)
+      .bind(input.now - 30 * 24 * 60 * 60 * 1000)
+      .all<{ task_id: string; employee_id: string | null; subject: string }>();
+    const hits = (results ?? []).filter((r) => strippedSubject(r.subject).toLowerCase().replace(/\s*\(\d+ of \d+\)$/, "") === bare);
+    const seats = new Set(hits.map((h) => h.employee_id));
+    const seat = hits[0] && seats.size === 1 ? seatOf(hits[0].employee_id) : null;
+    if (hits[0] && seat) return { taskId: hits[0].task_id, seat };
+  }
+  return null;
 }

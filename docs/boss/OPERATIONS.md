@@ -270,6 +270,26 @@ somatic one comes up today, deterministically from `movement_log`, and says why.
 
 ---
 
+## How to give Boss OS work by email
+
+_22 October 2026, her words: "all the work boss os is doing should be easy for me to command from my
+email" and "i should not have to put an employee name, my main assistant should find out who does it
+for me."_ The whole page, with examples: [HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md](../HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md).
+
+- **Write to `boss@sequoiataylor.com`** from one of your addresses, in your own words. No tag needed.
+- **Simone triages it** (`src/shared/boss/intake/triage.mjs`): splits the email into its asks and gives
+  each to the seat that can execute it — Danielle builds and repo changes (any repo you name; one not
+  yet registered is registered as a step of the job), Camille research pages, Monique outreach, Simone
+  scheduling, Zora records, Toni risk, Imani practice, Kendra tools. No clear fit goes to the closest
+  seat and the reply says so; nothing bounces back to you. The reply is one line per job.
+- **name@sequoiataylor.com** (all eight) and `#name` still reach that person directly.
+- **Replies are permission:** `approved` / `changes: …` / `stop` on the thread; `your call` in the
+  first email pre-approves. A reply goes back to the job it answers (`jobThisAnswers`), never a new pile.
+- **Secrets:** `SECRET VENDOR_API_KEY=value` on its own line; stored encrypted, scrubbed from the mail.
+- **Every job you email is tailed** by `com.seq.boss-mail-tail` (`scripts/ops/boss-mail-tail.sh`, every
+  15 min): one bounded tail agent per email follows it to done, fixes friction at the root, and Simone
+  emails you the report. Stop it: `launchctl bootout gui/501/com.seq.boss-mail-tail`.
+
 ## How to give an employee a duty
 
 _21 September 2026. "is there a lane for me to ask for a new duty to my Boss OS agents? i still dont

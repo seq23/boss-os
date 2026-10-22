@@ -77,7 +77,11 @@ Read the package, the runbook, and the repository. Then write the plan.
 
 1. If `{{REPO}}` is not named, find the repository the package is for — by its own words, its
    domain against each grid repo's `REPO_IDENTITY.md` or README, never by resemblance — and name it
-   as `repo` in the result. It must be on the grid.
+   as `repo` in the result. It must be on the grid or one of the registered repos listed with it.
+   A build Simone handed you with no repository named (her email said what to build, not where) is
+   this case: pick the repository the work plainly belongs to — a studio belongs in creator-studios —
+   and say why in one line of the plan. If none fits, block with the plain-English reason and the
+   exact reply that clears it ("Reply with the GitHub address, github.com/owner/name").
 2. Read `RUNBOOK.md` end to end. Read every file in the package. Read the parts of the repo the
    change touches.
 3. Write the plan: what changes, file by file; what the runbook requires (validators, build,
