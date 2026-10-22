@@ -838,6 +838,16 @@ describe("Simone triages untagged mail (owner, 22 Oct 2026: \"i should not have 
     expect(rp?.question).toMatch(/cheapest ways to host a static site/);
   });
 
+  it("the live proof emails of 22 Oct 2026, exactly: the repo keeps no trailing period, the question is research", async () => {
+    const build = await handleBossInboundMail(mail({ subject: "sample studio 3 landing page", body: "Build a one-page studio-style landing page for sample studio 3 (slug sample3) in seq23/creator-studios. This is a test: preview only, do not land it. Your call on the design." }), env as never);
+    expect(build.employeeId).toBe("emp_repo");
+    expect(await one<any>(`SELECT repo, github_repo FROM repo_changes WHERE task_id = ?`, build.taskId)).toMatchObject({ repo: "creator-studios", github_repo: "seq23/creator-studios" });
+    const q = await handleBossInboundMail(mail({ subject: "static site hosting", body: "What are the three cheapest ways to host a static website with a custom domain, and what does each cost per month?" }), env as never);
+    expect(q.employeeId).toBe("emp_research");
+    // Camille's seat takes research only; a one_off kind here is what failed it on arrival.
+    expect((await one<any>(`SELECT intake_kind FROM tasks WHERE id = ?`, q.taskId)).intake_kind).toBe("research");
+  });
+
   it("a build that names no repo is still Danielle's repo change (the plan finds the repo)", async () => {
     const res = await handleBossInboundMail(mail({ subject: "studio", body: "Build a one-page studio-style landing for a sample studio" }), env as never);
     expect(res.outcome).toBe("TRIAGED");
