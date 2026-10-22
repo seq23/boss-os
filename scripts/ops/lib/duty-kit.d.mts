@@ -13,4 +13,5 @@ export function sendAs(who: string, msg: { subject: string; text: string; html?:
 export function googleToken(scope: string, sub: string, fetchImpl?: typeof fetch): Promise<string>;
 export function gmailHeaders(token: string, q: string, max?: number, fetchImpl?: typeof fetch): Promise<{ id: string; from: string; subject: string; date: string }[]>;
 export function fromDomain(from: unknown): string;
-export function askClaudeJson(prompt: string, opts?: Record<string, unknown>): { ok: true; json: any } | { ok: false; why: string };
+export function askClaudeJson(prompt: string, opts?: { model?: string; maxTurns?: number; timeoutMs?: number; requireTool?: RegExp | null; toolSearch?: string | null; run?: unknown }): { ok: true; json: any } | { ok: false; why: string };
+export function readClaudeStream(stdout: string, requireTool?: RegExp | null): { ok: true; json: any } | { ok: false; why: string };

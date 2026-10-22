@@ -188,6 +188,8 @@ export function effectiveModel(dutyId, ownText, statements = ALL_MIGRATION_STATE
   let model = requestedModel(ownText);
   for (const st of statements) {
     if (!st.includes(`'${dutyId}'`)) continue;
+    // A later migration can also take the model AWAY (0289: the archive audit stopped calling one).
+    if (/json_remove\([^;]*'\$\.requested(?:\.model)?'/.test(st)) model = null;
     const m = /'\$\.(?:requested\.)?model'\s*,\s*'([A-Za-z0-9._-]+)'/.exec(st);
     if (m) model = m[1];
   }
@@ -600,6 +602,14 @@ function selfTest() {
   ]);
   if (moved !== "claude-opus-5" || unmoved !== "claude-sonnet-4-5-20250929") {
     console.error(`  ✗ effectiveModel: expected opus after the move and sonnet without it, got ${moved} / ${unmoved}`);
+    failed += 1;
+  }
+
+  // A later UPDATE that removes the model leaves the duty with none; another duty's removal does not.
+  const removed = effectiveModel("duty_x", born, [`UPDATE standing_duties SET task_input = json_set(json_remove(task_input, '$.requested'), '$.why_no_model', 'x') WHERE id = 'duty_x'`]);
+  const notRemoved = effectiveModel("duty_x", born, [`UPDATE standing_duties SET task_input = json_remove(task_input, '$.requested') WHERE id = 'duty_y'`]);
+  if (removed !== null || notRemoved !== "claude-sonnet-4-5-20250929") {
+    console.error(`  ✗ effectiveModel: expected no model after json_remove and sonnet for another duty's, got ${removed} / ${notRemoved}`);
     failed += 1;
   }
 

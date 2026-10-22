@@ -6,3 +6,4 @@ export function rdapExpiry(rdap: unknown): number | null;
 export function renewalReading(domain: string, expiresAt: number | null, now: number): Reading;
 export function senderPauseReason(b: unknown): string | null;
 export function hasDkim(txts: string[]): boolean;
+export function rdapUrl(domain: string): string;

@@ -27,12 +27,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
-  askClaudeJson, bossApi, loadState, movedReadings, readNothingStop, saveState, sendAs, stateMap,
+  bossApi, loadState, movedReadings, readNothingStop, saveState, sendAs, stateMap,
 } from "./lib/duty-kit.mjs";
 
 const DRY = process.argv.includes("--dry");
-/** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
-export const MODEL = "claude-haiku-4-5-20251001";
 const DAY = 86_400_000;
 export const STALE_DAYS = 14;
 const REPO = process.env.BOSS_OS_REPO ?? join(homedir(), "GitHub", "boss-os");
@@ -145,16 +143,24 @@ function auditHandoff(now) {
     : { key, state: "ok", line: `~/HANDOFF.md current (${age} day${age === 1 ? "" : "s"}).` };
 }
 
-/** One Claude-session read: the artifact gallery and the Open Loops page. */
-function readGalleryAndLoops() {
-  const a = askClaudeJson(
-    "Use the Artifact tool. First call it with action \"list\", scope \"mine\", limit 200. Then call it with action \"read\" on " + OPEN_LOOPS_URL + ". " +
-    "Reply with ONLY one JSON object: {\"artifacts\":[{\"title\":\"…\",\"url\":\"https://claude.ai/artifact/…\",\"updated\":\"YYYY-MM-DD\"}], " +
-    "\"open_loops\":[{\"item\":\"<the item in at most 15 words>\",\"date\":\"YYYY-MM-DD or null\",\"owner\":\"<who owns it, or null>\"}]}. Include every artifact and every open item.",
-    { model: MODEL, maxTurns: 8 },
-  );
-  if (!a.ok || typeof a.json !== "object" || a.json === null) return { ok: false, why: a.ok ? "the answer was not an object" : a.why };
-  return { ok: true, artifacts: Array.isArray(a.json.artifacts) ? a.json.artifacts : null, loops: Array.isArray(a.json.open_loops) ? a.json.open_loops : null };
+/**
+ * THE GALLERY AND THE OPEN LOOPS PAGE live on claude.ai, and a headless `claude -p` on her Mac has NO
+ * Artifact tool — CONFIRMED 22 Oct 2026: the init event lists none and ToolSearch cannot load one
+ * ("The Artifact tool is not available as a deferred tool"). Asking a model anyway would invite a
+ * guess. So Zora reads an EXPORT a Claude session that does hold the tool leaves on this Mac —
+ * `~/.boss-os/archive/gallery.json`, shape `{ exported_at, artifacts: [{title,url,updated}],
+ * open_loops: [{item,date,owner}] }` — and an absent or older-than-8-days export is a NAMED STOP
+ * that says exactly that. Camille's research pages file themselves on delivery either way.
+ */
+export const GALLERY_EXPORT = process.env.BOSS_GALLERY_EXPORT ?? join(homedir(), ".boss-os", "archive", "gallery.json");
+
+export function readGalleryExport(path = GALLERY_EXPORT, now = Date.now()) {
+  if (!existsSync(path)) return { ok: false, why: `no gallery export at ${path} — headless runs on this Mac have no Artifact tool, so a Claude session that does must write it (shape in archive-audit.mjs)` };
+  let j;
+  try { j = JSON.parse(readFileSync(path, "utf8")); } catch { return { ok: false, why: `${path} does not parse` }; }
+  const at = Date.parse(j?.exported_at ?? "");
+  if (!Number.isFinite(at) || now - at > 8 * DAY) return { ok: false, why: `the gallery export is ${Number.isFinite(at) ? `${daysSince(at, now)} days old` : "undated"} — older than a week is not this week's gallery` };
+  return { ok: true, artifacts: Array.isArray(j.artifacts) ? j.artifacts : null, loops: Array.isArray(j.open_loops) ? j.open_loops : null };
 }
 
 async function main() {
@@ -162,11 +168,11 @@ async function main() {
   const prev = loadState("archive-audit");
   const readings = [auditEmailMap(now), auditSideBusiness(now), auditHandoff(now)];
 
-  const g = readGalleryAndLoops();
+  const g = readGalleryExport();
   let filed = 0;
   let toFile = [];
   if (!g.ok || g.loops === null) {
-    readings.push({ key: "open_loops", state: "stop", line: `The Open Loops page could not be read through her Claude session (${g.ok ? "no open_loops list" : g.why}).` });
+    readings.push({ key: "open_loops", state: "stop", line: `The Open Loops page could not be read (${g.ok ? "no open_loops list" : g.why}).` });
   } else {
     const stale = g.loops.filter((l) => { const t = dateIn(l?.date); return t !== null && daysSince(t, now) >= STALE_DAYS; });
     readings.push(stale.length
@@ -174,7 +180,7 @@ async function main() {
       : { key: "open_loops", state: "ok", line: `Open Loops: ${g.loops.length} item(s), none 14+ days old.` });
   }
   if (!g.ok || g.artifacts === null) {
-    readings.push({ key: "gallery", state: "stop", line: `The artifact gallery could not be listed through her Claude session (${g.ok ? "no artifacts list" : g.why}).` });
+    readings.push({ key: "gallery", state: "stop", line: `The artifact gallery could not be listed (${g.ok ? "no artifacts list" : g.why}).` });
   } else {
     toFile = g.artifacts
       .filter((x) => /^https:\/\/claude\.ai\/(code\/)?artifact\//.test(String(x?.url ?? "")) && String(x?.title ?? "").trim() && !NOT_OURS_RE.test(String(x.title)))
