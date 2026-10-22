@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { seatForAsk, splitAsks, triage, triageLines } from "../../src/shared/boss/intake/triage.mjs";
+import { oneLine, seatForAsk, splitAsks, triage, triageLines } from "../../src/shared/boss/intake/triage.mjs";
 
 /**
  * SIMONE'S TRIAGE (owner, 22 Oct 2026): "i should not have to put an employee name, my main
@@ -54,7 +54,7 @@ describe("a multi-part email splits where the work changes hands", () => {
   it("a list of build steps for one site stays ONE job for Danielle", () => {
     const jobs = triage({ subject: "", text: "fix the footer on the site\n- make the header blue\n- add a contact form", roster: ROSTER });
     expect(jobs.map((j) => j.seat.name)).toEqual(["Danielle"]);
-    expect(triageLines(jobs)).toEqual(["Danielle has: fix the footer on the site"]);
+    expect(triageLines(jobs)).toEqual(["Danielle has: fix the footer on the site - make the header blue - add a contact form"]);
   });
 
   it("an 'also' paragraph is its own ask", () => {
@@ -82,5 +82,19 @@ describe("never bounced to her", () => {
 
   it("returns nothing only when the roster is empty", () => {
     expect(triage({ subject: "x", text: "build a site", roster: [] })).toEqual([]);
+  });
+});
+
+describe("the acknowledgement quotes her request whole (22 Oct 2026 live defect)", () => {
+  it("a hard-wrapped body is joined, never cut at the client's wrap", () => {
+    const body = "What are the three cheapest ways to host a static website with a custom\r\ndomain, and what does each cost per month?";
+    const jobs = triage({ subject: "cheap static hosting", text: body, roster: ROSTER });
+    expect(triageLines(jobs)).toEqual([
+      "Camille has: What are the three cheapest ways to host a static website with a custom domain, and what does each cost per month?",
+    ]);
+  });
+  it("only the first paragraph, and no ellipsis anywhere", () => {
+    expect(oneLine("Build the page\nin the studio repo.\n\nThanks!")).toBe("Build the page in the studio repo.");
+    expect(oneLine("x".repeat(400))).toHaveLength(400);
   });
 });

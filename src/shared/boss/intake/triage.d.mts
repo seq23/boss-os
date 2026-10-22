@@ -7,3 +7,4 @@ export function seatForAsk<S extends TriageSeat>(text: string, roster: S[]): { s
 export function splitAsks(text: string): { context: string; parts: string[] };
 export function triage<S extends TriageSeat>(input: { subject?: string; text?: string; roster?: S[] }): Array<TriageJob<S>>;
 export function triageLines(jobs: Array<{ seat: TriageSeat; ask: string; closest: boolean }>): string[];
+export function oneLine(s: string): string;

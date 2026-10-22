@@ -175,7 +175,13 @@ export function triageLines(jobs) {
   return jobs.map((j) => `${j.seat.name} has: ${oneLine(j.ask)}${j.closest ? " (closest fit — say so if you meant someone else)" : ""}`);
 }
 
-/** The ask's first line, whole — never cut mid-sentence with an ellipsis. */
-function oneLine(s) {
-  return String(s ?? "").split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? "";
+/**
+ * The ask's first paragraph, whole, on one line. NOT its first line: mail clients hard-wrap plain
+ * text at ~76 characters, so "the first line" of her live proof email (22 Oct 2026) was "What are
+ * the three cheapest ways to host a static website with a custom" — her request cut mid-sentence in
+ * Simone's acknowledgement. A paragraph is never cut, with or without an ellipsis.
+ */
+export function oneLine(s) {
+  const para = String(s ?? "").replace(/\r/g, "").split(/\n\s*\n/).map((p) => p.trim()).find(Boolean) ?? "";
+  return para.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
 }
