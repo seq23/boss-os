@@ -256,9 +256,12 @@ async function main() {
       if (childArgs.length === 0) fail("usage: vault:run -- <command> [args...]");
       const key = loadMasterKey();
       const secrets = readVault(key);
+      // A West Peek key (the fund's Resend team, any WP_ credential) never reaches a Boss OS
+      // process, whether it came from the shared vault or from the calling shell.
+      const { bossOsProcessEnv } = await import("../lib/vault-env.mjs");
       const child = spawn(childArgs[0], childArgs.slice(1), {
         stdio: "inherit",
-        env: { ...process.env, ...secrets },
+        env: bossOsProcessEnv({ ...process.env, ...secrets }),
       });
       child.on("exit", (code) => process.exit(code ?? 1));
       break;
@@ -395,6 +398,11 @@ async function main() {
       }
       for (const name of names) {
         if (!(name in secrets)) fail(`mapped secret ${name} is not in the vault; refusing partial sync.`);
+      }
+      const { isWestPeekKey } = await import("../lib/vault-env.mjs");
+      const fundKeys = names.filter((n) => isWestPeekKey(n));
+      if (fundKeys.length) {
+        fail(`secret_names lists West Peek key(s) ${fundKeys.join(", ")}. The fund's keys never go on the Boss OS Worker; move each to not_synced.`);
       }
 
       for (const name of names) {

@@ -9,3 +9,4 @@ export function employeeMail(
 ): { from: string; to: string[]; reply_to: string; subject: string; text: string; html?: string; attachments?: Array<{ filename: string; content: string }> };
 export function filesAt(paths: readonly string[]): Array<{ name: string; bytes: number; path: string | null }>;
 export const EMPLOYEE_LOCAL_PARTS: string[];
+export const FUND_SIDE_CHASSIS_SENDERS: string[];

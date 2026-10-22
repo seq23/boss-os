@@ -65,12 +65,38 @@ const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
  * (owner, 12 Oct 2026). When the Boss OS sender is refused, the last resort is The Industry Guides
  * team (cryptoclearr's Resend: theindustryguides.com) as `Boss OS <hello@theindustryguides.com>`,
  * keyed by BOSS_OS_FALLBACK_MAIL_KEY, and the run raises WRONG_SENDING_IDENTITY so the fallback
- * never passes unnoticed. The fund-side chassis scripts pass their own West Peek fallback instead
- * (scripts/ops/fund-side-chassis.mjs); tests/bossMailFallback.test.ts pins both halves.
+ * never passes unnoticed. Every script uses this pair, the fund-side chassis copies included
+ * (22 Oct 2026: they used to fall back to the fund's team); tests/bossMailFallback.test.ts pins it.
  *
  * The env name is prefixed (BOSS_OS_FALLBACK_MAIL_KEY, not a bare RESEND_API_KEY) because
- * RESEND_API_KEY already means the West Peek team here, and one name must never mean two accounts.
+ * RESEND_API_KEY is the West Peek fund's team, which `vault:run` now strips before any Boss OS
+ * process starts (scripts/lib/vault-env.mjs bossOsProcessEnv).
  */
+/**
+ * THE FUND-SIDE CHASSIS SENDERS, NAMED ONCE.
+ *
+ * Boss OS carries West Peek chassis code by copy (capital, buyer-hunt, people, LP). What these
+ * scripts report on is fund-shaped work, so their rows are kept OFF the Boss OS email map
+ * (tests/outboundEmailMap.test.ts reads this list for that exemption; it lives here, in the
+ * module every one of them imports, so it is reached code and not a list beside it).
+ *
+ * THEY SEND THROUGH BOSS OS'S OWN TEAM. Until 22 Oct 2026 they fell back to the fund's Resend team
+ * (RESEND_API_KEY, westpeek.ventures) whenever the Boss OS sender was refused, because `vault:run`
+ * injected every key in the shared Mac vault. The owner's rule: Boss OS only ever gets its own
+ * team's key. They now use `sendersFor`'s default — BOSS_OS_MAIL_KEY, then The Industry Guides
+ * fallback — `vault:run` strips the fund's key before any Boss OS process starts
+ * (scripts/lib/vault-env.mjs bossOsProcessEnv), and tests/bossKeySeparation.test.ts fails if any
+ * file here reads a West Peek key or names a West Peek From again.
+ */
+export const FUND_SIDE_CHASSIS_SENDERS = [
+  "scripts/ops/buyer-hunt.mjs",
+  "scripts/ops/interest-match.mjs",
+  "scripts/ops/ledger-hunt.mjs",
+  "scripts/ops/lp-outcomes.mjs",
+  "scripts/ops/lp-positive.mjs",
+  "scripts/ops/people-worth-a-call.mjs",
+];
+
 export const FALLBACK_FROM = "Boss OS <hello@theindustryguides.com>";
 export const FALLBACK_STOP =
   "NAMED STOP [WRONG_SENDING_IDENTITY] sent as The Industry Guides because the Boss OS sender was refused. " +

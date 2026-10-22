@@ -1,0 +1,11 @@
+export const VAULT_MANIFEST: string;
+export const HANDED_OFF_NAMES: string;
+export function vaultNames(manifestPath?: string): Set<string>;
+export function vendorPrefixOf(name: string): string;
+export function vaultLookup(wanted: string[], names?: Set<string>): { searched: string[]; found: string[]; by_vendor: Record<string, string[]>; missing: string[]; allowed: string[] };
+export function envForRepoRun(base: Record<string, string | undefined>, allowed: string[], known?: Set<string>): Record<string, string | undefined>;
+export function rememberHandedOff(names: string[], path?: string): string[];
+export function handedOffNames(path?: string): Set<string>;
+export const FUND_TEAM_KEYS: readonly string[];
+export function isWestPeekKey(name: string): boolean;
+export function bossOsProcessEnv<T extends Record<string, unknown>>(env: T): Partial<T>;

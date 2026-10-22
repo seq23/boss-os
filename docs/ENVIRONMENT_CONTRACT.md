@@ -16,7 +16,7 @@ PRESENT / MISSING / UNPROVEN (UNPROVEN = cannot be confirmed without credentials
 | `OPENROUTER_API_KEY` | yes (vault) | P4 live proof (optional provider) | AI provider adapter | MISSING — CREDENTIAL GATE |
 | `GOOGLE_OAUTH_CLIENT_ID` | no | P51 calendar + Gmail send | `effects/googleClient.ts` | SET |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | yes (vault) | P51 calendar + Gmail send | `effects/googleClient.ts` | SET |
-| `RESEND_API_KEY` | yes (vault) | P33 outbound email | `effects/resendClient.ts` | SET |
+| `RESEND_API_KEY` | never on this Worker | P33 chassis transport (inert here) | `effects/resendClient.ts` | NOT HELD — it is the West Peek fund's Resend team; `vault:run` strips it and `sync:cloudflare` refuses it (22 Oct 2026, `tests/bossKeySeparation.test.ts`) |
 | `WP_OS_EMAIL_FROM` | no — config, not a secret | P33; the address the firm sends as | `effects/*`, `services/sendAs.ts` | SET (`os@westpeek.ventures`) |
 | `WP_OS_EMAIL_SEND` | no — config, not a secret | P33; must be the literal `enabled` | `effects/resendClient.ts` | SET (`enabled`) |
 | `TELEGRAM_BOT_TOKEN` | yes (vault) | deferred (capture channel) | capture adapter | MISSING — CREDENTIAL GATE |

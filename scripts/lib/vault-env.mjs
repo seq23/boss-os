@@ -95,3 +95,30 @@ export function rememberHandedOff(names, path = HANDED_OFF_NAMES) {
 export function handedOffNames(path = HANDED_OFF_NAMES) {
   try { return new Set(existsSync(path) ? JSON.parse(readFileSync(path, "utf8")).names ?? [] : []); } catch { return new Set(); }
 }
+
+/**
+ * ─── THE FUND'S KEYS NEVER REACH A BOSS OS PROCESS (22 Oct 2026) ────────────
+ *
+ * The Mac vault is shared with West Peek OS, and `vault:run` used to inject EVERY key it holds. So
+ * every Boss OS process carried `RESEND_API_KEY` — the WEST PEEK FUND's Resend team (its domains:
+ * joinwestpeek.com, westpeek.ventures, events.westpeek.live) — and six chassis scripts fell back to
+ * sending through it. Boss OS and the fund are two businesses; Boss OS sends only through its own
+ * team (`BOSS_OS_MAIL_KEY`) and its declared fallback (`BOSS_OS_FALLBACK_MAIL_KEY`).
+ *
+ * ONE LIST: `vault:run` strips these before spawning, `sync:cloudflare` refuses to put one on the
+ * Worker, and `tests/bossKeySeparation.test.ts` fails if any Boss OS file reads one.
+ */
+export const FUND_TEAM_KEYS = Object.freeze(["RESEND_API_KEY"]);
+
+/** A West Peek key: the fund's Resend team key, or any West Peek OS credential (the `WP_` prefix). */
+export function isWestPeekKey(name) {
+  const n = String(name ?? "").trim();
+  return FUND_TEAM_KEYS.includes(n) || /^WP_/.test(n);
+}
+
+/** The environment a Boss OS process may start with: everything except a West Peek key. */
+export function bossOsProcessEnv(env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env ?? {})) if (!isWestPeekKey(k)) out[k] = v;
+  return out;
+}

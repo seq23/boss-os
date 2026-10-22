@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { FUND_SIDE_CHASSIS_MODULE, FUND_SIDE_CHASSIS_SENDERS, westPeekFallback } from "../scripts/ops/fund-side-chassis.mjs";
+import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/notify.mjs";
 import { FALLBACK_FROM, sendersFor } from "../scripts/ops/notify.mjs";
 
 /**
@@ -13,7 +13,7 @@ import { FALLBACK_FROM, sendersFor } from "../scripts/ops/notify.mjs";
  * is now The Industry Guides team (BOSS_OS_FALLBACK_MAIL_KEY, hello@theindustryguides.com).
  *
  * 1. No Boss OS file in scripts/ops or src names a From on westpeek.ventures or joinwestpeek.com.
- *    The fund-side chassis copies are exempt BY NAME, from the one list in fund-side-chassis.mjs.
+ *    No exemptions: since 22 Oct 2026 the fund-side chassis copies send through Boss OS's team too.
  * 2. sendersFor's default fallback is The Industry Guides, never RESEND_API_KEY.
  */
 
@@ -25,7 +25,8 @@ export const WEST_PEEK_FROM = [
   new RegExp(String.raw`\bfrom["'\`]?\s*[:=]\s*["'\`][^"'\`\n]*@${WP}`, "i"),
 ];
 
-const EXEMPT = new Set<string>([...FUND_SIDE_CHASSIS_SENDERS, FUND_SIDE_CHASSIS_MODULE]);
+// NO EXEMPTIONS since 22 Oct 2026: the fund-side chassis copies send through Boss OS's own team too.
+const EXEMPT = new Set<string>();
 
 export function westPeekFroms(files: Array<{ file: string; source: string }>): string[] {
   return files.filter(({ file, source }) => !EXEMPT.has(file) && WEST_PEEK_FROM.some((re) => re.test(source))).map(({ file }) => file);
@@ -45,20 +46,21 @@ describe("Boss OS mail never names a West Peek From", () => {
     expect(
       westPeekFroms(scanned),
       "Boss OS's own mail falls back to The Industry Guides (BOSS_OS_FALLBACK_MAIL_KEY), never West Peek. " +
-        "A fund-side chassis copy belongs on FUND_SIDE_CHASSIS_SENDERS in scripts/ops/fund-side-chassis.mjs.",
+        "No file is exempt: the fund-side chassis copies send through Boss OS's own team as well.",
     ).toEqual([]);
   });
 
-  it("every exemption still exists in the scan", () => {
+  it("has no exemptions, and scans every fund-side chassis copy", () => {
+    expect([...EXEMPT]).toEqual([]);
     const names = new Set(scanned.map((f) => f.file));
-    expect([...EXEMPT].filter((f) => !names.has(f))).toEqual([]);
+    expect(FUND_SIDE_CHASSIS_SENDERS.filter((f) => !names.has(f))).toEqual([]);
   });
 
   it("the pattern catches the old notify.mjs fallback and spares the new one", () => {
     const old = "{ from: `${label} <${local}@westpeek.ventures>`, key: process.env.RESEND_API_KEY }";
     expect(westPeekFroms([{ file: "scripts/ops/notify.mjs", source: old }])).toEqual(["scripts/ops/notify.mjs"]);
     expect(westPeekFroms([{ file: "src/x.ts", source: 'const FROM = "Porter <porter@joinwestpeek.com>";' }])).toEqual(["src/x.ts"]);
-    expect(westPeekFroms([{ file: "scripts/ops/lp-outcomes.mjs", source: old }])).toEqual([]);
+    expect(westPeekFroms([{ file: "scripts/ops/lp-outcomes.mjs", source: old }])).toEqual(["scripts/ops/lp-outcomes.mjs"]);
     expect(westPeekFroms([{ file: "scripts/ops/notify.mjs", source: `from: "${FALLBACK_FROM}"; // MAILBOX = "sequoia@westpeek.ventures"` }])).toEqual([]);
   });
 });
@@ -84,13 +86,16 @@ describe("sendersFor's fallback", () => {
     expect(sendersFor("Danielle").map((s) => s.key)).toEqual(["primary"]);
   });
 
-  it("the fund-side chassis keeps its own West Peek fallback, only when it asks for it", () => {
+  it("the fund-side chassis copies use the default Boss OS pair and never pass a West Peek fallback", () => {
     process.env.BOSS_OS_MAIL_KEY = "primary";
+    process.env.BOSS_OS_FALLBACK_MAIL_KEY = "fallback";
     process.env.RESEND_API_KEY = "west-peek";
-    const fund = sendersFor("Monique", { fallback: westPeekFallback });
-    expect(fund[1]).toMatchObject({ from: "Monique · Boss OS <monique@westpeek.ventures>", key: "west-peek" });
+    expect(sendersFor("Monique").map((s) => s.key)).toEqual(["primary", "fallback"]);
+    expect(FUND_SIDE_CHASSIS_SENDERS.length).toBeGreaterThan(0);
     for (const f of FUND_SIDE_CHASSIS_SENDERS) {
-      expect(readFileSync(path.join(ROOT, f), "utf8"), `${f} must pass westPeekFallback explicitly`).toContain("fallback: westPeekFallback");
+      const src = readFileSync(path.join(ROOT, f), "utf8");
+      expect(src, `${f} must not pass a West Peek fallback`).not.toMatch(/westPeekFallback|fallback:\s*\w/);
+      expect(src, `${f} must call sendersFor`).toMatch(/sendersFor\(/);
     }
   });
 });
