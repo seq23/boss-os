@@ -323,13 +323,16 @@ async function committedMonthlyUsd(env: Env): Promise<number> {
 const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
 function titleFor(phrase: string, who: string): string {
-  const trimmed = phrase.replace(/^\s*[a-z]+\s*[-–—:]\s*/i, "").trim();
+  // One line: a phrase that wrapped in her mail client carried its \r\n into the duty's name.
+  const trimmed = phrase.replace(/\s+/g, " ").replace(/^\s*[a-z]+\s*[-–—:]\s*/i, "").trim();
   const short = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
   return `${short.slice(0, 90)} — ${who}`;
 }
 
 function matchDeliverable(text: string): string | null {
-  if (/\b(report|briefing|intelligence|news)\b/i.test(text)) return "executive_reports";
+  // "send me a summary / digest / recap / update of what changed" is a report to her (22 Oct 2026: her
+  // first untagged duty by email, "…send me a five-line summary", was refused for having no route).
+  if (/\b(report|briefing|intelligence|news|summary|summari[sz]e|digest|recap|roundup|round-up|what changed)\b/i.test(text)) return "executive_reports";
   if (/\b(buyer|acquirer|sourcing|prospect firm|counterpart)\b/i.test(text)) return "sourcing_candidates";
   if (/\b(backlink|link|domain|outreach target)\b/i.test(text)) return "link_prospects";
   if (/\b(tool|software|saas|subscription)\b/i.test(text)) return "tool_suggestions";
