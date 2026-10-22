@@ -352,3 +352,44 @@ describe("every outreach sender and every Memphis Senior Care Homes path is on t
     }
   });
 });
+
+/*
+ * 22 Oct 2026 repairs, pinned: the KDP surface row says what the installer schedules (monthly, the
+ * 1st at 09:30 since 0285 — it said "daily"), and Porch & Party's senders are on the map with the
+ * sender they really use. A schedule written in prose next to a different one in code is the drift
+ * this map exists to prevent, so the row is read against the installer, not against itself.
+ */
+describe("the 22 Oct 2026 repairs stay repaired", () => {
+  const rowOf = (id: string) => MAP.split("\n").find((l) => l.startsWith(`| \`${id}\` |`)) ?? "";
+  const installer = readFileSync(path.join(ROOT, "scripts/ops/install-agent-launchd.sh"), "utf8");
+
+  it("the KDP surface row matches the installer's schedule", () => {
+    const row = rowOf("kdp-surface-report");
+    expect(row, "kdp-surface-report row missing").not.toBe("");
+    const at = installer.indexOf("duty-run.sh kdp-surface.sh");
+    expect(at).toBeGreaterThan(-1);
+    const cal = installer.slice(at, at + 600);
+    expect(cal).toMatch(/<key>Day<\/key><integer>1<\/integer><key>Hour<\/key><integer>9<\/integer><key>Minute<\/key><integer>30<\/integer>/);
+    expect(row).toMatch(/monthly, 1st at 09:30/);
+    expect(row).not.toMatch(/\bdaily 09:30\b/);
+  });
+
+  it("Porch & Party's six paths are on the map, from hello@porchandparty901.com through Cloudflare Email Service", () => {
+    const ids = ["pnp-valerie-todo", "pnp-new-request", "pnp-invoices", "pnp-hold-reminders", "pnp-customer-reminders", "pnp-marketplace-renew"];
+    for (const id of ids) {
+      const row = rowOf(id);
+      expect(row, `${id} missing`).not.toBe("");
+      expect(row).toContain("hello@porchandparty901.com");
+      expect(row).toContain("Cloudflare Email Service");
+      expect(row).toMatch(/\| p-n-p /);
+    }
+    expect(rowOf("pnp-marketplace-renew")).toMatch(/seq\.taylor@gmail\.com.*every 7th day from Fri 23 Oct 2026/);
+    expect(rowOf("pnp-valerie-todo")).toMatch(/7 AM.*Your week/);
+  });
+
+  it("the new Boss OS senders (Toni, Zora) are on the map with their launchd labels", () => {
+    expect(rowOf("toni-risk-watch")).toMatch(/com\.seq\.boss-risk-watch.*com\.seq\.boss-outside-locks/);
+    expect(rowOf("zora-archive-audit")).toContain("com.seq.boss-archive-audit");
+    for (const label of ["com.seq.boss-risk-watch", "com.seq.boss-outside-locks", "com.seq.boss-archive-audit"]) expect(installer).toContain(label);
+  });
+});

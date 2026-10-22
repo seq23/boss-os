@@ -33,6 +33,14 @@
     "authority-network-issues": { "seat": "Monique", "why": "Backlink prospecting is Monique's duty." },
     "claude-gmail-connector": { "seat": "Simone", "why": "Chief of Staff: ad-hoc sends on your behalf." },
     "client-dashboards-mail": { "seat": "The client", "why": "Client work; the client owns it, not a Boss OS seat." },
-    "client-publication-mail": { "seat": "The client", "why": "Client work; the client owns it, not a Boss OS seat." }
+    "client-publication-mail": { "seat": "The client", "why": "Client work; the client owns it, not a Boss OS seat." },
+    "pnp-valerie-todo": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
+    "pnp-new-request": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
+    "pnp-invoices": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
+    "pnp-hold-reminders": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
+    "pnp-customer-reminders": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
+    "pnp-marketplace-renew": { "seat": "Danielle", "why": "Porch & Party's own mail, sent by the p-n-p repo (a grid repo) through its pnp-mailer Worker; Danielle ships changes to it." },
+    "toni-risk-watch": { "seat": "Toni", "why": "Her daily risk watch and weekly outside-locks check (22 Oct 2026)." },
+    "zora-archive-audit": { "seat": "Zora", "why": "Her Friday archive audit (22 Oct 2026)." }
   }
 }

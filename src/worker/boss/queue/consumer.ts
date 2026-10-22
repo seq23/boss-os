@@ -199,8 +199,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
 
     const dispatched = await dispatchRunForTask(env, {
       // Scheduled: a duty made this, so the budget may refuse it. Work she asks for arrives through
-      // POST /backends/dispatch instead and is never gated.
-      scheduled: true,
+      // POST /backends/dispatch instead and is never gated — and so is a research page she asked
+      // Camille for by email (22 Oct 2026): her ask is not a duty, and the budget stops duties only.
+      scheduled: !(input.research_page && typeof input.research_page === "object"),
       taskId: task.id,
       lane: task.lane,
       backendId,

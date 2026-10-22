@@ -1010,7 +1010,7 @@ cat > "$POSITIVE_PLIST" <<POSEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh lp-positive.mjs -- npm run --silent lp:positive -- --email</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh lp-positive.mjs -- npm run --silent lp:positive -- --email --followups</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -1025,7 +1025,7 @@ POSEOF
 launchctl unload "$POSITIVE_PLIST" 2>/dev/null || true
 lint_plist "$POSITIVE_PLIST"
 launchctl load "$POSITIVE_PLIST"
-echo "Installed $POSITIVE_LABEL — Tuesday 08:15 Central (lp-positive.mjs --email)."
+echo "Installed $POSITIVE_LABEL — Tuesday 08:15 Central (lp-positive.mjs --email --followups)."
 
 # ─── Toni's credential prober ────────────────────────────────────────────────
 #
@@ -1085,6 +1085,110 @@ lint_plist "$CRED_PLIST"
 launchctl load "$CRED_PLIST"
 echo "Installed $CRED_LABEL — daily 06:15 Central, reporting to duty_credentials (Toni)."
 
+# ─── Zora's archive audit and Toni's two risk duties (22 Oct 2026) ─────────────
+#
+# Owner-approved: Zora, weekly on Friday, checks the living documents against the code and files
+# every delivered piece on one list; Toni, daily and quiet unless something moves, watches money
+# (OpenRouter, bills, renewals) and mail health (bounces, complaints, unsubscribes, DKIM), and weekly
+# reads for outside locks. Each is WRAPPED IN duty-run.sh so its run reaches its duty row
+# (duty_archive_audit, duty_risk_watch, duty_outside_locks, migration 0288). Toni's duties are in the
+# ops lane; her trading lane is untouched. 08:20 and 08:40: after the briefing, clear of 09:00.
+ARCHIVE_LABEL="com.seq.boss-archive-audit"
+ARCHIVE_PLIST="$HOME/Library/LaunchAgents/$ARCHIVE_LABEL.plist"
+
+cat > "$ARCHIVE_PLIST" <<ARCHIVEEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$ARCHIVE_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh archive-audit.mjs -- npm run --silent archive:audit</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>40</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$LOGS/archive-audit.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/archive-audit.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+ARCHIVEEOF
+
+launchctl unload "$ARCHIVE_PLIST" 2>/dev/null || true
+lint_plist "$ARCHIVE_PLIST"
+launchctl load "$ARCHIVE_PLIST"
+echo "Installed $ARCHIVE_LABEL — Friday 08:40 Central, reporting to duty_archive_audit (Zora)."
+
+RISK_LABEL="com.seq.boss-risk-watch"
+RISK_PLIST="$HOME/Library/LaunchAgents/$RISK_LABEL.plist"
+
+cat > "$RISK_PLIST" <<RISKEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$RISK_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh risk-watch.mjs -- npm run --silent risk:watch</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>20</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$LOGS/risk-watch.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/risk-watch.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+RISKEOF
+
+launchctl unload "$RISK_PLIST" 2>/dev/null || true
+lint_plist "$RISK_PLIST"
+launchctl load "$RISK_PLIST"
+echo "Installed $RISK_LABEL — daily 08:20 Central, reporting to duty_risk_watch (Toni)."
+
+LOCKS_LABEL="com.seq.boss-outside-locks"
+LOCKS_PLIST="$HOME/Library/LaunchAgents/$LOCKS_LABEL.plist"
+
+cat > "$LOCKS_PLIST" <<LOCKSEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$LOCKS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh outside-locks.mjs -- npm run --silent risk:locks</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>40</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$LOGS/outside-locks.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/outside-locks.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+LOCKSEOF
+
+launchctl unload "$LOCKS_PLIST" 2>/dev/null || true
+lint_plist "$LOCKS_PLIST"
+launchctl load "$LOCKS_PLIST"
+echo "Installed $LOCKS_LABEL — Monday 08:40 Central, reporting to duty_outside_locks (Toni)."
+
 echo "Installed $LABEL — fetches the sky and the market, then checks for queued work at 06:05, 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
 echo
@@ -1126,6 +1230,9 @@ require_loaded "$PROPS_LABEL"
 # "Verified" line that did not mention it — the installer and its own verifier each keeping their own
 # list of jobs, which is the defect this file's comments warn about, inside this file.
 require_loaded "$PEOPLE_LABEL"
+require_loaded "$ARCHIVE_LABEL"
+require_loaded "$RISK_LABEL"
+require_loaded "$LOCKS_LABEL"
 # THE RETIRED CASE WATCH MUST BE ABSENT, and its absence is checked the same way its presence was.
 # `require_loaded "$KDP_LABEL"` survived the retirement stanza above, so from 14 September every run
 # of this installer ended "NOT INSTALLED: com.seq.kdp-watch" and exit 1 — after it had already

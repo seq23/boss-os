@@ -11,6 +11,7 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound } from "../lib/http";
 import { admitTask } from "../tasks/admit";
+import { newId } from "../lib/id";
 import { parseFirmScan, scanReport } from "../research/firmScan";
 
 export const research = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -72,3 +73,66 @@ export function sentenceFor(s: any): string {
     default: return String(s.state);
   }
 }
+
+/*
+ * ─── CAMILLE'S RESEARCH PAGES (22 Oct 2026) ─────────────────────────────────
+ *
+ * The page she asked for, as a page: self-contained HTML, readable on a phone. The list is JSON —
+ * the "one findable list" of everything delivered is `GET /api/boss/research/delivered`, which
+ * reads `delivered_work` (research pages filed on delivery, every other piece filed by Zora's
+ * Friday duty). No screen is added here; she has not approved one.
+ */
+research.get("/pages/:id", async (c) => {
+  const row = await c.env.DB.prepare(`SELECT * FROM research_pages WHERE id = ?`).bind(c.req.param("id")).first<any>();
+  if (!row) throw notFound("No research page with that id");
+  if (row.state !== "delivered") {
+    return ok(c, { id: row.id, state: row.state, question: row.question, failure_reason: row.failure_reason ?? null });
+  }
+  const { renderResearchPageHtml } = await import("../../../shared/boss/research/page.mjs");
+  const parse = (s: string | null) => { try { return s ? JSON.parse(s) : []; } catch { return []; } };
+  return c.html(renderResearchPageHtml({
+    title: row.title, summary: row.summary ?? "", markdown: row.markdown ?? "", sources: parse(row.sources),
+    gaps: parse(row.gaps), question: row.question, delivered_at: row.delivered_at,
+  }));
+});
+
+research.get("/pages", async (c) => {
+  const rows = await c.env.DB
+    .prepare(`SELECT id, task_id, question, state, title, summary, status, failure_reason, requested_at, delivered_at FROM research_pages ORDER BY requested_at DESC LIMIT 50`)
+    .all<any>();
+  return ok(c, { items: rows.results ?? [] });
+});
+
+research.get("/delivered", async (c) => {
+  const rows = await c.env.DB
+    .prepare(`SELECT id, kind, title, location, owner_seat, delivered_at, filed_at, filed_by FROM delivered_work ORDER BY delivered_at DESC LIMIT 500`)
+    .all<any>();
+  return ok(c, { items: rows.results ?? [] });
+});
+
+/*
+ * Zora's Friday filing (archive-audit.mjs on her Mac): every delivered piece she found that is not on
+ * the list yet. Upsert by location; titles and links only — never a body, never a customer or LP name.
+ */
+research.post("/delivered", async (c) => {
+  const b = await c.req.json<{ items?: { kind?: string; title?: string; location?: string; owner_seat?: string | null; delivered_at?: number | null }[] }>().catch(() => ({} as any));
+  const items = Array.isArray(b?.items) ? b.items : [];
+  if (items.length === 0) throw badRequest("Send { items: [{ kind, title, location, delivered_at }] } — an empty filing is not a filing.");
+  const KINDS = ["research_page", "mockup", "playbook", "page", "report", "plan"];
+  const now = Date.now();
+  let filed = 0;
+  const refused: string[] = [];
+  for (const it of items.slice(0, 500)) {
+    const title = String(it?.title ?? "").trim().slice(0, 200);
+    const location = String(it?.location ?? "").trim();
+    const kind = KINDS.includes(String(it?.kind)) ? String(it?.kind) : "page";
+    if (!title || !/^https:\/\/\S+$/.test(location) || /@/.test(title)) { refused.push(location || title || "(blank)"); continue; }
+    await c.env.DB.prepare(
+      `INSERT INTO delivered_work (id, kind, title, location, owner_seat, delivered_at, filed_at, filed_by)
+       VALUES (?,?,?,?,?,?,?, 'zora')
+       ON CONFLICT(location) DO UPDATE SET title = excluded.title, kind = excluded.kind, delivered_at = COALESCE(excluded.delivered_at, delivered_work.delivered_at)`,
+    ).bind(newId("dlw"), kind, title, location, it?.owner_seat ?? null, Number(it?.delivered_at) || now, now).run();
+    filed += 1;
+  }
+  return ok(c, { filed, refused });
+});

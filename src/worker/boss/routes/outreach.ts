@@ -110,7 +110,7 @@ outreach.post("/settings", async (c) => {
 outreach.put("/business/:key", async (c) => {
   const b = businessByKey(c.req.param("key"));
   if (!b) throw notFound("No business with that key.");
-  const body = await c.req.json<{ postal_address?: string; resume?: boolean; seat_holder_domain?: string }>().catch(() => ({} as any));
+  const body = await c.req.json<{ postal_address?: string; resume?: boolean; pause?: boolean; pause_reason?: string; by?: string; seat_holder_domain?: string }>().catch(() => ({} as any));
   const now = Date.now();
   let holder: string | null | undefined;
   if (body.seat_holder_domain !== undefined) {
@@ -129,10 +129,20 @@ outreach.put("/business/:key", async (c) => {
     // The address was the stop's cause; the next tick re-raises it if anything else is still missing.
     await c.env.DB.prepare(`UPDATE outreach_domain_state SET postal_address = ?, stop_reason = NULL, stop_at = NULL, updated_at = ? WHERE business_key = ?`).bind(a, now, b.key).run();
   }
+  /*
+   * TONI PAUSES A SENDER OVER THRESHOLD (22 Oct 2026, duty_risk_watch). The same pause the tick's
+   * brakes write, with her reason on Monique's card; `resume` clears it exactly as before. A pause
+   * needs a reason — a sender that stops with no sentence is the quiet failure this repo forbids.
+   */
+  if (body.pause === true) {
+    const reason = typeof body.pause_reason === "string" ? body.pause_reason.trim().slice(0, 300) : "";
+    if (reason.length < 10) throw badRequest("A pause needs { pause_reason } — the sentence Monique's card will show.");
+    await c.env.DB.prepare(`UPDATE outreach_domain_state SET paused_at = COALESCE(paused_at, ?), pause_reason = ?, updated_at = ? WHERE business_key = ?`).bind(now, reason, now, b.key).run();
+  }
   if (body.resume === true) {
     await c.env.DB.prepare(`UPDATE outreach_domain_state SET paused_at = NULL, pause_reason = NULL, updated_at = ? WHERE business_key = ?`).bind(now, b.key).run();
   }
-  await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "outreach_domain_state", entityId: b.key, action: "changed", detail: { postal_address_set: typeof body.postal_address === "string", resume: body.resume === true, seat_holder_domain: holder } });
+  await audit(c.env.DB, { actor: body.by === "toni" ? "emp_risk" : "owner", lane: "ops", entityType: "outreach_domain_state", entityId: b.key, action: "changed", detail: { postal_address_set: typeof body.postal_address === "string", resume: body.resume === true, pause: body.pause === true, pause_reason: body.pause === true ? body.pause_reason ?? null : undefined, seat_holder_domain: holder } });
   return ok(c, await domainState(c.env.DB, b.key, now));
 });
 

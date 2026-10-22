@@ -59,7 +59,15 @@ const bad = (why) => { console.error("  ✗", why); fail = 1; };
 // ─── 1. Every Gmail API caller in scripts/ops, not one named file ─────────────
 
 const opsDir = join(ROOT, "scripts/ops");
-const opsFiles = readdirSync(opsDir).filter((f) => /\.(mjs|js|sh)$/.test(f));
+/*
+ * scripts/ops/lib IS SCANNED TOO (22 Oct 2026). The duty kit Zora's and Toni's jobs share reads
+ * headers from Gmail from inside lib/; a scan of the top directory only would have been a guard that
+ * cannot reach what it governs.
+ */
+const opsFiles = [
+  ...readdirSync(opsDir).filter((f) => /\.(mjs|js|sh)$/.test(f)),
+  ...readdirSync(join(opsDir, "lib")).filter((f) => /\.(mjs|js)$/.test(f)).map((f) => `lib/${f}`),
+];
 const callers = opsFiles.filter((f) => /gmail\.googleapis\.com/.test(read(`scripts/ops/${f}`)));
 
 /*
@@ -339,8 +347,51 @@ const installer = existsSync(join(ROOT, "scripts/ops/install-agent-launchd.sh"))
   ? read("scripts/ops/install-agent-launchd.sh")
   : "";
 
+/**
+ * HEADER READERS THAT NEED THE SUBJECT (22 Oct 2026). Toni's risk watch and outside-locks check read
+ * for charge notices and account-lock notices; whether a message is "Your account has been
+ * restricted" lives in its Subject and nowhere in From/To/Date. They read HEADERS ONLY — never a body,
+ * never a snippet — through the shared kit, read-only.
+ */
+const HEADER_READERS = new Map([
+  ["lib/duty-kit.mjs", {
+    why: "Toni's charge and lock notices are recognised by sender domain and Subject; no body is read.",
+    invariants: [
+      [(src) => /format=metadata/.test(src) && /metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date/.test(src), "it must request format=metadata with exactly From, Subject and Date"],
+      [(src) => !/format=full|"format", "full"|format=raw|"format", "raw"|\.snippet/.test(src), "it must never request a body, a raw message or a snippet"],
+      [(src) => !/gmail\.modify|gmail\.send|gmail\.compose|mail\.google\.com|\/send\b/.test(src), "it must hold no scope and call no endpoint that writes or sends"],
+      [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src), "nothing it reads from Gmail may reach a model host"],
+    ],
+  }],
+]);
+
+/**
+ * DRAFT WRITERS (22 Oct 2026). Monique's follow-up drafts for the positive replies Sequoia has not
+ * answered — owner-approved: "a DRAFT follow-up for each placed in her Gmail Drafts … Never sends."
+ * gmail.compose is the scope drafts need, and compose ALSO permits sending, so the narrowness is
+ * asserted here: drafts only, no send endpoint, headers only, no model sees a name.
+ */
+const DRAFT_WRITERS = new Map([
+  ["lp-followups.mjs", {
+    why: "Places one draft per unanswered positive reply in her own Drafts; she sends or labels pass.",
+    invariants: [
+      [(src) => /const MAILBOX = /.test(src) && /sub: MAILBOX/.test(src), "the mailbox it impersonates must be a named constant in the JWT's sub claim"],
+      [(src) => /\/drafts`/.test(src), "it must write through the drafts endpoint"],
+      [(src) => !/drafts\/send|messages\/send|\/send[`"']|gmail\.send|gmail\.modify|mail\.google\.com/.test(src), "it must never call a send endpoint or hold a send/modify scope — drafts only"],
+      [(src) => !/format=full|"format", "full"|format=raw|"format", "raw"|\.snippet/.test(src), "it must read headers only — never a body, a raw message or a snippet"],
+      [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src) && !/spawn(Sync)?\(/.test(src), "no model may see a name: the draft is a fixed template, and no model host or CLI is reachable from this file"],
+      [(src) => /export function draftBody/.test(src), "the draft body must be a fixed template in code (draftBody)"],
+    ],
+  }],
+]);
+
 for (const f of callers) {
   const src = read(`scripts/ops/${f}`);
+  const narrow = HEADER_READERS.get(f) ?? DRAFT_WRITERS.get(f);
+  if (narrow) {
+    for (const [holds, why] of narrow.invariants) if (!holds(src)) bad(`${f}: ${why}.\n      Why it was granted: ${narrow.why}`);
+    continue;
+  }
   const exception = CONTENT_EXCEPTIONS.get(f);
   if (exception) {
     // Read-only is not negotiable even for an exception: content may be read, never written or sent.
@@ -496,7 +547,10 @@ if (fail) {
   process.exit(1);
 }
 
-const metadataOnly = callers.filter((f) => !CONTENT_EXCEPTIONS.has(f));
+for (const f of [...HEADER_READERS.keys(), ...DRAFT_WRITERS.keys()]) {
+  if (!callers.includes(f)) bad(`${f} is named as a narrow Gmail caller and no longer calls Gmail — remove the entry or restore the file.`);
+}
+const metadataOnly = callers.filter((f) => !CONTENT_EXCEPTIONS.has(f) && !HEADER_READERS.has(f) && !DRAFT_WRITERS.has(f));
 console.log(
   `GMAIL SCAN PASSED: ${callers.length} Gmail caller(s) in scripts/ops. ` +
   `${metadataOnly.length} request headers only (${metadataOnly.join(", ")}); ` +

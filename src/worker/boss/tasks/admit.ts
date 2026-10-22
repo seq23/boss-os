@@ -178,6 +178,31 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     if (!employeeHint) employeeHint = "emp_research";
   }
 
+  /*
+   * ─── "#camille research: <question>" IS A RESEARCH PAGE, ON EVERY DOOR (22 Oct 2026) ─────
+   *
+   * The owner: "give Camille a real executor for research deliverables (output: an HTML/markdown
+   * page)". The task names her Claude Code seat and the delivery it owes, so the queue parks it for
+   * her Mac (bk_claude_code, claimed through /backends/claim) and `deliverResearchPage` files the
+   * page. A firm scan or a repo change keeps its own path; only Camille's desk (or no desk) reads it.
+   */
+  const { parseResearchPage, composeResearchPrompt, RESEARCH_PAGE_DELIVERS, RESEARCH_PAGE_SEAT, RESEARCH_PAGE_BACKEND } =
+    await import("../../../shared/boss/research/page.mjs");
+  const researchAsk = !firmScan && !change && !(input.research_page && typeof input.research_page === "object") &&
+      (employeeHint === null || employeeHint === RESEARCH_PAGE_SEAT)
+    ? parseResearchPage([b.title, input.body as string | undefined, input.prompt as string | undefined])
+    : null;
+  const researchId = researchAsk ? newId("rpg") : null;
+  if (researchAsk && researchId) {
+    Object.assign(input as Record<string, unknown>, {
+      research_page: { page_id: researchId, question: researchAsk.question },
+      delivers: RESEARCH_PAGE_DELIVERS,
+      backend_id: RESEARCH_PAGE_BACKEND,
+      prompt: composeResearchPrompt({ id: researchId, question: researchAsk.question }),
+    });
+    employeeHint = RESEARCH_PAGE_SEAT;
+  }
+
   const employeeId: string | null =
     employeeHint ?? (await suggestOwner(env, classification.intakeKind, lane))?.id ?? null;
 
@@ -241,6 +266,13 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
          VALUES (?,?,?,?,?,'queued',?,?)`,
       )
       .bind(scanId, id, firmScan.raw, firmScan.find, firmScan.ask, now, now)
+      .run();
+  }
+
+  if (researchAsk && researchId) {
+    await env.DB
+      .prepare(`INSERT INTO research_pages (id, task_id, question, state, requested_at, updated_at) VALUES (?,?,?,'queued',?,?)`)
+      .bind(researchId, id, researchAsk.question, now, now)
       .run();
   }
 

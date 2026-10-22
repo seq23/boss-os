@@ -63,6 +63,8 @@ export function gridRepoNames(): string[];
 export function repoIn(text: string | null | undefined): string | null;
 export function excludedRepoIn(text: string | null | undefined): { repo: string; why: string } | null;
 export function registeredRepoIn(text: string | null | undefined): { repo: string; github_repo: string } | null;
+export const REGISTERED_REPOS: readonly { readonly name: string; readonly github_repo: string; readonly since: string }[];
+export function registeredByNameIn(text: string | null | undefined): { repo: string; github_repo: string } | null;
 export function parseRepoChange(text: string | null | undefined): RepoChangeParse | RepoChangeExcluded | null;
 export const APPROVAL_WORDS: readonly string[];
 export const HOLD_PREFIXES: readonly string[];

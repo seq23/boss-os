@@ -159,6 +159,33 @@ export function gridRepoNames() {
 }
 
 /**
+ * ─── REPOS REGISTERED BESIDE THE GRID, BY HER STANDING WORD ────────────────
+ *
+ * R24 registers a repo the first time she names it by its GitHub address; these are the ones she has
+ * named as Danielle's to work in for good, so a bare name in her email ("creator-studios: …") is
+ * enough. They are NOT grid properties — the grid is her twelve, pinned by
+ * `validate:the-grid-is-her-twelve-properties` — and they are recorded beside it, exactly like a
+ * `boss_repo_registry` row (migration 0288 writes the same rows there).
+ *
+ * Owner, 22 Oct 2026: "give Danielle a real executor for repo work in seq23/creator-studios".
+ */
+export const REGISTERED_REPOS = Object.freeze([
+  Object.freeze({ name: "creator-studios", github_repo: "seq23/creator-studios", since: "2026-10-22" }),
+]);
+
+/** A registered repo named bare in the text, or null. Same boundary rule as `repoIn`; longest name first. */
+export function registeredByNameIn(text) {
+  const t = String(text ?? "").toLowerCase();
+  const names = [...REGISTERED_REPOS].sort((a, b) => b.name.length - a.name.length);
+  for (const r of names) {
+    if (isExcluded(r.name)) continue;
+    const re = new RegExp(`(?:^|[^a-z0-9_-])${r.name.replace(/[-]/g, "\\-")}(?![a-z0-9_-])`, "i");
+    if (re.test(t)) return { repo: r.name, github_repo: r.github_repo };
+  }
+  return null;
+}
+
+/**
  * A grid repo named in the text. Bare name, `owner/name`, or a GitHub URL — the same three shapes
  * `isExcluded` reads, for the same reason. The longest match wins so `local-guides-citation-velocity`
  * is never read as `local-guides-generator`'s neighbour by prefix.
@@ -240,7 +267,7 @@ export function parseRepoChange(text) {
     if (excluded) return { excluded };
   }
   // R24 (docs/SERVICE_RULES.md): a repo she names by its GitHub address registers at the door.
-  const registered = gridRepo ? null : registeredRepoIn(t);
+  const registered = gridRepo ? null : (registeredRepoIn(t) ?? registeredByNameIn(t));
   const repo = gridRepo ?? registered?.repo ?? null;
   if (!repo && !folder) return null;
   return {

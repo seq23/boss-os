@@ -238,6 +238,7 @@ const pad = (n) => String(n).padStart(2, "0");
  */
 export const INSTALLED_LOCAL_JOBS = [
   "ahrefs-audit-fix.sh",
+  "archive-audit.mjs",
   "buyer-hunt.mjs",
   "credential-check.mjs",
   "filing-hunt.mjs",
@@ -251,7 +252,9 @@ export const INSTALLED_LOCAL_JOBS = [
   "lp-replies.sh",
   "lp-tracker-sync.mjs",
   "mailbox-sweep.sh",
+  "outside-locks.mjs",
   "people-worth-a-call.mjs",
+  "risk-watch.mjs",
   "youtube-comment-watch.sh",
 ];
 

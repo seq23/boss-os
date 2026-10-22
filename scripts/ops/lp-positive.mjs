@@ -70,6 +70,7 @@ import os from "node:os";
 import { sendersFor, employeeMail } from "./notify.mjs";
 import { westPeekFallback } from "./fund-side-chassis.mjs";
 import { addressIn, bulkReason, headersFromRaw, ownDomainReason, replyEvidence } from "./mail-bulk.mjs";
+import { followUps } from "./lp-followups.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 /** The campaign's first send was 23 July 2026. July 1 is a deliberate margin, not a guess. */
@@ -78,6 +79,12 @@ const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os"
 const LIST = path.join(OUT_DIR, "positive.json");
 const SEND = process.argv.includes("--email");
 const VERIFY = process.argv.includes("--verify");
+/**
+ * --followups (22 Oct 2026): which positive replies she has NOT answered, a draft for each in her
+ * Gmail Drafts, and the count at the top of the Tuesday email. See lp-followups.mjs — it never sends,
+ * and no model sees a name.
+ */
+const FOLLOWUPS = process.argv.includes("--followups");
 
 /**
  * GROUND TRUTH, SUPPLIED BY THE OWNER FROM HER OWN RECORDS ON 2026-09-09 — KEPT ON HER MAC.
@@ -312,7 +319,24 @@ const api = async (url, token) => {
   return j;
 };
 
-async function emailHer(list, counts) {
+/** The reminder section: oldest first, days waiting, where the draft is. Names go to her inbox only. */
+export function unansweredSection(f) {
+  if (!f) return [];
+  const rows = f.unanswered ?? [];
+  const where = (r) => (r.draft === "none" ? "no draft (see below)" : r.draft === "waiting" ? "draft waiting in your Gmail Drafts" : "new draft in your Gmail Drafts");
+  return [
+    `${rows.length} POSITIVE REPL${rows.length === 1 ? "Y" : "IES"} YOU HAVEN'T ANSWERED — oldest first`,
+    "",
+    rows.length ? rows.map((r) => `${r.name ? `${r.name}  ` : ""}${r.address}\n    ${r.days ?? "?"} days waiting · ${r.bucket === "call" ? "wants a call" : "keep warm"} · ${where(r)}`).join("\n\n") : "(none — every positive reply has an answer from you)",
+    "",
+    "Each draft offers open times from your calendar. Nothing is sent: edit and send, or put the Gmail label \"pass\" on their message and I stop reminding you.",
+    ...(f.stops?.length ? ["", ...f.stops.map((x) => `Note: ${x}`)] : []),
+    "",
+    "",
+  ];
+}
+
+async function emailHer(list, counts, follow = null) {
   const TO = process.env.LP_POSITIVE_TO ?? "sequoia@westpeek.ventures";
   const SENDERS = sendersFor("Monique", { fallback: westPeekFallback });
   if (SENDERS.length === 0) {
@@ -336,6 +360,7 @@ async function emailHer(list, counts) {
     `Nothing here needs a decision from me — these are yours to answer.`,
     "",
     "",
+    ...unansweredSection(follow),
     `WANTS A CALL (${calls.length})`,
     "",
     calls.length ? calls.map(line).join("\n\n") : "(none yet)",
@@ -358,7 +383,7 @@ async function emailHer(list, counts) {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject: `LP positive replies — ${calls.length} want a call, ${warm.length} to keep warm`, text: body })),
+      body: JSON.stringify(employeeMail(sender, { to: TO, subject: follow?.unanswered?.length ? `${follow.unanswered.length} positive repl${follow.unanswered.length === 1 ? "y" : "ies"} you haven't answered — oldest ${follow.unanswered[0].days ?? "?"} days` : `LP positive replies — ${calls.length} want a call, ${warm.length} to keep warm`, text: body })),
     });
     if (res.ok) { console.log(`Emailed ${TO} from ${from}.`); return true; }
     console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
@@ -465,12 +490,14 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const existing = fs.existsSync(LIST) ? JSON.parse(fs.readFileSync(LIST, "utf8")) : { people: [] };
   const { people, removed, added, promoted } = reconcileList(existing.people ?? [], { found, accepted, rejected });
-  for (const r of removed) console.log(`  REMOVED [${r.bucket}] ${r.name || r.address} — ${r.reason}`);
+  // COUNTS ONLY IN THE LOG (22 Oct 2026): LP names and addresses never reach a log file; they are in
+  // positive.json on her Mac and in the email to her own inbox. `--verify` (run by hand) still prints.
+  for (const r of removed) console.log(`  REMOVED [${r.bucket}] ${VERIFY ? r.name || r.address : "(name withheld)"} — ${r.reason}`);
   fs.writeFileSync(LIST, JSON.stringify({ updated_at: new Date().toISOString(), counts, drops, removed: removed.map((r) => ({ address: r.address, reason: r.reason, removed_at: new Date().toISOString().slice(0, 10) })), people }, null, 2), "utf8");
 
   console.log(`replies read: ${counts.replies}  |  call: ${counts.call}  warm: ${counts.warm}  auto: ${counts.auto}  departed: ${counts.departed}  declined: ${counts.negative}  other: ${counts.other}`);
   console.log(`running list: ${people.length} positive (${added} new this run, ${promoted} promoted warm->call, ${removed.length} removed as not an LP reply)`);
-  for (const p of people) console.log(`  [${p.bucket === "call" ? "CALL" : "warm"}] ${p.name || p.address} — ${p.quote.slice(0, 90)}`);
+  if (VERIFY) for (const p of people) console.log(`  [${p.bucket === "call" ? "CALL" : "warm"}] ${p.name || p.address} — ${p.quote.slice(0, 90)}`);
 
   if (VERIFY) {
     const { KNOWN_REPLIES, UNREACHABLE } = loadKnownReplies();
@@ -501,8 +528,10 @@ async function main() {
     }
   }
 
+  const follow = FOLLOWUPS ? await followUps(people) : null;
+
   if (SEND) {
-    const sent = await emailHer(people, counts);
+    const sent = await emailHer(people, counts, follow);
     if (!sent) process.exit(8);
   } else {
     console.log("\nList updated. Re-run with --email to send the monthly note.");
