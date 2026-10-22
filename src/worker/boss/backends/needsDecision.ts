@@ -66,6 +66,10 @@ export const DELIVERY_KINDS = [
   "tool_suggestions",
   "practice_week",
   "mailbox_findings",
+  // Camille's research page (src/shared/boss/research/page.mjs), filed by routes/backends.ts on
+  // delivery. Missing from this list, the first emailed research page (22 Oct 2026) was DELIVERED
+  // and then sent to her Inbox as "its output landed nowhere".
+  "research_page",
 ] as const;
 
 export function runNeedsHerDecision(

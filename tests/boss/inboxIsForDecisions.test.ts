@@ -52,6 +52,21 @@ describe("an approval exists when her answer changes what happens next", () => {
     expect(verdict.delivers).toBe("executive_reports");
   });
 
+  it("does not raise one for a research page written into its own folder (22 Oct 2026 live false alarm)", () => {
+    const verdict = runNeedsHerDecision(
+      JSON.stringify({ delivers: "research_page" }),
+      { summary: "I wrote the research page to delivers.json.", files_touched: ["/Users/x/.boss-os/research/delivers.json"] },
+      [],
+    );
+    expect(verdict.needed).toBe(false);
+    expect(verdict.delivers).toBe("research_page");
+  });
+
+  it("every delivery key the research lane declares is one this rule knows", async () => {
+    const { RESEARCH_PAGE_DELIVERS } = await import("../../src/shared/boss/research/page.mjs");
+    expect(runNeedsHerDecision(JSON.stringify({ delivers: RESEARCH_PAGE_DELIVERS }), { files_touched: [] }, []).delivers).toBe(RESEARCH_PAGE_DELIVERS);
+  });
+
   it("raises one when the run wrote files outside its own workspace", () => {
     const verdict = runNeedsHerDecision(
       JSON.stringify({ delivers: "executive_reports" }),
