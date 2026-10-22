@@ -152,7 +152,7 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     if (!intakeKind) intakeKind = "repository";
   }
 
-  const classification = classify({
+  let classification = classify({
     title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
     intakeKind: intakeKind ?? undefined, risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
     model_access: b.model_access ?? undefined, audience: b.audience ?? undefined,
@@ -205,6 +205,19 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
       prompt: composeResearchPrompt({ id: researchId, question: researchAsk.question }),
     });
     employeeHint = RESEARCH_PAGE_SEAT;
+    /*
+     * A RESEARCH PAGE IS RESEARCH, WHATEVER ITS TITLE SAYS (22 Oct 2026). The kind was read from the
+     * title before the page was recognised, so "static site hosting" became one_off and Camille's
+     * own seat (bk_claude_code, research/repo_work/document only) refused it — the first research
+     * question emailed without the word "research" in its subject failed on arrival.
+     */
+    if (classification.intakeKind !== "research") {
+      classification = classify({
+        title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
+        intakeKind: "research", risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
+        model_access: b.model_access ?? undefined, audience: b.audience ?? undefined,
+      });
+    }
   }
 
   const employeeId: string | null =

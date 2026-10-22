@@ -238,7 +238,8 @@ export function registeredRepoIn(text) {
     let m;
     while ((m = re.exec(t)) !== null) {
       const owner = m[1];
-      const name = m[2].replace(/\.git$/i, "");
+      // A sentence-ending period is punctuation, not part of the name ("…in seq23/creator-studios.").
+      const name = m[2].replace(/\.+$/, "").replace(/\.git$/i, "");
       if (!name || isExcluded(name)) continue;
       return { repo: name, github_repo: `${owner}/${name}` };
     }

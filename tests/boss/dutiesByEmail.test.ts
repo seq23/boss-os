@@ -290,6 +290,16 @@ describe("the mail door", () => {
     expect(draft.state).toBe("created");
   });
 
+  it("her first live untagged duty (22 Oct 2026): \"send me a summary\" is a report route, and a wrapped line makes a one-line name", async () => {
+    const { res } = await request("new duty", "every monday, research what changed in free AI model offerings last week\r\nand send me a five-line summary. your call");
+    expect(res.outcome).toBe("DUTY_CREATED");
+    const draft = await row<any>(`SELECT employee_id, state, draft_json FROM duty_drafts`);
+    expect(draft.employee_id).toBe("emp_research");
+    const d = JSON.parse(draft.draft_json);
+    expect(d.delivers ?? d.deliverable ?? JSON.stringify(d)).toContain("executive_reports");
+    expect(d.name).not.toMatch(/[\r\n]/);
+  });
+
   it("`your call` in a LATER message is not a pre-approval: it is a note, and nothing is created", async () => {
     const { thread } = await request("#camille new duty", AGENT_PHRASE);
     const res = await handleBossInboundMail(mail({ subject: "Re: #camille new duty", body: "your call", ...thread }), env as never);
