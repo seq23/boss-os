@@ -80,12 +80,15 @@ test.describe("Team → Duties", () => {
 
     const preview = page.getByTestId("duty-preview");
     await expect(preview).toBeVisible();
-    await expect(preview).toContainText("Here is the duty as I would create it for Camille");
-    await expect(preview).toContainText(/Cadence:\s+every Friday at \d\d:\d\d America\/Chicago/);
-    await expect(preview).toContainText(/Executor:\s+an agent/);
-    await expect(preview).toContainText(/Model:\s+Haiku/);
-    await expect(preview).toContainText(/Delivery:\s+executive_reports/);
-    await expect(preview).toContainText("Reply `approved` to create it, `changes: …` to redraft.");
+    await expect(preview).toContainText("Here is the new regular job for Camille, ready to set up");
+    await expect(preview).toContainText(/When:\s+Fridays at \d{1,2}(:\d\d)? (am|pm)/);
+    // Plain words (owner, 22 Oct 2026): no 24-hour clock, no time-zone string, no table name.
+    await expect(preview).not.toContainText("America/Chicago");
+    await expect(preview).not.toContainText("executive_reports");
+    await expect(preview).toContainText(/Runs on:\s+an AI teammate/);
+    await expect(preview).toContainText(/Thinking:\s+the quick model/);
+    await expect(preview).toContainText(/Results go to:\s+executive reports/);
+    await expect(preview).toContainText("Reply approved to set it up, or reply changes: and what you want different.");
     // A preview files nothing.
     expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM duty_drafts`)[0]!.n).toBe(0);
 
@@ -133,7 +136,7 @@ test.describe("Team → Duties", () => {
     await page.getByTestId("preview-duty").click();
     const preview = page.getByTestId("duty-preview");
     await expect(preview).toContainText("NAMED STOP [NO_SUCH_SCRIPT]");
-    await expect(preview).toContainText(/Executor:\s+a job on your Mac/);
+    await expect(preview).toContainText(/Runs on:\s+your Mac/);
     await expect(page.getByTestId("create-duty")).toHaveCount(0);
     expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM duty_drafts`)[0]!.n).toBe(0);
     expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM judgement_calls WHERE resume_kind = 'duty_created'`)[0]!.n).toBe(0);
