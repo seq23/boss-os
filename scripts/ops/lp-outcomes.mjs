@@ -53,7 +53,6 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { sendersFor, employeeMail } from "./notify.mjs";
-import { westPeekFallback } from "./fund-side-chassis.mjs";
 
 const SOURCE_ID = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
 const SENT_TAB = process.env.LP_SOURCE_TAB ?? "Sent Log";
@@ -257,7 +256,7 @@ async function emailHer({ optedOut, replied, bounced, tally, scanned, sentRows }
    * problem rather than a wrong-key problem — so the key travels with the sender rather than being
    * ambient. The West Peek address stays only as a last resort, and says so loudly if ever used.
    */
-  const SENDERS = sendersFor("Monique", { fallback: westPeekFallback });
+  const SENDERS = sendersFor("Monique");
   //
   // `onboarding@resend.dev` WAS a third fallback and has been removed on purpose.
   //
@@ -269,7 +268,7 @@ async function emailHer({ optedOut, replied, bounced, tally, scanned, sentRows }
   // A fallback that always delivers to the wrong place is not a fallback. If both real senders fail,
   // this now fails loudly with a named stop, and the Boss OS inbox note is unaffected because it
   // never depended on the email.
-  if (!process.env.BOSS_OS_MAIL_KEY && !process.env.RESEND_API_KEY) {
+  if (!process.env.BOSS_OS_MAIL_KEY && !process.env.BOSS_OS_FALLBACK_MAIL_KEY) {
     console.error("NAMED STOP [NO_RESEND_KEY] the sheet was updated but no email could be sent.");
     console.error("  The spreadsheet is now correct either way — this is the push, not the record.");
     return false;

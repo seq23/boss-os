@@ -46,7 +46,6 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { sendersFor, employeeMail } from "./notify.mjs";
-import { westPeekFallback } from "./fund-side-chassis.mjs";
 import { observedCadence } from "./lib/cadence.mjs";
 
 const IN_DIR = process.env.BOSS_OS_SOURCING_WORKSPACE ?? path.join(os.homedir(), ".boss-os", "sourcing");
@@ -217,9 +216,9 @@ const CLASS_LABEL = ["You owe them a reply", "Your rhythm has slipped", "The rel
  * any payload containing an `@` and that guard is not weakened, it is simply not on this path.
  */
 async function emailHer(picks, examined, considered) {
-  const SENDERS = sendersFor("Monique", { fallback: westPeekFallback });
+  const SENDERS = sendersFor("Monique");
   if (SENDERS.length === 0) {
-    console.error("NAMED STOP [NO_RESEND_KEY] neither BOSS_OS_MAIL_KEY nor RESEND_API_KEY is set.");
+    console.error("NAMED STOP [NO_RESEND_KEY] neither BOSS_OS_MAIL_KEY nor BOSS_OS_FALLBACK_MAIL_KEY is set.");
     console.error("  Run this through the vault: npm run people:recommend -- --send");
     return false;
   }
