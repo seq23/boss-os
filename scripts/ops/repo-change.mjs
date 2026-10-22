@@ -43,7 +43,7 @@ import {
   REGISTERED_REPOS,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
-import { sendersFor, employeeMail, filesAt, FALLBACK_STOP } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, filesAt, FALLBACK_STOP } from "./notify.mjs";
 import { generateRunbook, readWranglerToml, readWranglerJson, mayRunFromRunbook, runbookSecretNames, secretNamesInSource, vendorPageFor } from "./lib/runbook.mjs";
 import { vaultLookup, envForRepoRun } from "../lib/vault-env.mjs";
 import { servicePracticesBlock } from "../../src/shared/boss/service/practices.mjs";
@@ -101,11 +101,7 @@ async function email(subject, text, files = []) {
   if (senders.length === 0) return null;
   for (const sender of senders) {
     const { from, key } = sender;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text, files })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, files }));
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
       say(`emailed ${TO} from ${from}: ${subject}`);
@@ -414,7 +410,7 @@ async function askForDns(row, repo, records, log) {
   const r = await serviceApi("/dns-waits", { change_id: row.id, repo, records });
   if (!r.ok) { say(`dns waits not recorded (${r.status})`); return; }
   for (const rec of records.slice(0, 5)) {
-    await email(`#danielle needs a DNS record for ${rec.host} ${changeToken(row.id)}`, [
+    await email(`One DNS record to add for ${rec.host} ${changeToken(row.id)}`, [
       "Sequoia,", "",
       `This is Danielle. ${repo} is built; one thing at your DNS provider makes ${rec.host} reach it.`, "",
       waitDetail("DNS_RECORD", { record: { host: rec.host, type: rec.type, name: rec.name, target: rec.target, txtName: rec.txt_name ?? null, txtValue: rec.txt_value ?? null, liveAt: rec.live_at ?? null } }),
@@ -432,8 +428,17 @@ export function screenshotPaths(proof, row) {
 
 // ─── The arc ─────────────────────────────────────────────────────────────────
 
+/** A stop's reason in her words, for the subject line (owner, 22 Oct 2026: no codes she has to decode). */
+const STOP_WORDS = {
+  CHECKS_RED: "the checks failed", NO_CHECKS: "no checks ran", DRIVE_EMPTY: "the Drive folder was empty",
+  PHASE_STUCK: "the work got stuck", POST_LAND_STEP_FAILED: "the step after going live failed",
+};
+export function stopWords(tag) {
+  return STOP_WORDS[tag] ?? String(tag ?? "a problem").toLowerCase().replace(/_/g, " ");
+}
+
 async function fail(row, tag, why, log) {
-  const subject = `#danielle stopped on ${row.repo ?? "your package"} ${changeToken(row.id)} — ${tag}`;
+  const subject = `Stopped work on ${row.repo ?? "your package"}: ${stopWords(tag)} ${changeToken(row.id)}`;
   const text = [
     "Sequoia,", "",
     `This is Danielle. I stopped work on ${row.id} (${row.repo ?? "the package you sent"}) and here is the named reason:`, "",
@@ -693,8 +698,8 @@ async function runPhase(claim) {
     if (!ready && placeholders.length === 0) placeholders.push("(the plan marked itself not publish-ready without naming what would ship as a placeholder)");
     const pre = Boolean(row.pre_approved_phrase);
     const subject = pre
-      ? `#danielle FYI — building ${chosen} ${changeToken(row.id)} (you pre-approved: "${row.pre_approved_phrase}")${ready ? "" : ` — NOT publish-ready, ${row.force_phrase ? "landing by your force" : "preview before landing"}`}`
-      : `#danielle plan for ${chosen} ${changeToken(row.id)} — ${ready ? 'reply "approved"' : `NOT publish-ready (${placeholders.length} placeholder${placeholders.length === 1 ? "" : "s"}) — reply "approved" for a preview`} ${asks.length ? `(${asks.length} question${asks.length === 1 ? "" : "s"}, each with a default)` : ""}`.trim();
+      ? `Building ${chosen} now${ready ? "" : (row.force_phrase ? ", with placeholders, as you said" : " — I'll send a preview before it goes live")} ${changeToken(row.id)}`
+      : `Plan for ${chosen}: reply approved to start${ready ? "" : " (you'll see a preview first)"}${asks.length ? `, ${asks.length} question${asks.length === 1 ? "" : "s"} with my picks` : ""} ${changeToken(row.id)}`;
     const text = [
       "Sequoia,", "",
       ...(pre ? [
@@ -806,7 +811,7 @@ async function runPhase(claim) {
       await failOut("POST_LAND_STEP_FAILED", `${repo} landed as ${out.merge_sha}, and the post-land step you asked for failed: \`${postLand.command}\` exited ${postLand.rc}. ${tail.slice(0, 600)}${reworks ? ` Danielle reworked it ${reworks} time(s) already (${shas.join(", ")}) and the step still fails; the budget of ${MAX_REWORKS} is spent. Her note from the last rework: ${String(row.rework_note ?? "").slice(0, 400)}` : ""}`, log);
       return;
     }
-    const subject = `#danielle DONE: ${repo} ${changeToken(row.id)} — landed and live${isForced(row) ? ` (to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"}, by your instruction)` : ""}${postLand ? " · post-land step done" : ""}`;
+    const subject = `${repo} is live${isForced(row) ? `, with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"} as you said` : ""} ${changeToken(row.id)}`;
     const text = [
       "Sequoia,", "",
       ...(isForced(row) ? [`Landed to production with ${forcedList.length} placeholder${forcedList.length === 1 ? "" : "s"} by your instruction: ${forcedList.join("; ") || "(none named)"}. Forced by ${row.forced_by} on ${new Date(Number(row.forced_at)).toISOString()}.`, ""] : []),
@@ -872,7 +877,7 @@ async function sendPreview(row, log) {
   const proof = row.proof ?? {};
   const found = previewUrlFor(row.repo, row.branch ?? `refs/pull/${row.pr_number}/head`, row.pr_number, 8);
   const placeholders = Array.isArray(row.placeholders) ? row.placeholders.map(String) : [];
-  const subject = `#danielle preview ready: ${row.repo} ${changeToken(row.id)} — reply "approved" to land, or "changes: …"`;
+  const subject = `Preview of ${row.repo}: reply approved to make it live ${changeToken(row.id)}`;
   const text = [
     "Sequoia,", "",
     `This is Danielle. ${row.repo} is built and the pull request is open: ${row.pr_url}`, "",
@@ -914,16 +919,16 @@ async function watchChecks(row, log, waitMinutes) {
       return;
     }
     if (verdict.state === "red") {
-      const id = await email(`#danielle stopped on ${row.repo} ${changeToken(row.id)} — CHECKS_RED`, [
+      const id = await email(`Stopped work on ${row.repo}: the checks failed ${changeToken(row.id)}`, [
         "Sequoia,", "", `This is Danielle. The checks on ${row.pr_url} went red, so I did not land it.`, "", verdict.detail, "",
-        "The branch is open for a fix; send a new #danielle instruction and I will start from it.", "", "— Danielle",
+        "The branch is open for a fix; email me a new instruction and I will start from it.", "", "— Danielle",
       ].join("\n"));
       const r = await api(`/${row.id}/checks`, { state: "red", detail: verdict.detail, notified_message_id: id ?? undefined });
       if (!r.ok) say(`NAMED STOP [RED_NOT_RECORDED] ${r.status} ${r.error ?? ""}`);
       return;
     }
     if (verdict.state === "none") {
-      const id = await email(`#danielle stopped on ${row.repo} ${changeToken(row.id)} — NO_CHECKS`, [
+      const id = await email(`Stopped work on ${row.repo}: no checks ran ${changeToken(row.id)}`, [
         "Sequoia,", "", `This is Danielle. ${row.pr_url} has no CI checks and the build's proof does not record the repo's validators passing, so there is no green to land on.`, "",
         "Land on green needs a green. Add CI to the repo, or have the runbook's validate step run before the PR, and send the instruction again.", "", "— Danielle",
       ].join("\n"));

@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { refsForChain, chainIds, refTail } from "./mailRefs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
@@ -99,6 +100,10 @@ export interface BossMailResult {
   employeeId: string | null;
   taskId: string | null;
   reply: string | null;
+  /** Her message's Message-ID: the reply's job codes are recorded against it (0290). */
+  messageId?: string | null;
+  /** Who signs the reply: the employee the message reached. */
+  signer?: string | null;
 }
 
 /** Is this message for Boss OS at all? Checked on the domain, not the local part. */
@@ -430,21 +435,32 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   if (secrets?.line && secrets.onlySecrets) {
     await finish({ outcome: "SECRET_STORED", why: secrets.line, objectKey, reply: secrets.line });
     await logEvent(env.DB, { level: "info", scope: "intake", event: "boss_mail_secret", lane: "ops", entityId: mailId, detail: { stored: secrets.stored.map((x) => x.name), refused: secrets.refused.map((x) => x.name), resumed: secrets.resumed.length } });
-    return { mailId, outcome: "SECRET_STORED", employeeId: null, taskId: null, reply: secrets.line };
+    return { mailId, outcome: "SECRET_STORED", employeeId: null, taskId: null, reply: secrets.line, messageId, signer: "Simone" };
   }
 
   /*
    * R8/R20 — A REPLY TO A STOPPED TASK TAKES THE DOOR IT NAMES, FIRST. The notice's subject carries
    * `[tsk_…]`; "try again", "drop it", a short yes, or her answer act on that task whoever owns it.
    */
+  /*
+   * ─── THE JOB CODE COMES FROM THE THREAD, NOT THE SUBJECT (22 Oct 2026) ─────
+   *
+   * Her emails no longer carry `[rc_…]` / `[tsk_…]` / `[dd_…]` / `[cw_…]` / `[kml_…]` where she can
+   * see them (src/shared/boss/mail/plain.mjs). The code is recorded against the Message-ID of the
+   * email that carried it (`boss_mail_refs`), and her client quotes that id back in References, so
+   * it is read here and handed to every lane below as the bracketed tail their readers already
+   * accept. A code she typed or kept in the subject still wins: it is already in the text.
+   */
+  const threadRefs = await refsForChain(env.DB, chainIds(message.headers.get("references"), message.headers.get("in-reply-to")));
+  const laneTail = refTail(threadRefs.refs.filter((r) => !`${subject}\n${readable}`.toLowerCase().includes(r)));
   const blockAnswer = readable || subject
-    ? await answerBlockFromMail(env, { subject, text: readable, mailId, now })
+    ? await answerBlockFromMail(env, { subject: subject + laneTail, text: readable, mailId, now })
     : null;
   if (blockAnswer) {
     const blockReply = [blockAnswer.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: "BLOCK_ANSWERED", why: blockAnswer.note, taskId: blockAnswer.taskId, objectKey, reply: blockReply });
     await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "block_answered", detail: { task_id: blockAnswer.taskId, door: blockAnswer.door } });
-    return { mailId, outcome: "BLOCK_ANSWERED", employeeId: null, taskId: blockAnswer.taskId, reply: blockReply };
+    return { mailId, outcome: "BLOCK_ANSWERED", employeeId: null, taskId: blockAnswer.taskId, reply: blockReply, messageId, signer: "Simone" };
   }
 
   // R19 — a line she marks `Always:` / `Never:` / `Standing rule:` / `Constraint:` is registered once and rides on every run.
@@ -642,7 +658,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     ? ((`${message.headers.get("references") ?? ""} ${message.headers.get("in-reply-to") ?? ""}`).match(/<[^>]+>/g) ?? []).slice(0, 20)
     : [];
   const planAnswer = route.outcome !== "AMBIGUOUS"
-    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject, text: readable, mailId, now, sender, replyChain })
+    ? await answerFromMail(env, { seatId: route.seat.id, subject: trueSubject + laneTail, text: readable, mailId, now, sender, replyChain })
     : null;
   /*
    * HER WORD ON A COMMENT DIGEST, the same way: `[cw_…]` in the subject names the digest Monique
@@ -652,14 +668,14 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * `validate:comment-act-instructed` pins that this call sits after the `!authorised` return.
    */
   const commentAnswer = !planAnswer
-    ? await answerCommentWatchFromMail(env, { sender, subject: trueSubject, text: readable, mailId, now })
+    ? await answerCommentWatchFromMail(env, { sender, subject: trueSubject + laneTail, text: readable, mailId, now })
     : null;
   /*
    * HER WORD ON A KINDLE PROBLEM, the same way: `[kml_…]` names the item Simone asked about
    * (`owner_ask`); "approved" — or her own wording — goes on the row and her next run executes it.
    */
   const kdpAnswer = !planAnswer && !commentAnswer
-    ? await answerKdpFromMail(env, { sender, subject: trueSubject, text: readable, mailId, now })
+    ? await answerKdpFromMail(env, { sender, subject: trueSubject + laneTail, text: readable, mailId, now })
     : null;
 
   /*
@@ -679,7 +695,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * `validate:duty-birth` pins that both calls sit after the `!authorised` return.
    */
   const dutyAnswer = planAnswer || commentAnswer || kdpAnswer ? null : await answerDutyFromMail(env, {
-    roster, subject: trueSubject, text: readable, mailId, now, sender,
+    roster, subject: trueSubject + laneTail, text: readable, mailId, now, sender,
     inReplyTo: message.headers.get("in-reply-to"), references: message.headers.get("references"),
   });
   const dutyRequest = planAnswer || commentAnswer || kdpAnswer || dutyAnswer ? null : await newDutyFromMail(env, {
@@ -829,7 +845,11 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
            */
           body: oversize
             ? `The message is ${(message.rawSize / 1024 / 1024).toFixed(1)}MB and was not read here.${objectKey ? ` The whole of it is kept at ${objectKey}.` : " It could not be stored either — nothing but this card survives it."}`
-            : taskBody || `The message carried no readable text — ${read?.parts ?? 0} MIME part(s) and nothing in any of them.${objectKey ? ` It is kept exactly as it arrived at ${objectKey}.` : ""}`,
+            : (taskBody || `The message carried no readable text — ${read?.parts ?? 0} MIME part(s) and nothing in any of them.${objectKey ? ` It is kept exactly as it arrived at ${objectKey}.` : ""}`)
+              // A reply to Simone's daily or weekly email ("move the KDP item to Monday") carries the email
+              // it answers. Only that email: it is built from Boss OS rows with nothing from the fund, so it
+              // is safe as model input; other emails' text stays in boss_mail_refs (LOCAL_ONLY for AI).
+              + (threadRefs.context && threadRefs.refs.some((r) => r.startsWith("yd_")) ? `\n\nShe is replying to this email from Boss OS:\n${threadRefs.context}` : ""),
           // The original, byte for byte. Re-extractable, and the reason a parser bug is repairable.
           ...(objectKey ? { raw_message: objectKey } : {}),
           ...(read ? { body_format: read.format, mime_parts: read.parts } : {}),
@@ -970,7 +990,8 @@ function headline(text: string): string {
     },
   });
 
-  return { mailId, outcome, employeeId: dutyNote?.employeeId ?? route.seat.id, taskId, reply };
+  const signerId = dutyNote?.employeeId ?? route.seat.id;
+  return { mailId, outcome, employeeId: signerId, taskId, reply, messageId, signer: roster.find((s) => s.id === signerId)?.name ?? route.seat.name ?? "Simone" };
 }
 
 /**

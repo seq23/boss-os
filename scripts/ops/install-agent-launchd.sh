@@ -1167,6 +1167,41 @@ lint_plist "$RISK_PLIST"
 launchctl load "$RISK_PLIST"
 echo "Installed $RISK_LABEL — daily 08:20 Central, reporting to duty_risk_watch (Toni)."
 
+# SIMONE'S "YOUR DAY", EVERY MORNING AT 06:40 (owner-approved 22 Oct 2026; Mondays add "Your week").
+# After the 06:05 briefing claim and before Valerie's 7 AM list, so the Porch & Party box matches what
+# she is about to read. duty-run.sh reports each run to duty_your_day (migration 0291).
+YOURDAY_LABEL="com.seq.boss-your-day"
+YOURDAY_PLIST="$HOME/Library/LaunchAgents/$YOURDAY_LABEL.plist"
+
+cat > "$YOURDAY_PLIST" <<YOURDAYEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$YOURDAY_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh your-day.mjs -- npm run --silent your-day</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>40</integer></dict>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
+  <key>StandardOutPath</key><string>$LOGS/your-day.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/your-day.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+YOURDAYEOF
+
+launchctl unload "$YOURDAY_PLIST" 2>/dev/null || true
+lint_plist "$YOURDAY_PLIST"
+launchctl load "$YOURDAY_PLIST"
+echo "Installed $YOURDAY_LABEL — daily 06:40 Central, reporting to duty_your_day (Simone)."
+
 LOCKS_LABEL="com.seq.boss-outside-locks"
 LOCKS_PLIST="$HOME/Library/LaunchAgents/$LOCKS_LABEL.plist"
 
@@ -1278,6 +1313,8 @@ require_loaded "$AHREFS_LABEL"
 require_loaded "$RC_LABEL"
 # WITH THE JOB, 21 September: the comment watch.
 require_loaded "$CW_LABEL"
+# WITH THE JOB, 22 October: Simone's Your day.
+require_loaded "$YOURDAY_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.

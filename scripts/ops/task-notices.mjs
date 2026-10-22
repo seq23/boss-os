@@ -33,7 +33,7 @@
  *   node scripts/ops/task-notices.mjs --dry-run
  */
 
-import { sendersFor, employeeMail, FALLBACK_STOP } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
 import { vaultLookup } from "../lib/vault-env.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
@@ -78,11 +78,7 @@ export async function sendNotice(notice, { fetchImpl = fetch, to = TO } = {}) {
   if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
   let last = "";
   for (const sender of senders) {
-    const res = await fetchImpl("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
-      body: JSON.stringify(employeeMail(sender, { to, subject: notice.subject, text: notice.body })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body }), fetchImpl);
     if (res.ok) {
       say(`sent "${notice.subject}" from ${sender.from}`);
       if (sender.fallback) say(FALLBACK_STOP);

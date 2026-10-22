@@ -48,7 +48,7 @@ import os from "node:os";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
 import { researchLot, renderFilings, renderReach, pressPodcastLeads, renderPressPodcast, money } from "./filing-hunt.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
-import { sendersFor, employeeMail } from "./notify.mjs";
+import { namesOnce, sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -128,7 +128,7 @@ function describeEntry(entry) {
 
 function renderEntry(entry, huntSide, inbox, filings, press, contacts) {
   const lines = [
-    `${String(entry.asset).toUpperCase()}  —  ${describeEntry(entry)}`,
+    `${String(entry.asset)}  —  ${describeEntry(entry)}`,
     `  "${entry.quote ?? entry.evidence ?? ""}"${entry.intermediated_by ? `  — via ${entry.intermediated_by}` : ""}`,
     `  ${entry.source_message}`,
     "",
@@ -194,10 +194,10 @@ async function main() {
 
   const total = sections.reduce((n, s) => n + s.count, 0);
   const header = [
-    `Ledger hunt against ${entries.length} new message(s) since the last run, `
-      + `${new Set(entries.map((e) => assetKey(e.asset))).size} name(s).`,
-    `${total} candidate(s) across all sources, every one with a filing, a ledger quote, or a`,
-    "press/podcast URL behind it.",
+    `I read ${entries.length} new message${entries.length === 1 ? "" : "s"} that named something to buy or sell `
+      + `(${new Set(entries.map((e) => assetKey(e.asset))).size} compan${new Set(entries.map((e) => assetKey(e.asset))).size === 1 ? "y" : "ies"}) and looked for the other side.`,
+    `I found ${total} people worth a look, each one backed by a filing, a quote from your own mail, or a`,
+    "press or podcast link.",
     "",
     "This is a list for you. Nobody here has been contacted.",
     "",
@@ -223,14 +223,10 @@ async function main() {
     "This is Monique. Today's mail named a side; I went looking for the other one — your own mail",
     "first, then the filings, then the press and podcasts.", "",
     body, "", "— Monique, Director of Relationships"].join("\n");
-  const subject = `${entries.length} new message(s), ${total} candidate(s) — ${entries.map((e) => e.asset).join(", ")}`;
+  const subject = `${total} people worth a look for ${namesOnce(entries.map((e) => e.asset))}`;
   for (const sender of SENDERS) {
     const { from, key } = sender;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
     if (res.ok) {
       console.log(`\nEmailed ${TO} from ${from}.`);
       /*

@@ -81,6 +81,7 @@
     "risk:watch": "node scripts/vault/vault.mjs run -- node scripts/ops/risk-watch.mjs",
     "risk:locks": "node scripts/vault/vault.mjs run -- node scripts/ops/outside-locks.mjs",
     "archive:audit": "node scripts/vault/vault.mjs run -- node scripts/ops/archive-audit.mjs",
+    "your-day": "node scripts/vault/vault.mjs run -- node scripts/ops/your-day.mjs",
     "kdp:covers": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-covers-submit.mjs",
     "kdp:resume": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-resume.mjs",
     "kdp:publish": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-publish.mjs",

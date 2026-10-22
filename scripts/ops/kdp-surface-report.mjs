@@ -34,7 +34,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { sendersFor, employeeMail, FALLBACK_STOP } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
 import { checkAssignment, ownerAskIsATask } from "../../src/shared/boss/duties/executors.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -192,11 +192,7 @@ async function sendAsSimone({ subject, text }) {
   if (senders.length === 0) return { id: null, error: "NO_RESEND_KEY" };
   let lastErr = "";
   for (const sender of senders) {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
     if (res.ok) {
       const j = await res.json().catch(() => ({}));
       if (sender.fallback) console.log(FALLBACK_STOP);
@@ -212,7 +208,7 @@ function askEmail(row, item, register) {
   const due = row.due_at ? ` Amazon's deadline: ${new Date(row.due_at).toISOString().slice(0, 10)}.` : "";
   if (messageShape(item) === "stop") {
     return {
-      subject: `#simone [${row.id}] ${t ? t.title : "Kindle"} — one thing only you can do`,
+      subject: `${t ? t.title : "Kindle"}: one thing only you can do [${row.id}]`,
       text:
         `${item.note}\n\n` +
         `What I did: ${item.action_taken}\n\n` +
@@ -221,7 +217,7 @@ function askEmail(row, item, register) {
     };
   }
   return {
-    subject: `#simone [${row.id}] ${t ? t.title : "a Kindle title"} — one decision, reply approved`,
+    subject: `${t ? t.title : "A Kindle title"}: one decision, reply approved [${row.id}]`,
     text:
       `${item.note}\n\n` +
       `What I did: ${item.action_taken}\n\n` +
@@ -236,7 +232,7 @@ function chaseEmail(p, register) {
   const days = Math.ceil((p.due_at - Date.now()) / DAY_MS);
   const when = days < 0 ? `${-days} day(s) PAST Amazon's deadline` : days === 0 ? "due TODAY" : `due in ${days} day(s)`;
   return {
-    subject: `#simone [${p.id}] still open — ${t ? t.title : "a Kindle title"} (${when})`,
+    subject: `Still open: ${t ? t.title : "a Kindle title"}, ${when} [${p.id}]`,
     text:
       `${p.note}\n\nThis is ${when} and I have no answer from you on it.\n\n` +
       (p.owner_ask ? `What I need: ${p.owner_ask}\n\nReply with one word — approved.` : `What is happening: ${p.action_taken}`) +

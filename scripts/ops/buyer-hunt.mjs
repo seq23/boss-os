@@ -63,7 +63,7 @@ import path from "node:path";
 import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
-import { sendersFor, employeeMail } from "./notify.mjs";
+import { namesOnce, sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { researchLot, renderFilings, renderReach } from "./filing-hunt.mjs";
 import { mirrorOrStop } from "./lib/book-mirror.mjs";
@@ -181,7 +181,7 @@ function renderAsset(lot, inbox, filings, contacts) {
   const size = lot.size_usd ?? 0;
   const want = describeLot(lot).split(" — ").slice(2).join(" — ") || lot.size_text;
   const lines = [
-    `${String(lot.asset).toUpperCase()}  —  you ${SIDE === "sell" ? "want" : "have"} ${want}`,
+    `${String(lot.asset)}  —  you ${SIDE === "sell" ? "want" : "have"} ${want}`,
     "",
   ];
 
@@ -284,15 +284,11 @@ async function main() {
   const text = ["Sequoia,", "", "This is Monique. I worked outward from your book rather than across your mailbox.", "",
     body, "", "— Monique, Director of Relationships"].join("\n");
   const subject = total
-    ? `${total} possible ${HUNTING}(s) — ${priced.map((p) => p.asset).join(", ")}`
-    : `No ${HUNTING} clears the bar this week — ${priced.map((p) => p.asset).join(", ")}`;
+    ? `${total} possible ${HUNTING}${total === 1 ? "" : "s"} for ${namesOnce(priced.map((p) => p.asset))}`
+    : `No ${HUNTING} clears the bar this week for ${namesOnce(priced.map((p) => p.asset))}`;
   for (const sender of SENDERS) {
     const { from, key } = sender;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
     if (res.ok) { console.log(`\nEmailed ${TO} from ${from}.`); return; }
     console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
   }

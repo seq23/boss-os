@@ -142,9 +142,9 @@ export async function checkDriveWatches() {
 
 /** One email, signed by the employee, through the one send every Mac lane uses. Returns true when it went. */
 async function emailHer(fromName, subject, text) {
-  const { sendersFor, employeeMail, FALLBACK_STOP } = await import("./notify.mjs");
+  const { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } = await import("./notify.mjs");
   for (const sender of sendersFor(fromName)) {
-    const res = await fetch("https://api.resend.com/emails", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` }, body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })) });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
     if (res.ok) {
       if (sender.fallback) say(FALLBACK_STOP);
       return true;

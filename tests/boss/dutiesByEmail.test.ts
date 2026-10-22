@@ -9,6 +9,7 @@
  * exist on her Mac is a NAMED STOP and creates nothing; the screen door files the same thing.
  * `validate:duty-birth` pins the structural half — one writer, two roads to it — over the source.
  */
+import { plainProblems, fromLegacy } from "../../src/shared/boss/mail/plain.mjs";
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { apiJson, row } from "./helpers";
@@ -132,15 +133,18 @@ describe("the mail door", () => {
     const { res } = await request("#camille new duty", AGENT_PHRASE);
     expect(res.outcome).toBe("DUTY_DRAFTED");
     expect(res.taskId).toBeNull();
-    expect(res.reply).toMatch(/Here is the duty as I would create it for Camille/);
-    expect(res.reply).toMatch(/Name: /);
-    expect(res.reply).toMatch(/Owner:\s+Camille/);
-    expect(res.reply).toMatch(/Cadence:\s+every Friday at \d\d:\d\d America\/Chicago/);
+    expect(res.reply).toMatch(/Here is the new regular job for Camille, ready to set up/);
+    expect(res.reply).toMatch(/What: /);
+    expect(res.reply).toMatch(/Who:\s+Camille/);
+    expect(res.reply).toMatch(/When:\s+Fridays at \d{1,2}(:\d\d)? (am|pm)/);
+    expect(fromLegacy({ who: "Camille", subject: "x", text: res.reply! }).text).not.toMatch(/America\/Chicago|\d\d:\d\d/);
     expect(res.reply).toMatch(/quiet hour|first quiet hour/);
-    expect(res.reply).toMatch(/Executor:\s+an agent/);
-    expect(res.reply).toMatch(/Model:\s+Haiku/);
-    expect(res.reply).toMatch(/Delivery:\s+executive_reports/);
-    expect(res.reply).toMatch(/Reply `approved` to create it, `changes: …` to redraft\./);
+    expect(res.reply).toMatch(/Runs on:\s+an AI teammate/);
+    expect(res.reply).toMatch(/Thinking:\s+the quick model/);
+    expect(res.reply).toMatch(/Results go to:\s+executive reports/);
+    expect(res.reply).toMatch(/Reply approved to set it up, or reply changes: and what you want different\./);
+    // What she reads, after the one layout, carries no code, id, cron, time zone or jargon.
+    expect(plainProblems(fromLegacy({ who: "Camille", subject: "Re: new duty", text: res.reply! }))).toEqual([]);
     expect(res.reply).toMatch(/— Camille$/);
     expect(draftTokenIn(res.reply!)).toMatch(/^dd_/);
 
@@ -160,7 +164,7 @@ describe("the mail door", () => {
   it("a draft that cannot run comes back with every refusal verbatim and files nothing in the Inbox", async () => {
     const { res } = await request("#zora new duty", "every monday, tidy the archive and tell me what moved");
     expect(res.outcome).toBe("DUTY_REFUSED");
-    expect(res.reply).toMatch(/I have NOT created this duty for Zora/);
+    expect(res.reply).toMatch(/I did not set up this regular job for Zora/);
     expect(res.reply).toMatch(/Why not:/);
     expect(res.reply).toMatch(/land nowhere/);
     expect(res.reply).toMatch(/Nothing is waiting on you/);
@@ -176,7 +180,7 @@ describe("the mail door", () => {
     expect(res.outcome).toBe("DUTY_REFUSED");
     expect(res.reply).toMatch(/NAMED STOP \[NO_SUCH_SCRIPT\]/);
     expect(res.reply).toMatch(/every-friday-read-my-inbox[a-z-]*\.sh/);
-    expect(res.reply).toMatch(/Executor:\s+a job on your Mac/);
+    expect(res.reply).toMatch(/Runs on:\s+your Mac/);
     expect(await dutyCount()).toBe(0);
     expect((await row<any>(`SELECT state FROM duty_drafts`)).state).toBe("refused");
   });
@@ -232,9 +236,9 @@ describe("the mail door", () => {
     const res = await handleBossInboundMail(mail({ subject: "Re: #camille new duty", body: "changes: make it daily at 3pm on the better model", ...thread }), env as never);
     expect(res.outcome).toBe("DUTY_ANSWERED");
     expect(res.reply).toMatch(/^Redrafted with your changes/);
-    expect(res.reply).toMatch(/Cadence:\s+daily at 15:00/);
-    expect(res.reply).toMatch(/Model:\s+Sonnet/);
-    expect(res.reply).toMatch(/Reply `approved` to create it/);
+    expect(res.reply).toMatch(/When:\s+every day at 3 pm/);
+    expect(res.reply).toMatch(/Thinking:\s+the stronger model/);
+    expect(res.reply).toMatch(/Reply approved to set it up/);
 
     const rows = (await env.DB.prepare(`SELECT id, state, supersedes, draft_json FROM duty_drafts ORDER BY created_at`).all<any>()).results!;
     expect(rows).toHaveLength(2);
@@ -261,7 +265,7 @@ describe("the mail door", () => {
   it("`your call` in the ORIGINAL request creates it without waiting, tells her, and records the phrase", async () => {
     const { res } = await request("#camille new duty", `${AGENT_PHRASE} — your call on the details`);
     expect(res.outcome).toBe("DUTY_CREATED");
-    expect(res.reply).toMatch(/^Created — you said "your call"/);
+    expect(res.reply).toMatch(/^Done — you said "your call"/);
     expect(res.reply).toMatch(/First run: /);
     expect(res.reply).toMatch(/Nothing is waiting on you/);
     expect(await dutyCount()).toBe(1);
@@ -281,7 +285,7 @@ describe("the mail door", () => {
   it("NO TAG: \"new duty\" + `your call` is routed by Simone and created at once (22 Oct 2026)", async () => {
     const { res } = await request("new duty", `${AGENT_PHRASE} — your call on the details`);
     expect(res.outcome).toBe("DUTY_CREATED");
-    expect(res.reply).toMatch(/^Created — you said "your call"/);
+    expect(res.reply).toMatch(/^Done — you said "your call"/);
     expect(await dutyCount()).toBe(1);
     const draft = await row<any>(`SELECT employee_id, routed_by, tag, state FROM duty_drafts`);
     expect(draft.employee_id).toBe("emp_research");
@@ -358,7 +362,7 @@ describe("the mail door", () => {
   it("#simone new duty camille … routes it: Camille owns it, Simone signs the reply", async () => {
     const { res } = await request("#simone new duty camille", AGENT_PHRASE);
     expect(res.outcome).toBe("DUTY_DRAFTED");
-    expect(res.reply).toMatch(/Owner:\s+Camille \(routed by Simone\)/);
+    expect(res.reply).toMatch(/Who:\s+Camille \(Simone chose Camille\)/);
     expect(res.reply).toMatch(/— Simone$/);
     expect(res.employeeId).toBe("emp_research");
     expect((await row<any>(`SELECT employee_id, routed_by FROM duty_drafts`)).routed_by).toBe("emp_chief");
@@ -414,7 +418,7 @@ describe("the screen door", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.draft.executor).toBe("agent");
     expect(res.body.data.draft.refusals).toEqual([]);
-    expect(res.body.data.letter).toMatch(/Reply `approved` to create it/);
+    expect(res.body.data.letter).toMatch(/Reply approved to set it up/);
     expect((await row<any>(`SELECT COUNT(*) AS n FROM duty_drafts`)).n).toBe(0);
     expect((await row<any>(`SELECT COUNT(*) AS n FROM judgement_calls WHERE resume_kind = 'duty_created'`)).n).toBe(0);
   });

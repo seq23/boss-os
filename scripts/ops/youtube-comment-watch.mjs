@@ -24,7 +24,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sendersFor, employeeMail, FALLBACK_STOP } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
 import {
   LOCAL_JOB, shouldEmail, digestEmail, confirmationEmail,
 } from "../../src/shared/boss/commentWatch/lane.mjs";
@@ -71,11 +71,7 @@ async function email(subject, text) {
   let last = "";
   for (const sender of senders) {
     const { from, key } = sender;
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify(employeeMail(sender, { to: TO, subject, text })),
-    });
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
       say(`emailed ${TO} from ${from}: ${subject} (${id})`);
