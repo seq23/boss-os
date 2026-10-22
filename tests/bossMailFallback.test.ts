@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/fund-side-chassis.mjs";
+import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/notify.mjs";
 import { FALLBACK_FROM, sendersFor } from "../scripts/ops/notify.mjs";
 
 /**
@@ -13,7 +13,7 @@ import { FALLBACK_FROM, sendersFor } from "../scripts/ops/notify.mjs";
  * is now The Industry Guides team (BOSS_OS_FALLBACK_MAIL_KEY, hello@theindustryguides.com).
  *
  * 1. No Boss OS file in scripts/ops or src names a From on westpeek.ventures or joinwestpeek.com.
- *    The fund-side chassis copies are exempt BY NAME, from the one list in fund-side-chassis.mjs.
+ *    No exemptions: since 22 Oct 2026 the fund-side chassis copies send through Boss OS's team too.
  * 2. sendersFor's default fallback is The Industry Guides, never RESEND_API_KEY.
  */
 
