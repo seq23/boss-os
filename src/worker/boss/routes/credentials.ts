@@ -146,9 +146,10 @@ credentials.post("/probe", async (c) => {
   /*
    * ── A DUTY THAT WAKES ITSELF ──────────────────────────────────────────────
    *
-   * `duty_lp_replies` is created suspended because nothing can read the West Peek mailbox until
-   * Scooter grants domain-wide delegation, and a duty that errored every morning for three weeks
-   * while he got round to it would be noise on the one surface she has to keep reading.
+   * The West Peek delegation was granted in October 2026 (read-only probe, 23 Oct: readonly, compose
+   * and calendar.readonly granted; send and modify not, and not needed — drafts/send is compose).
+   * The morning LP run, `duty_lp_daily` (boss fix L), replaced `duty_lp_replies` and is created
+   * awake. If it is ever suspended for a lapsed grant, the probe is still what wakes it.
    *
    * THE PROBE IS THE CONDITION, NOT A PERSON REMEMBERING. The morning the impersonation succeeds,
    * this unsuspends the duty and clears its reason. Nobody flips a switch, and nobody has to notice
@@ -159,7 +160,7 @@ credentials.post("/probe", async (c) => {
    * produces one honest stop rather than a duty silently switching itself off — which would look
    * exactly like a duty somebody turned off and forgot.
    */
-  const WOKEN_BY: Record<string, string> = { cred_westpeek_delegation: "duty_lp_replies" };
+  const WOKEN_BY: Record<string, string> = { cred_westpeek_delegation: "duty_lp_daily" }; // boss fix L
   const woken: string[] = [];
   for (const p of applied) {
     const dutyId = WOKEN_BY[p.id];

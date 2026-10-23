@@ -209,4 +209,24 @@ INSERT OR IGNORE INTO standing_duties
    'Never buys or upgrades; stops when the balance would fall below 30; every credit is in the ledger.',
    0);
 
+-- Every table above is classified: names live in D1 (CLOUD_SYNC) and never go to a model
+-- (LOCAL_ONLY for AI): every email here is a fixed template, and the router's private lexicon reads
+-- the name columns so no prompt carrying one reaches a route that trains.
+INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
+  ('lp_reply_drafts', 'relationships', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'The LPs who answered warmly and the reply held in each thread. LP names are confidential; the reply is a fixed template and no model sees a row.'),
+  ('prospects', 'relationships', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'Buyer and seller prospects, their source and sequence state. Names reach no model; the email is her approved template filled with a first name.'),
+  ('prospect_touches', 'relationships', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'One row per prospect email sent, so the sequence stops at three and the bounce brake can count.'),
+  ('prospect_templates', 'relationships', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'The prospect email and its featured names, pending until she taps Approve.'),
+  ('prospect_name_rules', 'relationships', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'Company names she added, dropped or ruled out of the prospect email.'),
+  ('eightraise_ledger', 'ops', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'Every 8Raise credit Monique used, by month and purpose, so the budget and the floor hold.'),
+  ('catchup_suggestions', 'relationships', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'Internal only: who was suggested for a catch-up and when, so nobody is suggested twice a week or more than twice ever.')
+ON CONFLICT(entity) DO NOTHING;
+
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0294_boss_lps_and_prospects');

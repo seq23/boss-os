@@ -9,7 +9,7 @@ export function lpReplyBody(a: { name?: string | null; bucket: string }): string
 export function tapUrl(token: string, action: string, origin?: string): string;
 export function gmailDraftUrl(draftMessageId: string | null | undefined, mailbox?: string): string;
 export function gmailThreadUrl(threadId: string | null | undefined, mailbox?: string): string;
-export interface DecideItem { title: string; body: string; urgent?: boolean; buttons: { label: string; url: string }[] }
+export interface DecideItem { title: string; body: string; urgent?: boolean; priority?: number; buttons: { label: string; url: string }[] }
 export function lpDecideItems(rows: any[], now?: number, origin?: string): DecideItem[];
 export function lpStatusFrom(a: { current?: string; sentAfterReply?: boolean; scheduled?: boolean; theirLatest?: number | null; sentAt?: number | null; hasDraft?: boolean; decision?: string | null }): string;
 export const MAX_TOUCHES: number;

@@ -3,7 +3,7 @@
  * 10, 11, 12, 14). Synthetic data only: invented people at example.com. The repo is public.
  */
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { apiJson } from "./helpers";
 import {
@@ -123,6 +123,8 @@ describe("LP replies: her voice and the Decide item", () => {
       { status: "sent", tap_token: "c".repeat(24), name: "Done Person" },
     ], now);
     expect(items.map((i) => i.title)).toEqual(["Waiting 3 days: Reply to Old Person", "Reply to New Person"]);
+    expect(items[0]!.priority).toBeGreaterThanOrEqual(10); // unsent after 2 days → top of Decide
+    expect(items[1]!.priority).toBeLessThan(10);
     expect(items[0]!.buttons.map((b) => b.label)).toEqual(["Send as is", "Edit, then send", "Skip"]);
     expect(items[0]!.buttons[0]!.url).toBe(`https://boss.sequoiataylor.com/api/boss/auth/tap/${"b".repeat(24)}?do=send`);
     expect(items[0]!.buttons[1]!.url).toMatch(/^https:\/\/mail\.google\.com\/mail\/u\/sequoia@westpeek\.ventures\/#drafts\?compose=m2$/);
@@ -180,10 +182,20 @@ describe("catch-ups: opportunistic, never repetitive, never Rainmaker or ruled o
 });
 
 describe("routes and the one-tap links", () => {
+  /*
+   * Builder D's two lists (rules 6 and 15). Stood up here only when D's migration has not, and
+   * dropped again afterwards so no other suite sees a table this file invented.
+   */
+  const made: string[] = [];
+  afterAll(async () => {
+    for (const t of made) await env.DB.prepare(`DROP TABLE IF EXISTS ${t}`).run();
+  });
   beforeEach(async () => {
+    for (const t of ["do_not_suggest", "same_firm_list"]) {
+      const has = await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).bind(t).first();
+      if (!has) { await env.DB.prepare(`CREATE TABLE ${t} (value TEXT)`).run(); if (!made.includes(t)) made.push(t); }
+    }
     await env.DB.batch([
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS do_not_suggest (value TEXT)`),
-      env.DB.prepare(`CREATE TABLE IF NOT EXISTS same_firm_list (value TEXT)`),
       env.DB.prepare(`DELETE FROM lp_reply_drafts`),
       env.DB.prepare(`DELETE FROM prospect_touches`),
       env.DB.prepare(`DELETE FROM prospects`),
@@ -269,13 +281,14 @@ describe("routes and the one-tap links", () => {
   });
 
   it("an unreadable do-not-suggest list holds every send (fail closed)", async () => {
-    await env.DB.prepare(`DROP TABLE do_not_suggest`).run();
+    await env.DB.prepare(`ALTER TABLE do_not_suggest RENAME TO do_not_suggest_away`).run();
     const t = await proposeTemplate(env.DB, null, NAMES);
     await approveTemplate(env.DB, (t as any).template.id);
     await importProspects(env.DB, [{ email: "anyone@example.com", source: "inbox" }]);
     const plan = await prospectPlan(env.DB, WED_10AM);
     expect(plan.sends).toEqual([]);
     expect(plan.stops.join(" ")).toMatch(/could not be read/);
+    await env.DB.prepare(`ALTER TABLE do_not_suggest_away RENAME TO do_not_suggest`).run();
   });
 
   it("the 8Raise route refuses past the floor and logs a spend", async () => {

@@ -47,6 +47,8 @@ const EGRESS_ALLOWED = new Map([
   ["src/worker/effects/googleClient.ts", "Google OAuth + Calendar (P51); READ-ONLY scopes so nothing here can alter a calendar, inert unless GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are both set, and reachable only for a partner who granted consent themselves"],
 
   // ── Inbox overhaul, 19 Sep 2026. ──
+  // boss fix L (23 Oct 2026, ruling 10)
+  ["src/worker/boss/routes/lpTap.ts", "Her one-tap \"Send as is\" on a held LP reply (owner, 23 Oct 2026: \"Send as is / Edit, then send / Skip\"; she OK'd read and write on sequoia@westpeek.ventures). Her POST on the 144-bit token stored on that one row IS the authorization; a GET never acts. Sends ONLY an existing draft (drafts/send, never messages/send) from a westpeek.ventures mailbox checked before the compose token is minted; spry-vc-never-sends.mjs (LP_TAP_MODULE) and lp-rules.mjs fail the build if any of that changes. Inert without the Worker's Google service-account secret, and says \"Not sent yet\" when it is absent"],
   ["src/worker/boss/wealth/gmailDraft.ts", "Boss OS Gmail DRAFT (owner, 19 Sep 2026: \"it should never send — the green button should be to create the draft\"). Impersonates her own mailbox under ONE scope (compose) and names ONE endpoint (drafts.create), both held as constants and never read from a request. It cannot send: no send endpoint and no transport exist on this path, and spry-vc-never-sends.mjs plus the-inbox-draft-never-sends.mjs fail the build if one appears. Reached only after her approval in the Inbox, which is the authorization; inert without the Worker's Google service-account secret, and its absence is a NAMED STOP printed on the card"],
 
   // ── Her jobs, 19 Sep 2026. ──

@@ -21,7 +21,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { bossApi } from "./lib/duty-kit.mjs";
 import { writeMorning } from "./lp-daily.mjs";
-import { EIGHTRAISE_BUDGET, eightRaiseFooter, monthOf } from "../../src/shared/boss/lp/plan.mjs";
+import { EIGHTRAISE_BUDGET, MONIQUE_MONTHLY, eightRaiseFooter, monthOf } from "../../src/shared/boss/lp/plan.mjs";
 
 const HELPER = process.env.EIGHTRAISE_HELPER ?? path.join(os.homedir(), "8raise-tools", "8r.sh");
 export const READ_TOOLS = Object.freeze(["get_usage", "check_enrichment_status", "refine_query"]);
@@ -92,7 +92,10 @@ async function main() {
   const led = await api.get(`/lp/eightraise?month=${monthOf()}`);
   const lines = [eightRaiseFooter(led.used ?? 0)];
   if (balance !== null && balance < EIGHTRAISE_BUDGET.floor) lines.push(`The 8Raise balance is ${balance}, under the ${EIGHTRAISE_BUDGET.floor} kept for you, so Monique is not using it.`);
-  const file = writeMorning("eightraise", { section: "eightraise", updated_at: new Date().toISOString(), decide: [], rows: [], lines });
+  const file = writeMorning("eightraise", {
+    section: "eightraise", updated_at: new Date().toISOString(), decide: [], rows: [], lines,
+    credits: { used: led.used ?? 0, budget: MONIQUE_MONTHLY, kept: EIGHTRAISE_BUDGET.floor },
+  });
   console.log(`LP-EIGHTRAISE-COMPLETE: ${led.used ?? 0} used this month; balance ${balance ?? "unread"}; ${file}`);
 }
 

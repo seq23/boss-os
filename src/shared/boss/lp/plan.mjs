@@ -87,6 +87,8 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
     title: `${days >= LP_UNSENT_URGENT_DAYS ? "Waiting " + days + " days: " : ""}Reply to ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}`,
     body: `${r.bucket === "call" ? "Wants a call" : "Wants to stay in touch"}${r.quote ? `: "${String(r.quote).slice(0, 140)}"` : ""}. Your reply is ready in their thread.`,
     urgent: days >= LP_UNSENT_URGENT_DAYS,
+    // E's renderer ranks Decide by priority; ≥10 puts a reply unsent for two days at the top.
+    priority: days >= LP_UNSENT_URGENT_DAYS ? 10 + days : 5,
     buttons: [
       { label: "Send as is", url: tapUrl(r.tap_token, "send", origin) },
       { label: "Edit, then send", url: gmailDraftUrl(r.draft_message_id) },

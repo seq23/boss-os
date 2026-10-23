@@ -71,13 +71,13 @@ lpTap.get("/:token", async (c) => {
 });
 
 /** Send a held Gmail draft from the mailbox it sits in. */
-async function sendDraft(env: Env, mailbox: string, draftId: string): Promise<{ ok: boolean; why?: string; messageId?: string }> {
+async function sendDraft(env: Env, mailbox: string, draftId: string, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; why?: string; messageId?: string }> {
   if (!WEST_PEEK.test(mailbox)) return { ok: false, why: "that reply does not sit in a West Peek mailbox" };
   const creds = serviceAccountFrom(env);
   if (!creds) return { ok: false, why: "the Google key is not on the Worker" };
-  const tok = await mintComposeToken(creds, mailbox, fetch);
+  const tok = await mintComposeToken(creds, mailbox, fetchImpl);
   if (!tok.ok) return { ok: false, why: `Google refused the sign-in (${tok.status})` };
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts/send", {
+  const res = await fetchImpl("https://gmail.googleapis.com/gmail/v1/users/me/drafts/send", {
     method: "POST",
     headers: { authorization: `Bearer ${tok.token}`, "content-type": "application/json" },
     body: JSON.stringify({ id: draftId }),

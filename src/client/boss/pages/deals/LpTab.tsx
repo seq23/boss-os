@@ -10,13 +10,14 @@ import { api } from "../../api";
 import { Empty, Loading } from "../../components/Shell";
 import { gmailDraftUrl, gmailThreadUrl } from "../../../../shared/boss/lp/plan.mjs";
 
-const PILL: Record<string, { bg: string; fg: string }> = {
-  drafted: { bg: "#FFF4D6", fg: "#8A5A00" },
-  replied_again: { bg: "#FFF4D6", fg: "#8A5A00" },
-  not_answered: { bg: "#FFF4D6", fg: "#8A5A00" },
-  scheduled: { bg: "#E5EDF8", fg: "#1F4E8C" },
-  sent: { bg: "#E6F4EA", fg: "#1F6B3A" },
-  skipped: { bg: "#EEF0F3", fg: "#5B6472" },
+/** Waiting on her = live; done = good; skipped = quiet. Colours come from the shared state classes. */
+const PILL: Record<string, string> = {
+  drafted: "pill state-live",
+  replied_again: "pill state-live",
+  not_answered: "pill state-live",
+  scheduled: "pill",
+  sent: "pill state-good",
+  skipped: "pill state-quiet",
 };
 const ORDER = ["drafted", "not_answered", "replied_again", "scheduled", "sent", "skipped"];
 const day = (ms?: number | null) => (ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—");
@@ -44,13 +45,12 @@ export function LpTab() {
           </thead>
           <tbody>
             {lpRowsInOrder(rows).map((r) => {
-              const pill = PILL[r.status] ?? PILL.skipped!;
               const draft = r.status === "drafted";
               return (
                 <tr key={r.id}>
                   <td style={{ padding: "9px 10px" }}><b>{r.name || "—"}</b>{r.firm ? ` · ${r.firm}` : ""}</td>
                   <td style={{ padding: "9px 10px" }}>{r.first_seen}{r.quote ? ` · "${String(r.quote).slice(0, 80)}"` : ""}</td>
-                  <td style={{ padding: "9px 10px" }}><span style={{ background: pill.bg, color: pill.fg, borderRadius: 999, padding: "2px 8px", fontSize: 12, fontWeight: 700 }}>{r.status_label}</span>{r.send_error ? <div className="row-sub">Not sent: {r.send_error}</div> : null}</td>
+                  <td style={{ padding: "9px 10px" }}><span className={PILL[r.status] ?? "pill"}>{r.status_label}</span>{r.send_error ? <div className="row-sub">Not sent: {r.send_error}</div> : null}</td>
                   <td style={{ padding: "9px 10px" }}>{r.status === "sent" || r.status === "replied_again" ? day(r.sent_at) : "—"}</td>
                   <td style={{ padding: "9px 10px" }}>
                     <a href={draft ? gmailDraftUrl(r.draft_message_id) : gmailThreadUrl(r.thread_id)} target="_blank" rel="noreferrer">{draft ? "Open the draft" : "Open the email"}</a>
