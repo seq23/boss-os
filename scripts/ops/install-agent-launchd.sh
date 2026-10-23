@@ -1280,6 +1280,8 @@ done
 missing=""
 checked=""
 require_loaded() { checked="$checked $1"; loaded "$1" || missing="$missing $1"; }
+# A retired job is verified ABSENT the same way (the validator reads `require_gone` as retired).
+require_gone() { checked="$checked !$1"; loaded "$1" && missing="$missing $1(should-be-retired)"; return 0; }
 require_loaded "$LABEL"
 require_loaded "$POLL_LABEL"
 require_loaded "$NETWORK_LABEL"
@@ -1312,7 +1314,9 @@ require_loaded "$PUBLISH_LABEL"
 require_loaded "$CAPITAL_LABEL"
 require_loaded "$NUDGE_LABEL"
 require_loaded "$SHEET_LABEL"
-require_loaded "$POSITIVE_LABEL"
+# RETIRED BY #116 (boss fix L, 23 Oct 2026): the Tuesday reminder email. Its absence is checked the
+# way kdp-watch's is, because a `require_loaded` left behind made every run end "NOT INSTALLED".
+require_gone "$POSITIVE_LABEL"
 # ADDED WITH THE JOB, FOR THE THIRD TIME, AND THE TWO NOTES ABOVE ARE WHY.
 require_loaded "$GRID_LABEL"
 # AND A FOURTH TIME. The Tuesday buyers job and the daily audit gate were written on 12 and 13
