@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/notify.mjs";
 import { BUSINESSES } from "../src/worker/boss/outreach/catalog";
+import { OWNER_OK_CROSSINGS, fundCrossings } from "./helpers/fundCrossings";
 
 /**
  * docs/OUTBOUND_EMAIL_MAP.md is read by code, so it is a rule and not a wish (owner, 12 Oct 2026:
@@ -252,39 +253,6 @@ describe("every path on the map has an owner, and Team → Duties is built from 
  * the term found, on any map row, any owner entry, or the map document itself naming the fund's
  * repos, its senders, its people or its investors. Their rows belong on the fund's own map.
  */
-export const FUND_TERMS: Array<[string, RegExp]> = [
-  ["a west-peek-* repo", /\bwest-?peek-[a-z]/i],
-  ["a westpeek domain", /@?\bwestpeek\.[a-z]+/i],
-  ["a joinwestpeek.com sender", /joinwestpeek\.com/i],
-  ["West Peek", /west\s*peek/i],
-  ["Porter", /\bporter\b/i],
-  ["Scooter", /\bscooter\b/i],
-  ["LP", /\bLPs?\b/],
-  ["investor", /\binvestors?\b/i],
-];
-
-/**
- * CROSSINGS SHE OK'D, ONE BY ONE (owner, 23 Oct 2026: "separation relaxes per item she OKs"; Monique
- * may read and write the fund's LP mailbox for LP replies). A CLOSED list: each entry names one map
- * row and only the terms that row may carry. Every other term, row, owner entry and line of the map
- * is still guarded, and the test below fails if an entry here names a row the map no longer has.
- */
-export const OWNER_OK_CROSSINGS: Record<string, string[]> = {
-  // Names the constant that holds the mailbox she OK'd (ruling 11), never the address itself.
-  "monique-prospects": ["LP"],
-  "her-tap-send": ["LP"], // her tap sends a held LP reply (ruling 10)
-};
-
-export function fundCrossings(entries: Array<[string, string]>): string[] {
-  const hits: string[] = [];
-  for (const [where, text] of entries) {
-    const id = (/^\|\s*`([^`]+)`\s*\|/.exec(text) ?? /^owner (\S+)$/.exec(where) ?? [])[1];
-    const allowed = (id && OWNER_OK_CROSSINGS[id]) || [];
-    for (const [name, re] of FUND_TERMS) if (re.test(text) && !allowed.includes(name)) hits.push(`${where}: names ${name}`);
-  }
-  return hits;
-}
-
 describe("Boss OS and the fund never cross on the map", () => {
   const ownersRaw = JSON.parse(readFileSync(path.join(ROOT, "docs/outbound_email_owners.json"), "utf8")) as {
     outside: string[];

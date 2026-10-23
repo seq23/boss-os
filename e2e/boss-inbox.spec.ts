@@ -40,6 +40,19 @@ async function tab(page: Page, label: string) {
   await expect(page.locator("main.page")).toBeVisible();
 }
 
+/**
+ * THE DESK, BEHIND THE GRID (boss fix D, 23 Oct 2026): the Deals/Capital page now opens on the Grid,
+ * the page her morning email links to; the desk (scans, sizes, sent back, approved letters) is one
+ * tap away. Pin both: the page opens on the Grid, and the desk is reached by its own button.
+ */
+async function desk(page: Page) {
+  await tab(page, "Capital");
+  const main = page.locator("main.page");
+  await expect(main.getByRole("button", { name: "Grid", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await main.getByRole("button", { name: "The desk", exact: true }).click();
+  await expect(main.getByRole("button", { name: "The desk", exact: true })).toHaveAttribute("aria-pressed", "true");
+}
+
 function cleanSql(): string {
   return [
     `DELETE FROM gmail_drafts WHERE candidate_id LIKE '${PREFIX}%'`,
@@ -82,7 +95,7 @@ test.describe("Boss OS Inbox overhaul", () => {
 
   test("her position sizes record the way she types them, and an unreadable size fails beside the field", async ({ page }) => {
     await unlock(page);
-    await tab(page, "Capital");
+    await desk(page);
 
     const panel = page.getByTestId("working-positions");
     await expect(panel).toBeVisible();
@@ -123,7 +136,7 @@ test.describe("Boss OS Inbox overhaul", () => {
     expect(JSON.parse(rows[1]!.value)).toEqual([40_000_000, 12_000_000, 5_000_000]);
 
     await page.reload();
-    await tab(page, "Capital");
+    await desk(page);
     await expect(page.getByTestId("working-positions")).toContainText("You are working positions of $40M, $12M and $5M");
   });
 
@@ -190,7 +203,7 @@ test.describe("Boss OS Inbox overhaul", () => {
     await expect(page.getByTestId("inbox-masthead")).toContainText("0");
     await expect(page.locator("article.docket")).toHaveCount(0);
 
-    await tab(page, "Capital");
+    await desk(page);
     const sentBack = page.getByTestId("sent-back");
     await expect(sentBack).toBeVisible();
     await expect(page.getByText("Sent back · 13")).toBeVisible();
@@ -259,7 +272,7 @@ test.describe("Boss OS Inbox overhaul", () => {
     await expect(page.getByText(/Blocked: the Worker holds no Google key/)).toBeVisible();
 
     // Capital shows the approved letter with the state named and a retry, and nothing marked sent.
-    await tab(page, "Capital");
+    await desk(page);
     const approved = page.getByTestId("approved-letter");
     await expect(approved).toHaveCount(1);
     await expect(approved.getByTestId("gmail-state")).toContainText("the Worker holds no Google key");
@@ -293,7 +306,7 @@ test.describe("Boss OS Inbox overhaul", () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
 
-    await tab(page, "Capital");
+    await desk(page);
     await page.getByTestId("working-positions-toggle").click();
     await page.getByTestId("working-positions-input").fill("500k, 2.5 million");
     await expect(page.getByTestId("working-positions")).toContainText("Reads as $2.5M and $500k");

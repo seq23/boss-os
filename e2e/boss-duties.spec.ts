@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { provisionLocalD1, queryLocalD1 } from "./support/provision";
+import { OWNER_OK_CROSSINGS, fundCrossings } from "../tests/helpers/fundCrossings";
 
 /**
  * TEAM → DUTIES — the screen door of the duty lane, 21 September 2026.
@@ -179,9 +180,18 @@ test.describe("Team → Duties", () => {
     // The only owner outside Boss OS is the client; the fund has no row and no seat here (owner, 12 Oct 2026).
     await expect(page.getByTestId("duties-outside")).toHaveCount(1);
     await expect(page.getByRole("region", { name: "The client's paths" }).locator('[data-path-id="client-dashboards-mail"]')).toBeVisible();
-    for (const text of await page.getByTestId("path-row").allInnerTexts()) {
-      expect(text).not.toMatch(/west\s*peek|westpeek|\bporter\b|\bscooter\b|\bLPs?\b|\binvestors?\b/i);
+    // The fund never crosses onto a rendered row, read with THE SAME term list and the same OK'd
+    // crossings as the map's unit test (tests/helpers/fundCrossings.ts): one list, never two.
+    const rendered: Array<[string, string]> = [];
+    for (const row of await page.getByTestId("path-row").all()) {
+      const id = (await row.getAttribute("data-path-id")) ?? "";
+      expect(id, "every path row carries its map Id").not.toBe("");
+      rendered.push([`path row ${id}`, `| \`${id}\` | ${await row.innerText()}`]);
     }
+    expect(rendered.length).toBe(mapIds);
+    expect(fundCrossings(rendered)).toEqual([]);
+    // Each crossing she OK'd is a row that renders, so the allowance is never for a row nobody sees.
+    for (const id of Object.keys(OWNER_OK_CROSSINGS)) await expect(page.locator(`[data-testid="path-row"][data-path-id="${id}"]`)).toHaveCount(1);
     await expect(page.locator('[data-path-id="approvalprep-download-email"]')).toContainText("no switch");
     await outreach.getByTestId("path-pause").click();
     await expect(page.getByRole("button", { name: "Outreach", exact: true })).toHaveAttribute("aria-pressed", "true");
