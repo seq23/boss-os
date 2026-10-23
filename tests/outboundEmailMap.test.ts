@@ -270,8 +270,8 @@ export const FUND_TERMS: Array<[string, RegExp]> = [
  * is still guarded, and the test below fails if an entry here names a row the map no longer has.
  */
 export const OWNER_OK_CROSSINGS: Record<string, string[]> = {
-  // Sends from the mailbox she OK'd (ruling 11); the address itself also reads as the fund's name.
-  "monique-prospects": ["a westpeek domain", "West Peek"],
+  // Names the constant that holds the mailbox she OK'd (ruling 11), never the address itself.
+  "monique-prospects": ["LP"],
   "her-tap-send": ["LP"], // her tap sends a held LP reply (ruling 10)
 };
 
@@ -326,10 +326,10 @@ describe("Boss OS and the fund never cross on the map", () => {
     const ids = MAP.split("\n").map((l) => (/^\|\s*`([^`]+)`\s*\|/.exec(l) ?? [])[1]).filter(Boolean);
     for (const id of Object.keys(OWNER_OK_CROSSINGS)) expect(ids, `${id} is OK'd but not on the map`).toContain(id);
     // Its own term passes; any other term on the same row, or the same term on another row, still fails.
-    expect(fundCrossings([["r", "| `monique-prospects` | b | e | a@westpeek.ventures | t |"]])).toEqual([]);
-    expect(fundCrossings([["r", "| `monique-prospects` | b | replies to Scooter | a@westpeek.ventures | t |"]])).not.toEqual([]);
-    expect(fundCrossings([["r", "| `monique-prospects` | b | an investor update | a@westpeek.ventures | t |"]])).not.toEqual([]);
-    expect(fundCrossings([["r", "| `monique-prospects` | b | LPs who replied | t |"]])).not.toEqual([]);
+    expect(fundCrossings([["r", "| `monique-prospects` | b | e | LP_MAILBOX | t |"]])).toEqual([]);
+    expect(fundCrossings([["r", "| `monique-prospects` | b | e | a@westpeek.ventures | t |"]])).not.toEqual([]);
+    expect(fundCrossings([["r", "| `monique-prospects` | b | replies to Scooter | LP_MAILBOX | t |"]])).not.toEqual([]);
+    expect(fundCrossings([["r", "| `monique-prospects` | b | an investor update | LP_MAILBOX | t |"]])).not.toEqual([]);
     expect(fundCrossings([["r", "| `her-tap-send` | b | e | a@westpeek.ventures | t |"]])).not.toEqual([]);
     expect(fundCrossings([["r", "| `repo-change` | b | LPs who replied | t |"]])).not.toEqual([]);
     expect(fundCrossings([["docs/x.md:3", "LPs who replied"]])).not.toEqual([]);
