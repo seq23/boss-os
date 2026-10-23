@@ -36,6 +36,7 @@ import { mailAuthRefusal } from "./mailauth";
 import { GmailSession, addressOf } from "./gmail";
 import { crawlCandidates, randomToken, readDirectories, readNextSlice } from "./lists";
 import { isSuppressed, suppress } from "./suppression";
+import { fixBounces, recordBounce, recordRestart } from "./bounceFix";
 import { ensurePartner, runMonthlyPayouts } from "./referrals";
 import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Seat } from "./seat";
 
@@ -88,6 +89,8 @@ export interface TickResult {
   stop?: string;
   /** NAMED STOPs this tick: a route-ready business refused in the sending window for a missing precondition. */
   stops: Record<string, string>;
+  /** The bounce agent this tick (bounceFix.ts): replacements found and bounced addresses dropped. */
+  bounceFixes?: { replaced: number; dropped: number };
 }
 
 export const NAMED_STOP_PREFIX = "NAMED STOP";
@@ -141,6 +144,12 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
       out.refused.replies = (err as Error).message;
     }
   }
+  // The bounce agent (rule 4, 23 Oct 2026): a working replacement for each bounced address, same day.
+  try {
+    out.bounceFixes = await fixBounces(db, fetchImpl, now);
+  } catch (err) {
+    out.refused.bounceFixes = (err as Error).message;
+  }
 
   for (const b of BUSINESSES) {
     const st = await domainState(db, b.key, now);
@@ -157,6 +166,7 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
       await db.prepare(`UPDATE outreach_domain_state SET paused_at = NULL, pause_reason = NULL, updated_at = ? WHERE business_key = ?`)
         .bind(now, b.key).run();
       st.paused_at = null; st.pause_reason = null;
+      await recordRestart(db, b.key, now).catch(() => {});
     }
   }
 
@@ -448,6 +458,7 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
         prospect = prospect ?? (await db.prepare(`SELECT * FROM outreach_prospects WHERE email = ? ORDER BY updated_at DESC LIMIT 1`).bind(failed).first<any>());
         subject = failed;
         await suppress(db, failed, "hard bounce", "bounce", now);
+        await recordBounce(db, prospect, failed, now);
         if (prospect) {
           await db.prepare(`UPDATE outreach_prospects SET state = 'bounced', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, prospect.id).run();
           await db.prepare(

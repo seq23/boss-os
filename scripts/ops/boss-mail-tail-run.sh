@@ -1,8 +1,8 @@
 #!/bin/bash
 #
 # One tail agent for boss-mail-tail.sh: runs `claude -p --model opus` with a 2 h hard cap, then
-# emails the report (or, if the agent wrote none, an INCOMPLETE one naming its log) through
-# boss-mail-tail-report.mjs under the Boss OS vault runner. Always clears the agent lock.
+# folds the report (or, if the agent wrote none, an INCOMPLETE one naming its log) into Simone's
+# morning email through boss-mail-tail-report.mjs under the Boss OS vault runner. Always clears the agent lock.
 #   boss-mail-tail-run.sh <prompt> <tail.jsonl> <lockdir> <claude> <report.txt> <subjects>
 set -uo pipefail
 PROMPT_FILE="$1" TAIL_LOG="$2" FIXLOCK="$3" CLAUDE="$4" REPORT_FILE="$5" SUBJECT="${6:-your email}"
@@ -35,14 +35,11 @@ if [ ! -s "$REPORT_FILE" ] || ! grep -q "FRICTION_FIXED" "$REPORT_FILE"; then
     echo "FRICTION_FIXED: 0"
   } >> "$REPORT_FILE"
 fi
-N="$(grep -oE '^FRICTION_FIXED: *[0-9]+' "$REPORT_FILE" | tail -1 | grep -oE '[0-9]+' || echo 0)"
-SUBJ="Tail: $SUBJECT — ${N:-0} fixed"
-grep -q "^INCOMPLETE" "$REPORT_FILE" && SUBJ="Tail: $SUBJECT — INCOMPLETE"
-if OUT="$(cd "$REPO" && node scripts/vault/vault.mjs run -- node scripts/ops/boss-mail-tail-report.mjs "$REPORT_FILE" "$SUBJ" 2>&1)"; then
+if OUT="$(cd "$REPO" && node scripts/vault/vault.mjs run -- node scripts/ops/boss-mail-tail-report.mjs "$REPORT_FILE" "$SUBJECT" 2>&1)"; then
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $OUT" >> "$REPORT_LOG"
 else
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) FAILED to send $REPORT_FILE: $OUT" >> "$REPORT_LOG"
-  /usr/bin/osascript -e "display notification \"Tail report email failed — see $REPORT_LOG\" with title \"Boss OS tail\" sound name \"Basso\"" >/dev/null 2>&1
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) FAILED to fold $REPORT_FILE into the morning email: $OUT" >> "$REPORT_LOG"
+  /usr/bin/osascript -e "display notification \"Tail report not folded — see $REPORT_LOG\" with title \"Boss OS tail\" sound name \"Basso\"" >/dev/null 2>&1
 fi
 rm -rf "$FIXLOCK"
 rm -f "$PROMPT_FILE"

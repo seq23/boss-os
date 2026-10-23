@@ -13,9 +13,9 @@
 #
 # ONE AGENT AT A TIME: `claude -p --model opus`, 2 h hard cap (a watchdog kills it and the report
 # says INCOMPLETE). Mail that arrives while one runs queues for the next free tick, never dropped.
-# REPORT: boss-mail-tail-report.mjs, as Simone <simone@sequoiataylor.com> through the Boss OS Resend
-# team (BOSS_OS_MAIL_KEY; fallback the Industry Guides team), under `vault:run` — which strips every
-# West Peek key — to BOSS_NOTIFY_TO (seq.taylor@gmail.com).
+# REPORT: boss-mail-tail-report.mjs folds the report into ONE line under "Done for you" in Simone's
+# morning email (owner, 23 Oct 2026: "#simone Tail" stops as a standalone email); an INCOMPLETE run is
+# a fix job for the team. It sends nothing itself.
 #
 # launchd com.seq.boss-mail-tail, every 15 min (install-boss-mail-tail.sh). Stop it:
 #   launchctl bootout gui/$(id -u)/com.seq.boss-mail-tail
@@ -122,9 +122,12 @@ RECORD:
      - **What Boss OS did:** <job states reached>
      - **Friction:** <what, or "none">
      - **Fix:** <PR link, or "none needed"> — CONFIRMED or SUSPECTED
-  b. FINISH by writing a plain-text report of at most 20 lines to $REPORT_FILE — it is emailed to
-     her as-is. First line: her subject(s). Then who had each job, where each ended, friction found,
-     fixes landed (PR links), and a last line "FRICTION_FIXED: <n>". No tables, no markdown.
+  b. FINISH by writing a plain-text report to $REPORT_FILE. It is NOT emailed: its second line becomes
+     one line under "Done for you" in Simone's morning email (owner, 23 Oct 2026). First line: her
+     subject(s). Second line: ONE plain sentence saying where her job ended, in everyday words — no PR
+     numbers, codes, commands, paths or jargon (e.g. "Danielle fixed the footer link and it is live.").
+     Then, for the record only, who had each job, friction found, fixes landed (PR links), and a last
+     line "FRICTION_FIXED: <n>". No tables, no markdown.
 PROMPT
 
 mkdir -p "$FIXLOCK"

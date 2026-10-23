@@ -1,115 +1,187 @@
 /**
- * SIMONE'S "YOUR DAY" AND MONDAY "YOUR WEEK" (owner-approved 22 Oct 2026, Review Pack mock-ups).
- * Built from fixtures shaped like the live reads (fake names: the repo is public).
+ * SIMONE'S ONE MORNING EMAIL (owner, 23 Oct 2026, rule 1 of the email fix; mock-up board 1).
+ * Built from fixtures shaped like the live reads and the section files D and L write (fake names:
+ * the repo is public).
  */
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildDay, buildWeek, replyContext } from "../scripts/ops/your-day.mjs";
+import { buildDay, replyContext, briefingDecision, briefingLines, bounceLine, BRIEFING_CAP } from "../scripts/ops/your-day.mjs";
 import { plainProblems } from "../src/shared/boss/mail/plain.mjs";
 import { sendersFor, employeeMail } from "../scripts/ops/notify.mjs";
+import { writeMorningSection, addMorningLines, readMorningSections, clearToldSections, morningSectionProblems, MORNING_SECTIONS } from "../src/shared/boss/mail/morning.mjs";
 
-// Thursday 22 Oct 2026, 06:40 Central (11:40 UTC).
-const NOW = Date.parse("2026-10-22T11:40:00Z");
+// Friday 23 Oct 2026, 07:15 Central (12:15 UTC) — after Camille's report landed.
+const NOW = Date.parse("2026-10-23T12:15:00Z");
 const at = (iso: string) => Date.parse(iso);
+const stamp = new Date(NOW).toISOString();
+const G = "https://mail.google.com/mail/u/0/#all/";
+const BOSS = "https://boss.sequoiataylor.com/";
 const DATA = {
-  diary: [
-    { title: "Call with Example Partners", with: "A. Person", scheduled_at: at("2026-10-22T15:00:00Z"), location: null },
-    { title: "Board prep", with: null, scheduled_at: at("2026-10-27T14:30:00Z"), location: null },
-  ],
+  diary: [{ title: "Call with Example Partners", with: "A. Person", scheduled_at: at("2026-10-23T15:00:00Z"), location: null }],
   tasks: [
     { id: "tsk_a1b2c3d4", title: "2 comments on the channel need your word", status: "awaiting_approval", employee_id: "emp_relationship", employee_name: "Monique", due: null },
-    { id: "tsk_b1b2c3d4", title: "Research referral fees", status: "running", employee_id: "emp_research", employee_name: "Camille", due: "2026-10-23T22:00:00Z" },
-    { id: "tsk_c1b2c3d4", title: "Make the cover", status: "failed", employee_id: "emp_chief", employee_name: "Simone", finished_at: NOW - 3_600_000, due: null },
+    { id: "tsk_b1b2c3d4", title: "Research referral fees", status: "running", employee_id: "emp_research", employee_name: "Camille", due: "2026-10-27T22:00:00Z" },
   ],
   approvals: [{ id: "apr_x1", title: "Renew the example.com domain" }],
   repoChanges: [{ id: "rc_x1", repo: "creator-studios", phase: "asking" }],
-  roster: [
-    { id: "emp_relationship", name: "Monique", duties: 9, health: "green" },
-    { id: "emp_research", name: "Camille", duties: 3, health: "green" },
-    { id: "emp_repo", name: "Danielle", duties: 4, health: "green" },
-    { id: "emp_risk", name: "Toni", duties: 3, health: "green" },
-  ],
-  alerts: 2, openLoops: 0,
-  briefing: { for_day: "2026-10-22", headline: "Markets flat, rates unchanged" },
+  briefing: { for_day: "2026-10-23", headline: "Markets flat", summary: "Markets flat. Rates unchanged.", sections: [
+    { key: "top_5_headlines", bullets: ["Not this one."] },
+    { key: "one_minute_summary", bullets: ["Rates held.", "A large AI secondary priced up.", "Two IPO filings.", "A launch slipped.", "One ruling on fund disclosure.", "A sixth line never shows."] },
+  ] },
+  bounceFixes: { replaced: 4, dropped: 0, restarted: ["The Industry Guides"] },
+  morning: {
+    deals: { section: "deals", at: stamp, rows: [
+      { company: "Company A", side: "Buy", size: "$1B", from: "Broker One", tag: "Rainmaker", url: `${G}a1` },
+      { company: "Company B", side: "Sell", size: "$300M", price: "$138", from: "Broker Two (Firm X)", url: `${G}b2` },
+    ], link: { label: "See the full grid", url: BOSS } },
+    monique_found: { section: "monique_found", at: stamp, lines: ["For your $1B Company A buyer: 5 funds hold $310M between them."], link: { label: "See holders and drafts", url: BOSS } },
+    lp: { section: "lp", at: stamp, decide: [{ title: "Reply to an LP who wants a call", body: "Replied Tuesday; not sent yet.", buttons: [{ label: "Send as is", url: `${G}d1` }, { label: "Edit, then send", url: `${G}d1e` }, { label: "Skip", url: BOSS }], priority: 10 }] },
+    prospects: { section: "prospects", at: stamp, lines: ["Prospecting: 12 new buyers found, 3 follow-ups sent, 1 interested."] },
+    tail: { section: "tail", at: stamp, lines: ['Your email "Fix the footer": Danielle fixed the footer link and it is live.', "Line four.", "Line five."] },
+    catchups: { section: "catchups", at: stamp, decide: [{ title: "Catch up with a past partner", body: "They bought Company A last year and it is moving.", buttons: [{ label: "Send", url: `${G}c1` }, { label: "Skip", url: BOSS }] }] },
+    eightraise: { section: "eightraise", at: stamp, credits: { used: 3, budget: 75, kept: 30 } },
+  },
   feed: { items: [
-    { kind: "deadline", title: "9:00 AM · Riley M. · Party setup", detail: "", due: "2026-10-22" },
+    { kind: "deadline", title: "9:00 AM · Riley M. · Party setup", detail: "", due: "2026-10-23" },
     { kind: "money", title: "Jordan P. · Waiting for deposit", detail: "$180 due ($130 + $50 refundable deposit)", due: null },
   ] },
 };
 
-const order = (text: string, heads: string[]) => heads.map((h) => text.indexOf(h));
-
-describe("Your day", () => {
+describe("the one morning email", () => {
   const e = buildDay(DATA, NOW);
-  it("is plain, and in her order: yours today, Valerie's box, the team, loose ends, the briefing", () => {
+  it("passes the gate and is in her order: Decide, deals, Monique found, briefing, done, catch-ups, Valerie, sign-off, 8Raise", () => {
+    expect(e.problems).toEqual([]);
     expect(plainProblems(e)).toEqual([]);
-    const idx = order(e.text, ["What I need from you:", "Yours today", "Porch & Party: To do for Valerie", "What the team is doing", "Loose ends", "This morning's briefing"]);
-    expect(idx.every((n) => n >= 0)).toBe(true);
+    const heads = ["Decide (4)", "New deals since yesterday (2)", "Monique found", "This morning's briefing (Camille)", "Done for you", "Catch up with", "Porch & Party: To do for Valerie", "— Simone", "8Raise: Monique used 3 of her 75 credits this month (30 always kept for you)"];
+    const idx = heads.map((h) => e.text.indexOf(h));
+    expect(idx.every((n) => n >= 0), JSON.stringify(idx)).toBe(true);
     expect([...idx].sort((a, b) => a - b)).toEqual(idx);
-    expect(e.subject).toBe("Your day: 4 things for you");
-    expect(e.text.split("\n")[0]).toBe("Good morning. Here is your Thursday, October 22.");
+    expect(e.subject).toBe("Friday: 4 decisions, 2 new deals, Valerie's list");
+    expect(e.text.split("\n")[0]).toBe("Good morning. Here is your Friday, October 23. On your calendar: 10 am Call with Example Partners with A. Person.");
   });
-  it("lists only what the data holds — the call, the decision, the plan, the held task — and nothing else", () => {
-    const yours = e.text.slice(e.text.indexOf("Yours today"), e.text.indexOf("Porch & Party")).split("\n").filter((l) => l.startsWith("- "));
-    expect(yours).toEqual([
-      "- 10 am: Call with Example Partners with A. Person.",
-      "- Decide: Renew the example.com domain — it is in your Inbox.",
-      "- Approve Danielle's plan for creator-studios — reply approved to her email to start the build.",
-      "- Approve or change: 2 comments on the channel need your word (Monique).",
-    ]);
+  it("Decide: three at most, the LP reply (priority) first, each with its buttons; catch-ups are not decisions", () => {
+    const decide = e.text.slice(e.text.indexOf("Decide (4)"), e.text.indexOf("New deals"));
+    expect(decide).toMatch(/^Decide \(4\)\n1\. Reply to an LP who wants a call\nReplied Tuesday; not sent yet\.\n- Send as is: https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1\n- Edit, then send: .*\n- Skip: /);
+    expect(decide).toContain("2. Renew the example.com domain");
+    expect(decide).toContain("3. Start Danielle's plan for creator-studios?");
+    expect(decide).not.toContain("4.");
+    expect(decide).toContain("And 1 more on your Today page.");
+    expect(decide).not.toContain("past partner");
+    expect(e.html).toMatch(/<a href="https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1" style="display:inline-block[^"]*">Send as is<\/a>/);
+  });
+  it("deals are grid rows with a real Gmail link each; Rainmaker rows say Rainmaker; the full grid is one tap", () => {
+    expect(e.text).toContain("- Company A · Buy · $1B · Rainmaker — Open the email: https://mail.google.com/mail/u/0/#all/a1");
+    expect(e.text).toContain("- Company B · Sell · $300M @ $138 · Broker Two (Firm X) — Open the email: https://mail.google.com/mail/u/0/#all/b2");
+    expect(e.text).toContain(`See the full grid: ${BOSS}`);
+    expect(e.html).toMatch(/<table role="presentation"/);
+  });
+  it("Camille's briefing is the one-minute summary, five lines at most", () => {
+    const brief = e.text.slice(e.text.indexOf("This morning's briefing"), e.text.indexOf("Done for you")).split("\n").filter((l) => l.startsWith("- "));
+    expect(brief).toEqual(["- Rates held.", "- A large AI secondary priced up.", "- Two IPO filings.", "- A launch slipped.", "- One ruling on fund disclosure."]);
+  });
+  it("Done for you: the bounce agent's one line first, three lines at most, the rest counted", () => {
+    const done = e.text.slice(e.text.indexOf("Done for you"), e.text.indexOf("Catch up with")).split("\n").filter((l) => l.startsWith("- "));
+    expect(done[0]).toBe("- Replaced 4 outreach addresses that bounced with working ones from each company's own site; outreach restarted (The Industry Guides).");
+    expect(done.length).toBe(4);
+    expect(done[3]).toBe("- And 2 more on your Today page.");
+  });
+  it("Valerie's box is unchanged: the site's own list, boxed", () => {
     expect(e.text).toContain("- 9:00 AM · Riley M. · Party setup");
     expect(e.text).toContain("- Money: Jordan P. · Waiting for deposit — $180 due ($130 + $50 refundable deposit)");
-    expect(e.text).toContain('- Simone could not finish "Make the cover"');
-    expect(e.text).toContain("- 2 high alerts on your Today page.");
-    expect(e.text).toContain("Markets flat, rates unchanged. The full briefing is on your Today page");
-    expect(e.text).toContain('Reply to this email to change anything — for example "move the KDP item to Monday".');
-    expect(e.refs).toEqual(["yd_20261022"]);
-  });
-  it("an empty day says so, section by section, in one line each; an unreadable site says so", () => {
-    const empty = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], roster: [], alerts: 0, openLoops: 0, briefing: null, feed: null, feedError: "the site answered 401" }, NOW);
-    expect(plainProblems(empty)).toEqual([]);
-    expect(empty.subject).toBe("Your day: nothing needs you");
-    expect(empty.text).toContain("What I need from you: Nothing — this is just so you know.");
-    expect(empty.text).toContain("I could not read the Porch & Party site this morning (the site answered 401).");
-    expect(empty.text).toContain("Nobody has anything open right now.");
-    expect(empty.text).toMatch(/Loose ends\nNone\./);
-    const clear = buildDay({ ...DATA, feed: { items: [] } }, NOW);
-    expect(clear.text).toContain("All clear for Valerie today.");
+    expect(e.html).toContain("faf6ec");
   });
   it("goes out through employeeMail as laid out, signed by Simone, with its code in the header", () => {
     process.env.BOSS_OS_MAIL_KEY = "test-key-not-real";
     const p = employeeMail(sendersFor("Simone")[0]!, { to: "owner@example.com", subject: e.subject, text: e.text, prelaid: e });
     expect(p.html).toBe(e.html);
-    expect(p.headers).toEqual({ "X-Boss-Ref": "yd_20261022" });
-    expect(p.html).toContain("faf6ec"); // Valerie's box is the calm boxed panel.
+    expect(p.headers).toEqual({ "X-Boss-Ref": "yd_20261023" });
     delete process.env.BOSS_OS_MAIL_KEY;
   });
 });
 
-describe("what her reply carries to Simone's task", () => {
-  it("keeps the list she is answering and leaves the calendar lines (people's names) out", () => {
-    const day = replyContext(buildDay(DATA, NOW).text);
-    expect(day).toContain("Approve Danielle's plan for creator-studios");
-    expect(day).toContain("Porch & Party: To do for Valerie");
-    expect(day).not.toMatch(/Example Partners|A\. Person/);
-    const week = replyContext(buildWeek(DATA, NOW).text);
-    expect(week).not.toMatch(/Your calendar|Example Partners|Board prep/);
-    expect(week).toContain("Research referral fees");
+describe("an empty or broken morning still reads plainly", () => {
+  it("nothing to decide, no sections invented, a feed that did not load is one plain line (never 'I could not read')", () => {
+    const empty = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: null, feedError: "the site answered 401", morning: {} }, NOW);
+    expect(empty.problems).toEqual([]);
+    expect(empty.subject).toBe("Friday: nothing to decide");
+    expect(empty.text.split("\n")[2]).toBe("Nothing to decide — this is just so you know.");
+    expect(empty.text).not.toMatch(/New deals|Monique found|Done for you|Catch up with|8Raise/);
+    expect(empty.text).toContain("Briefing late — it will be on your Today page.");
+    expect(empty.text).toContain("Valerie's list did not load this morning; the team is fixing it");
+  });
+  it("a producer's line that is not plain is dropped and named, never holds the whole email", () => {
+    const bad = buildDay({ ...DATA, morning: { ...DATA.morning, monique_found: { section: "monique_found", at: stamp, lines: ["I could not read the filings today.", "Kept line."] } } }, NOW);
+    expect(bad.problems).toEqual([]);
+    expect(bad.text).toContain("- Kept line.");
+    expect(bad.dropped).toEqual([expect.stringMatching(/^monique_found line 1: "I could not read"/)]);
+  });
+  it("Mondays carry this week's deadlines in the same email — there is no second Monday email", () => {
+    const monday = Date.parse("2026-10-26T12:15:00Z");
+    const m = buildDay({ ...DATA, briefing: { ...DATA.briefing, for_day: "2026-10-26" } }, monday);
+    expect(m.problems).toEqual([]);
+    expect(m.text).toContain("This week\n- Tue: Research referral fees (Camille).");
   });
 });
 
-describe("Your week (Mondays)", () => {
-  const w = buildWeek(DATA, NOW);
-  it("deadlines, her calendar, replies waiting, Valerie's week, the team — plain and in that order", () => {
-    expect(plainProblems(w)).toEqual([]);
-    const idx = order(w.text, ["Deadlines", "Your calendar", "Replies waiting on you", "Porch & Party: Valerie's week", "What the team is doing this week"]);
-    expect(idx.every((n) => n >= 0)).toBe(true);
-    expect([...idx].sort((a, b) => a - b)).toEqual(idx);
-    expect(w.text).toContain("- Fri: Research referral fees (Camille).");
-    expect(w.text).toContain("- Thu — Call with Example Partners at 10 am.");
-    expect(w.text).toContain("- Fri, Sat, Sun, Mon — clear.");
-    expect(w.text).toContain("- Tue — Board prep at 9:30 am.");
-    expect(w.text).toContain("- Danielle — 1 open: creator-studios change (waiting on your approved).");
-    expect(w.text).toContain("- Toni — 3 regular jobs on schedule; nothing open right now.");
-    expect(w.refs).toEqual(["yd_20261022w"]);
+describe("Camille's briefing and the send time (coordinator finding, 23 Oct 2026)", () => {
+  it("waits from 06:40 for today's report, sends the moment it lands, and at 07:45 Central sends without it", () => {
+    expect(BRIEFING_CAP).toEqual({ hour: 7, minute: 45 });
+    const at0640 = Date.parse("2026-10-23T11:40:00Z");
+    const at0744 = Date.parse("2026-10-23T12:44:00Z");
+    const at0745 = Date.parse("2026-10-23T12:45:00Z");
+    expect(briefingDecision(null, at0640)).toBe("wait");
+    expect(briefingDecision({ ...DATA.briefing, for_day: "2026-10-22" }, at0744)).toBe("wait");
+    expect(briefingDecision(DATA.briefing, at0640)).toBe("send");
+    expect(briefingDecision(null, at0745)).toBe("send_late");
+    // After the clocks change (CST, UTC−6) the cap is still 07:45 on her clock.
+    expect(briefingDecision(null, Date.parse("2026-11-02T13:44:00Z"))).toBe("wait");
+    expect(briefingDecision(null, Date.parse("2026-11-02T13:45:00Z"))).toBe("send_late");
+  });
+  it("the five lines come from the one-minute summary, else the report's summary sentences", () => {
+    expect(briefingLines(DATA.briefing, "2026-10-23")?.length).toBe(5);
+    expect(briefingLines({ for_day: "2026-10-23", summary: "One. Two." }, "2026-10-23")).toEqual(["One.", "Two."]);
+    expect(briefingLines({ ...DATA.briefing, for_day: "2026-10-22" }, "2026-10-23")).toBeNull();
+  });
+  it("the bounce agent's line says nothing when it did nothing", () => {
+    expect(bounceLine(null)).toBeNull();
+    expect(bounceLine({ replaced: 0, dropped: 0, restarted: [] })).toBeNull();
+    expect(bounceLine({ replaced: 1, dropped: 2, restarted: [] })).toBe("Replaced 1 outreach address that bounced with working ones from each company's own site; removed 2 bounced addresses for good (no working address was published).");
+  });
+});
+
+describe("what her reply carries to Simone's task", () => {
+  it("keeps the email she is answering and leaves the calendar (people's names) out", () => {
+    const ctx = replyContext(buildDay(DATA, NOW).text);
+    expect(ctx).toContain("Start Danielle's plan for creator-studios?");
+    expect(ctx).toContain("Porch & Party: To do for Valerie");
+    expect(ctx).not.toMatch(/Example Partners|A\. Person/);
+  });
+});
+
+describe("the morning section files (the interface D and L write)", () => {
+  it("names every section the contract lists", () => {
+    for (const s of ["deals", "monique_found", "lp", "prospects", "catchups", "eightraise"]) expect(MORNING_SECTIONS).toContain(s);
+  });
+  it("writes, reads, skips stale and broken files by name, appends without repeats, and clears what was told", () => {
+    const dir = mkdtempSync(join(tmpdir(), "morning-"));
+    writeMorningSection("deals", { rows: [{ company: "Company A" }] }, { dir, now: NOW });
+    writeMorningSection("lp", { lines: ["old"] }, { dir, now: NOW - 40 * 3_600_000 });
+    writeFileSync(join(dir, "prospects.json"), "{ not json");
+    addMorningLines("tail", { lines: ["one"] }, { dir, now: NOW });
+    addMorningLines("tail", { lines: ["one", "two"] }, { dir, now: NOW });
+    const { sections, skipped } = readMorningSections({ dir, now: NOW });
+    expect(Object.keys(sections).sort()).toEqual(["deals", "tail"]);
+    expect(sections.tail!.lines).toEqual(["one", "two"]);
+    expect(skipped.join(" | ")).toMatch(/lp: stale/);
+    expect(skipped.join(" | ")).toMatch(/prospects: does not parse/);
+    clearToldSections(["tail"], { dir });
+    expect(readdirSync(dir).filter((f) => f === "tail.json")).toEqual([]);
+  });
+  it("refuses a Decide item without a one-tap button and a section it does not know", () => {
+    expect(morningSectionProblems({ section: "lp", at: stamp, decide: [{ title: "x", buttons: [] }] })).toEqual(["decide[0] has no one-tap button"]);
+    expect(morningSectionProblems({ section: "nope", at: stamp })).toEqual(['unknown section "nope"']);
+    expect(() => writeMorningSection("lp", { decide: [{ title: "x", buttons: [{ label: "Go", url: "/api/x" }] }] }, { dir: mkdtempSync(join(tmpdir(), "m-")) })).toThrow(/without a real link/);
   });
 });

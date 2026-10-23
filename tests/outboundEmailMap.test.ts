@@ -393,11 +393,15 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
     for (const label of ["com.seq.boss-risk-watch", "com.seq.boss-outside-locks", "com.seq.boss-archive-audit"]) expect(installer).toContain(label);
   });
 
-  it("the tail on her Boss OS mail is on the map, sends as Simone, and its label is installed", () => {
+  it("the tail on her Boss OS mail is on the map, folded into Simone's morning email (23 Oct 2026), and its label is installed", () => {
     const row = rowOf("simone-mail-tail-report");
     expect(row).toContain("Simone <simone@sequoiataylor.com>");
     expect(row).toContain("com.seq.boss-mail-tail");
     expect(row).toContain("BOSS_OS_MAIL_KEY");
+    expect(row).toMatch(/NO EMAIL since 23 Oct 2026/);
+    const report = readFileSync(path.join(ROOT, "scripts/ops/boss-mail-tail-report.mjs"), "utf8");
+    expect(report).not.toMatch(/\bsendAs\(|employeeMail\(|sendAsEmployee\(/);
+    expect(report).toMatch(/toMorning\("tail", \{ lines: \[line\] \}\)/);
     expect(installer).toContain('bash "$REPO/scripts/ops/install-boss-mail-tail.sh"');
     expect(installer).toContain('require_loaded "$MAILTAIL_LABEL"');
     const tail = readFileSync(path.join(ROOT, "scripts/ops/install-boss-mail-tail.sh"), "utf8");
@@ -408,5 +412,17 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
     const run = readFileSync(path.join(ROOT, "scripts/ops/boss-mail-tail-run.sh"), "utf8");
     expect(run).toMatch(/grep -q '"type":"result"' "\$TAIL_LOG"[\s\S]{0,120}pkill -TERM -P "\$AGENT"[\s\S]{0,40}kill "\$AGENT"/);
     expect(run).toContain('exec "$CLAUDE" -p');
+  });
+
+  it("one morning email (23 Oct 2026): Zora's audit and Toni's locks send nothing; Toni sends only money at risk", () => {
+    expect(rowOf("zora-archive-audit")).toMatch(/NO EMAIL since 23 Oct 2026/);
+    expect(rowOf("toni-risk-watch")).toMatch(/^\| `toni-risk-watch` \| Boss OS \(personal\) \| Money at risk now/);
+    expect(rowOf("simone-your-day")).toMatch(/ONE morning email.*07:45 Central at the latest/);
+    for (const f of ["scripts/ops/archive-audit.mjs", "scripts/ops/outside-locks.mjs"]) {
+      expect(readFileSync(path.join(ROOT, f), "utf8"), f).not.toMatch(/\bsendAs\(|employeeMail\(|sendAsEmployee\(/);
+    }
+    const risk = readFileSync(path.join(ROOT, "scripts/ops/risk-watch.mjs"), "utf8");
+    expect((risk.match(/\bsendAs\(/g) ?? []).length).toBe(1);
+    expect(risk).toMatch(/if \(plan\.urgent\) \{/);
   });
 });

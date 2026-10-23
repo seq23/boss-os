@@ -17,7 +17,9 @@
  *      Camille's research pages file themselves on delivery). Pages that belong to the fund are left
  *      for the fund's own archive — Boss OS never lists them.
  *
- * A source it cannot read is a NAMED STOP line in the email, never a pass. Rule 0: nothing read → exit 3.
+ * WHAT SHE SEES (owner, 23 Oct 2026, rule 1): no Friday email any more. What moved becomes lines
+ * under "Done for you" in Simone's morning email (`planArchive`); a source it cannot read is a fix
+ * job for the team, never a pass and never her mail. Rule 0: nothing read → exit 3.
  *
  *   npm run archive:audit            # check, fix/flag, file, email what moved
  *   npm run archive:audit -- --dry   # check and print only
@@ -28,8 +30,25 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { writeGalleryExport } from "./gallery-export.mjs";
 import {
-  bossApi, loadState, movedReadings, readNothingStop, saveState, sendAs, stateMap,
+  bossApi, loadState, movedReadings, readNothingStop, saveState, stateMap, toMorning, fixJob,
 } from "./lib/duty-kit.mjs";
+
+/**
+ * The Friday audit, as morning-email lines and team fix jobs. Pure; tested.
+ * `fixing` = documents handed to Danielle, `flagged` = stale ones for another owner, `filed` = pieces
+ * newly filed on the delivered list, `cleared` and `stops` = readings that moved.
+ */
+export function planArchive({ fixing = 0, flagged = [], filed = 0, cleared = [], stops = [] }) {
+  const lines = [];
+  const bits = [];
+  if (fixing) bits.push(`${fixing} out-of-date document${fixing === 1 ? " is" : "s are"} being brought up to date by Danielle`);
+  if (filed) bits.push(`${filed} delivered piece${filed === 1 ? "" : "s"} filed where you can find ${filed === 1 ? "it" : "them"}`);
+  if (bits.length) lines.push(`Zora's Friday check: ${bits.join("; ")}.`);
+  for (const f of flagged) lines.push(`Zora flagged to ${f.owner ?? "its owner"}: ${f.line}`);
+  if (cleared.length) lines.push(`Zora: ${cleared.length} document${cleared.length === 1 ? " is" : "s are"} current again.`);
+  const fixes = stops.map((r) => ({ title: `Zora cannot check ${r.key.replace(/_/g, " ")}`, prompt: `Zora's Friday archive audit (scripts/ops/archive-audit.mjs) could not read ${r.key}: ${r.line} Fix the read so the audit covers it again. A team chore, never her email.` }));
+  return { lines, fixes };
+}
 
 const DRY = process.argv.includes("--dry");
 const DAY = 86_400_000;
@@ -223,22 +242,15 @@ async function main() {
   }
 
   if (moved.length || filed) {
-    const flagged = moved.filter((m) => m.state === "alert" && !m.fix);
-    const stops = moved.filter((m) => m.state === "stop");
-    const cleared = moved.filter((m) => m.state === "ok" || m.state === "cleared");
-    const text = [
-      "Sequoia,", "",
-      `Friday archive audit: ${fixes.length + flagged.length} stale, ${filed} newly filed.`, "",
-      ...(fixes.length ? ["BEING FIXED", ...fixes, ""] : []),
-      ...(flagged.length ? ["STALE — FOR ITS OWNER", ...flagged.map((m) => `- ${m.line} Owner: ${m.owner ?? "unnamed"}.`), ""] : []),
-      ...(filed ? [`FILED — ${filed} delivered piece(s) added to the one list (GET /api/boss/research/delivered)`, ...fresh.slice(0, 15).map((x) => `- ${x.title}: ${x.location}`), ""] : []),
-      ...(cleared.length ? ["CURRENT AGAIN", ...cleared.map((m) => `- ${m.line}`), ""] : []),
-      ...(stops.length ? ["I COULD NOT READ (said once)", ...stops.map((m) => `- ${m.line}`), ""] : []),
-      "— Zora, Archivist",
-    ].join("\n");
-    if (!(await sendAs("Zora", { subject: `Archive: ${fixes.length + flagged.length} stale, ${filed} filed`, text }))) {
-      console.error("NAMED STOP [NO_MAIL_SENT] the audit moved and no email could be sent; state not saved."); process.exit(8);
-    }
+    const plan = planArchive({
+      fixing: fixes.filter((f) => f.startsWith("- Danielle has it")).length,
+      flagged: moved.filter((m) => m.state === "alert" && !m.fix),
+      filed,
+      cleared: moved.filter((m) => m.state === "ok" || m.state === "cleared"),
+      stops: moved.filter((m) => m.state === "stop"),
+    });
+    for (const f of plan.fixes) { const why = await fixJob(api, f); console.log(`  fix job: ${f.title}${why ? ` — NOT opened (${why})` : ""}`); }
+    if (plan.lines.length && !toMorning("archive", { lines: plan.lines })) { console.error("state not saved."); process.exit(8); }
   }
   saveState("archive-audit", { at: new Date(now).toISOString(), states: stateMap(readings) });
   console.log(`ARCHIVE-AUDIT-COMPLETE: ${moved.length} moved, ${filed} filed`);

@@ -15,11 +15,13 @@
  *
  * Sample data is fake (the repo is public): no LP, customer or counterparty name is real.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { plainProblems, fromLegacy, layoutEmail, JARGON, cleanSubject, NEEDS_HEADING, NOTHING_NEEDED } from "../src/shared/boss/mail/plain.mjs";
-import { sendersFor, employeeMail, namesOnce } from "../scripts/ops/notify.mjs";
+import { plainProblems, fromLegacy, layoutEmail, layoutProblem, lineProblems, JARGON, cleanSubject, cleanText, DECIDE_HEADING, NOTHING_TO_DECIDE } from "../src/shared/boss/mail/plain.mjs";
+import { sendersFor, employeeMail, namesOnce, postEmployeeMail, mailGate } from "../scripts/ops/notify.mjs";
+import { INBOX } from "../scripts/validate/email-plain.mjs";
 
 const ROOT = join(__dirname, "..");
 
@@ -45,7 +47,7 @@ const SAMPLES: Record<string, Array<{ who: string; subject: string; text: string
     { who: "Danielle", subject: "Stopped work on example-site: the checks failed [rc_m5jh89zfkeyv3tmc]", text: "Sequoia,\n\nThis is Danielle. I stopped work on rc_m5jh89zfkeyv3tmc (example-site) and here is the named reason:\n\nNAMED STOP [CHECKS_RED] the unit tests failed on main.\n\nPull request: https://github.com/example/example-site/pull/12\n\n— Danielle, Technical Program Manager" },
     { who: "Danielle", subject: "example-site is live [rc_m5jh89zfkeyv3tmd]", text: "Sequoia,\n\nThis is Danielle. example-site is landed and proven live.\n\nPull request: https://github.com/example/example-site/pull/12\nMerge commit: 0123abc\n\nLIVE PROOF\n- home_status: 200\n\n— Danielle" },
   ],
-  "scripts/ops/task-notices.mjs": [{ who: "Simone", subject: "Stopped: Make the cover [tsk_m5jh8bjbxmhtfz1w]", text: "I could not do this one as asked.\n\nWhat you asked: Make the cover\nWhat it said back: \"I do not have direct access to…\"\n\nWhat I need from you: a narrower ask.\n\nReply to this email and your answer goes straight back to this job. Nothing was sent to anyone outside Boss OS. tsk_m5jh8bjbxmhtfz1w" }],
+  "scripts/ops/task-notices.mjs": [{ who: "Simone", subject: "One key only you hold: EXAMPLE_API_KEY [tsk_m5jh8bjbxmhtfz1w]", text: "The cover job needs a key only you hold.\n\nWhat you asked: Make the cover\n\nWhat I need from you: reply with SECRET EXAMPLE_API_KEY=<value>.\n\nReply to this email and your answer goes straight back to this job. Nothing was sent to anyone outside Boss OS. tsk_m5jh8bjbxmhtfz1w" }],
   "scripts/ops/service-tick.mjs": [{ who: "Simone", subject: "Key received: EXAMPLE_API_KEY", text: "Your key EXAMPLE_API_KEY is in the vault on your Mac and the work that waited for it is running again." }],
   "scripts/ops/kdp-surface-report.mjs": [{ who: "Simone", subject: "The Example Book: one decision, reply approved [kml_m331j7a4gqr6qz47]", text: "Amazon flagged the subtitle.\n\nWhat I did: drafted a shorter subtitle.\n\nWhat I need from you: approve the new subtitle. Amazon's deadline: 2026-10-30.\n\nReply with one word — approved — and I do it on my next run.\n\n— Simone" }],
   "scripts/ops/youtube-comment-watch.mjs": [{ who: "Monique", subject: "3 comments worth a reply [cw_m5abc123]", text: "Three new comments on How We Know are worth a reply.\n\n1. \"Great video\" — reply as drafted: Thank you!\n\nReply with one line per number: `1 delete`, `2 reply as drafted`, `3 reply: <your words>`, `4 ignore` — or `your call`." }],
@@ -55,11 +57,9 @@ const SAMPLES: Record<string, Array<{ who: string; subject: string; text: string
   "scripts/ops/lp-outcomes.mjs": [{ who: "Monique", subject: "LP outcomes: 2 to suppress, 3 replied, 1 bounced", text: "Two people asked not to be written to again, three replied and one address bounced.\n\nOPTED OUT (2) - remove from the list\n- a.person@example.com\n\nBOUNCED (1) - the address did not accept mail\n- b.person@example.com" }],
   "scripts/ops/lp-positive.mjs": [{ who: "Monique", subject: "3 positive replies you haven't answered — oldest 23 days", text: "Three people who replied warmly have not had an answer yet. A draft for each is in your Gmail Drafts.\n\nWANT A CALL\n- A. Person, Example Family Office: \"happy to talk next week\"\n\n— Monique, Director of Relationships" }],
   "scripts/ops/people-worth-a-call.mjs": [{ who: "Monique", subject: "5 people worth a conversation this week", text: "Five people are worth a call this week.\n\n1. A. Person — Example Partners\n   Why now: they asked about secondaries last month.\n   What to say: a quick hello and the new fund note." }],
-  "scripts/ops/risk-watch.mjs": [{ who: "Toni", subject: "Risk: 1 moved — OpenRouter balance fell to $2.10", text: "One reading moved since yesterday.\n\nMOVED\n- OpenRouter balance fell to $2.10 (was $4.00).\n- Domain renewal: example.com renews 2026-11-02.\n\n— Toni" }],
-  "scripts/ops/outside-locks.mjs": [{ who: "Toni", subject: "Locks: 1 new — linkedin.com: \"Your account is restricted\"", text: "One outside lock this week.\n\n- 2026-10-21 linkedin.com: \"Your account is restricted\" (personal Gmail).\n\n— Toni" }],
-  "scripts/ops/archive-audit.mjs": [{ who: "Zora", subject: "Archive: 2 stale, 3 filed", text: "Two living documents are out of date and three delivered pieces were filed.\n\nSTALE\n- The email map (last changed 20 days ago) — fixed through Danielle.\n\nFILED\n- Search Readiness Checklist\n\n— Zora" }],
-  "scripts/ops/boss-mail-tail-report.mjs": [{ who: "Simone", subject: "Your email \"Fix the footer\": done", text: "Your email about the footer went to Danielle, who fixed it and made it live.\n\n- Danielle: fixed the footer link, https://github.com/example/example-site/pull/13\n\n— Simone, Chief of Staff (the tail on your Boss OS mail)" }],
-  "scripts/ops/your-day.mjs": [{ who: "Simone", subject: "Your day: 2 things for you", text: "Two things need you today." }],
+  // Toni sends only money at risk now, as a problem email (prelaid); the legacy shape still has to pass.
+  "scripts/ops/risk-watch.mjs": [{ who: "Toni", subject: "Paid AI calls are being charged — the team is on it", text: "New OpenRouter spend of $0.01 since the last check.\n\nThe team is switching the job back to a free model.\n\n— Toni" }],
+  "scripts/ops/your-day.mjs": [{ who: "Simone", subject: "Friday: 2 decisions", text: "Good morning. Here is your Friday, October 23." }],
 };
 
 /** The Worker's replies, as the handler writes them before the layout (fake ids). */
@@ -84,28 +84,41 @@ function sendingFiles(): string[] {
   return out.filter((f) => f !== "scripts/ops/lib/duty-kit.mjs").sort();
 }
 
+const OK = `Something happened.\n\n${NOTHING_TO_DECIDE}`;
+
 describe("the guard sees the problem", () => {
   it("every email in her inbox on 22 Oct 2026 fails it, as sent", () => {
     for (const e of TODAY) expect(plainProblems(e), e.subject).not.toEqual([]);
     expect(plainProblems(TODAY[0]!).join(" ")).toMatch(/internal id|time zone|snake_case/);
-    expect(plainProblems(TODAY[2]!).join(" ")).toMatch(/#tag in the subject/);
+    expect(plainProblems(TODAY[2]!).join(" ")).toMatch(/#tag/);
     expect(plainProblems(TODAY[2]!).join(" ")).toMatch(/brackets in the subject/);
     expect(plainProblems(TODAY[2]!).join(" ")).toMatch(/capitals in the subject/);
     expect(plainProblems(TODAY[3]!).join(" ")).toMatch(/repeated name in the subject: "openai"/);
     expect(plainProblems(TODAY[3]!).join(" ")).toMatch(/jargon/);
     expect(plainProblems(TODAY[4]!).join(" ")).toMatch(/jargon "\\bledgers\?\\b"/);
   });
-  it("each jargon word in the one list is caught", () => {
+  it("every defect of her 22–23 Oct review is caught, by name (blurred copies, validate:email-plain's list)", () => {
+    expect(INBOX.length).toBeGreaterThanOrEqual(13);
+    for (const { why, e } of INBOX) expect(plainProblems(e).join(" | "), e.subject).toMatch(why);
+  });
+  it("each jargon word in the one list is caught, by its own sample, and the cleaner removes it", () => {
     for (const j of JARGON) {
-      const word = j.ban.source.replace(/\\b|\(es\)\?|s\?|\(s\?\)/g, "").replace(/_$/, "_x");
-      expect(plainProblems({ subject: "ok", text: `${NEEDS_HEADING} ${NOTHING_NEEDED}\nthe ${word} here` }), word).not.toEqual([]);
+      expect(plainProblems({ subject: "Ok", text: `${OK}\n${j.sample}` }), j.sample).not.toEqual([]);
+      expect(lineProblems(j.sample), `the cleaner leaves "${j.sample}"`).toEqual([]);
     }
   });
   it("a cron string, a bracketed id and a snake_case word are each caught alone", () => {
-    const ok = `${NEEDS_HEADING} ${NOTHING_NEEDED}`;
-    expect(plainProblems({ subject: "ok", text: `${ok}\nRuns 0 13 * * 1` })).toEqual([expect.stringMatching(/cron/)]);
-    expect(plainProblems({ subject: "ok", text: `${ok}\nsee [ab_xyz]` }).join(" ")).toMatch(/bracketed id/);
-    expect(plainProblems({ subject: "ok", text: `${ok}\nsent to executive_reports` }).join(" ")).toMatch(/snake_case/);
+    expect(plainProblems({ subject: "Ok", text: `${OK}\nRuns 0 13 * * 1` })).toEqual([expect.stringMatching(/cron/)]);
+    expect(plainProblems({ subject: "Ok", text: `${OK}\nsee [ab_xyz]` }).join(" ")).toMatch(/bracketed id/);
+    expect(plainProblems({ subject: "Ok", text: `${OK}\nsent to executive_reports` }).join(" ")).toMatch(/snake_case/);
+  });
+  it("the cleaner turns the 23 Oct defects into plain words", () => {
+    expect(cleanText("Open 1a08831e4f… in Gmail.")).toBe("Open in Gmail.");
+    expect(cleanText("Fixed (PR #112) and PR #12 landed.")).toBe("Fixed and the change landed.");
+    expect(cleanText("Filed (GET /api/boss/research/delivered).")).toBe("Filed.");
+    expect(cleanText("Write to #simone today.")).toBe("Write to Simone today.");
+    expect(cleanText("Run npm run capital:match -- --not 3 to hide it.")).not.toMatch(/npm|--/);
+    expect(cleanText("Done at 14:05 UTC.")).toMatch(/^Done at \d{1,2}:05 am\.$/);
   });
 });
 
@@ -127,7 +140,7 @@ describe("every sender, through the one layout, is plain", () => {
         const p = employeeMail(sender, { to: "owner@example.com", subject: s.subject, text: s.text });
         expect(plainProblems(p), `${p.subject}\n${p.text}`).toEqual([]);
         expect(p.text.split("\n")[0]).not.toMatch(/^(Sequoia|Hi)/);
-        expect(p.text).toContain(NEEDS_HEADING);
+        expect(p.text.split("\n")[2]).toMatch(new RegExp(`^${DECIDE_HEADING} \\(\\d\\)$|^${NOTHING_TO_DECIDE}$`));
         expect(p.text.trim().endsWith(`— ${s.who}`)).toBe(true);
         expect(p.text.match(new RegExp(`— ${s.who}`, "g"))?.length).toBe(1);
         expect(p.html).toContain('name="viewport"');
@@ -176,16 +189,33 @@ describe("no sender can skip the layout", () => {
 });
 
 describe("the layout itself", () => {
-  it("first line, then What I need from you, then details, then the name once — in text and HTML", () => {
-    const laid = layoutEmail({ who: "Toni", subject: "#toni Risk: [tsk_abc123] OPENROUTER", happened: "Your OpenRouter balance fell to $2.10.", needs: ["Top it up if you want the paid models back."], details: ["It was $4.00 yesterday."], refs: ["tsk_abc123"] });
+  it("first line, then Decide with buttons, then the sections, then the name once — in text and HTML", () => {
+    const laid = layoutEmail({ who: "Toni", subject: "#toni Risk: [tsk_abc123] OPENROUTER", happened: "Your OpenRouter balance fell to $2.10.", decide: [{ title: "Top it up?", body: "The paid models stop at $0.", buttons: [{ label: "Open OpenRouter", url: "https://openrouter.ai/credits" }] }], details: ["It was $4.00 yesterday."], refs: ["tsk_abc123"] });
     expect(laid.subject).toBe("Risk: openrouter");
-    expect(laid.text.split("\n")[0]).toBe("Your OpenRouter balance fell to $2.10.");
-    expect(laid.text).toMatch(/What I need from you:\n- Top it up/);
+    expect(laid.text.split("\n").slice(0, 6)).toEqual(["Your OpenRouter balance fell to $2.10.", "", "Decide (1)", "1. Top it up?", "The paid models stop at $0.", "- Open OpenRouter: https://openrouter.ai/credits"]);
     expect(laid.text.trim().endsWith("— Toni")).toBe(true);
-    expect(laid.html).toContain("What I need from you:");
+    expect(laid.html).toContain("Decide (1)");
+    expect(laid.html).toMatch(/<a href="https:\/\/openrouter\.ai\/credits" style="display:inline-block[^"]*">Open OpenRouter<\/a>/);
     expect(laid.refs).toEqual(["tsk_abc123"]);
+    expect(laid.problems).toEqual([]);
     const none = layoutEmail({ who: "Zora", subject: "Archive", happened: "Nothing moved." });
-    expect(none.text).toContain(`What I need from you: ${NOTHING_NEEDED}`);
+    expect(none.text.split("\n")[2]).toBe(NOTHING_TO_DECIDE);
+  });
+  it("shows three decisions at most and says where the rest are", () => {
+    const laid = layoutEmail({ who: "Simone", subject: "Friday", happened: "Morning.", decide: ["A?", "B?", "C?", "D?", "E?"] });
+    expect(laid.text).toContain("Decide (5)");
+    expect(laid.text).toContain("3. C?");
+    expect(laid.text).not.toContain("4. D?");
+    expect(laid.text).toContain("And 2 more on your Today page.");
+  });
+  it("a problem email is What happened → What we did → Status, and a Decide comes first only when she must act", () => {
+    const p = layoutProblem({ who: "Toni", subject: "Some outreach emails bounced — already handled", happened: "4 emails bounced.", did: "Replaced them.", done: true, status: "Outreach restarted at 9:05 am. Nothing needed from you." });
+    expect(p.text.split("\n").slice(0, 3)).toEqual(["What happened: 4 emails bounced.", "What we did: Replaced them.", "Status: done. Outreach restarted at 9:05 am. Nothing needed from you."]);
+    expect(p.problems).toEqual([]);
+    expect(p.kind).toBe("problem");
+    const ask = layoutProblem({ who: "Toni", subject: "A key only you hold", happened: "x", did: "y", status: "Waiting on you.", decide: [{ title: "Add the key?", buttons: [{ label: "Open the vault", url: "https://boss.sequoiataylor.com/" }] }] });
+    expect(ask.text.split("\n")[0]).toBe("Decide (1)");
+    expect(ask.problems).toEqual([]);
   });
   it("the job code rides in a header, never in what she reads", () => {
     const sender = sendersFor("Danielle")[0]!;
@@ -193,5 +223,46 @@ describe("the layout itself", () => {
     expect(p.headers).toEqual({ "X-Boss-Ref": "rc_abc123" });
     expect(`${p.subject}\n${p.text}\n${p.html}`).not.toMatch(/rc_abc123/);
     expect(p.reply_to).toBe("danielle@sequoiataylor.com");
+  });
+});
+
+describe("the send-time gate holds a failing email (rule 13)", () => {
+  it("never posts it to Resend, writes it down, and answers 422 so every caller reports it refused", async () => {
+    process.env.BOSS_OS_MAIL_KEY = "test-key-not-real";
+    const dir = mkdtempSync(join(tmpdir(), "held-"));
+    process.env.BOSS_OS_HELD_MAIL_DIR = dir;
+    const saved = process.env.BOSS_PASSCODE;
+    delete process.env.BOSS_PASSCODE;
+    const calls: string[] = [];
+    const fake = (async (url: string) => { calls.push(String(url)); return new Response("{}", { status: 200 }); }) as unknown as typeof fetch;
+    const sender = sendersFor("Monique")[0]!;
+    const bad = { ...employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "x" }), text: "x\n\nNothing to decide — this is just so you know.\nOpen 1a08831e4f in Gmail." };
+    expect(mailGate(bad).join(" ")).toMatch(/Gmail id/);
+    const res = await postEmployeeMail(sender, bad, fake);
+    expect(res.status).toBe(422);
+    expect(calls.filter((u) => u.includes("api.resend.com"))).toEqual([]);
+    expect(readdirSync(dir).length).toBe(1);
+    // A plain one goes.
+    const good = employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "Something happened today." });
+    expect(mailGate(good)).toEqual([]);
+    expect((await postEmployeeMail(sender, good, fake)).status).toBe(200);
+    expect(calls.filter((u) => u.includes("api.resend.com")).length).toBe(1);
+    if (saved !== undefined) process.env.BOSS_PASSCODE = saved;
+    delete process.env.BOSS_OS_HELD_MAIL_DIR;
+    delete process.env.BOSS_OS_MAIL_KEY;
+  });
+});
+
+describe("the rules in CLAUDE.md", () => {
+  const doc = readFileSync(join(ROOT, "CLAUDE.md"), "utf8");
+  const section = doc.slice(doc.indexOf("## Emails to her"));
+  it("the section exists and names the code that enforces each rule, and that code exists", () => {
+    expect(section.startsWith("## Emails to her")).toBe(true);
+    for (const [name, file] of [["layoutEmail", "src/shared/boss/mail/plain.mjs"], ["layoutProblem", "src/shared/boss/mail/plain.mjs"], ["mailGate", "scripts/ops/notify.mjs"], ["plainReply", "src/worker/boss/intake/mailRefs.ts"]] as const) {
+      expect(section).toContain(name);
+      expect(readFileSync(join(ROOT, file), "utf8")).toMatch(new RegExp(`export (async )?function ${name}\\b`));
+    }
+    for (const f of ["scripts/ops/your-day.mjs", "src/shared/boss/mail/morning.mjs", "src/shared/boss/mail/plain.mjs", "scripts/ops/notify.mjs"]) expect(section).toContain(f);
+    expect(section).toMatch(/07:45 Central/);
   });
 });

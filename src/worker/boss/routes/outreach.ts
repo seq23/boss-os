@@ -29,6 +29,7 @@ import { GmailSession } from "../outreach/gmail";
 import { suppress } from "../outreach/suppression";
 import { normaliseHolderDomain } from "../outreach/seat";
 import { recordConversion } from "../outreach/referrals";
+import { bounceSummary } from "../outreach/bounceFix";
 
 export const outreach = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -161,6 +162,15 @@ outreach.post("/test-send", async (c) => {
 });
 
 outreach.post("/tick", async (c) => ok(c, await runOutreachTick(c.env)));
+
+/**
+ * THE BOUNCE AGENT'S LAST DAY (rule 4, 23 Oct 2026): replacements found, bounced addresses dropped for
+ * good, businesses whose bounce pause lifted. Simone's morning email turns it into one "done" line
+ * (scripts/ops/your-day.mjs bounceLine); she never gets a bounce email.
+ */
+outreach.get("/bounce-fixes", async (c) => {
+  return ok(c, await bounceSummary(c.env.DB, Date.now()));
+});
 
 outreach.get("/referrals", async (c) => {
   const partners = await c.env.DB.prepare(`SELECT id, business_key, email, name, code, share_bps, created_at FROM referral_partners ORDER BY created_at DESC`).all();

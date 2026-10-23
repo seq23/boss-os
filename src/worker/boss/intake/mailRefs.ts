@@ -17,7 +17,8 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
-import { refsIn, fromLegacy } from "../../../shared/boss/mail/plain.mjs";
+import { refsIn, fromLegacy, layoutEmail } from "../../../shared/boss/mail/plain.mjs";
+import { logEvent } from "../lib/log";
 import type { LaidOutEmail } from "../../../shared/boss/mail/plain.mjs";
 
 const MAX_CHAIN = 20;
@@ -79,7 +80,17 @@ export async function plainReply(
   db: D1Database,
   input: { text: string; subject: string; signer?: string | null; messageId?: string | null; from: string },
 ): Promise<LaidOutEmail> {
-  const laid = fromLegacy({ who: input.signer ?? "Simone", subject: input.subject, text: input.text });
+  let laid = fromLegacy({ who: input.signer ?? "Simone", subject: input.subject, text: input.text });
+  /*
+   * THE GATE, ON THE WORKER'S SIDE TOO (rule 13, 23 Oct 2026). A reply that fails the plain-email
+   * check is held: what it would have said is logged as an error (it surfaces on Today for the team to
+   * fix the writer), and she gets a short plain acknowledgement instead, carrying the same job codes,
+   * so her next reply in the thread still lands on its job.
+   */
+  if (laid.problems.length) {
+    await logEvent(db, { level: "error", scope: "mail", event: "reply_held", detail: { subject: input.subject, problems: laid.problems, text: input.text.slice(0, 2000) } }).catch(() => {});
+    laid = layoutEmail({ who: input.signer ?? "Simone", subject: input.subject, happened: "Got your email — I'm on it.", footer: "The full answer will be on your Today page.", refs: laid.refs });
+  }
   if (laid.refs.length && input.messageId) {
     await recordMailRefs(db, { messageId: input.messageId, refs: laid.refs, subject: input.subject, sender: input.from, context: laid.text })
       .catch((e) => console.error("reply refs not recorded", e));

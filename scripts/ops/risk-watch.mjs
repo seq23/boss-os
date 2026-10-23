@@ -18,7 +18,13 @@
  *                  threshold is PAUSED (PUT /outreach/business/:key) and named
  *   dkim           google._domainkey for every sender domain (theindustryguides.com stuck since 13 Oct)
  *
- * It emails her as Toni only when a reading changes state. Rule 0: every source unreadable → exit 3.
+ * WHAT SHE SEES (owner, 23 Oct 2026, rules 1 and 3): routine risk is NOT its own email any more. A
+ * reading that moved becomes, by `planRisk`: a Decide item in Simone's morning email (a renewal, a paid
+ * plan — only she pays), a line under "Done for you" (a receipt, a sender paused for complaints, a
+ * reading back to normal), or a fix job for the team (a source it cannot read, a token missing a
+ * permission, a DKIM gap). Only money at risk RIGHT NOW (paid model calls on OpenRouter) is its own
+ * email, as a problem email, sent after the team's fix job is open. Rule 0: every source unreadable
+ * → exit 3.
  *
  *   npm run risk:watch              # read, pause what must pause, email what moved
  *   npm run risk:watch -- --dry     # read and print; no pause, no email, state not saved
@@ -26,8 +32,9 @@
 import { GRID } from "../../src/shared/boss/grid.mjs";
 import {
   askClaudeJson, bossApi, fromDomain, gmailHeaders, googleToken, loadState, movedReadings,
-  readNothingStop, saveState, sendAs, stateMap,
+  readNothingStop, saveState, sendAs, stateMap, toMorning, fixJob, gmailSearchLink,
 } from "./lib/duty-kit.mjs";
+import { layoutProblem } from "../../src/shared/boss/mail/plain.mjs";
 
 const DRY = process.argv.includes("--dry");
 /** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
@@ -218,6 +225,71 @@ async function readDkim(domain) {
   }
 }
 
+// ─── What she sees, from what moved (pure; tested) ───────────────────────────
+
+const RISK_LABELS = [
+  [/^openrouter$/, () => "OpenRouter spend"], [/^cloudflare$/, () => "Cloudflare bills"], [/^supabase$/, () => "Supabase bills"],
+  [/^renewal:(.+)$/, (m) => `The ${m[1]} renewal`], [/^sender:(.+)$/, (m) => `Outreach from ${m[1]}`], [/^dkim:(.+)$/, (m) => `The ${m[1]} sending setup`],
+];
+const labelOf = (key) => { for (const [re, f] of RISK_LABELS) { const m = re.exec(key); if (m) return f(m); } return key.split(":")[0]; };
+
+/**
+ * `{ urgent, decide, lines, fixes }` for the readings that moved. `urgent` is the one problem email
+ * (money at risk now); everything else goes into the morning email or to the team.
+ */
+export function planRisk(moved) {
+  const out = { urgent: null, decide: [], lines: [], fixes: [] };
+  for (const r of moved) {
+    const key = r.key;
+    if (r.state === "stop") {
+      out.fixes.push({ title: `Toni cannot check ${labelOf(key)}`, prompt: `Toni's daily risk watch (scripts/ops/risk-watch.mjs) could not read ${key}: ${r.line} Fix the read (a token, a permission, a key in the vault) so the check runs again. This is a team chore, never her email.` });
+      continue;
+    }
+    if (r.state === "ok" || r.state === "cleared") {
+      if (r.was === "alert" || r.was === "paused") out.lines.push(`${labelOf(key)} is back to normal.`);
+      continue;
+    }
+    if (key === "openrouter") {
+      out.fixes.push({ title: "Paid AI calls on OpenRouter — switch them back to free", prompt: `Toni's risk watch: ${r.line} Every model call is meant to be $0 (AI cost posture). Find which job called a paid model, switch it back to a free one, and say what it was.` });
+      out.urgent = {
+        subject: "Paid AI calls are being charged — the team is on it",
+        happened: r.line.replace(/\s*Paid calls are being made on credit;.*$/, "").replace(/\s*Something called a paid model\.?$/, ""),
+        did: "Opened a job for the team to find the job that called a paid model and switch it back to a free one.",
+        status: "Being fixed now; what it was will be in tomorrow's morning email.",
+      };
+      continue;
+    }
+    if (key === "cloudflare" || key === "supabase") {
+      const url = key === "cloudflare" ? "https://dash.cloudflare.com/" : "https://supabase.com/dashboard/org";
+      out.decide.push({ title: `Keep paying for ${key === "cloudflare" ? "Cloudflare" : "Supabase"}?`, body: r.line, buttons: [{ label: "Open the billing page", url }], priority: 1 });
+      continue;
+    }
+    if (key.startsWith("renewal:")) {
+      const domain = key.slice("renewal:".length);
+      out.decide.push({ title: `Renew ${domain}?`, body: r.line, buttons: [{ label: "See who it is registered with", url: `https://lookup.icann.org/en/lookup?name=${encodeURIComponent(domain)}` }], priority: 2 });
+      continue;
+    }
+    if (key.startsWith("charge:")) {
+      const subj = /"([^"]+)"/.exec(r.line)?.[1] ?? "";
+      const from = /:\s*([a-z0-9.-]+\.[a-z]{2,})\s*—/i.exec(r.line)?.[1] ?? "a company";
+      out.lines.push({ text: `New receipt from ${from}${subj ? `: "${subj}"` : ""}.`, links: subj ? [{ label: "Open the email", url: gmailSearchLink(subj) }] : [] });
+      continue;
+    }
+    if (key.startsWith("dkim:")) {
+      out.fixes.push({ title: `Publish the Google DKIM key for ${key.slice(5)}`, prompt: `Toni's risk watch: ${r.line} Publish the google._domainkey record (Google Admin → Gmail → Authenticate email, then the DNS record) and confirm live sends are allowed again.` });
+      continue;
+    }
+    if (key.startsWith("sender:")) {
+      // Bounces are the bounce agent's (rule 4): it replaces the address and restarts outreach itself.
+      if (/bounce/i.test(r.line)) continue;
+      out.lines.push(`${labelOf(key)} paused itself to protect the sending address: ${r.line.replace(/^[^:]+:\s*/, "")}`);
+      continue;
+    }
+    out.lines.push(r.line);
+  }
+  return out;
+}
+
 // ─── The run ────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -251,21 +323,15 @@ async function main() {
   if (DRY) { console.log("RISK-WATCH-COMPLETE: dry"); return; }
 
   if (moved.length) {
-    const alerts = moved.filter((m) => m.state === "alert" || m.state === "paused" || m.state === "notice");
-    const cleared = moved.filter((m) => m.state === "ok" || m.state === "cleared");
-    const stops = moved.filter((m) => m.state === "stop");
-    const text = [
-      "Sequoia,", "",
-      `${alerts.length ? `${alerts.length} thing${alerts.length === 1 ? "" : "s"} moved on money or mail.` : "Nothing needs you; this is what changed."}`, "",
-      ...(alerts.length ? ["NEEDS A LOOK", ...alerts.map((m) => `- ${m.line}`), ""] : []),
-      ...(cleared.length ? ["CLEARED", ...cleared.map((m) => `- ${m.line}`), ""] : []),
-      ...(stops.length ? ["I COULD NOT READ (said once; I will say again only if it changes)", ...stops.map((m) => `- ${m.line}`), ""] : []),
-      "Nobody on the team pays for anything: a renewal or a bill is yours to approve.",
-      "",
-      "— Toni, Chief Risk Officer",
-    ].join("\n");
-    const subject = alerts.length ? `Risk: ${alerts.length} moved — ${alerts[0].line.slice(0, 70)}` : `Risk: ${cleared.length} cleared, ${stops.length} unreadable`;
-    if (!(await sendAs("Toni", { subject, text }))) { console.error("NAMED STOP [NO_MAIL_SENT] readings moved and no email could be sent; state not saved so the next run says it again."); process.exit(8); }
+    const plan = planRisk(moved);
+    for (const f of plan.fixes) { const why = api ? await fixJob(api, f) : "Boss OS was not reachable"; console.log(`  fix job: ${f.title}${why ? ` — NOT opened (${why})` : ""}`); }
+    if (plan.lines.length || plan.decide.length) {
+      if (!toMorning("risk", { lines: plan.lines, decide: plan.decide })) { console.error("state not saved so the next run says it again."); process.exit(8); }
+    }
+    if (plan.urgent) {
+      const laid = layoutProblem({ who: "Toni", ...plan.urgent });
+      if (!(await sendAs("Toni", { subject: laid.subject, text: laid.text, prelaid: laid }))) { console.error("NAMED STOP [NO_MAIL_SENT] money at risk and no email could be sent; state not saved so the next run says it again."); process.exit(8); }
+    }
   }
   saveState("risk-watch", { at: new Date(now).toISOString(), states: stateMap(readings), openrouter_usage: or.usage ?? prev.openrouter_usage ?? null });
   console.log(`RISK-WATCH-COMPLETE: ${moved.length} moved`);

@@ -32,10 +32,12 @@
  * only for system mail that no employee owns.
  */
 
-import { readFileSync, statSync } from "node:fs";
-import { basename } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
-import { layoutEmail, fromLegacy } from "../../src/shared/boss/mail/plain.mjs";
+import { layoutEmail, fromLegacy, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 
 const ARGS = process.argv.slice(2);
 /** Every value of a repeatable flag (`--file a.csv --file b.png`). */
@@ -184,8 +186,9 @@ export function sendersFor(who, { fallback = industryGuidesFallback } = {}) {
  *
  * Every Mac email she gets is built here, so every one passes through `src/shared/boss/mail/plain.mjs`:
  * a plain subject (no `#tag`, no brackets, no ids, no capitals, no repeated names), the first line
- * saying what happened, "What I need from you:", short bullets, her employee's name once. A caller
- * that has the parts passes `layout: { happened, needs, details, sections, footer }`; a caller that
+ * saying what happened, "Decide (N)" with one-tap buttons (or "Nothing to decide"), the sections, her
+ * employee's name once. A caller that has the parts passes `layout: { happened, decide, sections,
+ * footer }` or a `prelaid` email (`layoutEmail` / `layoutProblem`); a caller that
  * still writes one block of text is fitted to the layout by `fromLegacy`.
  *
  * THE TAG LEFT THE SUBJECT, AND REPLIES STILL ROUTE. Reply-To is the employee's own address, which
@@ -215,7 +218,9 @@ export function employeeMail(sender, { to, subject, text, html: _html, files, la
     subject: laid.subject.slice(0, 200),
     text: laid.text,
     html: laid.html,
-    ...(laid.refs.length ? { headers: { "X-Boss-Ref": laid.refs.join(" ") } } : {}),
+    ...(laid.refs.length || laid.kind === "problem"
+      ? { headers: { ...(laid.refs.length ? { "X-Boss-Ref": laid.refs.join(" ") } : {}), ...(laid.kind === "problem" ? { "X-Boss-Kind": "problem" } : {}) } }
+      : {}),
     ...(attachments.length ? { attachments } : {}),
   };
 }
@@ -234,6 +239,8 @@ const BOSS_ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.co
  * email itself has gone and is not retried.
  */
 export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null } = {}) {
+  const held = mailGate(payload);
+  if (held.length) return holdMail(sender, payload, held, fetchImpl);
   const res = await fetchImpl(RESEND, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
@@ -252,6 +259,57 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
     if (why) console.error(`NAMED STOP [REFS_NOT_RECORDED] ${why} — a reply to "${payload.subject}" will not find its job by its thread.`);
   }
   return res;
+}
+
+/**
+ * THE SEND-TIME GATE (rule 13, owner 23 Oct 2026). Every Mac email reaches Resend only through
+ * `postEmployeeMail`, so every sender — Simone's morning email, Monique's, the LP drafts, a task
+ * notice — is checked here against `plainProblems` (src/shared/boss/mail/plain.mjs) on exactly what
+ * would be sent. `[]` means it may go.
+ */
+export function mailGate(payload) {
+  const kind = payload?.headers?.["X-Boss-Kind"] ?? null;
+  return plainProblems({ subject: payload?.subject, text: payload?.text, html: payload?.html, kind });
+}
+
+export const heldDir = () => process.env.BOSS_OS_HELD_MAIL_DIR ?? join(homedir(), ".boss-os", "held-mail");
+
+/**
+ * A FAILING EMAIL IS HELD, NEVER SENT: written to ~/.boss-os/held-mail (what it said and why it was
+ * held), and handed to Danielle as a fix job — once per distinct email, so the fallback sender or a
+ * retry does not open a second job. Returns a refused Response (422) so every caller's existing
+ * "refused" path runs: nothing is reported as sent.
+ */
+export async function holdMail(sender, payload, problems, fetchImpl = fetch) {
+  const key = createHash("sha256").update(`${payload?.subject}\n${payload?.text}`).digest("hex").slice(0, 16);
+  const HELD_DIR = heldDir();
+  const file = join(HELD_DIR, `${key}.json`);
+  const first = !existsSync(file);
+  try {
+    mkdirSync(HELD_DIR, { recursive: true });
+    if (first) writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), from: sender?.from ?? null, subject: payload?.subject, problems, text: payload?.text }, null, 2));
+  } catch (e) { console.error(`  could not write the held email to ${HELD_DIR}: ${e?.message ?? e}`); }
+  console.error(`HELD "${payload?.subject}" — not sent; it failed the plain-email check: ${problems.join("; ")}`);
+  if (first) {
+    let why = null;
+    try {
+      if (!process.env.BOSS_PASSCODE) why = "no BOSS_PASSCODE in the environment";
+      else {
+        const cookie = await bossCookieFor(fetchImpl);
+        const r = await fetchImpl(`${BOSS_ORIGIN}/api/boss/tasks`, {
+          method: "POST", headers: { cookie, "content-type": "application/json" },
+          body: JSON.stringify({
+            title: `Fix a held email: ${String(payload?.subject ?? "").slice(0, 120)}`,
+            lane: "ops", employee_id: "emp_repo",
+            input: { prompt: `seq23/boss-os — an email to the owner was held by the plain-email gate (scripts/ops/notify.mjs mailGate) and not sent. Problems: ${problems.join("; ")}. The held copy is ${file} on her Mac. Fix the sender at source so it writes plainly (src/shared/boss/mail/plain.mjs layoutEmail / layoutProblem), keep tests/plainEmail.test.ts green, and let the next run send it.` },
+          }),
+        });
+        if (!r.ok) why = `Boss OS refused the fix job (${r.status})`;
+      }
+    } catch (e) { why = String(e?.message ?? e); }
+    if (why) console.error(`  the fix job for the held email was not opened: ${why}`);
+  }
+  return new Response(JSON.stringify({ held: true, problems }), { status: 422, headers: { "content-type": "application/json" } });
 }
 
 let bossCookie = null;
