@@ -29,6 +29,10 @@ The principal is **who actually wants to buy or sell**, which is very often not 
 - When the person writing is the one who wants it, `intermediated_by` is `null`.
 - When Sequoia herself is asking on behalf of a client, the principal is that client, and
   `intermediated_by` is `null` — she is not an intermediary in her own ledger.
+- **Sequoia Taylor is never the principal and never `intermediated_by`, under any address or any
+  spelling of her name** — not "Sequoia Taylor", not her Rainmaker address, not her other domains.
+  When the interest is her own client's (her mail to rrlist@, or "my client has…"), write
+  `"principal": "your client"`. Never write "client of Sequoia Taylor".
 
 **How often someone writes tells you nothing.** A person she exchanges mail with daily may never
 once have been a counterparty. Anchor only on asset, side and size.
@@ -45,6 +49,7 @@ once have been a counterparty. Anchor only on asset, side and size.
   "size_shares": null,
   "size_text": "the size exactly as the message states it, e.g. \"$250M\" or \"40k shares\"",
   "price_text": "the mark, valuation or price per share if stated, else null",
+  "structure_text": "fees and structure exactly as stated (e.g. \"8/0/5\", \"SPV 0/0\", \"direct, common\"), else null",
   "durability": "transacted" | "wants_now",
   "confidence": "high" | "medium" | "low",
   "intermediated_by": "co-broker address, or null",

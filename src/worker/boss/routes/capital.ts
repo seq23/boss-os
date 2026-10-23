@@ -29,6 +29,12 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
 import { currentBook, currentBookLines } from "../capital/book";
+import {
+  activeLists, applyListEdit, cleanDealRow, cleanHolder, dealGrid, holdersList, storeDeals, storeHolders,
+  type DealRow, type HolderRow,
+} from "../capital/grid";
+import { targetOf, confirmEdit } from "../../../shared/boss/capital/partyLists.mjs";
+import type { ListEdit } from "../../../shared/boss/capital/partyLists.mjs";
 
 export const capital = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -134,4 +140,50 @@ capital.post("/brokerage-pointer", async (c) => {
     .run();
 
   return ok(c, { recorded: true, kind, crossings });
+});
+
+// ─── boss fix D: the deal grid, her two lists, the holders (23 Oct 2026) ─────────────────────────
+//
+// The Deals page reads these; `npm run capital:grid` on her Mac writes the grid and the holders.
+// Behind the same session as every other Boss OS route. See src/worker/boss/capital/grid.ts.
+
+capital.get("/deals", async (c) => ok(c, await dealGrid(c.env)));
+
+capital.post("/deals", async (c) => {
+  const body = await c.req.json<{ rows?: unknown[]; replace?: boolean }>().catch(() => null);
+  if (!body || !Array.isArray(body.rows)) throw badRequest("A grid push needs rows", "{ rows: [...], replace: true|false }");
+  if (body.rows.length > 2000) throw badRequest("At most 2,000 rows per push", "Send the grid in batches.");
+  const rows = body.rows.map((r) => cleanDealRow((r ?? {}) as Record<string, unknown>));
+  const bad = rows.filter((r) => r === null).length;
+  if (bad > 0) throw badRequest(`${bad} row(s) are not deals`, "Each row needs id, company, side, direction, received_on and a Gmail link or none.");
+  const stored = await storeDeals(c.env, rows as DealRow[], body.replace === true);
+  return ok(c, { stored });
+});
+
+capital.get("/lists", async (c) => ok(c, await activeLists(c.env)));
+
+/** Add or remove one entry by hand (the seed script, or the page). Her replies use the mail path. */
+capital.post("/lists", async (c) => {
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null);
+  const list = String(body?.list ?? "");
+  const action = String(body?.action ?? "");
+  if (!["same_firm", "do_not_suggest"].includes(list) || !["add", "remove"].includes(action)) {
+    throw badRequest("Which list, and add or remove?", "{ list: same_firm|do_not_suggest, action: add|remove, who: \"...\" }");
+  }
+  const t = targetOf(String(body?.who ?? ""));
+  if (!t) throw badRequest("Nobody named", "who is an address, a domain, or a person's name.");
+  const source = body?.source === "seed" ? "seed" : "screen";
+  const edit = { list, action, ...t } as ListEdit;
+  await applyListEdit(c.env, edit, source);
+  return ok(c, { done: confirmEdit(edit) });
+});
+
+capital.get("/holders", async (c) => ok(c, { holders: await holdersList(c.env) }));
+
+capital.post("/holders", async (c) => {
+  const body = await c.req.json<{ company?: string; holders?: unknown[] }>().catch(() => null);
+  const company = String(body?.company ?? "").trim().slice(0, 80);
+  if (!company || !Array.isArray(body?.holders)) throw badRequest("Holders need a company and a list", "{ company, holders: [...] }");
+  const holders = body.holders.map((h) => cleanHolder((h ?? {}) as Record<string, unknown>)).filter(Boolean) as HolderRow[];
+  return ok(c, { stored: await storeHolders(c.env, company, holders.slice(0, 1000)) });
 });

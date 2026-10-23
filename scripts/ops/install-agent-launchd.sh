@@ -320,11 +320,11 @@ cat > "$CAPITAL_PLIST" <<CAPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh ledger-hunt.mjs -- npm run --silent capital:ledger-hunt -- --send</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:scan; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-extract.mjs -- npm run --silent capital:extract; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh ledger-hunt.mjs -- npm run --silent capital:ledger-hunt -- --send; cd $REPO &amp;&amp; npm run --silent capital:grid; cd $REPO &amp;&amp; npm run --silent capital:match -- --send --pointer</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>30</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/capital.log</string>
   <key>StandardErrorPath</key><string>$LOGS/capital.err</string>
@@ -335,7 +335,9 @@ CAPEOF
 launchctl unload "$CAPITAL_PLIST" 2>/dev/null || true
 lint_plist "$CAPITAL_PLIST"
 launchctl load "$CAPITAL_PLIST"
-echo "Installed $CAPITAL_LABEL — daily 07:45 Central (interest-ledger.mjs, interest-extract.mjs, interest-match.mjs, ledger-hunt.mjs)."
+# boss fix D (23 Oct 2026): 05:30, so the deals sections are written before Simone's 06:40 email; the
+# hunt runs before the grid so what it finds is in the same morning; no step emails her any more.
+echo "Installed $CAPITAL_LABEL — daily 05:30 Central (interest-ledger.mjs, interest-extract.mjs, ledger-hunt.mjs, interest-grid.mjs, interest-match.mjs)."
 
 NUDGE_LABEL="com.seq.boss-capital-nudge"
 NUDGE_PLIST="$HOME/Library/LaunchAgents/$NUDGE_LABEL.plist"
@@ -350,7 +352,7 @@ cat > "$NUDGE_PLIST" <<NUDGEEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-match.mjs -- npm run --silent capital:match -- --nudge --send</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh interest-match.mjs -- npm run --silent capital:match -- --nudge</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>

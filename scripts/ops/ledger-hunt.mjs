@@ -46,9 +46,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
-import { researchLot, renderFilings, renderReach, pressPodcastLeads, renderPressPodcast, money } from "./filing-hunt.mjs";
+import { researchLot, renderFilings, renderReach, pressPodcastLeads, renderPressPodcast, money, recordFound } from "./filing-hunt.mjs";
+import { withinLookback } from "../../src/shared/boss/capital/partyLists.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
-import { namesOnce, sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -97,7 +97,8 @@ function newEntries() {
   const { interests = [] } = JSON.parse(fs.readFileSync(LEDGER, "utf8"));
   const wrong = new Set(loadJson(WRONG_FILE, "rows"));
   const hunted = loadHunted();
-  const entries = interests.filter((r) => r.source_message && r.side && r.asset
+  // Inside her ~6-month window only (owner, 23 Oct 2026), hers included.
+  const entries = interests.filter((r) => r.source_message && r.side && r.asset && withinLookback(r.date)
     && !wrong.has(r.source_message) && !hunted.has(rowKey(r)));
   return { entries, reason: null };
 }
@@ -209,39 +210,34 @@ async function main() {
   console.log(body);
 
   if (!SEND) {
-    console.log("\nRe-run with --send to email it. Nothing above has been marked as hunted.");
+    console.log("\nRe-run with --send to keep it for the morning email. Nothing above has been marked as hunted.");
     return;
   }
 
-  const SENDERS = sendersFor("Monique");
-  if (SENDERS.length === 0) {
-    console.error("NAMED STOP [NO_MAIL_KEY] the list is above and no email could be sent. Nothing was marked as hunted.");
-    process.exit(8);
+  /*
+   * ─── NO EMAIL (owner, 23 Oct 2026) ─────────────────────────────────────────
+   *
+   * "people worth a look" was one of nine emails in two days she found no use in. What this found is
+   * kept per company in `~/.boss-os/capital/found.json` — every named holder, the SPV vehicles, the
+   * press and podcast names — and reaches her as "Monique found" in Simone's morning email and on
+   * the Deals page, through `npm run capital:grid`. A row is marked hunted once it is KEPT there,
+   * which is the new "she has the answer".
+   */
+  const byCompany = new Map();
+  for (const sec of sections) {
+    const k = assetKey(sec.entry.asset);
+    const prior = byCompany.get(k) ?? { asset: sec.entry.asset, holders: [], spvs: [], press: [] };
+    prior.holders = prior.holders.length >= (sec.filings.holders?.length ?? 0) ? prior.holders : sec.filings.holders ?? [];
+    prior.spvs = prior.spvs.length ? prior.spvs : sec.filings.spvs ?? [];
+    prior.press = [...prior.press, ...sec.press.leads];
+    byCompany.set(k, prior);
   }
-  const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
-  const text = ["Sequoia,", "",
-    "This is Monique. Today's mail named a side; I went looking for the other one — your own mail",
-    "first, then the filings, then the press and podcasts.", "",
-    body, "", "— Monique, Director of Relationships"].join("\n");
-  const subject = `${total} people worth a look for ${namesOnce(entries.map((e) => e.asset))}`;
-  for (const sender of SENDERS) {
-    const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
-    if (res.ok) {
-      console.log(`\nEmailed ${TO} from ${from}.`);
-      /*
-       * MARKED ONLY NOW. The mail is the deliverable; a row is "hunted" when she has actually
-       * received the answer, not when the search finished — the same rule `buyer-hunt.mjs`
-       * enforces on its own queued requests.
-       */
-      markHunted(keysThisRun);
-      return;
-    }
-    console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
-  }
-  console.error("NAMED STOP [SEND_REFUSED] every sender was refused. Nothing was marked as hunted — tomorrow's run will retry these rows.");
-  process.exit(9);
+  for (const c of byCompany.values()) recordFound(c.asset, c);
+  markHunted(keysThisRun);
+  console.log(`\nKept for the morning email: ${byCompany.size} compan${byCompany.size === 1 ? "y" : "ies"} (${namesOnceLocal([...byCompany.values()].map((c) => c.asset))}).`);
 }
+
+const namesOnceLocal = (xs) => [...new Set(xs.map(String))].slice(0, 5).join(", ");
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => { console.error(`LEDGER HUNT FAILED: ${err?.stack ?? err}`); process.exit(1); });

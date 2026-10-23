@@ -404,7 +404,6 @@ export const api = {
   rewriteProgress: () => call<RewriteProgress>("/wealth/outreach/rewrites"),
   /** "Find firms that did X and draft the ask" — the scans her instructions started. Polling drains the queue. */
   /** Monique's reads of her personal LP search — the daily digest (kept by her word, 19 Sep 2026). */
-  lpDigests: () => call<{ digests: any[]; duty: any | null }>("/lp"),
   firmScans: () => call<{ items: any[] }>("/research/firm-scans"),
   firmScan: (id: string) => call<any>(`/research/firm-scans/${id}`),
   startFirmScan: (instruction: string) => call<{ task_id: string; scan_id: string | null; find: string; ask: string; queued: boolean }>("/research/firm-scans", post("", { instruction })),
@@ -633,4 +632,8 @@ export const api = {
   // ── Her jobs, 19 Sep 2026 — Job 3: the health of every grid property, per reader. ──
   propertyHealth: () => call<any>("/grid/health"),
   repoChanges: () => call<{ items: any[]; lane: any }>("/repo-changes"),
+
+  // ── boss fix D: the Deals page grid, the holders Monique found, her two lists (23 Oct 2026). ──
+  dealGrid: () => call<{ rows: any[]; lookback_days: number; updated_at: number | null }>("/capital/deals"), // boss fix D
+  dealHolders: () => call<{ holders: any[] }>("/capital/holders"), // boss fix D
 };

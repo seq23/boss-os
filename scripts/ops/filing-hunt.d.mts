@@ -1,0 +1,24 @@
+/** Loose types so tests can import this node script; the script itself is the authority. */
+export const CAP: any;
+export const SEC_GAP_MS: any;
+export const money: any;
+export const unescapeXml: any;
+export function sec(...args: any[]): any;
+export function filingsFromHits(...args: any[]): any;
+export function ftsFilings(...args: any[]): any;
+export function nportFilings(...args: any[]): any;
+export function formDVehicles(...args: any[]): any;
+export function recordFound(...args: any[]): any;
+export function genInfoFromXml(...args: any[]): any;
+export function positionFromXml(...args: any[]): any;
+export function capacity(...args: any[]): any;
+export function supply(...args: any[]): any;
+export function allHolders(...args: any[]): any;
+export function partialFill(...args: any[]): any;
+export function fromFilings(...args: any[]): any;
+export function renderReach(...args: any[]): any;
+export function peopleFor(...args: any[]): any;
+export function renderFilings(...args: any[]): any;
+export function researchLot(...args: any[]): any;
+export function pressPodcastLeads(...args: any[]): any;
+export function renderPressPodcast(...args: any[]): any;
