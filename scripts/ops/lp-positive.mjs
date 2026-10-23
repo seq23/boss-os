@@ -60,14 +60,12 @@
  * being bent — it is simply not in this path.
  *
  *   npm run lp:positive              # scan, update the running list, print it
- *   npm run lp:positive -- --email   # ...and send the monthly note
  */
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 import { addressIn, bulkReason, headersFromRaw, ownDomainReason, replyEvidence } from "./mail-bulk.mjs";
 import { followUps } from "./lp-followups.mjs";
 import { sideFromReply } from "../../src/shared/boss/lp/plan.mjs";
@@ -78,12 +76,12 @@ const SINCE = process.env.LP_SINCE ?? "2026/07/01";
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
 const LIST = path.join(OUT_DIR, "positive.json");
 /*
- * ON DEMAND ONLY. The Tuesday reminder that ran `--email --followups` every week is retired (owner,
- * 23 Oct 2026, ruling 10: "the weekly Tuesday reminder email goes away"); held replies are Decide
- * items in the morning email now. Nothing schedules `--email` — tests/lpFollowups.test.ts pins that
- * the installer never does — so this list reaches her inbox only when she asks for it.
+ * NO EMAIL. The Tuesday reminder that ran `--email --followups` every week is retired (owner,
+ * 23 Oct 2026, ruling 10: "the weekly Tuesday reminder email goes away"), and with the combined boss
+ * fix the hand-run `--email` is gone too: held replies are Decide items in Simone's morning email and
+ * the running list is the LP replies tab on the Deals page. tests/plainEmail.test.ts fails if this
+ * file sends again without passing the gate's samples.
  */
-const SEND = process.argv.includes("--email");
 const VERIFY = process.argv.includes("--verify");
 /**
  * --followups (22 Oct 2026): which positive replies she has NOT answered, a draft for each in her
@@ -342,57 +340,6 @@ export function unansweredSection(f) {
   ];
 }
 
-async function emailHer(list, counts, follow = null) {
-  const TO = process.env.LP_POSITIVE_TO ?? "sequoia@westpeek.ventures";
-  const SENDERS = sendersFor("Monique");
-  if (SENDERS.length === 0) {
-    console.error("NAMED STOP [NO_MAIL_KEY] the list is written but no email could be sent.");
-    return false;
-  }
-  const line = (p) => `${p.name ? `${p.name}  ` : ""}${p.address}\n    ${p.first_seen}  ${p.quote}`;
-  const calls = list.filter((p) => p.bucket === "call");
-  const warm = list.filter((p) => p.bucket === "warm");
-
-  const body = [
-    "Sequoia,",
-    "",
-    "This is Monique. Once a month I re-read every reply to the LP outreach and pull out the",
-    "positive ones — the people who want a call, and the people who want to be kept in touch.",
-    "",
-    `This is the running list, not just this month's: ${list.length} positive repl${list.length === 1 ? "y" : "ies"}`,
-    `out of ${counts.replies} human replies across ${counts.scanned} inbound messages. Nobody ever`,
-    "drops off this list once they are on it.",
-    "",
-    `Nothing here needs a decision from me — these are yours to answer.`,
-    "",
-    "",
-    ...unansweredSection(follow),
-    `WANTS A CALL (${calls.length})`,
-    "",
-    calls.length ? calls.map(line).join("\n\n") : "(none yet)",
-    "",
-    "",
-    `KEEP WARM — asked for materials, or to be contacted later (${warm.length})`,
-    "",
-    warm.length ? warm.map(line).join("\n\n") : "(none yet)",
-    "",
-    "",
-    "Not counted as positive: " +
-      `${counts.auto} autoresponders, ${counts.departed} people who have left their firm, ` +
-      `${counts.negative} declines, ${counts.other} replies that were neither.`,
-    "",
-    "— Monique, Director of Relationships",
-  ].join("\n");
-
-  for (const sender of SENDERS) {
-    const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: follow?.unanswered?.length ? `${follow.unanswered.length} positive repl${follow.unanswered.length === 1 ? "y" : "ies"} you haven't answered — oldest ${follow.unanswered[0].days ?? "?"} days` : `LP positive replies — ${calls.length} want a call, ${warm.length} to keep warm`, text: body }));
-    if (res.ok) { console.log(`Emailed ${TO} from ${from}.`); return true; }
-    console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
-  }
-  return false;
-}
-
 /**
  * WHAT CAME BACK FROM THE PROSPECTS (Boss fix L, ruling 11). Same mailbox, same screen, same bounded
  * read as the LP list, asked of a different set of senders: the people the prospect sequence wrote to.
@@ -597,12 +544,8 @@ async function main() {
 
   const follow = FOLLOWUPS ? await followUps(people) : null;
 
-  if (SEND) {
-    const sent = await emailHer(people, counts, follow);
-    if (!sent) process.exit(8);
-  } else {
-    console.log("\nList updated. Re-run with --email to send the monthly note.");
-  }
+  if (follow) console.log(`\n${follow.unanswered?.length ?? 0} positive repl(ies) not answered yet; they are Decide items in the morning email.`);
+  console.log("\nList updated. It shows on the Deals page (LP replies); nothing is emailed.");
   console.log("LP-POSITIVE-COMPLETE: filed");
 }
 

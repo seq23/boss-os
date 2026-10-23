@@ -74,6 +74,8 @@ const TRANSPORT = [
   /["'`/]messages\/send["'`]/,
   /\benv\.EMAIL\.send\(/,
   /\bemployeeMail\(/,
+  // A held Gmail draft sent as is (her one-tap "Send as is", combined boss fix 23 Oct 2026).
+  /["'`/]drafts\/send["'`]/,
 ];
 
 /** Fixtures and docs name the endpoints without sending anything. */
@@ -261,10 +263,24 @@ export const FUND_TERMS: Array<[string, RegExp]> = [
   ["investor", /\binvestors?\b/i],
 ];
 
+/**
+ * CROSSINGS SHE OK'D, ONE BY ONE (owner, 23 Oct 2026: "separation relaxes per item she OKs"; Monique
+ * may read and write the fund's LP mailbox for LP replies). A CLOSED list: each entry names one map
+ * row and only the terms that row may carry. Every other term, row, owner entry and line of the map
+ * is still guarded, and the test below fails if an entry here names a row the map no longer has.
+ */
+export const OWNER_OK_CROSSINGS: Record<string, string[]> = {
+  // Sends from the mailbox she OK'd (ruling 11); the address itself also reads as the fund's name.
+  "monique-prospects": ["a westpeek domain", "West Peek"],
+  "her-tap-send": ["LP"], // her tap sends a held LP reply (ruling 10)
+};
+
 export function fundCrossings(entries: Array<[string, string]>): string[] {
   const hits: string[] = [];
   for (const [where, text] of entries) {
-    for (const [name, re] of FUND_TERMS) if (re.test(text)) hits.push(`${where}: names ${name}`);
+    const id = (/^\|\s*`([^`]+)`\s*\|/.exec(text) ?? /^owner (\S+)$/.exec(where) ?? [])[1];
+    const allowed = (id && OWNER_OK_CROSSINGS[id]) || [];
+    for (const [name, re] of FUND_TERMS) if (re.test(text) && !allowed.includes(name)) hits.push(`${where}: names ${name}`);
   }
   return hits;
 }
@@ -304,6 +320,19 @@ describe("Boss OS and the fund never cross on the map", () => {
     ];
     for (const p of probes) expect(fundCrossings([["probe", p]]), p).not.toEqual([]);
     expect(fundCrossings([["clean", "| `monique-outreach` | The Industry Guides | Reporter of help | hello@uscisexam.com |"]])).toEqual([]);
+  });
+
+  it("an OK'd crossing allows only its own row and its own terms", () => {
+    const ids = MAP.split("\n").map((l) => (/^\|\s*`([^`]+)`\s*\|/.exec(l) ?? [])[1]).filter(Boolean);
+    for (const id of Object.keys(OWNER_OK_CROSSINGS)) expect(ids, `${id} is OK'd but not on the map`).toContain(id);
+    // Its own term passes; any other term on the same row, or the same term on another row, still fails.
+    expect(fundCrossings([["r", "| `monique-prospects` | b | e | a@westpeek.ventures | t |"]])).toEqual([]);
+    expect(fundCrossings([["r", "| `monique-prospects` | b | replies to Scooter | a@westpeek.ventures | t |"]])).not.toEqual([]);
+    expect(fundCrossings([["r", "| `monique-prospects` | b | an investor update | a@westpeek.ventures | t |"]])).not.toEqual([]);
+    expect(fundCrossings([["r", "| `monique-prospects` | b | LPs who replied | t |"]])).not.toEqual([]);
+    expect(fundCrossings([["r", "| `her-tap-send` | b | e | a@westpeek.ventures | t |"]])).not.toEqual([]);
+    expect(fundCrossings([["r", "| `repo-change` | b | LPs who replied | t |"]])).not.toEqual([]);
+    expect(fundCrossings([["docs/x.md:3", "LPs who replied"]])).not.toEqual([]);
   });
 });
 

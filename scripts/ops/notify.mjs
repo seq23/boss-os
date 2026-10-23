@@ -91,12 +91,11 @@ const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
  * (scripts/lib/vault-env.mjs bossOsProcessEnv), and tests/bossKeySeparation.test.ts fails if any
  * file here reads a West Peek key or names a West Peek From again.
  */
+// Combined boss fix (23 Oct 2026): buyer-hunt, interest-match and ledger-hunt send no email now (their
+// findings feed Simone's morning email through morning/monique_found.json), and lp-positive's
+// hand-run note is gone (the morning email's LP section replaced it). They left this list with it.
 export const FUND_SIDE_CHASSIS_SENDERS = [
-  "scripts/ops/buyer-hunt.mjs",
-  "scripts/ops/interest-match.mjs",
-  "scripts/ops/ledger-hunt.mjs",
   "scripts/ops/lp-outcomes.mjs",
-  "scripts/ops/lp-positive.mjs",
   "scripts/ops/people-worth-a-call.mjs",
 ];
 
