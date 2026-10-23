@@ -61,7 +61,7 @@ describe("follow-ups: the draft is a fixed template", () => {
 });
 
 describe("follow-ups: never sends, and no model sees a name (fail closed)", () => {
-  for (const f of ["lp-followups.mjs", "lp-positive.mjs"]) {
+  for (const f of ["lp-followups.mjs", "lp-positive.mjs", "lp-daily.mjs", "lp-prospects.mjs", "lp-catchups.mjs"]) {
     it(`${f} reaches no model host and spawns no CLI`, () => {
       const s = src(f);
       expect(s).not.toMatch(/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i);
@@ -73,7 +73,19 @@ describe("follow-ups: never sends, and no model sees a name (fail closed)", () =
     expect(s).toContain("/drafts`");
     expect(s).not.toMatch(/drafts\/send|messages\/send|gmail\.send/);
   });
-  it("the Tuesday job runs the follow-ups", () => {
-    expect(src("install-agent-launchd.sh")).toContain("duty-run.sh lp-positive.mjs -- npm run --silent lp:positive -- --email --followups");
+  it("the morning job holds the replies, and the Tuesday reminder email is gone (owner, 23 Oct 2026)", () => {
+    const installer = src("install-agent-launchd.sh");
+    expect(installer).toContain("duty-run.sh lp-daily.mjs -- npm run --silent lp:daily");
+    expect(installer).not.toMatch(/lp:positive -- --email|duty-run\.sh lp-positive\.mjs|duty-run\.sh lp-replies\.sh/);
+    expect(installer).toMatch(/launchctl unload "\$POSITIVE_PLIST"[\s\S]*rm -f "\$POSITIVE_PLIST"/);
+    // lp-daily reaches Gmail only through these two pinned files: it calls no Gmail host itself.
+    expect(src("lp-daily.mjs")).not.toMatch(/gmail\.googleapis\.com/);
+  });
+  it("the held reply speaks in her voice: we, more than $100M in secondary transactions, a short call, no fund size", () => {
+    const body = draftBody({ name: "Blake Example", bucket: "warm", slots: [] });
+    expect(body).toMatch(/more than \$100M in secondary transactions/);
+    expect(body).toMatch(/\bWe've\b/);
+    expect(body).toMatch(/short call/);
+    expect(body).not.toMatch(/fund size|\$\d+\s?(M|B)\s+fund/i);
   });
 });

@@ -60,6 +60,7 @@ import { rollBudgetWindows } from "./router/budget";
 import { materialiseDueDuties } from "./duties/materialise";
 import { reapSilentRuns } from "./backends/reap";
 import { newId } from "./lib/id";
+import { lpTap } from "./routes/lpTap"; // boss fix L
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -225,6 +226,10 @@ app.route(COMMENT_WATCH_PATH, commentWatch);
 // Cloudflare posted from her Mac. `/api/grid` declares only `/`, `/examination` and `/tasks/:id/cleared`, so this is
 // never shadowed by it.
 app.route("/api/grid/health", gridHealth);
+// boss fix L: the one-tap buttons in her morning email (Send as is / Skip / Approve). Under /api/auth/
+// because a tap from her phone carries no session: the 144-bit token on the one row IS the authority,
+// and a GET never acts (routes/lpTap.ts).
+app.route("/api/auth/tap", lpTap); // boss fix L
 //
 // === end Her jobs ===
 

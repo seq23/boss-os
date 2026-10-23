@@ -1,15 +1,20 @@
 /**
- * THE POSITIVE REPLIES SHE HAS NOT ANSWERED — counted, reminded weekly, a draft waiting for each
- * (owner, 22 Oct 2026).
+ * THE POSITIVE REPLIES SHE HAS NOT ANSWERED — a reply held in each LP's own thread, every morning
+ * (owner, 22 Oct 2026; made daily and one-tap by Boss fix L, 23 Oct 2026, ruling 10).
  *
- * Monique's Tuesday run (`lp-positive.mjs --email --followups`, duty_lp_positive) calls this after the
- * running list is reconciled. For every positive reply on the list it asks three questions of the
+ * Monique's morning run (`lp-daily.mjs`, duty_lp_daily) calls this after the running list is
+ * reconciled. The weekly Tuesday reminder email is gone: each held reply is a Decide item in the
+ * morning email with Send as is / Edit, then send / Skip. For every positive reply on the list it asks three questions of the
  * mailbox, headers and searches only:
  *
  *   answered?  a message FROM the mailbox TO that address after the reply arrived (her sent mail)
  *   passed?    she put the Gmail label "pass" (or "lp-pass") on any message from that address
  *   thread?    the newest message from that address: its thread, Message-ID and Subject, so the
  *              draft sits in the same conversation
+ *
+ * Gmail's API does not expose scheduled mail (no SCHEDULED label, `in:scheduled` returns nothing;
+ * probed 23 Oct 2026), so a reply she scheduled by hand reads as unanswered until it goes out; the
+ * tracker's "Scheduled" status is set only by something that can see it.
  *
  * Each unanswered, unpassed reply gets ONE draft in the mailbox's Drafts, offering 2–3 open times
  * from her calendar (free/busy only). The draft is refreshed with new times only when the old ones
@@ -18,7 +23,8 @@
  *
  * ─── IT NEVER SENDS ────────────────────────────────────────────────────────
  * The scope is gmail.compose because drafts need it; no send endpoint is called anywhere in this
- * file, and `validate:gmail` (DRAFT_WRITERS) fails the build if one appears.
+ * file, and `validate:gmail` (DRAFT_WRITERS) fails the build if one appears. Sending happens only
+ * when she taps "Send as is" (src/worker/boss/routes/lpTap.ts), which sends this very draft.
  *
  * ─── NO MODEL SEES A NAME ──────────────────────────────────────────────────
  * LP names and deal terms are confidential. The draft is a FIXED TEMPLATE filled in code — first
@@ -33,6 +39,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { lpReplyBody } from "../../src/shared/boss/lp/plan.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
@@ -105,16 +112,18 @@ export function slotLine(t) {
   return new Date(t).toLocaleString("en-US", { timeZone: TZ, weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }) + " Central";
 }
 
-/** The draft body. A FIXED TEMPLATE — no model writes any part of it. */
+/**
+ * The draft body. A FIXED TEMPLATE — no model writes any part of it. Her outreach voice (ruling 10:
+ * "we", "more than $100M in secondary transactions", never a fund size, a short call ask), with up
+ * to three open times from her calendar when it can be read.
+ */
 export function draftBody({ name, bucket, slots }) {
-  const hi = `Hi ${firstName(name)},`;
-  const opener = bucket === "call"
-    ? "Thank you for getting back to me — I'd be glad to find time to talk."
-    : "Thank you for your reply, and for being open to staying in touch. A short call might be the easiest way to share where things stand.";
+  const base = lpReplyBody({ name, bucket }).split("\n");
+  const sign = base.slice(-2);
   const times = slots.length
-    ? ["Would any of these work for a 30-minute call?", "", ...slots.map((t) => `- ${slotLine(t)}`), "", "If none of those suit, send me a couple of times that do and I'll make it work."]
-    : ["Would you have 30 minutes in the next two weeks? Send me a couple of times that suit and I'll make it work."];
-  return [hi, "", opener, "", ...times, "", "Best,", "Sequoia"].join("\n");
+    ? ["", "Any of these would work on our side:", ...slots.map((t) => `- ${slotLine(t)}`)]
+    : [];
+  return [...base.slice(0, -3), ...times, "", ...sign].join("\n");
 }
 
 export const hashOf = (s) => crypto.createHash("sha256").update(String(s)).digest("hex").slice(0, 16);
@@ -168,7 +177,7 @@ async function threadOf(tok, address) {
   for (const h of ["Message-ID", "Subject"]) u.searchParams.append("metadataHeaders", h);
   const msg = await call(tok, u.toString());
   const h = Object.fromEntries((msg?.payload?.headers ?? []).map((x) => [x.name.toLowerCase(), x.value]));
-  return { threadId: m.threadId, messageId: h["message-id"] ?? null, subject: h.subject ?? "" };
+  return { threadId: m.threadId, messageId: h["message-id"] ?? null, subject: h.subject ?? "", at: Number(msg?.internalDate ?? 0) || null };
 }
 
 function rawDraft({ to, subject, inReplyTo, body }) {
@@ -195,38 +204,58 @@ async function freeBusy(tok, now) {
 }
 
 /**
- * The run. `people` is the reconciled positive list. Returns `{ unanswered, drafts, stops }` with
- * names (for her email only); prints counts only.
+ * One pass over the running list. For each positive reply: sent (by her, after their reply) → Sent,
+ * or "They replied again" when they wrote after her answer; labelled pass, or skipped in Boss OS →
+ * Skipped; otherwise ONE held draft in their thread → Drafted. Returns the tracker rows Boss OS
+ * keeps (names stay in D1 and on her Mac; the console prints counts only).
  */
-export async function followUps(people, { now = Date.now() } = {}) {
+export async function followUps(people, { now = Date.now(), skipped = new Set() } = {}) {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] GSC_SERVICE_ACCOUNT_JSON is not in the vault run");
   const read = await token(creds, READ_SCOPE);
   const stops = [];
   let draftTok = null;
-  try { draftTok = await token(creds, DRAFT_SCOPE); } catch (e) { stops.push(`Drafts cannot be written (${e.message}); the reminder still lists every unanswered reply.`); }
+  try { draftTok = await token(creds, DRAFT_SCOPE); } catch (e) { stops.push(`Replies cannot be held as drafts (${e.message}); the tracker still lists every unanswered reply.`); }
   let busy = null;
-  try { busy = await freeBusy(await token(creds, CAL_SCOPE), now); } catch (e) { stops.push(`Your calendar could not be read for open times (${e.message}); drafts ask for their times instead.`); }
+  try { busy = await freeBusy(await token(creds, CAL_SCOPE), now); } catch (e) { stops.push(`Your calendar could not be read for open times (${e.message}); replies ask for their times instead.`); }
   const slots = busy ? pickSlots(busy, now) : [];
-
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, "utf8")) : { drafts: {} };
   state.drafts = state.drafts ?? {};
-  const unanswered = [];
-  let answered = 0, passed = 0, made = 0, refreshed = 0, kept = 0;
-
+  const rows = [];
+  const counts = { sent: 0, replied_again: 0, skipped: 0, drafted: 0, not_answered: 0, made: 0, refreshed: 0, kept: 0 };
   for (const p of people) {
     const after = gdate(p.first_seen);
-    if ((await search(read, `in:sent from:${MAILBOX} to:${p.address} after:${after}`)).length) { answered += 1; delete state.drafts[p.address]; continue; }
-    if ((await search(read, `from:${p.address} (${PASS_LABELS.map((l) => `label:${l}`).join(" OR ")})`)).length) { passed += 1; delete state.drafts[p.address]; continue; }
-    const row = { name: p.name ?? "", address: p.address, bucket: p.bucket, first_seen: p.first_seen, draft: "none" };
+    const th = await threadOf(read, p.address);
+    const base = {
+      address: p.address, name: p.name ?? "", bucket: p.bucket, quote: p.quote ?? null, first_seen: p.first_seen,
+      reply_from: MAILBOX, thread_id: th?.threadId ?? null, in_reply_to: th?.messageId ?? null, subject: th?.subject ?? null,
+      last_reply_at: th?.at ?? null,
+    };
+    const [mine] = await search(read, `in:sent from:${MAILBOX} to:${p.address} after:${after}`);
+    if (mine) {
+      const meta = await call(read, `${GMAIL}/messages/${mine.id}?format=metadata&metadataHeaders=Date`);
+      const sentAt = Number(meta?.internalDate ?? 0) || null;
+      const status = th?.at && sentAt && th.at > sentAt ? "replied_again" : "sent";
+      counts[status] += 1;
+      delete state.drafts[p.address];
+      rows.push({ ...base, status, sent_at: sentAt });
+      continue;
+    }
+    const passed = (await search(read, `from:${p.address} (${PASS_LABELS.map((l) => `label:${l}`).join(" OR ")})`)).length > 0;
+    if (passed || skipped.has(p.address)) {
+      counts.skipped += 1;
+      delete state.drafts[p.address];
+      rows.push({ ...base, status: "skipped" });
+      continue;
+    }
+    let held = null;
     if (draftTok) {
       const had = state.drafts[p.address];
       const existing = had ? await call(draftTok, `${GMAIL}/drafts/${had.id}?format=metadata`).catch(() => null) : null;
       const stale = had && (had.slots ?? []).length && had.slots.every((t) => t < now + DAY);
       const unedited = existing && existing.message?.id === had?.message_id;
-      if (existing && !(stale && unedited)) { kept += 1; row.draft = "waiting"; }
+      if (existing && !(stale && unedited)) { counts.kept += 1; held = { id: had.id, message_id: existing.message?.id ?? had.message_id, hash: had.hash }; }
       else {
-        const th = await threadOf(read, p.address);
         const body = draftBody({ name: p.name, bucket: p.bucket, slots });
         const message = { raw: rawDraft({ to: p.address, subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
         const res = existing
@@ -234,19 +263,18 @@ export async function followUps(people, { now = Date.now() } = {}) {
           : await call(draftTok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message }) });
         if (res?.id) {
           state.drafts[p.address] = { id: res.id, message_id: res.message?.id ?? null, slots, hash: hashOf(body), at: new Date(now).toISOString() };
-          if (existing) refreshed += 1; else made += 1;
-          row.draft = existing ? "refreshed" : "new";
+          if (existing) counts.refreshed += 1; else counts.made += 1;
+          held = { id: res.id, message_id: res.message?.id ?? null, hash: hashOf(body) };
         }
       }
     }
-    unanswered.push(row);
+    const status = held ? "drafted" : "not_answered";
+    counts[status] += 1;
+    rows.push({ ...base, status, draft_id: held?.id ?? null, draft_message_id: held?.message_id ?? null, body_hash: held?.hash ?? null });
   }
-  const ordered = unansweredOrder(unanswered, now);
   state.updated_at = new Date(now).toISOString();
-  state.unanswered = ordered.length;
-  state.oldest_days = ordered[0]?.days ?? null;
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(STATE, JSON.stringify(state, null, 2), "utf8");
-  console.log(`follow-ups: ${ordered.length} unanswered (oldest ${ordered[0]?.days ?? 0} days), ${answered} answered, ${passed} passed; drafts ${made} new, ${refreshed} refreshed, ${kept} waiting; ${stops.length} stop(s).`);
-  return { unanswered: ordered, stops, counts: { answered, passed, made, refreshed, kept } };
+  console.log(`LP replies: ${counts.drafted} held, ${counts.sent} sent, ${counts.replied_again} replied again, ${counts.skipped} skipped, ${counts.not_answered} without a draft; drafts ${counts.made} new, ${counts.refreshed} refreshed, ${counts.kept} kept; ${stops.length} stop(s).`);
+  return { rows, stops, counts, unanswered: unansweredOrder(rows.filter((r) => ["drafted", "not_answered"].includes(r.status)).map((r) => ({ ...r, draft: r.status === "drafted" ? "waiting" : "none" })), now) };
 }

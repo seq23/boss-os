@@ -70,12 +70,19 @@ import os from "node:os";
 import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 import { addressIn, bulkReason, headersFromRaw, ownDomainReason, replyEvidence } from "./mail-bulk.mjs";
 import { followUps } from "./lp-followups.mjs";
+import { sideFromReply } from "../../src/shared/boss/lp/plan.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 /** The campaign's first send was 23 July 2026. July 1 is a deliberate margin, not a guess. */
 const SINCE = process.env.LP_SINCE ?? "2026/07/01";
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
 const LIST = path.join(OUT_DIR, "positive.json");
+/*
+ * ON DEMAND ONLY. The Tuesday reminder that ran `--email --followups` every week is retired (owner,
+ * 23 Oct 2026, ruling 10: "the weekly Tuesday reminder email goes away"); held replies are Decide
+ * items in the morning email now. Nothing schedules `--email` — tests/lpFollowups.test.ts pins that
+ * the installer never does — so this list reaches her inbox only when she asks for it.
+ */
 const SEND = process.argv.includes("--email");
 const VERIFY = process.argv.includes("--verify");
 /**
@@ -386,7 +393,67 @@ async function emailHer(list, counts, follow = null) {
   return false;
 }
 
-async function main() {
+/**
+ * WHAT CAME BACK FROM THE PROSPECTS (Boss fix L, ruling 11). Same mailbox, same screen, same bounded
+ * read as the LP list, asked of a different set of senders: the people the prospect sequence wrote to.
+ *
+ * Per address, newest first: bounce (a mailer-daemon naming the address), auto (an out-of-office;
+ * the sequence carries on), opt_out (a decline or "no thanks" — never written to again), interested
+ * (wants to talk or stay in touch — a held reply goes to Decide), or replied. Their side (buyer /
+ * seller / both / unknown) is read from the words. A short quote is kept only for an interested
+ * reply, exactly as the LP list keeps one only for a positive one.
+ */
+export async function readProspectReplies(addresses, sinceYmd) {
+  const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault");
+  const token = await accessToken(JSON.parse(raw), GMAIL, MAILBOX);
+  const wanted = new Set(addresses.map((a) => String(a).toLowerCase()));
+  const out = new Map();
+  const since = String(sinceYmd).replace(/-/g, "/");
+  const list = async (q) => {
+    const ids = [];
+    let page;
+    do {
+      const j = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=200&q=${encodeURIComponent(q)}` + (page ? `&pageToken=${page}` : ""), token);
+      for (const m of j.messages ?? []) ids.push(m);
+      page = j.nextPageToken;
+    } while (page && ids.length < 2000);
+    return ids;
+  };
+  const rawOf = async (id) => {
+    const msg = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=raw`, token).catch(() => null);
+    return msg?.raw ? { raw: Buffer.from(msg.raw, "base64").toString("utf8").slice(0, 200_000), at: Number(msg.internalDate ?? 0), thread: msg.threadId } : null;
+  };
+  for (const m of await list(`in:anywhere after:${since} from:mailer-daemon`)) {
+    const r = await rawOf(m.id);
+    if (!r) continue;
+    const body = decodedBody(r.raw).toLowerCase();
+    for (const a of wanted) if (body.includes(a) && !out.has(a)) out.set(a, { kind: "bounce", side: "unknown", note: null, at: r.at });
+  }
+  const domains = [...new Set([...wanted].map((a) => a.split("@")[1]))];
+  for (let i = 0; i < domains.length; i += 25) {
+    const q = `in:anywhere after:${since} (${domains.slice(i, i + 25).map((d) => `from:${d}`).join(" OR ")})`;
+    for (const m of await list(q)) {
+      const r = await rawOf(m.id);
+      if (!r) continue;
+      const headers = headersFromRaw(r.raw);
+      const address = addressIn(headers.from ?? "");
+      if (!wanted.has(address) || out.get(address)?.at > r.at) continue;
+      const text = readableText(r.raw);
+      const { bucket } = classify(text);
+      const kind = bucket === "auto" ? "ooo" : bucket === "negative" ? "opt_out" : (bucket === "call" || bucket === "warm") ? "interested"
+        : /\bno thanks\b/i.test(text) ? "opt_out" : "replied";
+      out.set(address, { kind, side: sideFromReply(text), note: kind === "interested" ? quoteOf(text) : null, at: r.at, thread: r.thread });
+    }
+  }
+  return out;
+}
+
+/**
+ * Read the mailbox, reconcile the running list, write it to her Mac, and return it. The morning LP
+ * run (lp-daily.mjs) calls this every day; `main` below is the same read on demand.
+ */
+export async function refreshPositive() {
   const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
   if (!raw) {
     console.error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault: npm run lp:positive");
@@ -492,6 +559,11 @@ async function main() {
 
   console.log(`replies read: ${counts.replies}  |  call: ${counts.call}  warm: ${counts.warm}  auto: ${counts.auto}  departed: ${counts.departed}  declined: ${counts.negative}  other: ${counts.other}`);
   console.log(`running list: ${people.length} positive (${added} new this run, ${promoted} promoted warm->call, ${removed.length} removed as not an LP reply)`);
+  return { people, counts, seenAddresses };
+}
+
+async function main() {
+  const { people, counts, seenAddresses } = await refreshPositive();
   if (VERIFY) for (const p of people) console.log(`  [${p.bucket === "call" ? "CALL" : "warm"}] ${p.name || p.address} — ${p.quote.slice(0, 90)}`);
 
   if (VERIFY) {

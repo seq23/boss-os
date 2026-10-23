@@ -385,9 +385,29 @@ const DRAFT_WRITERS = new Map([
   }],
 ]);
 
+/**
+ * THE PROSPECT SENDER (owner, 23 Oct 2026, ruling 11: "those need to be going out regularly"). It
+ * sends — that is its job — so it is held narrower than a draft writer in every other respect:
+ * headers only, the West Peek mailbox pinned in the JWT, only what the Boss OS plan returns (which
+ * refuses without her approved template), dry-run unless --live, no model.
+ */
+const PROSPECT_SENDERS = new Map([
+  ["lp-prospects.mjs", {
+    why: "Sends the soft prospect email she approved, and its two follow-ups, under the outreach brakes.",
+    invariants: [
+      [(src) => /const MAILBOX = "[^"]+@westpeek\.ventures"/.test(src) && /sub: MAILBOX/.test(src), "the mailbox must be the pinned westpeek.ventures constant in the JWT's sub claim"],
+      [(src) => /gmail\.compose/.test(src) && !/gmail\.send|gmail\.modify|mail\.google\.com/.test(src), "compose and nothing wider"],
+      [(src) => !/format=full|"format", "full"|format=raw|"format", "raw"|\.snippet/.test(src), "it reads headers only — replies are read by lp-positive.mjs, the content exception"],
+      [(src) => /api\.get\("\/lp\/prospects\/plan"\)/.test(src) && /for \(const s of plan\.sends\)/.test(src), "it sends only what the Boss OS plan returns"],
+      [(src) => /const LIVE = process\.argv\.includes\("--live"\)/.test(src) && /!LIVE \|\| plan\.dryRun/.test(src), "nothing is sent without --live and live outreach sending"],
+      [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src) && !/spawn(Sync)?\(/.test(src), "no model sees a name"],
+    ],
+  }],
+]);
+
 for (const f of callers) {
   const src = read(`scripts/ops/${f}`);
-  const narrow = HEADER_READERS.get(f) ?? DRAFT_WRITERS.get(f);
+  const narrow = HEADER_READERS.get(f) ?? DRAFT_WRITERS.get(f) ?? PROSPECT_SENDERS.get(f);
   if (narrow) {
     for (const [holds, why] of narrow.invariants) if (!holds(src)) bad(`${f}: ${why}.\n      Why it was granted: ${narrow.why}`);
     continue;
