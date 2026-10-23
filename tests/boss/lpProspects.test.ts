@@ -3,7 +3,7 @@
  * 10, 11, 12, 14). Synthetic data only: invented people at example.com. The repo is public.
  */
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { apiJson } from "./helpers";
 import {
@@ -183,18 +183,15 @@ describe("catch-ups: opportunistic, never repetitive, never Rainmaker or ruled o
 
 describe("routes and the one-tap links", () => {
   /*
-   * Builder D's two lists (rules 6 and 15). Stood up here only when D's migration has not, and
-   * dropped again afterwards so no other suite sees a table this file invented.
+   * Builder D's two lists (rules 6 and 15), read through the views D's migration 0293 creates over
+   * capital_party_lists. Since the combined merge they are REQUIRED here: no stand-in table.
    */
-  const made: string[] = [];
-  afterAll(async () => {
-    for (const t of made) await env.DB.prepare(`DROP TABLE IF EXISTS ${t}`).run();
-  });
   beforeEach(async () => {
     for (const t of ["do_not_suggest", "same_firm_list"]) {
-      const has = await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).bind(t).first();
-      if (!has) { await env.DB.prepare(`CREATE TABLE ${t} (value TEXT)`).run(); if (!made.includes(t)) made.push(t); }
+      const view = await env.DB.prepare(`SELECT name FROM sqlite_master WHERE type = 'view' AND name = ?`).bind(t).first();
+      expect(view, `${t} is not a view from D's migration`).toBeTruthy();
     }
+    await env.DB.prepare(`DELETE FROM capital_party_lists`).run();
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM lp_reply_drafts`),
       env.DB.prepare(`DELETE FROM prospect_touches`),
@@ -272,23 +269,27 @@ describe("routes and the one-tap links", () => {
       { email: "stop.me@example.com", name: "Sam Stop", source: "inbox" },
       { email: "ruled.out@example.com", name: "Rue Out", source: "inbox" },
     ]);
-    await env.DB.prepare(`INSERT INTO do_not_suggest (value) VALUES ('ruled.out@example.com')`).run();
+    await env.DB.prepare(`INSERT INTO capital_party_lists (id, list, kind, value, source, created_at) VALUES ('pl_test_dns', 'do_not_suggest', 'email', 'ruled.out@example.com', 'seed', 0)`).run();
     await recordProspectEvents(env.DB, [{ email: "stop.me@example.com", kind: "opt_out", side: "unknown" }]);
     const plan = await prospectPlan(env.DB, WED_10AM);
     expect(plan.sends.map((s: any) => s.email)).toEqual([]);
     expect((await env.DB.prepare(`SELECT value FROM outreach_suppression WHERE value = 'stop.me@example.com'`).first())).toBeTruthy();
-    await env.DB.prepare(`DELETE FROM do_not_suggest`).run();
+    await env.DB.prepare(`DELETE FROM capital_party_lists WHERE id = 'pl_test_dns'`).run();
   });
 
   it("an unreadable do-not-suggest list holds every send (fail closed)", async () => {
-    await env.DB.prepare(`ALTER TABLE do_not_suggest RENAME TO do_not_suggest_away`).run();
-    const t = await proposeTemplate(env.DB, null, NAMES);
-    await approveTemplate(env.DB, (t as any).template.id);
-    await importProspects(env.DB, [{ email: "anyone@example.com", source: "inbox" }]);
-    const plan = await prospectPlan(env.DB, WED_10AM);
-    expect(plan.sends).toEqual([]);
-    expect(plan.stops.join(" ")).toMatch(/could not be read/);
-    await env.DB.prepare(`ALTER TABLE do_not_suggest_away RENAME TO do_not_suggest`).run();
+    const def = (await env.DB.prepare(`SELECT sql FROM sqlite_master WHERE type = 'view' AND name = 'do_not_suggest'`).first<{ sql: string }>())!.sql;
+    await env.DB.prepare(`DROP VIEW do_not_suggest`).run();
+    try {
+      const t = await proposeTemplate(env.DB, null, NAMES);
+      await approveTemplate(env.DB, (t as any).template.id);
+      await importProspects(env.DB, [{ email: "anyone@example.com", source: "inbox" }]);
+      const plan = await prospectPlan(env.DB, WED_10AM);
+      expect(plan.sends).toEqual([]);
+      expect(plan.stops.join(" ")).toMatch(/could not be read/);
+    } finally {
+      await env.DB.prepare(def).run();
+    }
   });
 
   it("the 8Raise route refuses past the floor and logs a spend", async () => {

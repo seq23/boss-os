@@ -49,6 +49,7 @@ import { vaultLookup, envForRepoRun } from "../lib/vault-env.mjs";
 import { servicePracticesBlock } from "../../src/shared/boss/service/practices.mjs";
 import { waitDetail, threeParts, missingSecretLine } from "../../src/shared/boss/service/waits.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
+import { layoutProblem, refsIn } from "../../src/shared/boss/mail/plain.mjs";
 import { detectUsageLimit } from "../lib/seat-usage-limit.mjs";
 import { codexExecArgs, codexSeatUsable, gitCommonDirs, helpMentions, runWithCodexFallback } from "../lib/codex-seat.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
@@ -95,13 +96,33 @@ async function api(path, body) {
 
 // ─── Email, as Danielle ───────────────────────────────────────────────────────
 
-async function email(subject, text, files = []) {
+/**
+ * DANIELLE'S "STOPPED WORK ON …" EMAIL, IN THE PROBLEM LAYOUT (owner, 23 Oct 2026, rule 3; combined
+ * boss fix): What happened → What we did → Status, with ONE Decide button that opens the change on
+ * Boss OS, where she can try again (with what to change, typed there) or drop it — no written reply
+ * needed. Replying to the email still works; the change's code rides in the hidden header.
+ * Pure, so tests/plainEmail.test.ts runs every stop through the send-time gate.
+ */
+export function stoppedMail({ id, repo, reason, happened, did, origin = ORIGIN }) {
+  const subject = `Stopped work on ${repo ?? "your package"}: ${reason} ${changeToken(id)}`;
+  return layoutProblem({
+    who: "Danielle",
+    subject,
+    happened,
+    did,
+    status: "Stopped, waiting on you. Open the change to try again, say what to change, or drop it. Replying to this email works too.",
+    decide: [{ title: `Try again or drop the ${repo ?? "package"} change`, body: "One tap opens it with both choices and a box for what to change.", buttons: [{ label: "Open the change", url: `${origin}/?tab=systems&change=${encodeURIComponent(id)}` }] }],
+    refs: refsIn(subject),
+  });
+}
+
+async function email(subject, text, files = [], prelaid = null) {
   if (DRY) { say(`DRY RUN — would email "${subject}"`); return "dry_run"; }
   const senders = sendersFor("Danielle");
   if (senders.length === 0) return null;
   for (const sender of senders) {
     const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, files }));
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text, files, prelaid }));
     if (res.ok) {
       const id = (await res.json().catch(() => ({})))?.id ?? "sent";
       say(`emailed ${TO} from ${from}: ${subject}`);
@@ -438,19 +459,14 @@ export function stopWords(tag) {
 }
 
 async function fail(row, tag, why, log) {
-  const subject = `Stopped work on ${row.repo ?? "your package"}: ${stopWords(tag)} ${changeToken(row.id)}`;
-  const text = [
-    "Sequoia,", "",
-    `This is Danielle. I stopped work on ${row.id} (${row.repo ?? "the package you sent"}) and here is the named reason:`, "",
-    `NAMED STOP [${tag}] ${why}`, "",
-    row.pr_url ? `Pull request: ${row.pr_url}` : null,
-    log ? `Run log on your Mac: ${log}` : null,
-    // R7/R8 (docs/SERVICE_RULES.md): every stop ends in three parts, and the clearing step is a reply
-    // that `repoChange/answer.ts` acts on — "try again" retries the same change, "drop it" closes it.
-    "", waitDetail(tag === "DRIVE_EMPTY" ? "DRIVE_EMPTY" : "TRIED_AND_STOPPED", { what: tag === "DRIVE_EMPTY" ? row.drive_url : "once", why }),
-    "", "— Danielle, Technical Program Manager",
-  ].filter((l) => l !== null).join("\n");
-  const id = await email(subject, text);
+  // R7/R8 (docs/SERVICE_RULES.md): the three parts and the clearing step stay — now as What happened /
+  // What we did / Status, and the clearing step is a tap on the change's page (or the reply, as before).
+  const laid = stoppedMail({
+    id: row.id, repo: row.repo, reason: stopWords(tag),
+    happened: `I stopped work on ${row.repo ?? "the package you sent"} because ${stopWords(tag)}: ${String(why ?? "").slice(0, 300)}`,
+    did: `I kept everything done so far${row.pr_url ? `, including the open pull request (${row.pr_url})` : ""}, so trying again picks up where it stopped.${log ? " The full run log is on your Mac." : ""}`,
+  });
+  const id = await email(laid.subject, laid.text, [], laid);
   const reported = await api(`/${row.id}/failed`, { failure: `NAMED STOP [${tag}] ${why}`, notified_message_id: id, run_log: log });
   if (!reported.ok) say(`NAMED STOP [FAILURE_NOT_RECORDED] ${reported.status} ${reported.error ?? ""}`);
   say(`NAMED STOP [${tag}] ${why}`);
@@ -919,19 +935,23 @@ async function watchChecks(row, log, waitMinutes) {
       return;
     }
     if (verdict.state === "red") {
-      const id = await email(`Stopped work on ${row.repo}: the checks failed ${changeToken(row.id)}`, [
-        "Sequoia,", "", `This is Danielle. The checks on ${row.pr_url} went red, so I did not land it.`, "", verdict.detail, "",
-        "The branch is open for a fix; email me a new instruction and I will start from it.", "", "— Danielle",
-      ].join("\n"));
+      const laid = stoppedMail({
+        id: row.id, repo: row.repo, reason: stopWords("CHECKS_RED"),
+        happened: `The checks on the ${row.repo} change went red, so I did not make it live.`,
+        did: `I left the pull request open for a fix (${row.pr_url}) and recorded what failed: ${String(verdict.detail ?? "").slice(0, 300)}`,
+      });
+      const id = await email(laid.subject, laid.text, [], laid);
       const r = await api(`/${row.id}/checks`, { state: "red", detail: verdict.detail, notified_message_id: id ?? undefined });
       if (!r.ok) say(`NAMED STOP [RED_NOT_RECORDED] ${r.status} ${r.error ?? ""}`);
       return;
     }
     if (verdict.state === "none") {
-      const id = await email(`Stopped work on ${row.repo}: no checks ran ${changeToken(row.id)}`, [
-        "Sequoia,", "", `This is Danielle. ${row.pr_url} has no CI checks and the build's proof does not record the repo's validators passing, so there is no green to land on.`, "",
-        "Land on green needs a green. Add CI to the repo, or have the runbook's validate step run before the PR, and send the instruction again.", "", "— Danielle",
-      ].join("\n"));
+      const laid = stoppedMail({
+        id: row.id, repo: row.repo, reason: stopWords("NO_CHECKS"),
+        happened: `No checks ran on the ${row.repo} change, so there was nothing green to make it live on.`,
+        did: `I held it before going live and left the pull request open (${row.pr_url}). Trying again with "add checks to the repo" fixes it.`,
+      });
+      const id = await email(laid.subject, laid.text, [], laid);
       await api(`/${row.id}/failed`, { failure: `NAMED STOP [NO_CHECKS] ${verdict.detail}`, notified_message_id: id ?? undefined, run_log: log });
       return;
     }

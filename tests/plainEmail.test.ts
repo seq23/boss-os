@@ -44,7 +44,6 @@ const SAMPLES: Record<string, Array<{ who: string; subject: string; text: string
   "scripts/ops/notify.mjs": [{ who: "Simone", subject: "KDP: needs you", text: "Amazon asked for a new cover file for The Example Book. Reply approved and I upload the one in your Drive." }],
   "scripts/ops/repo-change.mjs": [
     { who: "Danielle", subject: "Building creator-studios now — I'll send a preview before it goes live [rc_m5jh89zfkeyv3tmm]", text: "Sequoia,\n\nFYI — you pre-approved this (\"your call\"); no reply needed. Reply `stop` within the build to hold it.\nIt is NOT publish-ready, so it stops at the preview: you will get the preview email and it lands only after you reply \"approved\" to that.\n\nNOT PUBLISH-READY — this ships with 2 placeholders: hero image; price.\n\nThis is Danielle. Here is my plan for creator-studios from your instruction.\n\nREPLY WITH ONE WORD — approved — and I take the recommended default on every question below.\n(Keep [rc_m5jh89zfkeyv3tmm] in the subject; replying keeps it.)\n\nQUESTIONS, EACH WITH MY RECOMMENDED DEFAULT\n1. Which headline? Options: A / B.\n   → My recommended default: A\n\nWHAT I DECIDED (recorded, no reply needed)\n- kept the existing nav\n\nTHE PLAN\n\nSwap the hero, keep the rest.\n\nRun log on your Mac: /Users/someone/.boss-os/repo-change/rc_m5jh89zfkeyv3tmm.log\n\n— Danielle, Technical Program Manager" },
-    { who: "Danielle", subject: "Stopped work on example-site: the checks failed [rc_m5jh89zfkeyv3tmc]", text: "Sequoia,\n\nThis is Danielle. I stopped work on rc_m5jh89zfkeyv3tmc (example-site) and here is the named reason:\n\nNAMED STOP [CHECKS_RED] the unit tests failed on main.\n\nPull request: https://github.com/example/example-site/pull/12\n\n— Danielle, Technical Program Manager" },
     { who: "Danielle", subject: "example-site is live [rc_m5jh89zfkeyv3tmd]", text: "Sequoia,\n\nThis is Danielle. example-site is landed and proven live.\n\nPull request: https://github.com/example/example-site/pull/12\nMerge commit: 0123abc\n\nLIVE PROOF\n- home_status: 200\n\n— Danielle" },
   ],
   "scripts/ops/task-notices.mjs": [{ who: "Simone", subject: "One key only you hold: EXAMPLE_API_KEY [tsk_m5jh8bjbxmhtfz1w]", text: "The cover job needs a key only you hold.\n\nWhat you asked: Make the cover\n\nWhat I need from you: reply with SECRET EXAMPLE_API_KEY=<value>.\n\nReply to this email and your answer goes straight back to this job. Nothing was sent to anyone outside Boss OS. tsk_m5jh8bjbxmhtfz1w" }],
@@ -260,5 +259,50 @@ describe("the rules in CLAUDE.md", () => {
     }
     for (const f of ["scripts/ops/your-day.mjs", "src/shared/boss/mail/morning.mjs", "src/shared/boss/mail/plain.mjs", "scripts/ops/notify.mjs"]) expect(section).toContain(f);
     expect(section).toMatch(/07:45 Central/);
+  });
+});
+
+
+/**
+ * DANIELLE'S "STOPPED WORK ON …" EMAILS (combined boss fix, 23 Oct 2026; rule 3). Every stop is laid
+ * out by `stoppedMail` (scripts/ops/repo-change.mjs): What happened → What we did → Status, one Decide
+ * button to the change's own page. The gate now reads any "Stopped …" subject as a problem email, so
+ * the old free-text stop is held.
+ */
+describe("Danielle's stopped emails", () => {
+  const STOPS = [
+    { reason: "the checks failed", happened: "The checks on the example-site change went red, so I did not make it live.", did: "I left the pull request open for a fix (https://github.com/example/example-site/pull/12) and recorded what failed: two unit tests." },
+    { reason: "no checks ran", happened: "No checks ran on the example-site change, so there was nothing green to make it live on.", did: "I held it before going live and left the pull request open (https://github.com/example/example-site/pull/12). Trying again with \"add checks to the repo\" fixes it." },
+    { reason: "the work got stuck", happened: "I stopped work on example-site because the work got stuck: the build ran out of turns.", did: "I kept everything done so far, so trying again picks up where it stopped. The full run log is on your Mac." },
+  ];
+  it("every stop is a problem email in three parts with one button to the change's page, and passes the gate", async () => {
+    // @ts-expect-error — plain ESM with no declaration file
+    const { stoppedMail } = await import("../scripts/ops/repo-change.mjs");
+    for (const s of STOPS) {
+      const laid = stoppedMail({ id: "rc_m5jh89zfkeyv3tmc", repo: "example-site", ...s, origin: "https://boss.example.com" });
+      expect(laid.kind).toBe("problem");
+      expect(laid.problems, laid.text).toEqual([]);
+      expect(plainProblems({ ...laid, kind: null }), laid.text).toEqual([]);
+      const body = laid.text;
+      const at = ["Decide (1)", "What happened:", "What we did:", "Status:", "— Danielle"].map((h) => body.indexOf(h));
+      expect(at.every((n) => n >= 0), body).toBe(true);
+      expect([...at].sort((a, b) => a - b)).toEqual(at);
+      expect(body).toContain("Open the change: https://boss.example.com/?tab=systems&change=rc_m5jh89zfkeyv3tmc");
+      expect(laid.subject).toMatch(/^Stopped work on example-site: /);
+      expect(laid.refs).toEqual(["rc_m5jh89zfkeyv3tmc"]);
+      const sent = employeeMail({ name: "Danielle", from: "Danielle <danielle@example.com>" } as any, { to: "owner@example.com", subject: laid.subject, text: laid.text, prelaid: laid });
+      expect(sent.headers?.["X-Boss-Ref"]).toBe("rc_m5jh89zfkeyv3tmc");
+      expect(sent.headers?.["X-Boss-Kind"]).toBe("problem");
+    }
+  });
+  it("the old free-text stop is now held by the gate (no What we did, no Status)", () => {
+    const old = employeeMail({ name: "Danielle", from: "Danielle <danielle@example.com>" } as any, { to: "owner@example.com", subject: "Stopped work on example-site: the checks failed [rc_m5jh89zfkeyv3tmc]", text: "Sequoia,\n\nThis is Danielle. I stopped work on rc_m5jh89zfkeyv3tmc (example-site) and here is the named reason:\n\nNAMED STOP [CHECKS_RED] the unit tests failed on main.\n\nPull request: https://github.com/example/example-site/pull/12\n\n— Danielle, Technical Program Manager" });
+    expect(plainProblems(old).join(" ")).toMatch(/problem email without "What we did"/);
+  });
+  it("repo-change.mjs sends every stop through stoppedMail, never free text", () => {
+    const src = readFileSync(join(ROOT, "scripts/ops/repo-change.mjs"), "utf8");
+    expect(src.match(/stoppedMail\(\{/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+    expect(src).not.toMatch(/email\(`Stopped work on/);
+    expect(src).not.toMatch(/"This is Danielle\. I stopped work on/);
   });
 });

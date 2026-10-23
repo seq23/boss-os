@@ -574,7 +574,8 @@ export function plainProblems({ subject, text, html, kind = null }) {
   if (api) problems.push(`a link to an API path: "${api}"`);
   // The shape: Decide first (or "nothing to decide"); a problem email in its three parts.
   const lines = body.split("\n");
-  const problem = kind === "problem" || /^stopped\s*:/i.test(subj);
+  // "Stopped: …" and Danielle's "Stopped work on …" are both problem emails (combined boss fix).
+  const problem = kind === "problem" || /^stopped\b/i.test(subj);
   if (problem) {
     if (!/^What happened:/m.test(body)) problems.push('a problem email without "What happened"');
     if (!/^What we did:/m.test(body)) problems.push('a problem email without "What we did"');

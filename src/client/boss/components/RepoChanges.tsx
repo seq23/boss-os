@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Panel, usePanel } from "./panels";
 
@@ -28,11 +29,46 @@ function age(ms: number): string {
   return `${Math.round(h / 24)} d ago`;
 }
 
+/**
+ * HER ANSWER TO A STOPPED CHANGE, ON THE PAGE (combined boss fix, 23 Oct 2026). Danielle's "Stopped
+ * work on …" email links here (`?tab=systems&change=<id>`): what to change (optional), then Try again
+ * or Drop it — the same as replying "try again", "changes: …" or "drop it", without writing an email.
+ */
+export function StoppedAnswer({ id }: { id: string }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const act = async (what: "retry" | "drop") => {
+    setBusy(true);
+    try {
+      if (what === "retry") { await api.repoChangeRetry(id, text.trim()); setSaid("Danielle will try again on your Mac's next pass."); }
+      else { await api.repoChangeDrop(id); setSaid("Dropped. Nothing more will be tried or sent about it."); }
+    } catch (e: any) {
+      setSaid(`That did not go through: ${String(e?.message ?? e)}`);
+    } finally { setBusy(false); }
+  };
+  if (said) return <div className="row-sub" data-testid="repo-change-answered">{said}</div>;
+  return (
+    <div data-testid="repo-change-answer" style={{ marginTop: 8 }}>
+      <label className="row-sub" htmlFor={`rc-${id}`}>What to change (optional)</label>
+      <textarea id={`rc-${id}`} value={text} onChange={(e) => setText(e.target.value)} rows={3} style={{ width: "100%", boxSizing: "border-box", font: "inherit", marginTop: 4 }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button type="button" disabled={busy} onClick={() => act("retry")}>{text.trim() ? "Try again with this change" : "Try again"}</button>
+        <button type="button" disabled={busy} onClick={() => act("drop")}>Drop it</button>
+      </div>
+    </div>
+  );
+}
+
 export function RepoChanges() {
   const view = usePanel(() => api.repoChanges());
   const data: any = view.data;
   const items: any[] = data?.items ?? [];
   const now = Date.now();
+  const linked = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("change") : null;
+  useEffect(() => {
+    if (linked && items.some((r) => r.id === linked)) document.querySelector(`[data-testid="repo-change-${linked}"]`)?.scrollIntoView({ block: "center" });
+  }, [linked, items.length]);
 
   return (
     <Panel
@@ -74,6 +110,7 @@ export function RepoChanges() {
                 </div>
               )}
               {r.failure && <div className="row-sub state-bad">{r.failure}</div>}
+              {r.phase === "failed" && <StoppedAnswer id={r.id} />}
               {r.claim_live && <div className="row-sub">Running on {r.claimed_by} ({r.claimed_phase}).</div>}
             </div>
             <div className={`row-val ${tone(r.phase)}`}>{String(r.phase).toUpperCase()}</div>

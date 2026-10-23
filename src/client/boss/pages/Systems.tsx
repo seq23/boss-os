@@ -73,7 +73,9 @@ const SECTIONS: { id: SectionId; label: string }[] = [
 ];
 
 export function Systems() {
-  const [section, setSection] = useState<SectionId>("launch");
+  // A link to one repo change (`?tab=systems&change=<id>`) opens the section that holds it.
+  const [section, setSection] = useState<SectionId>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("change") ? "properties" : "launch");
   return (
     <>
       <div className="seg" role="tablist" aria-label="Systems">

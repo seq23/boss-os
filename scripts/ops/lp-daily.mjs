@@ -25,6 +25,9 @@ import { bossApi } from "./lib/duty-kit.mjs";
 import { LP_STATUS_LABEL, lpDecideItems } from "../../src/shared/boss/lp/plan.mjs";
 import { morningDir, writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 
+// The same override D's producers honour (tests and dry runs point it elsewhere); E's default otherwise.
+const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? morningDir();
+
 /** The morning section, per the shared interface: {decide, rows, lines}. Pure, so it is tested. */
 export function lpMorning(rows, now = Date.now()) {
   const decide = lpDecideItems(rows, now);
@@ -49,8 +52,8 @@ export function lpMorning(rows, now = Date.now()) {
  * Simone's 06:40 email reads, checked before it is written. Returns the file written.
  */
 export function writeMorning(section, obj) {
-  writeMorningSection(section, obj);
-  return path.join(morningDir(), `${section}.json`);
+  writeMorningSection(section, obj, { dir: MORNING_DIR });
+  return path.join(MORNING_DIR, `${section}.json`);
 }
 
 async function main() {

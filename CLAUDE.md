@@ -65,6 +65,11 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    #tags, jargon, link dumps or "I could not read".
 3. **Problem emails:** What happened → What we did → Status, sent after the fix is running; a stopped
    task is re-checked first; chores (vault, tokens, DNS, unreadable sources) are fix jobs, never her mail.
-4. **The gate holds, never sends, a failing email:** `mailGate` in `postEmployeeMail`
+4. **Where it stands (combined boss fix, 23 Oct 2026):** One morning email from Simone; Mac emails pass
+   the plain-email gate before sending. LP replies run daily through the delegation with one-tap send;
+   the Tuesday reminder and the connector digest are retired. Deals grid live; ~6-month lookback;
+   Rainmaker and do-not-suggest lists edited by reply. Every morning section goes through
+   `writeMorningSection`; a one-tap button is a page (`/tap/<token>`), never an /api link.
+5. **The gate holds, never sends, a failing email:** `mailGate` in `postEmployeeMail`
    (`scripts/ops/notify.mjs`) and `plainReply` on the Worker. A new sender passes through them or it
    does not send.

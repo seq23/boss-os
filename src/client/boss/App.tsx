@@ -45,6 +45,8 @@ export default function App() {
   const [tab, setTab] = useState<TabId>("today");
   // boss fix D — a link in her morning email ("See the full grid") opens the Deals page directly.
   useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "capital") setTab("capital"); }, []); // boss fix D
+  // Combined boss fix — Danielle's "Stopped work on …" email opens the change on Systems → Properties.
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "systems") setTab("systems"); }, []);
   // Today's Operations line opens Team on Duties; any other way in opens it on the roster.
   const [teamStart, setTeamStart] = useState<TeamView>("team");
   const [settingsOpen, setSettingsOpen] = useState(false);

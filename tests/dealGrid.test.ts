@@ -233,3 +233,22 @@ describe("combined merge: Monique found reads as one intro per pair, in plain gr
     expect(out.link).toEqual({ label: "See holders and drafts", url: expect.stringMatching(/view=holders$/) });
   });
 });
+
+describe("combined merge: L reads the two lists from the views D's migration creates", () => {
+  it("every table and column L's desk reads is a view in migration 0293 with that column", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const root = join(__dirname, "..");
+    const mig = readdirSync(join(root, "migrations")).find((f) => f.startsWith("0293_"));
+    expect(mig, "migration 0293 is D's").toBeTruthy();
+    const sql = readFileSync(join(root, "migrations", mig!), "utf8");
+    const desk = readFileSync(join(root, "src/worker/boss/lp/desk.ts"), "utf8");
+    const reads = [...desk.matchAll(/\{\s*table:\s*"([a-z_]+)",\s*column:\s*"([a-z_]+)"\s*\}/g)].map((m) => [m[1]!, m[2]!]);
+    expect(reads.map((r) => r[0]).sort()).toEqual(["do_not_suggest", "same_firm_list"]);
+    for (const [table, column] of reads) {
+      const view = new RegExp(`CREATE VIEW IF NOT EXISTS ${table} AS\\s+SELECT ([^;]+?) FROM capital_party_lists`).exec(sql);
+      expect(view, `${table} is not a view in ${mig}`).toBeTruthy();
+      expect(view![1]!.split(",").map((c) => c.trim()), `${table} has no ${column} column`).toContain(column);
+    }
+  });
+});

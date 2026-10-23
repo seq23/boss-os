@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, type RewriteProgress } from "../api";
 import { Empty, Loading } from "../components/Shell";
+import { LpTab } from "./deals/LpTab";
+import { ProspectsTab } from "./deals/ProspectsTab";
 import { ErrorNotice } from "../components/Notice";
 import { listSizes, moneyShort, parseMoneyUsd, parsePositionSizes } from "../../../shared/wealth/positionSizes";
 
@@ -1609,19 +1611,11 @@ function Wealth() {
 // ─── boss fix D: the deal grid and the holders Monique found (23 Oct 2026) ─────────────────────
 
 /*
- * BUILDER L's TABS: `src/client/boss/pages/deals/LpTab.tsx` (export LpTab) and `ProspectsTab.tsx`
- * (export ProspectsTab) land with L's PR, not on this branch's base. They are mounted through
- * `import.meta.glob`, so this builds before they exist and mounts them the moment they are on main;
- * a static `import` can replace the glob once both PRs have merged.
+ * BUILDER L's TABS, mounted statically now that D and L are one PR (combined boss fix, 23 Oct 2026):
+ * a missing or renamed export fails the build instead of quietly showing an empty tab.
  */
-const L_TABS = import.meta.glob("./deals/{LpTab,ProspectsTab}.tsx", { eager: true }) as Record<string, any>;
-const LpTab: (() => JSX.Element) | undefined = L_TABS["./deals/LpTab.tsx"]?.LpTab;
-const ProspectsTab: (() => JSX.Element) | undefined = L_TABS["./deals/ProspectsTab.tsx"]?.ProspectsTab;
-
-function LaterTab({ what }: { what: string }) {
-  const Tab = what === "LP replies" ? LpTab : ProspectsTab;
-  if (Tab) return <Tab />;
-  return <Empty title={what} hint="This tab arrives with the LP and prospects update." />;
+function LaterTab({ what }: { what: "LP replies" | "Prospects" }) {
+  return what === "LP replies" ? <LpTab /> : <ProspectsTab />;
 }
 
 const SIDE_LABEL: Record<string, string> = { buy: "Buy", sell: "Sell", yours: "Yours" };

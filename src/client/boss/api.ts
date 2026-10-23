@@ -632,6 +632,9 @@ export const api = {
   // ── Her jobs, 19 Sep 2026 — Job 3: the health of every grid property, per reader. ──
   propertyHealth: () => call<any>("/grid/health"),
   repoChanges: () => call<{ items: any[]; lane: any }>("/repo-changes"),
+  // Combined boss fix: a stopped change answered on its own page (the link in Danielle's email).
+  repoChangeRetry: (id: string, followUp: string) => call<{ id: string; phase: string }>(`/repo-changes/${encodeURIComponent(id)}/retry`, post("", { follow_up: followUp })),
+  repoChangeDrop: (id: string) => call<{ id: string; dropped: boolean }>(`/repo-changes/${encodeURIComponent(id)}/drop`, post("")),
 
   // ── boss fix D: the Deals page grid, the holders Monique found, her two lists (23 Oct 2026). ──
   dealGrid: () => call<{ rows: any[]; lookback_days: number; updated_at: number | null }>("/capital/deals"), // boss fix D
