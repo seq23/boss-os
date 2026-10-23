@@ -858,10 +858,14 @@ function Airlock() {
 
       <section className="panel">
         <p className="eyebrow">{showAll ? "Every entity" : "Never leaves this system"}</p>
-        <div className="btn-row">
-          <button className="btn" aria-pressed={!showAll} onClick={() => setShowAll(false)}>Sovereign only</button>
-          <button className="btn" aria-pressed={showAll} onClick={() => setShowAll(true)}>All {text(d.counts?.entities)}</button>
-        </div>
+        {/* Make it calm (Builder U): a filter is a pull-down, not a row of buttons. */}
+        <label className="field">
+          <span>Show</span>
+          <select value={showAll ? "all" : "sovereign"} onChange={(e) => setShowAll(e.target.value === "all")} data-testid="airlock-show">
+            <option value="sovereign">Sovereign only</option>
+            <option value="all">All {text(d.counts?.entities)}</option>
+          </select>
+        </label>
         {shown.length === 0 ? (
           <Empty title="Nothing is classified" hint="That is itself the finding: an unclassified system refuses everything." />
         ) : (

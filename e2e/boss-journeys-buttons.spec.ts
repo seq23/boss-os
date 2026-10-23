@@ -53,7 +53,7 @@ for (const vp of [PHONE, LAPTOP]) {
       // A surface opens and closes.
       await page.locator("button.row-title", { hasText: "Decision Vault" }).click();
       await expect(page.locator("main.page")).toContainText(/Decision Vault/);
-      await page.getByRole("button", { name: "Back" }).click();
+      await page.getByRole("button", { name: "← Back to the list", exact: true }).click();
       await expect(page.getByRole("button", { name: "Generate the Manual" })).toBeVisible();
     });
 
@@ -111,12 +111,13 @@ for (const vp of [PHONE, LAPTOP]) {
       await unlock(page);
       await tab(page, "Systems");
       await page.getByRole("tab", { name: "Airlock", exact: true }).click();
-      const all = page.getByRole("button", { name: /^All \d+/ });
-      await expect(all).toBeVisible({ timeout: 15_000 });
+      const show = page.getByTestId("airlock-show");
+      await expect(show).toBeVisible({ timeout: 15_000 });
+      await expect(show.locator("option", { hasText: /^All \d+/ })).toHaveCount(1);
       const sovereignRows = await page.locator("main.page .row").count();
-      await all.click();
+      await show.selectOption("all");
       await expect.poll(async () => page.locator("main.page .row").count()).toBeGreaterThan(sovereignRows);
-      await page.getByRole("button", { name: "Sovereign only" }).click();
+      await show.selectOption("sovereign");
       await expect.poll(async () => page.locator("main.page .row").count()).toBe(sovereignRows);
       await page.getByRole("tab", { name: "Backends", exact: true }).click();
       await page.locator("main.page button", { hasText: /Claude Code/ }).first().click();

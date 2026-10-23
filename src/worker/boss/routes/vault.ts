@@ -262,7 +262,7 @@ const SNAPSHOT_TABLES = [
   // `duty_runs` is the link between launchd and D1 — the thing whose absence let seven duties run
   // for days against a NULL last_run_at and produced a wrong report to her face. A restore that
   // lost it would recreate that exact confusion: every local job reading as never having run.
-  "kdp_publish_attempts", "duty_runs",
+  "kdp_publish_attempts", "duty_runs", "duty_versions",
   // 0207 — the credential liveness register. It holds no credential and no secret, which is exactly
   // why it belongs in a backup: what is not re-derivable is the FIX STEPS on each row, written once
   // and read at the worst possible moment. A restore that lost them would leave an alert saying a

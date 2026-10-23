@@ -61,6 +61,12 @@ const ASSET_DIR = join(ROOT, "src/client/public/employees-boss");
 const SHEET = join(ASSET_DIR, "CASTING.json");
 const MANIFEST = join(ASSET_DIR, "MANIFEST.json");
 const TEAM_PAGE = join(ROOT, "src/client/boss/pages/Team.tsx");
+/**
+ * The Team page and the pages it opens (Builder U, 23 Oct 2026): the portraits moved onto the Your
+ * team cards and each employee's own page. Every one of them is scanned, so a portrait added on any
+ * of them without the honesty statement fails here.
+ */
+const TEAM_PAGES = [TEAM_PAGE, join(ROOT, "src/client/boss/pages/YourTeam.tsx"), join(ROOT, "src/client/boss/pages/EmployeePage.tsx")];
 
 /** A portrait smaller than this is a truncated write or a placeholder, not a photograph. */
 const MIN_PORTRAIT_BYTES = 10_000;
@@ -382,7 +388,7 @@ function selfTest() {
 if (process.argv.includes("--self-test")) {
   selfTest();
 } else {
-  const missing = [SHEET, MANIFEST, TEAM_PAGE, MIGRATIONS].filter((p) => !existsSync(p));
+  const missing = [SHEET, MANIFEST, ...TEAM_PAGES, MIGRATIONS].filter((p) => !existsSync(p));
   if (missing.length) {
     console.error(
       `every-employee-has-a-portrait FAILED — missing ${missing.map((m) => m.replace(`${ROOT}/`, "")).join(", ")}. ` +
@@ -402,7 +408,7 @@ if (process.argv.includes("--self-test")) {
     sheet: JSON.parse(readFileSync(SHEET, "utf8")),
     manifest: JSON.parse(readFileSync(MANIFEST, "utf8")),
     files,
-    teamSource: readFileSync(TEAM_PAGE, "utf8"),
+    teamSource: TEAM_PAGES.map((p) => readFileSync(p, "utf8")).join("\n"),
   });
 
   if (problems.length) {

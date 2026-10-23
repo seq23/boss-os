@@ -86,9 +86,10 @@ const initialView = (): View => {
   return v && v in VIEW_LABEL ? (v as View) : "grid";
 };
 
-export function Capital() {
-  // The grid is the default: it is the page her morning email links to.
-  const [view, setView] = useState<View>(initialView);
+export function Capital({ start }: { start?: View } = {}) {
+  // The grid is the default: it is the page her morning email links to. Your team's "Open LP
+  // replies" opens a named view directly (Builder U).
+  const [view, setView] = useState<View>(() => start ?? initialView());
 
   return (
     <>
@@ -397,7 +398,7 @@ function Buyers() {
       {flash && (
         <div className="notice" style={{ borderColor: "var(--gold)" }}>
           {flash}
-          <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">×</button>
+          <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
 
@@ -1024,7 +1025,7 @@ function Deals() {
       )}
 
       <div className="btn-row">
-        <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "Close" : "Source a deal"}</button>
+        <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "✕ Close" : "Source a deal"}</button>
       </div>
       {adding && <AddDeal onDone={() => { setAdding(false); load(); }} />}
 
@@ -1182,7 +1183,7 @@ function Decisions() {
       )}
 
       <div className="btn-row">
-        <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "Close" : "Open a decision"}</button>
+        <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "✕ Close" : "Open a decision"}</button>
       </div>
       {adding && <AddDecision onDone={(id) => { setAdding(false); load(); setOpenDecision(id); }} />}
 
@@ -1253,7 +1254,7 @@ function Decision({ id, onBack }: { id: string; onBack: () => void }) {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      <button className="btn btn-small" onClick={onBack}>Back</button>
+      <button className="btn btn-small" onClick={onBack}>← Back to the list</button>
 
       <div className="panel">
         <h3 style={{ margin: 0 }}>{decision.title}</h3>

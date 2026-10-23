@@ -19,7 +19,7 @@
 set -uo pipefail
 
 REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
-PROMPT_FILE="${KDP_SURFACE_PROMPT:-$REPO/scripts/ops/kdp-surface-prompt.md}"
+PROMPT_FILE="${KDP_SURFACE_PROMPT:-${BOSS_DUTY_PROMPT_FILE:-$REPO/scripts/ops/kdp-surface-prompt.md}}"
 
 # THE MODEL IS NAMED AND MATCHES THE DUTY ROW. Deciding whether a message is promotional, an update
 # or a problem is classification rather than judgement. `claude -p` with no --model runs the most

@@ -6,16 +6,22 @@ import { usd } from "../../../shared/boss/types";
 import { OutreachDesk } from "../components/Outreach";
 import { buildOperations } from "../operationsSource";
 import type { OperationsRow } from "../../../shared/boss/operations";
+import { YourTeam } from "./YourTeam";
+import { EmployeePage } from "./EmployeePage";
 
 export type TeamView = "team" | "duties" | "owns" | "outreach" | "prompts" | "capabilities";
 
-export function Team({ start = "team" }: { start?: TeamView } = {}) {
+export function Team({ start = "team", onOpenDeals = () => {} }: { start?: TeamView; onOpenDeals?: (view: "lp" | "prospects") => void } = {}) {
   const [view, setView] = useState<TeamView>(start);
+  // Builder U: one page per employee, opened from her card; ← Back returns to the same cards.
+  const [employee, setEmployee] = useState<string | null>(null);
+
+  if (view === "team" && employee) return <EmployeePage id={employee} onBack={() => setEmployee(null)} />;
 
   return (
     <>
       <div className="btn-row">
-        <button className="btn" aria-pressed={view === "team"} onClick={() => setView("team")}>Team</button>
+        <button className="btn" aria-pressed={view === "team"} onClick={() => setView("team")}>Your team</button>
         {/*
           * WHAT THEY OWN, BESIDE WHO THEY ARE. Handing someone a deliverable is a different act
           * from giving them a duty — a duty fires, a deliverable is not finished until an outcome
@@ -34,7 +40,7 @@ export function Team({ start = "team" }: { start?: TeamView } = {}) {
         <button className="btn" aria-pressed={view === "prompts"} onClick={() => setView("prompts")}>Prompts</button>
         <button className="btn" aria-pressed={view === "capabilities"} onClick={() => setView("capabilities")}>Capabilities</button>
       </div>
-      {view === "team" ? <Roster />
+      {view === "team" ? <><YourTeam onOpenEmployee={setEmployee} onOpenDeals={onOpenDeals} /><Roster /></>
         : view === "duties" ? <Duties onOpenOutreach={() => setView("outreach")} />
         : view === "owns" ? <Owns />
         : view === "outreach" ? <OutreachDesk />
@@ -175,20 +181,18 @@ function Capabilities() {
 }
 
 function Roster() {
-  const [employees, setEmployees] = useState<any[] | null>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [sprawl, setSprawl] = useState<any>(null);
   const [error, setError] = useState<unknown>(null);
   const [open, setOpen] = useState(false);
-  const [openEmployee, setOpenEmployee] = useState<string | null>(null);
   const [outreach, setOutreach] = useState<any>(null);
 
   function load() {
     api.moniqueOutreach().then(setOutreach).catch(() => setOutreach(null));
-    Promise.all([api.employees(), api.tasks(), api.templates(), api.sprawl()])
-      .then(([e, t, tp, s]) => { setEmployees(e); setTasks(t); setTemplates(tp); setSprawl(s); })
-      .catch((e) => { setError(e); setEmployees([]); });
+    Promise.all([api.tasks(), api.templates(), api.sprawl()])
+      .then(([t, tp, s]) => { setTasks(t); setTemplates(tp); setSprawl(s); })
+      .catch((e) => { setError(e); });
   }
   useEffect(load, []);
 
@@ -197,7 +201,7 @@ function Roster() {
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
 
       <button className="btn" style={{ width: "100%" }} onClick={() => setOpen((v) => !v)}>
-        {open ? "Close" : "Give the team something to do"}
+        {open ? "✕ Close" : "Give the team something to do"}
       </button>
       {open && <NewTask templates={templates} onDone={() => { setOpen(false); load(); }} />}
 
@@ -226,63 +230,18 @@ function Roster() {
         </div>
       )}
 
-      {openEmployee && <EmployeeSheet id={openEmployee} onClose={() => setOpenEmployee(null)} />}
-
-      <p className="eyebrow">Employees</p>
-      {employees === null ? (
-        <Loading />
-      ) : employees.length === 0 ? (
-        <Empty title="No one hired yet" hint="Employees run tasks and raise approvals on your behalf." />
-      ) : (
-        employees.map((e) => (
-          /*
-            * A BUTTON, NOT A DIV. The owner asked "why cant i click on an employee name or pic and
-            * get a read on what they do for me?" — and the answer was that the endpoint returning
-            * her charter existed and nothing in the interface called it. A row that opens something
-            * must be operable by keyboard and announce itself as operable, which a div cannot do
-            * however many click handlers it carries.
-            */
-          <button className="row row-tap" key={e.id} onClick={() => setOpenEmployee(e.id)}>
-            {/*
-              * THE ALT TEXT IS THE HONESTY STATEMENT, and it is not optional.
-              *
-              * Seven polished headshots on a team screen are indistinguishable from photographs of
-              * real staff. The one way this becomes a problem is if a face is later taken for a
-              * colleague, so every portrait says what it is to anyone who cannot see it — and
-              * MANIFEST.json says the same thing beside the files.
-              *
-              * A missing file degrades to nothing rather than a broken image: the row still reads,
-              * because the name and the role are the information and the face is decoration.
-              */}
-            <img
-              className="avatar"
-              src={`/employees-boss/${String(e.name ?? "").toLowerCase()}.jpg`}
-              alt={`${e.name}, ${e.role} — an AI-generated portrait of a person who does not exist`}
-              loading="lazy"
-              onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
-            />
-            <div className="row-main">
-              <div className="row-title">
-                {e.name}
-                {e.lifecycle !== "active" && <span className="pill">{e.lifecycle}</span>}
-              </div>
-              <div className="row-sub">
-                {e.role} · {e.department ?? "unassigned"} ·{" "}
-                {e.autonomy === "auto" ? "acts alone" : "asks before acting"}
-              </div>
-              {/* An automatic pause is shown ON HER CARD, not only on the desk: the brake is visible where she looks. */}
-              {e.id === "emp_relationship" && outreach && (
-                <div className="row-sub">
-                  Outreach: {outreach.businesses.filter((b: any) => b.route_state === "ready" && !b.paused).length} sending ·{" "}
-                  {outreach.businesses.filter((b: any) => b.paused).length} paused
-                  {outreach.settings.killSwitch ? " · kill switch ON" : ""}
-                  {outreach.businesses.filter((b: any) => b.paused).map((b: any) => ` · ${b.brand}: ${b.pause_reason}`).join("")}
-                </div>
-              )}
-            </div>
-            <div className="row-val">{e.open_tasks} open</div>
-          </button>
-        ))
+      {/*
+        * THE EMPLOYEE ROWS MOVED UP INTO "YOUR TEAM" (Builder U, 23 Oct 2026): one card each, which
+        * opens her own page with her duties, charter and recent work — that page replaced the old
+        * employee sheet. The automatic outreach pause still shows here, where she looks.
+        */}
+      {outreach && (
+        <div className="row-sub" data-testid="outreach-brakes" style={{ margin: "10px 0" }}>
+          Monique&apos;s outreach: {outreach.businesses.filter((b: any) => b.route_state === "ready" && !b.paused).length} sending ·{" "}
+          {outreach.businesses.filter((b: any) => b.paused).length} paused
+          {outreach.settings.killSwitch ? " · kill switch ON" : ""}
+          {outreach.businesses.filter((b: any) => b.paused).map((b: any) => ` · ${b.brand}: ${b.pause_reason}`).join("")}
+        </div>
       )}
 
       <p className="eyebrow">Recent work</p>
@@ -563,137 +522,6 @@ function Prompts() {
 }
 
 /**
- * WHAT THIS PERSON ACTUALLY DOES FOR YOU.
- *
- * The list gave a name, a role and a department — none of which says what someone is FOR. The
- * charter does, and it was sitting behind `GET /employees/:id`, an endpoint that existed and that
- * nothing in the interface had ever called.
- *
- * THE THREE THINGS THAT MAKE AN EMPLOYEE LEGIBLE, in this order: what she is for (the charter),
- * when she acts without being asked (her standing duties), and what she follows when she does (the
- * spec). The owner asked for the first and the third in the same breath, of Camille and her morning
- * report, and they belong on one screen because they are one question.
- */
-function EmployeeSheet({ id, onClose }: { id: string; onClose: () => void }) {
-  const [data, setData] = useState<any>(null);
-  const [error, setError] = useState<unknown>(null);
-
-  useEffect(() => {
-    let live = true;
-    api.employee(id).then((d) => live && setData(d)).catch((e) => live && setError(e));
-    return () => { live = false; };
-  }, [id]);
-
-  const e = data?.employee;
-
-  return (
-    <div className="sheet" role="dialog" aria-label="Employee detail">
-      <div className="sheet-head">
-        <p className="eyebrow" style={{ margin: 0 }}>{e?.name ?? "Loading"}</p>
-        <button className="btn btn-small" onClick={onClose}>Close</button>
-      </div>
-
-      <ErrorNotice error={error} onDismiss={() => setError(null)} />
-
-      {!data && !error ? (
-        <Loading />
-      ) : e ? (
-        <>
-          <div className="sheet-id">
-            <img
-              className="avatar avatar-lg"
-              src={`/employees-boss/${String(e.name ?? "").toLowerCase()}.jpg`}
-              alt={`${e.name} — an AI-generated portrait of a person who does not exist`}
-              onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
-            />
-            <div>
-              <div className="row-title">{e.role}</div>
-              <div className="row-sub">
-                {e.department ?? "unassigned"} · {e.lane} lane ·{" "}
-                {e.autonomy === "auto" ? "acts alone" : "asks before acting"}
-              </div>
-            </div>
-          </div>
-
-          {/* The charter is the point of this panel, so it leads and it is quoted, not summarised. */}
-          <p className="eyebrow">What she is for</p>
-          <p className="charter">{e.charter ?? "No charter recorded — which means nothing governs what she does."}</p>
-
-          <p className="eyebrow">When she acts without being asked</p>
-          {(data.duties ?? []).length === 0 ? (
-            <Empty title="No standing duties" hint="She acts only when work is routed to her." />
-          ) : (
-            data.duties.map((d: any) => (
-              <div className="row" key={d.id}>
-                <div className="row-main">
-                  <div className="row-title">{d.name}</div>
-                  <div className="row-sub">
-                    {d.cadence} at {String(d.local_hour).padStart(2, "0")}:{String(d.local_minute).padStart(2, "0")} {d.timezone}
-                    {d.suspended ? " · suspended" : ""}
-                    {" · "}{d.success_criteria}
-                  </div>
-                </div>
-                <div className="row-val">
-                  {d.suspended ? "off" : d.next_due_at ? new Date(d.next_due_at).toLocaleString() : "next tick"}
-                </div>
-              </div>
-            ))
-          )}
-
-          {/*
-            * WHERE THE DOCUMENT LIVES, stated plainly including the part that is inconvenient: it
-            * is in the repository, not in this product. Naming the path is not the same as being
-            * able to open it, and pretending otherwise would answer her question wrongly.
-            */}
-          {(data.specs ?? []).length > 0 && (
-            <>
-              <p className="eyebrow">What she follows</p>
-              {data.specs.map((sp: string) => (
-                <div className="row" key={sp}>
-                  <div className="row-main">
-                    <div className="row-title">{sp.split("/").pop()}</div>
-                    <div className="row-sub">{sp} — in the repository. Not readable from here yet.</div>
-                  </div>
-                </div>
-              ))}
-            </>
-          )}
-
-          <p className="eyebrow">Cost</p>
-          <div className="row">
-            <div className="row-main">
-              <div className="row-title">{(e.budget_micros_day ?? 0) > 0 ? `$${((e.budget_micros_day ?? 0) / 1_000_000).toFixed(2)} a day` : "No personal cap"}</div>
-              <div className="row-sub">
-                {(e.budget_micros_day ?? 0) > 0
-                  ? "Her own ceiling. The lane budget and the spend lever bind first when either is tighter."
-                  : "Only the lane's daily and monthly budgets and the spend lever limit her work."}
-              </div>
-            </div>
-            <div className="row-val">${((data.lifetime_cost_micros ?? 0) / 1_000_000).toFixed(4)} ever</div>
-          </div>
-
-          <p className="eyebrow">Recent work</p>
-          {(data.recent_tasks ?? []).length === 0 ? (
-            <Empty title="Nothing yet" hint="Tasks routed to her appear here with what they cost." />
-          ) : (
-            data.recent_tasks.slice(0, 8).map((t: any) => (
-              <div className="row" key={t.id}>
-                <div className="row-main">
-                  <div className="row-title">{t.title}</div>
-                  <div className="row-sub">{t.status} · {new Date(t.created_at).toLocaleString()}</div>
-                </div>
-                <div className="row-val">${((t.cost_micros ?? 0) / 1_000_000).toFixed(4)}</div>
-              </div>
-            ))
-          )}
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-
-/**
  * THE REGISTER OF OWNED WORK.
  *
  * Her rule: "she owns this deliverable so she needs to make sure its done and if there is any block
@@ -776,7 +604,7 @@ function Owns() {
               </p>
             )}
             <details>
-              <summary className="docket-more" style={{ cursor: "pointer" }}>Open</summary>
+              <summary className="docket-more" style={{ cursor: "pointer" }}>Tap to open ▾</summary>
               <div className="docket-full">
                 <p className="row-sub"><strong>Finished when:</strong> {d.terminal_condition}</p>
                 <p className="row-sub"><strong>How you find out:</strong> {d.escalation_path}</p>
@@ -976,7 +804,7 @@ function Duties({ onOpenOutreach }: { onOpenOutreach: () => void }) {
                 <div className="row-title">
                   {d.name}
                   {d.suspended ? <span className="pill">suspended</span> : d.overdue ? <span className="pill pill-forbid">overdue</span> : null}
-                  {d.model_warning && <span className="pill pill-forbid">no model</span>}
+                  {d.model_warning && <span className="pill state-live">no model named</span>}
                 </div>
                 <div className="row-sub">
                   {when(d)} · {executor(d)} · about ${d.estimated_per_month_usd}/mo
@@ -1045,7 +873,7 @@ function PathRow({ row, stamp, onOpenOutreach }: { row: OperationsRow; stamp: (m
           {row.what}
           <span className="pill">{row.where}</span>
           {row.inert && <span className="pill">off</span>}
-          {row.ownerKind === "unassigned" && <span className="pill pill-forbid">unassigned</span>}
+          {row.ownerKind === "unassigned" && <span className="pill state-live">unassigned</span>}
         </div>
         <div className="row-sub">{row.business} · {row.cadence}</div>
         <div className="row-sub">From {row.from} · footer: {row.footer}</div>

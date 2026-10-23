@@ -142,7 +142,7 @@ for (const vp of [PHONE, LAPTOP]) {
       const card = page.locator("article.docket", { hasText: "E2E output to approve" });
       await card.getByRole("button", { name: /open the full docket/i }).click();
       await expect(page.locator("main.page")).toContainText("E2E output approve");
-      await page.getByRole("button", { name: "← Inbox" }).click();
+      await page.getByRole("button", { name: "← Back to Inbox", exact: true }).click();
       await expect(page.getByTestId("inbox-masthead")).toBeVisible();
       if (vp.name === "phone") await expectNoSidewaysScroll(page);
     });

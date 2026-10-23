@@ -49,7 +49,7 @@
 set -uo pipefail
 
 REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
-PROMPT_FILE="${AHREFS_AUDIT_PROMPT:-$REPO/scripts/ops/ahrefs-audit-fix-prompt.md}"
+PROMPT_FILE="${AHREFS_AUDIT_PROMPT:-${BOSS_DUTY_PROMPT_FILE:-$REPO/scripts/ops/ahrefs-audit-fix-prompt.md}}"
 OUT_DIR="${BOSS_OS_SITE_AUDIT_DIR:-$HOME/.boss-os/site-audit}"
 
 # THE MODEL IS NAMED, AND IT MATCHES THE DUTY ROW.

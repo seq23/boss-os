@@ -80,17 +80,26 @@ for (const vp of [PHONE, LAPTOP]) {
       if (vp.name === "phone") await expectNoSidewaysScroll(page);
     });
 
-    test("the employee sheet opens on a tap, quotes the charter and the duties, and closes", async ({ page }) => {
+    /*
+     * The employee sheet became her own page (Builder U, 23 Oct 2026, board 8). Same promises, held
+     * at least as tightly: a tap opens it, it quotes the charter and lists every duty, and there is a
+     * labelled way back to exactly where she was.
+     */
+    test("the employee page opens on a tap, quotes the charter and the duties, and goes back", async ({ page }) => {
       await unlock(page);
       await tab(page, "Team");
-      await page.locator("button.row", { hasText: "Camille" }).click();
-      const sheet = page.getByRole("dialog", { name: "Employee detail" });
+      await page.getByTestId("team-card").filter({ hasText: "Camille" }).click();
+      const sheet = page.getByTestId("employee-page");
       await expect(sheet).toBeVisible();
       await expect(sheet).toContainText("What she is for");
       await expect(sheet.locator(".charter")).not.toHaveText("");
-      await expect(sheet).toContainText("When she acts without being asked");
-      await sheet.getByRole("button", { name: "Close" }).click();
+      await expect(sheet).toContainText("Her duties");
+      const cards = sheet.getByTestId("duty-card");
+      expect(await cards.count()).toBeGreaterThanOrEqual(1);
+      await expect(sheet).toContainText("Executive Intelligence Report");
+      await sheet.getByRole("button", { name: "← Back to Your team", exact: true }).first().click();
       await expect(sheet).toHaveCount(0);
+      await expect(page.getByTestId("team-card").filter({ hasText: "Camille" })).toBeVisible();
       if (vp.name === "phone") await expectNoSidewaysScroll(page);
     });
 

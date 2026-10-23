@@ -334,7 +334,7 @@ test.describe("Boss OS Inbox overhaul", () => {
     await notice.getByRole("button", { name: /Open the full docket/ }).click();
     await expect(page.getByRole("button", { name: "Got it" })).toHaveCount(1);
     await expect(page.getByRole("button", { name: /^Reject$|^Later$|^Approve$/ })).toHaveCount(0);
-    await page.getByRole("button", { name: "← Inbox" }).click();
+    await page.getByRole("button", { name: "← Back to Inbox", exact: true }).click();
 
     const card = page.locator("article.docket").filter({ hasText: "E2E budget line" });
     await card.getByRole("button", { name: "Reject" }).click();

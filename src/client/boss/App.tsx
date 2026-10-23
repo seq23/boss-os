@@ -49,6 +49,8 @@ export default function App() {
   useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "systems") setTab("systems"); }, []);
   // Today's Operations line opens Team on Duties; any other way in opens it on the roster.
   const [teamStart, setTeamStart] = useState<TeamView>("team");
+  // Your team → "Open LP replies" lands on that Deals view (Builder U).
+  const [capitalStart, setCapitalStart] = useState<"lp" | "prospects" | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pending, setPending] = useState(0);
   const [openApproval, setOpenApproval] = useState<string | null>(null);
@@ -158,7 +160,8 @@ export default function App() {
   return (
     <Shell
       tab={tab}
-      onTab={(t) => { setTab(t); setTeamStart("team"); setSettingsOpen(false); setOpenApproval(null); }}
+      onTab={(t) => { setTab(t); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); }}
+      onBack={tab !== "today" || settingsOpen ? () => { setTab("today"); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); } : undefined}
       title={title}
       lane={lane}
       pending={pending}
@@ -193,11 +196,11 @@ export default function App() {
           <Inbox key={inboxKey} onCountChange={setPending} onOpen={setOpenApproval} />
         )
       ) : tab === "capital" ? (
-        <Capital />
+        <Capital key={capitalStart ?? "default"} start={capitalStart} />
       ) : tab === "spirit" ? (
         <Spirit />
       ) : tab === "team" ? (
-        <Team key={teamStart} start={teamStart} />
+        <Team key={teamStart} start={teamStart} onOpenDeals={(v) => { setCapitalStart(v); setTab("capital"); }} />
       ) : tab === "memory" ? (
         <Memory />
       ) : tab === "trading" ? (

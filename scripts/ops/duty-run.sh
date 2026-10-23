@@ -91,13 +91,22 @@ STARTED_AT=$(( $(date +%s) * 1000 ))
 
 echo "[$(date +%H:%M:%S)] duty-run: $LOCAL_JOB" | tee -a "$RUN_LOG"
 
-if [ "$ONLY_IF_DUE" -eq 1 ]; then
-  if [ ! -d "$REPO" ]; then
+# THE OWNER'S WORD, ASKED EVERY RUN (Builder U, 23 Oct 2026). duty-brief.mjs reads
+# /api/duties/brief/<job>: paused or removed on the employee page → named skip; days she changed (or
+# --only-if-due) and not due → named skip; her own instructions → BOSS_DUTY_PROMPT_FILE, which each
+# prompt-file script reads before its repo default. Unreachable with --only-if-due is a failure (6);
+# without it the job runs as it always did, on the repo's instructions, and the log says so.
+BRIEF_OUT="$LOG_DIR/$LOCAL_JOB-brief-$$.md"
+rm -f "$BRIEF_OUT"
+if [ ! -d "$REPO" ]; then
+  if [ "$ONLY_IF_DUE" -eq 1 ]; then
     echo "NAMED STOP [NO_REPO] $REPO — cannot ask whether $LOCAL_JOB is due, so nothing was run." | tee -a "$RUN_LOG" >&2
     exit 2
   fi
-  cd "$REPO" && LOCAL_JOB="$LOCAL_JOB" \
-    npm run --silent vault:run -- node scripts/ops/duty-due.mjs >> "$RUN_LOG" 2>&1
+  echo "NOTE [NO_REPO] $REPO — the owner's settings for $LOCAL_JOB could not be read; running as set up." | tee -a "$RUN_LOG"
+else
+  ( cd "$REPO" && LOCAL_JOB="$LOCAL_JOB" ONLY_IF_DUE="$ONLY_IF_DUE" BRIEF_OUT="$BRIEF_OUT" \
+    npm run --silent vault:run -- node scripts/ops/duty-brief.mjs >> "$RUN_LOG" 2>&1 )
   DRC=$?
   if [ "$DRC" -eq 10 ]; then
     # The one permitted "exit 0 having done nothing": it is named, dated, and in the log.
@@ -109,10 +118,13 @@ if [ "$ONLY_IF_DUE" -eq 1 ]; then
     exit "$DRC"
   fi
   tail -1 "$RUN_LOG"
+  # --only-if-due always ran its job from the repo (the old due check cd'd there); keep that.
+  [ "$ONLY_IF_DUE" -eq 1 ] && cd "$REPO"
+fi
+if [ -s "$BRIEF_OUT" ]; then
+  export BOSS_DUTY_PROMPT_FILE="$BRIEF_OUT"
 fi
 
-# The job's own output goes to the run log AND to launchd's stdout, so nothing is hidden by this
-# wrapper existing. The exit code is the job's, not the tee's.
 "$@" > >(tee -a "$RUN_LOG") 2>&1
 RC=${PIPESTATUS[0]}
 FINISHED_AT=$(( $(date +%s) * 1000 ))

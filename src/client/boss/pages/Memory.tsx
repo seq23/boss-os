@@ -91,7 +91,7 @@ function MemoryTiers() {
       <div className="btn-row">
         <button className="btn" onClick={sweep}>Run promotion sweep</button>
         <button className="btn" onClick={() => setCapturing((v) => !v)}>
-          {capturing ? "Close" : "Capture something"}
+          {capturing ? "✕ Close" : "Capture something"}
         </button>
       </div>
 
@@ -301,7 +301,7 @@ function Surface({ surfaceKey, onBack }: { surfaceKey: string; onBack: () => voi
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      <button className="btn btn-small" onClick={onBack}>Back</button>
+      <button className="btn btn-small" onClick={onBack}>← Back to the list</button>
 
       <div className="panel">
         <h3 style={{ margin: 0 }}>{surface.name}</h3>
