@@ -40,6 +40,8 @@ export interface DutyRow {
   suspended: number;
   /** 'agent' | 'local_job' | 'worker'. Absent on rows written before 0201, which means agent. */
   executor?: string | null;
+  /** Her edited instructions from the employee page (migration 0295). NULL = the repository's prompt. */
+  owner_prompt?: string | null;
 }
 
 export interface MaterialiseResult {
@@ -257,6 +259,14 @@ export async function materialiseDueDuties(
           cloud_fallback: true,
           requested: { ...requested, model_by_backend: modelBySeat() },
         };
+      }
+      /*
+       * HER INSTRUCTIONS WIN (Builder U, 23 Oct 2026). An edit saved on the employee page replaces the
+       * repository's prompt for this run; with none, the repo prompt above stands. The version is
+       * stamped so a run can be traced to the words it was given.
+       */
+      if (typeof duty.owner_prompt === "string" && duty.owner_prompt.trim()) {
+        input = { ...input, prompt: duty.owner_prompt, prompt_source: "owner_edit" };
       }
       const briefing = input.spec_module === "executive_briefing";
       admitted = await admitTask(env, {

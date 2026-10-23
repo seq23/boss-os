@@ -112,7 +112,7 @@ function flush(rows, key, done) {
   }).catch((e) => { console.error("checkpoint flush failed:", e.message); });
   return flushChain;
 }
-const PROMPT = process.env.CAPITAL_PROMPT
+const PROMPT = process.env.CAPITAL_PROMPT ?? process.env.BOSS_DUTY_PROMPT_FILE // her edit on the employee page (duty-run.sh)
   ?? path.join(path.dirname(new URL(import.meta.url).pathname), "interest-extract-prompt.md");
 
 /** Haiku. Classification, not judgement. Named here and in the duty row, and reconciled by validate:duty-delivery. */

@@ -26,7 +26,7 @@
 set -uo pipefail
 
 REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
-PROMPT_FILE="${MAILBOX_SWEEP_PROMPT:-$REPO/scripts/ops/mailbox-sweep-prompt.md}"
+PROMPT_FILE="${MAILBOX_SWEEP_PROMPT:-${BOSS_DUTY_PROMPT_FILE:-$REPO/scripts/ops/mailbox-sweep-prompt.md}}"
 MAP_FILE="${BOSS_OS_CONTACTS_DIR:-$HOME/.boss-os/contacts}/MAP.json"
 OUT_DIR="${BOSS_OS_MAILBOX_DIR:-$HOME/.boss-os/mailbox}"
 

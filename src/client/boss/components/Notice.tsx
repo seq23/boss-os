@@ -12,7 +12,7 @@ export function ErrorNotice({ error, onDismiss }: { error: unknown; onDismiss?: 
       <strong>{e.message ?? "Something failed"}</strong>
       {e.hint && <span className="notice-hint">{e.hint}</span>}
       {onDismiss && (
-        <button className="notice-x" onClick={onDismiss} aria-label="Dismiss">×</button>
+        <button className="notice-x" onClick={onDismiss} aria-label="Dismiss">✕</button>
       )}
     </div>
   );

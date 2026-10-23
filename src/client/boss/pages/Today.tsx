@@ -122,7 +122,7 @@ export function Today({ onOpenOperations }: { onOpenOperations?: () => void } = 
       {flash && (
         <div className="notice" style={{ borderColor: "var(--ok)" }}>
           {flash}
-          <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">×</button>
+          <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
 
@@ -252,7 +252,7 @@ function BlockCard({ block, onChanged, onError }: {
       {block.key === "executive_briefing" && <RunBriefingNow hasReport={Boolean(block.content?.sections || block.content?.summary)} runStatus={block.content?.run_status ?? null} onChanged={onChanged} />}
       {detail && (
         <details>
-          <summary className="docket-more" style={{ cursor: "pointer" }}>Open</summary>
+          <summary className="docket-more" style={{ cursor: "pointer" }}>Tap to open ▾</summary>
           <div className="docket-full">{detail}</div>
         </details>
       )}

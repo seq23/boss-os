@@ -123,7 +123,7 @@ const LABELS: Record<TabId, string> = {
 };
 
 export function Shell({
-  tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, children,
+  tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, onBack, children,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
@@ -136,6 +136,8 @@ export function Shell({
   offline?: boolean;
   /** Captures written offline and not yet sent. */
   waiting?: number;
+  /** Make it calm (Builder U): "← Back to Today" on every screen that is not Today. */
+  onBack?: () => void;
   children: ReactNode;
 }) {
   const { navRef, shellRef } = useMeasuredNav();
@@ -173,7 +175,7 @@ export function Shell({
           aria-pressed={settingsOpen}
           aria-label={settingsOpen ? "Close settings" : "Open settings"}
         >
-          {settingsOpen ? "Close" : lane === "trading" ? "Trading" : "Operations"}
+          {settingsOpen ? "✕ Close" : lane === "trading" ? "Trading" : "Operations"}
         </button>
       </header>
 
@@ -194,6 +196,11 @@ export function Shell({
       )}
 
       <main className="page">
+        {onBack && (
+          <div className="page-back">
+            <button className="btn btn-small" onClick={onBack} data-testid="back-to-today">← Back to Today</button>
+          </div>
+        )}
         {children}
         {/*
           * The page says it has finished, rather than just stopping.

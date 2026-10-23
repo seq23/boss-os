@@ -1593,3 +1593,47 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 }
 
 .inbox-group { margin-top: 6px; }
+
+/*
+ * ─── Your team and the employee page (Builder U, 23 Oct 2026, boards 7 + 8) ──────────────────────
+ *
+ * Phone first: one column at 390 px, two or more as the width allows. Cards are buttons with their
+ * action written on them ("Open Monique's duties"), never a bare chevron. Destructive actions sit
+ * apart, at the end of the row, and confirm in place.
+ */
+.team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.team-card {
+  display: flex; flex-direction: column; gap: 6px; text-align: left; width: 100%;
+  background: var(--card); border: 1px solid var(--line); border-radius: 3px; padding: 14px 16px;
+  color: var(--ink); font: inherit; cursor: pointer; box-shadow: var(--lift);
+}
+.team-card:hover { border-color: var(--muted); }
+.team-card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.team-card-name { font-family: var(--display); font-size: 20px; font-weight: 600; }
+.team-card-line { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.team-card-open { margin-top: 4px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold-deep); }
+.team-list { margin: 0; }
+.team-list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.back-link { flex: 0 0 auto; margin: 0 0 4px; }
+.page-back { display: flex; margin: 0 0 12px; }
+.page-back .btn { flex: 0 0 auto; }
+.employee-name { font-family: var(--display); font-size: 28px; margin: 0; }
+.duty-card { padding: 0; margin-bottom: 10px; }
+.duty-card-head {
+  all: unset; box-sizing: border-box; width: 100%; cursor: pointer; padding: 14px 16px;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.duty-card-head:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.duty-card-hint { color: var(--gold-deep); font-weight: 600; }
+.duty-card-body { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
+.duty-card-body textarea { font-family: var(--body); font-size: 14px; line-height: 1.5; }
+.duty-when { display: flex; gap: 12px; flex-wrap: wrap; }
+.duty-when > .field { flex: 1 1 200px; margin-bottom: 0; }
+.duty-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.duty-actions > .btn { flex: 0 1 auto; }
+.duty-actions-gap { flex: 1 1 24px; }
+.btn-remove { color: var(--rose); border-color: color-mix(in srgb, var(--rose) 35%, var(--line)); }
+.duty-confirm { flex: 1 1 100%; margin: 0; }
+.duty-add { border-style: dashed; }
+.notice-hint-box { border-color: var(--gold); }
+.team-card-who { display: flex; align-items: center; gap: 10px; }

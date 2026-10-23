@@ -600,7 +600,7 @@ export function Spirit() {
             <p className="row-sub">{ancestors.dismissal}</p>
             <div className="btn-row">
               <button className="btn" onClick={() => setRecordingHour((v) => !v)}>
-                {recordingHour ? "Close" : "I did this"}
+                {recordingHour ? "✕ Close" : "I did this"}
               </button>
             </div>
             {recordingHour && (
@@ -618,7 +618,7 @@ export function Spirit() {
 
       <p className="eyebrow">Manifestations</p>
       <div className="btn-row">
-        <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "Close" : "Open one"}</button>
+        <button className="btn" onClick={() => setAdding((v) => !v)}>{adding ? "✕ Close" : "Open one"}</button>
       </div>
       {adding && <AddManifestation onDone={(id) => { setAdding(false); load(); setOpenManifestation(id); }} />}
       {month.manifestations.length === 0 ? (
@@ -863,7 +863,7 @@ function Manifestation({ id, onBack }: { id: string; onBack: () => void }) {
   return (
     <>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      <button className="btn btn-small" onClick={onBack}>Back</button>
+      <button className="btn btn-small" onClick={onBack}>← Back to the list</button>
 
       <div className="panel">
         <h3 style={{ margin: 0 }}>{manifestation.title}</h3>

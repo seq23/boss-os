@@ -51,7 +51,7 @@ export function Trading() {
 
       <div className="btn-row">
         <button className="btn" disabled={busy} onClick={() => setDrafting((v) => !v)}>
-          {drafting ? "Close" : "Draft an order"}
+          {drafting ? "✕ Close" : "Draft an order"}
         </button>
         <button className={`btn ${auth.kill_switch ? "" : "btn-reject"}`} disabled={busy}
                 onClick={() => toggleKill(!auth.kill_switch)}>

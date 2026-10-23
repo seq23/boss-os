@@ -45,7 +45,7 @@ export function ApprovalDetail({ id, onBack, onDecided }: {
     }
   }
 
-  if (error && !data) return <><ErrorNotice error={error} /><button className="btn" onClick={onBack}>Back</button></>;
+  if (error && !data) return <><ErrorNotice error={error} /><button className="btn" onClick={onBack}>← Back to Inbox</button></>;
   if (!data) return <Loading />;
 
   const a = data.approval;
@@ -54,7 +54,7 @@ export function ApprovalDetail({ id, onBack, onDecided }: {
 
   return (
     <>
-      <button className="link-back" onClick={onBack}>← Inbox</button>
+      <button className="link-back" onClick={onBack}>← Back to Inbox</button>
 
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
       {outcome && <div className="notice" style={{ borderColor: "var(--gold)" }}>{outcome}</div>}

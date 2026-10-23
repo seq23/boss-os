@@ -52,6 +52,10 @@ import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound } from "../lib/http";
 import { materialiseDueDuties } from "../duties/materialise";
 import { isDue, nextDueAt } from "../duties/cadence";
+import { admitTask } from "../tasks/admit";
+import {
+  dutyBrief, editDuty, employeeDuties, loadDuty, pauseDuty, removeDuty, teamCards, undoDuty, type EditInput,
+} from "../duties/ownerEdits";
 
 export const duties = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -451,4 +455,61 @@ duties.get("/runs", async (c) => {
       "A local_job duty with no runs recorded has not reported since this link was built — which is not the " +
       "same as never having run, and the launchd log on her Mac is the other half of the answer.",
   });
+});
+
+// ─── Builder U (23 Oct 2026, boards 7 + 8): the owner edits duties on the site ─────────────────
+//
+// Your team (cards) and one page per employee. Every change is versioned in duty_versions and read
+// by the jobs: materialiseDueDuties (Worker duties) and /brief → duty-run.sh (Mac duties). See
+// src/worker/boss/duties/ownerEdits.ts.
+
+duties.get("/team", async (c) => ok(c, { team: await teamCards(c.env) }));
+
+duties.get("/employee/:id", async (c) => ok(c, await employeeDuties(c.env, c.req.param("id"))));
+
+duties.get("/brief/:local_job", async (c) => ok(c, await dutyBrief(c.env, c.req.param("local_job"))));
+
+duties.post("/:id/edit", async (c) => {
+  const b = await c.req.json<EditInput>().catch(() => null);
+  if (!b) throw badRequest("Nothing to save", "{ instructions?, schedule?, hour?, minute? }");
+  return ok(c, await editDuty(c.env, c.req.param("id"), b));
+});
+
+duties.post("/:id/undo", async (c) => ok(c, await undoDuty(c.env, c.req.param("id"))));
+
+duties.post("/:id/pause", async (c) => {
+  const b = await c.req.json<{ paused?: boolean }>().catch(() => null);
+  if (typeof b?.paused !== "boolean") throw badRequest("Pause or resume?", "{ paused: true|false }");
+  return ok(c, await pauseDuty(c.env, c.req.param("id"), b.paused));
+});
+
+duties.post("/:id/remove", async (c) => {
+  const b = await c.req.json<{ confirm?: boolean }>().catch(() => null);
+  return ok(c, await removeDuty(c.env, c.req.param("id"), b?.confirm === true));
+});
+
+/**
+ * A duty whose steps are fixed in code has no instructions to edit, so her change goes to Danielle,
+ * who changes code, as an ordinary task through intake (approval rules and all).
+ */
+duties.post("/:id/ask-change", async (c) => {
+  const b = await c.req.json<{ text?: string }>().catch(() => null);
+  const words = String(b?.text ?? "").trim().slice(0, 4000);
+  if (words.length < 8) throw badRequest("Say what should change", "A sentence or two in plain words.");
+  const d = await loadDuty(c.env, c.req.param("id"));
+  const owner = await c.env.DB.prepare(`SELECT name FROM employees WHERE id = ?`).bind(d.employee_id).first<{ name: string }>();
+  const danielle = await c.env.DB.prepare(`SELECT id FROM employees WHERE role = 'Technical Program Manager' AND lifecycle = 'active' LIMIT 1`).first<{ id: string }>();
+  const admitted = await admitTask(c.env, {
+    title: `Change how ${owner?.name ?? "the"} duty "${d.name}" works`.slice(0, 200),
+    lane: "ops",
+    employee_id: danielle?.id ?? null,
+    input: {
+      prompt: `The owner asked for a change to the standing duty ${d.id} ("${d.name}"), whose steps are fixed in code ` +
+        `(${(() => { try { return JSON.parse(d.task_input ?? "{}").local_job ?? "the Worker"; } catch { return "the Worker"; } })()}). ` +
+        `Her words: ${words}`,
+      duty_id: d.id,
+      source: "employee_page",
+    },
+  });
+  return ok(c, { sent_to: "Danielle", task_id: admitted.task_id ?? null, created: admitted.created, reason: admitted.reason ?? null });
 });

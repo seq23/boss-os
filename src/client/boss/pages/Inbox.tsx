@@ -376,13 +376,13 @@ export function Inbox({ onCountChange, onOpen }: {
       {flash && (
         <div className="notice" style={{ borderColor: "var(--reject)" }}>
           {flash}
-          <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">×</button>
+          <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
       {result && (
         <div className="notice" style={{ borderColor: "var(--gold)" }} data-testid="bulk-result">
           {result}
-          <button className="notice-x" onClick={() => setResult(null)} aria-label="Dismiss">×</button>
+          <button className="notice-x" onClick={() => setResult(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
 
@@ -523,7 +523,7 @@ export function Inbox({ onCountChange, onOpen }: {
               <button className="btn btn-reject" disabled={progress !== null} onClick={rejectSelected} data-testid="bulk-confirm">
                 Yes — reject all {selectedCount}
               </button>
-              <button className="btn btn-defer" onClick={() => setConfirming(false)}>Back</button>
+              <button className="btn btn-defer" onClick={() => setConfirming(false)}>✕ No, keep them</button>
             </div>
           )}
         </div>

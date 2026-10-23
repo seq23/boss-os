@@ -244,7 +244,6 @@ export const api = {
   addMeeting: (body: Record<string, unknown>) => call<any>("/diary", post("", body)),
   cancelMeeting: (id: string) => call<any>(`/diary/${id}/cancel`, post("")),
 
-  employees: () => call<any[]>("/employees"),
   employee: (id: string) => call<any>(`/employees/${id}`),
   /** Every seat with every duty — cadence, executor, last run, next run, last outcome. Team → Duties. */
   roster: () => call<any>("/employees/roster"),
@@ -643,4 +642,21 @@ export const api = {
   lpReplies: () => call<{ rows: any[] }>("/lp/replies"), // boss fix L
   prospects: () => call<{ rows: any[]; approved: any; pending: any }>("/lp/prospects"), // boss fix L
   eightRaise: () => call<{ month: string; used: number; allowance: number; rows: any[] }>("/lp/eightraise"), // boss fix L
+
+  // ── Builder U (23 Oct 2026, boards 7 + 8): Your team, one page per employee, the lists Monique keeps. ──
+  teamCards: () => call<{ team: any[] }>("/duties/team"),
+  employeeDuties: (id: string) => call<{ employee: any; duties: any[]; removed: any[] }>(`/duties/employee/${encodeURIComponent(id)}`),
+  editDuty: (id: string, body: { instructions?: string; schedule?: string; hour?: number; minute?: number }) =>
+    call<{ duty_id: string; changed: string[]; version: number | null }>(`/duties/${encodeURIComponent(id)}/edit`, post("", body)),
+  undoDuty: (id: string) => call<{ duty_id: string; restored_version: number; version: number }>(`/duties/${encodeURIComponent(id)}/undo`, post("")),
+  pauseDuty: (id: string, paused: boolean) => call<{ duty_id: string; paused: boolean }>(`/duties/${encodeURIComponent(id)}/pause`, post("", { paused })),
+  removeDuty: (id: string) => call<{ duty_id: string; removed: boolean }>(`/duties/${encodeURIComponent(id)}/remove`, post("", { confirm: true })),
+  askDutyChange: (id: string, text: string) => call<{ sent_to: string; task_id: string | null; created: boolean }>(`/duties/${encodeURIComponent(id)}/ask-change`, post("", { text })),
+  partyLists: () => call<{ same_firm: any[]; do_not_suggest: any[] }>("/capital/lists"),
+  editPartyList: (list: "same_firm" | "do_not_suggest", action: "add" | "remove", who: string) =>
+    call<{ done: string }>("/capital/lists", post("", { list, action, who })),
+  featuredNameRules: () => call<{ rules: { name: string; rule: string }[] }>("/lp/prospects/names"),
+  changeFeaturedNames: (text: string) => call<{ applied: any[]; rules: any[] }>("/lp/prospects/names", post("", { text })),
+  proposeProspectEmail: (template: { subject: string; body: string; follow_up: string }, names: { name: string; why?: string }[]) =>
+    call<any>("/lp/prospects/template", post("", { template, names })),
 };
