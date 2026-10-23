@@ -33,6 +33,19 @@ async function tab(page: Page, label: string) {
   await expect(page.locator("main.page")).toBeVisible();
 }
 
+/**
+ * THE DESK, BEHIND THE GRID (boss fix D, 23 Oct 2026): the Deals/Capital page now opens on the Grid,
+ * the page her morning email links to; the desk (scans, sizes, sent back, approved letters) is one
+ * tap away. Pin both: the page opens on the Grid, and the desk is reached by its own button.
+ */
+async function desk(page: Page) {
+  await tab(page, "Capital");
+  const main = page.locator("main.page");
+  await expect(main.getByRole("button", { name: "Grid", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await main.getByRole("button", { name: "The desk", exact: true }).click();
+  await expect(main.getByRole("button", { name: "The desk", exact: true })).toHaveAttribute("aria-pressed", "true");
+}
+
 function cleanSql(): string {
   return [
     `DELETE FROM ask_scan_findings WHERE scan_id IN (SELECT id FROM ask_scans WHERE instruction LIKE '%Anthropic IPO%')`,
@@ -49,7 +62,7 @@ test.describe("Her jobs — find firms and draft the ask", () => {
 
   test("the desk door: one sentence in, a scan owned by Camille, progress from rows, and a named stop here", async ({ page }) => {
     await unlock(page);
-    await tab(page, "Capital");
+    await desk(page);
     const panel = page.getByTestId("firm-scans");
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("No instruction has started a scan yet");
@@ -114,7 +127,7 @@ test.describe("Her jobs — find firms and draft the ask", () => {
   test("at phone width the scan door and the desk do not overflow", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await unlock(page);
-    await tab(page, "Capital");
+    await desk(page);
     await expect(page.getByTestId("firm-scans")).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBe(0);
