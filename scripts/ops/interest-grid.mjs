@@ -29,6 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
+import { writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 import {
   FIRM_DOMAIN, LOOKBACK_DAYS, withinLookback, isSameFirm, isDoNotSuggest, pairAllowed,
 } from "../../src/shared/boss/capital/partyLists.mjs";
@@ -356,7 +357,8 @@ export function holdersLine(deal, holders) {
   const sum = named.reduce((n, h) => n + h.value_usd, 0);
   const top = named.slice(0, 3).map((h) => `${h.fund} ${moneyWords(h.value_usd)}`).join(", ");
   const vs = deal.size_usd ? ` vs ${deal.side === "yours" ? "your" : "the"} ${moneyWords(deal.size_usd)} ${sideWord(deal)}` : "";
-  return `For ${dealPhrase(deal)}: ${named.length} fund${named.length === 1 ? "" : "s"} hold ${moneyWords(sum)} of ${deal.company} between them${vs}. Biggest: ${top}.`;
+  if (named.length === 1) return `For ${dealPhrase(deal)}: ${named[0].fund} holds ${moneyWords(sum)} of ${deal.company}${vs}.`;
+  return `For ${dealPhrase(deal)}: ${named.length} funds hold ${moneyWords(sum)} of ${deal.company} between them${vs}. Biggest: ${top}.`;
 }
 
 /**
@@ -364,7 +366,14 @@ export function holdersLine(deal, holders) {
  * with nothing found is simply not mentioned.
  */
 export function moniqueFound({ newRows, grid, lists, found = {} }) {
-  const pairs = otherSides(grid, lists).filter((p) => newRows.some((n) => n.id === p.deal.id));
+  // One intro per buyer-seller pair: the same two rows seen from the other side are the same intro.
+  const seenPair = new Set();
+  const pairs = otherSides(grid, lists).filter((p) => newRows.some((n) => n.id === p.deal.id)).filter((p) => {
+    const key = [p.deal.id, p.hits[0].id].sort().join("|");
+    if (seenPair.has(key)) return false;
+    seenPair.add(key);
+    return true;
+  });
   const decide = pairs.slice(0, 3).map(introDecide);
   const lines = [];
   for (const p of pairs.slice(3)) {
@@ -383,7 +392,7 @@ export function moniqueFound({ newRows, grid, lists, found = {} }) {
       lines.push(`${l.name}${l.org ? ` at ${l.org}` : ""} said publicly they ${g.direction === "buy" ? "hold" : "want"} ${g.company} (${l.kind}${l.published_date ? `, ${l.published_date}` : ""}).`);
     }
   }
-  return { decide, rows, lines, more: lines.length || rows.length ? { label: "See holders and drafts", url: HOLDERS_PAGE } : null };
+  return { decide, rows, lines, ...(lines.length || rows.length ? { link: { label: "See holders and drafts", url: HOLDERS_PAGE } } : {}) };
 }
 
 function monthOf(daysBack) {
@@ -409,7 +418,7 @@ export function morningDeals(newRows, gridSize, now = Date.now()) {
     size_usd: g.size_usd, rainmaker: g.rainmaker === 1,
   }));
   const lines = newRows.length > 12 ? [`And ${newRows.length - 12} more on the Deals page.`] : [];
-  return { decide: [], rows, lines, more: { label: `See the full grid (${gridSize} open deals)`, url: DEALS_PAGE } };
+  return { decide: [], rows, lines, link: { label: `See the full grid (${gridSize} open deals)`, url: DEALS_PAGE } };
 }
 
 // ─── The run ─────────────────────────────────────────────────────────────────
@@ -447,17 +456,13 @@ export async function loadLists(session) {
 }
 
 /**
- * Same contract as Builder E's `writeMorningSection` (src/shared/boss/mail/morning.mjs, on its own
- * branch): `~/.boss-os/morning/<section>.json` = { decide: [{ title, body, buttons: [{ label, url }] }],
- * rows, lines }. A decision with no real link is refused here rather than rendered as a dead button.
- * When both branches are on main this can call `writeMorningSection` directly.
+ * The morning sections go through Builder E's ONE writer (`writeMorningSection`,
+ * src/shared/boss/mail/morning.mjs): same shape, same checks, same file Simone reads. A decision
+ * whose buttons are not all real links is left out here rather than refusing the whole section.
  */
+const realButtons = (d) => (d.buttons ?? []).length > 0 && d.buttons.every((b) => /^(?:https?:\/\/|mailto:)\S+$/.test(String(b?.url ?? "")));
 export function writeMorning(name, section) {
-  const decide = (section.decide ?? []).filter((d) => (d.buttons ?? []).some((b) => /^(https:|mailto:)/.test(String(b.url ?? ""))));
-  fs.mkdirSync(MORNING_DIR, { recursive: true });
-  fs.writeFileSync(path.join(MORNING_DIR, `${name}.json`), JSON.stringify({
-    written_at: new Date().toISOString(), ...section, decide, rows: section.rows ?? [], lines: section.lines ?? [],
-  }, null, 2));
+  return writeMorningSection(name, { ...section, decide: (section.decide ?? []).filter(realButtons) }, { dir: MORNING_DIR });
 }
 
 async function main() {

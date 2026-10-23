@@ -28,7 +28,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, tapPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1279,6 +1279,14 @@ export async function handleRequest(
   ctx?: ExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
+
+  // Her one-tap email buttons (`/tap/<token>`) are Boss OS's tap route, reached as a page (bossMount.ts).
+  const tapPath = tapPageToBossPath(url.pathname);
+  if (tapPath) {
+    const inner = new URL(url.toString());
+    inner.pathname = tapPath;
+    return handleBossRequest(new Request(inner.toString(), request), env);
+  }
 
   if (!url.pathname.startsWith("/api/")) {
     if (typeof env.ASSETS === "undefined") {

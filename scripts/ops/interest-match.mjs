@@ -780,7 +780,7 @@ async function main() {
 export function morningWrittenToday(name, now = Date.now()) {
   const dir = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
   try {
-    const at = JSON.parse(fs.readFileSync(path.join(dir, `${name}.json`), "utf8")).written_at;
+    const at = JSON.parse(fs.readFileSync(path.join(dir, `${name}.json`), "utf8")).at; // writeMorningSection stamps "at"
     const day = (t) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(t);
     return Boolean(at) && day(Date.parse(at)) === day(now);
   } catch { return false; }

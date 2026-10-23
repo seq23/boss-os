@@ -126,7 +126,7 @@ describe("LP replies: her voice and the Decide item", () => {
     expect(items[0]!.priority).toBeGreaterThanOrEqual(10); // unsent after 2 days → top of Decide
     expect(items[1]!.priority).toBeLessThan(10);
     expect(items[0]!.buttons.map((b) => b.label)).toEqual(["Send as is", "Edit, then send", "Skip"]);
-    expect(items[0]!.buttons[0]!.url).toBe(`https://boss.sequoiataylor.com/api/boss/auth/tap/${"b".repeat(24)}?do=send`);
+    expect(items[0]!.buttons[0]!.url).toBe(`https://boss.sequoiataylor.com/tap/${"b".repeat(24)}?do=send`);
     expect(items[0]!.buttons[1]!.url).toMatch(/^https:\/\/mail\.google\.com\/mail\/u\/sequoia@westpeek\.ventures\/#drafts\?compose=m2$/);
   });
   it("tracker status: sent, they replied again, skipped, drafted, not answered", () => {

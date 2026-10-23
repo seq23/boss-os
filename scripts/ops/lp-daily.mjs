@@ -20,13 +20,10 @@
  *   npm run lp:daily            (through the vault: BOSS_PASSCODE + GSC_SERVICE_ACCOUNT_JSON)
  *   npm run lp:daily -- --dry   (reads and drafts nothing; prints counts and the morning file only)
  */
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { bossApi } from "./lib/duty-kit.mjs";
 import { LP_STATUS_LABEL, lpDecideItems } from "../../src/shared/boss/lp/plan.mjs";
-
-const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
+import { morningDir, writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 
 /** The morning section, per the shared interface: {decide, rows, lines}. Pure, so it is tested. */
 export function lpMorning(rows, now = Date.now()) {
@@ -41,17 +38,19 @@ export function lpMorning(rows, now = Date.now()) {
     section: "lp",
     updated_at: new Date(now).toISOString(),
     decide,
-    rows: rows.map((r) => ({ name: r.name, firm: r.firm, status: LP_STATUS_LABEL[r.status] ?? r.status, since: r.first_seen })),
+    // No rows: the tracker itself is the LP replies tab on the Deals page (D1), never re-sent by mail.
+    rows: [],
     lines,
   };
 }
 
+/**
+ * Every L section goes through Builder E's ONE writer (src/shared/boss/mail/morning.mjs): the shape
+ * Simone's 06:40 email reads, checked before it is written. Returns the file written.
+ */
 export function writeMorning(section, obj) {
-  fs.mkdirSync(MORNING_DIR, { recursive: true, mode: 0o700 });
-  const file = path.join(MORNING_DIR, `${section}.json`);
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(obj, null, 2), { mode: 0o600 });
-  fs.renameSync(`${file}.tmp`, file);
-  return file;
+  writeMorningSection(section, obj);
+  return path.join(morningDir(), `${section}.json`);
 }
 
 async function main() {

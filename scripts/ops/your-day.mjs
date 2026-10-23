@@ -183,7 +183,7 @@ export function buildDay(data, now = Date.now()) {
   // 2. Deals and Monique found.
   const deals = m.deals?.rows ?? [];
   const dealRows = deals.map((r) => ({
-    company: r.company, side: r.side ?? "—", size: [r.size, r.price ? `@ ${r.price}` : ""].filter(Boolean).join(" ") || "—",
+    company: r.company, side: r.side ?? "—", size: [r.size, r.price && r.price !== "—" ? `@ ${r.price}` : ""].filter(Boolean).join(" ") || "—",
     from: r.tag === "Rainmaker" ? "Rainmaker" : (r.from ?? "—"), url: r.url ?? null, url_label: "Open the email",
   }));
   const found = (m.monique_found?.lines ?? []).map(lineOf);

@@ -42,7 +42,8 @@ export const MORNING_SECTIONS = Object.freeze([
 export const STALE_MS = 30 * 3_600_000;
 
 export function morningDir() {
-  return join(homedir(), ".boss-os", "morning");
+  // The one override every producer and the renderer honour (tests and dry runs point it elsewhere).
+  return process.env.BOSS_OS_MORNING_DIR || join(homedir(), ".boss-os", "morning");
 }
 
 const isButton = (b) => b && typeof b.label === "string" && typeof b.url === "string" && /^(?:https?:\/\/|mailto:)\S+$/.test(b.url);

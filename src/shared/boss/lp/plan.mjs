@@ -60,7 +60,8 @@ export function lpReplyBody({ name, bucket }) {
 export const LP_UNSENT_URGENT_DAYS = 2;
 
 export function tapUrl(token, action, origin = ORIGIN) {
-  return `${origin}/api/boss/auth/tap/${encodeURIComponent(token)}?do=${action}`;
+  // A page path, never /api (the plain-email gate holds a link to an API path); bossMount.ts serves it.
+  return `${origin}/tap/${encodeURIComponent(token)}?do=${action}`;
 }
 
 /** A real Gmail link into the West Peek mailbox — the draft itself, or the thread. Never a bare id. */

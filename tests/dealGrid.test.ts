@@ -152,7 +152,7 @@ describe("morning sections (interface for Builder E)", () => {
     expect(deals.rows[0]).toMatchObject({ company: "Acme Robotics", side: "Buy", when: "yesterday", url: expect.stringMatching(/^https:\/\/mail\.google\.com\//) });
     expect(deals.rows[0]).not.toHaveProperty("tag");
     expect(deals.rows[0]).toMatchObject({ from_email: "pm@examplefund.com", from_name: "Pat Example", from_firm: "Example Fund", size_usd: 50e6, rainmaker: false });
-    expect(deals.more.url).toMatch(/tab=capital&view=grid$/);
+    expect(deals.link.url).toMatch(/tab=capital&view=grid$/);
     const found = moniqueFound({ newRows: grid, grid, lists: NO_LISTS, found: {} });
     expect(found.decide[0].title).toBe("Make an Acme Robotics intro?");
     expect(found.decide[0].buttons.map((x: any) => x.label)).toContain("Edit, then send");
@@ -211,5 +211,25 @@ describe("her plain-words edits (rules 6, 15)", () => {
       "same_firm:remove:name:jo doe",
     ]);
     expect(parseListEdits("We are Rainmaker\n> stop suggesting Someone")).toEqual([]);
+  });
+});
+
+describe("combined merge: Monique found reads as one intro per pair, in plain grammar", () => {
+  const row = (o: Record<string, unknown>) => ({ side: "buy", direction: "buy", size_usd: null, size_text: "—", price_text: "—", structure_text: "—",
+    rainmaker: 0, received_on: "2026-10-22", email_url: null, _row: {}, ...o });
+  const g = [
+    row({ id: "p1", company: "Company Z", from_text: "Broker One", size_usd: 1e9, size_text: "$1B", _row: { from: "one@x.example" } }),
+    row({ id: "p2", company: "Company Z", side: "sell", direction: "sell", from_text: "Broker Two", size_usd: 3e8, size_text: "$300M", _row: { from: "two@y.example" } }),
+  ];
+  it("a buyer and a seller who are both new make ONE intro, not one from each side", () => {
+    const out = moniqueFound({ newRows: g, grid: g, lists: { same_firm: [], do_not_suggest: [] } });
+    expect(out.decide).toHaveLength(1);
+    expect(out.decide[0].title).toBe("Make a Company Z intro?");
+  });
+  it("one holder is named in the singular", () => {
+    const out = moniqueFound({ newRows: [g[0]], grid: [g[0]], lists: { same_firm: [], do_not_suggest: [] },
+      found: { "company z": { holders: [{ fund: "Fund A", value_usd: 1.2e8, filing_url: "https://www.sec.gov/x" }] } } });
+    expect(out.lines[0]).toBe("For the $1B Company Z buyer: Fund A holds $120M of Company Z vs the $1B buyer.");
+    expect(out.link).toEqual({ label: "See holders and drafts", url: expect.stringMatching(/view=holders$/) });
   });
 });
