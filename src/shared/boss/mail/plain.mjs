@@ -233,6 +233,10 @@ export function linkLabel(url) {
   if (/claude\.ai\/(?:code\/)?artifact/.test(u)) return "Open the page";
   try { return `Open ${new URL(u).hostname.replace(/^www\./, "")}`; } catch { return "Open the link"; }
 }
+/** A Gmail search for a subject: the email itself, one tap, never a bare id (rule 2, 23 Oct 2026). */
+export function gmailSearchLink(subject) {
+  return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`subject:"${String(subject ?? "").replace(/"/g, "")}"`)}`;
+}
 const linkify = (s) => esc(s).replace(/\b(?:https?:\/\/|mailto:)[^\s<>()"']+[^\s<>()"'.,;:!?]/g, (u) => `<a href="${u}" style="color:#1F4E8C">${esc(linkLabel(u.replace(/&amp;/g, "&")))}</a>`);
 const okUrl = (u) => typeof u === "string" && /^(?:https?:\/\/|mailto:)\S+$/.test(u.trim());
 

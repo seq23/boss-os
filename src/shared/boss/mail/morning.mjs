@@ -6,7 +6,7 @@
  * The standalone emails it replaced (Zora's archive audit, Toni's routine risk, the tail reports,
  * Monique's "crosses" and "people worth a look") now write a section file here instead of sending.
  *
- * A SECTION FILE is `~/.boss-os/morning/<section>.json` (BOSS_OS_MORNING_DIR overrides), written by
+ * A SECTION FILE is `~/.boss-os/morning/<section>.json` (every function takes `{ dir }` to override), written by
  * `writeMorningSection` (whole section) or `addMorningLines` (append a line, for producers that run
  * many times a day). Its shape:
  *
@@ -42,7 +42,7 @@ export const MORNING_SECTIONS = Object.freeze([
 export const STALE_MS = 30 * 3_600_000;
 
 export function morningDir() {
-  return process.env.BOSS_OS_MORNING_DIR ?? join(homedir(), ".boss-os", "morning");
+  return join(homedir(), ".boss-os", "morning");
 }
 
 const isButton = (b) => b && typeof b.label === "string" && typeof b.url === "string" && /^(?:https?:\/\/|mailto:)\S+$/.test(b.url);

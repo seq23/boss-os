@@ -127,8 +127,8 @@ export async function fixBounces(db: D1Database, fetchImpl: typeof fetch, now: n
     const domain = String(row.bounced_domain ?? "");
     const repliers = await db.prepare(
       `SELECT from_email AS email, classification, gmail_message_id FROM outreach_replies
-        WHERE from_email LIKE ? ORDER BY received_at DESC LIMIT 10`,
-    ).bind(`%@${domain}`).all<Replier>();
+        WHERE lower(substr(from_email, instr(from_email, '@') + 1)) = ? ORDER BY received_at DESC LIMIT 10`,
+    ).bind(domain.toLowerCase()).all<Replier>();
     const pages: Array<{ url: string; html: string }> = [];
     if (row.website) {
       for (const p of PAGES) {

@@ -127,11 +127,6 @@ export async function fixJob(api, { title, prompt }) {
   catch (e) { return String(e?.message ?? e); }
 }
 
-/** A Gmail search for a subject: the email itself, one tap, never a bare id. */
-export function gmailSearchLink(subject) {
-  return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`subject:"${String(subject ?? "").replace(/"/g, "")}"`)}`;
-}
-
 // ─── Google, through the service account (delegation is granted per mailbox) ──
 
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");

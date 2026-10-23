@@ -292,7 +292,7 @@ const SNAPSHOT_TABLES = [
   // Monique's outreach (0280). Suppression above all must survive a restore: a restored database
   // that forgot an unsubscribe would write to someone who asked us to stop.
   "outreach_settings", "outreach_domain_state", "outreach_slices", "outreach_candidates",
-  "outreach_prospects", "outreach_suppression", "outreach_sends", "outreach_replies",
+  "outreach_prospects", "outreach_suppression", "outreach_sends", "outreach_replies", "outreach_bounce_fixes", // boss fix E (0292)
   "referral_partners", "referral_conversions", "referral_payouts",
 ] as const;
 

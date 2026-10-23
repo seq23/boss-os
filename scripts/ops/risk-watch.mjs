@@ -32,9 +32,9 @@
 import { GRID } from "../../src/shared/boss/grid.mjs";
 import {
   askClaudeJson, bossApi, fromDomain, gmailHeaders, googleToken, loadState, movedReadings,
-  readNothingStop, saveState, sendAs, stateMap, toMorning, fixJob, gmailSearchLink,
+  readNothingStop, saveState, sendAs, stateMap, toMorning, fixJob,
 } from "./lib/duty-kit.mjs";
-import { layoutProblem } from "../../src/shared/boss/mail/plain.mjs";
+import { layoutProblem, gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 
 const DRY = process.argv.includes("--dry");
 /** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */

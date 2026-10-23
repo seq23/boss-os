@@ -39,3 +39,4 @@ export function visibleText(input: { subject?: string; text?: string; html?: str
 export function linksIn(input: { text?: string; html?: string | null }): string[];
 export function plainProblems(input: { subject?: string; text?: string; html?: string | null; kind?: string | null }): string[];
 export function lineProblems(line: unknown): string[];
+export function gmailSearchLink(subject: string): string;

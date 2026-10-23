@@ -9,3 +9,4 @@ export function handoffTodayDate(md: unknown): number | null;
 export function citedBossFiles(mapMd: unknown): string[];
 export const GALLERY_EXPORT: string;
 export function readGalleryExport(path?: string, now?: number): { ok: true; artifacts: unknown[] | null; loops: unknown[] | null } | { ok: false; why: string };
+export function planArchive(input: { fixing?: number; flagged?: Array<{ owner?: string | null; line: string }>; filed?: number; cleared?: unknown[]; stops?: Array<{ key: string; line: string }> }): { lines: string[]; fixes: Array<{ title: string; prompt: string }> };

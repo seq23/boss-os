@@ -20,8 +20,9 @@
  */
 import {
   askClaudeJson, fromDomain, gmailHeaders, googleToken, loadState, movedReadings, readNothingStop,
-  saveState, stateMap, toMorning, fixJob, bossApi, gmailSearchLink,
+  saveState, stateMap, toMorning, fixJob, bossApi,
 } from "./lib/duty-kit.mjs";
+import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
 
 /** Moved lock readings → `{ decide, lines, fixes }`. Pure; tested. */
 export function planLocks(moved) {

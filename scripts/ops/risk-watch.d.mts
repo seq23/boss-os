@@ -7,3 +7,10 @@ export function renewalReading(domain: string, expiresAt: number | null, now: nu
 export function senderPauseReason(b: unknown): string | null;
 export function hasDkim(txts: string[]): boolean;
 export function rdapUrl(domain: string): string;
+import type { DecideItem, Button } from "../../src/shared/boss/mail/plain.mjs";
+export function planRisk(moved: Array<{ key: string; state: string; line: string; was?: string | null }>): {
+  urgent: { subject: string; happened: string; did: string; status: string } | null;
+  decide: Array<DecideItem & { body: string; buttons: Button[]; priority?: number }>;
+  lines: Array<string | { text: string; links: Button[] }>;
+  fixes: Array<{ title: string; prompt: string }>;
+};
