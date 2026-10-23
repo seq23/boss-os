@@ -269,8 +269,11 @@ export const INSTALLED_LOCAL_JOBS = [
   "kdp-publish.sh",
   "kdp-surface.sh",
   "ledger-hunt.mjs",
-  "lp-positive.mjs",
-  "lp-replies.sh",
+  "lp-catchups.mjs", // boss fix L
+  "lp-daily.mjs", // boss fix L
+  "lp-eightraise.mjs", // boss fix L
+  "lp-prospect-discovery.mjs", // boss fix L
+  "lp-prospects.mjs", // boss fix L
   "lp-tracker-sync.mjs",
   "mailbox-sweep.sh",
   "outside-locks.mjs",

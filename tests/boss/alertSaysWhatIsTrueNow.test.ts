@@ -212,12 +212,16 @@ describe("the credential register", () => {
   it("wakes the dormant duty the morning the grant actually works", async () => {
     /*
      * A DUTY THAT WAKES ITSELF, because the last thing waiting on this grant went unnoticed for
-     * three weeks. `duty_lp_replies` is created suspended — nothing can read the West Peek mailbox
-     * until Scooter grants delegation, and a duty erroring every morning while he gets round to it
-     * would be noise on the one surface she has to keep reading. The probe is the condition; nobody
-     * flips a switch.
+     * three weeks. The grant is live now (23 Oct 2026), so the morning LP run, `duty_lp_daily`,
+     * replaced the connector digest and is created awake. If a lapsed grant ever suspends it, the
+     * probe is still the condition that wakes it; nobody flips a switch.
      */
-    const before = await row<any>(`SELECT suspended, suspended_reason FROM standing_duties WHERE id = 'duty_lp_replies'`);
+    const fresh = await row<any>(`SELECT suspended, suspended_reason FROM standing_duties WHERE id = 'duty_lp_daily'`);
+    expect(fresh.suspended).toBe(0);
+    expect(await row<any>(`SELECT id FROM standing_duties WHERE id = 'duty_lp_replies'`)).toBeNull();
+    const reason = "The West Peek delegation lapsed; Scooter re-grants it.";
+    await env.DB.prepare(`UPDATE standing_duties SET suspended = 1, suspended_reason = ? WHERE id = 'duty_lp_daily'`).bind(reason).run();
+    const before = await row<any>(`SELECT suspended, suspended_reason FROM standing_duties WHERE id = 'duty_lp_daily'`);
     expect(before.suspended).toBe(1);
     expect(before.suspended_reason).toMatch(/Scooter/);
 
@@ -226,20 +230,17 @@ describe("the credential register", () => {
       method: "POST",
       body: { probes: [{ id: "cred_westpeek_delegation", state: "unknown", detail: "Could not decide." }] },
     });
-    expect((await row<any>(`SELECT suspended FROM standing_duties WHERE id = 'duty_lp_replies'`)).suspended).toBe(1);
+    expect((await row<any>(`SELECT suspended FROM standing_duties WHERE id = 'duty_lp_daily'`)).suspended).toBe(1);
 
     const res = await apiJson<any>("/api/credentials/probe", {
       method: "POST",
       body: { probes: [{ id: "cred_westpeek_delegation", state: "live", detail: "The impersonation succeeded." }] },
     });
-    expect(res.body.data.woken).toContain("duty_lp_replies");
-    const after = await row<any>(`SELECT suspended, suspended_reason FROM standing_duties WHERE id = 'duty_lp_replies'`);
+    expect(res.body.data.woken).toContain("duty_lp_daily");
+    const after = await row<any>(`SELECT suspended, suspended_reason FROM standing_duties WHERE id = 'duty_lp_daily'`);
     expect(after.suspended).toBe(0);
     expect(after.suspended_reason).toBeNull();
 
-    await env.DB
-      .prepare(`UPDATE standing_duties SET suspended = 1, suspended_reason = ? WHERE id = 'duty_lp_replies'`)
-      .bind(before.suspended_reason).run();
     await env.DB
       .prepare(`UPDATE credential_probes SET state = 'unknown', checked_at = NULL WHERE id = 'cred_westpeek_delegation'`)
       .run();

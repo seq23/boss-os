@@ -31,6 +31,12 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest } from "../lib/http";
 import { nextDueAt } from "../duties/cadence";
+// boss fix L
+import {
+  upsertLpRows, listLpRows, importProspects, prospectPlan, recordProspectEvents, proposeTemplate,
+  approvedTemplate, pendingTemplate, ledgerRows, readExclusions,
+} from "../lp/desk";
+import { LP_STATUS_LABEL, canSpend, monthOf, monthSpent, nameRulesIn, MONIQUE_MONTHLY } from "../../../shared/boss/lp/plan.mjs";
 
 export const lp = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -147,4 +153,124 @@ lp.post("/digest", async (c) => {
   });
 
   return ok(c, { id, day_id: dayId, ...values }, 201);
+});
+
+/* ═══ Boss fix L (23 Oct 2026): the LP tracker, prospects, 8Raise ledger, catch-up suppression ═══
+ *
+ * Read by the Deals page (LpTab, ProspectsTab) and written by the Mac lanes (lp-daily.mjs,
+ * lp-prospects.mjs, lp-prospect-discovery.mjs, lp-eightraise.mjs, lp-catchups.mjs). Names stay in
+ * D1; nothing here is ever logged with a name.
+ */
+
+lp.get("/replies", async (c) => {
+  const rows = await listLpRows(c.env.DB);
+  return ok(c, {
+    rows: rows.map((r) => ({
+      id: r.id, name: r.name, firm: r.firm, address: r.address, bucket: r.bucket, quote: r.quote,
+      status: r.status, status_label: (LP_STATUS_LABEL as Record<string, string>)[r.status] ?? r.status,
+      first_seen: r.first_seen, drafted_at: r.drafted_at, sent_at: r.sent_at, thread_id: r.thread_id,
+      draft_message_id: r.draft_message_id, send_error: r.send_error,
+    })),
+  });
+});
+
+/** The Mac's morning read. Returns the rows with their tap tokens, for the morning email buttons. */
+lp.post("/replies", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (!Array.isArray(b?.rows)) throw badRequest("rows[] is required");
+  const n = await upsertLpRows(c.env.DB, b.rows);
+  if (b.rows.length > 0 && n === 0) throw badRequest("No row was valid", "Each row needs an address, a bucket of call or warm, a status and the YYYY-MM-DD it arrived.");
+  return ok(c, { upserted: n, rows: await listLpRows(c.env.DB) });
+});
+
+lp.get("/prospects", async (c) => {
+  // Tap tokens only for the Mac lane that builds the morning email (?tokens=1); the screen never needs them.
+  const tokens = c.req.query("tokens") === "1" ? ", draft_tap_token" : "";
+  const rows = (await c.env.DB.prepare(`SELECT id, name, firm, email, kind, source, source_ref, status, side, touches, first_sent_at, last_touch_at, thread_id, last_message_id, subject, reply_note, draft_tap_token IS NOT NULL AS has_draft, created_at, updated_at${tokens} FROM prospects ORDER BY created_at DESC LIMIT 1000`).all<any>()).results ?? [];
+  return ok(c, { rows, approved: await approvedTemplate(c.env.DB), pending: await pendingTemplate(c.env.DB) });
+});
+
+lp.post("/prospects/import", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (!Array.isArray(b?.rows)) throw badRequest("rows[] is required");
+  return ok(c, await importProspects(c.env.DB, b.rows));
+});
+
+lp.get("/prospects/plan", async (c) => ok(c, await prospectPlan(c.env.DB)));
+
+lp.post("/prospects/events", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (!Array.isArray(b?.events)) throw badRequest("events[] is required");
+  return ok(c, { recorded: await recordProspectEvents(c.env.DB, b.events) });
+});
+
+/** Propose the prospect email + featured names. A tone-rule failure is refused with its reasons. */
+lp.post("/prospects/template", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const names = Array.isArray(b?.names) ? b.names.map((n: any) => ({ name: String(n.name ?? n), why: n.why ? String(n.why) : undefined })) : [];
+  const r = await proposeTemplate(c.env.DB, b?.template ?? null, names);
+  if (!r.ok) throw badRequest(`The prospect email was not proposed: ${r.problems.join("; ")}`);
+  return ok(c, r);
+});
+
+/** Her plain-words edits to the featured names ("add X", "drop Y", "never feature Z"). */
+lp.post("/prospects/names", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const rules = nameRulesIn(String(b?.text ?? ""));
+  const now = Date.now();
+  for (const r of rules) {
+    await c.env.DB.prepare(`INSERT INTO prospect_name_rules (name, rule, said, created_at) VALUES (?,?,?,?)
+      ON CONFLICT(name) DO UPDATE SET rule = CASE WHEN prospect_name_rules.rule = 'never' THEN 'never' ELSE excluded.rule END, said = excluded.said, created_at = excluded.created_at`)
+      .bind(r.name.toLowerCase(), r.rule, String(b?.text ?? "").slice(0, 300), now).run();
+  }
+  const all = (await c.env.DB.prepare(`SELECT name, rule FROM prospect_name_rules`).all<any>()).results ?? [];
+  return ok(c, { applied: rules, rules: all });
+});
+
+lp.get("/prospects/names", async (c) => ok(c, { rules: (await c.env.DB.prepare(`SELECT name, rule FROM prospect_name_rules`).all<any>()).results ?? [] }));
+
+/** Her two lists (D's tables), read-only. `established: false` means fail closed. */
+lp.get("/exclusions", async (c) => ok(c, await readExclusions(c.env.DB)));
+
+lp.get("/eightraise", async (c) => {
+  const month = c.req.query("month") ?? monthOf();
+  const rows = await ledgerRows(c.env.DB, month);
+  return ok(c, { month, rows, used: monthSpent(rows, month), allowance: MONIQUE_MONTHLY });
+});
+
+/**
+ * Log a credit. A spend is checked against the month's budget, the floor and the one-search-per-
+ * company rule BEFORE the Mac makes the call (dry: true), and logged after it (dry: false).
+ */
+lp.post("/eightraise", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const month = monthOf();
+  const purpose = String(b?.purpose ?? "");
+  const credits = Number(b?.credits ?? 0);
+  if (purpose === "balance_read") {
+    await c.env.DB.prepare(`INSERT INTO eightraise_ledger (id, month, purpose, tool, company, credits, balance_after, at, note) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .bind(newId("e8r"), month, "balance_read", String(b?.tool ?? "get_usage"), null, 0, b?.balance ?? null, Date.now(), null).run();
+    return ok(c, { logged: true });
+  }
+  const ledger = await ledgerRows(c.env.DB, month);
+  const check = canSpend({ purpose, credits, contacts: Number(b?.contacts ?? 0), company: b?.company ?? null, ledger, balance: b?.balance ?? null, month });
+  if (!check.ok) return ok(c, { allowed: false, why: check.why });
+  if (b?.dry) return ok(c, { allowed: true });
+  await c.env.DB.prepare(`INSERT INTO eightraise_ledger (id, month, purpose, tool, company, credits, balance_after, at, note) VALUES (?,?,?,?,?,?,?,?,?)`)
+    .bind(newId("e8r"), month, purpose, String(b?.tool ?? "").slice(0, 60), b?.company ? String(b.company).slice(0, 120) : null, credits,
+      b?.balance_after ?? null, Date.now(), b?.note ? String(b.note).slice(0, 200) : null).run();
+  return ok(c, { allowed: true, logged: true });
+});
+
+lp.get("/catchups/history", async (c) => ok(c, { rows: (await c.env.DB.prepare(`SELECT person_key, reason_type, suggested_at FROM catchup_suggestions ORDER BY suggested_at DESC LIMIT 2000`).all<any>()).results ?? [] }));
+
+lp.post("/catchups/record", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const rows = Array.isArray(b?.rows) ? b.rows : [];
+  const now = Date.now();
+  const stmts = rows.filter((r: any) => String(r.person_key ?? "").includes("@")).map((r: any) =>
+    c.env.DB.prepare(`INSERT INTO catchup_suggestions (id, person_key, reason_type, suggested_at) VALUES (?,?,?,?)`)
+      .bind(newId("cus"), String(r.person_key).toLowerCase(), String(r.reason_type ?? "other").slice(0, 40), now));
+  if (stmts.length) await c.env.DB.batch(stmts);
+  return ok(c, { recorded: stmts.length });
 });

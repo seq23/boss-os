@@ -908,26 +908,21 @@ lint_plist "$CW_PLIST"
 launchctl load "$CW_PLIST"
 echo "Installed $CW_LABEL — daily 14:05 and 19:05 Central slots; the sweep runs when the duty is due (Wednesday 14:00), the act half every slot."
 
-# ─── Monique's LP reply digest ───────────────────────────────────────────────
+# ─── boss fix L: Monique's morning LP run (replaces the connector digest) ────────
 #
-# "an employee can keep track of all the opt outs and replies and send me an inbox daily summary to
-# deliver to the twin agent". Daily rather than weekly because an LP who asked for the deck on
-# Tuesday and hears nothing until Sunday is an LP you have lost.
+# Owner, 23 Oct 2026, ruling 10: every positive LP reply gets a reply held in its own thread, and
+# the morning email carries Send as is / Edit, then send / Skip. lp-daily.mjs reads
+# sequoia@westpeek.ventures through the delegation. It REPLACES lp-replies.sh, which read the
+# mailbox through the claude.ai Gmail connector — bound to her PERSONAL account — and reported zero
+# replies every morning while 50+ arrived. Same label, so the readiness check below still finds it.
 #
-# INSTALLED WHILE DORMANT, ON PURPOSE. Nothing can read sequoia@westpeek.ventures until Scooter
-# grants domain-wide delegation on that domain, and the script checks the credential register and
-# stops with a named reason rather than starting a run that would fail at its first tool call. It
-# begins working on its own the morning after he grants it — no reinstall, nobody remembering.
-#
-# 07:45: after the 07:10 agent tick, before the day starts.
+# 06:15: before Simone's 06:40 morning email reads ~/.boss-os/morning/lp.json.
 LP_LABEL="com.seq.boss-lp"
 LP_PLIST="$HOME/Library/LaunchAgents/$LP_LABEL.plist"
-LP_LOGS="$HOME/Library/Logs/lp-replies"
+LP_LOGS="$HOME/Library/Logs/lp-daily"
 
-mkdir -p "$LP_LOGS" "$HOME/.boss-os/lp"
-chmod +x "$REPO/scripts/ops/lp-replies.sh"
-ln -sfn "$REPO/scripts/ops/lp-replies.sh" "$HOME/bin/lp-replies.sh"
-ln -sfn "$REPO/scripts/ops/lp-replies-prompt.md" "$HOME/bin/lp-replies-prompt.md"
+mkdir -p "$LP_LOGS" "$HOME/.boss-os/lp" "$HOME/.boss-os/morning"
+rm -f "$HOME/bin/lp-replies.sh" "$HOME/bin/lp-replies-prompt.md"
 
 cat > "$LP_PLIST" <<LPEOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -939,14 +934,12 @@ cat > "$LP_PLIST" <<LPEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>bash $REPO/scripts/ops/duty-run.sh lp-replies.sh -- bash $REPO/scripts/ops/lp-replies.sh</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh lp-daily.mjs -- npm run --silent lp:daily</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>15</integer></dict>
   </array>
-  <key>EnvironmentVariables</key>
-  <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
   <key>StandardOutPath</key><string>$LP_LOGS/launchd.log</string>
   <key>StandardErrorPath</key><string>$LP_LOGS/launchd.err</string>
   <key>RunAtLoad</key><false/>
@@ -956,7 +949,46 @@ LPEOF
 launchctl unload "$LP_PLIST" 2>/dev/null || true
 lint_plist "$LP_PLIST"
 launchctl load "$LP_PLIST"
-echo "Installed $LP_LABEL — daily 07:45 Central, dormant until the West Peek grant exists."
+echo "Installed $LP_LABEL — daily 06:15 Central (lp-daily.mjs: held LP replies for the morning email)."
+
+# boss fix L: prospects (09:30 weekdays-in-window, the brakes decide), discovery (Monday 07:00),
+# catch-ups (06:20), 8Raise balance (06:25). One plist each, all through duty-run.sh.
+install_l_job() {
+  # $2 is the literal "duty-run.sh <token> -- <command>", so validate:launchd-duty reads the token here.
+  local label="$1" cmd="$2" when="$3" logs="$HOME/Library/Logs/$4"
+  local plist="$HOME/Library/LaunchAgents/$label.plist"
+  mkdir -p "$logs"
+  cat > "$plist" <<LJEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/$cmd</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    $when
+  </array>
+  <key>StandardOutPath</key><string>$logs/launchd.log</string>
+  <key>StandardErrorPath</key><string>$logs/launchd.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+LJEOF
+  launchctl unload "$plist" 2>/dev/null || true
+  lint_plist "$plist"
+  launchctl load "$plist"
+  echo "Installed $label (${cmd%% --*})."
+}
+install_l_job com.seq.boss-prospects "duty-run.sh lp-prospects.mjs -- npm run --silent lp:prospects -- --live" '<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>' lp-prospects
+install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery.mjs -- npm run --silent lp:discover -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>' lp-discovery
+install_l_job com.seq.boss-catchups "duty-run.sh lp-catchups.mjs -- npm run --silent lp:catchups" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>' lp-catchups
+install_l_job com.seq.boss-eightraise "duty-run.sh lp-eightraise.mjs -- npm run --silent lp:eightraise" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>' lp-eightraise
+# end boss fix L
 
 # ─── The two things Scooter reads on a Wednesday ─────────────────────────────
 #
@@ -1009,35 +1041,14 @@ lint_plist "$SHEET_PLIST"
 launchctl load "$SHEET_PLIST"
 echo "Installed $SHEET_LABEL — Tuesday 07:15 Central (lp-tracker-sync.mjs then lp-outcomes.mjs)."
 
+# boss fix L: the Tuesday 08:15 reminder email (lp-positive.mjs --email --followups) is RETIRED —
+# owner, 23 Oct 2026: "the weekly Tuesday reminder email goes away". Held replies are in the morning
+# email now (com.seq.boss-lp above). Unloaded and removed, so an old install stops sending it.
 POSITIVE_LABEL="com.seq.boss-lp-positive"
 POSITIVE_PLIST="$HOME/Library/LaunchAgents/$POSITIVE_LABEL.plist"
-
-cat > "$POSITIVE_PLIST" <<POSEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>$POSITIVE_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>-lc</string>
-    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh lp-positive.mjs -- npm run --silent lp:positive -- --email --followups</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
-  </array>
-  <key>StandardOutPath</key><string>$LOGS/lp-positive.log</string>
-  <key>StandardErrorPath</key><string>$LOGS/lp-positive.err</string>
-  <key>RunAtLoad</key><false/>
-</dict></plist>
-POSEOF
-
 launchctl unload "$POSITIVE_PLIST" 2>/dev/null || true
-lint_plist "$POSITIVE_PLIST"
-launchctl load "$POSITIVE_PLIST"
-echo "Installed $POSITIVE_LABEL — Tuesday 08:15 Central (lp-positive.mjs --email --followups)."
+rm -f "$POSITIVE_PLIST"
+echo "Removed $POSITIVE_LABEL — the weekly LP reminder email is retired."
 
 # ─── Toni's credential prober ────────────────────────────────────────────────
 #

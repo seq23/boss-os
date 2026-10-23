@@ -109,6 +109,12 @@ export const PRIVATE_SOURCES: readonly { table: string; column: string; what: st
   { table: "investment_opportunity", column: "seller_name", what: "a counterparty" },
   { table: "investment_opportunity", column: "broker_name", what: "a counterparty" },
   { table: "capital_book_line", column: "asset", what: "a position" },
+  // boss fix L (23 Oct 2026): the LPs who answered and the prospects she writes to. Their names reach
+  // no route that may train on them; the drafts are fixed templates and never go to a model at all.
+  { table: "lp_reply_drafts", column: "name", what: "an LP" },
+  { table: "lp_reply_drafts", column: "firm", what: "an LP" },
+  { table: "prospects", column: "name", what: "a counterparty" },
+  { table: "prospects", column: "firm", what: "a counterparty" },
 ];
 
 /**

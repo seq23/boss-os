@@ -1,0 +1,58 @@
+/** Types for plan.mjs. See that file. */
+export const LP_MAILBOX: string;
+export const INBOX_LOOKBACK_DAYS: number;
+export const ORIGIN: string;
+export const LP_STATUS_LABEL: Readonly<Record<string, string>>;
+export const LP_UNSENT_URGENT_DAYS: number;
+export function firstName(name: unknown): string;
+export function lpReplyBody(a: { name?: string | null; bucket: string }): string;
+export function tapUrl(token: string, action: string, origin?: string): string;
+export function gmailDraftUrl(draftMessageId: string | null | undefined, mailbox?: string): string;
+export function gmailThreadUrl(threadId: string | null | undefined, mailbox?: string): string;
+export interface DecideItem { title: string; body: string; urgent?: boolean; priority?: number; buttons: { label: string; url: string }[] }
+export function lpDecideItems(rows: any[], now?: number, origin?: string): DecideItem[];
+export function lpStatusFrom(a: { current?: string; sentAfterReply?: boolean; scheduled?: boolean; theirLatest?: number | null; sentAt?: number | null; hasDraft?: boolean; decision?: string | null }): string;
+export const MAX_TOUCHES: number;
+export const TOUCH_DAYS: readonly number[];
+export const MAX_NEW_PER_DAY: number;
+export const MIN_TOUCH_GAP_DAYS: number;
+export const FEATURED_MIN: number;
+export const FEATURED_MAX: number;
+export const FEATURE_FRESH_DAYS: number;
+export const FEATURE_STALE_DAYS: number;
+export const PROSPECT_KINDS: readonly string[];
+export const PROSPECT_BANNED: readonly RegExp[];
+export const EITHER_SIDE: RegExp;
+export const CHAT_ASK: RegExp;
+export const PROSPECT_WORD_CAP: number;
+export const OPT_OUT_LINE: string;
+export const SIGNATURE: string;
+export type Named = string | { name: string; why?: string };
+export interface Template { subject: string; body: string; follow_up: string }
+export function namesLine(names: Named[], variant?: number): string;
+export const DEFAULT_PROSPECT_TEMPLATE: Readonly<Template>;
+export function subjectNames(names: Named[]): string;
+export function renderProspect(t: Template, a: { first?: string | null; names: Named[]; touch?: number; variant?: number }): { subject: string; body: string };
+export function wordCount(body: string): number;
+export function prospectProblems(e: { subject: string; body: string }): string[];
+export function templateHash(t: Template, names: Named[]): string;
+export function dueTouch(p: any, now?: number): number | null;
+export function proposeFeatured(supply: any[], rules?: { never?: string[]; add?: string[]; drop?: string[] }, now?: number): { name: string; why: string }[];
+export function staleFeatured(featured: { name: string }[], supply: any[], now?: number): string[];
+export function sideFromReply(text: string): "buyer" | "seller" | "both" | "unknown";
+export function nameRulesIn(text: string): { rule: "never" | "add" | "drop"; name: string }[];
+export function fmtUsd(n: unknown): string;
+export function blur(name: string | null | undefined, email?: string | null): string;
+export const EIGHTRAISE_BUDGET: Readonly<{ plan: number; prospecting: number; buyers_for_supply: number; floor: number; per_search_contacts: number }>;
+export const MONIQUE_MONTHLY: number;
+export function monthOf(ms?: number): string;
+export interface LedgerRow { month: string; purpose: string; credits: number; company?: string | null }
+export function canSpend(a: { purpose: string; credits: number; contacts?: number; company?: string | null; ledger?: LedgerRow[]; balance?: number | null; month?: string }): { ok: boolean; why: string | null };
+export function monthSpent(ledger: LedgerRow[], month?: string): number;
+export function eightRaiseFooter(used: number): string;
+export const CATCHUP_MAX_PER_DAY: number;
+export const CATCHUP_MAX_EVER: number;
+export const CATCHUP_REASON_TYPES: readonly string[];
+export function excluded(person: { email?: string; name?: string }, lists?: { doNotSuggest?: any[]; rainmaker?: any[] }): "do_not_suggest" | "rainmaker" | null;
+export function pickCatchups(candidates: any[], history: any[], lists: { doNotSuggest?: any[]; rainmaker?: any[] }, now?: number): any[];
+export function catchupNote(a: { name?: string; reason: string }): string;
