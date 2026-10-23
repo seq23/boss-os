@@ -62,17 +62,31 @@ const day = (ts: number | null) => (ts ? new Date(ts).toLocaleDateString() : "�
  * *paper trading* balance as the only non-zero figure on the whole screen, which reads as money and
  * is not.
  */
-type View = "desk" | "return" | "ledger";
+/*
+ * boss fix D (23 Oct 2026, mock-up board 5): the Deals page opens on THE GRID — every buy and sell in
+ * her inbox from the last ~6 months, one row each — then the holders Monique found, then L's LP
+ * replies and Prospects tabs. The older desk, return and ledger views stay behind them.
+ */
+type View = "grid" | "holders" | "lp" | "prospects" | "desk" | "return" | "ledger";
 
 const VIEW_LABEL: Record<View, string> = {
+  grid: "Grid",
+  holders: "Holders Monique found",
+  lp: "LP replies",
+  prospects: "Prospects",
   desk: "The desk",
   return: "Return",
   ledger: "Ledger",
 };
 
+const initialView = (): View => {
+  const v = new URLSearchParams(window.location.search).get("view");
+  return v && v in VIEW_LABEL ? (v as View) : "grid";
+};
+
 export function Capital() {
-  // The desk is the default because it is the only view with a decision on it.
-  const [view, setView] = useState<View>("desk");
+  // The grid is the default: it is the page her morning email links to.
+  const [view, setView] = useState<View>(initialView);
 
   return (
     <>
@@ -83,7 +97,11 @@ export function Capital() {
           </button>
         ))}
       </div>
-      {view === "desk" ? <Buyers />
+      {view === "grid" ? <DealGrid />
+        : view === "holders" ? <HoldersFound />
+        : view === "lp" ? <LaterTab what="LP replies" />
+        : view === "prospects" ? <LaterTab what="Prospects" />
+        : view === "desk" ? <Buyers />
         : view === "return" ? <ReturnLedger />
         : <Ledger />}
     </>
@@ -113,47 +131,8 @@ function Ledger() {
   );
 }
 
-// ─── Monique's finds in her personal LP search ─────────────────────────────
-
-/**
- * Her words, 19 Sep 2026: "I still want Monique to do her job of finding positive replies in my LP
- * search — the LP search is my personal LP search, that's why she is doing it." The daily digest
- * (`GET /api/lp`, written by `lp-replies.sh` on her Mac) had no screen — it reached her by email
- * and through Today's wealth pillar only. This is the screen: who said yes, who wants the deck,
- * who asked a question, per day. Counts only; the names live on her Mac. No fund totals here.
- */
-function MoniquesFinds() {
-  const [data, setData] = useState<{ digests: any[]; duty: any | null } | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => { api.lpDigests().then(setData).catch(() => setFailed(true)); }, []);
-  const recent = (data?.digests ?? []).slice(0, 7);
-  return (
-    <>
-      <p className="eyebrow">Your LP search — Monique's reads</p>
-      <div className="panel" data-testid="moniques-finds">
-        {failed && <div className="row-sub">Monique's digest could not be read just now, so this is not saying she found nothing.</div>}
-        {data && recent.length === 0 && (
-          <div className="row-sub">
-            No digest yet. {data.duty?.suspended ? `The duty is suspended: ${data.duty.suspended_reason ?? "no reason recorded"}.` : "Monique reads the replies daily at 07:00 CT from your Mac; the first digest lands here after that run."}
-          </div>
-        )}
-        {recent.map((d: any) => (
-          <div className="row" key={d.id}>
-            <div className="row-main">
-              <div className="row-title">
-                {d.day_id} · {d.interested} said yes · {d.wants_deck} want the deck · {d.questions} asked a question
-              </div>
-              <div className="row-sub">{d.total_read} read · {d.opt_outs} opted out · {d.bounces} bounced{d.summary ? ` — ${d.summary}` : ""}</div>
-            </div>
-          </div>
-        ))}
-        {data?.duty && recent.length > 0 && (
-          <div className="row-sub">Last run {data.duty.last_run_at ? new Date(data.duty.last_run_at).toLocaleString() : "never"}; next due {data.duty.next_due_at ? new Date(data.duty.next_due_at).toLocaleString() : "—"}.</div>
-        )}
-      </div>
-    </>
-  );
-}
+// Monique's LP-search digest panel ("Your LP search — Monique's reads") was retired on 23 Oct 2026
+// (boss fix D): LP replies now have their own tab on this page, built by the LP update.
 
 // ─── "Find firms that did X and draft the ask" — her instructions, as work ────
 
@@ -551,7 +530,6 @@ function Buyers() {
       )}
 
       <FirmScans />
-      <MoniquesFinds />
 
       {/* ─── The recommendation ──────────────────────────────────────────── */}
       <p className="eyebrow">Write to these this week</p>
@@ -1624,6 +1602,186 @@ function Wealth() {
         </dl>
         <p className="row-sub">{trading.note}</p>
       </div>
+    </>
+  );
+}
+
+// ─── boss fix D: the deal grid and the holders Monique found (23 Oct 2026) ─────────────────────
+
+/*
+ * BUILDER L's TABS: `src/client/boss/pages/deals/LpTab.tsx` (export LpTab) and `ProspectsTab.tsx`
+ * (export ProspectsTab) land with L's PR, not on this branch's base. They are mounted through
+ * `import.meta.glob`, so this builds before they exist and mounts them the moment they are on main;
+ * a static `import` can replace the glob once both PRs have merged.
+ */
+const L_TABS = import.meta.glob("./deals/{LpTab,ProspectsTab}.tsx", { eager: true }) as Record<string, any>;
+const LpTab: (() => JSX.Element) | undefined = L_TABS["./deals/LpTab.tsx"]?.LpTab;
+const ProspectsTab: (() => JSX.Element) | undefined = L_TABS["./deals/ProspectsTab.tsx"]?.ProspectsTab;
+
+function LaterTab({ what }: { what: string }) {
+  const Tab = what === "LP replies" ? LpTab : ProspectsTab;
+  if (Tab) return <Tab />;
+  return <Empty title={what} hint="This tab arrives with the LP and prospects update." />;
+}
+
+const SIDE_LABEL: Record<string, string> = { buy: "Buy", sell: "Sell", yours: "Yours" };
+const SIZE_BANDS: { label: string; min: number }[] = [
+  { label: "Any size", min: 0 }, { label: "$5M+", min: 5e6 }, { label: "$20M+", min: 20e6 },
+  { label: "$100M+", min: 100e6 }, { label: "$500M+", min: 500e6 },
+];
+type Sort = "newest" | "biggest" | "company";
+
+const ago = (d: string) => {
+  const days = Math.floor((Date.now() - Date.parse(d)) / 86_400_000);
+  return days <= 0 ? "today" : days === 1 ? "yesterday" : days < 14 ? `${days} days ago` : days < 60 ? `${Math.round(days / 7)} weeks ago` : `${Math.round(days / 30)} months ago`;
+};
+
+/** Pull-down filters on what the rows actually hold; "All" first. Exported for the test. */
+export function filterDeals(rows: any[], f: { company: string; side: string; min: number; from: string; sort: Sort }) {
+  const out = rows.filter((r) => (f.company === "" || r.company === f.company)
+    && (f.side === "" || r.side === f.side)
+    && (f.min === 0 || (r.size_usd ?? 0) >= f.min)
+    && (f.from === "" || r.from_text === f.from));
+  const by = f.sort === "biggest" ? (a: any, b: any) => (b.size_usd ?? 0) - (a.size_usd ?? 0)
+    : f.sort === "company" ? (a: any, b: any) => String(a.company).localeCompare(String(b.company))
+    : (a: any, b: any) => String(b.received_on).localeCompare(String(a.received_on));
+  return [...out].sort(by);
+}
+
+function DealGrid() {
+  const [data, setData] = useState<{ rows: any[]; lookback_days: number; updated_at: number | null } | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [company, setCompany] = useState("");
+  const [side, setSide] = useState("");
+  const [min, setMin] = useState(0);
+  const [from, setFrom] = useState("");
+  const [sort, setSort] = useState<Sort>("newest");
+  useEffect(() => { api.dealGrid().then(setData).catch(setError); }, []);
+
+  if (error) return <ErrorNotice error={error} />;
+  if (!data) return <Loading />;
+  if (data.rows.length === 0) {
+    return <Empty title="No deals yet" hint="The grid fills from your inbox every morning before Simone's email." />;
+  }
+  const companies = [...new Set(data.rows.map((r) => r.company))].sort((a, b) => a.localeCompare(b));
+  const senders = [...new Set(data.rows.map((r) => r.from_text))].sort((a, b) => a.localeCompare(b));
+  const rows = filterDeals(data.rows, { company, side, min, from, sort });
+
+  return (
+    <>
+      <p className="row-sub" style={{ marginBottom: 10 }}>
+        {data.rows.length} deals from your inbox in the last {Math.round(data.lookback_days / 30)} months. "—" means the email
+        did not say it clearly. <b>Yours</b> is what you posted to rrlist@. Rainmaker rows are marked; Monique never
+        suggests a match between two Rainmaker sides.
+      </p>
+      <div className="btn-row" style={{ flexWrap: "wrap", gap: 10 }}>
+        <label className="field"><span>Company</span>
+          <select value={company} onChange={(e) => setCompany(e.target.value)}>
+            <option value="">All companies</option>
+            {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Side</span>
+          <select value={side} onChange={(e) => setSide(e.target.value)}>
+            <option value="">Buy, Sell and Yours</option>
+            <option value="buy">Buy</option><option value="sell">Sell</option><option value="yours">Yours</option>
+          </select>
+        </label>
+        <label className="field"><span>Size</span>
+          <select value={min} onChange={(e) => setMin(Number(e.target.value))}>
+            {SIZE_BANDS.map((b) => <option key={b.min} value={b.min}>{b.label}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>From</span>
+          <select value={from} onChange={(e) => setFrom(e.target.value)}>
+            <option value="">Everyone</option>
+            {senders.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Sort by</span>
+          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+            <option value="newest">Newest first</option><option value="biggest">Biggest first</option><option value="company">Company A–Z</option>
+          </select>
+        </label>
+      </div>
+      <div className="brief-tablewrap">
+        <table className="brief-table">
+          <thead>
+            <tr><th>Company</th><th>Side</th><th>Size</th><th>Price / valuation</th><th>Structure &amp; fees</th><th>From</th><th>When</th><th>Email</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td><b>{r.company}</b></td>
+                <td>{SIDE_LABEL[r.side] ?? r.side}{r.rainmaker && r.side !== "yours" ? <span className="pill">Rainmaker</span> : null}</td>
+                <td>{r.size_text}</td>
+                <td>{r.price_text}</td>
+                <td>{r.structure_text}</td>
+                <td>{r.from_text}</td>
+                <td>{ago(r.received_on)}</td>
+                <td>{r.email_url ? <a href={r.email_url} target="_blank" rel="noreferrer">Open the email</a> : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length === 0 ? <p className="row-sub">Nothing matches those filters.</p> : null}
+    </>
+  );
+}
+
+function HoldersFound() {
+  const [holders, setHolders] = useState<any[] | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [company, setCompany] = useState("");
+  useEffect(() => { api.dealHolders().then((r) => setHolders(r.holders ?? [])).catch(setError); }, []);
+  if (error) return <ErrorNotice error={error} />;
+  if (!holders) return <Loading />;
+  if (holders.length === 0) {
+    return <Empty title="No holders found yet" hint="Danielle reads every fund filing for the companies in your deals; holders appear here by size." />;
+  }
+  const companies = [...new Set(holders.map((h) => h.company))].sort((a, b) => a.localeCompare(b));
+  const shown = holders.filter((h) => company === "" || h.company === company);
+  const byCompany = new Map<string, any[]>();
+  for (const h of shown) byCompany.set(h.company, [...(byCompany.get(h.company) ?? []), h]);
+  return (
+    <>
+      <div className="btn-row">
+        <label className="field"><span>Company</span>
+          <select value={company} onChange={(e) => setCompany(e.target.value)}>
+            <option value="">All companies</option>
+            {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      </div>
+      {[...byCompany.entries()].map(([co, list]) => {
+        const funds = list.filter((h) => h.kind === "nport");
+        const spvs = list.filter((h) => h.kind === "form_d");
+        const sum = funds.reduce((n, h) => n + (h.value_usd ?? 0), 0);
+        return (
+          <div key={co} style={{ marginBottom: 18 }}>
+            <h3>{co}</h3>
+            {funds.length ? <p className="row-sub">{funds.length} fund{funds.length === 1 ? "" : "s"} hold {moneyShort(sum)} between them, from their latest public filings.</p> : null}
+            <div className="brief-tablewrap">
+              <table className="brief-table">
+                <thead><tr><th>Fund</th><th>Manager</th><th>Holds</th><th>As of</th><th>Contact</th><th>Filing</th></tr></thead>
+                <tbody>
+                  {[...funds, ...spvs].map((h, i) => (
+                    <tr key={`${co}-${i}`}>
+                      <td>{h.fund}{h.kind === "form_d" ? <span className="pill">SPV</span> : null}</td>
+                      <td>{h.manager ?? "—"}</td>
+                      <td>{h.value_usd ? moneyShort(h.value_usd) : "—"}</td>
+                      <td>{h.as_of ?? "—"}</td>
+                      <td>{h.contact ?? "—"}</td>
+                      <td><a href={h.filing_url} target="_blank" rel="noreferrer">Open the filing</a></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 }

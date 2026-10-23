@@ -40,6 +40,11 @@ const SNAPSHOT_TABLES = [
   "boss_notices",
   "capital_book",
   "capital_book_line",
+  // boss fix D (23 Oct 2026): the deal grid, her Rainmaker and do-not-suggest lists, the holders found.
+  // LOCAL_ONLY in data_policy (0293), so a cloud snapshot excludes them; the private vault keeps them.
+  "capital_deal_rows", // fix D
+  "capital_party_lists", // fix D
+  "capital_holders", // fix D
   /*
    * THE POINTERS TO WORK MONIQUE EMAILED HER FROM THE LEDGER. A count, a kind and a clock — the
    * whole table is incapable of holding anything else — and losing it to a rebuild would silently

@@ -97,6 +97,10 @@ const STATE_FILE = path.join(DIR, "scan-state.json");
 const ARGS = process.argv.slice(2);
 const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null : (ARGS[i + 1] ?? null); };
 const BACKFILL = ARGS.includes("--backfill");
+/** Fill in who sent each ledger row the extract never recorded a sender for (23 Oct 2026). Headers only. */
+const SENDERS_BACKFILL = ARGS.includes("--senders");
+/** Her firm's internal list. What SHE sends here is her own supply and demand: "Yours" on the grid. */
+const RRLIST = (process.env.RRLIST_ADDRESS ?? "rrlist@rainmakersecurities.com").toLowerCase();
 const SINCE = argOf("since");
 const CONCURRENCY = Number(process.env.CAPITAL_CONCURRENCY ?? 8);
 const MAX_FETCH = Number(process.env.CAPITAL_MAX_FETCH ?? 200_000);
@@ -163,7 +167,7 @@ export const SIZE_RE = new RegExp(
 
 /** SIDE — the vocabulary of a secondary. Not company names: those are what we are trying to learn. */
 export const SIDE_RE =
-  /\b(buy(?:er|ers|ing|side)?|sell(?:er|ers|ing|side)?|shares?|stock|secondar(?:y|ies)|block|allocation|alloc\b|tender|bid|ask|offer|indication of interest|\bIOI\b|SPV|forward(?: contract)?|cap table|common|preferred|mandate|inventory|available)\b/i;
+  /\b(buy(?:er|ers|ing|side)?|sell(?:er|ers|ing|side)?|shares?|stock|secondar(?:y|ies)|block|allocation|alloc\b|tender|bid|ask|offer|indication of interest|\bIOI\b|SPV|forward(?: contract)?|cap table|common|preferred|mandate|inventory|available|supply|demand)\b/i;
 
 /**
  * STAGE 2 — the shape of a trade. Returns a named reason for a drop, or null to keep.
@@ -334,6 +338,37 @@ function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); } catch { return {}; }
 }
 
+/**
+ * `--senders`: the ledger rows written before the extract kept a sender. For each one, the From, To
+ * and Cc HEADERS only (format=metadata, no body), merged into `senders.json` — so the grid can say who
+ * a deal came from and which of her own rows went to rrlist@. Added to, never trimmed.
+ */
+async function backfillSenders() {
+  const LEDGER = path.join(DIR, "ledger.json");
+  const SENDERS = path.join(DIR, "senders.json");
+  const ids = new Set((JSON.parse(fs.readFileSync(LEDGER, "utf8")).interests ?? []).map((r) => r.source_message).filter(Boolean));
+  let have = {};
+  try { have = JSON.parse(fs.readFileSync(SENDERS, "utf8")).senders ?? {}; } catch { /* first run */ }
+  const todo = [...ids].filter((id) => !have[id]);
+  console.log(`${ids.size} ledger message(s), ${todo.length} without a sender.`);
+  let failed = 0;
+  await pooled(todo, CONCURRENCY, async (id) => {
+    const msg = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc`);
+    if (!msg) { failed += 1; return; }
+    const h = headerMap(msg);
+    const from = addressIn(h.from);
+    const to = [...String(h.to ?? "").split(","), ...String(h.cc ?? "").split(",")].map(addressIn).filter(Boolean);
+    have[id] = {
+      from,
+      from_name: (String(h.from).match(/^\s*"?([^"<]{2,60}?)"?\s*</) ?? ["", ""])[1].trim() || null,
+      to_rrlist: to.includes(RRLIST),
+      outbound: from === MAILBOX.toLowerCase(),
+    };
+  });
+  fs.writeFileSync(SENDERS, JSON.stringify({ updated_at: new Date().toISOString(), senders: have }), "utf8");
+  console.log(`CAPITAL-SENDERS-COMPLETE: ${todo.length - failed} filled, ${failed} could not be read (retried next run).`);
+}
+
 async function main() {
   const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
   if (!raw) {
@@ -342,6 +377,7 @@ async function main() {
   }
   CREDS = JSON.parse(raw);
   const token = await liveToken();
+  if (SENDERS_BACKFILL) { await backfillSenders(); return; }
 
   const state = loadState();
   const since = SINCE ?? (BACKFILL ? null : state.last_scanned_date ?? null);
@@ -360,7 +396,14 @@ async function main() {
   }
 
   // ─── Stage A: side vocabulary, in Gmail's index ───
-  const candidateIds = await listIds(token, `${scope} ${GMAIL_SHAPE}`, MAX_FETCH);
+  /*
+   * PLUS EVERYTHING ADDRESSED TO RRLIST@, whatever its words. Her own posts there ("Applied Intuition
+   * supply") are her supply and demand and may carry none of the vocabulary below; the shape test in
+   * stage 2 still applies to them. A union, so nothing is counted twice.
+   */
+  const vocab = await listIds(token, `${scope} ${GMAIL_SHAPE}`, MAX_FETCH);
+  const rrlist = await listIds(token, `${scope} {to:${RRLIST} cc:${RRLIST}}`, MAX_FETCH);
+  const candidateIds = [...new Set([...vocab, ...rrlist])];
   const drops = { gmail_no_trade_vocabulary: census - candidateIds.length };
   /*
    * COUNTED APART FROM THE DECISIONS, because they are a different fact. A drop is "this message was

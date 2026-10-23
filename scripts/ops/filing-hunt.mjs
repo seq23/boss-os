@@ -65,17 +65,45 @@ import path from "node:path";
 import os from "node:os";
 import { advFirms, advPeople } from "./lib/adv.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
+/*
+ * IMPORTED, BECAUSE IT WAS NEVER DEFINED HERE (found 23 Oct 2026). `positionFromXml` called
+ * `assetKey` with no import, threw a ReferenceError inside the `try` that wraps every filing read,
+ * and the catch swallowed it — so every N-PORT filing was "unreadable" and every hunt reported no
+ * holder. Pinned by tests/boss/dealGrid.test.ts.
+ */
+import { assetKey } from "./interest-match.mjs";
 
 /** SEC Fair Access requires a descriptive agent with a contact address. It is a condition, not a nicety. */
 const USER_AGENT = process.env.SEC_USER_AGENT ?? "Boss OS capital research (seq.taylor@gmail.com)";
 const FTS = "https://efts.sec.gov/LATEST/search-index";
 
-/** Filings read per name. Enough to see who the holders are, far inside SEC's 10/second. */
-const FILINGS_PER_ASSET = Number(process.env.BUYER_HUNT_FILINGS ?? 8);
-/** Named holders printed per name. A directory is the People tab she deleted. */
-export const CAP = Number(process.env.BUYER_HUNT_CAP ?? 6);
+/*
+ * ─── EVERY FILING, EVERY HOLDER (owner, 23 Oct 2026) ───────────────────────
+ *
+ * This used to read 8 filings per name and print 6 holders, dropping any holder whose position could
+ * not fill the whole block. Her review: "reads 2–8 of hundreds of filings and drops any holder that
+ * can't fill the whole size, never naming the holders". So now: every N-PORT filing that names the
+ * issuer is read (paged through EDGAR full-text search), every holder with a readable position is
+ * named — fund, manager, value held, as-of date, filing link, the registrant's public phone — ranked
+ * by size, and partial fills are SUMMED ("top 5 hold $180M vs your $1B buyer"). Nothing is dropped
+ * for being smaller than the block.
+ *
+ * SEC FAIR ACCESS: a declared User-Agent (above) and at most ~9 requests a second (`sec` spaces every
+ * call by `SEC_GAP_MS`), across the whole process. A per-name cache (7 days) keeps a daily hunt from
+ * re-reading the same few hundred filings every morning.
+ */
+/** Upper bound on filings read per name; reported when hit, never silent. */
+const MAX_FILINGS = Number(process.env.NPORT_MAX_FILINGS ?? 2000);
+/** Named holders printed per name in a text render. The full list is on the Deals page. */
+export const CAP = Number(process.env.BUYER_HUNT_CAP ?? 25);
+/** Holders whose adviser is looked up on Form ADV (one or two calls each). */
+const ADV_TOP = Number(process.env.BUYER_HUNT_ADV_TOP ?? 10);
 /** How far back a filing may be and still describe a position that plausibly still exists. */
 const FILING_LOOKBACK_DAYS = Number(process.env.BUYER_HUNT_LOOKBACK_DAYS ?? 400);
+/** ≤10 requests/second is SEC's rule; 110 ms between calls keeps every run under it. */
+export const SEC_GAP_MS = 110;
+const CACHE_DIR = path.join(process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital"), "holders-cache");
+const CACHE_TTL_MS = 7 * 86_400_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const money = (n) => (n == null ? "unknown"
@@ -83,27 +111,24 @@ export const money = (n) => (n == null ? "unknown"
 
 // ─── N-PORT: which funds report this position ─────────────────────────────────
 
+let lastSecCall = 0;
 export async function sec(url) {
+  const wait = lastSecCall + SEC_GAP_MS - Date.now();
+  if (wait > 0) await sleep(wait);
+  lastSecCall = Date.now();
   const r = await fetch(url, { headers: { "user-agent": USER_AGENT, accept: "application/json, text/xml, */*" } });
   if (!r.ok) throw new Error(`SEC ${r.status} for ${url}`);
   return r;
 }
 
-/** Recent N-PORT filings whose text names this issuer. */
-export async function nportFilings(asset) {
-  const startdt = new Date(Date.now() - FILING_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
-  const url = `${FTS}?${new URLSearchParams({ q: `"${asset}"`, forms: "NPORT-P", startdt, enddt: new Date().toISOString().slice(0, 10) })}`;
-  const j = await (await sec(url)).json();
-  const seen = new Set();
+/** One page of EDGAR full-text search hits for a form, flattened to filings. */
+export function filingsFromHits(hits) {
   const out = [];
-  for (const h of j?.hits?.hits ?? []) {
+  for (const h of hits ?? []) {
     const s = h._source ?? {};
     const cik = String(s.ciks?.[0] ?? "").replace(/^0+/, "");
-    if (!cik || seen.has(cik)) continue;
-    // `_id` is "accession:filename". The accession is what makes this citable.
     const [accRaw, file] = String(h._id ?? "").split(":");
-    if (!accRaw) continue;
-    seen.add(cik);
+    if (!cik || !accRaw) continue;
     out.push({
       cik,
       filer: String(s.display_names?.[0] ?? "").replace(/\s+\(CIK.*$/, "").trim(),
@@ -112,9 +137,85 @@ export async function nportFilings(asset) {
       filed: s.file_date ?? null,
       url: `https://www.sec.gov/Archives/edgar/data/${cik}/${accRaw.replace(/-/g, "")}/${file ?? "primary_doc.xml"}`,
     });
-    if (out.length >= FILINGS_PER_ASSET) break;
   }
-  return { filings: out, total: j?.hits?.total?.value ?? 0 };
+  return out;
+}
+
+/** EVERY filing of this form whose text names the issuer, paged, newest first, one per accession. */
+export async function ftsFilings(asset, form, { lookbackDays = FILING_LOOKBACK_DAYS, max = MAX_FILINGS } = {}) {
+  const startdt = new Date(Date.now() - lookbackDays * 86_400_000).toISOString().slice(0, 10);
+  const enddt = new Date().toISOString().slice(0, 10);
+  const byAcc = new Map();
+  let total = 0;
+  for (let from = 0; from < max; from += 100) {
+    const url = `${FTS}?${new URLSearchParams({ q: `"${asset}"`, forms: form, startdt, enddt, from: String(from) })}`;
+    const j = await (await sec(url)).json();
+    total = j?.hits?.total?.value ?? total;
+    const page = filingsFromHits(j?.hits?.hits);
+    for (const f of page) if (!byAcc.has(f.accession)) byAcc.set(f.accession, f);
+    if (page.length < 100 || from + 100 >= total) break;
+  }
+  const filings = [...byAcc.values()].sort((a, b) => String(b.filed).localeCompare(String(a.filed)));
+  return { filings: filings.slice(0, max), total, capped: total > max };
+}
+
+/** Recent N-PORT filings whose text names this issuer — all of them. */
+export async function nportFilings(asset) {
+  return ftsFilings(asset, "NPORT-P");
+}
+
+/**
+ * SPV VEHICLES FOR THIS COMPANY, FROM FREE SEC FORM D DATA. A Form D whose text names the issuer is
+ * very often a single-purpose vehicle raised to hold it — each one has a manager who either holds the
+ * paper or is raising to buy it. Named with the filing link; nothing is inferred beyond the filing.
+ */
+export async function formDVehicles(asset, { lookbackDays = 730 } = {}) {
+  const { filings, total } = await ftsFilings(asset, "D", { lookbackDays, max: 300 });
+  const byFiler = new Map();
+  for (const f of filings) if (f.filer && !byFiler.has(f.filer)) byFiler.set(f.filer, f);
+  return { vehicles: [...byFiler.values()].map((f) => ({ fund: f.filer, filed: f.filed, filing_url: f.url.replace(/[^/]+$/, "") })), total };
+}
+
+export const unescapeXml = (v) => (v == null ? v : String(v).replace(/&amp;/g, "&").replace(/&apos;|&#39;/g, "'")
+  .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
+
+/**
+ * WHAT DANIELLE AND MONIQUE FOUND, KEPT ON HER MAC FOR THE MORNING (23 Oct 2026). The hunts used to
+ * email it; now they write `~/.boss-os/capital/found.json`, per company, and `npm run capital:grid`
+ * turns it into the "Monique found" lines and the Holders tab. Named holders only, ranked by size.
+ */
+export function recordFound(asset, { holders = [], spvs = [], press = [] } = {}, file = null) {
+  const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
+  const target = file ?? path.join(DIR, "found.json");
+  let all = { companies: {} };
+  try { all = JSON.parse(fs.readFileSync(target, "utf8")); } catch { /* first */ }
+  all.companies ??= {};
+  all.companies[assetKey(asset)] = {
+    company: String(asset),
+    updated_at: new Date().toISOString(),
+    holders: holders.filter((h) => Number(h.valUSD) > 0).map((h) => ({
+      fund: unescapeXml(h.fund ?? h.filer), manager: unescapeXml(h.manager ?? null), value_usd: h.valUSD,
+      as_of: h.as_of ?? h.filed ?? null, filing_url: h.url, contact: h.contact ?? null,
+    })),
+    spvs,
+    press: press.filter((l) => l?.name && l?.source_url),
+  };
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, JSON.stringify({ updated_at: new Date().toISOString(), companies: all.companies }, null, 2));
+  return all.companies[assetKey(asset)];
+}
+
+/** The registrant's own lines out of an N-PORT: who filed, which fund, as of when, a public phone. */
+export function genInfoFromXml(xml) {
+  const tag = (t) => unescapeXml(new RegExp(`<${t}>\\s*([\\s\\S]*?)\\s*</${t}>`, "i").exec(xml)?.[1]?.trim()) || null;
+  return {
+    manager: tag("regName"),
+    fund: tag("seriesName"),
+    series_id: tag("seriesId"),
+    as_of: tag("repPdDate"),
+    phone: tag("regPhone"),
+    city: [tag("regCity"), tag("regStateConditional") ?? tag("regState")].filter(Boolean).join(", ") || null,
+  };
 }
 
 /**
@@ -208,29 +309,60 @@ export function supply(position, size) {
 }
 
 const RANK = { COMFORTABLY: 3, PLAUSIBLY: 2, UNVERIFIED: 1, NO: 0 };
+const cacheKey = (asset) => assetKey(asset).replace(/[^a-z0-9]+/g, "-").slice(0, 60) || "x";
 
-export async function fromFilings(asset, size, SIDE = "buy") {
-  let found;
-  try { found = await nportFilings(asset); }
-  catch (err) { return { holders: [], note: `EDGAR could not be read: ${err.message}` }; }
-
-  const holders = [];
-  for (const f of found.filings) {
-    await sleep(150); // Well inside SEC's 10 requests/second.
-    let position = null;
+/**
+ * Every holder of this issuer, from every N-PORT that names it: the position, the fund, the manager,
+ * the as-of date, the filing and the registrant's phone. Latest filing per fund. Size-independent, so
+ * it is cached per name; `fromFilings` applies the block size afterwards.
+ */
+export async function allHolders(asset, { fresh = false, read = nportFilings, fetchXml = async (u) => (await sec(u)).text() } = {}) {
+  const file = path.join(CACHE_DIR, `${cacheKey(asset)}.json`);
+  if (!fresh) {
     try {
-      const xml = await (await sec(f.url)).text();
-      position = positionFromXml(xml, asset);
-    } catch { /* One unreadable filing must not end the hunt for the other seven. */ }
-    if (!position) continue;
-    const cap = capacity(position, size, SIDE);
-    // HER BAR: a holder who cannot write the cheque — or cannot supply the paper — is not a
-    // candidate, it is a distraction.
-    if (cap.verdict === "NO") continue;
-    holders.push({ ...f, ...position, capacity: cap });
+      const c = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (Date.now() - c.at < CACHE_TTL_MS) return c.result;
+    } catch { /* no cache */ }
   }
-  holders.sort((a, b) => (RANK[b.capacity.verdict] - RANK[a.capacity.verdict]) || ((b.valUSD ?? 0) - (a.valUSD ?? 0)));
-  return { holders: holders.slice(0, CAP), scanned: found.filings.length, total: found.total };
+  const found = await read(asset);
+  const byFund = new Map();
+  let readable = 0;
+  for (const f of found.filings) {
+    let xml;
+    try { xml = await fetchXml(f.url); } catch { continue; } // one unreadable filing must not end the hunt
+    readable += 1;
+    const position = positionFromXml(xml, asset);
+    if (!position) continue;
+    const g = genInfoFromXml(xml);
+    const key = g.series_id ?? `${f.cik}|${g.fund ?? f.filer}`;
+    const prior = byFund.get(key);
+    if (prior && String(prior.as_of ?? prior.filed) >= String(g.as_of ?? f.filed)) continue;
+    byFund.set(key, {
+      ...f, ...position,
+      holding: unescapeXml(position.holding), fund: g.fund ?? f.filer, manager: g.manager ?? f.filer, as_of: g.as_of ?? f.filed,
+      contact: [g.phone, g.city].filter(Boolean).join(" · ") || null,
+    });
+  }
+  const holders = [...byFund.values()].sort((a, b) => (b.valUSD ?? 0) - (a.valUSD ?? 0));
+  const result = { holders, scanned: readable, listed: found.filings.length, total: found.total, capped: Boolean(found.capped) };
+  try { fs.mkdirSync(CACHE_DIR, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ at: Date.now(), result })); } catch { /* cache is a convenience */ }
+  return result;
+}
+
+/** Partial fills summed: what the top holders hold between them, against the block. */
+export function partialFill(holders, size, top = 5) {
+  const valued = holders.filter((h) => Number(h.valUSD) > 0).slice(0, top);
+  const sum = valued.reduce((n, h) => n + h.valUSD, 0);
+  return { count: valued.length, sum, line: valued.length ? `top ${valued.length} hold ${money(sum)}${size ? ` vs your ${money(size)}` : ""}` : null };
+}
+
+export async function fromFilings(asset, size, SIDE = "buy", opts = {}) {
+  let all;
+  try { all = await allHolders(asset, opts); }
+  catch (err) { return { holders: [], note: `EDGAR could not be read: ${err.message}` }; }
+  // EVERY HOLDER, ranked by what they hold. The verdict is shown beside each, never used to drop one.
+  const holders = all.holders.map((h) => ({ ...h, capacity: capacity(h, size, SIDE) }));
+  return { ...all, holders, fill: partialFill(holders, size) };
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
@@ -315,16 +447,16 @@ export function renderFilings(lines, lot, filings, contacts, SIDE) {
   }
   if (filings.holders.length === 0) {
     lines.push(SIDE === "sell"
-      ? `    Nobody marking enough of it to supply ${money(size)}. ${filings.total ?? 0} N-PORT filing(s) name this issuer;`
-      : `    Nobody who could write ${money(size)}. ${filings.total ?? 0} N-PORT filing(s) name this issuer;`);
-    lines.push(SIDE === "sell"
-      ? `    ${filings.scanned ?? 0} were read and none marked a position large enough against what you want.`
-      : `    ${filings.scanned ?? 0} were read and none had both a readable position and the balance sheet for it.`);
+      ? `    No fund reports a readable position: ${filings.total ?? 0} N-PORT filing(s) name this issuer;`
+      : `    No fund reports a readable position: ${filings.total ?? 0} N-PORT filing(s) name this issuer;`);
+    lines.push(`    ${filings.scanned ?? 0} were read.`);
     return;
   }
 
-  for (const h of filings.holders) {
-    lines.push(`    ${h.filer}`);
+  if (filings.fill?.line) lines.push(`    ${filings.holders.length} holder(s) in ${filings.scanned} filing(s) read; ${filings.fill.line}.`);
+  if (filings.capped) lines.push(`    EDGAR lists ${filings.total} filings; the first ${filings.listed} were read.`);
+  for (const h of filings.holders.slice(0, CAP)) {
+    lines.push(`    ${h.fund ?? h.filer}${h.manager && h.manager !== (h.fund ?? h.filer) ? ` (${h.manager})` : ""}${h.as_of ? ` · as of ${h.as_of}` : ""}${h.contact ? ` · ${h.contact}` : ""}`);
     lines.push(`      Holds ${money(h.valUSD)}${h.pctVal != null ? ` (${h.pctVal.toFixed(2)}% of the fund)` : ""} of "${h.holding}"`);
     lines.push(`      ${SIDE === "sell" ? "Could supply it" : "Can write it"}: ${h.capacity.verdict} — ${h.capacity.why}`);
     lines.push(`      ${h.filed ?? ""} N-PORT ${h.accession}  ${h.url}`);
@@ -364,9 +496,10 @@ export function renderFilings(lines, lot, filings, contacts, SIDE) {
  */
 export async function researchLot(asset, size, SIDE = "buy", { offline = false } = {}) {
   const filings = await fromFilings(asset, size, SIDE);
-  for (const h of filings.holders ?? []) {
+  for (const h of (filings.holders ?? []).slice(0, ADV_TOP)) {
     h.adv = await peopleFor(h.filer, { offline });
   }
+  try { filings.spvs = (await formDVehicles(asset)).vehicles; } catch { filings.spvs = []; }
   return filings;
 }
 

@@ -63,9 +63,9 @@ import path from "node:path";
 import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
-import { namesOnce, sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
+import { namesOnce } from "./notify.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
-import { researchLot, renderFilings, renderReach } from "./filing-hunt.mjs";
+import { researchLot, renderFilings, renderReach, recordFound } from "./filing-hunt.mjs";
 import { mirrorOrStop } from "./lib/book-mirror.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
@@ -274,26 +274,14 @@ async function main() {
     + sections.map((s) => renderAsset(s.lot, s.inbox, s.filings, contacts)).join("\n");
   console.log(body);
 
-  if (!SEND) { console.log("\nRe-run with --send to email it."); return; }
-  const SENDERS = sendersFor("Monique");
-  if (SENDERS.length === 0) {
-    console.error("NAMED STOP [NO_MAIL_KEY] the list is above and no email could be sent.");
-    process.exit(8);
-  }
-  const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
-  const text = ["Sequoia,", "", "This is Monique. I worked outward from your book rather than across your mailbox.", "",
-    body, "", "— Monique, Director of Relationships"].join("\n");
-  const subject = total
-    ? `${total} possible ${HUNTING}${total === 1 ? "" : "s"} for ${namesOnce(priced.map((p) => p.asset))}`
-    : `No ${HUNTING} clears the bar this week for ${namesOnce(priced.map((p) => p.asset))}`;
-  for (const sender of SENDERS) {
-    const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
-    if (res.ok) { console.log(`\nEmailed ${TO} from ${from}.`); return; }
-    console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
-  }
-  console.error("NAMED STOP [SEND_REFUSED] every sender was refused.");
-  process.exit(9);
+  if (!SEND) { console.log("\nRe-run with --send to keep it for the morning email."); return; }
+  /*
+   * NO EMAIL (owner, 23 Oct 2026). The weekly hunt's findings are kept per company in found.json and
+   * reach her as "Monique found" in the morning email and on the Deals page (npm run capital:grid).
+   * A hunt she asked for by email (`--from-boss`) still lands its full result on her card.
+   */
+  for (const sec of sections) recordFound(sec.lot.asset, { holders: sec.filings.holders ?? [], spvs: sec.filings.spvs ?? [] });
+  console.log(`\nKept for the morning email: ${namesOnce(priced.map((p) => p.asset))}.`);
 }
 
 /**
@@ -371,7 +359,7 @@ async function fromBoss() {
      * So a dry run prints and leaves the task exactly where it was, and says so.
      */
     if (!SEND) {
-      console.log(`  ${task.id} LEFT QUEUED — nothing was emailed, so this request is not finished.`);
+      console.log(`  ${task.id} LEFT QUEUED — nothing was kept or recorded, so this request is not finished.`);
       console.log("  Re-run with --send to deliver it and close the task.");
       continue;
     }

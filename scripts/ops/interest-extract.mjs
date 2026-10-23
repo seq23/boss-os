@@ -52,6 +52,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
+import { loadIdentity, isHers, RRLIST } from "./interest-grid.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const BATCH_DIR = path.join(DIR, "candidates");
@@ -131,7 +132,38 @@ const FIRM = "rainmakersecurities.com";
  * Left in, the matcher would eventually recommend that she call herself, or count her as a
  * counterparty at size she does not hold.
  */
-const HERSELF = /staylor@spry\.vc|sequoia@westpeek\.ventures|seq\.taylor@gmail\.com/i;
+
+/*
+ * ─── BUT HER OWN SUPPLY IS NOT A COUNTERPARTY, AND IT IS NOT NOTHING EITHER (23 Oct 2026) ───
+ *
+ * The rule above stopped her being matched against herself by DROPPING her rows. Her inbox review
+ * showed the cost: "Unnamed buyer of Sequoia Taylor" still reached her (her display name and her
+ * firm address were never in that regex), and the rows that were caught vanished — yet what she
+ * posts to rrlist@ is exactly her own supply and demand. So a row that is hers is KEPT, marked
+ * `hers: true` with "your client" as the principal, and becomes a "Yours" row on the grid. It is
+ * never a counterparty: `isHers` (interest-grid.mjs) reads her name, her addresses, her firm
+ * address by local part, and `~/.boss-os/capital/self.json` on her Mac.
+ */
+const IDENTITY = loadIdentity();
+
+/** Who sent the message, kept on every row so the grid can say "from" and "Yours" without Gmail. */
+export function senderOf(msg) {
+  const to = [...(msg?.to ?? []), ...(msg?.cc ?? [])].map((a) => String(a).toLowerCase());
+  return {
+    from: String(msg?.from ?? "").toLowerCase() || null,
+    from_name: msg?.from_name || null,
+    to_rrlist: to.includes(RRLIST),
+    outbound: Boolean(msg?.outbound),
+  };
+}
+
+/** A row that is hers: "your client" as principal, `hers: true`, and nobody of hers as intermediary. */
+export function markHers(row, msg, identity = IDENTITY) {
+  const sender = senderOf(msg);
+  const withSender = { ...row, ...sender };
+  if (!isHers(withSender, identity) && !(sender.outbound && sender.to_rrlist)) return withSender;
+  return { ...withSender, hers: true, principal: "your client", principal_email: null, intermediated_by: null };
+}
 
 /**
  * ─── HOW THIS IS ACTUALLY VERIFIED, AND WHY IT IS NOT RECALL ───────────────
@@ -163,6 +195,7 @@ const REVIEW = ARGS.includes("--review");
 const WRONG = argOf("wrong");
 const REVIEW_SIZE = Number(process.env.CAPITAL_REVIEW_SIZE ?? 25);
 const WRONG_FILE = path.join(DIR, "wrong.json");
+const SENDERS_FILE = path.join(DIR, "senders.json");
 
 // ─── The structured-order fast path ──────────────────────────────────────────
 
@@ -180,8 +213,8 @@ export function structuredOrder(msg) {
   const [, side, asset, amount, unit, price] = m;
   const from = String(msg.from ?? "").toLowerCase();
   const internal = from.endsWith(`@${FIRM}`);
-  return {
-    principal: internal ? `unnamed client of ${from}` : (msg.from_name || from),
+  return markHers({
+    principal: internal ? `unnamed client of ${msg.from_name || from}` : (msg.from_name || from),
     principal_email: internal ? null : from,
     side: side.toLowerCase(),
     asset: asset.trim(),
@@ -203,7 +236,7 @@ export function structuredOrder(msg) {
     source_message: msg.source_message,
     date: msg.date,
     via: "order_system",
-  };
+  }, msg);
 }
 
 // ─── The model pass ──────────────────────────────────────────────────────────
@@ -286,7 +319,7 @@ export function admissible(row, msg) {
    */
   const pe = String(row.principal_email ?? "").toLowerCase();
   if (pe.endsWith(`@${FIRM}`)) return "principal is at her own firm";
-  if (HERSELF.test(pe) || HERSELF.test(String(row.principal))) return "principal is the owner herself";
+  // Her own rows are no longer refused here: `markHers` turns them into "Yours" rows (23 Oct 2026).
   if (/@|^https?:/i.test(String(row.asset))) return "asset is an address or a link";
   if (row.confidence && !["high", "medium", "low"].includes(row.confidence)) return "bad confidence";
   if (row.source_message && msg && row.source_message !== msg.source_message) return "source id does not match";
@@ -300,7 +333,7 @@ export function admissible(row, msg) {
   return null;
 }
 
-const normalise = (row, msg) => ({
+const normalise = (row, msg) => markHers({
   principal: String(row.principal).trim().slice(0, 160),
   principal_email: row.principal_email ? String(row.principal_email).toLowerCase().slice(0, 160) : null,
   side: row.side,
@@ -319,7 +352,8 @@ const normalise = (row, msg) => ({
   source_message: msg.source_message,
   date: msg.date,
   via: "model",
-});
+  structure_text: row.structure_text ? String(row.structure_text).slice(0, 60) : null,
+}, msg);
 
 const CONF_ORDER = { high: 0, medium: 1, low: 2 };
 
@@ -414,14 +448,23 @@ async function main() {
   const rows = [];
   const forModel = [];
   let messages = 0;
+  /*
+   * WHO SENT EACH CANDIDATE, KEPT. The ledger row never carried its sender, so the grid could not
+   * say who a deal came from and could not tell her own rrlist@ posts from anybody else's. Read from
+   * the candidate batches (no Gmail call here), merged into `senders.json`, added to and never trimmed.
+   */
+  const senders = (() => { try { return JSON.parse(fs.readFileSync(SENDERS_FILE, "utf8")).senders ?? {}; } catch { return {}; } })();
   for (const f of files) {
     for (const msg of JSON.parse(fs.readFileSync(path.join(BATCH_DIR, f), "utf8"))) {
       messages += 1;
+      senders[msg.source_message] = senderOf(msg);
       const fast = structuredOrder(msg);
       if (fast) { rows.push(fast); continue; }
       forModel.push(msg);
     }
   }
+  fs.mkdirSync(DIR, { recursive: true });
+  fs.writeFileSync(SENDERS_FILE, JSON.stringify({ updated_at: new Date().toISOString(), senders }), "utf8");
   console.log(`${messages} candidate message(s): ${rows.length} answered by the order-system format,`
     + ` ${forModel.length} going to ${MODEL}.`);
 
