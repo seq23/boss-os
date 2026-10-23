@@ -15,6 +15,11 @@
 -- per positive LP reply in the LP's own thread, and put Send as is / Edit, then send / Skip in the
 -- morning email.
 
+-- Their run history goes first: duty_runs.duty_id REFERENCES standing_duties(id), and production holds
+-- runs for both (45 rows, read 23 Oct 2026), so deleting the duties alone failed the production apply
+-- with SQLITE_CONSTRAINT_FOREIGNKEY. Same order as 0244. validate:retired-duty-fk guards it.
+DELETE FROM duty_runs WHERE duty_id IN ('duty_lp_replies', 'duty_lp_positive');
+DELETE FROM comment_watch_digests WHERE duty_id IN ('duty_lp_replies', 'duty_lp_positive');
 DELETE FROM standing_duties WHERE id IN ('duty_lp_replies', 'duty_lp_positive');
 
 -- One held reply per LP who answered warmly. `status` is the tracker word she sees.
