@@ -10,16 +10,36 @@
  *   spry.vc mailbox    the service account (gmail.readonly), headers only, never a body
  *   personal Gmail     her Claude session's Gmail connector (one short Haiku run), headers only
  *
- * A mailbox it cannot read is a NAMED STOP line, said once. It emails her as Toni only when a lock
- * appears or one it reported is gone. Rule 0: both mailboxes unreadable → exit 3.
+ * WHAT SHE SEES (owner, 23 Oct 2026, rule 1): no Toni email. A new lock is a Decide item in Simone's
+ * morning email (only she can answer for her own account) with the notice one tap away; a lock that is
+ * gone is a "Done for you" line; a mailbox it cannot read is a fix job for the team (`planLocks`).
+ * Rule 0: both mailboxes unreadable → exit 3.
  *
  *   npm run risk:locks             # read and email what moved
  *   npm run risk:locks -- --dry    # read and print only
  */
 import {
   askClaudeJson, fromDomain, gmailHeaders, googleToken, loadState, movedReadings, readNothingStop,
-  saveState, sendAs, stateMap,
+  saveState, stateMap, toMorning, fixJob, bossApi,
 } from "./lib/duty-kit.mjs";
+import { gmailSearchLink } from "../../src/shared/boss/mail/plain.mjs";
+
+/** Moved lock readings → `{ decide, lines, fixes }`. Pure; tested. */
+export function planLocks(moved) {
+  const out = { decide: [], lines: [], fixes: [] };
+  for (const m of moved) {
+    if (m.state === "alert") {
+      const subj = /"([^"]+)"/.exec(m.line)?.[1] ?? "";
+      const domain = /\s([a-z0-9.-]+\.[a-z]{2,}):/i.exec(` ${m.line}`)?.[1] ?? "an account";
+      out.decide.push({ title: `Answer the ${domain} notice on your account?`, body: subj ? `"${subj}"` : "", buttons: [{ label: "Open the email", url: gmailSearchLink(subj) }], priority: 2 });
+    } else if (m.state === "cleared" || m.state === "ok") {
+      if (m.key.startsWith("lock:")) out.lines.push(`An account notice from ${m.key.split(":")[1]} is no longer showing (resolved or older than 8 days).`);
+    } else if (m.state === "stop") {
+      out.fixes.push({ title: `Toni cannot check ${m.key.replace("mailbox:", "")} mail for account locks`, prompt: `Toni's weekly outside-locks check (scripts/ops/outside-locks.mjs) could not read ${m.key}: ${m.line} Fix the read. A team chore, never her email.` });
+    }
+  }
+  return out;
+}
 
 const DRY = process.argv.includes("--dry");
 /** The one model this duty names (its duty row says the same): a short Haiku run on her Claude seat, mail headers or the gallery only. */
@@ -74,19 +94,14 @@ async function main() {
   console.log(`outside locks: ${readings.filter((r) => r.key.startsWith("lock:")).length} lock notice(s), ${moved.length} moved.`);
   if (DRY) { console.log("OUTSIDE-LOCKS-COMPLETE: dry"); return; }
   if (moved.length) {
-    const locks = moved.filter((m) => m.state === "alert");
-    const gone = moved.filter((m) => m.state === "cleared" || m.state === "ok");
-    const stops = moved.filter((m) => m.state === "stop");
-    const text = [
-      "Sequoia,", "",
-      locks.length ? `${locks.length} new lock notice${locks.length === 1 ? "" : "s"} on your accounts this week.` : "No new locks this week; this is what changed.", "",
-      ...(locks.length ? ["NEW", ...locks.map((m) => `- ${m.line}`), ""] : []),
-      ...(gone.length ? ["NO LONGER SEEN (older than 8 days or resolved)", ...gone.map((m) => `- ${m.line}`), ""] : []),
-      ...(stops.length ? ["I COULD NOT READ (said once)", ...stops.map((m) => `- ${m.line}`), ""] : []),
-      "— Toni, Chief Risk Officer",
-    ].join("\n");
-    if (!(await sendAs("Toni", { subject: locks.length ? `Locks: ${locks.length} new — ${locks[0].line.slice(0, 60)}` : "Locks: changes this week", text }))) {
-      console.error("NAMED STOP [NO_MAIL_SENT] locks moved and no email could be sent; state not saved."); process.exit(8);
+    const plan = planLocks(moved);
+    if (plan.fixes.length) {
+      let api = null;
+      try { api = await bossApi(); } catch (e) { console.error(String(e?.message ?? e)); }
+      for (const f of plan.fixes) { const why = api ? await fixJob(api, f) : "Boss OS was not reachable"; console.log(`  fix job: ${f.title}${why ? ` — NOT opened (${why})` : ""}`); }
+    }
+    if ((plan.lines.length || plan.decide.length) && !toMorning("risk", { lines: plan.lines, decide: plan.decide })) {
+      console.error("state not saved."); process.exit(8);
     }
   }
   saveState("outside-locks", { at: new Date().toISOString(), states: stateMap(readings) });

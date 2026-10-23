@@ -410,8 +410,24 @@ repoChanges.post("/:id/retry", async (c) => {
   const row = await repoChangeById(c.env, c.req.param("id"));
   if (!row) throw notFound("No repo change with that id");
   if (row.phase !== "failed") throw conflict(`${row.id} is ${describePhase(row)}; only a failed change can be retried`);
-  const { phase } = await retryRow(c.env, row, { now: Date.now(), reason: text(b?.reason, 500), by: "owner session" });
+  // `follow_up`: what to change, typed on the change's own page (the written reply, without the email).
+  const { phase } = await retryRow(c.env, row, { now: Date.now(), reason: text(b?.reason, 500), followUp: text(b?.follow_up, 2000), by: "owner session" });
   return ok(c, { id: row.id, phase, previous_failure: row.failure });
+});
+
+/**
+ * DROP — the page's "Drop it", the same as replying "drop it" to the stop email (R8): the task is
+ * cancelled for good, the row stays failed with the reason on it. Only a failed change can be dropped.
+ */
+repoChanges.post("/:id/drop", async (c) => {
+  const row = await repoChangeById(c.env, c.req.param("id"));
+  if (!row) throw notFound("No repo change with that id");
+  if (row.phase !== "failed") throw conflict(`${row.id} is ${describePhase(row)}; only a stopped change can be dropped`);
+  const now = Date.now();
+  await c.env.DB.prepare(`UPDATE tasks SET status = 'cancelled', finished_at = ? WHERE id = ? AND status <> 'done'`).bind(now, row.task_id).run();
+  await taskEvent(c.env, row.task_id, "repo_change_dropped", { repo_change_id: row.id, by: "owner session" });
+  await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "repo_change", entityId: row.id, action: "dropped", detail: { task_id: row.task_id, via: "page" } });
+  return ok(c, { id: row.id, dropped: true });
 });
 
 /** The row must be claimed by the reporting device, for the phase the report closes. */

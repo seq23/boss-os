@@ -32,7 +32,9 @@ describe("Danielle finds, Monique relates", () => {
 
   it("keeps the mailbox half, and the people, with Monique", async () => {
     expect(await ownerOf("duty_buyer_hunt")).toBe("emp_relationship");
-    for (const id of ["duty_lp_replies", "duty_people_worth_a_call", "duty_mailbox_sweep"]) {
+    // duty_lp_replies became duty_lp_daily (boss fix L, 23 Oct 2026); the LP, prospect and catch-up
+    // work all stay Monique's.
+    for (const id of ["duty_lp_daily", "duty_prospects", "duty_prospect_discovery", "duty_catchups", "duty_eightraise_budget", "duty_people_worth_a_call", "duty_mailbox_sweep"]) {
       expect(await ownerOf(id), `${id} is relationship work`).toBe("emp_relationship");
     }
   });

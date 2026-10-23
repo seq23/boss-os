@@ -33,6 +33,10 @@ compatibility_flags = ["nodejs_compat"]
 directory = "./dist/client"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+# A link she taps in an email is a NAVIGATION request, and since compatibility_date 2025-04-01 a
+# navigation the SPA fallback can answer never reaches the Worker. Her one-tap buttons (/tap/<token>)
+# and every /api link (the unsubscribe link) must run the Worker first, or they open the app shell.
+run_worker_first = ["/tap/*", "/api/*"]
 
 # D1 — relational operational truth. database_id below is a placeholder:
 # local `wrangler dev` / migrations work without a real id; remote use requires
@@ -189,6 +193,10 @@ name = "boss-os"
 directory = "./dist/client"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+# A link she taps in an email is a NAVIGATION request, and since compatibility_date 2025-04-01 a
+# navigation the SPA fallback can answer never reaches the Worker. Her one-tap buttons (/tap/<token>)
+# and every /api link (the unsubscribe link) must run the Worker first, or they open the app shell.
+run_worker_first = ["/tap/*", "/api/*"]
 
 [[env.production.d1_databases]]
 binding = "WP_OS_DB"

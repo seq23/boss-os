@@ -20,6 +20,7 @@ import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
 import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
 import { closeDirectiveFor } from "../../../shared/boss/intake/close.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
+import { listEditsFromMail } from "../capital/grid"; // boss fix D
 import { stopDeliverable } from "../today/deliverables";
 import { answerFromMail } from "../repoChange/answer";
 import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
@@ -453,6 +454,18 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const threadRefs = await refsForChain(env.DB, chainIds(message.headers.get("references"), message.headers.get("in-reply-to")));
   const laneTail = refTail(threadRefs.refs.filter((r) => !`${subject}\n${readable}`.toLowerCase().includes(r)));
+  /*
+   * ─── boss fix D: HER RAINMAKER AND DO-NOT-SUGGEST LISTS, IN HER OWN WORDS (23 Oct 2026) ───
+   *
+   * "X at Y is Rainmaker" / "take X off the Rainmaker list" / "stop suggesting X", replying to any
+   * Monique email. Applied to D1 at once; Monique confirms in one line. When the edits are all the
+   * reply said, nothing else opens; otherwise the rest of the message goes on as ordinary work.
+   */
+  const listEdit = readable ? await listEditsFromMail(env, readable, mailId, now) : null;
+  if (listEdit?.onlyEdits) {
+    await finish({ outcome: "LIST_EDITED", why: listEdit.note, objectKey, reply: listEdit.note });
+    return { mailId, outcome: "LIST_EDITED", employeeId: null, taskId: null, reply: listEdit.note, messageId, signer: "Monique" };
+  }
   const blockAnswer = readable || subject
     ? await answerBlockFromMail(env, { subject: subject + laneTail, text: readable, mailId, now })
     : null;

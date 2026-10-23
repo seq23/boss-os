@@ -22,6 +22,7 @@ import { spawnSync } from "node:child_process";
 import { createSign } from "node:crypto";
 import { seatEnv } from "./seat-env.mjs";
 import { sendersFor, employeeMail, postEmployeeMail } from "../notify.mjs";
+import { addMorningLines } from "../../../src/shared/boss/mail/morning.mjs";
 
 export const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 export const OWNER_TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
@@ -96,14 +97,34 @@ export async function bossApi(fetchImpl = fetch) {
 // ─── Mail ──────────────────────────────────────────────────────────────────────
 
 /** Send as an employee through the one Resend path every Mac lane uses. Returns true on a send. */
-export async function sendAs(who, { subject, text, html, to = OWNER_TO }, fetchImpl = fetch) {
+export async function sendAs(who, { subject, text, html, prelaid = null, to = OWNER_TO }, fetchImpl = fetch) {
   const senders = sendersFor(who);
   for (const sender of senders) {
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject, text, html }), fetchImpl);
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject, text, html, prelaid }), fetchImpl);
     if (res.ok) { console.log(`emailed ${to} as ${sender.from}`); return true; }
     console.error(`  ${sender.from} refused: ${res.status}`);
   }
   return false;
+}
+
+/**
+ * INTO THE MORNING EMAIL, NOT A NEW EMAIL (owner, 23 Oct 2026, rule 1). Zora's audit, Toni's routine
+ * risk and the tail reports add their lines (and any Decide item) to Simone's one morning email
+ * (src/shared/boss/mail/morning.mjs). Returns true when written; a refused section is said by name.
+ */
+export function toMorning(section, add) {
+  try { addMorningLines(section, add); console.log(`into the morning email (${section}): ${(add.lines ?? []).length} line(s), ${(add.decide ?? []).length} decision(s)`); return true; }
+  catch (e) { console.error(`NAMED STOP [MORNING_SECTION_REFUSED] ${e?.message ?? e}`); return false; }
+}
+
+/**
+ * A CHORE FOR THE TEAM, NEVER HER MAIL (rule 3): a source that cannot be read, a token missing a
+ * permission, a DNS record — a task on Danielle's desk with what was seen. Best effort; returns the
+ * reason it was not opened, or null.
+ */
+export async function fixJob(api, { title, prompt }) {
+  try { await api.post("/tasks", { title: String(title).slice(0, 160), lane: "ops", employee_id: "emp_repo", input: { prompt: `seq23/boss-os — ${prompt}` } }); return null; }
+  catch (e) { return String(e?.message ?? e); }
 }
 
 // ─── Google, through the service account (delegation is granted per mailbox) ──

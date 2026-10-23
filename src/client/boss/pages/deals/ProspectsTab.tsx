@@ -1,0 +1,112 @@
+/**
+ * Deals page → "Prospects" (Boss fix L, rulings 11 and 12; mock-up board 6, bottom half).
+ *
+ * Everyone Monique writes to on the prospect sequence: where they were found, how many touches
+ * (three at most, then never again), their side once they reply (Buyer / Seller / Both), and the
+ * 8Raise credits used this month. Filters are pull-downs. Builder D mounts this in Capital.tsx.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../../api";
+import { Empty, Loading } from "../../components/Shell";
+import { MAX_TOUCHES, TOUCH_DAYS, MIN_TOUCH_GAP_DAYS, eightRaiseFooter, gmailThreadUrl } from "../../../../shared/boss/lp/plan.mjs";
+
+const SOURCE: Record<string, string> = {
+  "8raise_2026_10_11": "First batch (11 Oct)",
+  inbox: "Wrote to you about a deal",
+  sec_form_d: "SEC filings (SPV manager)",
+  sec_13f: "SEC filings (13F)",
+  "8raise_lp_mode": "8Raise",
+};
+const sourceLabel = (s: string) => SOURCE[s] ?? (s.startsWith("8raise") ? "8Raise" : s.replace(/_/g, " "));
+const STATUS: Record<string, string> = {
+  new: "Not written to yet", active: "No reply yet", interested: "Wants to talk", replied: "Replied",
+  opted_out: "Asked not to be emailed", bounced: "Address did not work", done: "Done (no reply)",
+};
+const SIDE: Record<string, string> = { buyer: "Buyer", seller: "Seller", both: "Both", unknown: "—" };
+const DAY = 86_400_000;
+const day = (ms?: number | null) => (ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—");
+
+export function nextTouchLabel(p: any): string {
+  if (!["new", "active"].includes(p.status)) return p.status === "done" ? "— never again" : "— stopped";
+  if (p.touches >= MAX_TOUCHES) return "— never again";
+  if (!p.first_sent_at) return "Next sending day";
+  const due = Math.max(p.first_sent_at + (TOUCH_DAYS[p.touches] ?? 0) * DAY, (p.last_touch_at ?? 0) + MIN_TOUCH_GAP_DAYS * DAY);
+  return `${day(due)}${p.touches + 1 === MAX_TOUCHES ? " (last one)" : ""}`;
+}
+
+export function ProspectsTab() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [credits, setCredits] = useState<{ used: number } | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [source, setSource] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [side, setSide] = useState("all");
+  useEffect(() => {
+    api.prospects().then((d) => setRows(d.rows ?? [])).catch(() => setFailed(true));
+    api.eightRaise().then((d) => setCredits({ used: d.used ?? 0 })).catch(() => setCredits(null));
+  }, []);
+  const shown = useMemo(() => (rows ?? []).filter((r) =>
+    (source === "all" || sourceLabel(r.source) === source) && (status === "all" || r.status === status) && (side === "all" || r.side === side)), [rows, source, status, side]);
+  if (failed) return <div className="row-sub">The prospects could not be read just now. This is not saying there are none.</div>;
+  if (!rows) return <Loading />;
+  if (rows.length === 0) return <Empty title="No prospects yet" hint="Monique imports the first batch and adds new ones every Monday." />;
+  const count = (f: (r: any) => boolean) => rows.filter(f).length;
+  const weekAgo = Date.now() - 7 * DAY;
+  const stats = [
+    { v: count((r) => r.source === "8raise_2026_10_11"), k: "first batch emailed" },
+    { v: count((r) => r.status === "interested"), k: "want to talk" },
+    { v: count((r) => r.created_at >= weekAgo), k: "new this week" },
+    { v: count((r) => r.touches >= 2), k: "had a follow-up" },
+  ];
+  const sources = [...new Set(rows.map((r) => sourceLabel(r.source)))];
+  const select = (label: string, value: string, set: (v: string) => void, options: [string, string][]) => (
+    <label className="row-sub" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+      {label}
+      <select value={value} onChange={(e) => set(e.target.value)}>
+        <option value="all">All</option>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </label>
+  );
+  return (
+    <div data-testid="prospects-tab" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {stats.map((s) => (
+          <div key={s.k} className="panel" style={{ padding: "12px 16px", minWidth: 150 }}>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{s.v}</div>
+            <div className="row-sub">{s.k}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {select("Found via", source, setSource, sources.map((s) => [s, s]))}
+        {select("Status", status, setStatus, Object.entries(STATUS))}
+        {select("Side", side, setSide, Object.entries(SIDE).filter(([k]) => k !== "unknown"))}
+      </div>
+      <div className="panel" style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead>
+            <tr>{["Prospect", "Found via", "Touches", "Last sent", "Side", "Status", "Next touch"].map((h) => <th key={h} style={{ textAlign: "left", padding: "9px 10px", fontSize: 12 }}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {shown.map((p) => (
+              <tr key={p.id}>
+                <td style={{ padding: "9px 10px" }}><b>{p.name || "—"}</b>{p.firm ? ` · ${p.firm}` : ""}</td>
+                <td style={{ padding: "9px 10px" }}>{sourceLabel(p.source)}</td>
+                <td style={{ padding: "9px 10px" }}>{p.touches} of {MAX_TOUCHES}</td>
+                <td style={{ padding: "9px 10px" }}>{p.thread_id ? <a href={gmailThreadUrl(p.thread_id)} target="_blank" rel="noreferrer">{day(p.last_touch_at)}</a> : day(p.last_touch_at)}</td>
+                <td style={{ padding: "9px 10px" }}>{SIDE[p.side] ?? "—"}</td>
+                <td style={{ padding: "9px 10px" }}>{STATUS[p.status] ?? p.status}{p.reply_note ? <div className="row-sub">"{String(p.reply_note).slice(0, 80)}"</div> : null}</td>
+                <td style={{ padding: "9px 10px" }}>{nextTouchLabel(p)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="row-sub">
+        Three emails at most, then they stop. Anyone who replies or opts out is never emailed again. At most 20 new a day.
+        {credits ? ` ${eightRaiseFooter(credits.used)}.` : ""}
+      </p>
+    </div>
+  );
+}

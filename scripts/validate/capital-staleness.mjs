@@ -109,19 +109,27 @@ check("a fresh sell against the same buyer must still cross", () => {
   assert.equal(picked.length, 1, "the matcher stopped crossing live supply; staleness was applied as a blanket cutoff");
 });
 
-// 6. OUTREACH REACHES BACK AS FAR AS THE LEDGER GOES. No cutoff, ever.
-check("an eighteen-month-old interest is still reachable for outreach", () => {
-  const ancient = row({ side: "buy", durability: "wants_now", date: "2025-03-01", size_usd: 250e6,
+// 6. OUTREACH REACHES BACK ABOUT SIX MONTHS, AND NO FURTHER (owner, 23 Oct 2026: "rough 6 month cut
+//    off doesnt have to be exact"). This replaced "no cutoff, ever"; it is pinned at least as strictly
+//    — inside the window nothing is lost to age, past it nothing is offered.
+const daysBefore = (n) => new Date(NOW - n * 86_400_000).toISOString().slice(0, 10);
+check("a five-month-old interest is still reachable for outreach, an eighteen-month-old one is not", () => {
+  const recent = row({ side: "buy", durability: "wants_now", date: daysBefore(150), size_usd: 250e6,
+    principal: "Recent Buyer", principal_email: "recent@example.com" });
+  const ancient = row({ side: "buy", durability: "wants_now", date: daysBefore(540), size_usd: 250e6,
     principal: "Old Buyer", principal_email: "old@example.com" });
-  const found = assignedSearch([ancient], "Polymarket", "buy", 250e6, new Set(), NOW);
-  assert.equal(found.length, 1, "an 18-month-old buyer vanished from the assigned search — age became a cutoff");
-  assert.ok(found[0].ageDays > 500, "the fixture is not actually old");
+  const found = assignedSearch([recent, ancient], "Polymarket", "buy", 250e6, new Set(), NOW);
+  assert.deepEqual(found.map((f) => f.row.principal), ["Recent Buyer"],
+    "the assigned search must reach back about six months and no further");
+  assert.ok(found[0].ageDays >= 150, "the fixture is not actually five months old");
 });
-check("an ancient unfilled interest is still revivable", () => {
-  const ancient = row({ side: "buy", durability: "wants_now", date: "2025-03-01", size_usd: 250e6,
+check("a five-month-old unfilled interest is still revivable, an eighteen-month-old one is not", () => {
+  const recent = row({ side: "buy", durability: "wants_now", date: daysBefore(150), size_usd: 250e6,
+    principal: "Recent Buyer", principal_email: "recent@example.com" });
+  const ancient = row({ side: "buy", durability: "wants_now", date: daysBefore(540), size_usd: 250e6,
     principal: "Old Buyer", principal_email: "old@example.com" });
-  assert.ok(revivals([ancient], [], new Set(), NOW, 5).picked.length >= 1,
-    "the revival list applied a staleness cutoff; that is the half of the rule that must not decay");
+  const picked = revivals([recent, ancient], [], new Set(), NOW, 5).picked.map((x) => x.row.principal);
+  assert.deepEqual(picked, ["Recent Buyer"], "the revival list must keep the six-month window, no shorter and no longer");
 });
 
 // 7. HARD-FAIL ON AN EMPTY LEDGER rather than passing an empty loop.
@@ -228,5 +236,5 @@ if (fails.length) {
 }
 const ran = 12 - notHere.length;
 for (const s of notHere) console.log(`NAMED STOP [LEDGER_NOT_HERE]: ${s} — ${LEDGER_PATH} does not exist on this runner (CI=true); it is checked where the ledger lives.`);
-console.log(`CAPITAL STALENESS PASS: ${ran} behavioural assertions ran — a sell decays on either durability, six months reads as stale, a buyer's mandate stays durable, a stale sell cannot cross while a fresh one still does, and outreach reaches back with no cutoff. Two brokers at her own firm never cross; one side still does.`
+console.log(`CAPITAL STALENESS PASS: ${ran} behavioural assertions ran — a sell decays on either durability, six months reads as stale, a buyer's mandate stays durable, a stale sell cannot cross while a fresh one still does, and outreach reaches back about six months and no further. Two brokers at her own firm never cross; one side still does.`
   + (notHere.length ? "" : " Live ledger offers 0 stale-sell crosses and 0 internal co-broker crosses."));

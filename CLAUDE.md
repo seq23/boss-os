@@ -49,3 +49,27 @@ her as a decision; she pays. Enforced in code, three places, and pinned by
 2. `src/shared/boss/service/practices.mjs` — R32 in `SERVICE_PRACTICES`, so the sentence is in front of
    every employee run (cloud rungs, Mac seats, Danielle's repo lane through `{{PRACTICES}}`).
 3. `docs/SERVICE_RULES.md` — R32 [ALL-KINDS], read by `validate:service-rules`.
+
+## Emails to her
+
+Owner, 23 Oct 2026 (inbox review: nine Boss OS emails in two days, none useful). Enforced in code and
+pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads this section, and by
+`npm run validate:email-plain`:
+1. **One morning email.** Simone's (`scripts/ops/your-day.mjs`): Decide → New deals since yesterday +
+   Monique found → Camille's briefing (≤5 lines; it waits for the report, 07:45 Central at the latest)
+   → Done for you (≤3) → Catch up with → Porch & Party: To do for Valerie → sign-off → the 8Raise line.
+   Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of an
+   email. Another email only when it cannot wait: a decision due today, money at risk, a deal moving now.
+2. **Decide first, one-tap buttons, plain words.** `layoutEmail` / `layoutProblem`
+   (`src/shared/boss/mail/plain.mjs`). Never Gmail ids, commands, /api paths, PR numbers, UTC times,
+   #tags, jargon, link dumps or "I could not read".
+3. **Problem emails:** What happened → What we did → Status, sent after the fix is running; a stopped
+   task is re-checked first; chores (vault, tokens, DNS, unreadable sources) are fix jobs, never her mail.
+4. **Where it stands (combined boss fix, 23 Oct 2026):** One morning email from Simone; Mac emails pass
+   the plain-email gate before sending. LP replies run daily through the delegation with one-tap send;
+   the Tuesday reminder and the connector digest are retired. Deals grid live; ~6-month lookback;
+   Rainmaker and do-not-suggest lists edited by reply. Every morning section goes through
+   `writeMorningSection`; a one-tap button is a page (`/tap/<token>`), never an /api link.
+5. **The gate holds, never sends, a failing email:** `mailGate` in `postEmployeeMail`
+   (`scripts/ops/notify.mjs`) and `plainReply` on the Worker. A new sender passes through them or it
+   does not send.

@@ -108,6 +108,19 @@ export function isBossRoute(pathname: string): boolean {
 }
 
 /**
+ * HER ONE-TAP LINKS ARE PAGES, NOT /api PATHS (combined boss fix, 23 Oct 2026). The plain-email gate
+ * holds any email linking to an /api path (rule 13), so the morning email's Send as is / Skip /
+ * Approve buttons point at `/tap/<token>?do=…` and are served here by Boss OS's tap route
+ * (`/api/auth/tap`, src/worker/boss/routes/lpTap.ts). Same handler, same token rules: a GET only
+ * renders the confirm page, the page's own POST (relative `?do=…`) acts.
+ */
+export const TAP_PAGE_RE = /^\/tap\/([A-Za-z0-9_-]{20,40})$/;
+export function tapPageToBossPath(pathname: string): string | null {
+  const m = TAP_PAGE_RE.exec(pathname);
+  return m ? `/api/boss/auth/tap/${m[1]}` : null;
+}
+
+/**
  * Hand the request to Boss OS with the mount prefix removed, so its routes and its tests see the
  * same paths they always did.
  */

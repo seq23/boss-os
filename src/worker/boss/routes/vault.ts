@@ -40,6 +40,11 @@ const SNAPSHOT_TABLES = [
   "boss_notices",
   "capital_book",
   "capital_book_line",
+  // boss fix D (23 Oct 2026): the deal grid, her Rainmaker and do-not-suggest lists, the holders found.
+  // LOCAL_ONLY in data_policy (0293), so a cloud snapshot excludes them; the private vault keeps them.
+  "capital_deal_rows", // fix D
+  "capital_party_lists", // fix D
+  "capital_holders", // fix D
   /*
    * THE POINTERS TO WORK MONIQUE EMAILED HER FROM THE LEDGER. A count, a kind and a clock — the
    * whole table is incapable of holding anything else — and losing it to a rebuild would silently
@@ -181,6 +186,16 @@ const SNAPSHOT_TABLES = [
   // 0290 — the job codes that left her email, keyed by the Message-ID her reply quotes. Lose them and
   // a reply to an email sent before the restore no longer finds its job.
   "boss_mail_refs",
+  // 0294 (boss fix L) — the LP tracker, prospects and their touches, the approved prospect email,
+  // her name rules, the 8Raise ledger and the catch-up record. Parents before children: prospects
+  // before prospect_touches. None of it re-derives: decisions she tapped, touches already sent.
+  "lp_reply_drafts", // fix L
+  "prospects", // fix L
+  "prospect_touches", // fix L
+  "prospect_templates", // fix L
+  "prospect_name_rules", // fix L
+  "eightraise_ledger", // fix L
+  "catchup_suggestions", // fix L
   // 0263 — the latest health reading per grid property per reader: a status code and latency, a
   // workflow conclusion, a week of Search Console clicks, a deployment's age. RE-DERIVABLE only
   // going forward: the readers run again, but the history — when a site first went 5xx, which
@@ -292,7 +307,7 @@ const SNAPSHOT_TABLES = [
   // Monique's outreach (0280). Suppression above all must survive a restore: a restored database
   // that forgot an unsubscribe would write to someone who asked us to stop.
   "outreach_settings", "outreach_domain_state", "outreach_slices", "outreach_candidates",
-  "outreach_prospects", "outreach_suppression", "outreach_sends", "outreach_replies",
+  "outreach_prospects", "outreach_suppression", "outreach_sends", "outreach_replies", "outreach_bounce_fixes", // boss fix E (0292)
   "referral_partners", "referral_conversions", "referral_payouts",
 ] as const;
 

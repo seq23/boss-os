@@ -670,6 +670,29 @@ describe("retry is her door for a failed row", () => {
 });
 
 
+describe("her answer to a stopped change, on the change's page (combined boss fix)", () => {
+  it("Try again with what to change carries her words into the instruction; Drop it cancels for good; a live change can do neither", async () => {
+    const res = await handleBossInboundMail(mail({ subject: "#danielle page answer", body: `Update WPP-llm from ${FOLDER}.` }), env as never);
+    const rc = await row<any>(`SELECT id, task_id FROM repo_changes WHERE task_id = ?`, res.taskId);
+    expect((await apiJson(`/api/repo-changes/${rc.id}/drop`, { method: "POST", body: {} })).status).toBe(409);
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [CHECKS_RED] two tests failed", notified_message_id: "re_p" } });
+    const r = await apiJson(`/api/repo-changes/${rc.id}/retry`, { method: "POST", body: { follow_up: "use the blue header instead" } });
+    expect(r.status).toBe(200);
+    const after = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(after.phase).toBe("plan");
+    expect(after.instruction).toContain("Her follow-up on retry");
+    expect(after.instruction).toContain("use the blue header instead");
+    // Stopped again, then dropped from the page.
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/failed`, { method: "POST", body: { failure: "NAMED STOP [CHECKS_RED] still red", notified_message_id: "re_q" } });
+    const d = await apiJson(`/api/repo-changes/${rc.id}/drop`, { method: "POST", body: {} });
+    expect(d.status).toBe(200);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, rc.task_id)).status).toBe("cancelled");
+    expect((await row<any>(`SELECT phase FROM repo_changes WHERE id = ?`, rc.id)).phase).toBe("failed");
+  });
+});
+
 describe("a retry is a resume of her original instruction, never a new one", () => {
   it("\"try again\" on the ORIGINAL thread of a failed pre-approved change keeps the row, its pre-approval, repo and folder; opens nothing; the fresh plan is FYI-only", async () => {
     const originalId = `<orig-${Date.now()}@mail.gmail.com>`;

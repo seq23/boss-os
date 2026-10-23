@@ -60,23 +60,28 @@
  * being bent — it is simply not in this path.
  *
  *   npm run lp:positive              # scan, update the running list, print it
- *   npm run lp:positive -- --email   # ...and send the monthly note
  */
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 import { addressIn, bulkReason, headersFromRaw, ownDomainReason, replyEvidence } from "./mail-bulk.mjs";
 import { followUps } from "./lp-followups.mjs";
+import { sideFromReply } from "../../src/shared/boss/lp/plan.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 /** The campaign's first send was 23 July 2026. July 1 is a deliberate margin, not a guess. */
 const SINCE = process.env.LP_SINCE ?? "2026/07/01";
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
 const LIST = path.join(OUT_DIR, "positive.json");
-const SEND = process.argv.includes("--email");
+/*
+ * NO EMAIL. The Tuesday reminder that ran `--email --followups` every week is retired (owner,
+ * 23 Oct 2026, ruling 10: "the weekly Tuesday reminder email goes away"), and with the combined boss
+ * fix the hand-run `--email` is gone too: held replies are Decide items in Simone's morning email and
+ * the running list is the LP replies tab on the Deals page. tests/plainEmail.test.ts fails if this
+ * file sends again without passing the gate's samples.
+ */
 const VERIFY = process.argv.includes("--verify");
 /**
  * --followups (22 Oct 2026): which positive replies she has NOT answered, a draft for each in her
@@ -335,58 +340,67 @@ export function unansweredSection(f) {
   ];
 }
 
-async function emailHer(list, counts, follow = null) {
-  const TO = process.env.LP_POSITIVE_TO ?? "sequoia@westpeek.ventures";
-  const SENDERS = sendersFor("Monique");
-  if (SENDERS.length === 0) {
-    console.error("NAMED STOP [NO_MAIL_KEY] the list is written but no email could be sent.");
-    return false;
+/**
+ * WHAT CAME BACK FROM THE PROSPECTS (Boss fix L, ruling 11). Same mailbox, same screen, same bounded
+ * read as the LP list, asked of a different set of senders: the people the prospect sequence wrote to.
+ *
+ * Per address, newest first: bounce (a mailer-daemon naming the address), auto (an out-of-office;
+ * the sequence carries on), opt_out (a decline or "no thanks" — never written to again), interested
+ * (wants to talk or stay in touch — a held reply goes to Decide), or replied. Their side (buyer /
+ * seller / both / unknown) is read from the words. A short quote is kept only for an interested
+ * reply, exactly as the LP list keeps one only for a positive one.
+ */
+export async function readProspectReplies(addresses, sinceYmd) {
+  const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault");
+  const token = await accessToken(JSON.parse(raw), GMAIL, MAILBOX);
+  const wanted = new Set(addresses.map((a) => String(a).toLowerCase()));
+  const out = new Map();
+  const since = String(sinceYmd).replace(/-/g, "/");
+  const list = async (q) => {
+    const ids = [];
+    let page;
+    do {
+      const j = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=200&q=${encodeURIComponent(q)}` + (page ? `&pageToken=${page}` : ""), token);
+      for (const m of j.messages ?? []) ids.push(m);
+      page = j.nextPageToken;
+    } while (page && ids.length < 2000);
+    return ids;
+  };
+  const rawOf = async (id) => {
+    const msg = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=raw`, token).catch(() => null);
+    return msg?.raw ? { raw: Buffer.from(msg.raw, "base64").toString("utf8").slice(0, 200_000), at: Number(msg.internalDate ?? 0), thread: msg.threadId } : null;
+  };
+  for (const m of await list(`in:anywhere after:${since} from:mailer-daemon`)) {
+    const r = await rawOf(m.id);
+    if (!r) continue;
+    const body = decodedBody(r.raw).toLowerCase();
+    for (const a of wanted) if (body.includes(a) && !out.has(a)) out.set(a, { kind: "bounce", side: "unknown", note: null, at: r.at });
   }
-  const line = (p) => `${p.name ? `${p.name}  ` : ""}${p.address}\n    ${p.first_seen}  ${p.quote}`;
-  const calls = list.filter((p) => p.bucket === "call");
-  const warm = list.filter((p) => p.bucket === "warm");
-
-  const body = [
-    "Sequoia,",
-    "",
-    "This is Monique. Once a month I re-read every reply to the LP outreach and pull out the",
-    "positive ones — the people who want a call, and the people who want to be kept in touch.",
-    "",
-    `This is the running list, not just this month's: ${list.length} positive repl${list.length === 1 ? "y" : "ies"}`,
-    `out of ${counts.replies} human replies across ${counts.scanned} inbound messages. Nobody ever`,
-    "drops off this list once they are on it.",
-    "",
-    `Nothing here needs a decision from me — these are yours to answer.`,
-    "",
-    "",
-    ...unansweredSection(follow),
-    `WANTS A CALL (${calls.length})`,
-    "",
-    calls.length ? calls.map(line).join("\n\n") : "(none yet)",
-    "",
-    "",
-    `KEEP WARM — asked for materials, or to be contacted later (${warm.length})`,
-    "",
-    warm.length ? warm.map(line).join("\n\n") : "(none yet)",
-    "",
-    "",
-    "Not counted as positive: " +
-      `${counts.auto} autoresponders, ${counts.departed} people who have left their firm, ` +
-      `${counts.negative} declines, ${counts.other} replies that were neither.`,
-    "",
-    "— Monique, Director of Relationships",
-  ].join("\n");
-
-  for (const sender of SENDERS) {
-    const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject: follow?.unanswered?.length ? `${follow.unanswered.length} positive repl${follow.unanswered.length === 1 ? "y" : "ies"} you haven't answered — oldest ${follow.unanswered[0].days ?? "?"} days` : `LP positive replies — ${calls.length} want a call, ${warm.length} to keep warm`, text: body }));
-    if (res.ok) { console.log(`Emailed ${TO} from ${from}.`); return true; }
-    console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
+  const domains = [...new Set([...wanted].map((a) => a.split("@")[1]))];
+  for (let i = 0; i < domains.length; i += 25) {
+    const q = `in:anywhere after:${since} (${domains.slice(i, i + 25).map((d) => `from:${d}`).join(" OR ")})`;
+    for (const m of await list(q)) {
+      const r = await rawOf(m.id);
+      if (!r) continue;
+      const headers = headersFromRaw(r.raw);
+      const address = addressIn(headers.from ?? "");
+      if (!wanted.has(address) || out.get(address)?.at > r.at) continue;
+      const text = readableText(r.raw);
+      const { bucket } = classify(text);
+      const kind = bucket === "auto" ? "ooo" : bucket === "negative" ? "opt_out" : (bucket === "call" || bucket === "warm") ? "interested"
+        : /\bno thanks\b/i.test(text) ? "opt_out" : "replied";
+      out.set(address, { kind, side: sideFromReply(text), note: kind === "interested" ? quoteOf(text) : null, at: r.at, thread: r.thread });
+    }
   }
-  return false;
+  return out;
 }
 
-async function main() {
+/**
+ * Read the mailbox, reconcile the running list, write it to her Mac, and return it. The morning LP
+ * run (lp-daily.mjs) calls this every day; `main` below is the same read on demand.
+ */
+export async function refreshPositive() {
   const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
   if (!raw) {
     console.error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault: npm run lp:positive");
@@ -492,6 +506,11 @@ async function main() {
 
   console.log(`replies read: ${counts.replies}  |  call: ${counts.call}  warm: ${counts.warm}  auto: ${counts.auto}  departed: ${counts.departed}  declined: ${counts.negative}  other: ${counts.other}`);
   console.log(`running list: ${people.length} positive (${added} new this run, ${promoted} promoted warm->call, ${removed.length} removed as not an LP reply)`);
+  return { people, counts, seenAddresses };
+}
+
+async function main() {
+  const { people, counts, seenAddresses } = await refreshPositive();
   if (VERIFY) for (const p of people) console.log(`  [${p.bucket === "call" ? "CALL" : "warm"}] ${p.name || p.address} — ${p.quote.slice(0, 90)}`);
 
   if (VERIFY) {
@@ -525,12 +544,8 @@ async function main() {
 
   const follow = FOLLOWUPS ? await followUps(people) : null;
 
-  if (SEND) {
-    const sent = await emailHer(people, counts, follow);
-    if (!sent) process.exit(8);
-  } else {
-    console.log("\nList updated. Re-run with --email to send the monthly note.");
-  }
+  if (follow) console.log(`\n${follow.unanswered?.length ?? 0} positive repl(ies) not answered yet; they are Decide items in the morning email.`);
+  console.log("\nList updated. It shows on the Deals page (LP replies); nothing is emailed.");
   console.log("LP-POSITIVE-COMPLETE: filed");
 }
 

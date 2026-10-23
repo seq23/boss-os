@@ -293,6 +293,35 @@ script is not installed is a `NAMED STOP [NO_SUCH_SCRIPT]`, never a row. Operato
   leaves one draft per reply in that mailbox's Drafts (`scripts/ops/lp-followups.mjs`): fixed template,
   no model, never sends; label "pass" stops the reminder.
 
+### 23 October 2026 — the combined boss fix (emails, deals, LPs), in three lines
+
+- LP replies run daily through the delegation with one-tap send; the Tuesday reminder and the connector digest are retired.
+- Deals grid live; ~6-month lookback; Rainmaker and do-not-suggest lists edited by reply.
+- One morning email from Simone; Mac emails pass the plain-email gate before sending.
+
+Every morning section (deals, Monique found, LP replies, prospects, catch-ups, 8Raise) is written
+through the one writer, `writeMorningSection` (`src/shared/boss/mail/morning.mjs`), and
+`tests/morningProducers.test.ts` renders them into the morning email through the gate. Her one-tap
+buttons are pages (`/tap/<token>`, Worker first), never /api links. Danielle's "Stopped work on …"
+emails are problem emails with one button to the change, where she can try again, say what to
+change, or drop it.
+
+### 23 October 2026 — her emails: one morning email, Decide first, a gate that holds
+
+Her inbox review (nine Boss OS emails in two days, none useful) became four rules, in CLAUDE.md "Emails
+to her" and pinned by tests and `validate:email-plain`:
+- **One morning email** from Simone (`scripts/ops/your-day.mjs`), sent once Camille's briefing lands
+  (from 06:40; 07:45 Central at the latest, then "Briefing late" and a fix job). Every producer writes a
+  section file to `~/.boss-os/morning/` (`src/shared/boss/mail/morning.mjs`); Zora's audit, Toni's
+  routine risk and account locks, and the mail tail send no email of their own any more.
+- **Decide first** with one-tap buttons (`layoutEmail`); **problem emails** are What happened → What we
+  did → Status (`layoutProblem`); a stopped-task notice is re-checked first and merged with duplicates.
+- **The gate** (`plainProblems`) runs in `postEmployeeMail` and the Worker's `plainReply`: a failing
+  email is held (`~/.boss-os/held-mail`) and handed to Danielle as a fix job, never sent.
+- **The bounce agent** (`src/worker/boss/outreach/bounceFix.ts`, migration 0292): a bounced outreach
+  address gets a working replacement at the same organisation (someone there who wrote to us, or one
+  published on its own site — never a guess), MX-checked, with its source; she sees one "done" line.
+
 ### Monique's outreach — fully automatic, braked in code (9 October 2026)
 
 **Owner: "u do it all".** Monique writes to businesses for ten side businesses (five local guides,

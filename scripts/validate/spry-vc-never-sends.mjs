@@ -81,6 +81,16 @@ const NEVER_A_SENDER = /spry\.vc|westpeek\.ventures|sequoiataylor\.com/i;
  * constant that is never spry.vc.
  */
 const LP_DRAFT_MODULE = "scripts/ops/lp-followups.mjs";
+/**
+ * THE FOURTH AND FIFTH (owner, 23 Oct 2026, Boss fix L, rulings 10 and 11). Both send only as the
+ * West Peek mailbox, never spry.vc:
+ *   LP_TAP_MODULE      sends a HELD DRAFT on her one tap — drafts/send only (never messages/send),
+ *                      and only after checking the mailbox is a westpeek.ventures address.
+ *   PROSPECT_SENDER    sends the prospect touches the Boss OS plan returns — the sub claim is the
+ *                      pinned MAILBOX constant on westpeek.ventures, scope compose and nothing wider.
+ */
+const LP_TAP_MODULE = "src/worker/boss/routes/lpTap.ts";
+const PROSPECT_SENDER = "scripts/ops/lp-prospects.mjs";
 
 /** Drop comments and doc prose so a rule can be DESCRIBED in a file without the scan reading it as code. */
 function stripProse(src) {
@@ -190,6 +200,20 @@ export function violations(files) {
       const sendAt = code.search(/messages\/send/);
       const assertAt = code.search(/assertSenderAllowed\s*\(/);
       if (sendAt !== -1 && (assertAt === -1 || assertAt > sendAt)) bad.push(`${rel}: reaches messages/send without calling assertSenderAllowed first.`);
+    } else if (rel === LP_TAP_MODULE) {
+      if (!/\bmintComposeToken\b/.test(code)) bad.push(`${rel}: is the one-tap sender and no longer mints the compose token — this guard is watching an empty room.`);
+      if (/messages\/send|messages\.send/.test(code)) bad.push(`${rel}: names messages/send. The tap sends the held draft (drafts/send) and nothing else.`);
+      if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose.`);
+      if (DOMAIN_RE.test(code)) bad.push(`${rel}: names ${DOMAIN} in code. The tap sends only from westpeek.ventures.`);
+      const guard = code.search(/WEST_PEEK\.test\(mailbox\)/);
+      const mint = code.search(/mintComposeToken\(creds/);
+      if (guard === -1 || mint === -1 || guard > mint) bad.push(`${rel}: must refuse any mailbox that is not on westpeek.ventures BEFORE minting a token.`);
+    } else if (rel === PROSPECT_SENDER) {
+      if (!impersonates) bad.push(`${rel}: is the prospect sender and no longer impersonates its mailbox — this guard is watching an empty room.`);
+      if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose.`);
+      const mailbox = /const MAILBOX = ["'`]([^"'`]+)["'`]/.exec(code)?.[1] ?? "";
+      if (!/\bsub: MAILBOX\b/.test(code) || !/@westpeek\.ventures$/.test(mailbox)) bad.push(`${rel}: the prospect mailbox must be the pinned westpeek.ventures MAILBOX constant in the JWT's sub claim (it is "${mailbox || "missing"}").`);
+      if (DOMAIN_RE.test(code)) bad.push(`${rel}: names ${DOMAIN} in code.`);
     } else if (/\bmintComposeToken\b/.test(code) && SEND_ENDPOINT.test(code) && rel !== DRAFT_MODULE) {
       // THE LAUNDERING ROUTE: borrow the draft module's compose token and send with it from a file
       // that never says GSC_SERVICE_ACCOUNT_JSON or `sub`, so the impersonation check above cannot see it.

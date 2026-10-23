@@ -19,3 +19,6 @@ export function namesOnce(names: readonly string[]): string;
 export function filesAt(paths: readonly string[]): Array<{ name: string; bytes: number; path: string | null }>;
 export const EMPLOYEE_LOCAL_PARTS: string[];
 export const FUND_SIDE_CHASSIS_SENDERS: string[];
+export function mailGate(payload: { subject?: string; text?: string; html?: string; headers?: Record<string, string> }): string[];
+export function heldDir(): string;
+export function holdMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, problems: string[], fetchImpl?: typeof fetch): Promise<Response>;

@@ -35,6 +35,53 @@
 
 import { sendersFor, employeeMail, postEmployeeMail, FALLBACK_STOP } from "./notify.mjs";
 import { vaultLookup } from "../lib/vault-env.mjs";
+import { layoutProblem } from "../../src/shared/boss/mail/plain.mjs";
+
+/*
+ * ─── A "STOPPED" EMAIL IS A PROBLEM EMAIL, AND ONLY WHILE IT IS TRUE (owner, 23 Oct 2026, rule 3) ───
+ *
+ * Her inbox, 22 Oct: a "Stopped" email arrived three hours AFTER the tail said the job was fixed. So
+ * before a stopped notice goes, the task is read again (`stillStopped`): a task that is running, done
+ * or back in the queue is a false alarm and is closed without an email. Two notices with the same
+ * sender and subject in one drain are one email (`mergeNotices`). A stopped notice is laid out as
+ * What happened → What we did → Status, with one Decide item, because only she can say run it again
+ * or drop it (`stoppedEmail`).
+ */
+const ORIGIN_URL = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
+
+/** A task in one of these is still stopped; anything else means the notice is a false alarm. */
+export const STOPPED_STATES = new Set(["failed", "awaiting_approval", "dead_letter", "blocked"]);
+export function stillStopped(task) {
+  return Boolean(task) && STOPPED_STATES.has(String(task.status));
+}
+
+/** Same sender, same subject → one email; the rest ride along and are marked sent with it. */
+export function mergeNotices(items) {
+  const groups = new Map();
+  for (const n of items) {
+    const k = `${n.from_name}\u0000${String(n.subject).replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "").trim().toLowerCase()}`;
+    if (!groups.has(k)) groups.set(k, { first: n, also: [] });
+    else groups.get(k).also.push(n);
+  }
+  return [...groups.values()];
+}
+
+/** The stopped notice as a problem email. Pure; tested. */
+export function stoppedEmail(notice, task = null) {
+  const body = String(notice.body ?? "");
+  const title = String(task?.title ?? /^"([^"]+)"/.exec(body)?.[1] ?? String(notice.subject).replace(/^Stopped:\s*/i, "")).replace(/\s*\[?tsk_[a-z0-9]+\]?\s*$/i, "");
+  const tried = /I tried this (.+?) and could not finish/.exec(body)?.[1] ?? "more than once";
+  const why = /could not finish:\s*(.+?)\.\s*To clear it by email/s.exec(body)?.[1]?.replace(/\s+/g, " ").slice(0, 240) ?? null;
+  return layoutProblem({
+    who: notice.from_name,
+    subject: `Stopped: ${title}`,
+    happened: `"${title}" stopped before it finished${why ? `: ${why.replace(/[.!?]?$/, ".")}` : "."}`,
+    did: `Tried it ${tried}, kept everything as it was, and sent nothing to anyone outside Boss OS.`,
+    status: "Waiting for your word. Reply to this email with try again, or with drop it to close it.",
+    decide: [{ title: "Run it again, change it, or drop it?", body: "Reply to this email with your answer; it goes straight back to this job.", buttons: [{ label: "See the job in Boss OS", url: `${ORIGIN_URL}/` }] }],
+    refs: [String(notice.task_id ?? "")].filter((r) => /^tsk_/.test(r)),
+  });
+}
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
@@ -67,18 +114,28 @@ async function api(path, body) {
   return { ok: res.ok, status: res.status, data: json?.data ?? null, error: json?.error ?? null };
 }
 
+/** The task behind a notice, read fresh: `{ read, task }`. A failed read sends the notice as before. */
+async function taskOf(id) {
+  if (!id) return { read: false, task: null };
+  const res = await fetch(`${ORIGIN}/api/boss/tasks/${encodeURIComponent(id)}`, { headers: { cookie } }).catch(() => null);
+  if (res?.status === 404) return { read: true, task: null };
+  if (!res?.ok) return { read: false, task: null };
+  return { read: true, task: (await res.json().catch(() => ({})))?.data?.task ?? null };
+}
+
 /**
  * One notice, sent as the employee who owns the work.
  *
  * Returns the refusal text, or null when it went. Every sender on the roster's list is tried before
  * it is called a failure — the second is The Industry Guides fallback, and using it is itself reported.
  */
-export async function sendNotice(notice, { fetchImpl = fetch, to = TO } = {}) {
+export async function sendNotice(notice, { fetchImpl = fetch, to = TO, task = null } = {}) {
   const senders = sendersFor(notice.from_name);
   if (senders.length === 0) return "no Resend key in the environment (BOSS_OS_MAIL_KEY / BOSS_OS_FALLBACK_MAIL_KEY)";
+  const prelaid = notice.kind === "stopped" ? stoppedEmail(notice, task) : null;
   let last = "";
   for (const sender of senders) {
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body }), fetchImpl);
+    const res = await postEmployeeMail(sender, employeeMail(sender, { to, subject: notice.subject, text: notice.body, prelaid }), fetchImpl);
     if (res.ok) {
       say(`sent "${notice.subject}" from ${sender.from}`);
       if (sender.fallback) say(FALLBACK_STOP);
@@ -128,8 +185,19 @@ async function main() {
   }
 
   let failed = 0;
-  for (const notice of items) {
-    if (DRY) { say(`DRY RUN — would send "${notice.subject}" as ${notice.from_name}`); continue; }
+  for (const { first: notice, also } of mergeNotices(items)) {
+    if (DRY) { say(`DRY RUN — would send "${notice.subject}" as ${notice.from_name}${also.length ? ` (and ${also.length} duplicate(s) with it)` : ""}`); continue; }
+    // Kill false alarms: a stopped task that is running or done again gets no "Stopped" email.
+    let task = null;
+    if (notice.kind === "stopped") {
+      const t = await taskOf(notice.task_id);
+      task = t.task;
+      if (t.read && !stillStopped(task)) {
+        for (const n of [notice, ...also]) await api(`/${n.id}/sent`, { from: `not sent: the task is ${task?.status ?? "gone"} again` });
+        say(`not sent "${notice.subject}": the task is ${task?.status ?? "gone"} now — a false alarm`);
+        continue;
+      }
+    }
     /*
      * R5 — THE VAULT IS CHECKED BEFORE SHE IS ASKED FOR A KEY (docs/SERVICE_RULES.md). A run that
      * wrote `Missing key: NAME` could not see this Mac's vault; this can. Held by exact name or by
@@ -144,9 +212,11 @@ async function main() {
       continue;
     }
     if (ask.body) notice.body = ask.body;
-    const error = await sendNotice(notice);
-    const report = error ? await api(`/${notice.id}/failed`, { error }) : await api(`/${notice.id}/sent`, { from: notice.from_name });
-    if (!report.ok) say(`could not record the outcome of ${notice.id}: ${report.status} ${report.error ?? ""}`);
+    const error = await sendNotice(notice, { task });
+    for (const n of [notice, ...also]) {
+      const report = error ? await api(`/${n.id}/failed`, { error }) : await api(`/${n.id}/sent`, { from: n === notice ? notice.from_name : `merged into the email for ${notice.id}` });
+      if (!report.ok) say(`could not record the outcome of ${n.id}: ${report.status} ${report.error ?? ""}`);
+    }
     if (error) failed += 1;
   }
 

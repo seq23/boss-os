@@ -38,7 +38,10 @@
  * open one is a phone call. So the ranking inverts what a reconciliation would do: unfilled outranks
  * filled, and a specific unanswered ask outranks a general expression of appetite.
  *
- * ─── NO MATCHING WINDOW, BECAUSE A CLIFF LOSES REAL DEALS ──────────────────
+ * ─── NO MATCHING WINDOW, BECAUSE A CLIFF LOSES REAL DEALS (SUPERSEDED 23 OCT 2026) ─
+ *
+ * She has since set one: "rough 6 month cut off doesnt have to be exact" — see `inWindow` below.
+ * The history is kept because the decay curve inside the window still follows it.
  *
  * Asked how far back a match should reach she said "like up to 12 months? i dont know" — and she
  * should not have to pick, because a cutoff means a genuine match silently vanishes on day 366. Age
@@ -68,7 +71,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { namesOnce, sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
+import { namesOnce } from "./notify.mjs";
+import { withinLookback, pairAllowed, isDoNotSuggest, LOOKBACK_DAYS } from "../../src/shared/boss/capital/partyLists.mjs";
+
+/*
+ * ─── THE WINDOW SHE SET, 23 OCT 2026 ────────────────────────────────────────
+ *
+ * The "no matching window" rule below was hers, and so is its replacement: "when we go back in my
+ * inbox to find deals buyers and sellers we can use rough 6 month cut off doesnt have to be exact".
+ * Every function here that reads the ledger for a match, an unfilled ask or a search keeps only rows
+ * inside `LOOKBACK_DAYS` (one constant, partyLists.mjs). Her own rows follow the same window.
+ */
+const inWindow = (interests, now) => interests.filter((r) => withinLookback(r.date, now));
+
+/** Her two lists, as the last `capital:grid` run cached them from D1. Empty when never fetched. */
+export const loadPartyLists = () => {
+  try { return JSON.parse(fs.readFileSync(path.join(DIR, "party-lists.json"), "utf8")); } catch { return { same_firm: [], do_not_suggest: [] }; }
+};
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -298,10 +317,11 @@ export const isInternalCoBrokerCross = (b, s) => atHerBrokerage(b) && atHerBroke
 
 // ─── The standing cross ──────────────────────────────────────────────────────
 
-export function standingMatches(interests, suppressed, now = Date.now()) {
+export function standingMatches(interests, suppressed, now = Date.now(), lists = null) {
   const byAsset = new Map();
-  for (const r of interests) {
+  for (const r of inWindow(interests, now)) {
     if (suppressed.has(whoKey(r))) continue;
+    if (lists && isDoNotSuggest(r, lists)) continue;
     const k = assetKey(r.asset);
     if (!k) continue;
     if (!byAsset.has(k)) byAsset.set(k, []);
@@ -329,7 +349,12 @@ export function standingMatches(interests, suppressed, now = Date.now()) {
          * a pre-floor count against a post-floor one and read as though nine tenths of the market
          * had been hidden from her. A control she cannot audit is a control she stops trusting.
          */
-        if (isInternalCoBrokerCross(b, s)) { coBroker += 1; continue; }
+        /*
+         * RAINMAKER ON BOTH SIDES, by her same-firm list (23 Oct 2026): her firm's domain, the people
+         * on other domains she has named as Rainmaker, and her own rows — she is Rainmaker too.
+         */
+        if (isInternalCoBrokerCross(b, s)
+          || !pairAllowed(b, s, lists, { aIsHers: b.hers === true, bIsHers: s.hers === true })) { coBroker += 1; continue; }
         out.push({ asset: s.asset, buy: b, sell: s, score, buyAge: fb.ageDays, sellAge: fs_.ageDays });
       }
     }
@@ -371,7 +396,9 @@ export function standingMatches(interests, suppressed, now = Date.now()) {
  */
 export function assignedSearch(interests, asset, side, size, suppressed, now = Date.now()) {
   const k = assetKey(asset);
-  const rows = interests.filter((r) => assetKey(r.asset) === k && r.side === side && !suppressed.has(whoKey(r)));
+  // Never her own rows (a search is for the other side of her), and only inside the window.
+  const rows = inWindow(interests, now).filter((r) => assetKey(r.asset) === k && r.side === side
+    && r.hers !== true && !suppressed.has(whoKey(r)));
   const byWho = new Map();
   for (const r of rows) {
     const who = whoKey(r) || r.principal;
@@ -416,14 +443,15 @@ export function assignedSearch(interests, asset, side, size, suppressed, now = D
  *      mailbox rather than assumed — where the record cannot say, the row still stands, ranked
  *      lower, rather than being invented into a grievance.
  *
- * Age is shown and never used as a cutoff, for the same reason as everywhere else: a cliff means a
- * real lead silently vanishes on day 366.
+ * Age is shown on every row. The only cutoff is the one she set on 23 Oct 2026 — about six months,
+ * `LOOKBACK_DAYS` — and nothing inside it is dropped for being old.
  */
 export function revivals(interests, contacts, suppressed, now = Date.now(), cap = 5) {
   const byEmail = new Map((contacts ?? []).map((c) => [String(c.email ?? "").toLowerCase(), c]));
   const scored = [];
-  for (const r of interests) {
+  for (const r of inWindow(interests, now)) {
     if (r.durability === "transacted") continue;
+    if (r.hers === true) continue;
     const who = whoKey(r);
     if (!who || suppressed.has(who)) continue;
     const f = freshness(r, now);
@@ -496,7 +524,7 @@ export function nudges(interests, contacts, suppressed, now = Date.now(), cap = 
   const byEmail = new Map((contacts ?? []).map((c) => [String(c.email ?? "").toLowerCase(), c]));
   const seen = new Map();
 
-  for (const r of interests) {
+  for (const r of inWindow(interests, now)) {
     const email = String(r.principal_email ?? "").toLowerCase();
     if (!email || suppressed.has(email)) continue;
     const c = byEmail.get(email);
@@ -703,7 +731,7 @@ async function main() {
         ? `${rev.picked.length} unfilled — ${namesOnce(rev.picked.map((x) => x.row.asset))}`
         : "No open interest worth reviving";
     } else {
-      const { picked, considered, coBroker } = standingMatches(usable, suppressed);
+      const { picked, considered, coBroker } = standingMatches(usable, suppressed, Date.now(), loadPartyLists());
       body = [renderStanding(picked, considered, coBroker), "",
         "─────────────────────────────────────────────────────────────",
         "", "WORTH GOING BACK TO — they said what they wanted and never got it", "",
@@ -721,58 +749,41 @@ async function main() {
     + `${suppressed.size} name(s) suppressed, ${wrongRows.size} row(s) struck as wrong.\n`);
   console.log(body);
 
-  if (!SEND) { console.log("\nRe-run with --send to email it."); return; }
+  /*
+   * ─── NO EMAIL (owner, 23 Oct 2026) ─────────────────────────────────────────
+   *
+   * "#monique", "crosses", "buyer-seller matches": nine Boss OS emails in two days, none useful. The
+   * matches now reach her as Decide items and lines in Simone's ONE morning email and on the Deals
+   * page, both written by `npm run capital:grid` (interest-grid.mjs). `--send` is still accepted so
+   * an old launchd line cannot fail, and it sends nothing. The pointer still posts: it is a count
+   * and a clock for today's contract, and the morning email is what it points at now.
+   */
+  if (!SEND) return;
+  console.log(`\nNo email: matches reach her in the morning email and on the Deals page (npm run capital:grid). Window: ${LOOKBACK_DAYS} days.`);
+  /*
+   * THE POINTER STILL FOLLOWS DELIVERY, NEVER PRECEDES IT. Delivery is now the morning section
+   * `monique_found.json`, written by `capital:grid` earlier in the same launchd chain; the pointer
+   * posts only when that file was written today, so it never points at something she will not get.
+   */
+  const res = { ok: morningWrittenToday("monique_found") };
+  const sentAt = Date.now();
+  const dayName = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short" }).format(sentAt);
+  const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(dayName);
+  if (res.ok) {
+    if (POINTER && pointerKind && isWeekday) await postPointer(pointerKind, pointerCount, sentAt);
+    return;
+  }
+  console.error("  pointer NOT posted: this morning's Monique section was not written (run npm run capital:grid first).");
+}
 
-  const SENDERS = sendersFor("Monique");
-  if (SENDERS.length === 0) {
-    console.error("NAMED STOP [NO_MAIL_KEY] the matches are above and no email could be sent.");
-    process.exit(8);
-  }
-  const TO = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
-  const text = ["Sequoia,", "", "This is Monique. Both sides of this were already in your mailbox.", "", body, "",
-    "— Monique, Director of Relationships"].join("\n");
-  for (const sender of SENDERS) {
-    const { from, key } = sender;
-    const res = await postEmployeeMail(sender, employeeMail(sender, { to: TO, subject, text }));
-    if (res.ok) {
-      const sentAt = Date.now();
-      console.log(`\nEmailed ${TO} from ${from}.`);
-      /*
-       * ─── AND THE POINTER, AFTER THE MAIL AND NEVER BEFORE ──────────────────
-       *
-       * Three gates, and each one is a different way this could become noise:
-       *
-       *   · `--pointer` was asked for. The daily launchd job passes it; a hand-run does not, so
-       *     checking her matches at four in the afternoon does not rewrite her morning.
-       *   · There is something to point AT. A mail saying "no cross and no lead today" is a fine
-       *     mail and a terrible pointer — empty-handed beats noise.
-       *   · It is a weekday. Her instruction on the contract is M-F, and the line is weekday-gated
-       *     at the other end too; posting on a Saturday would only leave a row that goes stale
-       *     unread, which is a worse record than none.
-       *
-       * A FAILED POST DOES NOT FAIL THE RUN. The email is the deliverable and it has already
-       * arrived; refusing to exit 0 because a convenience line did not post would turn a delivered
-       * piece of work into a red duty. It says so, loudly, on stderr where the duty log keeps it.
-       */
-      /*
-       * THE DAY IN HER TIMEZONE, NOT THE MACHINE'S. Read as a weekday NAME rather than by parsing a
-       * formatted date string back into a Date — that round trip reinterprets the result in the
-       * local zone and silently returns the wrong day for anything near midnight, which is exactly
-       * the boundary a Friday-evening or Sunday-night run sits on.
-       */
-      const dayName = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short" }).format(sentAt);
-      const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(dayName);
-      if (POINTER && pointerKind && isWeekday) {
-        await postPointer(pointerKind, pointerCount, sentAt);
-      } else if (POINTER && !pointerKind) {
-        console.log("  No pointer: nothing crossed and nothing was worth reviving. Silence is the answer.");
-      }
-      return;
-    }
-    console.error(`  ${from} refused: ${res.status} ${(await res.text()).slice(0, 140)}`);
-  }
-  console.error("NAMED STOP [SEND_REFUSED] every sender was refused.");
-  process.exit(9);
+/** Was `~/.boss-os/morning/<name>.json` written today (Central time)? */
+export function morningWrittenToday(name, now = Date.now()) {
+  const dir = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
+  try {
+    const at = JSON.parse(fs.readFileSync(path.join(dir, `${name}.json`), "utf8")).at; // writeMorningSection stamps "at"
+    const day = (t) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(t);
+    return Boolean(at) && day(Date.parse(at)) === day(now);
+  } catch { return false; }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
