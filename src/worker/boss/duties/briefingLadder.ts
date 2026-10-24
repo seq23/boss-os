@@ -42,16 +42,22 @@ export interface BriefingSeat {
 }
 
 /**
- * The two $0 seats, in the order she named them: Claude, then OpenAI.
+ * The two $0 seats, in the order she named them: OpenAI, then Claude (24 Oct 2026; was Claude first).
  *
  * `bk_codex` carries no model: Codex CLI runs whatever her ChatGPT Plus seat's default is, and
  * passing a Claude model id to it — which is what a single `requested.model` did — is a run that
  * cannot start.
  */
 export const BRIEFING_SEATS: BriefingSeat[] = [
-  { backend_id: "bk_claude_code", model: "claude-sonnet-4-5-20250929", label: "Claude Code on her Max seat", cost: "plan_equivalent" },
+  // Owner, 24 Oct 2026: OpenAI first, Claude as backup (she is tight on Claude usage).
   { backend_id: "bk_codex", model: null, label: "Codex CLI on her ChatGPT Plus seat", cost: "plan_equivalent" },
+  { backend_id: "bk_claude_code", model: "claude-sonnet-4-5-20250929", label: "Claude Code on her Max seat", cost: "plan_equivalent" },
 ];
+/**
+ * NO PAID RUNG, EVER, FOR THE BRIEFING (her "nothing paid" posture). When both seats refuse, the
+ * task stops by name and the morning email says so; it never falls to a paid cloud model.
+ */
+export const BRIEFING_CLOUD_FALLBACK = false;
 
 export const BRIEFING_LADDER_IDS = BRIEFING_SEATS.map((s) => s.backend_id);
 
@@ -175,6 +181,11 @@ export function orderBriefingCandidates(
           ? `training-permitting (${m.data_use}); the router refuses it for this content — ${privacy?.why}`
           : free ? "free rung, walked by the cloud router if both seats refuse" : `paid rung${trains ? "" : ", non-training"}; the last resort`,
     });
+  }
+  // Her "nothing paid" rule (24 Oct 2026): below the two seats nothing is reachable for the
+  // briefing. Both seats refusing is a stop by name in the morning email, never a cloud call.
+  if (!BRIEFING_CLOUD_FALLBACK) {
+    for (const c of out) if (c.kind !== "seat") { c.eligible = false; c.why = "unreachable: the briefing never falls to a cloud rung (nothing paid); if both seats refuse it stops by name"; }
   }
   return out;
 }

@@ -94,16 +94,18 @@ export async function check({ spec, fixture, prompt, files, deliveredAt, ladder 
   const rungs = Array.isArray(ladder?.candidates) ? ladder.candidates : [];
   if (rungs.length === 0) problems.push("The briefing ladder resolves to ZERO candidates. Rule 0.");
   else {
-    if (!(rungs[0]?.backend_id === "bk_claude_code" && rungs[0]?.kind === "seat" && rungs[0]?.model === "claude-sonnet-4-5-20250929")) problems.push(`Rung 1 is ${rungs[0]?.backend_id}/${rungs[0]?.model}, not bk_claude_code on Sonnet 4.5.`);
-    if (!(rungs[1]?.backend_id === "bk_codex" && rungs[1]?.kind === "seat" && rungs[1]?.model === null)) problems.push(`Rung 2 is ${rungs[1]?.backend_id}/${rungs[1]?.model}, not bk_codex on its own default.`);
+    // Owner, 24 Oct 2026: OpenAI first, Claude as backup.
+    if (!(rungs[0]?.backend_id === "bk_codex" && rungs[0]?.kind === "seat" && rungs[0]?.model === null)) problems.push(`Rung 1 is ${rungs[0]?.backend_id}/${rungs[0]?.model}, not bk_codex on its own default.`);
+    if (!(rungs[1]?.backend_id === "bk_claude_code" && rungs[1]?.kind === "seat" && rungs[1]?.model === "claude-sonnet-4-5-20250929")) problems.push(`Rung 2 is ${rungs[1]?.backend_id}/${rungs[1]?.model}, not bk_claude_code on Sonnet 4.5.`);
     if (!rungs.slice(0, 2).every((r) => r.cost === "$0 (subscription)")) problems.push("A seat is not priced as a subscription seat.");
     const below = rungs.slice(2);
     if (!below.some((r) => r.kind === "free_rung")) problems.push("No free rung below the seats.");
-    if (!below.some((r) => r.kind === "paid_rung")) problems.push("No paid rung below the seats — the ladder has no last resort.");
+    // Her "nothing paid" rule (24 Oct 2026): no rung below the seats may be reachable for the briefing.
+    if (below.some((r) => r.eligible)) problems.push(`A cloud rung below the seats is reachable (${below.filter((r) => r.eligible).map((r) => r.model).join(", ")}) — the briefing must stop by name, never pay.`);
     const firstPaid = below.findIndex((r) => r.kind === "paid_rung");
     if (below.slice(0, firstPaid).some((r) => r.cost !== "$0 (free tier)")) problems.push("A priced rung sits above a free one.");
-    if (!ladder?.duty || JSON.stringify(ladder.duty.backend_ladder) !== JSON.stringify(["bk_claude_code", "bk_codex"])) problems.push(`The duty row's backend_ladder is ${JSON.stringify(ladder?.duty?.backend_ladder ?? null)}, not the two seats in her order.`);
-    if (ladder?.duty?.cloud_fallback !== true) problems.push("The duty row does not fall through to the cloud rungs when both seats refuse.");
+    if (!ladder?.duty || JSON.stringify(ladder.duty.backend_ladder) !== JSON.stringify(["bk_codex", "bk_claude_code"])) problems.push(`The duty row's backend_ladder is ${JSON.stringify(ladder?.duty?.backend_ladder ?? null)}, not the two seats in her order (OpenAI, then Claude).`);
+    if (ladder?.duty?.cloud_fallback !== false) problems.push("The duty row falls through to cloud rungs when both seats refuse — that is a paid call she ruled out.");
   }
   const F0 = files;
   if (!/for \(const backendId of ladder\)/.test(F0.consumer) || !/'ladder_step'/.test(F0.consumer)) problems.push("queue/consumer.ts does not walk backend_ladder.");
@@ -303,9 +305,10 @@ async function selfTest() {
     { name: "a materialiser that stopped composing from the module is caught", input: { ...good, files: { ...good.files, materialise: good.files.materialise.replace("prompt: composeBriefingPrompt(", "prompt: oldPrompt(") } }, expect: 1 },
     { name: "a retry slot on the screen that the Mac does not have is caught", input: { ...good, files: { ...good.files, today: good.files.today.replace("{ h: 6, m: 5 }", "{ h: 6, m: 15 }") } }, expect: 1 },
     { name: "a delivery that stopped re-queuing a failed morning is caught", input: { ...good, files: { ...good.files, deliver: good.files.deliver.replace(/retryFailedBriefing\(/g, "noRetry(") } }, expect: 1 },
-    { name: "a ladder whose second rung is not Codex is caught", input: { ...good, ladder: { ...good.ladder, candidates: [good.ladder.candidates[0], ...good.ladder.candidates.slice(2)] } }, expect: 1 },
+    { name: "a ladder whose first rung is not Codex is caught", input: { ...good, ladder: { ...good.ladder, candidates: [good.ladder.candidates[1], good.ladder.candidates[0], ...good.ladder.candidates.slice(2)] } }, expect: 1 },
+    { name: "a reachable paid rung under the seats is caught", input: { ...good, ladder: { ...good.ladder, candidates: [...good.ladder.candidates.slice(0, 2), ...good.ladder.candidates.slice(2).map((r, i) => (i === 0 ? { ...r, eligible: true } : r))] } }, expect: 1 },
     { name: "a ladder with zero candidates is a hard failure", input: { ...good, ladder: { ...good.ladder, candidates: [] } }, expect: 1 },
-    { name: "a duty row that lost cloud_fallback is caught", input: { ...good, ladder: { ...good.ladder, duty: { ...good.ladder.duty, cloud_fallback: false } } }, expect: 1 },
+    { name: "a duty row that falls to the cloud (cloud_fallback true) is caught", input: { ...good, ladder: { ...good.ladder, duty: { ...good.ladder.duty, cloud_fallback: true } } }, expect: 1 },
     { name: "a consumer that stopped walking the ladder is caught", input: { ...good, files: { ...good.files, consumer: good.files.consumer.replace("for (const backendId of ladder)", "for (const backendId of [ladder[0]])") } }, expect: 1 },
     { name: "a claim route that lost the hand-off is caught", input: { ...good, files: { ...good.files, route: good.files.route.replace(/fallback_from/g, "nothing") } }, expect: 1 },
     { name: "a Codex adapter back on read-only is caught", input: { ...good, files: { ...good.files, codex: good.files.codex.replace(/workspace-write/g, "read-only") } }, expect: 1 },
@@ -340,6 +343,6 @@ if (process.argv.includes("--self-test")) {
   console.log(
     `the-briefing-is-on-par: the live fixture (${input.fixture.day}) carries ${n} sections and ${src} article-level sources; ` +
     `every summary figure and headline number is cited inline, every [n] resolves, the dashboard is built from ` +
-    `${input.fixture.markets.quotes.length} feed quotes, nothing astrological, and the prompt, runner, launchd, migration and screen are wired; the ladder reads bk_claude_code → bk_codex → rungs. OK.`,
+    `${input.fixture.markets.quotes.length} feed quotes, nothing astrological, and the prompt, runner, launchd, migration and screen are wired; the ladder reads bk_codex → bk_claude_code, and no cloud rung is reachable. OK.`,
   );
 }

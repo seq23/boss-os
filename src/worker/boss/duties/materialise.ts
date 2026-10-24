@@ -4,7 +4,7 @@ import { logEvent } from "../lib/log";
 import { isDue, nextDueAt, type DutySchedule } from "./cadence";
 import { admitTask } from "../tasks/admit";
 import { BRIEFING_PROMPT_VERSION, composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
-import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, modelBySeat } from "./briefingLadder";
+import { BRIEFING_CLASSIFICATION, BRIEFING_LADDER_IDS, BRIEFING_CLOUD_FALLBACK, modelBySeat } from "./briefingLadder";
 import { runWorkerReader } from "../health/readers";
 
 /**
@@ -256,7 +256,7 @@ export async function materialiseDueDuties(
            */
           backend_id: BRIEFING_LADDER_IDS[0],
           backend_ladder: BRIEFING_LADDER_IDS,
-          cloud_fallback: true,
+          cloud_fallback: BRIEFING_CLOUD_FALLBACK,
           requested: { ...requested, model_by_backend: modelBySeat() },
         };
       }

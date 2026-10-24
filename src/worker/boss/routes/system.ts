@@ -366,7 +366,7 @@ system.get("/settings", async (c) => {
 
 system.put("/settings/:key", async (c) => {
   const key = c.req.param("key");
-  const { value } = await c.req.json<{ value: string }>();
+  const { value, via } = await c.req.json<{ value: string; via?: string }>();
 
   // Live trading is not a settings toggle. It lives behind the authority
   // envelope, which refuses until every gate is met.
@@ -383,7 +383,7 @@ system.put("/settings/:key", async (c) => {
   await setSetting(c.env.DB, key, String(value));
   await audit(c.env.DB, {
     actor: "boss", lane: "ops", entityType: "setting", entityId: key,
-    action: "updated", detail: { value: String(value) },
+    action: "updated", detail: { value: String(value), ...(typeof via === "string" && via.trim() ? { via: via.trim().slice(0, 200) } : {}) },
   });
   if (key === "cost_mode") {
     await logEvent(c.env.DB, { level: "warn", scope: "settings", event: "cost_mode_changed", detail: { value } });

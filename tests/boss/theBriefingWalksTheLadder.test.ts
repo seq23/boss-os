@@ -54,34 +54,30 @@ async function briefingTask(): Promise<{ taskId: string; input: Record<string, a
 }
 
 describe("the ordered candidate list, from the rows as migrated", () => {
-  it("reads bk_claude_code (Sonnet 4.5) → bk_codex → the free OpenRouter rungs → paid, and no paid rung before a free one", async () => {
+  it("reads bk_codex → bk_claude_code (Sonnet 4.5), and NOTHING below the seats is reachable (owner, 24 Oct 2026)", async () => {
     await seatsReset();
     const c = await resolveBriefingCandidates(env.DB, NOW);
     expect(c.length, "Rule 0: an empty ladder is a failure").toBeGreaterThan(4);
 
-    expect(c[0]).toMatchObject({ position: 1, kind: "seat", backend_id: "bk_claude_code", model: "claude-sonnet-4-5-20250929", eligible: true });
-    expect(c[1]).toMatchObject({ position: 2, kind: "seat", backend_id: "bk_codex", model: null, eligible: true });
+    expect(c[0]).toMatchObject({ position: 1, kind: "seat", backend_id: "bk_codex", model: null, eligible: true });
+    expect(c[1]).toMatchObject({ position: 2, kind: "seat", backend_id: "bk_claude_code", model: "claude-sonnet-4-5-20250929", eligible: true });
     expect(c[0]!.cost).toBe("$0 (subscription)");
     expect(c[1]!.cost).toBe("$0 (subscription)");
 
+    // The rungs are still listed, so the printout shows what exists — and every one is unreachable.
     const rungs = c.slice(2);
-    expect(rungs[0]).toMatchObject({ kind: "free_rung", backend_id: "bk_openrouter" });
-    expect(rungs[0]!.model).toMatch(/:free$/);
-    const eligibleRungs = rungs.filter((r) => r.eligible);
-    const firstPaid = eligibleRungs.findIndex((r) => r.kind === "paid_rung");
-    const lastFree = eligibleRungs.map((r) => r.kind).lastIndexOf("free_rung");
-    expect(firstPaid, "there is no paid rung — the ladder has no last resort").toBeGreaterThan(0);
-    expect(lastFree, "an eligible paid rung sits above an eligible free one").toBeLessThan(firstPaid);
-    expect(eligibleRungs.slice(0, firstPaid).every((r) => r.cost === "$0 (free tier)")).toBe(true);
+    expect(rungs.some((r) => r.kind === "paid_rung")).toBe(true);
+    expect(rungs.filter((r) => r.eligible), "a cloud rung is reachable for the briefing").toEqual([]);
+    expect(rungs.every((r) => /unreachable: the briefing never falls to a cloud rung/.test(r.why))).toBe(true);
   });
 
   it("marks a capped seat ineligible and keeps it on the list, so the printed ladder shows where the walk starts today", async () => {
     await seatsReset();
-    await seatCapped("bk_claude_code");
+    await seatCapped("bk_codex");
     const c = await resolveBriefingCandidates(env.DB, NOW);
-    expect(c[0]).toMatchObject({ backend_id: "bk_claude_code", eligible: false });
+    expect(c[0]).toMatchObject({ backend_id: "bk_codex", eligible: false });
     expect(c[0]!.why).toMatch(/ceiling spent/);
-    expect(c[1]).toMatchObject({ backend_id: "bk_codex", eligible: true });
+    expect(c[1]).toMatchObject({ backend_id: "bk_claude_code", eligible: true });
     await seatsReset();
   });
 
@@ -98,9 +94,10 @@ describe("the ordered candidate list, from the rows as migrated", () => {
       ],
     }, NOW);
     expect(c.map((x) => x.backend_id + ":" + (x.model ?? "default"))).toEqual([
-      "bk_claude_code:claude-sonnet-4-5-20250929", "bk_codex:default", "bk_openrouter:nvidia/nemotron-3-ultra-550b-a55b:free", "bk_openrouter:openai/gpt-5-mini",
+      "bk_codex:default", "bk_claude_code:claude-sonnet-4-5-20250929", "bk_openrouter:nvidia/nemotron-3-ultra-550b-a55b:free", "bk_openrouter:openai/gpt-5-mini",
     ]);
-    expect(BRIEFING_SEATS.map((s) => s.backend_id)).toEqual(["bk_claude_code", "bk_codex"]);
+    expect(c.filter((x) => x.kind !== "seat").every((x) => !x.eligible)).toBe(true);
+    expect(BRIEFING_SEATS.map((s) => s.backend_id)).toEqual(["bk_codex", "bk_claude_code"]);
   });
 });
 
@@ -109,19 +106,19 @@ describe("the duty row carries the ladder, stamped by the materialiser from the 
 
   it("fires with backend_ladder, cloud_fallback and a model per seat", async () => {
     const { input } = await briefingTask();
-    expect(input.backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
-    expect(input.cloud_fallback).toBe(true);
-    expect(input.requested.model_by_backend).toEqual({ bk_claude_code: "claude-sonnet-4-5-20250929", bk_codex: null });
+    expect(input.backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(input.cloud_fallback).toBe(false);
+    expect(input.requested.model_by_backend).toEqual({ bk_codex: null, bk_claude_code: "claude-sonnet-4-5-20250929" });
     expect(input.delivers).toBe("executive_reports");
   });
 });
 
-describe("scenario (a): Claude Code capped or unavailable → Codex serves the same spec at $0", () => {
+describe("scenario (a): Codex capped or unavailable → Claude Code serves the same spec at $0", () => {
   beforeEach(seatsReset);
   afterEach(seatsReset);
 
-  it("walks past a capped bk_claude_code to bk_codex at dispatch, and records the step on the task", async () => {
-    await seatCapped("bk_claude_code");
+  it("walks past a capped bk_codex to bk_claude_code at dispatch, and records the step on the task", async () => {
+    await seatCapped("bk_codex");
     const { taskId } = await briefingTask();
     let calls = 0;
     restore = stubFetch(() => { calls++; return completionResponse("should not be called"); });
@@ -131,47 +128,47 @@ describe("scenario (a): Claude Code capped or unavailable → Codex serves the s
     const runs = await all<any>(`SELECT id, backend_id, status, requested FROM backend_runs WHERE task_id = ? ORDER BY started_at`, taskId);
     const parked = runs.filter((r) => r.status === "running");
     expect(parked, "no run was parked for a seat").toHaveLength(1);
-    expect(parked[0]!.backend_id).toBe("bk_codex");
+    expect(parked[0]!.backend_id).toBe("bk_claude_code");
     const requested = JSON.parse(parked[0]!.requested);
-    expect(requested.model, "a Claude model id reached the Codex seat").toBeUndefined();
-    expect(requested.backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
+    expect(requested.model, "Claude's seat lost its model").toBe("claude-sonnet-4-5-20250929");
+    expect(requested.backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
     // The prompt Codex gets is the same specification, verbatim.
     expect(requested.instruction).toMatch(/EXECUTIVE INTELLIGENCE ENGINE/);
     expect(requested.instruction).toMatch(/Never invent/);
 
     const steps = await all<any>(`SELECT event, detail FROM task_events WHERE task_id = ? AND event IN ('ladder_step','dispatched') ORDER BY ts`, taskId);
     expect(steps.map((s) => s.event)).toEqual(["ladder_step", "dispatched"]);
-    expect(JSON.parse(steps[0]!.detail)).toMatchObject({ backend_id: "bk_claude_code", next: "bk_codex" });
+    expect(JSON.parse(steps[0]!.detail)).toMatchObject({ backend_id: "bk_codex", next: "bk_claude_code" });
     expect(JSON.parse(steps[0]!.detail).refused).toMatch(/budget is spent/);
     expect(calls, "the walk went to the cloud while a seat was still available").toBe(0);
   });
 
-  it("lets the Codex seat claim a run parked for Claude Code when the Mac says that seat is down, with its own model and a hand-off event", async () => {
+  it("lets the Claude Code seat claim a run parked for Codex when the Mac says that seat is down, with its own model and a hand-off event", async () => {
     const { taskId } = await briefingTask();
     await handleTask(env as any, { taskId, lane: "ops" });
     const parked = await row<any>(`SELECT id, backend_id FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
-    expect(parked.backend_id).toBe("bk_claude_code");
+    expect(parked.backend_id).toBe("bk_codex");
 
-    // Codex alone, without saying Claude is down: nothing. A seat never takes another's work unasked.
-    const alone = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_codex" } });
+    // Claude alone, without saying Codex is down: nothing. A seat never takes another's work unasked.
+    const alone = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_claude_code" } });
     expect(alone.status).toBe(200);
     expect((await alone.json() as any).data.run).toBeNull();
 
-    // Codex, reporting that the Claude seat failed preflight: it takes the run, re-labelled.
-    const res = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_codex", fallback_from: ["bk_claude_code"] } });
+    // Claude, reporting that the Codex seat failed preflight: it takes the run, re-labelled.
+    const res = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_claude_code", fallback_from: ["bk_codex"] } });
     expect(res.status).toBe(200);
     const envelope = (await res.json() as any).data.run;
     expect(envelope, "the fallback claim returned nothing").not.toBeNull();
     expect(envelope.run_id).toBe(parked.id);
-    expect(envelope.backend_id).toBe("bk_codex");
-    expect(envelope.model, "the Claude model id travelled to Codex").toBeUndefined();
+    expect(envelope.backend_id).toBe("bk_claude_code");
+    expect(envelope.model, "Claude's seat did not get its own model").toBe("claude-sonnet-4-5-20250929");
     expect(envelope.instruction).toMatch(/EXECUTIVE INTELLIGENCE ENGINE/);
     expect(envelope.web_tools).toEqual(["WebSearch", "WebFetch"]);
 
     const run = await row<any>(`SELECT backend_id, claimed_by FROM backend_runs WHERE id = ?`, parked.id);
-    expect(run.backend_id).toBe("bk_codex");
+    expect(run.backend_id).toBe("bk_claude_code");
     const handoff = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_handoff'`, taskId);
-    expect(JSON.parse(handoff.detail)).toMatchObject({ from: "bk_claude_code", to: "bk_codex" });
+    expect(JSON.parse(handoff.detail)).toMatchObject({ from: "bk_codex", to: "bk_claude_code" });
 
     // And the report Codex delivers lands under the same grader, saying who wrote it.
     const report = await api("/api/backends/report", {
@@ -179,7 +176,7 @@ describe("scenario (a): Claude Code capped or unavailable → Codex serves the s
       body: {
         device_id: "dev_test",
         evidence: {
-          run_id: parked.id, task_id: taskId, backend_id: "bk_codex", status: "succeeded", summary: "done",
+          run_id: parked.id, task_id: taskId, backend_id: "bk_claude_code", status: "succeeded", summary: "done",
           files_touched: [], commands: [], checks_run: { run: 0, passed: 0, failed: 0, detail: [] }, remaining_risks: [], violations: [],
           rollback_ref: null, refusal_reason: null, error: null, cost_micros: 0, started_at: NOW, finished_at: NOW + 1000,
           delivers: { status: "partial", headline: "Codex wrote this morning.", summary: "A short one.", sections: [{ key: "key_events", heading: "Key Events Today", so_what: "Nothing scheduled.", bullets: ["Markets closed.", "Nothing scheduled."] }], sources: [], gaps: [{ wanted: "everything else", why: "test" }] },
@@ -190,8 +187,8 @@ describe("scenario (a): Claude Code capped or unavailable → Codex serves the s
     expect(report.status, await report.text()).toBe(200);
     const stored = await row<any>(`SELECT written_by, status FROM executive_reports WHERE task_id = ?`, taskId);
     const by = JSON.parse(stored.written_by);
-    expect(by).toMatchObject({ kind: "seat", backend_id: "bk_codex", refused_seats: ["bk_claude_code"] });
-    expect(by.label).toMatch(/Codex CLI on her ChatGPT Plus seat/);
+    expect(by).toMatchObject({ kind: "seat", backend_id: "bk_claude_code", refused_seats: ["bk_codex"] });
+    expect(by.label).toMatch(/Claude Code on her Max seat/);
   });
 
   it("never hands a run to a seat that is not below the parked seat on the run's own ladder", async () => {
@@ -226,97 +223,31 @@ describe("scenario (a): Claude Code capped or unavailable → Codex serves the s
   });
 });
 
-describe("scenario (b): both seats unavailable → the walk continues down the free rungs, and the block names the rung", () => {
+describe("scenario (b): both seats unavailable → the briefing stops by name; it never falls to a cloud rung (owner, 24 Oct 2026: nothing paid)", () => {
   beforeEach(seatsReset);
   afterEach(seatsReset);
 
-  it("falls through to the cloud router, delivers the rung's reply through the same grader, and records written_by", async () => {
-    await seatCapped("bk_claude_code");
-    await seatDisabled("bk_codex");
+  it("makes no network call, writes no report, and fails with every seat's refusal on it", async () => {
+    await seatCapped("bk_codex");
+    await seatDisabled("bk_claude_code");
     const { taskId } = await briefingTask();
-
-    const rungReply = {
-      status: "partial",
-      headline: "A cloud rung wrote this morning.",
-      summary: "Both seats declined; this is what could be said without a current number.",
-      sections: [
-        { key: "key_events", heading: "Key Events Today", so_what: "Markets are closed.", bullets: ["Saturday: U.S. markets closed.", "Monday: the week's questions."] },
-        { key: "one_thing_to_watch", heading: "One Thing to Watch", so_what: "Watch the 10-year.", bullets: ["Whether the 10-year holds below 5%.", "What would confirm it.", "What would invalidate it."] },
-      ],
-      sources: [],
-      gaps: [{ wanted: "every market figure", why: "no feed and no web from a cloud rung" }],
-    };
     const seen: string[] = [];
-    restore = stubFetch((req) => {
-      seen.push(new URL(req.url).hostname);
-      return completionResponse(`Here is the report:\n${JSON.stringify(rungReply)}`, 5000, 800);
-    });
+    restore = stubFetch((req) => { seen.push(new URL(req.url).hostname); return completionResponse("must not be reached"); });
     const withKey = Object.create(env) as typeof env;
     (withKey as any).OPENROUTER_API_KEY = "test-key";
+    (withKey as any).OPENAI_API_KEY = "sk-test";
 
     await handleTask(withKey as any, { taskId, lane: "ops" });
 
+    expect(seen, "a request left the Worker for a cloud rung").toEqual([]);
     const steps = await all<any>(`SELECT event, detail FROM task_events WHERE task_id = ? AND event = 'ladder_step' ORDER BY ts`, taskId);
-    expect(steps.map((s) => JSON.parse(s.detail).backend_id)).toEqual(["bk_claude_code", "bk_codex"]);
-    expect(JSON.parse(steps[1]!.detail).next).toBe("cloud rungs");
-    if (!seen.includes("openrouter.ai")) {
-      const t = await row<any>(`SELECT status, error, output FROM tasks WHERE id = ?`, taskId);
-      const ev = await all<any>(`SELECT event, detail FROM task_events WHERE task_id = ? ORDER BY ts`, taskId);
-      const dec = await all<any>(`SELECT outcome, reason, candidates FROM routing_decisions WHERE task_id = ?`, taskId);
-      const logs = await all<any>(`SELECT event, detail FROM system_events WHERE entity_id = ? ORDER BY ts`, taskId);
-      throw new Error(`no cloud rung called. task=${JSON.stringify(t)} events=${JSON.stringify(ev)} decisions=${JSON.stringify(dec)} logs=${JSON.stringify(logs)}`);
-    }
-
-    const decision = await row<any>(`SELECT chosen_model_id, outcome, candidates FROM routing_decisions WHERE task_id = ? ORDER BY ts DESC LIMIT 1`, taskId);
-    // "degraded" is the router's honest word for "the route's primary tier was unavailable and a
-    // continuity rung answered" — which is exactly what walking down the ladder is.
-    expect(["routed", "degraded"]).toContain(decision.outcome);
-
-    /*
-     * ─── THE FREE RUNGS ARE REFUSED FOR THIS CONTENT, AND THAT IS HER OWN RULE HOLDING ────
-     *
-     * Every `:free` OpenRouter rung is TRAINS_ON_PROMPTS. The router scans the outgoing prompt for
-     * LP names and deal material, reads the briefing's own wording ("commitment", "valuation",
-     * "allocation", a rate) as deal material, and refuses every training-permitting lane — and
-     * nothing a caller declares can lower that verdict. So the walk lands on the FIRST NON-TRAINING
-     * rung the resolver lists as eligible, not on a $0 rung. This test pins that rather than
-     * loosening the scan: "never route LP names or deal terms to a training-permitting provider"
-     * is enforced at the router, fail closed, and a briefing that reads as deal material to the
-     * scan is exactly the case it exists for.
-     */
-    const candidates = JSON.parse(decision.candidates) as { model_id: string; stage: string; verdict: string; reason: string }[];
-    const freeIds = (await all<any>(`SELECT id FROM models WHERE slug LIKE '%:free' AND enabled = 1`)).map((m) => m.id);
-    for (const id of freeIds) {
-      const c = candidates.find((x) => x.model_id === id);
-      expect(c, `${id} was never considered`).toBeDefined();
-      expect(c!.stage, `${id} should have been refused at privacy`).toBe("privacy");
-      expect(c!.reason).toMatch(/TRAINS_ON_PROMPTS/);
-    }
-    const chosen = await row<any>(`SELECT slug, data_use FROM models WHERE id = ?`, decision.chosen_model_id);
-    expect(chosen.data_use).toBe("NO_TRAINING_CONTRACTUAL");
-    const { input } = { input: JSON.parse((await row<any>(`SELECT input FROM tasks WHERE id = ?`, taskId)).input) };
-    const ladderNow = await resolveBriefingCandidates(env.DB, NOW, input.prompt);
-    const firstEligibleRung = ladderNow.find((c) => c.kind !== "seat" && c.eligible);
-    expect(firstEligibleRung, "the resolver lists no eligible rung below the seats").toBeDefined();
-    expect(chosen.slug, "the router walked to a different rung than the resolver prints first").toBe(firstEligibleRung!.model);
-    expect(ladderNow.filter((c) => c.kind === "free_rung" && c.backend_id === "bk_openrouter").every((c) => !c.eligible && /router refuses it for this content/.test(c.why))).toBe(true);
-
-    const stored = await row<any>(`SELECT written_by, status, headline, sections FROM executive_reports WHERE task_id = ?`, taskId);
-    expect(stored, "the rung's reply never reached executive_reports").not.toBeNull();
-    const by = JSON.parse(stored.written_by);
-    expect(by.kind).toBe("cloud_rung");
-    expect(by.refused_seats).toEqual(["bk_claude_code", "bk_codex"]);
-    // The label is the router's own honest name for the rung, degraded-tier wording included.
-    expect(by.label).toMatch(/Claude Haiku 4\.5 \(OpenRouter\)/); // paid rungs: Claude family first for strong-model work
-    expect(by.model).toBe(decision.chosen_model_id);
-    expect(stored.headline).toBe("A cloud rung wrote this morning.");
-    expect(stored.status).toBe("partial");
-    expect(JSON.parse(stored.sections).map((s: any) => s.key)).toEqual(["key_events", "one_thing_to_watch"]);
-
-    // The Today block carries the rung's name, so her Claude seat is never implied.
-    const today = await api(`/api/today?blocks=executive_briefing`);
-    const block = ((await today.json() as any).data.blocks as any[]).find((b) => b.key === "executive_briefing");
-    expect(block.content.written_by.label).toBe(by.label);
+    expect(steps.map((s) => JSON.parse(s.detail).backend_id)).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(JSON.parse(steps[1]!.detail).next).toBeNull();
+    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
+    expect(t.status).toBe("failed");
+    expect(t.error).toMatch(/bk_codex: .*bk_claude_code: /);
+    expect(await row(`SELECT 1 FROM executive_reports WHERE task_id = ?`, taskId)).toBeNull();
+    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId)).toHaveLength(0);
   });
 
   it("reads the delivers object out of a rung's reply, and nothing out of prose", () => {
@@ -356,54 +287,9 @@ describe("scenario (c): both seats unavailable and OpenAI provisioned → the re
     gaps: [],
   };
 
-  it("calls the Responses API with web_search, stamps the sources itself, names what it could not verify, and says who wrote it", async () => {
-    await seatCapped("bk_claude_code");
-    await seatDisabled("bk_codex");
-    const { taskId } = await briefingTask();
-    // The task's own envelope is a share of the ops lane (about $0.26 in production, $0.30 here) — below the
-    // research estimate. The research call carries its own task budget, so nothing is raised by hand here.
-    const env0 = await row<any>(`SELECT budget_micros FROM permission_envelopes WHERE task_id = ?`, taskId);
-    expect(env0.budget_micros).toBeLessThan(450_000);
-
-    const calls: { url: string; body: any }[] = [];
-    restore = stubFetch(async (req) => {
-      calls.push({ url: req.url, body: await req.json() });
-      return new Response(JSON.stringify({
-        output: [
-          { type: "web_search_call", id: "ws_1" },
-          { type: "message", content: [{ type: "output_text", text: JSON.stringify(report), annotations: [{ type: "url_citation", url: "https://www.reuters.com/markets/a", title: "Reuters" }] }] },
-        ],
-        usage: { input_tokens: 20000, output_tokens: 4000 },
-      }), { status: 200, headers: { "content-type": "application/json" } });
-    });
-    const withKey = Object.create(env) as typeof env;
-    (withKey as any).OPENAI_API_KEY = "sk-test";
-    (withKey as any).OPENROUTER_API_KEY = "test-key";
-
-    await handleTask(withKey as any, { taskId, lane: "ops" });
-
-    const why = await all<any>(`SELECT detail FROM system_events WHERE entity_id = ? AND event = 'research_rung_unavailable'`, taskId);
-    expect(calls.map((c) => c.url), `the research rung was never called: ${JSON.stringify(why)}`).toEqual(["https://api.openai.com/v1/responses"]);
-    expect(calls[0]!.body.tools).toEqual([{ type: "web_search" }]);
-    expect(calls[0]!.body.input[0].content).toContain("CLOUD RESEARCH RUNG");
-
-    const stored = await row<any>(`SELECT written_by, sources, gaps FROM executive_reports WHERE task_id = ?`, taskId);
-    expect(stored, "the research rung's reply never reached executive_reports").not.toBeNull();
-    const by = JSON.parse(stored.written_by);
-    expect(by.kind).toBe("cloud_rung");
-    expect(by.label).toBe("GPT-4.1 with web search (OpenAI)");
-    expect(by.refused_seats).toEqual(["bk_claude_code", "bk_codex"]);
-    const sources = JSON.parse(stored.sources);
-    // The page the search returned is stamped by the system; the one it never returned is NOT certified.
-    expect(Date.parse(sources[0].read_at)).toBeGreaterThan(Date.parse("2026-01-01"));
-    expect(sources[1].read_at ?? null).toBeNull();
-    expect(JSON.stringify(JSON.parse(stored.gaps))).toContain("https://example.com/never-searched");
-  });
-
-  it("falls back to the ordinary walk when the research rung is refused at FREE_ONLY", async () => {
-    await env.DB.prepare(`UPDATE settings SET value = 'FREE_ONLY' WHERE key = 'spend_lever'`).run();
-    await seatCapped("bk_claude_code");
-    await seatDisabled("bk_codex");
+  it("never calls the research rung for the briefing, even provisioned with the lever open", async () => {
+    await seatCapped("bk_codex");
+    await seatDisabled("bk_claude_code");
     const { taskId } = await briefingTask();
     const hosts: string[] = [];
     restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("{}", 10, 10); });
@@ -411,8 +297,8 @@ describe("scenario (c): both seats unavailable and OpenAI provisioned → the re
     (withKey as any).OPENAI_API_KEY = "sk-test";
     (withKey as any).OPENROUTER_API_KEY = "test-key";
     await handleTask(withKey as any, { taskId, lane: "ops" });
-    expect(hosts).not.toContain("api.openai.com");
-    const ev = await all<any>(`SELECT event FROM system_events WHERE entity_id = ?`, taskId);
-    expect(ev.map((e) => e.event)).toContain("research_rung_unavailable");
+    expect(hosts).toEqual([]);
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId)).status).toBe("failed");
+    expect(await row(`SELECT 1 FROM executive_reports WHERE task_id = ?`, taskId)).toBeNull();
   });
 });
