@@ -385,7 +385,10 @@ export async function messageWords(id, { quoted = false, token = null } = {}) {
   if (!msg?.raw) return null;
   const rawText = Buffer.from(msg.raw, "base64").toString("utf8").slice(0, 200_000);
   const words = quoted ? decodedBody(rawText).replace(/\r\n/g, "\n").trim() : withoutSignature(readableText(rawText));
-  return { text: words.slice(0, 6000) || null, at: Number(msg.internalDate ?? 0) || null, thread: msg.threadId ?? null, subject: headersFromRaw(rawText).subject ?? "" };
+  const head = headersFromRaw(rawText);
+  // The mailbox it really went from, read off its own From header (24 Oct 2026: the Prospects screen shows it).
+  const from = (addressIn(head.from ?? "") || "").toLowerCase() || null;
+  return { text: words.slice(0, 6000) || null, at: Number(msg.internalDate ?? 0) || null, thread: msg.threadId ?? null, subject: head.subject ?? "", from };
 }
 export async function sentWordsTo(emails, { max = 3 } = {}) {
   const tok = await contentToken();
@@ -395,7 +398,7 @@ export async function sentWordsTo(emails, { max = 3 } = {}) {
     const msgs = [];
     for (const m of j?.messages ?? []) {
       const w = await messageWords(m.id, { quoted: true, token: tok });
-      if (w) msgs.push({ email, sent_at: w.at, subject: w.subject, body: w.text, gmail_id: m.id, thread_id: w.thread });
+      if (w) msgs.push({ email, sent_at: w.at, subject: w.subject, body: w.text, gmail_id: m.id, thread_id: w.thread, sent_from: w.from });
     }
     msgs.sort((a, b) => a.sent_at - b.sent_at).slice(0, max).forEach((t, i) => out.push({ ...t, touch_no: i + 1 }));
   }

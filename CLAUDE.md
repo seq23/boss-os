@@ -64,9 +64,20 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
 3. **The grid is six months; the Archive is six to twelve.** A view by the source email's date, never
    a deletion; only the main grid is matched; a new email about an archived order is a fresh row.
 4. **Her own deals read "Yours: buyer" / "Yours: seller"** everywhere.
-5. **The email** carries new matches in Decide (both sides, addresses, sizes, prices, fill, gap, age,
-   a ready note to each) and one line per company with a live match under Monique found; the
-   Matches screen (Deals → Matches) lists every current one.
+5. **A match is one buyer and one seller on one company, counted once** (24 Oct 2026: "1,305 in all;
+   1,359 within the 15% limit" contradicted itself — one broker re-sending an order every week was
+   counted every time). `allMatches` collapses order pairs to party pairs (`pairKeyOf`, `orders`), and
+   every number quoted comes from `matchCounts`.
+6. **The email carries the best few, never hundreds:** at most `MAX_EMAIL_MATCHES` (5) new matches —
+   a pair first seen in the last 36 hours (`matches-first-seen.json` on her Mac) or one on an order
+   that arrived since yesterday — one per company, freshest then closest price, none stale. One on a
+   new order is in Decide (both sides, addresses, sizes, prices, fill, gap, age, a ready note to
+   each); the rest are lines under Monique found; then one count line, "See all N matches →", to the
+   Matches screen (Deals → Matches), which lists every current one. Pinned by
+   `tests/morningSizeAndMatches.test.ts`.
+7. **Outward words call her buyers "LPs"** (owner, 24 Oct 2026): match notes, prospect emails, LP
+   replies and deal drafts never say "buyer"; a prospect email never names Anthropic (it alludes:
+   `NEVER_NAMED`, `src/shared/boss/lp/plan.mjs`). Pinned by `tests/outboundWords.test.ts`.
 
 ## Emails to her
 
@@ -75,8 +86,8 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
 `npm run validate:email-plain`:
 1. **One morning email.** Simone's (`scripts/ops/your-day.mjs`): Decide → New deals since yesterday +
    Monique found (+ Prospect emails) → ✨ Spirit (the approved sample: week, moon, sky, practice, a
-   new non-body gratitude sentence every day, the month; the rest under "Show more ▾") → Camille's briefing (five lines, then the whole briefing under
-   "Show the full briefing ▾"; it waits for the report, 07:45 Central at the latest) → Done for you (≤3)
+   new non-body gratitude sentence every day, the month; the rest under "Show more ▾") → Camille's briefing (five lines and "Read the full briefing →" to its screen — the whole briefing is never
+   in the email; it waits for the report, 07:45 Central at the latest) → Done for you (≤3)
    → Catch up with → Porch & Party: To do for Valerie → sign-off → the 8Raise line only when something
    is wrong. Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of
    an email. Another email only when it cannot wait: a decision due today, money at risk, a deal moving now.
@@ -102,3 +113,9 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
 5. **The gate holds, never sends, a failing email:** `mailGate` in `postEmployeeMail`
    (`scripts/ops/notify.mjs`) and `plainReply` on the Worker. A new sender passes through them or it
    does not send.
+6. **Never risk Gmail's clip** (owner, 24 Oct 2026: Gmail hides an email over ~102KB behind "View entire
+   message"). The HTML must fit `EMAIL_HTML_BUDGET` (80KB, bytes): styles live on the wrapper, not on
+   every paragraph; long lists stop with "See all N →" on their screen (`MAX_DEAL_ROWS`, `MAX_FOUND_LINES`,
+   `MAX_PROSPECT_SENDS`); past the budget `CUT_ORDER` cuts the prospect emails' words, then Monique's
+   lines to three, then the deal rows to five. **Decisions are never cut.** Pinned by
+   `tests/morningSizeAndMatches.test.ts` (a heavy-day fixture that fails over 80KB).

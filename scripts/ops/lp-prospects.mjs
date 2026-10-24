@@ -35,6 +35,7 @@ import os from "node:os";
 import path from "node:path";
 import { bossApi } from "./lib/duty-kit.mjs";
 import { writeMorning } from "./lp-daily.mjs";
+import { quotedSentence } from "../../src/shared/boss/mail/plain.mjs";
 import {
   DEFAULT_PROSPECT_TEMPLATE, FEATURED_MIN, blur, gmailThreadUrl, proposeFeatured, renderProspect,
   staleFeatured, tapUrl, MAX_TOUCHES,
@@ -207,7 +208,7 @@ export function prospectsMorning({ rows, pending, stale, plan, sent, now = Date.
       body: `A prospect Monique wrote to${p.firm ? ` (${p.firm})` : ""} answered. Side: ${p.side === "unknown" ? "not clear yet" : p.side}. Your reply is ready in their thread.`,
       details: [
         ...(p.email ? [`Their email: ${p.email}`] : []),
-        ...(p.reply_note ? [`What they wrote: "${String(p.reply_note).slice(0, 300).replace(/[\s.!?]+$/, "")}."`] : []),
+        ...(p.reply_note ? [`What they wrote: ${quotedSentence(String(p.reply_note).slice(0, 300))}`] : []),
         `History: ${p.touches ?? 1} email${(p.touches ?? 1) === 1 ? "" : "s"} from Monique, then their reply.`,
       ],
       // No "Send as is": this email cannot show the held reply word for word, so it is sent from Gmail.

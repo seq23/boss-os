@@ -92,13 +92,15 @@ describe("the one morning email", () => {
     expect(e.text).toContain(`See the full grid: ${BOSS}`);
     expect(e.html).toMatch(/<table role="presentation"/);
   });
-  it("Camille's briefing: the one-minute summary in five lines, then the whole briefing folded under one tap", () => {
+  it("Camille's briefing: the one-minute summary in five lines, then one link to the whole briefing on its screen", () => {
     const brief = e.text.slice(e.text.indexOf("This morning's briefing"), e.text.indexOf("Read the full briefing")).split("\n").filter((l) => l.startsWith("- "));
     expect(brief.map((l) => l.replace(/\u2063/g, ""))).toEqual(["- Rates held.", "- A large AI secondary priced up.", "- Two IPO filings.", "- A launch slipped.", "- One ruling on fund disclosure."]);
-    expect(e.text).toContain("Read the full briefing: https://boss.sequoiataylor.com/?view=briefing");
-    // The rest of the report is in the email: written out in the text, folded in the HTML.
-    expect(e.text.replace(/\u2063/g, "")).toContain("- Not this one.");
-    expect(e.html).toMatch(/<details[^>]*><summary[^>]*>Show the full briefing ▾<\/summary>[\s\S]*Not this one\.[\s\S]*<\/details>/);
+    expect(e.text).toContain("Read the full briefing →: https://boss.sequoiataylor.com/?view=briefing");
+    // The rest of the report is on its screen, never in the email (owner, 24 Oct 2026: "never risk the size limit").
+    expect(e.text.replace(/\u2063/g, "")).not.toContain("Not this one.");
+    expect(e.html).not.toContain("Not this one.");
+    expect(e.html).not.toMatch(/<details|Show the full briefing/);
+    expect(e.html).toMatch(/<a href="https:\/\/boss\.sequoiataylor\.com\/\?view=briefing"[^>]*>Read the full briefing →<\/a>/);
   });
   it("Done for you: the bounce agent's one line first, three lines at most, each opening its screen, the rest on Today", () => {
     const done = e.text.slice(e.text.indexOf("Done for you"), e.text.indexOf("Catch up with")).split("\n").filter((l) => l.startsWith("- "));

@@ -77,7 +77,10 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
     const r = rankMatches(b, [old, stale, fresh], { now: NOW }).matches;
     expect(r.map((m: any) => [m.other.id, m.stale, m.old])).toEqual([["f", false, false], ["s", true, false], ["o", true, true]]);
     const out = moniqueFound({ newRows: [], grid: [b, stale, old], lists: NO_LISTS, now: NOW });
-    expect(out.lines.map((l: any) => l.text).join(" ")).toMatch(/Older matches \(an order over 60 days old, may be stale — check it's still live\): Co\./);
+    // A stale match never takes an email slot; it is counted, once, in the line to the Matches screen.
+    expect(out.lines.map((l: any) => l.text)).toEqual(["1 possible trade in all, on 1 company, each buyer and seller counted once; 1 has an order over 60 days old (may be stale — check it's still live)."]);
+    expect(out.lines[0].links).toEqual([{ label: "See the match →", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" }]);
+    expect(out.counts).toEqual({ within: 1, companies: 1, stale: 1, live: 0 });
     expect(out.matches.find((m: any) => m.key === "b|o")?.old).toBe(true);
   });
 
@@ -191,17 +194,22 @@ describe("Camille's briefing, whole and readable", () => {
     ],
     corrections: ["Yesterday's figure was wrong."],
   };
-  it("keeps capitals, drops stray asterisks, links citations to their sources, and folds the rest", () => {
+  it("keeps capitals, drops stray asterisks, links citations to their sources; the rest is on its screen, never in the email", () => {
     const runs = proseRuns(briefing.sections[0]!.bullets[0]!, (n: number) => (n === 2 ? "https://news.example/a" : null));
     expect(runs.map((r: any) => r.text).join("")).not.toMatch(/\*/);
     const e = buildDay({ ...EMPTY, briefing }, NOW);
     const text = e.text.replace(/⁣/g, "");
     expect(text).toContain("- WTI settled at $103 [1]. Crude crossed the 2025 high on shipping routes [2].");
-    expect(text).toContain("AI & Technology\n- What it means: Spending under scrutiny.\n- A CVSS 9.2 PHP flaw in the UAE [2].");
-    expect(text).toContain("Corrections to earlier briefings\n- Yesterday's figure was wrong.");
-    expect(text).toContain("Sources\n- 1. Feed: https://boss.sequoiataylor.com/?view=briefing#brief-src-1\n- 2. A Wire: https://news.example/a");
-    expect(e.html).toContain('<sup style="font-size:10px"><a href="https://news.example/a" style="color:#1F4E8C">2</a></sup>');
-    expect(e.html).toMatch(/<details[^>]*><summary[^>]*>Show the full briefing ▾<\/summary>/);
+    // Owner, 24 Oct 2026 ("never risk the size limit"): the full briefing is never in the email.
+    for (const body of [text, e.html]) {
+      expect(body).not.toContain("AI & Technology");
+      expect(body).not.toContain("Corrections to earlier briefings");
+      expect(body).not.toContain("Show the full briefing");
+    }
+    expect(e.html).not.toContain("<details");
+    expect(text).toContain("Read the full briefing →: https://boss.sequoiataylor.com/?view=briefing");
+    expect(e.html).toContain('<a href="https://boss.sequoiataylor.com/?view=briefing"');
+    expect(e.html).toContain('<sup><a href="https://news.example/a">2</a></sup>');
     expect(e.problems).toEqual([]);
     expect(briefingFull(briefing).map((b: any) => b.heading)).toEqual(["AI & Technology", "Corrections to earlier briefings", "Sources"]);
   });

@@ -58,3 +58,6 @@ export const CATCHUP_REASON_TYPES: readonly string[];
 export function excluded(person: { email?: string; name?: string }, lists?: { doNotSuggest?: any[]; rainmaker?: any[] }): "do_not_suggest" | "rainmaker" | null;
 export function pickCatchups(candidates: any[], history: any[], lists: { doNotSuggest?: any[]; rainmaker?: any[] }, now?: number): any[];
 export function catchupNote(a: { name?: string; reason: string }): string;
+export const NEVER_NAMED: ReadonlyArray<{ re: RegExp; allude: string }>;
+export function sayName(n: string): string;
+export function withoutNeverNamed(text: string): string;

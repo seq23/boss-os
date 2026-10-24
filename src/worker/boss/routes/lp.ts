@@ -188,7 +188,7 @@ lp.post("/replies", async (c) => {
 lp.get("/prospects", async (c) => {
   // Tap tokens only for the Mac lane that builds the morning email (?tokens=1); the screen never needs them.
   const tokens = c.req.query("tokens") === "1" ? ", draft_tap_token" : "";
-  const rows = (await c.env.DB.prepare(`SELECT id, name, firm, email, kind, source, source_ref, status, side, touches, first_sent_at, last_touch_at, thread_id, last_message_id, subject, reply_note, draft_tap_token IS NOT NULL AS has_draft, created_at, updated_at${tokens} FROM prospects ORDER BY created_at DESC LIMIT 1000`).all<any>()).results ?? [];
+  const rows = (await c.env.DB.prepare(`SELECT id, name, firm, email, kind, source, source_ref, status, side, touches, first_sent_at, last_touch_at, thread_id, last_message_id, subject, reply_note, (SELECT t.sent_from FROM prospect_touches t WHERE t.prospect_id = prospects.id AND t.sent_from IS NOT NULL ORDER BY t.sent_at DESC LIMIT 1) AS sent_from, draft_tap_token IS NOT NULL AS has_draft, created_at, updated_at${tokens} FROM prospects ORDER BY created_at DESC LIMIT 1000`).all<any>()).results ?? [];
   return ok(c, { rows, approved: await approvedTemplate(c.env.DB), pending: await pendingTemplate(c.env.DB) });
 });
 

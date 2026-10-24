@@ -44,7 +44,7 @@ import os from "node:os";
 import path from "node:path";
 import { sendAsEmployee } from "./notify.mjs";
 import { createHash } from "node:crypto";
-import { layoutEmail, clockWords, lineProblems, proseRuns, proseText, cleanText } from "../../src/shared/boss/mail/plain.mjs";
+import { layoutEmail, clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence } from "../../src/shared/boss/mail/plain.mjs";
 import { readMorningSections, clearToldSections } from "../../src/shared/boss/mail/morning.mjs";
 import { templateDecide } from "./lp-prospects.mjs";
 
@@ -85,6 +85,18 @@ function callsOn(diary, iso) {
 export const itemUrl = (day, id) => `${ORIGIN}/?morning=${day}&item=${encodeURIComponent(id)}`;
 export const taskUrl = (id) => `${ORIGIN}/?task=${encodeURIComponent(id)}`;
 export const BRIEFING_URL = `${ORIGIN}/?view=briefing`;
+/** Under Gmail's ~102KB clip with room to spare (24 Oct 2026). Pinned by tests/yourDaySize.test.ts. */
+export const EMAIL_HTML_BUDGET = 80_000;
+/** Long lists stop here in the email; the rest is one tap away on its screen. */
+export const MAX_DEAL_ROWS = 10;
+export const MAX_FOUND_LINES = 8;
+export const MAX_PROSPECT_SENDS = 5;
+/** What goes first when a heavy day is still over budget, in order; each step keeps the ones before. */
+export const CUT_ORDER = Object.freeze([
+  ["prospect email words", { prospectWords: false }],
+  ["Monique's lines to three", { prospectWords: false, foundMax: 3 }],
+  ["deal rows to five", { prospectWords: false, foundMax: 3, dealMax: 5 }],
+]);
 /** A short stable id for an item, from what it is (the same item keeps its screen across re-runs). */
 export function itemId(kind, key) {
   return `${kind}-${createHash("sha256").update(String(key)).digest("hex").slice(0, 10)}`;
@@ -300,9 +312,10 @@ export function prospectSection(a, now = Date.now()) {
   const items = [];
   const t = a.totals ?? {};
   const sent = (a.sent ?? []).filter((r) => Number(r.sent_at) >= now - 30 * 3_600_000);
-  for (const r of sent) items.push({ text: `Sent: email ${r.touch_no} of 3 to ${whoLine(r)}, ${SIDE_WORDS[r.side] ?? SIDE_WORDS.unknown}, ${shortDate(r.sent_at)}.`, links: [{ label: "See it on the Prospects screen", url: PROSPECTS_URL }] });
+  for (const r of sent.slice(0, MAX_PROSPECT_SENDS)) items.push({ text: `Sent: email ${r.touch_no} of 3 to ${whoLine(r)}, ${SIDE_WORDS[r.side] ?? SIDE_WORDS.unknown}, ${shortDate(r.sent_at)}.`, links: [{ label: "See it on the Prospects screen", url: PROSPECTS_URL }] });
+  if (sent.length > MAX_PROSPECT_SENDS) items.push({ text: `And ${sent.length - MAX_PROSPECT_SENDS} more sent since yesterday.`, links: [{ label: `See all ${sent.length} on the Prospects screen →`, url: PROSPECTS_URL }] });
   for (const r of a.replies ?? []) {
-    const what = r.status === "opted_out" ? "asked not to be written to again (done: they are off every list)" : r.status === "bounced" ? "bounced (done: the address is off the list)" : `answered${r.reply_note ? `: "${String(r.reply_note).replace(/[\s.!?]+$/, "")}."` : "."}${r.has_draft ? " Your reply is ready in Decide above." : ""}`;
+    const what = r.status === "opted_out" ? "asked not to be written to again (done: they are off every list)" : r.status === "bounced" ? "bounced (done: the address is off the list)" : `answered${r.reply_note ? `: ${quotedSentence(r.reply_note)}` : "."}${r.has_draft ? " Your reply is ready in Decide above." : ""}`;
     items.push(`${whoLine(r)} ${what}`);
   }
   const endOfToday = now + 18 * 3_600_000;
@@ -316,7 +329,7 @@ export function prospectSection(a, now = Date.now()) {
   }
   if (!sent.length && !(a.replies ?? []).length && !due.length) items.push("Nothing new on prospect emails since yesterday.");
   items.push(`So far: ${plural(t.emails_sent ?? 0, "email")} sent; ${(t.new ?? 0) + (t.active ?? 0)} in the sequence, ${t.interested ?? 0} interested, ${t.replied ?? 0} replied, ${t.opted_out ?? 0} opted out, ${t.bounced ?? 0} bounced.`);
-  const blocks = sent.map((r) => ({
+  const blocks = sent.slice(0, MAX_PROSPECT_SENDS).map((r) => ({
     heading: `Email ${r.touch_no} to ${nameOf(r)}${r.firm ? `, ${r.firm}` : ""}`,
     lines: r.body ? [`Subject: ${r.sent_subject ?? r.subject ?? ""}`, ...String(r.body).split("\n").filter((l) => l.trim())] : ["Its words are in your Sent mail."],
   }));
@@ -491,7 +504,7 @@ export function buildDay(data, now = Date.now()) {
     const id = idFor("deal", `${r.company}|${r.side}|${r.size}|${r.from}|${r.received_on ?? r.when}`);
     return { ...r, id, screen: itemUrl(today, id) };
   });
-  const dealRows = deals.map((r) => ({
+  const dealRowsAll = deals.map((r) => ({
     company: r.company, side: r.side ?? "—", size: [r.size, r.price && r.price !== "—" ? `@ ${r.price}` : ""].filter(Boolean).join(" ") || "—",
     from: r.from ?? "—", url: r.screen, url_label: "Open the deal",
   }));
@@ -501,11 +514,20 @@ export function buildDay(data, now = Date.now()) {
     return { ...line, id, screen: itemUrl(today, id), holders: (m.monique_found?.rows ?? []).filter((h) => line.deal && h.company === line.deal) };
   });
 
-  // 3. Briefing: the top five, then the whole thing folded under one tap.
+  // The best few, never hundreds: the count line (it carries its own link) always shows.
+  const isCount = (f) => Boolean(f.counts);
+  const foundItems = found.filter((f) => !isCount(f)).map((f) => ({ text: f.text, links: f.links?.length ? f.links.slice(0, 1).concat([{ label: "See it", url: f.screen }]) : [{ label: "See it", url: f.screen }] }));
+  const foundShown = (max) => [
+    ...foundItems.slice(0, max),
+    ...(foundItems.length > max ? [{ text: `And ${foundItems.length - max} more from Monique.`, links: [{ label: "See them all on Today", url: `${ORIGIN}/?view=morning` }] }] : []),
+    ...found.filter(isCount).map((f) => ({ text: f.text, links: f.links ?? [] })),
+  ];
+
+  // 3. Briefing: the top five, and "Read the full briefing →" to its screen. The whole briefing is never
+  // in the email (owner, 24 Oct 2026: "never risk the size limit"); `briefingFull` is its screen's shape.
   const raw = briefingRaw(data.briefing, today);
   const src = briefingSourceUrl(data.briefing);
   const briefTop = raw ? raw.map((l) => ({ runs: proseRuns(l, src) })) : null;
-  const briefFull = raw ? briefingFull(data.briefing) : [];
 
   // 4. Done for you: what the team fixed or did, each What happened / What we did / Status when it can.
   const doneRaw = [];
@@ -546,11 +568,18 @@ export function buildDay(data, now = Date.now()) {
 
   const subjBits = [];
   if (decide.length) subjBits.push(plural(decide.length, "decision"));
-  if (dealRows.length) subjBits.push(plural(dealRows.length, "new deal"));
+  if (deals.length) subjBits.push(plural(deals.length, "new deal"));
   if (val?.length) subjBits.push("Valerie's list");
   const subject = `${p.weekday}: ${subjBits.length ? subjBits.join(", ") : "nothing to decide"}`;
 
-  const laid = layoutEmail({
+  /*
+   * THE SIZE BUDGET (owner, 24 Oct 2026: "never risk the size limit"). Gmail clips an email over
+   * ~102KB behind "View entire message". The full briefing is never in the email: the top five and
+   * "Read the full briefing →" to its screen. Past EMAIL_HTML_BUDGET the email cuts, in CUT_ORDER:
+   * the prospect emails' words, then Monique's lines to three, then the deal rows to five — each
+   * "See all N" on its screen. Decisions are never cut. Measured in bytes, as Gmail measures.
+   */
+  const lay = ({ prospectWords = true, foundMax = MAX_FOUND_LINES, dealMax = MAX_DEAL_ROWS } = {}) => layoutEmail({
     who: "Simone",
     kind: "morning",
     maxDecide: Infinity,
@@ -558,11 +587,11 @@ export function buildDay(data, now = Date.now()) {
     happened: `Good morning. Here is your ${dayWords(today)}.${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
     decide,
     sections: [
-      { title: `New deals since yesterday (${dealRows.length})`, rows: dealRows.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size" }, { key: "from", label: "From" }], data: dealRows } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
-      { title: "Monique found", items: found.map((f) => ({ text: f.text, links: [{ label: "See it", url: f.screen }] })), link: m.monique_found?.link ?? null, empty: null },
-      ...(prospects ? [prospects] : []),
+      { title: `New deals since yesterday (${deals.length})`, note: deals.length > dealMax ? `The ${dealMax} newest are here; all ${deals.length} are on the Deals screen.` : null, rows: dealRowsAll.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size" }, { key: "from", label: "From" }], data: dealRowsAll.slice(0, dealMax) } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
+      { title: "Monique found", items: foundShown(foundMax), link: m.monique_found?.link ?? null, empty: null },
+      ...(prospects ? [prospectWords ? prospects : { ...prospects, full: undefined }] : []),
       ...(spirit ? [spirit] : []),
-      { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing", url: BRIEFING_URL }, ...(briefFull.length ? { full: { summary: "Show the full briefing ▾", blocks: briefFull } } : {}) },
+      { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
       { title: "Done for you", tone: "done", items: doneShown, empty: null },
       { title: "Catch up with", cards: catchCards, items: catchLines, empty: null },
       ...(monday ? [{ title: "This week", items: deadlines, empty: "No deadlines this week." }] : []),
@@ -572,6 +601,14 @@ export function buildDay(data, now = Date.now()) {
     postscript: ps,
     refs: [`yd_${today.replace(/-/g, "")}`],
   });
+  const bytes = (l) => Buffer.byteLength(l.html, "utf8");
+  let laid = lay();
+  const cuts = [];
+  for (const [name, opts] of CUT_ORDER) {
+    if (bytes(laid) <= EMAIL_HTML_BUDGET) break;
+    laid = lay(opts);
+    cuts.push(name);
+  }
 
   const digest = {
     day: today, subject: laid.subject, built_at: new Date(now).toISOString(),
@@ -584,7 +621,7 @@ export function buildDay(data, now = Date.now()) {
     prospects: prospects ? { items: prospects.items.map((i) => (typeof i === "string" ? i : i.text)), sent: (data.prospects?.sent ?? []).map((r) => ({ name: r.name, firm: r.firm, email: r.email, touch: r.touch_no, sent_at: r.sent_at, subject: r.sent_subject ?? r.subject, body: r.body ?? null })) } : null,
     eightraise: ps,
   };
-  return { ...laid, dropped, digest };
+  return { ...laid, dropped, digest, cuts, bytes: bytes(laid) };
 }
 
 /**
@@ -681,7 +718,7 @@ async function main() {
     fs.writeFileSync(path.join(PREVIEW, "your-day.digest.json"), JSON.stringify(email.digest, null, 2), { mode: 0o600 });
     // --post-digest: keep the morning in Boss OS too (its screens and Today), still sending nothing.
     if (process.argv.includes("--post-digest")) await postDigest(api, email.digest);
-    console.log(`your-day: wrote the preview to ${PREVIEW}${email.problems.length ? ` — it would be HELD: ${email.problems.join("; ")}` : ""}`);
+    console.log(`your-day: wrote the preview (${email.bytes} bytes${email.cuts?.length ? `, cut: ${email.cuts.join(", ")}` : ""}) to ${PREVIEW}${email.problems.length ? ` — it would be HELD: ${email.problems.join("; ")}` : ""}`);
     return;
   }
   if (DRY) { console.log(`--- ${email.subject}\n${email.text}\n${email.problems.length ? `HELD: ${email.problems.join("; ")}` : ""}`); return; }

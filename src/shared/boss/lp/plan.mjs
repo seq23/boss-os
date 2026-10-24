@@ -7,6 +7,7 @@
  *
  * NO NAMES LIVE HERE. Templates carry placeholders; the names come from D1 at runtime.
  */
+import { quotedSentence } from "../mail/plain.mjs";
 
 export const LP_MAILBOX = "sequoia@westpeek.ventures";
 /**
@@ -96,7 +97,8 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
   const aged = held.map((r) => ({ r, days: daysSince(r.drafted_at, now) ?? 0 }))
     .sort((a, b) => b.days - a.days);
   const items = aged.map(({ r, days }) => {
-    const said = trimEnd(r.said || r.quote);
+    const said0 = r.said || r.quote;
+    const said = trimEnd(said0);
     const showable = Boolean(r.draft_body && r.draft_message_id);
     return {
       key: `lp:${r.id ?? r.address}`,
@@ -104,7 +106,7 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
       body: `${r.bucket === "call" ? "They want a call" : "They want to stay in touch"}. Who: ${lpWho(r)}.`,
       details: [
         `Their email: ${r.address}`,
-        ...(said ? [`What they wrote: "${said}."`] : []),
+        ...(said ? [`What they wrote: ${quotedSentence(said0)}`] : []),
         `History: they answered your outreach on ${r.first_seen}${r.subject ? ` ("${trimEnd(r.subject)}")` : ""}; you have not replied yet.`,
         `Your reply goes from ${r.reply_from ?? LP_MAILBOX}, in their thread.`,
       ],
@@ -123,14 +125,15 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
   // Someone who wrote back after her reply: answering is hers (it goes in her name), so it is a
   // decision with their words and the thread, never a "done" line.
   for (const r of (rows ?? []).filter((x) => x.status === "replied_again")) {
-    const said = trimEnd(r.last_reply_text || r.said || r.quote);
+    const said0 = r.last_reply_text || r.said || r.quote;
+    const said = trimEnd(said0);
     items.push({
       key: `lp-again:${r.id ?? r.address}`,
       title: `Answer ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}: they wrote back after your reply`,
       body: `Who: ${lpWho(r)}.`,
       details: [
         `Their email: ${r.address}`,
-        ...(said ? [`What they wrote: "${said}."`] : []),
+        ...(said ? [`What they wrote: ${quotedSentence(said0)}`] : []),
         `History: they answered your outreach on ${r.first_seen}; you replied${r.sent_at ? ` on ${new Date(Number(r.sent_at)).toISOString().slice(0, 10)}` : ""}; they wrote again${r.last_reply_at ? ` on ${new Date(Number(r.last_reply_at)).toISOString().slice(0, 10)}` : ""}.`,
         "No reply is drafted for this one: it needs your own words.",
       ],
@@ -196,9 +199,23 @@ export const PROSPECT_WORD_CAP = 90;
 export const OPT_OUT_LINE = "If this isn't relevant, just reply \"no thanks\" and I won't write again.";
 export const SIGNATURE = "Sequoia Taylor\nWest Peek Ventures";
 
+/**
+ * NEVER ANTHROPIC BY NAME (owner, 24 Oct 2026): a prospect email alludes to it instead. Every other
+ * name is said as it is (OpenAI stays named). `NEVER_NAMED` is the list; `allude` is the words used;
+ * `renderProspect` also sweeps the finished subject and body, so an edited template cannot say it.
+ */
+export const NEVER_NAMED = Object.freeze([{ re: /\banthropic(?:'s|’s)?\b(?:\s*(?:PBC|Inc\.?))?/gi, allude: "a leading frontier AI lab" }]);
+const neverNamed = (n) => NEVER_NAMED.find((x) => { x.re.lastIndex = 0; return x.re.test(String(n)); });
+export const sayName = (n) => neverNamed(n)?.allude ?? n;
+export function withoutNeverNamed(text) {
+  let t = String(text ?? "");
+  for (const x of NEVER_NAMED) t = t.replace(x.re, x.allude);
+  return t;
+}
+
 /** The names line. Her phrasing is primary; the other rotates in lightly (every third prospect). */
 export function namesLine(names, variant = 0) {
-  const list = (names ?? []).map((n) => (typeof n === "string" ? n : n.name)).filter(Boolean);
+  const list = (names ?? []).map((n) => (typeof n === "string" ? n : n.name)).filter(Boolean).map(sayName);
   const join = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
   if (list.length === 0) return "";
   return variant % 3 === 2
@@ -233,7 +250,8 @@ export const DEFAULT_PROSPECT_TEMPLATE = Object.freeze({
 
 /** Subject line names: the first three approved names. */
 export function subjectNames(names) {
-  const list = (names ?? []).map((n) => (typeof n === "string" ? n : n.name)).filter(Boolean).slice(0, 3);
+  // A never-named company is left out of the subject (its allusion is in the body's names line).
+  const list = (names ?? []).map((n) => (typeof n === "string" ? n : n.name)).filter((n) => n && !neverNamed(n)).slice(0, 3);
   return list.join(", ");
 }
 
@@ -242,8 +260,8 @@ export function renderProspect(template, { first, names, touch = 1, variant = 0 
     .replaceAll("{first}", firstName(first))
     .replaceAll("{names_line}", namesLine(names, variant))
     .replaceAll("{subject_names}", subjectNames(names));
-  const subject = fill(template.subject).replace(/:\s*$/, "");
-  const body = fill(touch === 1 ? template.body : template.follow_up).replace(/\n{3,}/g, "\n\n");
+  const subject = withoutNeverNamed(fill(template.subject)).replace(/:\s*$/, "");
+  const body = withoutNeverNamed(fill(touch === 1 ? template.body : template.follow_up)).replace(/\n{3,}/g, "\n\n");
   return { subject, body };
 }
 
@@ -370,10 +388,22 @@ export function sideFromReply(text) {
 }
 
 /** Her plain-words edits to the names list: "add X", "drop Y", "never feature Z". */
+/**
+ * Her plain-words edits to the featured names. EVERY name in a list counts (24 Oct 2026: "add OpenAI,
+ * Anduril, Databricks" applied only OpenAI — and her own email tells her to reply that way): names
+ * are split on commas, "and" and "&" after one verb, and a name keeps up to four capitalised words.
+ */
+const NAME = "[A-Z0-9][\\w&.'’-]*(?:\\s+[A-Z0-9][\\w&.'’-]*){0,3}";
+const NAME_LIST_RE = new RegExp(`\\b(never feature|add|drop)\\s+(${NAME}(?:\\s*(?:,\\s*(?:and\\s+|&\\s*)?|\\s+(?:and|&)\\s+)${NAME})*)`, "g");
 export function nameRulesIn(text) {
   const out = [];
-  for (const m of String(text ?? "").matchAll(/\b(never feature|add|drop)\s+([A-Z][\w&.'-]*(?:\s+[A-Z][\w&.'-]*){0,3})/g)) {
-    out.push({ rule: m[1] === "never feature" ? "never" : m[1], name: m[2].trim() });
+  for (const m of String(text ?? "").matchAll(NAME_LIST_RE)) {
+    const rule = m[1] === "never feature" ? "never" : m[1];
+    for (const raw of m[2].split(/\s*,\s*(?:and\s+|&\s*)?|\s+(?:and|&)\s+/)) {
+      // A sentence ends a name ("add Gamma Co. Then drop …" is Gamma Co).
+      const name = raw.split(/[.!?]\s+/)[0].trim().replace(/[.,;:!?]+$/, "");
+      if (name && !out.some((r) => r.rule === rule && r.name.toLowerCase() === name.toLowerCase())) out.push({ rule, name });
+    }
   }
   return out;
 }
