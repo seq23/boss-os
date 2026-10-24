@@ -157,8 +157,9 @@ export function lpStatusFrom({ current, sentAfterReply, scheduled, theirLatest, 
 
 /* ─── Rule 11: prospects ─────────────────────────────────────────────────────── */
 
-export const MAX_TOUCHES = 3;              // the first email and at most two more, then stop forever
-export const TOUCH_DAYS = Object.freeze([0, 5, 12]); // days after the first send
+// Owner, 24 Oct 2026: ONE follow-up at most — the first email and one more, never a third.
+export const MAX_TOUCHES = 2;              // the first email and ONE follow-up, then the sequence is complete
+export const TOUCH_DAYS = Object.freeze([0, 5]); // days after the first send
 export const MAX_NEW_PER_DAY = 20;
 export const MIN_TOUCH_GAP_DAYS = 5;
 export const FEATURED_MIN = 3;
@@ -302,7 +303,7 @@ export function templateHash(template, names) {
 
 /**
  * Which touch is due for a prospect today, if any. 1 = the first email (subject to the daily cap),
- * 2 ≈ day 5, 3 ≈ day 12, then never again. Replies, opt-outs and bounces end it.
+ * 2 ≈ day 5 (the one follow-up), then the sequence is complete. Replies, opt-outs and bounces end it.
  */
 /**
  * When a prospect's next email is due (ms), by the same rule `dueTouch` sends on: touch 1 as soon as
@@ -325,8 +326,7 @@ export function dueTouch(p, now = Date.now()) {
   if (!p.first_sent_at) return null;
   const days = (now - Number(p.first_sent_at)) / DAY;
   const next = touches + 1;
-  // A late start (the 11 Oct send is imported on day 12) must not fire two follow-ups on
-  // consecutive days: each touch is also at least five days after the one before it.
+  // Each touch is at least five days after the one before it.
   const sinceLast = p.last_touch_at ? (now - Number(p.last_touch_at)) / DAY : days;
   return days >= TOUCH_DAYS[next - 1] && sinceLast >= MIN_TOUCH_GAP_DAYS ? next : null;
 }
@@ -569,10 +569,11 @@ export function approveOutcome(f) {
   else if (f.paused && f.risky) headline = "Approve → nothing goes yet: the bounce brake is on and none of the waiting addresses is confirmed valid.";
   else if (f.unverified) headline = "Approve → nothing goes yet: NeverBounce checks the waiting addresses on Monique's next run, then the confirmed ones go.";
   else headline = "Approve → nothing goes yet: no one is due an email today.";
-  if (f.invalid) lines.push(`${plural2(f.invalid, "address", "addresses")} skipped: NeverBounce says it does not exist, so it is off the list.`);
-  if (f.risky) lines.push(`${plural2(f.risky, "address", "addresses")} held: NeverBounce could not confirm it (catch-all or unknown); it waits until the bounce rate is back under 3%.`);
-  if (f.unverified) lines.push(`${plural2(f.unverified, "address", "addresses")} not checked yet: NeverBounce checks it on Monique's next run, before anything goes.`);
+  if (f.invalid) lines.push(`${plural2(f.invalid, "address", "addresses")} skipped: NeverBounce says ${f.invalid === 1 ? "it does not exist, so it is" : "they do not exist, so they are"} off the list.`);
+  if (f.risky) lines.push(`${plural2(f.risky, "address", "addresses")} held: NeverBounce could not confirm ${f.risky === 1 ? "it (catch-all or unknown); it waits" : "them (catch-all or unknown); they wait"} until the bounce rate is back under 3%.`);
+  if (f.unverified) lines.push(`${plural2(f.unverified, "address", "addresses")} not checked yet: NeverBounce checks ${f.unverified === 1 ? "it" : "them"} on Monique's next run, before anything goes.`);
   if (f.bounced) lines.push(`${plural2(f.bounced, "address", "addresses")} already bounced: never written to again.`);
+  if (f.follow) lines.push("This is the one follow-up: after it, the sequence is complete for them and they get no more emails.");
   if (f.paused) lines.push(`Why only confirmed addresses: ${String(f.paused).replace(/^Paused automatically:\s*/i, "")}`);
   return { headline, lines };
 }

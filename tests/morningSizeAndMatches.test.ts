@@ -78,7 +78,7 @@ describe("the morning email stays under Gmail's clip (owner, 24 Oct 2026: never 
     expect((e.text.match(/Open the deal:/g) ?? []).length).toBeLessThanOrEqual(10);
     expect(e.text).toMatch(/all 60 are on the Deals screen/);
     expect(e.text).toMatch(/And \d+ more from Monique\./);
-    expect(e.text).not.toContain("Sent: email 1 of 3 to Prospect 39");
+    expect(e.text).not.toMatch(/Sent: email \d+ of \d+ to Prospect 39\b/); // any cap: the list stops
   });
   it("cuts go in a fixed order, and a day under the budget keeps everything it carries", () => {
     expect(CUT_ORDER.map(([n]) => n)).toEqual(["prospect email words", "Monique's lines to three", "deal rows to five"]);

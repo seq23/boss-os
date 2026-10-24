@@ -12,7 +12,7 @@
  *   4. The weekly Tuesday reminder is gone and the connector digest is retired: nothing in the
  *      installer schedules `lp:positive -- --email` or lp-replies.sh.
  *   5. A GET on a one-tap link never acts (mail scanners fetch links).
- *   6. The sequence stops at three touches, five days apart at least.
+ *   6. The sequence stops at two emails — the first and ONE follow-up (owner, 24 Oct 2026) — five days apart at least.
  *   7. No address outside our own domains or example.com in any file this fix owns (public repo).
  *
  * RULE 0: every check examines something; an empty scan fails. `--self-test` breaks each rule and
@@ -73,8 +73,9 @@ export function check({ template, lpBody, installer, tapSrc, eightSrc, files, P 
   examined++;
   const DAY = 86_400_000;
   const t0 = Date.UTC(2026, 9, 11);
-  if (P.dueTouch({ status: "active", touches: 3, first_sent_at: t0 }, t0 + 60 * DAY) !== null) bad.push("a fourth touch is due");
-  if (P.dueTouch({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 12 * DAY }, t0 + 13 * DAY) !== null) bad.push("two touches one day apart");
+  if (P.MAX_TOUCHES !== 2) bad.push(`MAX_TOUCHES is ${P.MAX_TOUCHES}; her rule is the first email and ONE follow-up`);
+  if (P.dueTouch({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 5 * DAY }, t0 + 60 * DAY) !== null) bad.push("a third touch is due");
+  if (P.dueTouch({ status: "active", touches: 1, first_sent_at: t0, last_touch_at: t0 + 4 * DAY }, t0 + 6 * DAY) !== null) bad.push("two touches two days apart");
   if (P.dueTouch({ status: "replied", touches: 1, first_sent_at: t0 }, t0 + 30 * DAY) !== null) bad.push("a reply did not stop the sequence");
 
   examined++;
@@ -141,4 +142,4 @@ if (bad.length) {
   console.error(`LP RULES FAILED (${bad.length}):\n  ${bad.join("\n  ")}`);
   process.exit(1);
 }
-console.log(`LP RULES PASSED: ${examined} checks — soft side-neutral prospect email, her LP voice, the 8Raise budget, no Tuesday reminder, no acting GET, three touches at most, no outside address.`);
+console.log(`LP RULES PASSED: ${examined} checks — soft side-neutral prospect email, her LP voice, the 8Raise budget, no Tuesday reminder, no acting GET, one follow-up at most, no outside address.`);

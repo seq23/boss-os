@@ -229,7 +229,7 @@ function EmailEditor({ approved, pending, featured, onChanged, onError }: { appr
       <label className="field"><span>Subject</span><input value={subject} onChange={(e) => setSubject(e.target.value)} /></label>
       <label className="field"><span>The email ({"{first}"} is their first name, {"{names}"} the featured names)</span>
         <textarea rows={6} value={body} onChange={(e) => setBody(e.target.value)} /></label>
-      <label className="field"><span>The two follow-ups</span><textarea rows={3} value={follow} onChange={(e) => setFollow(e.target.value)} /></label>
+      <label className="field"><span>The one follow-up</span><textarea rows={3} value={follow} onChange={(e) => setFollow(e.target.value)} /></label>
       <button className="btn btn-small btn-approve" disabled={busy || !subject.trim() || !body.trim()} onClick={propose}>Save as a new version for me to approve</button>
       {said && <div className="notice" role="status" style={{ marginTop: 10 }}>{said}</div>}
     </div>
