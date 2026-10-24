@@ -349,6 +349,85 @@ export function prospectDecisions(a, existingKeys = new Set(), now = Date.now())
   return out;
 }
 
+// ─── Spirit (owner-approved sample, 24 Oct 2026) ──────────────────────────────
+
+export const SPIRIT_URL = `${ORIGIN}/?tab=spirit`;
+const BAND_WORDS = { peak_green: "Peak money week", green: "Good money week", yellow: "Steady money week", orange: "Careful money week", red: "Quiet money week" };
+const MOON_ICON = { full_moon: "🌕", new_moon: "🌑", first_quarter: "🌓", last_quarter: "🌗" };
+const STEP_WORDS = [[/breath/i, "breathe"], [/cent(er|re)|ground/i, "center"], [/gratitude/i, "gratitude"], [/visuali/i, "visualize"], [/affirm/i, "affirm"], [/embod/i, "embody"], [/action|standard/i, "name today's one action"]];
+const HARD = new Set(["square", "opposition"]);
+const EASY = new Set(["trine", "sextile"]);
+const cap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+
+/** "Sunday night", "this afternoon", in her zone. */
+function whenWords(at, now) {
+  const p = parts(at);
+  const part = p.hour < 12 ? "morning" : p.hour < 17 ? "afternoon" : "night";
+  if (p.date === dayOf(now)) return part === "night" ? "tonight" : `this ${part}`;
+  return `${p.weekday} ${part}`;
+}
+
+/**
+ * THE SPIRIT SECTION, built exactly like the sample she approved: the money-map week, the next
+ * major lunar event, today's sky in one plain line, the morning practice in one line, the gratitude
+ * sentence, and this month's Ancestors hour and Contribution — then everything else under "Show
+ * more ▾". The sky is context, never a cause: the advisory note travels with it. Pure.
+ */
+export function spiritSection(day, week, now = Date.now()) {
+  if (!day) return null;
+  const items = [];
+  const cur = day.map?.current;
+  if (cur) items.push(`${cur.signal ?? ""} ${BAND_WORDS[cur.band] ?? cur.meaning ?? "This week"} (${cur.label}). ${cap(String(cur.note ?? "").replace(/^Peak money week\s*[—-]\s*/i, ""))}${/[.!?]$/.test(cur.note ?? "") ? "" : "."}`.trim());
+  const ev = day.major_event;
+  if (ev?.label && ev.at) items.push(`${MOON_ICON[ev.kind] ?? "🌙"} ${ev.label} ${whenWords(ev.at, now)}${ev.hours_away ? `, about ${ev.hours_away} hours away` : ""}.`);
+  const active = day.sky?.active ?? [];
+  if (active.length) {
+    const hard = active.filter((a) => HARD.has(a.aspect)).length;
+    const easy = active.filter((a) => EASY.has(a.aspect)).length;
+    const lead = hard >= easy ? "the sky says make the decision rather than wait" : "the sky is easy today, so reach for what you want";
+    items.push(`⚡ Today: ${lead}.${hard >= easy && easy ? " There's also an easy opening for growth, so use it." : ""}`);
+  } else if (day.sky?.available) items.push("⚡ Today: a quiet sky.");
+  const steps = day.practice?.manifestation?.steps ?? [];
+  if (steps.length) {
+    const total = steps.reduce((n, x) => n + (Number(x.minutes) || 0), 0);
+    const words = steps.map((x) => `${(STEP_WORDS.find(([re]) => re.test(x.what)) ?? [null, String(x.what).split(/\s+/).slice(0, 2).join(" ").toLowerCase()])[1]} ${x.minutes}`);
+    items.push(`This morning · ${total} min: ${cap(words.join(" → "))}.`);
+  }
+  const g = day.practice?.gratitude?.sentence;
+  if (g) items.push({ runs: [{ text: `“${g}”` }] });
+  const anc = day.ancestors;
+  const con = day.contribution;
+  if (anc || con) {
+    const [y, mo] = dayOf(now).split("-").map(Number);
+    const left = new Date(Date.UTC(y, mo, 0)).getUTCDate() - Number(dayOf(now).slice(8, 10));
+    items.push(`This month · ${plural(left, "day")} left: 🕯 Ancestors hour: ${anc?.minutes ?? 0} of ${anc?.target_minutes ?? 60} min · 🤝 Contribution: ${con?.count ?? 0} of ${con?.minimum ?? 1}.`);
+  }
+  const blocks = [];
+  if (active.length) blocks.push({ heading: "Today's sky in full", lines: active.map((a) => `${a.body_name} ${a.aspect} your ${a.natal_point_name}: ${a.meaning ?? ""}`) });
+  if (week?.body?.suggestion) blocks.push({ heading: "Body", lines: [`${week.body.suggestion}${week.body.why ? ` Why: ${week.body.why}` : ""}`] });
+  if (week?.practice?.technique) {
+    const src = week.practice.source_url && /^https?:\/\//.test(week.practice.source_url) ? week.practice.source_url : null;
+    blocks.push({ heading: `This week's practice: ${week.practice.technique}`, lines: [
+      String(week.practice.how_to_try_it ?? week.practice.claim ?? ""),
+      { runs: [{ text: "Source: " }, { text: String(week.practice.source_name ?? "the study"), ...(src ? { url: src } : {}) }] },
+    ].filter(Boolean) });
+  }
+  const open = day.manifestations?.open ?? 0;
+  blocks.push({ heading: "Manifestations", lines: [{ runs: [{ text: open ? `${open} open. ` : "None open. " }, { text: open ? "See them" : "Start one", url: SPIRIT_URL }] }] });
+  if (day.note) blocks.push({ heading: "", lines: [day.note] });
+  return { title: "✨ Spirit", items: items.map((i) => (typeof i === "string" ? { runs: [{ text: i }] } : i)), link: { label: "Open Spirit →", url: SPIRIT_URL }, full: { summary: "Show more ▾", blocks }, empty: null };
+}
+
+/**
+ * A TASK THAT FAILED IS THE TEAM'S TO FIX, AND SHE IS TOLD AS DONE (owner, 24 Oct 2026). Each one
+ * that failed since yesterday is a done line — What happened / What we did / Status — and the run
+ * opens a fix job for it (main). Pure.
+ */
+export function failedTaskLines(tasks, now = Date.now()) {
+  return (tasks ?? []).filter((t) => t.status === "failed" && Number(t.finished_at ?? t.created_at) >= now - 26 * 3_600_000)
+    .map((t) => ({ id: t.id, text: `What happened: ${t.employee_name ?? "A teammate"}'s "${String(t.title).slice(0, 80)}" stopped (${String(t.error ?? "no reason given").split("\n")[0].slice(0, 120)}). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed; nothing needed from you.` }));
+}
+
 const DONE_SOURCES = ["bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];
 const MAX_DONE = 3;
 
@@ -431,7 +510,9 @@ export function buildDay(data, now = Date.now()) {
   const bl = bounceLine(data.bounceFixes);
   if (bl) doneRaw.push({ text: bl, links: [] });
   doneRaw.push(...commentDoneLines(data, now));
+  doneRaw.push(...failedTaskLines(data.tasks, now).map(({ text }) => ({ text, links: [] })));
   const prospects = prospectSection(data.prospects ?? null, now);
+  const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
   for (const name of DONE_SOURCES.filter((n) => !(prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
   const done = doneRaw.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
@@ -473,6 +554,7 @@ export function buildDay(data, now = Date.now()) {
       { title: `New deals since yesterday (${dealRows.length})`, rows: dealRows.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size" }, { key: "from", label: "From" }], data: dealRows } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
       { title: "Monique found", items: found.map((f) => ({ text: f.text, links: [{ label: "See it", url: f.screen }] })), link: m.monique_found?.link ?? null, empty: null },
       ...(prospects ? [prospects] : []),
+      ...(spirit ? [spirit] : []),
       { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing", url: BRIEFING_URL }, ...(briefFull.length ? { full: { summary: "Show the full briefing ▾", blocks: briefFull } } : {}) },
       { title: "Done for you", tone: "done", items: doneShown, empty: null },
       { title: "Catch up with", cards: catchCards, items: catchLines, empty: null },
@@ -528,10 +610,12 @@ async function read(api, now) {
   const bounceFixes = await api.get("/outreach/bounce-fixes").catch((e) => { console.error(`your-day: bounce fixes not read (${e.message})`); return null; });
   // The channel's comment digests: what a comment task is about, and the ones Monique left alone.
   const prospects = await api.get(`/lp/prospects/activity?since=${now - 30 * 3_600_000}`).catch((e) => { console.error(`your-day: prospect activity not read (${e.message})`); return null; });
+  const spirit = await api.get("/spirit/day").catch((e) => { console.error(`your-day: spirit day not read (${e.message})`); return null; });
+  const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
   const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
   const { sections, skipped } = readMorningSections({ now });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, commentWatch, prospects, morning: sections };
+  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, morning: sections };
 }
 
 async function feedOf(range) {
@@ -596,6 +680,15 @@ async function main() {
 
   if (decision === "send_late") await fixJob(api, "Camille's briefing was late for the morning email", `today's executive report had not landed by 07:45 Central, so Simone's morning email (scripts/ops/your-day.mjs) went without it. Find why the briefing duty ran late and fix it at source.`);
   if (email.dropped.length) await fixJob(api, "A morning-email section wrote a line that is not plain", `Simone's morning email dropped these lines because they failed the plain-email check (src/shared/boss/mail/plain.mjs lineProblems): ${email.dropped.join(" | ")}. Fix the producer that wrote them (~/.boss-os/morning/<section>.json, src/shared/boss/mail/morning.mjs).`);
+  // Every task that failed since yesterday is the team's to fix (its done line says so).
+  const failMarks = path.join(SENT_DIR, "failed-told.json");
+  let told = []; try { told = JSON.parse(fs.readFileSync(failMarks, "utf8")); } catch { told = []; }
+  for (const f of failedTaskLines(data.tasks, now).filter((x) => !told.includes(x.id))) {
+    const t = (data.tasks ?? []).find((x) => x.id === f.id);
+    await fixJob(api, `Find why "${String(t?.title ?? "a task").slice(0, 60)}" failed`, `the task ${f.id} (${t?.employee_name ?? "an employee"}) failed: ${String(t?.error ?? "").slice(0, 400)}. Find the cause, fix it at source with a test, and run the job again or close it with the reason.`);
+    told.push(f.id);
+  }
+  try { fs.mkdirSync(SENT_DIR, { recursive: true }); fs.writeFileSync(failMarks, JSON.stringify(told.slice(-500))); } catch { /* best effort */ }
   if (d.error) await fixJob(api, "Valerie's list did not load for the morning email", `the Porch & Party owner feed answered: ${d.error}. Simone's morning email said so in one line. Fix the read (PNP_OWNER_FEED_TOKEN, ${FEED}).`);
 
   // The morning goes to Boss OS FIRST: every link in the email opens one of its items, and Today

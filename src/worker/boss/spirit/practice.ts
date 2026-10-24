@@ -52,23 +52,38 @@ export const SEQUENCE_MINUTES = MANIFESTATION_SEQUENCE.reduce((n, s) => n + s.mi
 
 // ─── §8.5 · the gratitude sentence ───────────────────────────────────────────
 
-/** Her six themes, rotated so a week does not land on "resilience" three times. */
+/**
+ * Her themes, rotated so a week visits each. Owner, 24 Oct 2026: "a NEW gratitude sentence every
+ * day" and "not about body/diet/health/keto" — the body theme is gone (it produced "Grateful keto is
+ * a decision I already made" on 24 Oct), and people, work, home, faith, ancestors and small
+ * moments joined the rotation.
+ */
 export const GRATITUDE_THEMES = [
   "wealth and opportunity",
-  "resilience and survival",
-  "body and health",
-  "spiritual protection and alignment",
-  "momentum and progress",
+  "work and craft",
   "relationships and support",
+  "home",
+  "spiritual protection and alignment",
+  "ancestors",
+  "small moments",
+  "resilience and survival",
+  "momentum and progress",
 ] as const;
+
+/** Words a gratitude sentence never uses (owner, 24 Oct 2026). Pinned by tests/boss/arcs.test.ts. */
+export const GRATITUDE_NEVER = /\b(keto|diet|body|health|healthy|weight|food|eat|eating|fat|carb|calorie|fasting|workout|exercise|gym)\b/i;
 
 /** How far back the no-repeat rule reaches. Her §8.5: the active 90-day cycle. */
 export const NO_REPEAT_DAYS = 90;
+/** No sentence repeats inside this many days, whatever the facts (owner, 24 Oct 2026: "every day new"). */
+export const NEW_EVERY_DAYS = 30;
 
-/** Rotates on the date, so the same day always draws the same theme and a week visibly cycles. */
+const dayNumber = (dayId: string) => Math.floor(Date.parse(`${dayId}T00:00:00Z`) / 86_400_000);
+const mod = (n: number, m: number) => ((n % m) + m) % m;
+
+/** The theme of the day's sentence: the theme of its place in the rotation. */
 export function themeFor(dayId: string): string {
-  const days = Math.floor(Date.parse(`${dayId}T00:00:00Z`) / 86_400_000);
-  return GRATITUDE_THEMES[((days % GRATITUDE_THEMES.length) + GRATITUDE_THEMES.length) % GRATITUDE_THEMES.length]!;
+  return ROTATION[mod(dayNumber(dayId), ROTATION.length)]!.theme;
 }
 
 const STOP_WORDS = new Set([
@@ -193,50 +208,79 @@ export interface DayFacts {
 /**
  * The forms, per theme.
  *
- * EACH ONE REQUIRES A REAL FACT AND RETURNS NULL WITHOUT IT. That is the whole mechanism against
- * §8.5's four prohibitions: a form that cannot find its fact does not fall back to something
- * general, it declines, and the next form is tried. Nothing here can produce a sentence that would
- * be true of anybody, because every one of them names something only true of her today.
+ * EACH ONE NAMES A REAL FACT WHEN THERE IS ONE, AND OTHERWISE SAYS ITS OWN LINE — never a line
+ * another form says. So every form always yields a sentence, the rotation below can promise a new
+ * sentence every day, and a fact is still never invented: the fallback names no fact at all.
  */
-type Form = (f: DayFacts) => string | null;
+type Form = (f: DayFacts) => string;
 
 const FORMS: Record<string, Form[]> = {
   "wealth and opportunity": [
-    (f) => f.anchor ? `Grateful I know exactly what today is for, and it is ${lower(f.anchor)}.` : null,
-    (f) => f.westPeekDay ? "Grateful the fund is a real conversation with my brother today and not a someday." : null,
+    (f) => f.anchor ? `Grateful I know exactly what today is for, and it is ${lower(f.anchor)}.` : "Grateful the next deal is mine to find, and I know where to look.",
+    (f) => f.westPeekDay ? "Grateful the fund is a real conversation with my brother today and not a someday." : "Grateful the fund is a real thing I am building, not a someday.",
     () => "Grateful the brokerage is mine to work — nobody hands me the next move, and nobody can take it.",
-    (f) => f.secondVehicle ? `Grateful ${f.secondVehicle} is still standing and still mine to build.` : null,
+    (f) => f.secondVehicle ? `Grateful ${f.secondVehicle} is still standing and still mine to build.` : "Grateful every business I started is still mine to build.",
   ],
-  "resilience and survival": [
-    (f) => f.lastVerdict === "miss" ? "Grateful yesterday is closed and today is the one that decides what it was." : null,
-    (f) => f.continuousDays >= 3 ? `Grateful I have shown up ${f.continuousDays} days running, including the ones that were small.` : null,
-    (f) => f.dayMode === "recovery" ? "Grateful I can name this a recovery day out loud instead of calling myself lazy." : null,
-    () => "Grateful money fear has not gotten to decide how I negotiate.",
-  ],
-  "body and health": [
-    (f) => f.dayMode === "recovery" || f.dayMode === "mvd"
-      ? "Grateful the floor is in bed today, and that counts as done." : null,
-    () => "Grateful my body still does what I ask it to, on the days I ask gently.",
-    () => "Grateful keto is a decision I already made, so today is only the doing.",
-  ],
-  "spiritual protection and alignment": [
-    (f) => f.holding ? `Grateful I am still holding ${lower(f.holding)} without gripping it.` : null,
-    () => "Grateful for the people behind me who never needed to be asked.",
-    () => "Grateful the quiet before anyone needs anything is mine.",
-  ],
-  "momentum and progress": [
-    (f) => f.openLoops === 0 ? "Grateful nothing is hanging over me this morning." : null,
+  "work and craft": [
+    () => "Grateful I get to do work I chose, with people I chose.",
     (f) => f.openLoops > 0 && f.openLoops <= 3
-      ? `Grateful only ${f.openLoops} thing${f.openLoops === 1 ? " is" : "s are"} open, and none of them is an emergency.` : null,
-    (f) => f.lastVerdict === "full" ? "Grateful yesterday closed clean, and that is not luck." : null,
-    (f) => f.anchor ? `Grateful today already has a centre of gravity: ${lower(f.anchor)}.` : null,
+      ? `Grateful only ${f.openLoops} thing${f.openLoops === 1 ? " is" : "s are"} open, and none of them is an emergency.` : "Grateful my desk is mine to clear, one thing at a time.",
+    () => "Grateful I am good at this, and getting better at it on purpose.",
+    () => "Grateful the team runs while I sleep and tells me plainly what it did.",
   ],
   "relationships and support": [
-    (f) => f.westPeekDay ? "Grateful I get to build something with Scooter that outlasts both of us." : null,
+    (f) => f.westPeekDay ? "Grateful I get to build something with Scooter that outlasts both of us." : "Grateful for a partner who picks up when I call.",
     () => "Grateful for the people who knew me before any of this worked.",
     () => "Grateful I am not doing this alone, even on the days it feels like it.",
+    () => "Grateful for the friends who tell me the truth, kindly.",
+  ],
+  "home": [
+    () => "Grateful for a home that is quiet when I need it to be.",
+    () => "Grateful for the first coffee and the first light in my kitchen.",
+    () => "Grateful there is a place that is mine to come back to tonight.",
+  ],
+  "spiritual protection and alignment": [
+    (f) => f.holding ? `Grateful I am still holding ${lower(f.holding)} without gripping it.` : "Grateful I can want something big without gripping it.",
+    () => "Grateful I am protected in ways I do not always see.",
+    () => "Grateful the quiet before anyone needs anything is mine.",
+    () => "Grateful my faith does not depend on how this week goes.",
+  ],
+  "ancestors": [
+    () => "Grateful for the people behind me who never needed to be asked.",
+    () => "Grateful the stubbornness of the people before me lives in me and gets used for good.",
+    () => "Grateful to carry a name that the people before me kept clean.",
+  ],
+  "small moments": [
+    () => "Grateful for one good laugh yesterday that I did not plan.",
+    () => "Grateful for a song that can change the whole room.",
+    () => "Grateful for the small kindness of a stranger I will never see again.",
+    () => "Grateful for an unhurried minute before the phone wakes up.",
+  ],
+  "resilience and survival": [
+    (f) => f.lastVerdict === "miss" ? "Grateful yesterday is closed and today is the one that decides what it was." : "Grateful a hard day has never had the last word.",
+    (f) => f.continuousDays >= 3 ? `Grateful I have shown up ${f.continuousDays} days running, including the ones that were small.` : "Grateful I keep coming back, even after the small days.",
+    (f) => f.dayMode === "recovery" ? "Grateful I can name this a recovery day out loud instead of calling myself lazy." : "Grateful I can rest without calling it quitting.",
+    () => "Grateful money fear has not gotten to decide how I negotiate.",
+  ],
+  "momentum and progress": [
+    (f) => f.openLoops === 0 ? "Grateful nothing is hanging over me this morning." : "Grateful the list is shorter than it was a month ago.",
+    (f) => f.lastVerdict === "full" ? "Grateful yesterday closed clean, and that is not luck." : "Grateful for every clean finish I can count this month.",
+    (f) => f.anchor ? `Grateful today already has a centre of gravity: ${lower(f.anchor)}.` : "Grateful today has room for the one thing that matters.",
   ],
 };
+
+/**
+ * THE ROTATION: every form of every theme, taken round-robin across the themes, so the first days
+ * visit every theme and the cycle is as long as the number of forms (31+). Day n says form n of it,
+ * so no two days inside the cycle say the same form — and no two forms share a sentence.
+ */
+const ROTATION: Array<{ theme: string; form: Form }> = (() => {
+  const out: Array<{ theme: string; form: Form }> = [];
+  const longest = Math.max(...GRATITUDE_THEMES.map((t) => FORMS[t]!.length));
+  for (let k = 0; k < longest; k++) for (const t of GRATITUDE_THEMES) { const f = FORMS[t]![k]; if (f) out.push({ theme: t, form: f }); }
+  return out;
+})();
+export const ROTATION_DAYS = ROTATION.length;
 
 const lower = (s: string) => (s.length > 1 && s[0] === s[0]!.toUpperCase() && s[1] === s[1]!.toLowerCase()
   ? s[0]!.toLowerCase() + s.slice(1) : s).replace(/\.$/, "");
@@ -244,24 +288,16 @@ const lower = (s: string) => (s.length > 1 && s[0] === s[0]!.toUpperCase() && s[
 /**
  * Today's sentence.
  *
- * THE THEME ROTATES ON THE DATE AND THE FORM ROTATES WITHIN IT, so the pair does not recur for
- * weeks — which is how §8.5's 90-day rule is honoured WITHOUT a table. Storing sentences to check
+ * ONE CYCLE OF EVERY FORM, ON THE DATE: day n says form n of the rotation (31+ days long), so no
+ * sentence repeats inside 30 days whatever the facts are — which is how the rule is honoured
+ * WITHOUT a table. Storing sentences to check
  * for repeats would have meant writing her gratitude into Cloudflare's database, and the rule
  * against repetition is not worth breaking the rule about residency for.
  */
 export function composeGratitude(dayId: string, facts: DayFacts): { sentence: string; theme: string } | null {
-  const theme = themeFor(dayId);
-  const forms = FORMS[theme] ?? [];
-  const days = Math.floor(Date.parse(`${dayId}T00:00:00Z`) / 86_400_000);
-
-  // Start at a different form each cycle, so a theme's first form is not simply always the one used.
-  const offset = Math.floor(days / GRATITUDE_THEMES.length);
-  for (let i = 0; i < forms.length; i++) {
-    const form = forms[(offset + i) % forms.length]!;
-    const sentence = form(facts);
-    if (sentence) return { sentence, theme };
-  }
-  return null;
+  const { theme, form } = ROTATION[mod(dayNumber(dayId), ROTATION.length)]!;
+  const sentence = form(facts);
+  return sentence && !GRATITUDE_NEVER.test(sentence) ? { sentence, theme } : null;
 }
 
 export interface GratitudeResult {
