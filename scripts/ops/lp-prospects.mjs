@@ -319,12 +319,18 @@ async function main() {
   let stale = [];
   const approvedNames = state.approved ? JSON.parse(state.approved.names_json ?? "[]") : [];
   if (state.approved && deals) stale = staleFeatured(approvedNames, supply).filter((n) => !byRule("add").includes(n.toLowerCase()));
-  if (!pending && (!state.approved || stale.length)) {
+  if (!state.approved || stale.length) {
     const keep = approvedNames.filter((n) => !stale.includes(n.name));
     const proposed = [...keep, ...proposeFeatured(supply, { never: byRule("never"), add: byRule("add"), drop: byRule("drop") }).filter((p) => !keep.some((k) => k.name.toLowerCase() === p.name.toLowerCase()))].slice(0, 5);
-    if (proposed.length >= FEATURED_MIN) {
+    // A waiting draft whose names no longer match her list (a name she added since, or written in the
+    // wrong case) is replaced; proposeTemplate retires the old one. The same names leave it alone.
+    const waitingNames = pending ? JSON.parse(pending.names_json ?? "[]").map((n) => n.name).join("|") : null;
+    if (pending && waitingNames === proposed.map((n) => n.name).join("|")) {
+      console.log(`template: the draft with ${proposed.length} names is waiting for her Approve.`);
+    } else if (proposed.length >= FEATURED_MIN) {
       const r = await api.post("/lp/prospects/template", { template: DEFAULT_PROSPECT_TEMPLATE, names: proposed });
       pending = r.template?.status === "pending" ? r.template : null;
+      console.log(`template: ${pending ? `proposed with ${proposed.length} names, waiting for her Approve` : "NOT proposed"}.`);
     } else {
       console.log(`template: only ${proposed.length} fresh names on her list (need ${FEATURED_MIN}); nothing proposed today.`);
     }

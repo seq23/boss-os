@@ -9,6 +9,7 @@
  * Synthetic names only: the repo is public.
  */
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { pairDrafts } from "../scripts/ops/interest-grid.mjs";
 import { DEFAULT_PROSPECT_TEMPLATE, renderProspect, namesLine, subjectNames, nameRulesIn, withoutNeverNamed } from "../src/shared/boss/lp/plan.mjs";
 
@@ -63,5 +64,12 @@ describe("her featured-names edits apply every name in a list", () => {
     ]);
     expect(nameRulesIn("add Solo")).toEqual([{ rule: "add", name: "Solo" }]);
     expect(nameRulesIn("happy to talk about what you're looking to add or trim")).toEqual([]);
+  });
+});
+
+describe("featured names keep her casing (migration 0301)", () => {
+  it("backfills each old rule's casing from her own words, the statement the route test runs", () => {
+    const sql = readFileSync("migrations/0301_boss_prospect_name_display.sql", "utf8").replace(/\s+/g, " ");
+    expect(sql).toContain("SET display = substr(said, instr(lower(said), name), length(name)) WHERE display IS NULL AND said IS NOT NULL AND instr(lower(said), name) > 0");
   });
 });
