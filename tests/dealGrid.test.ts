@@ -153,9 +153,13 @@ describe("morning sections (interface for Builder E)", () => {
     expect(deals.rows[0]).not.toHaveProperty("tag");
     expect(deals.rows[0]).toMatchObject({ from_email: "pm@examplefund.com", from_name: "Pat Example", from_firm: "Example Fund", size_usd: 50e6, rainmaker: false });
     expect(deals.link.url).toMatch(/tab=capital&view=grid$/);
-    const found = moniqueFound({ newRows: grid, grid, lists: NO_LISTS, found: {} });
-    expect(found.decide[0].title).toBe("Make an Acme Robotics intro?");
-    expect(found.decide[0].buttons.map((x: any) => x.label)).toContain("Edit, then send");
+    const found = moniqueFound({ newRows: grid, grid, lists: NO_LISTS, found: {}, now: NOW });
+    // A new buy and sell on one company is a match in Decide, both sides named with their addresses,
+    // what fills, the price gap in words, and a ready note to each (24 Oct 2026).
+    expect(found.decide[0].title).toBe("Acme Robotics: a buyer and a seller who could trade");
+    expect(found.decide[0].buttons.map((x: any) => x.label)).toEqual(["Write to the seller (draft ready)", "Write to the buyer (draft ready)", "Open the seller's email", "Open the buyer's email"]);
+    expect(found.decide[0].details.join(" ")).toContain("s@sellerco.com");
+    expect(found.decide[0].draft.text).toContain("Hi Sam,");
     const all = JSON.stringify(found);
     expect(all).not.toMatch(/Nobody|npm run|\/api\/|\b[0-9a-f]{16}\b/);
   });
@@ -197,8 +201,14 @@ describe("N-PORT: every holder named, partial fills summed (rule 7)", () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "found-")), "found.json");
     const c = recordFound("Acme Robotics", { holders: [{ fund: "Fund A", valUSD: 120e6, url: "https://www.sec.gov/a" }, { fund: "Fund B", valUSD: 64e6, url: "https://www.sec.gov/b" }] }, file);
     const grid = buildGrid([row({})], { identity: ID, lists: NO_LISTS, now: NOW });
-    const out = moniqueFound({ newRows: grid, grid, lists: NO_LISTS, found: { "acme robotics": c } });
-    expect(out.lines[0]).toBe("For the $50M Acme Robotics buyer: 2 funds hold $184M of Acme Robotics between them vs the $50M buyer. Biggest: Fund A $120M, Fund B $64M.");
+    const out = moniqueFound({ newRows: grid, grid, lists: NO_LISTS, found: { "acme robotics": c }, now: NOW });
+    // Her own email first (nobody yet, said plainly), then the outward list, labelled, with one next step.
+    expect(out.lines.map((l: any) => l.text)).toEqual([
+      "For the $50M Acme Robotics buyer: no one in your email yet for this.",
+      "For the $50M Acme Robotics buyer, outside your email. Public filings, not confirmed sellers: 2 funds hold $184M of Acme Robotics between them. Biggest: Fund A $120M, Fund B $64M. Next step: see the funds and their filings.",
+    ]);
+    expect(out.lines[1].links).toEqual([{ label: "See the funds", url: expect.stringMatching(/view=holders&company=Acme%20Robotics$/) }]);
+    expect(JSON.stringify(out.lines)).not.toMatch(/\bvs\b/);
   });
 });
 
@@ -222,15 +232,18 @@ describe("combined merge: Monique found reads as one intro per pair, in plain gr
     row({ id: "p2", company: "Company Z", side: "sell", direction: "sell", from_text: "Broker Two", size_usd: 3e8, size_text: "$300M", _row: { from: "two@y.example" } }),
   ];
   it("a buyer and a seller who are both new make ONE intro, not one from each side", () => {
-    const out = moniqueFound({ newRows: g, grid: g, lists: { same_firm: [], do_not_suggest: [] } });
+    const out = moniqueFound({ newRows: g, grid: g, lists: { same_firm: [], do_not_suggest: [] }, now: NOW });
     expect(out.decide).toHaveLength(1);
-    expect(out.decide[0].title).toBe("Make a Company Z intro?");
+    expect(out.decide[0].title).toBe("Company Z: a buyer and a seller who could trade");
+    expect(out.decide[0].body).toBe("The $300M seller fills $300M of the $1B buyer. Price unknown on both sides — worth asking.");
+    // It is in Decide, so it is not said a second time under Monique found.
+    expect(out.lines.filter((l: any) => /^Match, Company Z/.test(l.text))).toHaveLength(0);
   });
   it("one holder is named in the singular", () => {
     const out = moniqueFound({ newRows: [g[0]], grid: [g[0]], lists: { same_firm: [], do_not_suggest: [] },
       found: { "company z": { holders: [{ fund: "Fund A", value_usd: 1.2e8, filing_url: "https://www.sec.gov/x" }] } } });
-    expect(out.lines[0]).toBe("For the $1B Company Z buyer: Fund A holds $120M of Company Z vs the $1B buyer.");
-    expect(out.link).toEqual({ label: "See holders and drafts", url: expect.stringMatching(/view=holders$/) });
+    expect(out.lines[1].text).toBe("For the $1B Company Z buyer, outside your email. Public filings, not confirmed sellers: Fund A holds $120M of Company Z. Next step: see the funds and their filings.");
+    expect(out.link).toEqual({ label: "See every match", url: expect.stringMatching(/view=matches$/) });
   });
 });
 

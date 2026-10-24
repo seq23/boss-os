@@ -76,26 +76,69 @@ export function gmailThreadUrl(threadId, mailbox = LP_MAILBOX) {
 
 const daysSince = (ms, now) => (ms ? Math.floor((now - ms) / DAY) : null);
 
+const domainOf = (address) => String(address ?? "").split("@")[1] ?? "";
+const trimEnd = (t) => String(t ?? "").trim().replace(/[\s.!?…]+$/, "");
+
+/** Who an LP row is, in one plain phrase: "an LP you wrote to (Example Foundation, example.org)". */
+export function lpWho(r) {
+  const org = r.firm ? `${r.firm}, ${domainOf(r.address)}` : domainOf(r.address);
+  return `an LP you wrote to in West Peek's fundraising outreach${org ? ` (${org})` : ""}`;
+}
+
 /**
- * Decide items for held LP replies, oldest-unsent first. Each carries the three buttons she ruled:
- * Send as is / Edit, then send / Skip.
+ * Decide items for held LP replies, oldest-unsent first (owner, 24 Oct 2026: who they are, their
+ * address, what they said, the history, and the reply WORD FOR WORD). "Send as is" is offered only
+ * when the held draft's words are on the row (`draft_body`, pinned to `draft_message_id`): the tap
+ * sends nothing the email did not show.
  */
 export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
   const held = (rows ?? []).filter((r) => r.status === "drafted" && r.tap_token);
   const aged = held.map((r) => ({ r, days: daysSince(r.drafted_at, now) ?? 0 }))
     .sort((a, b) => b.days - a.days);
-  return aged.map(({ r, days }) => ({
-    title: `${days >= LP_UNSENT_URGENT_DAYS ? "Waiting " + days + " days: " : ""}Reply to ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}`,
-    body: `${r.bucket === "call" ? "Wants a call" : "Wants to stay in touch"}${r.quote ? `: "${String(r.quote).slice(0, 140)}"` : ""}. Your reply is ready in their thread.`,
-    urgent: days >= LP_UNSENT_URGENT_DAYS,
-    // E's renderer ranks Decide by priority; ≥10 puts a reply unsent for two days at the top.
-    priority: days >= LP_UNSENT_URGENT_DAYS ? 10 + days : 5,
-    buttons: [
-      { label: "Send as is", url: tapUrl(r.tap_token, "send", origin) },
-      { label: "Edit, then send", url: gmailDraftUrl(r.draft_message_id) },
-      { label: "Skip", url: tapUrl(r.tap_token, "skip", origin) },
-    ],
-  }));
+  const items = aged.map(({ r, days }) => {
+    const said = trimEnd(r.said || r.quote);
+    const showable = Boolean(r.draft_body && r.draft_message_id);
+    return {
+      key: `lp:${r.id ?? r.address}`,
+      title: `${days >= LP_UNSENT_URGENT_DAYS ? "Waiting " + days + " days: " : ""}Reply to ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}`,
+      body: `${r.bucket === "call" ? "They want a call" : "They want to stay in touch"}. Who: ${lpWho(r)}.`,
+      details: [
+        `Their email: ${r.address}`,
+        ...(said ? [`What they wrote: "${said}."`] : []),
+        `History: they answered your outreach on ${r.first_seen}${r.subject ? ` ("${trimEnd(r.subject)}")` : ""}; you have not replied yet.`,
+        `Your reply goes from ${r.reply_from ?? LP_MAILBOX}, in their thread.`,
+      ],
+      draft: showable ? { heading: "Your reply, word for word (Send as is sends exactly this)", text: r.draft_body } : null,
+      urgent: days >= LP_UNSENT_URGENT_DAYS,
+      // E's renderer ranks Decide by priority; ≥10 puts a reply unsent for two days at the top.
+      priority: days >= LP_UNSENT_URGENT_DAYS ? 10 + days : 5,
+      buttons: [
+        ...(showable ? [{ label: "Send as is", url: tapUrl(r.tap_token, "send", origin) }] : []),
+        { label: showable ? "Edit in Gmail, then send" : "Open the draft in Gmail (you changed it there)", url: gmailDraftUrl(r.draft_message_id, r.reply_from ?? LP_MAILBOX) },
+        ...(r.thread_id ? [{ label: "Open their email", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) }] : []),
+        { label: "Skip", url: tapUrl(r.tap_token, "skip", origin) },
+      ],
+    };
+  });
+  // Someone who wrote back after her reply: answering is hers (it goes in her name), so it is a
+  // decision with their words and the thread, never a "done" line.
+  for (const r of (rows ?? []).filter((x) => x.status === "replied_again")) {
+    const said = trimEnd(r.last_reply_text || r.said || r.quote);
+    items.push({
+      key: `lp-again:${r.id ?? r.address}`,
+      title: `Answer ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}: they wrote back after your reply`,
+      body: `Who: ${lpWho(r)}.`,
+      details: [
+        `Their email: ${r.address}`,
+        ...(said ? [`What they wrote: "${said}."`] : []),
+        `History: they answered your outreach on ${r.first_seen}; you replied${r.sent_at ? ` on ${new Date(Number(r.sent_at)).toISOString().slice(0, 10)}` : ""}; they wrote again${r.last_reply_at ? ` on ${new Date(Number(r.last_reply_at)).toISOString().slice(0, 10)}` : ""}.`,
+        "No reply is drafted for this one: it needs your own words.",
+      ],
+      priority: 4,
+      buttons: [{ label: "Open the thread and reply", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) }],
+    });
+  }
+  return items;
 }
 
 /** The status a row should carry given what the mailbox shows. Pure, so the order is pinned. */
@@ -243,6 +286,19 @@ export function templateHash(template, names) {
  * Which touch is due for a prospect today, if any. 1 = the first email (subject to the daily cap),
  * 2 ≈ day 5, 3 ≈ day 12, then never again. Replies, opt-outs and bounces end it.
  */
+/**
+ * When a prospect's next email is due (ms), by the same rule `dueTouch` sends on: touch 1 as soon as
+ * the email is approved (`null`), then TOUCH_DAYS after the first, never under MIN_TOUCH_GAP_DAYS
+ * after the last. `null` also when the sequence is over.
+ */
+export function nextTouchAt(p) {
+  const touches = Number(p?.touches ?? 0);
+  if (!p || touches >= MAX_TOUCHES || touches === 0 || !p.first_sent_at) return null;
+  const byFirst = Number(p.first_sent_at) + TOUCH_DAYS[touches] * DAY;
+  const byLast = Number(p.last_touch_at ?? p.first_sent_at) + MIN_TOUCH_GAP_DAYS * DAY;
+  return Math.max(byFirst, byLast);
+}
+
 export function dueTouch(p, now = Date.now()) {
   if (!p || !["new", "active"].includes(p.status)) return null;
   const touches = Number(p.touches ?? 0);

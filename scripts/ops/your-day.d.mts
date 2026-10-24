@@ -8,5 +8,19 @@ export function briefingReady(briefing: unknown, today: string): boolean;
 export const BRIEFING_CAP: { hour: number; minute: number };
 export const BRIEFING_POLL_MS: number;
 export function briefingDecision(briefing: unknown, now: number): "send" | "wait" | "send_late";
-export function buildDay(data: Record<string, unknown>, now?: number): LaidOutEmail & { dropped: string[] };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function buildDay(data: Record<string, unknown>, now?: number): LaidOutEmail & { dropped: string[]; digest: any };
+export function briefingFull(briefing: unknown): Array<{ heading: string; lines: unknown[] }>;
+export function briefingSourceUrl(briefing: unknown): (n: number) => string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function prospectSection(a: any, now?: number): any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function prospectDecisions(a: any, existingKeys?: Set<string>, now?: number): any[];
+export function eightRaiseLine(credits: { used?: number; budget?: number; kept?: number; error?: string } | null): string | null;
+export function itemId(kind: string, key: string): string;
+export function itemUrl(day: string, id: string): string;
+export function taskUrl(id: string): string;
+export const BRIEFING_URL: string;
+export const PROSPECTS_URL: string;
+export const CHANNEL: string;
 export function replyContext(text: string): string;

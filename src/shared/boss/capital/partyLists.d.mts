@@ -35,3 +35,7 @@ export function pairAllowed(
 export function targetOf(phrase: string): (PartyEntry & { label: string }) | null;
 export function parseListEdits(text: string): ListEdit[];
 export function confirmEdit(e: ListEdit): string;
+
+export const ARCHIVE_DAYS: number;
+export function withinArchive(date: unknown, now?: number): boolean;
+export function archiveRows<T extends { company: string; direction: string; from_text: string; received_on: string }>(rows: T[], now?: number): T[];

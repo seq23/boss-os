@@ -636,11 +636,17 @@ export const api = {
   repoChangeDrop: (id: string) => call<{ id: string; dropped: boolean }>(`/repo-changes/${encodeURIComponent(id)}/drop`, post("")),
 
   // ── boss fix D: the Deals page grid, the holders Monique found, her two lists (23 Oct 2026). ──
-  dealGrid: () => call<{ rows: any[]; lookback_days: number; updated_at: number | null }>("/capital/deals"), // boss fix D
+  dealGrid: () => call<{ rows: any[]; archive?: any[]; counts?: { open: number; archived: number }; lookback_days: number; archive_days?: number; updated_at: number | null }>("/capital/deals"), // boss fix D
+  dealMatches: () => call<{ matches: any[]; updated_at: number | null }>("/capital/matches"),
   dealHolders: () => call<{ holders: any[] }>("/capital/holders"), // boss fix D
   // boss fix L: the Deals page LP and Prospects tabs.
   lpReplies: () => call<{ rows: any[] }>("/lp/replies"), // boss fix L
   prospects: () => call<{ rows: any[]; approved: any; pending: any }>("/lp/prospects"), // boss fix L
+  prospectActivity: (since = 0) => call<any>(`/lp/prospects/activity?since=${since}`),
+  // The morning email as sent (24 Oct 2026): Today's list and every item's own screen.
+  morningLatest: () => call<{ day: string; sent_at: number | null; payload: any } | null>("/morning/latest"),
+  morningDay: (day: string) => call<{ day: string; sent_at: number | null; payload: any }>(`/morning/${encodeURIComponent(day)}`),
+  commentDigests: () => call<{ digests: any[] }>("/comment-watch-items"),
   eightRaise: () => call<{ month: string; used: number; allowance: number; rows: any[] }>("/lp/eightraise"), // boss fix L
 
   // ── Builder U (23 Oct 2026, boards 7 + 8): Your team, one page per employee, the lists Monique keeps. ──

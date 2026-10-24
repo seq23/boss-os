@@ -11,7 +11,7 @@ import { pauseReason, inSendWindow, dailyCap, DAY_MS } from "../outreach/brakes"
 import { isSuppressed, suppress } from "../outreach/suppression";
 import { readSettings } from "../outreach/engine";
 import {
-  DEFAULT_PROSPECT_TEMPLATE, MAX_NEW_PER_DAY, dueTouch, excluded, prospectProblems, renderProspect,
+  DEFAULT_PROSPECT_TEMPLATE, MAX_NEW_PER_DAY, MAX_TOUCHES, dueTouch, nextTouchAt, excluded, prospectProblems, renderProspect,
   templateHash, type Template,
 } from "../../../shared/boss/lp/plan.mjs";
 
@@ -55,6 +55,7 @@ export interface LpRowIn {
   reply_from: string; thread_id?: string | null; in_reply_to?: string | null; subject?: string | null;
   draft_id?: string | null; draft_message_id?: string | null; body_hash?: string | null;
   status: string; first_seen: string; drafted_at?: number | null; sent_at?: number | null; last_reply_at?: number | null;
+  draft_body?: string | null; said?: string | null; last_reply_text?: string | null;
 }
 
 const LP_STATUSES = new Set(["drafted", "sent", "scheduled", "skipped", "not_answered", "replied_again"]);
@@ -68,8 +69,9 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r.first_seen))) continue;
     stmts.push(db.prepare(
       `INSERT INTO lp_reply_drafts (id, address, name, firm, bucket, quote, reply_from, thread_id, in_reply_to, subject,
-         draft_id, draft_message_id, body_hash, status, tap_token, first_seen, drafted_at, sent_at, last_reply_at, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         draft_id, draft_message_id, body_hash, status, tap_token, first_seen, drafted_at, sent_at, last_reply_at, created_at, updated_at,
+         draft_body, said, last_reply_text)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(address) DO UPDATE SET
          name = excluded.name, firm = COALESCE(excluded.firm, lp_reply_drafts.firm), bucket = excluded.bucket,
          quote = excluded.quote, reply_from = excluded.reply_from, thread_id = excluded.thread_id,
@@ -82,12 +84,19 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
          tap_token = COALESCE(lp_reply_drafts.tap_token, excluded.tap_token),
          drafted_at = COALESCE(lp_reply_drafts.drafted_at, excluded.drafted_at),
          sent_at = COALESCE(excluded.sent_at, lp_reply_drafts.sent_at),
-         last_reply_at = excluded.last_reply_at, updated_at = excluded.updated_at`,
+         last_reply_at = excluded.last_reply_at, updated_at = excluded.updated_at,
+         -- The held draft word for word (0296). NULL when she edited it in Gmail: then the morning email
+         -- shows no "Send as is", because it could not show what would be sent.
+         draft_body = excluded.draft_body,
+         said = COALESCE(excluded.said, lp_reply_drafts.said),
+         last_reply_text = COALESCE(excluded.last_reply_text, lp_reply_drafts.last_reply_text)`,
     ).bind(
       newId("lpr"), address, r.name ?? null, r.firm ?? null, r.bucket, r.quote ? String(r.quote).slice(0, 300) : null,
       String(r.reply_from).toLowerCase(), r.thread_id ?? null, r.in_reply_to ?? null, r.subject ?? null,
       r.draft_id ?? null, r.draft_message_id ?? null, r.body_hash ?? null, r.status, tapToken(),
       r.first_seen, r.drafted_at ?? (r.status === "drafted" ? now : null), r.sent_at ?? null, r.last_reply_at ?? null, now, now,
+      r.draft_body ? String(r.draft_body).slice(0, 6000) : null, r.said ? String(r.said).slice(0, 1200) : null,
+      r.last_reply_text ? String(r.last_reply_text).slice(0, 1200) : null,
     ));
   }
   if (stmts.length) await db.batch(stmts);
@@ -184,7 +193,7 @@ const chicagoDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: 
 export async function prospectPlan(db: D1Database, now = Date.now()) {
   const stops: string[] = [];
   const tpl = await approvedTemplate(db);
-  if (!tpl) stops.push("No approved prospect email yet; it is waiting in the morning email for your Approve.");
+  if (!tpl) stops.push("No prospect email is approved yet. Monique proposes one for your Approve once she has at least three fresh names to feature.");
   const settings = await readSettings(db);
   if (settings.killSwitch) stops.push("The global outreach kill switch is on.");
   const dryRun = settings.sending !== "live";
@@ -223,11 +232,68 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
   return { sends, stops, dryRun, template: tpl };
 }
 
+/**
+ * PROSPECT OUTREACH, FOR HER (owner, 24 Oct 2026: "keep me abreast of prospect outreach"): every
+ * email sent since `since` with its words, the replies, who is next and when, and the totals.
+ * Read by Simone's morning email and the Deals → Prospects screen. Names stay in D1.
+ */
+export async function prospectActivity(db: D1Database, since: number, now = Date.now()) {
+  const sent = (await db.prepare(
+    `SELECT t.touch_no, t.sent_at, t.subject AS sent_subject, t.body, p.id AS prospect_id, p.name, p.firm, p.email, p.side, p.kind, p.subject, p.thread_id
+       FROM prospect_touches t JOIN prospects p ON p.id = t.prospect_id WHERE t.sent_at >= ? ORDER BY t.sent_at DESC LIMIT 500`,
+  ).bind(since).all<any>()).results ?? [];
+  const replies = (await db.prepare(
+    `SELECT id, name, firm, email, side, status, reply_note, thread_id, touches, updated_at, draft_tap_token IS NOT NULL AS has_draft
+       FROM prospects WHERE status IN ('interested','replied','opted_out','bounced') AND updated_at >= ? ORDER BY updated_at DESC LIMIT 200`,
+  ).bind(since).all<any>()).results ?? [];
+  const active = (await db.prepare(`SELECT id, name, firm, email, side, status, touches, first_sent_at, last_touch_at FROM prospects WHERE status IN ('new','active') LIMIT 1000`).all<any>()).results ?? [];
+  const next = active.map((p) => ({ ...p, next_touch: Number(p.touches) + 1, next_at: nextTouchAt(p) }))
+    .filter((p) => p.next_touch <= MAX_TOUCHES)
+    .sort((a, b) => (a.next_at ?? 0) - (b.next_at ?? 0));
+  const counts = (await db.prepare(`SELECT status, COUNT(*) AS n FROM prospects GROUP BY status`).all<{ status: string; n: number }>()).results ?? [];
+  const touches = await db.prepare(`SELECT COUNT(*) AS n FROM prospect_touches`).first<{ n: number }>();
+  const plan = await prospectPlan(db, now);
+  return {
+    since, sent, replies, next: next.slice(0, 60), next_total: next.length,
+    totals: { ...Object.fromEntries(counts.map((c) => [c.status, c.n])), emails_sent: touches?.n ?? 0 },
+    stops: plan.stops, dry_run: plan.dryRun,
+    approved: await approvedTemplate(db), pending: await pendingTemplate(db),
+  };
+}
+
+/**
+ * WHAT WAS ACTUALLY SENT, FROM HER SENT MAIL (owner, 24 Oct 2026: "the system KNOWS what has been
+ * sent and what each said"). Each touch she sent — by Monique or from Gmail herself — is kept with
+ * its words, date and thread, so a follow-up builds on it, nobody gets a second first touch, and a
+ * reply lands on the right prospect. `touches` and the dates move only forward.
+ */
+export async function backfillTouches(db: D1Database, touches: Array<{ email: string; touch_no: number; sent_at: number; subject?: string | null; body?: string | null; gmail_id?: string | null; thread_id?: string | null }>, now = Date.now()) {
+  let n = 0;
+  for (const t of touches) {
+    const p = await db.prepare(`SELECT * FROM prospects WHERE email = ?`).bind(String(t.email ?? "").toLowerCase()).first<any>();
+    const no = Number(t.touch_no);
+    if (!p || !(no >= 1 && no <= MAX_TOUCHES) || !(Number(t.sent_at) > 0)) continue;
+    await db.batch([
+      db.prepare(`INSERT INTO prospect_touches (id, prospect_id, touch_no, gmail_id, template_id, sent_at, subject, body) VALUES (?,?,?,?,?,?,?,?)
+                  ON CONFLICT(prospect_id, touch_no) DO UPDATE SET body = COALESCE(prospect_touches.body, excluded.body),
+                    subject = COALESCE(prospect_touches.subject, excluded.subject), gmail_id = COALESCE(prospect_touches.gmail_id, excluded.gmail_id)`)
+        .bind(newId("ptc"), p.id, no, t.gmail_id ?? null, null, Number(t.sent_at), t.subject ? String(t.subject).slice(0, 300) : null, t.body ? String(t.body).slice(0, 6000) : null),
+      db.prepare(`UPDATE prospects SET touches = MAX(touches, ?), first_sent_at = MIN(COALESCE(first_sent_at, ?), ?),
+                    last_touch_at = MAX(COALESCE(last_touch_at, 0), ?), thread_id = COALESCE(thread_id, ?),
+                    status = CASE WHEN status IN ('new','active') AND ? >= 3 THEN 'done' WHEN status = 'new' THEN 'active' ELSE status END,
+                    updated_at = ? WHERE id = ?`)
+        .bind(no, Number(t.sent_at), Number(t.sent_at), Number(t.sent_at), t.thread_id ?? null, no, now, p.id),
+    ]);
+    n++;
+  }
+  return n;
+}
+
 export interface ProspectEvent {
   prospect_id?: string; email?: string;
   kind: "sent" | "interested" | "replied" | "opt_out" | "bounce" | "ooo";
   touch?: number; gmail_id?: string | null; thread_id?: string | null; message_id?: string | null; subject?: string | null;
-  side?: string | null; note?: string | null; draft_id?: string | null;
+  side?: string | null; note?: string | null; draft_id?: string | null; body?: string | null; template_id?: string | null;
 }
 
 /** Record sends and replies. Opt-outs and bounces go on the shared suppression list the same moment. */
@@ -243,8 +309,9 @@ export async function recordProspectEvents(db: D1Database, events: ProspectEvent
       const touch = Number(e.touch ?? p.touches + 1);
       if (touch !== Number(p.touches) + 1 || touch > 3) continue;
       await db.batch([
-        db.prepare(`INSERT OR IGNORE INTO prospect_touches (id, prospect_id, touch_no, gmail_id, template_id, sent_at) VALUES (?,?,?,?,?,?)`)
-          .bind(newId("ptc"), p.id, touch, e.gmail_id ?? null, null, now),
+        // The words that went, kept (0296): her morning email and the Prospects screen show each send.
+        db.prepare(`INSERT OR IGNORE INTO prospect_touches (id, prospect_id, touch_no, gmail_id, template_id, sent_at, subject, body) VALUES (?,?,?,?,?,?,?,?)`)
+          .bind(newId("ptc"), p.id, touch, e.gmail_id ?? null, e.template_id ?? null, now, e.subject ? String(e.subject).slice(0, 300) : null, e.body ? String(e.body).slice(0, 6000) : null),
         db.prepare(`UPDATE prospects SET touches = ?, status = CASE WHEN ? >= 3 THEN 'done' ELSE 'active' END,
             first_sent_at = COALESCE(first_sent_at, ?), last_touch_at = ?, thread_id = COALESCE(?, thread_id),
             last_message_id = COALESCE(?, last_message_id), subject = COALESCE(subject, ?), updated_at = ? WHERE id = ?`)

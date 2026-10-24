@@ -48,8 +48,17 @@ export function LpTab() {
               const draft = r.status === "drafted";
               return (
                 <tr key={r.id}>
-                  <td style={{ padding: "9px 10px" }}><b>{r.name || "—"}</b>{r.firm ? ` · ${r.firm}` : ""}</td>
-                  <td style={{ padding: "9px 10px" }}>{r.first_seen}{r.quote ? ` · "${String(r.quote).slice(0, 80)}"` : ""}</td>
+                  <td style={{ padding: "9px 10px" }}><b>{r.name || "—"}</b>{r.firm ? ` · ${r.firm}` : ""}<div className="row-sub">{r.address}</div></td>
+                  <td style={{ padding: "9px 10px" }}>{r.first_seen}{r.quote ? ` · "${String(r.quote).slice(0, 80)}"` : ""}
+                    {r.said || r.draft_body || r.last_reply_text ? (
+                      <details className="mi-more">
+                        <summary>Show what they wrote{r.draft_body ? " and your reply" : ""} ▾</summary>
+                        {r.said ? <><p className="eyebrow">What they wrote</p><div className="mi-draft">{r.said}</div></> : null}
+                        {r.last_reply_text ? <><p className="eyebrow">What they wrote after your reply</p><div className="mi-draft">{r.last_reply_text}</div></> : null}
+                        {r.draft_body ? <><p className="eyebrow">Your reply, word for word (Send as is sends exactly this)</p><div className="mi-draft">{r.draft_body}</div></> : null}
+                      </details>
+                    ) : null}
+                  </td>
                   <td style={{ padding: "9px 10px" }}><span className={PILL[r.status] ?? "pill"}>{r.status_label}</span>{r.send_error ? <div className="row-sub">Not sent: {r.send_error}</div> : null}</td>
                   <td style={{ padding: "9px 10px" }}>{r.status === "sent" || r.status === "replied_again" ? day(r.sent_at) : "—"}</td>
                   <td style={{ padding: "9px 10px" }}>

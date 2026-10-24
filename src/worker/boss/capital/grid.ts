@@ -2,7 +2,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import {
-  LOOKBACK_DAYS, isDoNotSuggest, parseListEdits, confirmEdit,
+  LOOKBACK_DAYS, ARCHIVE_DAYS, archiveRows, isDoNotSuggest, parseListEdits, confirmEdit,
 } from "../../../shared/boss/capital/partyLists.mjs";
 import type { ListEdit, PartyEntry, PartyList, PartyLists } from "../../../shared/boss/capital/partyLists.mjs";
 
@@ -132,7 +132,8 @@ export async function storeDeals(env: Env, rows: DealRow[], replace: boolean, no
     ).bind(r.id, r.company, r.side, r.direction, r.size_usd, r.size_text, r.price_text, r.structure_text,
       r.from_text, r.rainmaker, r.received_on, r.email_url, r.parties, now));
   }
-  const cutoff = new Date(now - LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
+  // Past twelve months a row leaves even the Archive view; her Mac's ledger keeps every one.
+  const cutoff = new Date(now - ARCHIVE_DAYS * 86_400_000).toISOString().slice(0, 10);
   stmts.push(env.DB.prepare(`DELETE FROM capital_deal_rows WHERE received_on < ?`).bind(cutoff));
   for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
   return rows.length;
@@ -140,7 +141,9 @@ export async function storeDeals(env: Env, rows: DealRow[], replace: boolean, no
 
 /** The grid as the page shows it: inside the window, nobody she has ruled out, newest first. */
 export async function dealGrid(env: Env, now = Date.now()) {
-  const cutoff = new Date(now - LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
+  // The main grid is the lookback; the Archive is lookback → twelve months (owner, 24 Oct 2026).
+  const cutoff = new Date(now - ARCHIVE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const openFrom = new Date(now - LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
   const res = await env.DB.prepare(
     `SELECT id, company, side, direction, size_usd, size_text, price_text, structure_text, from_text,
             rainmaker, received_on, email_url, parties, updated_at
@@ -150,7 +153,9 @@ export async function dealGrid(env: Env, now = Date.now()) {
   const rows = (res.results ?? []).filter((r) => !isDoNotSuggest({ parties: r.parties, from_text: r.from_text }, lists))
     .map(({ parties: _p, ...rest }) => rest);
   const updated = rows.reduce((n, r) => Math.max(n, r.updated_at ?? 0), 0);
-  return { rows, lookback_days: LOOKBACK_DAYS, updated_at: updated || null };
+  const open = rows.filter((r) => r.received_on >= openFrom);
+  const archive = archiveRows(rows, now);
+  return { rows: open, archive, counts: { open: open.length, archived: archive.length }, lookback_days: LOOKBACK_DAYS, archive_days: ARCHIVE_DAYS, updated_at: updated || null };
 }
 
 /** The holders for one company, replaced as a set. */

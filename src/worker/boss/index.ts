@@ -61,6 +61,7 @@ import { materialiseDueDuties } from "./duties/materialise";
 import { reapSilentRuns } from "./backends/reap";
 import { newId } from "./lib/id";
 import { lpTap } from "./routes/lpTap"; // boss fix L
+import { morning } from "./routes/morning";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -230,6 +231,8 @@ app.route("/api/grid/health", gridHealth);
 // because a tap from her phone carries no session: the 144-bit token on the one row IS the authority,
 // and a GET never acts (routes/lpTap.ts).
 app.route("/api/auth/tap", lpTap); // boss fix L
+// The morning email as sent (24 Oct 2026): every link in it opens its item; Today lists its decisions.
+app.route("/api/morning", morning);
 //
 // === end Her jobs ===
 

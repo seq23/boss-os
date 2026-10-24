@@ -22,7 +22,7 @@
  */
 import path from "node:path";
 import { bossApi } from "./lib/duty-kit.mjs";
-import { LP_STATUS_LABEL, lpDecideItems } from "../../src/shared/boss/lp/plan.mjs";
+import { ORIGIN, lpDecideItems } from "../../src/shared/boss/lp/plan.mjs";
 import { morningDir, writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
 
 // The same override D's producers honour (tests and dry runs point it elsewhere); E's default otherwise.
@@ -31,12 +31,20 @@ const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? morningDir();
 /** The morning section, per the shared interface: {decide, rows, lines}. Pure, so it is tested. */
 export function lpMorning(rows, now = Date.now()) {
   const decide = lpDecideItems(rows, now);
-  const count = (s) => rows.filter((r) => r.status === s).length;
-  const lines = [];
-  const again = rows.filter((r) => r.status === "replied_again");
-  for (const r of again.slice(0, 3)) lines.push(`${r.name || "An LP"} wrote back after your reply. Open the thread in Gmail.`);
-  const tally = Object.keys(LP_STATUS_LABEL).map((s) => [LP_STATUS_LABEL[s], count(s)]).filter(([, n]) => n > 0);
-  if (tally.length) lines.push(`LP tracker: ${tally.map(([l, n]) => `${n} ${l.toLowerCase()}`).join(", ")}.`);
+  // THE TRACKER, BY NAME (owner, 24 Oct 2026: "2 drafted, 5 sent, 1 they replied again" — name them).
+  // The held replies and the ones who wrote back are decisions above; this line says who is where.
+  const named = (s) => rows.filter((r) => r.status === s).map((r) => r.name || r.address);
+  const groups = [
+    ["waiting for your reply (in Decide above)", named("drafted")],
+    ["wrote back after your reply (in Decide above)", named("replied_again")],
+    ["not drafted yet", named("not_answered")],
+    ["you replied", named("sent")],
+    ["scheduled", named("scheduled")],
+    ["skipped", named("skipped")],
+  ].filter(([, list]) => list.length);
+  const lines = groups.length
+    ? [{ text: `LP replies: ${groups.map(([label, list]) => `${label}: ${list.join(", ")}`).join("; ")}.`, links: [{ label: "See every LP reply", url: `${ORIGIN}/?tab=capital&view=lp` }] }]
+    : [];
   return {
     section: "lp",
     updated_at: new Date(now).toISOString(),

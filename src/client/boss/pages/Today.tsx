@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MorningBlock } from "./MorningItem";
+import { go, employeeHref } from "../nav";
 import { api } from "../api";
 import { buildOperations } from "../operationsSource";
 import { Coaching } from "./Coaching";
@@ -52,7 +54,7 @@ export const TODAY_GROUPS: readonly (readonly string[])[] = [
 const time = (ms: number) =>
   new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
-export function Today({ onOpenOperations }: { onOpenOperations?: () => void } = {}) {
+export function Today({ onOpenOperations, focus = null }: { onOpenOperations?: () => void; focus?: "briefing" | "morning" | null } = {}) {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -92,6 +94,12 @@ export function Today({ onOpenOperations }: { onOpenOperations?: () => void } = 
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // Her email's "Read the full briefing" and "See them all on Today" open Today at that place.
+  useEffect(() => {
+    if (!data || !focus) return;
+    const el = document.getElementById(focus);
+    if (el) el.scrollIntoView({ block: "start" });
+  }, [data, focus]);
 
   if (!data) return error ? <ErrorNotice error={error} /> : <Loading />;
 
@@ -164,10 +172,20 @@ export function Today({ onOpenOperations }: { onOpenOperations?: () => void } = 
         <NightForm max={limits.night_review_prompts} maxSeed={limits.morning_priorities} onRun={(b) => run("night", b)} />
       )}
 
+      {/*
+        * THIS MORNING'S EMAIL (24 Oct 2026). Her email said "6 decisions" and Today showed none: the
+        * email was built from files on her Mac that Today never saw. Simone now keeps the morning in
+        * Boss OS before she sends it, and this lists the very same decisions, each opening its screen.
+        */}
+      <div className="docket" data-testid="today-morning">
+        <div className="docket-head"><h3 style={{ margin: 0 }}>This morning&apos;s email</h3></div>
+        <MorningBlock />
+      </div>
+
       <OperationsLine onOpen={onOpenOperations} />
 
       {blocks.map((b) => (
-        <BlockCard key={b.key} block={b} onChanged={load} onError={setError} />
+        <BlockCard key={b.key} block={b} onChanged={load} onError={setError} open={focus === "briefing" && b.key === "executive_briefing"} />
       ))}
     </>
   );
@@ -219,8 +237,9 @@ function RunBriefingNow({ hasReport, runStatus, onChanged }: { hasReport: boolea
   );
 }
 
-function BlockCard({ block, onChanged, onError }: {
+function BlockCard({ block, onChanged, onError, open = false }: {
   block: Block;
+  open?: boolean;
   onChanged: () => void | Promise<void>;
   onError: (e: unknown) => void;
 }) {
@@ -231,7 +250,7 @@ function BlockCard({ block, onChanged, onError }: {
   const detail = renderDetail(block, onChanged, onError);
 
   return (
-    <div className="docket" style={{ paddingBottom: detail ? 14 : 12 }}>
+    <div className="docket" id={block.key === "executive_briefing" ? "briefing" : undefined} style={{ paddingBottom: detail ? 14 : 12 }}>
       {/*
         * ── THE NUMBER IS GONE ────────────────────────────────────────────────
         *
@@ -251,7 +270,7 @@ function BlockCard({ block, onChanged, onError }: {
       <p style={{ marginTop: 6 }}>{summary}</p>
       {block.key === "executive_briefing" && <RunBriefingNow hasReport={Boolean(block.content?.sections || block.content?.summary)} runStatus={block.content?.run_status ?? null} onChanged={onChanged} />}
       {detail && (
-        <details>
+        <details open={open || undefined}>
           <summary className="docket-more" style={{ cursor: "pointer" }}>Tap to open ▾</summary>
           <div className="docket-full">{detail}</div>
         </details>
@@ -1173,7 +1192,9 @@ function renderDetail(
                 <div className="row-sub">{e.role} · {e.lane}</div>
                 {e.reason && <div className="row-sub">{e.reason}</div>}
               </div>
-              <div className="row-val">{e.open_tasks} open</div>
+              {e.open_tasks > 0
+                ? <button className="row-open" onClick={() => go(employeeHref(e.id))} aria-label={`See ${e.name}'s ${e.open_tasks} open item${e.open_tasks === 1 ? "" : "s"}`}>See {e.open_tasks} open ▸</button>
+                : <div className="row-val">0 open</div>}
             </div>
           ))}
         </>

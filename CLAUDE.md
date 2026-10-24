@@ -50,16 +50,43 @@ her as a decision; she pays. Enforced in code, three places, and pinned by
    every employee run (cloud rungs, Mac seats, Danielle's repo lane through `{{PRACTICES}}`).
 3. `docs/SERVICE_RULES.md` — R32 [ALL-KINDS], read by `validate:service-rules`.
 
+## Deals: matches and the archive
+
+Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, age) and
+`scripts/ops/interest-grid.mjs` (`otherSides`, `allMatches`, `moniqueFound`), pinned by
+`tests/morningFullContext.test.ts` and `tests/dealGrid.test.ts`:
+1. **A buy and a sell on the same company match** when sizes fit (partial fills say "fills $15M of
+   their $100M"; small orders stack) and prices are within 15% (`DEFAULT_TOLERANCE`; the Matches
+   screen offers 5–30%). **A missing price never hides a match**: it ranks below, "worth asking".
+   Never two Rainmaker sides, never anyone on her do-not-suggest list (`pairAllowed`).
+2. **Age counts.** Fresher first; an order over 60 days is "may be stale — check it's still live";
+   over 6 months it leaves the email and shows on the Matches screen as "old".
+3. **The grid is six months; the Archive is six to twelve.** A view by the source email's date, never
+   a deletion; only the main grid is matched; a new email about an archived order is a fresh row.
+4. **Her own deals read "Yours: buyer" / "Yours: seller"** everywhere.
+5. **The email** carries new matches in Decide (both sides, addresses, sizes, prices, fill, gap, age,
+   a ready note to each) and one line per company with a live match under Monique found; the
+   Matches screen (Deals → Matches) lists every current one.
+
 ## Emails to her
 
 Owner, 23 Oct 2026 (inbox review: nine Boss OS emails in two days, none useful). Enforced in code and
 pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads this section, and by
 `npm run validate:email-plain`:
 1. **One morning email.** Simone's (`scripts/ops/your-day.mjs`): Decide → New deals since yesterday +
-   Monique found → Camille's briefing (≤5 lines; it waits for the report, 07:45 Central at the latest)
-   → Done for you (≤3) → Catch up with → Porch & Party: To do for Valerie → sign-off → the 8Raise line.
-   Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of an
-   email. Another email only when it cannot wait: a decision due today, money at risk, a deal moving now.
+   Monique found (+ Prospect emails) → Camille's briefing (five lines, then the whole briefing under
+   "Show the full briefing ▾"; it waits for the report, 07:45 Central at the latest) → Done for you (≤3)
+   → Catch up with → Porch & Party: To do for Valerie → sign-off → the 8Raise line only when something
+   is wrong. Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of
+   an email. Another email only when it cannot wait: a decision due today, money at risk, a deal moving now.
+   **Every decision is in Decide, all of them** (24 Oct 2026: "6 decisions" showed 3 and Today showed
+   none): the count is the number shown, each item says who (with their full address), what they
+   said, the history, the words that go out in her name word for word ("Send as is" never sends what
+   was not shown), and links to its own screen. The run posts the whole morning to Boss OS before it
+   sends (`/api/boss/morning`, `src/worker/boss/routes/morning.ts`); Today lists the same decisions
+   and every link opens that item (`/?morning=<day>&item=<id>`). Anything an employee can fix is a done
+   line (What happened / What we did / Status), never a decision. Pinned by
+   `tests/morningFullContext.test.ts` ("Rule 0: everything awaiting her is in Decide").
 2. **Decide first, one-tap buttons, plain words.** `layoutEmail` / `layoutProblem`
    (`src/shared/boss/mail/plain.mjs`). Never Gmail ids, commands, /api paths, PR numbers, UTC times,
    #tags, jargon, link dumps or "I could not read".

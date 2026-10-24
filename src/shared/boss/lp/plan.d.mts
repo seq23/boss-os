@@ -9,7 +9,7 @@ export function lpReplyBody(a: { name?: string | null; bucket: string }): string
 export function tapUrl(token: string, action: string, origin?: string): string;
 export function gmailDraftUrl(draftMessageId: string | null | undefined, mailbox?: string): string;
 export function gmailThreadUrl(threadId: string | null | undefined, mailbox?: string): string;
-export interface DecideItem { title: string; body: string; urgent?: boolean; priority?: number; buttons: { label: string; url: string }[] }
+export interface DecideItem { key?: string; title: string; body: string; details: string[]; draft?: { heading: string; text: string } | null; urgent?: boolean; priority?: number; buttons: { label: string; url: string }[] }
 export function lpDecideItems(rows: any[], now?: number, origin?: string): DecideItem[];
 export function lpStatusFrom(a: { current?: string; sentAfterReply?: boolean; scheduled?: boolean; theirLatest?: number | null; sentAt?: number | null; hasDraft?: boolean; decision?: string | null }): string;
 export const MAX_TOUCHES: number;
@@ -37,6 +37,8 @@ export function wordCount(body: string): number;
 export function prospectProblems(e: { subject: string; body: string }): string[];
 export function templateHash(t: Template, names: Named[]): string;
 export function dueTouch(p: any, now?: number): number | null;
+export function nextTouchAt(p: any): number | null;
+export function lpWho(r: any): string;
 export function proposeFeatured(supply: any[], rules?: { never?: string[]; add?: string[]; drop?: string[] }, now?: number): { name: string; why: string }[];
 export function staleFeatured(featured: { name: string }[], supply: any[], now?: number): string[];
 export function sideFromReply(text: string): "buyer" | "seller" | "both" | "unknown";

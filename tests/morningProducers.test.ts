@@ -114,21 +114,25 @@ describe("D and L sections reach Simone's morning email through E's writer", () 
   it("renders every section's content in her order", () => {
     const t: string = email.text;
     for (const s of ["New deals since yesterday (2)", "Company A", "Broker Two (Firm Y)", "See the full grid (2 open deals)",
-      "Monique found", "Example Growth Fund", "See holders and drafts",
+      "Monique found", "Example Growth Fund", "See every match",
       "Reply to An Allocator at Example Endowment", "A Buyer at Example Capital wants to talk",
-      "Catch up with", "A Past Partner", "8Raise: Monique used 7 of her 75 credits this month (30 always kept for you)"]) {
+      "Catch up with", "A Past Partner"]) {
       expect(t, s).toContain(s);
     }
+    // 7 of 75 credits used is fine, so no 8Raise line (owner, 24 Oct 2026).
+    expect(t).not.toMatch(/8Raise/);
     // The LP reply waiting three days outranks everything else in Decide.
     expect(t.indexOf("Waiting 3 days: Reply to An Allocator")).toBeGreaterThan(-1);
     expect(t.indexOf("Waiting 3 days")).toBeLessThan(t.indexOf("wants to talk"));
     expect(t.indexOf("Decide")).toBeLessThan(t.indexOf("New deals since yesterday"));
-    // One intro for the one buyer-seller pair (D), and a row with no price shows none (E).
-    expect(t.split("Make a Company A intro?").length - 1).toBe(1);
+    // One match for the one buyer-seller pair (D), in Decide; a row with no price shows none (E).
+    expect(t.split("Company A: a buyer and a seller who could trade").length - 1).toBe(1);
     expect(t).toContain("Company A · Buy · $1B · Broker One (Firm X)");
     expect(t).not.toMatch(/@\s*(?:·|—|$)/m);
+    // An LP draft whose words are not on the row has no "Send as is": nothing goes that was not shown.
+    expect(t).not.toContain("Send as is: https://boss.sequoiataylor.com/tap/tok_lp_1?do=send");
+    expect(t).toContain("Skip: https://boss.sequoiataylor.com/tap/tok_lp_1?do=skip");
     // L's one-tap buttons are pages (/tap/<token>), never an /api path the gate would hold.
-    expect(t).toContain("Send as is: https://boss.sequoiataylor.com/tap/tok_lp_1?do=send");
     expect(t).not.toMatch(/\/api\//);
   });
 

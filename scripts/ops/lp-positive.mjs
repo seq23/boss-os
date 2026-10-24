@@ -310,7 +310,8 @@ export function reconcileList(existing, { found, accepted, rejected }) {
   for (const [address, p] of found) {
     const was = byAddress.get(address);
     if (!was) { byAddress.set(address, p); added += 1; continue; }
-    if (was.bucket === "warm" && p.bucket === "call") { byAddress.set(address, { ...was, bucket: "call", quote: p.quote }); promoted += 1; }
+    if (was.bucket === "warm" && p.bucket === "call") { byAddress.set(address, { ...was, bucket: "call", quote: p.quote, said: p.said ?? was.said }); promoted += 1; continue; }
+    if (p.said && !was.said) byAddress.set(address, { ...was, said: p.said });
   }
   const people = [...byAddress.values()].sort((a, b) => String(a.first_seen).localeCompare(String(b.first_seen)));
   return { people, removed, added, promoted };
@@ -350,6 +351,43 @@ export function unansweredSection(f) {
  * seller / both / unknown) is read from the words. A short quote is kept only for an interested
  * reply, exactly as the LP list keeps one only for a positive one.
  */
+/**
+ * THE WORDS THE MORNING EMAIL SHOWS (owner, 24 Oct 2026), read here because this is the one file
+ * allowed to read content, read-only, from the one named mailbox. Each is bounded and returns text
+ * only; nothing is written or sent, and nothing reaches a model.
+ *
+ *   messageWords(id, { quoted })   a message's words: their reply (quoted original dropped), or a
+ *                                  held draft or sent email whole (`quoted: true` keeps every line)
+ *   sentWordsTo(emails)            every email she sent each prospect, oldest first, with its words
+ */
+async function contentToken() {
+  const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault");
+  return accessToken(JSON.parse(raw), GMAIL, MAILBOX);
+}
+export async function messageWords(id, { quoted = false, token = null } = {}) {
+  const tok = token ?? await contentToken();
+  const msg = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=raw`, tok).catch(() => null);
+  if (!msg?.raw) return null;
+  const rawText = Buffer.from(msg.raw, "base64").toString("utf8").slice(0, 200_000);
+  const words = quoted ? decodedBody(rawText).replace(/\r\n/g, "\n").trim() : readableText(rawText);
+  return { text: words.slice(0, 6000) || null, at: Number(msg.internalDate ?? 0) || null, thread: msg.threadId ?? null, subject: headersFromRaw(rawText).subject ?? "" };
+}
+export async function sentWordsTo(emails, { max = 3 } = {}) {
+  const tok = await contentToken();
+  const out = [];
+  for (const email of emails) {
+    const j = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&q=${encodeURIComponent(`in:sent to:${email} newer_than:183d`)}`, tok).catch(() => null);
+    const msgs = [];
+    for (const m of j?.messages ?? []) {
+      const w = await messageWords(m.id, { quoted: true, token: tok });
+      if (w) msgs.push({ email, sent_at: w.at, subject: w.subject, body: w.text, gmail_id: m.id, thread_id: w.thread });
+    }
+    msgs.sort((a, b) => a.sent_at - b.sent_at).slice(0, max).forEach((t, i) => out.push({ ...t, touch_no: i + 1 }));
+  }
+  return out;
+}
+
 export async function readProspectReplies(addresses, sinceYmd) {
   const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
   if (!raw) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault");
@@ -483,7 +521,8 @@ export async function refreshPositive() {
     // The strongest signal a person ever gave is the one that matters: someone who asked for
     // materials in July and offered a call in September is a call.
     if (!prior || (prior.bucket === "warm" && bucket === "call")) {
-      found.set(address, { address, name, bucket, first_seen: prior?.first_seen ?? when, quote: quoteOf(text) });
+      // `said`: their own words, whole (up to 800 characters), so the morning email can show what they wrote.
+      found.set(address, { address, name, bucket, first_seen: prior?.first_seen ?? when, quote: quoteOf(text), said: text.slice(0, 800) });
     }
   }
 

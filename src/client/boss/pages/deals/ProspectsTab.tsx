@@ -41,7 +41,10 @@ export function ProspectsTab() {
   const [source, setSource] = useState("all");
   const [status, setStatus] = useState("all");
   const [side, setSide] = useState("all");
+  // What went out, word for word, and why nothing did (owner, 24 Oct 2026: keep me abreast).
+  const [activity, setActivity] = useState<any>(null);
   useEffect(() => {
+    api.prospectActivity(0).then(setActivity).catch(() => setActivity(null));
     api.prospects().then((d) => setRows(d.rows ?? [])).catch(() => setFailed(true));
     api.eightRaise().then((d) => setCredits({ used: d.used ?? 0 })).catch(() => setCredits(null));
   }, []);
@@ -78,6 +81,7 @@ export function ProspectsTab() {
           </div>
         ))}
       </div>
+      {activity ? <ActivityPanel a={activity} /> : null}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         {select("Found via", source, setSource, sources.map((s) => [s, s]))}
         {select("Status", status, setStatus, Object.entries(STATUS))}
@@ -86,12 +90,13 @@ export function ProspectsTab() {
       <div className="panel" style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
-            <tr>{["Prospect", "Found via", "Touches", "Last sent", "Side", "Status", "Next touch"].map((h) => <th key={h} style={{ textAlign: "left", padding: "9px 10px", fontSize: 12 }}>{h}</th>)}</tr>
+            <tr>{["Prospect", "Email", "Found via", "Touches", "Last sent", "Side", "Status", "Next touch"].map((h) => <th key={h} style={{ textAlign: "left", padding: "9px 10px", fontSize: 12 }}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {shown.map((p) => (
               <tr key={p.id}>
                 <td style={{ padding: "9px 10px" }}><b>{p.name || "—"}</b>{p.firm ? ` · ${p.firm}` : ""}</td>
+                <td style={{ padding: "9px 10px" }}>{p.email ?? "—"}</td>
                 <td style={{ padding: "9px 10px" }}>{sourceLabel(p.source)}</td>
                 <td style={{ padding: "9px 10px" }}>{p.touches} of {MAX_TOUCHES}</td>
                 <td style={{ padding: "9px 10px" }}>{p.thread_id ? <a href={gmailThreadUrl(p.thread_id)} target="_blank" rel="noreferrer">{day(p.last_touch_at)}</a> : day(p.last_touch_at)}</td>
@@ -107,6 +112,40 @@ export function ProspectsTab() {
         Three emails at most, then they stop. Anyone who replies or opts out is never emailed again. At most 20 new a day.
         {credits ? ` ${eightRaiseFooter(credits.used)}.` : ""}
       </p>
+    </div>
+  );
+}
+
+const TAP = (token: string, action: string) => `/tap/${encodeURIComponent(token)}?do=${action}`;
+
+/** Why nothing is going out, the email waiting for her OK, and every email sent with its words. */
+function ActivityPanel({ a }: { a: any }) {
+  const sent: any[] = a.sent ?? [];
+  return (
+    <div className="panel" style={{ padding: "12px 16px" }} data-testid="prospects-activity">
+      {(a.stops ?? []).length ? (
+        <p className="mi-lede"><b>Nothing is going out right now.</b> Why: {(a.stops as string[]).join(" ")}</p>
+      ) : <p className="mi-lede">Sending on schedule: weekdays, 9 to 5 Central, up to 20 new people a day.</p>}
+      {a.pending ? (
+        <details className="mi-more" open>
+          <summary>The email waiting for your OK — tap to hide ▴</summary>
+          <div className="mi-draft">{`Subject: ${a.pending.subject}\n\n${a.pending.body}`}</div>
+          {a.pending.tap_token ? (
+            <div className="btn-row mi-buttons">
+              <a className="btn btn-small btn-primary" href={TAP(a.pending.tap_token, "approve")}>Approve</a>
+              <a className="btn btn-small" href={TAP(a.pending.tap_token, "edit")}>Change</a>
+            </div>
+          ) : null}
+        </details>
+      ) : null}
+      <p className="eyebrow" style={{ marginTop: 10 }}>Emails sent ({a.totals?.emails_sent ?? sent.length})</p>
+      {sent.length === 0 ? <p className="row-sub">None recorded with their words yet.</p> : sent.map((r: any, i: number) => (
+        <details key={i} className="mi-more">
+          <summary>{day(r.sent_at)} · email {r.touch_no} of {MAX_TOUCHES} to {r.name || r.email}{r.firm ? `, ${r.firm}` : ""} ({r.email}) — tap to read ▾</summary>
+          <div className="mi-draft">{r.body ? `Subject: ${r.sent_subject ?? r.subject ?? ""}\n\n${r.body}` : "Its words were not kept (it went before 24 October); it is in your Sent mail."}</div>
+          {r.thread_id ? <a className="btn btn-small" href={gmailThreadUrl(r.thread_id)} target="_blank" rel="noreferrer">Open the thread</a> : null}
+        </details>
+      ))}
     </div>
   );
 }

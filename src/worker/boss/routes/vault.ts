@@ -158,6 +158,10 @@ const SNAPSHOT_TABLES = [
   // evidence for why each firm got one lives only here.
   "ask_scans",
   "ask_scan_findings",
+  // 0296 — the morning email as it went (every decision with its context) and the current buy↔sell
+  // matches. The morning is not re-derivable once the section files on her Mac are cleared.
+  "morning_digests",
+  "capital_matches",
   // Danielle's repo changes (0265): her instruction, the plan, her reply, the PR and the proof.
   "repo_changes",
   /*

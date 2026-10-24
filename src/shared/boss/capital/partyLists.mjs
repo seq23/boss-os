@@ -19,9 +19,32 @@ export const FIRM_DOMAIN = "rainmakersecurities.com";
 
 /** Owner, 23 Oct 2026: "rough 6 month cut off". One constant for every inbox lookback. */
 export const LOOKBACK_DAYS = 183;
+/**
+ * THE ARCHIVE (owner, 24 Oct 2026): an order whose source email is older than the lookback leaves
+ * the main grid for the Archive view, and leaves that too at twelve months. Nothing is deleted: both
+ * are views by the source email's date. Only main-grid orders are matched; an archived one may show
+ * on the Matches screen labelled "old". A new email about it is a new row with a fresh date.
+ */
+export const ARCHIVE_DAYS = 365;
 const DAY = 86_400_000;
 
 /** True when a YYYY-MM-DD (or ISO) date is inside the inbox lookback. An unreadable date is outside. */
+export function withinArchive(date, now = Date.now()) {
+  const t = Date.parse(String(date ?? ""));
+  return Number.isFinite(t) && now - t <= ARCHIVE_DAYS * DAY;
+}
+
+/**
+ * Archived orders still worth showing: older than the lookback, inside twelve months, and not
+ * brought back by a newer email (same company, same side, same sender) that is on the main grid.
+ */
+export function archiveRows(rows, now = Date.now()) {
+  const open = (rows ?? []).filter((r) => withinLookback(r.received_on, now));
+  const key = (r) => `${String(r.company).toLowerCase()}|${r.direction}|${String(r.from_text).toLowerCase()}`;
+  const live = new Set(open.map(key));
+  return (rows ?? []).filter((r) => !withinLookback(r.received_on, now) && withinArchive(r.received_on, now) && !live.has(key(r)));
+}
+
 export function withinLookback(date, now = Date.now()) {
   const t = Date.parse(String(date ?? ""));
   return Number.isFinite(t) && now - t <= LOOKBACK_DAYS * DAY;

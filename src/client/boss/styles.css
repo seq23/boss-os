@@ -1637,3 +1637,17 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .duty-add { border-style: dashed; }
 .notice-hint-box { border-color: var(--gold); }
 .team-card-who { display: flex; align-items: center; gap: 10px; }
+
+/* ─── The morning email's own screens (24 Oct 2026): one item, in full ─────── */
+.mi-title { font-family: var(--display); font-size: 20px; margin: 4px 0 8px; color: var(--ink); }
+.mi-lede { font-size: 15px; line-height: 1.5; margin: 0 0 10px; color: var(--ink); }
+.mi-list { margin: 0 0 12px; }
+.mi-draft { white-space: pre-wrap; border-left: 3px solid var(--line); background: var(--card); padding: 10px 12px; margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: var(--ink); }
+.mi-buttons { flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
+.mi-buttons .btn { flex: 0 1 auto; text-decoration: none; text-align: center; }
+.btn-primary { background: var(--ink); color: var(--card); border-color: var(--ink); }
+.mi-row { width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); cursor: pointer; font: inherit; }
+.mi-comment { margin: 0 0 12px; padding: 12px; }
+.mi-more { margin: 10px 0 0; }
+.mi-more summary { cursor: pointer; font-size: 14px; padding: 8px 0; color: var(--ink); }
+.row-open { background: none; border: 1px solid var(--line); border-radius: 2px; padding: 6px 10px; cursor: pointer; font: inherit; font-size: 13px; color: var(--ink); white-space: nowrap; }

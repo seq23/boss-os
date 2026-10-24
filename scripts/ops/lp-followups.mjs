@@ -169,6 +169,15 @@ async function search(tok, q, max = 1) {
 const gdate = (ymd) => String(ymd).replace(/-/g, "/");
 
 /** The newest message from the address: thread, Message-ID, Subject (headers only). */
+/** A held draft's words as they stand in Gmail, and their newest message's words (lp-positive.mjs reads content). */
+async function draftWords(messageId) {
+  if (!messageId) return null;
+  try { const { messageWords } = await import("./lp-positive.mjs"); return (await messageWords(messageId, { quoted: true }))?.text ?? null; } catch { return null; }
+}
+async function latestWords(messageId) {
+  try { const { messageWords } = await import("./lp-positive.mjs"); return (await messageWords(messageId))?.text?.slice(0, 600) ?? null; } catch { return null; }
+}
+
 async function threadOf(tok, address) {
   const [m] = await search(tok, `from:${address} to:${MAILBOX}`, 1);
   if (!m) return null;
@@ -177,7 +186,7 @@ async function threadOf(tok, address) {
   for (const h of ["Message-ID", "Subject"]) u.searchParams.append("metadataHeaders", h);
   const msg = await call(tok, u.toString());
   const h = Object.fromEntries((msg?.payload?.headers ?? []).map((x) => [x.name.toLowerCase(), x.value]));
-  return { threadId: m.threadId, messageId: h["message-id"] ?? null, subject: h.subject ?? "", at: Number(msg?.internalDate ?? 0) || null };
+  return { id: m.id, threadId: m.threadId, messageId: h["message-id"] ?? null, subject: h.subject ?? "", at: Number(msg?.internalDate ?? 0) || null };
 }
 
 function rawDraft({ to, subject, inReplyTo, body }) {
@@ -227,7 +236,7 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
     const after = gdate(p.first_seen);
     const th = await threadOf(read, p.address);
     const base = {
-      address: p.address, name: p.name ?? "", bucket: p.bucket, quote: p.quote ?? null, first_seen: p.first_seen,
+      address: p.address, name: p.name ?? "", bucket: p.bucket, quote: p.quote ?? null, said: p.said ?? null, first_seen: p.first_seen,
       reply_from: MAILBOX, thread_id: th?.threadId ?? null, in_reply_to: th?.messageId ?? null, subject: th?.subject ?? null,
       last_reply_at: th?.at ?? null,
     };
@@ -238,7 +247,9 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
       const status = th?.at && sentAt && th.at > sentAt ? "replied_again" : "sent";
       counts[status] += 1;
       delete state.drafts[p.address];
-      rows.push({ ...base, status, sent_at: sentAt });
+      // What they said after her reply, in their own words: the morning email's one line for it.
+      const lastReplyText = status === "replied_again" && th?.id ? await latestWords(th.id) : null;
+      rows.push({ ...base, status, sent_at: sentAt, last_reply_text: lastReplyText });
       continue;
     }
     const passed = (await search(read, `from:${p.address} (${PASS_LABELS.map((l) => `label:${l}`).join(" OR ")})`)).length > 0;
@@ -254,7 +265,9 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
       const existing = had ? await call(draftTok, `${GMAIL}/drafts/${had.id}?format=metadata`).catch(() => null) : null;
       const stale = had && (had.slots ?? []).length && had.slots.every((t) => t < now + DAY);
       const unedited = existing && existing.message?.id === had?.message_id;
-      if (existing && !(stale && unedited)) { counts.kept += 1; held = { id: had.id, message_id: existing.message?.id ?? had.message_id, hash: had.hash }; }
+      // A kept draft is shown as it stands in Gmail NOW, word for word, pinned to its message id: the
+      // tap sends it only if that id has not changed since the email showed it (owner, 24 Oct 2026).
+      if (existing && !(stale && unedited)) { counts.kept += 1; held = { id: had.id, message_id: existing.message?.id ?? had.message_id, hash: had.hash, body: await draftWords(existing.message?.id ?? had.message_id) }; }
       else {
         const body = draftBody({ name: p.name, bucket: p.bucket, slots });
         const message = { raw: rawDraft({ to: p.address, subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
@@ -262,15 +275,15 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
           ? await call(draftTok, `${GMAIL}/drafts/${had.id}`, { method: "PUT", body: JSON.stringify({ id: had.id, message }) })
           : await call(draftTok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message }) });
         if (res?.id) {
-          state.drafts[p.address] = { id: res.id, message_id: res.message?.id ?? null, slots, hash: hashOf(body), at: new Date(now).toISOString() };
+          state.drafts[p.address] = { id: res.id, message_id: res.message?.id ?? null, slots, hash: hashOf(body), body, at: new Date(now).toISOString() };
           if (existing) counts.refreshed += 1; else counts.made += 1;
-          held = { id: res.id, message_id: res.message?.id ?? null, hash: hashOf(body) };
+          held = { id: res.id, message_id: res.message?.id ?? null, hash: hashOf(body), body };
         }
       }
     }
     const status = held ? "drafted" : "not_answered";
     counts[status] += 1;
-    rows.push({ ...base, status, draft_id: held?.id ?? null, draft_message_id: held?.message_id ?? null, body_hash: held?.hash ?? null });
+    rows.push({ ...base, status, draft_id: held?.id ?? null, draft_message_id: held?.message_id ?? null, body_hash: held?.hash ?? null, draft_body: held?.body ?? null });
   }
   state.updated_at = new Date(now).toISOString();
   fs.mkdirSync(OUT_DIR, { recursive: true });
