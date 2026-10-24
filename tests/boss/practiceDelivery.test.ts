@@ -79,7 +79,18 @@ describe("delivering the week", () => {
       taskId, runId: uid("run"), runStatus: "succeeded", payload: { status: "complete" }, now: sundayEvening,
     });
     const stored = await row<any>(`SELECT week_id FROM practice_week LIMIT 1`);
-    expect(stored.week_id).toBe(weekIdInZone(sundayEvening, CHICAGO));
+    // A Sunday run is the brief for the week AHEAD (24 Oct 2026: the 18 Oct brief was filed as W42,
+    // so all of W43 the screen said it was stale): it is filed under Monday's week, in her zone.
+    expect(stored.week_id).toBe(weekIdInZone(sundayEvening + 86_400_000, CHICAGO));
+    expect(stored.week_id).not.toBe(weekIdInZone(sundayEvening, CHICAGO));
+  });
+
+  it("the scheduled Sunday 17:00 run files the week ahead, and a model naming the ending week cannot file it back", async () => {
+    const sunday1700 = Date.parse("2026-10-18T22:00:00Z");
+    const taskId = await practiceTask();
+    await deliverPracticeWeek(env as any, { taskId, runId: uid("run"), runStatus: "succeeded", payload: { status: "complete", week_id: "2026-W42" }, now: sunday1700 });
+    const stored = await row<any>(`SELECT week_id FROM practice_week LIMIT 1`);
+    expect(stored.week_id).toBe("2026-W43");
   });
 
   it("corrects a week rather than producing a second opinion about it", async () => {
@@ -138,7 +149,7 @@ describe("reading it back", () => {
     const taskId = await practiceTask();
     await deliverPracticeWeek(env as any, {
       taskId, runId: uid("run"), runStatus: "succeeded",
-      payload: { status: "complete", week_id: "2020-W01" },
+      payload: { status: "complete" }, now: Date.parse("2020-01-08T18:00:00Z"),
     });
     const res = await apiJson<any>("/api/spirit/practice-week");
     // Last week's rituals read as this week's is exactly the quiet wrongness the block exists to end.

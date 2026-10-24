@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ARCS, VEHICLES, ENGINE, secondBlockVehicle, isWestPeekDay } from "../../src/worker/boss/spirit/arcs";
 import { instructionsFor, RUN_OF_SHOW } from "../../src/worker/boss/today/runOfShow";
-import { composeGratitude, GRATITUDE_THEMES, themeFor } from "../../src/worker/boss/spirit/practice";
+import { composeGratitude, GRATITUDE_THEMES, GRATITUDE_NEVER, NEW_EVERY_DAYS, ROTATION_DAYS, themeFor } from "../../src/worker/boss/spirit/practice";
 
 /**
  * THE SYSTEM KNEW HER RULES AND NOT HER GOALS.
@@ -132,6 +132,31 @@ describe("§8.5 — the sentence, composed here and sent nowhere", () => {
     expect(without.some((x) => x.toLowerCase().includes("close the raise"))).toBe(false);
     // And a day with no anchor still produces a sentence, from some other real fact.
     expect(without.every((x) => x.length > 0)).toBe(true);
+  });
+
+  it("a NEW sentence every day: none repeats inside 30 days, whatever the facts do (owner, 24 Oct 2026)", () => {
+    expect(ROTATION_DAYS).toBeGreaterThan(NEW_EVERY_DAYS);
+    const variants = [FACTS, { ...FACTS, anchor: null, holding: null, openLoops: 0, lastVerdict: null, continuousDays: 0, westPeekDay: true }];
+    for (let start = 0; start < 120; start += 7) {
+      const said: string[] = [];
+      for (let i = 0; i < NEW_EVERY_DAYS; i++) {
+        const dayId = new Date(Date.UTC(2026, 9, 1 + start + i)).toISOString().slice(0, 10);
+        said.push(composeGratitude(dayId, variants[(start + i) % 2]!)!.sentence);
+      }
+      expect(new Set(said).size, `a repeat in the 30 days from day ${start}`).toBe(NEW_EVERY_DAYS);
+    }
+  });
+
+  it("is never about body, diet or health (owner, 24 Oct 2026: not keto)", () => {
+    for (let i = 0; i < 365; i++) {
+      const dayId = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+      for (const f of [FACTS, { ...FACTS, dayMode: "recovery" }, { ...FACTS, dayMode: "mvd", anchor: null }]) {
+        const out = composeGratitude(dayId, f)!;
+        expect(out.sentence, dayId).not.toMatch(GRATITUDE_NEVER);
+        expect(out.sentence).not.toMatch(/\b(keto|body|diet|health)\b/i);
+      }
+    }
+    expect(GRATITUDE_THEMES as readonly string[]).not.toContain("body and health");
   });
 
   it("never claims a streak on a broken run", () => {

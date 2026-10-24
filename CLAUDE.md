@@ -74,7 +74,8 @@ Owner, 23 Oct 2026 (inbox review: nine Boss OS emails in two days, none useful).
 pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads this section, and by
 `npm run validate:email-plain`:
 1. **One morning email.** Simone's (`scripts/ops/your-day.mjs`): Decide → New deals since yesterday +
-   Monique found (+ Prospect emails) → Camille's briefing (five lines, then the whole briefing under
+   Monique found (+ Prospect emails) → ✨ Spirit (the approved sample: week, moon, sky, practice, a
+   new non-body gratitude sentence every day, the month; the rest under "Show more ▾") → Camille's briefing (five lines, then the whole briefing under
    "Show the full briefing ▾"; it waits for the report, 07:45 Central at the latest) → Done for you (≤3)
    → Catch up with → Porch & Party: To do for Valerie → sign-off → the 8Raise line only when something
    is wrong. Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of
@@ -85,7 +86,8 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    was not shown), and links to its own screen. The run posts the whole morning to Boss OS before it
    sends (`/api/boss/morning`, `src/worker/boss/routes/morning.ts`); Today lists the same decisions
    and every link opens that item (`/?morning=<day>&item=<id>`). Anything an employee can fix is a done
-   line (What happened / What we did / Status), never a decision. Pinned by
+   line (What happened / What we did / Status), never a decision — a task that failed is a fix job
+   and a done line the next morning (`failedTaskLines`). Pinned by
    `tests/morningFullContext.test.ts` ("Rule 0: everything awaiting her is in Decide").
 2. **Decide first, one-tap buttons, plain words.** `layoutEmail` / `layoutProblem`
    (`src/shared/boss/mail/plain.mjs`). Never Gmail ids, commands, /api paths, PR numbers, UTC times,

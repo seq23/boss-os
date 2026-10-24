@@ -4,7 +4,7 @@ import {
 } from "../today/briefing";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
-import { dayIdInZone, wallClock, weekIdInZone } from "@shared/boss/timezone";
+import { dayIdInZone, wallClock, weekIdInZone, OWNER_TIMEZONE } from "@shared/boss/timezone";
 import { materialiseDueDuties } from "./materialise";
 import {
   applyMarketData, assessBriefing, checkedThrough, stripExcludedSections,
@@ -327,7 +327,16 @@ export async function deliverPracticeWeek(
    * brief under the week that just ended, with a plausible-looking number. The runner may name the
    * week explicitly; otherwise it is computed in Central.
    */
-  const forWeek = asText(args.payload?.week_id) ?? weekIdInZone(now);
+  /*
+   * AND A SUNDAY RUN IS FOR THE WEEK AHEAD (24 Oct 2026). The duty is "Practice — the week ahead"
+   * and fires Sunday 17:00 Central — the last day of an ISO week — so filing it under "today's
+   * week" labelled the 18 Oct brief 2026-W42; on Monday the screen's week was W43 and it read
+   * stale all week. A Sunday delivery is filed under Monday's week. A week the runner names is
+   * taken only when it is that week or later: a model's idea of "this week" never files it back.
+   */
+  const ahead = weekIdInZone(new Date(now).toLocaleDateString("en-US", { weekday: "short", timeZone: OWNER_TIMEZONE }) === "Sun" ? now + 86_400_000 : now);
+  const named = asText(args.payload?.week_id);
+  const forWeek = named && /^\d{4}-W\d{2}$/.test(named) && named >= ahead ? named : ahead;
 
   const reported = asText(args.payload?.status);
   /*

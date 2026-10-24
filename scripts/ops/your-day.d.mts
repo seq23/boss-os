@@ -24,3 +24,7 @@ export const BRIEFING_URL: string;
 export const PROSPECTS_URL: string;
 export const CHANNEL: string;
 export function replyContext(text: string): string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function spiritSection(day: any, week: any, now?: number): any;
+export function failedTaskLines(tasks: unknown[], now?: number): Array<{ id: string; text: string }>;
+export const SPIRIT_URL: string;
