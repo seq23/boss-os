@@ -61,3 +61,7 @@ export function catchupNote(a: { name?: string; reason: string }): string;
 export const NEVER_NAMED: ReadonlyArray<{ re: RegExp; allude: string }>;
 export function sayName(n: string): string;
 export function withoutNeverNamed(text: string): string;
+export const NB_FRESH_DAYS: number;
+export function verdictGate(p: any, opts?: { paused?: boolean; now?: number }): "go" | "invalid" | "risky" | "unverified";
+export type ProspectForecast = { go: number; first: number; follow: number; invalid: number; risky: number; unverified: number; bounced: number; paused: string | null; blocked: string[] };
+export function approveOutcome(f: ProspectForecast | null | undefined): { headline: string; lines: string[] };

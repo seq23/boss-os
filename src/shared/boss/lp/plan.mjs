@@ -530,3 +530,49 @@ export function pickCatchups(candidates, history, lists, now = Date.now()) {
 export function catchupNote({ name, reason }) {
   return [`Hi ${firstName(name)},`, "", `It's been a while. ${reason} Would love to catch up for 15 minutes if you have time in the next couple of weeks.`, "", "Best,", "Sequoia"].join("\n");
 }
+
+/* ─── Her NeverBounce, before every touch, and what Approve will do (24 Oct 2026) ───────────
+ *
+ * The bounce brake paused every prospect email, so the email waiting for her Approve would have sent
+ * nothing and she could not see it (Rule 0). Now each touch needs a NeverBounce verdict on record
+ * (`prospects.nb_result`, checked by the Mac within a per-run credit cap). Brake off: valid,
+ * catch-all and unknown go. Brake on: only valid goes; the rest wait until the rate recovers.
+ * Invalid / disposable never go (the address is suppressed when the verdict is posted).
+ */
+export const NB_FRESH_DAYS = 90;
+
+/** "go" | "invalid" | "risky" | "unverified" for one prospect row. Pure. */
+export function verdictGate(p, { paused = false, now = Date.now() } = {}) {
+  const r = String(p?.nb_result ?? "").toLowerCase();
+  const fresh = r && Number(p?.nb_checked_at) > 0 && now - Number(p.nb_checked_at) < NB_FRESH_DAYS * DAY;
+  if (!fresh) return "unverified";
+  if (r === "invalid" || r === "disposable") return "invalid";
+  if (r === "valid") return "go";
+  if (r === "catchall" || r === "unknown") return paused ? "risky" : "go";
+  return "unverified";
+}
+
+const plural2 = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * What tapping Approve does, in her words, from the plan's `forecast`
+ * ({ go, first, follow, invalid, risky, unverified, bounced, paused, blocked }). Never an Approve
+ * that silently does nothing: when nothing would go, the first line says so and why. Pure.
+ */
+export function approveOutcome(f) {
+  if (!f) return { headline: "Approve → Monique checks every address with NeverBounce, then sends on the next weekday, 9 to 5 Central.", lines: [] };
+  const lines = [];
+  const what = f.first && f.follow ? `the first email (${f.first}) and the follow-up (${f.follow})` : f.first ? "the first email" : "the follow-up";
+  let headline;
+  if ((f.blocked ?? []).length) headline = `Approve → nothing goes yet: ${f.blocked[0]}`;
+  else if (f.go > 0) headline = `Approve → ${what} goes to the ${plural2(f.go, "address", "addresses")} NeverBounce confirmed, on the next weekday, 9 to 5 Central.`;
+  else if (f.paused && f.risky) headline = "Approve → nothing goes yet: the bounce brake is on and none of the waiting addresses is confirmed valid.";
+  else if (f.unverified) headline = "Approve → nothing goes yet: NeverBounce checks the waiting addresses on Monique's next run, then the confirmed ones go.";
+  else headline = "Approve → nothing goes yet: no one is due an email today.";
+  if (f.invalid) lines.push(`${plural2(f.invalid, "address", "addresses")} skipped: NeverBounce says it does not exist, so it is off the list.`);
+  if (f.risky) lines.push(`${plural2(f.risky, "address", "addresses")} held: NeverBounce could not confirm it (catch-all or unknown); it waits until the bounce rate is back under 3%.`);
+  if (f.unverified) lines.push(`${plural2(f.unverified, "address", "addresses")} not checked yet: NeverBounce checks it on Monique's next run, before anything goes.`);
+  if (f.bounced) lines.push(`${plural2(f.bounced, "address", "addresses")} already bounced: never written to again.`);
+  if (f.paused) lines.push(`Why only confirmed addresses: ${String(f.paused).replace(/^Paused automatically:\s*/i, "")}`);
+  return { headline, lines };
+}

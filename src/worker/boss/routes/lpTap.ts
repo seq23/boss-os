@@ -19,7 +19,8 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { audit } from "../lib/audit";
 import { mintComposeToken, serviceAccountFrom } from "../wealth/gmailDraft";
-import { approveTemplate } from "../lp/desk";
+import { approveTemplate, prospectPlan } from "../lp/desk";
+import { approveOutcome } from "../../../shared/boss/lp/plan.mjs";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -111,7 +112,10 @@ lpTap.post("/:token", async (c) => {
     if (f.row.status !== "pending") return c.html(page("A newer version is waiting", "Approve the newest one in this morning's email."));
     await approveTemplate(db, f.row.id, now);
     await audit(db, { actor: "owner", lane: "ops", entityType: "prospect_template", entityId: f.row.id, action: "approved", detail: { via: "one_tap" } });
-    return c.html(page("Approved", "Monique sends it on the usual schedule: up to 20 new people a day, two gentle follow-ups, then stop."));
+    // Say what Approve just did, from the plan itself — never an Approve that silently does nothing.
+    const { forecast } = await prospectPlan(db, now);
+    const o = approveOutcome(forecast);
+    return c.html(page("Approved", [o.headline.replace(/^Approve → /, ""), ...o.lines].join(" ")));
   }
 
   const row = f.row;

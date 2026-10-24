@@ -5,6 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   hardBouncedAddresses, twinReplyQueueRows, sendsAfterBounce, neverBounceVerdict, verifyFirstSends, NEVERBOUNCE_MAX_PER_RUN,
 } from "../src/shared/boss/lp/bounces.mjs";
@@ -55,6 +57,33 @@ describe("a bounced address Twin wrote to goes on Twin's Reply Queue, so no step
   it("counts sends that went after the bounce, and only those", () => {
     const at = Date.parse("2026-10-21T10:00:00Z");
     expect(sendsAfterBounce([{ to: ["gone.person@pension.example.org"], at: at - 1 }, { to: ["Gone.Person@pension.example.org"], at: at + 1 }, { to: ["fine@pension.example.org"], at: at + 1 }], hard)).toHaveLength(1);
+  });
+});
+
+describe("NeverBounce before EVERY touch: the Mac checks what Boss OS says is due and keeps the verdicts (24 Oct 2026)", () => {
+  it("asks for the due addresses within the cap, checks them, posts only real verdicts", async () => {
+    const { verifyDue } = await import("../scripts/ops/lp-prospects.mjs");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nb-"));
+    const posted: any[] = [];
+    let asked = "";
+    const api = {
+      get: async (u: string) => { asked = u; return { emails: ["ok@example.com", "bad@example.com", "flaky@example.com"] }; },
+      post: async (_u: string, b: any) => { posted.push(b); return { recorded: b.verdicts.length }; },
+    };
+    const fetchImpl = (async (u: URL) => {
+      const e = u.searchParams.get("email");
+      return { json: async () => (e === "flaky@example.com" ? { status: "general_failure" } : { status: "success", result: e === "bad@example.com" ? "invalid" : "valid" }) };
+    }) as any;
+    const r = await verifyDue(api, { key: "k", fetchImpl, cacheFile: path.join(dir, "c.json") });
+    expect(asked).toMatch(/^\/lp\/prospects\/to-verify\?cap=\d+$/);
+    expect(posted).toEqual([{ verdicts: [{ email: "ok@example.com", result: "valid" }, { email: "bad@example.com", result: "invalid" }] }]);
+    expect(r.marks).toEqual({ valid: 1, invalid: 1, unverified: 1 });
+    // Cached: a second run spends no credits.
+    let calls = 0;
+    await verifyDue(api, { key: "k", fetchImpl: (async (u: URL) => { calls++; return fetchImpl(u); }) as any, cacheFile: path.join(dir, "c.json") });
+    expect(calls).toBe(1); // only the one with no answer is asked again
+    // The run no longer filters sends itself: the plan (one list, in D1) decides.
+    expect(fs.readFileSync("scripts/ops/lp-prospects.mjs", "utf8")).not.toMatch(/verdicts\.get\(s\.email/);
   });
 });
 
