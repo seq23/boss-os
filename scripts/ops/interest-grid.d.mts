@@ -42,3 +42,13 @@ export function matchDecide(m: any): any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function pairDrafts(buyer: any, seller: any): any[];
 export function pairFillWords(buyer: { size_usd?: number | null }, seller: { size_usd?: number | null }): string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function partyOf(g: any): string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function pairKeyOf(buyer: any, seller: any): string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function matchCounts(all: any[], opts?: { tolerance?: number }): { within: number; companies: number; stale: number; live: number };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function emailMatches(within: any[], opts?: { firstSeen?: Record<string, number> | null; now?: number; max?: number }): any[];
+export const MAX_EMAIL_MATCHES: number;
+export const NEW_MATCH_MS: number;

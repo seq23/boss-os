@@ -58,6 +58,12 @@ export interface LpRowIn {
   draft_body?: string | null; said?: string | null; last_reply_text?: string | null;
 }
 
+/** A mailbox address as stored: lower case, an address only, or null. */
+export const sentFrom = (v: unknown): string | null => {
+  const m = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.exec(String(v ?? ""));
+  return m ? m[0].toLowerCase() : null;
+};
+
 const LP_STATUSES = new Set(["drafted", "sent", "scheduled", "skipped", "not_answered", "replied_again"]);
 
 /** Upsert what the morning read found. A decision she already made (skip) is never undone by a read. */
@@ -239,7 +245,7 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
  */
 export async function prospectActivity(db: D1Database, since: number, now = Date.now()) {
   const sent = (await db.prepare(
-    `SELECT t.touch_no, t.sent_at, t.subject AS sent_subject, t.body, p.id AS prospect_id, p.name, p.firm, p.email, p.side, p.kind, p.subject, p.thread_id
+    `SELECT t.touch_no, t.sent_at, t.subject AS sent_subject, t.body, t.sent_from, p.id AS prospect_id, p.name, p.firm, p.email, p.side, p.kind, p.subject, p.thread_id
        FROM prospect_touches t JOIN prospects p ON p.id = t.prospect_id WHERE t.sent_at >= ? ORDER BY t.sent_at DESC LIMIT 500`,
   ).bind(since).all<any>()).results ?? [];
   const replies = (await db.prepare(
@@ -267,17 +273,19 @@ export async function prospectActivity(db: D1Database, since: number, now = Date
  * its words, date and thread, so a follow-up builds on it, nobody gets a second first touch, and a
  * reply lands on the right prospect. `touches` and the dates move only forward.
  */
-export async function backfillTouches(db: D1Database, touches: Array<{ email: string; touch_no: number; sent_at: number; subject?: string | null; body?: string | null; gmail_id?: string | null; thread_id?: string | null }>, now = Date.now()) {
+export async function backfillTouches(db: D1Database, touches: Array<{ email: string; touch_no: number; sent_at: number; subject?: string | null; body?: string | null; gmail_id?: string | null; thread_id?: string | null; sent_from?: string | null }>, now = Date.now()) {
   let n = 0;
   for (const t of touches) {
     const p = await db.prepare(`SELECT * FROM prospects WHERE email = ?`).bind(String(t.email ?? "").toLowerCase()).first<any>();
     const no = Number(t.touch_no);
     if (!p || !(no >= 1 && no <= MAX_TOUCHES) || !(Number(t.sent_at) > 0)) continue;
     await db.batch([
-      db.prepare(`INSERT INTO prospect_touches (id, prospect_id, touch_no, gmail_id, template_id, sent_at, subject, body) VALUES (?,?,?,?,?,?,?,?)
+      // sent_from: the mailbox it went from, off the message's own From header; a fresh read wins.
+      db.prepare(`INSERT INTO prospect_touches (id, prospect_id, touch_no, gmail_id, template_id, sent_at, subject, body, sent_from) VALUES (?,?,?,?,?,?,?,?,?)
                   ON CONFLICT(prospect_id, touch_no) DO UPDATE SET body = COALESCE(prospect_touches.body, excluded.body),
-                    subject = COALESCE(prospect_touches.subject, excluded.subject), gmail_id = COALESCE(prospect_touches.gmail_id, excluded.gmail_id)`)
-        .bind(newId("ptc"), p.id, no, t.gmail_id ?? null, null, Number(t.sent_at), t.subject ? String(t.subject).slice(0, 300) : null, t.body ? String(t.body).slice(0, 6000) : null),
+                    subject = COALESCE(prospect_touches.subject, excluded.subject), gmail_id = COALESCE(prospect_touches.gmail_id, excluded.gmail_id),
+                    sent_from = COALESCE(excluded.sent_from, prospect_touches.sent_from)`)
+        .bind(newId("ptc"), p.id, no, t.gmail_id ?? null, null, Number(t.sent_at), t.subject ? String(t.subject).slice(0, 300) : null, t.body ? String(t.body).slice(0, 6000) : null, sentFrom(t.sent_from)),
       db.prepare(`UPDATE prospects SET touches = MAX(touches, ?), first_sent_at = MIN(COALESCE(first_sent_at, ?), ?),
                     last_touch_at = MAX(COALESCE(last_touch_at, 0), ?), thread_id = COALESCE(thread_id, ?),
                     status = CASE WHEN status IN ('new','active') AND ? >= 3 THEN 'done' WHEN status = 'new' THEN 'active' ELSE status END

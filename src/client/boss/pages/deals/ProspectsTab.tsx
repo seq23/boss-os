@@ -90,7 +90,7 @@ export function ProspectsTab() {
       <div className="panel" style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
-            <tr>{["Prospect", "Email", "Found via", "Touches", "Last sent", "Side", "Status", "Next touch"].map((h) => <th key={h} style={{ textAlign: "left", padding: "9px 10px", fontSize: 12 }}>{h}</th>)}</tr>
+            <tr>{["Prospect", "Email", "Found via", "Touches", "Last sent", "Sent from", "Side", "Status", "Next touch"].map((h) => <th key={h} style={{ textAlign: "left", padding: "9px 10px", fontSize: 12 }}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {shown.map((p) => (
@@ -100,6 +100,7 @@ export function ProspectsTab() {
                 <td style={{ padding: "9px 10px" }}>{sourceLabel(p.source)}</td>
                 <td style={{ padding: "9px 10px" }}>{p.touches} of {MAX_TOUCHES}</td>
                 <td style={{ padding: "9px 10px" }}>{p.thread_id ? <a href={gmailThreadUrl(p.thread_id)} target="_blank" rel="noreferrer">{day(p.last_touch_at)}</a> : day(p.last_touch_at)}</td>
+                <td style={{ padding: "9px 10px" }}>{p.sent_from ?? (p.touches > 0 ? "not read yet" : "—")}</td>
                 <td style={{ padding: "9px 10px" }}>{SIDE[p.side] ?? "—"}</td>
                 <td style={{ padding: "9px 10px" }}>{STATUS[p.status] ?? p.status}{p.reply_note ? <div className="row-sub">"{String(p.reply_note).slice(0, 80)}"</div> : null}</td>
                 <td style={{ padding: "9px 10px" }}>{nextTouchLabel(p)}</td>
@@ -141,7 +142,7 @@ function ActivityPanel({ a }: { a: any }) {
       <p className="eyebrow" style={{ marginTop: 10 }}>Emails sent ({a.totals?.emails_sent ?? sent.length})</p>
       {sent.length === 0 ? <p className="row-sub">None recorded with their words yet.</p> : sent.map((r: any, i: number) => (
         <details key={i} className="mi-more">
-          <summary>{day(r.sent_at)} · email {r.touch_no} of {MAX_TOUCHES} to {r.name || r.email}{r.firm ? `, ${r.firm}` : ""} ({r.email}) — tap to read ▾</summary>
+          <summary>{day(r.sent_at)} · email {r.touch_no} of {MAX_TOUCHES} to {r.name || r.email}{r.firm ? `, ${r.firm}` : ""} ({r.email}){r.sent_from ? `, from ${r.sent_from}` : ""} — tap to read ▾</summary>
           <div className="mi-draft">{r.body ? `Subject: ${r.sent_subject ?? r.subject ?? ""}\n\n${r.body}` : "Its words were not kept (it went before 24 October); it is in your Sent mail."}</div>
           {r.thread_id ? <a className="btn btn-small" href={gmailThreadUrl(r.thread_id)} target="_blank" rel="noreferrer">Open the thread</a> : null}
         </details>

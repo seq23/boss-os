@@ -256,16 +256,28 @@ export function proseText(runs) {
 }
 // A research run reads the open web: only a plain http(s) address ever becomes a link.
 const webUrl = (u) => typeof u === "string" && /^https?:\/\/[^\s"'<>]+$/.test(u);
-function proseHtml(runs) {
+function proseHtml(runs, { marked = true } = {}) {
   const body = runs.map((r) => {
-    if (r.cite) return `<sup style="font-size:10px">${r.cite.map((c) => (webUrl(c.url) ? `<a href="${esc(c.url)}" style="color:#1F4E8C">${c.n}</a>` : String(c.n))).join(",")}</sup>`;
-    if (webUrl(r.url)) return `<a href="${esc(r.url)}" style="color:#1F4E8C">${esc(r.text)}</a>`;
+    if (r.cite) return `<sup>${r.cite.map((c) => (webUrl(c.url) ? `<a href="${esc(c.url)}">${c.n}</a>` : String(c.n))).join(",")}</sup>`;
+    if (webUrl(r.url)) return `<a href="${esc(r.url)}">${esc(r.text)}</a>`;
     return r.bold ? `<b>${esc(r.text)}</b>` : esc(r.text);
   }).join("");
-  return `<!--prose-->${body}<!--/prose-->`;
+  return marked ? `<!--prose-->${body}<!--/prose-->` : body;
 }
 
 /** "OpenAI, OpenAI, OpenAI, Blue Origin" → "OpenAI and Blue Origin". */
+/**
+ * Their words, quoted at the END of one of our sentences, ending as they ended (24 Oct 2026: a
+ * question came out as `answered: "Can we talk."`). A question keeps its "?", an exclamation its
+ * "!", anything else ends in "." — always inside the quote, never doubled.
+ */
+export function quotedSentence(words) {
+  const t = String(words ?? "").trim().replace(/^["“]+|["”]+$/g, "").trim();
+  if (!t) return "";
+  const end = /[?？]\s*[.…]*$/.test(t) ? "?" : /!\s*[.…]*$/.test(t) ? "!" : ".";
+  return `"${t.replace(/[\s.!?？…,;:]+$/, "")}${end}"`;
+}
+
 export function dedupeList(segment) {
   if (!segment.includes(",")) return segment;
   const items = segment.split(",").map((x) => x.trim()).filter(Boolean);
@@ -315,7 +327,7 @@ export function linkLabel(url) {
 export function gmailSearchLink(subject) {
   return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`subject:"${String(subject ?? "").replace(/"/g, "")}"`)}`;
 }
-const linkify = (s) => esc(s).replace(/\b(?:https?:\/\/|mailto:)[^\s<>()"']+[^\s<>()"'.,;:!?]/g, (u) => `<a href="${u}" style="color:#1F4E8C">${esc(linkLabel(u.replace(/&amp;/g, "&")))}</a>`);
+const linkify = (s) => esc(s).replace(/\b(?:https?:\/\/|mailto:)[^\s<>()"']+[^\s<>()"'.,;:!?]/g, (u) => `<a href="${u}">${esc(linkLabel(u.replace(/&amp;/g, "&")))}</a>`);
 const okUrl = (u) => typeof u === "string" && /^(?:https?:\/\/|mailto:)\S+$/.test(u.trim());
 
 function cleanButtons(buttons) {
@@ -353,6 +365,8 @@ const C = {
   boxBorder: "#e9dfc7", boxBg: "#faf6ec", page: "#F4F5F7",
 };
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+/** A paragraph: size, line height and ink come from the page wrapper (one place, not every <p>). */
+const P = 'style="margin:0 0 8px"';
 const SEC = (color = C.muted) => `style="margin:18px 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${color}"`;
 const BTN = (primary) => `style="display:inline-block;margin:0 8px 8px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;border:1px solid ${C.link};${primary ? `background:${C.link};color:#ffffff` : `background:#ffffff;color:${C.link}`}"`;
 
@@ -360,11 +374,11 @@ function cardHtml(c, n, tone = "decide") {
   const border = tone === "decide" ? C.decideBorder : C.line;
   const bg = tone === "decide" ? C.decideBg : "#ffffff";
   return `<div style="margin:0 0 10px;padding:14px;border:1px solid ${border};border-radius:10px;background:${bg}">`
-    + `<p style="margin:0 0 6px;font-size:15px;font-weight:600;color:${C.ink}">${n ? `${n}. ` : ""}${esc(c.title)}</p>`
-    + (c.body ? `<p style="margin:0 0 10px;font-size:14px;line-height:1.5;color:${C.ink}">${linkify(c.body)}</p>` : "")
-    + (c.details.length ? `<ul style="margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.5;color:${C.ink}">${c.details.map((d) => `<li style="margin:0 0 4px">${linkify(d)}</li>`).join("")}</ul>` : "")
+    + `<p style="margin:0 0 6px;font-size:15px;font-weight:600">${n ? `${n}. ` : ""}${esc(c.title)}</p>`
+    + (c.body ? `<p style="margin:0 0 10px">${linkify(c.body)}</p>` : "")
+    + (c.details.length ? `<ul style="margin:0 0 10px;padding-left:18px;font-size:13px">${c.details.map((d) => `<li>${linkify(d)}</li>`).join("")}</ul>` : "")
     + (c.draft ? `<p style="margin:0 0 4px;font-size:12px;font-weight:600;color:${C.muted}">${esc(c.draft.heading)}</p>`
-      + `<div style="margin:0 0 10px;padding:10px 12px;border-left:3px solid ${C.decideBorder};background:#ffffff;font-size:14px;line-height:1.5;color:${C.ink};white-space:pre-wrap"><!--prose-->${esc(c.draft.text)}<!--/prose--></div>` : "")
+      + `<div style="margin:0 0 10px;padding:10px 12px;border-left:3px solid ${C.decideBorder};background:#ffffff;white-space:pre-wrap"><!--prose-->${esc(c.draft.text)}<!--/prose--></div>` : "")
     + (c.buttons.length ? `<div>${c.buttons.map((b, i) => `<a href="${esc(b.url)}" ${BTN(i === 0)}>${esc(b.label)}</a>`).join("")}</div>` : "")
     + `</div>`;
 }
@@ -415,25 +429,26 @@ function sectionHtml(sec) {
   if (sec.rows) {
     any = true;
     const th = `style="padding:6px;text-align:left;font-size:11px;color:${C.muted};font-weight:600;border-bottom:1px solid #D9DDE3"`;
-    const td = `style="padding:7px 6px;border-bottom:1px solid #EEF0F3;vertical-align:top;font-size:13px;color:${C.ink}"`;
-    inner += `<table role="presentation" style="border-collapse:collapse;width:100%;margin:0 0 8px">`
+    const td = `style="padding:7px 6px;border-bottom:1px solid #EEF0F3;vertical-align:top"`;
+    inner += `<table role="presentation" style="border-collapse:collapse;width:100%;margin:0 0 8px;font-size:13px">`
       + `<tr>${sec.rows.columns.map((c) => `<th ${th}>${esc(c.label)}</th>`).join("")}<th ${th}></th></tr>`
       + sec.rows.data.map((r) => `<tr>${sec.rows.columns.map((c, i) => `<td ${td}>${i === 0 ? `<b>${esc(cell(r, c.key))}</b>` : esc(cell(r, c.key))}</td>`).join("")}`
-        + `<td ${td}>${r.url ? `<a href="${esc(r.url)}" style="color:${C.link}">${esc(r.url_label ?? linkLabel(r.url))}</a>` : ""}</td></tr>`).join("")
+        + `<td ${td}>${r.url ? `<a href="${esc(r.url)}">${esc(r.url_label ?? linkLabel(r.url))}</a>` : ""}</td></tr>`).join("")
       + `</table>`;
   }
   if (sec.cards.length) { any = true; inner += sec.cards.map((c, i) => cardHtml(c, i + 1, "plain")).join(""); }
   if (sec.items.length) {
     any = true;
-    inner += sec.items.map((i) => `<p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:${C.ink}">${i.runs ? proseHtml(i.runs) : linkify(i.text)}${i.links.map((l) => ` <a href="${esc(l.url)}" style="color:${C.link}">${esc(l.label)}</a>`).join("")}</p>`).join("");
+    inner += sec.items.map((i) => `<p ${P}>${i.runs ? proseHtml(i.runs) : linkify(i.text)}${i.links.map((l) => ` <a href="${esc(l.url)}">${esc(l.label)}</a>`).join("")}</p>`).join("");
   }
-  if (!any && sec.empty) { any = true; inner += `<p style="margin:0 0 8px;font-size:14px;color:${C.ink}">${esc(sec.empty)}</p>`; }
+  if (!any && sec.empty) { any = true; inner += `<p ${P}>${esc(sec.empty)}</p>`; }
   if (sec.link) { any = true; inner += `<p style="margin:4px 0 0"><a href="${esc(sec.link.url)}" ${BTN(false)}>${esc(sec.link.label)}</a></p>`; }
   if (sec.full) {
     any = true;
-    const line = (l) => `<p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:${C.ink}">${l.runs ? proseHtml(l.runs) : `<!--prose-->${esc(l.text.replace(/\u2063/g, ""))}<!--/prose-->`}</p>`;
-    inner += `<details style="margin:10px 0 0"><summary style="cursor:pointer;font-size:14px;font-weight:600;color:${C.link};padding:8px 0">${esc(sec.full.summary)}</summary>`
-      + sec.full.blocks.map((b) => `${b.heading ? `<p style="margin:14px 0 6px;font-size:14px;font-weight:700;color:${C.ink}">${esc(b.heading)}</p>` : ""}${b.lines.map(line).join("")}`).join("")
+    // One prose mark around each block, not each line: the gate reads the same words, the email is lighter.
+    const line = (l) => `<p ${P}>${l.runs ? proseHtml(l.runs, { marked: false }) : esc(l.text.replace(/\u2063/g, ""))}</p>`;
+    inner += `<details style="margin:10px 0 0"><summary style="cursor:pointer;font-weight:600;color:${C.link};padding:8px 0">${esc(sec.full.summary)}</summary>`
+      + sec.full.blocks.map((b) => `${b.heading ? `<p style="margin:14px 0 6px;font-weight:700">${esc(b.heading)}</p>` : ""}${b.lines.length ? `<!--prose-->${b.lines.map(line).join("")}<!--/prose-->` : ""}`).join("")
       + `</details>`;
   }
   if (!any) return "";
@@ -445,7 +460,7 @@ function sectionHtml(sec) {
 
 function page(inner) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>`
-    + `<body style="margin:0;padding:0;background:${C.page}"><div style="max-width:560px;margin:0 auto;padding:16px;font-family:${FONT};color:${C.ink}">`
+    + `<body style="margin:0;padding:0;background:${C.page}"><div style="max-width:560px;margin:0 auto;padding:16px;font-family:${FONT};font-size:14px;line-height:1.55;color:${C.ink}">`
     + inner + `</div></body></html>`;
 }
 
@@ -493,21 +508,21 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
     let open = false;
     detailHtml += `<div style="margin:12px 0;padding:4px 14px 10px;border:1px solid ${C.line};border-radius:10px;background:#ffffff"><p ${SEC()}>Details</p>`;
     for (const d of detailList) {
-      if (typeof d === "string") { if (!open) { detailHtml += `<ul style="margin:0 0 8px;padding-left:20px;font-size:14px;line-height:1.5;color:${C.ink}">`; open = true; } detailHtml += `<li style="margin:0 0 6px">${linkify(d)}</li>`; }
-      else { if (open) { detailHtml += "</ul>"; open = false; } detailHtml += `<p style="margin:12px 0 4px;font-size:14px;font-weight:600;color:${C.ink}">${esc(d.heading)}</p>`; }
+      if (typeof d === "string") { if (!open) { detailHtml += `<ul style="margin:0 0 8px;padding-left:20px">`; open = true; } detailHtml += `<li style="margin:0 0 6px">${linkify(d)}</li>`; }
+      else { if (open) { detailHtml += "</ul>"; open = false; } detailHtml += `<p style="margin:12px 0 4px;font-weight:600">${esc(d.heading)}</p>`; }
     }
     if (open) detailHtml += "</ul>";
     detailHtml += "</div>";
   }
   const html = page(
-    `<div style="background:#ffffff;border-radius:10px;padding:12px 14px;border:1px solid ${C.line}"><p style="margin:0;font-size:16px;line-height:1.45;font-weight:600;color:${C.ink}">${linkify(first)}</p></div>`
+    `<div style="background:#ffffff;border-radius:10px;padding:12px 14px;border:1px solid ${C.line}"><p style="margin:0;font-size:16px;line-height:1.45;font-weight:600">${linkify(first)}</p></div>`
     + (shown.length
       ? `<p ${SEC(C.decideInk)}>${DECIDE_HEADING} (${allDecide.length})</p>${shown.map((c, i) => cardHtml(c, i + 1)).join("")}${moreLine ? `<p style="margin:0 0 8px;font-size:13px;color:${C.muted}">${esc(moreLine)}</p>` : ""}`
       : `<p style="margin:14px 2px;font-size:14px;color:${C.muted}">${NOTHING_TO_DECIDE}</p>`)
     + sectionList.map(sectionHtml).join("")
     + detailHtml
     + (foot ? `<p style="margin:16px 2px 0;font-size:13px;color:${C.muted}">${linkify(foot)}</p>` : "")
-    + `<p style="margin:12px 2px 0;font-size:14px;color:${C.ink}">— ${esc(name)}</p>`
+    + `<p style="margin:12px 2px 0">— ${esc(name)}</p>`
     + (ps ? `<p style="margin:14px 2px 0;font-size:12px;color:${C.muted}">${esc(ps)}</p>` : ""),
   );
 

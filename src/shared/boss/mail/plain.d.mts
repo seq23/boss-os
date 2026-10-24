@@ -29,6 +29,7 @@ export const MAX_DECIDE: number;
 export function clockWords(h: string | number, m: string | number): string;
 export function utcClockWords(h: string | number, m: string | number, now?: number): string;
 export function cleanText(input: unknown, opts?: { prose?: boolean }): string;
+export function quotedSentence(words: unknown): string;
 export function dedupeList(segment: string): string;
 export function cleanSubject(input: unknown): string;
 export function refsIn(text: unknown): string[];
