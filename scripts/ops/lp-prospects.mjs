@@ -237,11 +237,11 @@ export function templateDecide(tpl, { stale = [], forecast = null } = {}) {
     outcome: outcome.headline,
     details: [
       ...outcome.lines,
-      "After that: up to 20 new people a day, two gentle follow-ups each, then stop; every address is checked with NeverBounce first.",
+      "After that: up to 20 new people a day, ONE gentle follow-up each, then the sequence is complete; every address is checked with NeverBounce first.",
       `Names it mentions: ${names.map((n) => `${n.name} (${n.why ?? "on your list"})`).join("; ")}.`,
       "Change: opens it so you can say what to change; nothing is sent meanwhile.",
     ],
-    draft: { heading: "The email, word for word (Alex stands in for each person's first name)", text: `Subject: ${sample.subject}\n\n${sample.body}\n\nThe follow-up (emails 2 and 3):\n\n${follow.body}` },
+    draft: { heading: "The email, word for word (Alex stands in for each person's first name)", text: `Subject: ${sample.subject}\n\n${sample.body}\n\nThe one follow-up (email 2, the last):\n\n${follow.body}` },
     buttons: [
       { label: "Approve", url: tapUrl(tpl.tap_token, "approve") },
       { label: "Change", url: tapUrl(tpl.tap_token, "edit") },

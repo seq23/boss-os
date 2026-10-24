@@ -2,7 +2,7 @@
  * Deals page → "Prospects" (Boss fix L, rulings 11 and 12; mock-up board 6, bottom half).
  *
  * Everyone Monique writes to on the prospect sequence: where they were found, how many touches
- * (three at most, then never again), their side once they reply (Buyer / Seller / Both), and the
+ * (the first email and ONE follow-up, then the sequence is complete; owner, 24 Oct 2026), their side once they reply (Buyer / Seller / Both), and the
  * 8Raise credits used this month. Filters are pull-downs. Builder D mounts this in Capital.tsx.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -20,18 +20,18 @@ const SOURCE: Record<string, string> = {
 const sourceLabel = (s: string) => SOURCE[s] ?? (s.startsWith("8raise") ? "8Raise" : s.replace(/_/g, " "));
 const STATUS: Record<string, string> = {
   new: "Not written to yet", active: "No reply yet", interested: "Wants to talk", replied: "Replied",
-  opted_out: "Asked not to be emailed", bounced: "Address did not work", done: "Done (no reply)",
+  opted_out: "Asked not to be emailed", bounced: "Address did not work", done: "Sequence complete",
 };
 const SIDE: Record<string, string> = { buyer: "Buyer", seller: "Seller", both: "Both", unknown: "—" };
 const DAY = 86_400_000;
 const day = (ms?: number | null) => (ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—");
 
 export function nextTouchLabel(p: any): string {
-  if (!["new", "active"].includes(p.status)) return p.status === "done" ? "— never again" : "— stopped";
-  if (p.touches >= MAX_TOUCHES) return "— never again";
+  if (!["new", "active"].includes(p.status)) return p.status === "done" ? "— sequence complete" : "— stopped";
+  if (p.touches >= MAX_TOUCHES) return "— sequence complete";
   if (!p.first_sent_at) return "Next sending day";
   const due = Math.max(p.first_sent_at + (TOUCH_DAYS[p.touches] ?? 0) * DAY, (p.last_touch_at ?? 0) + MIN_TOUCH_GAP_DAYS * DAY);
-  return `${day(due)}${p.touches + 1 === MAX_TOUCHES ? " (last one)" : ""}`;
+  return `${day(due)}${p.touches + 1 === MAX_TOUCHES ? " (the one follow-up, the last)" : ""}`;
 }
 
 export function ProspectsTab() {

@@ -9,7 +9,7 @@ import { apiJson } from "./helpers";
 import {
   DEFAULT_PROSPECT_TEMPLATE, PROSPECT_BANNED, canSpend, dueTouch, eightRaiseFooter, excluded, lpDecideItems,
   lpReplyBody, lpStatusFrom, namesLine, nameRulesIn, pickCatchups, proposeFeatured, prospectProblems,
-  renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS,
+  renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS, MAX_TOUCHES, nextTouchAt,
 } from "../../src/shared/boss/lp/plan.mjs";
 import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents, suppressAddresses, prospectsToVerify, recordVerdicts } from "../../src/worker/boss/lp/desk";
 import { approveOutcome } from "../../src/shared/boss/lp/plan.mjs";
@@ -86,16 +86,17 @@ describe("featured names: a select few, never a never-feature, swaps proposed no
   });
 });
 
-describe("the sequence: three touches, five days apart, replies end it", () => {
+describe("the sequence: the first email and ONE follow-up, five days apart, replies end it (owner, 24 Oct 2026)", () => {
   const t0 = Date.parse("2026-10-11T20:00:00Z");
-  it("is due on day 5 and day 12, never twice in a row, never a fourth", () => {
+  it("is due on day 5, never twice in a row, never a third", () => {
+    expect(MAX_TOUCHES).toBe(2);
     expect(dueTouch({ status: "new", touches: 0 }, t0)).toBe(1);
     expect(dueTouch({ status: "active", touches: 1, first_sent_at: t0, last_touch_at: t0 }, t0 + 4 * DAY)).toBeNull();
     expect(dueTouch({ status: "active", touches: 1, first_sent_at: t0, last_touch_at: t0 }, t0 + 5 * DAY)).toBe(2);
-    // Imported late: touch 2 on day 12 — touch 3 waits five more days, not one.
-    expect(dueTouch({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 12 * DAY }, t0 + 13 * DAY)).toBeNull();
-    expect(dueTouch({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 12 * DAY }, t0 + 17 * DAY)).toBe(3);
-    expect(dueTouch({ status: "active", touches: 3, first_sent_at: t0 }, t0 + 90 * DAY)).toBeNull();
+    expect(dueTouch({ status: "active", touches: 1, first_sent_at: t0, last_touch_at: t0 + 4 * DAY }, t0 + 6 * DAY)).toBeNull();
+    // Two sends: never a third, however long it has been.
+    for (const d of [5, 12, 17, 90, 400]) expect(dueTouch({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 5 * DAY }, t0 + d * DAY)).toBeNull();
+    expect(nextTouchAt({ status: "active", touches: 2, first_sent_at: t0, last_touch_at: t0 + 5 * DAY })).toBeNull();
     for (const s of ["replied", "interested", "opted_out", "bounced", "done"]) expect(dueTouch({ status: s, touches: 1, first_sent_at: t0 }, t0 + 30 * DAY)).toBeNull();
   });
   it("reads the side from a reply", () => {
@@ -314,8 +315,26 @@ describe("routes and the one-tap links", () => {
     // One Boss OS never wrote to is only stopped, so another system's bounce does not trip this brake.
     expect((await env.DB.prepare(`SELECT status FROM prospects WHERE email = 'never.written@example.com'`).first<any>()).status).toBe("done");
     expect(await suppressAddresses(env.DB, ["bounced.lp@example.com"], "bounced", WED_10AM)).toBe(0); // idempotent
-    // Days later touch 3 would be due: still nothing.
+    // Days later: still nothing.
     expect((await prospectPlan(env.DB, WED_10AM + 7 * DAY)).sends.map((s: any) => s.email)).not.toContain("bounced.lp@example.com");
+  });
+
+  it("a prospect with 2 sends never gets a 3rd: the one follow-up completes the sequence (owner, 24 Oct 2026)", async () => {
+    const t = await proposeTemplate(env.DB, null, NAMES);
+    await approveTemplate(env.DB, (t as any).template.id);
+    const t0 = WED_10AM - 6 * DAY;
+    await importProspects(env.DB, [{ email: "two.sends@example.com", name: "Tw O", source: "8raise_2026_10_11", touches: 1, first_sent_at: t0, last_touch_at: t0, status: "active", thread_id: "t2", last_message_id: "<z@example.com>", subject: "Re: x" }]);
+    await recordVerdicts(env.DB, [{ email: "two.sends@example.com", result: "valid" }], WED_10AM);
+    const plan = await prospectPlan(env.DB, WED_10AM);
+    expect(plan.sends.map((s: any) => [s.email, s.touch])).toEqual([["two.sends@example.com", 2]]);
+    await recordProspectEvents(env.DB, [{ prospect_id: plan.sends[0]!.prospect_id, email: "two.sends@example.com", kind: "sent", touch: 2, gmail_id: "g2", thread_id: "t2" } as any]);
+    expect(await env.DB.prepare(`SELECT status, touches FROM prospects WHERE email = 'two.sends@example.com'`).first<any>()).toEqual({ status: "done", touches: 2 });
+    // Weeks later, nothing; and a third send is refused even if something tried to record one.
+    for (const d of [7, 14, 60]) expect((await prospectPlan(env.DB, WED_10AM + d * DAY)).sends).toEqual([]);
+    await env.DB.prepare(`UPDATE prospects SET status = 'active' WHERE email = 'two.sends@example.com'`).run();
+    expect((await prospectPlan(env.DB, WED_10AM + 14 * DAY)).sends).toEqual([]);
+    await recordProspectEvents(env.DB, [{ email: "two.sends@example.com", kind: "sent", touch: 3, gmail_id: "g3" } as any]);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM prospect_touches t JOIN prospects p ON p.id = t.prospect_id WHERE p.email = 'two.sends@example.com' AND t.touch_no >= 3`).first<any>()).n).toBe(0);
   });
 
   /*
@@ -362,9 +381,10 @@ describe("routes and the one-tap links", () => {
     expect(o.headline).toBe("Approve → the follow-up goes to the 15 addresses NeverBounce confirmed, on the next weekday, 9 to 5 Central.");
     expect(o.lines).toEqual([
       "1 address skipped: NeverBounce says it does not exist, so it is off the list.",
-      "3 addresses held: NeverBounce could not confirm it (catch-all or unknown); it waits until the bounce rate is back under 3%.",
+      "3 addresses held: NeverBounce could not confirm them (catch-all or unknown); they wait until the bounce rate is back under 3%.",
       "1 address not checked yet: NeverBounce checks it on Monique's next run, before anything goes.",
       "2 addresses already bounced: never written to again.",
+      "This is the one follow-up: after it, the sequence is complete for them and they get no more emails.",
       "Why only confirmed addresses: bounce rate 9.1% (2 of 22 in 14 days) is over 3%.",
     ]);
     // The tap page says the same thing the moment she approves.

@@ -355,7 +355,7 @@ export async function backfillTouches(db: D1Database, touches: Array<{ email: st
         .bind(newId("ptc"), p.id, no, t.gmail_id ?? null, null, Number(t.sent_at), t.subject ? String(t.subject).slice(0, 300) : null, t.body ? String(t.body).slice(0, 6000) : null, sentFrom(t.sent_from)),
       db.prepare(`UPDATE prospects SET touches = MAX(touches, ?), first_sent_at = MIN(COALESCE(first_sent_at, ?), ?),
                     last_touch_at = MAX(COALESCE(last_touch_at, 0), ?), thread_id = COALESCE(thread_id, ?),
-                    status = CASE WHEN status IN ('new','active') AND ? >= 3 THEN 'done' WHEN status = 'new' THEN 'active' ELSE status END
+                    status = CASE WHEN status IN ('new','active') AND ? >= ${MAX_TOUCHES} THEN 'done' WHEN status = 'new' THEN 'active' ELSE status END
                     WHERE id = ?`)
         // updated_at is left alone: reading her Sent mail is not news, and the morning email reads
         // updated_at as "a reply came in" (24 Oct 2026: an old bounce showed as new).
@@ -384,12 +384,12 @@ export async function recordProspectEvents(db: D1Database, events: ProspectEvent
     n++;
     if (e.kind === "sent") {
       const touch = Number(e.touch ?? p.touches + 1);
-      if (touch !== Number(p.touches) + 1 || touch > 3) continue;
+      if (touch !== Number(p.touches) + 1 || touch > MAX_TOUCHES) continue; // one follow-up at most, never a third
       await db.batch([
         // The words that went, kept (0296): her morning email and the Prospects screen show each send.
         db.prepare(`INSERT OR IGNORE INTO prospect_touches (id, prospect_id, touch_no, gmail_id, template_id, sent_at, subject, body) VALUES (?,?,?,?,?,?,?,?)`)
           .bind(newId("ptc"), p.id, touch, e.gmail_id ?? null, e.template_id ?? null, now, e.subject ? String(e.subject).slice(0, 300) : null, e.body ? String(e.body).slice(0, 6000) : null),
-        db.prepare(`UPDATE prospects SET touches = ?, status = CASE WHEN ? >= 3 THEN 'done' ELSE 'active' END,
+        db.prepare(`UPDATE prospects SET touches = ?, status = CASE WHEN ? >= ${MAX_TOUCHES} THEN 'done' ELSE 'active' END,
             first_sent_at = COALESCE(first_sent_at, ?), last_touch_at = ?, thread_id = COALESCE(?, thread_id),
             last_message_id = COALESCE(?, last_message_id), subject = COALESCE(subject, ?), updated_at = ? WHERE id = ?`)
           .bind(touch, touch, now, now, e.thread_id ?? null, e.message_id ?? null, e.subject ?? null, now, p.id),

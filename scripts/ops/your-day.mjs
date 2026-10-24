@@ -39,6 +39,7 @@
  *   npm run your-day -- --dry-run    # print what would be sent, send nothing
  *   npm run your-day -- --preview <dir>   # write the HTML and text to <dir>, send nothing
  */
+import { MAX_TOUCHES } from "../../src/shared/boss/lp/plan.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -312,7 +313,7 @@ export function prospectSection(a, now = Date.now()) {
   const items = [];
   const t = a.totals ?? {};
   const sent = (a.sent ?? []).filter((r) => Number(r.sent_at) >= now - 30 * 3_600_000);
-  for (const r of sent.slice(0, MAX_PROSPECT_SENDS)) items.push({ text: `Sent: email ${r.touch_no} of 3 to ${whoLine(r)}, ${SIDE_WORDS[r.side] ?? SIDE_WORDS.unknown}, ${shortDate(r.sent_at)}.`, links: [{ label: "See it on the Prospects screen", url: PROSPECTS_URL }] });
+  for (const r of sent.slice(0, MAX_PROSPECT_SENDS)) items.push({ text: `Sent: email ${r.touch_no} of ${MAX_TOUCHES} to ${whoLine(r)}, ${SIDE_WORDS[r.side] ?? SIDE_WORDS.unknown}, ${shortDate(r.sent_at)}.`, links: [{ label: "See it on the Prospects screen", url: PROSPECTS_URL }] });
   if (sent.length > MAX_PROSPECT_SENDS) items.push({ text: `And ${sent.length - MAX_PROSPECT_SENDS} more sent since yesterday.`, links: [{ label: `See all ${sent.length} on the Prospects screen →`, url: PROSPECTS_URL }] });
   for (const r of a.replies ?? []) {
     const what = r.status === "opted_out" ? "asked not to be written to again (done: they are off every list)" : r.status === "bounced" ? "bounced (done: the address is off the list)" : `answered${r.reply_note ? `: ${quotedSentence(r.reply_note)}` : "."}${r.has_draft ? " Your reply is ready in Decide above." : ""}`;
