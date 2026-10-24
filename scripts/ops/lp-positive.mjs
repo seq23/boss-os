@@ -323,7 +323,9 @@ export function reconcileList(existing, { found, accepted, rejected }) {
     const was = byAddress.get(address);
     if (!was) { byAddress.set(address, p); added += 1; continue; }
     if (was.bucket === "warm" && p.bucket === "call") { byAddress.set(address, { ...was, bucket: "call", quote: p.quote, said: p.said ?? was.said }); promoted += 1; continue; }
-    if (p.said && !was.said) byAddress.set(address, { ...was, said: p.said });
+    // Their words are re-read every run, so a fix to how mail is decoded reaches the email the next
+    // morning instead of a stale copy living on forever (24 Oct 2026: "â" for a dash).
+    if (p.said && p.said !== was.said) byAddress.set(address, { ...was, said: p.said });
   }
   const people = [...byAddress.values()].sort((a, b) => String(a.first_seen).localeCompare(String(b.first_seen)));
   return { people, removed, added, promoted };

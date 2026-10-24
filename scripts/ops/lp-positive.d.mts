@@ -7,6 +7,8 @@ export interface Positive {
   bucket: "call" | "warm";
   first_seen: string;
   quote: string;
+  /** Their own words, signature dropped (24 Oct 2026). */
+  said?: string;
 }
 
 export type Screened =
