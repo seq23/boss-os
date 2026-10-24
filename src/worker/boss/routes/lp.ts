@@ -237,21 +237,25 @@ lp.post("/prospects/template", async (c) => {
   return ok(c, r);
 });
 
+/** Her featured-name rules, each name as she wrote it (migration 0301). */
+export const NAME_RULES_SQL = `SELECT COALESCE(display, name) AS name, rule FROM prospect_name_rules`;
+
 /** Her plain-words edits to the featured names ("add X", "drop Y", "never feature Z"). */
 lp.post("/prospects/names", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   const rules = nameRulesIn(String(b?.text ?? ""));
   const now = Date.now();
   for (const r of rules) {
-    await c.env.DB.prepare(`INSERT INTO prospect_name_rules (name, rule, said, created_at) VALUES (?,?,?,?)
-      ON CONFLICT(name) DO UPDATE SET rule = CASE WHEN prospect_name_rules.rule = 'never' THEN 'never' ELSE excluded.rule END, said = excluded.said, created_at = excluded.created_at`)
-      .bind(r.name.toLowerCase(), r.rule, String(b?.text ?? "").slice(0, 300), now).run();
+    // Keyed lower case (one rule per company); `display` keeps her casing for the email ("OpenAI").
+    await c.env.DB.prepare(`INSERT INTO prospect_name_rules (name, rule, said, created_at, display) VALUES (?,?,?,?,?)
+      ON CONFLICT(name) DO UPDATE SET rule = CASE WHEN prospect_name_rules.rule = 'never' THEN 'never' ELSE excluded.rule END, said = excluded.said, created_at = excluded.created_at, display = excluded.display`)
+      .bind(r.name.toLowerCase(), r.rule, String(b?.text ?? "").slice(0, 300), now, r.name).run();
   }
-  const all = (await c.env.DB.prepare(`SELECT name, rule FROM prospect_name_rules`).all<any>()).results ?? [];
+  const all = (await c.env.DB.prepare(NAME_RULES_SQL).all<any>()).results ?? [];
   return ok(c, { applied: rules, rules: all });
 });
 
-lp.get("/prospects/names", async (c) => ok(c, { rules: (await c.env.DB.prepare(`SELECT name, rule FROM prospect_name_rules`).all<any>()).results ?? [] }));
+lp.get("/prospects/names", async (c) => ok(c, { rules: (await c.env.DB.prepare(NAME_RULES_SQL).all<any>()).results ?? [] }));
 
 /** Her two lists (D's tables), read-only. `established: false` means fail closed. */
 lp.get("/exclusions", async (c) => ok(c, await readExclusions(c.env.DB)));
