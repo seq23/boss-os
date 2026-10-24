@@ -274,3 +274,13 @@ describe("their words, readable (24 Oct 2026: mojibake and signature blocks in t
     expect(withoutSignature("November may work. I'm tied up in October. Best Regards, Pat Pat Example Jr. Managing Partner")).toBe("November may work. I'm tied up in October.");
   });
 });
+
+describe("their words are re-read every run", () => {
+  it("a newly decoded reply replaces the stored one", async () => {
+    const { reconcileList } = await import("../scripts/ops/lp-positive.mjs");
+    const was = [{ address: "a@x.example", name: "A", bucket: "call", first_seen: "2026-10-01", quote: "q", said: "garbled \u00e2 text" }];
+    const found = new Map([["a@x.example", { address: "a@x.example", name: "A", bucket: "call", first_seen: "2026-10-01", quote: "q", said: "clean — text" }]]);
+    const out = reconcileList(was, { found, accepted: new Set(["a@x.example"]), rejected: new Map() });
+    expect(out.people[0]!.said).toBe("clean — text");
+  });
+});
