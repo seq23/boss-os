@@ -160,6 +160,39 @@ const CONTENT_EXCEPTIONS = new Map([
     },
   ],
   /*
+   * ── lp-bounces.mjs · THE BOUNCE READ FOR THE WEST PEEK MAILBOX (24 Oct 2026) ──
+   *
+   * "a lot of 2nd emails went out to emails that were already bounced or blocked." It reads ONLY
+   * mailer-daemon / postmaster notices (the query names them) and takes the addresses their
+   * Final-Recipient / X-Failed-Recipients fields say failed with a 5.x.x code. Content is needed
+   * because the failed address is inside the notice, never in From/To/Date.
+   */
+  [
+    "lp-bounces.mjs",
+    {
+      why:
+        "Reads delivery-failure notices only, so Twin's drip and Monique's prospect sequence stop " +
+        "writing to an address that has already bounced. The failed address is inside the notice.",
+      invariants: [
+        [(src) => /const COMMIT = process\.argv\.includes\("--commit"\)/.test(src),
+         "it must require --commit to write anything"],
+        [(src) => /const MAILBOX = /.test(src) && /accessToken\(creds, "https:\/\/www\.googleapis\.com\/auth\/gmail\.readonly", MAILBOX\)/.test(src),
+         "it must read the one named mailbox, read-only"],
+        [(src) => /from:mailer-daemon OR from:postmaster/.test(src),
+         "it must read delivery-failure notices only, never the rest of the mailbox"],
+        [(src) => /slice\(0, ?200_000\)/.test(src),
+         "it must bound how much of a message it reads"],
+        [(src) => !/writeFileSync\([^)]*(body|raw|msg|message)/i.test(src),
+         "it must never write a message to disk — only a list of addresses"],
+        [(src) => !/api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|openrouter\.ai/i.test(src),
+         "it must send nothing to any model"],
+        [(src) => (src.match(/[\w.+'-]+@[\w.-]+\.\w+/g) ?? [])
+          .every((a) => /@(?:[\w.-]+\.)?(westpeek\.ventures|sequoiataylor\.com|joinwestpeek\.com|spry\.vc)$/i.test(a)),
+         "it must carry no email address at a domain outside our own — the repository is public"],
+      ],
+    },
+  ],
+  /*
    * ── lp-positive.mjs · THE LPs WHO SAID YES ──────────────────────────────
    *
    * ADDED AS A NAMED EXCEPTION RATHER THAN BY LOOSENING THE RULE, same as its neighbours. The

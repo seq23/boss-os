@@ -157,6 +157,30 @@ export function interestedReply(first) {
   return [`Hi ${hi},`, "", "Thank you for coming back to me. Would love to find 15 minutes to compare notes. Send me a couple of times that suit and we'll make it work.", "", "Best,", "Sequoia"].join("\n");
 }
 
+/* ─── NeverBounce (her account; key NEVERBOUNCE_API_KEY injected by the vault) ─ */
+
+const NB_CACHE = path.join(os.homedir(), ".boss-os", "lp", "neverbounce-cache.json");
+export async function neverBounceFirstSends(emails, { key = process.env.NEVERBOUNCE_API_KEY, fetchImpl = fetch } = {}) {
+  const { verifyFirstSends, NEVERBOUNCE_MAX_PER_RUN } = await import("../../src/shared/boss/lp/bounces.mjs");
+  if (!key) console.log("NAMED STOP [NO_NEVERBOUNCE_KEY] first emails go unverified until her NeverBounce key is in the vault as NEVERBOUNCE_API_KEY; bounces still stop every later email.");
+  const check = key ? async (email) => {
+    const u = new URL("https://api.neverbounce.com/v4.2/single/check");
+    u.searchParams.set("key", key);
+    u.searchParams.set("email", email);
+    const j = await (await fetchImpl(u)).json();
+    return j?.status === "success" ? j.result : null;
+  } : null;
+  const cache = readJson(NB_CACHE) ?? {};
+  const cap = Number(process.env.NEVERBOUNCE_MAX_PER_RUN ?? NEVERBOUNCE_MAX_PER_RUN);
+  const r = await verifyFirstSends(emails, { check, cache, cap });
+  if (r.checked) { fs.mkdirSync(path.dirname(NB_CACHE), { recursive: true }); fs.writeFileSync(NB_CACHE, JSON.stringify(r.cache), { mode: 0o600 }); }
+  const invalid = [...r.verdicts].filter(([, v]) => !v.send).map(([e]) => e);
+  const marks = {};
+  for (const v of r.verdicts.values()) marks[v.mark] = (marks[v.mark] ?? 0) + 1;
+  console.log(`neverbounce: ${r.checked} checked (${Object.entries(marks).map(([k, n]) => `${n} ${k}`).join(", ") || "none due"}).`);
+  return { verdicts: r.verdicts, invalid };
+}
+
 /* ─── The morning section ───────────────────────────────────────────────── */
 
 function readJson(file) {
@@ -305,8 +329,24 @@ async function main() {
     }
   }
 
+  // 3b. Bounces from the whole mailbox (Twin's sends too) go on suppression before the plan is read.
+  try {
+    const { syncBounces } = await import("./lp-bounces.mjs");
+    await syncBounces({ days: 3, commit: LIVE, api });
+  } catch (e) { console.log(`note: ${e.message}`); }
+
   // 4. Send what is due.
-  const plan = await api.get("/lp/prospects/plan");
+  let plan = await api.get("/lp/prospects/plan");
+  // 4a. Her NeverBounce, before the FIRST email to any address (owner, 24 Oct 2026: "u need to use my
+  // neverbounce when u can"). Invalid → suppressed, never sent; catch-all / unknown → sent, marked.
+  if (plan.sends?.length && LIVE && !plan.dryRun) {
+    const { verdicts, invalid } = await neverBounceFirstSends(plan.sends.filter((s) => s.touch === 1).map((s) => s.email));
+    if (invalid.length) {
+      await api.post("/lp/prospects/suppress", { emails: invalid, reason: "invalid" });
+      console.log(`neverbounce: ${invalid.length} first email(s) held back — the address is invalid; suppressed.`);
+    }
+    plan = { ...plan, sends: plan.sends.filter((s) => s.touch !== 1 || verdicts.get(s.email.toLowerCase())?.send !== false) };
+  }
   let sent = 0;
   if (plan.sends?.length) {
     if (!LIVE || plan.dryRun) {
