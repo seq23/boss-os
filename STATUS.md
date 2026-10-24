@@ -322,6 +322,21 @@ to her" and pinned by tests and `validate:email-plain`:
   address gets a working replacement at the same organisation (someone there who wrote to us, or one
   published on its own site — never a guess), MX-checked, with its source; she sees one "done" line.
 
+### 24 October 2026 — the morning email in full, matches, and the screens it opens
+
+- **Every decision in the email, and the same list on Today.** Today was empty because the email's
+  decisions came from section files on her Mac (`~/.boss-os/morning`) that the Worker never saw; the
+  run now posts the whole morning to `morning_digests` (migration 0296) before it sends, and every
+  link opens its item (`src/client/boss/pages/MorningItem.tsx`, `src/client/boss/nav.ts`).
+- **LP replies show the reply word for word** (`lp_reply_drafts.draft_body`, `said`,
+  `last_reply_text`); "Send as is" refuses a draft whose Gmail message changed since the email.
+- **Matches** by size, price and age, the **Archive** (6–12 months), Deals → Matches; see CLAUDE.md
+  "Deals: matches and the archive".
+- **Prospects**: every send kept with its words (`prospect_touches.subject/body`, backfilled from
+  Sent mail); the email shows only what is new; follow-ups due but blocked are a decision.
+- **Comment watch**: a sweep's repeats are dropped and the digest is written in one batch (the
+  21 Oct digest said 2 over 1 row); comments Monique leaves alone are a done line, not a task.
+
 ### Monique's outreach — fully automatic, braked in code (9 October 2026)
 
 **Owner: "u do it all".** Monique writes to businesses for ten side businesses (five local guides,

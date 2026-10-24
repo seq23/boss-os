@@ -30,8 +30,9 @@ import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
 import { writeMorningSection } from "../../src/shared/boss/mail/morning.mjs";
+import { rankMatches, ageWords, moneyShort, parsePrice, DEFAULT_TOLERANCE, STALE_DAYS } from "../../src/shared/boss/deals/match.mjs";
 import {
-  FIRM_DOMAIN, LOOKBACK_DAYS, withinLookback, isSameFirm, isDoNotSuggest, pairAllowed,
+  FIRM_DOMAIN, LOOKBACK_DAYS, withinLookback, withinArchive, isSameFirm, isDoNotSuggest, pairAllowed,
 } from "../../src/shared/boss/capital/partyLists.mjs";
 
 export { LOOKBACK_DAYS, withinLookback };
@@ -43,6 +44,7 @@ export const RRLIST = (process.env.RRLIST_ADDRESS ?? `rrlist@${FIRM_DOMAIN}`).to
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 export const DEALS_PAGE = `${ORIGIN}/?tab=capital&view=grid`;
 export const HOLDERS_PAGE = `${ORIGIN}/?tab=capital&view=holders`;
+export const MATCHES_PAGE = `${ORIGIN}/?tab=capital&view=matches`;
 
 // ─── Who she is ──────────────────────────────────────────────────────────────
 
@@ -211,6 +213,8 @@ export const gmailUrl = (id, mailbox = MAILBOX) =>
   `https://mail.google.com/mail/u/${encodeURIComponent(mailbox)}/#all/${encodeURIComponent(String(id))}`;
 
 const SIDE_LABEL = { buy: "Buy", sell: "Sell", yours: "Yours" };
+/** Her own deals, one wording everywhere (owner, 24 Oct 2026): email, grid and Matches screen. */
+export const yoursLabel = (direction) => (direction === "buy" ? "Yours: buyer" : direction === "sell" ? "Yours: seller" : "Yours: side unclear — open the email");
 
 /** One ledger interest → one grid row. */
 export function gridRow(r, { identity, lists, mailbox = MAILBOX }) {
@@ -243,12 +247,13 @@ export function gridRow(r, { identity, lists, mailbox = MAILBOX }) {
  * The grid: inside the lookback, not struck as wrong, nobody on her do-not-suggest list, one row per
  * deal (the same company, side, size and sender on one day is one deal however many mails said it).
  */
-export function buildGrid(interests, { identity, lists, senders = {}, wrong = new Set(), now = Date.now(), mailbox = MAILBOX }) {
+export function buildGrid(interests, { identity, lists, senders = {}, wrong = new Set(), now = Date.now(), mailbox = MAILBOX, archive = false }) {
   const out = new Map();
   for (const raw of interests) {
     if (!raw?.asset || !raw?.side || !raw?.source_message) continue;
     if (wrong.has(raw.source_message)) continue;
-    if (!withinLookback(raw.date, now)) continue;
+    // The main grid is the lookback; `archive: true` builds lookback → twelve months (the Archive view).
+    if (archive ? (withinLookback(raw.date, now) || !withinArchive(raw.date, now)) : !withinLookback(raw.date, now)) continue;
     const r = { ...(senders[raw.source_message] ?? {}), ...raw };
     if (isDoNotSuggest(r, lists)) continue;
     const g = gridRow(r, { identity, lists, mailbox });
@@ -310,44 +315,110 @@ export function replyAddress(g) {
  * The other side of each deal, from her own mail: brokers who offered the company (a "Still have it?"
  * note) for her buyers, and people who asked for it for her sellers. Only pairs she may be shown.
  */
-export function otherSides(grid, lists, { cap = 3 } = {}) {
+export function otherSides(grid, lists, { cap = 3, tolerance = DEFAULT_TOLERANCE, now = Date.now() } = {}) {
   const found = [];
   for (const g of grid) {
     const wantSide = g.direction === "buy" ? "sell" : "buy";
     const hits = grid.filter((o) => o !== g && o.company.toLowerCase() === g.company.toLowerCase()
-      && o.direction === wantSide && o.side !== "yours" && o.from_text !== g.from_text && o.from_text !== "—"
-      && pairAllowed(g._row, o._row, lists, { aIsHers: g.side === "yours", bIsHers: false }));
+      && o.direction === wantSide && o.from_text !== g.from_text && o.from_text !== "—"
+      && !(o.side === "yours" && g.side === "yours")
+      && pairAllowed(g._row, o._row, lists, { aIsHers: g.side === "yours", bIsHers: o.side === "yours" }));
     if (hits.length === 0) continue;
-    const ranked = [...hits].sort((a, b) => (b.size_usd ?? 0) - (a.size_usd ?? 0) || b.received_on.localeCompare(a.received_on));
-    found.push({ deal: g, hits: ranked.slice(0, cap), total: hits.length });
+    // Size, price and age (owner, 24 Oct 2026): closest price first, a missing price never hides a
+    // match (it ranks below, "worth asking"), fresher before older; too far apart on price drops out.
+    const { matches, stack } = rankMatches(g, hits, { tolerance, now });
+    if (matches.length === 0) continue;
+    found.push({ deal: g, hits: matches.slice(0, cap).map((m) => m.other), ranked: matches, stack, total: matches.length });
   }
   return found;
 }
 
 const dealPhrase = (g) => `${g.side === "yours" ? "your " : "the "}${g.size_text !== "—" ? `${g.size_text} ` : ""}${g.company} ${sideWord(g)}`;
 
-/** One Decide item: a buyer and a seller she can introduce, both outside her firm or one each side. */
-export function introDecide(pair) {
-  const { deal, hits } = pair;
-  const h = hits[0];
-  const buyer = deal.direction === "buy" ? deal : h;
-  const seller = deal.direction === "buy" ? h : deal;
-  const to = replyAddress(h);
-  const ask = deal.direction === "buy" ? `Still have ${deal.company}?` : `Still looking for ${deal.company}?`;
-  const body = deal.direction === "buy"
-    ? `Hi,\n\nStill have the ${deal.company}${h.size_text !== "—" ? ` (${h.size_text})` : ""}? I have a buyer${deal.size_text !== "—" ? ` for ${deal.size_text}` : ""}. Happy to talk today.\n\nSequoia`
-    : `Hi,\n\nStill looking for ${deal.company}? I have ${deal.size_text !== "—" ? `${deal.size_text} ` : ""}available. Happy to talk today.\n\nSequoia`;
-  const buttons = [];
-  if (to) buttons.push({ label: "Edit, then send", url: mailto(to, ask, body) });
-  if (buyer.email_url) buttons.push({ label: "Open the buyer's email", url: buyer.email_url });
-  if (seller.email_url) buttons.push({ label: "Open the seller's email", url: seller.email_url });
-  buttons.push({ label: "Skip", url: DEALS_PAGE });
+/** "Person, Firm" for a row; "you (your own deal)" for hers. */
+const whoOf = (g) => (g.side === "yours" ? "you (your own deal)" : g.from_text);
+const offerWords = (g) => `${g.direction === "buy" ? "wants to buy" : "has to sell"}${g.size_text !== "—" ? ` ${g.size_text}` : ""}${g.price_text !== "—" ? ` at ${g.price_text}` : ""}${g.structure_text && g.structure_text !== "—" ? ` (${g.structure_text})` : ""}`;
+
+// A greeting uses a person's first name only (from the email's display name), never a firm's word.
+const firstOf = (g) => { const w = String(g?._row?.from_name ?? "").split(/[\s,]+/)[0] ?? ""; return /^[A-Z][a-z'’-]{1,30}$/.test(w) ? w : ""; };
+const sizeOf = (g) => (g.size_text !== "—" ? g.size_text : "");
+const priceOf = (g) => (g.price_text !== "—" ? ` at ${g.price_text}` : "");
+
+/** What the seller fills of the buyer, in words: "the $25M seller can fill all of the $5M buyer". */
+export function pairFillWords(buyer, seller) {
+  const b = Number(buyer.size_usd) || 0;
+  const s = Number(seller.size_usd) || 0;
+  if (!b || !s) return `size unknown on ${!b && !s ? "both sides" : !b ? "the buyer's side" : "the seller's side"} — worth asking`;
+  if (s >= b) return `the ${moneyShort(s)} seller can fill all of the ${moneyShort(b)} buyer`;
+  return `the ${moneyShort(s)} seller fills ${moneyShort(s)} of the ${moneyShort(b)} buyer`;
+}
+
+/** The notes she sends, word for word. Fixed templates: no model writes any part of them. */
+export function pairDrafts(buyer, seller) {
+  const company = buyer.company;
+  const out = [];
+  if (seller.side !== "yours") {
+    const to = replyAddress(seller);
+    if (to) out.push({ to, side: "seller", subject: `Is your ${company} still available?`,
+      body: `Hi${firstOf(seller) ? ` ${firstOf(seller)}` : ""},\n\nIs your ${company}${sizeOf(seller) ? ` (${sizeOf(seller)})` : ""} still available? I have a buyer${sizeOf(buyer) ? ` for ${sizeOf(buyer)}` : ""}.${parsePrice(seller.price_text) ? "" : " What price are they looking for?"} Happy to talk today.\n\nSequoia` });
+  }
+  if (buyer.side !== "yours") {
+    const to = replyAddress(buyer);
+    if (to) out.push({ to, side: "buyer", subject: `Still looking for ${company}?`,
+      body: `Hi${firstOf(buyer) ? ` ${firstOf(buyer)}` : ""},\n\nAre you still looking for ${company}? I have ${sizeOf(seller) ? `${sizeOf(seller)} ` : "a block "}available.${parsePrice(buyer.price_text) ? "" : " What price would work for you?"} Happy to talk today.\n\nSequoia` });
+  }
+  return out;
+}
+
+/** One match, as the email, Today and the Matches screen show it. Pure. */
+export function matchView(buyer, seller, rank, { isNew = false, now = Date.now() } = {}) {
+  const side = (g) => ({
+    who: whoOf(g), email: g.side === "yours" ? null : replyAddress(g), size: g.size_text, price: g.price_text,
+    received_on: g.received_on, age: ageWords(g.received_on, now), email_url: g.email_url ?? null, rainmaker: g.rainmaker === 1,
+  });
+  const drafts = pairDrafts(buyer, seller);
   return {
-    title: `Make ${/^[aeiou]/i.test(deal.company) ? "an" : "a"} ${deal.company} intro?`,
-    body: `${buyer.from_text === "You" ? "You have" : `${buyer.from_text} has`} a ${buyer.size_text !== "—" ? `${buyer.size_text} ` : ""}buyer${buyer.price_text !== "—" ? ` at ${buyer.price_text}` : ""}. `
-      + `${seller.from_text === "You" ? "You have" : `${seller.from_text} has`} a ${seller.size_text !== "—" ? `${seller.size_text} ` : ""}seller${seller.price_text !== "—" ? ` at ${seller.price_text}` : ""}.`,
-    buttons,
+    key: `${buyer.id}|${seller.id}`, company: buyer.company, new: isNew,
+    buyer: side(buyer), seller: side(seller),
+    fill: pairFillWords(buyer, seller), gap: rank.gap, priced: rank.priced, price: rank.gap_words,
+    age: rank.age_words, stale: rank.stale, old: rank.old, drafts,
   };
+}
+
+/** A match as a Decide item: both sides in full, what fills, the price gap, the age, the notes. */
+export function matchDecide(m) {
+  const line = (s, role) => `${role}: ${s.who}${s.email ? ` (${s.email})` : ""} ${role === "Buyer" ? "wants" : "has"} ${s.size !== "—" ? s.size : "an amount not given"}${s.price !== "—" ? ` at ${s.price}` : ", no price given"}; their email came ${s.age}.`;
+  return {
+    key: `match:${m.key}`,
+    title: `${m.company}: a buyer and a seller who could trade`,
+    body: `${m.fill[0].toUpperCase()}${m.fill.slice(1)}. ${m.price[0].toUpperCase()}${m.price.slice(1)}.${m.stale ? " One side may be stale — check it's still live." : ""}`,
+    details: [line(m.seller, "Seller"), line(m.buyer, "Buyer"), `Age: ${m.age}.`],
+    draft: m.drafts.length ? { heading: m.drafts.length > 1 ? "The two notes, word for word" : "The note, word for word", text: m.drafts.map((d) => `To ${d.to} (the ${d.side})\nSubject: ${d.subject}\n\n${d.body}`).join("\n\n— — —\n\n") } : null,
+    buttons: [
+      ...m.drafts.map((d) => ({ label: `Write to the ${d.side} (draft ready)`, url: mailto(d.to, d.subject, d.body) })),
+      ...(m.seller.email_url ? [{ label: "Open the seller's email", url: m.seller.email_url }] : []),
+      ...(m.buyer.email_url ? [{ label: "Open the buyer's email", url: m.buyer.email_url }] : []),
+    ],
+  };
+}
+
+/** Every allowed buy↔sell pair in the grid, once each, ranked as `rankMatches` ranks. */
+export function allMatches(grid, lists, { newIds = new Set(), now = Date.now(), tolerance = 0.3 } = {}) {
+  const out = [];
+  const seen = new Set();
+  for (const pair of otherSides(grid, lists, { cap: 999, tolerance, now })) {
+    if (pair.deal.direction !== "buy") continue;
+    for (const r of pair.ranked) {
+      const buyer = pair.deal;
+      const seller = r.other;
+      const key = `${buyer.id}|${seller.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(matchView(buyer, seller, r, { isNew: newIds.has(buyer.id) || newIds.has(seller.id), now }));
+    }
+  }
+  out.sort((a, b) => (a.priced !== b.priced ? (a.priced ? -1 : 1) : a.old !== b.old ? (a.old ? 1 : -1) : a.stale !== b.stale ? (a.stale ? 1 : -1) : (a.gap ?? 0) - (b.gap ?? 0)));
+  return out;
 }
 
 /** A holders line: "5 funds hold $310M between them. Biggest: A $120M, B $64M." Partial fills summed. */
@@ -356,43 +427,79 @@ export function holdersLine(deal, holders) {
   if (named.length === 0) return null;
   const sum = named.reduce((n, h) => n + h.value_usd, 0);
   const top = named.slice(0, 3).map((h) => `${h.fund} ${moneyWords(h.value_usd)}`).join(", ");
-  const vs = deal.size_usd ? ` vs ${deal.side === "yours" ? "your" : "the"} ${moneyWords(deal.size_usd)} ${sideWord(deal)}` : "";
-  if (named.length === 1) return `For ${dealPhrase(deal)}: ${named[0].fund} holds ${moneyWords(sum)} of ${deal.company}${vs}.`;
-  return `For ${dealPhrase(deal)}: ${named.length} funds hold ${moneyWords(sum)} of ${deal.company} between them${vs}. Biggest: ${top}.`;
+  // Owner, 24 Oct 2026: label them for what they are, no "vs", one next step.
+  const label = deal.direction === "buy" ? "Public filings, not confirmed sellers" : "Public filings, not confirmed buyers";
+  if (named.length === 1) return `${label}: ${named[0].fund} holds ${moneyWords(sum)} of ${deal.company}.`;
+  return `${label}: ${named.length} funds hold ${moneyWords(sum)} of ${deal.company} between them. Biggest: ${top}.`;
 }
 
 /**
- * monique_found.json — only what she found, named and ranked, with drafts. No "Nobody" lines: a deal
- * with nothing found is simply not mentioned.
+ * monique_found.json — owner, 24 Oct 2026: for each new deal, FIRST the people in her own email
+ * who can fill it, and only then the outward list (public filings and press, labelled "not
+ * confirmed"), each with one next step. MATCHES: every buy and sell on the same company that could
+ * trade (size, price within 15%, a missing price never hides one, fresher first). A match she has not
+ * been told about yet is in the email — a new one in Decide (her move) — and every current match is
+ * on the Matches screen (`matches`). Older than her ~6-month lookback: on the screen only, as "old".
  */
-export function moniqueFound({ newRows, grid, lists, found = {} }) {
-  // One intro per buyer-seller pair: the same two rows seen from the other side are the same intro.
-  const seenPair = new Set();
-  const pairs = otherSides(grid, lists).filter((p) => newRows.some((n) => n.id === p.deal.id)).filter((p) => {
-    const key = [p.deal.id, p.hits[0].id].sort().join("|");
-    if (seenPair.has(key)) return false;
-    seenPair.add(key);
-    return true;
-  });
-  const decide = pairs.slice(0, 3).map(introDecide);
+export const MAX_MATCH_DECIDE = 6;
+export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now() }) {
+  const newIds = new Set(newRows.map((g) => g.id));
+  const all = allMatches(grid, lists, { newIds, now });
+  const within = all.filter((m) => !m.old && (m.gap === null || m.gap <= DEFAULT_TOLERANCE));
+  // Her move: a match on an order that arrived since yesterday is a decision, best first.
+  const decide = within.filter((m) => m.new).slice(0, MAX_MATCH_DECIDE).map(matchDecide);
   const lines = [];
-  for (const p of pairs.slice(3)) {
-    lines.push(`For ${dealPhrase(p.deal)}: ${p.total} ${p.deal.direction === "buy" ? "seller" : "buyer"}${p.total === 1 ? "" : "s"} in your mail since ${monthOf(LOOKBACK_DAYS)}, biggest ${p.hits[0].from_text}${p.hits[0].size_text !== "—" ? ` (${p.hits[0].size_text})` : ""}.`);
+  /*
+   * EVERY COMPANY WITH A LIVE MATCH, ONE LINE EACH (owner, 24 Oct 2026: a $25M seller and a $5M
+   * buyer of the same company, neither priced, sat in the grid unseen). The best pair is spelled out
+   * — both sides, sizes, prices, what fills, the gap, the age — with its note ready, and the rest are
+   * counted on the Matches screen. Live means no side older than STALE_DAYS; companies with only
+   * older matches are counted in one line.
+   */
+  const fresh = within.filter((m) => !m.stale);
+  const byCompany = new Map();
+  for (const m of fresh) byCompany.set(m.company, [...(byCompany.get(m.company) ?? []), m]);
+  const side = (x, role) => `${role} ${x.who}${x.email ? ` (${x.email})` : ""} ${role === "buyer" ? "wants" : "has"} ${x.size !== "—" ? x.size : "an amount not given"}${x.price !== "—" ? ` at ${x.price}` : ", no price"}`;
+  const inDecide = new Set(within.filter((m) => m.new).slice(0, MAX_MATCH_DECIDE).map((m) => m.key));
+  for (const [company, list] of byCompany) {
+    const rest = list.filter((m) => !inDecide.has(m.key));
+    if (!rest.length) continue; // every live match on it is in Decide above
+    const m = rest[0];
+    lines.push({
+      text: `Match, ${company}: ${side(m.seller, "seller")}; ${side(m.buyer, "buyer")}. ${m.fill[0].toUpperCase()}${m.fill.slice(1)}; ${m.price}. ${m.age[0].toUpperCase()}${m.age.slice(1)}.${rest.length > 1 ? ` ${rest.length - 1} more possible ${rest.length === 2 ? "trade" : "trades"} on ${company}.` : ""}`,
+      links: m.drafts.slice(0, 1).map((d) => ({ label: `Write to the ${d.side} (draft ready)`, url: mailto(d.to, d.subject, d.body) })),
+      deal: company, match: { ...m },
+    });
   }
+  const staleOnly = [...new Set(within.filter((m) => m.stale && !byCompany.has(m.company)).map((m) => m.company))];
+  if (staleOnly.length) lines.push({ text: `Older matches (an order over ${STALE_DAYS} days old, may be stale — check it's still live): ${staleOnly.join(", ")}.`, links: [{ label: "See every match", url: MATCHES_PAGE }] });
   const rows = [];
   for (const g of newRows) {
+    const head = `For ${dealPhrase(g)}`;
+    const mine = within.filter((m) => m.key.split("|").includes(g.id));
+    if (!mine.length) lines.push({ text: `${head}: no one in your email yet for this.`, deal: g.company });
     const holders = (found[g.company.toLowerCase()]?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
     const line = holdersLine(g, holders);
     if (line) {
-      lines.push(line);
+      lines.push({ text: `${head}, outside your email. ${line} Next step: see the funds and their filings.`, links: [{ label: "See the funds", url: `${HOLDERS_PAGE}&company=${encodeURIComponent(g.company)}` }], deal: g.company });
       for (const h of holders.slice(0, 5)) rows.push({ company: g.company, fund: h.fund, manager: h.manager ?? "—", value: moneyWords(h.value_usd), as_of: h.as_of ?? "—", url: h.filing_url });
     }
-    for (const l of found[g.company.toLowerCase()]?.press ?? []) {
+    for (const l of (found[g.company.toLowerCase()]?.press ?? []).slice(0, 3)) {
       if (isDoNotSuggest({ principal: l.name, from_text: l.org }, lists)) continue;
-      lines.push(`${l.name}${l.org ? ` at ${l.org}` : ""} said publicly they ${g.direction === "buy" ? "hold" : "want"} ${g.company} (${l.kind}${l.published_date ? `, ${l.published_date}` : ""}).`);
+      const src = String(l.url ?? l.link ?? "");
+      lines.push({
+        text: `${head}, outside your email. Press, not confirmed: ${l.name}${l.org ? ` at ${l.org}` : ""} said publicly they ${g.direction === "buy" ? "hold" : "want"} ${g.company} (${l.kind}${l.published_date ? `, ${l.published_date}` : ""}). Next step: read what they said.`,
+        links: /^https?:\/\//.test(src) ? [{ label: "Read the article", url: src }] : [],
+        deal: g.company,
+      });
     }
   }
-  return { decide, rows, lines, ...(lines.length || rows.length ? { link: { label: "See holders and drafts", url: HOLDERS_PAGE } } : {}) };
+  return {
+    decide, rows, lines,
+    // Every current match goes to the Matches screen (capital_matches), not into this file.
+    matches: all.slice(0, 2000),
+    link: { label: "See every match", url: MATCHES_PAGE },
+  };
 }
 
 function monthOf(daysBack) {
@@ -408,8 +515,10 @@ const whenWords = (d, now = Date.now()) => {
 export function morningDeals(newRows, gridSize, now = Date.now()) {
   // The row shape Simone's renderer reads (Builder E, src/shared/boss/mail/morning.mjs).
   const rows = newRows.slice(0, 12).map((g) => ({
-    company: g.company, side: SIDE_LABEL[g.side], size: g.size_text, price: g.price_text,
-    from: g.from_text, when: whenWords(g.received_on, now), url: g.email_url ?? DEALS_PAGE,
+    // Owner, 24 Oct 2026: "Yours · You" said nothing. Her own post reads as its side and where it came from.
+    company: g.company, side: g.side === "yours" ? yoursLabel(g.direction) : SIDE_LABEL[g.side], size: g.size_text, price: g.price_text,
+    from: g.side === "yours" ? "You, on the deal list" : g.from_text, when: whenWords(g.received_on, now), url: g.email_url ?? DEALS_PAGE,
+    received_on: g.received_on, structure: g.structure_text ?? "—", id: g.id ?? null,
     ...(g.rainmaker === 1 && g.side !== "yours" ? { tag: "Rainmaker" } : {}),
     // Builder L reads these (catch-ups, prospects): who it came from, as fields, and the size as a number.
     from_email: g.side === "yours" ? null : replyAddress(g),
@@ -496,20 +605,31 @@ async function main() {
   const monique = moniqueFound({ newRows, grid, lists, found });
   console.log(`Grid: ${grid.length} deal(s) in the last ${LOOKBACK_DAYS} days, ${newRows.length} new since the last run `
     + `(${grid.filter((g) => g.side === "yours").length} yours, ${grid.filter((g) => g.rainmaker).length} Rainmaker).`);
-  console.log(`Monique found: ${monique.decide.length} intro(s) to decide, ${monique.lines.length} line(s), ${monique.rows.length} holder row(s).`);
+  console.log(`Monique found: ${monique.decide.length} match(es) to decide, ${monique.lines.length} line(s), ${monique.rows.length} holder row(s), ${monique.matches.length} current match(es) on the screen.`);
   if (DRY) { console.log(JSON.stringify({ deals, monique_found: monique }, null, 2).slice(0, 4000)); return; }
 
   writeMorning("deals", deals);
-  writeMorning("monique_found", monique);
+  const { matches, ...moniqueSection } = monique;
+  writeMorning("monique_found", moniqueSection);
 
   let pushed = false;
   if (session) {
-    const rows = grid.map(publicRow);
+    // The Archive rides along (owner, 24 Oct 2026): a view by date on the Deals page, never matched.
+    const archived = buildGrid(ledger.interests, { identity, lists, senders, wrong, archive: true });
+    const rows = [...grid, ...archived.filter((a) => !grid.some((g) => g.id === a.id))].map(publicRow);
     pushed = true;
     for (let i = 0; i < rows.length || i === 0; i += 500) {
       const res = await session.post("/capital/deals", { rows: rows.slice(i, i + 500), replace: i === 0, lookback_days: LOOKBACK_DAYS });
       if (!res?.ok) { pushed = false; console.error(`  grid NOT pushed [${res?.status ?? "no response"}] — the Deals page shows the last good push.`); break; }
       if (rows.length === 0) break;
+    }
+  }
+  // THE MATCHES SCREEN: every current match, best first, replaced whole.
+  if (session && pushed) {
+    for (let i = 0; i < matches.length || i === 0; i += 500) {
+      const res = await session.post("/capital/matches", { matches: matches.slice(i, i + 500), replace: i === 0, offset: i });
+      if (!res?.ok) { console.error(`  matches NOT pushed [${res?.status ?? "no response"}]`); break; }
+      if (matches.length === 0) break;
     }
   }
   /*

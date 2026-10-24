@@ -37,7 +37,7 @@ import { bossApi } from "./lib/duty-kit.mjs";
 import { writeMorning } from "./lp-daily.mjs";
 import {
   DEFAULT_PROSPECT_TEMPLATE, FEATURED_MIN, blur, gmailThreadUrl, proposeFeatured, renderProspect,
-  staleFeatured, tapUrl,
+  staleFeatured, tapUrl, MAX_TOUCHES,
 } from "../../src/shared/boss/lp/plan.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures";
@@ -176,19 +176,24 @@ export function supplyFrom(deals) {
 
 export function templateDecide(tpl, { stale = [] } = {}) {
   const names = JSON.parse(tpl.names_json ?? "[]");
-  const sample = renderProspect({ subject: tpl.subject, body: tpl.body, follow_up: tpl.follow_up }, { first: "Alex", names });
+  const tplObj = { subject: tpl.subject, body: tpl.body, follow_up: tpl.follow_up };
+  const sample = renderProspect(tplObj, { first: "Alex", names });
+  const follow = renderProspect(tplObj, { first: "Alex", names, touch: 2 });
   return {
+    key: `prospect-template:${tpl.id ?? tpl.hash ?? ""}`,
     title: stale.length ? `Swap ${stale.join(", ")} in the prospect email` : "Approve the prospect email before it goes out",
-    body: [
-      stale.length ? `${stale.join(", ")} ${stale.length === 1 ? "is" : "are"} no longer fresh on your list, so here is the email with a swap.` : "This goes to up to 20 new people a day, with two gentle follow-ups, then stops.",
-      `Names: ${names.map((n) => `${n.name} (${n.why ?? "on your list"})`).join("; ")}.`,
-      "",
-      `Subject: ${sample.subject}`,
-      sample.body.replace(/^Hi Alex,/, "Hi A.,"),
-    ].join("\n"),
+    body: stale.length
+      ? `${stale.join(", ")} ${stale.length === 1 ? "is" : "are"} no longer fresh on your list, so here is the email with a swap. Nothing new goes out until you approve.`
+      : "No prospect email goes out until you approve this one. Then it goes to up to 20 new people a day, with two gentle follow-ups, then stops.",
+    details: [
+      `Names it mentions: ${names.map((n) => `${n.name} (${n.why ?? "on your list"})`).join("; ")}.`,
+      "Approve: Monique starts sending it on the next weekday, 9 to 5 Central.",
+      "Change: opens it so you can say what to change; nothing is sent meanwhile.",
+    ],
+    draft: { heading: "The email, word for word (Alex stands in for each person's first name)", text: `Subject: ${sample.subject}\n\n${sample.body}\n\nThe follow-up (emails 2 and 3):\n\n${follow.body}` },
     buttons: [
       { label: "Approve", url: tapUrl(tpl.tap_token, "approve") },
-      { label: "Edit", url: tapUrl(tpl.tap_token, "edit") },
+      { label: "Change", url: tapUrl(tpl.tap_token, "edit") },
     ],
   };
 }
@@ -199,10 +204,15 @@ export function prospectsMorning({ rows, pending, stale, plan, sent, now = Date.
   for (const p of rows.filter((r) => r.status === "interested" && r.draft_tap_token)) {
     decide.push({
       title: `${p.name || "A prospect"}${p.firm ? ` at ${p.firm}` : ""} wants to talk`,
-      body: `${p.reply_note ? `"${String(p.reply_note).slice(0, 140)}" ` : ""}Side: ${p.side === "unknown" ? "not clear yet" : p.side}. Your reply is ready in their thread.`,
+      body: `A prospect Monique wrote to${p.firm ? ` (${p.firm})` : ""} answered. Side: ${p.side === "unknown" ? "not clear yet" : p.side}. Your reply is ready in their thread.`,
+      details: [
+        ...(p.email ? [`Their email: ${p.email}`] : []),
+        ...(p.reply_note ? [`What they wrote: "${String(p.reply_note).slice(0, 300).replace(/[\s.!?]+$/, "")}."`] : []),
+        `History: ${p.touches ?? 1} email${(p.touches ?? 1) === 1 ? "" : "s"} from Monique, then their reply.`,
+      ],
+      // No "Send as is": this email cannot show the held reply word for word, so it is sent from Gmail.
       buttons: [
-        { label: "Send as is", url: tapUrl(p.draft_tap_token, "send") },
-        { label: "Edit, then send", url: gmailThreadUrl(p.thread_id) },
+        { label: "Read the reply in Gmail, then send", url: gmailThreadUrl(p.thread_id) },
         { label: "Skip", url: tapUrl(p.draft_tap_token, "skip") },
       ],
     });
@@ -239,6 +249,15 @@ async function main() {
   } else {
     console.log("import: the 11 Oct files are not on this Mac; nothing imported.");
   }
+
+  // 1b. WHAT ACTUALLY WENT, from her Sent mail (owner, 24 Oct 2026): every prospect email, whether
+  // Monique sent it or she sent a draft from Gmail herself, is kept with its words, date and thread,
+  // so follow-ups build on it, nobody gets a second first touch, and replies find their prospect.
+  try {
+    const { sentWordsTo } = await import("./lp-positive.mjs");
+    const touches = await sentWordsTo(((await api.get("/lp/prospects")).rows ?? []).map((r) => r.email), { max: MAX_TOUCHES });
+    if (touches.length) console.log(`sent mail: ${(await api.post("/lp/prospects/touches", { touches })).recorded} prospect email(s) on record with their words.`);
+  } catch (e) { console.log(`note: her Sent mail was not read for prospect emails (${e.message}); the tracker keeps what it had.`); }
 
   // 2. Replies.
   const list = (await api.get("/lp/prospects?tokens=1")).rows ?? [];
@@ -301,7 +320,7 @@ async function main() {
         const m = await call(tok, `${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw, ...(s.thread_id ? { threadId: s.thread_id } : {}) }) }).catch((e) => ({ error: e.message }));
         if (!m?.id) { console.error(`  touch ${s.touch} refused: ${m?.error ?? "no id"}`); continue; }
         const meta = await threadOfSent(tok, m.id);
-        events.push({ prospect_id: s.prospect_id, kind: "sent", touch: s.touch, gmail_id: m.id, thread_id: m.threadId, message_id: meta?.message_id ?? null, subject: s.subject });
+        events.push({ prospect_id: s.prospect_id, kind: "sent", touch: s.touch, gmail_id: m.id, thread_id: m.threadId, message_id: meta?.message_id ?? null, subject: s.subject, body: s.body, template_id: s.template_id ?? null });
         sent++;
       }
       if (events.length) await api.post("/lp/prospects/events", { events });

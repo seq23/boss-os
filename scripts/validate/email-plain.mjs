@@ -106,9 +106,12 @@ export function check() {
     if (laid.problems.length) fails.push(`${name} fails the gate: ${laid.problems.join("; ")}`);
   }
   const morning = emails[0][1];
-  const order = ["Decide (", "New deals since yesterday", "Monique found", "This morning's briefing (Camille)", "Done for you", "Porch & Party: To do for Valerie", "— Simone", "8Raise: Monique used 3 of her 75 credits"];
+  const order = ["Decide (", "New deals since yesterday", "Monique found", "This morning's briefing (Camille)", "Done for you", "Porch & Party: To do for Valerie", "— Simone"];
   const idx = order.map((h) => morning.text.indexOf(h));
   if (idx.some((n) => n < 0) || idx.some((n, i) => i && n < idx[i - 1])) fails.push(`the morning email is not in her order: ${order.map((h, i) => `${h}@${idx[i]}`).join(", ")}`);
+  // Owner, 24 Oct 2026: the 8Raise line only when something is wrong (3 of 75 used is not).
+  if (/8Raise/.test(morning.text)) fails.push("the morning email carries the 8Raise line when nothing is wrong with the credits");
+  if (/more on your Today page/.test(morning.text)) fails.push("the morning email hides decisions behind \"more on your Today page\"");
   if (!risk.urgent || risk.decide.length !== 1 || risk.fixes.length !== 2 || risk.lines.length !== 1) fails.push(`planRisk did not route money/renewal/receipt/unreadable as ruled: ${JSON.stringify({ urgent: Boolean(risk.urgent), d: risk.decide.length, f: risk.fixes.length, l: risk.lines.length })}`);
   if (archive.fixes.length !== 1 || archive.lines.length !== 1) fails.push("planArchive did not turn a stop into a fix job and the rest into one line");
   if (briefingDecision(null, Date.parse("2026-10-23T11:40:00Z")) !== "wait" || briefingDecision(null, Date.parse("2026-10-23T12:45:00Z")) !== "send_late") fails.push("the briefing wait is not 06:40 → 07:45 Central");

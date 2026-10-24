@@ -187,6 +187,12 @@ async function sweepHalf() {
     say(`NOTHING_TO_REPORT: recorded on ${posted.data.id}; no email sent.`);
     return;
   }
+  // Every comment is one Monique leaves alone: nothing waits for her word, so no email (the morning
+  // email tells it as done). Owner, 24 Oct 2026: fix it yourself first, then tell me.
+  if (posted.data.email === false) {
+    say(`recorded ${posted.data.item_count} comment(s) on ${posted.data.id}, all left alone; told in the morning email, no email of its own.`);
+    return;
+  }
   // Number the items as Boss OS numbered its rows, so her "2 delete" means the same row here and there.
   const numbered = { ...digest, items: posted.data.items.map((row) => ({ ...digest.items.find((it) => it.comment_id === row.comment_id), n: row.n })) };
   const mail = digestEmail(numbered, posted.data.id);

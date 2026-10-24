@@ -71,12 +71,23 @@ lpTap.get("/:token", async (c) => {
 });
 
 /** Send a held Gmail draft from the mailbox it sits in. */
-async function sendDraft(env: Env, mailbox: string, draftId: string, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; why?: string; messageId?: string }> {
+async function sendDraft(env: Env, mailbox: string, draftId: string, fetchImpl: typeof fetch = fetch, expectMessageId: string | null = null): Promise<{ ok: boolean; why?: string; messageId?: string }> {
   if (!WEST_PEEK.test(mailbox)) return { ok: false, why: "that reply does not sit in a West Peek mailbox" };
   const creds = serviceAccountFrom(env);
   if (!creds) return { ok: false, why: "the Google key is not on the Worker" };
   const tok = await mintComposeToken(creds, mailbox, fetchImpl);
   if (!tok.ok) return { ok: false, why: `Google refused the sign-in (${tok.status})` };
+  /*
+   * "SEND AS IS" SENDS ONLY WHAT HER EMAIL SHOWED (owner, 24 Oct 2026). The morning email prints the
+   * held draft word for word; Gmail gives an edited draft a new message id, so a draft whose message
+   * is not the one Monique wrote is not sent from here. She sends her own edit from Gmail.
+   */
+  if (expectMessageId) {
+    const held = await fetchImpl(`https://gmail.googleapis.com/gmail/v1/users/me/drafts/${encodeURIComponent(draftId)}?format=minimal`, { headers: { authorization: `Bearer ${tok.token}` } });
+    if (!held.ok) return { ok: false, why: held.status === 404 ? "the draft is no longer in Gmail (sent or deleted by hand)" : `Gmail did not show the draft (${held.status})` };
+    const j = (await held.json().catch(() => ({}))) as { message?: { id?: string } };
+    if (j.message?.id !== expectMessageId) return { ok: false, why: "the draft was changed in Gmail after your email showed it, so it was not sent from here; open it in Gmail and press Send when it reads right" };
+  }
   const res = await fetchImpl("https://gmail.googleapis.com/gmail/v1/users/me/drafts/send", {
     method: "POST",
     headers: { authorization: `Bearer ${tok.token}`, "content-type": "application/json" },
@@ -120,8 +131,10 @@ lpTap.post("/:token", async (c) => {
 
   if (action !== "send") return c.html(page("This link has done its job", "Nothing else to do here."));
   if (!row.draft_id) return c.html(page("The reply is not ready yet", "Monique will have it in tomorrow's email."));
-  const mailbox = f.kind === "lp" ? row.reply_from : "sequoia@westpeek.ventures";
-  const r = await sendDraft(c.env, mailbox, row.draft_id);
+  // A reply whose words the email could not show (an edited draft, a prospect's reply) is never sent by a tap.
+  if (f.kind !== "lp" || !row.draft_body || !row.draft_message_id) return c.html(page("Open it in Gmail to send", "This reply was not shown word for word in your email, so it is not sent from here. Open the draft in Gmail and press Send when it reads right."));
+  const mailbox = row.reply_from;
+  const r = await sendDraft(c.env, mailbox, row.draft_id, fetch, row.draft_message_id);
   if (!r.ok) {
     if (f.kind === "lp") {
       await db.prepare(`UPDATE lp_reply_drafts SET decision = 'send', decided_at = ?, send_error = ?, updated_at = ? WHERE id = ?`).bind(now, r.why ?? null, now, row.id).run();

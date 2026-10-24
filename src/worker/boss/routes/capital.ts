@@ -160,6 +160,31 @@ capital.post("/deals", async (c) => {
   return ok(c, { stored });
 });
 
+/** Every current match (24 Oct 2026), best first — the Matches screen. Written whole by her Mac. */
+capital.get("/matches", async (c) => {
+  const r = await c.env.DB.prepare(`SELECT payload, updated_at FROM capital_matches ORDER BY rank ASC LIMIT 2000`).all<{ payload: string; updated_at: number }>();
+  const rows = (r.results ?? []).map((x) => { try { return JSON.parse(x.payload); } catch { return null; } }).filter(Boolean);
+  return ok(c, { matches: rows, updated_at: (r.results ?? []).reduce((n, x) => Math.max(n, x.updated_at), 0) || null });
+});
+
+capital.post("/matches", async (c) => {
+  const body = await c.req.json<{ matches?: unknown[]; replace?: boolean; offset?: number }>().catch(() => null);
+  if (!body || !Array.isArray(body.matches)) throw badRequest("A matches push needs matches", "{ matches: [...], replace: true|false, offset }");
+  if (body.matches.length > 500) throw badRequest("At most 500 matches per push", "Send them in batches.");
+  const now = Date.now();
+  const offset = Number(body.offset ?? 0) || 0;
+  const stmts: D1PreparedStatement[] = body.replace ? [c.env.DB.prepare(`DELETE FROM capital_matches`)] : [];
+  body.matches.forEach((m: any, i: number) => {
+    const key = String(m?.key ?? "").slice(0, 120);
+    const company = String(m?.company ?? "").slice(0, 120);
+    if (!key || !company) return;
+    stmts.push(c.env.DB.prepare(`INSERT OR REPLACE INTO capital_matches (key, company, rank, payload, updated_at) VALUES (?,?,?,?,?)`)
+      .bind(key, company, offset + i, JSON.stringify(m).slice(0, 20000), now));
+  });
+  for (let i = 0; i < stmts.length; i += 100) await c.env.DB.batch(stmts.slice(i, i + 100));
+  return ok(c, { stored: stmts.length - (body.replace ? 1 : 0) });
+});
+
 capital.get("/lists", async (c) => ok(c, await activeLists(c.env)));
 
 /** Add or remove one entry by hand (the seed script, or the page). Her replies use the mail path. */

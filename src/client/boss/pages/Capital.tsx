@@ -69,10 +69,12 @@ const day = (ts: number | null) => (ts ? new Date(ts).toLocaleDateString() : "�
  * her inbox from the last ~6 months, one row each — then the holders Monique found, then L's LP
  * replies and Prospects tabs. The older desk, return and ledger views stay behind them.
  */
-type View = "grid" | "holders" | "lp" | "prospects" | "desk" | "return" | "ledger";
+type View = "grid" | "matches" | "archive" | "holders" | "lp" | "prospects" | "desk" | "return" | "ledger";
 
 const VIEW_LABEL: Record<View, string> = {
   grid: "Grid",
+  matches: "Matches",
+  archive: "Archive",
   holders: "Holders Monique found",
   lp: "LP replies",
   prospects: "Prospects",
@@ -100,7 +102,9 @@ export function Capital({ start }: { start?: View } = {}) {
           </button>
         ))}
       </div>
-      {view === "grid" ? <DealGrid />
+      {view === "grid" ? <DealGrid onArchive={() => setView("archive")} />
+        : view === "matches" ? <Matches />
+        : view === "archive" ? <DealGrid archive onArchive={() => setView("grid")} />
         : view === "holders" ? <HoldersFound />
         : view === "lp" ? <LaterTab what="LP replies" />
         : view === "prospects" ? <LaterTab what="Prospects" />
@@ -1620,6 +1624,10 @@ function LaterTab({ what }: { what: "LP replies" | "Prospects" }) {
 }
 
 const SIDE_LABEL: Record<string, string> = { buy: "Buy", sell: "Sell", yours: "Yours" };
+/** Her own deals, the same words as the email and the Matches screen (owner, 24 Oct 2026). */
+export const sideLabel = (r: { side: string; direction?: string }) =>
+  r.side !== "yours" ? (SIDE_LABEL[r.side] ?? r.side)
+    : r.direction === "buy" ? "Yours: buyer" : r.direction === "sell" ? "Yours: seller" : "Yours: side unclear — open the email";
 const SIZE_BANDS: { label: string; min: number }[] = [
   { label: "Any size", min: 0 }, { label: "$5M+", min: 5e6 }, { label: "$20M+", min: 20e6 },
   { label: "$100M+", min: 100e6 }, { label: "$500M+", min: 500e6 },
@@ -1643,10 +1651,11 @@ export function filterDeals(rows: any[], f: { company: string; side: string; min
   return [...out].sort(by);
 }
 
-function DealGrid() {
-  const [data, setData] = useState<{ rows: any[]; lookback_days: number; updated_at: number | null } | null>(null);
+function DealGrid({ archive = false, onArchive }: { archive?: boolean; onArchive?: () => void } = {}) {
+  const [data, setData] = useState<{ rows: any[]; archive?: any[]; counts?: { open: number; archived: number }; lookback_days: number; updated_at: number | null } | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [company, setCompany] = useState("");
+  // A deal screen in her email opens the grid on its company.
+  const [company, setCompany] = useState(() => new URLSearchParams(window.location.search).get("company") ?? "");
   const [side, setSide] = useState("");
   const [min, setMin] = useState(0);
   const [from, setFrom] = useState("");
@@ -1655,18 +1664,27 @@ function DealGrid() {
 
   if (error) return <ErrorNotice error={error} />;
   if (!data) return <Loading />;
-  if (data.rows.length === 0) {
-    return <Empty title="No deals yet" hint="The grid fills from your inbox every morning before Simone's email." />;
+  const all = archive ? (data.archive ?? []) : data.rows;
+  const counts = data.counts ?? { open: data.rows.length, archived: (data.archive ?? []).length };
+  const switcher = (
+    <p className="row-sub" style={{ marginBottom: 10 }}>
+      <b>{counts.open} open · {counts.archived} in archive.</b>{" "}
+      {onArchive ? <button className="row-open" onClick={onArchive}>{archive ? "← Back to the open grid" : "Open the archive (6 to 12 months old) ▸"}</button> : null}
+    </p>
+  );
+  if (all.length === 0) {
+    return <>{switcher}<Empty title={archive ? "Nothing in the archive" : "No deals yet"} hint={archive ? "Orders move here when their email is more than 6 months old, and leave at 12 months." : "The grid fills from your inbox every morning before Simone's email."} /></>;
   }
-  const companies = [...new Set(data.rows.map((r) => r.company))].sort((a, b) => a.localeCompare(b));
-  const senders = [...new Set(data.rows.map((r) => r.from_text))].sort((a, b) => a.localeCompare(b));
-  const rows = filterDeals(data.rows, { company, side, min, from, sort });
+  const companies = [...new Set(all.map((r) => r.company))].sort((a, b) => a.localeCompare(b));
+  const senders = [...new Set(all.map((r) => r.from_text))].sort((a, b) => a.localeCompare(b));
+  const rows = filterDeals(all, { company, side, min, from, sort });
 
   return (
     <>
+      {switcher}
       <p className="row-sub" style={{ marginBottom: 10 }}>
-        {data.rows.length} deals from your inbox in the last {Math.round(data.lookback_days / 30)} months. "—" means the email
-        did not say it clearly. <b>Yours</b> is what you posted to rrlist@. Rainmaker rows are marked; Monique never
+        {archive ? `${all.length} orders whose email is 6 to 12 months old. They are not matched; a new email about one brings it back to the grid.` : `${all.length} deals from your inbox in the last ${Math.round(data.lookback_days / 30)} months.`} "—" means the email
+        did not say it clearly. <b>Yours: buyer</b> and <b>Yours: seller</b> are deals you put forward. Rainmaker rows are marked; Monique never
         suggests a match between two Rainmaker sides.
       </p>
       <div className="btn-row" style={{ flexWrap: "wrap", gap: 10 }}>
@@ -1708,12 +1726,12 @@ function DealGrid() {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td><b>{r.company}</b></td>
-                <td>{SIDE_LABEL[r.side] ?? r.side}{r.rainmaker && r.side !== "yours" ? <span className="pill">Rainmaker</span> : null}</td>
+                <td>{sideLabel(r)}{r.rainmaker && r.side !== "yours" ? <span className="pill">Rainmaker</span> : null}</td>
                 <td>{r.size_text}</td>
                 <td>{r.price_text}</td>
                 <td>{r.structure_text}</td>
                 <td>{r.from_text}</td>
-                <td>{ago(r.received_on)}</td>
+                <td>{ago(r.received_on)}{archive ? <span className="pill">old</span> : null}</td>
                 <td>{r.email_url ? <a href={r.email_url} target="_blank" rel="noreferrer">Open the email</a> : "—"}</td>
               </tr>
             ))}
@@ -1728,7 +1746,7 @@ function DealGrid() {
 function HoldersFound() {
   const [holders, setHolders] = useState<any[] | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [company, setCompany] = useState("");
+  const [company, setCompany] = useState(() => new URLSearchParams(window.location.search).get("company") ?? "");
   useEffect(() => { api.dealHolders().then((r) => setHolders(r.holders ?? [])).catch(setError); }, []);
   if (error) return <ErrorNotice error={error} />;
   if (!holders) return <Loading />;
@@ -1777,6 +1795,78 @@ function HoldersFound() {
           </div>
         );
       })}
+    </>
+  );
+}
+
+/**
+ * MATCHES (owner, 24 Oct 2026): every buy and sell order on the same company that could trade, from
+ * Monique's deal reader — size (partial fills included), price within her tolerance, a missing price
+ * never hides one ("worth asking"), fresher first. Older than 60 days is flagged; older than her
+ * ~6-month lookback is shown only with "Show older matches", labelled old.
+ */
+function Matches() {
+  const [data, setData] = useState<{ matches: any[]; updated_at: number | null } | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [tolerance, setTolerance] = useState(0.15);
+  const [company, setCompany] = useState(() => new URLSearchParams(window.location.search).get("company") ?? "");
+  const [showOld, setShowOld] = useState(false);
+  useEffect(() => { api.dealMatches().then(setData).catch(setError); }, []);
+  if (error) return <ErrorNotice error={error} />;
+  if (!data) return <Loading />;
+  const shown = data.matches.filter((m) => (m.gap === null || m.gap <= tolerance) && (showOld || !m.old) && (company === "" || m.company === company));
+  const companies = [...new Set(data.matches.map((m) => m.company))].sort((a, b) => a.localeCompare(b));
+  const side = (x: any, role: string) => (
+    <div className="row-sub">
+      <b>{role}:</b> {x.who}{x.email ? ` (${x.email})` : ""} · {x.size !== "—" ? x.size : "amount not given"} · {x.price !== "—" ? x.price : "no price"} · {x.age}
+      {x.rainmaker ? <span className="pill">Rainmaker</span> : null}
+      {x.email_url ? <> · <a href={x.email_url} target="_blank" rel="noreferrer">Open the email</a></> : null}
+    </div>
+  );
+  return (
+    <>
+      <p className="row-sub" style={{ marginBottom: 10 }}>
+        {shown.length} possible trades. A buy and a sell on the same company match when their prices are within your tolerance;
+        a missing price never hides one (it says &quot;worth asking&quot;). Never two Rainmaker sides. The morning email uses 15%.
+      </p>
+      <div className="btn-row" style={{ flexWrap: "wrap", gap: 10 }}>
+        <label className="field"><span>Prices at most this far apart</span>
+          <select value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))}>
+            {[0.05, 0.1, 0.15, 0.2, 0.3].map((t) => <option key={t} value={t}>{Math.round(t * 100)}%</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Company</span>
+          <select value={company} onChange={(e) => setCompany(e.target.value)}>
+            <option value="">All companies</option>
+            {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Older matches</span>
+          <select value={showOld ? "1" : "0"} onChange={(e) => setShowOld(e.target.value === "1")}>
+            <option value="0">Hide (over 6 months)</option><option value="1">Show, labelled old</option>
+          </select>
+        </label>
+      </div>
+      {shown.length === 0 ? <Empty title="No matches with these choices" hint="Widen the price tolerance or pick All companies." /> : shown.slice(0, 300).map((m) => (
+        <div key={m.key} className="duty-card mi-comment">
+          <p className="row-title">{m.company}{m.old ? <span className="pill">old</span> : m.stale ? <span className="pill">may be stale — check it&apos;s still live</span> : null}</p>
+          <p className="mi-lede">{m.fill}; {m.price}.</p>
+          {side(m.seller, "Seller")}
+          {side(m.buyer, "Buyer")}
+          {(m.drafts ?? []).length ? (
+            <details className="mi-more">
+              <summary>Show the {m.drafts.length > 1 ? "notes" : "note"}, word for word ▾</summary>
+              {m.drafts.map((d: any, i: number) => (
+                <div key={i}>
+                  <p className="eyebrow">To {d.to} (the {d.side})</p>
+                  <div className="mi-draft">{`Subject: ${d.subject}\n\n${d.body}`}</div>
+                  <a className="btn btn-small" href={`mailto:${encodeURIComponent(d.to)}?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}`}>Write to the {d.side} (draft ready)</a>
+                </div>
+              ))}
+            </details>
+          ) : null}
+        </div>
+      ))}
     </>
   );
 }

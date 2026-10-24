@@ -217,8 +217,8 @@ export function employeeMail(sender, { to, subject, text, html: _html, files, la
     subject: laid.subject.slice(0, 200),
     text: laid.text,
     html: laid.html,
-    ...(laid.refs.length || laid.kind === "problem"
-      ? { headers: { ...(laid.refs.length ? { "X-Boss-Ref": laid.refs.join(" ") } : {}), ...(laid.kind === "problem" ? { "X-Boss-Kind": "problem" } : {}) } }
+    ...(laid.refs.length || laid.kind === "problem" || laid.kind === "morning"
+      ? { headers: { ...(laid.refs.length ? { "X-Boss-Ref": laid.refs.join(" ") } : {}), ...(laid.kind === "problem" || laid.kind === "morning" ? { "X-Boss-Kind": laid.kind } : {}) } }
       : {}),
     ...(attachments.length ? { attachments } : {}),
   };

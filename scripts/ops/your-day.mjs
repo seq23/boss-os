@@ -4,16 +4,24 @@
  *
  * Her ruling: "ONE morning email from Simone (06:40)", in this order:
  *
- *   1. Decide — at most three things only she can decide, each with one-tap buttons: her Inbox
- *      decisions, Danielle's plans and previews, work held for her word, and every Decide item the
- *      other producers wrote (an intro to approve, an LP reply to send) — highest priority first;
- *   2. New deals since yesterday (the grid rows Monique's deal reader wrote) and "Monique found";
- *   3. Camille's briefing in five lines or fewer, with the link to the whole thing;
- *   4. Done for you — three lines at most (bounced addresses replaced, prospecting, the tail on the
- *      jobs she emailed, Zora's and Toni's quiet work);
+ *   1. Decide — EVERY thing only she can decide (24 Oct 2026: "6 decisions" showed 3 and Today showed
+ *      none), each with who, what they said, the history, the words that go out in her name word for
+ *      word, one-tap buttons and a link to its own screen: her Inbox decisions, Danielle's plans and
+ *      previews, work held for her word (the channel's comments by name), and every Decide item the
+ *      other producers wrote (an intro to make, an LP reply to send) — highest priority first;
+ *   2. New deals since yesterday (each opens its deal screen) and "Monique found" (her own email
+ *      first, then public filings and press, labelled "not confirmed", each with one next step);
+ *   3. Camille's briefing: five lines, then the WHOLE briefing under "Show the full briefing ▾"
+ *      (written out in full in the plain-text copy), citations linked to their sources;
+ *   4. Done for you — three lines at most, What happened / What we did / Status where it fits (the
+ *      bounce agent, comments left alone, the jobs she emailed, Zora's and Toni's quiet work);
  *   5. Catch up with — 0–3, only when a live reason exists (rule 14);
  *   6. Porch & Party: To do for Valerie — the site's own owner feed, unchanged;
- *   7. the sign-off, then "8Raise: Monique used N of her 75 credits this month (30 always kept for you)".
+ *   7. the sign-off; the 8Raise line only when something is wrong with Monique's credits.
+ *
+ * THE MORNING IS KEPT IN BOSS OS. Before it sends, the run posts every item (POST /morning); each
+ * link in the email opens that item's screen (/?morning=<day>&item=<id>) and Today shows the same
+ * Decide list. The email, Today and the item screen read one record and cannot disagree.
  *
  * On Mondays the same email carries "This week" (deadlines); there is no second Monday email.
  *
@@ -35,15 +43,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { sendAsEmployee } from "./notify.mjs";
-import { layoutEmail, clockWords, lineProblems } from "../../src/shared/boss/mail/plain.mjs";
+import { createHash } from "node:crypto";
+import { layoutEmail, clockWords, lineProblems, proseRuns, proseText, cleanText } from "../../src/shared/boss/mail/plain.mjs";
 import { readMorningSections, clearToldSections } from "../../src/shared/boss/mail/morning.mjs";
+import { templateDecide } from "./lp-prospects.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const FEED = process.env.PNP_OWNER_FEED_URL ?? "https://porchandparty901.com/api/owner-feed";
 const TZ = "America/Chicago";
 const SENT_DIR = path.join(os.homedir(), ".boss-os", "your-day");
 const DAY_MS = 86_400_000;
-const OPEN_BOSS = { label: "Open Boss OS", url: `${ORIGIN}/` };
 
 // ─── Time, in her zone ─────────────────────────────────────────────────────────
 
@@ -72,17 +81,86 @@ function callsOn(diary, iso) {
   return (diary ?? []).filter((r) => r.scheduled_at && dayOf(r.scheduled_at) === iso).sort((a, b) => a.scheduled_at - b.scheduled_at);
 }
 
-/** Boss OS's own decisions for her: Inbox approvals, Danielle's plans and previews, held work. */
+/** Every item in the email opens its own screen (owner, 24 Oct 2026): the morning, kept in Boss OS. */
+export const itemUrl = (day, id) => `${ORIGIN}/?morning=${day}&item=${encodeURIComponent(id)}`;
+export const taskUrl = (id) => `${ORIGIN}/?task=${encodeURIComponent(id)}`;
+export const BRIEFING_URL = `${ORIGIN}/?view=briefing`;
+/** A short stable id for an item, from what it is (the same item keeps its screen across re-runs). */
+export function itemId(kind, key) {
+  return `${kind}-${createHash("sha256").update(String(key)).digest("hex").slice(0, 10)}`;
+}
+
+/** The channel Monique reads comments on, by its name (24 Oct 2026: "which channel?"). */
+export const CHANNEL = "How We Know on YouTube";
+const COMMENT_CHOICE = {
+  hide: "hide it (it disappears for everyone except the person who wrote it)",
+  reply: "answer it in public as the channel",
+  ignore: "leave it alone (nothing changes on the channel)",
+};
+
+/** The comment-watch digest behind a task, with its rows, from GET /comment-watch-items. */
+function digestOf(data, task) {
+  let input = {};
+  try { input = typeof task.input === "string" ? JSON.parse(task.input) : (task.input ?? {}); } catch { input = {}; }
+  if (input?.kind !== "youtube_comment_watch") return null;
+  return (data.commentWatch ?? []).find((d) => d.id === input.digest_id || d.task_id === task.id) ?? { id: input.digest_id, items: [] };
+}
+
+/**
+ * Boss OS's own decisions for her: Inbox approvals, Danielle's plans and previews, work held for her
+ * word. Each says what she is deciding and what each choice does, and opens its own screen.
+ */
 function bossDecisions(data) {
   const out = [];
-  for (const a of data.approvals ?? []) out.push({ title: a.title, body: "It is waiting in your Inbox.", buttons: [{ label: "Open your Inbox", url: `${ORIGIN}/` }], priority: 2 });
+  for (const a of data.approvals ?? []) {
+    out.push({
+      key: `approval:${a.id}`, title: a.title, body: a.summary ?? a.reason ?? "It waits in your Inbox for Approve or Decline.",
+      details: [...(a.employee_name ? [`Asked by ${a.employee_name}.`] : []), ...(a.risk ? [`Risk: ${a.risk}.`] : [])],
+      buttons: [{ label: "Open it to approve or decline", url: `${ORIGIN}/?tab=inbox&approval=${encodeURIComponent(a.id)}` }], priority: 2,
+    });
+  }
   for (const r of (data.repoChanges ?? []).filter((x) => x.phase === "asking" || x.phase === "previewing")) {
+    const firstLine = String(r.instruction ?? "").split("\n")[0].trim();
     out.push(r.phase === "asking"
-      ? { title: `Start Danielle's plan for ${r.repo ?? "your change"}?`, body: "Reply approved to her email to start the build.", buttons: [OPEN_BOSS], priority: 1 }
-      : { title: `Make Danielle's preview of ${r.repo ?? "your change"} live?`, body: "Look at the preview, then reply approved to her email.", buttons: [OPEN_BOSS], priority: 1 });
+      ? { key: `rc:${r.id}`, title: `Start Danielle's plan for ${r.repo ?? "your change"}?`, body: `${firstLine ? `You asked: "${firstLine}". ` : ""}Danielle wrote a plan and builds nothing until you say yes.`, details: ["Yes: reply approved to her email and she starts the build.", "No: reply with what to change, or drop it."], plan: r.plan_text ?? null, buttons: [], priority: 1 }
+      : { key: `rc:${r.id}`, title: `Make Danielle's preview of ${r.repo ?? "your change"} live?`, body: `${firstLine ? `You asked: "${firstLine}". ` : ""}The preview is built; nothing is live until you say so.`, details: ["Yes: reply approved to her email and it goes live.", "No: reply with what to change."], plan: r.plan_text ?? null, buttons: [], priority: 1 });
   }
   for (const t of (data.tasks ?? []).filter((x) => x.status === "awaiting_approval")) {
-    out.push({ title: `Approve or change: ${t.title}`, body: t.employee_name ? `${t.employee_name} is holding it for your word.` : "", buttons: [OPEN_BOSS], priority: 1 });
+    const dg = digestOf(data, t);
+    if (dg) {
+      const items = dg.items ?? [];
+      const open = items.filter((i) => !i.instructed_at);
+      if (!open.length) continue; // answered: nothing waits for her
+      out.push({
+        key: `task:${t.id}`,
+        title: `${CHANNEL}: ${plural(open.length, "comment needs", "comments need")} your word`,
+        body: `${t.employee_name ?? "Monique"} read the channel's new comments. Hiding or answering one speaks for the channel, so it waits for you.`,
+        details: [
+          ...open.map((i) => `${i.n}. On the video "${i.video_title ?? "a video"}", ${i.author ?? "a viewer"} wrote: "${String(i.text).slice(0, 300)}". Monique suggests: ${COMMENT_CHOICE[i.proposed_action] ?? i.proposed_action}${i.proposed_action === "reply" && i.proposed_reply ? `, with: "${i.proposed_reply}"` : ""}.`),
+          "Your choices for each: hide, reply or ignore. Answer by replying to Monique's email about these comments with the number and the word, for example \"1 ignore\".",
+        ],
+        buttons: [{ label: "See the comments", url: taskUrl(t.id) }], priority: 1,
+      });
+      continue;
+    }
+    out.push({
+      key: `task:${t.id}`, title: `${t.employee_name ?? "Your team"} is waiting for your word: ${t.title}`,
+      body: "Nothing happens on it until you answer.",
+      buttons: [{ label: "Open it", url: taskUrl(t.id) }], priority: 1,
+    });
+  }
+  return out;
+}
+
+/** What Monique did with the comments that did not need her (owner, 24 Oct 2026: fix it, then tell me). */
+function commentDoneLines(data, now) {
+  const out = [];
+  for (const d of data.commentWatch ?? []) {
+    if (d.task_id || !(d.items ?? []).length || now - Number(d.created_at) > DAY_MS) continue;
+    const faults = d.items.filter((i) => i.product_note);
+    out.push({
+      text: `What happened: ${plural(d.items.length, "new comment")} on ${CHANNEL}${faults.length ? `, ${faults.length} pointing at a fault in a video (${faults.map((i) => i.product_note).join("; ")})` : ""}. What we did: Monique left ${d.items.length === 1 ? "it" : "them"} alone, as none needed an answer${faults.length ? ", and Danielle has the fault to fix for future videos" : ""}. Status: done, nothing needed from you.`,
+    });
   }
   return out;
 }
@@ -96,12 +174,8 @@ function valerieItems(feed) {
   }).filter((s) => !/^Your week\b/.test(s));
 }
 
-/**
- * CAMILLE'S BRIEFING IN FIVE LINES OR FEWER, from the report's One-Minute Executive Summary section
- * (key `one_minute_summary`, or its heading on older reports); the report's `summary` sentences when
- * the section is absent. `null` when today's report has not landed.
- */
-export function briefingLines(briefing, today) {
+/** The one-minute summary's raw lines (≤5), as Camille wrote them. `null` when today's report is not in. */
+function briefingRaw(briefing, today) {
   if (!briefingReady(briefing, today)) return null;
   const sec = (briefing.sections ?? []).find((s) => s?.key === "one_minute_summary" || /one[- ]minute/i.test(String(s?.heading ?? s?.title ?? "")));
   const raw = [];
@@ -113,7 +187,65 @@ export function briefingLines(briefing, today) {
   }
   if (!raw.length && typeof briefing.summary === "string") raw.push(...briefing.summary.split(/(?<=[.!?])\s+/));
   if (!raw.length && briefing.headline) raw.push(String(briefing.headline));
-  return raw.map((l) => String(l).replace(/^[-*•]\s*/, "").trim()).filter(Boolean).slice(0, 5).map((l) => l.replace(/[.!?]?\s*$/, "."));
+  return raw.map((l) => String(l).replace(/^[-*•]\s+/, "").trim()).filter(Boolean).slice(0, 5);
+}
+
+/**
+ * CAMILLE'S BRIEFING IN FIVE LINES OR FEWER, from the report's One-Minute Executive Summary section
+ * (key `one_minute_summary`, or its heading on older reports); the report's `summary` sentences when
+ * the section is absent. `null` when today's report has not landed. Plain words, no markdown.
+ */
+export function briefingLines(briefing, today) {
+  const raw = briefingRaw(briefing, today);
+  return raw ? raw.map((l) => proseText(proseRuns(l)).replace(/⁣/g, "").replace(/[.!?]?\s*$/, ".")) : null;
+}
+
+/** Where citation n of a report opens: its source on the web, else the briefing screen. */
+export function briefingSourceUrl(briefing) {
+  return (n) => {
+    const s = (briefing?.sources ?? [])[Number(n) - 1];
+    const u = String(s?.url ?? "");
+    return /^https?:\/\/[^\s"'<>]+$/.test(u) ? u : `${BRIEFING_URL}#brief-src-${n}`;
+  };
+}
+
+const textOf = (v) => (typeof v === "string" ? v : v && typeof v === "object" ? (v.text ?? v.wanted ?? v.claim ?? v.title ?? v.summary ?? "") : "");
+
+/**
+ * THE WHOLE BRIEFING, for the fold under the top five (owner, 24 Oct 2026: "must come FULLY in the
+ * email"): every section in the report's order, what it means, its lines, the corrections and gaps,
+ * and the numbered sources, each a link. Pure.
+ */
+export function briefingFull(briefing) {
+  if (!briefing) return [];
+  const src = briefingSourceUrl(briefing);
+  const runs = (l) => ({ runs: proseRuns(String(l), src) });
+  const blocks = [];
+  for (const sec of briefing.sections ?? []) {
+    if (sec?.key === "one_minute_summary") continue;
+    const lines = [];
+    if (typeof sec.so_what === "string" && sec.so_what.trim()) lines.push(runs(`What it means: ${sec.so_what}`));
+    for (const b of sec.bullets ?? []) if (textOf(b).trim()) lines.push(runs(textOf(b)));
+    for (const it of sec.items ?? []) {
+      if (typeof it === "string") { lines.push(runs(it)); continue; }
+      const head = [it?.headline ?? it?.title, it?.summary ?? it?.text].filter(Boolean).join(": ");
+      if (head) lines.push(runs(head));
+      for (const b of it?.bullets ?? []) if (textOf(b).trim()) lines.push(runs(textOf(b)));
+    }
+    if (typeof sec.body === "string") for (const p of sec.body.split(/\n{2,}/)) if (p.trim()) lines.push(runs(p));
+    if (sec.insight && typeof sec.insight === "object") {
+      for (const [k, v] of Object.entries(sec.insight)) if (typeof v === "string" && v.trim() && k !== "cites") lines.push(runs(v));
+    }
+    if (sec.table) lines.push({ runs: [{ text: "The table of figures is on the briefing screen: " }, { text: "open it", url: BRIEFING_URL }] });
+    if (lines.length) blocks.push({ heading: String(sec.heading ?? sec.title ?? ""), lines });
+  }
+  for (const [key, heading] of [["corrections", "Corrections to earlier briefings"], ["gaps", "What Camille could not confirm"], ["watching", "Watching for"]]) {
+    const list = (briefing[key] ?? []).map(textOf).filter((t) => t.trim());
+    if (list.length) blocks.push({ heading, lines: list.map(runs) });
+  }
+  const sources = (briefing.sources ?? []).map((s, i) => ({ n: i + 1, name: String(s?.name ?? s?.title ?? `Source ${i + 1}`), url: src(i + 1) }));
+  if (sources.length) blocks.push({ heading: "Sources", lines: sources.map((s) => ({ runs: [{ text: `${s.n}. ` }, { text: cleanText(s.name, { prose: true }) || `Source ${s.n}`, url: s.url }] })) });
+  return blocks;
 }
 
 /** Today's executive report has landed (Camille files it at about 07:10 Central). */
@@ -138,8 +270,6 @@ export function briefingDecision(briefing, now) {
   return p.hour * 60 + p.minute >= BRIEFING_CAP.hour * 60 + BRIEFING_CAP.minute ? "send_late" : "wait";
 }
 
-const lineOf = (l) => (typeof l === "string" ? l : l);
-
 /** The one "done" line for the bounce agent (rule 4), from GET /outreach/bounce-fixes. */
 export function bounceLine(b) {
   if (!b || !(b.replaced || b.dropped || b.restarted?.length)) return null;
@@ -150,9 +280,95 @@ export function bounceLine(b) {
   return `${bits.join("; ")}.`;
 }
 
-const DONE_SOURCES = ["bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];
 
-/** The one morning email. `data` is everything read; `data.morning` the section files by name. */
+const SIDE_WORDS = { buyer: "a buyer", seller: "a seller", both: "buys and sells", unknown: "side not known yet" };
+const shortDate = (ms) => new Date(Number(ms)).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: TZ });
+const nameOf = (r) => r.name || r.email || "someone";
+const whoLine = (r) => `${nameOf(r)}${[r.firm, r.email].filter(Boolean).length ? ` (${[r.firm, r.email].filter(Boolean).join(", ")})` : ""}`;
+export const PROSPECTS_URL = `${ORIGIN}/?tab=capital&view=prospects`;
+
+/**
+ * "PROSPECT EMAILS" (owner, 24 Oct 2026: "keep me abreast of prospect outreach"): yesterday's sends
+ * (who, firm, address, side, which email of three, the words under a fold), the replies, who is next
+ * and when, and the totals. Nothing went out: it says exactly why. From GET /lp/prospects/activity.
+ * Pure. `null` when the activity did not load (the run says so in its log; Done keeps its line).
+ */
+export function prospectSection(a, now = Date.now()) {
+  if (!a) return null;
+  // Only what is NEW since the last morning (owner, 24 Oct 2026): sends since yesterday, new replies,
+  // touches due today, one totals line. Everything already sent lives on the Prospects screen.
+  const items = [];
+  const t = a.totals ?? {};
+  const sent = (a.sent ?? []).filter((r) => Number(r.sent_at) >= now - 30 * 3_600_000);
+  for (const r of sent) items.push({ text: `Sent: email ${r.touch_no} of 3 to ${whoLine(r)}, ${SIDE_WORDS[r.side] ?? SIDE_WORDS.unknown}, ${shortDate(r.sent_at)}.`, links: [{ label: "See it on the Prospects screen", url: PROSPECTS_URL }] });
+  for (const r of a.replies ?? []) {
+    const what = r.status === "opted_out" ? "asked not to be written to again (done: they are off every list)" : r.status === "bounced" ? "bounced (done: the address is off the list)" : `answered${r.reply_note ? `: "${String(r.reply_note).replace(/[\s.!?]+$/, "")}."` : "."}${r.has_draft ? " Your reply is ready in Decide above." : ""}`;
+    items.push(`${whoLine(r)} ${what}`);
+  }
+  const endOfToday = now + 18 * 3_600_000;
+  const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= endOfToday);
+  if (due.length) {
+    items.push((a.stops ?? []).length
+      ? `${plural(due.length, "follow-up is", "follow-ups are")} due and not going out. Why: ${(a.stops ?? []).join(" ")}`
+      : `Going out today: ${plural(due.length, "follow-up")} (${due.slice(0, 5).map(nameOf).join(", ")}${due.length > 5 ? ` and ${due.length - 5} more` : ""}).`);
+  }
+  if (!sent.length && !(a.replies ?? []).length && !due.length) items.push("Nothing new on prospect emails since yesterday.");
+  items.push(`So far: ${plural(t.emails_sent ?? 0, "email")} sent; ${(t.new ?? 0) + (t.active ?? 0)} in the sequence, ${t.interested ?? 0} interested, ${t.replied ?? 0} replied, ${t.opted_out ?? 0} opted out, ${t.bounced ?? 0} bounced.`);
+  const blocks = sent.map((r) => ({
+    heading: `Email ${r.touch_no} to ${nameOf(r)}${r.firm ? `, ${r.firm}` : ""}`,
+    lines: r.body ? [`Subject: ${r.sent_subject ?? r.subject ?? ""}`, ...String(r.body).split("\n").filter((l) => l.trim())] : ["Its words are in your Sent mail."],
+  }));
+  return { title: "Prospect emails", items, link: { label: "See every prospect", url: PROSPECTS_URL }, ...(blocks.length ? { full: { summary: "Show the emails ▾", blocks } } : {}), empty: null };
+}
+
+/**
+ * EVERYTHING AWAITING HER ON PROSPECTS IS A DECISION (owner, 24 Oct 2026, Rule 0): the email waiting
+ * for her OK, and follow-ups that are due but cannot go because no email is approved — with why and
+ * what unblocks them. Pure; `existingKeys` stops a second copy of what a producer already wrote.
+ */
+export function prospectDecisions(a, existingKeys = new Set(), now = Date.now()) {
+  if (!a) return [];
+  const out = [];
+  if (a.pending && a.pending.tap_token && !existingKeys.has(`prospect-template:${a.pending.id ?? a.pending.hash ?? ""}`)) {
+    out.push({ ...templateDecide(a.pending), priority: 3 });
+  }
+  const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= now + 18 * 3_600_000);
+  if (due.length && !a.approved && !a.pending) {
+    out.push({
+      key: "prospects-stuck",
+      title: `${plural(due.length, "prospect follow-up is", "prospect follow-ups are")} due and cannot go out`,
+      body: `No prospect email is approved, and Monique has fewer than three fresh names on your list to write one, so nothing goes. ${(a.stops ?? []).join(" ")}`.trim(),
+      details: [
+        `Waiting: ${due.slice(0, 8).map(whoLine).join("; ")}${due.length > 8 ? `; and ${due.length - 8} more` : ""}.`,
+        "To unblock: add at least three company names to feature, on Your team under the lists Monique keeps, or by replying to any Monique email (for example \"add Company A, Company B, Company C\"). Monique then writes the email and puts it here for your Approve.",
+      ],
+      buttons: [{ label: "Add the names", url: `${ORIGIN}/?tab=team` }, { label: "See who is waiting", url: PROSPECTS_URL }],
+      priority: 3,
+    });
+  }
+  return out;
+}
+
+const DONE_SOURCES = ["bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];
+const MAX_DONE = 3;
+
+/** 8Raise is said only when something is wrong (owner, 24 Oct 2026: "drop the footer unless"). */
+export function eightRaiseLine(credits) {
+  if (!credits) return null;
+  const budget = Number(credits.budget ?? 75);
+  const kept = Number(credits.kept ?? 30);
+  const used = Number(credits.used ?? 0);
+  if (credits.error) return `8Raise: Monique could not check her credits this month (${credits.error}); the team is on it.`;
+  if (used >= budget - kept) return `8Raise: Monique has used ${used} of her ${budget} credits this month, so she has stopped searching; the last ${kept} stay kept for you.`;
+  return null;
+}
+
+/**
+ * The one morning email, and THE MORNING it describes. `data` is everything read; `data.morning` the
+ * section files by name. Returns the laid-out email plus `digest`: every item the email shows, each
+ * with its full context and an id, which the run posts to Boss OS before it sends — so every link in
+ * the email opens that item's own screen, and Today lists exactly the email's decisions.
+ */
 export function buildDay(data, now = Date.now()) {
   const today = dayOf(now);
   const p = parts(now);
@@ -169,39 +385,62 @@ export function buildDay(data, now = Date.now()) {
   for (const [name, sec] of Object.entries(data.morning ?? {})) {
     m[name] = {
       ...sec,
-      decide: (sec.decide ?? []).filter((d, i) => passes(`${name} decide ${i + 1}`, d.title, d.body, ...(d.buttons ?? []).map((b) => b.label))),
+      decide: (sec.decide ?? []).filter((d, i) => passes(`${name} decide ${i + 1}`, d.title, d.body, ...(d.details ?? []), ...(d.buttons ?? []).map((b) => b.label))),
       rows: (sec.rows ?? []).filter((r, i) => passes(`${name} row ${i + 1}`, r.company, r.side, r.size, r.price, r.from)),
       lines: (sec.lines ?? []).filter((l, i) => passes(`${name} line ${i + 1}`, typeof l === "string" ? l : l.text)),
     };
   }
+  const used = new Set();
+  const idFor = (kind, key) => { let id = itemId(kind, key); let n = 2; while (used.has(id)) id = itemId(kind, `${key}#${n++}`); used.add(id); return id; };
+  const more = (url) => ({ label: "See everything about this", url });
 
-  // 1. Decide: Boss OS's own, then every producer's (catch-ups have their own section).
-  const decide = [...bossDecisions(data)];
-  for (const [name, sec] of Object.entries(m)) if (name !== "catchups") for (const d of sec.decide ?? []) decide.push({ priority: 0, ...d });
-  decide.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  // 1. Decide: Boss OS's own, then every producer's (catch-ups have their own section). ALL of them.
+  const decideRaw = [...bossDecisions(data)];
+  for (const [name, sec] of Object.entries(m)) if (name !== "catchups") for (const d of sec.decide ?? []) decideRaw.push({ priority: 0, from: name, ...d });
+  decideRaw.push(...prospectDecisions(data.prospects ?? null, new Set(decideRaw.map((d) => d.key).filter(Boolean)), now));
+  decideRaw.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  const decide = decideRaw.map((d) => {
+    const id = idFor("decide", d.key ?? d.title);
+    const screen = itemUrl(today, id);
+    return { ...d, id, screen, buttons: [...(d.buttons ?? []), more(screen)] };
+  });
 
-  // 2. Deals and Monique found.
-  const deals = m.deals?.rows ?? [];
+  // 2. Deals: each opens its own screen there; the source email is one more tap from it.
+  const deals = (m.deals?.rows ?? []).map((r) => {
+    const id = idFor("deal", `${r.company}|${r.side}|${r.size}|${r.from}|${r.received_on ?? r.when}`);
+    return { ...r, id, screen: itemUrl(today, id) };
+  });
   const dealRows = deals.map((r) => ({
     company: r.company, side: r.side ?? "—", size: [r.size, r.price && r.price !== "—" ? `@ ${r.price}` : ""].filter(Boolean).join(" ") || "—",
-    from: r.tag === "Rainmaker" ? "Rainmaker" : (r.from ?? "—"), url: r.url ?? null, url_label: "Open the email",
+    from: r.from ?? "—", url: r.screen, url_label: "Open the deal",
   }));
-  const found = (m.monique_found?.lines ?? []).map(lineOf);
+  const found = (m.monique_found?.lines ?? []).map((l) => {
+    const line = typeof l === "string" ? { text: l, links: [] } : l;
+    const id = idFor("found", line.text);
+    return { ...line, id, screen: itemUrl(today, id), holders: (m.monique_found?.rows ?? []).filter((h) => line.deal && h.company === line.deal) };
+  });
 
-  // 3. Briefing.
-  const brief = briefingLines(data.briefing, today);
+  // 3. Briefing: the top five, then the whole thing folded under one tap.
+  const raw = briefingRaw(data.briefing, today);
+  const src = briefingSourceUrl(data.briefing);
+  const briefTop = raw ? raw.map((l) => ({ runs: proseRuns(l, src) })) : null;
+  const briefFull = raw ? briefingFull(data.briefing) : [];
 
-  // 4. Done for you: the bounce agent's line first, then each producer's lines.
-  const done = [];
+  // 4. Done for you: what the team fixed or did, each What happened / What we did / Status when it can.
+  const doneRaw = [];
   const bl = bounceLine(data.bounceFixes);
-  if (bl) done.push(bl);
-  for (const name of DONE_SOURCES) for (const l of m[name]?.lines ?? []) done.push(lineOf(l));
-  const doneShown = done.slice(0, 3);
-  if (done.length > 3) doneShown.push(`And ${done.length - 3} more on your Today page.`);
+  if (bl) doneRaw.push({ text: bl, links: [] });
+  doneRaw.push(...commentDoneLines(data, now));
+  const prospects = prospectSection(data.prospects ?? null, now);
+  // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
+  for (const name of DONE_SOURCES.filter((n) => !(prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
+  const done = doneRaw.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
+  const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [...(l.links ?? []).slice(0, 1), { label: "See it", url: l.screen }] }));
+  if (done.length > MAX_DONE) doneShown.push({ text: `And ${done.length - MAX_DONE} more done for you.`, links: [{ label: "See them all on Today", url: `${ORIGIN}/?view=morning` }] });
 
   // 5. Catch up with.
-  const catchCards = m.catchups?.decide ?? [];
-  const catchLines = (m.catchups?.lines ?? []).map(lineOf);
+  const catchCards = (m.catchups?.decide ?? []).map((d) => { const id = idFor("catchup", d.key ?? d.title); const screen = itemUrl(today, id); return { ...d, id, screen, buttons: [...(d.buttons ?? []), more(screen)] }; });
+  const catchLines = (m.catchups?.lines ?? []).map((l) => (typeof l === "string" ? l : l));
 
   // Mondays: this week's deadlines, in the same email.
   const deadlines = [];
@@ -209,39 +448,54 @@ export function buildDay(data, now = Date.now()) {
     const end = addDays(today, 6);
     for (const t of data.tasks ?? []) {
       const due = typeof t.due === "string" ? t.due.slice(0, 10) : null;
-      if (due && due >= today && due <= end && OPEN.has(t.status)) deadlines.push(`${shortDay(due)}: ${t.title}${t.employee_name ? ` (${t.employee_name})` : ""}.`);
+      if (due && due >= today && due <= end && OPEN.has(t.status)) deadlines.push({ text: `${shortDay(due)}: ${t.title}${t.employee_name ? ` (${t.employee_name})` : ""}.`, links: [{ label: "Open it", url: taskUrl(t.id) }] });
     }
   }
 
   const val = valerieItems(data.feed);
   const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at)} ${c.title}${c.with ? ` with ${c.with}` : ""}`);
-  const credits = m.eightraise?.credits;
+  const ps = eightRaiseLine(m.eightraise?.credits ?? null);
 
   const subjBits = [];
   if (decide.length) subjBits.push(plural(decide.length, "decision"));
   if (dealRows.length) subjBits.push(plural(dealRows.length, "new deal"));
   if (val?.length) subjBits.push("Valerie's list");
+  const subject = `${p.weekday}: ${subjBits.length ? subjBits.join(", ") : "nothing to decide"}`;
 
   const laid = layoutEmail({
     who: "Simone",
-    subject: `${p.weekday}: ${subjBits.length ? subjBits.join(", ") : "nothing to decide"}`,
+    kind: "morning",
+    maxDecide: Infinity,
+    subject,
     happened: `Good morning. Here is your ${dayWords(today)}.${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
     decide,
-    moreDecide: decide.length > 3 ? `And ${decide.length - 3} more on your Today page.` : null,
     sections: [
       { title: `New deals since yesterday (${dealRows.length})`, rows: dealRows.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size" }, { key: "from", label: "From" }], data: dealRows } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
-      { title: "Monique found", items: found, link: m.monique_found?.link ?? null, empty: null },
-      { title: "This morning's briefing (Camille)", items: brief ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing", url: `${ORIGIN}/` } },
+      { title: "Monique found", items: found.map((f) => ({ text: f.text, links: [{ label: "See it", url: f.screen }] })), link: m.monique_found?.link ?? null, empty: null },
+      ...(prospects ? [prospects] : []),
+      { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing", url: BRIEFING_URL }, ...(briefFull.length ? { full: { summary: "Show the full briefing ▾", blocks: briefFull } } : {}) },
       { title: "Done for you", tone: "done", items: doneShown, empty: null },
       { title: "Catch up with", cards: catchCards, items: catchLines, empty: null },
       ...(monday ? [{ title: "This week", items: deadlines, empty: "No deadlines this week." }] : []),
       { title: "Porch & Party: To do for Valerie", note: val ? `From the Porch & Party site at ${timeOf(now)}. Valerie gets her own copy at 7 am.` : null, boxed: true, items: val ?? [], empty: val ? "All clear for Valerie today." : "Valerie's list did not load this morning; the team is fixing it and Valerie still gets her own copy at 7 am." },
     ],
     footer: 'Reply to change anything, for example "move the intro to Monday".',
-    postscript: credits ? `8Raise: Monique used ${credits.used} of her ${credits.budget ?? 75} credits this month (${credits.kept ?? 30} always kept for you)` : null,
+    postscript: ps,
     refs: [`yd_${today.replace(/-/g, "")}`],
   });
-  return { ...laid, dropped };
+
+  const digest = {
+    day: today, subject: laid.subject, built_at: new Date(now).toISOString(),
+    decide: decide.map(({ id, title, body, details, draft, buttons, plan, from, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, plan: plan ?? null, from: from ?? "boss", screen })),
+    deals: deals.map(({ id, company, side, size, price, structure, from, when, received_on, url, screen }) => ({ id, company, side, size, price: price ?? "—", structure: structure ?? "—", from, when, received_on: received_on ?? null, email_url: /^https:\/\/mail\.google\.com\//.test(String(url ?? "")) ? url : null, screen })),
+    found: found.map(({ id, text, links, deal, holders, screen }) => ({ id, text, links: links ?? [], deal: deal ?? null, holders, screen })),
+    done: done.map(({ id, text, links, screen }) => ({ id, text, links: links ?? [], screen })),
+    catchups: catchCards.map(({ id, title, body, details, draft, buttons, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, screen })),
+    briefing: raw ? { for_day: data.briefing.for_day, top: raw.map((l) => proseText(proseRuns(l)).replace(/⁣/g, "")) } : null,
+    prospects: prospects ? { items: prospects.items.map((i) => (typeof i === "string" ? i : i.text)), sent: (data.prospects?.sent ?? []).map((r) => ({ name: r.name, firm: r.firm, email: r.email, touch: r.touch_no, sent_at: r.sent_at, subject: r.sent_subject ?? r.subject, body: r.body ?? null })) } : null,
+    eightraise: ps,
+  };
+  return { ...laid, dropped, digest };
 }
 
 /**
@@ -272,9 +526,12 @@ async function read(api, now) {
   const withDue = tasks.map((t) => { let input = {}; try { input = typeof t.input === "string" ? JSON.parse(t.input) : (t.input ?? {}); } catch { input = {}; } return { ...t, due: input?.due ?? null }; });
   // The bounce agent's last day (rule 4): one "done" line. A failed read is said in the log, not to her.
   const bounceFixes = await api.get("/outreach/bounce-fixes").catch((e) => { console.error(`your-day: bounce fixes not read (${e.message})`); return null; });
+  // The channel's comment digests: what a comment task is about, and the ones Monique left alone.
+  const prospects = await api.get(`/lp/prospects/activity?since=${now - 30 * 3_600_000}`).catch((e) => { console.error(`your-day: prospect activity not read (${e.message})`); return null; });
+  const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
   const { sections, skipped } = readMorningSections({ now });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, morning: sections };
+  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, commentWatch, prospects, morning: sections };
 }
 
 async function feedOf(range) {
@@ -287,6 +544,15 @@ async function feedOf(range) {
 async function fixJob(api, title, prompt) {
   try { await api.post("/tasks", { title, lane: "ops", employee_id: "emp_repo", input: { prompt: `seq23/boss-os — ${prompt}` } }); console.log(`your-day: fix job opened — ${title}`); }
   catch (e) { console.error(`your-day: the fix job "${title}" was not opened (${e.message})`); }
+}
+
+/** Keep the morning in Boss OS (one retry). `true` when it is there. */
+async function postDigest(api, digest) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try { await api.post("/morning", { day: digest.day, payload: digest }); console.log(`your-day: kept the morning in Boss OS (${digest.decide.length} decisions)`); return true; }
+    catch (e) { console.error(`your-day: the morning was not kept in Boss OS (attempt ${attempt}: ${e.message})`); }
+  }
+  return false;
 }
 
 /** The morning sections this email told her once and clears after it goes (producers that append). */
@@ -318,8 +584,11 @@ async function main() {
 
   if (PREVIEW) {
     fs.mkdirSync(PREVIEW, { recursive: true });
-    fs.writeFileSync(path.join(PREVIEW, "your-day.html"), email.html);
-    fs.writeFileSync(path.join(PREVIEW, "your-day.txt"), `${email.subject}\n\n${email.text}`);
+    fs.writeFileSync(path.join(PREVIEW, "your-day.html"), email.html, { mode: 0o600 });
+    fs.writeFileSync(path.join(PREVIEW, "your-day.txt"), `${email.subject}\n\n${email.text}`, { mode: 0o600 });
+    fs.writeFileSync(path.join(PREVIEW, "your-day.digest.json"), JSON.stringify(email.digest, null, 2), { mode: 0o600 });
+    // --post-digest: keep the morning in Boss OS too (its screens and Today), still sending nothing.
+    if (process.argv.includes("--post-digest")) await postDigest(api, email.digest);
     console.log(`your-day: wrote the preview to ${PREVIEW}${email.problems.length ? ` — it would be HELD: ${email.problems.join("; ")}` : ""}`);
     return;
   }
@@ -329,9 +598,14 @@ async function main() {
   if (email.dropped.length) await fixJob(api, "A morning-email section wrote a line that is not plain", `Simone's morning email dropped these lines because they failed the plain-email check (src/shared/boss/mail/plain.mjs lineProblems): ${email.dropped.join(" | ")}. Fix the producer that wrote them (~/.boss-os/morning/<section>.json, src/shared/boss/mail/morning.mjs).`);
   if (d.error) await fixJob(api, "Valerie's list did not load for the morning email", `the Porch & Party owner feed answered: ${d.error}. Simone's morning email said so in one line. Fix the read (PNP_OWNER_FEED_TOKEN, ${FEED}).`);
 
+  // The morning goes to Boss OS FIRST: every link in the email opens one of its items, and Today
+  // lists its decisions. A failed post still sends (the email carries everything) and opens a fix job.
+  const kept = await postDigest(api, email.digest);
+  if (!kept) await fixJob(api, "The morning email's screens were not saved", `Simone's morning email (scripts/ops/your-day.mjs) could not post its items to Boss OS (POST /morning), so its "See everything" links and Today's list are empty for ${email.digest.day}. Find why and fix it at source (src/worker/boss/routes/morning.ts).`);
   const r = await sendAsEmployee("Simone", { to: process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", subject: email.subject, text: email.text, prelaid: email, context: replyContext(email.text) });
   if (!r.ok) { console.error(`NAMED STOP [SEND_REFUSED] "${email.subject}" was not sent: ${r.error}`); process.exit(9); }
   console.log(`your-day: sent "${email.subject}" from ${r.from}`);
+  if (kept) await api.post(`/morning/${email.digest.day}/sent`, {}).catch((e) => console.error(`your-day: the morning was not marked sent (${e.message})`));
   clearToldSections(TOLD_ONCE);
   fs.mkdirSync(SENT_DIR, { recursive: true });
   fs.writeFileSync(marker, new Date(now).toISOString());

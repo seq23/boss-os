@@ -37,7 +37,7 @@ const DATA = {
       { company: "Company B", side: "Sell", size: "$300M", price: "$138", from: "Broker Two (Firm X)", url: `${G}b2` },
     ], link: { label: "See the full grid", url: BOSS } },
     monique_found: { section: "monique_found", at: stamp, lines: ["For your $1B Company A buyer: 5 funds hold $310M between them."], link: { label: "See holders and drafts", url: BOSS } },
-    lp: { section: "lp", at: stamp, decide: [{ title: "Reply to an LP who wants a call", body: "Replied Tuesday; not sent yet.", buttons: [{ label: "Send as is", url: `${G}d1` }, { label: "Edit, then send", url: `${G}d1e` }, { label: "Skip", url: BOSS }], priority: 10 }] },
+    lp: { section: "lp", at: stamp, decide: [{ title: "Reply to an LP who wants a call", body: "Replied Tuesday; not sent yet.", buttons: [{ label: "Send as is", url: `${G}d1` }, { label: "Edit, then send", url: `${G}d1e` }, { label: "Skip", url: `${BOSS}tap/${"a".repeat(24)}?do=skip` }], priority: 10 }] },
     prospects: { section: "prospects", at: stamp, lines: ["Prospecting: 12 new buyers found, 3 follow-ups sent, 1 interested."] },
     tail: { section: "tail", at: stamp, lines: ['Your email "Fix the footer": Danielle fixed the footer link and it is live.', "Line four.", "Line five."] },
     catchups: { section: "catchups", at: stamp, decide: [{ title: "Catch up with a past partner", body: "They bought Company A last year and it is moving.", buttons: [{ label: "Send", url: `${G}c1` }, { label: "Skip", url: BOSS }] }] },
@@ -51,52 +51,72 @@ const DATA = {
 
 describe("the one morning email", () => {
   const e = buildDay(DATA, NOW);
-  it("passes the gate and is in her order: Decide, deals, Monique found, briefing, done, catch-ups, Valerie, sign-off, 8Raise", () => {
+  it("passes the gate and is in her order: Decide, deals, Monique found, briefing, done, catch-ups, Valerie, sign-off; no 8Raise line when nothing is wrong", () => {
     expect(e.problems).toEqual([]);
-    expect(plainProblems(e)).toEqual([]);
-    const heads = ["Decide (4)", "New deals since yesterday (2)", "Monique found", "This morning's briefing (Camille)", "Done for you", "Catch up with", "Porch & Party: To do for Valerie", "— Simone", "8Raise: Monique used 3 of her 75 credits this month (30 always kept for you)"];
+    expect(plainProblems({ ...e, kind: "morning" })).toEqual([]);
+    const heads = ["Decide (4)", "New deals since yesterday (2)", "Monique found", "This morning's briefing (Camille)", "Done for you", "Catch up with", "Porch & Party: To do for Valerie", "— Simone"];
     const idx = heads.map((h) => e.text.indexOf(h));
     expect(idx.every((n) => n >= 0), JSON.stringify(idx)).toBe(true);
     expect([...idx].sort((a, b) => a - b)).toEqual(idx);
     expect(e.subject).toBe("Friday: 4 decisions, 2 new deals, Valerie's list");
     expect(e.text.split("\n")[0]).toBe("Good morning. Here is your Friday, October 23. On your calendar: 10 am Call with Example Partners with A. Person.");
+    // Owner, 24 Oct 2026: the 8Raise footer only when something is wrong (3 of 75 used is fine).
+    expect(e.text).not.toMatch(/8Raise/);
   });
-  it("Decide: three at most, the LP reply (priority) first, each with its buttons; catch-ups are not decisions", () => {
+  it("Decide: EVERY decision is shown, the count is the number shown, nothing points at Today, each opens its own screen", () => {
     const decide = e.text.slice(e.text.indexOf("Decide (4)"), e.text.indexOf("New deals"));
     expect(decide).toMatch(/^Decide \(4\)\n1\. Reply to an LP who wants a call\nReplied Tuesday; not sent yet\.\n- Send as is: https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1\n- Edit, then send: .*\n- Skip: /);
     expect(decide).toContain("2. Renew the example.com domain");
     expect(decide).toContain("3. Start Danielle's plan for creator-studios?");
-    expect(decide).not.toContain("4.");
-    expect(decide).toContain("And 1 more on your Today page.");
+    expect(decide).toContain("4. Monique is waiting for your word: 2 comments on the channel need your word");
+    expect(decide).not.toMatch(/more on your Today page|5\./);
     expect(decide).not.toContain("past partner");
+    const numbered = decide.split("\n").filter((l) => /^\d+\. /.test(l));
+    expect(numbered).toHaveLength(4);
+    // Every decision carries a link to its own screen, and the digest Boss OS keeps holds the same four.
+    const screens = [...decide.matchAll(/See everything about this: (\S+)/g)].map((m) => m[1]);
+    expect(screens).toHaveLength(4);
+    expect(screens.every((u) => /^https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=decide-[0-9a-f]{10}$/.test(u!))).toBe(true);
+    expect(e.digest.decide.map((d: any) => d.screen)).toEqual(screens);
+    expect(e.digest.decide.map((d: any) => d.title)).toEqual(numbered.map((l) => l.replace(/^\d+\. /, "")));
+    // An Inbox approval opens that approval, never the home page.
+    expect(decide).toContain("Open it to approve or decline: https://boss.sequoiataylor.com/?tab=inbox&approval=apr_x1");
+    expect(decide).not.toMatch(/: https:\/\/boss\.sequoiataylor\.com\/\n/);
     expect(e.html).toMatch(/<a href="https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1" style="display:inline-block[^"]*">Send as is<\/a>/);
   });
-  it("deals are grid rows with a real Gmail link each; Rainmaker rows say Rainmaker; the full grid is one tap", () => {
-    expect(e.text).toContain("- Company A · Buy · $1B · Rainmaker — Open the email: https://mail.google.com/mail/u/0/#all/a1");
-    expect(e.text).toContain("- Company B · Sell · $300M @ $138 · Broker Two (Firm X) — Open the email: https://mail.google.com/mail/u/0/#all/b2");
+  it("deals are grid rows, each opening its own deal screen; the person and firm say who it came from", () => {
+    expect(e.text).toMatch(/- Company A · Buy · \$1B · Broker One — Open the deal: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=deal-[0-9a-f]{10}\n/);
+    expect(e.text).toMatch(/- Company B · Sell · \$300M @ \$138 · Broker Two \(Firm X\) — Open the deal: /);
+    expect(e.text).not.toMatch(/· Rainmaker — /);
+    expect(e.digest.deals.map((d: any) => [d.company, d.email_url])).toEqual([["Company A", `${G}a1`], ["Company B", `${G}b2`]]);
     expect(e.text).toContain(`See the full grid: ${BOSS}`);
     expect(e.html).toMatch(/<table role="presentation"/);
   });
-  it("Camille's briefing is the one-minute summary, five lines at most", () => {
-    const brief = e.text.slice(e.text.indexOf("This morning's briefing"), e.text.indexOf("Done for you")).split("\n").filter((l) => l.startsWith("- "));
-    expect(brief).toEqual(["- Rates held.", "- A large AI secondary priced up.", "- Two IPO filings.", "- A launch slipped.", "- One ruling on fund disclosure."]);
+  it("Camille's briefing: the one-minute summary in five lines, then the whole briefing folded under one tap", () => {
+    const brief = e.text.slice(e.text.indexOf("This morning's briefing"), e.text.indexOf("Read the full briefing")).split("\n").filter((l) => l.startsWith("- "));
+    expect(brief.map((l) => l.replace(/\u2063/g, ""))).toEqual(["- Rates held.", "- A large AI secondary priced up.", "- Two IPO filings.", "- A launch slipped.", "- One ruling on fund disclosure."]);
+    expect(e.text).toContain("Read the full briefing: https://boss.sequoiataylor.com/?view=briefing");
+    // The rest of the report is in the email: written out in the text, folded in the HTML.
+    expect(e.text.replace(/\u2063/g, "")).toContain("- Not this one.");
+    expect(e.html).toMatch(/<details[^>]*><summary[^>]*>Show the full briefing ▾<\/summary>[\s\S]*Not this one\.[\s\S]*<\/details>/);
   });
-  it("Done for you: the bounce agent's one line first, three lines at most, the rest counted", () => {
+  it("Done for you: the bounce agent's one line first, three lines at most, each opening its screen, the rest on Today", () => {
     const done = e.text.slice(e.text.indexOf("Done for you"), e.text.indexOf("Catch up with")).split("\n").filter((l) => l.startsWith("- "));
-    expect(done[0]).toBe("- Replaced 4 outreach addresses that bounced with working ones from each company's own site; outreach restarted (The Industry Guides).");
+    expect(done[0]).toMatch(/^- Replaced 4 outreach addresses that bounced with working ones from each company's own site; outreach restarted \(The Industry Guides\)\. — See it: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=done-[0-9a-f]{10}$/);
     expect(done.length).toBe(4);
-    expect(done[3]).toBe("- And 2 more on your Today page.");
+    expect(done[3]).toBe("- And 2 more done for you. — See them all on Today: https://boss.sequoiataylor.com/?view=morning");
+    expect(e.digest.done).toHaveLength(5);
   });
   it("Valerie's box is unchanged: the site's own list, boxed", () => {
     expect(e.text).toContain("- 9:00 AM · Riley M. · Party setup");
     expect(e.text).toContain("- Money: Jordan P. · Waiting for deposit — $180 due ($130 + $50 refundable deposit)");
     expect(e.html).toContain("faf6ec");
   });
-  it("goes out through employeeMail as laid out, signed by Simone, with its code in the header", () => {
+  it("goes out through employeeMail as laid out, signed by Simone, with its code and its kind in the header", () => {
     process.env.BOSS_OS_MAIL_KEY = "test-key-not-real";
     const p = employeeMail(sendersFor("Simone")[0]!, { to: "owner@example.com", subject: e.subject, text: e.text, prelaid: e });
     expect(p.html).toBe(e.html);
-    expect(p.headers).toEqual({ "X-Boss-Ref": "yd_20261023" });
+    expect(p.headers).toEqual({ "X-Boss-Ref": "yd_20261023", "X-Boss-Kind": "morning" });
     delete process.env.BOSS_OS_MAIL_KEY;
   });
 });

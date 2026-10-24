@@ -56,14 +56,20 @@ commentWatch.post("/", async (c) => {
     if (!ACTIONS.includes(it.proposed_action)) throw badRequest(`Item ${i + 1}: proposed_action must be one of ${ACTIONS.join("/")}`);
     if (it.class !== "negative" && it.class !== "question") throw badRequest(`Item ${i + 1}: class must be negative or question`);
   }
-  // A comment already reported once is never reported twice, whatever the Mac's ledger says.
-  const fresh: DigestBody["items"] = [];
+  // A comment already reported once is never reported twice, whatever the Mac's ledger says — and
+  // never twice in ONE digest either. 21 Oct 2026: the sweep handed the same comment twice, row 2
+  // failed UNIQUE(comment_id) after the digest, the task and row 1 were written, and the digest said
+  // "2 comments" over one row for three days. Repeats go first; everything is written in one batch.
+  const fresh: NonNullable<DigestBody["items"]> = [];
+  const inBatch = new Set<string>();
   for (const it of items) {
+    if (inBatch.has(it.comment_id)) continue;
+    inBatch.add(it.comment_id);
     const seen = await c.env.DB.prepare(`SELECT id FROM comment_watch_items WHERE comment_id = ?`).bind(it.comment_id).first();
-    if (!seen) fresh!.push(it);
+    if (!seen) fresh.push(it);
   }
 
-  if (!fresh!.length) {
+  if (!fresh.length) {
     await c.env.DB
       .prepare(`INSERT INTO comment_watch_digests (id, duty_id, task_id, outcome, new_comments, by_class, item_count, created_at) VALUES (?,?,?,?,?,?,?,?)`)
       .bind(id, DUTY_ID, null, "NOTHING_TO_REPORT", Number(b.new_comments ?? 0) || 0, JSON.stringify(b.by_class ?? {}), 0, now)
@@ -72,26 +78,36 @@ commentWatch.post("/", async (c) => {
     return ok(c, { id, outcome: "NOTHING_TO_REPORT", item_count: 0, task_id: null, email: false }, 201);
   }
 
-  const taskId = newId("tsk");
-  await c.env.DB
-    .prepare(
-      `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at,
-                          intake_kind, execution_assignment, risk, sensitivity, cost_mode)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    )
-    .bind(
-      taskId, duty.lane, duty.employee_id,
-      `${fresh!.length} comment${fresh!.length === 1 ? "" : "s"} on the channel need your word`,
-      JSON.stringify({ kind: TASK_KIND, digest_id: id, duty_id: DUTY_ID, item_count: fresh!.length }),
-      "awaiting_approval", now, "ops", "AI_DRAFT", "low", "private", "NORMAL",
-    )
-    .run();
-  await c.env.DB
+  /*
+   * ONLY WHAT IS HERS WAITS FOR HER (owner, 24 Oct 2026: "always when u can fix something yourself do
+   * that first and just tell me what happened and what u did to fix it"). Hiding or answering a
+   * comment speaks for the channel, so it waits for her word. A comment Monique proposes to leave
+   * alone touches nothing: it is recorded and told in the morning email as done, with no task and
+   * no email. A comment that names a fault in the video (`product_note`) becomes a fix job for the
+   * team, and the morning email says so.
+   */
+  const needsHer = fresh.some((it) => it.proposed_action !== "ignore");
+  const taskId = needsHer ? newId("tsk") : null;
+  const stmts: D1PreparedStatement[] = [];
+  if (taskId) {
+    stmts.push(c.env.DB
+      .prepare(
+        `INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at,
+                            intake_kind, execution_assignment, risk, sensitivity, cost_mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        taskId, duty.lane, duty.employee_id,
+        `${fresh.length} comment${fresh.length === 1 ? " on the channel needs" : "s on the channel need"} your word`,
+        JSON.stringify({ kind: TASK_KIND, digest_id: id, duty_id: DUTY_ID, item_count: fresh.length }),
+        "awaiting_approval", now, "ops", "AI_DRAFT", "low", "private", "NORMAL",
+      ));
+  }
+  stmts.push(c.env.DB
     .prepare(`INSERT INTO comment_watch_digests (id, duty_id, task_id, outcome, new_comments, by_class, item_count, created_at) VALUES (?,?,?,?,?,?,?,?)`)
-    .bind(id, DUTY_ID, taskId, "SENT", Number(b.new_comments ?? 0) || 0, JSON.stringify(b.by_class ?? {}), fresh!.length, now)
-    .run();
-  for (const [i, it] of fresh!.entries()) {
-    await c.env.DB
+    .bind(id, DUTY_ID, taskId, "SENT", Number(b.new_comments ?? 0) || 0, JSON.stringify(b.by_class ?? {}), fresh.length, now));
+  for (const [i, it] of fresh.entries()) {
+    stmts.push(c.env.DB
       .prepare(
         `INSERT INTO comment_watch_items (id, digest_id, n, comment_id, video_id, video_title, author, text, published_at, class,
                                           proposed_action, proposed_reply, product_note, created_at)
@@ -100,14 +116,30 @@ commentWatch.post("/", async (c) => {
       .bind(
         newId("cwi"), id, i + 1, it.comment_id, it.video_id, text(it.video_title, 300), text(it.author, 200), it.text.slice(0, 20000),
         text(it.published_at, 40), it.class, it.proposed_action, text(it.proposed_reply, 2000), text(it.product_note, 500), now,
-      )
-      .run();
+      ));
   }
-  await c.env.DB.prepare(`UPDATE standing_duties SET last_task_id = ? WHERE id = ?`).bind(taskId, DUTY_ID).run();
-  await taskEvent(c.env, taskId, "comment_watch_digest", { digest_id: id, item_count: fresh!.length, new_comments: b.new_comments ?? 0 });
-  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "comment_watch_digest", entityId: id, action: "posted", detail: { item_count: fresh!.length, task_id: taskId } });
+  // A fault a viewer named is the team's to fix (the channel's own repo), never her decision.
+  const fixIds: string[] = [];
+  for (const it of fresh.filter((x) => text(x.product_note, 500))) {
+    const fixId = newId("tsk");
+    fixIds.push(fixId);
+    stmts.push(c.env.DB
+      .prepare(`INSERT INTO tasks (id, lane, employee_id, title, input, status, created_at, intake_kind, execution_assignment, risk, sensitivity, cost_mode)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(
+        fixId, "ops", "emp_repo", `Fix what a viewer noticed on "${text(it.video_title, 120) ?? "a video"}": ${text(it.product_note, 200)}`,
+        JSON.stringify({ kind: "comment_fault_fix", digest_id: id, comment_id: it.comment_id, prompt: `seq23/how-we-know — a viewer's comment on the video "${text(it.video_title, 200) ?? it.video_id}" points at a fault in the video: ${text(it.product_note, 500)}. Their words: "${it.text.slice(0, 400)}". Find the cause in the pipeline that made it, fix it at source for future videos, and guard it with a test.` }),
+        "queued", now, "ops", "AI_DRAFT", "low", "private", "NORMAL",
+      ));
+  }
+  if (taskId) stmts.push(c.env.DB.prepare(`UPDATE standing_duties SET last_task_id = ? WHERE id = ?`).bind(taskId, DUTY_ID));
+  await c.env.DB.batch(stmts);
+  // Queued like every other task (routes/tasks.ts): a row nobody is told about never runs.
+  for (const fixId of fixIds) await c.env.TASKS.send({ taskId: fixId, lane: "ops" });
+  if (taskId) await taskEvent(c.env, taskId, "comment_watch_digest", { digest_id: id, item_count: fresh.length, new_comments: b.new_comments ?? 0 });
+  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "comment_watch_digest", entityId: id, action: "posted", detail: { item_count: fresh.length, task_id: taskId, needs_her: needsHer } });
   const rows = await itemsOf(c.env, id);
-  return ok(c, { id, outcome: "SENT", item_count: rows.length, task_id: taskId, email: true, items: rows.map(({ n, comment_id, author, video_title, proposed_action, proposed_reply }) => ({ n, comment_id, author, video_title, proposed_action, proposed_reply })) }, 201);
+  return ok(c, { id, outcome: "SENT", item_count: rows.length, task_id: taskId, email: needsHer, items: rows.map(({ n, comment_id, author, video_title, proposed_action, proposed_reply }) => ({ n, comment_id, author, video_title, proposed_action, proposed_reply })) }, 201);
 });
 
 /** The Mac records the digest email's id once it is sent, so the row says the mail went. */

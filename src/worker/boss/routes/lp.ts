@@ -34,7 +34,7 @@ import { nextDueAt } from "../duties/cadence";
 // boss fix L
 import {
   upsertLpRows, listLpRows, importProspects, prospectPlan, recordProspectEvents, proposeTemplate,
-  approvedTemplate, pendingTemplate, ledgerRows, readExclusions,
+  approvedTemplate, pendingTemplate, ledgerRows, readExclusions, prospectActivity, backfillTouches,
 } from "../lp/desk";
 import { LP_STATUS_LABEL, canSpend, monthOf, monthSpent, nameRulesIn, MONIQUE_MONTHLY } from "../../../shared/boss/lp/plan.mjs";
 
@@ -170,6 +170,8 @@ lp.get("/replies", async (c) => {
       status: r.status, status_label: (LP_STATUS_LABEL as Record<string, string>)[r.status] ?? r.status,
       first_seen: r.first_seen, drafted_at: r.drafted_at, sent_at: r.sent_at, thread_id: r.thread_id,
       draft_message_id: r.draft_message_id, send_error: r.send_error,
+      said: r.said, draft_body: r.draft_body, last_reply_text: r.last_reply_text, last_reply_at: r.last_reply_at,
+      reply_from: r.reply_from, subject: r.subject,
     })),
   });
 });
@@ -188,6 +190,19 @@ lp.get("/prospects", async (c) => {
   const tokens = c.req.query("tokens") === "1" ? ", draft_tap_token" : "";
   const rows = (await c.env.DB.prepare(`SELECT id, name, firm, email, kind, source, source_ref, status, side, touches, first_sent_at, last_touch_at, thread_id, last_message_id, subject, reply_note, draft_tap_token IS NOT NULL AS has_draft, created_at, updated_at${tokens} FROM prospects ORDER BY created_at DESC LIMIT 1000`).all<any>()).results ?? [];
   return ok(c, { rows, approved: await approvedTemplate(c.env.DB), pending: await pendingTemplate(c.env.DB) });
+});
+
+/** Every send with its words, the replies, who is next and when, the totals (?since=ms, default all). */
+lp.get("/prospects/activity", async (c) => {
+  const since = Number(c.req.query("since") ?? 0);
+  return ok(c, await prospectActivity(c.env.DB, Number.isFinite(since) && since > 0 ? since : 0));
+});
+
+/** Her Sent mail, read on her Mac: every prospect email that went, with its words. */
+lp.post("/prospects/touches", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (!Array.isArray(b?.touches)) throw badRequest("touches[] is required");
+  return ok(c, { recorded: await backfillTouches(c.env.DB, b.touches.slice(0, 2000)) });
 });
 
 lp.post("/prospects/import", async (c) => {

@@ -15,6 +15,8 @@ import { Vault } from "./pages/Vault";
 import { Settings } from "./pages/Settings";
 import { Systems } from "./pages/Systems";
 import { startAutoFlush, pendingCount } from "./offline/outbox";
+import { MorningItem, WorkItem } from "./pages/MorningItem";
+import { readRoute, readFocus, type Route } from "./nav";
 
 /*
  * ─── THE PEOPLE TAB IS GONE, AND THE RECORD IS NOT ──────────────────────────
@@ -47,6 +49,23 @@ export default function App() {
   useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "capital") setTab("capital"); }, []); // boss fix D
   // Combined boss fix — Danielle's "Stopped work on …" email opens the change on Systems → Properties.
   useEffect(() => { if (new URLSearchParams(window.location.search).get("tab") === "systems") setTab("systems"); }, []);
+  /*
+   * EVERY LINK IN HER MORNING EMAIL OPENS ITS OWN SCREEN (24 Oct 2026): an item of the morning, a
+   * piece of work, an employee's open work, an Inbox approval, or Today at the briefing. The address
+   * bar carries which (nav.ts); the browser's Back returns to where she was.
+   */
+  const [route, setRoute] = useState<Route>(() => readRoute());
+  const [focus, setFocus] = useState(() => readFocus());
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const t = q.get("tab");
+    if (t && t in TITLES) setTab(t as TabId);
+    if (t === "inbox" && q.get("approval")) setOpenApproval(q.get("approval"));
+    const onPop = () => { setRoute(readRoute()); setFocus(readFocus()); };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const closeRoute = () => { if (route) { window.history.pushState({}, "", "/"); setRoute(null); } };
   // Today's Operations line opens Team on Duties; any other way in opens it on the roster.
   const [teamStart, setTeamStart] = useState<TeamView>("team");
   // Your team → "Open LP replies" lands on that Deals view (Builder U).
@@ -155,13 +174,14 @@ export default function App() {
     );
 
   const lane = tab === "trading" ? "trading" : "ops";
-  const title = settingsOpen ? "Settings" : openApproval && tab === "inbox" ? "Docket" : TITLES[tab];
+  const title = route ? (route.kind === "morning" ? "This morning" : route.kind === "task" ? "The work" : "Open work")
+    : settingsOpen ? "Settings" : openApproval && tab === "inbox" ? "Docket" : TITLES[tab];
 
   return (
     <Shell
       tab={tab}
-      onTab={(t) => { setTab(t); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); }}
-      onBack={tab !== "today" || settingsOpen ? () => { setTab("today"); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); } : undefined}
+      onTab={(t) => { closeRoute(); setTab(t); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); }}
+      onBack={route || tab !== "today" || settingsOpen ? () => { closeRoute(); setTab("today"); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); } : undefined}
       title={title}
       lane={lane}
       pending={pending}
@@ -175,8 +195,12 @@ export default function App() {
         * ScreenBoundary for why this exists: without it, one screen's render error took the entire
         * application down to a blank page, navigation included.
         */}
-      <ScreenBoundary key={settingsOpen ? "settings" : tab} screen={settingsOpen ? "Settings" : TITLES[tab]}>
-      {settingsOpen ? (
+      <ScreenBoundary key={route ? JSON.stringify(route) : settingsOpen ? "settings" : tab} screen={settingsOpen ? "Settings" : title}>
+      {route ? (
+        route.kind === "morning" ? <MorningItem day={route.day} id={route.item} />
+          : route.kind === "task" ? <WorkItem taskId={route.id} />
+          : <WorkItem employeeId={route.id} />
+      ) : settingsOpen ? (
         <Settings onLock={async () => {
               await api.lock();
               try { localStorage.removeItem("boss-os-unlocked-here"); } catch { /* private window */ }
@@ -184,7 +208,7 @@ export default function App() {
               setSettingsOpen(false);
             }} />
       ) : tab === "today" ? (
-        <Today onOpenOperations={() => { setTeamStart("duties"); setTab("team"); }} />
+        <Today focus={focus} onOpenOperations={() => { setTeamStart("duties"); setTab("team"); }} />
       ) : tab === "inbox" ? (
         openApproval ? (
           <ApprovalDetail

@@ -119,13 +119,16 @@ describe("LP replies: her voice and the Decide item", () => {
     const now = Date.parse("2026-10-23T11:00:00Z");
     const items = lpDecideItems([
       { status: "drafted", tap_token: "a".repeat(24), name: "New Person", drafted_at: now - 1 * DAY, bucket: "warm", draft_message_id: "m1" },
-      { status: "drafted", tap_token: "b".repeat(24), name: "Old Person", drafted_at: now - 3 * DAY, bucket: "call", draft_message_id: "m2" },
+      { status: "drafted", tap_token: "b".repeat(24), name: "Old Person", drafted_at: now - 3 * DAY, bucket: "call", draft_message_id: "m2", draft_body: "Hi Old,\n\nThank you." },
       { status: "sent", tap_token: "c".repeat(24), name: "Done Person" },
     ], now);
     expect(items.map((i) => i.title)).toEqual(["Waiting 3 days: Reply to Old Person", "Reply to New Person"]);
     expect(items[0]!.priority).toBeGreaterThanOrEqual(10); // unsent after 2 days → top of Decide
     expect(items[1]!.priority).toBeLessThan(10);
-    expect(items[0]!.buttons.map((b) => b.label)).toEqual(["Send as is", "Edit, then send", "Skip"]);
+    expect(items[0]!.buttons.map((b) => b.label)).toEqual(["Send as is", "Edit in Gmail, then send", "Skip"]);
+    expect(items[0]!.draft?.text).toBe("Hi Old,\n\nThank you.");
+    // No words on the row, no "Send as is": a tap never sends what the email did not show (24 Oct 2026).
+    expect(items[1]!.buttons.map((b) => b.label)).toEqual(["Open the draft in Gmail (you changed it there)", "Skip"]);
     expect(items[0]!.buttons[0]!.url).toBe(`https://boss.sequoiataylor.com/tap/${"b".repeat(24)}?do=send`);
     expect(items[0]!.buttons[1]!.url).toMatch(/^https:\/\/mail\.google\.com\/mail\/u\/sequoia@westpeek\.ventures\/#drafts\?compose=m2$/);
   });
@@ -221,10 +224,18 @@ describe("routes and the one-tap links", () => {
   });
 
   it("Send as is without the Google key does not pretend: it says not sent and keeps the draft", async () => {
-    const r = await apiJson("/api/lp/replies", { method: "POST", body: { rows: [{ address: "lp.two@example.com", bucket: "warm", reply_from: "sequoia@westpeek.ventures", status: "drafted", first_seen: "2026-10-21", draft_id: "d2" }] } });
+    const r = await apiJson("/api/lp/replies", { method: "POST", body: { rows: [{ address: "lp.two@example.com", bucket: "warm", reply_from: "sequoia@westpeek.ventures", status: "drafted", first_seen: "2026-10-21", draft_id: "d2", draft_message_id: "m2", draft_body: "Hi,\n\nThanks." }] } });
     const res = await tap(`/api/auth/tap/${r.body.data.rows[0].tap_token}?do=send`, "POST");
     expect(res.text).toContain("Not sent yet");
     expect((await env.DB.prepare(`SELECT status, send_error FROM lp_reply_drafts WHERE address = 'lp.two@example.com'`).first<any>())).toMatchObject({ status: "drafted" });
+  });
+
+  it("Send as is refuses a draft whose words her email could not show", async () => {
+    const r = await apiJson("/api/lp/replies", { method: "POST", body: { rows: [{ address: "lp.three@example.com", bucket: "warm", reply_from: "sequoia@westpeek.ventures", status: "drafted", first_seen: "2026-10-21", draft_id: "d3", draft_message_id: "m3" }] } });
+    const row = r.body.data.rows.find((x: any) => x.address === "lp.three@example.com");
+    const res = await tap(`/api/auth/tap/${row.tap_token}?do=send`, "POST");
+    expect(res.text).toContain("Open it in Gmail to send");
+    expect((await env.DB.prepare(`SELECT status, decision FROM lp_reply_drafts WHERE address = 'lp.three@example.com'`).first<any>())).toMatchObject({ status: "drafted", decision: null });
   });
 
   it("an unknown token does nothing and says so calmly", async () => {
@@ -238,7 +249,7 @@ describe("routes and the one-tap links", () => {
     ]);
     const before = await prospectPlan(env.DB, WED_10AM);
     expect(before.sends).toEqual([]);
-    expect(before.stops.join(" ")).toMatch(/No approved prospect email/);
+    expect(before.stops.join(" ")).toMatch(/No prospect email is approved yet/);
     const t = await proposeTemplate(env.DB, null, NAMES);
     expect(t.ok).toBe(true);
     const tok = (t as any).template.tap_token;

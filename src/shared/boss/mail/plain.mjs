@@ -40,6 +40,10 @@ export const ACRONYMS = new Set([
   "KDP", "LLC", "LP", "LPS", "NYC", "OK", "PDF", "PR", "PRS", "SEO", "SMS", "SPF", "TLC", "TV", "UK", "URL", "US", "USA",
   "UTC", "VC", "PNG", "AM", "PM", "ET", "CT", "PT", "Q1", "Q2", "Q3", "Q4", "ABA", "ADHD", "TRT", "IV", "LGCV", "OS",
   "SPV", "ESOP", "RSU", "IRS", "SEC", "FINRA", "BD", "AUM", "HNW", "YC", "ISBN", "DMs", "HQ", "ASAP", "EOD", "USCIS",
+  // 24 Oct 2026: the briefing came through as "wti", "php", "cvss", "uae". Real names, kept as written.
+  "WTI", "PHP", "CVSS", "CVE", "UAE", "OPEC", "GDP", "CPI", "PCE", "ETF", "ETFS", "FDA", "FTC", "DOJ", "EU", "IMF", "NATO",
+  "NAV", "IPOS", "M&A", "SPCX", "S&P", "GPU", "GPUS", "CFO", "COO", "CTO", "LLM", "LLMS", "RCE", "FOMC", "ECB", "BOJ", "UN",
+  "EV", "EVS", "ARR", "YTD", "QOQ", "YOY", "LPS", "GPS", "VCS", "SPVS", "NYSE", "NASDAQ", "TSMC", "AMD", "IBM", "AWS", "CEOS",
 ]);
 
 /**
@@ -96,6 +100,22 @@ const COULD_NOT_READ_RE = /\bI could(?: not|n['’]t) read\b/i;
 
 /** The caps the gate holds an email to. */
 export const MAX_TEXT_CHARS = 9000;
+/**
+ * THE MORNING EMAIL CARRIES CAMILLE'S WHOLE BRIEFING (owner, 24 Oct 2026: "must come FULLY in the
+ * email"), so it has its own cap; every other email keeps 9,000.
+ */
+export const MORNING_MAX_TEXT_CHARS = 60000;
+/**
+ * PROSE IS HER RESEARCH, NOT OUR SYSTEM TALKING. Camille's briefing is about the world: "crude
+ * crossed $100", "shipping routes", "WTI", "the #1 holder". The jargon list, the capitals rule and
+ * the "#12" rule are about Boss OS's own words, so inside a prose run they neither rewrite nor hold.
+ * Ids, commands, /api paths and "I could not read" are still refused everywhere. A prose run is
+ * marked in the text with an invisible separator (U+2063) at each end, and in the HTML with
+ * `<!--prose-->…<!--/prose-->`; the gate reads the marks.
+ */
+export const PROSE_MARK = "\u2063";
+const PROSE_TEXT_RE = /\u2063[^\u2063]*\u2063/g;
+const PROSE_HTML_RE = /<!--prose-->[\s\S]*?<!--\/prose-->/g;
 export const MAX_SUBJECT_CHARS = 90;
 export const MAX_DECIDE = 3;
 
@@ -143,8 +163,9 @@ function capsWord(w) {
  * no snake_case, no cron or time-zone strings, no shouting, no jargon. Idempotent, so a structured
  * sender that already wrote plainly passes through untouched.
  */
-export function cleanText(input) {
+export function cleanText(input, { prose = false } = {}) {
   if (input === null || input === undefined) return "";
+  if (prose) return cleanProse(input);
   const { out, restore } = protect(String(input));
   let s = out;
   const wasAllCaps = /[A-Z]{3}/.test(s) && !/[a-z]/.test(s.replace(/\u0000\d+\u0000/g, ""));
@@ -185,6 +206,63 @@ export function cleanText(input) {
   s = s.replace(/^[—–-]\s+/, "").replace(/\s+[—–-]$/, "");
   if (wasAllCaps && s) s = s.charAt(0).toUpperCase() + s.slice(1);
   return restore(s);
+}
+
+/**
+ * One run of research prose, cleaned only of what never belongs in her email (ids, commands, /api
+ * paths, Mac paths, backticks, markdown asterisks). Capitals, "#1" and every word are kept.
+ */
+function cleanProse(input) {
+  const { out, restore } = protect(String(input));
+  let s = out.replace(/\u2063/g, "");
+  s = s.replace(COMMAND_SPAN, (m) => (m.startsWith("`") && !COMMAND_RE.test(m) ? m : "")).replace(/`/g, "");
+  s = s.replace(/\s*\(\s*(?:(?:GET|POST|PUT|PATCH|DELETE)\s+)?\/api\/[^)]*\)/g, "").replace(/(?:\b(?:GET|POST|PUT|PATCH|DELETE)\s+)?(?<![\w.])\/api\/[\w/:.?=&-]*/g, "");
+  s = s.replace(/\s*[[(]\s*(?:[a-z]{2,5}_[a-z0-9_]+)\s*[\])]/gi, "").replace(ID_RE, "");
+  s = s.replace(MAC_PATH_RE, "a file on your Mac");
+  // Markdown emphasis is punctuation noise in an email: "**x**", "*x*" and a stray "*" all go.
+  s = s.replace(/\*+/g, "").replace(/(^|\s)_{1,2}(\S[^_]*\S)_{1,2}(?=\s|[.,;:!?]|$)/g, "$1$2");
+  s = s.replace(/\(\s*\)/g, "").replace(/\s+([,.;:!?])/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
+  return restore(s);
+}
+
+/**
+ * A briefing line as runs: `[{ text, bold?, cite?: [{ n, url }] }]`. "**Brent hit $116**, on … [5, 6]"
+ * is a bold run, a plain run and one citation run whose numbers open their sources. Unbalanced
+ * asterisks ("*x**") are dropped, never shown. Pure; `sourceUrl(n)` says where source n lives.
+ */
+export function proseRuns(line, sourceUrl = () => null) {
+  const out = [];
+  const raw = String(line ?? "").replace(/\u2063/g, "");
+  const pieces = raw.split(/\*\*/);
+  // An odd number of "**" pairs means one is stray: then nothing is bold, and every asterisk goes.
+  const balanced = pieces.length % 2 === 1;
+  pieces.forEach((piece, i) => {
+    const bold = balanced && i % 2 === 1;
+    for (const part of piece.split(/(\[\d{1,3}(?:\s*,\s*\d{1,3})*\])/)) {
+      const m = /^\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]$/.exec(part);
+      if (m) { out.push({ text: "", cite: m[1].split(",").map((n) => Number(n.trim())).map((n) => ({ n, url: sourceUrl(n) })) }); continue; }
+      const text = cleanProse(part);
+      if (text || /\s/.test(part)) out.push({ text: part.trim() ? (/^\s/.test(part) ? " " : "") + text + (/\s$/.test(part) ? " " : "") : " ", ...(bold ? { bold: true } : {}) });
+    }
+  });
+  return out.filter((r, i, a) => r.cite || r.text.trim() || (i > 0 && i < a.length - 1));
+}
+
+const citeText = (c) => `[${c.map((x) => x.n).join(", ")}]`;
+/** A prose line in the plain text: the words, the citation numbers kept, marked for the gate. */
+export function proseText(runs) {
+  const t = runs.map((r) => (r.cite ? ` ${citeText(r.cite)}` : webUrl(r.url) ? `${r.text}: ${r.url}` : r.text)).join("").replace(/\s+([,.;:!?])/g, "$1").replace(/ {2,}/g, " ").trim();
+  return t ? `${PROSE_MARK}${t}${PROSE_MARK}` : "";
+}
+// A research run reads the open web: only a plain http(s) address ever becomes a link.
+const webUrl = (u) => typeof u === "string" && /^https?:\/\/[^\s"'<>]+$/.test(u);
+function proseHtml(runs) {
+  const body = runs.map((r) => {
+    if (r.cite) return `<sup style="font-size:10px">${r.cite.map((c) => (webUrl(c.url) ? `<a href="${esc(c.url)}" style="color:#1F4E8C">${c.n}</a>` : String(c.n))).join(",")}</sup>`;
+    if (webUrl(r.url)) return `<a href="${esc(r.url)}" style="color:#1F4E8C">${esc(r.text)}</a>`;
+    return r.bold ? `<b>${esc(r.text)}</b>` : esc(r.text);
+  }).join("");
+  return `<!--prose-->${body}<!--/prose-->`;
 }
 
 /** "OpenAI, OpenAI, OpenAI, Blue Origin" → "OpenAI and Blue Origin". */
@@ -246,12 +324,26 @@ function cleanButtons(buttons) {
 
 /** A Decide item, cleaned: `{ title, body?, buttons: [{ label, url }] }`. A bare string is a title. */
 function cleanCard(c) {
-  if (typeof c === "string") return { title: cleanText(c), body: "", buttons: [] };
-  return { title: cleanText(c?.title), body: cleanText(c?.body ?? ""), buttons: cleanButtons(c?.buttons) };
+  if (typeof c === "string") return { title: cleanText(c), body: "", details: [], draft: null, buttons: [] };
+  // `details`: plain lines under the body (who, their address, what they said, the history).
+  // `draft`: the words that go out in her name, word for word — "Send as is" never sends what is not
+  // shown (owner, 24 Oct 2026). The draft is her voice, so it is kept as written (prose).
+  const draft = c?.draft && typeof c.draft.text === "string" && c.draft.text.trim()
+    ? { heading: cleanText(c.draft.heading ?? "The reply, word for word"), text: String(c.draft.text).split("\n").map((l) => cleanText(l, { prose: true })).join("\n").replace(/\n{3,}/g, "\n\n").trim() }
+    : null;
+  return {
+    title: cleanText(c?.title), body: cleanText(c?.body ?? ""),
+    details: (c?.details ?? []).map((d) => cleanText(d)).filter(Boolean),
+    draft, buttons: cleanButtons(c?.buttons),
+  };
 }
 
 function cardText(c, n) {
-  return [`${n}. ${c.title}`, ...(c.body ? [c.body] : []), ...c.buttons.map((b) => `- ${b.label}: ${b.url}`)];
+  return [
+    `${n}. ${c.title}`, ...(c.body ? [c.body] : []), ...c.details.map((d) => `- ${d}`),
+    ...(c.draft ? [`${c.draft.heading}:`, ...c.draft.text.split("\n").map((l) => (l ? `  | ${PROSE_MARK}${l}${PROSE_MARK}` : "  |"))] : []),
+    ...c.buttons.map((b) => `- ${b.label}: ${b.url}`),
+  ];
 }
 
 const C = {
@@ -270,21 +362,32 @@ function cardHtml(c, n, tone = "decide") {
   return `<div style="margin:0 0 10px;padding:14px;border:1px solid ${border};border-radius:10px;background:${bg}">`
     + `<p style="margin:0 0 6px;font-size:15px;font-weight:600;color:${C.ink}">${n ? `${n}. ` : ""}${esc(c.title)}</p>`
     + (c.body ? `<p style="margin:0 0 10px;font-size:14px;line-height:1.5;color:${C.ink}">${linkify(c.body)}</p>` : "")
+    + (c.details.length ? `<ul style="margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.5;color:${C.ink}">${c.details.map((d) => `<li style="margin:0 0 4px">${linkify(d)}</li>`).join("")}</ul>` : "")
+    + (c.draft ? `<p style="margin:0 0 4px;font-size:12px;font-weight:600;color:${C.muted}">${esc(c.draft.heading)}</p>`
+      + `<div style="margin:0 0 10px;padding:10px 12px;border-left:3px solid ${C.decideBorder};background:#ffffff;font-size:14px;line-height:1.5;color:${C.ink};white-space:pre-wrap"><!--prose-->${esc(c.draft.text)}<!--/prose--></div>` : "")
     + (c.buttons.length ? `<div>${c.buttons.map((b, i) => `<a href="${esc(b.url)}" ${BTN(i === 0)}>${esc(b.label)}</a>`).join("")}</div>` : "")
     + `</div>`;
 }
 
 function cleanSection(sec) {
   const items = (sec.items ?? []).map((i) => (i && typeof i === "object"
-    ? { text: cleanText(i.text), links: cleanButtons(i.links) }
+    ? (Array.isArray(i.runs) ? { runs: i.runs, text: proseText(i.runs), links: cleanButtons(i.links) } : { text: cleanText(i.text), links: cleanButtons(i.links) })
     : { text: cleanText(i), links: [] })).filter((i) => i.text);
+  // `full`: a long read folded under one tap (<details>) in the HTML, written out whole in the text.
+  const full = sec.full && Array.isArray(sec.full.blocks) && sec.full.blocks.length ? {
+    summary: cleanText(sec.full.summary ?? "Show all ▾"),
+    blocks: sec.full.blocks.map((b) => ({
+      heading: cleanText(b.heading ?? ""),
+      lines: (b.lines ?? []).map((l) => (Array.isArray(l?.runs) ? { runs: l.runs, text: proseText(l.runs) } : { text: cleanText(l, { prose: true }) ? `${PROSE_MARK}${cleanText(l, { prose: true })}${PROSE_MARK}` : "" })).filter((l) => l.text),
+    })).filter((b) => b.heading || b.lines.length),
+  } : null;
   const rows = sec.rows && Array.isArray(sec.rows.data) && sec.rows.data.length ? {
     columns: (sec.rows.columns ?? []).map((c) => ({ key: c.key, label: cleanText(c.label) })),
     data: sec.rows.data.map((r) => ({ ...r, url: okUrl(r.url) ? r.url : null, url_label: cleanText(r.url_label ?? "") || null })),
   } : null;
   return {
     title: cleanText(sec.title), note: sec.note ? cleanText(sec.note) : null, boxed: Boolean(sec.boxed), tone: sec.tone ?? null,
-    items, rows, cards: (sec.cards ?? []).map(cleanCard).filter((c) => c.title),
+    items, rows, full, cards: (sec.cards ?? []).map(cleanCard).filter((c) => c.title),
     link: sec.link && okUrl(sec.link.url) ? { label: cleanText(sec.link.label) || linkLabel(sec.link.url), url: sec.link.url } : null,
     empty: sec.empty === null ? null : (sec.empty ? cleanText(sec.empty) : "Nothing here today."),
   };
@@ -300,7 +403,9 @@ function sectionText(sec) {
   for (const i of sec.items) body.push(`- ${i.text}${i.links.map((l) => ` — ${l.label}: ${l.url}`).join("")}`);
   if (!body.length && sec.empty) body.push(sec.empty);
   if (!body.length && !sec.link) return [];
-  return [...out, ...body, ...(sec.link ? [`${sec.link.label}: ${sec.link.url}`] : [])];
+  // The plain-text copy has no fold: everything is written out (owner, 24 Oct 2026).
+  const fullText = sec.full ? ["", ...sec.full.blocks.flatMap((b) => [...(b.heading ? ["", b.heading] : []), ...b.lines.map((l) => `- ${l.text}`)])] : [];
+  return [...out, ...body, ...(sec.link ? [`${sec.link.label}: ${sec.link.url}`] : []), ...fullText];
 }
 
 function sectionHtml(sec) {
@@ -320,10 +425,17 @@ function sectionHtml(sec) {
   if (sec.cards.length) { any = true; inner += sec.cards.map((c, i) => cardHtml(c, i + 1, "plain")).join(""); }
   if (sec.items.length) {
     any = true;
-    inner += sec.items.map((i) => `<p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:${C.ink}">${linkify(i.text)}${i.links.map((l) => ` <a href="${esc(l.url)}" style="color:${C.link}">${esc(l.label)}</a>`).join("")}</p>`).join("");
+    inner += sec.items.map((i) => `<p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:${C.ink}">${i.runs ? proseHtml(i.runs) : linkify(i.text)}${i.links.map((l) => ` <a href="${esc(l.url)}" style="color:${C.link}">${esc(l.label)}</a>`).join("")}</p>`).join("");
   }
   if (!any && sec.empty) { any = true; inner += `<p style="margin:0 0 8px;font-size:14px;color:${C.ink}">${esc(sec.empty)}</p>`; }
   if (sec.link) { any = true; inner += `<p style="margin:4px 0 0"><a href="${esc(sec.link.url)}" ${BTN(false)}>${esc(sec.link.label)}</a></p>`; }
+  if (sec.full) {
+    any = true;
+    const line = (l) => `<p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:${C.ink}">${l.runs ? proseHtml(l.runs) : `<!--prose-->${esc(l.text.replace(/\u2063/g, ""))}<!--/prose-->`}</p>`;
+    inner += `<details style="margin:10px 0 0"><summary style="cursor:pointer;font-size:14px;font-weight:600;color:${C.link};padding:8px 0">${esc(sec.full.summary)}</summary>`
+      + sec.full.blocks.map((b) => `${b.heading ? `<p style="margin:14px 0 6px;font-size:14px;font-weight:700;color:${C.ink}">${esc(b.heading)}</p>` : ""}${b.lines.map(line).join("")}`).join("")
+      + `</details>`;
+  }
   if (!any) return "";
   const box = sec.boxed
     ? [C.boxBorder, C.boxBg]
@@ -349,12 +461,14 @@ function page(inner) {
  *   details   strings (bullets) or `{ heading }`, under "Details" (what `fromLegacy` writes).
  *   footer    a small line above the name; `postscript` a small line below it (the 8Raise line).
  */
-export function layoutEmail({ who, subject, happened, decide = [], needs = [], details = [], sections = [], refs = [], footer = null, postscript = null, moreDecide = null }) {
+export function layoutEmail({ who, subject, happened, decide = [], needs = [], details = [], sections = [], refs = [], footer = null, postscript = null, moreDecide = null, maxDecide = MAX_DECIDE, kind = "plain" }) {
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
   const first = cleanText(happened) || subj;
   const allDecide = [...(Array.isArray(decide) ? decide : [decide]), ...(Array.isArray(needs) ? needs : [needs])].map(cleanCard).filter((c) => c.title);
-  const shown = allDecide.slice(0, MAX_DECIDE);
+  // The morning email shows EVERY decision (owner, 24 Oct 2026: "6 decisions" with 3 shown); other
+  // emails keep three. The heading's count is always the number shown when nothing is held back.
+  const shown = allDecide.slice(0, maxDecide);
   const extra = allDecide.length - shown.length;
   const moreLine = extra > 0 ? cleanText(moreDecide ?? `And ${extra} more on your Today page.`) : null;
   const detailList = (details ?? []).map((d) => (d && typeof d === "object" && "heading" in d ? { heading: cleanText(d.heading) } : cleanText(d)))
@@ -397,7 +511,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
     + (ps ? `<p style="margin:14px 2px 0;font-size:12px;color:${C.muted}">${esc(ps)}</p>` : ""),
   );
 
-  return finish({ subject: subj, text, html, refs: [...new Set(refs.map((r) => String(r).toLowerCase()))], kind: "plain" });
+  return finish({ subject: subj, text, html, refs: [...new Set(refs.map((r) => String(r).toLowerCase()))], kind: kind === "morning" ? "morning" : "plain" });
 }
 
 /**
@@ -499,7 +613,11 @@ export function fromLegacy({ who, subject, text, refs = [] }) {
 }
 
 /** The words she sees: subject, the plain text, and the HTML with its tags, urls and addresses removed. */
-export function visibleText({ subject, text, html }) {
+export function visibleText({ subject, text, html }, { prose = "keep" } = {}) {
+  // prose: "keep" (everything), "drop" (our own words only), "only" (the research prose only).
+  const pick = (all, re) => (prose === "keep" ? all : prose === "drop" ? all.replace(re, " ") : (all.match(re) ?? []).join("\n"));
+  text = pick(String(text ?? ""), PROSE_TEXT_RE);
+  html = pick(String(html ?? ""), PROSE_HTML_RE);
   const fromHtml = String(html ?? "").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<head[\s\S]*?<\/head>/gi, " ")
     .replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
   return [subject ?? "", text ?? "", fromHtml].join("\n").replace(SECRET_LINE_RE, " ").replace(URL_RE, " ").replace(EMAIL_RE, " ");
@@ -522,6 +640,18 @@ export function linksIn({ text, html }) {
  * did" or its status — and the rest of her review: "I could not read", "needs a look" beside "nothing
  * needed", a dump of bare links, a link to an API path.
  */
+/** What is refused inside research prose too: ids, commands, /api paths, "I could not read". */
+function proseProblems(seen) {
+  const problems = [];
+  const hit = (name, re) => { const m = re.exec(seen); if (m) problems.push(`${name}: "${m[0].trim()}"`); };
+  hit("internal id", new RegExp(ID_RE.source, "i"));
+  hit("bracketed id", BRACKETED_ID_RE);
+  hit("command", COMMAND_RE);
+  hit("API path", API_PATH_RE);
+  hit('"I could not read"', COULD_NOT_READ_RE);
+  return problems;
+}
+
 function contentProblems(seen) {
   const problems = [];
   const hit = (name, re) => { const m = re.exec(seen); if (m) problems.push(`${name}: "${m[0].trim()}"`); };
@@ -552,10 +682,10 @@ export function lineProblems(line) {
 }
 
 export function plainProblems({ subject, text, html, kind = null }) {
-  const seen = visibleText({ subject, text, html });
+  const seen = visibleText({ subject, text, html }, { prose: "drop" });
   const subj = String(subject ?? "");
   const body = String(text ?? "");
-  const problems = contentProblems(seen);
+  const problems = [...contentProblems(seen), ...proseProblems(visibleText({ text, html }, { prose: "only" }))];
   const hit = (name, re, where = seen) => { const m = re.exec(where); if (m) problems.push(`${name}: "${m[0].trim()}"`); };
   hit("brackets in the subject", /[[\]]/, subj);
   const shout = subj.split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).find((w) => w.length >= 2 && /^[A-Z][A-Z0-9]*$/.test(w) && /[A-Z]{2}/.test(w) && !ACRONYMS.has(w));
@@ -567,7 +697,8 @@ export function plainProblems({ subject, text, html, kind = null }) {
   }
   if (/\bneeds? (?:a look|you)\b/i.test(seen) && /\bnothing (?:needed|to decide)\b|\bno reply needed\b/i.test(seen)) problems.push('"needs a look" beside "nothing needed"');
   if (subj.length > MAX_SUBJECT_CHARS) problems.push(`subject longer than ${MAX_SUBJECT_CHARS} characters`);
-  if (body.length > MAX_TEXT_CHARS) problems.push(`longer than ${MAX_TEXT_CHARS} characters`);
+  const cap = kind === "morning" ? MORNING_MAX_TEXT_CHARS : MAX_TEXT_CHARS;
+  if (body.length > cap) problems.push(`longer than ${cap} characters`);
   const bare = body.split("\n").filter((l) => /^\s*(?:[-*•]\s*)?(?:https?:\/\/|mailto:)\S+\s*$/.test(l)).length;
   if (bare >= 3) problems.push(`a dump of ${bare} bare links`);
   const api = linksIn({ text, html }).find((u) => /^https?:\/\/[^/]+\/api\//.test(u) && !/\/api\/outreach\/u\//.test(u));

@@ -29,3 +29,16 @@ export function writeMorning(...args: any[]): any;
 export const LOOKBACK_DAYS: number;
 export function withinLookback(...args: any[]): any;
 export function prospectSellRows(...args: any[]): any;
+
+export const yoursLabel: (direction: string) => string;
+export const MATCHES_PAGE: string;
+export const MAX_MATCH_DECIDE: number;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function allMatches(grid: any[], lists: any, opts?: { newIds?: Set<string>; now?: number; tolerance?: number }): any[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function matchView(buyer: any, seller: any, rank: any, opts?: { isNew?: boolean; now?: number }): any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function matchDecide(m: any): any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function pairDrafts(buyer: any, seller: any): any[];
+export function pairFillWords(buyer: { size_usd?: number | null }, seller: { size_usd?: number | null }): string;
