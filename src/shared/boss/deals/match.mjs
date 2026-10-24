@@ -47,7 +47,8 @@ const UNIT = { t: 1e12, tn: 1e12, trillion: 1e12, b: 1e9, bn: 1e9, billion: 1e9,
 export function parsePrice(text) {
   const t = String(text ?? "").replace(/,/g, "");
   if (!t.trim() || t.trim() === "—") return null;
-  const share = /\$\s*(\d+(?:\.\d+)?)\s*(?:\/\s*(?:sh|share)\b|per\s+share|pps\b|a share)/i.exec(t);
+  // "$197.29/sh", "$105 pps" and "952.65 per share" (no "$") are all per-share prices.
+  const share = /\$?\s*(\d+(?:\.\d+)?)\s*(?:\/\s*(?:sh|share)\b|per\s+share|pps\b|a share)/i.exec(t);
   if (share) return { kind: "share", value: Number(share[1]) };
   const val = /\$\s*(\d+(?:\.\d+)?)\s*(trillion|billion|million|tn|bn|mm|t|b|m)\b/i.exec(t);
   if (val) return { kind: "valuation", value: Number(val[1]) * UNIT[val[2].toLowerCase()] };

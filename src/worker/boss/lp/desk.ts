@@ -280,9 +280,11 @@ export async function backfillTouches(db: D1Database, touches: Array<{ email: st
         .bind(newId("ptc"), p.id, no, t.gmail_id ?? null, null, Number(t.sent_at), t.subject ? String(t.subject).slice(0, 300) : null, t.body ? String(t.body).slice(0, 6000) : null),
       db.prepare(`UPDATE prospects SET touches = MAX(touches, ?), first_sent_at = MIN(COALESCE(first_sent_at, ?), ?),
                     last_touch_at = MAX(COALESCE(last_touch_at, 0), ?), thread_id = COALESCE(thread_id, ?),
-                    status = CASE WHEN status IN ('new','active') AND ? >= 3 THEN 'done' WHEN status = 'new' THEN 'active' ELSE status END,
-                    updated_at = ? WHERE id = ?`)
-        .bind(no, Number(t.sent_at), Number(t.sent_at), Number(t.sent_at), t.thread_id ?? null, no, now, p.id),
+                    status = CASE WHEN status IN ('new','active') AND ? >= 3 THEN 'done' WHEN status = 'new' THEN 'active' ELSE status END
+                    WHERE id = ?`)
+        // updated_at is left alone: reading her Sent mail is not news, and the morning email reads
+        // updated_at as "a reply came in" (24 Oct 2026: an old bounce showed as new).
+        .bind(no, Number(t.sent_at), Number(t.sent_at), Number(t.sent_at), t.thread_id ?? null, no, p.id),
     ]);
     n++;
   }

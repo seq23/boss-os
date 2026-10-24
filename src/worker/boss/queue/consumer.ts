@@ -1,3 +1,4 @@
+import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT } from "../duties/seatOrder";
 import type { Env, TaskMessage } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -175,9 +176,11 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
    * the delivery names which rung wrote it. Without `cloud_fallback`, exhausting the seats fails the
    * task with every refusal on it, as before.
    */
-  const ladder: string[] = Array.isArray(input.backend_ladder) && input.backend_ladder.length
+  const baseLadder: string[] = Array.isArray(input.backend_ladder) && input.backend_ladder.length
     ? input.backend_ladder.filter((x: unknown): x is string => typeof x === "string")
     : typeof input.backend_id === "string" ? [input.backend_id] : [];
+  // Her switch, "Use OpenAI first for everything" (24 Oct 2026), applied in this one place.
+  const ladder = orderSeats(baseLadder, isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
   const refusals: { backend_id: string; refused: string }[] = [];
   const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
     ? ((input.requested as any).model_by_backend as Record<string, string | null>)
@@ -193,6 +196,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     if (modelBySeat && backendId in modelBySeat) {
       const m = modelBySeat[backendId];
       if (m) requested.model = m; else delete requested.model;
+    } else if (backendId === OPENAI_SEAT && typeof requested.model === "string" && /claude/i.test(requested.model)) {
+      // A Claude model id handed to OpenAI's seat is a run that cannot start: it runs its own default.
+      delete requested.model;
     }
     requested.backend_ladder = ladder;
     requested.model_by_backend = modelBySeat ?? undefined;

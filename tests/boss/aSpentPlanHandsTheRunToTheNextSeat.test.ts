@@ -68,10 +68,10 @@ describe("0275 — the four other seat duties walk Claude Code, then Codex", () 
     }
   });
 
-  it("leaves the briefing's ladder, and every duty that is not a seat duty, exactly as it was", async () => {
+  it("leaves every duty that is not a seat duty as it was; the briefing is OpenAI first and never falls to the cloud (0298)", async () => {
     const briefing = JSON.parse((await row<any>(`SELECT task_input FROM standing_duties WHERE id = 'duty_exec_intel'`)).task_input);
-    expect(briefing.backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
-    expect(briefing.cloud_fallback).toBe(true);
+    expect(briefing.backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(briefing.cloud_fallback).toBe(false);
     const others = await all<any>(`SELECT id, task_input FROM standing_duties WHERE id NOT IN (${["duty_exec_intel", ...FOUR].map(() => "?").join(",")})`, "duty_exec_intel", ...FOUR);
     expect(others.length).toBeGreaterThan(10);
     for (const d of others) expect(JSON.parse(d.task_input ?? "{}").backend_ladder, d.id).toBeUndefined();
@@ -84,6 +84,24 @@ describe("0275 — the four other seat duties walk Claude Code, then Codex", () 
     const requested = JSON.parse(run.requested);
     expect(requested.backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
     expect(requested.model).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("with her switch \"Use OpenAI first for everything\" ON, the same duty parks for Codex first, on Codex's own default; OFF, it is Claude first again", async () => {
+    await env.DB.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('seat_order_openai_first','on',?) ON CONFLICT(key) DO UPDATE SET value = 'on'`).bind(Date.now()).run();
+    try {
+      const { taskId } = await fire("duty_tool_scout");
+      const run = await row<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
+      expect(run.backend_id).toBe("bk_codex");
+      const requested = JSON.parse(run.requested);
+      expect(requested.backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
+      expect(requested.model, "a Claude model id reached the Codex seat").toBeUndefined();
+    } finally {
+      await env.DB.prepare(`UPDATE settings SET value = 'off' WHERE key = 'seat_order_openai_first'`).run();
+    }
+    const { taskId } = await fire("duty_tool_scout");
+    const run = await row<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ? AND status = 'running' ORDER BY started_at DESC`, taskId);
+    expect(run.backend_id).toBe("bk_claude_code");
+    expect(JSON.parse(run.requested).backend_ladder).toEqual(["bk_claude_code", "bk_codex"]);
   });
 });
 

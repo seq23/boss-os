@@ -15,6 +15,9 @@ export type Screened =
 
 export function decodedBody(raw: string): string;
 export function readableText(raw: string): string;
+export function withoutSignature(text: string): string;
+export function messageWords(id: string, opts?: { quoted?: boolean; token?: string | null }): Promise<{ text: string | null; at: number | null; thread: string | null; subject: string } | null>;
+export function sentWordsTo(emails: string[], opts?: { max?: number }): Promise<any[]>;
 export function screenMessage(
   raw: string,
   opts: { mailbox?: string; sentByUs: (messageId: string) => Promise<boolean> | boolean },

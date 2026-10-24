@@ -308,7 +308,9 @@ export function prospectSection(a, now = Date.now()) {
   const endOfToday = now + 18 * 3_600_000;
   const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= endOfToday);
   if (due.length) {
-    items.push((a.stops ?? []).length
+    items.push(!a.approved && !a.pending
+      ? `${plural(due.length, "follow-up is", "follow-ups are")} due and not going out; why, and what unblocks them, is in Decide above.`
+      : (a.stops ?? []).length
       ? `${plural(due.length, "follow-up is", "follow-ups are")} due and not going out. Why: ${(a.stops ?? []).join(" ")}`
       : `Going out today: ${plural(due.length, "follow-up")} (${due.slice(0, 5).map(nameOf).join(", ")}${due.length > 5 ? ` and ${due.length - 5} more` : ""}).`);
   }
@@ -337,7 +339,7 @@ export function prospectDecisions(a, existingKeys = new Set(), now = Date.now())
     out.push({
       key: "prospects-stuck",
       title: `${plural(due.length, "prospect follow-up is", "prospect follow-ups are")} due and cannot go out`,
-      body: `No prospect email is approved, and Monique has fewer than three fresh names on your list to write one, so nothing goes. ${(a.stops ?? []).join(" ")}`.trim(),
+      body: "No prospect email is approved, and Monique has fewer than three fresh names on your list to write one, so nothing goes.",
       details: [
         `Waiting: ${due.slice(0, 8).map(whoLine).join("; ")}${due.length > 8 ? `; and ${due.length - 8} more` : ""}.`,
         "To unblock: add at least three company names to feature, on Your team under the lists Monique keeps, or by replying to any Monique email (for example \"add Company A, Company B, Company C\"). Monique then writes the email and puts it here for your Approve.",
@@ -535,7 +537,12 @@ export function buildDay(data, now = Date.now()) {
 
   const val = valerieItems(data.feed);
   const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at)} ${c.title}${c.with ? ` with ${c.with}` : ""}`);
-  const ps = eightRaiseLine(m.eightraise?.credits ?? null);
+  // While her "OpenAI first" switch is on, one small line says so (owner, 24 Oct 2026).
+  const openaiFirst = (data.settings ?? []).find((r) => r.key === "seat_order_openai_first");
+  const openaiLine = openaiFirst && /^(on|true)$/.test(String(openaiFirst.value))
+    ? `OpenAI goes first for every job (saves Claude usage), on since ${dayWords(dayOf(Number(openaiFirst.updated_at) || now), { weekday: false })}. Turn it off in Settings.`
+    : null;
+  const ps = [eightRaiseLine(m.eightraise?.credits ?? null), openaiLine].filter(Boolean).join(" ") || null;
 
   const subjBits = [];
   if (decide.length) subjBits.push(plural(decide.length, "decision"));
@@ -610,12 +617,13 @@ async function read(api, now) {
   const bounceFixes = await api.get("/outreach/bounce-fixes").catch((e) => { console.error(`your-day: bounce fixes not read (${e.message})`); return null; });
   // The channel's comment digests: what a comment task is about, and the ones Monique left alone.
   const prospects = await api.get(`/lp/prospects/activity?since=${now - 30 * 3_600_000}`).catch((e) => { console.error(`your-day: prospect activity not read (${e.message})`); return null; });
+  const settings = await api.get("/system/settings").catch(() => []);
   const spirit = await api.get("/spirit/day").catch((e) => { console.error(`your-day: spirit day not read (${e.message})`); return null; });
   const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
   const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
   const { sections, skipped } = readMorningSections({ now });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, morning: sections };
+  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, morning: sections };
 }
 
 async function feedOf(range) {

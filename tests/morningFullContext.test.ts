@@ -56,6 +56,7 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
     expect(stack).toBeNull();
     expect(parsePrice("$197.29/sh")).toEqual({ kind: "share", value: 197.29 });
     expect(parsePrice("$188bn valuation")).toEqual({ kind: "valuation", value: 188e9 });
+    expect(parsePrice("952.65 per share")).toEqual({ kind: "share", value: 952.65 });
     expect(gapWords({ price_text: "$10/share" }, { price_text: "$1B valuation" })).toMatch(/different terms/);
   });
 
@@ -229,12 +230,13 @@ describe("prospect emails: only what is new, and stuck follow-ups are a decision
     const items = sec.items.map((i: any) => (typeof i === "string" ? i : i.text));
     expect(items.join(" ")).not.toContain("Old Send");
     expect(items[0]).toBe("Sent: email 2 of 3 to New Send (Firm N, n@x.example), a buyer, October 24.");
-    expect(items).toContain("1 follow-up is due and not going out. Why: No prospect email is approved yet.");
+    expect(items).toContain("1 follow-up is due and not going out; why, and what unblocks them, is in Decide above.");
     expect(items.join(" ")).not.toContain("Later");
     expect(items[items.length - 1]).toBe("So far: 36 emails sent; 35 in the sequence, 0 interested, 0 replied, 0 opted out, 1 bounced.");
     const d = prospectDecisions(a, new Set(), NOW);
     expect(d.map((x: any) => x.title)).toEqual(["1 prospect follow-up is due and cannot go out"]);
     expect(d[0].details[0]).toBe("Waiting: Due Today (d@x.example).");
+    expect(d[0].body).toBe("No prospect email is approved, and Monique has fewer than three fresh names on your list to write one, so nothing goes.");
   });
   it("a template waiting for her OK is a decision with its full text and Approve / Change", () => {
     const pending = { id: "pt1", tap_token: "p".repeat(24), subject: "Up to $1B secondary inquiry: {subject_names}", body: "Hi {first},\n\n{names_line}\n\nSequoia Taylor", follow_up: "Hi {first}, again.", names_json: JSON.stringify([{ name: "Co A" }, { name: "Co B" }, { name: "Co C" }]) };
@@ -260,5 +262,15 @@ describe("the comment digest is written whole or not at all", () => {
     expect(src).toMatch(/await c\.env\.DB\.batch\(stmts\);/);
     // No digest, task or row is written one statement at a time any more.
     expect(src.match(/INSERT INTO comment_watch_items[\s\S]{0,400}?\.run\(\)/g)).toBeNull();
+  });
+});
+
+describe("their words, readable (24 Oct 2026: mojibake and signature blocks in the email)", () => {
+  it("decodes quoted-printable as UTF-8 and drops the signature", async () => {
+    const { decodedBody, withoutSignature } = await import("../scripts/ops/lp-positive.mjs");
+    const raw = "Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nHappy to connect =E2=80=94 next week works.\r\n";
+    expect(decodedBody(raw).trim()).toBe("Happy to connect — next week works.");
+    expect(withoutSignature("Hi, I'm happy to connect. What did you have in mind? — Pat Example Managing Partner 555-0100")).toBe("Hi, I'm happy to connect. What did you have in mind?");
+    expect(withoutSignature("November may work. I'm tied up in October. Best Regards, Pat Pat Example Jr. Managing Partner")).toBe("November may work. I'm tied up in October.");
   });
 });

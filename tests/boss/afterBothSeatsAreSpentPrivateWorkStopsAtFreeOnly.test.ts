@@ -47,7 +47,7 @@ beforeEach(async () => { await seatsReset(); });
 afterEach(async () => { await seatsReset(); });
 
 describe("Free only, both seats out of usage, private work", () => {
-  it("stops the executive briefing, holds at the lever, names both spent seats, and never makes a network call", async () => {
+  it("stops the executive briefing by name at the seats (it never falls to the cloud), names both spent seats, and never makes a network call", async () => {
     await setLever("FREE_ONLY");
     await bothSeatsSpent();
     await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
@@ -62,16 +62,17 @@ describe("Free only, both seats out of usage, private work", () => {
     expect(hosts, "a request left the Worker while both seats were spent and the lever was Free only").toEqual([]);
 
     const steps = await all<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_step' ORDER BY ts`, taskId);
-    expect(steps.map((s) => JSON.parse(s.detail).backend_id)).toEqual(["bk_claude_code", "bk_codex"]);
+    // OpenAI first, Claude second (owner, 24 Oct 2026).
+    expect(steps.map((s) => JSON.parse(s.detail).backend_id)).toEqual(["bk_codex", "bk_claude_code"]);
     for (const s of steps) expect(JSON.parse(s.detail).refused).toMatch(/out of usage/);
 
-    const t = await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId);
-    // Held, not run: a budget block is the system stopping at a gate only she can open (consumer.ts,
-    // `BudgetExceeded` / `holdForApproval`). The card says why, in the lever's own words.
-    expect(t.status, "the task did not stop").toBe("awaiting_approval");
-    const card = await row<any>(`SELECT kind, summary FROM approvals WHERE origin_id = ? ORDER BY requested_at DESC`, taskId);
-    expect(card.kind).toBe("spend");
-    expect(card.summary).toMatch(/FREE_ONLY/);
+    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
+    // "Nothing paid" (24 Oct 2026): the briefing has no cloud rung beneath the seats, so it stops by
+    // name at the seats — no spend card, no router call — and the morning email says so.
+    expect(t.status, "the task did not stop").toBe("failed");
+    expect(t.error).toMatch(/bk_codex: .*out of usage/);
+    expect(await row(`SELECT 1 FROM approvals WHERE origin_id = ?`, taskId), "a spend card was raised for a route that must not exist").toBeNull();
+    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId), "the router was asked").toHaveLength(0);
     expect(await row(`SELECT 1 FROM executive_reports WHERE task_id = ?`, taskId), "a report was written by nothing").toBeNull();
 
     // Whatever the router was asked, it chose nothing: no paid model (lever) and no free lane (privacy).

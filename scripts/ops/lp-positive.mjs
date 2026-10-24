@@ -166,7 +166,9 @@ export function decodedBody(raw) {
       return Buffer.from(body.replace(/[^A-Za-z0-9+/=]/g, ""), "base64").toString("utf8");
     }
     if (enc === "quoted-printable") {
-      return body.replace(/=\r?\n/g, "").replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+      // The escapes are BYTES of UTF-8: "=E2=80=94" is one em dash, not three Latin-1 letters (the 24 Oct
+      // morning email printed "â" and "ð©" for a dash and an emoji).
+      return Buffer.from(body.replace(/=\r?\n/g, "").replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16))), "latin1").toString("utf8");
     }
     return body;
   };
@@ -212,6 +214,16 @@ export function decodedBody(raw) {
  * quoted underneath most replies, and matching intent against her own copy would mark every
  * replier as enthusiastic about her own pitch.
  */
+/**
+ * Their words without the signature block: cut at the sign-off ("Best,", "Thanks,", "— Name") so
+ * the morning email shows what they said, not their phone number and calendar link. Pure.
+ */
+export function withoutSignature(text) {
+  const t = String(text ?? "");
+  const cut = /\s(?:Best(?: regards| wishes)?|Kind regards|Warm regards|Regards|Many thanks|Thanks(?: so much)?|Thank you|Cheers|Sincerely|All the best)[,!.]?\s|\s[—–]\s?[A-Z][a-z]+\s[A-Z]|\sSent from my\s/i.exec(t);
+  return (cut && cut.index >= 20 ? t.slice(0, cut.index) : t).trim();
+}
+
 export function readableText(raw) {
   return decodedBody(raw)
     .split(/\r?\n/).filter((l) => !/^\s*>/.test(l)).join("\n")
@@ -370,7 +382,7 @@ export async function messageWords(id, { quoted = false, token = null } = {}) {
   const msg = await api(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=raw`, tok).catch(() => null);
   if (!msg?.raw) return null;
   const rawText = Buffer.from(msg.raw, "base64").toString("utf8").slice(0, 200_000);
-  const words = quoted ? decodedBody(rawText).replace(/\r\n/g, "\n").trim() : readableText(rawText);
+  const words = quoted ? decodedBody(rawText).replace(/\r\n/g, "\n").trim() : withoutSignature(readableText(rawText));
   return { text: words.slice(0, 6000) || null, at: Number(msg.internalDate ?? 0) || null, thread: msg.threadId ?? null, subject: headersFromRaw(rawText).subject ?? "" };
 }
 export async function sentWordsTo(emails, { max = 3 } = {}) {
@@ -522,7 +534,7 @@ export async function refreshPositive() {
     // materials in July and offered a call in September is a call.
     if (!prior || (prior.bucket === "warm" && bucket === "call")) {
       // `said`: their own words, whole (up to 800 characters), so the morning email can show what they wrote.
-      found.set(address, { address, name, bucket, first_seen: prior?.first_seen ?? when, quote: quoteOf(text), said: text.slice(0, 800) });
+      found.set(address, { address, name, bucket, first_seen: prior?.first_seen ?? when, quote: quoteOf(text), said: withoutSignature(text).slice(0, 800) });
     }
   }
 
