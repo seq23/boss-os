@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { buildDay, EMAIL_HTML_BUDGET, CUT_ORDER } from "../scripts/ops/your-day.mjs";
 import { allMatches, moniqueFound, matchCounts, emailMatches, MAX_EMAIL_MATCHES } from "../scripts/ops/interest-grid.mjs";
 import { quotedSentence } from "../src/shared/boss/mail/plain.mjs";
+import { lpDecideItems } from "../src/shared/boss/lp/plan.mjs";
 
 const NOW = Date.parse("2026-10-24T12:15:00Z"); // Saturday 07:15 Central
 const day = (n: number) => new Date(NOW - n * 86_400_000).toISOString().slice(0, 10);
@@ -127,6 +128,7 @@ describe("matches are counted once and the email carries the best few", () => {
     const last = out.lines[out.lines.length - 1];
     expect(last.text).toBe("16 possible trades in all, on 8 companies, each buyer and seller counted once.");
     expect(last.links).toEqual([{ label: "See all 16 matches →", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" }]);
+    expect(out.link).toBeNull(); // one button to the Matches screen, not two
   });
   it("a pair already told yesterday is not new; one first seen today is; a stale one never takes a slot", () => {
     const sell = row({ id: "s", company: "Company Q", side: "sell", direction: "sell", size_usd: 25e6, size_text: "$25M", from_text: "Pat", received_on: day(11), _row: { from: "pat@q.example" } });
@@ -159,6 +161,10 @@ describe("their words, quoted, end as they ended", () => {
     expect(quotedSentence("Sounds good...")).toBe('"Sounds good."');
     expect(quotedSentence('"Already quoted?"')).toBe('"Already quoted?"');
     expect(quotedSentence("")).toBe("");
+  });
+  it("an LP's question in Decide keeps its question mark (24 Oct 2026: 'What did you have in mind.')", () => {
+    const [item] = lpDecideItems([{ address: "a@lp.example", name: "A Person", bucket: "call", status: "drafted", tap_token: "t", said: "Happy to connect. What did you have in mind?", first_seen: "2026-09-09", drafted_at: NOW }], NOW);
+    expect(item!.details).toContain('What they wrote: "Happy to connect. What did you have in mind?"');
   });
   it("the prospect section's reply line ends with their question mark", () => {
     const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: {},

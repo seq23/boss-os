@@ -558,7 +558,8 @@ export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(
     decide, rows, lines, counts,
     // Every current match goes to the Matches screen (capital_matches), not into this file.
     matches: all.slice(0, 2000),
-    link: { label: "See every match", url: MATCHES_PAGE },
+    // The count line carries "See all N matches →"; a second button to the same screen is noise.
+    link: lines.some((l) => l.counts) ? null : { label: "See every match", url: MATCHES_PAGE },
   };
 }
 
