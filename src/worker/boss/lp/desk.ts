@@ -340,6 +340,27 @@ export async function recordProspectEvents(db: D1Database, events: ProspectEvent
   return n;
 }
 
+/**
+ * Hard bounces read from the West Peek mailbox, and addresses NeverBounce called invalid, go on the
+ * shared suppression list (owner, 24 Oct 2026: "2nd emails went out to emails that were already
+ * bounced or blocked"). `prospectPlan` checks that list before EVERY touch, so no later email goes.
+ * A prospect Boss OS already wrote to is marked bounced; one it never wrote to is only suppressed, so
+ * another system's bounce does not trip this sequence's bounce brake.
+ */
+export async function suppressAddresses(db: D1Database, emails: string[], reason: "bounced" | "invalid", now = Date.now()) {
+  let n = 0;
+  for (const raw of emails ?? []) {
+    const email = String(raw ?? "").trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) continue;
+    const before = await isSuppressed(db, email);
+    await suppress(db, email, reason, reason === "invalid" ? "neverbounce" : "wp_mailbox_bounce", now);
+    await db.prepare(`UPDATE prospects SET status = 'bounced', updated_at = ? WHERE email = ? AND status IN ('new','active') AND touches > 0`).bind(now, email).run();
+    await db.prepare(`UPDATE prospects SET status = 'done', updated_at = ? WHERE email = ? AND status = 'new' AND touches = 0`).bind(now, email).run();
+    if (!before) n++;
+  }
+  return n;
+}
+
 /* ─── 8Raise ledger ─────────────────────────────────────────────────────── */
 
 export async function ledgerRows(db: D1Database, month?: string) {

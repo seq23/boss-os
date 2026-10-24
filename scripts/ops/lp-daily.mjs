@@ -67,6 +67,12 @@ export function writeMorning(section, obj) {
 async function main() {
   const dry = process.argv.includes("--dry");
   const api = await bossApi();
+  // Bounces first, before any system sends from the mailbox today (Twin ~07:30, Monique 09:30):
+  // a hard-bounced address goes on Twin's Reply Queue and Boss OS suppression (lp-bounces.mjs).
+  try {
+    const { syncBounces } = await import("./lp-bounces.mjs");
+    await syncBounces({ days: Number(process.env.LP_BOUNCE_DAYS ?? 7), commit: !dry, api });
+  } catch (e) { console.log(`note: ${e.message}`); }
   const prior = await api.get("/lp/replies");
   const skipped = new Set((prior.rows ?? []).filter((r) => r.status === "skipped").map((r) => r.address));
   const { refreshPositive } = await import("./lp-positive.mjs");

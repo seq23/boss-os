@@ -33,7 +33,7 @@ import { ok, badRequest } from "../lib/http";
 import { nextDueAt } from "../duties/cadence";
 // boss fix L
 import {
-  upsertLpRows, listLpRows, importProspects, prospectPlan, recordProspectEvents, proposeTemplate,
+  upsertLpRows, listLpRows, importProspects, prospectPlan, recordProspectEvents, suppressAddresses, proposeTemplate,
   approvedTemplate, pendingTemplate, ledgerRows, readExclusions, prospectActivity, backfillTouches,
 } from "../lp/desk";
 import { LP_STATUS_LABEL, canSpend, monthOf, monthSpent, nameRulesIn, MONIQUE_MONTHLY } from "../../../shared/boss/lp/plan.mjs";
@@ -212,6 +212,15 @@ lp.post("/prospects/import", async (c) => {
 });
 
 lp.get("/prospects/plan", async (c) => ok(c, await prospectPlan(c.env.DB)));
+
+/** The Mac's morning bounce read (lp-bounces.mjs) and NeverBounce "invalid" verdicts (lp-prospects.mjs). */
+lp.post("/prospects/suppress", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (!Array.isArray(b?.emails)) throw badRequest("emails[] is required");
+  if (!["bounced", "invalid"].includes(b?.reason)) throw badRequest("reason must be bounced or invalid");
+  const added = await suppressAddresses(c.env.DB, b.emails.slice(0, 2000), b.reason);
+  return ok(c, { added, received: b.emails.length });
+});
 
 lp.post("/prospects/events", async (c) => {
   const b = await c.req.json<any>().catch(() => null);

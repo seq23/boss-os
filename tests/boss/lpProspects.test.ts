@@ -11,7 +11,7 @@ import {
   lpReplyBody, lpStatusFrom, namesLine, nameRulesIn, pickCatchups, proposeFeatured, prospectProblems,
   renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS,
 } from "../../src/shared/boss/lp/plan.mjs";
-import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents } from "../../src/worker/boss/lp/desk";
+import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents, suppressAddresses } from "../../src/worker/boss/lp/desk";
 import TAP_SOURCE from "../../src/worker/boss/routes/lpTap.ts?raw";
 
 const DAY = 86_400_000;
@@ -286,6 +286,28 @@ describe("routes and the one-tap links", () => {
     expect(plan.sends.map((s: any) => s.email)).toEqual([]);
     expect((await env.DB.prepare(`SELECT value FROM outreach_suppression WHERE value = 'stop.me@example.com'`).first())).toBeTruthy();
     await env.DB.prepare(`DELETE FROM capital_party_lists WHERE id = 'pl_test_dns'`).run();
+  });
+
+  it("a hard bounce read from the mailbox (any system's send) stops touch 2 and every later touch (owner, 24 Oct 2026)", async () => {
+    const t = await proposeTemplate(env.DB, null, NAMES);
+    await approveTemplate(env.DB, (t as any).template.id);
+    const due = { source: "8raise_2026_10_11", touches: 1, first_sent_at: WED_10AM - 6 * DAY, last_touch_at: WED_10AM - 6 * DAY, status: "active", thread_id: "t9", last_message_id: "<y@example.com>", subject: "Re: Up to $1B secondary inquiry: Alpha" };
+    await importProspects(env.DB, [
+      { email: "bounced.lp@example.com", name: "Bo Unce", ...due },
+      { email: "fine.lp@example.com", name: "Fi Ne", ...due },
+      { email: "never.written@example.com", name: "Ne Ver", source: "inbox" },
+    ]);
+    // Before: both touch-2s are due — the guard below is what removes one.
+    expect((await prospectPlan(env.DB, WED_10AM)).sends.filter((s: any) => s.touch === 2).map((s: any) => s.email).sort()).toEqual(["bounced.lp@example.com", "fine.lp@example.com"]);
+    expect(await suppressAddresses(env.DB, ["Bounced.LP@example.com", "never.written@example.com", "not-an-address"], "bounced", WED_10AM)).toBe(2);
+    const plan = await prospectPlan(env.DB, WED_10AM);
+    expect(plan.sends.map((s: any) => s.email)).toEqual(["fine.lp@example.com"]);
+    expect((await env.DB.prepare(`SELECT status FROM prospects WHERE email = 'bounced.lp@example.com'`).first<any>()).status).toBe("bounced");
+    // One Boss OS never wrote to is only stopped, so another system's bounce does not trip this brake.
+    expect((await env.DB.prepare(`SELECT status FROM prospects WHERE email = 'never.written@example.com'`).first<any>()).status).toBe("done");
+    expect(await suppressAddresses(env.DB, ["bounced.lp@example.com"], "bounced", WED_10AM)).toBe(0); // idempotent
+    // Days later touch 3 would be due: still nothing.
+    expect((await prospectPlan(env.DB, WED_10AM + 7 * DAY)).sends.map((s: any) => s.email)).not.toContain("bounced.lp@example.com");
   });
 
   it("an unreadable do-not-suggest list holds every send (fail closed)", async () => {

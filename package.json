@@ -110,6 +110,7 @@
     "//boss-fix-L": "boss fix L: LP replies, prospects, 8Raise budget, catch-ups (Mac lanes) and their validator",
     "lp:daily": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-daily.mjs",
     "lp:prospects": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-prospects.mjs",
+    "lp:bounces": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-bounces.mjs",
     "lp:discover": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-prospect-discovery.mjs",
     "lp:catchups": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-catchups.mjs",
     "lp:eightraise": "node scripts/vault/vault.mjs run -- node scripts/ops/lp-eightraise.mjs",
