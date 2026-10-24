@@ -12,7 +12,7 @@ import { isSuppressed, suppress } from "../outreach/suppression";
 import { readSettings } from "../outreach/engine";
 import {
   DEFAULT_PROSPECT_TEMPLATE, MAX_NEW_PER_DAY, MAX_TOUCHES, dueTouch, nextTouchAt, excluded, prospectProblems, renderProspect,
-  templateHash, type Template,
+  templateHash, verdictGate, type Template, type ProspectForecast,
 } from "../../../shared/boss/lp/plan.mjs";
 
 /** 144 random bits, url-safe. The tap links carry it and nothing else. */
@@ -193,22 +193,29 @@ const chicagoDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: 
 
 /**
  * Today's sends. Nothing goes without: an approved template, the kill switch off, sending live (else
- * the plan is marked dry-run), the bounce brake clear, the sending window, the lists readable, the
- * address unsuppressed and not on either list. New first emails ≤ min(20, the outreach ramp).
+ * the plan is marked dry-run), the sending window, the lists readable, the address unsuppressed and
+ * not on either list, and her NeverBounce verdict on record (`verdictGate`). The bounce brake no
+ * longer stops everything (24 Oct 2026): while it is on, only addresses NeverBounce called valid go,
+ * so the rate recovers on safe sends. New first emails ≤ min(20, the outreach ramp).
+ *
+ * `forecast` is what would go at the next window if the template were approved — it ignores only
+ * the missing approval and the clock — so the Approve card says exactly what Approve does (Rule 0).
  */
 export async function prospectPlan(db: D1Database, now = Date.now()) {
   const stops: string[] = [];
+  const blocked: string[] = [];
   const tpl = await approvedTemplate(db);
   if (!tpl) stops.push("No prospect email is approved yet. Monique proposes one for your Approve once she has at least three fresh names to feature.");
   const settings = await readSettings(db);
-  if (settings.killSwitch) stops.push("The global outreach kill switch is on.");
+  if (settings.killSwitch) blocked.push("the outreach kill switch is on.");
   const dryRun = settings.sending !== "live";
+  if (dryRun) blocked.push("outreach sending is not switched to live.");
   const paused = pauseReason(await prospectHealth(db, now));
-  if (paused) stops.push(paused);
   if (!inSendWindow(now)) stops.push("Outside the sending window (weekdays 9 to 5 Central).");
   const lists = await readExclusions(db);
+  if (!lists.established) blocked.push(`her lists could not be read (${lists.note}).`);
+  if (settings.killSwitch) stops.push("The global outreach kill switch is on.");
   if (!lists.established) stops.push(`Held: ${lists.note}.`);
-  if (stops.length) return { sends: [], stops, dryRun, template: tpl ?? null };
 
   const first = await db.prepare(`SELECT MIN(sent_at) AS t FROM prospect_touches`).first<{ t: number | null }>();
   const cap = Math.min(MAX_NEW_PER_DAY, dailyCap(first?.t ?? null, now));
@@ -216,26 +223,86 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
   const recent = await db.prepare(`SELECT sent_at FROM prospect_touches WHERE touch_no = 1 AND sent_at >= ?`).bind(now - 2 * DAY_MS).all<{ sent_at: number }>();
   let newLeft = cap - (recent.results ?? []).filter((r) => chicagoDay(r.sent_at) === today).length;
 
-  const names = JSON.parse(tpl.names_json ?? "[]");
-  const template: Template = { subject: tpl.subject, body: tpl.body, follow_up: tpl.follow_up };
   const rows = (await db.prepare(`SELECT * FROM prospects WHERE status IN ('new','active') ORDER BY touches DESC, created_at ASC LIMIT 400`).all<any>()).results ?? [];
-  const sends: any[] = [];
-  let i = 0;
-  for (const p of rows) {
-    const touch = dueTouch(p, now);
-    if (!touch) continue;
-    if (touch === 1 && newLeft <= 0) continue;
-    if (await isSuppressed(db, p.email)) continue;
-    if (excluded({ email: p.email, name: p.name }, lists)) continue;
-    const r = renderProspect(template, { first: (p.name ?? "").split(/\s+/)[0], names, touch, variant: i++ });
-    sends.push({
-      prospect_id: p.id, email: p.email, name: p.name, touch, template_id: tpl.id,
+  const go: Array<{ p: any; touch: number }> = [];
+  const count = { invalid: 0, risky: 0, unverified: 0 };
+  if (lists.established) {
+    for (const p of rows) {
+      const touch = dueTouch(p, now);
+      if (!touch) continue;
+      if (touch === 1 && newLeft <= 0) continue;
+      if (await isSuppressed(db, p.email)) continue;
+      if (excluded({ email: p.email, name: p.name }, lists)) continue;
+      const gate = verdictGate(p, { paused: Boolean(paused), now });
+      if (gate !== "go") { count[gate]++; continue; }
+      go.push({ p, touch });
+      if (touch === 1) newLeft--;
+    }
+  }
+  const stopped = await db.prepare(
+    `SELECT SUM(CASE WHEN status = 'done' AND nb_result IN ('invalid','disposable') THEN 1 ELSE 0 END) AS invalid,
+            SUM(CASE WHEN status = 'bounced' THEN 1 ELSE 0 END) AS bounced FROM prospects`,
+  ).first<{ invalid: number | null; bounced: number | null }>();
+  const forecast: ProspectForecast = {
+    go: blocked.length ? 0 : go.length,
+    first: blocked.length ? 0 : go.filter((g) => g.touch === 1).length,
+    follow: blocked.length ? 0 : go.filter((g) => g.touch > 1).length,
+    invalid: Number(stopped?.invalid ?? 0) + count.invalid, risky: count.risky, unverified: count.unverified,
+    bounced: Number(stopped?.bounced ?? 0), paused: paused ?? null, blocked,
+  };
+  // The brake on and nothing confirmed valid: nothing goes, and it says why.
+  if (paused && !go.length) stops.push(paused);
+  if (stops.length) return { sends: [], stops, dryRun, template: tpl ?? null, forecast, held: count };
+
+  const names = JSON.parse(tpl!.names_json ?? "[]");
+  const template: Template = { subject: tpl!.subject, body: tpl!.body, follow_up: tpl!.follow_up };
+  const sends = go.map(({ p, touch }, i) => {
+    const r = renderProspect(template, { first: (p.name ?? "").split(/\s+/)[0], names, touch, variant: i });
+    return {
+      prospect_id: p.id, email: p.email, name: p.name, touch, template_id: tpl!.id, nb_result: p.nb_result,
       subject: touch === 1 ? r.subject : (p.subject ?? r.subject),
       body: r.body, thread_id: touch === 1 ? null : p.thread_id, in_reply_to: touch === 1 ? null : p.last_message_id,
-    });
-    if (touch === 1) newLeft--;
+    };
+  });
+  return { sends, stops, dryRun, template: tpl, forecast, held: count, ...(paused ? { note: `${paused} Only addresses NeverBounce confirmed valid go until it recovers.` } : {}) };
+}
+
+/**
+ * The addresses due a touch by tomorrow with no fresh NeverBounce verdict, in plan order, at most
+ * `cap` — what the Mac checks before the plan is read (her credits: only imminent sends).
+ */
+export async function prospectsToVerify(db: D1Database, cap: number, now = Date.now()) {
+  const rows = (await db.prepare(`SELECT * FROM prospects WHERE status IN ('new','active') ORDER BY touches DESC, created_at ASC LIMIT 400`).all<any>()).results ?? [];
+  const out: string[] = [];
+  for (const p of rows) {
+    if (out.length >= cap) break;
+    if (!dueTouch(p, now + DAY_MS)) continue;
+    if (verdictGate(p, { now }) !== "unverified") continue;
+    if (await isSuppressed(db, p.email)) continue;
+    out.push(p.email);
   }
-  return { sends, stops, dryRun, template: tpl };
+  return out;
+}
+
+/**
+ * Her NeverBounce verdicts, kept on the prospect. Invalid / disposable: suppressed and the prospect
+ * stopped ('done', never 'bounced': a check is not a bounce, so it does not hold the brake on).
+ */
+export async function recordVerdicts(db: D1Database, verdicts: Array<{ email: string; result: string }>, now = Date.now()) {
+  let n = 0;
+  for (const v of verdicts ?? []) {
+    const email = String(v?.email ?? "").trim().toLowerCase();
+    const result = String(v?.result ?? "").toLowerCase();
+    if (!email || !["valid", "catchall", "unknown", "invalid", "disposable"].includes(result)) continue;
+    const r = await db.prepare(`UPDATE prospects SET nb_result = ?, nb_checked_at = ? WHERE email = ?`).bind(result, now, email).run();
+    if (!r.meta?.changes) continue;
+    n++;
+    if (result === "invalid" || result === "disposable") {
+      await suppress(db, email, "invalid", "neverbounce", now);
+      await db.prepare(`UPDATE prospects SET status = 'done', updated_at = ? WHERE email = ? AND status IN ('new','active')`).bind(now, email).run();
+    }
+  }
+  return n;
 }
 
 /**
@@ -262,7 +329,7 @@ export async function prospectActivity(db: D1Database, since: number, now = Date
   return {
     since, sent, replies, next: next.slice(0, 60), next_total: next.length,
     totals: { ...Object.fromEntries(counts.map((c) => [c.status, c.n])), emails_sent: touches?.n ?? 0 },
-    stops: plan.stops, dry_run: plan.dryRun,
+    stops: plan.stops, dry_run: plan.dryRun, forecast: plan.forecast,
     approved: await approvedTemplate(db), pending: await pendingTemplate(db),
   };
 }
@@ -354,7 +421,8 @@ export async function suppressAddresses(db: D1Database, emails: string[], reason
     if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) continue;
     const before = await isSuppressed(db, email);
     await suppress(db, email, reason, reason === "invalid" ? "neverbounce" : "wp_mailbox_bounce", now);
-    await db.prepare(`UPDATE prospects SET status = 'bounced', updated_at = ? WHERE email = ? AND status IN ('new','active') AND touches > 0`).bind(now, email).run();
+    // A NeverBounce "invalid" is a check, not a bounce: it stops the prospect without holding the brake on.
+    await db.prepare(`UPDATE prospects SET status = ?, updated_at = ? WHERE email = ? AND status IN ('new','active') AND touches > 0`).bind(reason === "invalid" ? "done" : "bounced", now, email).run();
     await db.prepare(`UPDATE prospects SET status = 'done', updated_at = ? WHERE email = ? AND status = 'new' AND touches = 0`).bind(now, email).run();
     if (!before) n++;
   }

@@ -11,7 +11,8 @@ import {
   lpReplyBody, lpStatusFrom, namesLine, nameRulesIn, pickCatchups, proposeFeatured, prospectProblems,
   renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS,
 } from "../../src/shared/boss/lp/plan.mjs";
-import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents, suppressAddresses } from "../../src/worker/boss/lp/desk";
+import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents, suppressAddresses, prospectsToVerify, recordVerdicts } from "../../src/worker/boss/lp/desk";
+import { approveOutcome } from "../../src/shared/boss/lp/plan.mjs";
 import TAP_SOURCE from "../../src/worker/boss/routes/lpTap.ts?raw";
 
 const DAY = 86_400_000;
@@ -256,6 +257,12 @@ describe("routes and the one-tap links", () => {
     expect((await tap(`/api/auth/tap/${tok}?do=approve`)).text).toContain("Approving");
     expect((await prospectPlan(env.DB, WED_10AM)).sends).toEqual([]); // the GET did not approve
     expect((await tap(`/api/auth/tap/${tok}?do=approve`, "POST")).text).toContain("Approved");
+    // Approved, but no address has her NeverBounce verdict yet: nothing goes, and it says so.
+    const unchecked = await prospectPlan(env.DB, WED_10AM);
+    expect(unchecked.sends).toEqual([]);
+    expect(unchecked.forecast).toMatchObject({ go: 0, unverified: 2 });
+    expect(approveOutcome(unchecked.forecast).headline).toMatch(/^Approve → nothing goes yet: NeverBounce checks/);
+    expect(await recordVerdicts(env.DB, [{ email: "new.one@example.com", result: "valid" }, { email: "old.one@example.com", result: "catchall" }], WED_10AM)).toBe(2);
     const plan = await prospectPlan(env.DB, WED_10AM);
     expect(plan.stops).toEqual([]);
     expect(plan.dryRun).toBe(false);
@@ -297,6 +304,7 @@ describe("routes and the one-tap links", () => {
       { email: "fine.lp@example.com", name: "Fi Ne", ...due },
       { email: "never.written@example.com", name: "Ne Ver", source: "inbox" },
     ]);
+    await recordVerdicts(env.DB, [{ email: "bounced.lp@example.com", result: "valid" }, { email: "fine.lp@example.com", result: "valid" }], WED_10AM);
     // Before: both touch-2s are due — the guard below is what removes one.
     expect((await prospectPlan(env.DB, WED_10AM)).sends.filter((s: any) => s.touch === 2).map((s: any) => s.email).sort()).toEqual(["bounced.lp@example.com", "fine.lp@example.com"]);
     expect(await suppressAddresses(env.DB, ["Bounced.LP@example.com", "never.written@example.com", "not-an-address"], "bounced", WED_10AM)).toBe(2);
@@ -308,6 +316,83 @@ describe("routes and the one-tap links", () => {
     expect(await suppressAddresses(env.DB, ["bounced.lp@example.com"], "bounced", WED_10AM)).toBe(0); // idempotent
     // Days later touch 3 would be due: still nothing.
     expect((await prospectPlan(env.DB, WED_10AM + 7 * DAY)).sends.map((s: any) => s.email)).not.toContain("bounced.lp@example.com");
+  });
+
+  /*
+   * 24 Oct 2026: the bounce brake (5.6%) paused every prospect email, so the email waiting for her
+   * Approve would have sent nothing — a dead end she could not see. Now: brake on → only addresses
+   * NeverBounce called valid go; every touch needs a verdict; the Approve card and page say what goes.
+   */
+  async function seedCohort() {
+    const t0 = WED_10AM - 6 * DAY;
+    const due = { source: "8raise_2026_10_11", touches: 1, first_sent_at: t0, last_touch_at: t0, status: "active", thread_id: "tc", last_message_id: "<c@example.com>", subject: "Re: Up to $1B secondary inquiry: Alpha" };
+    const rows = Array.from({ length: 20 }, (_, i) => ({ email: `lp${String(i).padStart(2, "0")}@example.com`, name: `Lp${i} Person`, ...due }));
+    await importProspects(env.DB, [...rows, { email: "gone1@example.com", name: "Go One", ...due }, { email: "gone2@example.com", name: "Go Two", ...due }]);
+    const all = (await env.DB.prepare(`SELECT id FROM prospects`).all<any>()).results ?? [];
+    await env.DB.batch(all.map((p: any, i: number) => env.DB.prepare(`INSERT OR IGNORE INTO prospect_touches (id, prospect_id, touch_no, sent_at) VALUES (?, ?, 1, ?)`).bind(`ptc_seed_${i}`, p.id, t0)));
+    // Two old bounces, already suppressed: 2 of 22 is 9.1%, over 3%.
+    await suppressAddresses(env.DB, ["gone1@example.com", "gone2@example.com"], "bounced", WED_10AM - DAY);
+  }
+
+  it("brake on: only NeverBounce-valid addresses get the follow-up; Approve says exactly what goes (Rule 0)", async () => {
+    await seedCohort();
+    const t = await proposeTemplate(env.DB, null, NAMES);
+    // Nothing checked yet: the brake holds everything, and the forecast says why.
+    const cold = await prospectPlan(env.DB, WED_10AM);
+    expect(cold.sends).toEqual([]);
+    expect(cold.forecast).toMatchObject({ go: 0, unverified: 20, bounced: 2 });
+    expect(cold.forecast.paused).toMatch(/bounce rate 9\.1% \(2 of 22/);
+    // The Mac is told only the due, unsuppressed, unchecked addresses, within its credit cap.
+    expect(await prospectsToVerify(env.DB, 5, WED_10AM)).toHaveLength(5);
+    const toCheck = await prospectsToVerify(env.DB, 25, WED_10AM);
+    expect(toCheck).toHaveLength(20);
+    expect(toCheck).not.toContain("gone1@example.com");
+    const result = (i: number) => (i < 15 ? "valid" : i < 17 ? "catchall" : i === 17 ? "unknown" : "invalid");
+    expect(await recordVerdicts(env.DB, toCheck.slice(0, 19).map((email, i) => ({ email, result: result(i) })), WED_10AM)).toBe(19);
+    const invalid = toCheck[18];
+    // Invalid: suppressed and stopped — a check is not a bounce, so the brake's count is unchanged.
+    expect((await env.DB.prepare(`SELECT status FROM prospects WHERE email = ?`).bind(invalid).first<any>()).status).toBe("done");
+    expect(await env.DB.prepare(`SELECT value FROM outreach_suppression WHERE value = ?`).bind(invalid).first()).toBeTruthy();
+    expect(await prospectsToVerify(env.DB, 25, WED_10AM)).toEqual([toCheck[19]]); // only the unchecked one is left
+
+    const pending = await prospectPlan(env.DB, WED_10AM);
+    expect(pending.sends).toEqual([]); // not approved yet
+    expect(pending.forecast).toMatchObject({ go: 15, first: 0, follow: 15, invalid: 1, risky: 3, unverified: 1, bounced: 2 });
+    const o = approveOutcome(pending.forecast);
+    expect(o.headline).toBe("Approve → the follow-up goes to the 15 addresses NeverBounce confirmed, on the next weekday, 9 to 5 Central.");
+    expect(o.lines).toEqual([
+      "1 address skipped: NeverBounce says it does not exist, so it is off the list.",
+      "3 addresses held: NeverBounce could not confirm it (catch-all or unknown); it waits until the bounce rate is back under 3%.",
+      "1 address not checked yet: NeverBounce checks it on Monique's next run, before anything goes.",
+      "2 addresses already bounced: never written to again.",
+      "Why only confirmed addresses: bounce rate 9.1% (2 of 22 in 14 days) is over 3%.",
+    ]);
+    // The tap page says the same thing the moment she approves.
+    const page = await tap(`/api/auth/tap/${(t as any).template.tap_token}?do=approve`, "POST");
+    expect(page.text).toContain("the follow-up goes to the 15 addresses NeverBounce confirmed");
+    const plan = await prospectPlan(env.DB, WED_10AM);
+    expect(plan.stops).toEqual([]);
+    expect(plan.sends).toHaveLength(15);
+    expect(plan.sends.every((s: any) => s.touch === 2 && s.nb_result === "valid")).toBe(true);
+    expect(plan.note).toMatch(/Only addresses NeverBounce confirmed valid go/);
+    // Brake off (the old bounces age out): catch-all and unknown go too; never the unchecked or invalid.
+    await env.DB.prepare(`UPDATE prospects SET updated_at = ? WHERE status = 'bounced'`).bind(WED_10AM - 30 * DAY).run();
+    const clear = await prospectPlan(env.DB, WED_10AM);
+    expect(clear.forecast.paused).toBeNull();
+    expect(clear.sends).toHaveLength(18);
+    expect(clear.sends.map((s: any) => s.email)).not.toContain(invalid);
+    expect(clear.sends.map((s: any) => s.email)).not.toContain(toCheck[19]);
+  });
+
+  it("brake on and nothing confirmed valid: Approve says nothing goes yet, and why", async () => {
+    await seedCohort();
+    const emails = await prospectsToVerify(env.DB, 25, WED_10AM);
+    await recordVerdicts(env.DB, emails.map((email) => ({ email, result: "catchall" })), WED_10AM);
+    const p = await prospectPlan(env.DB, WED_10AM);
+    expect(p.forecast).toMatchObject({ go: 0, risky: 20 });
+    expect(approveOutcome(p.forecast).headline).toBe("Approve → nothing goes yet: the bounce brake is on and none of the waiting addresses is confirmed valid.");
+    await env.DB.prepare(`UPDATE outreach_settings SET value = 'on' WHERE key = 'kill_switch'`).run();
+    expect(approveOutcome((await prospectPlan(env.DB, WED_10AM)).forecast).headline).toBe("Approve → nothing goes yet: the outreach kill switch is on.");
   });
 
   it("an unreadable do-not-suggest list holds every send (fail closed)", async () => {

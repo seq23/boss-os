@@ -33,7 +33,7 @@ import { ok, badRequest } from "../lib/http";
 import { nextDueAt } from "../duties/cadence";
 // boss fix L
 import {
-  upsertLpRows, listLpRows, importProspects, prospectPlan, recordProspectEvents, suppressAddresses, proposeTemplate,
+  upsertLpRows, listLpRows, importProspects, prospectPlan, prospectsToVerify, recordVerdicts, recordProspectEvents, suppressAddresses, proposeTemplate,
   approvedTemplate, pendingTemplate, ledgerRows, readExclusions, prospectActivity, backfillTouches,
 } from "../lp/desk";
 import { LP_STATUS_LABEL, canSpend, monthOf, monthSpent, nameRulesIn, MONIQUE_MONTHLY } from "../../../shared/boss/lp/plan.mjs";
@@ -212,6 +212,17 @@ lp.post("/prospects/import", async (c) => {
 });
 
 lp.get("/prospects/plan", async (c) => ok(c, await prospectPlan(c.env.DB)));
+
+/** Her NeverBounce, before every touch (24 Oct 2026): the due addresses with no fresh verdict, then the verdicts. */
+lp.get("/prospects/to-verify", async (c) => {
+  const cap = Math.max(0, Math.min(200, Number(c.req.query("cap") ?? 25) || 0));
+  return ok(c, { emails: await prospectsToVerify(c.env.DB, cap) });
+});
+lp.post("/prospects/verdicts", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (!Array.isArray(b?.verdicts)) throw badRequest("verdicts[] is required");
+  return ok(c, { recorded: await recordVerdicts(c.env.DB, b.verdicts.slice(0, 2000)) });
+});
 
 /** The Mac's morning bounce read (lp-bounces.mjs) and NeverBounce "invalid" verdicts (lp-prospects.mjs). */
 lp.post("/prospects/suppress", async (c) => {

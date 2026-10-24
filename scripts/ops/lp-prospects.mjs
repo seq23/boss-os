@@ -28,6 +28,12 @@
  *
  *   npm run lp:prospects            dry run (default): import, read replies, propose, preview sends
  *   npm run lp:prospects -- --live  the launchd job: also sends what is due
+ *   npm run lp:prospects -- --verify-only   only her NeverBounce on the due addresses (posts verdicts)
+ *
+ * NEVERBOUNCE (owner, 24 Oct 2026: "u need to use my neverbounce when u can"): before the plan is
+ * read, every address due a touch by tomorrow with no fresh verdict — first emails AND follow-ups —
+ * is checked (≤ NEVERBOUNCE_MAX_PER_RUN credits a run, 90-day cache) and the verdict is kept in D1.
+ * The plan sends only addresses with a verdict; while the bounce brake is on, only "valid" ones.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -38,7 +44,7 @@ import { writeMorning } from "./lp-daily.mjs";
 import { quotedSentence } from "../../src/shared/boss/mail/plain.mjs";
 import {
   DEFAULT_PROSPECT_TEMPLATE, FEATURED_MIN, blur, gmailThreadUrl, proposeFeatured, renderProspect,
-  staleFeatured, tapUrl, MAX_TOUCHES,
+  staleFeatured, tapUrl, MAX_TOUCHES, approveOutcome,
 } from "../../src/shared/boss/lp/plan.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures";
@@ -48,6 +54,7 @@ const SOURCE_DIR = process.env.PROSPECT_SOURCE_DIR ?? path.join(os.homedir(), "8
 const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
 const PREVIEW = path.join(os.homedir(), ".boss-os", "lp", "prospect-preview.txt");
 const LIVE = process.argv.includes("--live");
+const VERIFY_ONLY = process.argv.includes("--verify-only");
 
 /* ─── The 11 Oct files (pure parsers, tested with synthetic text) ─────────── */
 
@@ -161,9 +168,13 @@ export function interestedReply(first) {
 /* ─── NeverBounce (her account; key NEVERBOUNCE_API_KEY injected by the vault) ─ */
 
 const NB_CACHE = path.join(os.homedir(), ".boss-os", "lp", "neverbounce-cache.json");
-export async function neverBounceFirstSends(emails, { key = process.env.NEVERBOUNCE_API_KEY, fetchImpl = fetch } = {}) {
+/**
+ * Check `emails` with her NeverBounce (cache first, ≤ cap new credits). Returns the verdicts worth
+ * keeping ({ email, result } — never an "unverified"), for POST /lp/prospects/verdicts.
+ */
+export async function neverBounceCheck(emails, { key = process.env.NEVERBOUNCE_API_KEY, fetchImpl = fetch, cacheFile = NB_CACHE } = {}) {
   const { verifyFirstSends, NEVERBOUNCE_MAX_PER_RUN } = await import("../../src/shared/boss/lp/bounces.mjs");
-  if (!key) console.log("NAMED STOP [NO_NEVERBOUNCE_KEY] first emails go unverified until her NeverBounce key is in the vault as NEVERBOUNCE_API_KEY; bounces still stop every later email.");
+  if (!key) console.log("NAMED STOP [NO_NEVERBOUNCE_KEY] no prospect email goes to an unchecked address, and none can be checked until her NeverBounce key is in the vault as NEVERBOUNCE_API_KEY.");
   const check = key ? async (email) => {
     const u = new URL("https://api.neverbounce.com/v4.2/single/check");
     u.searchParams.set("key", key);
@@ -171,15 +182,26 @@ export async function neverBounceFirstSends(emails, { key = process.env.NEVERBOU
     const j = await (await fetchImpl(u)).json();
     return j?.status === "success" ? j.result : null;
   } : null;
-  const cache = readJson(NB_CACHE) ?? {};
+  const cache = readJson(cacheFile) ?? {};
   const cap = Number(process.env.NEVERBOUNCE_MAX_PER_RUN ?? NEVERBOUNCE_MAX_PER_RUN);
   const r = await verifyFirstSends(emails, { check, cache, cap });
-  if (r.checked) { fs.mkdirSync(path.dirname(NB_CACHE), { recursive: true }); fs.writeFileSync(NB_CACHE, JSON.stringify(r.cache), { mode: 0o600 }); }
-  const invalid = [...r.verdicts].filter(([, v]) => !v.send).map(([e]) => e);
+  if (r.checked) { fs.mkdirSync(path.dirname(cacheFile), { recursive: true }); fs.writeFileSync(cacheFile, JSON.stringify(r.cache), { mode: 0o600 }); }
+  const verdicts = [...r.verdicts].filter(([, v]) => v.mark !== "unverified").map(([email, v]) => ({ email, result: v.mark }));
   const marks = {};
   for (const v of r.verdicts.values()) marks[v.mark] = (marks[v.mark] ?? 0) + 1;
-  console.log(`neverbounce: ${r.checked} checked (${Object.entries(marks).map(([k, n]) => `${n} ${k}`).join(", ") || "none due"}).`);
-  return { verdicts: r.verdicts, invalid };
+  console.log(`neverbounce: ${emails.length} due, ${r.checked} new check(s) (${Object.entries(marks).map(([k, n]) => `${n} ${k}`).join(", ") || "none due"}).`);
+  return { verdicts, checked: r.checked, marks };
+}
+
+/** The due addresses Boss OS has no fresh verdict for → NeverBounce → kept in D1. */
+export async function verifyDue(api, opts = {}) {
+  const { NEVERBOUNCE_MAX_PER_RUN } = await import("../../src/shared/boss/lp/bounces.mjs");
+  const cap = Number(process.env.NEVERBOUNCE_MAX_PER_RUN ?? NEVERBOUNCE_MAX_PER_RUN);
+  const { emails = [] } = await api.get(`/lp/prospects/to-verify?cap=${cap}`);
+  if (!emails.length) { console.log("neverbounce: every due address already has a verdict."); return { verdicts: [], marks: {} }; }
+  const r = await neverBounceCheck(emails, opts);
+  if (r.verdicts.length) console.log(`neverbounce: ${(await api.post("/lp/prospects/verdicts", { verdicts: r.verdicts })).recorded} verdict(s) kept.`);
+  return r;
 }
 
 /* ─── The morning section ───────────────────────────────────────────────── */
@@ -199,20 +221,24 @@ export function supplyFrom(deals) {
   }));
 }
 
-export function templateDecide(tpl, { stale = [] } = {}) {
+export function templateDecide(tpl, { stale = [], forecast = null } = {}) {
   const names = JSON.parse(tpl.names_json ?? "[]");
   const tplObj = { subject: tpl.subject, body: tpl.body, follow_up: tpl.follow_up };
   const sample = renderProspect(tplObj, { first: "Alex", names });
   const follow = renderProspect(tplObj, { first: "Alex", names, touch: 2 });
+  const outcome = approveOutcome(forecast);
   return {
     key: `prospect-template:${tpl.id ?? tpl.hash ?? ""}`,
     title: stale.length ? `Swap ${stale.join(", ")} in the prospect email` : "Approve the prospect email before it goes out",
     body: stale.length
-      ? `${stale.join(", ")} ${stale.length === 1 ? "is" : "are"} no longer fresh on your list, so here is the email with a swap. Nothing new goes out until you approve.`
-      : "No prospect email goes out until you approve this one. Then it goes to up to 20 new people a day, with two gentle follow-ups, then stops.",
+      ? `${stale.join(", ")} ${stale.length === 1 ? "is" : "are"} no longer fresh on your list, so here is the email with a swap. Nothing new goes out until you approve. ${outcome.headline}`
+      : `No prospect email goes out until you approve this one. ${outcome.headline}`,
+    // What Approve does, from the plan (24 Oct 2026, Rule 0): never an Approve that silently sends nothing.
+    outcome: outcome.headline,
     details: [
+      ...outcome.lines,
+      "After that: up to 20 new people a day, two gentle follow-ups each, then stop; every address is checked with NeverBounce first.",
       `Names it mentions: ${names.map((n) => `${n.name} (${n.why ?? "on your list"})`).join("; ")}.`,
-      "Approve: Monique starts sending it on the next weekday, 9 to 5 Central.",
       "Change: opens it so you can say what to change; nothing is sent meanwhile.",
     ],
     draft: { heading: "The email, word for word (Alex stands in for each person's first name)", text: `Subject: ${sample.subject}\n\n${sample.body}\n\nThe follow-up (emails 2 and 3):\n\n${follow.body}` },
@@ -225,7 +251,7 @@ export function templateDecide(tpl, { stale = [] } = {}) {
 
 export function prospectsMorning({ rows, pending, stale, plan, sent, now = Date.now() }) {
   const decide = [];
-  if (pending) decide.push(templateDecide(pending, { stale }));
+  if (pending) decide.push(templateDecide(pending, { stale, forecast: plan?.forecast ?? null }));
   for (const p of rows.filter((r) => r.status === "interested" && r.draft_tap_token)) {
     decide.push({
       title: `${p.name || "A prospect"}${p.firm ? ` at ${p.firm}` : ""} wants to talk`,
@@ -250,6 +276,7 @@ export function prospectsMorning({ rows, pending, stale, plan, sent, now = Date.
   const lines = [];
   if (sent) lines.push(`Monique sent ${sent} prospect email${sent === 1 ? "" : "s"} today.`);
   if (plan?.stops?.length && !pending) lines.push(`Prospect emails are paused: ${plan.stops[0]}`);
+  if (plan?.note) lines.push(plan.note);
   lines.push(`Prospects: ${active} in the sequence, ${rows.filter((r) => r.status === "interested").length} interested, ${rows.filter((r) => r.status === "replied").length} replied, ${rows.filter((r) => ["opted_out", "bounced"].includes(r.status)).length} stopped.`);
   return { section: "prospects", updated_at: new Date(now).toISOString(), decide, rows: sells, lines };
 }
@@ -258,6 +285,7 @@ export function prospectsMorning({ rows, pending, stale, plan, sent, now = Date.
 
 async function main() {
   const api = await bossApi();
+  if (VERIFY_ONLY) { const r = await verifyDue(api); console.log(`LP-PROSPECTS-VERIFIED: ${JSON.stringify(r.marks)}`); return; }
   const tok = await token();
 
   // 1. Import the 11 Oct send (idempotent: a known address keeps its history).
@@ -342,18 +370,13 @@ async function main() {
     await syncBounces({ days: 3, commit: LIVE, api });
   } catch (e) { console.log(`note: ${e.message}`); }
 
-  // 4. Send what is due.
-  let plan = await api.get("/lp/prospects/plan");
-  // 4a. Her NeverBounce, before the FIRST email to any address (owner, 24 Oct 2026: "u need to use my
-  // neverbounce when u can"). Invalid → suppressed, never sent; catch-all / unknown → sent, marked.
-  if (plan.sends?.length && LIVE && !plan.dryRun) {
-    const { verdicts, invalid } = await neverBounceFirstSends(plan.sends.filter((s) => s.touch === 1).map((s) => s.email));
-    if (invalid.length) {
-      await api.post("/lp/prospects/suppress", { emails: invalid, reason: "invalid" });
-      console.log(`neverbounce: ${invalid.length} first email(s) held back — the address is invalid; suppressed.`);
-    }
-    plan = { ...plan, sends: plan.sends.filter((s) => s.touch !== 1 || verdicts.get(s.email.toLowerCase())?.send !== false) };
+  // 4. Her NeverBounce on every address due a touch (first emails and follow-ups), then the plan —
+  // which sends only checked addresses, and only "valid" ones while the bounce brake is on.
+  if (LIVE) {
+    try { await verifyDue(api); } catch (e) { console.log(`note: NeverBounce did not run (${e.message}); unchecked addresses wait.`); }
   }
+  const plan = await api.get("/lp/prospects/plan");
+  if (plan.note) console.log(`plan: ${plan.note}`);
   let sent = 0;
   if (plan.sends?.length) {
     if (!LIVE || plan.dryRun) {

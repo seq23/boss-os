@@ -345,7 +345,7 @@ export function prospectDecisions(a, existingKeys = new Set(), now = Date.now())
   if (!a) return [];
   const out = [];
   if (a.pending && a.pending.tap_token && !existingKeys.has(`prospect-template:${a.pending.id ?? a.pending.hash ?? ""}`)) {
-    out.push({ ...templateDecide(a.pending), priority: 3 });
+    out.push({ ...templateDecide(a.pending, { forecast: a.forecast ?? null }), priority: 3 });
   }
   const due = (a.next ?? []).filter((r) => r.next_at && r.next_at <= now + 18 * 3_600_000);
   if (due.length && !a.approved && !a.pending) {

@@ -253,6 +253,14 @@ describe("prospect emails: only what is new, and stuck follow-ups are a decision
     expect(d[0].draft.text).toContain("Hi Alex,");
     expect(d[0].buttons.map((b: any) => b.label)).toEqual(["Approve", "Change"]);
     expect(prospectDecisions({ ...a, pending }, new Set(["prospect-template:pt1"]), NOW)).toHaveLength(0);
+    // What Approve does is on the card, from the plan's forecast (24 Oct 2026, Rule 0).
+    const forecast = { go: 31, first: 0, follow: 31, invalid: 4, risky: 0, unverified: 0, bounced: 2, paused: "Paused automatically: bounce rate 5.6% (2 of 36 in 14 days) is over 3%.", blocked: [] };
+    const f = prospectDecisions({ ...a, pending, forecast }, new Set(), NOW)[0];
+    expect(f.body).toBe("No prospect email goes out until you approve this one. Approve → the follow-up goes to the 31 addresses NeverBounce confirmed, on the next weekday, 9 to 5 Central.");
+    expect(f.details).toContain("4 addresses skipped: NeverBounce says it does not exist, so it is off the list.");
+    expect(f.details).toContain("Why only confirmed addresses: bounce rate 5.6% (2 of 36 in 14 days) is over 3%.");
+    const dead = prospectDecisions({ ...a, pending, forecast: { ...forecast, go: 0, follow: 0, risky: 31 } }, new Set(), NOW)[0];
+    expect(dead.body).toMatch(/Approve → nothing goes yet: the bounce brake is on/);
   });
 });
 
