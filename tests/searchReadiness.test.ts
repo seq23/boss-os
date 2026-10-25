@@ -244,7 +244,8 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     expect(w.chunks.flatMap((c) => c.ids)).toEqual(many.map((b) => b.id));
     expect(w.chunks.every((c) => c.repo === "big")).toBe(true);
     const driver = readFileSync("scripts/ops/search-readiness-fix.sh", "utf8");
-    expect(driver).toMatch(/SR_SCOPE_REPO="\$R" SR_SCOPE_BRIEFS="\$IDS" bash scripts\/ops\/ahrefs-audit-fix\.sh/);
+    expect(driver).toMatch(/SR_SCOPE_REPO="\$rr" SR_SCOPE_BRIEFS="\$ids" bash scripts\/ops\/ahrefs-audit-fix\.sh/);
+    expect(driver).toMatch(/CHUNK \/\{print \$2" "\$3" "\$4\}/);
     expect(readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8")).toMatch(/SR_SCOPE_BRIEFS/);
   });
   it("NEGATIVE: an empty queue plans nothing — the driver names that stop rather than passing silently", () => {
@@ -271,5 +272,33 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     expect(readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8")).toMatch(/SR_SCOPE_REPO/);
     const driver = readFileSync("scripts/ops/search-readiness-fix.sh", "utf8");
     expect(driver).toMatch(/fixed nothing; stopping/);
+  });
+});
+
+describe("known limits and one page counted once (25 Oct 2026)", () => {
+  const html = (t: string) => `<html><head><title>${t}</title></head><body>x</body></html>`;
+  it("a page sampled twice is not a duplicate title; two different pages with one title still are", () => {
+    const t = "Time2Read - Interactive Reading Adventures for Kids";
+    const same = CHECKS.title_band!({ pages: [
+      { url: "https://time-2-read.com/", status: 200, html: html(t) },
+      { url: "https://time-2-read.com", status: 200, html: html(t) },
+    ] } as any);
+    expect(same.status).toBe("pass");
+    const two = CHECKS.title_band!({ pages: [
+      { url: "https://time-2-read.com/", status: 200, html: html(t) },
+      { url: "https://time-2-read.com/about", status: 200, html: html(t) },
+    ] } as any);
+    expect(two.status).toBe("fail");
+    expect(two.detail).toMatch(/on 2 pages \(https:\/\/time-2-read\.com\/, https:\/\/time-2-read\.com\/about\)/);
+  });
+  it("a known limit stays in the queue with its reason and is never workable", () => {
+    const site = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
+    expect(site.known_limits.map((k: any) => k.item).sort()).toEqual(["a1", "a9", "e6", "i8"]);
+    const results = ["a1", "a9", "b1", "e6", "i8", "i10"].map((id) => ({ id, status: "fail", detail: "x" }));
+    const briefs = fixBriefs(checklist, [{ site, host: site.domain, results }]);
+    const by = Object.fromEntries(briefs.map((b: any) => [b.item_id, b]));
+    for (const id of ["a1", "a9", "e6", "i8"]) { expect(by[id].disposition).toBe("known_limit"); expect(by[id].known_limit.length).toBeGreaterThan(20); }
+    expect(by.b1.disposition).toBe("fix");
+    expect(workQueue(briefs)).toMatchObject({ total: 6, workable: 2 });
   });
 });
