@@ -53,6 +53,7 @@ import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
 import { loadIdentity, isHers, RRLIST } from "./interest-grid.mjs";
+import { decideSide, isRelayedNote } from "../../src/shared/boss/deals/side.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const BATCH_DIR = path.join(DIR, "candidates");
@@ -157,10 +158,25 @@ export function senderOf(msg) {
   };
 }
 
-/** A row that is hers: "your client" as principal, `hers: true`, and nobody of hers as intermediary. */
+/**
+ * A row that is hers: "your client" as principal, `hers: true`, and nobody of hers as intermediary.
+ *
+ * "YOURS" MEANS SHE IS THE PRINCIPAL'S DIRECT REP, NEVER "SHE SENT THE EMAIL" (owner, 25 Oct 2026).
+ * Her outbound mail that passes on somebody else's note — a broker's "He's got a $1 billion Anthropic
+ * block…" forwarded with "Can u find this seller rep" — is THAT broker's order: `hers: false`, the
+ * principal the note names, and it never reads "Yours". The model says so with `relayed: true`;
+ * `isRelayedNote` catches it from the message even when the model does not. The Rainmaker rule
+ * stands: nobody at her firm is ever the principal (`admissible`).
+ */
 export function markHers(row, msg, identity = IDENTITY) {
   const sender = senderOf(msg);
   const withSender = { ...row, ...sender };
+  if (row.relayed === true || isRelayedNote(msg)) {
+    const principal = isHers({ principal: row.principal, principal_email: row.principal_email }, identity) || /^your client$/i.test(String(row.principal ?? "").trim())
+      ? `unnamed ${row.side === "sell" ? "seller" : row.side === "buy" ? "buyer" : "party"} in a note passed to you`
+      : row.principal;
+    return { ...withSender, relayed: true, hers: false, principal, principal_email: isHers({ principal_email: row.principal_email }, identity) ? null : row.principal_email ?? null };
+  }
   if (!isHers(withSender, identity) && !(sender.outbound && sender.to_rrlist)) return withSender;
   return { ...withSender, hers: true, principal: "your client", principal_email: null, intermediated_by: null };
 }
@@ -307,7 +323,8 @@ export function parseRows(text) {
 export function admissible(row, msg) {
   if (!row || typeof row !== "object") return "not an object";
   if (!row.asset || typeof row.asset !== "string" || row.asset.trim().length < 2) return "no asset";
-  if (row.side !== "buy" && row.side !== "sell") return "no side";
+  // A side the model could not place is kept UNSET with its reason, never guessed (25 Oct 2026).
+  if (row.side !== "buy" && row.side !== "sell" && !String(row.side_note ?? "").trim()) return "no side";
   const usd = Number(row.size_usd) || 0;
   const shares = Number(row.size_shares) || 0;
   if (usd <= 0 && shares <= 0) return "no size";
@@ -333,10 +350,16 @@ export function admissible(row, msg) {
   return null;
 }
 
-const normalise = (row, msg) => markHers({
+/**
+ * WHO HOLDS OR OFFERS THE BLOCK DECIDES THE SIDE (owner, 25 Oct 2026): `decideSide`
+ * (src/shared/boss/deals/side.mjs) overrules a "buy" whose own sentence says the block is on offer,
+ * and keeps a side the model could not place UNSET with the reason. Never a default buy.
+ */
+export const normalise = (row, msg) => markHers({
   principal: String(row.principal).trim().slice(0, 160),
   principal_email: row.principal_email ? String(row.principal_email).toLowerCase().slice(0, 160) : null,
-  side: row.side,
+  ...decideSide(row),
+  relayed: row.relayed === true,
   asset: String(row.asset).trim().slice(0, 80),
   size_usd: Number(row.size_usd) || null,
   size_shares: Number(row.size_shares) || null,
@@ -387,8 +410,42 @@ function strike(id) {
   console.log(`  The list is ${WRONG_FILE}; delete a line to undo it.`);
 }
 
+/**
+ * RE-CHECK THE LEDGER AGAINST THE SIDE AND "YOURS" RULES (owner, 25 Oct 2026), without the model:
+ * every row's side through `decideSide`, every outbound row through `markHers` with its message.
+ * Pure over (interests, messages by id); `--recheck` writes the result and prints each change.
+ */
+export function recheckRows(interests, messagesById, identity = IDENTITY) {
+  const changes = [];
+  const rows = interests.map((r) => {
+    if (r.via !== "model") return r;
+    const msg = messagesById.get(r.source_message) ?? { source_message: r.source_message, outbound: r.outbound, from: r.from, from_name: r.from_name, to: [], excerpt: "" };
+    const side = decideSide(r);
+    let next = { ...r, ...side };
+    if (r.outbound) next = markHers({ ...next, hers: undefined }, msg, identity);
+    const changed = ["side", "hers", "principal", "relayed"].filter((k) => (next[k] ?? null) !== (r[k] ?? null));
+    if (changed.length) changes.push({ source_message: r.source_message, asset: r.asset, before: Object.fromEntries(changed.map((k) => [k, r[k] ?? null])), after: Object.fromEntries(changed.map((k) => [k, next[k] ?? null])) });
+    return next;
+  });
+  return { rows, changes };
+}
+
+function recheck() {
+  const ledger = JSON.parse(fs.readFileSync(LEDGER, "utf8"));
+  const byId = new Map();
+  for (const f of fs.existsSync(BATCH_DIR) ? fs.readdirSync(BATCH_DIR) : []) {
+    try { const b = JSON.parse(fs.readFileSync(path.join(BATCH_DIR, f), "utf8")); for (const m of Array.isArray(b) ? b : b.messages ?? []) byId.set(m.source_message, m); } catch { /* a bad batch file is skipped */ }
+  }
+  const { rows, changes } = recheckRows(ledger.interests ?? [], byId);
+  for (const c of changes) console.log(`[${c.source_message}] ${c.asset}: ${JSON.stringify(c.before)} -> ${JSON.stringify(c.after)}`);
+  if (!changes.length) { console.log(`recheck: ${rows.length} row(s), nothing to correct.`); return; }
+  fs.writeFileSync(LEDGER, JSON.stringify({ ...ledger, interests: rows, rechecked_at: new Date().toISOString() }, null, 2), "utf8");
+  console.log(`recheck: ${changes.length} row(s) corrected in ${LEDGER}. Run npm run capital:grid to rebuild the matches.`);
+}
+
 async function main() {
   if (WRONG) { strike(WRONG); return; }
+  if (ARGS.includes("--recheck")) { recheck(); return; }
 
   if (REVIEW) {
     if (!fs.existsSync(LEDGER)) {

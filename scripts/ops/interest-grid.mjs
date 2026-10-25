@@ -95,6 +95,8 @@ export function mentionsHer(text, id) {
  */
 export function isHers(row, id) {
   if (row.hers === true) return true;
+  // A note she passed on is the broker's order, however it reached the ledger (25 Oct 2026).
+  if (row.hers === false && row.relayed === true) return false;
   if (isHerAddress(row.from, id) || mentionsHer(row.from_name, id)) return true;
   if (isHerAddress(row.principal_email, id) || mentionsHer(row.principal, id)) return true;
   if (isHerAddress(row.intermediated_by, id) || mentionsHer(row.intermediated_by, id)) return true;
@@ -200,6 +202,8 @@ const unnamed = (p) => !p || /\b(unnamed|undisclosed|anonymous|a client|client o
 /** Who it came from, as person and firm. Her own rows say "You". */
 export function fromWords(row, hers) {
   if (hers) return "You";
+  // A note she passed on comes from the party it names, not from her (25 Oct 2026).
+  if (row.relayed) return `${String(row.principal ?? "").trim() || "—"}${row.intermediated_by ? `, via ${row.intermediated_by}` : ""} (a note you passed on)`;
   const addr = row.from && !row.outbound ? row.from : (row.intermediated_by || row.principal_email || "");
   const person = row.from_name || (unnamed(row.principal) ? "" : String(row.principal)) || (addr ? nameFromAddress(addr) : "");
   const firm = firmOf(addr || row.principal_email);
@@ -222,7 +226,7 @@ export function gridRow(r, { identity, lists, mailbox = MAILBOX }) {
   const side = hers ? "yours" : r.side;
   const company = String(r.asset ?? "").trim();
   const id = createHash("sha256").update(`${r.source_message}|${r.side}|${company.toLowerCase()}|${r.size_usd ?? r.size_shares ?? ""}`).digest("hex").slice(0, 24);
-  const parties = [r.principal, r.principal_email, r.intermediated_by, r.from, r.from_name]
+  const parties = [r.principal, r.principal_email, r.intermediated_by, ...(r.relayed ? [] : [r.from, r.from_name])]
     .filter(Boolean).map((s) => String(s).toLowerCase()).join(" | ").slice(0, 600);
   return {
     id,
@@ -340,7 +344,7 @@ const whoOf = (g) => (g.side === "yours" ? "you (your own deal)" : g.from_text);
 const offerWords = (g) => `${g.direction === "buy" ? "wants to buy" : "has to sell"}${g.size_text !== "—" ? ` ${g.size_text}` : ""}${g.price_text !== "—" ? ` at ${g.price_text}` : ""}${g.structure_text && g.structure_text !== "—" ? ` (${g.structure_text})` : ""}`;
 
 // A greeting uses a person's first name only (from the email's display name), never a firm's word.
-const firstOf = (g) => { const w = String(g?._row?.from_name ?? "").split(/[\s,]+/)[0] ?? ""; return /^[A-Z][a-z'’-]{1,30}$/.test(w) ? w : ""; };
+const firstOf = (g) => { if (g?._row?.relayed) return ""; const w = String(g?._row?.from_name ?? "").split(/[\s,]+/)[0] ?? ""; return /^[A-Z][a-z'’-]{1,30}$/.test(w) ? w : ""; };
 const sizeOf = (g) => (g.size_text !== "—" ? g.size_text : "");
 const priceOf = (g) => (g.price_text !== "—" ? ` at ${g.price_text}` : "");
 
