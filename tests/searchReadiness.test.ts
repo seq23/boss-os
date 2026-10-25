@@ -89,6 +89,12 @@ describe("every grid repo site has a coverage manifest", () => {
     }
   });
 
+  it("time-2-read.com is audited against its repo, dailystory, never as \"no repo\" (25 Oct 2026)", () => {
+    const t = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
+    expect(t.repo).toBe("dailystory");
+    expect(t.no_repo_why).toBeUndefined();
+  });
+
   it("the two hyperlocal sites are seeded in full: towns in the radius, neighborhoods, anchors, service × town", () => {
     const senior = sites.grid_repos.find((s: any) => s.domain === "memphisseniorcarehomes.com");
     const pnp = sites.grid_repos.find((s: any) => s.domain === "porchandparty901.com");

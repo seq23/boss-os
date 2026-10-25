@@ -177,13 +177,16 @@ export const GRID = [
     label: "SaaS apps — partnerships",
     domains: ["heygetonmylevel.com", "time-2-read.com"],
     /*
-     * ONLY ONE OF THE TWO HAS A REPO. `heygetonmylevel` is on her GitHub; there is no repo for
-     * time-2-read.com. Recorded as it is rather than paired with a plausible-looking name — the
-     * daily examination reads this list, and a repo that does not exist would fail every run and
-     * teach whoever reads the log to ignore it.
+     * TWO DOMAINS, TWO REPOS, ONE EACH. `heygetonmylevel` is heygetonmylevel.com; `dailystory` is
+     * time-2-read.com (Lovable publishes its front end, Actions deploy its edge functions on merge).
+     * Until 25 Oct 2026 this row said time-2-read.com had no repo, so the search-readiness audit
+     * recorded its twelve failing items as "no repo" and nothing ever fixed them. The repo name does
+     * not match the domain, which is exactly why the mapping is written down per domain.
+     * `scripts/validate/the-grid-is-her-twelve-properties.mjs` fails if a domain with a repo is ever
+     * marked as having none again, here or in searchReadiness/sites.json.
      */
-    repos: ["heygetonmylevel"],
-    domains_without_repo: ["time-2-read.com"],
+    repos: ["heygetonmylevel", "dailystory"],
+    domain_repos: { "heygetonmylevel.com": "heygetonmylevel", "time-2-read.com": "dailystory" },
     owner: "hers",
     tier: "primary",
     why_tier:
