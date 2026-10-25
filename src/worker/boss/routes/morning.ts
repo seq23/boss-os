@@ -18,6 +18,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound } from "../lib/http";
+import { dismissedSet, pruneDismissed } from "../capital/dismiss";
 
 export const morning = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -58,7 +59,8 @@ morning.post("/:day/sent", async (c) => {
 
 morning.get("/latest", async (c) => {
   const r = await c.env.DB.prepare(`SELECT * FROM morning_digests ORDER BY day DESC LIMIT 1`).first<Row>();
-  return ok(c, r ? view(r) : null);
+  // What she has dismissed since leaves Today and the item screens at once (25 Oct 2026).
+  return ok(c, r ? pruneDismissed(view(r), await dismissedSet(c.env)) : null);
 });
 
 morning.get("/:day", async (c) => {
@@ -66,5 +68,5 @@ morning.get("/:day", async (c) => {
   if (!DAY_RE.test(day)) throw badRequest("The day is YYYY-MM-DD");
   const r = await c.env.DB.prepare(`SELECT * FROM morning_digests WHERE day = ?`).bind(day).first<Row>();
   if (!r) throw notFound(`No morning kept for ${day}`);
-  return ok(c, view(r));
+  return ok(c, pruneDismissed(view(r), await dismissedSet(c.env)));
 });

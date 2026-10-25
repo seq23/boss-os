@@ -368,6 +368,7 @@ export function prospectDecisions(a, existingKeys = new Set(), now = Date.now())
 // ─── Spirit (owner-approved sample, 24 Oct 2026) ──────────────────────────────
 
 export const SPIRIT_URL = `${ORIGIN}/?tab=spirit`;
+export const SPIRIT_LINK_LABEL = "See the full sky, body and practice in Boss OS →";
 const BAND_WORDS = { peak_green: "Peak money week", green: "Good money week", yellow: "Steady money week", orange: "Careful money week", red: "Quiet money week" };
 const MOON_ICON = { full_moon: "🌕", new_moon: "🌑", first_quarter: "🌓", last_quarter: "🌗" };
 const STEP_WORDS = [[/breath/i, "breathe"], [/cent(er|re)|ground/i, "center"], [/gratitude/i, "gratitude"], [/visuali/i, "visualize"], [/affirm/i, "affirm"], [/embod/i, "embody"], [/action|standard/i, "name today's one action"]];
@@ -386,8 +387,8 @@ function whenWords(at, now) {
 /**
  * THE SPIRIT SECTION, built exactly like the sample she approved: the money-map week, the next
  * major lunar event, today's sky in one plain line, the morning practice in one line, the gratitude
- * sentence, and this month's Ancestors hour and Contribution — then everything else under "Show
- * more ▾". The sky is context, never a cause: the advisory note travels with it. Pure.
+ * sentence, this month's Ancestors hour and Contribution, and the week's practice in one line — then
+ * one link to the Spirit tab for the rest (owner, 25 Oct 2026: trimmed). Pure.
  */
 export function spiritSection(day, week, now = Date.now()) {
   if (!day) return null;
@@ -418,20 +419,19 @@ export function spiritSection(day, week, now = Date.now()) {
     const left = new Date(Date.UTC(y, mo, 0)).getUTCDate() - Number(dayOf(now).slice(8, 10));
     items.push(`This month · ${plural(left, "day")} left: 🕯 Ancestors hour: ${anc?.minutes ?? 0} of ${anc?.target_minutes ?? 60} min · 🤝 Contribution: ${con?.count ?? 0} of ${con?.minimum ?? 1}.`);
   }
-  const blocks = [];
-  if (active.length) blocks.push({ heading: "Today's sky in full", lines: active.map((a) => `${a.body_name} ${a.aspect} your ${a.natal_point_name}: ${a.meaning ?? ""}`) });
-  if (week?.body?.suggestion) blocks.push({ heading: "Body", lines: [`${week.body.suggestion}${week.body.why ? ` Why: ${week.body.why}` : ""}`] });
-  if (week?.practice?.technique) {
-    const src = week.practice.source_url && /^https?:\/\//.test(week.practice.source_url) ? week.practice.source_url : null;
-    blocks.push({ heading: `This week's practice: ${week.practice.technique}`, lines: [
-      String(week.practice.how_to_try_it ?? week.practice.claim ?? ""),
-      { runs: [{ text: "Source: " }, { text: String(week.practice.source_name ?? "the study"), ...(src ? { url: src } : {}) }] },
-    ].filter(Boolean) });
-  }
-  const open = day.manifestations?.open ?? 0;
-  blocks.push({ heading: "Manifestations", lines: [{ runs: [{ text: open ? `${open} open. ` : "None open. " }, { text: open ? "See them" : "Start one", url: SPIRIT_URL }] }] });
-  if (day.note) blocks.push({ heading: "", lines: [day.note] });
-  return { title: "✨ Spirit", items: items.map((i) => (typeof i === "string" ? { runs: [{ text: i }] } : i)), link: { label: "Open Spirit →", url: SPIRIT_URL }, full: { summary: "Show more ▾", blocks }, empty: null };
+  /*
+   * THE WEEK'S PRACTICE, ONE SHORT LINE (owner, 25 Oct 2026): its own first sentence, no source.
+   * Everything else — the sky in full, Body, Manifestations, the advisory note — is on the Spirit tab,
+   * one link away. The email carries only what she reads in the morning.
+   */
+  const how = String(week?.practice?.how_to_try_it ?? week?.practice?.claim ?? "").replace(/\s+/g, " ").trim();
+  const tech = String(week?.practice?.technique ?? "").replace(/\s*\([^)]*\)\s*/g, " ").trim();
+  // An if-then plan reads as the plan itself: "If I finish my morning coffee, then I do 5 minutes of breathwork."
+  const plan = /['"‘“](If [^'"’”]{8,160}?)['"’”]/i.exec(how)?.[1]?.trim();
+  const first = (how.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? how).trim();
+  const line = plan ? `${tech ? `${tech}: ` : ""}${plan}${/[.!?]$/.test(plan) ? "" : "."}` : first || tech;
+  if (line) items.push(`This week's practice: ${line}${/[.!?]$/.test(line) ? "" : "."}`);
+  return { title: "✨ Spirit", items: items.map((i) => (typeof i === "string" ? { runs: [{ text: i }] } : i)), link: { label: SPIRIT_LINK_LABEL, url: SPIRIT_URL }, empty: null };
 }
 
 /**
@@ -507,7 +507,16 @@ export function buildDay(data, now = Date.now()) {
   });
   const dealRowsAll = deals.map((r) => ({
     company: r.company, side: r.side ?? "—", size: [r.size, r.price && r.price !== "—" ? `@ ${r.price}` : ""].filter(Boolean).join(" ") || "—",
-    from: r.from ?? "—", url: r.screen, url_label: "Open the deal",
+    from: r.from ?? "—", url: r.screen, url_label: "Open ›",
+  }));
+  /*
+   * MONIQUE FOUND IS ONE GRID (owner, 25 Oct 2026, mock-up v2): company (+N more) | seller → buyer |
+   * fit dots | "Open ›" to the trade's card in Boss OS, which holds the seller's ready email and
+   * Dismiss. ⭐ first. No match is ever in Decide. Each row carries its pair and orders, so a match
+   * she dismisses leaves Today at once (routes/morning.ts prunes them).
+   */
+  const foundGrid = (m.monique_found?.grid ?? []).filter((r, i) => passes(`monique_found grid ${i + 1}`, r.company, r.trade, r.fit)).map((r) => ({
+    company: r.company, trade: r.trade, fit: r.fit, url: r.url, url_label: "Open ›", match_pair: r.match_pair, match_sig: r.match_sig,
   }));
   const found = (m.monique_found?.lines ?? []).map((l) => {
     const line = typeof l === "string" ? { text: l, links: [] } : l;
@@ -594,8 +603,8 @@ export function buildDay(data, now = Date.now()) {
     happened: `Good morning. Here is your ${dayWords(today)}.${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
     decide,
     sections: [
-      { title: `New deals since yesterday (${deals.length})`, note: deals.length > dealMax ? `The ${dealMax} newest are here; all ${deals.length} are on the Deals screen.` : null, rows: dealRowsAll.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size" }, { key: "from", label: "From" }], data: dealRowsAll.slice(0, dealMax) } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
-      { title: "Monique found", items: foundShown(foundMax), link: m.monique_found?.link ?? null, empty: null },
+      { title: `New deals since yesterday (${deals.length})`, note: deals.length > dealMax ? `The ${dealMax} newest are here; all ${deals.length} are on the Deals screen.` : null, rows: dealRowsAll.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size @ price" }, { key: "from", label: "From" }], data: dealRowsAll.slice(0, dealMax) } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
+      { title: "Monique found", rows: foundGrid.length ? { columns: [{ key: "company", label: "Company" }, { key: "trade", label: "Seller → buyer" }, { key: "fit", label: "Fit" }], data: foundGrid } : null, items: foundShown(foundMax), link: m.monique_found?.link ?? null, empty: null },
       ...(prospects ? [prospectWords ? prospects : { ...prospects, full: undefined }] : []),
       ...(spirit ? [spirit] : []),
       { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
@@ -623,6 +632,7 @@ export function buildDay(data, now = Date.now()) {
     decide: decide.map(({ id, title, body, details, draft, buttons, plan, from, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, plan: plan ?? null, from: from ?? "boss", screen })),
     deals: deals.map(({ id, company, side, size, price, structure, from, when, received_on, url, screen }) => ({ id, company, side, size, price: price ?? "—", structure: structure ?? "—", from, when, received_on: received_on ?? null, email_url: /^https:\/\/mail\.google\.com\//.test(String(url ?? "")) ? url : null, screen })),
     found: found.map(({ id, text, links, deal, holders, screen }) => ({ id, text, links: links ?? [], deal: deal ?? null, holders, screen })),
+    found_grid: foundGrid,
     done: done.map(({ id, text, links, screen }) => ({ id, text, links: links ?? [], screen })),
     catchups: catchCards.map(({ id, title, body, details, draft, buttons, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, screen })),
     briefing: raw ? { for_day: data.briefing.for_day, top: raw.map((l) => proseText(proseRuns(l)).replace(/⁣/g, "")) } : null,

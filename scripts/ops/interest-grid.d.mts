@@ -38,7 +38,6 @@ export function allMatches(grid: any[], lists: any, opts?: { newIds?: Set<string
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function matchView(buyer: any, seller: any, rank: any, opts?: { isNew?: boolean; now?: number }): any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function matchDecide(m: any): any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function pairDrafts(buyer: any, seller: any): any[];
 export function pairFillWords(buyer: { size_usd?: number | null }, seller: { size_usd?: number | null }): string;
@@ -49,6 +48,12 @@ export function pairKeyOf(buyer: any, seller: any): string;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function matchCounts(all: any[], opts?: { tolerance?: number }): { within: number; companies: number; stale: number; live: number };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function emailMatches(within: any[], opts?: { firstSeen?: Record<string, number> | null; now?: number; max?: number }): any[];
+export function gridMatches(within: any[], opts?: { dismissed?: Set<string>; max?: number }): any[];
+export function gridRowOf(m: any): any;
+export function matchFit(buyer: any, seller: any, rank: any, now?: number): { size: string; price: string; age: string; star: boolean; days: number };
+export function fitWords(f: { size: string; price: string; age: string }): string;
+export function cardUrl(m: { key: string }): string;
+export const STAR: Readonly<{ maxGap: number; minFillShare: number; minFillUsd: number; maxDays: number }>;
+export const NEW_MATCH_MS: number;
 export const MAX_EMAIL_MATCHES: number;
 export const NEW_MATCH_MS: number;

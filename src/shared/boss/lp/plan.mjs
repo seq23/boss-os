@@ -127,9 +127,16 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
   for (const r of (rows ?? []).filter((x) => x.status === "replied_again")) {
     const said0 = r.last_reply_text || r.said || r.quote;
     const said = trimEnd(said0);
+    /*
+     * IT STAYS IN DECIDE EVERY DAY UNTIL SHE ANSWERS, AND GETS LOUDER (owner, 25 Oct 2026): "Waiting
+     * N days:" counts from their last message, and the card carries NO Skip or Dismiss — answering
+     * is the only way it leaves.
+     */
+    const waited = daysSince(r.last_reply_at ?? r.updated_at, now) ?? 0;
     items.push({
       key: `lp-again:${r.id ?? r.address}`,
-      title: `Answer ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}: they wrote back after your reply`,
+      title: `${waited >= 1 ? `Waiting ${waited} day${waited === 1 ? "" : "s"}: ` : ""}Answer ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}: they wrote back after your reply`,
+      noDismiss: true,
       body: `Who: ${lpWho(r)}.`,
       details: [
         `Their email: ${r.address}`,
@@ -137,7 +144,7 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
         `History: they answered your outreach on ${r.first_seen}; you replied${r.sent_at ? ` on ${new Date(Number(r.sent_at)).toISOString().slice(0, 10)}` : ""}; they wrote again${r.last_reply_at ? ` on ${new Date(Number(r.last_reply_at)).toISOString().slice(0, 10)}` : ""}.`,
         "No reply is drafted for this one: it needs your own words.",
       ],
-      priority: 4,
+      priority: 4 + Math.min(waited, 60),
       buttons: [{ label: "Open the thread and reply", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) }],
     });
   }

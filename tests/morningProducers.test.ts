@@ -114,7 +114,7 @@ describe("D and L sections reach Simone's morning email through E's writer", () 
   it("renders every section's content in her order", () => {
     const t: string = email.text;
     for (const s of ["New deals since yesterday (2)", "Company A", "Broker Two (Firm Y)", "See the full grid (2 open deals)",
-      "Monique found", "Example Growth Fund", "See every match",
+      "Monique found", "See the filings and press", "See every match",
       "Reply to An Allocator at Example Endowment", "A Buyer at Example Capital wants to talk",
       "Catch up with", "A Past Partner"]) {
       expect(t, s).toContain(s);
@@ -125,8 +125,9 @@ describe("D and L sections reach Simone's morning email through E's writer", () 
     expect(t.indexOf("Waiting 3 days: Reply to An Allocator")).toBeGreaterThan(-1);
     expect(t.indexOf("Waiting 3 days")).toBeLessThan(t.indexOf("wants to talk"));
     expect(t.indexOf("Decide")).toBeLessThan(t.indexOf("New deals since yesterday"));
-    // One match for the one buyer-seller pair (D), in Decide; a row with no price shows none (E).
-    expect(t.split("Company A: a buyer and a seller who could trade").length - 1).toBe(1);
+    // One match for the one buyer-seller pair (D), as ONE grid row and never in Decide (25 Oct 2026).
+    expect(t).not.toContain("a buyer and a seller who could trade");
+    expect(t.match(/^- Company A · .* → .* · Size . Price . Age . — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?tab=capital&view=matches&match=/gm)).toHaveLength(1);
     expect(t).toContain("Company A · Buy · $1B · Broker One (Firm X)");
     expect(t).not.toMatch(/@\s*(?:·|—|$)/m);
     // An LP draft whose words are not on the row has no "Send as is": nothing goes that was not shown.

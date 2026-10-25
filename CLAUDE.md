@@ -68,13 +68,21 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
    1,359 within the 15% limit" contradicted itself — one broker re-sending an order every week was
    counted every time). `allMatches` collapses order pairs to party pairs (`pairKeyOf`, `orders`), and
    every number quoted comes from `matchCounts`.
-6. **The email carries the best few, never hundreds:** at most `MAX_EMAIL_MATCHES` (5) new matches —
-   a pair first seen in the last 36 hours (`matches-first-seen.json` on her Mac) or one on an order
-   that arrived since yesterday — one per company, freshest then closest price, none stale. One on a
-   new order is in Decide (both sides, addresses, sizes, prices, fill, gap, age, a ready note to
-   each); the rest are lines under Monique found; then one count line, "See all N matches →", to the
-   Matches screen (Deals → Matches), which lists every current one. Pinned by
+6. **Monique found is ONE grid, never hundreds, never Decide** (owner, 25 Oct 2026, mock-up v2):
+   company (+N more) | seller → buyer with sizes and prices | fit dots (size, price, age) | "Open ›" to
+   the trade's card on the Matches screen, which holds the seller's ready email and Dismiss. At most
+   `MAX_EMAIL_MATCHES` (5) rows, one per company, live and within tolerance; a ⭐ match sorts first and
+   earns the star only when both prices are known and within 10%, the seller fills at least 25% of the
+   buyer or $10M, and both orders are under 14 days (`STAR`, `matchFit`). A row stays until she
+   dismisses it or one side goes stale. **No match goes to Decide**: Decide is her own moves (LP
+   replies, approvals). Then "Still looking" as one line, the filings and press as one link, and one
+   count line, "See all N matches →". "New deals since yesterday" is a grid too: company | side |
+   size @ price | from | Open ›. Pinned by `tests/matchGridAndStar.test.ts` and
    `tests/morningSizeAndMatches.test.ts`.
+6a. **Dismiss is one table** (`capital_dismissed`, `src/worker/boss/capital/dismiss.ts`): the card's
+   button, the one-tap link and her reply "dismiss <code>" all write it; the Matches screen, Today
+   (the kept morning) and her Mac's morning run all read it. A dismissed pair comes back only on a new
+   order (a new size or price). Pinned by `tests/boss/dismissMatch.test.ts`.
 7. **Outward words call her buyers "LPs"** (owner, 24 Oct 2026): match notes, prospect emails, LP
    replies and deal drafts never say "buyer"; a prospect email never names Anthropic (it alludes:
    `NEVER_NAMED`, `src/shared/boss/lp/plan.mjs`). Pinned by `tests/outboundWords.test.ts`.
@@ -85,8 +93,9 @@ Owner, 23 Oct 2026 (inbox review: nine Boss OS emails in two days, none useful).
 pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads this section, and by
 `npm run validate:email-plain`:
 1. **One morning email.** Simone's (`scripts/ops/your-day.mjs`): Decide → New deals since yesterday +
-   Monique found (+ Prospect emails) → ✨ Spirit (the approved sample: week, moon, sky, practice, a
-   new non-body gratitude sentence every day, the month; the rest under "Show more ▾") → Camille's briefing (five lines and "Read the full briefing →" to its screen — the whole briefing is never
+   Monique found (+ Prospect emails) → ✨ Spirit (week, moon, sky, the morning sequence, a new non-body
+   gratitude sentence every day, the month, the week's practice in one line; then one link, "See the
+   full sky, body and practice in Boss OS →" — trimmed 25 Oct 2026) → Camille's briefing (five lines and "Read the full briefing →" to its screen — the whole briefing is never
    in the email; it waits for the report, 07:45 Central at the latest) → Done for you (≤3)
    → Catch up with → Porch & Party: To do for Valerie → sign-off → the 8Raise line only when something
    is wrong. Every other producer writes a section file (`src/shared/boss/mail/morning.mjs`) instead of

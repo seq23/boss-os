@@ -638,6 +638,7 @@ export const api = {
   // ── boss fix D: the Deals page grid, the holders Monique found, her two lists (23 Oct 2026). ──
   dealGrid: () => call<{ rows: any[]; archive?: any[]; counts?: { open: number; archived: number }; lookback_days: number; archive_days?: number; updated_at: number | null }>("/capital/deals"), // boss fix D
   dealMatches: () => call<{ matches: any[]; updated_at: number | null }>("/capital/matches"),
+  dismissMatch: (code: string) => call<{ dismissed: boolean; company: string }>("/capital/dismiss", post("", { code })),
   dealHolders: () => call<{ holders: any[] }>("/capital/holders"), // boss fix D
   // boss fix L: the Deals page LP and Prospects tabs.
   lpReplies: () => call<{ rows: any[] }>("/lp/replies"), // boss fix L

@@ -218,7 +218,7 @@ export function nothingUnclearReachesAModel(source) {
   // The regex admits exactly those six beside the original, in that order, and nothing else; the
   // duty note is REQUIRED, because a draft appended under "Monique has it" is a draft she never
   // reads to the end.
-  if (!/const stopped = question \? question\.ask : (?:planAnswer\?\.note \?\? )?(?:commentAnswer\?\.note \?\? )?(?:kdpAnswer\?\.note \?\? )?dutyNote\?\.note \?\? (?:closeQuestion \?\? closedNote \?\? )?bookFailure;/.test(source)
+  if (!/const stopped = question \? question\.ask : (?:planAnswer\?\.note \?\? )?(?:commentAnswer\?\.note \?\? )?(?:kdpAnswer\?\.note \?\? )?(?:dismissAnswer\?\.note \?\? )?dutyNote\?\.note \?\? (?:closeQuestion \?\? closedNote \?\? )?bookFailure;/.test(source)
     || !/const reply = stopped \?/.test(source)) {
     bad.push("a message that STOPPED no longer leads with the reason — the one sentence that matters is buried under the reassurance that it worked.");
   }

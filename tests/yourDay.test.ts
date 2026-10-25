@@ -85,8 +85,8 @@ describe("the one morning email", () => {
     expect(e.html).toMatch(/<a href="https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1" style="display:inline-block[^"]*">Send as is<\/a>/);
   });
   it("deals are grid rows, each opening its own deal screen; the person and firm say who it came from", () => {
-    expect(e.text).toMatch(/- Company A · Buy · \$1B · Broker One — Open the deal: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=deal-[0-9a-f]{10}\n/);
-    expect(e.text).toMatch(/- Company B · Sell · \$300M @ \$138 · Broker Two \(Firm X\) — Open the deal: /);
+    expect(e.text).toMatch(/- Company A · Buy · \$1B · Broker One — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=deal-[0-9a-f]{10}\n/);
+    expect(e.text).toMatch(/- Company B · Sell · \$300M @ \$138 · Broker Two \(Firm X\) — Open ›: /);
     expect(e.text).not.toMatch(/· Rainmaker — /);
     expect(e.digest.deals.map((d: any) => [d.company, d.email_url])).toEqual([["Company A", `${G}a1`], ["Company B", `${G}b2`]]);
     expect(e.text).toContain(`See the full grid: ${BOSS}`);

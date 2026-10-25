@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { buildDay, EMAIL_HTML_BUDGET, CUT_ORDER } from "../scripts/ops/your-day.mjs";
-import { allMatches, moniqueFound, matchCounts, emailMatches, MAX_EMAIL_MATCHES } from "../scripts/ops/interest-grid.mjs";
+import { allMatches, moniqueFound, matchCounts, gridMatches, MAX_EMAIL_MATCHES } from "../scripts/ops/interest-grid.mjs";
 import { quotedSentence } from "../src/shared/boss/mail/plain.mjs";
 import { lpDecideItems } from "../src/shared/boss/lp/plan.mjs";
 
@@ -114,31 +114,37 @@ describe("matches are counted once and the email carries the best few", () => {
     expect(c.live + c.stale).toBe(c.within);
     expect(new Set(out.matches.map((m: any) => m.pair)).size).toBe(out.matches.length);
   });
-  it("the email: at most five new matches, one per company, freshest then closest price; then 'See all N matches →'", () => {
+  it("the email: at most five grid rows, one per company, freshest then closest price; then 'See all N matches →'", () => {
     const grid: any[] = [];
     for (let c = 0; c < 8; c++) {
       grid.push(row({ id: `b${c}`, company: `Co ${c}`, from_text: `Buyer ${c}`, received_on: day(c + 1), price_text: "$100/share", _row: { from: `b${c}@x.example` } }));
       for (const [k, price] of [["near", "$101/share"], ["far", "$110/share"]]) grid.push(row({ id: `s${c}${k}`, company: `Co ${c}`, side: "sell", direction: "sell", from_text: `Seller ${c}${k}`, received_on: day(c + 1), price_text: price, _row: { from: `s${c}${k}@x.example` } }));
     }
     const out = moniqueFound({ newRows: [], grid, lists: NO_LISTS, now: NOW });
-    const match = out.lines.filter((l: any) => /^Match, /.test(l.text));
-    expect(match).toHaveLength(MAX_EMAIL_MATCHES);
-    expect(match.map((l: any) => l.deal)).toEqual(["Co 0", "Co 1", "Co 2", "Co 3", "Co 4"]);
-    expect(match[0].text).toMatch(/^Match, Co 0: seller Seller 0near .*1 more possible trade on Co 0\.$/);
+    expect(out.grid).toHaveLength(MAX_EMAIL_MATCHES);
+    // Fresh, 1% apart and filled: every one of these earns the star, so the order is freshest first.
+    expect(out.grid.map((r: any) => r.company)).toEqual(["⭐ Co 0 (+1 more)", "⭐ Co 1 (+1 more)", "⭐ Co 2 (+1 more)", "⭐ Co 3 (+1 more)", "⭐ Co 4 (+1 more)"]);
+    expect(out.grid[0].trade).toMatch(/^Seller 0near .* at \$101\/share → Buyer 0 .* at \$100\/share$/);
+    expect(out.lines.filter((l: any) => /^Match, /.test(l.text))).toEqual([]);
     const last = out.lines[out.lines.length - 1];
     expect(last.text).toBe("16 possible trades in all, on 8 companies, each buyer and seller counted once.");
     expect(last.links).toEqual([{ label: "See all 16 matches →", url: "https://boss.sequoiataylor.com/?tab=capital&view=matches" }]);
     expect(out.link).toBeNull(); // one button to the Matches screen, not two
   });
-  it("a pair already told yesterday is not new; one first seen today is; a stale one never takes a slot", () => {
+  it("a row stays until she dismisses it or one side goes stale; a new order brings a dismissed pair back", () => {
     const sell = row({ id: "s", company: "Company Q", side: "sell", direction: "sell", size_usd: 25e6, size_text: "$25M", from_text: "Pat", received_on: day(11), _row: { from: "pat@q.example" } });
     const buy = row({ id: "b", company: "Company Q", from_text: "Bo", received_on: day(11), _row: { from: "bo@q.example" } });
     const all = allMatches([sell, buy], NO_LISTS, { now: NOW });
     const within = all;
-    expect(emailMatches(within, { firstSeen: { [all[0].pair]: NOW - 3 * 86_400_000 }, now: NOW })).toHaveLength(0);
-    expect(emailMatches(within, { firstSeen: { [all[0].pair]: NOW - 3_600_000 }, now: NOW })).toHaveLength(1);
-    expect(emailMatches(within, { firstSeen: {}, now: NOW })).toHaveLength(1); // first seen this run
-    expect(emailMatches(within.map((m: any) => ({ ...m, stale: true })), { now: NOW })).toHaveLength(0);
+    // Told yesterday or today, it stays (25 Oct 2026: "a row stays until she dismisses it").
+    expect(gridMatches(within)).toHaveLength(1);
+    expect(gridMatches(within.map((m: any) => ({ ...m, stale: true })))).toHaveLength(0);
+    const dismissed = new Set([`${all[0].pair}#${all[0].sig}`]);
+    expect(gridMatches(within, { dismissed })).toHaveLength(0);
+    expect(moniqueFound({ newRows: [], grid: [sell, buy], lists: NO_LISTS, now: NOW, dismissed }).matches).toHaveLength(0);
+    // A new price from the seller is a new order: the pair is back.
+    const repriced = { ...sell, price_text: "$120/share" };
+    expect(moniqueFound({ newRows: [], grid: [repriced, buy], lists: NO_LISTS, now: NOW, dismissed }).grid).toHaveLength(1);
   });
   it("the email never lists hundreds: a grid of 300 pairs still shows five and one count line", () => {
     const grid: any[] = [];
@@ -147,8 +153,9 @@ describe("matches are counted once and the email carries the best few", () => {
       grid.push(row({ id: `s${i}`, company: `Co ${i % 40}`, side: "sell", direction: "sell", from_text: `S${i}`, _row: { from: `s${i}@x.example` } }));
     }
     const out = moniqueFound({ newRows: [], grid, lists: NO_LISTS, now: NOW });
-    expect(out.lines.length).toBe(MAX_EMAIL_MATCHES + 1);
-    expect(out.lines[MAX_EMAIL_MATCHES].links[0].label).toMatch(/^See all \d[\d,]* matches →$/);
+    expect(out.grid.length).toBe(MAX_EMAIL_MATCHES);
+    expect(out.lines.length).toBe(1);
+    expect(out.lines[0].links[0].label).toMatch(/^See all \d[\d,]* matches →$/);
   });
 });
 
