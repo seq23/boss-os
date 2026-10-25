@@ -34,6 +34,32 @@ The principal is **who actually wants to buy or sell**, which is very often not 
   When the interest is her own client's (her mail to rrlist@, or "my client has…"), write
   `"principal": "your client"`. Never write "client of Sequoia Taylor".
 
+## WHICH SIDE — who holds or offers the block decides it
+
+The side is about **the block**, never about who wrote or forwarded the email.
+
+- Somebody **has, has got, holds or offers** a block, the block is **available**, or the note
+  quotes **sell side fees** → `"side": "sell"`. "He's got a $1 billion Anthropic block at 1.35T +
+  4% sell side fees … Block is pre-approved and direct on the cap table" is a **SELL**, whoever
+  sent it.
+- Somebody **wants to buy**, has buyers or demand for it, or asks whether a block is still
+  available → `"side": "buy"`.
+- If the words do not settle it, write `"side": null` and say why in `"side_note"`. **Never
+  default to buy.**
+
+## WHEN SHE PASSES ON SOMEBODY ELSE'S NOTE
+
+Her outbound email often forwards a broker's note ("Hi Sequoia - He's got … ———- Can u find this
+seller rep, it's a merchant bank out of Spain"). That order is **the broker's**, not hers:
+
+- `"relayed": true`.
+- `principal` is who holds or wants the block as the note names them ("seller rep — a merchant
+  bank in Spain", or the firm the note's own disclosure names), and `intermediated_by` is the
+  broker who wrote the note if the message names them. Never "your client".
+- `"your client"` is ONLY for an order where she is the principal's direct rep: her own posting to
+  rrlist@, "my client has…", "my client wants…". Nobody at `@rainmakersecurities.com` is ever the
+  principal (the rule above still holds).
+
 **How often someone writes tells you nothing.** A person she exchanges mail with daily may never
 once have been a counterparty. Anchor only on asset, side and size.
 
@@ -43,7 +69,9 @@ once have been a counterparty. Anchor only on asset, side and size.
 {
   "principal": "the person or firm that wants to buy or sell, by name or firm, as written",
   "principal_email": "their address if the message gives one, else null",
-  "side": "buy" | "sell",
+  "side": "buy" | "sell" | null,
+  "side_note": "only when side is null: why the words do not settle it",
+  "relayed": "true when this is somebody else's note she is passing on, else false",
   "asset": "the company whose stock it is, as a plain name — SpaceX, ByteDance, Stripe",
   "size_usd": 250000000,
   "size_shares": null,
