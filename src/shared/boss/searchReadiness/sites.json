@@ -709,9 +709,7 @@
    },
    "known_limits": [
     { "item": "a1", "why": "Hosted on Lovable, which answers the www host with its own 302; the repo cannot set a 301 there." },
-    { "item": "a9", "why": "Lovable serves the app shell with 200 for every unknown path; a real 404 status is not configurable from the repo." },
-    { "item": "e6", "why": "Clarity waits on the site's own Clarity project id, a named stop; the loader is already in the repo (signed-out visitors only)." },
-    { "item": "i8", "why": "Same Clarity project id as e6; the IndexNow half is already live." }
+    { "item": "a9", "why": "Lovable serves the app shell with 200 for every unknown path; a real 404 status is not configurable from the repo." }
    ]
   },
   {

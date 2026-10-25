@@ -293,12 +293,13 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
   });
   it("a known limit stays in the queue with its reason and is never workable", () => {
     const site = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
-    expect(site.known_limits.map((k: any) => k.item).sort()).toEqual(["a1", "a9", "e6", "i8"]);
+    expect(site.known_limits.map((k: any) => k.item).sort()).toEqual(["a1", "a9"]);
     const results = ["a1", "a9", "b1", "e6", "i8", "i10"].map((id) => ({ id, status: "fail", detail: "x" }));
     const briefs = fixBriefs(checklist, [{ site, host: site.domain, results }]);
     const by = Object.fromEntries(briefs.map((b: any) => [b.item_id, b]));
-    for (const id of ["a1", "a9", "e6", "i8"]) { expect(by[id].disposition).toBe("known_limit"); expect(by[id].known_limit.length).toBeGreaterThan(20); }
-    expect(by.b1.disposition).toBe("fix");
-    expect(workQueue(briefs)).toMatchObject({ total: 6, workable: 2 });
+    for (const id of ["a1", "a9"]) { expect(by[id].disposition).toBe("known_limit"); expect(by[id].known_limit.length).toBeGreaterThan(20); }
+    // Clarity went live on time-2-read.com on 25 Oct 2026 (project z3erswoh8e): a failing e6/i8 is real fix work, never excused.
+    for (const id of ["b1", "e6", "i8"]) expect(by[id].disposition).toBe("fix");
+    expect(workQueue(briefs)).toMatchObject({ total: 6, workable: 4 });
   });
 });
