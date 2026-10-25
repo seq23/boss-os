@@ -149,6 +149,15 @@ say "=== claude exited rc=$RC ==="
 if ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG"; then
   say "NAMED STOP [AUDIT_DID_NOT_COMPLETE] no sentinel in the log — the run started and never reached"
   say "  its end, so its silence is not evidence that there was nothing to fix."
+  # NOTHING IT DID IS LOST (25 Oct 2026). Round 1 of the first full Search Readiness run hit its
+  # turn limit with 63 files changed and none committed, and the runner moved on. Every worktree
+  # this pass cut is committed, pushed and opened as a DRAFT "Salvaged:" PR, which the next scoped
+  # pass for that repo continues (prompt: "Never lose finished work"). The pass start is read back
+  # from RUN_LOG's own name, so nothing above `claude -p` had to change: an edit there would shift
+  # the bytes under a copy of this script that is already running.
+  SINCE="$(basename "$RUN_LOG" | sed -E 's/^([0-9]{4})-([0-9]{2})-([0-9]{2})-([0-9]{6}).*/\1\2\3-\4/')"
+  node "$REPO/scripts/ops/salvage-pass-worktrees.mjs" --since "$SINCE" ${SR_SCOPE_REPO:+--repo "$SR_SCOPE_REPO"} 2>&1 | tee -a "$RUN_LOG" | sed 's/^/  /'
+  [ "${PIPESTATUS[0]}" -eq 0 ] || say "NAMED STOP [SALVAGE_FAILED] a worktree of this pass could not be saved; see the SALVAGE lines above."
   exit 9
 fi
 

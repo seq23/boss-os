@@ -193,6 +193,25 @@ what they said. Re-run `site-crawl.py` against a local build if the repo can ser
 
 ---
 
+### NEVER LOSE FINISHED WORK
+
+You have a turn limit, and a pass that reaches it ends mid-sentence. On 25 Oct 2026 one did, with 63
+files changed and nothing committed. So:
+
+- **Before you start a repo, look for a salvaged PR:** `gh pr list --repo <owner>/<repo> --state open
+  --search "Salvaged: in:title"`. If one exists, an earlier pass stopped there. Cut your worktree as
+  usual, then `git fetch origin <its branch> && git reset --hard origin/<its branch>` inside `$WT`,
+  review its diff, keep only correct at-source fixes, finish what is half done, and push to THAT
+  branch. Mark it ready (`gh pr ready <pr>`), retitle it, record it as your `fixed_pr`, and close
+  nothing else.
+- **Commit and push after each finished group of briefs**, not once at the end:
+  `git add -A && git rm -r -q --cached --ignore-unmatch node_modules && git commit -m "…" && git push -u origin HEAD`, and open the
+  PR (draft until the last group) after the first group. A turn limit then costs at most one group.
+- If the pass still stops early, `ahrefs-audit-fix.sh` commits what is left in your worktree and opens
+  it as a draft "Salvaged:" PR (`scripts/ops/salvage-pass-worktrees.mjs`); the next pass continues it.
+
+---
+
 ## 4. Open the pull request and get it GREEN. The runner lands it.
 
 - One PR per repository, however many findings it covers, from the worktree branch.
