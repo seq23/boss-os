@@ -22,3 +22,5 @@ export const FUND_SIDE_CHASSIS_SENDERS: string[];
 export function mailGate(payload: { subject?: string; text?: string; html?: string; headers?: Record<string, string> }): string[];
 export function heldDir(): string;
 export function holdMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, problems: string[], fetchImpl?: typeof fetch): Promise<Response>;
+
+export function plainOrSimplified(payload: any): { payload: any; simplified: string[] | null; held: string[] | null };

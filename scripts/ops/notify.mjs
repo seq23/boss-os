@@ -37,7 +37,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { outboundFilesPlan } from "../../src/shared/boss/service/files.mjs";
-import { layoutEmail, fromLegacy, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
+import { layoutEmail, fromLegacy, plainProblems, simplifyForOwner } from "../../src/shared/boss/mail/plain.mjs";
 
 const ARGS = process.argv.slice(2);
 /** Every value of a repeatable flag (`--file a.csv --file b.png`). */
@@ -238,8 +238,10 @@ const BOSS_ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.co
  * email itself has gone and is not retried.
  */
 export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null } = {}) {
-  const held = mailGate(payload);
-  if (held.length) return holdMail(sender, payload, held, fetchImpl);
+  const ready = plainOrSimplified(payload);
+  if (ready.held) return holdMail(sender, payload, ready.held, fetchImpl);
+  if (ready.simplified) console.error(`SIMPLIFIED "${payload?.subject}" before sending: ${ready.simplified.join("; ")} — the technical lines ride as an attached file.`);
+  payload = ready.payload;
   const res = await fetchImpl(RESEND, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
@@ -266,6 +268,26 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
  * notice — is checked here against `plainProblems` (src/shared/boss/mail/plain.mjs) on exactly what
  * would be sent. `[]` means it may go.
  */
+/**
+ * THE GATE MAKES IT PLAIN BEFORE IT EVER HOLDS (owner, 25 Oct 2026). An email that fails the plain
+ * check is first simplified (`simplifyForOwner`): its technical lines move into an attached
+ * "details.txt", labelled lines keep their labels, the HTML is rebuilt from the plain text. It is
+ * held only if it still fails after that. `{ payload }` to send, with `simplified` naming what was
+ * moved; `{ held }` with the problems. Pure.
+ */
+export function plainOrSimplified(payload) {
+  const problems = mailGate(payload);
+  if (!problems.length) return { payload, simplified: null, held: null };
+  const kind = payload?.headers?.["X-Boss-Kind"] ?? null;
+  const s = simplifyForOwner({ subject: payload?.subject, text: payload?.text, html: payload?.html ?? null, kind });
+  const next = {
+    ...payload, subject: s.subject, text: s.text, html: s.html,
+    ...(s.details.length ? { attachments: [...(payload.attachments ?? []), { filename: "details.txt", content: Buffer.from(s.details.join("\n")).toString("base64") }] } : {}),
+  };
+  const still = mailGate(next);
+  return still.length ? { payload, simplified: null, held: still } : { payload: next, simplified: problems, held: null };
+}
+
 export function mailGate(payload) {
   const kind = payload?.headers?.["X-Boss-Kind"] ?? null;
   return plainProblems({ subject: payload?.subject, text: payload?.text, html: payload?.html, kind });

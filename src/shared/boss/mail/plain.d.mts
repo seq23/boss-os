@@ -45,5 +45,6 @@ export function fromLegacy(input: { who: string; subject: string; text: string; 
 export function visibleText(input: { subject?: string; text?: string; html?: string | null }, opts?: { prose?: "keep" | "drop" | "only" }): string;
 export function linksIn(input: { text?: string; html?: string | null }): string[];
 export function plainProblems(input: { subject?: string; text?: string; html?: string | null; kind?: string | null }): string[];
+export function simplifyForOwner(input: { subject?: string; text?: string; html?: string | null; kind?: string | null }): { subject: string; text: string; html: string; kind: string | null; details: string[] };
 export function lineProblems(line: unknown): string[];
 export function gmailSearchLink(subject: string): string;

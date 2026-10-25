@@ -119,9 +119,14 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    the Tuesday reminder and the connector digest are retired. Deals grid live; ~6-month lookback;
    Rainmaker and do-not-suggest lists edited by reply. Every morning section goes through
    `writeMorningSection`; a one-tap button is a page (`/tap/<token>`), never an /api link.
-5. **The gate holds, never sends, a failing email:** `mailGate` in `postEmployeeMail`
-   (`scripts/ops/notify.mjs`) and `plainReply` on the Worker. A new sender passes through them or it
-   does not send.
+5. **The gate makes a failing email plain before it ever holds it** (owner, 25 Oct 2026: every email
+   clear, never silently held): `plainOrSimplified` in `postEmployeeMail` (`scripts/ops/notify.mjs`)
+   reads `mailGate`, then runs `simplifyForOwner` (`src/shared/boss/mail/plain.mjs`), which moves every line carrying a code
+   word, file name, flag, id, markdown or command into an attached "details" file, keeps labelled
+   lines' labels, and rebuilds the HTML from the plain text. Only what still fails is held and handed
+   to Danielle as a repair; `plainReply` guards the Worker's replies. No code words reach her: file
+   names, flags, validators, build and commit words and markdown are in the gate's own checks.
+   Every sender's real builder output is pinned by `tests/everySenderPlain.test.ts`.
 6. **Never risk Gmail's clip** (owner, 24 Oct 2026: Gmail hides an email over ~102KB behind "View entire
    message"). The HTML must fit `EMAIL_HTML_BUDGET` (80KB, bytes): styles live on the wrapper, not on
    every paragraph; long lists stop with "See all N →" on their screen (`MAX_DEAL_ROWS`, `MAX_FOUND_LINES`,

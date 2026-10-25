@@ -72,6 +72,15 @@ export const JARGON = [
   { ban: /\bfriction\b/i, find: /\bfriction\b/gi, plain: "snags", sample: "friction fixed" },
   { ban: /\bempty run\b/i, find: /[^.!?\n]*\bempty run\b[^.!?\n]*[.!?]?/gi, plain: "", sample: "That is an answer, not an empty run." },
   { ban: /\btail\b/i, find: /\btail\b/gi, plain: "follow-up", sample: "Tail: your email" },
+  // 25 Oct 2026 (owner: "no code words reach her"): build and code words, in plain words.
+  { ban: /\bvalidators?\b/i, find: /\bvalidator(s?)\b/gi, plain: (m, s) => (s ? "checks" : "check"), sample: "the validator ran" },
+  { ban: /\bworktrees?\b/i, find: /\bworktree(s?)\b/gi, plain: (m, s) => (s ? "working copies" : "working copy"), sample: "a worktree" },
+  { ban: /\btypecheck\b/i, find: /\btypecheck\b/gi, plain: "code check", sample: "typecheck passed" },
+  { ban: /\bstd(?:err|out)\b/i, find: /\bstd(?:err|out)\b/gi, plain: "the output", sample: "stderr said" },
+  { ban: /\bstack trace\b/i, find: /\bstack trace\b/gi, plain: "error details", sample: "the stack trace" },
+  { ban: /\bexit code\b/i, find: /\bexit code\b/gi, plain: "result", sample: "exit code 1" },
+  { ban: /\bmerge commit\b/i, find: /\bmerge commit\b/gi, plain: "change", sample: "the merge commit" },
+  { ban: /\bregex\b/i, find: /\bregex\b/gi, plain: "pattern", sample: "a regex" },
 ];
 
 /** The reply tokens a lane reads back from her answer. Pulled out of the text into `refs`. */
@@ -186,6 +195,8 @@ export function cleanText(input, { prose = false } = {}) {
   s = s.replace(COMMAND_SPAN, (m) => (m.startsWith("`") && !COMMAND_RE.test(m) ? m : ""));
   s = s.replace(/`/g, "");
   s = s.replace(/\b(\w+)\((e?s)\)/g, "$1$2");
+  // A bracketed aside that is only machinery (a file, a path, the output, a result code) goes whole.
+  s = s.replace(/\s*\((?=[^)]*(?:\.(?:m?js|tsx?|json|md|sql|sh|py)\b|~\/|\/Users\/|\bstd(?:err|out)\b|\bexit code\b|\bstack trace\b))[^)]*\)/gi, "");
   for (const j of JARGON) s = s.replace(j.find, j.plain);
   // /api paths, with or without their verb or brackets.
   s = s.replace(/\s*\(\s*(?:(?:GET|POST|PUT|PATCH|DELETE)\s+)?\/api\/[^)]*\)/g, "");
@@ -212,6 +223,9 @@ export function cleanText(input, { prose = false } = {}) {
     return month ? `${month} ${Number(d)}` : m;
   });
   s = s.replace(MAC_PATH_RE, "a file on your Mac");
+  // File names ("plain.mjs", "scripts/ops/notify.mjs") say nothing to her: "a file" (25 Oct 2026).
+  s = s.replace(new RegExp(FILE_NAME_RE.source, "gi"), (m) => `${/^[\s(]/.test(m) ? m[0] : ""}a file`);
+  s = s.replace(/^\s*#{1,6}\s+/gm, "").replace(/\*\*/g, "");
   // snake_case and UPPER_SNAKE become words.
   s = s.replace(/\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/g, (m) => m.replace(/_/g, " ").toLowerCase());
   s = s.replace(/[A-Za-z0-9][A-Za-z0-9'’-]*/g, capsWord);
@@ -567,8 +581,9 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
 export function layoutProblem({ who, subject, happened, did, status, done = false, decide = [], refs = [], happenedLabel = PROBLEM_PARTS.happened }) {
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
-  const what = cleanText(happened);
-  const didLine = cleanText(did);
+  // A sentence the cleaner had to drop whole (a command, a code dump) never leaves a bare label.
+  const what = cleanText(happened) || "The work stopped before it finished; the technical details are on your Mac.";
+  const didLine = cleanText(did) || "The team has it.";
   const statusLine = cleanText(status) || (done ? "Done. Nothing needed from you." : "");
   const ask = (Array.isArray(decide) ? decide : [decide]).map(cleanCard).filter((c) => c.title).slice(0, 1);
   const statusWord = done ? "Status: done." : PROBLEM_PARTS.status;
@@ -697,10 +712,21 @@ function proseProblems(seen) {
   return problems;
 }
 
+/**
+ * NO CODE WORDS REACH HER (owner, 25 Oct 2026: "every email Boss OS sends her clear"). File names,
+ * flags, validators, commit and build words, markdown symbols. Read by `contentProblems`, so every
+ * sender is held to it, and `simplifyForOwner` moves any line that carries one into the attached
+ * details instead of holding the email.
+ */
+const FILE_NAME_RE = /(?:^|[\s(])(?:[\w.-]+\/)*[\w-]+\.(?:m?js|tsx?|json|md|sql|sh|py|toml|ya?ml|plist|log)\b/i;
+const MARKDOWN_RE = /`|\*\*|^\s*#{1,6}\s|\[[^\]]+\]\([^)]+\)/m;
+
 function contentProblems(seen) {
   const problems = [];
   const hit = (name, re) => { const m = re.exec(seen); if (m) problems.push(`${name}: "${m[0].trim()}"`); };
   hit("internal id", new RegExp(ID_RE.source, "i"));
+  hit("file name", FILE_NAME_RE);
+  hit("markdown", MARKDOWN_RE);
   hit("bracketed id", BRACKETED_ID_RE);
   hit("code or Gmail id", HEX_ID_RE);
   hit("snake_case word", SNAKE_RE);
@@ -765,4 +791,41 @@ export function plainProblems({ subject, text, html, kind = null }) {
   if (decideAt > 2 && !problem) problems.push("Decide is not first");
   if (html !== undefined && html !== null && !/Decide \(\d+\)|Nothing to decide|What happened|What broke/.test(String(html))) problems.push("the HTML has no Decide line");
   return [...new Set(problems)];
+}
+
+/**
+ * ─── A JARGON EMAIL IS SIMPLIFIED, NEVER SILENTLY HELD (owner, 25 Oct 2026) ───
+ *
+ * The send-time gate used to hold any email that failed `plainProblems`. Now the gate first makes it
+ * plain: every line that carries a code word, a file name, a flag, an id, markdown or a command moves
+ * into an attached "details" file; a labelled line keeps its label ("What happened: …") with "the
+ * technical details are attached" in place of the jargon; the subject is cleaned. The HTML is rebuilt
+ * from the plain text, so the two always agree. Only what still fails after that is held (and handed
+ * to Danielle as a repair). Pure.
+ */
+const STRUCTURE_RE = /^(?:Decide \(\d+\)|Nothing to decide — this is just so you know\.|What (?:happened|broke|we did|you need to do):|Status(?::| done)|Details:|— [A-Z][a-z]+)/;
+export function simplifyForOwner({ subject, text, html = null, kind = null }) {
+  const moved = [];
+  const out = [];
+  for (const [i, line] of String(text ?? "").split("\n").entries()) {
+    // The line as written, not as the cleaner would have it: what she would read is what is checked.
+    const probs = line.trim() ? contentProblems(visibleText({ text: line }, { prose: "drop" })) : [];
+    if (!probs.length) { out.push(line); continue; }
+    moved.push(line);
+    const label = /^((?:\d+\. )?[A-Z][A-Za-z ]{2,30}:)\s/.exec(line)?.[1];
+    // The opening line is what the email is about: it is never left out, only said plainly.
+    if (i === 0) out.push(label && STRUCTURE_RE.test(label) ? `${label} the technical details are in the attached file.` : "An update for you; the technical details are in the attached file.");
+    else if (label && STRUCTURE_RE.test(label)) out.push(`${label} the technical details are in the attached file.`);
+    else if (/^\d+\. /.test(line)) out.push(`${line.match(/^\d+\. /)[0]}One item; its technical details are in the attached file.`);
+  }
+  if (moved.length) {
+    const sign = out.findLastIndex((l) => /^— [A-Z]/.test(l));
+    out.splice(sign === -1 ? out.length : sign, 0, "Technical details are in the attached file, for the team.", "");
+  }
+  const plainText = out.join("\n").replace(/\n{3,}/g, "\n\n");
+  const subj = cleanSubject(String(subject ?? "").replace(/\[[^\]]*\]/g, "").replace(/`/g, ""));
+  const rebuilt = moved.length || html === null
+    ? page(plainText.split(/\n{2,}/).map((para) => `<p style="margin:0 0 12px;font-size:14px;line-height:1.55">${esc(para).replace(/\n/g, "<br>")}</p>`).join(""))
+    : html;
+  return { subject: subj, text: plainText, html: rebuilt, kind, details: moved };
 }
