@@ -314,7 +314,7 @@ async function main() {
       load: () => { try { return JSON.parse(getState(db, "seat_exhausted", "{}")); } catch { return {}; } },
       save: (state) => setState(db, "seat_exhausted", JSON.stringify(state)),
     });
-    const run = async () => {
+    const runCycle = async () => {
       const spentNow = seats.filter((id) => exhaustion.activeUntil(id) !== null);
       const usableNow = seats.filter((id) => !spentNow.includes(id));
       const unusable = [...unusableAtStart, ...spentNow];
@@ -359,6 +359,21 @@ async function main() {
          */
         console.error("REPORT FAILED — the evidence for a completed run is below and nowhere else:");
         console.error(JSON.stringify(out.evidence, null, 2));
+      }
+      return out;
+    };
+    /*
+     * A RELEASED RUN IS CLAIMED AGAIN IN THE SAME CYCLE (25 Oct 2026). When the cloud answers a report
+     * with `released` — the seat gave an unusable answer, or its plan ran out — the run is waiting for
+     * the next seat on its ladder NOW. Waiting for the next five-minute poll, or worse the next fixed
+     * slot, is how a briefing skipped a morning. Bounded: the cloud releases a run at most once per
+     * seat, so this loops at most once per seat on this machine.
+     */
+    const run = async () => {
+      let out = await runCycle();
+      for (let hops = 0; out.released && hops < seats.length; hops++) {
+        console.error(`run released to ${out.next_seat ?? "the next seat"}; claiming it again in this cycle.`);
+        out = await runCycle();
       }
       return out;
     };

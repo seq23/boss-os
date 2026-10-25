@@ -45,6 +45,8 @@ export interface DispatchInput {
   title: string;
   /** The instruction, in words. */
   prompt: string;
+  /** The firm's own standing rules (owner-written); the runner places them OUTSIDE the untrusted fence. */
+  firmContext?: string;
   kind: string | null;
   envelopeId: string | null;
   /** Free-form extras the runner understands: repo_path, allowed_paths, verification, model. */
@@ -146,6 +148,7 @@ export async function dispatchRunForTask(env: Env, input: DispatchInput): Promis
 
   const requested = {
     instruction: input.prompt,
+    ...(input.firmContext ? { firm_context: input.firmContext } : {}),
     instruction_origin: "standing_duty",
     kind: input.kind,
     receipt,
