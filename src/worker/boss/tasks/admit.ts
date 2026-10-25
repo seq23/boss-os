@@ -301,17 +301,25 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
      * so `pre_approved_by` is the verified sender and never a later correspondent. The finding
      * names the phrase, so "why did this build without asking me" has a one-line answer.
      */
+    const { repairOriginOf } = await import("../../../shared/boss/repoChange/lane.mjs");
+    const repair = typeof input.mail_id === "string" ? { origin: "owner", repair_kind: null } : repairOriginOf(input);
     const preBy = change.pre_approved_phrase ? (typeof input.from === "string" ? input.from : "console") : null;
     await env.DB
       .prepare(
         `INSERT INTO repo_changes (id, task_id, mail_id, repo, property_key, drive_folder, drive_url, instruction, phase,
-                                   pre_approved_phrase, pre_approved_by, force_phrase, created_at, updated_at, github_repo)
-         VALUES (?,?,?,?,?,?,?,?,'plan',?,?,?,?,?,?)`,
+                                   pre_approved_phrase, pre_approved_by, force_phrase, created_at, updated_at, github_repo, origin, repair_kind)
+         VALUES (?,?,?,?,?,?,?,?,'plan',?,?,?,?,?,?,?,?)`,
       )
       .bind(
         changeId, id, typeof input.mail_id === "string" ? input.mail_id : null,
         change.repo, change.property, change.drive_folder, change.drive_url,
         change.instruction, change.pre_approved_phrase, preBy, change.force_phrase, now, now, change.github_repo,
+        /*
+         * REPAIRS NEVER WAIT ON THE OWNER (25 Oct 2026). Only the API door's caller can declare a
+         * repair — her mail never sets `input.origin` — and only with a known kind; anything else
+         * is her request and keeps its approval email.
+         */
+        repair.origin, repair.repair_kind,
       )
       .run();
     /*

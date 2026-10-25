@@ -39,7 +39,7 @@ export function layoutEmail(input: {
   details?: DetailItem[]; sections?: EmailSection[]; refs?: string[]; footer?: string | null; postscript?: string | null; moreDecide?: string | null; maxDecide?: number; kind?: "plain" | "morning";
 }): LaidOutEmail;
 export function layoutProblem(input: {
-  who: string; subject: string; happened: string; did: string; status?: string; done?: boolean; decide?: Array<DecideItem | string>; refs?: string[];
+  who: string; subject: string; happened: string; did: string; status?: string; done?: boolean; decide?: Array<DecideItem | string>; refs?: string[]; happenedLabel?: string;
 }): LaidOutEmail;
 export function fromLegacy(input: { who: string; subject: string; text: string; refs?: string[] }): LaidOutEmail;
 export function visibleText(input: { subject?: string; text?: string; html?: string | null }, opts?: { prose?: "keep" | "drop" | "only" }): string;

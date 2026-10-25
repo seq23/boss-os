@@ -33,6 +33,7 @@ export interface RepoChangeRow {
   land_approved_at: number | null; land_approval_text: string | null; land_approval_mail_id: string | null;
   forced_by: string | null; forced_at: number | null; forced_placeholders: string | null; forced_mail_id: string | null;
   pre_approved_phrase: string | null; pre_approved_by: string | null; plan_approved_by: string | null; force_phrase: string | null;
+  origin?: string | null; repair_kind?: string | null; superseded_at?: number | null; superseded_reason?: string | null;
 }
 
 export async function repoChangeById(env: Env, id: string): Promise<RepoChangeRow | null> {

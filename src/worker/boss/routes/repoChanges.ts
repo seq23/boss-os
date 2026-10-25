@@ -27,7 +27,7 @@ import { repoChangeById, taskEvent, describePhase, safeList, recordForce, retryR
 import {
   claimablePhase, claimIsLive, canLand, canEnterBuild, canPreview, needsPreview, isForced, RUNNABLE_PHASES, PHASE_MODELS, PHASE_MAX_TURNS,
   CLAIM_LEASE_MS, TASK_KIND, EXECUTOR_SCRIPT, gridRepoNames,
-  MAX_REWORKS,
+  MAX_REWORKS, isRepair, REPAIR_ANSWER_TEXT, REPAIR_APPROVED_BY,
 } from "../../../shared/boss/repoChange/lane.mjs";
 import { propertyForRepo } from "../../../shared/boss/grid.mjs";
 import { constraintsOnRecord } from "../service/constraints";
@@ -158,10 +158,21 @@ repoChanges.post("/:id/plan", async (c) => {
   const row = await mustBeClaimed(c.env, c.req.param("id"), b, "plan");
   const planText = text(b?.plan_text, 60_000);
   if (!planText) throw badRequest("A plan report needs plan_text", "The plan as written, markdown.");
+  /*
+   * A REPAIR SENDS NO PLAN EMAIL (owner, 25 Oct 2026): Boss OS opened it to fix something broken,
+   * so there is nothing for her to approve and no message id to require. Every other plan still
+   * needs the id of the email that reached her.
+   */
+  const repair = isRepair(row);
   const askMessageId = text(b?.ask_message_id, 200);
-  if (!askMessageId) throw badRequest("A plan report needs ask_message_id", "The id the mail provider returned for the plan email. Without it the plan never reached her, so nothing here may move to `asking`.");
-  const decided = Array.isArray(b?.decided) ? b.decided.slice(0, 100) : [];
-  const asks = Array.isArray(b?.asks) ? b.asks.slice(0, 50) : [];
+  if (!askMessageId && !repair) throw badRequest("A plan report needs ask_message_id", "The id the mail provider returned for the plan email. Without it the plan never reached her, so nothing here may move to `asking`.");
+  const rawAsks = Array.isArray(b?.asks) ? b.asks.slice(0, 50) : [];
+  // A repair's asks are Danielle's own decisions: each takes its recommended default, on the record.
+  const decided = [
+    ...(Array.isArray(b?.decided) ? b.decided.slice(0, 100) : []),
+    ...(repair ? rawAsks.map((a: any) => typeof a === "string" ? `${a} — decided by Danielle (a repair does not wait on the owner)` : `${a?.question ?? JSON.stringify(a)} — decided: ${a?.default ?? "her recommended default"}`) : []),
+  ];
+  const asks = repair ? [] : rawAsks;
   /*
    * EVERY PLAN SAYS WHETHER IT IS PUBLISH-READY (owner, 21 Sep 2026). A plan that does not say is
    * refused — "did not say" would otherwise read as ready, and ready is the direction that ships a
@@ -199,9 +210,11 @@ repoChanges.post("/:id/plan", async (c) => {
    * recorded through the one force writer, with her as the actor.
    */
   const pre = Boolean(row.pre_approved_phrase && row.pre_approved_by);
+  const goes = pre || repair;
   if (pre && asks.length > 0) throw badRequest(`A pre-approved plan may not ask (${asks.length} ask${asks.length === 1 ? "" : "s"})`, `She wrote "${row.pre_approved_phrase}": every decision is Danielle's; move each ask into decided with its default as the decision.`);
-  const phase = pre ? "build" : "asking";
-  const approvedBy = pre ? `${row.pre_approved_by} (pre-approved in the request: "${row.pre_approved_phrase}")` : null;
+  const phase = goes ? "build" : "asking";
+  const approvedBy = repair ? REPAIR_APPROVED_BY : pre ? `${row.pre_approved_by} (pre-approved in the request: "${row.pre_approved_phrase}")` : null;
+  const answersText = repair ? REPAIR_ANSWER_TEXT : pre ? `pre-approved in the request: "${row.pre_approved_phrase}" — every decision is Danielle's` : null;
   await c.env.DB
     .prepare(
       `UPDATE repo_changes SET phase = ?, repo = ?, property_key = ?, plan_text = ?, decided_json = ?, asks_json = ?, planned_at = ?, plan_written_by = ?,
@@ -212,14 +225,14 @@ repoChanges.post("/:id/plan", async (c) => {
         WHERE id = ? AND phase = 'plan'`,
     )
     .bind(phase, repo, property, planText, JSON.stringify(decided), JSON.stringify(asks), now, text(b?.written_by, 120), b.publish_ready ? 1 : 0, JSON.stringify(placeholders), postLandCommand, postLandProof, now, askMessageId, text(b?.run_log, 500),
-      pre ? now : null, pre ? `pre-approved in the request: "${row.pre_approved_phrase}" — every decision is Danielle's` : null, pre ? "approved" : null, approvedBy, now, row.id)
+      goes ? now : null, answersText, goes ? "approved" : null, approvedBy, now, row.id)
     .run();
   if (pre && row.force_phrase) {
     await recordForce(c.env, { ...row, placeholders_json: JSON.stringify(placeholders) }, { mailId: row.mail_id, now, sender: row.pre_approved_by! }, "request");
   }
-  await taskEvent(c.env, row.task_id, "repo_change_planned", { repo_change_id: row.id, decided: decided.length, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, ask_message_id: askMessageId, pre_approved: pre, plan_approved_by: approvedBy });
-  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: pre ? "planned_pre_approved" : "planned", detail: { task_id: row.task_id, asks: asks.length, phrase: row.pre_approved_phrase ?? null } });
-  return ok(c, { id: row.id, phase, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, pre_approved: pre });
+  await taskEvent(c.env, row.task_id, "repo_change_planned", { repo_change_id: row.id, decided: decided.length, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, ask_message_id: askMessageId, pre_approved: pre, repair, plan_approved_by: approvedBy });
+  await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: repair ? "planned_repair" : pre ? "planned_pre_approved" : "planned", detail: { task_id: row.task_id, asks: asks.length, phrase: row.pre_approved_phrase ?? null, origin: repair ? "repair" : "owner", repair_kind: row.repair_kind ?? null } });
+  return ok(c, { id: row.id, phase, asks: asks.length, publish_ready: Boolean(b.publish_ready), placeholders: placeholders.length, pre_approved: pre, repair });
 });
 
 /** BUILD → LANDING. The PR exists; the checks are not yet recorded. */
@@ -419,6 +432,30 @@ repoChanges.post("/:id/retry", async (c) => {
  * DROP — the page's "Drop it", the same as replying "drop it" to the stop email (R8): the task is
  * cancelled for good, the row stays failed with the reason on it. Only a failed change can be dropped.
  */
+/**
+ * SUPERSEDED (25 Oct 2026): the work this change asked for was done another way (by hand, or by a
+ * sibling change), so its plan email no longer waits on her. The row closes as done with the reason
+ * and the pull request that did it; Today and the morning email count only rows still asking.
+ */
+repoChanges.post("/:id/supersede", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const row = await repoChangeById(c.env, c.req.param("id"));
+  if (!row) throw notFound("No repo change with that id");
+  if (row.phase === "done") throw conflict(`${row.id} is already done`);
+  const reason = text(b?.reason, 600);
+  if (!reason) throw badRequest("A supersede needs a reason", "Say what did the work instead, e.g. \"built by hand in PR #136\".");
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE repo_changes SET phase = 'done', done_at = ?, superseded_at = ?, superseded_reason = ?, pr_url = COALESCE(?, pr_url),
+                             claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ? WHERE id = ? AND phase <> 'done'`)
+      .bind(now, now, reason, text(b?.pr_url, 400), now, row.id),
+    c.env.DB.prepare(`UPDATE tasks SET status = 'done', finished_at = ? WHERE id = ? AND status <> 'done'`).bind(now, row.task_id),
+  ]);
+  await taskEvent(c.env, row.task_id, "repo_change_superseded", { repo_change_id: row.id, from_phase: row.phase, reason });
+  await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "repo_change", entityId: row.id, action: "superseded", detail: { task_id: row.task_id, from_phase: row.phase, reason } });
+  return ok(c, { id: row.id, phase: "done", superseded: true });
+});
+
 repoChanges.post("/:id/drop", async (c) => {
   const row = await repoChangeById(c.env, c.req.param("id"));
   if (!row) throw notFound("No repo change with that id");

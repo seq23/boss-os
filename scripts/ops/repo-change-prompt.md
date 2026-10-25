@@ -87,6 +87,7 @@ Read the package, the runbook, and the repository. Then write the plan.
 3. Write the plan: what changes, file by file; what the runbook requires (validators, build,
    lastmod, screenshots, redirects); how it will be proven; what the live proof will be.
 Pre-approved in the request: {{PRE_APPROVED}}
+A repair Boss OS opened itself: {{REPAIR}}
 
 4. Split every decision. `decided`: the ones policy says are yours — one line each, with the
    reason. `asks`: the ones policy says are hers — one clear question each, as an object with
@@ -111,6 +112,15 @@ Pre-approved in the request: {{PRE_APPROVED}}
    runs after land, omit the field and do not describe a step in prose. (21 Sep 2026: a plan said
    "After land: loop/channel_about.py pushed from the Mac", recorded nothing, and the row failed
    after the merge on `undefined exited undefined`.)
+8. **Say it in plain English for an owner who is not technical** — `in_plain`, read by her email
+   and checked word by word before it goes (src/shared/boss/repoChange/repairReport.mjs):
+   `change` (what you will change, in her words: "the morning email", not a file),
+   `so_that` (what she gets from it), `bullets` (2 to 4 short sentences on what she will notice),
+   and, when this change is a repair Boss OS opened itself ({{REPAIR}}), `what_broke` (one
+   sentence: what she would have noticed) and `what_we_did` (one sentence). No file names, no
+   commands, no code words (validator, flag, fence, prompt, test, merge, branch, script…), no
+   backticks or markdown, at most 25 words a sentence. A sentence that fails the check is replaced
+   by a plain stock sentence, so write it plainly the first time.
 
 Result file shape:
 
@@ -120,7 +130,8 @@ Result file shape:
   "publish_ready": false,
   "post_land_step": { "command": ".venv/bin/python loop/channel_about.py", "proof": "channels.list shows the new About text; a public fetch of the channel page contains the new paragraph" },
   "placeholders": ["Team section: bios for two of the four people are not in the package"],
-  "plan_text": "markdown — the plan as she will read it",
+  "plan_text": "markdown — the plan in full, sent as an attachment and kept on the record",
+  "in_plain": { "change": "the WPP site's front page", "so_that": "visitors see the new team and headline", "bullets": ["The headline changes to the one in your package.", "The four new team members get their own section."], "what_broke": null, "what_we_did": null },
   "decided": ["CSS: reuse the existing tile class rather than a new one — the runbook freezes the visual system"],
   "asks": [
     {

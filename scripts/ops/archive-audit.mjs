@@ -233,7 +233,7 @@ async function main() {
       await api.post("/tasks", {
         title: `Bring ${r.fix.split(" ")[1]} current (Zora's archive audit)`,
         lane: "ops", employee_id: "emp_repo",
-        input: { prompt: `seq23/boss-os — ${r.line} Re-verify ${r.fix.split(" ")[1]} against the code and live data it describes, update its date line, and keep its test green. Zora found this on her Friday archive audit.` },
+        input: { origin: "repair", repair_kind: "self_repair", prompt: `seq23/boss-os — ${r.line} Re-verify ${r.fix.split(" ")[1]} against the code and live data it describes, update its date line, and keep its test green. Zora found this on her Friday archive audit.` },
       });
       fixes.push(`- Danielle has it: ${r.line}`);
     } catch (e) {

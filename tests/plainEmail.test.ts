@@ -19,7 +19,7 @@ import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { plainProblems, fromLegacy, layoutEmail, layoutProblem, lineProblems, JARGON, cleanSubject, cleanText, DECIDE_HEADING, NOTHING_TO_DECIDE } from "../src/shared/boss/mail/plain.mjs";
+import { plainProblems, fromLegacy, layoutEmail, layoutProblem, lineProblems, JARGON, cleanSubject, cleanText, refsIn, DECIDE_HEADING, NOTHING_TO_DECIDE } from "../src/shared/boss/mail/plain.mjs";
 import { sendersFor, employeeMail, namesOnce, postEmployeeMail, mailGate } from "../scripts/ops/notify.mjs";
 import { INBOX } from "../scripts/validate/email-plain.mjs";
 
@@ -196,6 +196,35 @@ describe("the layout itself", () => {
     const none = layoutEmail({ who: "Zora", subject: "Archive", happened: "Nothing moved." });
     expect(none.text.split("\n")[2]).toBe(NOTHING_TO_DECIDE);
   });
+  it("a flag inside backticks, brackets or quotes is read as a command and dropped, same as a bare one (25 Oct 2026 held mail)", () => {
+    const wrapped = [
+      "Its `--self-test` fails on the shipped-today composition.",
+      "Run `node scripts/validate/foo.mjs --self-test` to check it.",
+      "The flag '--self-test' is read as a command too.",
+      'The flag "--self-test" is read as a command too.',
+      "See [--self-test] in the docs.",
+      "Run --self-test to check it.",
+    ];
+    for (const line of wrapped) {
+      expect(cleanText(line), line).not.toMatch(/self-test/);
+      expect(lineProblems(line), line).toEqual([]);
+    }
+    // The exact held table row (25 Oct 2026), through the real sender path, keeps the rest of the row.
+    const row = "| scripts/validate/a-notice-reaches-the-employee.mjs | Extended: it now also proves the notices reach the Mac teammate's prompt outside the fence, by running the real runner.buildPrompt over the real composed parts. Its `--self-test` fails on the shipped-today composition. |";
+    const laid = fromLegacy({ who: "Danielle", subject: "Plan for boss-os [rc_abc123]", text: `Here is my plan.\n\n${row}` });
+    expect(laid.text).not.toMatch(/self-test/);
+    expect(laid.problems).toEqual([]);
+  });
+  it("no email exceeds its cap — trailing details are dropped by construction, never a Decide item, and it says how many (25 Oct 2026 held mail: 9,152 characters, nothing bounding it)", () => {
+    const details = Array.from({ length: 400 }, (_, i) => `This is detail line number ${i} with a few extra words to pad it out.`);
+    const laid = layoutEmail({ who: "Danielle", subject: "Plan for boss-os [rc_abc123]", happened: "Plan ready for boss-os.", decide: [{ title: "Reply approved to build it" }], details });
+    expect(laid.text.length).toBeLessThanOrEqual(9000);
+    expect(laid.problems).toEqual([]);
+    expect(laid.text).toContain("Reply approved to build it");
+    expect(laid.text).toMatch(/more lines? not shown here\./);
+    expect(laid.text).toContain("This is detail line number 0 ");
+    expect(laid.text).not.toContain("This is detail line number 399 ");
+  });
   it("shows three decisions at most and says where the rest are", () => {
     const laid = layoutEmail({ who: "Simone", subject: "Friday", happened: "Morning.", decide: ["A?", "B?", "C?", "D?", "E?"] });
     expect(laid.text).toContain("Decide (5)");
@@ -304,5 +333,79 @@ describe("Danielle's stopped emails", () => {
     expect(src.match(/stoppedMail\(\{/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
     expect(src).not.toMatch(/email\(`Stopped work on/);
     expect(src).not.toMatch(/"This is Danielle\. I stopped work on/);
+  });
+});
+
+/**
+ * THE PLAN EMAIL WAS HELD (25 Oct 2026): a table row carried a flag inside backticks, which the
+ * cleaner unwrapped into something the gate then refused, and the free-text block ran to 9,152
+ * characters with nothing bounding it. `scripts/ops/repo-change.mjs` now renders the plan's own
+ * markdown into plain lines (`renderPlanLines`) and sends it through `layoutEmail`, the same bounded
+ * layout every other sender uses, with the whole plan riding as an attached file.
+ */
+describe("Danielle's plan email", () => {
+  it("renderPlanLines turns a table row, a heading and a wrapped paragraph into plain, bounded lines", async () => {
+    // @ts-expect-error — plain ESM with no declaration file
+    const { renderPlanLines } = await import("../scripts/ops/repo-change.mjs");
+    const markdown = [
+      "## What changes, file by file",
+      "",
+      "| File | Change |",
+      "|---|---|",
+      "| scripts/validate/a-notice-reaches-the-employee.mjs | Extended: it now also proves the notices reach the **Mac teammate's** prompt, by running the real runner.buildPrompt. Its `--self-test` fails on the shipped-today composition. |",
+      "",
+      "A paragraph that got hard-wrapped at some column, so the next physical line continues",
+      "the same sentence instead of starting a new one.",
+      "",
+      "- A bullet whose own continuation",
+      "  also wraps onto a second physical line.",
+    ].join("\n");
+    const lines = renderPlanLines(markdown);
+    expect(lines[0]).toEqual({ heading: "What changes, file by file" });
+    const row = lines.find((l: unknown) => typeof l === "string" && (l as string).includes("a-notice-reaches-the-employee.mjs"));
+    expect(row).toBeTruthy();
+    expect(row as string).not.toContain("|");
+    // The row still carries the flag at this stage — `layoutEmail`'s own cleaner drops it (tested
+    // above); this function's own job is the table-to-line and wrap-to-paragraph flattening.
+    expect(cleanText(row as string)).not.toMatch(/self-test/);
+    expect(lines).toContain("A paragraph that got hard-wrapped at some column, so the next physical line continues the same sentence instead of starting a new one.");
+    expect(lines).toContain("A bullet whose own continuation also wraps onto a second physical line.");
+  });
+  it("the plan email is built from layoutEmail, bounded, with the plan attached as a file — the held mail's own defects are gone", () => {
+    const src = readFileSync(join(ROOT, "scripts/ops/repo-change.mjs"), "utf8");
+    // 25 Oct 2026 (owner): the plan email is `planMail`, plain words over `layoutEmail`; the plan in
+    // full rides ONLY as the attached file — `planMail` never reads the plan's own text.
+    expect(src).toMatch(/const laid = planMail\(\{/);
+    const fn = src.slice(src.indexOf("export function planMail("), src.indexOf("async function email("));
+    expect(fn).toMatch(/return layoutEmail\(\{/);
+    expect(fn).not.toMatch(/plan_text|renderPlanLines/);
+    expect(src).toMatch(/filesAt\(\[planFile\]\)/);
+    expect(src).not.toMatch(/"THE PLAN", "", String\(out\.plan_text/);
+  });
+  it("the exact held mail (25 Oct 2026, rc_m5sd0byy3678wdjc) replays clean through the fixed layout", async () => {
+    // @ts-expect-error — plain ESM with no declaration file
+    const { renderPlanLines } = await import("../scripts/ops/repo-change.mjs");
+    const markdown = [
+      "## What changes, file by file",
+      "",
+      "| File | Change |",
+      "|---|---|",
+      "| scripts/validate/a-notice-reaches-the-employee.mjs | Extended: it now also proves the notices reach the Mac teammate's prompt outside the fence, by running the real runner.buildPrompt over the real composed parts. Its `--self-test` fails on the shipped-today composition. |",
+      "",
+      "## Proof",
+      "",
+      "Negative proof of the guard: the validator's `--self-test` composes the prompt the way it shipped",
+      "this morning and must fail.",
+    ].join("\n") + `\n\n${"Padding to push this plan past the ordinary cap. ".repeat(200)}`;
+    const laid = layoutEmail({
+      who: "Danielle", subject: "Plan for boss-os: reply approved to start [rc_m5sd0byy3678wdjc]",
+      happened: "Plan ready for boss-os.",
+      decide: [{ title: "Reply \"approved\" to build it", body: "I take the recommended default on every question below." }],
+      details: [{ heading: "The plan" }, ...renderPlanLines(markdown)],
+      refs: refsIn("Plan for boss-os: reply approved to start [rc_m5sd0byy3678wdjc]"),
+    });
+    expect(laid.problems).toEqual([]);
+    expect(laid.text.length).toBeLessThanOrEqual(9000);
+    expect(laid.text).not.toMatch(/self-test/);
   });
 });

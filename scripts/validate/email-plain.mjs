@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { plainProblems, layoutProblem, fromLegacy, JARGON, lineProblems } from "../../src/shared/boss/mail/plain.mjs";
+import { plainProblems, layoutProblem, layoutEmail, fromLegacy, JARGON, lineProblems, MAX_TEXT_CHARS } from "../../src/shared/boss/mail/plain.mjs";
 import { buildDay, briefingDecision } from "../ops/your-day.mjs";
 import { stoppedEmail, stillStopped, mergeNotices } from "../ops/task-notices.mjs";
 import { planRisk } from "../ops/risk-watch.mjs";
@@ -45,6 +45,21 @@ export const INBOX = [
   { why: /Decide is not first/, e: { subject: "Your day", text: "Good morning.\n\nDetails:\n- one\n\nDecide (1)\n1. Approve it" } },
   { why: /longer than/, e: { subject: "Your day", text: `x\n\nNothing to decide — this is just so you know.\n${"word ".repeat(2000)}` } },
   { why: /bare links/, e: { subject: "Links", text: "x\n\nNothing to decide — this is just so you know.\nhttps://a.example/1\nhttps://a.example/2\nhttps://a.example/3" } },
+];
+
+/**
+ * A COMMAND SURVIVES ANY WRAPPING (25 Oct 2026 held mail: a plan's table row carried a flag inside
+ * backticks, which the cleaner then unwrapped into something the gate had to catch instead of
+ * removing). Each line here must come out of the cleaner with the flag gone, not merely refused by
+ * the gate afterward.
+ */
+export const COMMAND_CORPUS = [
+  "Its `--self-test` fails on the shipped-today composition.",
+  "Run `node scripts/validate/foo.mjs --self-test` to check it.",
+  "The flag '--self-test' is read as a command too.",
+  'The flag "--self-test" is read as a command too.',
+  "See [--self-test] in the docs.",
+  "Run --self-test to check it.",
 ];
 
 const NOW = Date.parse("2026-10-23T12:15:00Z");
@@ -99,6 +114,17 @@ export function check() {
     if (!p.some((x) => why.test(x))) fails.push(`the gate missed ${why} in "${e.subject}" (it said: ${p.join("; ") || "nothing"})`);
   }
   for (const j of JARGON) { examined += 1; if (!lineProblems(j.sample).length && !j.ban.test(j.sample)) fails.push(`jargon ${j.ban} cannot catch its own sample "${j.sample}"`); }
+  // The cleaner's output always passes the check, over a corpus of hostile wrapped flags (25 Oct 2026).
+  for (const line of COMMAND_CORPUS) { examined += 1; const p = lineProblems(line); if (p.length) fails.push(`the cleaner left a command in "${line}": ${p.join("; ")}`); }
+  // A plan email built from a 30,000 character plan passes and fits (25 Oct 2026 held mail: 9,152
+  // characters with nothing bounding it).
+  {
+    examined += 1;
+    const details = Array.from({ length: 1 }, () => "x".repeat(30000)).flatMap((s) => s.match(/.{1,80}/g) ?? []);
+    const laid = layoutEmail({ who: "Danielle", subject: "Plan for example-site [rc_abc123]", happened: "Plan ready for example-site.", decide: [{ title: "Reply approved to build it" }], details });
+    if (laid.text.length > MAX_TEXT_CHARS) fails.push(`a 30,000 character plan email is ${laid.text.length} characters, over the ${MAX_TEXT_CHARS} cap`);
+    if (laid.problems.length) fails.push(`a 30,000 character plan email fails the gate: ${laid.problems.join("; ")}`);
+  }
   // 2. Every rewritten sender passes.
   const { risk, archive, emails } = senderSamples();
   for (const [name, laid] of emails) {
@@ -140,6 +166,11 @@ function main() {
       () => plainProblems({ subject: "Stopped: x", text: "What happened: x\nStatus: done." }).some((p) => /What we did/.test(p)),
       () => plainProblems({ subject: "Ok", text: "x\n\nNothing to decide — this is just so you know.", html: "<p>Open the link</p>" }).some((p) => /HTML has no Decide/.test(p)),
       () => plainProblems({ subject: "Ok", text: "x\n\nNothing to decide — this is just so you know.\nSee https://boss.sequoiataylor.com/api/boss/tasks" }).some((p) => /API path/.test(p)),
+      // The gate still catches a command that survives backticks, even if the cleaner's own fix
+      // were reverted — belt and braces, same rule both ends (25 Oct 2026).
+      () => plainProblems({ subject: "Ok", text: "x\n\nNothing to decide — this is just so you know.\nIts `--self-test` fails." }).some((p) => /command/.test(p)),
+      // A plan with nothing bounding it is still over the cap, so the backstop gate catches it.
+      () => plainProblems({ subject: "Ok", text: `x\n\nNothing to decide — this is just so you know.\n${"word ".repeat(2000)}` }).some((p) => /longer than/.test(p)),
     ];
     for (const [i, t] of broken.entries()) { if (t()) caught += 1; else console.error(`self-test ${i + 1}: a broken email passed`); }
     if (caught !== broken.length) process.exit(1);

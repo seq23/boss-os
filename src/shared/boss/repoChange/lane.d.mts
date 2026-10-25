@@ -84,3 +84,9 @@ export function canEnterBuild(row: RepoChangeRowLike | null | undefined): GuardV
 export function canLand(row: RepoChangeRowLike | null | undefined): GuardVerdict;
 export function claimablePhase(row: RepoChangeRowLike | null | undefined): "plan" | "build" | "preview" | "land" | null;
 export function claimIsLive(row: RepoChangeRowLike | null | undefined, now?: number): boolean;
+export const REPAIR_KINDS: readonly string[];
+export const REPAIR_ANSWER_TEXT: string;
+export const REPAIR_APPROVED_BY: string;
+export function repairOriginOf(input: unknown): { origin: "owner" | "repair"; repair_kind: string | null };
+export function isRepair(row: { origin?: string | null } | null | undefined): boolean;
+export function planWaitsForOwner(row: { origin?: string | null; pre_approved_phrase?: string | null; pre_approved_by?: string | null } | null | undefined): boolean;

@@ -89,8 +89,13 @@ const SECRET_LINE_RE = /\bSECRET [A-Z][A-Z0-9_]*=(?:<value>)?/g;
 const MAC_PATH_RE = /(?:~|\/Users\/[^\s/]+)(?:\/[^\s,;)]+)+/g;
 /** A Gmail message id, a commit, any bare hex code: 7+ lowercase hex with a digit and a letter in it. */
 const HEX_ID_RE = /\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,}\b…?/;
-/** Something to type at a terminal. */
-const COMMAND_RE = /\bnpm (?:run|i|install|ci|test)\b|\bnpx\s|\bnode\s+scripts\/|\bgit\s+(?:push|pull|merge|checkout|rebase|commit)\b|\bwrangler\s|\bcurl\s|\blaunchctl\b|\bvault:run\b|(?:^|\s)--[a-z][a-z-]{2,}\b/i;
+/**
+ * Something to type at a terminal. A flag's left boundary includes a backtick, bracket or quote —
+ * not only whitespace — so "`--self-test`" reads as a command instead of unwrapping into one once
+ * its backticks are stripped (23 Oct 2026 held mail: a plan's own table row carried `--self-test`
+ * inside backticks, which this regex's old `(?:^|\s)` boundary never saw).
+ */
+const COMMAND_RE = /\bnpm (?:run|i|install|ci|test)\b|\bnpx\s|\bnode\s+scripts\/|\bgit\s+(?:push|pull|merge|checkout|rebase|commit)\b|\bwrangler\s|\bcurl\s|\blaunchctl\b|\bvault:run\b|(?:^|[\s`'"(\[])--[a-z][a-z-]{2,}\b/i;
 const COMMAND_SPAN = /`[^`]*`|\b(?:npm (?:run|i|install|ci|test)|npx|node scripts\/|launchctl|wrangler|curl|git (?:push|pull|merge|checkout|rebase|commit))\s*[^\s.,;)]*(?:\s+--?\s*[^\s.,;)]*)*/gi;
 const API_PATH_RE = /(?:^|[\s("'])\/api\/[\w/:.-]*/;
 const PR_NUMBER_RE = /\bPRs?\s*#?\d+\b|\bpull request\s*#?\d+\b|(?:^|[\s(])#\d+\b/i;
@@ -143,6 +148,11 @@ export function utcClockWords(h, m, now = Date.now()) {
   return clockWords(Number(g("hour")) % 24, Number(g("minute")));
 }
 
+/** Drop any whole sentence that reads as a command to type (the one place this rule lives). */
+function dropCommandSentences(s) {
+  return s.split(/(?<=[.!?])\s+/).filter((sentence) => !COMMAND_RE.test(sentence)).join(" ");
+}
+
 function protect(s) {
   const kept = [];
   const keep = (m) => { kept.push(m); return `\u0000${kept.length - 1}\u0000`; };
@@ -169,6 +179,9 @@ export function cleanText(input, { prose = false } = {}) {
   const { out, restore } = protect(String(input));
   let s = out;
   const wasAllCaps = /[A-Z]{3}/.test(s) && !/[a-z]/.test(s.replace(/\u0000\d+\u0000/g, ""));
+  // A whole sentence that reads as a command to type — bare, backticked, bracketed or quoted —
+  // is dropped here so every sender agrees with the gate, not only `fromLegacy`'s own line pass.
+  s = dropCommandSentences(s);
   // Commands (backticked or bare) go whole; then the backticks of anything else.
   s = s.replace(COMMAND_SPAN, (m) => (m.startsWith("`") && !COMMAND_RE.test(m) ? m : ""));
   s = s.replace(/`/g, "");
@@ -215,6 +228,7 @@ export function cleanText(input, { prose = false } = {}) {
 function cleanProse(input) {
   const { out, restore } = protect(String(input));
   let s = out.replace(/\u2063/g, "");
+  s = dropCommandSentences(s);
   s = s.replace(COMMAND_SPAN, (m) => (m.startsWith("`") && !COMMAND_RE.test(m) ? m : "")).replace(/`/g, "");
   s = s.replace(/\s*\(\s*(?:(?:GET|POST|PUT|PATCH|DELETE)\s+)?\/api\/[^)]*\)/g, "").replace(/(?:\b(?:GET|POST|PUT|PATCH|DELETE)\s+)?(?<![\w.])\/api\/[\w/:.?=&-]*/g, "");
   s = s.replace(/\s*[[(]\s*(?:[a-z]{2,5}_[a-z0-9_]+)\s*[\])]/gi, "").replace(ID_RE, "");
@@ -486,31 +500,47 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
   const shown = allDecide.slice(0, maxDecide);
   const extra = allDecide.length - shown.length;
   const moreLine = extra > 0 ? cleanText(moreDecide ?? `And ${extra} more on your Today page.`) : null;
-  const detailList = (details ?? []).map((d) => (d && typeof d === "object" && "heading" in d ? { heading: cleanText(d.heading) } : cleanText(d)))
+  const detailListFull = (details ?? []).map((d) => (d && typeof d === "object" && "heading" in d ? { heading: cleanText(d.heading) } : cleanText(d)))
     .filter((d) => (typeof d === "string" ? d : d.heading));
   const sectionList = (sections ?? []).map(cleanSection).filter((sec) => sec.title);
   const foot = footer ? cleanText(footer) : null;
   const ps = postscript ? cleanText(postscript) : null;
+  const cap = kind === "morning" ? MORNING_MAX_TEXT_CHARS : MAX_TEXT_CHARS;
 
-  const text = [
-    first, "",
-    ...(shown.length
-      ? [`${DECIDE_HEADING} (${allDecide.length})`, ...shown.flatMap((c, i) => [...cardText(c, i + 1), ""]), ...(moreLine ? [moreLine] : [])]
-      : [NOTHING_TO_DECIDE]),
-    ...sectionList.flatMap(sectionText),
-    ...(detailList.length ? ["", "Details:", ...detailList.map((d) => (typeof d === "string" ? `- ${d}` : `${d.heading}`))] : []),
-    "", ...(foot ? [foot, ""] : []), `— ${name}`,
-    ...(ps ? ["", ps] : []),
-  ].join("\n").replace(/\n{3,}/g, "\n\n");
+  const decideLines = shown.length
+    ? [`${DECIDE_HEADING} (${allDecide.length})`, ...shown.flatMap((c, i) => [...cardText(c, i + 1), ""]), ...(moreLine ? [moreLine] : [])]
+    : [NOTHING_TO_DECIDE];
+  const sectionLines = sectionList.flatMap(sectionText);
+  const detailLines = (list, cutNote) => (list.length || cutNote ? ["", "Details:", ...list.map((d) => (typeof d === "string" ? `- ${d}` : `${d.heading}`)), ...(cutNote ? [`- ${cutNote}`] : [])] : []);
+  const buildText = (list, cutNote) => [first, "", ...decideLines, ...sectionLines, ...detailLines(list, cutNote), "", ...(foot ? [foot, ""] : []), `— ${name}`, ...(ps ? ["", ps] : [])]
+    .join("\n").replace(/\n{3,}/g, "\n\n");
+
+  /*
+   * THE CAP HOLDS BY CONSTRUCTION, NEVER BY HOPING A WRITER IS BRIEF (23 Oct 2026, 25 Oct 2026 held
+   * mail: a plan ran to 9,152 characters with nothing bounding it). Trailing detail lines are
+   * dropped — never a Decide item, never a section — until the body fits, and the last line says
+   * how many are missing. Every caller of this one function is covered, including `fromLegacy`'s.
+   */
+  let detailList = detailListFull;
+  let text = buildText(detailList, null);
+  let cutNote = null;
+  while (text.length > cap && detailList.length) {
+    detailList = detailList.slice(0, -1);
+    while (detailList.length && typeof detailList[detailList.length - 1] !== "string") detailList = detailList.slice(0, -1);
+    const dropped = detailListFull.length - detailList.length;
+    cutNote = `${dropped} more line${dropped === 1 ? "" : "s"} not shown here.`;
+    text = buildText(detailList, cutNote);
+  }
 
   let detailHtml = "";
-  if (detailList.length) {
+  if (detailList.length || cutNote) {
     let open = false;
     detailHtml += `<div style="margin:12px 0;padding:4px 14px 10px;border:1px solid ${C.line};border-radius:10px;background:#ffffff"><p ${SEC()}>Details</p>`;
     for (const d of detailList) {
       if (typeof d === "string") { if (!open) { detailHtml += `<ul style="margin:0 0 8px;padding-left:20px">`; open = true; } detailHtml += `<li style="margin:0 0 6px">${linkify(d)}</li>`; }
       else { if (open) { detailHtml += "</ul>"; open = false; } detailHtml += `<p style="margin:12px 0 4px;font-weight:600">${esc(d.heading)}</p>`; }
     }
+    if (cutNote) { if (!open) { detailHtml += `<ul style="margin:0 0 8px;padding-left:20px">`; open = true; } detailHtml += `<li style="margin:0 0 6px">${esc(cutNote)}</li>`; }
     if (open) detailHtml += "</ul>";
     detailHtml += "</div>";
   }
@@ -534,7 +564,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
  * when). Sent only once the fix is running. `decide` — one item, one button — only when she alone can
  * act (an account or key only she holds); it then comes first, as every Decide does.
  */
-export function layoutProblem({ who, subject, happened, did, status, done = false, decide = [], refs = [] }) {
+export function layoutProblem({ who, subject, happened, did, status, done = false, decide = [], refs = [], happenedLabel = PROBLEM_PARTS.happened }) {
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
   const what = cleanText(happened);
@@ -544,7 +574,7 @@ export function layoutProblem({ who, subject, happened, did, status, done = fals
   const statusWord = done ? "Status: done." : PROBLEM_PARTS.status;
   const text = [
     ...(ask.length ? [`${DECIDE_HEADING} (1)`, ...cardText(ask[0], 1), ""] : []),
-    `${PROBLEM_PARTS.happened} ${what}`,
+    `${happenedLabel} ${what}`,
     `${PROBLEM_PARTS.did} ${didLine}`,
     `${statusWord} ${statusLine}`,
     "", `— ${name}`,
@@ -557,7 +587,7 @@ export function layoutProblem({ who, subject, happened, did, status, done = fals
   };
   const html = page(
     (ask.length ? `<p ${SEC(C.decideInk)}>${DECIDE_HEADING} (1)</p>${cardHtml(ask[0], 1)}` : "")
-    + part(PROBLEM_PARTS.happened.replace(/:$/, ""), what)
+    + part(happenedLabel.replace(/:$/, ""), what)
     + part(PROBLEM_PARTS.did.replace(/:$/, ""), didLine)
     + part(done ? "Status: done" : "Status", statusLine, done ? "done" : null)
     + `<p style="margin:12px 2px 0;font-size:14px;color:${C.ink}">— ${esc(name)}</p>`,
@@ -602,7 +632,7 @@ export function fromLegacy({ who, subject, text, refs = [] }) {
     if (name && new RegExp(`^[—–-]\\s*${name}\\b`, "i").test(trimmed)) continue;
     // A line she would have to type at a terminal is not for her (23 Oct 2026: "npm run capital:match -- --not").
     // Only the sentences that hold one go; the rest of the line stays.
-    const kept = trimmed.split(/(?<=[.!?])\s+/).filter((sentence) => !COMMAND_RE.test(sentence)).join(" ");
+    const kept = dropCommandSentences(trimmed);
     if (!kept) continue;
     const wasHeading = /[A-Z]{3}/.test(kept) && !/[a-z]/.test(kept.replace(/\bhttps?:\S+/g, "")) && kept.length < 90;
     let line = kept.replace(/^(?:[-*•·]|\d+[.)])\s+/, "").replace(new RegExp(`^This is ${name || "[A-Z][a-z]+"}\\.\\s*`), "");
@@ -723,15 +753,16 @@ export function plainProblems({ subject, text, html, kind = null }) {
   // "Stopped: …" and Danielle's "Stopped work on …" are both problem emails (combined boss fix).
   const problem = kind === "problem" || /^stopped\b/i.test(subj);
   if (problem) {
-    if (!/^What happened:/m.test(body)) problems.push('a problem email without "What happened"');
+    // A repair's report says "What broke:" (25 Oct 2026); either label opens a problem email.
+    if (!/^What (?:happened|broke):/m.test(body)) problems.push('a problem email without "What happened"');
     if (!/^What we did:/m.test(body)) problems.push('a problem email without "What we did"');
     if (!/^Status(?::| done)/m.test(body)) problems.push("a problem email without its status");
-    if (!(/^What happened:/.test(lines[0] ?? "") || /^Decide \(\d+\)$/.test(lines[0] ?? ""))) problems.push("Decide is not first");
+    if (!(/^What (?:happened|broke):/.test(lines[0] ?? "") || /^Decide \(\d+\)$/.test(lines[0] ?? ""))) problems.push("Decide is not first");
   } else if (!(/^Decide \(\d+\)$/.test(lines[2] ?? "") || lines[2] === NOTHING_TO_DECIDE)) {
     problems.push("Decide is not first");
   }
   const decideAt = lines.findIndex((l) => /^Decide \(\d+\)$/.test(l));
   if (decideAt > 2 && !problem) problems.push("Decide is not first");
-  if (html !== undefined && html !== null && !/Decide \(\d+\)|Nothing to decide|What happened/.test(String(html))) problems.push("the HTML has no Decide line");
+  if (html !== undefined && html !== null && !/Decide \(\d+\)|Nothing to decide|What happened|What broke/.test(String(html))) problems.push("the HTML has no Decide line");
   return [...new Set(problems)];
 }

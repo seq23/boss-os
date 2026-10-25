@@ -319,6 +319,40 @@ export function parseRepoChange(text, opts = {}) {
 }
 
 /**
+ * ─── REPAIRS NEVER WAIT ON THE OWNER (owner, 25 Oct 2026) ──────────────────
+ *
+ * When Boss OS itself opens a repo change to repair something broken — an email the plain check
+ * held, a job that failed or was refused, a red check, a self-repair or a rework — Danielle plans,
+ * builds and lands it with NO "reply approved" step, and sends at most one short plain report
+ * afterwards (What broke / What we did / Status). Work Sequoia asked for keeps its approval email.
+ *
+ * `origin` on the row is the one fact that tells them apart: "owner" (the default, every door she
+ * uses) or "repair" (only the system's own repair openers, which name a kind from REPAIR_KINDS).
+ * `planWaitsForOwner` is the one reader: the Worker's /plan route and the Mac runner both ask it,
+ * and tests/boss/repairsNeverWait.test.ts pins both directions.
+ */
+export const REPAIR_KINDS = Object.freeze(["held_mail", "failed_task", "refused_run", "red_check", "self_repair", "rework"]);
+export const REPAIR_ANSWER_TEXT = "repair — Boss OS opened this to fix something broken, and repairs never wait on the owner (25 Oct 2026): every ask takes the recommended default";
+export const REPAIR_APPROVED_BY = "standing rule: repairs never wait on the owner (25 Oct 2026)";
+
+/** The origin a task's input declares: "repair" only with a known kind; everything else is hers. */
+export function repairOriginOf(input) {
+  const kind = input && typeof input === "object" && input.origin === "repair" ? String(input.repair_kind ?? "") : "";
+  return REPAIR_KINDS.includes(kind) ? { origin: "repair", repair_kind: kind } : { origin: "owner", repair_kind: null };
+}
+
+export function isRepair(row) {
+  return row?.origin === "repair";
+}
+
+/** Does this row's plan wait for her reply? No for a repair, no for a pre-approved request. */
+export function planWaitsForOwner(row) {
+  if (isRepair(row)) return false;
+  if (row?.pre_approved_phrase && row?.pre_approved_by) return false;
+  return true;
+}
+
+/**
  * ─── HER REPLY, READ AS ONE OF THREE THINGS ────────────────────────────────
  *
  * Owner, 21 Sep 2026: the approval step must have zero friction. The plan email carries the whole
