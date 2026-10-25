@@ -27,3 +27,5 @@ export function runChecks(checklist: any, ctx: any): any[];
 export function fixBriefs(checklist: any, siteResults: any[], opts?: { now?: number }): any[];
 export function morningLines(checklist: any, siteResults: any[], opts?: { previous?: any; queued?: number; max?: number }): string[];
 export function summaryLines(siteResults: any[]): string[];
+export function workQueue(briefs: unknown[]): { total: number; workable: number; protected: number; no_repo: number; repos: { repo: string; n: number }[] };
+export function queueRunLine(args: { started: number; fixed: number; left: number; protectedLeft?: number; noRepo?: number }): string;

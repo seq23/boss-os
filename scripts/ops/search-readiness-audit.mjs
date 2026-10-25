@@ -293,6 +293,20 @@ async function auditSite(site, checklist, g, gscSites, portfolio) {
 const writeJson = (p, v) => { const tmp = `${p}.tmp`; writeFileSync(tmp, JSON.stringify(v, null, 1)); renameSync(tmp, p); };
 
 async function main() {
+  /*
+   * --plan: the repos the queue run still has to work, one per line ("REPO <name> <count>"), then a
+   * "QUEUE" totals line. Read by scripts/ops/search-readiness-fix.sh, which loops until no REPO
+   * lines are left. Protected and no_repo briefs are never listed.
+   */
+  if (flag("--plan")) {
+    const q = join(OUT, "fix-queue.json");
+    if (!existsSync(q)) stop(3, "NO_QUEUE", `${q} does not exist yet; run npm run sites:audit first.`);
+    const { workQueue } = await import("../../src/shared/boss/searchReadiness/audit.mjs");
+    const w = workQueue(JSON.parse(readFileSync(q, "utf8")).briefs);
+    for (const r of w.repos) console.log(`REPO ${r.repo} ${r.n}`);
+    console.log(`QUEUE total=${w.total} workable=${w.workable} protected=${w.protected} no_repo=${w.no_repo}`);
+    return;
+  }
   if (flag("--queue")) {
     const q = join(OUT, "fix-queue.json");
     if (!existsSync(q)) stop(3, "NO_QUEUE", `${q} does not exist yet; run npm run sites:audit first.`);
@@ -338,7 +352,7 @@ async function main() {
   writeJson(join(OUT, `results-${day}.json`), report);
   if (!only) writeJson(prevPath, report);
   const briefs = fixBriefs(checklist, siteResults);
-  if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, consumer: "Danielle's weekly repair run (scripts/ops/ahrefs-audit-fix.sh), section 'The Search Readiness fix queue' of its prompt", briefs });
+  if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, consumer: "Danielle's daily queue run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
 
   const fails = siteResults.reduce((n, s) => n + s.results.filter((r) => r.status === "fail").length, 0);
   say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} briefs=${briefs.length} → ${join(OUT, `results-${day}.json`)}`);

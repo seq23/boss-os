@@ -607,8 +607,13 @@ export function buildDay(data, now = Date.now()) {
   // 4b. The grid repos: the weekly Search Readiness check (Mondays; owner, 25 Oct 2026). Its own short
   // section — what is broken, what was fixed, what is being built — never pooled into "Done for you",
   // where three lines would hide it.
-  const gridLines = (m.grid_repos?.lines ?? []).slice(0, 4).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
-  const gridRepos = gridLines.length ? { title: "The grid repos: this week's search check", tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
+  // Plus, every morning, the queue run's one line: how many of the queued search fixes went live today.
+  const asItem = (l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
+  const weekly = (m.grid_repos?.lines ?? []).slice(0, 4).map(asItem);
+  const fixesToday = (m.grid_repos_fixes?.lines ?? []).slice(0, 1).map(asItem);
+  const gridLines = [...weekly, ...fixesToday];
+  const gridTitle = weekly.length ? "The grid repos: this week's search check" : "The grid repos: search fixes today";
+  const gridRepos = gridLines.length ? { title: gridTitle, tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
 
   // 5. Catch up with.
   const catchCards = (m.catchups?.decide ?? []).map((d) => { const id = idFor("catchup", d.key ?? d.title); const screen = itemUrl(today, id); return { ...d, id, screen, buttons: [...(d.buttons ?? []), more(screen)] }; });
@@ -754,7 +759,7 @@ async function postDigest(api, digest) {
 }
 
 /** The morning sections this email told her once and clears after it goes (producers that append). */
-const TOLD_ONCE = ["tail", "risk", "archive", "notices", "grid_repos"];
+const TOLD_ONCE = ["tail", "risk", "archive", "notices", "grid_repos", "grid_repos_fixes"];
 
 async function main() {
   const DRY = process.argv.includes("--dry-run");

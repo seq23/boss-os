@@ -539,6 +539,41 @@ lint_plist "$SR_PLIST"
 launchctl load "$SR_PLIST"
 echo "Installed $SR_LABEL — Monday 06:00 Central."
 
+# ─── The Search Readiness fix queue, worked to empty — daily ─────────────────────────────────────
+#
+# Owner, 25 Oct 2026: "why can't all 242 be fixed now?" The queue gets its own daily run, 07:30,
+# after the 06:00 slots: re-audit, then one scoped fixer pass per repo, round after round, until only
+# protected (Spry Labs download page) and no_repo briefs are left. Its one line rides the next
+# morning email. By hand: bash scripts/ops/search-readiness-fix.sh
+SRF_LABEL="com.seq.boss-sr-fix"
+SRF_PLIST="$HOME/Library/LaunchAgents/$SRF_LABEL.plist"
+cat > "$SRF_PLIST" <<SRFEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SRF_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; bash scripts/ops/search-readiness-fix.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/sr-fix.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/sr-fix.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+SRFEOF
+
+launchctl unload "$SRF_PLIST" 2>/dev/null || true
+lint_plist "$SRF_PLIST"
+launchctl load "$SRF_PLIST"
+echo "Installed $SRF_LABEL — daily 07:30 Central."
+
 # ─── Simone's publication chase — RETIRED 14 September 2026 ─────────────────
 #
 # `duty_kdp_publication` chased KDP case #51496198 until the books were Live. Six of the seven went
@@ -1322,6 +1357,7 @@ require_loaded "$POLL_LABEL"
 require_loaded "$NETWORK_LABEL"
 require_loaded "$PROPS_LABEL"
 require_loaded "$SR_LABEL"
+require_loaded "$SRF_LABEL"
 # ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a
 # "Verified" line that did not mention it — the installer and its own verifier each keeping their own
 # list of jobs, which is the defect this file's comments warn about, inside this file.

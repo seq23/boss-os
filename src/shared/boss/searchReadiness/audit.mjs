@@ -742,7 +742,7 @@ export function morningLines(checklist, siteResults, { previous = null, queued =
     const fixed = [...was].filter((k) => !now.has(k)).length;
     if (fixed) lines.push(`Fixed since last week: ${fixed} gaps closed.`);
   }
-  if (queued) lines.push(`Being fixed: ${queued} fixes are queued for Danielle's Thursday repair run, which builds them and puts them live.`);
+  if (queued) lines.push(`Being fixed: ${queued} fixes are queued. Danielle works through them every morning, one site at a time, and puts each fix live.`);
   return lines.slice(0, max);
 }
 
@@ -754,4 +754,35 @@ export function summaryLines(siteResults) {
     const miss = s.results.find((r) => r.id === "j9" && r.status === "fail")?.missing?.length ?? 0;
     return `${s.site.domain}: ${f.length ? `${f.length} failing (${f.join(" ")})` : "all pass"}${miss ? `; ${miss} coverage URLs missing` : ""}${nc ? `; ${nc} not checked` : ""}`;
   });
+}
+
+// ─── The fix queue, worked to empty (owner, 25 Oct 2026: "why can't all 242 be fixed now?") ─────
+
+/**
+ * What the daily queue run still has to do. A brief is WORKABLE when it names a repo and is not on a
+ * protected page; protected briefs (the Spry Labs download page) are fixed only on their own, and
+ * no_repo briefs have nowhere to land. Those two are what may be left when the run says "done".
+ */
+export function workQueue(briefs) {
+  const list = Array.isArray(briefs) ? briefs : [];
+  const isProtected = (b) => Array.isArray(b.protected) ? b.protected.length > 0 : Boolean(b.protected);
+  const noRepo = list.filter((b) => !b.repo || b.disposition === "no_repo");
+  const prot = list.filter((b) => b.repo && b.disposition !== "no_repo" && isProtected(b));
+  const workable = list.filter((b) => b.repo && b.disposition === "fix" && !isProtected(b));
+  const byRepo = {};
+  for (const b of workable) byRepo[b.repo] = (byRepo[b.repo] ?? 0) + 1;
+  const repos = Object.entries(byRepo).sort((a, b) => b[1] - a[1]).map(([repo, n]) => ({ repo, n }));
+  return { total: list.length, workable: workable.length, protected: prot.length, no_repo: noRepo.length, repos };
+}
+
+/** The plain-English line for the morning email: what the queue run did today. No ids, no commands. */
+export function queueRunLine({ started, fixed, left, protectedLeft = 0, noRepo = 0 }) {
+  const parts = [`Search fixes today: ${fixed} of ${started} fixed and live.`];
+  if (left > 0) parts.push(`${left} still to do; Danielle carries on tomorrow morning.`);
+  else parts.push("Nothing left that can be fixed automatically.");
+  const kept = [];
+  if (protectedLeft) kept.push(`${protectedLeft} on the Spry Labs download page, which is only ever changed on its own`);
+  if (noRepo) kept.push(`${noRepo} on sites with no code to change`);
+  if (kept.length) parts.push(`Left alone on purpose: ${kept.join(", and ")}.`);
+  return parts.join(" ");
 }
