@@ -51,6 +51,14 @@ set -uo pipefail
 REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
 PROMPT_FILE="${AHREFS_AUDIT_PROMPT:-${BOSS_DUTY_PROMPT_FILE:-$REPO/scripts/ops/ahrefs-audit-fix-prompt.md}}"
 OUT_DIR="${BOSS_OS_SITE_AUDIT_DIR:-$HOME/.boss-os/site-audit}"
+# A SCOPED PASS OWNS ITS REPO, NOT THE MACHINE (25 Oct 2026). search-readiness-fix.sh runs up to three
+# repos at once, so a scoped pass gets its own findings file (and, below, its own lock): two passes
+# writing one findings.json would land and report each other's rows. Exported so the reporter reads
+# the same file. An unscoped run (the weekly Ahrefs pass) keeps the one shared path and global lock.
+if [ -n "${SR_SCOPE_REPO:-}" ]; then
+  OUT_DIR="$OUT_DIR/sr-$SR_SCOPE_REPO"
+fi
+export BOSS_OS_SITE_AUDIT_DIR="$OUT_DIR"
 
 # THE MODEL IS NAMED, AND IT MATCHES THE DUTY ROW.
 #
@@ -61,7 +69,7 @@ OUT_DIR="${BOSS_OS_SITE_AUDIT_DIR:-$HOME/.boss-os/site-audit}"
 MODEL="${AHREFS_AUDIT_MODEL:-claude-opus-5}"
 MAX_TURNS="${AHREFS_AUDIT_MAX_TURNS:-250}"
 LOG_DIR="$HOME/Library/Logs/ahrefs-audit-fix"
-LOCK="$LOG_DIR/.lock"
+LOCK="$LOG_DIR/.lock${SR_SCOPE_REPO:+-sr-$SR_SCOPE_REPO}"
 RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"
 
 mkdir -p "$LOG_DIR" "$OUT_DIR"
@@ -118,7 +126,7 @@ cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 # worktree helper and the IN_FLIGHT check; on 16 Oct the owner's checkout there was on a docs branch
 # without those scripts, so the run would have called files that did not exist. Rewritten to the
 # checkout this runner was started from, which is the one that has them.
-PROMPT_TEXT="$(sed "s#~/GitHub/boss-os#$REPO#g" "$PROMPT_FILE")"
+PROMPT_TEXT="$(sed "s#~/GitHub/boss-os#$REPO#g" "$PROMPT_FILE" | sed "s#~/.boss-os/site-audit/findings.json#$OUT_DIR/findings.json#g")"
 # ─── ONE REPO OF THE SEARCH READINESS QUEUE, WHEN THE DAILY QUEUE RUN ASKS (25 Oct 2026) ─────────
 # scripts/ops/search-readiness-fix.sh works the whole queue one repository at a time so no single
 # pass runs out of turns half way through 242 briefs. SR_SCOPE_REPO narrows THIS pass to section 1b,

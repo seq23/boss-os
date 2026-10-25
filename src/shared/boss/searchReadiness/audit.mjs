@@ -281,12 +281,20 @@ export const CHECKS = {
   },
   title_band(ctx) {
     const bad = [], seen = {};
+    // Distinct URLs, not page entries. The page list is the homepage, the sitemap sample and two
+    // coverage town pages, and the sample can draw the homepage or a town page again: on 25 Oct 2026
+    // time-2-read.com, memphisseniorcarehomes.com and neuroevalguides.com each "shared a title" with
+    // themselves, and the fixer was briefed to fix a duplicate that did not exist.
+    const norm = (u) => String(u).replace(/[?#].*$/, "").replace(/\/+$/, "");
+    const checked = new Set();
     for (const p of okPages(ctx)) {
+      if (checked.has(norm(p.url))) continue;
+      checked.add(norm(p.url));
       const t = titleOf(p.html);
       if (t.length < 30 || t.length > 65) bad.push(`${p.url} title is ${t.length} chars`);
       (seen[t] ??= []).push(p.url);
     }
-    for (const [t, us] of Object.entries(seen)) if (us.length > 1) bad.push(`"${t.slice(0, 50)}" on ${us.length} pages`);
+    for (const [t, us] of Object.entries(seen)) if (us.length > 1) bad.push(`"${t.slice(0, 50)}" on ${us.length} pages (${us.slice(0, 3).join(", ")})`);
     return bad.length ? fail(list(bad), { evidence: bad }) : pass("titles 30–65 characters and unique");
   },
   meta_description(ctx) {
@@ -691,6 +699,10 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
   for (const s of siteResults) {
     for (const r of s.results.filter((x) => x.status === "fail")) {
       const item = byId[r.id];
+      // A KNOWN LIMIT is a failure the repo cannot fix at source (the host decides it, or it waits on a
+      // named stop), recorded on the site in sites.json with its reason. It stays in the results and
+      // the queue, so it is never hidden, but it is not workable: no pass is spent on it.
+      const limit = (s.site.known_limits ?? []).find((k) => k.item === r.id) ?? null;
       const prot = (s.site.protected_pages ?? []).filter((pp) => [r.detail, ...(r.evidence ?? []), ...(r.missing ?? [])].join(" ").includes(pp.path));
       briefs.push({
         id: `sr-${s.site.domain}-${r.id}`,
@@ -707,7 +719,8 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         missing_urls: r.missing ?? [],
         evidence: (r.evidence ?? []).slice(0, 25),
         protected: prot.length ? prot.map((pp) => ({ path: pp.path, rule: pp.rule, buy_link: pp.buy_link, sha256: pp.sha256 })) : null,
-        disposition: s.site.repo ? "fix" : "no_repo",
+        disposition: !s.site.repo ? "no_repo" : limit ? "known_limit" : "fix",
+        ...(limit ? { known_limit: limit.why } : {}),
       });
     }
   }
