@@ -1,0 +1,35 @@
+/** Types for Simone's command grammar. See parse.mjs. */
+export const OWNER_TZ: string;
+export const DEFAULT_MINUTES: number;
+export const ZONES: Readonly<Record<string, [string, string]>>;
+export function zoneLabel(tz: string): string;
+export const DEFAULT_MAILBOX: string;
+export const BRAND_MAILBOXES: ReadonlyArray<{ re: RegExp; mailbox: string; brand: string }>;
+export const WORKSPACE_MAILBOXES: ReadonlyArray<string>;
+export function mailboxFor(text: string): string;
+export const PERSONAL_CALENDAR_RE: RegExp;
+export const PRODUCT_REPOS: ReadonlyArray<{ re: RegExp; product: string; github_repo: string }>;
+export function addressesIn(text: string): string[];
+export function zonedUtc(y: number, m: number, d: number, h: number, min: number, tz: string): number;
+export function wallIn(ts: number, tz: string): { y: number; m: number; d: number; h: number; min: number; dow: number };
+export function minutesIn(text: string): number;
+export type When = { start: number; tz: string; tzLabel: string; minutes: number; said: string | null };
+export function whenIn(text: string, now?: number): When | { error: string; start?: undefined };
+export function slotText(start: number, minutes: number, tz: string, o?: { withDay?: boolean }): string;
+export function dayText(ts: number, tz: string): string;
+export function confirmLine(i: { guestName?: string | null; guestEmail: string; start: number; minutes: number; tz?: string | null; meet?: string | null; calendar?: string | null }): string;
+export function renderUrl(i: { title: string; start: number; minutes: number; guests?: string[]; details?: string }): string;
+export function inviteIn(text: string, now?: number): Record<string, any> | null;
+export function lookupIn(text: string): { name: string; relation: string | null; hints: string[]; drive: boolean; gmail: boolean } | null;
+export function repoAskIn(clause: string): { github_repo: string; product: string; instruction: string; code: string | null } | null;
+export function emailAskIn(clause: string): { to: string | null; pronoun: string | null; name: string | null; purpose: string } | null;
+export const CANT_YET: ReadonlyArray<{ re: RegExp; what: string }>;
+export function clausesIn(text: string): string[];
+export interface Command { ref: number; waits_on: number[]; kind: "invite" | "lookup" | "email" | "repo" | "access_code" | "cant_yet"; spec: Record<string, any> }
+export function commandsIn(i?: { subject?: string; text?: string; now?: number }): Command[];
+export function ownWords(text: string): string;
+export function commandReplyIn(text: string, now?: number): Record<string, any> | null;
+export const ACCESS_CODE_SHAPE: Readonly<{ table: string; columns: readonly string[]; view: string; view_columns: readonly string[]; max_days: number }>;
+export function normaliseCode(c: string): string;
+export function accessCodeIn(text: string): { op: "create" | "count" | "off"; code: string | null; trial_days?: number; label?: string | null; error?: string } | null;
+export function codeLines(rows: Array<{ code: string; trial_days: number; label?: string | null; active?: boolean; checkouts_started?: number; signups?: number }>): string[];

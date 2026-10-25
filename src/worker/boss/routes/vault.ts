@@ -192,6 +192,7 @@ const SNAPSHOT_TABLES = [
   // 0290 — the job codes that left her email, keyed by the Message-ID her reply quotes. Lose them and
   // a reply to an email sent before the restore no longer finds its job.
   "boss_mail_refs",
+  "boss_commands",
   // 0294 (boss fix L) — the LP tracker, prospects and their touches, the approved prospect email,
   // her name rules, the 8Raise ledger and the catch-up record. Parents before children: prospects
   // before prospect_touches. None of it re-derives: decisions she tapped, touches already sent.
