@@ -12,7 +12,7 @@ import { isSuppressed, suppress } from "../outreach/suppression";
 import { readSettings } from "../outreach/engine";
 import {
   DEFAULT_PROSPECT_TEMPLATE, MAX_NEW_PER_DAY, MAX_TOUCHES, dueTouch, nextTouchAt, excluded, prospectProblems, renderProspect,
-  templateHash, verdictGate, PROSPECT_VARIANTS, applyTemplateNotes, type Template, type ProspectForecast,
+  templateHash, verdictGate, PROSPECT_VARIANTS, applyTemplateNotes, featuredNamesProblems, type Template, type ProspectForecast,
 } from "../../../shared/boss/lp/plan.mjs";
 
 /** 144 random bits, url-safe. The tap links carry it and nothing else. */
@@ -217,7 +217,11 @@ export async function redraftTemplate(db: D1Database, id: string, input: { notes
   const note = String(input.notes ?? "").trim();
   const notes = [...prior, ...(note ? [note] : []), ...(input.tryAgain ? ["try again"] : [])];
   const variant = input.tryAgain ? (Number(row.variant ?? 0) + 1) % PROSPECT_VARIANTS.length : Number(row.variant ?? 0);
-  const base: Template = input.tryAgain ? { ...(PROSPECT_VARIANTS[variant] as Template) } : { subject: row.subject, body: row.body, follow_up: row.follow_up };
+  const stored: Template = { subject: row.subject, body: row.body, follow_up: row.follow_up };
+  // A draft written before a standing rule existed (a "Re:" subject, a closed list of names) starts
+  // again from its own template as the rules now write it, then takes her words.
+  const breaksStanding = featuredNamesProblems(renderProspect(stored, { first: "Alex", names }), names).length > 0;
+  const base: Template = input.tryAgain || breaksStanding ? { ...(PROSPECT_VARIANTS[variant] as Template) } : stored;
   const edited = note ? applyTemplateNotes(base, note) : { template: base, applied: [], kept: [] };
   const r = await proposeTemplate(db, edited.template, names, now, { variant, notes, parentId: row.id });
   if (!r.ok) return { ok: false as const, problems: r.problems, applied: edited.applied, kept: edited.kept };

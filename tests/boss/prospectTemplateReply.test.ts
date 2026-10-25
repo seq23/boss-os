@@ -80,4 +80,15 @@ describe("a numbered reply to the prospect-email card", () => {
     expect(res.outcome).not.toBe("TEMPLATE_ANSWERED");
     expect((await pendingRows()).map((r: any) => r.id)).toEqual([t.template.id]);
   });
+
+  it("a draft written before her standing rule (a \"Re:\" subject) is redrafted under it, with her words kept", async () => {
+    const old = { subject: "Re: Up to $1B secondary inquiry: {subject_names}", body: "Hi {first},\n\nI hope you don't mind the direct note. We've done more than $100M in secondary transactions.\n\n{names_line} Would love to find 15 minutes to compare notes, and I'm happy to talk about what you're looking to add or trim.\n\nSequoia Taylor\nWest Peek Ventures\n\nIf this isn't relevant, just reply \"no thanks\" and I won't write again.", follow_up: "Hi {first},\n\nJust floating this back up. {names_line} We've done more than $100M in secondary transactions, and I'd love to find 15 minutes to compare notes on what you're looking to add or trim.\n\nSequoia Taylor\nWest Peek Ventures\n\nIf this isn't relevant, just reply \"no thanks\" and I won't write again." };
+    await env.DB.prepare(`INSERT INTO prospect_templates (id, hash, subject, body, follow_up, names_json, status, tap_token, created_at) VALUES ('ptp_oldone1', 'h_old', ?, ?, ?, ?, 'pending', 'tok_old_aaaaaaaaaaaaaaaaaa', 1)`).bind(old.subject, old.body, old.follow_up, JSON.stringify(NAMES)).run();
+    const res = await handleBossInboundMail(mail("ptp_oldone1: I don't like that you make it seem like those are the only 3 companies I'm working on."), env as never);
+    expect(res.outcome).toBe("TEMPLATE_ANSWERED");
+    const [now] = await pendingRows();
+    expect(now.parent_id).toBe("ptp_oldone1");
+    expect(now.subject).not.toMatch(/^Re:/);
+    expect(JSON.parse(now.change_notes)).toEqual(["I don't like that you make it seem like those are the only 3 companies I'm working on."]);
+  });
 });
