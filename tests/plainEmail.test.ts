@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { plainProblems, fromLegacy, layoutEmail, layoutProblem, lineProblems, JARGON, cleanSubject, cleanText, refsIn, DECIDE_HEADING, NOTHING_TO_DECIDE } from "../src/shared/boss/mail/plain.mjs";
-import { sendersFor, employeeMail, namesOnce, postEmployeeMail, mailGate } from "../scripts/ops/notify.mjs";
+import { sendersFor, employeeMail, namesOnce, postEmployeeMail, mailGate, plainOrSimplified } from "../scripts/ops/notify.mjs";
 import { INBOX } from "../scripts/validate/email-plain.mjs";
 
 const ROOT = join(__dirname, "..");
@@ -254,8 +254,8 @@ describe("the layout itself", () => {
   });
 });
 
-describe("the send-time gate holds a failing email (rule 13)", () => {
-  it("never posts it to Resend, writes it down, and answers 422 so every caller reports it refused", async () => {
+describe("the send-time gate makes a jargon email plain, and holds only what it cannot (rule 13; 25 Oct 2026)", () => {
+  it("a jargon email is simplified and SENT, the technical line attached; one it cannot make plain is held, written down, 422", async () => {
     process.env.BOSS_OS_MAIL_KEY = "test-key-not-real";
     const dir = mkdtempSync(join(tmpdir(), "held-"));
     process.env.BOSS_OS_HELD_MAIL_DIR = dir;
@@ -264,17 +264,32 @@ describe("the send-time gate holds a failing email (rule 13)", () => {
     const calls: string[] = [];
     const fake = (async (url: string) => { calls.push(String(url)); return new Response("{}", { status: 200 }); }) as unknown as typeof fetch;
     const sender = sendersFor("Monique")[0]!;
-    const bad = { ...employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "x" }), text: "x\n\nNothing to decide — this is just so you know.\nOpen 1a08831e4f in Gmail." };
-    expect(mailGate(bad).join(" ")).toMatch(/Gmail id/);
+    const sent: any[] = [];
+    const fake2 = (async (url: string, init?: RequestInit) => { calls.push(String(url)); if (String(url).includes("api.resend.com")) sent.push(JSON.parse(String(init?.body ?? "{}"))); return new Response("{}", { status: 200 }); }) as unknown as typeof fetch;
+    // Jargon: simplified, never silently held.
+    const jargon = { ...employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "x" }), text: "x\n\nNothing to decide — this is just so you know.\nOpen 1a08831e4f in Gmail.\nThe validator plain.mjs ran `--self-test`.\n\n— Monique" };
+    expect(mailGate(jargon).join(" ")).toMatch(/Gmail id/);
+    const ready = plainOrSimplified(jargon);
+    expect(ready.held).toBeNull();
+    expect(mailGate(ready.payload)).toEqual([]);
+    expect(ready.payload.text).not.toMatch(/1a08831e4f|validator|plain\.mjs|self-test/);
+    expect(ready.payload.text).toContain("Technical details are in the attached file, for the team.");
+    expect(Buffer.from(ready.payload.attachments.at(-1).content, "base64").toString()).toContain("1a08831e4f");
+    expect((await postEmployeeMail(sender, jargon, fake2)).status).toBe(200);
+    expect(sent.at(-1).text).not.toMatch(/1a08831e4f/);
+    expect(readdirSync(dir).length).toBe(0);
+    // What cannot be made plain (no Decide line where it belongs) is still held: written down, 422.
+    const bad = { ...employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "x" }), text: "x\n\nsomething\nOpen 1a08831e4f in Gmail." };
+    const before = calls.filter((u) => u.includes("api.resend.com")).length;
     const res = await postEmployeeMail(sender, bad, fake);
     expect(res.status).toBe(422);
-    expect(calls.filter((u) => u.includes("api.resend.com"))).toEqual([]);
+    expect(calls.filter((u) => u.includes("api.resend.com")).length).toBe(before);
     expect(readdirSync(dir).length).toBe(1);
     // A plain one goes.
     const good = employeeMail(sender, { to: "o@example.com", subject: "Ok", text: "Something happened today." });
     expect(mailGate(good)).toEqual([]);
     expect((await postEmployeeMail(sender, good, fake)).status).toBe(200);
-    expect(calls.filter((u) => u.includes("api.resend.com")).length).toBe(1);
+    expect(calls.filter((u) => u.includes("api.resend.com")).length).toBe(before + 1);
     if (saved !== undefined) process.env.BOSS_PASSCODE = saved;
     delete process.env.BOSS_OS_HELD_MAIL_DIR;
     delete process.env.BOSS_OS_MAIL_KEY;
@@ -286,7 +301,7 @@ describe("the rules in CLAUDE.md", () => {
   const section = doc.slice(doc.indexOf("## Emails to her"));
   it("the section exists and names the code that enforces each rule, and that code exists", () => {
     expect(section.startsWith("## Emails to her")).toBe(true);
-    for (const [name, file] of [["layoutEmail", "src/shared/boss/mail/plain.mjs"], ["layoutProblem", "src/shared/boss/mail/plain.mjs"], ["mailGate", "scripts/ops/notify.mjs"], ["plainReply", "src/worker/boss/intake/mailRefs.ts"]] as const) {
+    for (const [name, file] of [["layoutEmail", "src/shared/boss/mail/plain.mjs"], ["layoutProblem", "src/shared/boss/mail/plain.mjs"], ["mailGate", "scripts/ops/notify.mjs"], ["plainOrSimplified", "scripts/ops/notify.mjs"], ["simplifyForOwner", "src/shared/boss/mail/plain.mjs"], ["plainReply", "src/worker/boss/intake/mailRefs.ts"]] as const) {
       expect(section).toContain(name);
       expect(readFileSync(join(ROOT, file), "utf8")).toMatch(new RegExp(`export (async )?function ${name}\\b`));
     }

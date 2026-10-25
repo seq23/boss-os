@@ -1009,7 +1009,8 @@ function headline(text: string): string {
      * she still has to be told which seats exist, or the question and the mis-routing become one
      * confusing message and she fixes neither. On a clean ROUTED message the roster block is noise.
      */
-    ...(route.outcome !== "ROUTED" && !dutyNote ? ["", "—", "", replyBody(route, roster, trueSubject)] : []),
+    // An answer to a card in her email (a dismissal, the prospect email) already says what it did.
+    ...(route.outcome !== "ROUTED" && !dutyNote && !dismissAnswer ? ["", "—", "", replyBody(route, roster, trueSubject)] : []),
   ].join("\n") : [triaged.length ? triageReply(triageTasks, { tags: route.unknownTags, roster }) : followed ? followReply(followed) : replyBody(route, roster, trueSubject),
     ...(bookNote ? ["", bookNote] : []),
     ...(bookFailure ? ["", bookFailure] : []),
