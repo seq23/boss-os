@@ -19,7 +19,8 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { audit } from "../lib/audit";
 import { mintComposeToken, serviceAccountFrom } from "../wealth/gmailDraft";
-import { approveTemplate, prospectPlan } from "../lp/desk";
+import { approveTemplate, prospectPlan, redraftTemplate, followUpsReleased } from "../lp/desk";
+import { redraftReply } from "../lp/templateReply";
 import { approveOutcome } from "../../../shared/boss/lp/plan.mjs";
 import { dismissMatch } from "../capital/dismiss";
 
@@ -62,7 +63,7 @@ async function find(db: D1Database, token: string): Promise<Found | null> {
   return null;
 }
 
-const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…" };
+const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…", retry: "Writing a different draft…" };
 
 lpTap.get("/:token", async (c) => {
   const action = c.req.query("do") ?? "";
@@ -118,6 +119,17 @@ lpTap.post("/:token", async (c) => {
   }
 
   if (f.kind === "template") {
+    /*
+     * TRY AGAIN (owner, 25 Oct 2026): a genuinely different draft — a new opening and structure —
+     * and the old one retired. The page shows the new email word for word with its own Approve.
+     */
+    if (action === "retry") {
+      if (f.row.status !== "pending") return c.html(page("A newer version is waiting", "Use the newest one in your email."));
+      const r = await redraftTemplate(db, f.row.id, { tryAgain: true }, now);
+      if (!r.ok) return c.html(page("Not redrafted", `The different draft would break one of your rules (${(r.problems ?? []).join("; ")}). The one waiting is unchanged.`));
+      await audit(db, { actor: "owner", lane: "ops", entityType: "prospect_template", entityId: f.row.id, action: "try_again", detail: { via: "one_tap", next: r.template.id } });
+      return c.html(page("Here is a different draft", redraftReply(r.template, { released: await followUpsReleased(db), headline: "Nothing goes out until you tap Approve." }).replace(/\n+/g, " · ")));
+    }
     if (action !== "approve") return c.redirect(DECK, 302);
     if (f.row.status === "approved") return c.html(page("Already approved", "It goes out on the usual schedule."));
     if (f.row.status !== "pending") return c.html(page("A newer version is waiting", "Approve the newest one in this morning's email."));

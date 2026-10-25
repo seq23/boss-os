@@ -221,45 +221,184 @@ export function withoutNeverNamed(text) {
   return t;
 }
 
-/** The names line. Her phrasing is primary; the other rotates in lightly (every third prospect). */
+/**
+ * ─── THE FEATURED NAMES ARE EXAMPLES OF A WIDER BOOK (owner, 25 Oct 2026) ───
+ *
+ * "I don't like that you make it seem like those are the only 3 companies I'm working on." Every
+ * names line reads as examples — "Some of the names crossing my desk right now include OpenAI,
+ * Anduril and Databricks, among others" — never as the full list; the subject never lists them as
+ * if they were everything, and a cold email never starts "Re:" (a fake reply). A standing rule for
+ * every future template: `featuredNamesProblems` enforces both, `prospectProblems` refuses a draft
+ * that breaks them, and `PROSPECT_TEMPLATE_RULES` is the record of her words.
+ */
+export const EXAMPLES_QUALIFIER = /\b(?:among (?:many )?others|including|such as|and (?:many )?others|and more)\b/i;
+export const FAKE_REPLY_SUBJECT = /^\s*(?:re|fwd?|fw)\s*:/i;
+export const PROSPECT_TEMPLATE_RULES = Object.freeze([
+  { key: "names_are_examples", said: "I don't like that you make it seem like those are the only 3 companies I'm working on.", rule: "Featured names read as examples of a wider book (\"including …, among others\"), never as the full list; the subject does not list them as everything." },
+  { key: "no_fake_reply_subject", said: "Drop the \"Re:\" prefix: a fake reply on a cold email.", rule: "A cold subject never starts with Re: or Fwd:." },
+]);
+
+/** What breaks the two standing rules in a rendered email. Pure; part of `prospectProblems`. */
+export function featuredNamesProblems({ subject, body }, names = []) {
+  const out = [];
+  if (FAKE_REPLY_SUBJECT.test(String(subject ?? ""))) out.push('the subject starts with "Re:" or "Fwd:" (a fake reply on a cold email)');
+  const list = (names ?? []).map((n) => (typeof n === "string" ? n : n?.name)).filter(Boolean).map((n) => String(sayName(n)).toLowerCase());
+  if (list.length >= 2) {
+    for (const sentence of String(body ?? "").split(/(?<=[.!?])\s+|\n+/)) {
+      const hits = list.filter((n) => sentence.toLowerCase().includes(n)).length;
+      if (hits >= 2 && !EXAMPLES_QUALIFIER.test(sentence)) out.push(`lists the featured names as if they were all of them ("${sentence.trim().slice(0, 80)}")`);
+    }
+    const subjHits = list.filter((n) => String(subject ?? "").toLowerCase().includes(n)).length;
+    if (subjHits >= list.length && list.length >= 2 && !EXAMPLES_QUALIFIER.test(String(subject ?? ""))) out.push("the subject lists every featured name as if that were everything");
+  }
+  return out;
+}
+
+/** The names line, always as examples. Her phrasing is primary; others rotate in lightly. */
 export function namesLine(names, variant = 0) {
   const list = (names ?? []).map((n) => (typeof n === "string" ? n : n.name)).filter(Boolean).map(sayName);
   const join = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
   if (list.length === 0) return "";
   return variant % 3 === 2
-    ? `We've been working on a few names, including ${join(list.slice(0, 2))}.`
-    : `Names coming across my desk at the moment are: ${list.join(", ")}.`;
+    ? `We've been working on a range of names, including ${join(list.slice(0, 2))}.`
+    : variant % 3 === 1
+      ? `A few of the names on my desk right now include ${join(list)}, among many others.`
+      : `Some of the names crossing my desk right now include ${join(list)}, among others.`;
 }
 
-/** The default template: warm, personal, a chat ask, the names as a soft aside. */
-export const DEFAULT_PROSPECT_TEMPLATE = Object.freeze({
-  subject: "Re: Up to $1B secondary inquiry: {subject_names}",
-  body: [
-    "Hi {first},",
-    "",
-    "I hope you don't mind the direct note. We've done more than $100M in secondary transactions, and I've been wanting to meet more people who think about late-stage private companies the way you do.",
-    "",
-    "{names_line} Would love to find 15 minutes to compare notes, and I'm happy to talk about what you're looking to add or trim.",
-    "",
-    SIGNATURE,
-    "",
-    OPT_OUT_LINE,
-  ].join("\n"),
-  follow_up: [
-    "Hi {first},",
-    "",
-    "Just floating this back up. {names_line} We've done more than $100M in secondary transactions, and I'd love to find 15 minutes to compare notes on what you're looking to add or trim.",
-    "",
-    SIGNATURE,
-    "",
-    OPT_OUT_LINE,
-  ].join("\n"),
-});
+/**
+ * The templates Monique drafts from. A is the default; "try again" moves to the next one, so a new
+ * draft has a genuinely different opening and structure, never a reworded copy. Every one passes
+ * `prospectProblems` (tests/prospectTemplateReplies.test.ts renders each).
+ */
+export const PROSPECT_VARIANTS = Object.freeze([
+  Object.freeze({
+    subject: "Late-stage secondaries: {subject_names} and others",
+    body: [
+      "Hi {first},",
+      "",
+      "I hope you don't mind the direct note. We've done more than $100M in secondary transactions, and I've been wanting to meet more people who think about late-stage private companies the way you do.",
+      "",
+      "{names_line} Would love to find 15 minutes to compare notes, and I'm happy to talk about what you're looking to add or trim.",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+    follow_up: [
+      "Hi {first},",
+      "",
+      "Just floating this back up. {names_line} We've done more than $100M in secondary transactions, and I'd love to find 15 minutes to compare notes on what you're looking to add or trim.",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+  }),
+  Object.freeze({
+    subject: "Comparing notes on late-stage names",
+    body: [
+      "Hi {first},",
+      "",
+      "Would you be open to 15 minutes to compare notes on late-stage private companies? {names_line}",
+      "",
+      "We've done more than $100M in secondary transactions, so if you're thinking about what to add or trim, we may be able to help.",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+    follow_up: [
+      "Hi {first},",
+      "",
+      "A quick nudge on this. We've done more than $100M in secondary transactions, and I'd value 15 minutes to compare notes on what you're looking to add or trim. {names_line}",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+  }),
+  Object.freeze({
+    subject: "A short hello from West Peek",
+    body: [
+      "Hi {first},",
+      "",
+      "{names_line} That's part of a wider book we work across; we've done more than $100M in secondary transactions.",
+      "",
+      "If you're weighing what to add or trim, could we find 15 minutes to compare notes?",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+    follow_up: [
+      "Hi {first},",
+      "",
+      "Circling back once. If it's useful, I'd be glad to find 15 minutes to compare notes on what you're looking to add or trim. We've done more than $100M in secondary transactions. {names_line}",
+      "",
+      SIGNATURE,
+      "",
+      OPT_OUT_LINE,
+    ].join("\n"),
+  }),
+]);
+/** The default template: variant A. */
+export const DEFAULT_PROSPECT_TEMPLATE = PROSPECT_VARIANTS[0];
 
-/** Subject line names: the first three approved names. */
+/**
+ * WHAT HER WORDS SAY PLAINLY, APPLIED (owner, 25 Oct 2026). Two shapes are read and applied to the
+ * subject, the email and the follow-up: "say 'X' not 'Y'" (also "instead of", "rather than") and
+ * "drop / remove / cut the … line" (the sentence that carries those words). Anything else is kept
+ * on the row as her note, and the reply says so; nothing is guessed. Pure.
+ */
+export function applyTemplateNotes(template, note) {
+  const t = { subject: String(template.subject), body: String(template.body), follow_up: String(template.follow_up) };
+  const applied = [];
+  const kept = [];
+  const Q = `['"‘’“”]`;
+  const clauses = String(note ?? "").split(/\s*(?:;|,\s*(?=(?:and\s+)?(?:say|drop|remove|cut|delete)\b)|\band\s+(?=(?:say|drop|remove|cut|delete)\b)|\n)\s*/i).map((c) => c.trim()).filter(Boolean);
+  for (const c of clauses) {
+    const swap = new RegExp(`^(?:please\\s+)?(?:say|use|write)\\s+${Q}(.+?)${Q}\\s+(?:not|instead of|rather than)\\s+${Q}(.+?)${Q}`, "i").exec(c);
+    if (swap) {
+      const [, want, was] = swap;
+      const re = new RegExp(was.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+      const hit = ["subject", "body", "follow_up"].filter((k) => re.test(t[k]));
+      for (const k of ["subject", "body", "follow_up"]) t[k] = t[k].replace(re, want);
+      (hit.length ? applied : kept).push(hit.length ? `said "${want}" instead of "${was}"` : swap[0]);
+      const rest = c.slice(swap[0].length).replace(/^[\s,.;]*(?:and\s+)?/i, "").trim();
+      if (rest) kept.push(rest);
+      continue;
+    }
+    const drop = /^(?:please\s+)?(?:drop|remove|cut|delete)\s+(?:the\s+)?(.+?)\s+(?:line|sentence|bit|part)\b/i.exec(c);
+    if (drop) {
+      const words = drop[1].toLowerCase().split(/[\s-]+/).filter((w) => w.length > 2 && !["the", "and", "that", "this"].includes(w));
+      let done = false;
+      for (const k of ["body", "follow_up"]) {
+        // Paragraph by paragraph, so the greeting, signature and opt-out keep their places.
+        t[k] = t[k].split("\n\n").map((para) => {
+          if (/^Hi \{first\},$|Sequoia Taylor|no thanks/.test(para)) return para;
+          return para.split(/(?<=[.!?])\s+/).filter((sentence) => {
+            const low = sentence.toLowerCase();
+            const hit = words.length > 0 && words.every((w) => low.includes(w.replace(/s$/, "")));
+            if (hit) done = true;
+            return !hit;
+          }).join(" ");
+        }).filter((para) => para.trim()).join("\n\n");
+      }
+      (done ? applied : kept).push(done ? `dropped the ${drop[1]} line` : drop[0]);
+      const rest = c.slice(drop[0].length).replace(/^[\s,.;]*(?:and\s+)?/i, "").trim();
+      if (rest) kept.push(rest);
+      continue;
+    }
+    kept.push(c);
+  }
+  return { template: t, applied, kept };
+}
+
+/** Subject line names: the first two approved names, said as examples ("… and others" in the template). */
 export function subjectNames(names) {
   // A never-named company is left out of the subject (its allusion is in the body's names line).
-  const list = (names ?? []).map((n) => (typeof n === "string" ? n : n.name)).filter((n) => n && !neverNamed(n)).slice(0, 3);
+  const list = (names ?? []).map((n) => (typeof n === "string" ? n : n.name)).filter((n) => n && !neverNamed(n)).slice(0, 2);
   return list.join(", ");
 }
 
@@ -283,7 +422,7 @@ export function wordCount(body) {
  * Everything wrong with a rendered prospect email. Empty = it may be shown to her for approval.
  * Pinned by tests: banned sales phrases, the chat ask, the $100M line, "we", the word cap, the opt-out.
  */
-export function prospectProblems({ subject, body }) {
+export function prospectProblems({ subject, body }, names = null) {
   const out = [];
   const text = `${subject}\n${body}`;
   for (const re of PROSPECT_BANNED) if (re.test(body)) out.push(`uses a sales phrase (${re.source})`);
@@ -294,6 +433,7 @@ export function prospectProblems({ subject, body }) {
   if (wordCount(body) > PROSPECT_WORD_CAP) out.push(`is ${wordCount(body)} words (cap ${PROSPECT_WORD_CAP})`);
   if (!body.includes(OPT_OUT_LINE)) out.push("has no opt-out line");
   if (/\{[a-z_]+\}/.test(text)) out.push("has an unfilled placeholder");
+  out.push(...featuredNamesProblems({ subject, body }, names));
   return out;
 }
 

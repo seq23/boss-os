@@ -27,6 +27,7 @@ import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
 import { dismissFromMail } from "../capital/dismiss";
+import { prospectTemplateFromMail } from "../lp/templateReply";
 import { secretDoor } from "../service/secretHandoff";
 import { answerBlockFromMail } from "../service/blockReply";
 import { recordConstraints } from "../service/constraints";
@@ -697,7 +698,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * like every other answer: a dismissal changes what her screens and email show.
    */
   const dismissAnswer = !planAnswer && !commentAnswer && !kdpAnswer
-    ? await dismissFromMail(env, readable, now)
+    // …and her numbered answer to the prospect-email card ("5: try again"), the same way (25 Oct 2026).
+    ? (await dismissFromMail(env, readable, now)) ?? (await prospectTemplateFromMail(env, readable, now))
     : null;
 
   /*
@@ -927,7 +929,7 @@ function headline(text: string): string {
     : planAnswer ? "PLAN_ANSWERED"
     : commentAnswer ? "COMMENT_INSTRUCTED"
     : kdpAnswer ? "KDP_ANSWERED"
-    : dismissAnswer ? "MATCH_DISMISSED"
+    : dismissAnswer ? ("outcome" in dismissAnswer ? String(dismissAnswer.outcome) : "MATCH_DISMISSED")
     : closedNote ? "CLOSED"
       : question || closeQuestion ? "NEEDS_CLARITY"
         : triaged.length ? (taskId ? "TRIAGED" : "NOT_ADMITTED")

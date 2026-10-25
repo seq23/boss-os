@@ -546,10 +546,18 @@ export function buildDay(data, now = Date.now()) {
   for (const [name, sec] of Object.entries(m)) if (name !== "catchups") for (const d of sec.decide ?? []) decideRaw.push({ priority: 0, from: name, ...d });
   decideRaw.push(...prospectDecisions(data.prospects ?? null, new Set(decideRaw.map((d) => d.key).filter(Boolean)), now));
   decideRaw.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
-  const decide = decideRaw.map((d) => {
+  /*
+   * EVERY DECIDE CARD SAYS HOW TO ANSWER IT BY REPLY (owner, 25 Oct 2026): its number in this email.
+   * The prospect-email card's reply goes to Monique's template (src/worker/boss/lp/templateReply.ts),
+   * which reads the number against this morning as kept in Boss OS.
+   */
+  const replyHint = (d, n) => (String(d.key ?? "").startsWith("prospect-template:")
+    ? `Reply "${n}: your changes" to change it, "${n}: try again" for a different draft, or "${n}: approved" to approve it.`
+    : `Reply "${n}: …" to this email to answer this one.`);
+  const decide = decideRaw.map((d, i) => {
     const id = idFor("decide", d.key ?? d.title);
     const screen = itemUrl(today, id);
-    return { ...d, id, screen, buttons: [...(d.buttons ?? []), more(screen)] };
+    return { ...d, id, screen, details: [...(d.details ?? []), replyHint(d, i + 1)], buttons: [...(d.buttons ?? []), more(screen)] };
   });
 
   // 2. Deals: each opens its own screen there; the source email is one more tap from it.

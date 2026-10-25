@@ -42,7 +42,8 @@ describe("her buyers are LPs in anything outward", () => {
 describe("a prospect email never names Anthropic", () => {
   it("alludes to it in the names line, leaves it out of the subject, and sweeps an edited template", () => {
     const names = ["OpenAI", "Anthropic", "Anduril"];
-    expect(namesLine(names)).toBe("Names coming across my desk at the moment are: OpenAI, a leading frontier AI lab, Anduril.");
+    // 25 Oct 2026: the names read as examples of a wider book, never the full list.
+    expect(namesLine(names)).toBe("Some of the names crossing my desk right now include OpenAI, a leading frontier AI lab and Anduril, among others.");
     expect(subjectNames(names)).toBe("OpenAI, Anduril");
     for (const touch of [1, 2]) for (const variant of [0, 1, 2]) {
       const r = renderProspect({ ...DEFAULT_PROSPECT_TEMPLATE, body: `${DEFAULT_PROSPECT_TEMPLATE.body}\nWe also see ANTHROPIC PBC and Anthropic's tender.` }, { first: "Alex", names: ["anthropic", ...names], touch, variant });
