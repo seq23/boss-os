@@ -48,7 +48,10 @@ export const BRAND_MAILBOXES = Object.freeze([
 ]);
 export const WORKSPACE_MAILBOXES = Object.freeze([DEFAULT_MAILBOX, ...BRAND_MAILBOXES.map((b) => b.mailbox)]);
 export function mailboxFor(text) {
-  for (const b of BRAND_MAILBOXES) if (b.re.test(String(text ?? ""))) return b.mailbox;
+  // The brand is in her WORDS, never in an address she wrote (live proof, 25 Oct 2026: a guest at
+  // st@time-2-read.com put a plain invite on the time-2-read calendar).
+  const words = String(text ?? "").replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, " ");
+  for (const b of BRAND_MAILBOXES) if (b.re.test(words)) return b.mailbox;
   return DEFAULT_MAILBOX;
 }
 /** "on my personal calendar" / "my gmail calendar": the one calendar no delegation can write. */

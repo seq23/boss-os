@@ -58,6 +58,10 @@ describe("the asks in one email", () => {
     expect(three[0]!.spec).toMatchObject({ name: "Rowan", relation: "cousin", hints: ["Smith family reunion"] });
     expect(three[2]!.spec).toMatchObject({ to: null, pronoun: "her", from_mailbox: "st@time-2-read.com", code: "TESTCODE15", recipient_name: "Rowan" });
   });
+  it("the calendar's brand comes from her words, never from an address (live proof, 25 Oct 2026)", () => {
+    expect(commandsIn({ text: "Send a calendar invite to Avery for Oct 31 at 6am CT, avery@time-2-read.com", now: NOW })[0]!.spec.calendar).toBe("sequoia@westpeek.ventures");
+    expect(commandsIn({ text: "Send a time-2-read calendar invite to Avery for Oct 31 at 6am CT, a@example.com", now: NOW })[0]!.spec.calendar).toBe("st@time-2-read.com");
+  });
   it("an invite with no address finds it first", () => {
     const c = commandsIn({ text: "Schedule a call with Avery Example tomorrow at 2pm", now: NOW });
     expect(c.map((x) => [x.kind, x.waits_on])).toEqual([["lookup", []], ["invite", [0]]]);
