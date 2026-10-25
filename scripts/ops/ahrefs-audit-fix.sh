@@ -118,7 +118,25 @@ cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 # worktree helper and the IN_FLIGHT check; on 16 Oct the owner's checkout there was on a docs branch
 # without those scripts, so the run would have called files that did not exist. Rewritten to the
 # checkout this runner was started from, which is the one that has them.
-"$CLAUDE" -p "$(sed "s#~/GitHub/boss-os#$REPO#g" "$PROMPT_FILE")" \
+PROMPT_TEXT="$(sed "s#~/GitHub/boss-os#$REPO#g" "$PROMPT_FILE")"
+# ─── ONE REPO OF THE SEARCH READINESS QUEUE, WHEN THE DAILY QUEUE RUN ASKS (25 Oct 2026) ─────────
+# scripts/ops/search-readiness-fix.sh works the whole queue one repository at a time so no single
+# pass runs out of turns half way through 242 briefs. SR_SCOPE_REPO narrows THIS pass to section 1b,
+# that repo's briefs only; everything else in the prompt (off-limits list, worktrees, validators,
+# land) still applies. Protected briefs are skipped here: they are fixed only on their own.
+if [ -n "${SR_SCOPE_REPO:-}" ]; then
+  PROMPT_TEXT="$PROMPT_TEXT
+
+## THIS PASS IS SCOPED (daily Search Readiness queue run)
+
+Work ONLY section 1b, and ONLY the briefs in ~/.boss-os/search-readiness/fix-queue.json whose
+\`repo\` is \`$SR_SCOPE_REPO\`. Do not read the Ahrefs mail this pass. Fix EVERY such brief that is not
+\`protected\` — batch them into as few PRs as the repo's own validators allow, and get each green.
+Skip any brief with \`protected\` set; record it as surfaced with the reason. Record every brief in
+findings.json as section 1b says. End with the usual completion sentinel."
+  say "scoped pass: Search Readiness queue, repo $SR_SCOPE_REPO"
+fi
+"$CLAUDE" -p "$PROMPT_TEXT" \
   --model "$MODEL" --max-turns "$MAX_TURNS" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="

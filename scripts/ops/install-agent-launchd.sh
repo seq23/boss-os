@@ -539,6 +539,41 @@ lint_plist "$SR_PLIST"
 launchctl load "$SR_PLIST"
 echo "Installed $SR_LABEL — Monday 06:00 Central."
 
+# ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
+#
+# Owner, 25 Oct 2026: the queue was worked to empty that day; after that it runs WEEKLY, Tuesday 07:30
+# Central (Monday is crowded), working from Monday's 06:00 audit queue; the audit stays Monday. The
+# schedule lives on duty_search_readiness_repair (migration 0305); launchd ticks daily and asks the row
+# (--only-if-due), the same shape as the Thursday Ahrefs pass. By hand: bash scripts/ops/search-readiness-fix.sh
+SRF_LABEL="com.seq.boss-sr-fix"
+SRF_PLIST="$HOME/Library/LaunchAgents/$SRF_LABEL.plist"
+cat > "$SRF_PLIST" <<SRFEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SRF_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh search-readiness-fix.sh --only-if-due -- bash $REPO/scripts/ops/search-readiness-fix.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/sr-fix.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/sr-fix.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+SRFEOF
+
+launchctl unload "$SRF_PLIST" 2>/dev/null || true
+lint_plist "$SRF_PLIST"
+launchctl load "$SRF_PLIST"
+echo "Installed $SRF_LABEL — daily 07:30 Central tick, weekly Tuesday work (asks the duty row)."
+
 # ─── Simone's publication chase — RETIRED 14 September 2026 ─────────────────
 #
 # `duty_kdp_publication` chased KDP case #51496198 until the books were Live. Six of the seven went
@@ -1322,6 +1357,7 @@ require_loaded "$POLL_LABEL"
 require_loaded "$NETWORK_LABEL"
 require_loaded "$PROPS_LABEL"
 require_loaded "$SR_LABEL"
+require_loaded "$SRF_LABEL"
 # ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a
 # "Verified" line that did not mention it — the installer and its own verifier each keeping their own
 # list of jobs, which is the defect this file's comments warn about, inside this file.
