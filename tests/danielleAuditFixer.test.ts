@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error — plain .mjs with no types; the functions under test are the ones the runner calls.
 import { runVerdict, landAll, matchInFlight } from "../scripts/ops/site-audit-lib.mjs";
+import { mayAutoFix, NO_AUTO_FIX_REPOS } from "../src/shared/boss/siteAudit/repoPolicy.mjs";
 
 const ROOT = join(__dirname, "..");
 const WORKTREE = join(ROOT, "scripts/ops/audit-worktree.sh");
@@ -73,10 +74,24 @@ describe("dirty owner checkout → fresh worktree (was: refused)", () => {
   });
 });
 
+describe("the two client grid repo sites are on the full auto-fix lane (owner, 25 Oct 2026)", () => {
+  it("hicks and horse are fixable in every form; the non-grid clients still are not", () => {
+    for (const repo of ["hicks-consulting-canonical", "horse-legal-guide-velocity"]) {
+      expect(NO_AUTO_FIX_REPOS).not.toContain(repo);
+      expect(mayAutoFix(repo)).toBe(true);
+      expect(mayAutoFix(`seq23/${repo}`)).toBe(true);
+      expect(mayAutoFix(`/Users/sequoiataylor/GitHub/${repo}`)).toBe(true);
+    }
+    for (const repo of ["dianne-place-recovery-services", "sheila-creator-dashboard", "sheila-bruce", "mercedes-creator-dashboard", "justbeingmercedes"]) {
+      expect(mayAutoFix(repo)).toBe(false);
+    }
+  });
+});
+
 describe("client repo → report only, never a branch or a land", () => {
   it("audit-worktree refuses with CLIENT_REPO and cuts nothing", () => {
-    const { root } = fakeRoot("hicks-consulting-canonical");
-    const r = spawnSync("bash", [WORKTREE, "hicks-consulting-canonical"], { env: { ...GIT_ENV, AUDIT_GITHUB_ROOT: root }, encoding: "utf8" });
+    const { root } = fakeRoot("dianne-place-recovery-services");
+    const r = spawnSync("bash", [WORKTREE, "dianne-place-recovery-services"], { env: { ...GIT_ENV, AUDIT_GITHUB_ROOT: root }, encoding: "utf8" });
     expect(r.status).toBe(20);
     expect(r.stderr).toMatch(/NAMED STOP \[CLIENT_REPO\]/);
     expect(readdirSync(root).filter((d) => d.startsWith(".wt-danielle"))).toEqual([]);
@@ -85,12 +100,12 @@ describe("client repo → report only, never a branch or a land", () => {
 
   it("landAll never runs checks or land for a client repo, and a client_repo row is not red", () => {
     const calls: string[][] = [];
-    const payload = { findings: [{ disposition: "fixed_pr", repo: "hicks-consulting-canonical", pr_url: "https://github.com/x/y/pull/1" }] };
+    const payload = { findings: [{ disposition: "fixed_pr", repo: "dianne-place-recovery-services", pr_url: "https://github.com/x/y/pull/1" }] };
     landAll(payload, { run: (c: string, a: string[]) => { calls.push([c, ...a]); return { status: 0, out: "" }; } });
     expect(calls).toEqual([]);
     expect((payload.findings[0] as any).land).toBe("refused_policy");
 
-    const v = runVerdict({ findings: [{ disposition: "client_repo", repo: "hicks-consulting-canonical", project: "Hicks", headline: "CLIENT_REPO: 4 broken links" }] });
+    const v = runVerdict({ findings: [{ disposition: "client_repo", repo: "dianne-place-recovery-services", project: "Dianne", headline: "CLIENT_REPO: 4 broken links" }] });
     expect(v.red).toBe(false);
   });
 });

@@ -207,7 +207,7 @@ export function velocityCannotBeAutoFixed(files) {
   const bad = [];
 
   if (NO_AUTO_FIX.length === 0) return ["the off-limits list is EMPTY, so this guard would examine nothing and pass."];
-  for (const client of ["hicks-consulting-canonical", "dianne-place-recovery-services"]) {
+  for (const client of ["dianne-place-recovery-services", "sheila-creator-dashboard", "mercedes-creator-dashboard"]) {
     if (!isClientRepo(client)) bad.push(`${client} is not on the list as a client repo. Client repos stay out of Boss OS; the fixer may never branch one.`);
     if (mayAutoFix(client)) bad.push(`mayAutoFix() allowed the client repo ${client}.`);
     if (mayAutoFix(`/Users/sequoiataylor/GitHub/${client}`)) bad.push(`mayAutoFix() allowed ${client} as a full path — the form the local job holds.`);
@@ -220,12 +220,13 @@ export function velocityCannotBeAutoFixed(files) {
   }
   if (mayAutoFix("")) bad.push("mayAutoFix() allowed an EMPTY repository name. 'I could not tell which repo this is' must never resolve to 'go ahead and commit'.");
   if (mayAutoFix(null)) bad.push("mayAutoFix() allowed a null repository name.");
-  for (const fixable of ["WPP-llm", "sprylabs-hpc-site", "local-guides-citation-velocity", "local-guides-generator", "p-n-p"]) {
+  // Owner, 25 Oct 2026: the two client grid repo sites get the full auto-fix lane too.
+  for (const fixable of ["WPP-llm", "sprylabs-hpc-site", "local-guides-citation-velocity", "local-guides-generator", "p-n-p", "hicks-consulting-canonical", "horse-legal-guide-velocity"]) {
     if (!mayAutoFix(fixable)) {
       bad.push(`mayAutoFix() refused ${fixable}, which IS fixable. Owner, 16 Oct 2026: "fix danielle's job so she can actually fix things"; collisions are handled by the worktree and the IN_FLIGHT check, not by a ban.`);
     }
   }
-  if (!whyNoAutoFix("hicks-consulting-canonical")) {
+  if (!whyNoAutoFix("dianne-place-recovery-services")) {
     bad.push("whyNoAutoFix() gives no reason for a client repo, so a refusal cannot explain itself.");
   }
   for (const d of ["off_limits", "none", "ahrefs_side", "client_repo", "in_flight", "ahrefs_credits"]) {

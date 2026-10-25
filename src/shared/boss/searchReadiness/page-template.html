@@ -1,0 +1,282 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Search Readiness Checklist</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: a working checklist. Lessons first (why), then ten phases of items with a tick box, a why, and a how-to-check; a site switcher keeps one tick-state per site in this browser. */
+  :root {
+    --bg: #f5f6f8;
+    --fg: #1b1f27;
+    --muted: #5d6573;
+    --rule: #d8dce3;
+    --panel: #ffffff;
+    --panel-2: #eef1f6;
+    --accent: #2f4fb3;
+    --accent-soft: #e2e8fa;
+    --ok: #2b7a4b;
+    --warn: #b06a0c;
+    --bad: #b3362f;
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --body: "Public Sans", "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #13161c; --fg: #e7e9ee; --muted: #9ba3b1; --rule: #2b303a; --panel: #1a1e26; --panel-2: #20252f;
+      --accent: #8aa3ee; --accent-soft: #1f2a4a; --ok: #6fc48f; --warn: #e0a94a; --bad: #e07a73; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #13161c; --fg: #e7e9ee; --muted: #9ba3b1; --rule: #2b303a; --panel: #1a1e26; --panel-2: #20252f;
+    --accent: #8aa3ee; --accent-soft: #1f2a4a; --ok: #6fc48f; --warn: #e0a94a; --bad: #e07a73; color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 72px; }
+  header { border-bottom: 2px solid var(--fg); padding-bottom: 20px; margin-bottom: 24px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(32px, 5vw, 46px); line-height: 1.05; margin: 8px 0 12px; text-wrap: balance; letter-spacing: -.01em; }
+  .lede { max-width: 66ch; margin: 0; font-size: 17px; }
+  .lede b { color: var(--accent); }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 22px; margin: 40px 0 12px; letter-spacing: -.005em; text-wrap: balance; }
+  h3 { font-family: var(--display); font-weight: 700; font-size: 17px; margin: 22px 0 8px; }
+  p { max-width: 70ch; }
+  code { font-family: var(--mono); font-size: 13px; background: var(--panel-2); padding: 1px 5px; border-radius: 3px; }
+  pre { font-family: var(--mono); font-size: 13px; background: var(--panel-2); padding: 12px 14px; overflow-x: auto; border-radius: 4px; line-height: 1.5; }
+  /* nav */
+  .nav { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 8px; padding: 0; list-style: none; font-size: 14px; }
+  .nav a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; }
+  .nav a:hover, .nav a:focus-visible { border-bottom-color: var(--accent); outline: none; }
+  /* lessons */
+  .lessons { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .lesson { background: var(--panel); border: 1px solid var(--rule); border-top: 3px solid var(--bad); padding: 14px 16px; min-width: 0; }
+  .lesson h3 { margin: 0 0 6px; font-size: 16px; }
+  .lesson p { margin: 0 0 6px; font-size: 14.5px; }
+  .lesson .k { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  /* site switcher */
+  .bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg); border-bottom: 1px solid var(--rule); margin: 0 -20px 8px; padding: 10px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .bar label { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .bar input { font: 15px var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 10px; min-width: 220px; }
+  .bar .prog { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .bar button { font: 13px var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+  .bar button:hover, .bar button:focus-visible { border-color: var(--accent); outline: none; }
+  /* phases */
+  .phase { border: 1px solid var(--rule); background: var(--panel); margin: 18px 0; }
+  .phase-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 14px 18px; border-bottom: 1px solid var(--rule); background: var(--panel-2); }
+  .phase-head h2 { margin: 0; font-size: 19px; }
+  .phase-head .when { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .phase-head .count { margin-left: auto; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .item { display: grid; grid-template-columns: 28px 1fr; gap: 10px 12px; padding: 12px 18px; border-bottom: 1px solid var(--rule); }
+  .item:last-child { border-bottom: 0; }
+  .item input[type=checkbox] { width: 18px; height: 18px; margin: 3px 0 0 2px; accent-color: var(--accent); cursor: pointer; }
+  .item .t { font-weight: 600; }
+  .item .t .bad { color: var(--bad); font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin-left: 8px; }
+  .item .why { font-size: 14.5px; margin: 2px 0 0; color: var(--fg); }
+  .item .how { font-size: 13.5px; margin: 4px 0 0; color: var(--muted); }
+  .item .how code { font-size: 12.5px; }
+  .item.done .t { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--rule); }
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .tbl { overflow-x: auto; }
+  /* order list */
+  ol.order { padding-left: 22px; max-width: 70ch; }
+  ol.order li { margin-bottom: 8px; }
+  footer { margin-top: 44px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--muted); }
+  @media (max-width: 760px) { .lessons { grid-template-columns: 1fr; } .bar input { min-width: 0; flex: 1 1 160px; } }
+  @media (prefers-reduced-motion: no-preference) { .item { transition: background .15s; } }
+  .item:has(input:focus-visible) { background: var(--accent-soft); }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Search readiness · SEO, AEO, GEO · written 11 October 2026 from the portfolio audit · phase J added 13 October 2026</div>
+    <h1>Search Readiness Checklist</h1>
+    <p class="lede">What a site needs so search engines index it, answer engines quote it, and AI engines cite it. <b>Every item has a why and a way to check it</b>, because the sites that sat for months with no traction were not missing effort. They were missing a handful of switches nobody had looked at.</p>
+  </header>
+
+  <ul class="nav">
+    <li><a href="#lessons">The seven switches</a></li>
+    <li><a href="#checklist">Checklist</a></li>
+    <li><a href="#order">Launch order</a></li>
+    <li><a href="#leadgen">Lead-gen verticals</a></li>
+    <li><a href="#zero">Doing it for $0</a></li>
+    <li><a href="#tools">Tools</a></li>
+    <li><a href="#numbers">Numbers that mean something</a></li>
+    <li><a href="#terms">SEO, AEO, GEO</a></li>
+  </ul>
+
+  <h2 id="lessons">The seven switches that were off</h2>
+  <p>Each of these was found on a live site in October 2026, after months of content work. None shows up in a Lighthouse score. All seven are now checklist items below, marked <span style="color:var(--bad);font-family:var(--mono);font-size:11px;letter-spacing:.06em">BURNED</span>.</p>
+  <div class="lessons">
+    <div class="lesson"><div class="k">1 · Links</div><h3>Backlinks marked nofollow pass nothing</h3><p>The three library sites sent 341 links into the portfolio, every one tagged <code>rel="nofollow sponsored"</code>. That tag is the instruction "do not count this link". The backlink network had been running for months at zero effect.</p><p><b>Check:</b> look at the <code>rel</code> attribute on every link you are counting on. Only paid links and links to sites you do not vouch for should carry nofollow or sponsored.</p></div>
+    <div class="lesson"><div class="k">2 · Indexing</div><h3>A noindex tag on the public page</h3><p>aplayermode.com shipped with <code>&lt;meta name="robots" content="noindex"&gt;</code>, added to keep it out of an internal registry. It also kept it out of Google. Robots, sitemap and llms files all redirected to the homepage as well.</p><p><b>Check:</b> <code>curl -sL site/ | grep -i robots</code> on every public page type, and fetch /robots.txt, /sitemap.xml, /llms.txt expecting 200 and the right content type.</p></div>
+    <div class="lesson"><div class="k">3 · Canonical</div><h3>Canonical pointing at a site you don't own</h3><p>detoxdenver.org's every page declared a canonical on a Webador site from an earlier era. Google credited that site and ignored this one: 112 pages, 4 impressions a month. Search Console rejected the sitemap because its URLs were on the other host.</p><p><b>Check:</b> <code>rel="canonical"</code> on every page is the page's own URL on the one host you chose; www redirects to it; sitemap URLs match it.</p></div>
+    <div class="lesson"><div class="k">4 · URLs</div><h3>Ranked URLs returning 404 after a restructure</h3><p>virtualagency-os.com moved pages under /programmatic/ and left the old URLs dead. 149 of them had been ranking and carried 72% of the site's impressions. Traffic fell to 26 impressions a month and nobody noticed because nothing measured it.</p><p><b>Check:</b> every URL Search Console has ever shown must answer 200 or 301. Generate redirects from the Search Console export on every build and fail the build if a measured URL would 404.</p></div>
+    <div class="lesson"><div class="k">5 · Demand</div><h3>Hundreds of pages for searches nobody makes</h3><p>Content programs were writing to 120 and 240 "target queries" taken from keyword tools. After six months, zero of those queries had ever appeared in Search Console for any site. Google had crawled the pages and declined to index most of them as thin or duplicate.</p><p><b>Check:</b> a target query must have a measured number (Search Console impressions, or a measured volume). No number, no page. Strengthen the pages Google already shows at positions 5 to 15 before writing anything new.</p></div>
+    <div class="lesson"><div class="k">6 · Sitemap</div><h3>A sitemap that says every page changed today</h3><p>Daily build cycles rewrote every page's <code>lastmod</code> to today, every day, on 115 and 323-page sites. Google learns within weeks that a sitemap like that is noise and stops trusting it for crawl scheduling.</p><p><b>Check:</b> lastmod comes from a content hash of the page's main content, not the build date. A rebuild with no content change keeps the old date. Pin it with a test.</p></div>
+    <div class="lesson"><div class="k">7 · Reach</div><h3>Impressions landing on privacy and terms pages</h3><p>approvalprep.com's few impressions were on its legal pages, and eight guides were in the sitemap but reachable by no link on the site. Google had nothing better to show.</p><p><b>Check:</b> noindex the legal and utility pages; every content page reachable within three clicks from the homepage; no sitemap URL that no page links to.</p></div>
+  </div>
+
+  <div class="bar" id="bar">
+    <label for="site">Site</label>
+    <input id="site" type="text" placeholder="e.g. clientsite.com" autocomplete="off">
+    <span class="prog" id="prog">0 of 0 ticked</span>
+    <button type="button" id="reset">Clear ticks for this site</button>
+  </div>
+  <p style="font-size:13.5px;color:var(--muted);margin-top:0">Ticks are saved in this browser only, one set per site name. Type a different site name to start a fresh set.</p>
+
+  <h2 id="checklist">The checklist</h2>
+
+  <!--PHASE:A-->
+
+  <!--PHASE:B-->
+
+  <!--PHASE:C-->
+
+  <!--PHASE:D-->
+
+  <!--PHASE:E-->
+
+  <!--PHASE:F-->
+
+  <!--PHASE:G-->
+
+  <!--PHASE:H-->
+
+
+  <h2 id="leadgen">A lead-gen or hyperlocal vertical</h2>
+  <p>Added 13 October 2026 while building the sixth local-guides vertical (a Memphis senior-care guide that routes family leads to facilities). Each item was a gap found in the first brief, not in the sites. The pattern: a canonical site that holds the guides and the intake, a companion citation site that routes to it, a directory built from a public registry, and a lead funnel that is measured next to the search numbers.</p>
+  <!--PHASE:J-->
+
+  <h2 id="order">Launch order for a new site</h2>
+  <ol class="order">
+    <li><b>Host decisions first:</b> one canonical domain, www redirect, HTTPS, the Search Console domain property verified and the service account added. Do this before the first page exists.</li>
+    <li><b>Template before content:</b> title, description, H1, definition slot, FAQ slot, social tags, the JSON-LD graph, icons, canonical. Every page inherits them; nothing is retrofitted.</li>
+    <li><b>Crawl files:</b> robots.txt, sitemap with content-derived lastmod, llms.txt, 404 page. Validators for all of them, proven negatively.</li>
+    <li><b>Measurement wired before launch:</b> daily Search Console collection, daily coverage, Clarity, CTA refs with a readable token, IndexNow key and ping, sitemap submission in the cycle.</li>
+    <li><b>Launch with 5 to 15 strong pages, not 115 thin ones.</b> Each answers a measured query with a definition, an FAQ and specific facts.</li>
+    <li><b>For a lead-gen vertical:</b> the canonical site ships its thick guides, FAQ page and intake first, from the measured shape of an existing vertical; the directory comes from the public registry with contact coverage measured; the companion citation site routes to the canonical intake at every turn; the lead funnel is in the weekly report before the first lead (phase J).</li>
+    <li><b>Google Business Profile on day one</b> for anything local; phone, photos, category, hours; the Maps link on the site.</li>
+    <li><b>Links:</b> followed, contextual, capped, disclosed; aimed at the pages you are strengthening.</li>
+    <li><b>Week 2 review:</b> coverage counts, first queries, which pages Google shows. Strengthen those; freeze everything else.</li>
+    <li><b>Week 6 review:</b> consolidate what Google declined; rebuild the target set from what it showed; write new pages only for measured queries.</li>
+  </ol>
+
+  <h2 id="zero">Doing all of it for $0</h2>
+  <p>Every item on this page can be run at no monthly cost. The portfolio spent $98.84 on model calls between August and October 2026 and nothing paid produced a measurable result; the three things that moved numbers (removing a noindex, fixing a canonical, following the backlinks) cost nothing. On 11 October 2026 every repo was moved to the posture below and the key that paid for the calls was capped at $0 a month, so a mistake cannot spend.</p>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Job</th><th>What it cost before</th><th>What does it now, free</th></tr></thead>
+    <tbody>
+      <tr><td>Hosting and deploys</td><td>$0 already</td><td>Cloudflare Pages with Git integration. No deploy step in CI, nothing to pay for bandwidth.</td></tr>
+      <tr><td>CI minutes</td><td>Private repos bill Actions minutes</td><td>Public repos get unlimited Actions minutes. Scrub history of anything private (addresses, keys) before flipping; a test pins that the repo stays public.</td></tr>
+      <tr><td>Model calls (drafting, FAQ questions, localisation, demand pass)</td><td>Sonnet and Haiku through OpenRouter, $98.84 over ten weeks</td><td>OpenRouter <code>:free</code> models only (Nemotron 3 Ultra and Super, Gemma 4 31B and 26B, in that order). One router module, <code>max_cost_usd: 0</code>, refuses any model id that is not a <code>:free</code> variant, fails loudly if a receipt shows any cost.</td></tr>
+      <tr><td>Query discovery</td><td>A paid "Twin" engine and keyword tools</td><td>Google autocomplete seeded from the queries Search Console already shows, run every Monday: 2,166 candidates from 224 seeds for $0. People Also Ask and Reddit block bots and are recorded as unavailable, never retried.</td></tr>
+      <tr><td>Citation and AI-answer probes</td><td>Scheduled paid probes</td><td>Dispatch only, behind <code>confirm_paid=true</code>. A scheduled run exits with the named stop <code>PAID_PROBE_DISABLED_BY_OWNER_POLICY</code>.</td></tr>
+      <tr><td>Search performance data</td><td>Semrush estimates</td><td>Search Console API through a service account: queries, pages, coverage, sitemaps. 2,000 URL inspections a day, free.</td></tr>
+      <tr><td>Behaviour analytics</td><td>$0 already</td><td>Microsoft Clarity, one project per host, loader keyed by hostname.</td></tr>
+      <tr><td>Telling search engines about changes</td><td>$0 already</td><td>IndexNow key file plus a ping in the deploy cycle; Bing Webmaster Tools, which also feeds ChatGPT search.</td></tr>
+      <tr><td>The weekly report</td><td>A model reading dashboards</td><td>A Monday workflow that computes week-over-week per site, emails through Resend's free tier and opens one GitHub issue per red site, closing it itself when the number recovers.</td></tr>
+    </tbody>
+  </table></div>
+
+  <p><b>What free models cost you instead of money.</b> They rate-limit, one listed free model refused the key outright, and long drafts fail validation more often. The answer is never to pay: shorter structured prompts, a validation gate on every draft, a retry on the next free model, and when every free model fails, a named stop (<code>OPENROUTER_NO_FREE_MODEL</code> or <code>DRAFT_FAILED_VALIDATION</code>) that puts the topic back in next week's queue. Nothing waits on a person and nothing spends.</p>
+
+  <!--PHASE:I-->
+
+  <h3 style="font-family:var(--display);margin:22px 0 8px">Setting it up in a new repo in one pass</h3>
+  <ol>
+    <li><b>Copy the three templates</b> from existing repos: the router module (<code>how-we-know/loop/llm_router.py</code> and its test), the daily Search Console workflow (<code>hicks-consulting-canonical/.github/workflows</code>, the search measurement loop), and the Monday report with discovery (<code>local-guides-citation-velocity/.github/workflows/search-outcomes-weekly.yml</code>).</li>
+    <li><b>Create the OpenRouter key</b> named after the repo, set its monthly limit to $0 in the dashboard, add it as the repo's Actions secret. Add <code>GSC_SERVICE_ACCOUNT_JSON</code> and the Resend key the same way.</li>
+    <li><b>Run the daily workflow by hand once</b> and check the three data files land. Run the Monday workflow once and check the email and the receipt.</li>
+    <li><b>Break each guard once</b>: put a paid model in the config, watch the test fail, restore. Dispatch the probe without the flag, read the named stop.</li>
+    <li><b>Then start the content jobs.</b> Every one reads measured targets, routes through the router, and leaves a receipt with cost 0.</li>
+  </ol>
+
+  <h2 id="tools">Tools and what each one tells you</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Tool</th><th>Tells you</th><th>Cost</th></tr></thead>
+    <tbody>
+      <tr><td><code>curl -sL URL</code> and grep</td><td>What the live page actually serves: robots meta, canonical, og tags, schema types, rel attributes. The single most useful check and the one everybody skips.</td><td>Free</td></tr>
+      <tr><td>Search Console (web and API)</td><td>Queries, impressions, clicks, position per page; sitemap status; URL Inspection coverage. The only true source for Google performance.</td><td>Free; API 2,000 inspections/day</td></tr>
+      <tr><td>Lighthouse / PageSpeed Insights</td><td>Performance, accessibility, SEO basics, best practices. A floor check, not a growth signal.</td><td>Free; PSI API has a daily quota</td></tr>
+      <tr><td>Rich Results Test (search.google.com/test/rich-results)</td><td>Whether the structured data is valid and which rich results it qualifies for.</td><td>Free</td></tr>
+      <tr><td>IndexNow</td><td>Tells Bing and partners about changed URLs within hours.</td><td>Free</td></tr>
+      <tr><td>Microsoft Clarity</td><td>Sessions, scroll depth, time on page, recordings. Shows that visitors leave in 14 seconds.</td><td>Free</td></tr>
+      <tr><td>Bing Webmaster Tools</td><td>Bing's view of indexing and queries; feeds ChatGPT search and DuckDuckGo.</td><td>Free</td></tr>
+      <tr><td>Semrush / Ahrefs</td><td>Estimated volumes and backlink profiles. Useful for finding candidates; never a substitute for Search Console numbers. Semrush mapped queries to sites that had never been shown for them.</td><td>Paid</td></tr>
+      <tr><td>Your own crawl script</td><td>Orphan pages, link rel attributes, word counts, duplicate titles, schema per page. Ten lines of Python; run it before trusting any tool above.</td><td>Free</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="numbers">Numbers that mean something</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Metric</th><th>Where</th><th>What a healthy site shows</th></tr></thead>
+    <tbody>
+      <tr><td>Indexed share</td><td>URL Inspection coverage, daily</td><td>80% or more of sitemap URLs "submitted and indexed". Under 40% with a large "crawled, not indexed" count means consolidate.</td></tr>
+      <tr><td>Impressions and clicks, 28 days</td><td>Search Console</td><td>Rising month over month; clicks above zero on the pages you strengthened. 4 clicks a month across 12 sites is the number this checklist was written against.</td></tr>
+      <tr><td>Average position on shown queries</td><td>Search Console</td><td>Pages at 5–15 are the ones to work; pages at 50–100 are not competing and need a different page or no page.</td></tr>
+      <tr><td>Pages with any impression</td><td>Search Console, page dimension</td><td>More than a handful. One page out of 116 means the site is not a site to Google yet.</td></tr>
+      <tr><td>Measured URLs returning 404</td><td>Your build validator</td><td>Zero, always.</td></tr>
+      <tr><td>Followed inbound links to the pages you are strengthening</td><td>Crawl of the linking sites; Search Console Links report</td><td>More than zero, from more than one domain.</td></tr>
+      <tr><td>CTA clicks per ref</td><td>Daily click file</td><td>Readable (status ok), and rising on the pages that get impressions.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="terms">SEO, AEO, GEO in one line each</h2>
+  <p><b>SEO</b> (search engine optimisation): getting indexed and ranked in Google and Bing results. Host, crawl, on-page, links. <b>AEO</b> (answer engine optimisation): being the extracted answer in featured snippets, "People also ask" and voice assistants. Definition paragraphs, question headings, snippet-length answers, lists and tables, FAQ markup. <b>GEO</b> (generative engine optimisation): being cited by AI answer engines (Google AI Overviews, ChatGPT search, Perplexity, Claude). Entity clarity in structured data, llms.txt, AI crawlers allowed, specific sourced facts, a named author and organisation. The three overlap almost entirely; a page built for one serves the others.</p>
+
+  <footer>Written 11 October 2026 from the audit and repair of 25 sites in one weekend. Every "burned" item was a live defect found that weekend. The $0 section was added the same day, after every repo moved to free models and the paying key was capped. Phase J was added 13 October 2026 from the senior-living vertical build, where the first brief got the guide placement and the companion-site link pattern wrong. Ticks are stored per site in this browser only and never leave it.</footer>
+</div>
+
+<script>
+(function () {
+  var items = Array.prototype.slice.call(document.querySelectorAll('.item'));
+  var siteInput = document.getElementById('site');
+  var prog = document.getElementById('prog');
+  var resetBtn = document.getElementById('reset');
+  function key() { var s = (siteInput.value || '').trim().toLowerCase() || '_default'; return 'srl:' + s; }
+  function load() {
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(key()) || '{}') || {}; } catch (e) { saved = {}; }
+    items.forEach(function (it) {
+      var cb = it.querySelector('input[type=checkbox]');
+      var on = !!saved[it.dataset.id];
+      cb.checked = on; it.classList.toggle('done', on);
+    });
+    counts();
+  }
+  function save() {
+    var out = {};
+    items.forEach(function (it) { if (it.querySelector('input[type=checkbox]').checked) out[it.dataset.id] = 1; });
+    try { localStorage.setItem(key(), JSON.stringify(out)); } catch (e) {}
+  }
+  function counts() {
+    var total = 0, done = 0;
+    document.querySelectorAll('.phase').forEach(function (ph) {
+      var ps = ph.querySelectorAll('.item'); var pd = 0;
+      ps.forEach(function (it) { if (it.querySelector('input[type=checkbox]').checked) pd++; });
+      ph.querySelector('.count').textContent = pd + ' / ' + ps.length;
+      total += ps.length; done += pd;
+    });
+    prog.textContent = done + ' of ' + total + ' ticked';
+  }
+  items.forEach(function (it) {
+    it.querySelector('input[type=checkbox]').addEventListener('change', function (e) {
+      it.classList.toggle('done', e.target.checked); save(); counts();
+    });
+  });
+  siteInput.addEventListener('input', function () {
+    try { localStorage.setItem('srl:lastSite', siteInput.value); } catch (e) {}
+    load();
+  });
+  resetBtn.addEventListener('click', function () {
+    items.forEach(function (it) { it.querySelector('input[type=checkbox]').checked = false; it.classList.remove('done'); });
+    save(); counts();
+  });
+  try { siteInput.value = localStorage.getItem('srl:lastSite') || ''; } catch (e) {}
+  load();
+})();
+</script>
+
+</body></html>

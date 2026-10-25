@@ -38,8 +38,14 @@ const CLIENT_WHY =
  * KIND, because a bare list decays into folklore and the next reader cannot tell a deliberate
  * exclusion from an old one that should have been removed — which is exactly what happened to LGCV.
  */
+/*
+ * hicks-consulting-canonical LEFT THIS LIST on 25 Oct 2026 (owner ruling, through the Search
+ * Readiness work): horselegalguide.com and hicksconsulting.org get the same auto-fix lane as every
+ * other grid repo site. They are still client properties (grid.mjs owner "client"), so anything
+ * needing her there is client-facing — but their site defects are fixed, not reported and left.
+ * The repositories below are clients who are not grid repo sites; they stay report-only.
+ */
 export const NO_AUTO_FIX = [
-  { repo: "hicks-consulting-canonical", kind: "client", why: CLIENT_WHY },
   { repo: "dianne-place-recovery-services", kind: "client", why: CLIENT_WHY },
   { repo: "sheila-creator-dashboard", kind: "client", why: CLIENT_WHY },
   { repo: "sheila-bruce", kind: "client", why: CLIENT_WHY },

@@ -1,0 +1,1519 @@
+{
+ "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (72 = the page's 71 plus j9) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
+ "version": 1,
+ "page_item_count": 71,
+ "kinds": [
+  "guide",
+  "hyperlocal",
+  "brand",
+  "authority"
+ ],
+ "categories": [
+  "side_business",
+  "client",
+  "own_business"
+ ],
+ "cosmetic_items": [
+  "a9",
+  "a10",
+  "b6",
+  "b8",
+  "b9"
+ ],
+ "phases": [
+  {
+   "id": "A",
+   "title": "A · Host and crawl",
+   "when": "before launch, never after"
+  },
+  {
+   "id": "B",
+   "title": "B · Every page",
+   "when": "template level, so new pages inherit it"
+  },
+  {
+   "id": "C",
+   "title": "C · Entity and structured data (GEO)",
+   "when": "one JSON-LD graph per page, from the template"
+  },
+  {
+   "id": "D",
+   "title": "D · Answer engines (AEO)",
+   "when": "content shape, per page"
+  },
+  {
+   "id": "E",
+   "title": "E · Discovery and measurement",
+   "when": "launch day, then automated daily"
+  },
+  {
+   "id": "F",
+   "title": "F · Demand and the content program",
+   "when": "before writing page two"
+  },
+  {
+   "id": "G",
+   "title": "G · Links and authority",
+   "when": "the part nobody checks"
+  },
+  {
+   "id": "H",
+   "title": "H · Guards, so it stays fixed",
+   "when": "one validator per item above"
+  },
+  {
+   "id": "J",
+   "title": "J · Lead-gen and hyperlocal verticals",
+   "when": "brief stage, before any agent runs"
+  },
+  {
+   "id": "I",
+   "title": "I · The $0 posture in a new repo",
+   "when": "first day, before any content job runs"
+  }
+ ],
+ "items": [
+  {
+   "id": "a1",
+   "phase": "A",
+   "title": "One canonical host; every other host 301s to it",
+   "title_html": "One canonical host; every other host 301s to it",
+   "burned": true,
+   "why_html": "Google treats www and apex, and any old domain, as separate sites unless told otherwise. Split signals rank nothing.",
+   "how_html": "<code>curl -sI https://www.site.com/ | grep -i location</code> → the apex. Repeat for every alias domain.",
+   "check": {
+    "mode": "auto",
+    "type": "host_redirect",
+    "source": "canonical",
+    "how": "GET the other host (www or apex) and every alias in the site's manifest; each must answer 301/308 to the canonical host.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "a2",
+   "phase": "A",
+   "title": "Self-referencing canonical on every page, on that host",
+   "title_html": "Self-referencing canonical on every page, on that host",
+   "burned": true,
+   "why_html": "The canonical is the page's statement of its own address. Pointing it anywhere else hands the page away.",
+   "how_html": "Sample 10 pages: <code>curl -sL URL | grep -o 'rel=\"canonical\" href=\"[^\"]*\"'</code>. A validator should assert canonical = own URL on every generated page.",
+   "check": {
+    "mode": "auto",
+    "type": "canonical_self",
+    "source": "canonical",
+    "how": "On the homepage and sampled sitemap pages, rel=canonical must equal the page's own URL on the canonical host.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "a3",
+   "phase": "A",
+   "title": "No noindex on any public page; noindex on legal, utility and thank-you pages",
+   "title_html": "No noindex on any public page; noindex on legal, utility and thank-you pages",
+   "burned": true,
+   "why_html": "A single noindex on the homepage hides the site. Legal pages that are indexable absorb impressions a content page should get.",
+   "how_html": "Grep every built page for <code>name=\"robots\"</code>; allowlist the pages that may carry noindex; fail on any other.",
+   "check": {
+    "mode": "auto",
+    "type": "indexable_pages",
+    "source": "html",
+    "how": "No sampled sitemap page and not the homepage may carry a robots noindex (meta tag or X-Robots-Tag).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "a4",
+   "phase": "A",
+   "title": "robots.txt served at the root with a Sitemap line, AI crawlers allowed",
+   "title_html": "robots.txt served at the root with a Sitemap line, AI crawlers allowed",
+   "burned": false,
+   "why_html": "Answer engines (OAI-SearchBot, PerplexityBot, ClaudeBot, Google-Extended) obey robots. Blocking them by default is why a site never gets cited.",
+   "how_html": "<code>curl -s https://site.com/robots.txt</code> → 200, text/plain, <code>Sitemap:</code> line present, per-agent Allow for the AI crawlers you want.",
+   "check": {
+    "mode": "auto",
+    "type": "robots_ok",
+    "source": "robots",
+    "how": "robots.txt answers 200 as text/plain with a Sitemap line, and none of the AI crawlers is disallowed from /.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ],
+    "params": {
+     "ai_agents": [
+      "OAI-SearchBot",
+      "GPTBot",
+      "PerplexityBot",
+      "ClaudeBot",
+      "Google-Extended"
+     ]
+    }
+   }
+  },
+  {
+   "id": "a5",
+   "phase": "A",
+   "title": "sitemap.xml (or an index) listing only indexable, 200-serving URLs on the canonical host",
+   "title_html": "sitemap.xml (or an index) listing only indexable, 200-serving URLs on the canonical host",
+   "burned": false,
+   "why_html": "Redirecting or noindexed URLs in the sitemap are \"errors\" in Search Console and waste the crawl budget on a new domain.",
+   "how_html": "Validator: sitemap URL count equals indexable page count; no sitemap URL redirects; none noindexed.",
+   "check": {
+    "mode": "auto",
+    "type": "sitemap_valid",
+    "source": "sitemap",
+    "how": "sitemap.xml (and every child of an index) parses and is not empty; every URL is on the canonical host; sampled URLs answer 200 without a redirect.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "a6",
+   "phase": "A",
+   "title": "lastmod comes from content, not from the build date",
+   "title_html": "lastmod comes from content, not from the build date",
+   "burned": true,
+   "why_html": "Dates that change daily on every page teach Google the sitemap is noise.",
+   "how_html": "Test: build twice with no content change; every lastmod is identical. Header, footer and nav changes must not count as content.",
+   "check": {
+    "mode": "auto",
+    "type": "lastmod_from_content",
+    "source": "sitemap",
+    "how": "Fails when 90% or more of a sitemap's URLs (20 or more) carry the same lastmod dated within the last two days: that is a build date, not a content date.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "a7",
+   "phase": "A",
+   "title": "llms.txt at the root (and llms-full.txt for a large site)",
+   "title_html": "llms.txt at the root (and llms-full.txt for a large site)",
+   "burned": false,
+   "why_html": "The plain-text summary AI engines read first: what the site is, what it offers, where the key pages are, how to cite it.",
+   "how_html": "<code>curl -s https://site.com/llms.txt</code> → 200 text/plain, under ~2,000 words, links resolve.",
+   "check": {
+    "mode": "auto",
+    "type": "llms_txt",
+    "source": "http",
+    "how": "/llms.txt answers 200 as text/plain and is under about 2,000 words.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "a8",
+   "phase": "A",
+   "title": "Every URL that has ever had an impression answers 200 or 301, never 404",
+   "title_html": "Every URL that has ever had an impression answers 200 or 301, never 404",
+   "burned": true,
+   "why_html": "A restructure that drops ranked URLs throws away the rankings. Google does not forward them to the new page on its own.",
+   "how_html": "Generate redirects from the Search Console page export on every build; a validator fails if any measured URL would 404; a post-deploy script checks live.",
+   "check": {
+    "mode": "auto",
+    "type": "gsc_pages_live",
+    "source": "gsc",
+    "how": "Every page Search Console shows with impressions in the last 90 days answers 200 or a 301 to a 200 (up to 100 pages a site).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "a9",
+   "phase": "A",
+   "title": "HTTPS, a real 404 page, favicon.ico, apple-touch-icon.png, site.webmanifest",
+   "title_html": "HTTPS, a real 404 page, favicon.ico, apple-touch-icon.png, site.webmanifest",
+   "burned": false,
+   "why_html": "Missing icons are console errors and a Lighthouse best-practices hit; a soft-404 (every unknown path 301s home) hides broken links from you.",
+   "how_html": "<code>curl -sI site/favicon.ico</code> → 200; <code>curl -sI site/nonexistent</code> → 404.",
+   "check": {
+    "mode": "auto",
+    "type": "site_basics",
+    "source": "http",
+    "how": "HTTPS answers; a made-up path answers 404 (not a redirect home); favicon.ico, apple-touch-icon.png and site.webmanifest answer 200.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "a10",
+   "phase": "A",
+   "title": "Mobile Lighthouse: performance and SEO at 90 or better, accessibility at 95 or better",
+   "title_html": "Mobile Lighthouse: performance and SEO at 90 or better, accessibility at 95 or better",
+   "burned": false,
+   "why_html": "It is the floor, not the goal. A perfect score with the switches above off still gets zero traffic.",
+   "how_html": "<code>npx lighthouse URL --form-factor=mobile --only-categories=performance,seo,accessibility</code>, or pagespeed.web.dev.",
+   "check": {
+    "mode": "auto",
+    "type": "lighthouse_mobile",
+    "source": "psi",
+    "how": "Google PageSpeed Insights (free, no key) on the homepage, mobile: performance and SEO 90 or more, accessibility 95 or more. A quota refusal is recorded as not checked, never as a pass.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ],
+    "params": {
+     "performance": 90,
+     "seo": 90,
+     "accessibility": 95
+    }
+   }
+  },
+  {
+   "id": "b1",
+   "phase": "B",
+   "title": "Title 30–65 characters, unique, the query first, the site name once",
+   "title_html": "Title 30–65 characters, unique, the query first, the site name once",
+   "burned": false,
+   "why_html": "The title is the search result. \"Memphis Vendor Library | Memphis Vendor Library\" wastes the whole line.",
+   "how_html": "Validator: length band, no duplicate titles sitewide, suffix never equals prefix.",
+   "check": {
+    "mode": "auto",
+    "type": "title_band",
+    "source": "html",
+    "how": "Every sampled page has a title of 30 to 65 characters, and no two sampled pages share a title.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "b2",
+   "phase": "B",
+   "title": "Meta description 120–160 characters, present in the HTML for every user agent",
+   "title_html": "Meta description 120–160 characters, present in the HTML for every user agent",
+   "burned": false,
+   "why_html": "It is the snippet. Some frameworks only inject it for a bot list (Next.js did; Lighthouse's crawler wasn't on it).",
+   "how_html": "<code>curl -sL URL -A \"Mozilla/5.0\" | grep -c 'name=\"description\"'</code> → 1.",
+   "check": {
+    "mode": "auto",
+    "type": "meta_description",
+    "source": "html",
+    "how": "Every sampled page has exactly one meta description of 120 to 160 characters, served to a plain browser user agent.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "b3",
+   "phase": "B",
+   "title": "One H1 that matches the title's intent; H2s phrased as the questions people ask",
+   "title_html": "One H1 that matches the title's intent; H2s phrased as the questions people ask",
+   "burned": false,
+   "why_html": "Question headings are what answer engines lift into \"People also ask\" and voice results.",
+   "how_html": "Grep for <code>&lt;h1</code> count = 1; read the H2s aloud as questions.",
+   "check": {
+    "mode": "auto",
+    "type": "one_h1",
+    "source": "html",
+    "how": "Every sampled page has exactly one H1.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "b4",
+   "phase": "B",
+   "title": "A 40–60 word definition directly under the H1: \"X is …\"",
+   "title_html": "A 40–60 word definition directly under the H1: \"X is …\"",
+   "burned": false,
+   "why_html": "The sentence a snippet, a voice answer and an AI citation all want. If the page makes the reader scroll for it, the engine moves on.",
+   "how_html": "Validator: first paragraph after H1 starts with the entity name + \"is\", 40–60 words.",
+   "check": {
+    "mode": "auto",
+    "type": "definition_paragraph",
+    "source": "html",
+    "how": "On sampled guide pages, the first paragraph after the H1 runs 40 to 60 words and contains \" is \".",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "b5",
+   "phase": "B",
+   "title": "Visible FAQ (3–6 questions) with 40–60 word answers, marked up as one FAQPage",
+   "title_html": "Visible FAQ (3–6 questions) with 40–60 word answers, marked up as one FAQPage",
+   "burned": false,
+   "why_html": "Answers at snippet length are what gets quoted. Two FAQPage blocks on one page void the rich result; FAQ markup with no visible Q&amp;A is a spam signal.",
+   "how_html": "Validator: FAQPage count per page ≤ 1, and every question in the schema appears in the visible text.",
+   "check": {
+    "mode": "auto",
+    "type": "faq_schema_visible",
+    "source": "schema",
+    "how": "At most one FAQPage per sampled page, and every question in it appears in the visible text.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "b6",
+   "phase": "B",
+   "title": "Complete social tags: og:title, og:description, og:type, og:url, og:site_name, og:image 1200×630 on your own host with width/height, twitter:card summary_large_image",
+   "title_html": "Complete social tags: og:title, og:description, og:type, og:url, og:site_name, og:image 1200×630 on your own host with width/height, twitter:card summary_large_image",
+   "burned": false,
+   "why_html": "Shares and AI previews render from these. An image hosted on another domain is a dependency you don't control.",
+   "how_html": "<code>curl -sL URL | grep -o 'property=\"og:[a-z:]*\"' | sort -u</code>; <code>curl -sI site/og.png</code> → 200.",
+   "check": {
+    "mode": "auto",
+    "type": "social_tags",
+    "source": "html",
+    "how": "og:title, og:description, og:type, og:url, og:site_name, og:image (with width and height, on the site's own host, answering 200) and twitter:card summary_large_image on every sampled page.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "b7",
+   "phase": "B",
+   "title": "Every content page reachable within three clicks of the homepage; no orphans",
+   "title_html": "Every content page reachable within three clicks of the homepage; no orphans",
+   "burned": true,
+   "why_html": "A page in the sitemap that no page links to is a page Google crawls last and ranks lowest, if at all.",
+   "how_html": "Crawl the built site from \"/\" and diff against the sitemap; a validator fails on any orphan.",
+   "check": {
+    "mode": "auto",
+    "type": "no_orphans",
+    "source": "crawl",
+    "how": "Crawl from the homepage three clicks deep (up to 300 pages); every sitemap URL must be reached. A crawl that hits its cap is recorded as not conclusive, never as a pass.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "b8",
+   "phase": "B",
+   "title": "Descriptive internal anchor text; images with real alt text; one topic per page",
+   "title_html": "Descriptive internal anchor text; images with real alt text; one topic per page",
+   "burned": false,
+   "why_html": "Anchor text tells Google what the target page is about. \"Click here\" tells it nothing.",
+   "how_html": "Spot check 10 pages; validator for empty alt attributes.",
+   "check": {
+    "mode": "auto",
+    "type": "img_alt",
+    "source": "html",
+    "how": "No image on a sampled page has a missing or empty alt attribute (decorative images marked role=presentation or aria-hidden are allowed).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "b9",
+   "phase": "B",
+   "title": "Word count fits the intent: 600+ for a guide, 1,200+ for a pillar; under 300 is a consolidation candidate",
+   "title_html": "Word count fits the intent: 600+ for a guide, 1,200+ for a pillar; under 300 is a consolidation candidate",
+   "burned": false,
+   "why_html": "\"Crawled, currently not indexed\" is Google's verdict on thin or near-duplicate pages. Volume of pages is not a strategy.",
+   "how_html": "Report word counts per page from the build; list everything under 300 words with zero impressions.",
+   "check": {
+    "mode": "auto",
+    "type": "word_count",
+    "source": "html",
+    "how": "No sampled content page (legal, contact and utility pages excepted) is under 300 words of visible text.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ],
+    "params": {
+     "min_words": 300
+    }
+   }
+  },
+  {
+   "id": "c1",
+   "phase": "C",
+   "title": "Organization (or the publication's own editorial company) with name, url, logo, sameAs",
+   "title_html": "Organization (or the publication's own editorial company) with name, url, logo, sameAs",
+   "burned": false,
+   "why_html": "This is how AI engines decide what entity a page belongs to. Consistent naming across every page is what makes the site citable as one thing.",
+   "how_html": "Rich Results test on the homepage; grep JSON-LD for <code>\"@type\":\"Organization\"</code> on every page.",
+   "check": {
+    "mode": "auto",
+    "type": "organization_node",
+    "source": "schema",
+    "how": "Every sampled page's JSON-LD has an Organization (or subtype) with name, url, logo and sameAs.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "c2",
+   "phase": "C",
+   "title": "WebSite on the homepage, WebPage on every page, BreadcrumbList on inner pages",
+   "title_html": "WebSite on the homepage, WebPage on every page, BreadcrumbList on inner pages",
+   "burned": false,
+   "why_html": "Sitelinks, breadcrumbs in results, and the page-to-site relationship engines use for attribution.",
+   "how_html": "Validator: required types per page kind.",
+   "check": {
+    "mode": "auto",
+    "type": "page_types",
+    "source": "schema",
+    "how": "WebSite on the homepage; WebPage (or subtype) on every sampled page; BreadcrumbList on every inner page.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "c3",
+   "phase": "C",
+   "title": "The business type that fits, fully filled: LocalBusiness (telephone, address, geo, hasMap, areaServed), SoftwareApplication (operatingSystem, Offers per plan), Product (Offer with price), Article (author, datePublished)",
+   "title_html": "The business type that fits, fully filled: LocalBusiness (telephone, address, geo, hasMap, areaServed), SoftwareApplication (operatingSystem, Offers per plan), Product (Offer with price), Article (author, datePublished)",
+   "burned": false,
+   "why_html": "An Offer with a real price is what puts the price in the result; a LocalBusiness with a phone and map link is what the local pack reads.",
+   "how_html": "Prices in schema must equal prices on the page and in the pricing config; pin with a test.",
+   "check": {
+    "mode": "auto",
+    "type": "business_type",
+    "source": "schema",
+    "how": "At least one fully filled business node: LocalBusiness with telephone, address and areaServed (hyperlocal), or SoftwareApplication/Product/Service with an Offer and price (brand).",
+    "applies_to": [
+     "hyperlocal",
+     "brand"
+    ]
+   }
+  },
+  {
+   "id": "c4",
+   "phase": "C",
+   "title": "SpeakableSpecification on the definition paragraph and the FAQ",
+   "title_html": "SpeakableSpecification on the definition paragraph and the FAQ",
+   "burned": false,
+   "why_html": "Marks the sentences voice assistants and AI readers may read aloud or quote.",
+   "how_html": "The cssSelector in the schema must resolve to an element on the page; validator checks it.",
+   "check": {
+    "mode": "auto",
+    "type": "speakable",
+    "source": "schema",
+    "how": "Pages with SpeakableSpecification: every cssSelector resolves to an element on the page; guide pages must carry one.",
+    "applies_to": [
+     "guide",
+     "hyperlocal"
+    ]
+   }
+  },
+  {
+   "id": "c5",
+   "phase": "C",
+   "title": "No schema that the visible page does not support; no claims the business can't back (an iOS app not yet in the store, a medical subtype without a licence)",
+   "title_html": "No schema that the visible page does not support; no claims the business can't back (an iOS app not yet in the store, a medical subtype without a licence)",
+   "burned": false,
+   "why_html": "Markup without matching content is treated as deceptive and can cost all rich results on the domain.",
+   "how_html": "Validator: every FAQ/HowTo/Offer in schema has visible counterpart text.",
+   "check": {
+    "mode": "auto",
+    "type": "schema_supported",
+    "source": "schema",
+    "how": "Every FAQ question and every Offer price in the JSON-LD appears in the page's visible text.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "c6",
+   "phase": "C",
+   "title": "Author and publisher are real, consistent, and have an About page; E-E-A-T signals (credentials, sources, dates) visible",
+   "title_html": "Author and publisher are real, consistent, and have an About page; E-E-A-T signals (credentials, sources, dates) visible",
+   "burned": false,
+   "why_html": "AI engines weight who is speaking. An unnamed page with no About is the last thing they cite.",
+   "how_html": "About page exists and is linked sitewide; author node matches the byline.",
+   "check": {
+    "mode": "auto",
+    "type": "about_page",
+    "source": "html",
+    "how": "/about/ (or /about) answers 200 and the homepage links to it.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "d1",
+   "phase": "D",
+   "title": "The direct answer sits in the first 100 words, not after a story",
+   "title_html": "The direct answer sits in the first 100 words, not after a story",
+   "burned": false,
+   "why_html": "Snippets and AI answers are extracted from the top of the page. A page that earns the click with a tease loses the citation.",
+   "how_html": "Read the first screen of each template page type.",
+   "check": {
+    "mode": "manual",
+    "reason": "Whether the first 100 words answer the question is a reader's judgement; a word-position heuristic would pass a story that happens to contain the keyword.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "d2",
+   "phase": "D",
+   "title": "Numbered steps for processes, tables for comparisons, bullet lists for options",
+   "title_html": "Numbered steps for processes, tables for comparisons, bullet lists for options",
+   "burned": false,
+   "why_html": "List and table snippets are extracted from literal lists and tables, never from prose.",
+   "how_html": "Any \"how to\" page has an ordered list; any \"X vs Y\" page has a table.",
+   "check": {
+    "mode": "auto",
+    "type": "steps_and_tables",
+    "source": "html",
+    "how": "Sampled pages whose title says \"how to\" carry an ordered list; pages whose title says \" vs \" carry a table.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "d3",
+   "phase": "D",
+   "title": "Specific facts with units, dates and sources: prices, counts, timeframes, named authorities",
+   "title_html": "Specific facts with units, dates and sources: prices, counts, timeframes, named authorities",
+   "burned": false,
+   "why_html": "AI engines prefer citable specifics over generalities. \"Starting at $350\" beats \"affordable\".",
+   "how_html": "Each page carries at least three specific, sourced facts.",
+   "check": {
+    "mode": "manual",
+    "reason": "\"Specific, sourced facts\" needs a reader to tell a real figure with its source from a number in a sentence.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "d4",
+   "phase": "D",
+   "title": "Published and updated dates visible; content refreshed when the facts change, not on a timer",
+   "title_html": "Published and updated dates visible; content refreshed when the facts change, not on a timer",
+   "burned": false,
+   "why_html": "Freshness is a signal only when it is true; faked dates are the sitemap problem again.",
+   "how_html": "Date in the page and in Article/WebPage schema agree.",
+   "check": {
+    "mode": "auto",
+    "type": "dates_visible",
+    "source": "schema",
+    "how": "Sampled pages with datePublished or dateModified in JSON-LD also show that date in the visible text.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "e1",
+   "phase": "E",
+   "title": "Search Console domain property (sc-domain:) verified; the service account added as a user",
+   "title_html": "Search Console domain property (sc-domain:) verified; the service account added as a user",
+   "burned": false,
+   "why_html": "Without it you are guessing. Every number that matters comes from here, and the API needs the service account on the property.",
+   "how_html": "<code>sites.list</code> with the service account returns the property.",
+   "check": {
+    "mode": "auto",
+    "type": "gsc_property",
+    "source": "gsc",
+    "how": "Search Console's sites list (read as the gsc-bot service account) includes sc-domain:<domain> or the https property.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "e2",
+   "phase": "E",
+   "title": "Sitemap submitted in Search Console and showing no errors; resubmitted automatically if missing",
+   "title_html": "Sitemap submitted in Search Console and showing no errors; resubmitted automatically if missing",
+   "burned": false,
+   "why_html": "Three sites had none registered. Registration is one API call; the daily cycle should check it.",
+   "how_html": "<code>sitemaps.list</code> daily; submit if absent; record the response.",
+   "check": {
+    "mode": "auto",
+    "type": "gsc_sitemap",
+    "source": "gsc",
+    "how": "Search Console's sitemaps list for the property has the site's sitemap submitted, with zero errors and a download in the last 14 days.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "e3",
+   "phase": "E",
+   "title": "IndexNow key file on the host and a ping of changed URLs after every deploy",
+   "title_html": "IndexNow key file on the host and a ping of changed URLs after every deploy",
+   "burned": false,
+   "why_html": "Bing, DuckDuckGo and others index within hours instead of weeks. New key files return 403 for a few minutes; retry.",
+   "how_html": "<code>curl -sI site/&lt;key&gt;.txt</code> → 200; deploy log shows the ping accepted.",
+   "check": {
+    "mode": "auto",
+    "type": "indexnow_key",
+    "source": "http",
+    "how": "The repo holds an IndexNow key file (64-hex .txt or indexnow.txt) and the live host serves /<key>.txt with the key in it.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "e4",
+   "phase": "E",
+   "title": "Daily collection of Search Console query and page data (rolling 28 days) committed to the repo, with a query history so targets don't vanish when they leave the window",
+   "title_html": "Daily collection of Search Console query and page data (rolling 28 days) committed to the repo, with a query history so targets don't vanish when they leave the window",
+   "burned": false,
+   "why_html": "A query that drops out of 28 days is not gone; a validator that forgets it reddens the build.",
+   "how_html": "<code>gsc_truth.json</code> fresh daily, totals equal to the export, timestamp real (not 1970).",
+   "check": {
+    "mode": "auto",
+    "type": "gsc_truth_fresh",
+    "source": "repo",
+    "how": "The repo's default branch has a gsc_truth.json committed within the last 3 days.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "e5",
+   "phase": "E",
+   "title": "Daily URL Inspection coverage: indexed / crawled-not-indexed / discovered / unknown per page, rotating 150 URLs a day, 8 in parallel",
+   "title_html": "Daily URL Inspection coverage: indexed / crawled-not-indexed / discovered / unknown per page, rotating 150 URLs a day, 8 in parallel",
+   "burned": false,
+   "why_html": "The only way to know whether Google is declining your pages (quality) or not finding them (discovery). The answer decides what to do next.",
+   "how_html": "<code>index_coverage.json</code> fresh, counts sum to the sitemap; quota is 2,000 inspections a day across all properties.",
+   "check": {
+    "mode": "auto",
+    "type": "index_coverage_fresh",
+    "source": "repo",
+    "how": "The repo's default branch has an index_coverage.json committed within the last 3 days.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "e6",
+   "phase": "E",
+   "title": "Analytics (Clarity) installed with a per-host id; consent-gated where the subject is health or legal",
+   "title_html": "Analytics (Clarity) installed with a per-host id; consent-gated where the subject is health or legal",
+   "burned": false,
+   "why_html": "Without session data you cannot see that visitors leave in 14 seconds.",
+   "how_html": "The project id appears on the live page (or in its loader file); Clarity shows sessions within a day.",
+   "check": {
+    "mode": "auto",
+    "type": "clarity",
+    "source": "html",
+    "how": "The homepage loads Microsoft Clarity (clarity.ms) directly or through its loader file.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "e7",
+   "phase": "E",
+   "title": "Every call to action carries a ref and its clicks are readable by the daily cycle (the token has read scope)",
+   "title_html": "Every call to action carries a ref and its clicks are readable by the daily cycle (the token has read scope)",
+   "burned": false,
+   "why_html": "A CTA you can't measure is a guess. A write-only token recorded clicks nobody could read.",
+   "how_html": "The daily click file shows status ok, not a 403.",
+   "check": {
+    "mode": "manual",
+    "reason": "Click data sits behind each repo's own short-link token; the auditor holds no such token, and reading it would widen what it can see.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "e8",
+   "phase": "E",
+   "title": "Google Business Profile for any local or service business, with phone, photos, hours, category matching the site's positioning, and the Maps link on the site (hasMap)",
+   "title_html": "Google Business Profile for any local or service business, with phone, photos, hours, category matching the site's positioning, and the Maps link on the site (hasMap)",
+   "burned": false,
+   "why_html": "For local intent, the map pack is where the clicks are. A listing with no phone and no photos, or no listing at all, is the biggest single gap a local site can have.",
+   "how_html": "Search Maps for the business name and phone; the site links <code>maps.google.com/?cid=…</code>.",
+   "check": {
+    "mode": "auto",
+    "type": "gbp_maps_link",
+    "source": "html",
+    "how": "A hyperlocal business site links Google Maps (maps.google.com/?cid= or google.com/maps) from the homepage or its LocalBusiness hasMap.",
+    "applies_to": [
+     "hyperlocal"
+    ]
+   }
+  },
+  {
+   "id": "f1",
+   "phase": "F",
+   "title": "Target queries come only from measured sources: Search Console rows, or a measured volume with a number",
+   "title_html": "Target queries come only from measured sources: Search Console rows, or a measured volume with a number",
+   "burned": true,
+   "why_html": "Keyword-tool lists with no number produced hundreds of pages Google never showed once.",
+   "how_html": "Every target carries source + number; a validator drops unmeasured ones with the reason.",
+   "check": {
+    "mode": "manual",
+    "reason": "Whether a target query came from a measured source lives in each repo's targeting data, in a different shape per repo.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "f2",
+   "phase": "F",
+   "title": "New pages frozen until their query has a number; held pages publish automatically once it does",
+   "title_html": "New pages frozen until their query has a number; held pages publish automatically once it does",
+   "burned": false,
+   "why_html": "Stops the thin-page pile from growing while the measured pages get the effort.",
+   "how_html": "A config flag the publisher reads, with a validator; a frozen page logs why.",
+   "check": {
+    "mode": "manual",
+    "reason": "The page freeze is a per-repo publisher flag; its existence is a code review question, not a live check.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "f3",
+   "phase": "F",
+   "title": "Strengthen the pages already shown at positions 5–15 before writing anything new",
+   "title_html": "Strengthen the pages already shown at positions 5–15 before writing anything new",
+   "burned": false,
+   "why_html": "Page two to page one is the cheapest ranking move there is: aligned title and H1, definition, FAQ from the real queries, links from the homepage.",
+   "how_html": "List pages with impressions and position ≤15 from the daily data; each has had a pass.",
+   "check": {
+    "mode": "manual",
+    "reason": "Search Console can list the position 5 to 15 pages, but whether each has had a pass is a record only the repo's content log holds.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "f4",
+   "phase": "F",
+   "title": "Consolidate: fold thin, zero-impression, \"crawled not indexed\" pages into their hub with a 301, drop them from the sitemap",
+   "title_html": "Consolidate: fold thin, zero-impression, \"crawled not indexed\" pages into their hub with a 301, drop them from the sitemap",
+   "burned": false,
+   "why_html": "Fewer, fuller pages get indexed; a hundred thin ones get declined and drag the site's topic score down.",
+   "how_html": "A consolidation ledger (page, words, impressions, hub) exists; merges happen after two weeks of coverage data, with a validator that every old URL 301s to a 200.",
+   "check": {
+    "mode": "auto",
+    "type": "consolidation_ledger",
+    "source": "repo",
+    "how": "The repo's default branch has a consolidation ledger (a file whose name contains \"consolidat\").",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "f5",
+   "phase": "F",
+   "title": "Read who is actually arriving; turn wrong-audience traffic toward the buyer instead of ignoring it",
+   "title_html": "Read who is actually arriving; turn wrong-audience traffic toward the buyer instead of ignoring it",
+   "burned": false,
+   "why_html": "Dentists checking licences were the listing buyers; people searching USCIS offices needed the civil-surgeon exam. Both were \"wrong\" traffic until a block addressed them.",
+   "how_html": "Top queries by impressions reviewed monthly against who the page serves.",
+   "check": {
+    "mode": "manual",
+    "reason": "Reading who arrives and turning the wrong audience toward the buyer is a monthly human review.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "f6",
+   "phase": "F",
+   "title": "Brand capture: the site ranks first for its own name and common misspellings",
+   "title_html": "Brand capture: the site ranks first for its own name and common misspellings",
+   "burned": false,
+   "why_html": "virtualagency-os.com ranked 78th for \"west peak\", its own brand misspelled.",
+   "how_html": "Site name in WebSite schema, title and og:site_name; alternateName for misspellings; search your own name.",
+   "check": {
+    "mode": "auto",
+    "type": "brand_capture",
+    "source": "schema",
+    "how": "WebSite JSON-LD name and og:site_name are present on the homepage, and the homepage title contains the site name.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "g1",
+   "phase": "G",
+   "title": "Links you are counting on are followed: no nofollow, sponsored or ugc on them",
+   "title_html": "Links you are counting on are followed: no nofollow, sponsored or ugc on them",
+   "burned": true,
+   "why_html": "rel=\"nofollow\" and rel=\"sponsored\" are the explicit instruction to pass no ranking value. Reserve them for paid links and sites you do not vouch for.",
+   "how_html": "Crawl the linking site: <code>grep -o '&lt;a [^&gt;]*target-domain[^&gt;]*&gt;'</code> and read the rel attribute. A validator on the linking site's build.",
+   "check": {
+    "mode": "auto",
+    "type": "links_followed",
+    "source": "html",
+    "how": "On sampled pages, no link to a portfolio domain carries rel nofollow, sponsored or ugc.",
+    "applies_to": [
+     "authority",
+     "role:companion"
+    ]
+   }
+  },
+  {
+   "id": "g2",
+   "phase": "G",
+   "title": "Links are contextual, inside relevant articles, with anchor text matching the target page's title, pointing at the pages you are strengthening (deep links, not the homepage)",
+   "title_html": "Links are contextual, inside relevant articles, with anchor text matching the target page's title, pointing at the pages you are strengthening (deep links, not the homepage)",
+   "burned": false,
+   "why_html": "A sitewide footer link is a pattern; a sentence in a matching article is a recommendation.",
+   "how_html": "Anchor = target title; target answers 200; post-deploy live check.",
+   "check": {
+    "mode": "auto",
+    "type": "deep_links_live",
+    "source": "html",
+    "how": "Links to portfolio domains on sampled pages point at inner pages (not only homepages), and each sampled target answers 200.",
+    "applies_to": [
+     "authority",
+     "role:companion"
+    ]
+   }
+  },
+  {
+   "id": "g3",
+   "phase": "G",
+   "title": "Concentration capped: no target domain gets more than a quarter of a site's outbound links; no URL more than ten",
+   "title_html": "Concentration capped: no target domain gets more than a quarter of a site's outbound links; no URL more than ten",
+   "burned": false,
+   "why_html": "141 links from one site to one target is a footprint search engines read as a scheme.",
+   "how_html": "Validator on the linking site's build.",
+   "check": {
+    "mode": "auto",
+    "type": "link_concentration",
+    "source": "html",
+    "how": "No single portfolio domain takes more than a quarter of a sampled page's outbound links, and no target URL appears more than ten times across the sample.",
+    "applies_to": [
+     "authority",
+     "role:companion"
+    ]
+   }
+  },
+  {
+   "id": "g4",
+   "phase": "G",
+   "title": "Common-ownership disclosure where a site recommends a commonly owned product (medical, legal, financial, immigration especially)",
+   "title_html": "Common-ownership disclosure where a site recommends a commonly owned product (medical, legal, financial, immigration especially)",
+   "burned": false,
+   "why_html": "Undisclosed ownership inside an endorsement is what the FTC acts on, and the ownership is visible to Google anyway through shared accounts and hosting.",
+   "how_html": "One line near citations and in the footer; no parent name needed.",
+   "check": {
+    "mode": "auto",
+    "type": "ownership_disclosure",
+    "source": "html",
+    "how": "Pages that link portfolio sites carry a common-ownership line (\"commonly owned\", \"common ownership\", \"same owner\", \"affiliated\").",
+    "applies_to": [
+     "authority",
+     "role:companion"
+    ]
+   }
+  },
+  {
+   "id": "g5",
+   "phase": "G",
+   "title": "Citations and directories for a local business (consistent name, address, phone); links from real third parties over time",
+   "title_html": "Citations and directories for a local business (consistent name, address, phone); links from real third parties over time",
+   "burned": false,
+   "why_html": "Owned networks are a start, not a substitute. The links that move a domain come from sites you don't control.",
+   "how_html": "Track referring domains monthly from Search Console's Links report.",
+   "check": {
+    "mode": "manual",
+    "reason": "Third-party citations and directory listings accrue over time off the site; Search Console's Links report has no API.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "h1",
+   "phase": "H",
+   "title": "Every item above that can be checked by code has a blocking validator, proven once by breaking it and watching it fail",
+   "title_html": "Every item above that can be checked by code has a blocking validator, proven once by breaking it and watching it fail",
+   "burned": false,
+   "why_html": "A fix without a guard is undone by the next rebuild. Every defect in the seven switches was a regression nobody could see.",
+   "how_html": "Pass count goes up with the fix; the validator fails with the fix reverted.",
+   "check": {
+    "mode": "manual",
+    "reason": "Proving a validator by breaking it is a one-time act inside each repo; this weekly audit is itself the live check for every automated item.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "h2",
+   "phase": "H",
+   "title": "New assets and tags live in a registry the build reads, so a rebuild cannot drop them",
+   "title_html": "New assets and tags live in a registry the build reads, so a rebuild cannot drop them",
+   "burned": false,
+   "why_html": "Generated sites regenerate; what isn't in the generator's data disappears.",
+   "how_html": "A registry file plus a test that reads it.",
+   "check": {
+    "mode": "manual",
+    "reason": "Whether a tag lives in a registry the build reads is a code review question per repo.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "h3",
+   "phase": "H",
+   "title": "Validators pin real harms only; brittle ones (exact counts, prose assertions, extension-length guesses) are rewritten or removed",
+   "title_html": "Validators pin real harms only; brittle ones (exact counts, prose assertions, extension-length guesses) are rewritten or removed",
+   "burned": false,
+   "why_html": "Validation hell is when validators drive decisions instead of catching harm. A check that fails on a new favicon is noise.",
+   "how_html": "A blocker cap (40 worked), and each blocker names the harm it prevents.",
+   "check": {
+    "mode": "manual",
+    "reason": "Whether a validator pins a real harm is a judgement about each validator.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "h4",
+   "phase": "H",
+   "title": "Post-deploy live check: crawl files, icons, og image, schema types, redirects of measured URLs, IndexNow key",
+   "title_html": "Post-deploy live check: crawl files, icons, og image, schema types, redirects of measured URLs, IndexNow key",
+   "burned": false,
+   "why_html": "The build can pass and the edge can still serve the wrong thing (a Worker that 301'd robots.txt did).",
+   "how_html": "A script that curls the live host after every deploy and fails the job on a miss.",
+   "check": {
+    "mode": "auto",
+    "type": "post_deploy_check",
+    "source": "repo",
+    "how": "A workflow on the default branch runs a post-deploy live check (a workflow or script named for a live, post-deploy or smoke check).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "h5",
+   "phase": "H",
+   "title": "The merge gate stays under five minutes; long suites run on main after merge",
+   "title_html": "The merge gate stays under five minutes; long suites run on main after merge",
+   "burned": false,
+   "why_html": "A slow gate taxes every fix, so fixes stop happening.",
+   "how_html": "Read the last run's duration; cancel anything past 1.5× it.",
+   "check": {
+    "mode": "auto",
+    "type": "merge_gate_fast",
+    "source": "github",
+    "how": "The repo's pull-request checks (last five completed runs) finish in five minutes or less, median.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "j1",
+   "phase": "J",
+   "title": "Brief the new vertical from the built pages of an existing one, not from memory",
+   "title_html": "Brief the new vertical from the built pages of an existing one, not from memory",
+   "burned": true,
+   "why_html": "The first senior-living brief put the guides on the wrong site and gave the companion site the wrong link pattern. Ten minutes of measuring the uscis build (15 guides at 2,100–2,800 words, a fixed H2 set, a three-link conversion block with tracking params, four intake links per companion piece) would have prevented both.",
+   "how_html": "The brief cites measured numbers from the existing build: guide count and word band, H2 set, CTA URL and params, companion-site link counts and targets.",
+   "check": {
+    "mode": "manual",
+    "reason": "A brief written before an agent runs is not on the live site; the check is on the brief.",
+    "applies_to": [
+     "hyperlocal",
+     "guide"
+    ]
+   }
+  },
+  {
+   "id": "j2",
+   "phase": "J",
+   "title": "The canonical site holds the thick guides, the FAQ page and the intake; every companion site routes to the canonical intake at every turn, and to a specific guide only where the reader's query matches it",
+   "title_html": "The canonical site holds the thick guides, the FAQ page and the intake; every companion site routes to the canonical intake at every turn, and to a specific guide only where the reader's query matches it",
+   "burned": false,
+   "why_html": "The canonical is where the lead is captured. A companion piece that answers the question itself, or links only to city pages, ends the visit on the wrong host.",
+   "how_html": "Per companion piece: a canonical link in the first 150 words, ≥4 links to the canonical intake with tracking params, a home link, ≥1 matching guide link, a city-page link; validator on the companion build.",
+   "check": {
+    "mode": "auto",
+    "type": "companion_routes",
+    "source": "html",
+    "how": "Sampled companion pages link a canonical site's intake (/request-assistance/) with tracking parameters, and link the canonical home.",
+    "applies_to": [
+     "role:companion"
+    ]
+   }
+  },
+  {
+   "id": "j3",
+   "phase": "J",
+   "title": "Guides follow the house shape exactly: Quick answer H2, citation summary, \"what this guide is best for\", visible FAQ with one FAQPage, sibling links, the conversion block to /request-assistance/ with vertical, page kind and slug params",
+   "title_html": "Guides follow the house shape exactly: Quick answer H2, citation summary, \"what this guide is best for\", visible FAQ with one FAQPage, sibling links, the conversion block to /request-assistance/ with vertical, page kind and slug params",
+   "burned": false,
+   "why_html": "The shape is what the answer engines already quote from the five existing sites and what the lead attribution reads. A guide in a different shape is a guide the funnel cannot credit.",
+   "how_html": "Validator: guide count ≥ N, body words ≥ 1,800, the H2 ids present, FAQPage ≤ 1, the CTA params present and attributable in the lead table.",
+   "check": {
+    "mode": "auto",
+    "type": "guide_shape",
+    "source": "html",
+    "how": "Sampled /guides/ pages: 1,800 or more words, a \"Quick answer\" H2, at most one FAQPage, and a link to /request-assistance/ carrying vertical, kind and slug parameters.",
+    "applies_to": [
+     "role:generator"
+    ],
+    "params": {
+     "min_words": 1800
+    }
+   }
+  },
+  {
+   "id": "j4",
+   "phase": "J",
+   "title": "A hyperlocal query universe is authored into the fan-out before any measured seed exists, as question sets on existing pages, never as one page per query",
+   "title_html": "A hyperlocal query universe is authored into the fan-out before any measured seed exists, as question sets on existing pages, never as one page per query",
+   "burned": false,
+   "why_html": "A new domain has no Search Console rows to seed discovery from, so item F1 would leave it with nothing. The universe (every phrase people type × every locality covered) gives the city pages, guides and FAQ their questions on day one; Monday discovery takes over once impressions arrive.",
+   "how_html": "Fan-out records ≥ 600 for the vertical, every record mapped to an existing route, every covered locality ≥ 20 records; the companion site compiles ≥ 400 of them into its question sets; no new page without an impression (F2 still holds).",
+   "check": {
+    "mode": "manual",
+    "reason": "The fan-out record counts come out of the generator's compile step, not off the live site.",
+    "applies_to": [
+     "role:generator"
+    ]
+   }
+  },
+  {
+   "id": "j5",
+   "phase": "J",
+   "title": "The directory comes from the public licensure registry, with source and fetched date, per-listing LocalBusiness nodes inside an ItemList, and measured contact coverage",
+   "title_html": "The directory comes from the public licensure registry, with source and fetched date, per-listing LocalBusiness nodes inside an ItemList, and measured contact coverage",
+   "burned": false,
+   "why_html": "The registry is the whole market (Shelby County had 31 licensed facilities, not the 47 a playbook claimed, because memory care is licensed as beds, not buildings). Lead delivery runs on the listing's email: 7 of 31 with an email means 24 facilities that can never take a lead.",
+   "how_html": "Validator: row count ≥ the registry count, every row has phone, zip and the care-type flags; ≥ 80% rows with an email (hard floor below that); each listing's schema has telephone, address, geo, hasMap.",
+   "check": {
+    "mode": "auto",
+    "type": "directory_listings",
+    "source": "schema",
+    "how": "Sampled town pages carry an ItemList whose LocalBusiness listings each have telephone, address, geo and hasMap.",
+    "applies_to": [
+     "role:directory"
+    ]
+   }
+  },
+  {
+   "id": "j6",
+   "phase": "J",
+   "title": "The lead funnel is reported next to the search numbers, weekly: impressions → clicks → intake starts → leads → accepts → move-ins, with a RED when clicks arrive and intake starts do not",
+   "title_html": "The lead funnel is reported next to the search numbers, weekly: impressions → clicks → intake starts → leads → accepts → move-ins, with a RED when clicks arrive and intake starts do not",
+   "burned": false,
+   "why_html": "Search Console says people came; only the funnel says whether the form was reached. The expensive failure is a page that ranks and never shows the intake.",
+   "how_html": "A token-guarded funnel endpoint with no PII (tested with a fixture lead); the Monday report row carries the funnel columns and per-page lead attribution; RED rule: clicks ≥ 20 in a week and intake starts = 0 opens the usual self-closing issue; fetch failure prints \"funnel: unavailable\", never red.",
+   "check": {
+    "mode": "manual",
+    "reason": "The funnel endpoint is token-guarded with no personal data; the auditor holds no funnel token, and the Monday report is where the funnel lives.",
+    "applies_to": [
+     "hyperlocal"
+    ]
+   }
+  },
+  {
+   "id": "j7",
+   "phase": "J",
+   "title": "Transactional lead emails are senders too: in the outbound email map with owner, trigger and kill switch; footer, unsubscribe and postal address on every one; nothing identifying in a teaser",
+   "title_html": "Transactional lead emails are senders too: in the outbound email map with owner, trigger and kill switch; footer, unsubscribe and postal address on every one; nothing identifying in a teaser",
+   "burned": false,
+   "why_html": "Teasers, releases, pass notices and family follow-ups go out by the hundred without a human. An unmapped sender is one nobody can switch off, and a teaser with a name in it gives the lead away for free.",
+   "how_html": "Email-map test passes with the new rows; compose refuses an email without the footer; a fixture lead's teaser contains no name, phone or email field.",
+   "check": {
+    "mode": "manual",
+    "reason": "The outbound email map is checked by Boss OS's own email-map test, which this audit does not duplicate.",
+    "applies_to": [
+     "hyperlocal"
+    ]
+   }
+  },
+  {
+   "id": "j8",
+   "phase": "J",
+   "title": "Google Business Profile (E8) is marked not applicable for a guide with no premises; the facilities in the directory are the local entities, each with its own hasMap",
+   "title_html": "Google Business Profile (E8) is marked not applicable for a guide with no premises; the facilities in the directory are the local entities, each with its own hasMap",
+   "burned": false,
+   "why_html": "A lead-gen guide listed as a business gets removed by Google and costs the domain trust. The map-pack opportunity belongs to the listed businesses, which the directory links to.",
+   "how_html": "E8 ticked as n/a with the reason recorded; every listing's hasMap resolves to a Maps result.",
+   "check": {
+    "mode": "auto",
+    "type": "listing_maps",
+    "source": "schema",
+    "how": "Every listing hasMap on sampled town pages is a Google Maps URL.",
+    "applies_to": [
+     "role:directory"
+    ]
+   }
+  },
+  {
+   "id": "j9",
+   "phase": "J",
+   "title": "Hyperlocal coverage is a list, and every place on it has its page",
+   "burned": true,
+   "why_html": "A hyperlocal site that covers three towns out of fifteen loses every search in the other twelve, and nobody notices because nothing lists the twelve. On 25 Oct 2026 memphisseniorcarehomes.com had two empty sitemaps and no neighborhood, extra-town or hospital pages.",
+   "how_html": "The site's coverage manifest names the radius, the towns inside it, the neighborhoods, the local anchors (hospitals, venues) and the service × town pages. Every one of those URLs must be in the sitemap and answer 200; the weekly audit lists each missing one.",
+   "check": {
+    "mode": "auto",
+    "type": "hyperlocal_coverage",
+    "source": "coverage",
+    "how": "Expand the site's coverage manifest into URLs; each must be in the live sitemap and answer 200. Missing ones are listed by URL.",
+    "applies_to": [
+     "hyperlocal",
+     "guide"
+    ]
+   }
+  },
+  {
+   "id": "i1",
+   "phase": "I",
+   "title": "Public GitHub repo; history scrubbed first; a test pins it public",
+   "title_html": "Public GitHub repo; history scrubbed first; a test pins it public",
+   "burned": false,
+   "why_html": "Public repos run Actions free. Everything else below runs in Actions.",
+   "how_html": "<code>gh repo view --json visibility</code> says PUBLIC. Grep the full history for addresses, keys and client data before flipping, rewrite if anything is there.",
+   "check": {
+    "mode": "auto",
+    "type": "repo_public",
+    "source": "github",
+    "how": "gh repo view says the repo is PUBLIC.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i2",
+   "phase": "I",
+   "title": "Cloudflare Pages project connected to the repo; no deploy step in any workflow",
+   "title_html": "Cloudflare Pages project connected to the repo; no deploy step in any workflow",
+   "burned": false,
+   "why_html": "Git integration deploys every push for free; a workflow deploy needs a token and can ship a stale build.",
+   "how_html": "Push to main, watch the Pages deployment go live; a release validator asserts <code>no_direct_cloudflare_deploy</code>.",
+   "check": {
+    "mode": "auto",
+    "type": "no_deploy_step",
+    "source": "repo",
+    "how": "No workflow on the default branch runs wrangler deploy or pages deploy (the Pages project deploys from git).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i3",
+   "phase": "I",
+   "title": "config/llm_routing.json with :free models in order, max_cost_usd: 0, a snapshot date, and one router module every call goes through",
+   "title_html": "<code>config/llm_routing.json</code> with <code>:free</code> models in order, <code>max_cost_usd: 0</code>, a snapshot date, and one router module every call goes through",
+   "burned": false,
+   "why_html": "If any script can name its own model, one of them will name a paid one. The router is the only door.",
+   "how_html": "A test fails when a non-<code>:free</code> id is put in the config; grep the repo for <code>anthropic/</code>, <code>openai/</code>, <code>claude-</code> outside comments and find nothing.",
+   "check": {
+    "mode": "auto",
+    "type": "llm_routing_free",
+    "source": "repo",
+    "how": "config/llm_routing.json exists, max_cost_usd is 0, and every model id ends in :free.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i4",
+   "phase": "I",
+   "title": "A dedicated OpenRouter key for the repo, labelled, with a $0 monthly limit set in the OpenRouter dashboard",
+   "title_html": "A dedicated OpenRouter key for the repo, labelled, with a $0 monthly limit set in the OpenRouter dashboard",
+   "burned": false,
+   "why_html": "The repo's $0 posture is enforced in code; the dashboard cap is the second lock that holds when code is wrong. Free models still work on a $0-limited key; paid ones return \"Key limit exceeded\".",
+   "how_html": "Every receipt records <code>key_label</code>; a paid model called with the key is refused.",
+   "check": {
+    "mode": "manual",
+    "reason": "The $0 limit is set in the OpenRouter dashboard on her account; the auditor reads no OpenRouter account.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i5",
+   "phase": "I",
+   "title": "Every paid lane (probes, premium models) is workflow_dispatch only behind confirm_paid=true; schedules exit with a named stop",
+   "title_html": "Every paid lane (probes, premium models) is <code>workflow_dispatch</code> only behind <code>confirm_paid=true</code>; schedules exit with a named stop",
+   "burned": false,
+   "why_html": "A schedule is a standing order to spend. Dispatch is a decision each time.",
+   "how_html": "Dispatch without the flag and read the stop line in the log; cost in the run's receipt is 0.",
+   "check": {
+    "mode": "manual",
+    "reason": "Whether a lane is paid depends on what each workflow calls; reading that needs a review, and dispatching it to test the stop line would spend a run.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i6",
+   "phase": "I",
+   "title": "Search Console service account JSON as an Actions secret; the site added to the property as that account; a daily workflow writes query truth, coverage and sitemap status",
+   "title_html": "Search Console service account JSON as an Actions secret; the site added to the property as that account; a daily workflow writes query truth, coverage and sitemap status",
+   "burned": false,
+   "why_html": "The only true numbers; free; and once they land in the repo every other job can read them instead of guessing.",
+   "how_html": "The key is never on a laptop or in a vault. Files appear daily: <code>gsc_truth.json</code>, <code>index_coverage.json</code>, <code>gsc_sitemaps.json</code>.",
+   "check": {
+    "mode": "auto",
+    "type": "gsc_daily_workflow",
+    "source": "repo",
+    "how": "A scheduled workflow on the default branch writes gsc_truth.json.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i7",
+   "phase": "I",
+   "title": "Free query discovery: autocomplete seeded from measured queries, a receipt that counts every host, a validator that fails on any model call or any cost",
+   "title_html": "Free query discovery: autocomplete seeded from measured queries, a receipt that counts every host, a validator that fails on any model call or any cost",
+   "burned": false,
+   "why_html": "Discovery is where paid tools creep back in. A host allowlist and a receipt make it visible.",
+   "how_html": "The Monday run's receipt shows model calls 0, cost $0, and only allowlisted hosts.",
+   "check": {
+    "mode": "manual",
+    "reason": "The discovery receipt is per repo, in its own shape; its hosts and cost lines need reading.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i8",
+   "phase": "I",
+   "title": "Clarity project per host, IndexNow key file, Bing Webmaster verified",
+   "title_html": "Clarity project per host, IndexNow key file, Bing Webmaster verified",
+   "burned": false,
+   "why_html": "Behaviour, change notification and Bing's view, all free and all needed before the first content job.",
+   "how_html": "<code>curl -s HOST/</code> contains the Clarity loader; <code>curl -s HOST/KEY.txt</code> returns the key; Bing shows the sitemap.",
+   "check": {
+    "mode": "auto",
+    "type": "clarity_indexnow",
+    "source": "http",
+    "how": "The homepage loads Clarity and the IndexNow key file answers (Bing Webmaster verification is account-side and not read).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i9",
+   "phase": "I",
+   "title": "Weekly outcome report: week-over-week per site, Resend free tier email, one self-closing issue per red site",
+   "title_html": "Weekly outcome report: week-over-week per site, Resend free tier email, one self-closing issue per red site",
+   "burned": false,
+   "why_html": "Without a report nobody notices a drop for a month. Without self-closing issues the list rots.",
+   "how_html": "Dispatch the weekly workflow; the email arrives; the issue appears for a red site and closes on recovery.",
+   "check": {
+    "mode": "auto",
+    "type": "weekly_report_workflow",
+    "source": "repo",
+    "how": "A workflow on the default branch runs on a weekly cron and names a report.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i10",
+   "phase": "I",
+   "title": "docs/cost/zero-paid-llm.md and a \"nothing paid\" line in CLAUDE.md, with a test that reads it",
+   "title_html": "<code>docs/cost/zero-paid-llm.md</code> and a \"nothing paid\" line in CLAUDE.md, with a test that reads it",
+   "burned": false,
+   "why_html": "A rule no code reads is a wish; the next agent in the repo needs to find the rule where it works.",
+   "how_html": "The test imports the doc and the routing config and fails if either names a paid model.",
+   "check": {
+    "mode": "auto",
+    "type": "zero_paid_doc",
+    "source": "repo",
+    "how": "docs/cost/zero-paid-llm.md exists and CLAUDE.md says \"nothing paid\" (any case).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  }
+ ]
+}

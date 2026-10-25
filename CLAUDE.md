@@ -119,3 +119,23 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    `MAX_PROSPECT_SENDS`); past the budget `CUT_ORDER` cuts the prospect emails' words, then Monique's
    lines to three, then the deal rows to five. **Decisions are never cut.** Pinned by
    `tests/morningSizeAndMatches.test.ts` (a heavy-day fixture that fails over 80KB).
+
+## Search Readiness: the checklist enforces itself on the grid repos
+
+Owner, 25 Oct 2026. Her pinned Search Readiness Checklist is data, run every week on every grid repo
+site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
+1. **One definition.** `src/shared/boss/searchReadiness/checklist.json` holds every item (the page's
+   71 plus j9, hyperlocal coverage) as an automatic check or a manual item with its reason.
+   `npm run sites:page -- --out <path>` renders the pinned page from it; edit the JSON, never the page.
+2. **The grid repos** are `src/shared/boss/searchReadiness/sites.json`: category (side business,
+   client, own business), kind, and a coverage entry for every site. Hyperlocal sites list the towns
+   inside their radius, the neighborhoods, the local anchors and the service × town pages; the
+   generator's guide sites read their own city list. heygetonmylevel.com is excluded (no payment
+   mechanism yet); nothing West Peek, nothing of Shirley Brown's senior housing work.
+3. **Weekly, Monday 06:00** (`com.seq.boss-sites-audit`, `npm run sites:audit -- --morning`; by hand
+   `npm run sites:audit`). Spends nothing: plain GETs, Search Console read-only, free PageSpeed, `gh` reads.
+   Results go into the Monday morning email as "The grid repos" section, told once.
+4. **Every failure is a fix brief** in `~/.boss-os/search-readiness/fix-queue.json`
+   (`npm run sites:fix-queue`), which Danielle's repair run reads (prompt section 1b) and fixes like an
+   Ahrefs finding. The two client sites are fixed too. The Spry Labs download page is PROTECTED: fixed
+   only on its own, single-page, Gumroad buy link checked before and after, never cosmetic or bulk.

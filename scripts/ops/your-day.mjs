@@ -544,6 +544,12 @@ export function buildDay(data, now = Date.now()) {
   const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [...(l.links ?? []).slice(0, 1), { label: "See it", url: l.screen }] }));
   if (done.length > MAX_DONE) doneShown.push({ text: `And ${done.length - MAX_DONE} more done for you.`, links: [{ label: "See them all on Today", url: `${ORIGIN}/?view=morning` }] });
 
+  // 4b. The grid repos: the weekly Search Readiness check (Mondays; owner, 25 Oct 2026). Its own short
+  // section — what is broken, what was fixed, what is being built — never pooled into "Done for you",
+  // where three lines would hide it.
+  const gridLines = (m.grid_repos?.lines ?? []).slice(0, 4).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
+  const gridRepos = gridLines.length ? { title: "The grid repos: this week's search check", tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
+
   // 5. Catch up with.
   const catchCards = (m.catchups?.decide ?? []).map((d) => { const id = idFor("catchup", d.key ?? d.title); const screen = itemUrl(today, id); return { ...d, id, screen, buttons: [...(d.buttons ?? []), more(screen)] }; });
   const catchLines = (m.catchups?.lines ?? []).map((l) => (typeof l === "string" ? l : l));
@@ -594,6 +600,7 @@ export function buildDay(data, now = Date.now()) {
       ...(spirit ? [spirit] : []),
       { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
       { title: "Done for you", tone: "done", items: doneShown, empty: null },
+      ...(gridRepos ? [gridRepos] : []),
       { title: "Catch up with", cards: catchCards, items: catchLines, empty: null },
       ...(monday ? [{ title: "This week", items: deadlines, empty: "No deadlines this week." }] : []),
       { title: "Porch & Party: To do for Valerie", note: val ? `From the Porch & Party site at ${timeOf(now)}. Valerie gets her own copy at 7 am.` : null, boxed: true, items: val ?? [], empty: val ? "All clear for Valerie today." : "Valerie's list did not load this morning; the team is fixing it and Valerie still gets her own copy at 7 am." },
@@ -686,7 +693,7 @@ async function postDigest(api, digest) {
 }
 
 /** The morning sections this email told her once and clears after it goes (producers that append). */
-const TOLD_ONCE = ["tail", "risk", "archive", "notices"];
+const TOLD_ONCE = ["tail", "risk", "archive", "notices", "grid_repos"];
 
 async function main() {
   const DRY = process.argv.includes("--dry-run");

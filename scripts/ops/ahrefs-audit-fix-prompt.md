@@ -100,6 +100,28 @@ the mail's. A count from an email is not evidence; a 404 your crawl hit is.
 
 ---
 
+## 1b. The Search Readiness fix queue — fix these too
+
+Owner, 25 Oct 2026: her Search Readiness Checklist enforces itself on every grid repo site. Every
+Monday `npm run sites:audit` checks each site and writes one brief per failure to
+**`~/.boss-os/search-readiness/fix-queue.json`** (`npm run sites:fix-queue` prints it). Read it every
+run. Each brief names the `domain`, the `repo`, the checklist `item_id` and `item_title`, the
+`failure`, the `missing_urls` (for hyperlocal coverage: every town, neighborhood, hospital or
+service × town page the site's coverage manifest says must exist) and the `evidence`.
+
+Treat each brief exactly like an Ahrefs finding: confirm it on the live site, map it to the repo,
+skip it as IN_FLIGHT if an open PR already carries it, fix the cause at source in a fresh worktree,
+prove it with the repo's own validators, open the PR and get it green. Record each one in
+`findings.json` with `project: "checklist:<domain>"` and a headline starting with the item id
+(`j9: 87 coverage pages missing`), so `(project, headline)` stays unique. Missing coverage pages are
+built by the site's own generator (its city or area list), never hand-written one by one.
+
+**A brief with `protected` set is a protected page** (the Spry Labs download page). Fix it on its
+own, in a single-page PR that touches nothing else: open its Gumroad buy link before and after and
+confirm both answer, and never fold it into a bulk or cosmetic change.
+
+A queue older than eight days is stale: say so in `because` and do not act on it.
+
 ## 2. Map each project to a repository BY EVIDENCE
 
 For every flagged site, work out its public domain, then find the repository whose own
@@ -121,7 +143,9 @@ Billionairehighperformancecoach → `sprylabs-hpc-site`.
 ### CLIENT REPOSITORIES ARE REPORT-ONLY
 
 The list is `src/shared/boss/siteAudit/repoPolicy.mjs` (`NO_AUTO_FIX`, kind `client`): today
-hicks-consulting-canonical, dianne-place-recovery-services and the sheila / mercedes repositories.
+dianne-place-recovery-services and the sheila / mercedes repositories. **horselegalguide.com
+(horse-legal-guide-velocity) and hicksconsulting.org (hicks-consulting-canonical) are NOT on it**
+(owner, 25 Oct 2026): fix them like every other grid repo site.
 A finding there is `disposition: "client_repo"`, headline starting `CLIENT_REPO:` — no branch, no
 commit, no PR. `audit-worktree.sh` refuses them and the ingest endpoint refuses a fix claimed
 against one.

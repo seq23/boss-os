@@ -504,6 +504,41 @@ lint_plist "$PROPS_PLIST"
 launchctl load "$PROPS_PLIST"
 echo "Installed $PROPS_LABEL — Monday 07:00 Central."
 
+# ─── The Search Readiness audit — every checklist item on every grid repo site, weekly ───────────
+#
+# Owner, 25 Oct 2026: her pinned checklist enforces itself. Monday 06:00, before Simone's 06:40
+# morning email, so the "grid repos" section lands in that Monday's email (it is told once, then
+# cleared). It writes the fix queue Danielle's repair run reads; it fixes nothing itself. Through the
+# vault (npm run sites:audit) for the read-only Search Console key. By hand: npm run sites:audit.
+SR_LABEL="com.seq.boss-sites-audit"
+SR_PLIST="$HOME/Library/LaunchAgents/$SR_LABEL.plist"
+cat > "$SR_PLIST" <<SREOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SR_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent sites:audit -- --morning</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/sites-audit.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/sites-audit.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+SREOF
+
+launchctl unload "$SR_PLIST" 2>/dev/null || true
+lint_plist "$SR_PLIST"
+launchctl load "$SR_PLIST"
+echo "Installed $SR_LABEL — Monday 06:00 Central."
+
 # ─── Simone's publication chase — RETIRED 14 September 2026 ─────────────────
 #
 # `duty_kdp_publication` chased KDP case #51496198 until the books were Live. Six of the seven went
@@ -1286,6 +1321,7 @@ require_loaded "$LABEL"
 require_loaded "$POLL_LABEL"
 require_loaded "$NETWORK_LABEL"
 require_loaded "$PROPS_LABEL"
+require_loaded "$SR_LABEL"
 # ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a
 # "Verified" line that did not mention it — the installer and its own verifier each keeping their own
 # list of jobs, which is the defect this file's comments warn about, inside this file.
