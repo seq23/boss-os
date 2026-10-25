@@ -21,6 +21,7 @@ import { audit } from "../lib/audit";
 import { mintComposeToken, serviceAccountFrom } from "../wealth/gmailDraft";
 import { approveTemplate, prospectPlan } from "../lp/desk";
 import { approveOutcome } from "../../../shared/boss/lp/plan.mjs";
+import { dismissMatch } from "../capital/dismiss";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -45,7 +46,8 @@ button{font:inherit;padding:14px 28px;border-radius:10px;border:0;background:#1f
 type Found =
   | { kind: "lp"; row: any }
   | { kind: "prospect_reply"; row: any }
-  | { kind: "template"; row: any };
+  | { kind: "template"; row: any }
+  | { kind: "match"; row: any };
 
 async function find(db: D1Database, token: string): Promise<Found | null> {
   if (!/^[A-Za-z0-9_-]{20,40}$/.test(token)) return null;
@@ -55,10 +57,12 @@ async function find(db: D1Database, token: string): Promise<Found | null> {
   if (pr) return { kind: "prospect_reply", row: pr };
   const t = await db.prepare(`SELECT * FROM prospect_templates WHERE tap_token = ?`).bind(token).first<any>();
   if (t) return { kind: "template", row: t };
+  const m = await db.prepare(`SELECT * FROM capital_match_taps WHERE token = ?`).bind(token).first<any>();
+  if (m) return { kind: "match", row: m };
   return null;
 }
 
-const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…" };
+const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…" };
 
 lpTap.get("/:token", async (c) => {
   const action = c.req.query("do") ?? "";
@@ -105,6 +109,13 @@ lpTap.post("/:token", async (c) => {
   const f = await find(db, c.req.param("token"));
   const now = Date.now();
   if (!f) return c.html(page("This link has done its job", "Nothing else to do here."));
+
+  // DISMISS A MATCH (owner, 25 Oct 2026): off the email, Today and the Matches screen until a new order.
+  if (f.kind === "match") {
+    if (action !== "dismiss") return c.html(page("This link has done its job", "Nothing else to do here."));
+    const r = await dismissMatch(c.env, { pair: f.row.pair, sig: f.row.sig, company: f.row.company, code: f.row.code }, "tap", now);
+    return c.html(page(r.dismissed ? "Dismissed" : "Already dismissed", `This ${f.row.company} match will not come back unless one side sends a new order.`));
+  }
 
   if (f.kind === "template") {
     if (action !== "approve") return c.redirect(DECK, 302);

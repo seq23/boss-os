@@ -1811,10 +1811,21 @@ function Matches() {
   const [tolerance, setTolerance] = useState(0.15);
   const [company, setCompany] = useState(() => new URLSearchParams(window.location.search).get("company") ?? "");
   const [showOld, setShowOld] = useState(false);
+  // "Open ›" in her morning email opens ONE trade's card: the seller's ready email and Dismiss (25 Oct 2026).
+  const [only, setOnly] = useState(() => new URLSearchParams(window.location.search).get("match") ?? "");
+  const [gone, setGone] = useState<Set<string>>(() => new Set());
+  const [busy, setBusy] = useState("");
   useEffect(() => { api.dealMatches().then(setData).catch(setError); }, []);
   if (error) return <ErrorNotice error={error} />;
   if (!data) return <Loading />;
-  const shown = data.matches.filter((m) => (m.gap === null || m.gap <= tolerance) && (showOld || !m.old) && (company === "" || m.company === company));
+  const dismiss = async (m: any) => {
+    if (!m.code) return;
+    setBusy(m.key);
+    try { await api.dismissMatch(m.code); setGone((g) => new Set([...g, m.key])); } catch (e) { setError(e); } finally { setBusy(""); }
+  };
+  const live = data.matches.filter((m) => !gone.has(m.key));
+  const card = only ? live.find((m) => m.key === only) : null;
+  const shown = card ? [card] : live.filter((m) => (m.gap === null || m.gap <= tolerance) && (showOld || !m.old) && (company === "" || m.company === company));
   const companies = [...new Set(data.matches.map((m) => m.company))].sort((a, b) => a.localeCompare(b));
   const side = (x: any, role: string) => (
     <div className="row-sub">
@@ -1825,6 +1836,12 @@ function Matches() {
   );
   return (
     <>
+      {only ? (
+        <p className="row-sub" style={{ marginBottom: 10 }}>
+          {card ? "The trade from your morning email." : "That trade is no longer here: it was dismissed, or one side's order changed or went stale."}{" "}
+          <button className="btn btn-small" onClick={() => setOnly("")}>See every match</button>
+        </p>
+      ) : null}
       <p className="row-sub" style={{ marginBottom: 10 }}>
         {shown.length} possible trades. A buy and a sell on the same company match when their prices are within your tolerance;
         a missing price never hides one (it says &quot;worth asking&quot;). Never two Rainmaker sides. The morning email uses 15%.
@@ -1849,12 +1866,18 @@ function Matches() {
       </div>
       {shown.length === 0 ? <Empty title="No matches with these choices" hint="Widen the price tolerance or pick All companies." /> : shown.slice(0, 300).map((m) => (
         <div key={m.key} className="duty-card mi-comment">
-          <p className="row-title">{m.company}{m.old ? <span className="pill">old</span> : m.stale ? <span className="pill">may be stale — check it&apos;s still live</span> : null}</p>
+          <p className="row-title">{m.star ? "⭐ " : ""}{m.company}{m.old ? <span className="pill">old</span> : m.stale ? <span className="pill">may be stale — check it&apos;s still live</span> : null}</p>
           <p className="mi-lede">{m.fill}; {m.price}.</p>
           {side(m.seller, "Seller")}
           {side(m.buyer, "Buyer")}
+          {m.code ? (
+            <div className="btn-row">
+              <button className="btn btn-small" disabled={busy === m.key} onClick={() => dismiss(m)}>Dismiss</button>
+              <span className="row-sub">Or reply &quot;dismiss {m.code}&quot; to your morning email. It comes back only if one side sends a new order.</span>
+            </div>
+          ) : null}
           {(m.drafts ?? []).length ? (
-            <details className="mi-more">
+            <details className="mi-more" open={Boolean(card)}>
               <summary>Show the {m.drafts.length > 1 ? "notes" : "note"}, word for word ▾</summary>
               {m.drafts.map((d: any, i: number) => (
                 <div key={i}>

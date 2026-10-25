@@ -218,7 +218,7 @@ export function nothingUnclearReachesAModel(source) {
   // The regex admits exactly those six beside the original, in that order, and nothing else; the
   // duty note is REQUIRED, because a draft appended under "Monique has it" is a draft she never
   // reads to the end.
-  if (!/const stopped = question \? question\.ask : (?:planAnswer\?\.note \?\? )?(?:commentAnswer\?\.note \?\? )?(?:kdpAnswer\?\.note \?\? )?dutyNote\?\.note \?\? (?:closeQuestion \?\? closedNote \?\? )?bookFailure;/.test(source)
+  if (!/const stopped = question \? question\.ask : (?:planAnswer\?\.note \?\? )?(?:commentAnswer\?\.note \?\? )?(?:kdpAnswer\?\.note \?\? )?(?:dismissAnswer\?\.note \?\? )?dutyNote\?\.note \?\? (?:closeQuestion \?\? closedNote \?\? )?bookFailure;/.test(source)
     || !/const reply = stopped \?/.test(source)) {
     bad.push("a message that STOPPED no longer leads with the reason — the one sentence that matters is buried under the reassurance that it worked.");
   }
@@ -267,13 +267,16 @@ if (process.argv.includes("--self-test")) {
   ), true);
   expect("a handler that could not be read at all", nothingUnclearReachesAModel(null), true);
   expect("a handler where the duty draft is appended below the routing reassurance instead of leading", nothingUnclearReachesAModel(
-    handlerSource?.replace("planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dutyNote?.note ?? closeQuestion", "planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? closeQuestion") ?? null,
+    handlerSource?.replace("planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? dutyNote?.note ?? closeQuestion", "planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? closeQuestion") ?? null,
   ), true);
   expect("a handler where the duty draft outranks her plan answer", nothingUnclearReachesAModel(
-    handlerSource?.replace("planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dutyNote?.note ?? closeQuestion", "dutyNote?.note ?? planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? closeQuestion") ?? null,
+    handlerSource?.replace("planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? dutyNote?.note ?? closeQuestion", "dutyNote?.note ?? planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? closeQuestion") ?? null,
+  ), true);
+  expect("a handler where her dismiss reply outranks her plan answer", nothingUnclearReachesAModel(
+    handlerSource?.replace("planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? dutyNote?.note ?? closeQuestion", "dismissAnswer?.note ?? planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dutyNote?.note ?? closeQuestion") ?? null,
   ), true);
   expect("a handler where her Kindle answer outranks her plan answer", nothingUnclearReachesAModel(
-    handlerSource?.replace("planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dutyNote?.note ?? closeQuestion", "kdpAnswer?.note ?? planAnswer?.note ?? commentAnswer?.note ?? dutyNote?.note ?? closeQuestion") ?? null,
+    handlerSource?.replace("planAnswer?.note ?? commentAnswer?.note ?? kdpAnswer?.note ?? dismissAnswer?.note ?? dutyNote?.note ?? closeQuestion", "kdpAnswer?.note ?? planAnswer?.note ?? commentAnswer?.note ?? dismissAnswer?.note ?? dutyNote?.note ?? closeQuestion") ?? null,
   ), true);
 
   if (failed) { console.error(`VERB/CLARITY SELF-TEST FAILED (${failed})`); process.exit(1); }

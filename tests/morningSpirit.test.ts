@@ -32,19 +32,26 @@ describe("the Spirit section, as she approved it", () => {
       "This morning · 9 min: Breathe 2 → visualize 5 → name today's one action 2.",
       "“Grateful for the people behind me who never needed to be asked.”",
       "This month · 7 days left: 🕯 Ancestors hour: 0 of 60 min · 🤝 Contribution: 0 of 1.",
+      // Trimmed (owner, 25 Oct 2026): the week's practice as ONE short line, no source.
+      "This week's practice: Pick one friction point and write the rule.",
     ]);
-    expect(s.link).toEqual({ label: "Open Spirit →", url: "https://boss.sequoiataylor.com/?tab=spirit" });
-    expect(s.full.summary).toBe("Show more ▾");
-    expect(s.full.blocks.map((b: any) => b.heading)).toEqual(["Today's sky in full", "Body", "This week's practice: If-then plans", "Manifestations", ""]);
+    expect(s.link).toEqual({ label: "See the full sky, body and practice in Boss OS →", url: "https://boss.sequoiataylor.com/?tab=spirit" });
+    expect(s.full).toBeUndefined();
   });
-  it("sits after Monique found and before the briefing, folds the rest, and keeps the advisory note", () => {
+  it("an if-then practice reads as the plan itself, in one sentence", () => {
+    const s = spiritSection(DAY, { practice: { technique: "Implementation Intentions (if-then planning)", how_to_try_it: "Pick one existing habit loop. Write it as a concrete if-then: 'If I finish my morning coffee, then I do 5 minutes of breathwork.' The specificity matters.", source_name: "A study" } }, NOW)!;
+    expect(s.items.at(-1).runs[0].text).toBe("This week's practice: Implementation Intentions: If I finish my morning coffee, then I do 5 minutes of breathwork.");
+  });
+  it("sits after Monique found and before the briefing; the sky in full, Body, Manifestations and the advisory are one link away", () => {
     const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: {}, spirit: DAY, practiceWeek: WEEK }, NOW);
     const t = e.text.replace(/⁣/g, "");
     expect(t.indexOf("✨ Spirit")).toBeGreaterThan(-1);
     expect(t.indexOf("✨ Spirit")).toBeLessThan(t.indexOf("This morning's briefing"));
-    expect(t).toContain("- Venus square your Mercury: Money meets how you think.");
-    expect(t).toContain("never a cause and never a permission");
-    expect(e.html).toMatch(/<summary[^>]*>Show more ▾<\/summary>/);
+    for (const gone of ["Today's sky in full", "Venus square your Mercury", "Body", "Drink water first", "Manifestations", "never a cause and never a permission", "Source:", "doi.example", "Show more ▾"]) {
+      expect(t, gone).not.toContain(gone);
+      expect(e.html, gone).not.toContain(gone);
+    }
+    expect(t).toContain("See the full sky, body and practice in Boss OS →: https://boss.sequoiataylor.com/?tab=spirit");
     expect(e.problems).toEqual([]);
   });
 });

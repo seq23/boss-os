@@ -85,8 +85,8 @@ describe("the one morning email", () => {
     expect(e.html).toMatch(/<a href="https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1" style="display:inline-block[^"]*">Send as is<\/a>/);
   });
   it("deals are grid rows, each opening its own deal screen; the person and firm say who it came from", () => {
-    expect(e.text).toMatch(/- Company A · Buy · \$1B · Broker One — Open the deal: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=deal-[0-9a-f]{10}\n/);
-    expect(e.text).toMatch(/- Company B · Sell · \$300M @ \$138 · Broker Two \(Firm X\) — Open the deal: /);
+    expect(e.text).toMatch(/- Company A · Buy · \$1B · Broker One — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=deal-[0-9a-f]{10}\n/);
+    expect(e.text).toMatch(/- Company B · Sell · \$300M @ \$138 · Broker Two \(Firm X\) — Open ›: /);
     expect(e.text).not.toMatch(/· Rainmaker — /);
     expect(e.digest.deals.map((d: any) => [d.company, d.email_url])).toEqual([["Company A", `${G}a1`], ["Company B", `${G}b2`]]);
     expect(e.text).toContain(`See the full grid: ${BOSS}`);
@@ -109,9 +109,10 @@ describe("the one morning email", () => {
     expect(done[3]).toBe("- And 2 more done for you. — See them all on Today: https://boss.sequoiataylor.com/?view=morning");
     expect(e.digest.done).toHaveLength(5);
   });
-  it("Valerie's box is unchanged: the site's own list, boxed", () => {
-    expect(e.text).toContain("- 9:00 AM · Riley M. · Party setup");
-    expect(e.text).toContain("- Money: Jordan P. · Waiting for deposit — $180 due ($130 + $50 refundable deposit)");
+  it("Valerie's box: one calm line per customer from the site's own list, boxed (25 Oct 2026)", () => {
+    expect(e.text).toContain("- Riley M. · 9:00 AM party setup\n");
+    expect(e.text).toContain("- Jordan P. · waiting for deposit, $180 due ($130 + $50 refundable deposit)\n");
+    expect(e.text).not.toContain("Money: ");
     expect(e.html).toContain("faf6ec");
   });
   it("goes out through employeeMail as laid out, signed by Simone, with its code and its kind in the header", () => {

@@ -162,6 +162,8 @@ const SNAPSHOT_TABLES = [
   // matches. The morning is not re-derivable once the section files on her Mac are cleared.
   "morning_digests",
   "capital_matches",
+  "capital_match_taps",
+  "capital_dismissed",
   // Danielle's repo changes (0265): her instruction, the plan, her reply, the PR and the proof.
   "repo_changes",
   /*

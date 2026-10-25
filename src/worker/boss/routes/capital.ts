@@ -29,6 +29,7 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
 import { currentBook, currentBookLines } from "../capital/book";
+import { dismissedSet, tapsFor, tapByCode, dismissMatch, refKey } from "../capital/dismiss";
 import {
   activeLists, applyListEdit, cleanDealRow, cleanHolder, dealGrid, holdersList, storeDeals, storeHolders,
   type DealRow, type HolderRow,
@@ -163,7 +164,10 @@ capital.post("/deals", async (c) => {
 /** Every current match (24 Oct 2026), best first — the Matches screen. Written whole by her Mac. */
 capital.get("/matches", async (c) => {
   const r = await c.env.DB.prepare(`SELECT payload, updated_at FROM capital_matches ORDER BY rank ASC LIMIT 2000`).all<{ payload: string; updated_at: number }>();
-  const rows = (r.results ?? []).map((x) => { try { return JSON.parse(x.payload); } catch { return null; } }).filter(Boolean);
+  // A dismissed match stays off the screen until either side posts a new order (25 Oct 2026).
+  const dismissed = await dismissedSet(c.env);
+  const rows = (r.results ?? []).map((x) => { try { return JSON.parse(x.payload); } catch { return null; } })
+    .filter((m) => m && !(m.pair && dismissed.has(refKey(m.pair, String(m.sig ?? "")))));
   return ok(c, { matches: rows, updated_at: (r.results ?? []).reduce((n, x) => Math.max(n, x.updated_at), 0) || null });
 });
 
@@ -174,15 +178,45 @@ capital.post("/matches", async (c) => {
   const now = Date.now();
   const offset = Number(body.offset ?? 0) || 0;
   const stmts: D1PreparedStatement[] = body.replace ? [c.env.DB.prepare(`DELETE FROM capital_matches`)] : [];
+  // Each match gets its short code and one-tap link here, minted once per pair and orders and kept.
+  const taps = await tapsFor(c.env, body.matches.filter((m: any) => m?.pair && m?.sig) as any[], now);
+  const codes: Record<string, string> = {};
   body.matches.forEach((m: any, i: number) => {
     const key = String(m?.key ?? "").slice(0, 120);
     const company = String(m?.company ?? "").slice(0, 120);
     if (!key || !company) return;
+    const tap = m?.pair && m?.sig ? taps.get(refKey(String(m.pair), String(m.sig))) : undefined;
+    if (tap) codes[key] = tap.code;
     stmts.push(c.env.DB.prepare(`INSERT OR REPLACE INTO capital_matches (key, company, rank, payload, updated_at) VALUES (?,?,?,?,?)`)
-      .bind(key, company, offset + i, JSON.stringify(m).slice(0, 20000), now));
+      .bind(key, company, offset + i, JSON.stringify({ ...m, ...(tap ? { code: tap.code, tap: `/tap/${tap.token}?do=dismiss` } : {}) }).slice(0, 20000), now));
   });
   for (let i = 0; i < stmts.length; i += 100) await c.env.DB.batch(stmts.slice(i, i + 100));
-  return ok(c, { stored: stmts.length - (body.replace ? 1 : 0) });
+  return ok(c, { stored: stmts.length - (body.replace ? 1 : 0), codes });
+});
+
+/** What she has dismissed, for her Mac's morning run: every (pair, sig). */
+capital.get("/dismissed", async (c) => {
+  const r = await c.env.DB.prepare(`SELECT pair, sig, company, code, via, dismissed_at FROM capital_dismissed ORDER BY dismissed_at DESC LIMIT 5000`).all();
+  return ok(c, { dismissed: r.results ?? [] });
+});
+
+/**
+ * DISMISS (owner, 25 Oct 2026): the button on the trade's card, by its code; or by pair and orders
+ * from her own session (how the first one, the Stripe pair, was dismissed). Same row either way.
+ */
+capital.post("/dismiss", async (c) => {
+  const b = await c.req.json<{ code?: string; pair?: string; sig?: string; company?: string }>().catch(() => null);
+  const code = String(b?.code ?? "").trim().toLowerCase();
+  if (code) {
+    const tap = await tapByCode(c.env, code);
+    if (!tap) throw badRequest(`No match has the code ${code}`, "The five letters on the trade's card.");
+    return ok(c, await dismissMatch(c.env, { pair: tap.pair, sig: tap.sig, company: tap.company, code: tap.code }, "screen"));
+  }
+  const pair = String(b?.pair ?? "").trim();
+  const sig = String(b?.sig ?? "").trim();
+  const company = String(b?.company ?? "").trim();
+  if (!pair || !sig || !company) throw badRequest("Which match?", "{ code } from the card, or { pair, sig, company }.");
+  return ok(c, await dismissMatch(c.env, { pair, sig, company }, "owner_session"));
 });
 
 capital.get("/lists", async (c) => ok(c, await activeLists(c.env)));

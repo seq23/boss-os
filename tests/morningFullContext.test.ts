@@ -32,13 +32,16 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
   const sell = grow({ id: "s25", company: "Company Q", side: "sell", direction: "sell", size_usd: 25e6, size_text: "$25M", from_text: "Pat Seller, Seller Co", received_on: day(11), email_url: "https://mail.google.com/mail/u/0/#all/s25", _row: { from: "pat@sellerco.example", from_name: "Pat Seller" } });
   const buy = grow({ id: "b5", company: "Company Q", size_usd: 5e6, size_text: "$5M", from_text: "Bo Buyer, Buyer Co", received_on: day(11), email_url: "https://mail.google.com/mail/u/0/#all/b5", _row: { from: "bo@buyerco.example", from_name: "Bo Buyer" } });
 
-  it("an unpriced $25M seller and $5M buyer are a match in the email, with both contacts and a note to each", () => {
+  it("an unpriced $25M seller and $5M buyer are a grid row in the email; its card holds both contacts and a note to each", () => {
     const out = moniqueFound({ newRows: [], grid: [sell, buy], lists: NO_LISTS, now: NOW });
-    const line = out.lines.find((l: any) => /^Match, Company Q/.test(l.text));
-    expect(line?.text).toBe("Match, Company Q: seller Pat Seller, Seller Co (pat@sellerco.example) has $25M, no price; buyer Bo Buyer, Buyer Co (bo@buyerco.example) wants $5M, no price. The $25M seller can fill all of the $5M buyer; price unknown on both sides — worth asking. Seller: 11 days ago · buyer: 11 days ago.");
-    expect(line.links[0].label).toBe("Write to the seller (draft ready)");
-    expect(line.match.drafts.map((d: any) => d.to)).toEqual(["pat@sellerco.example", "bo@buyerco.example"]);
-    expect(line.match.drafts[0].body).toContain("What price are they looking for?");
+    expect(out.grid).toEqual([expect.objectContaining({
+      company: "Company Q", trade: "Pat Seller, Seller Co $25M at price? → Bo Buyer, Buyer Co $5M at price?", fit: "Size ● Price ○ Age ●",
+      url: "https://boss.sequoiataylor.com/?tab=capital&view=matches&match=b5%7Cs25", url_label: "Open ›", star: false,
+    })]);
+    const m = out.matches[0];
+    expect(m.drafts.map((d: any) => d.to)).toEqual(["pat@sellerco.example", "bo@buyerco.example"]);
+    expect(m.drafts[0].body).toContain("What price are they looking for?");
+    expect(out.decide).toEqual([]);
     // And it is on the Matches screen.
     expect(out.matches.map((m: any) => m.key)).toEqual(["b5|s25"]);
   });

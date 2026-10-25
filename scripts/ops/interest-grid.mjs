@@ -385,28 +385,15 @@ export function matchView(buyer, seller, rank, { isNew = false, now = Date.now()
     received_on: g.received_on, age: ageWords(g.received_on, now), email_url: g.email_url ?? null, rainmaker: g.rainmaker === 1,
   });
   const drafts = pairDrafts(buyer, seller);
+  const fit = matchFit(buyer, seller, rank, now);
   return {
     key: `${buyer.id}|${seller.id}`, company: buyer.company, new: isNew,
+    // Both orders, id and price: a dismissed pair comes back only on a new order (25 Oct 2026).
+    sig: `${buyer.id}:${buyer.price_text ?? "—"}|${seller.id}:${seller.price_text ?? "—"}`,
+    fit, star: fit.star,
     buyer: side(buyer), seller: side(seller),
     fill: pairFillWords(buyer, seller), gap: rank.gap, priced: rank.priced, price: rank.gap_words,
     age: rank.age_words, stale: rank.stale, old: rank.old, oldest_days: rank.oldest_days ?? 0, drafts,
-  };
-}
-
-/** A match as a Decide item: both sides in full, what fills, the price gap, the age, the notes. */
-export function matchDecide(m) {
-  const line = (s, role) => `${role}: ${s.who}${s.email ? ` (${s.email})` : ""} ${role === "Buyer" ? "wants" : "has"} ${s.size !== "—" ? s.size : "an amount not given"}${s.price !== "—" ? ` at ${s.price}` : ", no price given"}; their email came ${s.age}.`;
-  return {
-    key: `match:${m.key}`,
-    title: `${m.company}: a buyer and a seller who could trade`,
-    body: `${m.fill[0].toUpperCase()}${m.fill.slice(1)}. ${m.price[0].toUpperCase()}${m.price.slice(1)}.${m.stale ? " One side may be stale — check it's still live." : ""}`,
-    details: [line(m.seller, "Seller"), line(m.buyer, "Buyer"), `Age: ${m.age}.`],
-    draft: m.drafts.length ? { heading: m.drafts.length > 1 ? "The two notes, word for word" : "The note, word for word", text: m.drafts.map((d) => `To ${d.to} (the ${d.side})\nSubject: ${d.subject}\n\n${d.body}`).join("\n\n— — —\n\n") } : null,
-    buttons: [
-      ...m.drafts.map((d) => ({ label: `Write to the ${d.side} (draft ready)`, url: mailto(d.to, d.subject, d.body) })),
-      ...(m.seller.email_url ? [{ label: "Open the seller's email", url: m.seller.email_url }] : []),
-      ...(m.buyer.email_url ? [{ label: "Open the buyer's email", url: m.buyer.email_url }] : []),
-    ],
   };
 }
 
@@ -464,29 +451,9 @@ export function matchCounts(all, { tolerance = DEFAULT_TOLERANCE } = {}) {
   };
 }
 
-/**
- * THE BEST FEW FOR THE EMAIL (24 Oct 2026: "never hundreds"). New matches only — a pair first seen in
- * the last day and a half, or one touching an order that arrived since yesterday — none of them stale,
- * at most one per company, freshest first and then the closest price, at most `MAX_EMAIL_MATCHES`.
- * `firstSeen` (pair → ms) is Monique's memory; without it every live match counts as new.
- */
+/** The most matches the email's grid carries (owner, 24 Oct 2026: "never hundreds"). */
 export const MAX_EMAIL_MATCHES = 5;
 export const NEW_MATCH_MS = 36 * 3_600_000;
-export function emailMatches(within, { firstSeen = null, now = Date.now(), max = MAX_EMAIL_MATCHES } = {}) {
-  const isNew = (m) => m.new || !firstSeen || (firstSeen[m.pair] ?? now) >= now - NEW_MATCH_MS;
-  const ranked = within.filter((m) => !m.stale && isNew(m))
-    .sort((a, b) => a.oldest_days - b.oldest_days || (a.gap ?? 2) - (b.gap ?? 2));
-  const out = [];
-  const companies = new Set();
-  for (const m of ranked) {
-    const c = String(m.company).toLowerCase();
-    if (companies.has(c)) continue;
-    companies.add(c);
-    out.push({ ...m, more_on_company: ranked.filter((x) => String(x.company).toLowerCase() === c).length - 1 });
-    if (out.length >= max) break;
-  }
-  return out;
-}
 
 /** A holders line: "5 funds hold $310M between them. Biggest: A $120M, B $64M." Partial fills summed. */
 export function holdersLine(deal, holders) {
@@ -501,35 +468,94 @@ export function holdersLine(deal, holders) {
 }
 
 /**
- * monique_found.json — owner, 24 Oct 2026: for each new deal, FIRST the people in her own email
- * who can fill it, and only then the outward list (public filings and press, labelled "not
- * confirmed"), each with one next step. MATCHES: every buy and sell on the same company that could
- * trade (size, price within 15%, a missing price never hides one, fresher first). A match she has not
- * been told about yet is in the email — a new one in Decide (her move) — and every current match is
- * on the Matches screen (`matches`). Older than her ~6-month lookback: on the screen only, as "old".
+ * ─── THE STAR (owner, 25 Oct 2026) ──────────────────────────────────────────
+ *
+ * A ⭐ match sorts to the top of the grid, and earns it only when ALL of these hold: both prices are
+ * known and within 10% of each other; the seller fills at least 25% of the buyer's size, or at least
+ * $10M; and both orders are under 14 days old. Every other match is an ordinary row.
  */
-export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(), firstSeen = null }) {
+export const STAR = Object.freeze({ maxGap: 0.10, minFillShare: 0.25, minFillUsd: 10e6, maxDays: 14 });
+const daysSince = (d, now) => (d ? Math.max(0, Math.floor((now - Date.parse(String(d))) / 86_400_000)) : Infinity);
+
+/** The three fit dots (size, price, age) and the star, from the two orders. Pure. */
+export function matchFit(buyer, seller, rank, now = Date.now()) {
+  const b = Number(buyer.size_usd) || 0;
+  const s = Number(seller.size_usd) || 0;
+  const fills = s > 0 && ((b > 0 && s >= STAR.minFillShare * b) || s >= STAR.minFillUsd);
+  const size = b > 0 && s >= b ? "good" : fills ? "part" : "poor";
+  const priced = rank?.priced === true && typeof rank?.gap === "number";
+  const price = priced && rank.gap <= STAR.maxGap ? "good" : priced && rank.gap <= DEFAULT_TOLERANCE ? "part" : "poor";
+  const days = Math.max(daysSince(buyer.received_on, now), daysSince(seller.received_on, now));
+  const age = days < STAR.maxDays ? "good" : days < STALE_DAYS ? "part" : "poor";
+  const star = priced && rank.gap <= STAR.maxGap && fills && days < STAR.maxDays;
+  return { size, price, age, star, days };
+}
+const DOT = { good: "●", part: "◐", poor: "○" };
+export const fitWords = (f) => `Size ${DOT[f.size]} Price ${DOT[f.price]} Age ${DOT[f.age]}`;
+/** The trade's own card in Boss OS: the seller's ready email and Dismiss. */
+export const cardUrl = (m) => `${MATCHES_PAGE}&match=${encodeURIComponent(m.key)}`;
+const terms = (x) => `${x.size !== "—" ? x.size : "size?"} at ${x.price !== "—" ? x.price : "price?"}`;
+
+/**
+ * THE GRID ROWS FOR THE EMAIL (owner, 25 Oct 2026, mock-up v2): every live match within her
+ * tolerance — not stale, not old, not dismissed — one row per company ("+N more"), ⭐ first, then
+ * freshest, then closest price, at most `MAX_EMAIL_MATCHES`. A row stays until she dismisses it or
+ * one side goes stale. No match is ever a Decide item: Decide is for her own moves.
+ */
+export function gridMatches(within, { dismissed = new Set(), max = MAX_EMAIL_MATCHES } = {}) {
+  const live = within.filter((m) => !m.stale && !m.old && !dismissed.has(`${m.pair}#${m.sig}`))
+    .sort((a, b) => (a.star === b.star ? 0 : a.star ? -1 : 1) || a.oldest_days - b.oldest_days || (a.gap ?? 2) - (b.gap ?? 2));
+  const out = [];
+  const seen = new Set();
+  for (const m of live) {
+    const c = String(m.company).toLowerCase();
+    if (seen.has(c)) continue;
+    seen.add(c);
+    out.push({ ...m, more_on_company: live.filter((x) => String(x.company).toLowerCase() === c).length - 1 });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** One grid row: company (+N more) | seller → buyer | fit dots | Open ›. */
+export function gridRowOf(m) {
+  return {
+    company: `${m.star ? "⭐ " : ""}${m.company}${m.more_on_company > 0 ? ` (+${m.more_on_company} more)` : ""}`,
+    trade: `${m.seller.who} ${terms(m.seller)} → ${m.buyer.who} ${terms(m.buyer)}`,
+    fit: fitWords(m.fit),
+    url: cardUrl(m), url_label: "Open ›",
+    match_pair: m.pair, match_sig: m.sig, key: m.key, star: m.star,
+  };
+}
+
+/**
+ * monique_found.json — owner, 25 Oct 2026 (mock-up v2): ONE grid of the best live matches (`grid`),
+ * then "Still looking" as one line (new orders nobody in her email can fill yet), then the filings
+ * and press as one link, then the count line to the Matches screen. `decide` is always empty: no
+ * match goes to Decide. `dismissed` (pair#sig) is what she dismissed; it never comes back until a
+ * new order. Every current match is on the Matches screen (`matches`).
+ */
+export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(), firstSeen: _firstSeen = null, dismissed = new Set() }) {
   const newIds = new Set(newRows.map((g) => g.id));
-  const all = allMatches(grid, lists, { newIds, now });
+  const all = allMatches(grid, lists, { newIds, now }).filter((m) => !dismissed.has(`${m.pair}#${m.sig}`));
   const within = all.filter((m) => !m.old && (m.gap === null || m.gap <= DEFAULT_TOLERANCE));
   const counts = matchCounts(all);
-  /*
-   * THE EMAIL CARRIES THE BEST FEW, NEVER HUNDREDS (owner, 24 Oct 2026). At most five new matches,
-   * one per company, freshest then closest price: one on an order that arrived since yesterday is her
-   * move (Decide); one first seen since yesterday is a line here with its note ready. Then one line
-   * with the count and the Matches screen, where every current match is.
-   */
-  const picks = emailMatches(within, { firstSeen, now });
-  const decide = picks.filter((m) => m.new).map(matchDecide);
+  const picks = gridMatches(within, { dismissed });
   const lines = [];
-  const side = (x, role) => `${role} ${x.who}${x.email ? ` (${x.email})` : ""} ${role === "buyer" ? "wants" : "has"} ${x.size !== "—" ? x.size : "an amount not given"}${x.price !== "—" ? ` at ${x.price}` : ", no price"}`;
-  for (const m of picks.filter((x) => !x.new)) {
-    lines.push({
-      text: `Match, ${m.company}: ${side(m.seller, "seller")}; ${side(m.buyer, "buyer")}. ${m.fill[0].toUpperCase()}${m.fill.slice(1)}; ${m.price}. ${m.age[0].toUpperCase()}${m.age.slice(1)}.${m.more_on_company > 0 ? ` ${m.more_on_company} more possible ${m.more_on_company === 1 ? "trade" : "trades"} on ${m.company}.` : ""}`,
-      links: m.drafts.slice(0, 1).map((d) => ({ label: `Write to the ${d.side} (draft ready)`, url: mailto(d.to, d.subject, d.body) })),
-      deal: m.company, match: { ...m },
-    });
+  const looking = [];
+  const outward = [];
+  const rows = [];
+  for (const g of newRows) {
+    const mine = within.filter((m) => m.key.split("|").includes(g.id));
+    if (!mine.length) looking.push(dealPhrase(g).replace(/^the /, ""));
+    const holders = (found[g.company.toLowerCase()]?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
+    const press = (found[g.company.toLowerCase()]?.press ?? []).filter((l) => !isDoNotSuggest({ principal: l.name, from_text: l.org }, lists));
+    if (holdersLine(g, holders) || press.length) outward.push(g.company);
+    for (const h of holders.slice(0, 5)) rows.push({ company: g.company, fund: h.fund, manager: h.manager ?? "—", value: moneyWords(h.value_usd), as_of: h.as_of ?? "—", url: h.filing_url });
   }
+  if (looking.length) lines.push({ text: `Still looking: no one in your email yet for ${looking.slice(0, 4).join("; ")}${looking.length > 4 ? `; and ${looking.length - 4} more` : ""}.` });
+  const out = [...new Set(outward)];
+  if (out.length) lines.push({ text: `Outside your email: public filings and press, not confirmed, on ${out.slice(0, 4).join(", ")}${out.length > 4 ? ` and ${out.length - 4} more` : ""}.`, links: [{ label: "See the filings and press", url: out.length === 1 ? `${HOLDERS_PAGE}&company=${encodeURIComponent(out[0])}` : HOLDERS_PAGE }] });
   if (counts.within > picks.length) {
     lines.push({
       text: `${counts.within} possible ${counts.within === 1 ? "trade" : "trades"} in all, on ${counts.companies} ${counts.companies === 1 ? "company" : "companies"}, each buyer and seller counted once${counts.stale ? `; ${counts.stale} ${counts.stale === 1 ? "has" : "have"} an order over ${STALE_DAYS} days old (may be stale — check it's still live)` : ""}.`,
@@ -537,36 +563,16 @@ export function moniqueFound({ newRows, grid, lists, found = {}, now = Date.now(
       counts,
     });
   }
-  const rows = [];
-  for (const g of newRows) {
-    const head = `For ${dealPhrase(g)}`;
-    const mine = within.filter((m) => m.key.split("|").includes(g.id));
-    if (!mine.length) lines.push({ text: `${head}: no one in your email yet for this.`, deal: g.company });
-    const holders = (found[g.company.toLowerCase()]?.holders ?? []).filter((h) => !isDoNotSuggest({ principal: h.fund, from_text: h.manager }, lists));
-    const line = holdersLine(g, holders);
-    if (line) {
-      lines.push({ text: `${head}, outside your email. ${line} Next step: see the funds and their filings.`, links: [{ label: "See the funds", url: `${HOLDERS_PAGE}&company=${encodeURIComponent(g.company)}` }], deal: g.company });
-      for (const h of holders.slice(0, 5)) rows.push({ company: g.company, fund: h.fund, manager: h.manager ?? "—", value: moneyWords(h.value_usd), as_of: h.as_of ?? "—", url: h.filing_url });
-    }
-    for (const l of (found[g.company.toLowerCase()]?.press ?? []).slice(0, 3)) {
-      if (isDoNotSuggest({ principal: l.name, from_text: l.org }, lists)) continue;
-      const src = String(l.url ?? l.link ?? "");
-      lines.push({
-        text: `${head}, outside your email. Press, not confirmed: ${l.name}${l.org ? ` at ${l.org}` : ""} said publicly they ${g.direction === "buy" ? "hold" : "want"} ${g.company} (${l.kind}${l.published_date ? `, ${l.published_date}` : ""}). Next step: read what they said.`,
-        links: /^https?:\/\//.test(src) ? [{ label: "Read the article", url: src }] : [],
-        deal: g.company,
-      });
-    }
-  }
   return {
-    decide, rows, lines, counts,
+    decide: [], rows, lines, counts,
+    grid: picks.map(gridRowOf),
     // Every current match goes to the Matches screen (capital_matches), not into this file.
     matches: all.slice(0, 2000),
-    // The count line carries "See all N matches →"; a second button to the same screen is noise.
     link: lines.some((l) => l.counts) ? null : { label: "See every match", url: MATCHES_PAGE },
   };
 }
 
+/** deals.json — the new rows since yesterday, newest first, at most 12, and the way to the full grid. */
 function monthOf(daysBack) {
   return new Date(Date.now() - daysBack * 86_400_000).toLocaleString("en-US", { month: "long", timeZone: "America/Chicago" });
 }
@@ -670,13 +676,19 @@ async function main() {
   // Monique's memory of when each buyer/seller pair was first seen, so "new matches" means new.
   const firstSeenFile = path.join(DIR, "matches-first-seen.json");
   const firstSeen = readJson(firstSeenFile, null)?.pairs ?? null;
-  const monique = moniqueFound({ newRows, grid, lists, found, firstSeen });
+  // What she dismissed (one table, read by the screen and Today too); a run without Boss OS keeps the last copy.
+  const dismissedCache = path.join(DIR, "dismissed.json");
+  const live = session ? await session.get("/capital/dismissed") : null;
+  const dismissedRows = live?.data?.dismissed ?? readJson(dismissedCache, { dismissed: [] }).dismissed ?? [];
+  if (live?.data?.dismissed) fs.writeFileSync(dismissedCache, JSON.stringify({ fetched_at: new Date().toISOString(), dismissed: dismissedRows }));
+  const dismissed = new Set(dismissedRows.map((d) => `${d.pair}#${d.sig}`));
+  const monique = moniqueFound({ newRows, grid, lists, found, firstSeen, dismissed });
   const nowMs = Date.now();
   const nextSeen = {};
   for (const m of monique.matches) nextSeen[m.pair] = firstSeen?.[m.pair] ?? nowMs;
   console.log(`Grid: ${grid.length} deal(s) in the last ${LOOKBACK_DAYS} days, ${newRows.length} new since the last run `
     + `(${grid.filter((g) => g.side === "yours").length} yours, ${grid.filter((g) => g.rainmaker).length} Rainmaker).`);
-  console.log(`Monique found: ${monique.decide.length} match(es) to decide, ${monique.lines.length} line(s), ${monique.rows.length} holder row(s), ${monique.matches.length} current match(es) on the screen `
+  console.log(`Monique found: ${monique.grid.length} grid row(s) (${monique.grid.filter((r) => r.star).length} starred), ${dismissed.size} dismissed, ${monique.lines.length} line(s), ${monique.rows.length} holder row(s), ${monique.matches.length} current match(es) on the screen `
     + `(${monique.counts.within} within ${Math.round(DEFAULT_TOLERANCE * 100)}% on ${monique.counts.companies} companies, ${monique.counts.stale} with an order over ${STALE_DAYS} days).`);
   if (DRY) { console.log(JSON.stringify({ deals, monique_found: monique }, null, 2).slice(0, 4000)); return; }
 

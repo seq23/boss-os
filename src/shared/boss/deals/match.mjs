@@ -52,6 +52,9 @@ export function parsePrice(text) {
   if (share) return { kind: "share", value: Number(share[1]) };
   const val = /\$\s*(\d+(?:\.\d+)?)\s*(trillion|billion|million|tn|bn|mm|t|b|m)\b/i.exec(t);
   if (val) return { kind: "valuation", value: Number(val[1]) * UNIT[val[2].toLowerCase()] };
+  // "1.35T valuation", "at 1.35T" (25 Oct 2026, the $1B Anthropic sell): a valuation with no "$".
+  const noDollar = /(?:^|[\s(@])(\d+(?:\.\d+)?)\s*(trillion|billion|tn|bn|t|b)\b/i.exec(t);
+  if (noDollar && (/\b(?:valuation|val|post|pre)\b/i.test(t) || /^(?:t|tn|trillion)$/i.test(noDollar[2]))) return { kind: "valuation", value: Number(noDollar[1]) * UNIT[noDollar[2].toLowerCase()] };
   const bare = /\$\s*(\d+(?:\.\d+)?)(?!\s*[a-z%])/i.exec(t);
   if (bare && Number(bare[1]) < 100000) return { kind: "share", value: Number(bare[1]) };
   return null;
