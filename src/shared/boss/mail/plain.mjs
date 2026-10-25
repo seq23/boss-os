@@ -75,10 +75,10 @@ export const JARGON = [
 ];
 
 /** The reply tokens a lane reads back from her answer. Pulled out of the text into `refs`. */
-export const REF_RE = /\b(?:rc|dd|tsk|cw|kml|yd)_[a-z0-9]{3,40}\b/gi;
+export const REF_RE = /\b(?:rc|dd|tsk|cw|kml|yd|cmd)_[a-z0-9]{3,40}\b/gi;
 
 /** Every internal id shape: a known prefix, or a short prefix and an underscore with a digit in it. */
-const ID_RE = /\b(?:(?:rc|dd|tsk|wc|cw|kml|apr|iml|emp|cred|yd|mail|run)_[a-z0-9_]{3,}|[a-z]{2,5}_[a-z0-9]*\d[a-z0-9]*)\b/gi;
+const ID_RE = /\b(?:(?:rc|dd|tsk|wc|cw|kml|apr|iml|emp|cred|yd|mail|run|cmd)_[a-z0-9_]{3,}|[a-z]{2,5}_[a-z0-9]*\d[a-z0-9]*)\b/gi;
 const BRACKETED_ID_RE = /\[[a-z]{2,5}_[^\]\s]*\]/i;
 const SNAKE_RE = /\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b/;
 const CRON_RE = /(?:^|\s)(?:[\d*/,-]+\s+){4}[\d*/,-]+(?=\s|$)/;

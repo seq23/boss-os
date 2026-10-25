@@ -91,6 +91,15 @@ const LP_DRAFT_MODULE = "scripts/ops/lp-followups.mjs";
  */
 const LP_TAP_MODULE = "src/worker/boss/routes/lpTap.ts";
 const PROSPECT_SENDER = "scripts/ops/lp-prospects.mjs";
+/**
+ * THE SIXTH (owner, 25 Oct 2026: "Simone does it by email"). An email Simone drafted for a person
+ * goes ONLY after the owner taps Send on the exact words she was shown. COMMAND_SENDER may name
+ * messages/send, and is held to: compose and nothing wider, never spry.vc, the mailbox checked
+ * against the Workspace list (`mailboxAllowed`) BEFORE a token is minted, and `sendOne` called from
+ * exactly one place — COMMAND_RUNNER — after it refuses any row not in state "approved".
+ */
+const COMMAND_SENDER = "src/worker/boss/commands/google.ts";
+const COMMAND_RUNNER = "src/worker/boss/commands/run.ts";
 
 /** Drop comments and doc prose so a rule can be DESCRIBED in a file without the scan reading it as code. */
 function stripProse(src) {
@@ -208,6 +217,20 @@ export function violations(files) {
       const guard = code.search(/WEST_PEEK\.test\(mailbox\)/);
       const mint = code.search(/mintComposeToken\(creds/);
       if (guard === -1 || mint === -1 || guard > mint) bad.push(`${rel}: must refuse any mailbox that is not on westpeek.ventures BEFORE minting a token.`);
+    } else if (rel === COMMAND_SENDER) {
+      if (!/\bmintComposeToken\b/.test(code) || !/messages\/send/.test(code)) bad.push(`${rel}: is Simone's send-on-her-word and no longer mints compose or sends — this guard is watching an empty room.`);
+      if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose.`);
+      if (DOMAIN_RE.test(code)) bad.push(`${rel}: names ${DOMAIN} in code. Simone never sends from it.`);
+      const sendFn = code.slice(Math.max(0, code.search(/export async function sendOne\b/)));
+      const guard = sendFn.search(/mailboxAllowed\(input\.from\)/);
+      const mint = sendFn.search(/mintComposeToken\(creds/);
+      if (code.search(/export async function sendOne\b/) === -1 || guard === -1 || mint === -1 || guard > mint) bad.push(`${rel}: sendOne must refuse a mailbox off the Workspace list BEFORE minting a token.`);
+      const callers = Object.entries(files).filter(([f, src]) => f !== COMMAND_SENDER && /\bsendOne\s*\(/.test(stripProse(src))).map(([f]) => f);
+      if (callers.some((f) => f !== COMMAND_RUNNER)) bad.push(`${rel}: sendOne is called from ${callers.filter((f) => f !== COMMAND_RUNNER).join(", ")}; only ${COMMAND_RUNNER} (after her Send) may call it.`);
+      const runner = stripProse(files[COMMAND_RUNNER] ?? "");
+      const approvedAt = runner.search(/state !== "approved"/);
+      const callAt = runner.search(/\bsendOne\s*\(/);
+      if (callAt !== -1 && (approvedAt === -1 || approvedAt > callAt)) bad.push(`${COMMAND_RUNNER}: calls sendOne without first refusing a row that is not "approved" (her Send).`);
     } else if (rel === PROSPECT_SENDER) {
       if (!impersonates) bad.push(`${rel}: is the prospect sender and no longer impersonates its mailbox — this guard is watching an empty room.`);
       if (WIDER_THAN_COMPOSE.test(code)) bad.push(`${rel}: asks for a Gmail scope wider than compose.`);
@@ -268,6 +291,8 @@ if (process.argv.includes("--self-test")) {
     'const claims = { iss, sub: OUTREACH_MAILBOX, aud: "https://oauth2.googleapis.com/token" };',
     'async function send(business, raw) { assertSenderAllowed(business); await f(`${GMAIL}/messages/send`); }',
   ].join("\n");
+  const CMD_OK = 'import { mintComposeToken } from "../wealth/gmailDraft";\nexport async function sendOne(env, input) {\nif (!mailboxAllowed(input.from)) return x;\nconst tok = await mintComposeToken(creds, input.from, f);\nawait f("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");\n}';
+  const RUN_OK = 'async function sendApprovedEmail(row) {\nif (row.state !== "approved") return no;\nawait sendOne(env, m);\n}';
   const cases = [
     ["a from field on the domain",
      { "scripts/ops/x.mjs": 'const payload = { from: "Monique <monique@spry.vc>", to };' }, true],
@@ -311,6 +336,14 @@ if (process.argv.includes("--self-test")) {
      { "src/worker/boss/outreach/gmail.ts": OUT_OK.replace("assertSenderAllowed(business);", ""), "src/worker/boss/outreach/catalog.ts": CAT_OK }, true],
     ["the outreach sender naming westpeek.ventures in code",
      { "src/worker/boss/outreach/gmail.ts": OUT_OK + '\nconst FROM = "x@westpeek.ventures";', "src/worker/boss/outreach/catalog.ts": CAT_OK }, true],
+    ["Simone's send-on-her-word, checked and gated, which is allowed",
+     { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK }, false],
+    ["Simone's sender minting before it checks the mailbox",
+     { [COMMAND_SENDER]: CMD_OK.replace('if (!mailboxAllowed(input.from)) return x;', "").replace("await f(", 'if (!mailboxAllowed(input.from)) return x;\nawait f('), [COMMAND_RUNNER]: RUN_OK }, true],
+    ["Simone's runner sending without checking her Send",
+     { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK.replace('if (row.state !== "approved") return no;', "") }, true],
+    ["another file calling Simone's sendOne",
+     { [COMMAND_SENDER]: CMD_OK, [COMMAND_RUNNER]: RUN_OK, "src/worker/boss/routes/x.ts": "await sendOne(env, m);" }, true],
     ["another file borrowing the compose token to send",
      { "src/worker/boss/routes/x.ts": 'import { mintComposeToken } from "../wealth/gmailDraft";\nawait fetchImpl("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");' }, true],
     ["ANY OTHER impersonating file asking for compose",

@@ -22,6 +22,7 @@ import { mintComposeToken, serviceAccountFrom } from "../wealth/gmailDraft";
 import { approveTemplate, prospectPlan } from "../lp/desk";
 import { approveOutcome } from "../../../shared/boss/lp/plan.mjs";
 import { dismissMatch } from "../capital/dismiss";
+import { isCommandToken, commandTapGet, commandTapPost } from "../commands/tap";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -65,6 +66,8 @@ async function find(db: D1Database, token: string): Promise<Found | null> {
 const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…" };
 
 lpTap.get("/:token", async (c) => {
+  // Simone's Send / Change / Try again on a draft she wrote for a person (commands/tap.ts).
+  if (isCommandToken(c.req.param("token"))) return commandTapGet(c, c.req.param("token"));
   const action = c.req.query("do") ?? "";
   const f = await find(c.env.DB, c.req.param("token"));
   if (!f) return c.html(page("This link has done its job", "Nothing else to do here."), 200);
@@ -104,6 +107,7 @@ async function sendDraft(env: Env, mailbox: string, draftId: string, fetchImpl: 
 }
 
 lpTap.post("/:token", async (c) => {
+  if (isCommandToken(c.req.param("token"))) return commandTapPost(c, c.req.param("token"));
   const action = c.req.query("do") ?? "";
   const db = c.env.DB;
   const f = await find(db, c.req.param("token"));

@@ -33,6 +33,7 @@ import { recordConstraints } from "../service/constraints";
 import { recordDriveWatches } from "../service/macWaits";
 import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
 import { dueTimeIn, dueLine } from "../../../shared/boss/service/dueTime.mjs";
+import { commandFromMail } from "../commands/run";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -106,6 +107,12 @@ export interface BossMailResult {
   messageId?: string | null;
   /** Who signs the reply: the employee the message reached. */
   signer?: string | null;
+}
+
+/** The subject she meant: a forward's own subject when she forwarded something. */
+function trueSubjectOf(readable: string, subject: string): string {
+  const origin = readable ? forwardedOrigin(readable) : null;
+  return origin?.subject ? decodeMimeHeader(origin.subject) : subject;
 }
 
 /** Is this message for Boss OS at all? Checked on the domain, not the local part. */
@@ -478,6 +485,21 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   }
 
   // R19 — a line she marks `Always:` / `Never:` / `Standing rule:` / `Constraint:` is registered once and rides on every run.
+  /*
+   * SIMONE DOES IT (owner, 25 Oct 2026). An invite, a contact lookup, an email to a person on her
+   * word, repo work for Danielle, or a reply on one of those threads: done here, before the lanes
+   * and the triage, and answered in plain lines. Null when the email asks for none of these, and
+   * the email goes on exactly as before. src/worker/boss/commands/run.ts.
+   */
+  const command = readable || subject
+    ? await commandFromMail(env, { subject: trueSubjectOf(readable, subject), text: readable, mailId, sender, refs: threadRefs.refs, now, to })
+    : null;
+  if (command) {
+    const commandReply = [command.reply, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    await finish({ outcome: command.outcome, why: `Simone did it: ${command.commandIds.join(", ")}`, taskId: command.taskId, employeeId: "emp_chief", objectKey, reply: commandReply });
+    return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone" };
+  }
+
   const constraints = standingConstraintsIn(readable);
   const constraintsAdded = constraints.length ? await recordConstraints(env, constraints, "email", mailId) : 0;
   const constraintNote = constraints.length

@@ -49,6 +49,7 @@ import { research } from "./routes/research";
 import { repoChanges } from "./routes/repoChanges";
 import { taskNotices } from "./routes/taskNotices";
 import { mailRefs } from "./intake/mailRefs";
+import { commands } from "./commands/routes";
 import { service } from "./routes/service";
 import { commentWatch, COMMENT_WATCH_PATH } from "./routes/commentWatch";
 import { gridHealth } from "./routes/gridHealth";
@@ -216,6 +217,8 @@ app.route("/api/repo-changes", repoChanges);
 app.route("/api/task-notices", taskNotices);
 // The job codes that left her email (0290): the Mac records the Message-ID of each send that carried one.
 app.route("/api/mail-refs", mailRefs);
+// Simone does it by email (25 Oct 2026): the Mac half of invites, lookups and drafts (commands/routes.ts).
+app.route("/api/commands", commands);
 // The service rules (docs/SERVICE_RULES.md): emailed keys, key waits, DNS and Drive waits her Mac clears.
 app.route("/api/service", service);
 // Monique's weekly comment digest and the instruction rows her reply writes; the Mac's `act` half reads only those.

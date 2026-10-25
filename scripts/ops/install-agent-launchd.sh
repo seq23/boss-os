@@ -911,6 +911,11 @@ lint_plist "$RC_PLIST"
 launchctl load "$RC_PLIST"
 echo "Installed $RC_LABEL — every 20 minutes 06:00–22:00 Central (repo-change.sh, task kind repo_change)."
 
+# ─── Simone does it by email (25 Oct 2026): lookups, drafts, bounce checks, notices ──
+chmod +x "$REPO/scripts/ops/install-simone-commands.sh"
+BOSS_OS_REPO="$REPO" bash "$REPO/scripts/ops/install-simone-commands.sh"
+SIMONE_CMD_LABEL="com.seq.boss-simone-commands"
+
 # ─── The tail on her Boss OS mail ────────────────────────────────────────────
 #
 # Owner, 22 Oct 2026: every job she emails Boss OS gets one bounded tail agent that follows it to
@@ -1404,6 +1409,8 @@ require_loaded "$RC_LABEL"
 require_loaded "$CW_LABEL"
 # WITH THE JOB, 22 October: Simone's Your day.
 require_loaded "$YOURDAY_LABEL"
+# WITH THE JOB, 25 October: Simone does it by email.
+require_loaded "$SIMONE_CMD_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
