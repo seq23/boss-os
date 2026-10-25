@@ -46,4 +46,4 @@ INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VA
    'What Simone did from her email: invites, contact lookups, emails sent on her word, repo jobs handed on. Carries names and addresses; the drafting runs on her own Mac seat, never a Worker model.')
 ON CONFLICT(entity) DO NOTHING;
 
-INSERT OR IGNORE INTO schema_version (migration) VALUES ('0307_boss_simone_commands');
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0310_boss_simone_commands');
