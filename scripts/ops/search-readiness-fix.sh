@@ -8,8 +8,9 @@
 # nothing. Workable = names a repo and is not on a protected page. The Spry Labs download page
 # (protected) and the no_repo briefs are what may be left, and the morning line says so in words.
 #
-# Daily at 07:30 Central (com.seq.boss-sr-fix, install-agent-launchd.sh), so anything new or left
-# over is picked up the next morning. By hand: bash scripts/ops/search-readiness-fix.sh
+# Weekly, Tuesday 07:30 Central, from Monday's 06:00 audit queue (owner, 25 Oct 2026): the schedule is the
+# duty row duty_search_readiness_repair (migration 0305); launchd ticks daily and asks it. The status
+# file it writes is what the next Monday email reads. By hand: bash scripts/ops/search-readiness-fix.sh
 #
 # RULE 0: it never exits 0 having done nothing it can explain. Every stop is a NAMED STOP line.
 set -u
@@ -56,8 +57,6 @@ node -e '
     const line = m.queueRunLine({ started: +started, fixed: +fixed, left: +left, protectedLeft: +prot, noRepo: +noRepo });
     const fs = await import("node:fs");
     fs.writeFileSync(status, JSON.stringify({ at: new Date().toISOString(), started: +started, fixed: +fixed, left: +left, protected: +prot, no_repo: +noRepo, line }, null, 2));
-    const { writeMorningSection } = await import(process.cwd() + "/src/shared/boss/mail/morning.mjs");
-    writeMorningSection("grid_repos_fixes", { lines: [line] });
     console.log(line);
   });' "$STATUS" "$START" "$FIXED" "$LEFT" "${PROT:-0}" "${NOREPO:-0}" | tee -a "$LOG"
 say "SR-QUEUE-COMPLETE: started=$START fixed=$FIXED left=$LEFT protected=${PROT:-0} no_repo=${NOREPO:-0}"

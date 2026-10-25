@@ -723,7 +723,7 @@ const short = (s) => s.domain;
  * broken, what was fixed, what is being built; plain words, no ids, no commands). `previous` is
  * last week's result so a fix can be named as fixed.
  */
-export function morningLines(checklist, siteResults, { previous = null, queued = 0, max = 4 } = {}) {
+export function morningLines(checklist, siteResults, { previous = null, queued = 0, lastRepair = null, max = 4 } = {}) {
   const byId = Object.fromEntries(checklist.items.map((i) => [i.id, i]));
   const failing = siteResults.map((s) => ({ s, f: s.results.filter((r) => r.status === "fail") }));
   const clean = failing.filter((x) => !x.f.length).length;
@@ -742,7 +742,7 @@ export function morningLines(checklist, siteResults, { previous = null, queued =
     const fixed = [...was].filter((k) => !now.has(k)).length;
     if (fixed) lines.push(`Fixed since last week: ${fixed} gaps closed.`);
   }
-  if (queued) lines.push(`Being fixed: ${queued} fixes are queued. Danielle works through them every morning, one site at a time, and puts each fix live.`);
+  if (queued || lastRepair) lines.push(repairLine(lastRepair, queued));
   return lines.slice(0, max);
 }
 
@@ -773,6 +773,16 @@ export function workQueue(briefs) {
   for (const b of workable) byRepo[b.repo] = (byRepo[b.repo] ?? 0) + 1;
   const repos = Object.entries(byRepo).sort((a, b) => b[1] - a[1]).map(([repo, n]) => ({ repo, n }));
   return { total: list.length, workable: workable.length, protected: prot.length, no_repo: noRepo.length, repos };
+}
+
+/**
+ * The Monday email's line (owner's wording, 25 Oct 2026): "Danielle fixes these every Tuesday: N
+ * fixed last week, M left". N comes from the last repair run's status file; M is what this
+ * morning's audit queued for her. No status file yet says so rather than inventing a zero.
+ */
+export function repairLine(lastRepair, left) {
+  const fixed = lastRepair && Number.isFinite(Number(lastRepair.fixed)) ? Number(lastRepair.fixed) : null;
+  return `Danielle fixes these every Tuesday: ${fixed === null ? "no repair run on record yet" : `${fixed} fixed last week`}, ${left} left.`;
 }
 
 /** The plain-English line for the morning email: what the queue run did today. No ids, no commands. */

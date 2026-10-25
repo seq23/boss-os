@@ -259,6 +259,7 @@ const pad = (n) => String(n).padStart(2, "0");
  */
 export const INSTALLED_LOCAL_JOBS = [
   "ahrefs-audit-fix.sh",
+  "search-readiness-fix.sh",
   "archive-audit.mjs",
   "buyer-hunt.mjs",
   "credential-check.mjs",

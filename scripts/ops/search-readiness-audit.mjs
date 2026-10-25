@@ -352,14 +352,16 @@ async function main() {
   writeJson(join(OUT, `results-${day}.json`), report);
   if (!only) writeJson(prevPath, report);
   const briefs = fixBriefs(checklist, siteResults);
-  if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, consumer: "Danielle's daily queue run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
+  if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
 
   const fails = siteResults.reduce((n, s) => n + s.results.filter((r) => r.status === "fail").length, 0);
   say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} briefs=${briefs.length} → ${join(OUT, `results-${day}.json`)}`);
 
   if (flag("--morning") && !only) {
     const { writeMorningSection } = await import("../../src/shared/boss/mail/morning.mjs");
-    const lines = morningLines(checklist, siteResults, { previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length });
+    const statusPath = join(OUT, "fix-status.json");
+    const lastRepair = existsSync(statusPath) ? JSON.parse(readFileSync(statusPath, "utf8")) : null;
+    const lines = morningLines(checklist, siteResults, { previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
     writeMorningSection("grid_repos", { lines, link: { label: "See every site's checks →", url: "https://boss.sequoiataylor.com/?view=morning" } });
     say(`Morning section written: ${lines.length} lines.`);
   }

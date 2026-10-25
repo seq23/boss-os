@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
-  morningLines, haversineMiles, workQueue, queueRunLine,
+  morningLines, haversineMiles, workQueue, queueRunLine, repairLine,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { renderChecklistPage, loadTemplate } from "../src/shared/boss/searchReadiness/page.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -193,7 +193,7 @@ describe("the morning email section", () => {
     const lines = morningLines(checklist, results, { queued: 2 });
     expect(lines[0]).toMatch(/We checked all 2 grid repo sites/);
     expect(lines.join(" ")).toMatch(/memphisseniorcarehomes\.com is missing 2/);
-    expect(lines.join(" ")).toMatch(/Being fixed: 2 fixes are queued\. Danielle works through them every morning/);
+    expect(lines.join(" ")).toMatch(/Danielle fixes these every Tuesday: no repair run on record yet, 2 left\./);
     expect(lines.join(" ")).not.toMatch(/Thursday/);
     for (const l of lines) expect(lineProblems(l), l).toEqual([]);
   });
@@ -218,7 +218,7 @@ describe("CLAUDE.md says the rule, and the rule is this code", () => {
   });
 });
 
-describe("the fix queue is worked to empty, daily (owner, 25 Oct 2026)", () => {
+describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oct 2026)", () => {
   const prot = [{ path: "/download", rule: "PROTECTED" }];
   const briefs = [
     { repo: "a", disposition: "fix" }, { repo: "a", disposition: "fix" }, { repo: "b", disposition: "fix" },
@@ -235,23 +235,26 @@ describe("the fix queue is worked to empty, daily (owner, 25 Oct 2026)", () => {
     expect(workQueue([]).repos).toEqual([]);
     expect(workQueue(undefined as any).workable).toBe(0);
   });
-  it("says what the run did in plain words that pass the plain-email gate", () => {
-    const done = queueRunLine({ started: 242, fixed: 230, left: 12, protectedLeft: 2, noRepo: 13 });
-    expect(done).toMatch(/^Search fixes today: 230 of 242 fixed and live\. 12 still to do/);
-    expect(done).toMatch(/Spry Labs download page/);
-    expect(lineProblems(done)).toEqual([]);
-    expect(queueRunLine({ started: 5, fixed: 5, left: 0 })).toMatch(/Nothing left that can be fixed automatically/);
+  it("the Monday email says it in her words: \"Danielle fixes these every Tuesday: N fixed last week, M left\"", () => {
+    const line = repairLine({ fixed: 230 }, 12);
+    expect(line).toBe("Danielle fixes these every Tuesday: 230 fixed last week, 12 left.");
+    expect(lineProblems(line)).toEqual([]);
+    const site = sites.grid_repos[0];
+    const lines = morningLines(checklist, [{ site, results: [{ id: "a5", status: "fail", detail: "y" }] }], { queued: 12, lastRepair: { fixed: 230 } });
+    expect(lines).toContain("Danielle fixes these every Tuesday: 230 fixed last week, 12 left.");
+    expect(queueRunLine({ started: 242, fixed: 230, left: 12, protectedLeft: 2, noRepo: 13 })).toMatch(/Spry Labs download page/);
   });
-  it("has its own daily launchd job running the driver, and the fixer takes a one-repo scope", () => {
+  it("launchd only ticks and asks the duty row; the audit stays Monday; the fixer takes a one-repo scope", () => {
     const installer = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");
-    const block = installer.slice(installer.indexOf('SRF_LABEL="com.seq.boss-sr-fix"'));
-    expect(block).toContain("bash scripts/ops/search-readiness-fix.sh");
-    expect(block.slice(0, block.indexOf("SRFEOF\n\n"))).not.toMatch(/Weekday/);
-    const fixer = readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8");
-    expect(fixer).toMatch(/SR_SCOPE_REPO/);
+    const block = installer.slice(installer.indexOf('SRF_LABEL="com.seq.boss-sr-fix"'), installer.indexOf("SRFEOF\n\n"));
+    expect(block).toContain("duty-run.sh search-readiness-fix.sh --only-if-due -- bash $REPO/scripts/ops/search-readiness-fix.sh");
+    expect(block, "a Weekday in the plist is a second clock").not.toMatch(/Weekday/);
+    expect(block).toMatch(/<key>Hour<\/key><integer>7<\/integer><key>Minute<\/key><integer>30<\/integer>/);
+    const audit = installer.slice(installer.indexOf('SR_LABEL="com.seq.boss-sites-audit"'), installer.indexOf("SREOF\n\n"));
+    expect(audit).toMatch(/<key>Weekday<\/key><integer>1<\/integer><key>Hour<\/key><integer>6<\/integer>/);
+    expect(readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8")).toMatch(/SR_SCOPE_REPO/);
     const driver = readFileSync("scripts/ops/search-readiness-fix.sh", "utf8");
     expect(driver).toMatch(/SR_SCOPE_REPO="\$R" bash scripts\/ops\/ahrefs-audit-fix\.sh/);
     expect(driver).toMatch(/fixed nothing; stopping/);
-    expect(MORNING_SECTIONS).toContain("grid_repos_fixes");
   });
 });

@@ -539,12 +539,12 @@ lint_plist "$SR_PLIST"
 launchctl load "$SR_PLIST"
 echo "Installed $SR_LABEL — Monday 06:00 Central."
 
-# ─── The Search Readiness fix queue, worked to empty — daily ─────────────────────────────────────
+# ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
 #
-# Owner, 25 Oct 2026: "why can't all 242 be fixed now?" The queue gets its own daily run, 07:30,
-# after the 06:00 slots: re-audit, then one scoped fixer pass per repo, round after round, until only
-# protected (Spry Labs download page) and no_repo briefs are left. Its one line rides the next
-# morning email. By hand: bash scripts/ops/search-readiness-fix.sh
+# Owner, 25 Oct 2026: the queue was worked to empty that day; after that it runs WEEKLY, Tuesday 07:30
+# Central (Monday is crowded), working from Monday's 06:00 audit queue; the audit stays Monday. The
+# schedule lives on duty_search_readiness_repair (migration 0305); launchd ticks daily and asks the row
+# (--only-if-due), the same shape as the Thursday Ahrefs pass. By hand: bash scripts/ops/search-readiness-fix.sh
 SRF_LABEL="com.seq.boss-sr-fix"
 SRF_PLIST="$HOME/Library/LaunchAgents/$SRF_LABEL.plist"
 cat > "$SRF_PLIST" <<SRFEOF
@@ -557,7 +557,7 @@ cat > "$SRF_PLIST" <<SRFEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; bash scripts/ops/search-readiness-fix.sh</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh search-readiness-fix.sh --only-if-due -- bash $REPO/scripts/ops/search-readiness-fix.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -572,7 +572,7 @@ SRFEOF
 launchctl unload "$SRF_PLIST" 2>/dev/null || true
 lint_plist "$SRF_PLIST"
 launchctl load "$SRF_PLIST"
-echo "Installed $SRF_LABEL — daily 07:30 Central."
+echo "Installed $SRF_LABEL — daily 07:30 Central tick, weekly Tuesday work (asks the duty row)."
 
 # ─── Simone's publication chase — RETIRED 14 September 2026 ─────────────────
 #

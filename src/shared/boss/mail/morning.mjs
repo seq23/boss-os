@@ -40,8 +40,6 @@ export const MORNING_SECTIONS = Object.freeze([
   "risk", "archive", "tail", "bounces", "notices",
   // Mondays: the weekly Search Readiness check of the grid repo sites (scripts/ops/search-readiness-audit.mjs).
   "grid_repos",
-  // Daily: what the Search Readiness queue run fixed this morning (scripts/ops/search-readiness-fix.sh).
-  "grid_repos_fixes",
 ]);
 export const STALE_MS = 30 * 3_600_000;
 
