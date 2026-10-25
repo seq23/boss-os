@@ -763,7 +763,7 @@ export function summaryLines(siteResults) {
  * protected page; protected briefs (the Spry Labs download page) are fixed only on their own, and
  * no_repo briefs have nowhere to land. Those two are what may be left when the run says "done".
  */
-export function workQueue(briefs) {
+export function workQueue(briefs, { chunkSize = 10 } = {}) {
   const list = Array.isArray(briefs) ? briefs : [];
   const isProtected = (b) => Array.isArray(b.protected) ? b.protected.length > 0 : Boolean(b.protected);
   const noRepo = list.filter((b) => !b.repo || b.disposition === "no_repo");
@@ -772,7 +772,18 @@ export function workQueue(briefs) {
   const byRepo = {};
   for (const b of workable) byRepo[b.repo] = (byRepo[b.repo] ?? 0) + 1;
   const repos = Object.entries(byRepo).sort((a, b) => b[1] - a[1]).map(([repo, n]) => ({ repo, n }));
-  return { total: list.length, workable: workable.length, protected: prot.length, no_repo: noRepo.length, repos };
+  /*
+   * CHUNKS, NOT WHOLE REPOS (25 Oct 2026). The first full run gave local-guides-generator's 61 briefs
+   * to one pass; it hit its 250-turn limit before opening a single PR and everything it had done was
+   * lost. A pass is now handed at most `chunkSize` briefs of one repo, so each one can finish, land,
+   * and leave the rest for the next pass.
+   */
+  const chunks = [];
+  for (const { repo } of repos) {
+    const ids = workable.filter((b) => b.repo === repo).map((b) => b.id);
+    for (let i = 0; i < ids.length; i += chunkSize) chunks.push({ repo, ids: ids.slice(i, i + chunkSize) });
+  }
+  return { total: list.length, workable: workable.length, protected: prot.length, no_repo: noRepo.length, repos, chunks };
 }
 
 /**

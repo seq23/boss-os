@@ -33,14 +33,16 @@ START="$(echo "$P" | grep '^QUEUE' | field workable)"; START="${START:-0}"
 say "queue: $(echo "$P" | grep '^QUEUE')"
 LEFT="$START"
 for ROUND in $(seq 1 "$MAX_ROUNDS"); do
-  REPOS="$(echo "$P" | awk '/^REPO /{print $2}')"
-  [ -n "$REPOS" ] || break
+  # One pass per CHUNK (at most 10 briefs of one repo), so no pass runs out of turns before it lands.
+  CHUNKS="$(echo "$P" | awk '/^CHUNK /{print $2" "$3" "$4}')"
+  [ -n "$CHUNKS" ] || break
   BEFORE="$LEFT"
-  for R in $REPOS; do
-    say "round $ROUND: $R ($(echo "$P" | awk -v r="$R" '$1=="REPO"&&$2==r{print $3}') briefs)"
-    SR_SCOPE_REPO="$R" bash scripts/ops/ahrefs-audit-fix.sh >> "$LOG" 2>&1
+  while read -r R N IDS; do
+    [ -n "$R" ] || continue
+    say "round $ROUND: $R ($N briefs)"
+    SR_SCOPE_REPO="$R" SR_SCOPE_BRIEFS="$IDS" bash scripts/ops/ahrefs-audit-fix.sh >> "$LOG" 2>&1 < /dev/null
     say "  $R pass exited rc=$?"
-  done
+  done <<< "$CHUNKS"
   audit
   P="$(plan)" || break
   LEFT="$(echo "$P" | grep '^QUEUE' | field workable)"; LEFT="${LEFT:-$BEFORE}"

@@ -231,6 +231,16 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     expect(w.repos).toEqual([{ repo: "a", n: 2 }, { repo: "b", n: 1 }]);
     expect(w.repos.map((r) => r.repo)).not.toContain("sprylabs-hpc-site");
   });
+  it("hands a pass at most 10 briefs of one repo — 61 in one pass ran out of turns and landed nothing", () => {
+    const many = Array.from({ length: 23 }, (_, i) => ({ id: `sr-x-${i}`, repo: "big", disposition: "fix" }));
+    const w = workQueue([...many, { id: "p", repo: "big", disposition: "fix", protected: prot }]);
+    expect(w.chunks.map((c) => c.ids.length)).toEqual([10, 10, 3]);
+    expect(w.chunks.flatMap((c) => c.ids)).toEqual(many.map((b) => b.id));
+    expect(w.chunks.every((c) => c.repo === "big")).toBe(true);
+    const driver = readFileSync("scripts/ops/search-readiness-fix.sh", "utf8");
+    expect(driver).toMatch(/SR_SCOPE_REPO="\$R" SR_SCOPE_BRIEFS="\$IDS" bash scripts\/ops\/ahrefs-audit-fix\.sh/);
+    expect(readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8")).toMatch(/SR_SCOPE_BRIEFS/);
+  });
   it("NEGATIVE: an empty queue plans nothing — the driver names that stop rather than passing silently", () => {
     expect(workQueue([]).repos).toEqual([]);
     expect(workQueue(undefined as any).workable).toBe(0);
@@ -254,7 +264,6 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     expect(audit).toMatch(/<key>Weekday<\/key><integer>1<\/integer><key>Hour<\/key><integer>6<\/integer>/);
     expect(readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8")).toMatch(/SR_SCOPE_REPO/);
     const driver = readFileSync("scripts/ops/search-readiness-fix.sh", "utf8");
-    expect(driver).toMatch(/SR_SCOPE_REPO="\$R" bash scripts\/ops\/ahrefs-audit-fix\.sh/);
     expect(driver).toMatch(/fixed nothing; stopping/);
   });
 });
