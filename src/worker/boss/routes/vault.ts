@@ -200,6 +200,7 @@ const SNAPSHOT_TABLES = [
   "prospect_touches", // fix L
   "prospect_templates", // fix L
   "prospect_name_rules", // fix L
+  "prospect_template_rules", // her standing rules for the prospect email (25 Oct 2026)
   "eightraise_ledger", // fix L
   "catchup_suggestions", // fix L
   // 0263 — the latest health reading per grid property per reader: a status code and latency, a
