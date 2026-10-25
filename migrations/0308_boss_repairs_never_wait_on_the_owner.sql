@@ -21,4 +21,4 @@ UPDATE repo_changes SET origin = 'repair', repair_kind = 'failed_task'
 ALTER TABLE repo_changes ADD COLUMN superseded_at INTEGER;
 ALTER TABLE repo_changes ADD COLUMN superseded_reason TEXT;
 
-INSERT OR IGNORE INTO schema_version (migration) VALUES ('0305_boss_repairs_never_wait_on_the_owner');
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0308_boss_repairs_never_wait_on_the_owner');
