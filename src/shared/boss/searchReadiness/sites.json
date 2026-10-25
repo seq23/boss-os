@@ -698,12 +698,11 @@
   },
   {
    "domain": "time-2-read.com",
-   "repo": null,
+   "repo": "dailystory",
    "category": "side_business",
    "kind": "brand",
    "roles": [],
    "label": "Time2Read",
-   "no_repo_why": "No repository on her GitHub (grid.mjs domains_without_repo); live checks run, repo checks are recorded as no repo.",
    "coverage": {
     "model": "not_local",
     "why": "A subscription product; no place-based pages."

@@ -39,11 +39,13 @@
  *   node scripts/validate/the-grid-is-her-twelve-properties.mjs --self-test
  */
 
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const GRID_FILE = "src/shared/boss/grid.mjs";
+const SITES_FILE = "src/shared/boss/searchReadiness/sites.json";
 
 /**
  * HER TABLE, VERBATIM.
@@ -74,9 +76,15 @@ export const HER_GRID = [
   { repos: ["dream-wedding-builder"], tier: "primary", owner: "hers", domains: [], count: 4 },
   // Added 13 Sep 2026, her words: "all 3 are mine." See the note above HER_GRID.
   { repos: ["how-we-know"], tier: "primary", owner: "hers", domains: [], handles: ["@howweknowdeep"] },
-  // time-2-read.com is hers and has NO repo on her GitHub. Named so its absence is a recorded fact
-  // rather than something a later reader takes for an oversight.
-  { repos: ["heygetonmylevel"], tier: "primary", owner: "hers", domains: ["heygetonmylevel.com", "time-2-read.com"] },
+  // Two domains, two repos. time-2-read.com lives in `dailystory` — a name that does not match the
+  // domain, which is why it was once recorded as having no repo and its audit failures sat unfixed.
+  {
+    repos: ["heygetonmylevel", "dailystory"],
+    tier: "primary",
+    owner: "hers",
+    domains: ["heygetonmylevel.com", "time-2-read.com"],
+    domain_repos: { "heygetonmylevel.com": "heygetonmylevel", "time-2-read.com": "dailystory" },
+  },
   { repos: ["authority-backlink-network", "p-n-p"], tier: "infrastructure", owner: "hers", domains: [] },
   // Added 21 Sep 2026 on her instruction: "THE GRID GAINS creator-network". Private repo, no domain.
   { repos: ["creator-network"], tier: "primary", owner: "hers", domains: [] },
@@ -105,7 +113,7 @@ export const HER_EXCLUSIONS = [
 
 export function check(grid) {
   const problems = [];
-  const { GRID, EXCLUDED, isExcluded, suggestingKeys } = grid ?? {};
+  const { GRID, EXCLUDED, isExcluded, suggestingKeys, SITES } = grid ?? {};
 
   // ── RULE 0 ────────────────────────────────────────────────────────────────
   if (!Array.isArray(GRID) || GRID.length === 0) {
@@ -238,6 +246,44 @@ export function check(grid) {
     problems.push(`${GRID_FILE} exports no \`suggestingKeys\`.`);
   }
 
+  /*
+   * ── 5. A domain that has a repo is never recorded as having none ─────────
+   *
+   * 25 Oct 2026: time-2-read.com was marked "no repo" here and in sites.json while its repo,
+   * `dailystory`, sat on her GitHub. The search-readiness audit therefore filed its twelve failing
+   * items under "no repo" and nothing fixed them. Two lists said it, so both are checked, and each
+   * against the domain → repo map on her table.
+   */
+  const knownRepo = new Map();
+  for (const want of HER_GRID) for (const [d, r] of Object.entries(want.domain_repos ?? {})) knownRepo.set(d.toLowerCase(), r);
+  const markedNoRepo = new Set();
+  for (const p of GRID) {
+    for (const d of p.domains_without_repo ?? []) {
+      markedNoRepo.add(String(d).toLowerCase());
+      const r = knownRepo.get(String(d).toLowerCase());
+      if (r) problems.push(`\`${p.key}\` records ${d} as having no repo, but its repo is seq23/${r}. A site marked "no repo" never gets its audit failures fixed.`);
+    }
+    for (const [d, r] of Object.entries(p.domain_repos ?? {})) {
+      if (!(p.repos ?? []).includes(r)) problems.push(`\`${p.key}\` maps ${d} to \`${r}\`, which is not in its own repos list.`);
+      const want = knownRepo.get(d.toLowerCase());
+      if (want && want !== r) problems.push(`\`${p.key}\` maps ${d} to \`${r}\`; on her table it is \`${want}\`.`);
+    }
+  }
+  if (!Array.isArray(SITES) || SITES.length === 0) {
+    problems.push(`${SITES_FILE} lists no grid sites, so the search-readiness audit checks nothing while reporting success.`);
+  } else {
+    for (const site of SITES) {
+      const d = String(site.domain ?? "").toLowerCase();
+      const want = knownRepo.get(d);
+      if (site.repo == null) {
+        if (want) problems.push(`${SITES_FILE} gives ${site.domain} "repo": null, but its repo is seq23/${want}. The audit files every repo-side failure as "no repo" and nothing fixes them.`);
+        else if (!markedNoRepo.has(d)) problems.push(`${SITES_FILE} gives ${site.domain} "repo": null, but no grid row records it in domains_without_repo. Two lists disagreeing is how a real repo goes missing.`);
+      } else if (want && site.repo !== want) {
+        problems.push(`${SITES_FILE} maps ${site.domain} to \`${site.repo}\`; on her table it is \`${want}\`.`);
+      }
+    }
+  }
+
   return problems;
 }
 
@@ -252,14 +298,16 @@ function fixture(over = {}) {
     repos: p.repos,
     owner: p.owner,
     tier: p.tier,
+    ...(p.domain_repos ? { domain_repos: { ...p.domain_repos } } : {}),
   })));
+  const SITES = over.SITES ?? HER_GRID.flatMap((p) => p.domains.map((d) => ({ domain: d, repo: p.domain_repos?.[d] ?? p.repos[0] })));
   const EXCLUDED = over.EXCLUDED ?? HER_EXCLUSIONS.map((m) => ({ match: m, why: "Out of scope." }));
   const isExcluded = (repo) => {
     const name = String(repo ?? "").toLowerCase().replace(/\/+$/, "").split("/").pop() ?? "";
     return EXCLUDED.some((e) => name.startsWith(String(e.match).toLowerCase()));
   };
   const suggestingKeys = over.suggestingKeys ?? (() => GRID.filter((p) => p.tier === "primary").map((p) => p.key));
-  return { GRID, EXCLUDED, isExcluded, suggestingKeys };
+  return { GRID, EXCLUDED, isExcluded, suggestingKeys, SITES };
 }
 
 function selfTest() {
@@ -325,6 +373,46 @@ function selfTest() {
       })(),
       expect: 1,
     },
+    {
+      name: "THE 25 OCT CASE: time-2-read.com marked as having no repo in the grid",
+      input: (() => {
+        const f = fixture();
+        const row = f.GRID.find((p) => p.repos.includes("dailystory"));
+        row.repos = row.repos.filter((r) => r !== "dailystory");
+        delete row.domain_repos;
+        row.domains_without_repo = ["time-2-read.com"];
+        return f;
+      })(),
+      expect: 1,
+    },
+    {
+      name: "THE 25 OCT CASE: sites.json gives time-2-read.com \"repo\": null",
+      input: (() => {
+        const f = fixture();
+        f.SITES.find((x) => x.domain === "time-2-read.com").repo = null;
+        return f;
+      })(),
+      expect: 1,
+    },
+    {
+      name: "sites.json maps time-2-read.com to the wrong repo",
+      input: (() => {
+        const f = fixture();
+        f.SITES.find((x) => x.domain === "time-2-read.com").repo = "heygetonmylevel";
+        return f;
+      })(),
+      expect: 1,
+    },
+    {
+      name: "a site with \"repo\": null that no grid row records as repo-less",
+      input: (() => {
+        const f = fixture();
+        f.SITES.push({ domain: "orphan.example", repo: null });
+        return f;
+      })(),
+      expect: 1,
+    },
+    { name: "RULE 0 — no sites in sites.json", input: fixture({ SITES: [] }), expect: 1 },
     { name: "RULE 0 — an empty grid", input: fixture({ GRID: [] }), expect: 1 },
     { name: "RULE 0 — no exclusions at all", input: fixture({ EXCLUDED: [] }), expect: 1 },
   ];
@@ -359,7 +447,14 @@ if (process.argv.includes("--self-test")) {
     process.exit(1);
   }
 
-  const problems = check(grid);
+  let SITES = null;
+  try {
+    SITES = JSON.parse(readFileSync(join(ROOT, SITES_FILE), "utf8")).grid_repos;
+  } catch (err) {
+    console.error(`the-grid-is-her-twelve-properties FAILED — ${SITES_FILE} could not be read: ${err?.message ?? err}`);
+    process.exit(1);
+  }
+  const problems = check({ ...grid, SITES });
   if (problems.length) {
     console.error("the-grid-is-her-twelve-properties FAILED\n");
     for (const p of problems) console.error(`  • ${p}\n`);
