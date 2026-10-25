@@ -249,12 +249,13 @@ describe("prospect emails: only what is new, and stuck follow-ups are a decision
     expect(d[0].details[0]).toBe("Waiting: Due Today (d@x.example).");
     expect(d[0].body).toBe("No prospect email is approved, and Monique has fewer than three fresh names on your list to write one, so nothing goes.");
   });
-  it("a template waiting for her OK is a decision with its full text and Approve / Change", () => {
+  it("a template waiting for her OK is a decision with its full text and Approve / Change / Try again", () => {
     const pending = { id: "pt1", tap_token: "p".repeat(24), subject: "Up to $1B secondary inquiry: {subject_names}", body: "Hi {first},\n\n{names_line}\n\nSequoia Taylor", follow_up: "Hi {first}, again.", names_json: JSON.stringify([{ name: "Co A" }, { name: "Co B" }, { name: "Co C" }]) };
     const d = prospectDecisions({ ...a, pending }, new Set(), NOW);
     expect(d[0].title).toBe("Approve the prospect email before it goes out");
     expect(d[0].draft.text).toContain("Hi Alex,");
-    expect(d[0].buttons.map((b: any) => b.label)).toEqual(["Approve", "Change"]);
+    expect(d[0].buttons.map((b: any) => b.label)).toEqual(["Approve", "Change", "Try again"]);
+    expect(d[0].buttons[2].url).toBe(`https://boss.sequoiataylor.com/tap/${"p".repeat(24)}?do=retry`);
     expect(prospectDecisions({ ...a, pending }, new Set(["prospect-template:pt1"]), NOW)).toHaveLength(0);
     // What Approve does is on the card, from the plan's forecast (24 Oct 2026, Rule 0).
     const forecast = { go: 31, first: 0, follow: 31, invalid: 4, risky: 0, unverified: 0, bounced: 2, paused: "Paused automatically: bounce rate 5.6% (2 of 36 in 14 days) is over 3%.", blocked: [] };

@@ -65,8 +65,10 @@ describe("the one morning email", () => {
   });
   it("Decide: EVERY decision is shown, the count is the number shown, nothing points at Today, each opens its own screen", () => {
     const decide = e.text.slice(e.text.indexOf("Decide (4)"), e.text.indexOf("New deals"));
-    expect(decide).toMatch(/^Decide \(4\)\n1\. Reply to an LP who wants a call\nReplied Tuesday; not sent yet\.\n- Send as is: https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1\n- Edit, then send: .*\n- Skip: /);
+    expect(decide).toMatch(/^Decide \(4\)\n1\. Reply to an LP who wants a call\nReplied Tuesday; not sent yet\.\n- Reply "1: …" to this email to answer this one\.\n- Send as is: https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/d1\n- Edit, then send: .*\n- Skip: /);
     expect(decide).toContain("2. Renew the example.com domain");
+    // Every card says how to answer it by reply, by its own number (25 Oct 2026).
+    for (const n of [1, 2, 3, 4]) expect(decide).toContain(`Reply "${n}: …" to this email to answer this one.`);
     expect(decide).toContain("3. Start Danielle's plan for creator-studios?");
     expect(decide).toContain("4. Monique is waiting for your word: 2 comments on the channel need your word");
     expect(decide).not.toMatch(/more on your Today page|5\./);

@@ -31,15 +31,17 @@ describe("the prospect email (her tone rules, 23 Oct 2026)", () => {
   it("is soft, side-neutral, short, a chat ask, with her names line and the opt-out", () => {
     for (const touch of [1, 2]) {
       const r = renderProspect(DEFAULT_PROSPECT_TEMPLATE, { first: "Alex Example", names: NAMES, touch });
-      expect(prospectProblems(r)).toEqual([]);
-      expect(r.body).toContain("Names coming across my desk at the moment are: Alpha, Beta, Gamma.");
+      expect(prospectProblems(r, NAMES)).toEqual([]);
+      // 25 Oct 2026: the names are examples of a wider book, never the full list.
+      expect(r.body).toContain("Some of the names crossing my desk right now include Alpha, Beta and Gamma, among others.");
       expect(r.body).toMatch(/15 minutes to compare notes/);
       expect(r.body).toMatch(/add or trim/);
       expect(wordCount(r.body)).toBeLessThanOrEqual(90);
       expect(r.body).toMatch(/more than \$100M in secondary transactions|floating this back up/);
     }
     expect(renderProspect(DEFAULT_PROSPECT_TEMPLATE, { first: "Alex", names: NAMES, touch: 2 }).body).toMatch(/^Hi Alex,\n\nJust floating this back up\./);
-    expect(renderProspect(DEFAULT_PROSPECT_TEMPLATE, { first: "Alex", names: NAMES }).subject).toBe("Re: Up to $1B secondary inquiry: Alpha, Beta, Gamma");
+    // No fake "Re:" on a cold email, and the subject never lists the names as if they were all of them.
+    expect(renderProspect(DEFAULT_PROSPECT_TEMPLATE, { first: "Alex", names: NAMES }).subject).toBe("Late-stage secondaries: Alpha, Beta and others");
   });
 
   it("refuses every banned sales phrase and any buyer-only wording", () => {
@@ -55,8 +57,9 @@ describe("the prospect email (her tone rules, 23 Oct 2026)", () => {
   });
 
   it("rotates lightly to the second phrasing, and a changed name list is a new template", () => {
-    expect(namesLine(NAMES, 2)).toBe("We've been working on a few names, including Alpha and Beta.");
-    expect(namesLine(NAMES, 0)).toMatch(/^Names coming across my desk/);
+    expect(namesLine(NAMES, 2)).toBe("We've been working on a range of names, including Alpha and Beta.");
+    expect(namesLine(NAMES, 1)).toBe("A few of the names on my desk right now include Alpha, Beta and Gamma, among many others.");
+    expect(namesLine(NAMES, 0)).toMatch(/^Some of the names crossing my desk right now include .*, among others\.$/);
     expect(templateHash(DEFAULT_PROSPECT_TEMPLATE, NAMES)).not.toBe(templateHash(DEFAULT_PROSPECT_TEMPLATE, [...NAMES.slice(0, 2), { name: "Delta" }]));
   });
 });

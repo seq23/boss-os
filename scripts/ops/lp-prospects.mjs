@@ -145,9 +145,9 @@ async function threadOfSent(tok, id) {
 }
 
 /** One RFC 5322 message from the West Peek mailbox, threaded when it is a follow-up. Pure. */
-export function mime({ to, subject, body, inReplyTo }) {
+export function mime({ to, subject, body, inReplyTo, from = MAILBOX }) {
   return [
-    `From: Sequoia Taylor <${MAILBOX}>`,
+    `From: Sequoia Taylor <${from}>`,
     `To: ${to}`,
     `Subject: =?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`,
     ...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`, `References: ${inReplyTo}`] : []),
@@ -157,6 +157,24 @@ export function mime({ to, subject, body, inReplyTo }) {
     "",
     body,
   ].join("\r\n");
+}
+
+/**
+ * HOW ONE PLANNED SEND GOES (owner, 25 Oct 2026). A follow-up is a REPLY in the person's existing
+ * thread, from the mailbox that sent their first email — never a new thread, never another mailbox.
+ * Returns the mailbox, the message and the thread, or `{ refused }` with the reason. Pure.
+ */
+export function sendShape(s, { inReplyTo = s.in_reply_to ?? null } = {}) {
+  if (s.touch > 1) {
+    if (!s.thread_id) return { refused: `no thread on record for ${s.email}; a follow-up is only ever a reply in it` };
+    if (!s.from) return { refused: `no record of which mailbox sent ${s.email}'s first email` };
+    // This run holds the West Peek mailbox only (validate:gmail pins it): a thread that lives in any
+    // other mailbox is not replied to from here, and is never answered from a different one.
+    if (String(s.from).toLowerCase() !== MAILBOX) return { refused: `${s.email}'s first email went from ${s.from}; their follow-up can only be a reply from that mailbox, which this run does not hold` };
+    const subject = /^re:/i.test(String(s.subject ?? "")) ? s.subject : `Re: ${s.subject ?? ""}`.trim();
+    return { mailbox: s.from, threadId: s.thread_id, message: { to: s.email, subject, body: s.body, inReplyTo, from: s.from } };
+  }
+  return { mailbox: MAILBOX, threadId: null, message: { to: s.email, subject: s.subject, body: s.body, inReplyTo: null, from: MAILBOX } };
 }
 
 /** A held reply to an interested prospect: fixed, soft, either side. */
@@ -221,7 +239,10 @@ export function supplyFrom(deals) {
   }));
 }
 
-export function templateDecide(tpl, { stale = [], forecast = null } = {}) {
+/** "11 Oct" from a ms timestamp. */
+const dayMonth = (ms) => new Date(Number(ms)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "America/Chicago" });
+
+export function templateDecide(tpl, { stale = [], forecast = null, released = null } = {}) {
   const names = JSON.parse(tpl.names_json ?? "[]");
   const tplObj = { subject: tpl.subject, body: tpl.body, follow_up: tpl.follow_up };
   const sample = renderProspect(tplObj, { first: "Alex", names });
@@ -236,22 +257,27 @@ export function templateDecide(tpl, { stale = [], forecast = null } = {}) {
     // What Approve does, from the plan (24 Oct 2026, Rule 0): never an Approve that silently sends nothing.
     outcome: outcome.headline,
     details: [
+      // Her approval releases the one follow-up to everyone who got a first email (owner, 25 Oct 2026).
+      ...(released?.count ? [`Approving this also sends one follow-up to the ${released.count} people who got your first email${released.firstSentAt ? ` on ${dayMonth(released.firstSentAt)}` : ""}.`] : []),
       ...outcome.lines,
       "After that: up to 20 new people a day, ONE gentle follow-up each, then the sequence is complete; every address is checked with NeverBounce first.",
       `Names it mentions: ${names.map((n) => `${n.name} (${n.why ?? "on your list"})`).join("; ")}.`,
-      "Change: opens it so you can say what to change; nothing is sent meanwhile.",
+      "Change: say what to change by replying with this card's number and your words; nothing is sent meanwhile. Try again: a different draft, with a new opening.",
     ],
     draft: { heading: "The email, word for word (Alex stands in for each person's first name)", text: `Subject: ${sample.subject}\n\n${sample.body}\n\nThe one follow-up (email 2, the last):\n\n${follow.body}` },
     buttons: [
       { label: "Approve", url: tapUrl(tpl.tap_token, "approve") },
       { label: "Change", url: tapUrl(tpl.tap_token, "edit") },
+      { label: "Try again", url: tapUrl(tpl.tap_token, "retry") },
     ],
   };
 }
 
 export function prospectsMorning({ rows, pending, stale, plan, sent, now = Date.now() }) {
   const decide = [];
-  if (pending) decide.push(templateDecide(pending, { stale, forecast: plan?.forecast ?? null }));
+  const waiting = rows.filter((r) => ["new", "active"].includes(r.status) && Number(r.touches) === 1);
+  const released = waiting.length ? { count: waiting.length, firstSentAt: Math.min(...waiting.map((r) => Number(r.first_sent_at ?? Date.now()))) } : null;
+  if (pending) decide.push(templateDecide(pending, { stale, forecast: plan?.forecast ?? null, released }));
   for (const p of rows.filter((r) => r.status === "interested" && r.draft_tap_token)) {
     decide.push({
       title: `${p.name || "A prospect"}${p.firm ? ` at ${p.firm}` : ""} wants to talk`,
@@ -386,11 +412,23 @@ async function main() {
     } else {
       const events = [];
       for (const s of plan.sends) {
-        const raw = b64url(mime({ to: s.email, subject: s.subject, body: s.body, inReplyTo: s.in_reply_to }));
-        const m = await call(tok, `${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw, ...(s.thread_id ? { threadId: s.thread_id } : {}) }) }).catch((e) => ({ error: e.message }));
+        let shape = sendShape(s);
+        if (shape.refused) { console.error(`  touch ${s.touch} held: ${shape.refused}`); continue; }
+        const mtok = tok;
+        // Thread it properly: the follow-up answers the last message in their thread.
+        if (shape.threadId && !shape.message.inReplyTo) {
+          const th = await call(mtok, `${GMAIL}/threads/${shape.threadId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=Subject`).catch(() => null);
+          const last = th?.messages?.at(-1)?.payload?.headers ?? [];
+          const mid = last.find((h) => h.name.toLowerCase() === "message-id")?.value ?? null;
+          const subj = (th?.messages?.[0]?.payload?.headers ?? []).find((h) => h.name.toLowerCase() === "subject")?.value ?? null;
+          if (!th) { console.error(`  touch ${s.touch} held: the thread is not in ${shape.mailbox}`); continue; }
+          shape = sendShape({ ...s, subject: s.subject ?? subj }, { inReplyTo: mid });
+        }
+        const raw = b64url(mime(shape.message));
+        const m = await call(mtok, `${GMAIL}/messages/send`, { method: "POST", body: JSON.stringify({ raw, ...(shape.threadId ? { threadId: shape.threadId } : {}) }) }).catch((e) => ({ error: e.message }));
         if (!m?.id) { console.error(`  touch ${s.touch} refused: ${m?.error ?? "no id"}`); continue; }
-        const meta = await threadOfSent(tok, m.id);
-        events.push({ prospect_id: s.prospect_id, kind: "sent", touch: s.touch, gmail_id: m.id, thread_id: m.threadId, message_id: meta?.message_id ?? null, subject: s.subject, body: s.body, template_id: s.template_id ?? null });
+        const meta = await threadOfSent(mtok, m.id);
+        events.push({ prospect_id: s.prospect_id, kind: "sent", touch: s.touch, gmail_id: m.id, thread_id: m.threadId, message_id: meta?.message_id ?? null, subject: shape.message.subject, body: s.body, template_id: s.template_id ?? null, sent_from: shape.mailbox });
         sent++;
       }
       if (events.length) await api.post("/lp/prospects/events", { events });
