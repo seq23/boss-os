@@ -109,9 +109,10 @@ describe("the one morning email", () => {
     expect(done[3]).toBe("- And 2 more done for you. — See them all on Today: https://boss.sequoiataylor.com/?view=morning");
     expect(e.digest.done).toHaveLength(5);
   });
-  it("Valerie's box is unchanged: the site's own list, boxed", () => {
-    expect(e.text).toContain("- 9:00 AM · Riley M. · Party setup");
-    expect(e.text).toContain("- Money: Jordan P. · Waiting for deposit — $180 due ($130 + $50 refundable deposit)");
+  it("Valerie's box: one calm line per customer from the site's own list, boxed (25 Oct 2026)", () => {
+    expect(e.text).toContain("- Riley M. · 9:00 AM party setup\n");
+    expect(e.text).toContain("- Jordan P. · waiting for deposit, $180 due ($130 + $50 refundable deposit)\n");
+    expect(e.text).not.toContain("Money: ");
     expect(e.html).toContain("faf6ec");
   });
   it("goes out through employeeMail as laid out, signed by Simone, with its code and its kind in the header", () => {

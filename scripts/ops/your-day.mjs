@@ -178,13 +178,64 @@ function commentDoneLines(data, now) {
   return out;
 }
 
-function valerieItems(feed) {
+/**
+ * ─── SEQUOIA'S COPY OF VALERIE'S LIST, CALM (owner, 25 Oct 2026; make-it-calm) ───
+ *
+ * Only Simone's copy changes; the site's feed and Valerie's own 7 am email are untouched. Read-only,
+ * short, ONE line per customer: the booking and the money for the same customer merge, feed codes
+ * ("① All of it · now $180") are dropped or said in words, the money keeps the wording every P&P
+ * screen uses ("$180 due ($130 + $50 refundable deposit)"), and a hold says what happens next —
+ * never a time already passed as if it were current. Pure.
+ */
+const FEED_CODE = /[①②③④⑤⑥⑦⑧⑨⑩]\s*([^·]*?)\s*·\s*now\s*(\$[\d,.]+)/;
+function holdWords(text, now) {
+  return String(text).replace(/\b(?:games\s+)?reserved until (today|tomorrow)\s+(\d{1,2}):(\d{2})\s*([AP]M)\b/gi, (_m, when, h, mi, ap) => {
+    const clock = `${Number(h)}:${mi} ${ap.toUpperCase()}`;
+    if (when.toLowerCase() === "tomorrow") return `hold ends ${clock} tomorrow`;
+    const p = parts(now);
+    const hour24 = (Number(h) % 12) + (ap.toUpperCase() === "PM" ? 12 : 0);
+    const passed = p.hour > hour24 || (p.hour === hour24 && p.minute >= Number(mi));
+    return passed ? `hold ended ${clock}: still no deposit` : `hold ends ${clock} today`;
+  });
+}
+const lower = (t) => (t ? t[0].toLowerCase() + t.slice(1) : t);
+export function valerieItems(feed, now = Date.now()) {
   if (!feed) return null;
-  return (feed.items ?? []).map((i) => {
-    const due = i.kind === "money" || !i.detail ? "" : ` — ${i.detail}`;
-    const head = i.kind === "money" ? `Money: ${i.title}` : i.kind === "renewal" ? `Marketplace: ${i.title}` : i.kind === "id_delete" ? `ID photo: ${i.title}` : i.title;
-    return `${head}${i.kind === "money" && i.detail ? ` — ${i.detail}` : due}`;
-  }).filter((s) => !/^Your week\b/.test(s));
+  const order = [];
+  const byCustomer = new Map();
+  const loose = [];
+  for (const i of feed.items ?? []) {
+    const bits = String(i.title ?? "").split(/\s+·\s+/).map((x) => x.trim()).filter(Boolean);
+    if (/^Your week\b/.test(bits[0] ?? "")) continue;
+    if (i.kind === "renewal" || i.kind === "id_delete") {
+      loose.push(`${i.kind === "renewal" ? "Marketplace" : "ID photo"}: ${holdWords([bits.join(" · "), i.detail].filter(Boolean).join(" · "), now)}`);
+      continue;
+    }
+    // "9:00 AM · Riley M. · Party setup": a time first, then the customer.
+    const timed = /^\d{1,2}:\d{2}\s*[AP]M$/i.test(bits[0] ?? "");
+    const who = (timed ? bits[1] : bits[0]) ?? "A customer";
+    if (!byCustomer.has(who)) { byCustomer.set(who, { booking: [], money: [] }); order.push(who); }
+    const c = byCustomer.get(who);
+    const detail = String(i.detail ?? "").trim();
+    if (i.kind === "money") {
+      const amount = lower(bits.slice(1).join(" · "));
+      const code = FEED_CODE.exec(detail);
+      const rest = detail.replace(FEED_CODE, "").split(/\s*·\s*/).map((x) => x.trim()).filter(Boolean);
+      const words = amount || (code ? `owes ${lower(code[1])}: ${code[2]}` : "");
+      c.money.push([words, ...rest.map(lower)].filter(Boolean).join(", "));
+    } else {
+      if (timed) { c.booking.push([`${bits[0]} ${lower(bits.slice(2).join(" · "))}`.trim(), lower(holdWords(detail, now))].filter(Boolean).join(" · ")); continue; }
+      // "Rentals · asked for Fri 30 Oct" → "Fri 30 Oct rental"; "Party & decor · Thu 10 Dec" → "Thu 10 Dec party & decor".
+      const kind = bits[1] ? lower(bits[1].replace(/^Rentals$/i, "rental")) : "";
+      const date = (bits[2] ?? "").replace(/^asked for\s+/i, "");
+      c.booking.push([[date, kind].filter(Boolean).join(" "), lower(holdWords(detail, now))].filter(Boolean).join(" · "));
+    }
+  }
+  const lines = order.map((who) => {
+    const c = byCustomer.get(who);
+    return [who, ...c.booking, ...c.money].filter(Boolean).join(" · ");
+  });
+  return [...lines, ...loose];
 }
 
 /** The one-minute summary's raw lines (≤5), as Camille wrote them. `null` when today's report is not in. */
@@ -573,7 +624,7 @@ export function buildDay(data, now = Date.now()) {
     }
   }
 
-  const val = valerieItems(data.feed);
+  const val = valerieItems(data.feed, now);
   const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at)} ${c.title}${c.with ? ` with ${c.with}` : ""}`);
   // While her "OpenAI first" switch is on, one small line says so (owner, 24 Oct 2026).
   const openaiFirst = (data.settings ?? []).find((r) => r.key === "seat_order_openai_first");
