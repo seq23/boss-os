@@ -211,7 +211,10 @@
     "validate:cap-and-line": "node scripts/validate/a-cap-and-a-line-that-cannot-be-bypassed.mjs && node scripts/validate/a-cap-and-a-line-that-cannot-be-bypassed.mjs --self-test",
     "validate:stage-move-is-records-own": "node scripts/validate/a-stage-move-is-the-records-own.mjs && node scripts/validate/a-stage-move-is-the-records-own.mjs --self-test",
     "validate:fruitless-pass": "node scripts/validate/a-fruitless-audit-pass-is-loud.mjs && node scripts/validate/a-fruitless-audit-pass-is-loud.mjs --self-test",
-    "validate:non-answer": "node scripts/validate/a-non-answer-is-not-a-draft.mjs && node scripts/validate/a-non-answer-is-not-a-draft.mjs --self-test"
+    "validate:non-answer": "node scripts/validate/a-non-answer-is-not-a-draft.mjs && node scripts/validate/a-non-answer-is-not-a-draft.mjs --self-test",
+    "sites:audit": "node scripts/vault/vault.mjs run -- node scripts/ops/search-readiness-audit.mjs",
+    "sites:fix-queue": "node scripts/ops/search-readiness-audit.mjs --queue",
+    "sites:page": "node scripts/ops/search-readiness-page.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

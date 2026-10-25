@@ -1,0 +1,851 @@
+{
+ "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry.",
+ "never": [
+  "westpeek.",
+  "joinwestpeek.",
+  "Shirley Brown",
+  "WHA"
+ ],
+ "excluded": [
+  {
+   "domain": "heygetonmylevel.com",
+   "why": "Owner, 25 Oct 2026: off this work entirely until it has a payment mechanism."
+  }
+ ],
+ "grid_repos": [
+  {
+   "domain": "theindustryguides.com",
+   "repo": "local-guides-citation-velocity",
+   "category": "side_business",
+   "kind": "guide",
+   "roles": [
+    "companion"
+   ],
+   "label": "The Industry Guides (umbrella and velocity site)",
+   "coverage": {
+    "model": "not_local",
+    "why": "Topical, not local: it carries the vertical hubs and velocity pieces that route readers to the six canonical guides, which hold the city pages."
+   }
+  },
+  {
+   "domain": "uscisexam.com",
+   "repo": "local-guides-generator",
+   "category": "side_business",
+   "kind": "guide",
+   "roles": [
+    "generator"
+   ],
+   "label": "USCIS civil surgeon guide",
+   "coverage": {
+    "model": "repo_cities",
+    "why": "The generator's own city list for this vertical is the target list: every live city in it must have its page in the sitemap.",
+    "repo": "local-guides-generator",
+    "file": "data/page_sets/examples/cities_uscis_medical_v1.json",
+    "filter": {
+     "status": "live"
+    },
+    "url_pattern": "/{slug}/"
+   }
+  },
+  {
+   "domain": "dentistryguides.com",
+   "repo": "local-guides-generator",
+   "category": "side_business",
+   "kind": "guide",
+   "roles": [
+    "generator"
+   ],
+   "label": "Dentistry guide",
+   "coverage": {
+    "model": "repo_cities",
+    "why": "The generator's own city list for this vertical is the target list: every live city in it must have its page in the sitemap.",
+    "repo": "local-guides-generator",
+    "file": "data/page_sets/examples/cities_dentistry_v1.json",
+    "filter": {
+     "status": "live"
+    },
+    "url_pattern": "/{slug}/"
+   }
+  },
+  {
+   "domain": "theaccidentguides.com",
+   "repo": "local-guides-generator",
+   "category": "side_business",
+   "kind": "guide",
+   "roles": [
+    "generator"
+   ],
+   "label": "Accident (personal injury) guide",
+   "coverage": {
+    "model": "repo_cities",
+    "why": "The generator's own city list for this vertical is the target list: every live city in it must have its page in the sitemap.",
+    "repo": "local-guides-generator",
+    "file": "data/page_sets/examples/cities_pi_v1.json",
+    "filter": {
+     "status": "live"
+    },
+    "url_pattern": "/{slug}/"
+   }
+  },
+  {
+   "domain": "neuroevalguides.com",
+   "repo": "local-guides-generator",
+   "category": "side_business",
+   "kind": "guide",
+   "roles": [
+    "generator"
+   ],
+   "label": "Neuro evaluation guide",
+   "coverage": {
+    "model": "repo_cities",
+    "why": "The generator's own city list for this vertical is the target list: every live city in it must have its page in the sitemap.",
+    "repo": "local-guides-generator",
+    "file": "data/page_sets/examples/cities_neuro_v1.json",
+    "filter": {
+     "status": "live"
+    },
+    "url_pattern": "/{slug}/"
+   }
+  },
+  {
+   "domain": "hormonesivhair.com",
+   "repo": "local-guides-generator",
+   "category": "side_business",
+   "kind": "guide",
+   "roles": [
+    "generator"
+   ],
+   "label": "Hormones, IV and hair guide",
+   "coverage": {
+    "model": "repo_cities",
+    "why": "The generator's own city list for this vertical is the target list: every live city in it must have its page in the sitemap.",
+    "repo": "local-guides-generator",
+    "file": "data/page_sets/examples/cities_trt_v1.json",
+    "filter": {
+     "status": "live"
+    },
+    "url_pattern": "/{slug}/"
+   }
+  },
+  {
+   "domain": "memphisseniorcarehomes.com",
+   "repo": "local-guides-generator",
+   "category": "side_business",
+   "kind": "hyperlocal",
+   "roles": [
+    "generator",
+    "directory"
+   ],
+   "label": "Memphis Senior Care Homes",
+   "coverage": {
+    "model": "hyperlocal",
+    "why": "Owner, 25 Oct 2026: two empty sitemaps and no neighborhood, extra-town or hospital pages. Every town inside the radius, every listed neighborhood, every hospital and every service in every town is a page.",
+    "center": {
+     "name": "Memphis, TN",
+     "lat": 35.1495,
+     "lng": -90.049
+    },
+    "radius_miles": 40,
+    "towns": [
+     {
+      "name": "Memphis, TN",
+      "slug": "memphis-tn",
+      "lat": 35.1495,
+      "lng": -90.049
+     },
+     {
+      "name": "Germantown, TN",
+      "slug": "germantown-tn",
+      "lat": 35.0868,
+      "lng": -89.8101
+     },
+     {
+      "name": "Collierville, TN",
+      "slug": "collierville-tn",
+      "lat": 35.042,
+      "lng": -89.6645
+     },
+     {
+      "name": "Bartlett, TN",
+      "slug": "bartlett-tn",
+      "lat": 35.2045,
+      "lng": -89.874
+     },
+     {
+      "name": "Cordova, TN",
+      "slug": "cordova-tn",
+      "lat": 35.1557,
+      "lng": -89.7762
+     },
+     {
+      "name": "Arlington, TN",
+      "slug": "arlington-tn",
+      "lat": 35.2962,
+      "lng": -89.6615
+     },
+     {
+      "name": "Lakeland, TN",
+      "slug": "lakeland-tn",
+      "lat": 35.2306,
+      "lng": -89.7406
+     },
+     {
+      "name": "Millington, TN",
+      "slug": "millington-tn",
+      "lat": 35.3415,
+      "lng": -89.8973
+     },
+     {
+      "name": "Oakland, TN",
+      "slug": "oakland-tn",
+      "lat": 35.229,
+      "lng": -89.5151
+     },
+     {
+      "name": "Atoka, TN",
+      "slug": "atoka-tn",
+      "lat": 35.4412,
+      "lng": -89.7781
+     },
+     {
+      "name": "Munford, TN",
+      "slug": "munford-tn",
+      "lat": 35.4492,
+      "lng": -89.8151
+     },
+     {
+      "name": "Covington, TN",
+      "slug": "covington-tn",
+      "lat": 35.5642,
+      "lng": -89.6465
+     },
+     {
+      "name": "Rossville, TN",
+      "slug": "rossville-tn",
+      "lat": 35.0423,
+      "lng": -89.5426
+     },
+     {
+      "name": "Eads, TN",
+      "slug": "eads-tn",
+      "lat": 35.1834,
+      "lng": -89.6537
+     },
+     {
+      "name": "Brighton, TN",
+      "slug": "brighton-tn",
+      "lat": 35.4831,
+      "lng": -89.7251
+     },
+     {
+      "name": "Southaven, MS",
+      "slug": "southaven-ms",
+      "lat": 34.9889,
+      "lng": -90.0126
+     },
+     {
+      "name": "Olive Branch, MS",
+      "slug": "olive-branch-ms",
+      "lat": 34.9618,
+      "lng": -89.8295
+     },
+     {
+      "name": "Horn Lake, MS",
+      "slug": "horn-lake-ms",
+      "lat": 34.9554,
+      "lng": -90.0348
+     },
+     {
+      "name": "Hernando, MS",
+      "slug": "hernando-ms",
+      "lat": 34.824,
+      "lng": -89.9937
+     },
+     {
+      "name": "Walls, MS",
+      "slug": "walls-ms",
+      "lat": 34.9582,
+      "lng": -90.1526
+     },
+     {
+      "name": "Nesbit, MS",
+      "slug": "nesbit-ms",
+      "lat": 34.8932,
+      "lng": -90.0115
+     },
+     {
+      "name": "Byhalia, MS",
+      "slug": "byhalia-ms",
+      "lat": 34.8723,
+      "lng": -89.6906
+     },
+     {
+      "name": "Tunica, MS",
+      "slug": "tunica-ms",
+      "lat": 34.6851,
+      "lng": -90.3829
+     },
+     {
+      "name": "Senatobia, MS",
+      "slug": "senatobia-ms",
+      "lat": 34.6176,
+      "lng": -89.9687
+     },
+     {
+      "name": "West Memphis, AR",
+      "slug": "west-memphis-ar",
+      "lat": 35.1465,
+      "lng": -90.1845
+     },
+     {
+      "name": "Marion, AR",
+      "slug": "marion-ar",
+      "lat": 35.2145,
+      "lng": -90.1965
+     },
+     {
+      "name": "Earle, AR",
+      "slug": "earle-ar",
+      "lat": 35.2751,
+      "lng": -90.4668
+     }
+    ],
+    "neighborhoods": [
+     {
+      "name": "East Memphis",
+      "slug": "east-memphis-tn"
+     },
+     {
+      "name": "Midtown",
+      "slug": "midtown-memphis-tn"
+     },
+     {
+      "name": "Downtown",
+      "slug": "downtown-memphis-tn"
+     },
+     {
+      "name": "Cooper-Young",
+      "slug": "cooper-young-memphis-tn"
+     },
+     {
+      "name": "Whitehaven",
+      "slug": "whitehaven-memphis-tn"
+     },
+     {
+      "name": "Raleigh",
+      "slug": "raleigh-memphis-tn"
+     },
+     {
+      "name": "Frayser",
+      "slug": "frayser-memphis-tn"
+     },
+     {
+      "name": "Hickory Hill",
+      "slug": "hickory-hill-memphis-tn"
+     },
+     {
+      "name": "Berclair",
+      "slug": "berclair-memphis-tn"
+     },
+     {
+      "name": "Parkway Village",
+      "slug": "parkway-village-memphis-tn"
+     },
+     {
+      "name": "University District",
+      "slug": "university-district-memphis-tn"
+     },
+     {
+      "name": "Binghampton",
+      "slug": "binghampton-memphis-tn"
+     }
+    ],
+    "anchors": [
+     {
+      "name": "Baptist Memorial Hospital-Memphis",
+      "slug": "baptist-memorial-hospital-memphis",
+      "type": "hospital"
+     },
+     {
+      "name": "Methodist University Hospital",
+      "slug": "methodist-university-hospital",
+      "type": "hospital"
+     },
+     {
+      "name": "Saint Francis Hospital-Memphis (Park Avenue)",
+      "slug": "saint-francis-hospital-park-avenue",
+      "type": "hospital"
+     },
+     {
+      "name": "Regional One Health",
+      "slug": "regional-one-health",
+      "type": "hospital"
+     },
+     {
+      "name": "Methodist Le Bonheur Germantown Hospital",
+      "slug": "methodist-le-bonheur-germantown-hospital",
+      "type": "hospital"
+     },
+     {
+      "name": "Baptist Memorial Hospital-Collierville",
+      "slug": "baptist-memorial-hospital-collierville",
+      "type": "hospital"
+     },
+     {
+      "name": "Methodist North Hospital",
+      "slug": "methodist-north-hospital",
+      "type": "hospital"
+     },
+     {
+      "name": "Methodist South Hospital",
+      "slug": "methodist-south-hospital",
+      "type": "hospital"
+     },
+     {
+      "name": "Saint Francis Hospital-Bartlett",
+      "slug": "saint-francis-hospital-bartlett",
+      "type": "hospital"
+     },
+     {
+      "name": "Baptist Memorial Hospital-DeSoto",
+      "slug": "baptist-memorial-hospital-desoto",
+      "type": "hospital"
+     },
+     {
+      "name": "Methodist Olive Branch Hospital",
+      "slug": "methodist-olive-branch-hospital",
+      "type": "hospital"
+     },
+     {
+      "name": "Baptist Memorial Hospital-Crittenden",
+      "slug": "baptist-memorial-hospital-crittenden",
+      "type": "hospital"
+     },
+     {
+      "name": "Memphis VA Medical Center",
+      "slug": "memphis-va-medical-center",
+      "type": "hospital"
+     }
+    ],
+    "services": [
+     {
+      "name": "Assisted living",
+      "slug": "assisted-living"
+     },
+     {
+      "name": "Memory care",
+      "slug": "memory-care"
+     }
+    ],
+    "url_patterns": {
+     "town": "/{town}/",
+     "neighborhood": "/{slug}/",
+     "anchor": "/{slug}/",
+     "service_town": "/{town}/{service}/"
+    }
+   }
+  },
+  {
+   "domain": "porchandparty901.com",
+   "repo": "p-n-p",
+   "category": "own_business",
+   "kind": "hyperlocal",
+   "roles": [],
+   "label": "Porch & Party",
+   "coverage": {
+    "model": "hyperlocal",
+    "why": "Memphis and its suburbs: every service in every town is an /areas/ page, plus the Memphis neighborhoods and the hotels people book room setups in.",
+    "center": {
+     "name": "Memphis, TN",
+     "lat": 35.1495,
+     "lng": -90.049
+    },
+    "radius_miles": 35,
+    "towns": [
+     {
+      "name": "Memphis, TN",
+      "slug": "memphis-tn",
+      "lat": 35.1495,
+      "lng": -90.049
+     },
+     {
+      "name": "Germantown, TN",
+      "slug": "germantown-tn",
+      "lat": 35.0868,
+      "lng": -89.8101
+     },
+     {
+      "name": "Collierville, TN",
+      "slug": "collierville-tn",
+      "lat": 35.042,
+      "lng": -89.6645
+     },
+     {
+      "name": "Bartlett, TN",
+      "slug": "bartlett-tn",
+      "lat": 35.2045,
+      "lng": -89.874
+     },
+     {
+      "name": "Cordova, TN",
+      "slug": "cordova-tn",
+      "lat": 35.1557,
+      "lng": -89.7762
+     },
+     {
+      "name": "Arlington, TN",
+      "slug": "arlington-tn",
+      "lat": 35.2962,
+      "lng": -89.6615
+     },
+     {
+      "name": "Lakeland, TN",
+      "slug": "lakeland-tn",
+      "lat": 35.2306,
+      "lng": -89.7406
+     },
+     {
+      "name": "Millington, TN",
+      "slug": "millington-tn",
+      "lat": 35.3415,
+      "lng": -89.8973
+     },
+     {
+      "name": "Oakland, TN",
+      "slug": "oakland-tn",
+      "lat": 35.229,
+      "lng": -89.5151
+     },
+     {
+      "name": "Southaven, MS",
+      "slug": "southaven-ms",
+      "lat": 34.9889,
+      "lng": -90.0126
+     },
+     {
+      "name": "Olive Branch, MS",
+      "slug": "olive-branch-ms",
+      "lat": 34.9618,
+      "lng": -89.8295
+     },
+     {
+      "name": "Horn Lake, MS",
+      "slug": "horn-lake-ms",
+      "lat": 34.9554,
+      "lng": -90.0348
+     },
+     {
+      "name": "Hernando, MS",
+      "slug": "hernando-ms",
+      "lat": 34.824,
+      "lng": -89.9937
+     }
+    ],
+    "neighborhoods": [
+     {
+      "name": "East Memphis",
+      "slug": "east-memphis-tn"
+     },
+     {
+      "name": "Midtown",
+      "slug": "midtown-memphis-tn"
+     },
+     {
+      "name": "Downtown",
+      "slug": "downtown-memphis-tn"
+     },
+     {
+      "name": "Cooper-Young",
+      "slug": "cooper-young-memphis-tn"
+     },
+     {
+      "name": "Whitehaven",
+      "slug": "whitehaven-memphis-tn"
+     },
+     {
+      "name": "Raleigh",
+      "slug": "raleigh-memphis-tn"
+     }
+    ],
+    "anchors": [
+     {
+      "name": "The Peabody Memphis",
+      "slug": "the-peabody-memphis",
+      "type": "hotel"
+     },
+     {
+      "name": "The Guest House at Graceland",
+      "slug": "guest-house-at-graceland",
+      "type": "hotel"
+     },
+     {
+      "name": "The Central Station Memphis",
+      "slug": "the-central-station-memphis",
+      "type": "hotel"
+     },
+     {
+      "name": "Hu. Hotel",
+      "slug": "hu-hotel-memphis",
+      "type": "hotel"
+     },
+     {
+      "name": "The Westin Memphis Beale Street",
+      "slug": "westin-memphis-beale-street",
+      "type": "hotel"
+     },
+     {
+      "name": "The Madison Hotel",
+      "slug": "the-madison-hotel-memphis",
+      "type": "hotel"
+     }
+    ],
+    "services": [
+     {
+      "name": "Party decor",
+      "slug": "party-decor"
+     },
+     {
+      "name": "Grazing tables",
+      "slug": "grazing-tables"
+     },
+     {
+      "name": "Porch decorating",
+      "slug": "porch-decorating"
+     },
+     {
+      "name": "Party game rentals",
+      "slug": "party-game-rentals"
+     }
+    ],
+    "url_patterns": {
+     "service_town": "/areas/{town}-{service}",
+     "neighborhood": "/areas/{slug}-party-decor",
+     "anchor": "/areas/{slug}-hotel-room-decor"
+    }
+   }
+  },
+  {
+   "domain": "approvalprep.com",
+   "repo": "approvalprep",
+   "category": "side_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "ApprovalPrep",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national loan-document product; no place-based pages."
+   }
+  },
+  {
+   "domain": "weddingchecklistpdf.com",
+   "repo": "dream-wedding-builder",
+   "category": "side_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "Wedding checklist PDF",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national planning tool; no place-based pages."
+   }
+  },
+  {
+   "domain": "weddingbudgetspreadsheet.com",
+   "repo": "dream-wedding-builder",
+   "category": "side_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "Wedding budget spreadsheet",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national planning tool; no place-based pages."
+   }
+  },
+  {
+   "domain": "weddingseatingchartmaker.com",
+   "repo": "dream-wedding-builder",
+   "category": "side_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "Wedding seating chart maker",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national planning tool; no place-based pages."
+   }
+  },
+  {
+   "domain": "weddingtimelinetemplate.com",
+   "repo": "dream-wedding-builder",
+   "category": "side_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "Wedding timeline template",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national planning tool; no place-based pages."
+   }
+  },
+  {
+   "domain": "aplayermode.com",
+   "repo": "aplayer-mode",
+   "category": "side_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "A Player Mode",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national product; no place-based pages."
+   }
+  },
+  {
+   "domain": "time-2-read.com",
+   "repo": null,
+   "category": "side_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "Time2Read",
+   "no_repo_why": "No repository on her GitHub (grid.mjs domains_without_repo); live checks run, repo checks are recorded as no repo.",
+   "coverage": {
+    "model": "not_local",
+    "why": "A subscription product; no place-based pages."
+   }
+  },
+  {
+   "domain": "howweknowdeep.com",
+   "repo": "how-we-know",
+   "category": "side_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "How We Know (the channel's website)",
+   "coverage": {
+    "model": "not_local",
+    "why": "The YouTube channel's companion site; topical, no place-based pages."
+   }
+  },
+  {
+   "domain": "professionalresourcelibrary.com",
+   "repo": "authority-backlink-network",
+   "category": "side_business",
+   "kind": "authority",
+   "roles": [
+    "linker"
+   ],
+   "label": "Professional Resource Library",
+   "coverage": {
+    "model": "not_local",
+    "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."
+   }
+  },
+  {
+   "domain": "founderoperatorlibrary.com",
+   "repo": "authority-backlink-network",
+   "category": "side_business",
+   "kind": "authority",
+   "roles": [
+    "linker"
+   ],
+   "label": "Founder Operator Library",
+   "coverage": {
+    "model": "not_local",
+    "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."
+   }
+  },
+  {
+   "domain": "memphisvendorlibrary.com",
+   "repo": "authority-backlink-network",
+   "category": "side_business",
+   "kind": "authority",
+   "roles": [
+    "linker"
+   ],
+   "label": "Memphis Vendor Library",
+   "coverage": {
+    "model": "not_local",
+    "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."
+   }
+  },
+  {
+   "domain": "horselegalguide.com",
+   "repo": "horse-legal-guide-velocity",
+   "category": "client",
+   "kind": "guide",
+   "roles": [],
+   "label": "Horse Legal Guide",
+   "coverage": {
+    "model": "not_local",
+    "why": "Topical equine-law scenarios and comparisons; no place-based pages today."
+   }
+  },
+  {
+   "domain": "hicksconsulting.org",
+   "repo": "hicks-consulting-canonical",
+   "category": "client",
+   "kind": "brand",
+   "roles": [],
+   "label": "Hicks Consulting",
+   "coverage": {
+    "model": "not_local",
+    "why": "A consulting practice site; place pages are the practice's own call, none are targeted."
+   }
+  },
+  {
+   "domain": "virtualagency-os.com",
+   "repo": "WPP-llm",
+   "category": "own_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "Virtual Agency OS",
+   "coverage": {
+    "model": "not_local",
+    "why": "A national software product; no place-based pages."
+   }
+  },
+  {
+   "domain": "billionairehighperformancecoach.com",
+   "repo": "sprylabs-hpc-site",
+   "category": "own_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "Spry Labs HPC (Billionaire High Performance Coach)",
+   "protected_pages": [
+    {
+     "path": "/download",
+     "aliases": [
+      "/download.html"
+     ],
+     "source_file": "download.html",
+     "sha256": "69b072fc38037ff0b7246238b44b87e15876048d24d5e85f0a9a872f347f89f3",
+     "buy_link": "https://sprylabs.gumroad.com/l/billionaire-high-performance-coach",
+     "rule": "PROTECTED (owner, 25 Oct 2026): the page behind the portfolio's only two verified sales. A failure on it is fixed on its own, deliberately, in a single-page change: check the Gumroad buy link answers before and after, and never touch it in a bulk or cosmetic fix. Cosmetic-only items are skipped on it."
+    }
+   ],
+   "coverage": {
+    "model": "not_local",
+    "why": "A national product; no place-based pages."
+   }
+  },
+  {
+   "domain": "spryexecutiveos.com",
+   "repo": "sprylabs-hpc-site",
+   "category": "own_business",
+   "kind": "brand",
+   "roles": [],
+   "label": "Spry Executive OS",
+   "protected_pages": [
+    {
+     "path": "/download",
+     "aliases": [
+      "/download.html"
+     ],
+     "source_file": "download.html",
+     "sha256": "69b072fc38037ff0b7246238b44b87e15876048d24d5e85f0a9a872f347f89f3",
+     "buy_link": "https://sprylabs.gumroad.com/l/billionaire-high-performance-coach",
+     "rule": "PROTECTED (owner, 25 Oct 2026): the page behind the portfolio's only two verified sales. A failure on it is fixed on its own, deliberately, in a single-page change: check the Gumroad buy link answers before and after, and never touch it in a bulk or cosmetic fix. Cosmetic-only items are skipped on it."
+    }
+   ],
+   "coverage": {
+    "model": "not_local",
+    "why": "A national product; no place-based pages."
+   }
+  }
+ ]
+}

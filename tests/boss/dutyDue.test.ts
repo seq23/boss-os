@@ -201,9 +201,12 @@ describe("duty_site_audit_repair after 0246", () => {
       )
       .first<{ never: string; model: string; success_criteria: string }>();
 
-    expect(duty?.never).toMatch(/Client repos are off limits to the fixer entirely/);
-    expect(duty?.never).toMatch(/hicks-consulting-canonical/);
+    expect(duty?.never).toMatch(/Client repos that are not grid repo sites are off limits to the fixer entirely/);
     expect(duty?.never).toMatch(/dianne-place-recovery-services/);
+    // Owner, 25 Oct 2026: the two client grid repo sites are fixed like every other.
+    expect(duty?.never).toMatch(/hicks-consulting-canonical and horse-legal-guide-velocity are grid repo sites and are fixed/);
+    expect(duty?.never).toMatch(/protected page .* single-page change/);
+    expect(duty?.success_criteria).toMatch(/Search Readiness fix queue/);
     expect(duty?.never).toMatch(/lands through ~\/bin\/land and nothing else/);
     expect(duty?.never).toMatch(/local-guides-citation-velocity is no longer off limits/);
     expect(duty?.never).not.toMatch(/she merges/i);
