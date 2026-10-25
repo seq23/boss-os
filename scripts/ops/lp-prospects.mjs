@@ -111,12 +111,12 @@ export function importRows(sentLog, recipients) {
 /* ─── Gmail, the West Peek mailbox only ──────────────────────────────────── */
 
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-async function token(mailbox = MAILBOX) {
+async function token() {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault: npm run lp:prospects");
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claims = b64url(JSON.stringify({ iss: creds.client_email, sub: mailbox, scope: SCOPE, aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 }));
+  const claims = b64url(JSON.stringify({ iss: creds.client_email, sub: MAILBOX, scope: SCOPE, aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 }));
   const signer = crypto.createSign("RSA-SHA256");
   signer.update(`${header}.${claims}`);
   const res = await fetch("https://oauth2.googleapis.com/token", {
@@ -168,6 +168,9 @@ export function sendShape(s, { inReplyTo = s.in_reply_to ?? null } = {}) {
   if (s.touch > 1) {
     if (!s.thread_id) return { refused: `no thread on record for ${s.email}; a follow-up is only ever a reply in it` };
     if (!s.from) return { refused: `no record of which mailbox sent ${s.email}'s first email` };
+    // This run holds the West Peek mailbox only (validate:gmail pins it): a thread that lives in any
+    // other mailbox is not replied to from here, and is never answered from a different one.
+    if (String(s.from).toLowerCase() !== MAILBOX) return { refused: `${s.email}'s first email went from ${s.from}; their follow-up can only be a reply from that mailbox, which this run does not hold` };
     const subject = /^re:/i.test(String(s.subject ?? "")) ? s.subject : `Re: ${s.subject ?? ""}`.trim();
     return { mailbox: s.from, threadId: s.thread_id, message: { to: s.email, subject, body: s.body, inReplyTo, from: s.from } };
   }
@@ -408,12 +411,10 @@ async function main() {
       console.log(`DRY RUN: ${plan.sends.length} due (${plan.dryRun ? "outreach sending is not live" : "no --live"}); preview at ${PREVIEW}. Nothing sent.`);
     } else {
       const events = [];
-      const toks = new Map([[MAILBOX, tok]]);
       for (const s of plan.sends) {
         let shape = sendShape(s);
         if (shape.refused) { console.error(`  touch ${s.touch} held: ${shape.refused}`); continue; }
-        if (!toks.has(shape.mailbox)) toks.set(shape.mailbox, await token(shape.mailbox));
-        const mtok = toks.get(shape.mailbox);
+        const mtok = tok;
         // Thread it properly: the follow-up answers the last message in their thread.
         if (shape.threadId && !shape.message.inReplyTo) {
           const th = await call(mtok, `${GMAIL}/threads/${shape.threadId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=Subject`).catch(() => null);

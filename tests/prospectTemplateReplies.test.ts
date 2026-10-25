@@ -31,7 +31,7 @@ describe("the standing rules for every prospect email", () => {
   });
   it("her two rules are on record in her words, each with an enforcer", () => {
     expect(PROSPECT_TEMPLATE_RULES.map((r) => r.key)).toEqual(["names_are_examples", "no_fake_reply_subject"]);
-    expect(PROSPECT_TEMPLATE_RULES[0].said).toBe("I don't like that you make it seem like those are the only 3 companies I'm working on.");
+    expect(PROSPECT_TEMPLATE_RULES[0]!.said).toBe("I don't like that you make it seem like those are the only 3 companies I'm working on.");
   });
 });
 
@@ -44,21 +44,23 @@ describe("her changes, applied plainly", () => {
     expect(r.kept).toEqual(["make it warmer"]);
   });
   it("try again is a different structure, not a reworded copy", () => {
-    const a = renderProspect(PROSPECT_VARIANTS[0], { first: "Alex", names: NAMES });
-    const b = renderProspect(PROSPECT_VARIANTS[1], { first: "Alex", names: NAMES });
+    const a = renderProspect(PROSPECT_VARIANTS[0]!, { first: "Alex", names: NAMES });
+    const b = renderProspect(PROSPECT_VARIANTS[1]!, { first: "Alex", names: NAMES });
     expect(b.subject).not.toBe(a.subject);
     expect(b.body.split("\n\n")[1]!.slice(0, 30)).not.toBe(a.body.split("\n\n")[1]!.slice(0, 30));
   });
 });
 
 describe("the one follow-up replies in their thread, from the mailbox that sent the first email", () => {
-  const s = { touch: 2, email: "pat@family.example", subject: "Late-stage secondaries: OpenAI, Anduril and others", body: "Hi Pat,", thread_id: "t123", in_reply_to: "<m1@mail.example>", from: "first.sender@example.com" };
+  const s = { touch: 2, email: "pat@family.example", subject: "Late-stage secondaries: OpenAI, Anduril and others", body: "Hi Pat,", thread_id: "t123", in_reply_to: "<m1@mail.example>", from: "sequoia@westpeek.ventures" };
   it("uses the original mailbox and thread, as a reply", () => {
     const shape = sendShape(s);
-    expect(shape).toEqual({ mailbox: "first.sender@example.com", threadId: "t123", message: { to: "pat@family.example", subject: "Re: Late-stage secondaries: OpenAI, Anduril and others", body: "Hi Pat,", inReplyTo: "<m1@mail.example>", from: "first.sender@example.com" } });
+    expect(shape).toEqual({ mailbox: "sequoia@westpeek.ventures", threadId: "t123", message: { to: "pat@family.example", subject: "Re: Late-stage secondaries: OpenAI, Anduril and others", body: "Hi Pat,", inReplyTo: "<m1@mail.example>", from: "sequoia@westpeek.ventures" } });
   });
   it("is held, never sent fresh, without its thread or its first mailbox", () => {
     expect(sendShape({ ...s, thread_id: null }).refused).toMatch(/no thread/);
     expect(sendShape({ ...s, from: null }).refused).toMatch(/which mailbox/);
+    // A thread that lives in another mailbox is never answered from this one.
+    expect(sendShape({ ...s, from: "staylor@another.example" }).refused).toMatch(/only be a reply from that mailbox/);
   });
 });
