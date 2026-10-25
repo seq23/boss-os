@@ -643,6 +643,11 @@ export function fromLegacy({ who, subject, text, refs = [] }) {
   let happened = "";
   for (const original of lines) {
     const trimmed = original.trim();
+    /*
+     * A QUOTED LINE ("> …") IS WORDS THAT GO OUT IN HER NAME, WORD FOR WORD (25 Oct 2026: the
+     * redrafted prospect email's own opt-out line read as an ask). Never an ask, never reworded.
+     */
+    if (/^>\s?/.test(trimmed)) { const q = trimmed.replace(/^>\s?/, ""); if (q && happened) details.push(`“${q}”`); continue; }
     if (!trimmed || DROP_LINE.some((re) => re.test(trimmed))) continue;
     if (name && new RegExp(`^[—–-]\\s*${name}\\b`, "i").test(trimmed)) continue;
     // A line she would have to type at a terminal is not for her (23 Oct 2026: "npm run capital:match -- --not").

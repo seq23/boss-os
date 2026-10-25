@@ -8,6 +8,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { proposeTemplate, importProspects, prospectPlan } from "../../src/worker/boss/lp/desk";
+import { fromLegacy } from "../../src/shared/boss/mail/plain.mjs";
 
 const NAMES = [{ name: "Alpha" }, { name: "Beta" }, { name: "Gamma" }];
 const WED_10AM = Date.parse("2026-10-28T15:00:00Z");
@@ -44,9 +45,18 @@ describe("a numbered reply to the prospect-email card", () => {
     expect(now.follow_up).not.toContain("Just floating this back up.");
     expect((await env.DB.prepare(`SELECT status FROM prospect_templates WHERE id = ?`).bind(t.template.id).first<any>()).status).toBe("retired");
     const reply = String((res as any).reply ?? "");
+    expect(reply).not.toMatch(/could not tell who this was for/);
     expect(reply).toContain("What I changed: dropped the floating line.");
-    expect(reply).toContain(`Approve: https://boss.sequoiataylor.com/tap/${now.tap_token}?do=approve`);
-    expect(reply).toContain(`Try again: https://boss.sequoiataylor.com/tap/${now.tap_token}?do=retry`);
+    expect(reply).toContain(`Tap to approve: https://boss.sequoiataylor.com/tap/${now.tap_token}?do=approve`);
+    expect(reply).toContain(`Tap to try again: https://boss.sequoiataylor.com/tap/${now.tap_token}?do=retry`);
+    // The three taps are the asks; the email's own words (its opt-out line included) are quoted, never an ask.
+    // As laid out for her (the reply path's own layout): the three taps are the asks, and the email's
+    // own words — its opt-out line included — are quoted, never an ask.
+    const laid = fromLegacy({ who: "Monique", subject: "Re: Sunday", text: reply });
+    const asks = laid.text.slice(laid.text.indexOf("Decide ("), laid.text.indexOf("Details:")).split("\n").filter((l: string) => /^\d+\. /.test(l));
+    expect(asks.map((l: string) => l.replace(/^\d+\. /, "").split(":")[0])).toEqual(["Tap to approve", "Tap to change it", "Tap to try again"]);
+    expect(laid.text).toContain("“If this isn't relevant, just reply \"no thanks\" and I won't write again.”");
+    expect(laid.problems).toEqual([]);
     expect(reply).toContain("Some of the names crossing my desk right now include Alpha, Beta and Gamma, among others.");
   });
 
