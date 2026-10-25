@@ -300,7 +300,8 @@ export async function holdMail(sender, payload, problems, fetchImpl = fetch) {
           body: JSON.stringify({
             title: `Fix a held email: ${String(payload?.subject ?? "").slice(0, 120)}`,
             lane: "ops", employee_id: "emp_repo",
-            input: { prompt: `seq23/boss-os — an email to the owner was held by the plain-email gate (scripts/ops/notify.mjs mailGate) and not sent. Problems: ${problems.join("; ")}. The held copy is ${file} on her Mac. Fix the sender at source so it writes plainly (src/shared/boss/mail/plain.mjs layoutEmail / layoutProblem), keep tests/plainEmail.test.ts green, and let the next run send it.` },
+            // A repair Boss OS opened itself: built and landed without asking her (25 Oct 2026).
+            input: { origin: "repair", repair_kind: "held_mail", prompt: `seq23/boss-os — an email to the owner was held by the plain-email gate (scripts/ops/notify.mjs mailGate) and not sent. Problems: ${problems.join("; ")}. The held copy is ${file} on her Mac. Fix the sender at source so it writes plainly (src/shared/boss/mail/plain.mjs layoutEmail / layoutProblem), keep tests/plainEmail.test.ts green, and let the next run send it.` },
           }),
         });
         if (!r.ok) why = `Boss OS refused the fix job (${r.status})`;

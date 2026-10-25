@@ -534,7 +534,7 @@ export function layoutEmail({ who, subject, happened, decide = [], needs = [], d
  * when). Sent only once the fix is running. `decide` — one item, one button — only when she alone can
  * act (an account or key only she holds); it then comes first, as every Decide does.
  */
-export function layoutProblem({ who, subject, happened, did, status, done = false, decide = [], refs = [] }) {
+export function layoutProblem({ who, subject, happened, did, status, done = false, decide = [], refs = [], happenedLabel = PROBLEM_PARTS.happened }) {
   const name = String(who ?? "").trim() || "Simone";
   const subj = cleanSubject(subject);
   const what = cleanText(happened);
@@ -544,7 +544,7 @@ export function layoutProblem({ who, subject, happened, did, status, done = fals
   const statusWord = done ? "Status: done." : PROBLEM_PARTS.status;
   const text = [
     ...(ask.length ? [`${DECIDE_HEADING} (1)`, ...cardText(ask[0], 1), ""] : []),
-    `${PROBLEM_PARTS.happened} ${what}`,
+    `${happenedLabel} ${what}`,
     `${PROBLEM_PARTS.did} ${didLine}`,
     `${statusWord} ${statusLine}`,
     "", `— ${name}`,
@@ -557,7 +557,7 @@ export function layoutProblem({ who, subject, happened, did, status, done = fals
   };
   const html = page(
     (ask.length ? `<p ${SEC(C.decideInk)}>${DECIDE_HEADING} (1)</p>${cardHtml(ask[0], 1)}` : "")
-    + part(PROBLEM_PARTS.happened.replace(/:$/, ""), what)
+    + part(happenedLabel.replace(/:$/, ""), what)
     + part(PROBLEM_PARTS.did.replace(/:$/, ""), didLine)
     + part(done ? "Status: done" : "Status", statusLine, done ? "done" : null)
     + `<p style="margin:12px 2px 0;font-size:14px;color:${C.ink}">— ${esc(name)}</p>`,
@@ -723,15 +723,16 @@ export function plainProblems({ subject, text, html, kind = null }) {
   // "Stopped: …" and Danielle's "Stopped work on …" are both problem emails (combined boss fix).
   const problem = kind === "problem" || /^stopped\b/i.test(subj);
   if (problem) {
-    if (!/^What happened:/m.test(body)) problems.push('a problem email without "What happened"');
+    // A repair's report says "What broke:" (25 Oct 2026); either label opens a problem email.
+    if (!/^What (?:happened|broke):/m.test(body)) problems.push('a problem email without "What happened"');
     if (!/^What we did:/m.test(body)) problems.push('a problem email without "What we did"');
     if (!/^Status(?::| done)/m.test(body)) problems.push("a problem email without its status");
-    if (!(/^What happened:/.test(lines[0] ?? "") || /^Decide \(\d+\)$/.test(lines[0] ?? ""))) problems.push("Decide is not first");
+    if (!(/^What (?:happened|broke):/.test(lines[0] ?? "") || /^Decide \(\d+\)$/.test(lines[0] ?? ""))) problems.push("Decide is not first");
   } else if (!(/^Decide \(\d+\)$/.test(lines[2] ?? "") || lines[2] === NOTHING_TO_DECIDE)) {
     problems.push("Decide is not first");
   }
   const decideAt = lines.findIndex((l) => /^Decide \(\d+\)$/.test(l));
   if (decideAt > 2 && !problem) problems.push("Decide is not first");
-  if (html !== undefined && html !== null && !/Decide \(\d+\)|Nothing to decide|What happened/.test(String(html))) problems.push("the HTML has no Decide line");
+  if (html !== undefined && html !== null && !/Decide \(\d+\)|Nothing to decide|What happened|What broke/.test(String(html))) problems.push("the HTML has no Decide line");
   return [...new Set(problems)];
 }

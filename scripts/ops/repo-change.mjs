@@ -40,7 +40,7 @@ import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
-  REGISTERED_REPOS,
+  REGISTERED_REPOS, isRepair, planWaitsForOwner,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, filesAt, FALLBACK_STOP } from "./notify.mjs";
@@ -50,6 +50,7 @@ import { servicePracticesBlock } from "../../src/shared/boss/service/practices.m
 import { waitDetail, threeParts, missingSecretLine } from "../../src/shared/boss/service/waits.mjs";
 import { seatEnv } from "./lib/seat-env.mjs";
 import { layoutProblem, refsIn } from "../../src/shared/boss/mail/plain.mjs";
+import { repairReport, plainSentence } from "../../src/shared/boss/repoChange/repairReport.mjs";
 import { detectUsageLimit } from "../lib/seat-usage-limit.mjs";
 import { codexExecArgs, codexSeatUsable, gitCommonDirs, helpMentions, runWithCodexFallback } from "../lib/codex-seat.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
@@ -114,6 +115,22 @@ export function stoppedMail({ id, repo, reason, happened, did, origin = ORIGIN }
     decide: [{ title: `Try again or drop the ${repo ?? "package"} change`, body: "One tap opens it with both choices and a box for what to change.", buttons: [{ label: "Open the change", url: `${origin}/?tab=systems&change=${encodeURIComponent(id)}` }] }],
     refs: refsIn(subject),
   });
+}
+
+/**
+ * A REPAIR'S ONE REPORT (owner, 25 Oct 2026): What broke / What we did / Status, plain English, no
+ * code words — `repairReport` writes it and falls back to stock sentences for anything the plan
+ * phase wrote that fails `ownerTextProblems`. The full proof stays in the run log on her Mac.
+ */
+export function repairDoneMail(row, plan, at = Date.now()) {
+  const plain = plan?.in_plain && typeof plan.in_plain === "object" ? plan.in_plain : {};
+  // A failed job is named by its own title when the plan wrote nothing plain: "Your "Executive
+  // Intelligence Report" job stopped before it finished." says which one; the stock line does not.
+  const job = /^Find why "([^"\n]{3,80})" failed/.exec(String(row.instruction ?? ""))?.[1];
+  const named = job && row.repair_kind === "failed_task" ? `Your "${job}" job stopped before it finished.` : null;
+  const r = repairReport({ kind: row.repair_kind, whatBroke: plain.what_broke ?? named, whatWeDid: plain.what_we_did, live: true, at });
+  if (named && r.whatBroke !== plainSentence(plain.what_broke) && plainSentence(named)) r.whatBroke = plainSentence(named);
+  return layoutProblem({ who: "Danielle", subject: r.subject, happenedLabel: "What broke:", happened: r.whatBroke, did: r.whatWeDid, status: r.status, refs: [String(row.id).toLowerCase()] });
 }
 
 async function email(subject, text, files = [], prelaid = null) {
@@ -596,7 +613,7 @@ async function runPhase(claim) {
     PACKAGE_DIR: row.drive_folder ? packageDir : "(no Drive package was linked)", DRIVE_URL: row.drive_url ?? "",
     INSTRUCTION: row.instruction, PLAN: row.plan_text ?? "",
     ANSWERS: ["approved", "preview", "forced"].includes(row.answers_mode) || [APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT].includes(row.answers_text)
-      ? `${row.answers_text}. She replied with a single word of approval: take the recommended default on EVERY question below, exactly as written in its "default" field.`
+      ? `${row.answers_text}. ${isRepair(row) ? "No reply is needed for a repair:" : "She replied with a single word of approval:"} take the recommended default on EVERY question below, exactly as written in its "default" field.`
       : row.answers_text ?? "",
     ASKS: (row.asks ?? []).map((a, i) => `${i + 1}. ${typeof a === "string" ? a : `${a.question ?? JSON.stringify(a)} — default: ${a.default ?? "(none)"}`}`).join("\n") || "(none)",
     DECIDED: (row.decided ?? []).map((d) => `- ${typeof d === "string" ? d : JSON.stringify(d)}`).join("\n") || "(none)",
@@ -607,6 +624,9 @@ async function runPhase(claim) {
       ? `YES — rework ${row.rework_count}/${MAX_REWORKS}. Your previous PR for this change LANDED (merge ${(() => { try { return JSON.parse(row.reworked_merge_shas ?? "[]").join(", "); } catch { return "?"; } })()}) and then the recorded post-land step \`${row.post_land_command ?? "?"}\` FAILED: ${String(row.rework_note ?? "").slice(0, 1500)}. That failure is yours to fix, in this repo, now: read the step's own output, find the cause in the script or the content it pushes (a limit, a format, a missing field — not a credential unless the output names one), fix it at source, add a guard that would have caught it before the request left the Mac, and open a NEW pull request on this branch. The step runs again after this PR lands; it must exit 0 then. Do not ask the owner anything the output already answers.`
       : "no — a first build.",
     CONTINUATION: (() => { const c = continuationCount(dir, phase); if (!c.count) return "no — a fresh start."; const b = stateBehind({ phase, dir, repo, repoPath, buildPath, branch }); return `YES — continuation ${c.count}/${MAX_CONTINUATIONS}. The previous attempt: ${c.notes?.at(-1)?.note ?? "(no note)"}. What is already there: ${b.facts.join("; ") || "(nothing readable)"}. Do not redo it; verify it and FINISH — write ${outFile} first if the result already exists.`; })(),
+    REPAIR: isRepair(row)
+      ? `YES — Boss OS opened this itself to repair something broken (${row.repair_kind ?? "a repair"}). Repairs never wait on the owner (25 Oct 2026): there is no plan email and no reply. Every decision is yours — "asks" MUST be empty — and write in_plain.what_broke and in_plain.what_we_did for the one short report she gets after it lands.`
+      : "no — she asked for this; the plan goes to her for one word.",
     PRE_APPROVED: row.pre_approved_phrase
       ? `YES — she wrote "${row.pre_approved_phrase}" in the request. Every decision is yours: put what you would have asked under "decided" with your recommended default AS the decision and the reason. "asks" MUST be an empty list; the Worker refuses a pre-approved plan that asks.`
       : "no — ask what policy says to ask.",
@@ -751,6 +771,19 @@ async function runPhase(claim) {
       "", `Run log on your Mac: ${log}`,
       "", "— Danielle, Technical Program Manager",
     ].join("\n");
+    /*
+     * REPAIRS NEVER WAIT ON THE OWNER (owner, 25 Oct 2026). A change Boss OS opened itself to fix
+     * something broken sends NO plan email: the Worker files the plan straight into build, and the
+     * only email is the short plain report after it lands. `planWaitsForOwner` is the one reader.
+     */
+    if (!planWaitsForOwner(row)) {
+      if (isRepair(row)) {
+        const r = await api(`/${row.id}/plan`, { device_id: DEVICE, plan_text: String(out.plan_text ?? ""), decided, asks, publish_ready: ready, placeholders, ask_message_id: null, written_by: claim.model ?? PHASE_MODELS.plan, run_log: log, repo: chosen, ...(step ? { post_land_step: { command: String(step.command).trim(), proof: step.proof ? String(step.proof) : null } } : {}) });
+        if (!r.ok) say(`NAMED STOP [PLAN_NOT_RECORDED] ${r.status} ${r.error ?? ""} — a repair plan, not emailed by rule, and Boss OS was not told.`);
+        else { markReported(); say(`planned a repair (${row.repair_kind ?? "repair"}): no plan email by rule; building next.`); }
+        return;
+      }
+    }
     const messageId = await email(subject, text);
     if (!messageId) { await release(row, "plan written but the email could not be sent; will retry next tick", log); say("NAMED STOP [PLAN_NOT_SENT] Resend refused every sender; the plan is on disk and the claim is released."); return; }
     const r = await api(`/${row.id}/plan`, { device_id: DEVICE, plan_text: String(out.plan_text ?? ""), decided, asks, publish_ready: ready, placeholders, ask_message_id: messageId, written_by: claim.model ?? PHASE_MODELS.plan, run_log: log, repo: chosen, ...(step ? { post_land_step: { command: String(step.command).trim(), proof: step.proof ? String(step.proof) : null } } : {}) });
@@ -843,7 +876,10 @@ async function runPhase(claim) {
       "", `Run log on your Mac: ${log}`,
       "", "— Danielle, Technical Program Manager",
     ].join("\n");
-    const messageId = await email(subject, text, filesAt(screenshotPaths(row.proof ?? {}, row)));
+    const repairMail = isRepair(row) ? repairDoneMail(row, readJson(join(dir, "plan.json"))) : null;
+    const messageId = repairMail
+      ? await email(repairMail.subject, repairMail.text, [], repairMail)
+      : await email(subject, text, filesAt(screenshotPaths(row.proof ?? {}, row)));
     if (!messageId) { say("NAMED STOP [DONE_NOT_SENT] landed, and the DONE email could not be sent; the row stays in land until it can."); await release(row, "landed; DONE email not sent — retry the email next tick", log); writeFileSync(join(dir, "landed-unreported.json"), JSON.stringify(out)); return; }
     const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: postLand ? { ...proof, post_land: postLand } : proof, done_message_id: messageId, run_log: log });
     if (!r.ok) say(`NAMED STOP [LAND_NOT_RECORDED] ${r.status} ${r.error ?? ""} — it landed and she was told; Boss OS was not.`);

@@ -739,8 +739,9 @@ async function feedOf(range) {
 }
 
 /** A source that did not load is the team's job, never her email (rule 3). Best effort, logged. */
-async function fixJob(api, title, prompt) {
-  try { await api.post("/tasks", { title, lane: "ops", employee_id: "emp_repo", input: { prompt: `seq23/boss-os — ${prompt}` } }); console.log(`your-day: fix job opened — ${title}`); }
+/** A repair Boss OS opens itself: Danielle builds and lands it without asking her (25 Oct 2026). */
+async function fixJob(api, title, prompt, kind = "self_repair") {
+  try { await api.post("/tasks", { title, lane: "ops", employee_id: "emp_repo", input: { origin: "repair", repair_kind: kind, prompt: `seq23/boss-os — ${prompt}` } }); console.log(`your-day: fix job opened — ${title}`); }
   catch (e) { console.error(`your-day: the fix job "${title}" was not opened (${e.message})`); }
 }
 
@@ -799,7 +800,7 @@ async function main() {
   let told = []; try { told = JSON.parse(fs.readFileSync(failMarks, "utf8")); } catch { told = []; }
   for (const f of failedTaskLines(data.tasks, now).filter((x) => !told.includes(x.id))) {
     const t = (data.tasks ?? []).find((x) => x.id === f.id);
-    await fixJob(api, `Find why "${String(t?.title ?? "a task").slice(0, 60)}" failed`, `the task ${f.id} (${t?.employee_name ?? "an employee"}) failed: ${String(t?.error ?? "").slice(0, 400)}. Find the cause, fix it at source with a test, and run the job again or close it with the reason.`);
+    await fixJob(api, `Find why "${String(t?.title ?? "a task").slice(0, 60)}" failed`, `the task ${f.id} (${t?.employee_name ?? "an employee"}) failed: ${String(t?.error ?? "").slice(0, 400)}. Find the cause, fix it at source with a test, and run the job again or close it with the reason.`, "failed_task");
     told.push(f.id);
   }
   try { fs.mkdirSync(SENT_DIR, { recursive: true }); fs.writeFileSync(failMarks, JSON.stringify(told.slice(-500))); } catch { /* best effort */ }
