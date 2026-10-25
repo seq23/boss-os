@@ -134,6 +134,11 @@ Work ONLY section 1b, and ONLY the briefs in ~/.boss-os/search-readiness/fix-que
 \`protected\` — batch them into as few PRs as the repo's own validators allow, and get each green.
 Skip any brief with \`protected\` set; record it as surfaced with the reason. Record every brief in
 findings.json as section 1b says. End with the usual completion sentinel."
+  if [ -n "${SR_SCOPE_BRIEFS:-}" ]; then
+    PROMPT_TEXT="$PROMPT_TEXT
+Narrower still: work ONLY the briefs whose \`id\` is one of: $SR_SCOPE_BRIEFS. The rest of this repo's
+briefs go to the next pass. Open the PR and get it green before you finish, so nothing is lost."
+  fi
   say "scoped pass: Search Readiness queue, repo $SR_SCOPE_REPO"
 fi
 "$CLAUDE" -p "$PROMPT_TEXT" \

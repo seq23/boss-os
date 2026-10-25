@@ -304,6 +304,7 @@ async function main() {
     const { workQueue } = await import("../../src/shared/boss/searchReadiness/audit.mjs");
     const w = workQueue(JSON.parse(readFileSync(q, "utf8")).briefs);
     for (const r of w.repos) console.log(`REPO ${r.repo} ${r.n}`);
+    for (const c of w.chunks) console.log(`CHUNK ${c.repo} ${c.ids.length} ${c.ids.join(",")}`);
     console.log(`QUEUE total=${w.total} workable=${w.workable} protected=${w.protected} no_repo=${w.no_repo}`);
     return;
   }
