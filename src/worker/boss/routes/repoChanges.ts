@@ -432,6 +432,30 @@ repoChanges.post("/:id/retry", async (c) => {
  * DROP — the page's "Drop it", the same as replying "drop it" to the stop email (R8): the task is
  * cancelled for good, the row stays failed with the reason on it. Only a failed change can be dropped.
  */
+/**
+ * SUPERSEDED (25 Oct 2026): the work this change asked for was done another way (by hand, or by a
+ * sibling change), so its plan email no longer waits on her. The row closes as done with the reason
+ * and the pull request that did it; Today and the morning email count only rows still asking.
+ */
+repoChanges.post("/:id/supersede", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const row = await repoChangeById(c.env, c.req.param("id"));
+  if (!row) throw notFound("No repo change with that id");
+  if (row.phase === "done") throw conflict(`${row.id} is already done`);
+  const reason = text(b?.reason, 600);
+  if (!reason) throw badRequest("A supersede needs a reason", "Say what did the work instead, e.g. \"built by hand in PR #136\".");
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE repo_changes SET phase = 'done', done_at = ?, superseded_at = ?, superseded_reason = ?, pr_url = COALESCE(?, pr_url),
+                             claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ? WHERE id = ? AND phase <> 'done'`)
+      .bind(now, now, reason, text(b?.pr_url, 400), now, row.id),
+    c.env.DB.prepare(`UPDATE tasks SET status = 'done', finished_at = ? WHERE id = ? AND status <> 'done'`).bind(now, row.task_id),
+  ]);
+  await taskEvent(c.env, row.task_id, "repo_change_superseded", { repo_change_id: row.id, from_phase: row.phase, reason });
+  await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "repo_change", entityId: row.id, action: "superseded", detail: { task_id: row.task_id, from_phase: row.phase, reason } });
+  return ok(c, { id: row.id, phase: "done", superseded: true });
+});
+
 repoChanges.post("/:id/drop", async (c) => {
   const row = await repoChangeById(c.env, c.req.param("id"));
   if (!row) throw notFound("No repo change with that id");

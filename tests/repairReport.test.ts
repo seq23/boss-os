@@ -7,13 +7,13 @@ import { describe, expect, it } from "vitest";
 import { ownerTextProblems, repairReport, STOCK, MAX_WORDS_PER_LINE } from "../src/shared/boss/repoChange/repairReport.mjs";
 import { layoutProblem, plainProblems } from "../src/shared/boss/mail/plain.mjs";
 // @ts-expect-error — plain ESM with no declaration file
-import { repairDoneMail } from "../scripts/ops/repo-change.mjs";
+import { repairDoneMail, planMail } from "../scripts/ops/repo-change.mjs";
 
 describe("the Mac runner sends no plan email for a repair (25 Oct 2026)", () => {
   it("the Mac runner sends no plan email for a repair: the repair branch returns before the plan email is sent", () => {
     const src = readFileSync("scripts/ops/repo-change.mjs", "utf8");
     const gate = src.indexOf("if (!planWaitsForOwner(row)) {");
-    const send = src.indexOf("const messageId = await email(subject, text);");
+    const send = src.indexOf('const messageId = await email(subject, "", filesAt([planFile]), laid);');
     expect(gate).toBeGreaterThan(0);
     expect(send).toBeGreaterThan(gate);
     const branch = src.slice(gate, send);
@@ -103,5 +103,28 @@ describe("the one report a repair sends is plain English (owner, 25 Oct 2026)", 
     for (const [name, line] of Object.entries(bad)) expect(ownerTextProblems(line), name).not.toEqual([]);
     expect(ownerTextProblems(Array.from({ length: MAX_WORDS_PER_LINE }, () => "word").join(" ") + ".")).toEqual([]);
     expect(ownerTextProblems("An email we meant to send you was stopped before it reached you.")).toEqual([]);
+  });
+});
+
+describe("Danielle's plan email reads in plain words (owner, 25 Oct 2026)", () => {
+  const out = { publish_ready: true, plan_text: "## Plan\n- plain.mjs: layoutEmail trims details\n- run `npm run validate:email-plain -- --self-test`", in_plain: { change: "the morning email's deal list", so_that: "each deal reads as one short row you can open", bullets: ["Each new deal becomes one row with its size and price.", "Tap Open on a row to see the whole deal."] } };
+  it("\"I want to change X so that Y. Reply approved to go ahead.\" first, then 2 to 4 plain bullets; the plan is attached, not in the body", () => {
+    const m = planMail({ row: { id: "rc_m5sexample1" }, out, chosen: "boss-os", asks: [{ question: "Show ten deals or five?", default: "ten" }], ready: true });
+    expect(m.subject).toBe("Plan for boss-os: reply approved to go ahead");
+    expect(m.text.split("\n")[0]).toBe("I want to change the morning email's deal list so that each deal reads as one short row you can open. Reply approved to go ahead.");
+    const bullets = m.text.slice(m.text.indexOf("Details:")).split("\n").filter((l: string) => l.startsWith("- "));
+    expect(bullets.length).toBeGreaterThanOrEqual(2);
+    expect(bullets.length).toBeLessThanOrEqual(4);
+    expect(m.text).toContain("1. Show ten deals or five? My pick: ten.");
+    expect(m.text).not.toMatch(/plain\.mjs|layoutEmail|validate|--self-test|`|##/);
+    expect(m.text).toContain("The full plan is attached.");
+    expect(m.problems).toEqual([]);
+    expect(m.refs).toEqual(["rc_m5sexample1"]);
+  });
+  it("jargon the plan phase wrote never reaches her: stock plain lines stand in", () => {
+    const m = planMail({ row: { id: "rc_m5sexample2" }, out: { publish_ready: true, in_plain: { change: "plain.mjs layoutEmail", so_that: "the --self-test flag is cleaned", bullets: ["We fix the `cleaner`."] } }, chosen: "boss-os", ready: true });
+    expect(m.text.split("\n")[0]).toBe("I want to make the change you asked for on boss-os. Reply approved to go ahead.");
+    expect(m.text).not.toMatch(/plain\.mjs|--self-test|cleaner|`/);
+    expect(m.problems).toEqual([]);
   });
 });

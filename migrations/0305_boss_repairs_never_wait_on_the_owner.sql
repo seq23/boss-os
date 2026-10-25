@@ -14,3 +14,11 @@ UPDATE repo_changes SET origin = 'repair', repair_kind = 'held_mail'
  WHERE mail_id IS NULL AND instruction LIKE 'Fix a held email:%' AND phase NOT IN ('done', 'failed');
 UPDATE repo_changes SET origin = 'repair', repair_kind = 'failed_task'
  WHERE mail_id IS NULL AND instruction LIKE 'Find why "%" failed%' AND phase NOT IN ('done', 'failed');
+
+-- A PLAN EMAIL OVERTAKEN BY EVENTS IS SUPERSEDED, NOT LEFT WAITING (25 Oct 2026). Two plan emails
+-- waited on her while the work they asked about was done another way; `superseded_at` and its reason
+-- close the row (phase done), so neither Today nor the morning email counts it as a decision.
+ALTER TABLE repo_changes ADD COLUMN superseded_at INTEGER;
+ALTER TABLE repo_changes ADD COLUMN superseded_reason TEXT;
+
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0305_boss_repairs_never_wait_on_the_owner');

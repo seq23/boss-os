@@ -132,7 +132,8 @@ function bossDecisions(data) {
       buttons: [{ label: "Open it to approve or decline", url: `${ORIGIN}/?tab=inbox&approval=${encodeURIComponent(a.id)}` }], priority: 2,
     });
   }
-  for (const r of (data.repoChanges ?? []).filter((x) => x.phase === "asking" || x.phase === "previewing")) {
+  // A superseded plan email no longer waits on her (25 Oct 2026); only a row still asking counts.
+  for (const r of (data.repoChanges ?? []).filter((x) => (x.phase === "asking" || x.phase === "previewing") && !x.superseded_at)) {
     const firstLine = String(r.instruction ?? "").split("\n")[0].trim();
     out.push(r.phase === "asking"
       ? { key: `rc:${r.id}`, title: `Start Danielle's plan for ${r.repo ?? "your change"}?`, body: `${firstLine ? `You asked: "${firstLine}". ` : ""}Danielle wrote a plan and builds nothing until you say yes.`, details: ["Yes: reply approved to her email and she starts the build.", "No: reply with what to change, or drop it."], plan: r.plan_text ?? null, buttons: [], priority: 1 }

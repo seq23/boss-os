@@ -82,4 +82,21 @@ describe("repairs never wait on the owner (25 Oct 2026)", () => {
     await claim(rc.id);
     expect((await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], publish_ready: true } })).status).toBe(400);
   });
+
+  it("a plan email overtaken by events is SUPERSEDED: the row closes with its reason and no longer waits on her", async () => {
+    const rc = await openTask({});
+    await claim(rc.id);
+    await apiJson(`/api/repo-changes/${rc.id}/plan`, { method: "POST", body: { device_id: DEVICE, plan_text: "# Plan", decided: [], asks: [], publish_ready: true, ask_message_id: "re_old" } });
+    expect((await apiJson(`/api/repo-changes/${rc.id}/supersede`, { method: "POST", body: {} })).status).toBe(400);
+    const r = await apiJson<any>(`/api/repo-changes/${rc.id}/supersede`, { method: "POST", body: { reason: "built by hand in a pull request", pr_url: "https://github.com/seq23/boss-os/pull/1" } });
+    expect(r.body.data).toEqual({ id: rc.id, phase: "done", superseded: true });
+    const after = await row<any>(`SELECT * FROM repo_changes WHERE id = ?`, rc.id);
+    expect(after.phase).toBe("done");
+    expect(after.superseded_reason).toBe("built by hand in a pull request");
+    expect(claimablePhase(after)).toBeNull();
+    expect((await row<any>(`SELECT status FROM tasks WHERE id = ?`, rc.task_id)).status).toBe("done");
+    const listed = await apiJson<any>("/api/repo-changes/claimable");
+    expect(JSON.stringify(listed.body.data)).not.toContain(rc.id);
+    expect((await apiJson(`/api/repo-changes/${rc.id}/supersede`, { method: "POST", body: { reason: "again" } })).status).toBe(409);
+  });
 });
