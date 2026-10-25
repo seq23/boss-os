@@ -212,7 +212,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       lane: task.lane,
       backendId,
       title: task.title,
-      prompt: await buildPrompt(env, task, input),
+      ...(await buildPromptParts(env, task, input).then((p) => ({ prompt: p.instruction, firmContext: p.firmContext }))),
       kind: task.intake_kind ?? null,
       envelopeId: task.envelope_id ?? null,
       requested,
@@ -501,6 +501,21 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
  * rewrite that reads the key and drops it on the floor.
  */
 export async function buildPrompt(env: Env, task: any, input: Record<string, any>): Promise<string> {
+  const { firmContext, instruction } = await buildPromptParts(env, task, input);
+  return firmContext ? `${firmContext}\n\n${instruction}` : instruction;
+}
+
+/**
+ * The same words in their two halves (25 Oct 2026): the firm's own standing rules, which only the
+ * owner writes, and the task's instruction. The cloud path joins them (`buildPrompt`). The Mac seat
+ * path must NOT: `runner.mjs` fences the instruction as untrusted data, and with the notices inside
+ * that fence Codex read "These are standing rules of the firm you work for" exactly as the fence
+ * preamble says to read text claiming authority — as malice — and refused the morning briefing
+ * three times. So the dispatch carries `firm_context` beside the instruction and the runner places
+ * it above the fence. The deadline line is built from her parsed words, so it stays with the task.
+ * Pinned by tests/boss/firmContextOutsideTheFence.test.ts.
+ */
+export async function buildPromptParts(env: Env, task: any, input: Record<string, any>): Promise<{ firmContext: string; instruction: string }> {
   /*
    * ─── THE FIRM'S STANDING NOTICES GO IN FRONT OF EVERY EMPLOYEE RUN ─────────
    *
@@ -518,7 +533,6 @@ export async function buildPrompt(env: Env, task: any, input: Record<string, any
    * real rather than grepping this file for a name.
    */
   const notices = await firmNoticeBlock(env.DB);
-  const withNotices = (instruction: string) => (notices ? `${notices}\n\n${instruction}` : instruction);
   /*
    * THE SERVICE PRACTICES GO IN FRONT OF EVERY EMPLOYEE RUN TOO, AT THE SAME ONE POINT (6 Oct 2026,
    * docs/SERVICE_RULES.md): how to report back — three-part waits, email-only clearing, one done-line
@@ -529,7 +543,10 @@ export async function buildPrompt(env: Env, task: any, input: Record<string, any
   const due = input.due && typeof input.due === "object" ? dueLine(input.due as { due_at: string; due_words: string }) : null;
   const deadline = due ? `DEADLINE: this is ${due}. Say in your reply if anything could make it late.\n\n` : "";
 
-  return withNotices(`${practices}\n\n${deadline}${await buildInstruction(env, task, input)}`);
+  return {
+    firmContext: notices ? `${notices}\n\n${practices}` : practices,
+    instruction: `${deadline}${await buildInstruction(env, task, input)}`,
+  };
 }
 
 /** The task's own words: its template, its prompt, or the body she mailed in. */

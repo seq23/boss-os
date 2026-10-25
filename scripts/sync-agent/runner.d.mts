@@ -16,6 +16,8 @@ export interface Envelope {
   allowed_paths?: string[];
   instruction?: string;
   instruction_origin?: string;
+  /** The owner's standing rules; placed above the untrusted fence. */
+  firm_context?: string;
   verification?: string[];
   forbidden_actions?: string[];
   allowed_kinds?: string[];
@@ -134,7 +136,7 @@ export function validateEnvelope(
 export function executeRun(envelope: Envelope, deps?: RunDeps): Promise<EvidencePacket>;
 export function claimRun(opts: { origin: string; deviceId: string; backendId?: string; fetchImpl?: typeof fetch; cookie?: string }): Promise<Envelope | null>;
 export function reportRun(evidence: EvidencePacket, opts: { origin: string; deviceId: string; fetchImpl?: typeof fetch; cookie?: string }): Promise<Record<string, unknown>>;
-export function workOnce(deps: WorkDeps): Promise<{ claimed: boolean; reported?: boolean; error: string | null; evidence: EvidencePacket | null }>;
+export function workOnce(deps: WorkDeps): Promise<{ claimed: boolean; reported?: boolean; released?: boolean; next_seat?: string | null; error: string | null; evidence: EvidencePacket | null }>;
 export function defaultRunCommand(cmd: string, opts?: { cwd?: string; forbidden?: string[]; timeoutMs?: number }): Promise<{ exit_code: number; tail: string }>;
 export function childEnv(source?: Record<string, string | undefined>): Record<string, string>;
 /** One loader per `agent_executed` seat — the same key set as AGENT_EXECUTORS, pinned by a validator. */

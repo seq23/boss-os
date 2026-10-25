@@ -511,6 +511,7 @@ backends.post("/claim", async (c) => {
       capabilities: backend.capabilities,
       credential_ref: backend.credential_ref ?? "",
     };
+    if (typeof requested.firm_context === "string" && requested.firm_context.trim()) envelope.firm_context = requested.firm_context;
     if (requested.repo_path) envelope.repo_path = requested.repo_path;
     if (Array.isArray(requested.allowed_paths) && requested.allowed_paths.length) envelope.allowed_paths = requested.allowed_paths;
     if (Array.isArray(requested.verification) && requested.verification.length) envelope.verification = requested.verification;
@@ -614,8 +615,21 @@ backends.post("/report", async (c) => {
    *
    * A run with violations is never released: something forbidden happened and a person looks.
    */
+  /*
+   * ── AN UNUSABLE ANSWER STEPS DOWN TOO, AT ONCE (25 Oct 2026) ──────────────────────────────────
+   *
+   * The release above used to need `seat_exhausted`. On 25 Oct 2026 Codex answered the briefing in
+   * ten seconds with no searches, the run failed honestly — and because its plan was NOT spent the
+   * Claude seat beside it never saw the run: the briefing failed, "a retry is queued for your Mac's
+   * next slot", and the retry walked straight back to Codex. One seat failing must never skip her
+   * day. So ANY failure without a violation, on a run whose own ladder names a later untried seat,
+   * is released the same bounded way — and, because the next seat is not "out", the run is RE-PARKED
+   * on that seat (backend_id = next) so it claims it directly, without needing a `fallback_from`.
+   * Only a spent plan stamps the seat exhausted; a bad answer says nothing about tomorrow's usage.
+   * Pinned by tests/boss/anUnusableAnswerStepsDownToTheNextSeat.test.ts.
+   */
   const spentEvidence = ev.seat_exhausted && typeof ev.seat_exhausted === "object" ? (ev.seat_exhausted as Record<string, unknown>) : null;
-  if (spentEvidence && reported === "failed" && violations.length === 0) {
+  if (reported === "failed" && violations.length === 0) {
     let req: Record<string, unknown> = {};
     try { req = run.requested ? (JSON.parse(run.requested) as Record<string, unknown>) : {}; } catch { req = {}; }
     const ladder: string[] = Array.isArray(req.backend_ladder) ? (req.backend_ladder as unknown[]).filter((x): x is string => typeof x === "string") : [];
@@ -624,21 +638,29 @@ backends.post("/report", async (c) => {
     const next = at === -1 ? undefined : ladder.slice(at + 1).find((id) => !tried.includes(id) && id !== run.backend_id);
     if (next) {
       const releasedAt = Date.now();
-      const until = releasedAt + spentCooldownSeconds(spentEvidence.retry_after_seconds) * 1000;
-      const notice = (optionalText(spentEvidence.notice) ?? "").slice(0, 300) || null;
+      const until = spentEvidence ? releasedAt + spentCooldownSeconds(spentEvidence.retry_after_seconds) * 1000 : null;
+      const notice = spentEvidence ? (optionalText(spentEvidence.notice) ?? "").slice(0, 300) || null : null;
+      const failedWith = (optionalText(ev.error) ?? "it reported a failure and named no error").slice(0, 300);
+      const why = spentEvidence
+        ? `${run.backend_id} reported its plan is out of usage${notice ? `: ${notice}` : ""}`
+        : `${run.backend_id} gave an unusable answer: ${failedWith}`;
+      // A spent seat keeps the run (the next seat takes it through `fallback_from`, as before); an
+      // unusable answer re-parks it on the next seat, which is not out and so would never ask.
       const released = await c.env.DB
-        .prepare(`UPDATE backend_runs SET claimed_at = NULL, claimed_by = NULL, requested = ? WHERE id = ? AND finished_at IS NULL AND status = 'running'`)
-        .bind(JSON.stringify({ ...req, ladder_released: [...tried, run.backend_id] }), run.id)
+        .prepare(`UPDATE backend_runs SET claimed_at = NULL, claimed_by = NULL, requested = ?, backend_id = ? WHERE id = ? AND finished_at IS NULL AND status = 'running'`)
+        .bind(JSON.stringify({ ...req, ladder_released: [...tried, run.backend_id] }), spentEvidence ? run.backend_id : next, run.id)
         .run();
       if ((released.meta.changes ?? 0) > 0) {
-        await c.env.DB
-          .prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = ? WHERE id = ?`)
-          .bind(until, notice, run.backend_id)
-          .run();
+        if (spentEvidence) {
+          await c.env.DB
+            .prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = ? WHERE id = ?`)
+            .bind(until, notice, run.backend_id)
+            .run();
+        }
         if (run.task_id) {
           await c.env.DB
             .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_release',?)`)
-            .bind(newId("tev"), run.task_id, releasedAt, JSON.stringify({ run_id: run.id, from: run.backend_id, next, why: `${run.backend_id} reported its plan is out of usage${notice ? `: ${notice}` : ""}`, exhausted_until: until }))
+            .bind(newId("tev"), run.task_id, releasedAt, JSON.stringify({ run_id: run.id, from: run.backend_id, next, why, exhausted_until: until }))
             .run();
         }
         await logEvent(c.env.DB, {
