@@ -10,6 +10,13 @@ export function definitionChoice(a: { local?: string | null; remote?: string | n
 export const STATUS: readonly string[];
 export const GSC_TRUTH_NAMES: string[];
 export const FRESH_FILE_NAMES: string[];
+/** The name shape of an IndexNow key file: 8-128 characters of a-z, A-Z, 0-9 and dashes, or indexnow.txt. */
+export const INDEXNOW_KEY_NAME: RegExp;
+/**
+ * The IndexNow key files in a repository's tree. With `show`, only a file whose body is its own key
+ * counts - IndexNow's real contract, and the only test that tells a key from llms-full.txt.
+ */
+export function indexnowKeyFiles(files: string[], show?: ((path: string) => string | null | undefined) | undefined): string[];
 export function applies(item: any, site: any): boolean;
 export function haversineMiles(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number;
 export function expandCoverage(site: any, repoCities?: any[] | null): { kind: string; name: string; path: string }[];

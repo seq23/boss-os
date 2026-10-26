@@ -39,7 +39,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, summaryLines,
-  metaContent, links, tags, FRESH_FILE_NAMES, definitionChoice, CHECKLIST_PATH, SITES_PATH,
+  metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 
 const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "search-readiness");
@@ -236,7 +236,12 @@ async function readRepo(name) {
   // billionairehighperformancecoach.com, a second under aplayermode/ for aplayermode.com, because a
   // key is valid only on the host that serves it). Taking the first one made every other host on
   // that repo fail e3/i8 for a key that was never meant to answer there.
-  const keyFiles = files.filter((f) => /(^|\/)[0-9a-f]{32,64}\.txt$/.test(f));
+  //
+  // AND EVERY VALID KEY SHAPE, not only lowercase hex. The detection moved into
+  // indexnowKeyFiles(), which reads IndexNow's real contract - a key file's body is its own key -
+  // instead of guessing from the name. See the comment on it: the old hex-only pattern missed
+  // porchandparty901.com's UUID key and invented two fix briefs a week for a file that existed.
+  const keyFiles = indexnowKeyFiles(files, show);
   const indexnowKeys = [...new Set(keyFiles.map((f) => f.split("/").pop().replace(/\.txt$/, "")))].slice(0, 8);
   const indexnowKey = indexnowKeys[0] ?? null;
   const scriptsMentioningGscTruth = files.filter((f) => /\.(m?js|py|ts|sh)$/.test(f) && /gsc|search/i.test(f)).slice(0, 40).filter((f) => /gsc_truth|gsc_search_analytics/.test(show(f) ?? ""));
