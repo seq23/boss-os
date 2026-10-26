@@ -881,8 +881,8 @@ async function prepsDue(env: Env) {
   const rows = (await env.DB.prepare(`SELECT * FROM boss_commands WHERE kind = 'meeting_prep' AND state = 'queued' ORDER BY updated_at LIMIT 5`).all<CommandRow>()).results ?? [];
   const out = [];
   for (const r of rows) {
-    const thread = ((await env.DB.prepare(`SELECT message_id FROM boss_mail_refs WHERE (' ' || refs || ' ') LIKE ? ORDER BY created_at ASC LIMIT 20`)
-      .bind(`% ${r.id} %`).all<{ message_id: string }>()).results ?? []).map((m) => m.message_id);
+    const thread = ((await env.DB.prepare(`SELECT message_id FROM boss_mail_refs WHERE instr(' ' || refs || ' ', ?) > 0 ORDER BY created_at ASC LIMIT 20`)
+      .bind(` ${r.id} `).all<{ message_id: string }>()).results ?? []).map((m) => m.message_id);
     out.push({ id: r.id, spec: j(r.spec), purpose: j(r.result).purpose ?? null, thread });
   }
   return out;
@@ -900,8 +900,8 @@ export async function prepFinished(env: Env, id: string, out: { message_id?: str
 export async function prepMentions(env: Env, terms: string[]): Promise<Array<{ title: string; date: string }>> {
   const words = [...new Set(terms.map((t) => String(t ?? "").trim()).filter((t) => t.length >= 4))].slice(0, 4);
   if (!words.length) return [];
-  const where = words.map(() => "(title LIKE ? OR input LIKE ?)").join(" OR ");
+  const where = words.map(() => "(instr(lower(title), lower(?)) > 0 OR instr(lower(coalesce(input, '')), lower(?)) > 0)").join(" OR ");
   const rows = (await env.DB.prepare(`SELECT title, created_at FROM tasks WHERE (${where}) AND title NOT LIKE 'Meeting prep%' ORDER BY created_at DESC LIMIT 5`)
-    .bind(...words.flatMap((w) => [`%${w}%`, `%${w}%`])).all<{ title: string; created_at: number }>()).results ?? [];
+    .bind(...words.flatMap((w) => [w, w])).all<{ title: string; created_at: number }>()).results ?? [];
   return rows.map((r) => ({ title: r.title, date: new Date(r.created_at).toISOString().slice(0, 10) }));
 }

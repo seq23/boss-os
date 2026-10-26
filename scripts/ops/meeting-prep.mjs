@@ -295,7 +295,7 @@ export function prepEmail(event, data, opts = {}) {
 export const eventSnapshot = (e) => ({ title: e.title, scheduled_at: e.scheduled_at, duration_min: e.duration_min ?? null, location: e.location ?? null, join_url: e.join_url ?? null, description: e.description ?? null, attendees: e.attendees ?? [], ical_uid: e.ical_uid ?? null, calendar_uid: e.calendar_uid ?? null });
 
 /** Send one prep with its row's code, so her reply in the thread finds it. `{ ok, id, error }`. */
-export async function sendPrep(api, event, data, { context, purpose = null, plan = null, subject = null, thread = [], send = sendAsEmployee, to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
+export async function sendPrep(api, event, data, { context, purpose = null, plan = null, subject = null, thread = [], send = (who, msg) => sendAsEmployee(who, msg), to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
   const draft = buildPrep(event, data, { herAddresses: HER_ADDRESSES, context, purpose, plan });
   const id = (await api.post("/commands/meeting-prep", { key: draft.key, asked: draft.needsPurpose, spec: { who: draft.who, subject: subject ?? draft.subject, event: eventSnapshot(event), context } }))?.id;
   const m = prepEmail(event, data, { context, purpose, plan, refs: id ? [id] : [], subject: subject ?? draft.subject });
@@ -307,7 +307,7 @@ export async function sendPrep(api, event, data, { context, purpose = null, plan
  * HER ANSWER, AND THE FINISHED PREP IN THE SAME THREAD (simone-commands.mjs, every ten minutes). The
  * row carries the event and what was found; her words are the purpose; the plan is written from both.
  */
-export async function finishPrep(api, p, { ask = askClaudeJson, send = sendAsEmployee, log = console.error } = {}) {
+export async function finishPrep(api, p, { ask = askClaudeJson, send = (who, msg) => sendAsEmployee(who, msg), log = console.error } = {}) {
   const event = p.spec?.event;
   if (!event?.scheduled_at) return { ok: false, error: "the prep row has no event" };
   const data = await readRecords(api).catch(() => ({}));
