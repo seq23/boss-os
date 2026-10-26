@@ -13,6 +13,7 @@ import { ok, badRequest, notFound } from "../lib/http";
 import { admitTask } from "../tasks/admit";
 import { newId } from "../lib/id";
 import { parseFirmScan, scanReport } from "../research/firmScan";
+import { routeCompletion } from "../router";
 
 export const research = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -135,4 +136,30 @@ research.post("/delivered", async (c) => {
     filed += 1;
   }
   return ok(c, { filed, refused });
+});
+
+/**
+ * FIVE BULLETS OF A PUBLIC EPISODE OR ARTICLE, for Simone's meeting prep (26 Oct 2026). Through the
+ * router like every model call: free routes first, the spend lever decides, and the content scan
+ * keeps LP names and deal terms off any route that trains. `{ bullets: [] }` when nothing answered;
+ * the Mac then shows the show notes, labelled, and never invents.
+ */
+research.post("/summarize", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const text = String(b?.text ?? "").slice(0, 24_000);
+  if (text.length < 200) throw badRequest("text is required (at least 200 characters)");
+  try {
+    const r = await routeCompletion(c.env, {
+      routeId: "rt_ops_default", lane: "ops", sensitivity: "private", risk: "low", employeeId: "emp_chief",
+      intakeKind: "research", maxOutputTokens: 400,
+      messages: [
+        { role: "system", content: "Summarise the public episode or article below in exactly five short plain-English bullets, one per line, each starting with '- '. Only what the text says; no opinions, no names that are not in it." },
+        { role: "user", content: `${b?.title ? `Title: ${String(b.title).slice(0, 200)}\n\n` : ""}${text}` },
+      ],
+    });
+    const bullets = String(r.text ?? "").split("\n").map((l) => l.replace(/^\s*[-*•\d.)]+\s*/, "").trim()).filter((l) => l.length > 8).slice(0, 5);
+    return ok(c, { bullets, model: r.modelId });
+  } catch (e) {
+    return ok(c, { bullets: [], error: String((e as Error)?.message ?? e).slice(0, 200) });
+  }
 });

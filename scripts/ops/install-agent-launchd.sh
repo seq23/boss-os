@@ -1097,6 +1097,10 @@ LJEOF
 }
 install_l_job com.seq.boss-prospects "duty-run.sh lp-prospects.mjs -- npm run --silent lp:prospects -- --live" '<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>' lp-prospects
 install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery.mjs -- npm run --silent lp:discover -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>' lp-discovery
+# SIMONE'S MEETING PREP (owner-approved 26 Oct 2026): every hour at :05. The script decides by
+# Central time (from 18:00 Central, tomorrow's meetings; any hour, a meeting added for later today),
+# so the Mac's own zone (Eastern) cannot move it. Reports to duty_meeting_prep (migration 0312).
+install_l_job com.seq.boss-meeting-prep "duty-run.sh meeting-prep.mjs -- npm run --silent meeting-prep" '<dict><key>Minute</key><integer>5</integer></dict>' meeting-prep
 install_l_job com.seq.boss-catchups "duty-run.sh lp-catchups.mjs -- npm run --silent lp:catchups" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>' lp-catchups
 install_l_job com.seq.boss-eightraise "duty-run.sh lp-eightraise.mjs -- npm run --silent lp:eightraise" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>' lp-eightraise
 # end boss fix L
@@ -1446,6 +1450,7 @@ require_loaded "$RC_LABEL"
 require_loaded "$CW_LABEL"
 # WITH THE JOB, 22 October: Simone's Your day.
 require_loaded "$YOURDAY_LABEL"
+require_loaded com.seq.boss-meeting-prep
 # WITH THE JOB, 25 October: Simone does it by email.
 require_loaded "$SIMONE_CMD_LABEL"
 

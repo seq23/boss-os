@@ -87,7 +87,7 @@ async function calendarToken(creds, subject) {
  * arrives as three dated events rather than as one event and an RRULE to interpret. The ICS parser
  * still has to do that work itself, which is why it exists and why it is tested.
  */
-async function readCalendar(creds, subject, horizonDays) {
+export async function readCalendar(creds, subject, horizonDays) {
   const token = await calendarToken(creds, subject);
   const u = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
   u.searchParams.set("timeMin", new Date(Date.now() - 86_400_000).toISOString());
@@ -111,17 +111,68 @@ async function readCalendar(creds, subject, horizonDays) {
         scheduled_at: start,
         duration_min: end && end > start ? Math.round((end - start) / 60000) : null,
         location: e.location ? String(e.location).slice(0, 200) : null,
+        // For Simone's meeting prep only (never posted to the diary): who, how to join, the notes.
+        ical_uid: e.iCalUID ?? null,
+        all_day: !e.start.dateTime,
+        attendees: (e.attendees ?? []).map((a) => ({ email: a.email ?? null, name: a.displayName ?? null, self: Boolean(a.self), organizer: Boolean(a.organizer) })),
+        join_url: e.hangoutLink ?? (e.conferenceData?.entryPoints ?? []).find((p) => p.entryPointType === "video")?.uri ?? null,
+        description: e.description ? String(e.description).slice(0, 4000) : null,
+        calendar: subject,
       };
     })
     .filter((e) => Number.isFinite(e.scheduled_at));
 }
 
-const FEEDS = [
+export const FEEDS = [
   { env: "CAL_ICS_SEQ_TAYLOR", label: "your personal calendar" },
   { env: "CAL_ICS_STAYLOR_SPRY", label: "spry.vc" },
   { env: "CAL_ICS_WESTPEEK", label: "westpeek.ventures" },
   { env: "CAL_ICS_CRYPTOCLEARR", label: "cryptoclearr" },
 ];
+
+/**
+ * Every event on every calendar this Mac can read, with the rich fields (attendees, join link,
+ * notes). `{ events, read, unexpanded, log }`. Shared by the diary sync and Simone's meeting prep, so
+ * the two never read her calendars differently.
+ */
+export async function readAllCalendars({ horizonDays = HORIZON_DAYS, now = Date.now() } = {}) {
+  const events = [];
+  const log = [];
+  let read = 0;
+  let unexpanded = 0;
+  const rawCreds = process.env.GSC_SERVICE_ACCOUNT_JSON;
+  if (rawCreds) {
+    let creds = null;
+    try { creds = JSON.parse(rawCreds); } catch { creds = null; }
+    for (const subject of creds ? CAL_SUBJECTS : []) {
+      try {
+        const found = await readCalendar(creds, subject, horizonDays);
+        events.push(...found);
+        read += 1;
+        log.push(`  ✓ calendar ${subject}: ${found.length} event(s) in the next ${horizonDays} days`);
+      } catch (err) {
+        log.push(`  ✗ calendar ${subject}: ${String(err?.message ?? err).slice(0, 120)}`);
+      }
+    }
+  }
+  for (const feed of FEEDS.filter((f) => process.env[f.env])) {
+    try {
+      const res = await fetch(process.env[feed.env], { headers: { accept: "text/calendar" } });
+      if (!res.ok) { log.push(`  ✗ ${feed.label}: the feed answered ${res.status}.`); continue; }
+      const parsed = parseIcs(await res.text(), now, horizonDays);
+      events.push(...parsed.events.map((e) => ({ ...e, calendar: feed.label })));
+      unexpanded += parsed.unexpanded;
+      read += 1;
+      log.push(`  ✓ ${feed.label}: ${parsed.events.length} event(s) in the next ${horizonDays} days`);
+    } catch {
+      log.push(`  ✗ ${feed.label}: could not be reached from this machine.`);
+    }
+  }
+  return { events, read, unexpanded, log };
+}
+
+/** What the diary keeps: never the attendees or the notes. */
+export const diaryFields = (e) => ({ calendar_uid: e.calendar_uid, title: e.title, scheduled_at: e.scheduled_at, duration_min: e.duration_min, location: e.location });
 
 async function main() {
   const configured = FEEDS.filter((f) => process.env[f.env]);
@@ -143,52 +194,10 @@ async function main() {
    * Her forward schedule is not in Google, which is why what she types is the spine of the diary and
    * this job is the supplement that catches whatever does get scheduled.
    */
-  const events = [];
-  let unexpanded = 0;
-  let read = 0;
-
-  /*
-   * ── THE CALENDAR API FIRST ────────────────────────────────────────────────
-   *
-   * Preferred over the feeds because Google expands recurrence itself and because it is the source
-   * that actually holds her standing Wednesday. It fails soft: a 403 or a revoked grant leaves the
-   * iCal path below untouched, which is the entire point of keeping two.
-   */
-  const rawCreds = process.env.GSC_SERVICE_ACCOUNT_JSON;
-  if (rawCreds) {
-    let creds = null;
-    try { creds = JSON.parse(rawCreds); } catch { creds = null; }
-    for (const subject of creds ? CAL_SUBJECTS : []) {
-      try {
-        const found = await readCalendar(creds, subject, HORIZON_DAYS);
-        events.push(...found);
-        read += 1;
-        console.log(`  ✓ calendar ${subject}: ${found.length} event(s) in the next ${HORIZON_DAYS} days`);
-      } catch (err) {
-        // The status, not the exception: a thrown error here can carry a signed assertion.
-        console.error(`  ✗ calendar ${subject}: ${String(err?.message ?? err).slice(0, 120)}`);
-      }
-    }
-  } else {
-    console.log("  · no service account in the environment, so the calendar API was not tried.");
-  }
-  for (const feed of configured) {
-    try {
-      const res = await fetch(process.env[feed.env], { headers: { accept: "text/calendar" } });
-      if (!res.ok) {
-        // The status, never the URL — the URL is the secret.
-        console.error(`  ✗ ${feed.label}: the feed answered ${res.status}. If that is 404 the secret address was reset; copy the new one.`);
-        continue;
-      }
-      const parsed = parseIcs(await res.text(), Date.now(), HORIZON_DAYS);
-      events.push(...parsed.events);
-      unexpanded += parsed.unexpanded;
-      read += 1;
-      console.log(`  ✓ ${feed.label}: ${parsed.events.length} event(s) in the next ${HORIZON_DAYS} days`);
-    } catch {
-      console.error(`  ✗ ${feed.label}: could not be reached from this machine.`);
-    }
-  }
+  // The Calendar API first (Google expands repeats itself), the iCal feeds as the resilience layer.
+  if (!process.env.GSC_SERVICE_ACCOUNT_JSON) console.log("  · no service account in the environment, so the calendar API was not tried.");
+  const { events, read, unexpanded, log } = await readAllCalendars();
+  for (const l of log) (l.includes("✗") ? console.error : console.log)(l);
 
   if (read === 0) {
     console.error("NAMED STOP [NO_FEED_READ] every configured feed failed, so nothing was filed.");
@@ -214,7 +223,7 @@ async function main() {
   const res = await fetch(`${ORIGIN}/api/boss/diary/sync`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ events }),
+    body: JSON.stringify({ events: events.map(diaryFields) }),
   });
   if (!res.ok) throw new Error(`diary sync failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const { data } = await res.json();
@@ -225,7 +234,9 @@ async function main() {
   );
 }
 
-main().catch((err) => {
-  console.error(`calendar sync failed: ${err?.message ?? err}`);
-  process.exitCode = 1;
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(`calendar sync failed: ${err?.message ?? err}`);
+    process.exitCode = 1;
+  });
+}

@@ -322,6 +322,13 @@ describe("routes and the one-tap links", () => {
     expect((await prospectPlan(env.DB, WED_10AM + 7 * DAY)).sends.map((s: any) => s.email)).not.toContain("bounced.lp@example.com");
   });
 
+  it("a sent prospect email's warm line and link are on their record at send time (meeting prep, 26 Oct 2026)", async () => {
+    await importProspects(env.DB, [{ email: "warm.ref@example.com", name: "Wa Rm", source: "test", touches: 0, status: "new" }]);
+    await recordProspectEvents(env.DB, [{ email: "warm.ref@example.com", kind: "sent", touch: 1, gmail_id: "gw", body: "Hi Wa,\n\nI enjoyed your episode on pricing: https://pod.example/ep-7\n\nBook a time https://calendly.com/x" } as any]);
+    const rows = (await env.DB.prepare(`SELECT email, url, line, verified FROM warm_references WHERE email = 'warm.ref@example.com'`).all<any>()).results;
+    expect(rows).toEqual([{ email: "warm.ref@example.com", url: "https://pod.example/ep-7", line: "I enjoyed your episode on pricing: https://pod.example/ep-7", verified: null }]);
+  });
+
   it("a prospect with 2 sends never gets a 3rd: the one follow-up completes the sequence (owner, 24 Oct 2026)", async () => {
     const t = await proposeTemplate(env.DB, null, NAMES);
     await approveTemplate(env.DB, (t as any).template.id);

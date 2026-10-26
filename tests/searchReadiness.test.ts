@@ -319,6 +319,27 @@ describe("checks catch what they guard", () => {
     expect(briefs[0]).toMatchObject({ repo: "sprylabs-hpc-site", item_id: "a2", disposition: "fix" });
   });
 
+  it("b2 and c1 on the Spry Labs download page are accepted exceptions: only that page, only those two checks (26 Oct 2026)", () => {
+    for (const domain of ["billionairehighperformancecoach.com", "spryexecutiveos.com"]) {
+      const s = sites.grid_repos.find((x: any) => x.domain === domain);
+      const exc = s.protected_pages.find((p: any) => p.path === "/download").accepted_exceptions.map((x: any) => x.item);
+      expect(exc).toEqual(["b2", "c1"]);
+      const bare = page(`https://${domain}/download`, "<title>Buy</title><h1>Buy</h1>");
+      const other = page(`https://${domain}/about`, "<title>About</title><h1>About</h1>");
+      const status = (pages: any[], id: string) => runChecks(checklist, baseCtx({ site: s, host: domain, pages, protectedPaths: [] })).find((r: any) => r.id === id)?.status;
+      // The download page alone: b2 and c1 do not fail; every other check still runs on it.
+      expect(status([bare], "b2")).not.toBe("fail");
+      expect(status([bare], "c1")).not.toBe("fail");
+      expect(status([bare], "a2")).toBe("fail");
+      // Another page on the same site still fails b2 and c1: the exception is that page only.
+      expect(status([bare, other], "b2")).toBe("fail");
+      expect(status([bare, other], "c1")).toBe("fail");
+    }
+    // No other site, and no other page, carries an exception.
+    const all = sites.grid_repos.flatMap((x: any) => (x.protected_pages ?? []).filter((p: any) => p.accepted_exceptions?.length).map((p: any) => `${x.domain}${p.path}`));
+    expect(all.sort()).toEqual(["billionairehighperformancecoach.com/download", "spryexecutiveos.com/download"]);
+  });
+
   it("every applicable automatic item gets a verdict line (nothing silently skipped)", () => {
     const results = runChecks(checklist, baseCtx());
     const want = checklist.items.filter((i: any) => applies(i, site)).map((i: any) => i.id);

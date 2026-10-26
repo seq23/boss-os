@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import { sameCalendarEvent } from "../../../shared/boss/meetingPrep/prep.mjs";
 
 /**
  * WHAT SHE HAS COMING UP. That is the whole question this answers.
@@ -249,7 +250,8 @@ export function mergeDiaryRows(rows: DiaryRow[]): DiaryRow[] {
       const [a, b] = [(m.with ?? "").toLowerCase(), (r.with ?? "").toLowerCase()];
       if (m.source === "calendar" && r.source === "calendar") {
         // The same event on two of her calendars: one start, and one title or one counterpart.
-        return m.scheduled_at === r.scheduled_at && ((ta !== "" && ta === tb) || (a !== "" && a === b));
+        // One rule, shared with Simone's meeting prep (src/shared/boss/meetingPrep/prep.mjs).
+        return sameCalendarEvent(m, r);
       }
       if (ta && tb && (ta === tb || ta.includes(tb) || tb.includes(ta))) return true;
       const compatible = a === b || a === "" || b === "";

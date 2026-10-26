@@ -118,6 +118,13 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
     const end = dtend ? icsTime(dtend.value, dtend.params) : null;
     const duration = end && end > start ? Math.round((end - start) / 60000) : null;
     const location = field("LOCATION")?.value?.trim() || null;
+    // For Simone's meeting prep: who is invited, the notes, a join link (never posted to the diary).
+    const attendees = [...body.matchAll(/^ATTENDEE([^:\n]*):(?:mailto:)?([^\s]+)$/gim)].map((m) => ({
+      email: m[2].toLowerCase(), name: (/CN="?([^;":]+)"?/.exec(m[1])?.[1] ?? null), self: false, organizer: false,
+    }));
+    const description = (field("DESCRIPTION")?.value ?? "").replace(/\\n/g, "\n").replace(/\\([,;])/g, "$1").slice(0, 4000) || null;
+    const joinUrl = /https:\/\/(?:meet\.google\.com|[\w.-]*zoom\.us|teams\.microsoft\.com)\/[^\s"<>\\]+/.exec(`${location ?? ""} ${description ?? ""}`)?.[0] ?? null;
+    const allDay = /^\d{8}$/.test(dtstart.value.trim());
 
     const rrule = field("RRULE")?.value ?? "";
     const push = (at, suffix = "") => {
@@ -128,6 +135,11 @@ export function parseIcs(text, now = Date.now(), horizonDays = 28) {
         scheduled_at: at,
         duration_min: duration,
         location,
+        ical_uid: uid,
+        all_day: allDay,
+        attendees,
+        description,
+        join_url: joinUrl,
       });
     };
 
