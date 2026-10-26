@@ -77,7 +77,7 @@ describe("no purpose found: the prep asks, and offers to help", () => {
 
   it("the seat is told to search by address, domain and name, read the threads, look for bounces and earlier meetings", () => {
     const p = contextPrompt({ name: "Jo", email: "jo@fakeco.example.org", domain: "fakeco.example.org", firm: "Fake Co", title: meeting.title, when: "Tue 27 Oct at 10am ET", today: "2026-10-26" });
-    for (const w of ["from:jo@fakeco.example.org OR to:jo@fakeco.example.org", '"fakeco.example.org"', '"Fake Co"', "get_thread", "mailer-daemon", "search_events", "Never guess"]) expect(p).toContain(w);
+    for (const w of ["from:jo@fakeco.example.org OR to:jo@fakeco.example.org", '"fakeco.example.org"', '"Fake Co"', "get_thread", "mailer-daemon", "search_events", "Never guess", "every address of theirs"]) expect(p).toContain(w);
     expect(companyDomain("someone@gmail.com")).toBeNull();
     expect(companyDomain("jo@fakeco.example.org")).toBe("fakeco.example.org");
   });
@@ -122,7 +122,7 @@ describe("a purpose found: the real prep", () => {
   });
 
   it("the seat's context answer is kept only in the shape the prep reads", () => {
-    const c = readContext({ mail: { count: "3", recent: [{ date: "2026-10-01", subject: "Hello", from_them: true }, { date: "bad" }] }, bounces: [{ address: "not an address" }, { address: "A@B.example", date: "2026-10-25" }], purpose_hint: { text: "" } });
+    const c = readContext({ mail: { count: "3", recent: [{ date: "2026-10-01", subject: "Hello", from_them: true }, { date: "bad" }] }, bounces: [{ address: "not an address" }, { address: "A@B.example", date: "2026-10-25" }, { address: "a@b.example", date: "2026-10-25" }], purpose_hint: { text: "" } });
     expect(c.mail).toMatchObject({ count: 3, first: { date: "2026-10-01" } });
     expect(c.mail.recent).toHaveLength(1);
     expect(c.bounces).toEqual([{ address: "a@b.example", date: "2026-10-25" }]);
