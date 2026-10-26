@@ -153,3 +153,10 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    (`npm run sites:fix-queue`), which Danielle's repair run reads (prompt section 1b) and fixes like an
    Ahrefs finding. The two client sites are fixed too. The Spry Labs download page is PROTECTED: fixed
    only on its own, single-page, Gumroad buy link checked before and after, never cosmetic or bulk.
+5. **The run measures with main's definition, never a stale checkout's** (26 Oct 2026). The audit
+   runs from her own checkout, which nothing updates: it sat at #147 while main held the corrected
+   `aplayermode.com` → `sprylabs-hpc-site` mapping, so the run measured the apex against the Expo app
+   repo and wrote five fix briefs for files that were there all along. The runner reads
+   `checklist.json` and `sites.json` from `origin/<default>` every run (`definitionChoice`, pinned by
+   `tests/searchReadiness.test.ts`), says so when the checkout has drifted, and writes the definition
+   it used onto the results and the fix queue. A stale definition does not fail; it invents work.
