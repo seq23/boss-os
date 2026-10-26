@@ -58,6 +58,24 @@ and reply "approved".
 One email can carry several jobs. A numbered list with a build, a question and a call to schedule
 becomes three jobs on three desks, and the reply says who has which.
 
+## Errands Simone runs for you
+
+Ask Simone to book or request something from a business (a restaurant, a club, a salon, a venue, an
+appointment) and **give the business's email address in the same email**. Your email is the
+approval: she sends the request as your assistant straight away, signed "Simone, Assistant to Sequoia
+Taylor", from simone@ (you are not copied). She watches for their answer and tells you, in your
+morning email, What I asked for, What they said, and What you need to do, if anything.
+
+```
+To:      simone@sequoiataylor.com
+Subject: Dinner Thursday
+Body:    Book me a table for two Thursday after 8pm: reservations@thebistro.example
+```
+
+She never guesses an address, never pays, and never gives a card: if they ask for a card or a
+deposit, she tells you it needs you. Anything with money in it, or fund, LP or trading work, comes
+to you as a draft for your Send instead.
+
 ## What happens after you send
 
 1. **Within a minute, a reply from Boss OS** with one line per job: who has it.

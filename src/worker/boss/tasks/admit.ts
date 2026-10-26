@@ -156,6 +156,8 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
     title: b.title, prompt: (input.prompt as string | undefined) ?? null, lane,
     intakeKind: intakeKind ?? undefined, risk: b.risk ?? undefined, sensitivity: b.sensitivity ?? undefined,
     model_access: b.model_access ?? undefined, audience: b.audience ?? undefined,
+    // Mail-born work carries who wrote it, so her own errand (classify's one outbound carve-out) is known.
+    sender: input.source === "boss_inbound_mail" ? String(input.from ?? "") : null,
   });
 
   /*

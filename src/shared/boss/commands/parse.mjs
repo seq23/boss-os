@@ -294,8 +294,11 @@ export function clausesIn(text) {
  * place in the list; `waits_on` names refs. Empty when the email asks for none of these, and then
  * the ordinary triage takes it.
  */
-export function commandsIn({ subject = "", text = "", now = Date.now() } = {}) {
+export function commandsIn({ subject = "", text = "", now = Date.now(), sender = "" } = {}) {
   const body = String(text ?? "").trim() || String(subject ?? "").trim();
+  // An errand (a booking or request to a business she named, from her own Gmail) is the whole email.
+  const errand = sender ? errandIn({ sender, subject, text: body }) : null;
+  if (errand) return [{ ref: 0, waits_on: [], kind: "errand", spec: errand }];
   const out = [];
   const add = (c) => { const ref = out.length; out.push({ ref, waits_on: [], ...c }); return ref; };
   const whole = `${subject}\n${body}`;
@@ -434,4 +437,97 @@ export function commandReplyIn(text, now = Date.now()) {
   const when = whenIn(t, now);
   if (!when.error) return { verb: "time", when };
   return { verb: "note", note: t.slice(0, 2000) };
+}
+
+// ─── Errands: a booking or request to a business she named ─────────────────
+
+/**
+ * SIMONE RUNS HER ERRANDS (owner, 26 Oct 2026): "have one of my boss os agents pretend to be my
+ * assistant to get me reservations +1 to this place on thursday night after 8pm: <address> … and make
+ * sure going forward i can email simone to do this kind of thing".
+ *
+ * A booking or request to a business (a table, an appointment, a hold, a reservation) whose address
+ * she wrote in THIS email. Her email is the approval: Simone sends the request as her assistant with
+ * no second Send, from simone@ with Reply-To simone@ and NO copy to her by default ("she doesnt have
+ * to cc me next time"), watches for the answer and tells her what they said.
+ *
+ * NARROW ON PURPOSE. Each of these keeps the ordinary path (a draft for her Send, or the triage):
+ *   - a sender other than ERRAND_SENDERS (her own Gmail only);
+ *   - no address in her words, or more than one (an address is never guessed or looked up for this);
+ *   - one of her own addresses (OWN_ADDRESS_RE) or a West Peek / spry.vc domain;
+ *   - money in her words (pay, deposit, card, buy, $…): agents never spend money;
+ *   - trading, LPs, West Peek, the fund: never an errand.
+ */
+export const ERRAND_SENDERS = Object.freeze(["seq.taylor@gmail.com"]);
+const ERRAND_ASK_RE = /\b(?:book(?:ing)?|reserv(?:e|ation|ations)|table\s+for|appointment|hold\s+(?:a|me|us)|get\s+(?:me|us)\s+(?:a\s+)?(?:table|spot|seat|reservation|appointment)|request\s+(?:a|an)\s+(?:table|spot|seat|reservation|appointment|room|booking))\b/i;
+export const ERRAND_MONEY_RE = /\b(?:pay|paying|payment|deposit|card|credit|debit|purchase|buy|invoice|wire|spend|prepay|charge|venmo|zelle)\b|\$\s?\d/i;
+const ERRAND_NEVER_RE = /\b(?:LPs?|west\s*peek|the\s+fund|trad(?:e|ing)|shares?|secondar(?:y|ies)|allocation|invest(?:or|ment|ing)?s?|rainmaker)\b/i;
+const ERRAND_NEVER_DOMAIN_RE = /@(?:[a-z0-9-]+\.)*(?:westpeek\.ventures|joinwestpeek\.com|spry\.vc)$/i;
+
+/** Why an email is NOT an errand, or null when it is. Pure; the one definition intake and classify share. */
+export function errandRefusal({ sender = "", subject = "", text = "" } = {}) {
+  const s = String(sender ?? "").trim().toLowerCase().replace(/.*<|>.*/g, "");
+  if (!ERRAND_SENDERS.includes(s)) return "not from her own address";
+  const words = `${subject ?? ""}\n${text ?? ""}`;
+  if (!ERRAND_ASK_RE.test(words)) return "not a booking or request";
+  const all = [...new Set((words.match(EMAIL_RE) ?? []).map((a) => a.replace(/[.,;:]+$/, "").toLowerCase()))];
+  const outside = addressesIn(words);
+  if (all.some((a) => ERRAND_NEVER_DOMAIN_RE.test(a))) return "a West Peek or spry.vc address";
+  if (outside.length === 0) return "no business address in her words (never guessed)";
+  if (outside.length > 1) return "more than one address";
+  if (ERRAND_MONEY_RE.test(words)) return "money is involved";
+  if (ERRAND_NEVER_RE.test(words)) return "fund, trading or LP work";
+  return null;
+}
+
+/** `{ to, ask }` for an errand Simone may send on her word, or null. */
+export function errandIn({ sender = "", subject = "", text = "" } = {}) {
+  if (errandRefusal({ sender, subject, text })) return null;
+  const words = `${subject ?? ""}\n${text ?? ""}`.trim();
+  return { to: addressesIn(words)[0], ask: words.slice(0, 2000) };
+}
+
+/** The request Simone sends, word for word. `request` is one phrase ("a table for two on Thursday, October 29, any time after 8:00 pm"). */
+export function errandText(request) {
+  return [
+    "Hello,",
+    "",
+    `I'm writing on behalf of Sequoia Taylor to request ${String(request ?? "").trim().replace(/[.\s]+$/, "")}. Please let me know what's available and anything you need to confirm.`,
+    "",
+    "Thank you,",
+    "Simone",
+    "Assistant to Sequoia Taylor",
+  ].join("\n");
+}
+
+/** What is wrong with a request before it goes, by name. `[]` means it may go. Pure. */
+export function errandProblems({ subject = "", request = "" } = {}) {
+  const p = [];
+  const r = String(request ?? "");
+  if (!String(subject ?? "").trim()) p.push("no subject");
+  if (r.trim().length < 8) p.push("no request");
+  if (r.length > 300) p.push("the request is too long for one sentence");
+  if (/\b(?:AI|artificial intelligence|bot|automated|language model|Claude)\b/.test(`${subject}\n${r}`)) p.push("it mentions AI");
+  if (/\d[\d\s-]{11,}\d/.test(r)) p.push("it carries a long number (a card or phone number)");
+  if (ERRAND_MONEY_RE.test(r)) p.push("it mentions money");
+  if (/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(r) || /https?:\/\//.test(r)) p.push("it carries an address or a link");
+  return p;
+}
+
+const CARD_ASK_RE = /\b(?:credit\s+card|card\s+(?:number|details|on\s+file|to\s+(?:hold|secure|guarantee))|deposit|prepay(?:ment)?|pre-?authori[sz]|payment|cancellation\s+fee|no-?show\s+fee)\b/i;
+const CONFIRMED_RE = /\b(?:confirm(?:ed|ing)?|you(?:'re| are)\s+(?:all\s+)?set|booked|look\s+forward\s+to\s+(?:seeing|welcoming)|see\s+you\s+(?:on|then))\b/i;
+const ALTERNATIVE_RE = /\b(?:fully\s+booked|no\s+availability|not\s+available|unavailable|waitlist|wait\s+list|instead|alternative|earliest|latest|only\s+have|we\s+have\s+(?:a\s+)?(?:table|availability)\s+at|would\s+\d{1,2}(?::\d\d)?\s*(?:am|pm)?\s+work)\b/i;
+
+/**
+ * Their answer, read for her: `{ kind, what_they_said, what_you_do }`. A card, deposit or payment ask
+ * is ALWAYS hers ("card"): no agent fills one. Pure; the words she reads are built from it.
+ */
+export function readErrandReply(text, address = "them") {
+  const t = String(text ?? "").replace(/\s+/g, " ").trim();
+  const said = t.length > 400 ? `${t.slice(0, 400).replace(/\s+\S*$/, "")}…` : t;
+  const at = address && address !== "them" ? `them at ${address}` : "them";
+  if (CARD_ASK_RE.test(t)) return { kind: "card", what_they_said: said, what_you_do: `They want a card or deposit to hold it. Only you can give that; no one on your team will. If you want it, write to ${at}.` };
+  if (ALTERNATIVE_RE.test(t)) return { kind: "alternative", what_they_said: said, what_you_do: `They offered something different. If it works, write to ${at} to take it.` };
+  if (CONFIRMED_RE.test(t)) return { kind: "confirmed", what_they_said: said, what_you_do: "Nothing. It's booked." };
+  return { kind: "other", what_they_said: said, what_you_do: `Read what they said, and answer ${at} if it needs you.` };
 }

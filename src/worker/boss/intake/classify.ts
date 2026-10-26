@@ -1,3 +1,4 @@
+import { errandRefusal } from "../../../shared/boss/commands/parse.mjs";
 import type {
   Audience,
   ExecutionAssignment,
@@ -312,6 +313,8 @@ export function classify(input: {
   model_access?: string | null;
   /** `internal` or `external`. Governs approval and nothing else. */
   audience?: string | null;
+  /** Who wrote it, when it came by email. Only her own address can make an errand (errandRefusal). */
+  sender?: string | null;
 }): Classification {
   const text = `${input.title} ${input.prompt ?? ""}`;
   const matched: string[] = [];
@@ -382,7 +385,21 @@ export function classify(input: {
     matched.push("lane_trading");
   }
 
-  if (OUTBOUND.test(text)) {
+  /*
+   * THE ONE CARVE-OUT FROM "OUTBOUND NEEDS APPROVAL" (owner, 26 Oct 2026): an errand she wrote
+   * herself — a booking or request to a business whose address is in her own words, from her own
+   * Gmail. Her email IS the approval, so Simone sends it with notice, not a second Send. The
+   * definition is `errandRefusal` (src/shared/boss/commands/parse.mjs), shared with the intake: a
+   * guessed address, money, fund/LP/trading work, a West Peek address or any other sender is refused
+   * there and keeps the rule below. The trading lane and MONEY still apply after this.
+   */
+  const ownerErrand = input.lane !== "trading" && errandRefusal({ sender: input.sender ?? "", subject: input.title, text: input.prompt ?? "" }) === null;
+  if (ownerErrand) {
+    risk = risk === "high" ? "high" : "medium";
+    if (assignment === "AI_DRAFT" || assignment === "AI_EXECUTE_WITH_APPROVAL") assignment = "AI_EXECUTE_WITH_NOTICE";
+    reason += " An errand she asked for herself, to a business address she gave: her email is the approval, and Simone tells her what was sent.";
+    matched.push("owner_errand");
+  } else if (OUTBOUND.test(text)) {
     risk = risk === "low" ? "medium" : "high";
     if (assignment === "AI_EXECUTE_WITH_NOTICE") assignment = "AI_EXECUTE_WITH_APPROVAL";
     reason += " Something leaves the boundary, so approval is required first.";

@@ -13,7 +13,13 @@
  *      stream shows no successful Drive or Gmail call is refused as a guess (`requireTool`).
  *   2. DRAFTS in her voice, from her words and — for one of her products — facts read from that
  *      product's own repo on this Mac. The draft goes to the Worker, which shows it to her word for
- *      word with Send / Change / Try again. THIS SCRIPT NEVER SENDS TO A THIRD PARTY.
+ *      word with Send / Change / Try again. A DRAFT IS NEVER SENT TO A THIRD PARTY FROM HERE.
+ *   2b. ERRANDS (owner, 26 Oct 2026), the one exception: a booking or request to a business whose
+ *      address she wrote in her own email (`errandIn`). Her email is the approval, so the request
+ *      goes now, as "Simone, Assistant to Sequoia Taylor", from simone@ with Reply-To simone@ and no
+ *      copy to her (`postErrandMail` in notify.mjs). The words are one fixed letter around one phrase
+ *      (`errandText`), checked by `errandProblems` before anything goes. Their answer comes back to
+ *      the Worker, which tells her what they said; a card or deposit request is always hers.
  *   3. BOUNCE CHECKS in the mailbox an invite or email went from (gmail.readonly, delegated).
  *   4. NOTICES: the plain emails the Worker laid out for her (a lookup's answer, a draft to approve,
  *      a bounce), sent as Simone with the command's code so her reply lands on it.
@@ -22,8 +28,9 @@
  *   npm run -s vault:run -- node scripts/ops/simone-commands.mjs
  */
 import { bossApi, askClaudeJson, googleToken, gmailHeaders, OWNER_TO } from "./lib/duty-kit.mjs";
-import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
-import { PRODUCT_REPOS, ACCESS_CODE_SHAPE } from "../../src/shared/boss/commands/parse.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, errandMail, postErrandMail } from "./notify.mjs";
+import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
+import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
 
 /*
  * TIME-2-READ'S CODE TABLE (seq23/dailystory, supabase/migrations/20261025120000_access_codes.sql).
@@ -100,6 +107,26 @@ export function draftPrompt(spec, { changeNote = null, previous = null } = {}) {
   ].filter(Boolean).join("\n\n");
 }
 
+/** The errand prompt: one phrase for the fixed letter, from her words only. Pure. */
+export function errandPrompt(spec, now = Date.now()) {
+  const today = new Intl.DateTimeFormat("en-US", { timeZone: OWNER_TZ, weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(new Date(now));
+  return [
+    `Sequoia Taylor asked her assistant Simone to send a request to a business at <${spec.to}>. Today is ${today} (Central time).`,
+    `Her words: """${spec.ask}"""`,
+    "Write two things, and nothing else:",
+    '1. "request": ONE phrase that completes the sentence "I\'m writing on behalf of Sequoia Taylor to request ...". Use only what her words say: the thing (a table, an appointment ...), the business name if she gave it, how many people ("+1" means two people, "a table for two"), the day as a full date (resolve "Thursday" to the next one from today), and the time window. Invent nothing: no phone number, no occasion, no card, no money, no address, no link, no mention of AI. Example: "a table for two at The Example Club on Thursday, October 29, any time after 8:00 pm".',
+    '2. "subject": a short subject such as "Reservation request: Thursday, October 29, party of 2".',
+    'Answer with JSON only, in a ```json block: {"subject":"...","request":"..."}.',
+  ].join("\n");
+}
+
+/** The errand that goes, from the model's phrase: `{ subject, request, text, problems }`. Pure. */
+export function buildErrand(json) {
+  const subject = String(json?.subject ?? "").trim();
+  const request = String(json?.request ?? "").trim().replace(/^to request\s+/i, "");
+  return { subject, request, text: errandText(request), problems: errandProblems({ subject, request }) };
+}
+
 /** The employeeMail arguments for a notice the Worker laid out. Pure; the gate and the send are postEmployeeMail's. */
 export function noticeArgs(id, notice, to = OWNER_TO) {
   return { to, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide: notice.decide ?? [] }, refs: [id] };
@@ -132,6 +159,18 @@ async function main() {
     }
   }
 
+  for (const e of work.errands ?? []) {
+    const r = askClaudeJson(errandPrompt(e.spec), { model: "sonnet", maxTurns: 3, timeoutMs: 180_000 });
+    const built = r.ok ? buildErrand(r.json) : null;
+    if (!built || built.problems.length) {
+      await api.post(`/commands/${e.id}/failed`, { why: built ? `the request was not fit to send (${built.problems.join("; ")})` : (r.why ?? "no request came back") });
+      failures.push(e.id); continue;
+    }
+    const sent = await postErrandMail(errandMail({ to: e.spec.to, subject: built.subject, text: built.text }));
+    if (sent.ok) { await api.post(`/commands/${e.id}/errand-sent`, { message_id: sent.id, subject: built.subject, text: built.text, request: built.request }); did++; }
+    else { await api.post(`/commands/${e.id}/failed`, { why: `the send was refused (${sent.error})` }); failures.push(e.id); }
+  }
+
   const byMailbox = new Map();
   for (const b of work.bounce_checks ?? []) if (b.mailbox && b.address) byMailbox.set(b.mailbox, [...(byMailbox.get(b.mailbox) ?? []), b]);
   for (const [mailbox, checks] of byMailbox) {
@@ -145,16 +184,24 @@ async function main() {
   }
 
   // Notices last, so a lookup or draft made this tick goes out this tick.
-  const again = (work.lookups?.length || work.drafts?.length || work.codes?.length || did) ? await api.post("/commands/tick") : work;
+  const again = (work.lookups?.length || work.drafts?.length || work.codes?.length || work.errands?.length || did) ? await api.post("/commands/tick") : work;
   const [simone] = sendersFor("Simone");
   for (const n of again.notices ?? []) {
     const res = await postEmployeeMail(simone, employeeMail(simone, noticeArgs(n.id, n.notice)));
-    if (res.ok) { await api.post(`/commands/${n.id}/noticed`); did++; }
+    if (res.ok) {
+      // An errand's answer also goes into her morning email: a line, or a Decide item for a card ask.
+      const m = n.notice?.morning;
+      if (m?.line || m?.decide) {
+        try { addMorningLines("notices", { lines: m.line ? [m.line] : [], decide: m.decide ? [m.decide] : [] }); }
+        catch (e) { console.error(`NAMED STOP [MORNING_LINE_NOT_WRITTEN] ${n.id}: ${e.message}`); }
+      }
+      await api.post(`/commands/${n.id}/noticed`); did++;
+    }
     else console.error(`NAMED STOP [NOTICE_NOT_SENT] ${n.id}: ${res.status}`);
   }
 
   if (failures.length) console.error(`${failures.length} command(s) failed and went to Danielle as jobs: ${failures.join(", ")}`);
-  if (!did && !failures.length) { console.log("NAMED STOP [NOTHING_WAITING] no lookup, draft, bounce or notice was waiting."); process.exit(7); }
+  if (!did && !failures.length) { console.log("NAMED STOP [NOTHING_WAITING] no lookup, draft, errand, bounce or notice was waiting."); process.exit(7); }
   console.log(`simone-commands: ${did} thing(s) done.`);
 }
 
