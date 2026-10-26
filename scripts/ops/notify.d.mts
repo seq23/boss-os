@@ -11,6 +11,8 @@ export function employeeMail(
     layout?: { happened: string; needs?: string[]; details?: Array<string | { heading: string }>; sections?: unknown[]; footer?: string | null } | null;
     prelaid?: { subject: string; text: string; html: string; refs: string[] } | null;
     context?: string | null;
+    /** Message-IDs this answers, oldest first: In-Reply-To the newest, References all. */
+    thread?: string[];
   },
 ): { from: string; to: string[]; reply_to: string; subject: string; text: string; html: string; headers?: Record<string, string>; attachments?: Array<{ filename: string; content: string }> };
 export function postEmployeeMail(sender: EmployeeSender, payload: ReturnType<typeof employeeMail>, fetchImpl?: typeof fetch, opts?: { context?: string | null }): Promise<Response>;

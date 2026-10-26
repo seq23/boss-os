@@ -30,6 +30,7 @@
 import { bossApi, askClaudeJson, googleToken, gmailHeaders, OWNER_TO } from "./lib/duty-kit.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, errandMail, postErrandMail } from "./notify.mjs";
 import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
+import { finishPrep } from "./meeting-prep.mjs";
 import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, followUpProblems, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
 
 /*
@@ -181,6 +182,14 @@ async function main() {
     else { console.error(`NAMED STOP [ERRAND_FOLLOW_UP_NOT_SENT] ${f.id}: ${sent.error}`); failures.push(f.id); }
   }
 
+  // 5. MEETING PREP (26 Oct 2026): she answered "what's this meeting about?" in the prep's thread;
+  //    the finished prep goes back in that thread, from Simone (meeting-prep.mjs `finishPrep`).
+  for (const p of work.preps ?? []) {
+    const r = await finishPrep(api, p).catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
+    if (r.ok) { did++; console.log(`simone-commands: the finished prep for ${p.spec?.who ?? p.id} went in her thread`); }
+    else { await api.post(`/commands/${p.id}/failed`, { why: `the finished prep was not sent (${r.error})` }); failures.push(p.id); }
+  }
+
   const byMailbox = new Map();
   for (const b of work.bounce_checks ?? []) if (b.mailbox && b.address) byMailbox.set(b.mailbox, [...(byMailbox.get(b.mailbox) ?? []), b]);
   for (const [mailbox, checks] of byMailbox) {
@@ -211,7 +220,7 @@ async function main() {
   }
 
   if (failures.length) console.error(`${failures.length} command(s) failed and went to Danielle as jobs: ${failures.join(", ")}`);
-  if (!did && !failures.length) { console.log("NAMED STOP [NOTHING_WAITING] no lookup, draft, errand, bounce or notice was waiting."); process.exit(7); }
+  if (!did && !failures.length) { console.log("NAMED STOP [NOTHING_WAITING] no lookup, draft, errand, prep, bounce or notice was waiting."); process.exit(7); }
   console.log(`simone-commands: ${did} thing(s) done.`);
 }
 
