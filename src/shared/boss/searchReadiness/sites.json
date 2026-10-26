@@ -437,11 +437,12 @@
       "slug": "memory-care"
      }
     ],
+    "_url_patterns_why": "service_town was /{town}/{service}/ and the site has never served a nested URL: memphisseniorcarehomes.com is flat, every page is /{slug}/, and its care-type pages are /memory-care-memphis-tn/ and /assisted-living-memphis-tn/ - the shape local-guides-generator's senior_living_site_contract.js pins and the shape in the live sitemap. So the expansion asked for 54 URLs that 404 while the 22 real ones went uncounted, and brief sr-memphisseniorcarehomes.com-j9 reported '54 of 106 missing' on 25 and 26 Oct when the real gap was 34, every one of them a town with no care-type pages built. Corrected 26 Oct 2026. The pattern describes each site's real routing - porchandparty901 below is /areas/{town}-{service} for the same reason - so it is read from the site, never assumed.",
     "url_patterns": {
      "town": "/{town}/",
      "neighborhood": "/{slug}/",
      "anchor": "/{slug}/",
-     "service_town": "/{town}/{service}/"
+     "service_town": "/{service}-{town}/"
     }
    }
   },

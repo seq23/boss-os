@@ -641,6 +641,43 @@ export const CHECKS = {
     if (!c.targets.length) return pass("no place-based targets for this site (coverage model not_local)");
     const missing = c.targets.filter((t) => !t.inSitemap || t.status !== 200);
     const byKind = {}; for (const t of missing) byKind[t.kind] = (byKind[t.kind] ?? 0) + 1;
+    const totalByKind = {}; for (const t of c.targets) totalByKind[t.kind] = (totalByKind[t.kind] ?? 0) + 1;
+
+    // A url_pattern that does not match the site's real routing misses EVERY
+    // page of its kind, and the plain count reads it as a coverage gap. That
+    // happened to memphisseniorcarehomes.com on 25 and 26 Oct 2026: the
+    // service_town pattern was /{town}/{service}/ on a site that has only ever
+    // served flat /{service}-{town}/ URLs, so the brief said "54 of 106
+    // coverage pages missing" when 20 of those 54 were live and in the sitemap
+    // the whole time, and the real gap was 34. Two passes were sent to build
+    // pages that already existed.
+    //
+    // The tell is the shape of the miss, not its size: one kind wholly absent
+    // while another kind is almost entirely present means the site is healthy
+    // and the pattern is wrong, because a site that really had built none of
+    // one kind would not have built its towns either. Say that instead of a
+    // count, and name the pattern to read off the live site.
+    const suspectKinds = Object.keys(totalByKind).filter((k) => {
+      if (totalByKind[k] < 4 || (byKind[k] ?? 0) !== totalByKind[k]) return false;
+      const others = Object.keys(totalByKind).filter((o) => o !== k);
+      const otherTotal = others.reduce((n, o) => n + totalByKind[o], 0);
+      const otherMissing = others.reduce((n, o) => n + (byKind[o] ?? 0), 0);
+      return otherTotal >= 4 && otherMissing / otherTotal <= 0.1;
+    });
+    if (suspectKinds.length) {
+      const k = suspectKinds[0];
+      return fail(
+        `url_patterns.${k} does not match this site: all ${totalByKind[k]} ${k.replace("_", " × ")} URLs are absent while the rest of the coverage is live`,
+        {
+          missing: missing.map((t) => t.url),
+          evidence: [
+            `every ${k} URL expanded from url_patterns.${k} is missing, and ${Object.keys(totalByKind).filter((o) => o !== k).map((o) => `${totalByKind[o] - (byKind[o] ?? 0)} of ${totalByKind[o]} ${o}`).join(", ")} are live and in the sitemap.`,
+            `A site that had built none of one kind would not have built the others, so read the real URL shape off the live site and correct url_patterns.${k} in sites.json before treating this as a coverage gap.`,
+            ...missing.filter((t) => t.kind === k).slice(0, 5).map((t) => `${t.url}: ${t.status === 200 ? "not in sitemap" : `answered ${t.status ?? t.error}`}`),
+          ],
+        },
+      );
+    }
     return missing.length
       ? fail(`${missing.length} of ${c.targets.length} coverage pages missing (${Object.entries(byKind).map(([k, n]) => `${n} ${k.replace("_", " × ")}`).join(", ")})`, { missing: missing.map((t) => t.url), evidence: missing.slice(0, 20).map((t) => `${t.url}: ${t.status === 200 ? "not in sitemap" : `answered ${t.status ?? t.error}`}`) })
       : pass(`all ${c.targets.length} coverage pages live and in the sitemap`);
