@@ -99,6 +99,16 @@ export function toBossEnv(env: Env): BossEnv {
     GSC_SERVICE_ACCOUNT_JSON: env.GSC_SERVICE_ACCOUNT_JSON,
     // R3: the secret door's key. Omitted here, the door would be declared and fail closed forever.
     BOSS_OS_SECRET_HANDOFF_KEY: env.BOSS_OS_SECRET_HANDOFF_KEY,
+    /*
+     * THE TWO FRONTIER KEYS (26 Oct 2026). Set on the Worker since 17 Sep and never passed through
+     * here, so Boss OS's Anthropic and OpenAI backends were "enabled" with no key they could reach,
+     * and the first probe of them said so. Every key a backend's wiring names must cross this seam;
+     * tests/bossEnvCarriesBackendKeys.test.ts reads the wiring and fails if one does not.
+     */
+    ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
+    OPENAI_API_KEY: env.OPENAI_API_KEY,
+    // OpenRouter too, the same seam's same gap (bk_openrouter enabled 17 Sep with its own cap).
+    OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   };
 }
 

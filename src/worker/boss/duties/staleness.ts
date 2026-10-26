@@ -1,4 +1,4 @@
-import { nextDueAt, type DutySchedule } from "./cadence";
+import { nextDueAt, EARLY_RUN_GRACE_MS, type DutySchedule } from "./cadence";
 
 /**
  * A DUTY IS LATE AGAINST ITS OWN SCHEDULE, NEVER AGAINST A CALENDAR IT DOES NOT KEEP.
@@ -157,6 +157,11 @@ export function dutyStaleness(duty: DutyStalenessRow, now = Date.now()): DutySta
       occurrence = nextDueAt(schedule, cursor);
     } catch {
       break;
+    }
+    // A run that landed a little before this slot was that slot's run (a Mac east of Central).
+    if (i === 0 && duty.last_run_at && occurrence - duty.last_run_at <= EARLY_RUN_GRACE_MS) {
+      cursor = occurrence;
+      continue;
     }
     if (occurrence > now) {
       next = occurrence;

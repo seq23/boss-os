@@ -139,3 +139,10 @@ export function dayOfWeekIn(timeZone: string, at: number): number {
 export function isDue(nextDueAtMs: number, suspended: boolean, now: number): boolean {
   return !suspended && nextDueAtMs <= now;
 }
+
+/**
+ * A run this long BEFORE a slot answers for that slot (26 Oct 2026). launchd fires on the Mac's wall
+ * clock and duties are kept in Central, so a Mac on Eastern fires an hour early; Central → Europe is
+ * at most eight. Read by the run recorder (routes/duties.ts `creditFrom`) and by staleness.
+ */
+export const EARLY_RUN_GRACE_MS = 8 * 3_600_000;
