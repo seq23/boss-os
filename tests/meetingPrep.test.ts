@@ -78,7 +78,7 @@ describe("meeting prep: the email", () => {
 
   it("carries every section with something real, in order, and passes the plain-email gate", () => {
     const p = prepEmail(kate, data);
-    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Your history", "What you referenced", "What's relevant now", "Goals and questions", "Open between you", "Logistics"]);
+    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Your history", "What you referenced", "What's relevant now", "Goals and questions", "Have ready", "Open between you", "Logistics"]);
     expect(p.needsPurpose).toBe(false);
     expect(p.laid.text).toContain("The fund: they are an LP prospect and said they are interested.");
     expect(p.laid.text).toContain("Fri 30 Oct, 1:00pm to 1:30pm ET.");

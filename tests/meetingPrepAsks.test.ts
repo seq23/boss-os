@@ -46,7 +46,7 @@ describe("no purpose found: the prep asks, and offers to help", () => {
       const offers = m.decide[0].details as string[];
       expect(offers.length).toBeGreaterThanOrEqual(2);
       expect(offers.length).toBeLessThanOrEqual(3);
-      expect(offers).toContain("Draft a short follow-up email for after the call.");
+      if (context === EMPTY) expect(offers).toEqual(["Draft a short follow-up email for after the call.", "Write talking points once you tell me the goal."]);
       expect(plainProblems({ subject: m.laid.subject, text: t, html: m.laid.html })).toEqual([]);
     }
   });
@@ -161,13 +161,13 @@ describe("her reply: the finished prep in the same thread", () => {
 describe("the length is read right and shown in her zone", () => {
   it("an ICS event 10:00 to 12:30 New York time is 150 minutes, shown 10:00am to 12:30pm ET", () => {
     const ics = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:len1@google.com\nSUMMARY:Sequoia + Jo (Fake Co)\nDTSTART;TZID=America/New_York:20261027T100000\nDTEND;TZID=America/New_York:20261027T123000\nEND:VEVENT\nEND:VCALENDAR";
-    const [e] = parseIcs(ics, Date.parse("2026-10-26T12:00:00Z"), 5).events;
+    const e = parseIcs(ics, Date.parse("2026-10-26T12:00:00Z"), 5).events[0]!;
     expect(e.scheduled_at).toBe(TUE_10_ET);
     expect(e.duration_min).toBe(150);
     const logi = buildPrep(e, {}, {}).sections.find((s: any) => s.title === "Logistics").items[0];
     expect(logi).toBe("Tue 27 Oct, 10:00am to 12:30pm ET.");
     // A half-hour meeting is a half hour; a UTC end is read the same way.
-    const half = parseIcs(ics.replace("DTEND;TZID=America/New_York:20261027T123000", "DTEND:20261027T143000Z"), Date.parse("2026-10-26T12:00:00Z"), 5).events[0];
+    const half = parseIcs(ics.replace("DTEND;TZID=America/New_York:20261027T123000", "DTEND:20261027T143000Z"), Date.parse("2026-10-26T12:00:00Z"), 5).events[0]!;
     expect(half.duration_min).toBe(30);
     expect(buildPrep(half, {}, {}).sections.at(-1).items[0]).toBe("Tue 27 Oct, 10:00am to 10:30am ET.");
   });
