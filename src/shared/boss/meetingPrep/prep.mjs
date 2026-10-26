@@ -15,6 +15,13 @@
 
 export const PREP_PREFIX = "Prep: ";
 export const PREP_TZ = "America/Chicago";
+/**
+ * THE TIMES SHE READS ARE EASTERN (owner, 26 Oct 2026). The schedule (18:00 the evening before) is
+ * Central, but every time in the email is in her own zone, labelled: "10:00am to 12:30pm ET". A
+ * 2.5-hour meeting she set herself is 2.5 hours; the length is the calendar's own end minus start.
+ */
+export const DISPLAY_TZ = "America/New_York";
+export const DISPLAY_ZONE = "ET";
 /** The evening run: from 18:00 Central, tomorrow's meetings are due. */
 export const EVENING_HOUR = 18;
 
@@ -32,15 +39,15 @@ export const dayOfCt = (at) => parts(at).date;
 export const hourOfCt = (at) => parts(at).hour;
 export const addDays = (iso, n) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
-/** "12pm", "12:30pm". */
-export function clock(at) {
-  const { hour, minute } = parts(at);
+/** "12pm", "12:30pm", in her zone (Eastern). `full`: "10:00am". */
+export function clock(at, { tz = DISPLAY_TZ, full = false } = {}) {
+  const { hour, minute } = parts(at, tz);
   const h12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${h12}${minute ? `:${String(minute).padStart(2, "0")}` : ""}${hour >= 12 ? "pm" : "am"}`;
+  return `${h12}${minute || full ? `:${String(minute).padStart(2, "0")}` : ""}${hour >= 12 ? "pm" : "am"}`;
 }
-/** "Fri 30 Oct". */
-export function shortDate(at) {
-  const p = parts(at);
+/** "Fri 30 Oct", in her zone. */
+export function shortDate(at, tz = DISPLAY_TZ) {
+  const p = parts(at, tz);
   const [, m, d] = p.date.split("-").map(Number);
   return `${p.weekday} ${d} ${SHORT_MONTHS[m - 1]}`;
 }
@@ -181,14 +188,82 @@ export function bodyLead(body) {
 const dayMonth = (at) => { const d = new Date(Number(at)); return Number.isFinite(d.getTime()) ? `${d.getUTCDate()} ${SHORT_MONTHS[d.getUTCMonth()]}` : null; };
 const atOf = (v) => (typeof v === "number" ? v : Date.parse(String(v ?? "")));
 
+// ─── What the prep found beyond Boss OS's own records ───────────────────────
+
+const FREE_MAIL = /^(?:gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|aol|icloud|me|mac|proton|protonmail|pm|gmx|mail|comcast|att|sbcglobal|verizon|example)\.[a-z.]+$/i;
+/** Their company's domain from an address; null for a free mailbox (gmail.com is nobody's company). */
+export function companyDomain(email) {
+  const d = String(email ?? "").toLowerCase().split("@")[1] ?? "";
+  return d && !FREE_MAIL.test(d) ? d : null;
+}
+
+/** The invite's own notes, without the join boilerplate Google and Zoom add. Null when nothing real. */
+export function inviteNotes(description) {
+  const t = String(description ?? "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ")
+    .split("\n").map((l) => l.trim())
+    .filter((l) => l && !/https?:\/\/|join (?:with|by|the|zoom|google)|meeting id|passcode|dial[- ]?in|one tap|^[-─=_]{3,}|invitation from google|learn more about meet|reply for |more phone numbers/i.test(l))
+    .join(" ").replace(/\s+/g, " ").trim();
+  return t.length >= 15 ? t.slice(0, 400) : null;
+}
+
+/** "25 Oct 2026" from "2026-10-25" (or an epoch). Null when unreadable. */
+export function niceDate(v) {
+  const at = typeof v === "number" ? v : Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "")) ? `${v}T12:00:00Z` : String(v ?? ""));
+  if (!Number.isFinite(at)) return null;
+  const d = new Date(at);
+  return `${d.getUTCDate()} ${SHORT_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+const monthYear = (v) => { const n = niceDate(v); return n ? n.split(" ").slice(1).join(" ") : null; };
+const clip = (s, n = 160) => { const t = String(s ?? "").replace(/\s+/g, " ").trim(); return t.length > n ? `${t.slice(0, n - 1).replace(/\s+\S*$/, "")}…` : t; };
+
+/**
+ * WHAT THE MEETING IS FOR, AND HOW WE KNOW (26 Oct 2026: a prep with nothing inside "feels lazy").
+ * Her own words win; then the invite's notes; then a line from an email that said it; then what her
+ * records say they are. `{ text, from, guess }` or null — and null is never filled with an invention:
+ * it turns the email into a question.
+ */
+export function purposeOf(event, { purpose = null, context = {}, rec = null, role = null } = {}) {
+  if (purpose && String(purpose).trim()) return { text: clip(purpose, 600), from: "you", guess: false };
+  const notes = inviteNotes(event?.description);
+  if (notes) return { text: notes, from: "the invite", guess: false };
+  const hint = context?.purpose_hint;
+  if (hint?.text) return { text: clip(hint.text, 300), from: hint.from ? clip(hint.from, 80) : "an email", guess: true };
+  if (role === "LP" || role === "LP prospect") {
+    return { text: `The fund: they are ${role === "LP" ? "an LP" : "an LP prospect"}${rec?.prospect?.status === "interested" ? " and said they are interested" : ""}.`, from: "your records", guess: true };
+  }
+  if (role === "broker" && rec?.deals?.length) return { text: `Their orders on the grid (${rec.deals.slice(0, 2).map((d) => d.company).join(", ")}).`, from: "your records", guess: true };
+  return null;
+}
+
+/** Two or three concrete ways to help, from what was found. Always at least two. */
+export function offersFrom({ context = {}, firm = null, lead = null }) {
+  const out = [];
+  const site = context.site?.domain ? context.site : null;
+  if (site) out.push(`Research ${firm ?? site.domain} from their website (${site.domain}) and give you three questions to ask.`);
+  const m = context.mail ?? {};
+  if (m.count > 0 && m.first?.date) out.push(`Sum up your history with them (${m.count}${m.more ? "+" : ""} emails since ${monthYear(m.first.date)}) in five lines.`);
+  const b = (context.bounces ?? [])[0];
+  if (b) out.push(`Make sure you have the right address for them: your email to ${b.address} bounced${lead?.email && lead.email !== b.address ? `, and the invite went to ${lead.email}` : ""}.`);
+  out.push("Draft a short follow-up email for after the call.");
+  if (out.length < 3) out.push("Write talking points once you tell me the goal.");
+  return out.slice(0, 3);
+}
+
 // ─── The email ───────────────────────────────────────────────────────────────
+
+export const PREP_QUESTION = "What's this meeting about? Reply in a line and I'll prep talking points, research them, or draft a follow-up.";
 
 /**
  * One meeting's prep. `data`: { prospects, lpReplies, people, touches, references, deals, news,
- * summaries } (any may be missing), `herAddresses`. Returns { key, subject, sections, text } where
- * `sections` are layoutEmail sections (title + items) and only the ones with something real.
+ * summaries } (any may be missing). `context`: what the Mac found in her mailboxes, calendars, Boss OS
+ * cards and their website (see scripts/ops/meeting-prep.mjs `gatherContext`). `purpose`: her own
+ * words, from her reply. `plan`: { goals, ready, order } written from the evidence (optional).
+ *
+ * Returns { key, subject, who, happened, decide, sections, needsPurpose, purpose }. When nothing says
+ * what the meeting is for, the email OPENS WITH THE QUESTION and offers what it can do — never the
+ * bare logistics (26 Oct 2026).
  */
-export function buildPrep(event, data = {}, { herAddresses = [] } = {}) {
+export function buildPrep(event, data = {}, { herAddresses = [], context = {}, purpose = null, plan = null } = {}) {
   const guests = others(event, herAddresses);
   const lead = guests[0] ?? null;
   const titleName = nameFromTitle(event.title);
@@ -196,12 +271,18 @@ export function buildPrep(event, data = {}, { herAddresses = [] } = {}) {
   const leadName = (lead?.name && !String(lead.name).includes("@") ? lead.name : null) || titleName || null;
   const rec = recordsFor({ email: lead?.email ?? null, name: leadName }, data);
   const name = leadName ?? rec.prospect?.name ?? rec.lp?.name ?? rec.person?.full_name ?? null;
-  const firm = rec.prospect?.firm ?? rec.lp?.firm ?? rec.person?.organization_name ?? rec.deals[0]?.from_firm ?? null;
+  // The firm from her records, else the bracket in her own title ("Sequoia + Jo (Fake Co)").
+  const firm = rec.prospect?.firm ?? rec.lp?.firm ?? rec.person?.organization_name ?? rec.deals[0]?.from_firm ?? (/\(([^)]{2,60})\)/.exec(String(event.title ?? ""))?.[1]?.trim() || null);
   const role = roleOf(rec);
+  const ctx = context ?? {};
 
   const who = name ? `${name}${firm && !name.includes(firm) ? ` (${firm})` : ""}` : (counterpartFromTitle(event.title) ?? lead?.email ?? (String(event.title ?? "").trim() || "Meeting"));
-  const subject = `${PREP_PREFIX}${who}, ${shortDate(event.scheduled_at)}, ${clock(event.scheduled_at)}`;
+  const when = `${shortDate(event.scheduled_at)}, ${clock(event.scheduled_at)} ${DISPLAY_ZONE}`;
+  const subject = `${PREP_PREFIX}${who}, ${when}`;
+  const about = purposeOf(event, { purpose, context: ctx, rec, role });
   const sections = [];
+
+  if (about) sections.push({ title: about.guess ? `What it's probably about (a guess, from ${about.from})` : `What it's about (from ${about.from})`, items: [about.text] });
 
   // Who they are.
   const whoItems = [];
@@ -212,9 +293,26 @@ export function buildPrep(event, data = {}, { herAddresses = [] } = {}) {
   }
   if (rec.prospect?.status === "interested") whoItems.push("They said they are interested.");
   if (rec.lp?.bucket === "call") whoItems.push("They asked for a call.");
+  if (ctx.site?.domain && (ctx.site.title || ctx.site.about)) {
+    whoItems.push({ text: `Their website, ${ctx.site.domain}: ${clip([ctx.site.title, ctx.site.about].filter(Boolean).join(". "), 220)}`, links: [{ label: "Open their website", url: `https://${ctx.site.domain}` }] });
+  }
   if (whoItems.length) sections.push({ title: "Who they are", items: whoItems });
 
-  // Your history.
+  // How you know them: her mailboxes, her calendars, Boss OS cards. Only what was found.
+  const knowItems = [];
+  const m = ctx.mail ?? {};
+  if (m.count > 0 && m.first?.date) knowItems.push(`You have emailed each other since ${monthYear(m.first.date)}: ${m.count}${m.more ? "+" : ""} email${m.count === 1 ? "" : "s"} found.`);
+  for (const r of (m.recent ?? []).slice(0, 3)) {
+    if (!r?.date || !r?.subject) continue;
+    knowItems.push(`${niceDate(r.date)}, ${r.from_them ? "from them" : "from you"}: "${clip(r.subject, 90)}"${r.snippet ? `. ${clip(r.snippet, 140)}` : ""}`);
+  }
+  const met = (ctx.meetings ?? []).filter((x) => x?.date).slice(0, 3);
+  if (met.length) knowItems.push(`Met before: ${met.map((x) => `${niceDate(x.date)}${x.title ? ` ("${clip(x.title, 60)}")` : ""}`).join("; ")}.`);
+  const cards = (ctx.cards ?? []).filter((x) => x?.title).slice(0, 3);
+  if (cards.length) knowItems.push(`In Boss OS: ${cards.map((x) => `"${clip(x.title, 70)}"`).join("; ")}.`);
+  if (knowItems.length) sections.push({ title: "How you know them", items: knowItems });
+
+  // Your history (Monique's records).
   const hist = [];
   const firstAt = [rec.touches[0]?.sent_at, atOf(rec.prospect?.first_sent_at), atOf(rec.lp?.first_seen)].filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b)[0];
   if (firstAt) hist.push(`First contact: ${dayMonth(firstAt)}.`);
@@ -222,11 +320,9 @@ export function buildPrep(event, data = {}, { herAddresses = [] } = {}) {
   if (last && bodyLead(last.body)) hist.push(`Last thing you said (${dayMonth(last.sent_at)}): "${bodyLead(last.body)}"`);
   const theirs = rec.prospect?.reply_note || rec.lp?.quote || null;
   if (theirs) hist.push(`Last thing they said${rec.lp?.first_seen ? ` (${dayMonth(atOf(rec.lp.first_seen))})` : ""}: "${firstSentence(theirs)}"`);
-  if (rec.prospect?.has_draft || rec.lp?.status === "drafted") hist.push("Open: a reply to them is drafted and waiting for your yes.");
   if (hist.length) sections.push({ title: "Your history", items: hist });
 
-  // What you referenced: only references whose link was checked and resolves.
-  // Only a link her Mac checked and found answering: never a reference to something that is not there.
+  // What you referenced: only a link her Mac checked and found answering.
   const refs = rec.references.filter((r) => (r.verified === 1 || r.verified === true) && r.url);
   const refItems = refs.slice(0, 2).flatMap((r) => {
     const s = (data.summaries ?? {})[r.url] ?? null;
@@ -248,27 +344,56 @@ export function buildPrep(event, data = {}, { herAddresses = [] } = {}) {
   for (const n of (data.news ?? {})[firm ?? ""] ?? []) rel.push({ text: `News: ${n.title}${n.date ? ` (${n.date})` : ""}`, links: n.url ? [{ label: "Read it", url: n.url }] : [] });
   if (rel.length) sections.push({ title: "What's relevant now", items: rel });
 
-  // Bring up: from what is above, never invented; one ask by who they are.
-  const bring = [];
-  if (theirs) bring.push(`What they last said: "${firstSentence(theirs)}"`);
-  if (refs[0]) bring.push(`The piece you mentioned${(data.summaries ?? {})[refs[0].url]?.title ? `: "${data.summaries[refs[0].url].title}"` : ""}.`);
-  if (theirOrders[0]) bring.push(theirOrders[0].replace(/^Their order on the grid: /, "Their order: "));
-  else if (rel[0] && typeof rel[0] === "string") bring.push(rel[0]);
+  // Goals and questions: the plan written from the evidence, else from what is above. Never invented.
+  const fromEvidence = [];
+  if (theirs) fromEvidence.push(`Pick up what they last said: "${firstSentence(theirs)}"`);
+  if (refs[0]) fromEvidence.push(`The piece you mentioned${(data.summaries ?? {})[refs[0].url]?.title ? `: "${data.summaries[refs[0].url].title}"` : ""}.`);
+  if (theirOrders[0]) fromEvidence.push(theirOrders[0].replace(/^Their order on the grid: /, "Their order: "));
   const ask = role === "LP" || role === "LP prospect" ? "Ask: would they like to see the names on this week's list?"
     : role === "broker" ? "Ask: are their orders still live, and at what price?" : null;
-  if (bring.length || ask) sections.push({ title: "Bring up", items: [...bring.slice(0, 3), ...(ask ? [ask] : [])] });
+  const planGoals = (plan?.goals ?? []).filter((g) => typeof g === "string" && g.trim());
+  const goals = planGoals.length ? planGoals.slice(0, 5)
+    : about ? [...fromEvidence.slice(0, 3), ...(ask ? [ask] : []), ...(fromEvidence.length || ask ? [] : ["Ask what would help them most right now."]), "Agree the next step, and who does it, before you hang up."].slice(0, 5)
+      : [];
+  if (goals.length) sections.push({ title: "Goals and questions", items: goals });
 
-  // Logistics.
+  const order = (plan?.order ?? []).filter((g) => typeof g === "string" && g.trim()).slice(0, 7);
+  if (order.length) sections.push({ title: "Running order", items: order.map((o) => o.replace(/^\d+[.)]\s*/, "")) });
+
+  // Have ready.
+  const ready = (plan?.ready ?? []).filter((g) => typeof g === "string" && g.trim()).slice(0, 5);
+  const join = event.join_url ?? (/^https:\/\/\S+$/.test(String(event.location ?? "")) ? event.location : null);
+  if (about) {
+    if (!ready.length && ctx.site?.domain) ready.push(`Their website open in a tab (${ctx.site.domain}).`);
+    if (!ready.length && join) ready.push("The join link, below.");
+    if (ready.length) sections.push({ title: "Have ready", items: ready });
+  }
+
+  // Open between you: a bounce, an email of theirs with no answer, a drafted reply.
+  const open = [];
+  for (const b of (ctx.bounces ?? []).slice(0, 2)) {
+    if (!b?.address) continue;
+    open.push(`Your email to ${b.address} bounced${b.date ? ` on ${niceDate(b.date)}` : ""}: that address no longer works.${lead?.email && lead.email !== b.address ? ` The invite went to ${lead.email}.` : ""}`);
+  }
+  if (ctx.unanswered?.subject) open.push(`They emailed${ctx.unanswered.date ? ` on ${niceDate(ctx.unanswered.date)}` : ""} ("${clip(ctx.unanswered.subject, 90)}") and there is no reply from you yet.`);
+  if (rec.prospect?.has_draft || rec.lp?.status === "drafted") open.push("A reply to them is drafted and waiting for your yes.");
+  if (open.length) sections.push({ title: "Open between you", items: open });
+
+  // Logistics, in her zone. The length is the calendar's own end minus its start.
   const logi = [];
   const end = event.duration_min ? event.scheduled_at + event.duration_min * 60_000 : null;
-  logi.push(`${shortDate(event.scheduled_at)}, ${clock(event.scheduled_at)}${end ? ` to ${clock(end)}` : ""} Central.`);
-  const join = event.join_url ?? (/^https:\/\/\S+$/.test(String(event.location ?? "")) ? event.location : null);
+  logi.push(`${shortDate(event.scheduled_at)}, ${clock(event.scheduled_at, { full: true })}${end ? ` to ${clock(end, { full: true })}` : ""} ${DISPLAY_ZONE}.`);
   if (join) logi.push({ text: "Join the call", links: [{ label: "Join", url: join }] });
   if (event.location && event.location !== join) logi.push(`Where: ${event.location}.`);
-  if (guests.length) logi.push(`Who is on it: ${guests.map((g) => g.name || g.email).join(", ")}.`);
+  if (guests.length) logi.push(`Who is on it: ${guests.map((g) => (g.name && !String(g.name).includes("@") ? `${g.name} (${g.email})` : g.email)).join(", ")}.`);
   sections.push({ title: "Logistics", items: logi });
 
-  return { key: prepKey(event), subject, who, sections, happened: `Your prep for ${String(event.title ?? "your meeting").trim()}.` };
+  const needsPurpose = !about;
+  const decide = needsPurpose
+    ? [{ title: `Your meeting with ${who}, ${when}`, body: "Reply with what it's for, or pick one of these and I'll do it:", details: offersFrom({ context: ctx, firm, lead }) }]
+    : [];
+  const happened = needsPurpose ? PREP_QUESTION : `Your prep for ${who}, ${when}.`;
+  return { key: prepKey(event), subject, who, happened, decide, sections, needsPurpose, purpose: about };
 }
 
 // ─── Warm references in what was sent ───────────────────────────────────────

@@ -64,20 +64,24 @@ describe("meeting prep: one email per meeting, once", () => {
 });
 
 describe("meeting prep: the email", () => {
-  it('subject starts "Prep: " with who, firm, day and time', () => {
-    expect(buildPrep(kate, data, { herAddresses: ME }).subject).toBe("Prep: Kate Example (GEM), Fri 30 Oct, 12pm");
-    expect(buildPrep(terri, {}, { herAddresses: ME }).subject).toBe(`${PREP_PREFIX}Terri Sample, Fri 30 Oct, 2pm`);
+  it('subject starts "Prep: " with who, firm, day and time, in her zone (Eastern, labelled)', () => {
+    // 12pm Central is 1pm Eastern: every time she reads is ET (owner, 26 Oct 2026).
+    expect(buildPrep(kate, data, { herAddresses: ME }).subject).toBe("Prep: Kate Example (GEM), Fri 30 Oct, 1pm ET");
+    expect(buildPrep(terri, {}, { herAddresses: ME }).subject).toBe(`${PREP_PREFIX}Terri Sample, Fri 30 Oct, 3pm ET`);
     expect(nameFromTitle("Kate Example <> Sequoia")).toBe("Kate Example");
     // No name on the invite: the title without her name, never a bare address.
     const solo = { ...terri, title: "Sequoia + Jo (Fake Co)", attendees: [{ email: "jo@fakeco.example" }] };
-    expect(buildPrep(solo, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 2pm");
+    expect(buildPrep(solo, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 3pm ET");
     // The invite's name field holding the address is not a name.
-    expect(buildPrep({ ...solo, attendees: [{ email: "jo@fakeco.example", name: "jo@fakeco.example" }] }, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 2pm");
+    expect(buildPrep({ ...solo, attendees: [{ email: "jo@fakeco.example", name: "jo@fakeco.example" }] }, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 3pm ET");
   });
 
   it("carries every section with something real, in order, and passes the plain-email gate", () => {
     const p = prepEmail(kate, data);
-    expect(p.sections.map((s: any) => s.title)).toEqual(["Who they are", "Your history", "What you referenced", "What's relevant now", "Bring up", "Logistics"]);
+    expect(p.sections.map((s: any) => s.title)).toEqual(["What it's probably about (a guess, from your records)", "Who they are", "Your history", "What you referenced", "What's relevant now", "Goals and questions", "Open between you", "Logistics"]);
+    expect(p.needsPurpose).toBe(false);
+    expect(p.laid.text).toContain("The fund: they are an LP prospect and said they are interested.");
+    expect(p.laid.text).toContain("Fri 30 Oct, 1:00pm to 1:30pm ET.");
     const t = p.laid.text;
     expect(t).toContain('You wrote: "I loved your episode on secondaries pricing:');
     expect(t).toContain("41-min listen");
@@ -88,9 +92,11 @@ describe("meeting prep: the email", () => {
     expect(plainProblems({ subject: p.laid.subject, text: p.laid.text, html: p.laid.html })).toEqual([]);
   });
 
-  it("omits every section with nothing real and never invents", () => {
+  it("omits every section with nothing real and never invents; with no purpose it asks instead", () => {
     const p = buildPrep(terri, {}, { herAddresses: ME });
     expect(p.sections.map((s: any) => s.title)).toEqual(["Logistics"]);
+    expect(p.needsPurpose).toBe(true);
+    expect(p.decide).toHaveLength(1);
     // An unchecked or dead link is never quoted.
     const unchecked = buildPrep(kate, { ...data, references: [{ ...data.references[0], verified: null }] }, { herAddresses: ME });
     expect(unchecked.sections.map((s: any) => s.title)).not.toContain("What you referenced");

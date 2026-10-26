@@ -348,6 +348,7 @@ function commandTitle(kind: string, spec: Json): string {
   if (kind === "access_code") return `Access code${spec.code ? ` ${spec.code}` : ""}`;
   if (kind === "email") return `Email to ${spec.recipient_name ?? spec.to ?? "them"}`;
   if (kind === "errand") return `Request to ${spec.to}`;
+  if (kind === "meeting_prep") return `Meeting prep: ${spec.who ?? "a meeting"}`;
   return String(spec.what ?? kind).slice(0, 60);
 }
 
@@ -473,6 +474,7 @@ function waitingFor(row: CommandRow): string {
 
 async function answerOne(env: Env, row: CommandRow, said: Json, now: number): Promise<string | null> {
   const spec = j(row.spec); const result = j(row.result);
+  if (row.kind === "meeting_prep") return answerMeetingPrep(env, row, said, now);
   if (row.kind === "errand") return answerErrand(env, row, said, String(said.raw ?? ""), now);
   if (row.kind === "email") {
     if (said.verb === "send") return approveAndSend(env, row, now);
@@ -580,6 +582,7 @@ export async function macWork(env: Env, now = Date.now()) {
     notices: notices.map((r) => ({ id: r.id, notice: j(r.notice) })),
     codes: codes.map((r) => ({ id: r.id, spec: j(r.spec) })),
     errands: errands.map((r) => ({ id: r.id, spec: j(r.spec), asked_at: r.created_at })),
+    preps: await prepsDue(env),
     errand_follow_ups: followUps.filter((r) => j(r.result).pending?.text).map((r) => {
       const res = j(r.result);
       return { id: r.id, to: j(r.spec).to, subject: res.pending.subject, text: res.pending.text, purpose: res.pending.purpose, in_reply_to: res.thread?.message_id ?? null };
@@ -836,4 +839,69 @@ export async function errandTap(env: Env, row: CommandRow, action: "keep" | "can
   if (action === "keep") return "Kept. Nothing changes.";
   if (action === "cancel") return (await answerErrand(env, row, { verb: "cancel" }, "cancel", now)) ?? "Nothing to cancel on this one.";
   return (await answerErrand(env, row, { verb: "note" }, words, now)) ?? "Got it, but there was nothing open to answer.";
+}
+
+// ─── Simone's meeting prep: the question, her answer, the finished prep in the same thread ─────
+
+/*
+ * A PREP THAT CANNOT FIND WHAT THE MEETING IS FOR ASKS (owner, 26 Oct 2026: "she should ask what the
+ * meeting is about and offer to help me"). The Mac opens one row per prep (keyed on the event and
+ * its day) and sends the prep with the row's code, so her reply in that thread lands here through
+ * the ordinary intake (`commandFromMail` → `answerCommands`); no second path. Her words become the
+ * meeting's purpose, the row goes to `queued`, and the Mac's next tick (scripts/ops/simone-commands.mjs
+ * → meeting-prep.mjs `finishPrep`) writes the finished prep and sends it IN THE SAME THREAD.
+ */
+export async function openMeetingPrep(env: Env, input: { key: string; spec: Json; asked: boolean }, now = Date.now()): Promise<string> {
+  const state = input.asked ? "asked" : "sent";
+  const spec = { ...input.spec, key: input.key };
+  const hit = await env.DB.prepare(`SELECT id FROM boss_commands WHERE kind = 'meeting_prep' AND json_extract(spec, '$.key') = ? ORDER BY created_at DESC LIMIT 1`)
+    .bind(input.key).first<{ id: string }>();
+  if (hit) { await save(env, hit.id, { state, spec }, now); return hit.id; }
+  const id = newId("cmd");
+  await env.DB.prepare(`INSERT INTO boss_commands (id, mail_id, kind, state, spec, created_at, updated_at) VALUES (?, NULL, 'meeting_prep', ?, ?, ?, ?)`)
+    .bind(id, state, JSON.stringify(spec), now, now).run();
+  return id;
+}
+
+async function answerMeetingPrep(env: Env, row: CommandRow, said: Json, now: number): Promise<string | null> {
+  const spec = j(row.spec); const result = j(row.result);
+  if (said.verb === "cancel") {
+    await save(env, row.id, { state: "cancelled" }, now);
+    return "OK, I'll leave this meeting's prep as it is.";
+  }
+  const words = String(said.raw ?? said.note ?? "").trim();
+  if (!words) return null;
+  await save(env, row.id, { state: "queued", result: { ...result, purpose: words.slice(0, 2000), answered_at: now } }, now);
+  await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "meeting_prep_purpose", detail: { key: spec.key ?? null } });
+  return `Thanks. I'm writing your prep for ${spec.who ?? "the meeting"} with that now. It comes back to you in this thread before the meeting.`;
+}
+
+/** The preps her answer is waiting on, each with the thread to answer in (oldest message first). */
+async function prepsDue(env: Env) {
+  const rows = (await env.DB.prepare(`SELECT * FROM boss_commands WHERE kind = 'meeting_prep' AND state = 'queued' ORDER BY updated_at LIMIT 5`).all<CommandRow>()).results ?? [];
+  const out = [];
+  for (const r of rows) {
+    const thread = ((await env.DB.prepare(`SELECT message_id FROM boss_mail_refs WHERE (' ' || refs || ' ') LIKE ? ORDER BY created_at ASC LIMIT 20`)
+      .bind(`% ${r.id} %`).all<{ message_id: string }>()).results ?? []).map((m) => m.message_id);
+    out.push({ id: r.id, spec: j(r.spec), purpose: j(r.result).purpose ?? null, thread });
+  }
+  return out;
+}
+
+/** The finished prep went, in her thread. */
+export async function prepFinished(env: Env, id: string, out: { message_id?: string | null }, now = Date.now()): Promise<boolean> {
+  const row = await getCommand(env, id);
+  if (!row || row.kind !== "meeting_prep") return false;
+  await save(env, id, { state: "sent", result: { ...j(row.result), finished_at: now, finished_id: out.message_id ?? null } }, now);
+  return true;
+}
+
+/** Boss OS cards (tasks) that mention them: titles and inputs, newest first. Never this prep's own rows. */
+export async function prepMentions(env: Env, terms: string[]): Promise<Array<{ title: string; date: string }>> {
+  const words = [...new Set(terms.map((t) => String(t ?? "").trim()).filter((t) => t.length >= 4))].slice(0, 4);
+  if (!words.length) return [];
+  const where = words.map(() => "(title LIKE ? OR input LIKE ?)").join(" OR ");
+  const rows = (await env.DB.prepare(`SELECT title, created_at FROM tasks WHERE (${where}) AND title NOT LIKE 'Meeting prep%' ORDER BY created_at DESC LIMIT 5`)
+    .bind(...words.flatMap((w) => [`%${w}%`, `%${w}%`])).all<{ title: string; created_at: number }>()).results ?? [];
+  return rows.map((r) => ({ title: r.title, date: new Date(r.created_at).toISOString().slice(0, 10) }));
 }

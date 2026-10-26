@@ -196,7 +196,7 @@ export function sendersFor(who, { fallback = industryGuidesFallback } = {}) {
  * in the `X-Boss-Ref` header and, after the send, against the Message-ID her client will quote back
  * (`postEmployeeMail` → `/api/boss/mail-refs`).
  */
-export function employeeMail(sender, { to, subject, text, html: _html, files, layout = null, refs = [], prelaid = null }) {
+export function employeeMail(sender, { to, subject, text, html: _html, files, layout = null, refs = [], prelaid = null, thread = [] }) {
   /*
    * R18 (docs/SERVICE_RULES.md) — FILES FOR HER RIDE ON THE EMAIL. Every Mac lane sends through this
    * one function, so every lane can hand her a file: listed by name always, attached up to 10 MB in
@@ -210,6 +210,15 @@ export function employeeMail(sender, { to, subject, text, html: _html, files, la
   const laid = prelaid ?? (layout
     ? layoutEmail({ who, subject, ...layout, details: [...(layout.details ?? []), ...fileLines], refs })
     : fromLegacy({ who, subject, text: String(text ?? "").slice(0, 60_000) + (plan.lines.length ? `\n\nFiles:\n${plan.lines.map((l) => `- ${l}`).join("\n")}` : ""), refs }));
+  // IN HER THREAD (26 Oct 2026, the finished meeting prep): `thread` is the Message-IDs of the emails
+  // this answers, oldest first; the newest is In-Reply-To and all of them are References.
+  const ids = (Array.isArray(thread) ? thread : [thread]).filter((x) => /^<[^<>\s]+@[^<>\s]+>$/.test(String(x ?? ""))).slice(-20);
+  const threadHeaders = ids.length ? { "In-Reply-To": ids[ids.length - 1], References: ids.join(" ") } : {};
+  const headers = {
+    ...(laid.refs.length ? { "X-Boss-Ref": laid.refs.join(" ") } : {}),
+    ...(laid.kind === "problem" || laid.kind === "morning" ? { "X-Boss-Kind": laid.kind } : {}),
+    ...threadHeaders,
+  };
   return {
     from: sender.from,
     to: Array.isArray(to) ? to : [to],
@@ -217,9 +226,7 @@ export function employeeMail(sender, { to, subject, text, html: _html, files, la
     subject: laid.subject.slice(0, 200),
     text: laid.text,
     html: laid.html,
-    ...(laid.refs.length || laid.kind === "problem" || laid.kind === "morning"
-      ? { headers: { ...(laid.refs.length ? { "X-Boss-Ref": laid.refs.join(" ") } : {}), ...(laid.kind === "problem" || laid.kind === "morning" ? { "X-Boss-Kind": laid.kind } : {}) } }
-      : {}),
+    ...(Object.keys(headers).length ? { headers } : {}),
     ...(attachments.length ? { attachments } : {}),
   };
 }

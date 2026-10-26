@@ -9,11 +9,23 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
-import { macWork, cancelCommand, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent, errandFollowedUp, errandRemindersDue, errandReminded } from "./run";
+import { macWork, cancelCommand, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent, errandFollowedUp, errandRemindersDue, errandReminded, openMeetingPrep, prepFinished, prepMentions } from "./run";
 
 export const commands = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 commands.post("/tick", async (c) => ok(c, await macWork(c.env)));
+
+// Simone's meeting prep: one row per prep, so her reply in its thread finds it (meeting-prep.mjs).
+commands.post("/meeting-prep", async (c) => {
+  const b = await c.req.json<{ key?: string; spec?: Record<string, unknown>; asked?: boolean }>().catch(() => null);
+  if (!b?.key || !b.spec) throw badRequest("key and spec are both required");
+  return ok(c, { id: await openMeetingPrep(c.env, { key: b.key, spec: b.spec, asked: Boolean(b.asked) }) });
+});
+commands.get("/meeting-prep/mentions", async (c) => ok(c, { cards: await prepMentions(c.env, c.req.queries("q") ?? []) }));
+commands.post("/:id/prep-done", async (c) => {
+  const b = await c.req.json<{ message_id?: string }>().catch(() => ({} as { message_id?: string }));
+  return ok(c, { recorded: await prepFinished(c.env, c.req.param("id"), { message_id: b?.message_id ?? null }) });
+});
 
 commands.get("/:id", async (c) => {
   const row = await getCommand(c.env, c.req.param("id"));
