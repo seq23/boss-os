@@ -111,6 +111,9 @@ describe("their answer, read for her", () => {
   });
   it("a confirmation needs nothing; an alternative time is hers to take", () => {
     expect(readErrandReply("You're all set for two at 8:30pm Thursday. See you then.").kind).toBe("confirmed");
-    expect(readErrandReply("We are fully booked after 8, but we have a table at 6:30 instead.").kind).toBe("alternative");
+    const alt = readErrandReply("We are fully booked after 8, but we have a table at 6:30 instead.");
+    expect(alt.kind).toBe("decide");
+    expect(alt.what_you_do).toContain("They offered 6:30");
+    expect(alt.what_you_do).not.toMatch(/Nothing|booked/);
   });
 });

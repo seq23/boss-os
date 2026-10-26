@@ -346,15 +346,16 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   /*
    * A BUSINESS ANSWERING ONE OF HER ERRANDS (owner, 26 Oct 2026). Simone wrote to them from simone@
    * with Reply-To simone@, so their answer lands here. It is RECORDED AND READ FOR HER, never run and
-   * never answered: nothing goes back to them from this path, nothing they write becomes work, and a
-   * card or deposit request goes to her (src/worker/boss/commands/run.ts errandReplied).
+   * never answered from here: nothing they write becomes work, a card or deposit request goes to her,
+   * and only HER reply sends anything back, in their thread (src/worker/boss/commands/run.ts
+   * errandReplied, answerErrand).
    */
   const errand = !isOwner(sender) && message.rawSize <= MAX_BODY_BYTES ? await openErrandFor(env, sender, now) : null;
   if (errand) {
     const raw = await new Response(message.raw).text();
     const text = taskBodyFrom(raw)?.readable ?? "";
     await recordArrival("ERRAND_REPLY", `From ${sender}, answering a request Simone sent for you. Read and told to you; nothing was run or sent back.`);
-    await errandReplied(env, errand, { from: sender, subject, text, dmarc }, now);
+    await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId }, now);
     await finish({ outcome: "ERRAND_REPLY", why: `Their answer to Simone's request ${errand.id}, told to you plainly.`, employeeId: "emp_chief", reply: null });
     return { mailId, outcome: "ERRAND_REPLY", employeeId: "emp_chief", taskId: null, reply: null };
   }

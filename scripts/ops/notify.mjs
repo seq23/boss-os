@@ -394,8 +394,10 @@ export async function sendAsEmployee(who, msg, fetchImpl = fetch) {
  */
 export const ERRAND_FROM = "Simone <simone@sequoiataylor.com>";
 export const ERRAND_REPLY_TO = "simone@sequoiataylor.com";
-export function errandMail({ to, subject, text, cc = [] }) {
-  return { from: ERRAND_FROM, to: [to], reply_to: ERRAND_REPLY_TO, subject: String(subject).slice(0, 200), text, ...(cc.length ? { cc } : {}) };
+export function errandMail({ to, subject, text, cc = [], inReplyTo = null }) {
+  // In their thread (26 Oct 2026): a follow-up answers THEIR message, so their mail client threads it.
+  const thread = inReplyTo && /^<[^<>\s]+@[^<>\s]+>$/.test(inReplyTo) ? { headers: { "In-Reply-To": inReplyTo, References: inReplyTo } } : {};
+  return { from: ERRAND_FROM, to: [to], reply_to: ERRAND_REPLY_TO, subject: String(subject).slice(0, 200), text, ...(cc.length ? { cc } : {}), ...thread };
 }
 /** What is wrong with an errand payload, by name. `[]` means it may go. Pure. */
 export function errandPayloadProblems(p, { owner = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {

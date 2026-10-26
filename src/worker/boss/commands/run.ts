@@ -24,7 +24,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
 import {
-  commandsIn, commandReplyIn, readErrandReply, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
+  commandsIn, commandReplyIn, ownWords, readErrandReply, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
 } from "../../../shared/boss/commands/parse.mjs";
 import { clashes, createInvite, replaceGuest, deleteInvite, sendOne } from "./google";
 
@@ -448,8 +448,9 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
 
 /** Her reply on a command's thread. The newest open command it can apply to takes it. */
 async function answerCommands(env: Env, rows: CommandRow[], text: string, now: number): Promise<string | null> {
-  const said = commandReplyIn(text, now);
-  if (!said) return null;
+  const verb = commandReplyIn(text, now);
+  if (!verb) return null;
+  const said = { ...verb, raw: ownWords(text) };
   const order = [...rows].sort((a, b) => b.updated_at - a.updated_at);
   for (const row of order) {
     const line = await answerOne(env, row, said, now);
@@ -472,11 +473,7 @@ function waitingFor(row: CommandRow): string {
 
 async function answerOne(env: Env, row: CommandRow, said: Json, now: number): Promise<string | null> {
   const spec = j(row.spec); const result = j(row.result);
-  if (row.kind === "errand") {
-    if (said.verb === "cancel" && row.state === "queued") { await save(env, row.id, { state: "cancelled" }, now); return "Cancelled. Nothing was sent."; }
-    if (said.verb === "cancel") return `Too late to stop: it went to ${spec.to}. I'm watching for their answer.`;
-    return null;
-  }
+  if (row.kind === "errand") return answerErrand(env, row, said, String(said.raw ?? ""), now);
   if (row.kind === "email") {
     if (said.verb === "send") return approveAndSend(env, row, now);
     if (said.verb === "retry") return redraft(env, row, null, now);
@@ -574,6 +571,8 @@ export async function macWork(env: Env, now = Date.now()) {
   const notices = await rows(`SELECT * FROM boss_commands WHERE notice_state = 'due' ORDER BY updated_at LIMIT 20`);
   const codes = await rows(`SELECT * FROM boss_commands WHERE kind = 'access_code' AND state = 'queued' ORDER BY created_at LIMIT 10`);
   const errands = await rows(`SELECT * FROM boss_commands WHERE kind = 'errand' AND state = 'queued' ORDER BY created_at LIMIT 10`);
+  // Her answer or her cancellation, to go to the business in THEIR thread (In-Reply-To their message).
+  const followUps = await rows(`SELECT * FROM boss_commands WHERE kind = 'errand' AND state = 'follow_up' ORDER BY updated_at LIMIT 10`);
   return {
     lookups: lookups.map((r) => ({ id: r.id, spec: j(r.spec) })),
     drafts: drafts.map((r) => ({ id: r.id, spec: j(r.spec), change_note: j(r.result).change_note ?? null, previous: j(r.result).previous ?? null })),
@@ -581,6 +580,10 @@ export async function macWork(env: Env, now = Date.now()) {
     notices: notices.map((r) => ({ id: r.id, notice: j(r.notice) })),
     codes: codes.map((r) => ({ id: r.id, spec: j(r.spec) })),
     errands: errands.map((r) => ({ id: r.id, spec: j(r.spec), asked_at: r.created_at })),
+    errand_follow_ups: followUps.filter((r) => j(r.result).pending?.text).map((r) => {
+      const res = j(r.result);
+      return { id: r.id, to: j(r.spec).to, subject: res.pending.subject, text: res.pending.text, purpose: res.pending.purpose, in_reply_to: res.thread?.message_id ?? null };
+    }),
   };
 }
 
@@ -615,6 +618,9 @@ export const ERRAND_WATCH_MS = 21 * 86_400_000;
 /** Free-mail domains: an errand to one of these is answered only from that exact address. */
 const FREE_MAIL_RE = /@(?:gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|aol|proton|protonmail|live|msn|gmx)\.[a-z.]+$/i;
 
+/** Every state in which an errand still has a live thread with the business. */
+const ERRAND_LIVE = ["sent", "replied", "follow_up", "booked", "cancel_sent"];
+
 /**
  * The sent errand a stranger's email answers: from the address Simone wrote to, or — for a business
  * domain — anyone at that domain (the club's host answers for reservations@). Null when it answers none.
@@ -623,8 +629,8 @@ export async function openErrandFor(env: Env, sender: string, now = Date.now()):
   const from = String(sender ?? "").trim().toLowerCase();
   if (!from.includes("@")) return null;
   const { results } = await env.DB.prepare(
-    `SELECT * FROM boss_commands WHERE kind = 'errand' AND state IN ('sent','replied') AND updated_at > ? ORDER BY updated_at DESC LIMIT 50`,
-  ).bind(now - ERRAND_WATCH_MS).all<CommandRow>();
+    `SELECT * FROM boss_commands WHERE kind = 'errand' AND state IN (${ERRAND_LIVE.map(() => "?").join(",")}) AND updated_at > ? ORDER BY updated_at DESC LIMIT 50`,
+  ).bind(...ERRAND_LIVE, now - ERRAND_WATCH_MS).all<CommandRow>();
   for (const r of results ?? []) {
     const to = String(j(r.spec).to ?? "").toLowerCase();
     if (!to) continue;
@@ -643,30 +649,191 @@ export async function errandSent(env: Env, id: string, out: { message_id: string
   return true;
 }
 
+/** The words that say what and when the booking is: "Thursday, October 29" from her request or subject. */
+function errandWords(spec: Json, result: Json): string {
+  return `${result.subject ?? ""}\n${result.request ?? ""}\n${spec.ask ?? ""}`;
+}
+async function ensureTap(env: Env, row: CommandRow, now: number): Promise<string> {
+  if (row.tap_token) return row.tap_token;
+  const token = tapToken();
+  await save(env, row.id, { tap_token: token }, now);
+  return token;
+}
+
 /**
- * THEIR ANSWER, TOLD TO HER PLAINLY: What I asked for / What they said / What you need to do. Nothing
- * is ever sent back to them from here, and a card or deposit request is hers, never an agent's.
+ * THEIR ANSWER, TOLD TO HER PLAINLY: What I asked for / What they said (all of it) / What you need
+ * to do. "Booked" only for a real confirmation of one time with nothing asked (readErrandReply);
+ * a choice, a question or a fee is a Decide item she answers by replying, and a card or deposit is
+ * hers, never an agent's. Nothing goes back to them from here: her reply is what sends a follow-up.
  */
-export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean }, now = Date.now()): Promise<void> {
+export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean; messageId?: string | null }, now = Date.now()): Promise<void> {
   const spec = j(row.spec); const result = j(row.result);
   const read = readErrandReply(reply.text || reply.subject, spec.to);
-  const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 4000), kind: read.kind, dmarc: reply.dmarc }];
-  await save(env, row.id, { state: "replied", result: { ...result, replies } }, now);
+  const offer = read.offer;
+  const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 8000), kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];
+  const thread = { message_id: reply.messageId ?? result.thread?.message_id ?? null, subject: /^re:/i.test(reply.subject) ? reply.subject.slice(0, 200) : `Re: ${String(result.subject ?? reply.subject).slice(0, 196)}`, greet: offer.greet ?? result.thread?.greet ?? null };
   const asked = String(result.request ?? spec.ask ?? "").slice(0, 300);
-  const details = [
-    `What I asked for: ${asked}`,
-    `What they said: ${read.what_they_said}`,
-    `What you need to do: ${read.what_you_do}`,
-    ...(reply.dmarc ? [] : ["Their email could not be fully proven to come from them, so check it before acting on it."]),
-  ];
-  const card = read.kind === "card";
+  const unproven = reply.dmarc ? [] : ["Their email could not be fully proven to come from them, so check it before acting on it."];
+
+  // Their answer to Simone's cancellation.
+  if (row.state === "cancel_sent") {
+    const done = /\bcancel(?:l?ed|lation)\b/i.test(offer.text) && !/\?/.test(offer.text);
+    await save(env, row.id, { state: done ? "cancelled" : "cancel_sent", result: { ...result, replies, thread } }, now);
+    await owe(env, row.id, {
+      subject: done ? "Cancelled: they confirmed it" : "They answered about the cancellation",
+      happened: done ? `${spec.to} confirmed the cancellation.` : `${spec.to} answered Simone's cancellation.`,
+      details: [`What they said: ${read.what_they_said}`, ...(done ? [] : [`What you need to do: ${read.what_you_do}`]), ...unproven],
+    });
+    await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_cancel_answered", detail: { done, from: reply.from } });
+    return;
+  }
+
+  // A confirmation of one time: the booking is real, and its reminder is set 28 hours before.
+  const date = errandDateIn(errandWords(spec, result), result.sent_at ?? row.created_at, ERRAND_TZ);
+  const one = offer.options.length === 1 ? offer.options[0] : null;
+  const pending = result.booking && !result.booking.confirmed ? result.booking : null;
+  const confirmsPending = pending && offer.confirms && !offer.asks && (!one || one.time === pending.time);
+  let booking = result.booking ?? null;
+  if (read.kind === "confirmed" && one && date) booking = { ...(bookingAt(date, one, ERRAND_TZ) ?? {}), label: one.label, confirmed: true };
+  else if (confirmsPending) booking = { ...pending, confirmed: true };
+  else if (offer.confirms && one && date && !offer.asks) booking = { ...(bookingAt(date, one, ERRAND_TZ) ?? {}), label: one.label, confirmed: true };
+  const confirmed = Boolean(booking?.confirmed) && (read.kind === "confirmed" || confirmsPending || (offer.confirms && !offer.asks));
+  const kind = confirmsPending && read.kind !== "card" && !offer.asks ? "confirmed" : read.kind;
+  const rules = { rules: offer.rules.length ? offer.rules : (result.rules ?? []), cancel_rule: offer.cancel_rule.length ? offer.cancel_rule : (result.cancel_rule ?? []) };
+  const decideOpen = kind === "decide" && !confirmed;
+  await save(env, row.id, {
+    state: confirmed ? "booked" : "replied",
+    result: { ...result, replies, thread, ...rules, booking: confirmed ? booking : (booking ?? null), decide_open: decideOpen, offer: { options: offer.options, needs: offer.needs, rules: offer.rules, cancel_rule: offer.cancel_rule, greet: offer.greet } },
+  }, now);
+  const fresh = (await getCommand(env, row.id))!;
+  const token = kind === "decide" || confirmed ? await ensureTap(env, fresh, now) : null;
+  const when = booking?.at ? bookingWhen(booking.at, booking.tz ?? ERRAND_TZ) : null;
+  const doNow = kind === "confirmed" || (confirmed && kind !== "card")
+    ? `Nothing. They confirmed ${when ?? (one ? one.time : "it")}. ${booking?.at && confirmed ? " I'll check with you 28 hours before." : ""}${offer.cancel_rule.length ? ` Cancelling: ${offer.cancel_rule.join(" ")}` : ""}`
+    : read.what_you_do;
+  const details = [`What I asked for: ${asked}`, `What they said: ${read.what_they_said}`, `What you need to do: ${doNow}`, ...unproven];
+  const subject = kind === "card" ? "Your request needs you: they want a card"
+    : kind === "confirmed" || (confirmed && booking?.at) ? "Your request is booked"
+    : kind === "decide" ? (offer.options.length > 1 ? "Your request needs you: pick a time" : "Your request needs you: they asked something")
+    : "They answered your request";
   await owe(env, row.id, {
-    subject: card ? "Your request needs you: they want a card" : read.kind === "confirmed" ? "Your request is booked" : "They answered your request",
+    subject,
     happened: `${spec.to} answered the request I sent for you.`,
     details,
-    morning: card
+    morning: kind === "card"
       ? { decide: { title: `${spec.to} wants a card or deposit to hold your request`, body: `${read.what_they_said} Only you can give that.`, buttons: [{ label: "Write to them", url: `mailto:${spec.to}` }], priority: 2 } }
-      : { line: `${spec.to} answered your request: ${read.kind === "confirmed" ? "it's booked" : read.what_you_do}` },
+      : decideOpen && token
+        ? { decide: { title: `${spec.to} answered your request: ${offer.options.length > 1 ? "pick a time" : "they need something from you"}`, body: read.what_you_do, buttons: [{ label: "Answer Simone", url: tapUrl(token, "answer") }, { label: "Cancel it", url: tapUrl(token, "cancel") }], priority: 2 } }
+        : { line: `${spec.to} answered your request: ${subject === "Your request is booked" ? `it's booked${when ? `, ${when}` : ""}` : doNow}` },
   });
-  await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_answered", detail: { kind: read.kind, from: reply.from, dmarc: reply.dmarc } });
+  await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_answered", detail: { kind, confirmed, from: reply.from, dmarc: reply.dmarc } });
+}
+
+/**
+ * HER ANSWER, SENT ON (owner, 26 Oct 2026). Her reply on an errand's thread is the approval for what
+ * it says: a time and a phone number go to the business in the SAME thread; "cancel" cancels with
+ * them in the same thread; "yes, keep it" changes nothing. A card number or card words never go: she
+ * is told to give those herself. The Mac sends it on its next tick (`errand_follow_ups`).
+ */
+async function answerErrand(env: Env, row: CommandRow, said: Json, raw: string, now: number): Promise<string | null> {
+  const spec = j(row.spec); const result = j(row.result);
+  const offer = result.offer ?? { options: [], needs: [] };
+  const a = errandAnswerIn(raw, offer);
+  const cancel = said.verb === "cancel" || a.cancel;
+  if (cancel && row.state === "queued") { await save(env, row.id, { state: "cancelled" }, now); return "Cancelled. Nothing was sent."; }
+  if (cancel && ["cancel_sent", "cancelled"].includes(row.state)) return `Already cancelled with ${spec.to}.`;
+  if (cancel) {
+    const b = result.booking ?? null;
+    const what = b ? `the ${b.time}${b.label ? ` ${b.label}` : ""}` : null;
+    const when = b?.at ? new Intl.DateTimeFormat("en-US", { timeZone: b.tz ?? ERRAND_TZ, weekday: "long", month: "long", day: "numeric" }).format(new Date(b.at)) : null;
+    const text = errandCancelText({ greet: result.thread?.greet ?? null, what, when, party: partyIn(errandWords(spec, result)) });
+    await save(env, row.id, { state: "follow_up", result: { ...result, decide_open: false, pending: { purpose: "cancel", text, subject: result.thread?.subject ?? `Re: ${result.subject ?? "Reservation request"}`, at: now } } }, now);
+    await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_cancel_on_her_word", detail: { to: spec.to } });
+    return `Cancelling it: I'm writing to ${spec.to} now, in the same thread, to cancel${what ? ` ${what}` : ""}${when ? ` on ${when}` : ""}. I'll tell you when they confirm.`;
+  }
+  if (a.keep && ["booked", "sent", "follow_up"].includes(row.state)) return "Kept. Nothing changes.";
+  if (!result.decide_open) return null;
+  if (a.card) return `I never send card details. If you want to give them a card, write to ${spec.to} yourself; nothing was sent.`;
+  if (a.missing.length) return `To send it I still need ${a.missing.join(" and ")}. Nothing was sent yet.`;
+  const date = errandDateIn(errandWords(spec, result), result.sent_at ?? row.created_at, ERRAND_TZ);
+  const booking = a.choice && date ? { ...(bookingAt(date, a.choice, ERRAND_TZ) ?? {}), label: a.choice.label, confirmed: false } : result.booking ?? null;
+  const day = booking?.at ? new Intl.DateTimeFormat("en-US", { timeZone: ERRAND_TZ, weekday: "long", month: "long", day: "numeric" }).format(new Date(booking.at)) : null;
+  const text = errandFollowUpText({ greet: result.thread?.greet ?? offer.greet ?? null, choice: a.choice, when: day, party: partyIn(errandWords(spec, result)), phone: a.phone, offer });
+  const problems = followUpProblems(text);
+  if (problems.length) return `I didn't send it: ${problems.join("; ")}.`;
+  await save(env, row.id, { state: "follow_up", result: { ...result, decide_open: false, booking, pending: { purpose: "answer", text, subject: result.thread?.subject ?? `Re: ${result.subject ?? "Reservation request"}`, at: now } } }, now);
+  await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_answer_on_her_word", detail: { to: spec.to, choice: a.choice?.time ?? null } });
+  return `Sending this to ${spec.to} now, in the same thread, and I'll tell you when they confirm:\n\n${text}`;
+}
+
+/** The Mac sent a follow-up in their thread: the watch goes on (or the cancellation is awaited). */
+export async function errandFollowedUp(env: Env, id: string, out: { message_id: string }, now = Date.now()): Promise<boolean> {
+  const row = await getCommand(env, id);
+  if (!row || row.kind !== "errand" || row.state !== "follow_up") return false;
+  const result = j(row.result); const spec = j(row.spec);
+  const p = result.pending ?? {};
+  const follow_ups = [...(result.follow_ups ?? []), { message_id: out.message_id, sent_at: now, purpose: p.purpose, in_reply_to: result.thread?.message_id ?? null }];
+  await save(env, id, { state: p.purpose === "cancel" ? "cancel_sent" : "sent", result: { ...result, follow_ups, pending: null, status: p.purpose === "cancel" ? "waiting for them to confirm the cancellation" : "waiting for their confirmation" } }, now);
+  await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: id, action: p.purpose === "cancel" ? "errand_cancel_sent" : "errand_follow_up_sent", detail: { to: spec.to, message_id: out.message_id } });
+  if (p.purpose === "cancel") await owe(env, id, { subject: "Cancelling your booking", happened: `I asked ${spec.to} to cancel, in the same thread. I'll tell you when they confirm.`, details: [`What I sent: ${String(p.text ?? "").replace(/\s+/g, " ").trim()}`] });
+  return true;
+}
+
+/**
+ * "DO YOU STILL WANT TO GO?" (owner, 26 Oct 2026: "Simone needs to send a reminder 28 hrs before to
+ * ask if i still want to go"). Every errand with a booking time gets one email 28 hours before it
+ * (REMINDER_LEAD_MS, the true instant, so a clock-change weekend lands right): what, where, when, their
+ * rules and cancellation terms, and two taps, "Yes, keep it" / "Cancel it". A booking they have not
+ * confirmed yet still gets it, and says so.
+ */
+export async function errandRemindersDue(env: Env, now = Date.now()): Promise<Array<{ id: string; notice: Notice }>> {
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM boss_commands WHERE kind = 'errand' AND state IN ('sent','replied','follow_up','booked') ORDER BY updated_at DESC LIMIT 200`,
+  ).all<CommandRow>();
+  const due: Array<{ id: string; notice: Notice }> = [];
+  for (const row of results ?? []) {
+    const result = j(row.result);
+    const b = result.booking;
+    if (!b?.at || result.reminder_sent_at || now < reminderDueAt(b.at) || now >= b.at) continue;
+    const token = await ensureTap(env, row, now);
+    due.push({ id: row.id, notice: reminderNotice(j(row.spec), result, token) });
+  }
+  return due;
+}
+export function reminderNotice(spec: Json, result: Json, token: string): Notice {
+  const b = result.booking;
+  const when = bookingWhen(b.at, b.tz ?? ERRAND_TZ);
+  const what = `${b.label ? `The ${b.time} ${b.label}` : `Your booking at ${b.time}`}${partyIn(errandWords(spec, result)) ? `, party of ${partyIn(errandWords(spec, result))}` : ""}`;
+  const rules: string[] = result.rules ?? [];
+  const cancel: string[] = result.cancel_rule ?? [];
+  return {
+    subject: `Do you still want to go? ${when}`,
+    happened: `Your booking is in 28 hours. ${b.confirmed ? "They have confirmed it." : "They have NOT confirmed it yet: I asked them to, and I'm watching for their answer."}`,
+    details: [
+      `What: ${what}`,
+      `Where: ${String(result.request ?? "").match(/\bat\s+([A-Z][^,]+?)\s+on\b/)?.[1] ?? "the place you asked for"} (${spec.to})`,
+      `When: ${when} (New York time)`,
+      ...(rules.length ? [`Their rules: ${rules.join(" ")}`] : []),
+      ...(cancel.length ? [`Cancelling: ${cancel.join(" ")}`] : []),
+      `Do you still want to go? Tap one, or reply "yes" or "cancel". If you cancel, Simone tells them in the same thread.`,
+    ],
+    decide: [{
+      title: "Do you still want to go?",
+      body: `${what}, ${when}.`,
+      buttons: [{ label: "Yes, keep it", url: tapUrl(token, "keep") }, { label: "Cancel it", url: tapUrl(token, "cancel") }],
+    }],
+  };
+}
+export async function errandReminded(env: Env, id: string, now = Date.now()): Promise<boolean> {
+  const row = await getCommand(env, id);
+  if (!row || row.kind !== "errand") return false;
+  await save(env, id, { result: { ...j(row.result), reminder_sent_at: now } }, now);
+  await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: id, action: "errand_reminder_sent", detail: {} });
+  return true;
+}
+/** Her tap or her reply on an errand, from the tap page: keep, cancel, or her answer in words. */
+export async function errandTap(env: Env, row: CommandRow, action: "keep" | "cancel" | "answer", words = "", now = Date.now()): Promise<string> {
+  if (action === "keep") return "Kept. Nothing changes.";
+  if (action === "cancel") return (await answerErrand(env, row, { verb: "cancel" }, "cancel", now)) ?? "Nothing to cancel on this one.";
+  return (await answerErrand(env, row, { verb: "note" }, words, now)) ?? "Got it, but there was nothing open to answer.";
 }

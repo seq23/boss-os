@@ -5,10 +5,13 @@
  * token here). A GET never acts: it renders a confirm page whose own POST does. Send approves
  * EXACTLY the words her email showed and nothing else; Change asks what to change; Try again
  * redrafts. A used or unknown token says "this link has done its job".
+ *
+ * An ERRAND's taps (26 Oct 2026): "Yes, keep it" changes nothing; "Cancel it" has Simone cancel
+ * with the business in their thread; "Answer Simone" takes her answer to their options in words.
  */
 import type { Context } from "hono";
 import type { Env } from "../env";
-import { approveAndSend, redraft, getCommand } from "./run";
+import { approveAndSend, redraft, getCommand, errandTap } from "./run";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 function page(title: string, line: string, extra = ""): string {
@@ -32,6 +35,19 @@ async function find(env: Env, token: string) {
 export async function commandTapGet(c: Context<any>, token: string): Promise<Response> {
   const action = c.req.query("do") ?? "";
   const row = await find(c.env as Env, token);
+  if (row?.kind === "errand") {
+    if (["cancelled", "cancel_sent"].includes(row.state)) return c.html(page("Already cancelled", "Simone has asked them to cancel. Nothing else to do here."));
+    if (action === "keep") return c.html(page("Kept", "Nothing changes. Enjoy it."));
+    if (action === "answer") {
+      return c.html(page("Your answer", "Write it the way you'd tell Simone (for example \"11pm, my number is …\"). Never a card number: Simone won't send one.",
+        `<form method="post" action="?do=answer"><textarea name="note" required></textarea><br><button type="submit">Send to Simone</button></form>`));
+    }
+    if (action === "cancel") {
+      return c.html(page("Cancel it?", "Simone will write to them in the same thread to cancel.",
+        `<form method="post" action="?do=cancel"><button type="submit">Yes, cancel it</button></form>`));
+    }
+    return c.html(page("This link has done its job", "Nothing else to do here."));
+  }
   if (!row || ["sent", "cancelled"].includes(row.state)) return c.html(page("This link has done its job", row?.state === "sent" ? "That email has already gone." : "Nothing else to do here."));
   if (action === "change") {
     return c.html(page("What should change?", "Say it the way you'd say it to Simone. Nothing is sent; the new version comes back to you first.",
@@ -47,6 +63,12 @@ export async function commandTapPost(c: Context<any>, token: string): Promise<Re
   const env = c.env as Env;
   const action = c.req.query("do") ?? "";
   const row = await find(env, token);
+  if (row?.kind === "errand" && ["keep", "cancel", "answer"].includes(action)) {
+    const form = action === "answer" ? await c.req.parseBody().catch(() => ({} as Record<string, unknown>)) : {};
+    const words = String((form as Record<string, unknown>).note ?? "").trim().slice(0, 2000);
+    const line = await errandTap(env, row, action as "keep" | "cancel" | "answer", words);
+    return c.html(page(action === "cancel" ? "Cancelling" : action === "keep" ? "Kept" : "Got it", line));
+  }
   if (!row || ["sent", "cancelled"].includes(row.state)) return c.html(page("This link has done its job", "Nothing else to do here."));
   if (action === "send") {
     const line = await approveAndSend(env, row);

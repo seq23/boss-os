@@ -30,7 +30,7 @@
 import { bossApi, askClaudeJson, googleToken, gmailHeaders, OWNER_TO } from "./lib/duty-kit.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, errandMail, postErrandMail } from "./notify.mjs";
 import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
-import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
+import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, followUpProblems, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
 
 /*
  * TIME-2-READ'S CODE TABLE (seq23/dailystory, supabase/migrations/20261025120000_access_codes.sql).
@@ -171,6 +171,16 @@ async function main() {
     else { await api.post(`/commands/${e.id}/failed`, { why: `the send was refused (${sent.error})` }); failures.push(e.id); }
   }
 
+  // Her answer or her cancellation, in THEIR thread (her reply was the approval). Never a card: the
+  // Worker refused those words before they were queued, and followUpProblems checks again here.
+  for (const f of work.errand_follow_ups ?? []) {
+    const problems = followUpProblems(f.text);
+    if (problems.length) { await api.post(`/commands/${f.id}/failed`, { why: `the follow-up was not fit to send (${problems.join("; ")})` }); failures.push(f.id); continue; }
+    const sent = await postErrandMail(errandMail({ to: f.to, subject: f.subject, text: f.text, inReplyTo: f.in_reply_to }));
+    if (sent.ok) { await api.post(`/commands/${f.id}/errand-followed-up`, { message_id: sent.id }); did++; }
+    else { console.error(`NAMED STOP [ERRAND_FOLLOW_UP_NOT_SENT] ${f.id}: ${sent.error}`); failures.push(f.id); }
+  }
+
   const byMailbox = new Map();
   for (const b of work.bounce_checks ?? []) if (b.mailbox && b.address) byMailbox.set(b.mailbox, [...(byMailbox.get(b.mailbox) ?? []), b]);
   for (const [mailbox, checks] of byMailbox) {
@@ -184,7 +194,7 @@ async function main() {
   }
 
   // Notices last, so a lookup or draft made this tick goes out this tick.
-  const again = (work.lookups?.length || work.drafts?.length || work.codes?.length || work.errands?.length || did) ? await api.post("/commands/tick") : work;
+  const again = (work.lookups?.length || work.drafts?.length || work.codes?.length || work.errands?.length || work.errand_follow_ups?.length || did) ? await api.post("/commands/tick") : work;
   const [simone] = sendersFor("Simone");
   for (const n of again.notices ?? []) {
     const res = await postEmployeeMail(simone, employeeMail(simone, noticeArgs(n.id, n.notice)));
