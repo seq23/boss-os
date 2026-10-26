@@ -485,6 +485,9 @@ export const CHECKS = {
   gsc_truth_fresh: (ctx) => repoFresh(ctx, GSC_TRUTH_NAMES),
   index_coverage_fresh: (ctx) => repoFresh(ctx, ["index_coverage.json"]),
   clarity(ctx) {
+    // A site marked clarity: false in sites.json does not use Clarity, by the owner's ruling (25 Oct
+    // 2026: Clarity only where visitors fill a form or buy; how-we-know's audience is on YouTube).
+    if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
     const h = ctx.home?.html ?? "";
     return /clarity\.ms|clarity\.js|\/clarity[-.]|microsoft clarity/i.test(h) || ctx.files.__clarity_loader ? pass("Clarity loads on the homepage") : fail("the homepage does not load Clarity");
   },
