@@ -337,6 +337,37 @@ describe("the run measures with the branch's definition, never a stale checkout'
   });
 });
 
+describe("the scheduled audit runs current code (26 Oct 2026)", () => {
+  // definitionChoice fixes the DATA. The CODE is loaded before any of it can run, and the launchd
+  // job (com.seq.boss-sites-audit) runs npm run sites:audit in her own checkout, which nothing
+  // updated: it sat at #147. sites:audit now fast-forwards that checkout first — and only that.
+  const sh = readFileSync("scripts/ops/self-update-checkout.sh", "utf8");
+
+  it("sites:audit fast-forwards before it measures", () => {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    expect(pkg.scripts["sites:audit"]).toContain("scripts/ops/self-update-checkout.sh");
+    expect(pkg.scripts["sites:audit"]).toContain("search-readiness-audit.mjs");
+    expect(pkg.scripts["sites:audit"].indexOf("self-update-checkout"))
+      .toBeLessThan(pkg.scripts["sites:audit"].indexOf("search-readiness-audit"));
+  });
+
+  it("it is a fast-forward on the default branch of a clean tree, and nothing else", () => {
+    expect(sh).toContain("merge --ff-only");
+    expect(sh).toContain("git status --porcelain");          // dirty tree: left alone
+    expect(sh).toContain("merge-base --is-ancestor");        // strict fast-forward only
+    expect(sh).toMatch(/not \$DEFAULT; left alone/);         // never a branch switch
+    // Her checkout is never rewritten, rebased, stashed or committed into by this script.
+    for (const forbidden of ["reset --hard", "git rebase", "git stash", "git commit", "checkout -B", "push"]) {
+      expect(sh, `${forbidden} must never appear in the self-update step`).not.toContain(forbidden);
+    }
+  });
+
+  it("every refusal exits 0, so the audit always runs", () => {
+    expect(sh.match(/exit 0/g)!.length).toBeGreaterThanOrEqual(7);
+    expect(sh).not.toMatch(/exit [1-9]/);
+  });
+});
+
 describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oct 2026)", () => {
   const prot = [{ path: "/download", rule: "PROTECTED" }];
   const briefs = [

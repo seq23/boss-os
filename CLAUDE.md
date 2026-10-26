@@ -160,3 +160,7 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    `checklist.json` and `sites.json` from `origin/<default>` every run (`definitionChoice`, pinned by
    `tests/searchReadiness.test.ts`), says so when the checkout has drifted, and writes the definition
    it used onto the results and the fix queue. A stale definition does not fail; it invents work.
+   `npm run sites:audit` also fast-forwards that checkout first (`scripts/ops/self-update-checkout.sh`),
+   because the code is loaded before any definition can be read: default branch only, clean tree only,
+   strict fast-forward only, every refusal exits 0 so the audit still runs. Never a reset, rebase,
+   stash, commit or branch switch in her checkout.
