@@ -190,9 +190,9 @@ export function genericReasonsIn(reasons) {
  * days.
  */
 const NOTE_BINDINGS = [
-  { what: "why this person, this week", needle: "p.why", inside: "async function emailHer" },
-  { what: "what to say to them", needle: "p.say", inside: "async function emailHer" },
-  { what: "the person's real name", needle: "p.name", inside: "async function emailHer" },
+  { what: "why this person, this week", needle: "p.why", inside: "export function weeklyNote" },
+  { what: "what to say to them", needle: "p.say", inside: "export function weeklyNote" },
+  { what: "the person's real name", needle: "p.name", inside: "export function weeklyNote" },
   {
     what: "a week with nobody in it, told apart from a week that never ran",
     needle: "count === 0",
@@ -206,7 +206,7 @@ const NOTE_BINDINGS = [
  * The first version scanned the file, and a `console.log` of the same value satisfied it — so
  * deleting `${p.why}` from the letter she actually receives passed, because a debug line in a
  * terminal nobody opens still mentioned it. That is the Simone defect in a validator: reporting into
- * a log and calling it delivery. The scan now starts at `async function emailHer` and asks only
+ * a log and calling it delivery. The scan now starts at `export function weeklyNote` (the letter emailHer sends, 26 Oct 2026) and asks only
  * about what is sent.
  */
 export function noteUnboundIn(src) {
@@ -285,9 +285,9 @@ function selfTest() {
   say("a reason that quotes nothing is caught", ["rank 1"],
     genericReasonsIn(reasonsIn('return {\n      rank: 1,\n      why: "They have gone quiet.",\n      say: `Say hello.`,\n    };')));
   say("a note that cannot tell a quiet week from a dead job is caught", ["count === 0"],
-    noteUnboundIn("async function emailHer p.why p.say p.name").map((b) => b.needle));
+    noteUnboundIn("export function weeklyNote p.why p.say p.name").map((b) => b.needle));
   say("a debug log does not count as delivery", ["p.why"],
-    noteUnboundIn("async function emailHer p.say p.name\nasync function noteInInbox count === 0 p.why")
+    noteUnboundIn("export function weeklyNote p.say p.name\nasync function noteInInbox count === 0 p.why")
       .map((b) => b.needle));
 
   const total = FIXTURES.length + WITHHOLD_FIXTURES.length + 5;

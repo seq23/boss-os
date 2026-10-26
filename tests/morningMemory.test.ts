@@ -64,3 +64,12 @@ describe("one fix job per failed job family", () => {
     expect(fixJobsToOpen(tasks, { tasks, repoChanges: open })).toEqual([]);
   });
 });
+
+describe("a prospect-template card is the live one or nothing (26 Oct 2026)", () => {
+  it("a section file's card for a template that is no longer waiting is dropped when the live activity is read", () => {
+    const card = { key: "prospect-template:ptp_old", title: "Approve the prospect email before it goes out", body: "17 addresses held.", buttons: [] };
+    const d = { ...base(MON), tasks: [], morning: { prospects: { section: "prospects", at: new Date(MON).toISOString(), decide: [card] } } };
+    expect(buildDay({ ...d, prospects: { approved: { id: "ptp_new" }, pending: null, totals: {}, next: [], sent: [], replies: [] } }, MON).text).not.toContain("17 addresses held.");
+    expect(buildDay(d, MON).text).toContain("17 addresses held."); // no live read: the producer's card stands
+  });
+});

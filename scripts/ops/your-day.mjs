@@ -544,7 +544,16 @@ export function buildDay(data, now = Date.now()) {
 
   // 1. Decide: Boss OS's own, then every producer's (catch-ups have their own section). ALL of them.
   const decideRaw = [...bossDecisions(data)];
-  for (const [name, sec] of Object.entries(m)) if (name !== "catchups") for (const d of sec.decide ?? []) decideRaw.push({ priority: 0, from: name, ...d });
+  /*
+   * A PRODUCER'S PROSPECT-TEMPLATE CARD IS CHECKED AGAINST THE LIVE TEMPLATE (26 Oct 2026). Monday's
+   * email asked her to approve a template retired the evening before (her "only 3 companies" change
+   * had been recorded and a new one approved), from a section file written that morning, and its
+   * counts contradicted the live Prospect emails section. With the live activity loaded, only the
+   * template actually waiting for her may be a Decide card.
+   */
+  const livePending = data.prospects ? String(data.prospects.pending?.id ?? data.prospects.pending?.hash ?? "") : null;
+  const staleTemplate = (d) => livePending !== null && String(d.key ?? "").startsWith("prospect-template:") && String(d.key).slice("prospect-template:".length) !== livePending;
+  for (const [name, sec] of Object.entries(m)) if (name !== "catchups") for (const d of sec.decide ?? []) if (!staleTemplate(d)) decideRaw.push({ priority: 0, from: name, ...d });
   decideRaw.push(...prospectDecisions(data.prospects ?? null, new Set(decideRaw.map((d) => d.key).filter(Boolean)), now));
   decideRaw.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   /*
@@ -655,7 +664,9 @@ export function buildDay(data, now = Date.now()) {
   }
 
   const val = valerieItems(data.feed, now);
-  const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at)} ${c.title}${c.with ? ` with ${c.with}` : ""}`);
+  // Every call and meeting of the day, once (the diary merges a copy on a second calendar), with who
+  // and the join link when there is one (owner, 26 Oct 2026: "tell me when i have calls").
+  const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}`);
   // While her "OpenAI first" switch is on, one small line says so (owner, 24 Oct 2026).
   const openaiFirst = (data.settings ?? []).find((r) => r.key === "seat_order_openai_first");
   const openaiLine = openaiFirst && /^(on|true)$/.test(String(openaiFirst.value))
