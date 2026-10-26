@@ -157,7 +157,7 @@ export function contextPrompt({ name, email, domain, firm, title, when, today })
   const terms = [email ? `from:${email} OR to:${email}` : null, domain ? `"${domain}"` : null, name ? `"${name}"` : null, firm ? `"${firm}"` : null].filter(Boolean);
   return [
     `Sequoia Taylor has a meeting "${title}" on ${when}${name ? ` with ${name}` : ""}${email ? ` <${email}>` : ""}. Today is ${today}. Find what her own Gmail and Google Calendar say about this person. Search only; never send, label, change or delete anything.`,
-    `1. Gmail search_threads, each of these: ${terms.map((t) => `[${t}]`).join(", ")}. Count the distinct emails found with this person (any of their addresses), the date and subject of the oldest, and the three newest.`,
+    `1. Gmail search_threads, each of these: ${terms.map((t) => `[${t}]`).join(", ")}. Note every address of theirs you see (old personal ones too) and search each of those as well. Count the distinct emails found with this person across all of them, the date and subject of the oldest, and the three newest.`,
     "2. Read the newest two or three threads with get_thread (PLAIN_TEXT). Note whether any says what this meeting is for, and whether the newest email is from them with no answer from her.",
     `3. Gmail: from:(mailer-daemon OR postmaster) newer_than:30d ${name ? `"${name.split(" ")[0]}"` : email ? `"${email}"` : ""} — any bounce of an email to this person, with the address that bounced.`,
     `4. Google Calendar search_events for ${name ? `"${name}"` : `"${email}"`}: earlier meetings with them (before today), date and title.`,
@@ -176,7 +176,8 @@ export function readContext(json) {
   const count = Number.isFinite(Number(m.count)) ? Math.max(0, Math.floor(Number(m.count))) : recent.length;
   const first = isoDay(m.first?.date) ? { date: isoDay(m.first.date), subject: str(m.first?.subject, 160) } : null;
   const un = json?.unanswered && isoDay(json.unanswered.date) && str(json.unanswered.subject) ? { date: isoDay(json.unanswered.date), subject: str(json.unanswered.subject, 160) } : null;
-  const bounces = (Array.isArray(json?.bounces) ? json.bounces : []).filter((b) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(String(b?.address ?? ""))).map((b) => ({ address: String(b.address).toLowerCase(), date: isoDay(b.date) })).slice(0, 3);
+  const bounces = (Array.isArray(json?.bounces) ? json.bounces : []).filter((b) => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(String(b?.address ?? ""))).map((b) => ({ address: String(b.address).toLowerCase(), date: isoDay(b.date) }))
+    .filter((b, i, a) => a.findIndex((x) => x.address === b.address) === i).slice(0, 3); // one line per address, never the same bounce twice
   const meetings = (Array.isArray(json?.meetings) ? json.meetings : []).map((x) => ({ date: isoDay(x?.date), title: str(x?.title, 120) })).filter((x) => x.date).slice(0, 5);
   const hint = str(json?.purpose_hint?.text, 300) ? { text: str(json.purpose_hint.text, 300), from: str(json.purpose_hint.from, 80) ?? "an email" } : null;
   return { mail: { count: Math.max(count, recent.length), more: Boolean(m.more), first: first ?? (recent.length ? { date: recent[recent.length - 1].date, subject: recent[recent.length - 1].subject } : null), recent }, unanswered: un, bounces, meetings, purpose_hint: hint };
