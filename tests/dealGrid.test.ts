@@ -240,7 +240,7 @@ describe("combined merge: Monique found reads as one intro per pair, in plain gr
     const out = moniqueFound({ newRows: g, grid: g, lists: { same_firm: [], do_not_suggest: [] }, now: NOW });
     expect(out.decide).toEqual([]);
     expect(out.grid).toHaveLength(1);
-    expect(out.grid[0]).toMatchObject({ company: "Company Z", trade: "Broker Two $300M at price? → Broker One $1B at price?", fit: "Size ◐ Price ○ Age ●", url_label: "Open ›" });
+    expect(out.grid[0]).toMatchObject({ company: "Company Z", trade: "Broker Two $300M at price? → Broker One $1B at price?", fit: "fills part, price unknown or far, fresh", url_label: "Open ›" });
     expect(out.lines.filter((l: any) => /Company Z/.test(l.text) && /^Match/.test(l.text))).toHaveLength(0);
   });
   it("one holder is named in the singular", () => {
