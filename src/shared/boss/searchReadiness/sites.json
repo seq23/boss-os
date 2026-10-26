@@ -719,6 +719,8 @@
    "kind": "brand",
    "roles": [],
    "label": "How We Know (the channel's website)",
+   "clarity": false,
+   "clarity_why": "the audience is on YouTube and the site has no form or sale (owner, 25 Oct 2026)",
    "coverage": {
     "model": "not_local",
     "why": "The YouTube channel's companion site; topical, no place-based pages."

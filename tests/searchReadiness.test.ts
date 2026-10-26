@@ -291,6 +291,16 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     expect(two.status).toBe("fail");
     expect(two.detail).toMatch(/on 2 pages \(https:\/\/time-2-read\.com\/, https:\/\/time-2-read\.com\/about\)/);
   });
+  it("a site marked clarity: false passes the Clarity check with its reason; any other site still needs Clarity", () => {
+    const hwk = sites.grid_repos.find((s: any) => s.domain === "howweknowdeep.com");
+    expect(hwk.clarity).toBe(false);
+    const off = CHECKS.clarity!({ site: hwk, home: { html: "<html></html>" }, files: {} } as any);
+    expect(off.status).toBe("pass");
+    expect(off.detail).toMatch(/YouTube/);
+    const t2r = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
+    expect(CHECKS.clarity!({ site: t2r, home: { html: "<html></html>" }, files: {} } as any).status).toBe("fail");
+    expect(sites.grid_repos.filter((s: any) => s.clarity === false).map((s: any) => s.domain)).toEqual(["howweknowdeep.com"]);
+  });
   it("a known limit stays in the queue with its reason and is never workable", () => {
     const site = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
     expect(site.known_limits.map((k: any) => k.item).sort()).toEqual(["a1", "a9"]);
