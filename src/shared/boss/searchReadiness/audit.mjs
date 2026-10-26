@@ -171,7 +171,7 @@ const isUtility = (url) => /\/(privacy|terms|legal|cookie|disclaimer|accessibili
 
 // ─── The checks ───────────────────────────────────────────────────────────────
 // Each takes the fetched context and returns { status, detail, evidence?, missing? }.
-// ctx: { site, host (canonical), home: {url,status,html,headers}, pages: [{url,status,html,headers,redirected}],
+// ctx: { site, host (canonical), home: {url,status,html,headers}, pages: [{url,status,html,headers,redirected,final}],
 //        robots: {status,type,text}, sitemap: {ok, roots, children:[{url,status,count,lastmods}], urls:Set},
 //        files: {path: {status,type,text}}, gsc, repo, crawl, coverage, psi, portfolio: [hosts], protectedPaths }
 
@@ -189,13 +189,25 @@ export const CHECKS = {
     if ([301, 308].includes(r.status) && r.location && new URL(r.location, r.from).hostname === ctx.host) return pass(`${r.from} answers ${r.status} to ${ctx.host}`);
     return fail(`${r.from} answered ${r.status ?? r.error}${r.location ? ` → ${r.location}` : ""}, not a 301 to ${ctx.host}`, { evidence: [r.from] });
   },
+  // The canonical is compared against the URL the HTML actually came from, not
+  // the URL that was requested. Our fetches follow redirects, so a host whose /
+  // answers 308 to its one money page hands back that page's HTML under the
+  // request URL `https://host/`; comparing the two called three correct sites
+  // broken on 26 Oct 2026 (weddingbudgetspreadsheet.com,
+  // weddingseatingchartmaker.com, weddingtimelinetemplate.com - each / is a 308
+  // to a page whose canonical is itself, which is right, not a defect). A page
+  // that redirects is reported as a redirect by sitemap_clean; it is not this
+  // check's business. `final` is the fetch's resolved URL; `url` is the fallback
+  // for records that carry no redirect information.
   canonical_self(ctx) {
     const bad = [];
     for (const p of okPages(ctx)) {
+      const served = p.final ?? p.url;
       const c = canonicalOf(p.html);
-      if (!c) { bad.push(`${p.url} has no canonical`); continue; }
-      let abs; try { abs = new URL(c, p.url).href; } catch { abs = c; }
-      if (norm(abs) !== norm(p.url)) bad.push(`${p.url} → canonical ${abs}`);
+      if (!c) { bad.push(`${served} has no canonical`); continue; }
+      let abs; try { abs = new URL(c, served).href; } catch { abs = c; }
+      const via = served === p.url ? "" : ` (${p.url} → ${served})`;
+      if (norm(abs) !== norm(served)) bad.push(`${served}${via} → canonical ${abs}`);
     }
     return bad.length ? fail(list(bad), { evidence: bad }) : pass(`${okPages(ctx).length} pages carry a self canonical`);
   },

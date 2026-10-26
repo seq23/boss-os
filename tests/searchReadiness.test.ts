@@ -170,6 +170,28 @@ describe("checks catch what they guard", () => {
     expect(CHECKS.canonical_self(ctx).status).toBe("fail");
   });
 
+  // 26 Oct 2026: a2 called three correct sites broken. weddingbudgetspreadsheet.com,
+  // weddingseatingchartmaker.com and weddingtimelinetemplate.com each answer 308 at /
+  // to their one money page, whose canonical is itself - which is right. Our fetches
+  // follow redirects, so the money page's HTML arrived under the request URL
+  // `https://host/` and the check compared the canonical against the URL it asked for
+  // rather than the URL the HTML came from.
+  it("a / that 308s to a page whose canonical is itself passes a2", () => {
+    const served = "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet";
+    const redirected = { ...page("https://weddingbudgetspreadsheet.com/", "<h1>Budget</h1>", `<link rel="canonical" href="${served}">`), final: served, redirected: true };
+    const r = CHECKS.canonical_self(baseCtx({ host: "weddingbudgetspreadsheet.com", pages: [redirected] }));
+    expect(r.status).toBe("pass");
+  });
+
+  it("a / that 308s to a page canonicalised somewhere else still fails a2, and the detail names both URLs", () => {
+    const served = "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet";
+    const redirected = { ...page("https://weddingbudgetspreadsheet.com/", "<h1>Budget</h1>", '<link rel="canonical" href="https://other.com/x/">'), final: served, redirected: true };
+    const r = CHECKS.canonical_self(baseCtx({ host: "weddingbudgetspreadsheet.com", pages: [redirected] }));
+    expect(r.status).toBe("fail");
+    expect(r.detail).toContain("https://weddingbudgetspreadsheet.com/ → " + served);
+    expect(r.detail).toContain("https://other.com/x/");
+  });
+
   it("a repo serving several hosts passes e3 on the key that answers on THIS host", () => {
     // sprylabs-hpc-site's shape: one key at the root for two hosts, a second under aplayermode/ for
     // the third, because an IndexNow key is valid only on the host that serves it. Reading only the

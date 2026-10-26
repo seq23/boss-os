@@ -217,7 +217,10 @@ async function auditSite(site, checklist, g, gscSites, portfolio) {
   const t0 = Date.now();
   const start = await get(`https://${site.domain}/`);
   const host = start.final ? new URL(start.final).hostname : site.domain;
-  const home = { url: `https://${host}/`, status: start.status, html: start.text ?? "", headers: start.headers ?? {} };
+  // `final` is where the HTML actually came from. A host whose / answers 308 to
+  // its one money page returns that page's HTML here, and the canonical check
+  // must compare against the page it got, not the URL it asked for.
+  const home = { url: `https://${host}/`, final: start.final ?? `https://${host}/`, status: start.status, html: start.text ?? "", headers: start.headers ?? {} };
   const protectedPaths = (site.protected_pages ?? []).map((p) => p.path);
   const otherHost = host.startsWith("www.") ? host.slice(4) : `www.${host}`;
   const [robots, other, notFound, ...fileRes] = await Promise.all([
@@ -250,10 +253,10 @@ async function auditSite(site, checklist, g, gscSites, portfolio) {
   } catch (e) { coverage = { targets: [], error: String(e?.message ?? e) }; }
 
   const fetched = await pool(sample, 6, (u) => get(u));
-  const pages = [{ url: home.url, status: home.status, html: home.html, headers: home.headers, fromSitemap: false },
-    ...fetched.map((r, i) => ({ url: sample[i], status: r.status, html: r.text, headers: r.headers ?? {}, redirected: r.redirected, fromSitemap: true }))];
+  const pages = [{ url: home.url, final: home.final, status: home.status, html: home.html, headers: home.headers, redirected: home.final !== home.url, fromSitemap: false },
+    ...fetched.map((r, i) => ({ url: sample[i], final: r.final ?? sample[i], status: r.status, html: r.text, headers: r.headers ?? {}, redirected: r.redirected, fromSitemap: true }))];
   // Two coverage town pages, so the directory checks read real town pages.
-  for (const t of (coverage.targets ?? []).filter((x) => x.kind === "town" && x.html).slice(0, 2)) pages.push({ url: t.url, status: 200, html: t.html, headers: {}, fromSitemap: t.inSitemap, coverageKind: "town" });
+  for (const t of (coverage.targets ?? []).filter((x) => x.kind === "town" && x.html).slice(0, 2)) pages.push({ url: t.url, final: t.url, status: 200, html: t.html, headers: {}, fromSitemap: t.inSitemap, coverageKind: "town" });
 
   // og:image, Clarity loader, IndexNow key, portfolio link targets.
   const ogUrl = metaContent(home.html, "og:image")[0];
