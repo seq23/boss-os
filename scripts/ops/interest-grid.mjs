@@ -264,7 +264,23 @@ export function buildGrid(interests, { identity, lists, senders = {}, wrong = ne
     const key = `${g.company.toLowerCase()}|${g.side}|${g.direction}|${g.size_text}|${g.from_text}|${g.received_on}`;
     if (!out.has(key)) out.set(key, g);
   }
-  return [...out.values()].sort((a, b) => b.received_on.localeCompare(a.received_on) || (b.size_usd ?? 0) - (a.size_usd ?? 0));
+  return oneSidePerOrder([...out.values()]).sort((a, b) => b.received_on.localeCompare(a.received_on) || (b.size_usd ?? 0) - (a.size_usd ?? 0));
+}
+
+const STATES_A_SIZE = /\$\s?\d|\d\s?(m|mm|bn|b|k)\b|\d+\s?(million|billion)/i;
+
+/**
+ * ONE ORDER IS ONE SIDE (26 Oct 2026). A seller's offer and a broker's "I'll take both to my buyers"
+ * in the same thread were read as a Sell AND a Buy of the same size at the same price, so the morning
+ * listed Kalshi $6M and Stripe $3.5M from one sender on both sides. A row on the other side of an
+ * order from the same email, at the same size, whose own words state no size, is a relay of that
+ * order — not a second order — and is left out of the grid (the ledger keeps it: nothing is deleted).
+ */
+export function oneSidePerOrder(rows) {
+  const quoteOf = (g) => String(g._row?.quote ?? "");
+  return rows.filter((g) => !rows.some((o) => o !== g && o.source_message && o.source_message === g.source_message
+    && String(o.company).toLowerCase() === String(g.company).toLowerCase() && o.direction !== g.direction
+    && o.size_usd !== null && o.size_usd === g.size_usd && STATES_A_SIZE.test(quoteOf(o)) && !STATES_A_SIZE.test(quoteOf(g))));
 }
 
 /**
@@ -521,8 +537,16 @@ export function matchFit(buyer, seller, rank, now = Date.now()) {
   const star = priced && rank.gap <= STAR.maxGap && fills && days < STAR.maxDays;
   return { size, price, age, star, days };
 }
-const DOT = { good: "●", part: "◐", poor: "○" };
-export const fitWords = (f) => `Size ${DOT[f.size]} Price ${DOT[f.price]} Age ${DOT[f.age]}`;
+/*
+ * THE FIT IN PLAIN WORDS (26 Oct 2026: "Size ● Price ● Age ●" was unexplained jargon in her email).
+ * Same three readings as before — size, price, age — said the way she would say them.
+ */
+const FIT_WORDS = {
+  size: { good: "size fits", part: "fills part", poor: "size small" },
+  price: { good: "prices close", part: "prices near", poor: "price unknown or far" },
+  age: { good: "fresh", part: "a few weeks old", poor: "may be stale" },
+};
+export const fitWords = (f) => `${FIT_WORDS.size[f.size]}, ${FIT_WORDS.price[f.price]}, ${FIT_WORDS.age[f.age]}`;
 /** The trade's own card in Boss OS: the seller's ready email and Dismiss. */
 export const cardUrl = (m) => `${MATCHES_PAGE}&match=${encodeURIComponent(m.key)}`;
 const terms = (x) => `${x.size !== "—" ? x.size : "size?"} at ${x.price !== "—" ? x.price : "price?"}`;

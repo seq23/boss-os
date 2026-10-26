@@ -35,7 +35,7 @@ describe("matches: size, price and age (owner, 24 Oct 2026)", () => {
   it("an unpriced $25M seller and $5M buyer are a grid row in the email; its card holds both contacts and a note to each", () => {
     const out = moniqueFound({ newRows: [], grid: [sell, buy], lists: NO_LISTS, now: NOW });
     expect(out.grid).toEqual([expect.objectContaining({
-      company: "Company Q", trade: "Pat Seller, Seller Co $25M at price? → Bo Buyer, Buyer Co $5M at price?", fit: "Size ● Price ○ Age ●",
+      company: "Company Q", trade: "Pat Seller, Seller Co $25M at price? → Bo Buyer, Buyer Co $5M at price?", fit: "size fits, price unknown or far, fresh",
       url: "https://boss.sequoiataylor.com/?tab=capital&view=matches&match=b5%7Cs25", url_label: "Open ›", star: false,
     })]);
     const m = out.matches[0];

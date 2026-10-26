@@ -69,7 +69,7 @@ Owner, 24 Oct 2026. In code in `src/shared/boss/deals/match.mjs` (size, price, a
    counted every time). `allMatches` collapses order pairs to party pairs (`pairKeyOf`, `orders`), and
    every number quoted comes from `matchCounts`.
 6. **Monique found is ONE grid, never hundreds, never Decide** (owner, 25 Oct 2026, mock-up v2):
-   company (+N more) | seller → buyer with sizes and prices | fit dots (size, price, age) | "Open ›" to
+   company (+N more) | seller → buyer with sizes and prices | fit in plain words (size, price, age: "size fits, prices close, fresh") | "Open ›" to
    the trade's card on the Matches screen, which holds the seller's ready email and Dismiss. At most
    `MAX_EMAIL_MATCHES` (5) rows, one per company, live and within tolerance; a ⭐ match sorts first and
    earns the star only when both prices are known and within 10%, the seller fills at least 25% of the
