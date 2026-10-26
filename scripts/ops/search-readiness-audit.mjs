@@ -194,13 +194,19 @@ async function readRepo(name) {
   for (const want of FRESH_FILE_NAMES) {
     fresh[want] = files.filter((f) => f.endsWith(want)).slice(0, 40).map((p) => ({ path: p, at: Number(git(dir, "log", "-1", "--format=%ct", ref, "--", p).stdout.trim()) * 1000 })).filter((x) => x.at);
   }
-  const keyFile = files.find((f) => /(^|\/)[0-9a-f]{32,64}\.txt$/.test(f));
-  const indexnowKey = keyFile ? keyFile.split("/").pop().replace(/\.txt$/, "") : null;
+  // EVERY IndexNow key file, not the first. A repo that serves several hosts gives each host its
+  // own key (sprylabs-hpc-site: one key at the root for spryexecutiveos.com and
+  // billionairehighperformancecoach.com, a second under aplayermode/ for aplayermode.com, because a
+  // key is valid only on the host that serves it). Taking the first one made every other host on
+  // that repo fail e3/i8 for a key that was never meant to answer there.
+  const keyFiles = files.filter((f) => /(^|\/)[0-9a-f]{32,64}\.txt$/.test(f));
+  const indexnowKeys = [...new Set(keyFiles.map((f) => f.split("/").pop().replace(/\.txt$/, "")))].slice(0, 8);
+  const indexnowKey = indexnowKeys[0] ?? null;
   const scriptsMentioningGscTruth = files.filter((f) => /\.(m?js|py|ts|sh)$/.test(f) && /gsc|search/i.test(f)).slice(0, 40).filter((f) => /gsc_truth|gsc_search_analytics/.test(show(f) ?? ""));
   const view = spawnSync("gh", ["repo", "view", `${OWNER}/${name}`, "--json", "visibility", "--jq", ".visibility"], { encoding: "utf8" });
   const runs = spawnSync("gh", ["run", "list", "-R", `${OWNER}/${name}`, "--event", "pull_request", "--status", "completed", "--limit", "5", "--json", "createdAt,updatedAt"], { encoding: "utf8" });
   let prRunMinutes = null; try { prRunMinutes = JSON.parse(runs.stdout || "[]").map((x) => (Date.parse(x.updatedAt) - Date.parse(x.createdAt)) / 60_000); } catch { /* gh not signed in */ }
-  const v = { ok: true, ref, files, show, workflows, fresh, indexnowKey, scriptsMentioningGscTruth, visibility: view.status === 0 ? view.stdout.trim() : null, prRunMinutes, llmRouting: show("config/llm_routing.json"), claudeMd: show("CLAUDE.md") };
+  const v = { ok: true, ref, files, show, workflows, fresh, indexnowKey, indexnowKeys, scriptsMentioningGscTruth, visibility: view.status === 0 ? view.stdout.trim() : null, prRunMinutes, llmRouting: show("config/llm_routing.json"), claudeMd: show("CLAUDE.md") };
   repoCache.set(name, v);
   return v;
 }
@@ -254,7 +260,11 @@ async function auditSite(site, checklist, g, gscSites, portfolio) {
   if (ogUrl) { const abs = new URL(ogUrl, home.url).href; const r = await get(abs, { text: false }); files.__og_image = { url: abs, status: r.status }; }
   const loader = tags(home.html, "script").map((t) => t.src).find((s) => s && /clarity/i.test(s));
   if (loader) files.__clarity_loader = true;
-  if (repo.ok && repo.indexnowKey) { const r = await get(`https://${host}/${repo.indexnowKey}.txt`); files[`/${repo.indexnowKey}.txt`] = { status: r.status, text: (r.text ?? "").slice(0, 400) }; }
+  // Probe every key the repo holds: this host answers at most one of them (readRepo, indexnowKeys).
+  for (const key of repo.ok ? repo.indexnowKeys ?? [] : []) {
+    const r = await get(`https://${host}/${key}.txt`);
+    files[`/${key}.txt`] = { status: r.status, text: (r.text ?? "").slice(0, 400) };
+  }
   if (applies({ check: { applies_to: ["authority", "role:companion"] } }, site)) {
     const outs = [...new Set(pages.flatMap((p) => (p.html ? links(p.html, p.url) : [])).filter((l) => portfolio.includes(l.host) && l.host !== host.replace(/^www\./, "")).map((l) => l.url))].slice(0, 15);
     files.__targets = await pool(outs, 6, async (u) => { const r = await get(u, { text: false }); return { url: u, status: r.status, error: r.error }; });

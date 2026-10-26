@@ -686,7 +686,8 @@
   },
   {
    "domain": "aplayermode.com",
-   "repo": "aplayer-mode",
+   "_repo_why": "The apex is NOT served by seq23/aplayer-mode (that repo is the Expo app and the API, on app.aplayermode.com and api.aplayermode.com). aplayermode.com/* is answered by workers/aplayermode-com in sprylabs-hpc-site, whose aplayermode/ directory holds the page, its robots.txt, sitemap.xml, llms.txt and its OWN IndexNow key. Corrected 25 Oct 2026 after the repo-side items (e3, e4, e5, i3, i6, i8) all failed against a repo that never served this host.",
+   "repo": "sprylabs-hpc-site",
    "category": "side_business",
    "kind": "brand",
    "roles": [],
