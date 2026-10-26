@@ -873,8 +873,12 @@ export function runChecks(checklist, ctx) {
     if (c.mode === "manual") { results.push({ id: item.id, status: "manual", detail: c.reason }); continue; }
     const fn = CHECKS[c.type];
     if (!fn) { results.push({ id: item.id, status: "fail", detail: `no check is implemented for type ${c.type}` }); continue; }
-    const scoped = cosmetic.has(item.id) && ctx.protectedPaths?.length
-      ? { ...ctx, pages: ctx.pages.filter((p) => !ctx.protectedPaths.some((pp) => new URL(p.url).pathname.replace(/\.html$/, "") === pp)) }
+    // An ACCEPTED EXCEPTION is one check on one protected page that she decided stays as it is
+    // (26 Oct 2026: b2 and c1 on the Spry Labs download page). Only that page leaves only that check.
+    const excepted = (ctx.site?.protected_pages ?? []).filter((pp) => (pp.accepted_exceptions ?? []).some((x) => x.item === item.id)).map((pp) => pp.path);
+    const skip = [...(cosmetic.has(item.id) ? (ctx.protectedPaths ?? []) : []), ...excepted];
+    const scoped = skip.length
+      ? { ...ctx, pages: (ctx.pages ?? []).filter((p) => !skip.some((pp) => new URL(p.url).pathname.replace(/\.html$/, "") === pp)) }
       : ctx;
     let r;
     try { r = fn(scoped, c.params); } catch (e) { r = { status: "not_checked", detail: `the check threw: ${String(e?.message ?? e).slice(0, 160)}` }; }

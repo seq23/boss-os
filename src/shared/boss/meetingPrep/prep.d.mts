@@ -1,0 +1,24 @@
+/** Types for Simone's meeting prep (prep.mjs). */
+export declare const PREP_PREFIX: string;
+export declare const PREP_TZ: string;
+export declare const EVENING_HOUR: number;
+export declare function dayOfCt(at: number): string;
+export declare function hourOfCt(at: number): number;
+export declare function addDays(iso: string, n: number): string;
+export declare function clock(at: number): string;
+export declare function shortDate(at: number): string;
+export declare function sameCalendarEvent(a: any, b: any): boolean;
+export declare function dedupeEvents(events: any[]): any[];
+export declare function prepKey(e: any): string;
+export declare function dueMeetings(events: any[], opts?: { now?: number; sent?: Set<string>; day?: string | null }): any[];
+export declare function nameFromTitle(title: unknown, herNames?: string[]): string | null;
+export declare function others(event: any, herAddresses?: string[]): any[];
+export declare function recordsFor(who: { email?: string | null; name?: string | null }, data: any): any;
+export declare function roleOf(rec: any): string | null;
+export declare function bodyLead(body: unknown): string;
+export declare function buildPrep(event: any, data?: any, opts?: { herAddresses?: string[] }): { key: string; subject: string; who: string; sections: any[]; happened: string };
+export declare function extractWarmReferences(body: unknown): Array<{ line: string; url: string }>;
+export declare function lengthLabel(duration: unknown, opts?: { kind?: string }): string | null;
+export declare function linkResolves(url: string, fetchImpl?: typeof fetch): Promise<boolean>;
+export declare function deadLinks(body: unknown, fetchImpl?: typeof fetch): Promise<string[]>;
+export declare function counterpartFromTitle(title: unknown): string | null;

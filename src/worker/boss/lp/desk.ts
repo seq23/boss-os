@@ -7,6 +7,7 @@
  * (routes/lpTap.ts), from the address the LP wrote to.
  */
 import { newId } from "../lib/id";
+import { storeWarmReferences } from "./references";
 import { pauseReason, inSendWindow, dailyCap, DAY_MS } from "../outreach/brakes";
 import { isSuppressed, suppress } from "../outreach/suppression";
 import { readSettings } from "../outreach/engine";
@@ -422,6 +423,7 @@ export async function backfillTouches(db: D1Database, touches: Array<{ email: st
         // updated_at as "a reply came in" (24 Oct 2026: an old bounce showed as new).
         .bind(no, Number(t.sent_at), Number(t.sent_at), Number(t.sent_at), t.thread_id ?? null, no, p.id),
     ]);
+    await storeWarmReferences(db, p.email, t.body ?? null, Number(t.sent_at));
     n++;
   }
   return n;
@@ -455,6 +457,8 @@ export async function recordProspectEvents(db: D1Database, events: ProspectEvent
             last_message_id = COALESCE(?, last_message_id), subject = COALESCE(subject, ?), updated_at = ? WHERE id = ?`)
           .bind(touch, touch, now, now, e.thread_id ?? null, e.message_id ?? null, e.subject ?? null, now, p.id),
       ]);
+      // The warm line and link it carried, on their record at send time (Simone's meeting prep).
+      await storeWarmReferences(db, p.email, e.body ?? null, now);
       continue;
     }
     if (e.kind === "ooo") continue; // an autoresponder is not a reply; the sequence carries on

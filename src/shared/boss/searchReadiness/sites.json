@@ -854,7 +854,11 @@
      "source_file": "download.html",
      "sha256": "69b072fc38037ff0b7246238b44b87e15876048d24d5e85f0a9a872f347f89f3",
      "buy_link": "https://sprylabs.gumroad.com/l/billionaire-high-performance-coach",
-     "rule": "PROTECTED (owner, 25 Oct 2026): the page behind the portfolio's only two verified sales. A failure on it is fixed on its own, deliberately, in a single-page change: check the Gumroad buy link answers before and after, and never touch it in a bulk or cosmetic fix. Cosmetic-only items are skipped on it."
+     "rule": "PROTECTED (owner, 25 Oct 2026): the page behind the portfolio's only two verified sales. A failure on it is fixed on its own, deliberately, in a single-page change: check the Gumroad buy link answers before and after, and never touch it in a bulk or cosmetic fix. Cosmetic-only items are skipped on it.",
+     "accepted_exceptions": [
+      { "item": "b2", "decided": "2026-10-26", "why": "Accepted exception (owner, 26 Oct 2026): a protected page; its meta description stays as it is." },
+      { "item": "c1", "decided": "2026-10-26", "why": "Accepted exception (owner, 26 Oct 2026): a protected page; no Organization markup is added to it." }
+     ]
     }
    ],
    "coverage": {
@@ -878,7 +882,11 @@
      "source_file": "download.html",
      "sha256": "69b072fc38037ff0b7246238b44b87e15876048d24d5e85f0a9a872f347f89f3",
      "buy_link": "https://sprylabs.gumroad.com/l/billionaire-high-performance-coach",
-     "rule": "PROTECTED (owner, 25 Oct 2026): the page behind the portfolio's only two verified sales. A failure on it is fixed on its own, deliberately, in a single-page change: check the Gumroad buy link answers before and after, and never touch it in a bulk or cosmetic fix. Cosmetic-only items are skipped on it."
+     "rule": "PROTECTED (owner, 25 Oct 2026): the page behind the portfolio's only two verified sales. A failure on it is fixed on its own, deliberately, in a single-page change: check the Gumroad buy link answers before and after, and never touch it in a bulk or cosmetic fix. Cosmetic-only items are skipped on it.",
+     "accepted_exceptions": [
+      { "item": "b2", "decided": "2026-10-26", "why": "Accepted exception (owner, 26 Oct 2026): a protected page; its meta description stays as it is." },
+      { "item": "c1", "decided": "2026-10-26", "why": "Accepted exception (owner, 26 Oct 2026): a protected page; no Organization markup is added to it." }
+     ]
     }
    ],
    "coverage": {
