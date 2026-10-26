@@ -95,6 +95,19 @@ describe("every grid repo site has a coverage manifest", () => {
     expect(t.no_repo_why).toBeUndefined();
   });
 
+  it("aplayermode.com is audited against the repo that serves its apex, never the app repo (25 Oct 2026)", () => {
+    // aplayermode.com/* is answered by workers/aplayermode-com in sprylabs-hpc-site, whose
+    // aplayermode/ directory holds the page, its robots.txt, sitemap.xml, llms.txt and its OWN
+    // IndexNow key (1cf2f6839abec33933cb3e6ea81027b8.txt, live and 200). seq23/aplayer-mode is the
+    // Expo app and the API, on app. and api. only. Pointing the repo-side items at it wrote six
+    // briefs — e3, e4, e5, i3, i6, i8 — for files that were never missing. The mapping was corrected
+    // on 25 Oct and nothing pinned it, so this is the pin: a revert fails here.
+    const a = sites.grid_repos.find((s: any) => s.domain === "aplayermode.com");
+    expect(a.repo).toBe("sprylabs-hpc-site");
+    expect(a.repo).not.toBe("aplayer-mode");
+    expect(a._repo_why, "the correction keeps its reason, so it is not undone as a typo").toMatch(/workers\/aplayermode-com/);
+  });
+
   it("the two hyperlocal sites are seeded in full: towns in the radius, neighborhoods, anchors, service × town", () => {
     const senior = sites.grid_repos.find((s: any) => s.domain === "memphisseniorcarehomes.com");
     const pnp = sites.grid_repos.find((s: any) => s.domain === "porchandparty901.com");
