@@ -296,6 +296,37 @@ export function prospectSellRows(prospects, lists) {
   return out;
 }
 
+/**
+ * The pulled book mirror as grid rows ("Yours", from the book), skipping any company the inbox grid
+ * already shows on that side for her. Empty when no book was ever sent — which is fine now.
+ */
+/*
+ * HER BOOK, IF SHE SENT ONE, IS AN OPTIONAL EXTRA ON THE GRID (owner, 26 Oct 2026: "Yes, inbox only";
+ * see lib/her-lots.mjs). Inbox rows win; a book line adds only what the inbox does not show.
+ */
+export function bookGridRows(mirror, grid = []) {
+  if (!mirror?.book || !Array.isArray(mirror.lines)) return [];
+  const have = new Set(grid.filter((g) => g.side === "yours").map((g) => `${String(g.company).toLowerCase()}|${g.direction}`));
+  const day = new Date(Number(mirror.book.received_at) || 0).toISOString().slice(0, 10);
+  const out = [];
+  for (const l of mirror.lines) {
+    const company = String(l.asset ?? "").trim();
+    const direction = l.side === "buy" ? "buy" : "sell";
+    if (!company || have.has(`${company.toLowerCase()}|${direction}`)) continue;
+    have.add(`${company.toLowerCase()}|${direction}`);
+    const size = Number(l.size_usd) > 0 ? Number(l.size_usd) : null;
+    out.push({
+      id: createHash("sha256").update(`book|${company.toLowerCase()}|${direction}|${size ?? ""}`).digest("hex").slice(0, 24),
+      company, side: "yours", direction,
+      size_usd: size, size_text: String(l.size_text ?? "") || (size ? moneyWords(size) : "—"),
+      price_text: "—", structure_text: "—", from_text: "Your book", rainmaker: 1, received_on: day,
+      email_url: null, parties: "", source_message: null, source: "book",
+      _row: { side: direction, date: day, asset: company },
+    });
+  }
+  return out;
+}
+
 /** The grid row as D1 stores it and the page shows it. */
 export const publicRow = (g) => {
   const { _row, source_message, ...rest } = g;
@@ -662,6 +693,8 @@ async function main() {
   const prospects = readJson(path.join(MORNING_DIR, "prospects.json"), null);
   const fromProspects = prospectSellRows(prospects, lists).filter((p) => withinLookback(p.received_on));
   grid.push(...fromProspects.filter((p) => !grid.some((g) => g.id === p.id)));
+  // Her emailed book, when there is one, adds what the inbox does not show. Never required.
+  grid.push(...bookGridRows(readJson(path.join(DIR, "book.json"), null), grid));
   grid.sort((a, b) => b.received_on.localeCompare(a.received_on) || (b.size_usd ?? 0) - (a.size_usd ?? 0));
 
   const seenFile = path.join(DIR, "grid-seen.json");

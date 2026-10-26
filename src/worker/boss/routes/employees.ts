@@ -134,7 +134,7 @@ employees.get("/operations", async (c) => {
   const d = wallClock(now);
   const since = zonedTime(d.y, d.m, d.d, 0);
   const db = c.env.DB;
-  const [sends, lastSend, settings, paused, notices, lastNotice, dutyFails, cronFails, stops, jobs] = await db.batch<any>([
+  const [sends, lastSend, settings, paused, notices, lastNotice, dutyFails, cronFails, stops, jobs, failedList] = await db.batch<any>([
     db.prepare(
       `SELECT SUM(CASE WHEN status = 'sent' AND is_test = 0 THEN 1 ELSE 0 END) AS sent,
               SUM(CASE WHEN status <> 'sent' THEN 1 ELSE 0 END) AS failed,
@@ -158,6 +158,16 @@ employees.get("/operations", async (c) => {
          JOIN (SELECT local_job, MAX(finished_at) AS f FROM duty_runs GROUP BY local_job) m
            ON m.local_job = r.local_job AND m.f = r.finished_at`,
     ),
+    // What the failed-runs count opens (26 Oct 2026: she saw "1 failed runs" and could not click it).
+    db.prepare(
+      `SELECT 'duty' AS kind, COALESCE(d.name, r.local_job) AS name, r.reason, r.finished_at AS at, r.duty_id, d.employee_id
+         FROM duty_runs r LEFT JOIN standing_duties d ON d.id = r.duty_id
+        WHERE r.outcome = 'failed' AND r.finished_at >= ?
+       UNION ALL
+       SELECT 'cron' AS kind, 'maintenance' AS name, error AS reason, started_at AS at, NULL, NULL
+         FROM cron_runs WHERE status = 'failed' AND started_at >= ?
+        ORDER BY at DESC LIMIT 20`,
+    ).bind(since, since),
   ]);
   const one = (r: any) => (r?.results ?? [])[0] ?? {};
   const flags = Object.fromEntries((settings?.results ?? []).map((s: any) => [s.key, s.value]));
@@ -183,6 +193,7 @@ employees.get("/operations", async (c) => {
     runs: { duty_failed_today: Number(one(dutyFails).n ?? 0), cron_failed_today: Number(one(cronFails).n ?? 0) },
     named_stops: Number(one(stops).n ?? 0),
     local_jobs: (jobs?.results ?? []).map((j: any) => ({ local_job: j.local_job, outcome: j.outcome, finished_at: j.finished_at, reason: j.reason ?? null })),
+    failed_today: (failedList?.results ?? []).map((f: any) => ({ kind: f.kind, name: f.name, reason: f.reason ?? null, at: f.at, duty_id: f.duty_id ?? null, employee_id: f.employee_id ?? null })),
   });
 });
 

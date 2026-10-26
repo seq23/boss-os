@@ -86,3 +86,12 @@ export const anthropic: ProviderAdapter = {
     };
   },
 };
+
+/**
+ * Is this key alive? A GET of the model list: free, no tokens, nothing of hers in it. Used by the
+ * credential register (today/workerCredentialProbes.ts), which may not name a vendor host itself.
+ */
+export async function probeAnthropicKey(baseUrl: string, apiKey: string): Promise<number> {
+  const res = await fetch(`${baseUrl}/models?limit=1`, { headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } });
+  return res.status;
+}

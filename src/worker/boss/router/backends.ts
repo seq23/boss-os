@@ -1,6 +1,6 @@
-import { anthropic } from "./anthropic";
+import { anthropic, probeAnthropicKey } from "./anthropic";
 import { fireworks } from "./fireworks";
-import { openai } from "./openai";
+import { openai, probeOpenAiKey } from "./openai";
 import { openrouter } from "./openrouter";
 import { workersAi } from "./workersAi";
 import type { ProviderAdapter, WorkersAiBinding } from "./types";
@@ -373,3 +373,12 @@ export function backendKindFor(intakeKind: string | null | undefined): string | 
   if (!intakeKind) return null;
   return INTAKE_KIND_TO_BACKEND_KIND[intakeKind] ?? null;
 }
+
+/**
+ * A free liveness read per Worker-held key (the model list), keyed by backend. The credential
+ * register reaches the two adapters through here, so no file outside the router names a vendor.
+ */
+export const KEY_PROBES: Record<string, (baseUrl: string, apiKey: string) => Promise<number>> = {
+  bk_anthropic: probeAnthropicKey,
+  bk_openai: probeOpenAiKey,
+};

@@ -13,7 +13,7 @@ import {
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice,
   indexnowKeyFiles, INDEXNOW_KEY_NAME,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
-import { renderChecklistPage, loadTemplate } from "../src/shared/boss/searchReadiness/page.mjs";
+import { renderChecklistPage, loadTemplate, standingsSummary } from "../src/shared/boss/searchReadiness/page.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
 import { MORNING_SECTIONS } from "../src/shared/boss/mail/morning.mjs";
 
@@ -46,6 +46,16 @@ describe("the manifest holds every item on the page", () => {
     expect(ids.length).toBeGreaterThanOrEqual(72);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of PAGE_IDS) expect(ids, `item ${id} was lost from the manifest`).toContain(id);
+    // The four lessons of 26 Oct 2026, each an automatic check (never prose only).
+    expect(ids.length).toBeGreaterThanOrEqual(76);
+    const lessons = { b10: ["B", "title_names_own_site", "html"], e9: ["E", "clarity_scoped", "html"], h6: ["H", "build_cache_key", "repo"], j10: ["J", "blocked_lead_domains", "repo"] } as const;
+    for (const [id, [phase, type, source]] of Object.entries(lessons)) {
+      const it = checklist.items.find((i: any) => i.id === id);
+      expect(it, `lesson ${id} was lost`).toBeTruthy();
+      expect(it.phase).toBe(phase);
+      expect(it.check).toMatchObject({ mode: "auto", type, source });
+    }
+    expect(checklist.items.find((i: any) => i.id === "j10").title_html).toContain("BLOCKED_LEAD_DOMAINS");
     const j9 = checklist.items.find((i: any) => i.id === "j9");
     expect(j9.phase).toBe("J");
     expect(j9.check).toMatchObject({ mode: "auto", type: "hyperlocal_coverage", source: "coverage" });
@@ -336,7 +346,7 @@ describe("CLAUDE.md says the rule, and the rule is this code", () => {
     const md = readFileSync("CLAUDE.md", "utf8");
     const sec = md.slice(md.indexOf("## Search Readiness"));
     expect(sec.length).toBeGreaterThan(200);
-    for (const s of ["checklist.json", "sites.json", "npm run sites:audit", "fix-queue.json", "npm run sites:page", "grid repos", "tests/searchReadiness.test.ts"]) expect(sec).toContain(s);
+    for (const s of ["checklist.json", "sites.json", "npm run sites:audit", "fix-queue.json", "npm run sites:page", "grid repos", "tests/searchReadiness.test.ts", "Where every site stands", "BLOCKED_LEAD_DOMAINS", "b10", "e9", "h6", "j10"]) expect(sec).toContain(s);
   });
 });
 
@@ -512,5 +522,87 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     // Clarity went live on time-2-read.com on 25 Oct 2026 (project z3erswoh8e): a failing e6/i8 is real fix work, never excused.
     for (const id of ["b1", "e6", "i8"]) expect(by[id].disposition).toBe("fix");
     expect(workQueue(briefs)).toMatchObject({ total: 6, workable: 4 });
+  });
+
+  it("a known limit set from a measurement or a dated decision expires on review_after and is worked again (26 Oct 2026)", () => {
+    const dent = sites.grid_repos.find((s: any) => s.domain === "dentistryguides.com");
+    expect(dent.known_limits.map((k: any) => k.item).sort()).toEqual(["a3", "j9"]);
+    for (const k of dent.known_limits) expect(k.review_after).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const results = [{ id: "j9", status: "fail", detail: "50 missing" }];
+    const before = fixBriefs(checklist, [{ site: dent, host: dent.domain, results }], { now: Date.parse("2026-10-26T12:00:00Z") });
+    expect(before[0].disposition).toBe("known_limit");
+    const after = fixBriefs(checklist, [{ site: dent, host: dent.domain, results }], { now: Date.parse("2027-01-10T12:00:00Z") });
+    expect(after[0].disposition).toBe("fix");
+  });
+});
+
+// ─── The four lessons of 26 Oct 2026, each caught by its check ─────────────────
+
+describe("the 26 Oct 2026 lessons catch what they guard", () => {
+  const html = (title: string, body = "x", head = "") => `<html><head><title>${title}</title>${head}</head><body>${body}</body></html>`;
+  const at = (url: string, h: string) => ({ url, status: 200, html: h });
+  const CLARITY = '<script src="https://www.clarity.ms/tag/abc"></script>';
+  const t2r = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
+
+  it("e9: Clarity on an article with no form fails; on the form page only, it passes — and e6 accepts the form page", () => {
+    const article = at("https://time-2-read.com/blog/a/", html("Story time for kids at Time2Read", "<p>words</p>" + CLARITY));
+    const form = at("https://time-2-read.com/signup/", html("Sign up for Time2Read reading", '<form action="/api/lead"><input name=email></form>' + CLARITY));
+    const bad = CHECKS.clarity_scoped!({ site: t2r, pages: [article, form] } as any);
+    expect(bad.status).toBe("fail");
+    expect(bad.detail).toMatch(/blog\/a/);
+    expect(CHECKS.clarity_scoped!({ site: t2r, pages: [form, at("https://time-2-read.com/x/", html("Plain page for Time2Read readers"))] } as any).status).toBe("pass");
+    expect(CHECKS.clarity!({ site: t2r, home: { html: "<html></html>" }, files: {}, pages: [form] } as any).status).toBe("pass");
+    const buy = at("https://x.com/p/", html("Buy it", '<a href="https://sprylabs.gumroad.com/l/x">Buy</a>' + CLARITY));
+    expect(CHECKS.clarity_scoped!({ site: t2r, pages: [buy] } as any).status).toBe("pass");
+  });
+
+  it("b10: a title naming a sibling site fails, one naming neither fails, one naming its own site passes", () => {
+    const ctx = (title: string) => ({ host: "dentistryguides.com", home: { html: html("Dentistry Guides") }, portfolio: ["dentistryguides.com", "theaccidentguides.com", "uscisexam.com"],
+      pages: [at("https://dentistryguides.com/a/", html(title))] }) as any;
+    expect(CHECKS.title_names_own_site!(ctx("Medicaid dental coverage | Dentistry Guides")).status).toBe("pass");
+    const sib = CHECKS.title_names_own_site!(ctx("Medicaid dental coverage | The Accident Guides"));
+    expect(sib.status).toBe("fail");
+    expect(sib.detail).toMatch(/names theaccidentguides/);
+    expect(CHECKS.title_names_own_site!(ctx("Medicaid dental coverage")).detail).toMatch(/does not name the site/);
+  });
+
+  it("h6: a build cache keyed on a subset fails; one keyed on git ls-files minus only the workflows passes; no build cache passes", () => {
+    const wf = (key: string) => ({ name: "validate.yml", text: `jobs:\n  b:\n    steps:\n      - uses: actions/cache@v4\n        with:\n          path: .build-cache\n          key: ${key}\n` });
+    const repo = (workflows: any[], scripts: Record<string, string> = {}) => ({ repo: { ok: true, workflows, files: Object.keys(scripts), show: (f: string) => scripts[f] ?? null } }) as any;
+    expect(CHECKS.build_cache_key!(repo([wf("b-${{ hashFiles('src/**', 'package-lock.json') }}")])).status).toBe("fail");
+    expect(CHECKS.build_cache_key!(repo([wf("b-${{ hashFiles('**', '!.github/workflows/**') }}")])).status).toBe("pass");
+    const hash = `listing="$(git ls-files -s | grep -Ev '\\s\\.github/workflows/' | sort)"`;
+    expect(CHECKS.build_cache_key!(repo([wf("b-${{ steps.key.outputs.key }}")], { ".github/scripts/build_input_hash.sh": hash })).status).toBe("pass");
+    const narrow = `listing="$(git ls-files -s | grep -Ev '\\s(\\.github/workflows|artifacts)/' | sort)"`;
+    expect(CHECKS.build_cache_key!(repo([wf("b-${{ steps.key.outputs.key }}")], { ".github/scripts/build_input_hash.sh": narrow })).status).toBe("fail");
+    // Workflows are the one exclusion: a key that hashes them too is not this rule (a restored tree must never carry them).
+    expect(CHECKS.build_cache_key!(repo([wf("b-${{ steps.key.outputs.key }}")], { ".github/scripts/build_input_hash.sh": 'git ls-files -s | sort | sha256sum' })).status).toBe("fail");
+    expect(CHECKS.build_cache_key!(repo([{ name: "ci.yml", text: "      - uses: actions/cache@v4\n        with:\n          path: ~/.npm\n          key: npm-${{ hashFiles('package-lock.json') }}\n" }])).detail).toMatch(/no workflow restores a cached build/);
+  });
+
+  it("j10: a lead endpoint reading BLOCKED_LEAD_DOMAINS passes; a hardcoded list fails; an endpoint that reads neither fails", () => {
+    const repo = (files: Record<string, string>) => ({ repo: { ok: true, files: Object.keys(files), show: (f: string) => files[f] ?? null } }) as any;
+    expect(CHECKS.blocked_lead_domains!(repo({ "functions/api/request-assistance.js": "const b = blockedDomainFor(email, env.BLOCKED_LEAD_DOMAINS);" })).status).toBe("pass");
+    const hard = CHECKS.blocked_lead_domains!(repo({ "functions/api/lead.js": "const BLOCKED_DOMAINS = ['junk.example', 'spam.example'];" }));
+    expect(hard.status).toBe("fail");
+    expect(hard.detail).toMatch(/written into public code/);
+    expect(CHECKS.blocked_lead_domains!(repo({ "functions/api/lead.js": "export const onRequestPost = () => new Response('ok')" })).detail).toMatch(/no lead endpoint reads BLOCKED_LEAD_DOMAINS/);
+    expect(CHECKS.blocked_lead_domains!(repo({ "src/index.js": "x" })).status).toBe("pass");
+  });
+});
+
+describe("the page shows where every site stands, counted from the results file", () => {
+  it("one row per site, and the summary counts are computed, never typed", () => {
+    const results = { day: "2026-10-26", sites: [
+      { site: { domain: "a.com", repo: "ra" }, results: [{ id: "a1", status: "pass" }, { id: "b1", status: "fail" }, { id: "a10", status: "not_checked" }, { id: "d1", status: "manual" }], failing: ["b1"] },
+      { site: { domain: "b.com", repo: "rb" }, results: [{ id: "a1", status: "pass" }], failing: [] },
+    ] };
+    expect(standingsSummary(results)).toMatchObject({ sites: 2, checks: 3, failing: 1, notChecked: 1 });
+    const out = renderChecklistPage(checklist, loadTemplate(), { results });
+    expect(out).toContain('id="standings"');
+    expect(out).toContain('data-standings="2/3/1"');
+    expect((out.match(/<tr data-site=/g) ?? []).length).toBe(2);
+    expect(out).toMatch(/<b>b1<\/b> Title 30/);
+    expect(renderChecklistPage(checklist, loadTemplate())).not.toContain('id="standings"');
   });
 });

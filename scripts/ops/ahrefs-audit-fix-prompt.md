@@ -124,12 +124,20 @@ A queue older than eight days is stale: say so in `because` and do not act on it
 
 ## 2. Map each project to a repository BY EVIDENCE
 
-For every flagged site, work out its public domain, then find the repository whose own
-**`REPO_IDENTITY.md`** declares that domain:
+For every flagged site, work out its public domain, then ask the ONE list which repository serves it
+(`src/shared/boss/siteAudit/domainRepos.mjs`, built from the grid manifest `sites.json`):
 
 ```
-grep -ril "<domain>" ~/GitHub/*/REPO_IDENTITY.md
+node ~/GitHub/boss-os/scripts/ops/site-audit-lib.mjs repo-for <domain>
 ```
+
+`REPO <repo>` → that is the repository; record `mapped_by: "grid_manifest"`. `NO_REPO <why>` → the
+list says on purpose that no repository serves it: `disposition: "no_repo"` with that reason. Only on
+`UNKNOWN` fall back to the repository whose own **`REPO_IDENTITY.md`** declares the domain
+(`grep -ril "<domain>" ~/GitHub/*/REPO_IDENTITY.md`, `mapped_by: "repo_identity"`), and add the domain
+to `domainRepos.mjs` in a boss-os PR so the next pass finds it. A `no_repo` row for a domain the list
+maps is refused at the door (26 Oct 2026: porchandparty901.com read "no repository claims that
+domain" for five weeks while seq23/p-n-p served it).
 
 **A resemblance is not a mapping.** `dentistryguides` and `thedentistryguides` are two different
 Ahrefs projects and may be two different repositories. If nothing claims the domain, also check the
@@ -269,11 +277,14 @@ Write `~/.boss-os/site-audit/findings.json` and nothing else. Shape:
 `client_repo`, `in_flight`, `ahrefs_credits`. `surfaced` now means: a defect YOUR crawl confirmed, in
 a fixable repo, that you could not fix — say exactly why in `because`. **If fixed=0 while anything
 is surfaced, the run is RED** (`FIXABLE_LEFT_UNFIXED`), so surface only what you truly cannot fix.
-`fixed_pr` requires `pr_url` and `mapped_by: "repo_identity"`. `(project, headline)` is unique: give
+`fixed_pr` requires `pr_url` and `mapped_by: "repo_identity"` or `"grid_manifest"`. `(project, headline)` is unique: give
 each distinct defect its own headline.
 
-**No addresses anywhere in the file.** Public domains and repository names only. An `@` in any text
-field refuses the entire batch.
+**No addresses anywhere in the file.** Public domains and repository names only. An email address in
+any text field refuses the entire batch (JSON-LD words such as `@type` and `@id` are fine).
+
+A **queue pass** (this run scoped to section 1b) does not write the mailbox evidence: the runner
+records the queue file and the brief ids it handed you, and the reporter sends that as `searched`.
 
 ---
 

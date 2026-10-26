@@ -1,10 +1,10 @@
 import { env } from "cloudflare:test";
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { apiJson } from "./helpers";
 import { handleBossInboundMail, isBossMailbox, activeRoster, looksLikeBook, MAX_BODY_BYTES } from "../../src/worker/boss/intake/inboundMail";
 import { routeToSeat, seatTag, replyBody } from "../../src/shared/boss/intake/mail.mjs";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { storeLiveBook, currentBook, currentBookLines } from "../../src/worker/boss/capital/book";
-import { bookNagAlerts } from "../../src/worker/boss/capital/bookNag";
 import { unansweredQuestionAlerts } from "../../src/worker/boss/intake/questions";
 
 /**
@@ -634,22 +634,31 @@ describe("a message too big for the old cap", () => {
   });
 });
 
-describe("the seven-day nag", () => {
-  it("is loudest when she has never sent one", async () => {
-    const alerts = await bookNagAlerts(env as never);
-    expect(alerts.length).toBe(1);
-    expect(alerts[0]!.severity).toBe("critical");
-    expect(alerts[0]!.text).toContain("never");
+/*
+ * NO BOOK NAG, EVER (owner, 26 Oct 2026: "Yes, inbox only"). Replaces "the seven-day nag" (10 Sep
+ * 2026). Monique works from the inbox deal grid; a book is optional, so no book and an old book raise
+ * nothing on Today. A book she emails still files and is served to the grid's mirror.
+ */
+describe("no book nag, however old the book", () => {
+  const alertTexts = async () => {
+    const res = await apiJson<any>("/api/today");
+    const block = (res.body?.data?.blocks ?? []).find((b: any) => b.key === "critical_alerts");
+    return (block?.content?.alerts ?? []).map((a: any) => String(a.text));
+  };
+  afterEach(() => vi.useRealTimers());
+
+  it("never sent one: no alert asks for it", async () => {
+    expect((await alertTexts()).filter((t: string) => /live book|#monique/i.test(t))).toEqual([]);
   });
 
-  it("is silent while the book is fresh, and escalates as it ages", async () => {
+  it("a book 400 days old raises nothing, and the book she emailed is still served for the grid", async () => {
     await storeLiveBook(env as never, { text: HER_BOOK, mailId: null });
-    const now = Date.now();
-    expect(await bookNagAlerts(env as never, now)).toEqual([]);
-    expect(await bookNagAlerts(env as never, now + 6 * 86_400_000)).toEqual([]);
-    expect((await bookNagAlerts(env as never, now + 7 * 86_400_000))[0]!.severity).toBe("medium");
-    expect((await bookNagAlerts(env as never, now + 15 * 86_400_000))[0]!.severity).toBe("high");
-    expect((await bookNagAlerts(env as never, now + 22 * 86_400_000))[0]!.severity).toBe("critical");
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(Date.now() + 400 * 86_400_000);
+    expect((await alertTexts()).filter((t: string) => /live book|book is \d+ days|#monique/i.test(t))).toEqual([]);
+    vi.useRealTimers();
+    const book = await apiJson<any>("/api/capital/book");
+    expect(book.status).toBe(200);
+    expect((book.body?.data?.lines ?? []).length).toBeGreaterThan(0);
   });
 });
 

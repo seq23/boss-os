@@ -49,6 +49,10 @@
   },
   {
    "domain": "dentistryguides.com",
+   "known_limits": [
+    { "item": "a3", "why": "Owner decision, 9 Oct 2026, recorded and machine-checked in local-guides-generator (data/research/dentistry/vertical_status.json, held by its hard-fail research contract): only metros with sourced research are indexed; every other dentistry city page stays published but noindexed until its research file exists.", "review_after": "2027-01-09" },
+    { "item": "j9", "why": "Same owner decision, 9 Oct 2026: unresearched dentistry city pages are noindex, so the generator correctly keeps them out of the sitemap. A city joins the sitemap when its research file is written, never by filling the template.", "review_after": "2027-01-09" }
+   ],
    "repo": "local-guides-generator",
    "category": "side_business",
    "kind": "guide",
@@ -447,6 +451,9 @@
   },
   {
    "domain": "porchandparty901.com",
+   "known_limits": [
+    { "item": "j9", "why": "New pages are frozen by the repo's own measured cadence gate (data/cadence/policy.json, 11 Oct 2026): Search Console showed 0 searches a month for the town targets and the library is already 37 pages over what it can keep current. The gate reopens itself on measured demand; this limit is measured again on review_after.", "review_after": "2027-01-11" }
+   ],
    "repo": "p-n-p",
    "category": "own_business",
    "kind": "hyperlocal",

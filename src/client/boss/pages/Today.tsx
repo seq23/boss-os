@@ -1966,19 +1966,38 @@ function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRu
  * the day's blocks; it says so in words instead.
  */
 function OperationsLine({ onOpen }: { onOpen?: () => void }) {
-  const [line, setLine] = useState<string | null>(null);
+  const [s, setS] = useState<ReturnType<typeof buildOperations>["synopsis"] | null>(null);
+  const [err, setErr] = useState(false);
+  // THE FAILED-RUNS COUNT OPENS ITS DETAIL (owner, 26 Oct 2026: "1 failed runs" and she could not
+  // click it). What failed, why, and when — one line each, from the same ledgers as the count.
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     Promise.all([api.roster(), api.operations().catch(() => null)])
-      .then(([roster, ledgers]) => {
-        const s = buildOperations(roster, ledgers).synopsis;
-        setLine(`${s.running} · ${s.sent} · ${s.needs}`);
-      })
-      .catch(() => setLine("Operations could not be read just now; Team → Duties has the full view."));
+      .then(([roster, ledgers]) => setS(buildOperations(roster, ledgers).synopsis))
+      .catch(() => setErr(true));
   }, []);
+  const n = s?.counts.failedRuns ?? 0;
+  const when = (at: number | null) => (at ? new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
   return (
     <div className="panel" data-testid="today-operations">
       <p className="eyebrow" style={{ marginTop: 0 }}>Operations</p>
-      <div className="row-sub">{line ?? "Reading the schedule and today’s ledgers…"}</div>
+      <div className="row-sub">
+        {err ? "Operations could not be read just now; Team → Duties has the full view."
+          : !s ? "Reading the schedule and today’s ledgers…"
+          : `${s.running} · ${s.sent} · ${s.needs}`}
+      </div>
+      {n > 0 && (
+        <button className="btn btn-small" onClick={() => setOpen((v) => !v)} aria-expanded={open} data-testid="open-failed-runs">
+          {open ? "Hide" : "See"} the {n} failed run{n === 1 ? "" : "s"}
+        </button>
+      )}
+      {open && s && (
+        <ul className="row-sub" data-testid="failed-runs">
+          {s.failed.map((f, i) => (
+            <li key={i}><strong>{f.what}</strong>{f.at ? ` at ${when(f.at)}` : ""}: {f.why}</li>
+          ))}
+        </ul>
+      )}
       {onOpen && <button className="btn btn-small" onClick={onOpen} data-testid="open-operations">Team → Duties</button>}
     </div>
   );
