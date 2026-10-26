@@ -277,6 +277,13 @@ Write `~/.boss-os/site-audit/findings.json` and nothing else. Shape:
 `client_repo`, `in_flight`, `ahrefs_credits`. `surfaced` now means: a defect YOUR crawl confirmed, in
 a fixable repo, that you could not fix — say exactly why in `because`. **If fixed=0 while anything
 is surfaced, the run is RED** (`FIXABLE_LEFT_UNFIXED`), so surface only what you truly cannot fix.
+
+**Never ask her for something already true** (26 Oct 2026: three asks, all false). Before any row or
+closing line asks her to grant Search Console access, add a property, or withdraw a sitemap, re-read it
+in THIS run as the gsc-bot service account: `sites.list` (is `sc-domain:<domain>` there?) and a
+cache-busted GET of the sitemap plus its Search Console entry. A refused token is a vault chore, never
+"no property". A sitemap that answers 200 with URLs is not dead. Quote the re-read in `because`; an
+ask without it is not written.
 `fixed_pr` requires `pr_url` and `mapped_by: "repo_identity"` or `"grid_manifest"`. `(project, headline)` is unique: give
 each distinct defect its own headline.
 

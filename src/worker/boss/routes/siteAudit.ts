@@ -345,6 +345,34 @@ siteAudit.post("/site-audit-findings", async (c) => {
 });
 
 /** She acts on one, or waves it away. Nothing here decides anything on her behalf. */
+/**
+ * WHAT NOW PASSES CLEARS ITS OLD FINDING (26 Oct 2026). The weekly Search Readiness audit posts the
+ * items that passed on each site; every older open finding for that site and item is archived with
+ * the reason, so a repair run's "surfaced" row is never relayed to her once the check passes.
+ */
+siteAudit.post("/site-audit-findings/cleared", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const passes = Array.isArray(b?.passes) ? b.passes.slice(0, 5000) : null;
+  if (!passes) throw badRequest("passes[] is required");
+  const at = Number.isFinite(Date.parse(String(b?.at ?? ""))) ? Date.parse(String(b.at)) : Date.now();
+  const now = Date.now();
+  let archived = 0;
+  for (const p of passes) {
+    const project = String(p?.project ?? "").slice(0, 120);
+    const item = String(p?.item ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+    if (!project.startsWith("checklist:") || !item) continue;
+    const r = await c.env.DB
+      .prepare(
+        `UPDATE site_audit_findings SET archived_at = ?, updated_at = ?, notes = ?
+          WHERE project = ? AND archived_at IS NULL AND lower(headline) LIKE ? AND found_at <= ?`,
+      )
+      .bind(now, now, `cleared ${new Date(at).toISOString().slice(0, 10)}: the check passes`, project, `${item}:%`, at)
+      .run();
+    archived += r.meta?.changes ?? 0;
+  }
+  return ok(c, { archived });
+});
+
 siteAudit.post("/site-audit-findings/:id/:action", async (c) => {
   const id = c.req.param("id");
   const action = c.req.param("action");

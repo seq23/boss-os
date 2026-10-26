@@ -26,6 +26,7 @@
  */
 
 import fs from "node:fs";
+import { isRoleMailbox, roleWords } from "../../src/shared/boss/people/role.mjs";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
@@ -205,8 +206,10 @@ export function fromWords(row, hers) {
   // A note she passed on comes from the party it names, not from her (25 Oct 2026).
   if (row.relayed) return `${String(row.principal ?? "").trim() || "—"}${row.intermediated_by ? `, via ${row.intermediated_by}` : ""} (a note you passed on)`;
   const addr = row.from && !row.outbound ? row.from : (row.intermediated_by || row.principal_email || "");
-  const person = row.from_name || (unnamed(row.principal) ? "" : String(row.principal)) || (addr ? nameFromAddress(addr) : "");
   const firm = firmOf(addr || row.principal_email);
+  // A role mailbox is a team, never a person (26 Oct 2026: "Operations, Rainmaker").
+  if (isRoleMailbox(addr, row.from_name)) return roleWords(addr, row.from_name, firm);
+  const person = row.from_name || (unnamed(row.principal) ? "" : String(row.principal)) || (addr ? nameFromAddress(addr) : "");
   const out = [person, firm].filter(Boolean);
   if (out.length === 2 && out[0].toLowerCase().includes(out[1].toLowerCase())) return out[0];
   return out.join(", ") || "—";
@@ -256,6 +259,8 @@ export function buildGrid(interests, { identity, lists, senders = {}, wrong = ne
   for (const raw of interests) {
     if (!raw?.asset || !raw?.side || !raw?.source_message) continue;
     if (wrong.has(raw.source_message)) continue;
+    // Her own ask to someone is not their order (26 Oct 2026): never a seller or buyer label for them.
+    if (raw.to_recipient) continue;
     // The main grid is the lookback; `archive: true` builds lookback → twelve months (the Archive view).
     if (archive ? (withinLookback(raw.date, now) || !withinArchive(raw.date, now)) : !withinLookback(raw.date, now)) continue;
     const r = { ...(senders[raw.source_message] ?? {}), ...raw };

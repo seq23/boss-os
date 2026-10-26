@@ -66,6 +66,8 @@ mkdir -p "$LOGS"
 # somebody adds later. `scripts/validate/the-installer-writes-well-formed-plists.mjs` proves the
 # same thing offline, in CI, over this file's own text.
 lint_plist() {
+  # Every Hour in this file is Central; move it to the Mac's own zone before launchd reads it (26 Oct 2026).
+  node "$REPO/scripts/ops/plist-central.mjs" "$1" || { echo "NAMED STOP [PLIST_TZ] could not move $1 to this Mac's zone; not loaded." >&2; exit 1; }
   if ! plutil -lint "$1" >/dev/null 2>&1; then
     echo "NAMED STOP [PLIST_MALFORMED] $1 is not a valid property list; not loaded." >&2
     plutil -lint "$1" >&2 || true

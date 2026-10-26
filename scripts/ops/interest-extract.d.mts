@@ -6,3 +6,4 @@ export function structuredOrder(...args: any[]): any;
 export function parseRows(...args: any[]): any;
 export function admissible(...args: any[]): any;
 export function reviewSet(...args: any[]): any;
+export function namesRecipient(...args: any[]): boolean;

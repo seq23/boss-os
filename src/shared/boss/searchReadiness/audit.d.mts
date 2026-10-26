@@ -43,3 +43,4 @@ export function queueRunLine(args: { started: number; fixed: number; left: numbe
 export function repairLine(lastRepair: any, left: number, now?: number): string;
 export function repairsThisWeek(status: any, now?: number): number | null;
 export function nextFixStatus(prev: any, run: { started: number; fixed: number; left: number; protectedLeft?: number; noRepo?: number; done?: boolean; at?: string }): any;
+export declare function passingItems(siteResults: any[]): Array<{ project: string; item: string }>;

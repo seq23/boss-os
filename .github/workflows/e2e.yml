@@ -35,11 +35,17 @@ concurrency:
 
 jobs:
   e2e:
-    name: Playwright journeys
+    name: Playwright journeys (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    # Normal: ~15–17 min (runs 36151769145, 36146807613: 14m44s, 17m28s). 60 is a fault
-    # detector at ~4x normal, never a budget; the whole-suite retry below is inside it.
-    timeout-minutes: 60
+    # THREE SHARDS, EACH ITS OWN RUNNER, ITS OWN LOCAL D1 AND ITS OWN wrangler dev (26 Oct 2026: the
+    # one job had grown to 32 min, so every production deploy waited ~44 min). Specs still run one at a
+    # time inside a shard (workers: 1), so the single-database rule in playwright.config.ts holds. A
+    # shard is ~11 min; 45 is a fault detector at ~4x normal, never a budget; the retry is inside it.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     permissions:
       contents: read
 
@@ -72,12 +78,12 @@ jobs:
       # (see playwright.config.ts). A journey that fails on its own merits fails the step: this
       # tolerates the tool crashing, never a wrong assertion.
       - name: Playwright journeys
-        run: npm run e2e || (echo "::warning::wrangler dev crashed or a journey failed — retrying the whole suite once" && npm run e2e)
+        run: npm run e2e -- --shard=${{ matrix.shard }}/3 || (echo "::warning::wrangler dev crashed or a journey failed — retrying this shard once" && npm run e2e -- --shard=${{ matrix.shard }}/3)
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             playwright-report
             test-results

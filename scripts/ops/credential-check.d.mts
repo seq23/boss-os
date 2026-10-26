@@ -6,3 +6,4 @@ export interface CredentialProbe {
 }
 
 export declare function connectorStartFailure(error: { code?: string } | undefined | null): CredentialProbe;
+export declare function feedState(text: unknown): { state: "live" | "dead"; detail: string };

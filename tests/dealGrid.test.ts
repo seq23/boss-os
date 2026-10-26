@@ -59,6 +59,39 @@ describe("her own name and addresses are never a counterparty (rule 5)", () => {
   });
 });
 
+describe("a role mailbox is a team, never a person (26 Oct 2026)", () => {
+  it("the deal grid names the team, and the catch-ups never suggest it", async () => {
+    const { fromWords } = await import("../scripts/ops/interest-grid.mjs");
+    const { isRoleMailbox } = await import("../src/shared/boss/people/role.mjs");
+    const words = fromWords({ from: "operations@rainmakersecurities.com", from_name: "Operations" }, false);
+    expect(words).toMatch(/operations team$/i);
+    expect(words).not.toMatch(/^Operations,/);
+    expect(fromWords({ from: "jo.fake@firm.example", from_name: "Jo Fake" }, false)).toMatch(/^Jo Fake/);
+    expect(isRoleMailbox("info@x.example")).toBe(true);
+    expect(isRoleMailbox("jo@x.example", "Jo Fake")).toBe(false);
+    const { pickCatchups, CATCHUP_REASON_TYPES } = await import("../src/shared/boss/lp/plan.mjs");
+    const c = (email: string, name: string) => ({ email, name, reason: "they wrote last week", reason_type: CATCHUP_REASON_TYPES[0], score: 1 });
+    const picked = pickCatchups([c("operations@firm.example", "Operations"), c("jo@firm.example", "Jo Fake")], [], { doNotSuggest: [], rainmaker: [] });
+    expect(picked.map((p: any) => p.email)).toEqual(["jo@firm.example"]);
+  });
+});
+
+describe("her own ask never labels the person she asked (26 Oct 2026)", () => {
+  const id = { names: ["Sequoia Taylor"], addresses: ["staylor@spry.vc"] };
+  const msg = { source_message: "m-out", outbound: true, from: "staylor@spry.vc", from_name: "Sequoia Taylor", to: ["Desk <desk@bancoejemplo.example>"] };
+  it("an outbound row naming a recipient as the seller's rep is her question, kept off the grid", () => {
+    const r = markHers({ asset: "Acme AI", side: "sell", principal: "Banco Ejemplo", intermediated_by: "Banco Ejemplo (seller rep)", source_message: "m-out", date: "2026-10-20" }, msg, id);
+    expect(r).toMatchObject({ to_recipient: true, hers: false });
+    const grid = buildGrid([r], { identity: id, lists: { same_firm: [], do_not_suggest: [] }, now: Date.parse("2026-10-26") });
+    expect(grid).toEqual([]);
+  });
+  it("an outbound row about someone who is not a recipient is unchanged (her own supply stays Yours)", () => {
+    const r = markHers({ asset: "Acme AI", side: "sell", principal: "your client", source_message: "m-out" }, msg, id);
+    expect(r.to_recipient).toBeUndefined();
+    expect(r.hers).toBe(true);
+  });
+});
+
 describe("prices and sizes are sane or '—' (rule 5)", () => {
   it("never prints an absurd number", () => {
     expect(priceWords("$ 1,484,000 M")).toBe("—");

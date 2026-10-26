@@ -158,6 +158,20 @@ export function senderOf(msg) {
   };
 }
 
+const stem = (d) => String(d ?? "").toLowerCase().split("@").pop().replace(/^www\./, "").split(".").slice(0, -1).join("").replace(/[^a-z0-9]/g, "");
+const squash = (t) => String(t ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+/** Does the row's principal or intermediary name one of the people her outbound email went to? */
+export function namesRecipient(row, msg, identity = IDENTITY) {
+  const recips = [...(msg?.to ?? []), ...(msg?.cc ?? [])].map((a) => String(a).toLowerCase().match(/[^\s<>"]+@[^\s<>"]+/)?.[0] ?? "")
+    .filter((a) => a && a !== RRLIST && !a.endsWith(`@${FIRM}`) && !isHers({ from: a }, identity));
+  if (!recips.length) return false;
+  const named = [row.principal_email, row.intermediated_by, row.principal].filter(Boolean).map(String);
+  return recips.some((a) => {
+    const st = stem(a);
+    return named.some((n) => n.toLowerCase().includes(a) || (st.length >= 4 && squash(n).includes(st)));
+  });
+}
+
 /**
  * A row that is hers: "your client" as principal, `hers: true`, and nobody of hers as intermediary.
  *
@@ -171,6 +185,11 @@ export function senderOf(msg) {
 export function markHers(row, msg, identity = IDENTITY) {
   const sender = senderOf(msg);
   const withSender = { ...row, ...sender };
+  // HER OWN ASK NEVER LABELS THE PERSON SHE ASKED (26 Oct 2026). She wrote to a Spanish merchant
+  // bank as a possible bank for buyers, and the grid listed that bank as an Anthropic seller rep.
+  // An outbound row whose principal or intermediary is a recipient of her email is her question to
+  // them, not their order: kept in the ledger, `to_recipient: true`, never on the grid.
+  if (sender.outbound && namesRecipient(row, msg, identity)) return { ...withSender, hers: false, relayed: false, to_recipient: true };
   if (row.relayed === true || isRelayedNote(msg)) {
     const principal = isHers({ principal: row.principal, principal_email: row.principal_email }, identity) || /^your client$/i.test(String(row.principal ?? "").trim())
       ? `unnamed ${row.side === "sell" ? "seller" : row.side === "buy" ? "buyer" : "party"} in a note passed to you`
@@ -423,7 +442,7 @@ export function recheckRows(interests, messagesById, identity = IDENTITY) {
     const side = decideSide(r);
     let next = { ...r, ...side };
     if (r.outbound) next = markHers({ ...next, hers: undefined }, msg, identity);
-    const changed = ["side", "hers", "principal", "relayed"].filter((k) => (next[k] ?? null) !== (r[k] ?? null));
+    const changed = ["side", "hers", "principal", "relayed", "to_recipient"].filter((k) => (next[k] ?? null) !== (r[k] ?? null));
     if (changed.length) changes.push({ source_message: r.source_message, asset: r.asset, before: Object.fromEntries(changed.map((k) => [k, r[k] ?? null])), after: Object.fromEntries(changed.map((k) => [k, next[k] ?? null])) });
     return next;
   });
