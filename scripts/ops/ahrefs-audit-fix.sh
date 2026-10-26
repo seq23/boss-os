@@ -48,6 +48,10 @@
 
 set -uo pipefail
 
+# THE WHOLE BODY IS A FUNCTION, called on the last line (25 Oct 2026): bash reads a script as it runs
+# it, so a file rewritten under a running pass shifted the bytes under it. A function is parsed whole.
+main() {
+
 REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
 PROMPT_FILE="${AHREFS_AUDIT_PROMPT:-${BOSS_DUTY_PROMPT_FILE:-$REPO/scripts/ops/ahrefs-audit-fix-prompt.md}}"
 OUT_DIR="${BOSS_OS_SITE_AUDIT_DIR:-$HOME/.boss-os/site-audit}"
@@ -90,7 +94,14 @@ CLAUDE="$(command -v claude || echo /opt/homebrew/bin/claude)"
 [ -x "$CLAUDE" ] || { say "NAMED STOP [NO_CLAUDE_CLI] $CLAUDE"; exit 4; }
 [ -f "$PROMPT_FILE" ] || { say "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE"; exit 5; }
 command -v gh >/dev/null 2>&1 || { say "NAMED STOP [NO_GH_CLI] a fix that cannot open a PR is a fix nobody sees."; exit 6; }
-gh auth status >/dev/null 2>&1 || { say "NAMED STOP [GH_NOT_AUTHENTICATED] run: gh auth login"; exit 7; }
+# OFFLINE IS NOT LOGGED OUT (25 Oct 2026). `gh auth status` fails the same way for both, and an
+# outage once turned every pass of a run into "GH_NOT_AUTHENTICATED". lib/net-wait.sh asks whether
+# api.github.com answers at all: no answer waits (bounded, ~2 h, said in the log); an answer with gh
+# still failing is the login stop. Exit 13 = the network, so the runner resumes rather than gives up.
+# shellcheck source=lib/net-wait.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/net-wait.sh"
+gh_ready; GH_RC=$?
+[ "$GH_RC" -eq 0 ] || exit "$GH_RC"
 
 # Gmail here is a claude.ai connector, not a local MCP server. A lapsed login would make this job
 # silently find nothing for ever — indistinguishable from a week with no findings, which is the one
@@ -161,11 +172,21 @@ if ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG"; then
   # turn limit with 63 files changed and none committed, and the runner moved on. Every worktree
   # this pass cut is committed, pushed and opened as a DRAFT "Salvaged:" PR, which the next scoped
   # pass for that repo continues (prompt: "Never lose finished work"). The pass start is read back
-  # from RUN_LOG's own name, so nothing above `claude -p` had to change: an edit there would shift
-  # the bytes under a copy of this script that is already running.
+  # from RUN_LOG's own name. (The body is a function now, so edits anywhere are safe to land.)
+  # A PASS THAT LOST THE NETWORK waits for it first, so its salvage can push, then exits 13: the
+  # runner re-plans that chunk instead of counting it as "fixed nothing".
+  NET_LOST=0
+  if ! net_up; then
+    NET_LOST=1
+    wait_for_network "saving this pass's work" || say "the network is still down; salvaging what can be saved locally"
+  fi
   SINCE="$(basename "$RUN_LOG" | sed -E 's/^([0-9]{4})-([0-9]{2})-([0-9]{2})-([0-9]{6}).*/\1\2\3-\4/')"
   node "$REPO/scripts/ops/salvage-pass-worktrees.mjs" --since "$SINCE" ${SR_SCOPE_REPO:+--repo "$SR_SCOPE_REPO"} 2>&1 | tee -a "$RUN_LOG" | sed 's/^/  /'
   [ "${PIPESTATUS[0]}" -eq 0 ] || say "NAMED STOP [SALVAGE_FAILED] a worktree of this pass could not be saved; see the SALVAGE lines above."
+  if [ "$NET_LOST" -eq 1 ]; then
+    say "NAMED STOP [NETWORK_LOST_MID_PASS] the pass ended because the network went away, not because the work was done; the runner re-runs it."
+    exit 13
+  fi
   exit 9
 fi
 
@@ -192,3 +213,6 @@ VERDICT_RC=${PIPESTATUS[0]}
 [ $RC -ne 0 ] && exit $RC
 [ $VERDICT_RC -eq 0 ] || { say "NAMED STOP [AUDIT_PASS_RED] see the AUDIT-VERDICT lines above."; exit 12; }
 exit 0
+}
+
+main "$@"; exit $?

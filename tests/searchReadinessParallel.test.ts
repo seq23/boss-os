@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -21,6 +21,13 @@ function runDriver(parallel: string | null, chunks: string[]): Ev[] {
   mkdirSync(join(repo, "scripts/ops"), { recursive: true });
   mkdirSync(join(repo, "src/shared/boss/searchReadiness"), { recursive: true });
   copyFileSync("scripts/ops/search-readiness-fix.sh", join(repo, "scripts/ops/search-readiness-fix.sh"));
+  mkdirSync(join(repo, "scripts/ops/lib"), { recursive: true });
+  copyFileSync("scripts/ops/lib/net-wait.sh", join(repo, "scripts/ops/lib/net-wait.sh"));
+  // The network is faked UP (the runner probes it before every audit): no real request leaves the test.
+  const bin = join(home, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "curl"), "#!/bin/bash\nprintf 200\n");
+  chmodSync(join(bin, "curl"), 0o755);
   const events = join(home, "events.txt");
   writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "stub", scripts: { "sites:audit": "true" } }));
   // The plan: the given chunks the first time, an empty queue after the round.
@@ -36,7 +43,7 @@ sleep 1
 echo "end $SR_SCOPE_REPO $SR_SCOPE_BRIEFS $(node -e 'console.log(Date.now())')" >> ${JSON.stringify(events)}
 `);
   writeFileSync(join(repo, "src/shared/boss/searchReadiness/audit.mjs"), "export const queueRunLine = () => 'ok';\n");
-  const env: Record<string, string> = { ...process.env as Record<string, string>, HOME: home, BOSS_OS_REPO: repo };
+  const env: Record<string, string> = { ...process.env as Record<string, string>, HOME: home, BOSS_OS_REPO: repo, PATH: `${bin}:${process.env.PATH}` };
   if (parallel === null) delete env.SR_PARALLEL; else env.SR_PARALLEL = parallel;
   execFileSync("/bin/bash", [join(repo, "scripts/ops/search-readiness-fix.sh")], { env, cwd: repo, stdio: "pipe", timeout: 60000 });
   return readFileSync(events, "utf8").trim().split("\n").map((l) => {

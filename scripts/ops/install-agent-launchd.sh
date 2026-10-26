@@ -574,6 +574,42 @@ lint_plist "$SRF_PLIST"
 launchctl load "$SRF_PLIST"
 echo "Installed $SRF_LABEL — daily 07:30 Central tick, weekly Tuesday work (asks the duty row)."
 
+# ─── The Search Readiness run resumes by itself (25 Oct 2026) ─────────────────────────────────────
+#
+# A network outage stopped every pass of that day's run and nothing restarted it. The runner keeps
+# ~/.boss-os/search-readiness/run-unfinished.json from start to end. This job is a KeepAlive on that
+# PATH, not a poll: idle (no file) it never runs; while the file exists launchd runs the cheap local
+# check at most every 15 minutes (ThrottleInterval), which resumes a run whose pid is dead and does
+# nothing beside a live one. The resume goes through duty-run.sh inside the runner, so this plist
+# names no duty (validate:launchd-duty-link counts the one daily tick above).
+SRR_LABEL="com.seq.boss-sr-resume"
+SRR_PLIST="$HOME/Library/LaunchAgents/$SRR_LABEL.plist"
+mkdir -p "$HOME/.boss-os/search-readiness"
+cat > "$SRR_PLIST" <<SRREOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SRR_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; bash $REPO/scripts/ops/search-readiness-fix.sh --resume-if-unfinished</string>
+  </array>
+  <key>KeepAlive</key>
+  <dict><key>PathState</key><dict><key>$HOME/.boss-os/search-readiness/run-unfinished.json</key><true/></dict></dict>
+  <key>ThrottleInterval</key><integer>900</integer>
+  <key>StandardOutPath</key><string>$LOGS/sr-resume.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/sr-resume.err</string>
+</dict></plist>
+SRREOF
+
+launchctl unload "$SRR_PLIST" 2>/dev/null || true
+lint_plist "$SRR_PLIST"
+launchctl load "$SRR_PLIST"
+echo "Installed $SRR_LABEL — resumes an unfinished Search Readiness run within 15 minutes."
+
 # ─── Simone's publication chase — RETIRED 14 September 2026 ─────────────────
 #
 # `duty_kdp_publication` chased KDP case #51496198 until the books were Live. Six of the seven went
@@ -1363,6 +1399,7 @@ require_loaded "$NETWORK_LABEL"
 require_loaded "$PROPS_LABEL"
 require_loaded "$SR_LABEL"
 require_loaded "$SRF_LABEL"
+require_loaded "$SRR_LABEL"
 # ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a
 # "Verified" line that did not mention it — the installer and its own verifier each keeping their own
 # list of jobs, which is the defect this file's comments warn about, inside this file.
