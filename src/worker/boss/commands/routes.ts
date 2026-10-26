@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
-import { macWork, cancelCommand, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand } from "./run";
+import { macWork, cancelCommand, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent } from "./run";
 
 export const commands = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -47,6 +47,13 @@ commands.post("/:id/code", async (c) => {
   if (!b || !Array.isArray(b.codes)) throw badRequest("codes[] is required (the rows of the signups view)");
   await codeAnswered(c.env, c.req.param("id"), { done: Boolean(b.done), already: b.already, missing: b.missing, codes: b.codes });
   return ok(c, { recorded: true });
+});
+
+// An errand went (her email was the approval): the provider's id and the exact words, then the watch.
+commands.post("/:id/errand-sent", async (c) => {
+  const b = await c.req.json<{ message_id?: string; subject?: string; text?: string; request?: string }>().catch(() => null);
+  if (!b?.message_id || !b?.subject || !b?.text) throw badRequest("message_id, subject and text are all required");
+  return ok(c, { recorded: await errandSent(c.env, c.req.param("id"), { message_id: b.message_id, subject: b.subject, text: b.text, request: b.request ?? null }) });
 });
 
 commands.post("/:id/cancel", async (c) => ok(c, { line: await cancelCommand(c.env, c.req.param("id")) }));

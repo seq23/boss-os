@@ -34,7 +34,7 @@ import { recordConstraints } from "../service/constraints";
 import { recordDriveWatches } from "../service/macWaits";
 import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
 import { dueTimeIn, dueLine } from "../../../shared/boss/service/dueTime.mjs";
-import { commandFromMail } from "../commands/run";
+import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
 
 /**
  * MAIL TO `boss@sequoiataylor.com`.
@@ -343,6 +343,22 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * is visible to HER instead, on the row and in the audit trail, which is the person who actually
    * needs to know somebody is writing to her machine inbox.
    */
+  /*
+   * A BUSINESS ANSWERING ONE OF HER ERRANDS (owner, 26 Oct 2026). Simone wrote to them from simone@
+   * with Reply-To simone@, so their answer lands here. It is RECORDED AND READ FOR HER, never run and
+   * never answered: nothing goes back to them from this path, nothing they write becomes work, and a
+   * card or deposit request goes to her (src/worker/boss/commands/run.ts errandReplied).
+   */
+  const errand = !isOwner(sender) && message.rawSize <= MAX_BODY_BYTES ? await openErrandFor(env, sender, now) : null;
+  if (errand) {
+    const raw = await new Response(message.raw).text();
+    const text = taskBodyFrom(raw)?.readable ?? "";
+    await recordArrival("ERRAND_REPLY", `From ${sender}, answering a request Simone sent for you. Read and told to you; nothing was run or sent back.`);
+    await errandReplied(env, errand, { from: sender, subject, text, dmarc }, now);
+    await finish({ outcome: "ERRAND_REPLY", why: `Their answer to Simone's request ${errand.id}, told to you plainly.`, employeeId: "emp_chief", reply: null });
+    return { mailId, outcome: "ERRAND_REPLY", employeeId: "emp_chief", taskId: null, reply: null };
+  }
+
   if (!authorised) {
     const why = isOwner(sender)
       ? `From ${sender}, which is one of yours, but DMARC did not pass — so the address was not proven and nothing was run.`

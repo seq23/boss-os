@@ -24,7 +24,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
 import {
-  commandsIn, commandReplyIn, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
+  commandsIn, commandReplyIn, readErrandReply, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
 } from "../../../shared/boss/commands/parse.mjs";
 import { clashes, createInvite, replaceGuest, deleteInvite, sendOne } from "./google";
 
@@ -52,7 +52,11 @@ async function save(env: Env, id: string, patch: { state?: string; spec?: Json; 
 }
 
 /** A plain email the Mac owes her (the Worker can only answer HER mail; anything later goes from the Mac). */
-export interface Notice { subject: string; happened: string; details?: string[]; decide?: Json[] }
+export interface Notice {
+  subject: string; happened: string; details?: string[]; decide?: Json[];
+  /** What the Mac also writes into her morning email (an errand's answer): a line, or a Decide item. */
+  morning?: { line?: string; decide?: Json };
+}
 async function owe(env: Env, id: string, notice: Notice) {
   await env.DB.prepare(`UPDATE boss_commands SET notice = ?, notice_state = 'due', updated_at = ? WHERE id = ?`).bind(JSON.stringify(notice), Date.now(), id).run();
 }
@@ -343,6 +347,7 @@ function commandTitle(kind: string, spec: Json): string {
   if (kind === "repo") return `${spec.product}: ${String(spec.instruction ?? "").slice(0, 50)}`;
   if (kind === "access_code") return `Access code${spec.code ? ` ${spec.code}` : ""}`;
   if (kind === "email") return `Email to ${spec.recipient_name ?? spec.to ?? "them"}`;
+  if (kind === "errand") return `Request to ${spec.to}`;
   return String(spec.what ?? kind).slice(0, 60);
 }
 
@@ -390,7 +395,7 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
     return { reply: said.join("\n"), outcome: "COMMAND_REPLY", commandIds: [], taskId: null };
   }
   if (input.refs.some((r) => !r.startsWith("cmd_"))) return null;
-  const found = commandsIn({ subject: input.subject, text: input.text, now: input.now });
+  const found = commandsIn({ subject: input.subject, text: input.text, now: input.now, sender: input.sender });
   if (found.length === 0) return null;
 
   const ids = found.map(() => newId("cmd"));
@@ -420,6 +425,11 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
       const ready = Boolean(spec.to);
       await save(env, row.id, { state: ready ? "drafting" : "waiting" }, now);
       lines.push(`The email to ${spec.recipient_name ?? spec.to ?? "them"}: I'll draft it in your voice ${ready ? "now" : "once I have the address"} and show it to you word for word with Send / Change / Try again. Nothing goes until you tap Send.`);
+    } else if (c.kind === "errand") {
+      // Her email is the approval (owner, 26 Oct 2026): it goes on the Mac's next tick, no Send tap.
+      await save(env, row.id, { state: "queued" }, now);
+      await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_approved_by_her_email", detail: { to: spec.to, mail_id: input.mailId } });
+      lines.push(`I'm sending your request to ${spec.to} now, as your assistant, from my own address. I'll watch for their answer and tell you what they said. Reply "cancel" in the next few minutes to stop it.`);
     } else if (c.kind === "cant_yet") {
       lines.push(await cantYetLine(env, row, spec.what, now));
       await save(env, row.id, { state: "handed" }, now);
@@ -462,6 +472,11 @@ function waitingFor(row: CommandRow): string {
 
 async function answerOne(env: Env, row: CommandRow, said: Json, now: number): Promise<string | null> {
   const spec = j(row.spec); const result = j(row.result);
+  if (row.kind === "errand") {
+    if (said.verb === "cancel" && row.state === "queued") { await save(env, row.id, { state: "cancelled" }, now); return "Cancelled. Nothing was sent."; }
+    if (said.verb === "cancel") return `Too late to stop: it went to ${spec.to}. I'm watching for their answer.`;
+    return null;
+  }
   if (row.kind === "email") {
     if (said.verb === "send") return approveAndSend(env, row, now);
     if (said.verb === "retry") return redraft(env, row, null, now);
@@ -558,12 +573,14 @@ export async function macWork(env: Env, now = Date.now()) {
   const watch = await rows(`SELECT * FROM boss_commands WHERE state IN ('created','sent') AND kind IN ('invite','email') AND updated_at > ? LIMIT 50`, now - 3 * 86_400_000);
   const notices = await rows(`SELECT * FROM boss_commands WHERE notice_state = 'due' ORDER BY updated_at LIMIT 20`);
   const codes = await rows(`SELECT * FROM boss_commands WHERE kind = 'access_code' AND state = 'queued' ORDER BY created_at LIMIT 10`);
+  const errands = await rows(`SELECT * FROM boss_commands WHERE kind = 'errand' AND state = 'queued' ORDER BY created_at LIMIT 10`);
   return {
     lookups: lookups.map((r) => ({ id: r.id, spec: j(r.spec) })),
     drafts: drafts.map((r) => ({ id: r.id, spec: j(r.spec), change_note: j(r.result).change_note ?? null, previous: j(r.result).previous ?? null })),
     bounce_checks: watch.map((r) => ({ id: r.id, mailbox: r.kind === "invite" ? j(r.result).mailbox : j(r.spec).from_mailbox, address: r.kind === "invite" ? j(r.result).guest : j(r.spec).to, since: j(r.result).sent_at ?? r.updated_at })),
     notices: notices.map((r) => ({ id: r.id, notice: j(r.notice) })),
     codes: codes.map((r) => ({ id: r.id, spec: j(r.spec) })),
+    errands: errands.map((r) => ({ id: r.id, spec: j(r.spec), asked_at: r.created_at })),
   };
 }
 
@@ -589,4 +606,67 @@ export async function commandFailed(env: Env, id: string, why: string, now = Dat
   const line = await cantYetLine(env, row, what, now);
   await save(env, id, { state: "failed", result: { ...j(row.result), why } }, now);
   await owe(env, id, { subject: "Simone hit a wall", happened: line });
+}
+
+// ─── Errands: sent on her word, watched for the answer ─────────────────────
+
+/** How long a sent errand is watched for the business's answer. */
+export const ERRAND_WATCH_MS = 21 * 86_400_000;
+/** Free-mail domains: an errand to one of these is answered only from that exact address. */
+const FREE_MAIL_RE = /@(?:gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|aol|proton|protonmail|live|msn|gmx)\.[a-z.]+$/i;
+
+/**
+ * The sent errand a stranger's email answers: from the address Simone wrote to, or — for a business
+ * domain — anyone at that domain (the club's host answers for reservations@). Null when it answers none.
+ */
+export async function openErrandFor(env: Env, sender: string, now = Date.now()): Promise<CommandRow | null> {
+  const from = String(sender ?? "").trim().toLowerCase();
+  if (!from.includes("@")) return null;
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM boss_commands WHERE kind = 'errand' AND state IN ('sent','replied') AND updated_at > ? ORDER BY updated_at DESC LIMIT 50`,
+  ).bind(now - ERRAND_WATCH_MS).all<CommandRow>();
+  for (const r of results ?? []) {
+    const to = String(j(r.spec).to ?? "").toLowerCase();
+    if (!to) continue;
+    if (to === from) return r;
+    if (!FREE_MAIL_RE.test(to) && from.endsWith(`@${to.split("@")[1]}`)) return r;
+  }
+  return null;
+}
+
+/** The Mac sent it: the provider's id and the exact words go on the row, and the watch starts. */
+export async function errandSent(env: Env, id: string, out: { message_id: string; subject: string; text: string; request?: string | null }, now = Date.now()): Promise<boolean> {
+  const row = await getCommand(env, id);
+  if (!row || row.kind !== "errand" || row.state !== "queued") return false;
+  await save(env, id, { state: "sent", result: { ...j(row.result), message_id: out.message_id, subject: out.subject, text: out.text, request: out.request ?? null, sent_at: now } }, now);
+  await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: id, action: "errand_sent_on_her_word", detail: { to: j(row.spec).to, message_id: out.message_id } });
+  return true;
+}
+
+/**
+ * THEIR ANSWER, TOLD TO HER PLAINLY: What I asked for / What they said / What you need to do. Nothing
+ * is ever sent back to them from here, and a card or deposit request is hers, never an agent's.
+ */
+export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean }, now = Date.now()): Promise<void> {
+  const spec = j(row.spec); const result = j(row.result);
+  const read = readErrandReply(reply.text || reply.subject, spec.to);
+  const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 4000), kind: read.kind, dmarc: reply.dmarc }];
+  await save(env, row.id, { state: "replied", result: { ...result, replies } }, now);
+  const asked = String(result.request ?? spec.ask ?? "").slice(0, 300);
+  const details = [
+    `What I asked for: ${asked}`,
+    `What they said: ${read.what_they_said}`,
+    `What you need to do: ${read.what_you_do}`,
+    ...(reply.dmarc ? [] : ["Their email could not be fully proven to come from them, so check it before acting on it."]),
+  ];
+  const card = read.kind === "card";
+  await owe(env, row.id, {
+    subject: card ? "Your request needs you: they want a card" : read.kind === "confirmed" ? "Your request is booked" : "They answered your request",
+    happened: `${spec.to} answered the request I sent for you.`,
+    details,
+    morning: card
+      ? { decide: { title: `${spec.to} wants a card or deposit to hold your request`, body: `${read.what_they_said} Only you can give that.`, buttons: [{ label: "Write to them", url: `mailto:${spec.to}` }], priority: 2 } }
+      : { line: `${spec.to} answered your request: ${read.kind === "confirmed" ? "it's booked" : read.what_you_do}` },
+  });
+  await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_answered", detail: { kind: read.kind, from: reply.from, dmarc: reply.dmarc } });
 }

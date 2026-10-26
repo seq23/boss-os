@@ -384,6 +384,40 @@ export async function sendAsEmployee(who, msg, fetchImpl = fetch) {
   return { ok: false, error: last || "every sender was refused" };
 }
 
+/**
+ * SIMONE'S ERRAND TO A BUSINESS (owner, 26 Oct 2026). The one email Boss OS sends to an outsider on
+ * her word without a second Send: a booking or request she wrote to Simone, to the business address
+ * she gave in that email (`errandIn`, src/shared/boss/commands/parse.mjs). Signed "Simone, Assistant
+ * to Sequoia Taylor", from simone@ with Reply-To simone@ so the answer comes back to the Worker's
+ * watch (`openErrandFor`), and NO copy to her by default (owner: "she doesnt have to cc me next
+ * time"). Never the owner layout: this is a letter to a stranger, not a Boss OS notice.
+ */
+export const ERRAND_FROM = "Simone <simone@sequoiataylor.com>";
+export const ERRAND_REPLY_TO = "simone@sequoiataylor.com";
+export function errandMail({ to, subject, text, cc = [] }) {
+  return { from: ERRAND_FROM, to: [to], reply_to: ERRAND_REPLY_TO, subject: String(subject).slice(0, 200), text, ...(cc.length ? { cc } : {}) };
+}
+/** What is wrong with an errand payload, by name. `[]` means it may go. Pure. */
+export function errandPayloadProblems(p, { owner = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com" } = {}) {
+  const out = [];
+  if (p?.from !== ERRAND_FROM) out.push("not from Simone's own address");
+  if (p?.reply_to !== ERRAND_REPLY_TO) out.push("Reply-To is not Simone's address, so the answer would not be watched");
+  if (!Array.isArray(p?.to) || p.to.length !== 1) out.push("not exactly one business");
+  const copies = [...(p?.cc ?? []), ...(p?.bcc ?? [])].map((a) => String(a).toLowerCase());
+  if (copies.includes(String(owner).toLowerCase())) out.push("copies the owner (no Cc by default)");
+  if (p?.attachments?.length) out.push("carries a file");
+  return out;
+}
+/** The one POST of an errand to Resend. `{ ok, id }` or `{ ok: false, error }`; a payload that fails its check is never sent. */
+export async function postErrandMail(payload, fetchImpl = fetch, { key = process.env.BOSS_OS_MAIL_KEY } = {}) {
+  const problems = errandPayloadProblems(payload);
+  if (problems.length) return { ok: false, error: `refused before sending: ${problems.join("; ")}` };
+  if (!key) return { ok: false, error: "no BOSS_OS_MAIL_KEY in the environment (run through the vault)" };
+  const res = await fetchImpl(RESEND, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${key}` }, body: JSON.stringify(payload) });
+  const body = await res.json().catch(() => ({}));
+  return res.ok && body?.id ? { ok: true, id: body.id } : { ok: false, error: `${res.status} ${String(body?.message ?? "").slice(0, 200)}` };
+}
+
 /** "OpenAI (4) and Blue Origin": each name once, with how many times it came up (owner, 22 Oct 2026). */
 export function namesOnce(names) {
   const counts = new Map();

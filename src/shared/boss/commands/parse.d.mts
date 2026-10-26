@@ -25,11 +25,18 @@ export function repoAskIn(clause: string): { github_repo: string; product: strin
 export function emailAskIn(clause: string): { to: string | null; pronoun: string | null; name: string | null; purpose: string } | null;
 export const CANT_YET: ReadonlyArray<{ re: RegExp; what: string }>;
 export function clausesIn(text: string): string[];
-export interface Command { ref: number; waits_on: number[]; kind: "invite" | "lookup" | "email" | "repo" | "access_code" | "cant_yet"; spec: Record<string, any> }
-export function commandsIn(i?: { subject?: string; text?: string; now?: number }): Command[];
+export interface Command { ref: number; waits_on: number[]; kind: "invite" | "lookup" | "email" | "repo" | "access_code" | "cant_yet" | "errand"; spec: Record<string, any> }
+export function commandsIn(i?: { subject?: string; text?: string; now?: number; sender?: string }): Command[];
 export function ownWords(text: string): string;
 export function commandReplyIn(text: string, now?: number): Record<string, any> | null;
 export const ACCESS_CODE_SHAPE: Readonly<{ table: string; columns: readonly string[]; view: string; view_columns: readonly string[]; max_days: number }>;
 export function normaliseCode(c: string): string;
 export function accessCodeIn(text: string): { op: "create" | "count" | "off"; code: string | null; trial_days?: number; label?: string | null; error?: string } | null;
 export function codeLines(rows: Array<{ code: string; trial_days: number; label?: string | null; active?: boolean; checkouts_started?: number; signups?: number }>): string[];
+export const ERRAND_SENDERS: readonly string[];
+export const ERRAND_MONEY_RE: RegExp;
+export function errandRefusal(i?: { sender?: string; subject?: string; text?: string }): string | null;
+export function errandIn(i?: { sender?: string; subject?: string; text?: string }): { to: string; ask: string } | null;
+export function errandText(request: string): string;
+export function errandProblems(i?: { subject?: string; request?: string }): string[];
+export function readErrandReply(text: string, address?: string): { kind: "card" | "alternative" | "confirmed" | "other"; what_they_said: string; what_you_do: string };
