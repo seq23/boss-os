@@ -135,8 +135,20 @@ describe("every grid repo site has a coverage manifest", () => {
     expect(paths).toContain("/oakland-tn/");
     expect(paths).toContain("/midtown-memphis-tn/");
     expect(paths).toContain("/methodist-le-bonheur-germantown-hospital/");
-    expect(paths).toContain("/germantown-tn/memory-care/");
+    expect(paths).toContain("/memory-care-germantown-tn/");
+    // The generator's own care-type slugs; a folded town keeps its town page but no service pages.
+    expect(paths).toContain("/tunica-ms/");
+    expect(paths).not.toContain("/assisted-living-tunica-ms/");
+    expect(paths.filter((p: string) => /^\/(assisted-living|memory-care)-/.test(p)).length).toBe(28);
     expect(expandCoverage(pnp).map((t: any) => t.path)).toContain("/areas/cordova-tn-grazing-tables");
+  });
+
+  it("a town that narrows its services must say why", () => {
+    const senior = sites.grid_repos.find((s: any) => s.domain === "memphisseniorcarehomes.com");
+    const bad = JSON.parse(JSON.stringify(senior));
+    bad.coverage.towns[0].services = [];
+    delete bad.coverage.towns[0].services_why;
+    expect(coverageProblems(bad).join(" ")).toMatch(/services_why/);
   });
 
   it("the generator's guide sites read their own city list", () => {
