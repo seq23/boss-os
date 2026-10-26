@@ -32,6 +32,7 @@ export interface BossRoute {
 }
 
 export declare const BOSS_INTAKE_MAILBOX: string;
+export declare const SIMONE_MAILBOX: string;
 export declare const BOSS_INTAKE_DOMAIN: string;
 export declare const BOSS_INTAKE_SENDERS: readonly string[];
 export declare const BOSS_DEFAULT_ROUTE_ROLE: string;

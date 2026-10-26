@@ -7,6 +7,7 @@ import { Coaching } from "./Coaching";
 import { BodyContractView } from "./BodyContract";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice, InfoNotice } from "../components/Notice";
+import { TellSimone } from "../components/TellSimone";
 import { usd } from "../../../shared/boss/types";
 
 /**
@@ -54,7 +55,7 @@ export const TODAY_GROUPS: readonly (readonly string[])[] = [
 const time = (ms: number) =>
   new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
-export function Today({ onOpenOperations, focus = null }: { onOpenOperations?: () => void; focus?: "briefing" | "morning" | null } = {}) {
+export function Today({ onOpenOperations, onOpenRecentWork, focus = null }: { onOpenOperations?: () => void; onOpenRecentWork?: () => void; focus?: "briefing" | "morning" | "tell" | null } = {}) {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -96,12 +97,14 @@ export function Today({ onOpenOperations, focus = null }: { onOpenOperations?: (
   useEffect(() => { load(); }, [load]);
   // Her email's "Read the full briefing" and "See them all on Today" open Today at that place.
   useEffect(() => {
-    if (!data || !focus) return;
+    if (!data || !focus || focus === "tell") return;
     const el = document.getElementById(focus);
     if (el) el.scrollIntoView({ block: "start" });
   }, [data, focus]);
 
-  if (!data) return error ? <ErrorNotice error={error} /> : <Loading />;
+  // The box comes first and never waits on the day: she can hand Simone work while Today loads, or if it fails.
+  const tell = <TellSimone focus={focus === "tell"} onOpenRecentWork={onOpenRecentWork} />;
+  if (!data) return <>{tell}{error ? <ErrorNotice error={error} /> : <Loading />}</>;
 
   const { day, blocks, limits } = data;
   const done = {
@@ -133,6 +136,8 @@ export function Today({ onOpenOperations, focus = null }: { onOpenOperations?: (
           <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
+
+      {tell}
 
       <p className="eyebrow">
         {new Date(day.date_ts).toLocaleDateString(undefined, {

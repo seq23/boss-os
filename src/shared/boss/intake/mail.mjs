@@ -45,6 +45,8 @@
  * can be lost.
  */
 export const BOSS_INTAKE_MAILBOX = "boss@sequoiataylor.com";
+/** Simone's own address. The same front door as boss@ (owner, 26 Oct 2026): see routeToSeat. */
+export const SIMONE_MAILBOX = "simone@sequoiataylor.com";
 
 /** Everything Boss OS answers for. Mail to any other domain is not this system's business. */
 export const BOSS_INTAKE_DOMAIN = "sequoiataylor.com";
@@ -174,8 +176,14 @@ export function routeToSeat(text, roster, to = null) {
    * rules existed it bounced 550. Now a message with NO tag routes by its To: local part; a typed
    * tag still wins (it is a decision she made), and `boss@` still defaults to the Chief of Staff.
    */
+  /*
+   * SIMONE@ IS BOSS@ (owner, 26 Oct 2026). Simone is the Chief of Staff, the seat boss@ already
+   * defaults to, so her own address is the same front door: untagged mail to simone@ is triaged into
+   * its asks exactly like boss@, not filed whole on her desk. Every other name@ still goes straight
+   * to that person. Pinned by tests/boss/tellSimone.test.ts.
+   */
   const addressed = typed.length === 0 ? seatByAddress(to, active) : null;
-  if (addressed) {
+  if (addressed && addressed.id !== fallback.id) {
     return {
       outcome: "ROUTED", seat: addressed, tag: seatTag(addressed.name), unknownTags, candidates: [addressed],
       why: `Sent to ${String(to).trim().toLowerCase()}, which is ${addressed.name}, ${addressed.role}.`,

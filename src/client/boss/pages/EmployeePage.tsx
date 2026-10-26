@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
+import { go, tellSimoneHref } from "../nav";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? "am" : "pm"}`;
@@ -60,6 +61,12 @@ export function EmployeePage({ id, onBack }: { id: string; onBack: () => void })
       {data.duties.length === 0 ? <Empty title="No standing duties" hint="Add one below in plain words." /> : data.duties.map((d) => (
         <DutyCard key={d.id} duty={d} open={open === d.id} onToggle={() => setOpen(open === d.id ? null : d.id)} onChanged={load} onError={setError} />
       ))}
+
+      <section className="panel" data-testid="employee-tell-simone" aria-label={`Give ${e.name} a one-off task`}>
+        <p className="row-title" style={{ marginTop: 0 }}>Give {e.name} a one-off task</p>
+        <p className="row-sub">Goes through Simone, so it lands with the right person even if it isn&apos;t {e.name}&apos;s.</p>
+        <button className="btn btn-primary" style={{ marginTop: 10 }} onClick={() => go(tellSimoneHref())}>Tell Simone ↑</button>
+      </section>
 
       <AddDuty employee={e} onDone={load} onError={setError} />
 
