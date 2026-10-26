@@ -1399,6 +1399,7 @@ require_loaded "$NETWORK_LABEL"
 require_loaded "$PROPS_LABEL"
 require_loaded "$SR_LABEL"
 require_loaded "$SRF_LABEL"
+require_loaded "$SRR_LABEL"
 # ADDED WITH THE JOB, NOT AFTERWARDS. The first run installed com.seq.boss-people and then printed a
 # "Verified" line that did not mention it — the installer and its own verifier each keeping their own
 # list of jobs, which is the defect this file's comments warn about, inside this file.
