@@ -129,3 +129,20 @@ describe("the site-audit ingest", () => {
     expect(oldest!.found_at).toBe(now - 6 * 3_600_000);
   });
 });
+
+describe("what now passes clears its old finding (26 Oct 2026: three asks to her, all already true)", () => {
+  it("a passing item archives the older open findings for that site and item only", async () => {
+    const seed = (id: string, project: string, headline: string) => env.DB.prepare(
+      `INSERT INTO site_audit_findings (id, project, domain, repo, mapped_by, disposition, headline, because, suggested_action, searched, status, run_id, found_at, updated_at)
+       VALUES (?, ?, ?, 'local-guides-generator', 'grid_manifest', 'surfaced', ?, 'measured', 'remove the sitemap in Search Console', '{}', 'new', 'c1', ?, ?)`,
+    ).bind(id, project, project.slice(10), headline, Date.now(), Date.now()).run();
+    await seed("saf_c1", "checklist:guides.example", "e2: sitemap-guides.xml reports 1 error");
+    await seed("saf_c2", "checklist:guides.example", "j9: 3 pages missing");
+    await seed("saf_c3", "checklist:other.example", "e2: no property");
+    const later = new Date(Date.now() + 60_000).toISOString();
+    const cleared = await apiJson("/api/engineering/site-audit-findings/cleared", { method: "POST", body: { at: later, passes: [{ project: "checklist:guides.example", item: "e2" }] } });
+    expect((cleared.body as any).data.archived).toBe(1);
+    const live = await env.DB.prepare(`SELECT project, headline FROM site_audit_findings WHERE archived_at IS NULL AND project IN ('checklist:guides.example','checklist:other.example') ORDER BY headline`).all<any>();
+    expect(live.results.map((r: any) => `${r.project} ${r.headline}`)).toEqual(["checklist:other.example e2: no property", "checklist:guides.example j9: 3 pages missing"]);
+  });
+});

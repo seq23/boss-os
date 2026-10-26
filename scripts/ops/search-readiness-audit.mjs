@@ -37,7 +37,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
+import { passingItems,
   loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, summaryLines,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
@@ -413,6 +413,13 @@ async function main() {
   const briefs = fixBriefs(checklist, siteResults);
   if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, definition: defs.source, consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
 
+  // What passes now clears its old open finding in Boss OS, so nothing asks her for what is already true.
+  if (!only) {
+    const passes = passingItems(siteResults);
+    const cleared = await postCleared(passes, report.at);
+    say(cleared.ok ? `Boss OS: ${cleared.archived} old finding(s) cleared by checks that now pass.` : `Boss OS: old findings not cleared (${cleared.why}).`);
+  }
+
   const fails = siteResults.reduce((n, s) => n + s.results.filter((r) => r.status === "fail").length, 0);
   say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} briefs=${briefs.length} → ${join(OUT, `results-${day}.json`)}`);
 
@@ -424,6 +431,20 @@ async function main() {
     writeMorningSection("grid_repos", { lines, link: { label: "See every site's checks →", url: "https://boss.sequoiataylor.com/?view=morning" } });
     say(`Morning section written: ${lines.length} lines.`);
   }
+}
+
+/** POST the passing items; `{ ok, archived }` or `{ ok: false, why }`. Never fails the audit. */
+async function postCleared(passes, at) {
+  if (!process.env.BOSS_PASSCODE) return { ok: false, why: "no passcode in this process" };
+  try {
+    const origin = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
+    const u = await fetch(`${origin}/api/boss/auth/unlock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: process.env.BOSS_PASSCODE }) });
+    if (!u.ok) return { ok: false, why: `unlock ${u.status}` };
+    const cookie = (u.headers.get("set-cookie") ?? "").split(";")[0];
+    const r = await fetch(`${origin}/api/boss/engineering/site-audit-findings/cleared`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ passes, at }) });
+    if (!r.ok) return { ok: false, why: `answered ${r.status}` };
+    return { ok: true, archived: (await r.json()).data?.archived ?? 0 };
+  } catch (e) { return { ok: false, why: String(e?.message ?? e).slice(0, 120) }; }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

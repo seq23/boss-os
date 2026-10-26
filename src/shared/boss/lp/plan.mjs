@@ -8,6 +8,7 @@
  * NO NAMES LIVE HERE. Templates carry placeholders; the names come from D1 at runtime.
  */
 import { quotedSentence } from "../mail/plain.mjs";
+import { isRoleMailbox } from "../people/role.mjs";
 
 export const LP_MAILBOX = "sequoia@westpeek.ventures";
 /**
@@ -656,6 +657,7 @@ export function pickCatchups(candidates, history, lists, now = Date.now()) {
     if (!c.reason || !CATCHUP_REASON_TYPES.includes(c.reason_type)) continue;
     if (c.reason_at && now - Number(c.reason_at) > INBOX_LOOKBACK_DAYS * DAY) continue;
     if (excluded(c, lists)) continue;
+    if (isRoleMailbox(c.email, c.name)) continue; // a team mailbox is never someone to catch up with
     const k = String(c.email).toLowerCase();
     const past = (byPerson.get(k) ?? []).filter((h) => !c.last_wrote_at || h.suggested_at > c.last_wrote_at);
     if (past.length >= CATCHUP_MAX_EVER) continue;

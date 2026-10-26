@@ -188,6 +188,19 @@ async function fetchTwice(url, init) {
   }
 }
 
+/**
+ * What one feed's body says (pure). AN EMPTY FEED IS A NAMED ALERT, never a quiet "no calls"
+ * (26 Oct 2026): a calendar that answers with no events at all is the wrong address or an emptied
+ * calendar, and the diary would read "nothing today" over meetings it cannot see.
+ */
+export function feedState(text) {
+  const t = String(text ?? "");
+  if (!t.includes("BEGIN:VCALENDAR")) return { state: "dead", detail: "The address answered but did not return a calendar, so it is probably not the iCal address." };
+  const events = (t.match(/BEGIN:VEVENT/g) ?? []).length;
+  if (events === 0) return { state: "dead", detail: "EMPTY CALENDAR FEED: the feed answers but holds no events at all, so nothing from this calendar can reach the diary. It is probably another calendar's address, or the calendar was emptied." };
+  return { state: "live", detail: `The feed is readable and currently holds ${events} event(s).` };
+}
+
 async function probeCalendars() {
   const out = [];
   for (const feed of ICAL_FEEDS) {
@@ -215,15 +228,7 @@ async function probeCalendars() {
         });
         continue;
       }
-      const text = await res.text();
-      const events = (text.match(/BEGIN:VEVENT/g) ?? []).length;
-      out.push({
-        id: feed.id,
-        state: text.includes("BEGIN:VCALENDAR") ? "live" : "dead",
-        detail: text.includes("BEGIN:VCALENDAR")
-          ? `The feed is readable and currently holds ${events} event(s).`
-          : "The address answered but did not return a calendar, so it is probably not the iCal address.",
-      });
+      out.push({ id: feed.id, ...feedState(await res.text()) });
     } catch {
       // The message is deliberately not included: a fetch error can carry the URL, and the URL is
       // the secret.

@@ -1050,3 +1050,15 @@ export function queueRunLine({ started, fixed, left, protectedLeft = 0, noRepo =
   if (kept.length) parts.push(`Left alone on purpose: ${kept.join(", and ")}.`);
   return parts.join(" ");
 }
+
+/**
+ * WHAT NOW PASSES CLEARS ITS OLD FINDING (26 Oct 2026). A repair run's "surfaced" row stayed live
+ * after the check it was about passed: "no Search Console property for howweknowdeep.com" (the
+ * property had been shared all along; that night's token was refused) and two "dead sitemaps" that
+ * answered 200 with their URLs once PR #91 landed. Both were relayed to her as things to do. Every
+ * audit now posts the items that PASSED on each site, and Boss OS retires the older open findings
+ * for that site and item. `[{ project, item }]`, one per passing item per site.
+ */
+export function passingItems(siteResults) {
+  return (siteResults ?? []).flatMap((s) => (s.results ?? []).filter((r) => r.status === "pass").map((r) => ({ project: `checklist:${s.site?.domain ?? s.host}`, item: r.id })));
+}
