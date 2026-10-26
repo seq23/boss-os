@@ -509,3 +509,20 @@ export function claimIsLive(row, now = Date.now()) {
   if (!row?.claimed_at) return false;
   return now - Number(row.claimed_at) < CLAIM_LEASE_MS;
 }
+
+/**
+ * ─── DOES A PLAN NAME A STEP TO RUN AFTER LANDING? ────────────────────────────
+ *
+ * 26 Oct 2026: two repairs of Camille's report stopped NAMED STOP [POST_LAND_STEP_UNRESOLVED] on a
+ * plan that said "Nothing runs after landing." — the sentence the stop itself tells a plan to write.
+ * The check matched "after landing" and never read the "Nothing" in front of it. A sentence that
+ * says no step runs is now read as exactly that; only a sentence that names a step counts.
+ */
+const POST_LAND_WORDS = /(after (the )?land(ing)?|post[- ]land|once (it|this) (is )?(landed|merged)|after (it|this) (is )?(landed|merged))\b/i;
+const POST_LAND_NONE = /\b(nothing|no (step|command|script|job|action)s?|no post[- ]land (step|command)s?|none)\b[^.\n]{0,40}\b(runs?|is run|to run|happens?|needed|required|after|post[- ]land)\b|\bno post[- ]land\b|post[- ]land( step)?:\s*(none|nothing|n\/a)\b/i;
+
+export function namesPostLandStep(text) {
+  return String(text ?? "")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .some((sentence) => POST_LAND_WORDS.test(sentence) && !POST_LAND_NONE.test(sentence));
+}

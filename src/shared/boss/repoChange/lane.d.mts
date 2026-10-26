@@ -90,3 +90,4 @@ export const REPAIR_APPROVED_BY: string;
 export function repairOriginOf(input: unknown): { origin: "owner" | "repair"; repair_kind: string | null };
 export function isRepair(row: { origin?: string | null } | null | undefined): boolean;
 export function planWaitsForOwner(row: { origin?: string | null; pre_approved_phrase?: string | null; pre_approved_by?: string | null } | null | undefined): boolean;
+export function namesPostLandStep(text: string | null | undefined): boolean;

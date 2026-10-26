@@ -9,7 +9,7 @@ export const BRIEFING_CAP: { hour: number; minute: number };
 export const BRIEFING_POLL_MS: number;
 export function briefingDecision(briefing: unknown, now: number): "send" | "wait" | "send_late";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function buildDay(data: Record<string, unknown>, now?: number): LaidOutEmail & { dropped: string[]; digest: any; cuts: string[]; bytes: number };
+export function buildDay(data: Record<string, unknown>, now?: number): LaidOutEmail & { dropped: string[]; digest: any; cuts: string[]; bytes: number; memory: { decide: Record<string, string>; done: string[] } };
 export function briefingFull(briefing: unknown): Array<{ heading: string; lines: unknown[] }>;
 export function briefingSourceUrl(briefing: unknown): (n: number) => string;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

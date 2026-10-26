@@ -108,7 +108,8 @@ describe("the one morning email", () => {
     const done = e.text.slice(e.text.indexOf("Done for you"), e.text.indexOf("Catch up with")).split("\n").filter((l) => l.startsWith("- "));
     expect(done[0]).toMatch(/^- Replaced 4 outreach addresses that bounced with working ones from each company's own site; outreach restarted \(The Industry Guides\)\. — See it: https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=done-[0-9a-f]{10}$/);
     expect(done.length).toBe(4);
-    expect(done[3]).toBe("- And 2 more done for you. — See them all on Today: https://boss.sequoiataylor.com/?view=morning");
+    // Owner, 26 Oct 2026: compact — at most three short lines, then "+N more on Today ›".
+    expect(done[3]).toBe("- +2 more on Today — Open ›: https://boss.sequoiataylor.com/?view=morning");
     expect(e.digest.done).toHaveLength(5);
   });
   it("Valerie's box: one calm line per customer from the site's own list, boxed (25 Oct 2026)", () => {

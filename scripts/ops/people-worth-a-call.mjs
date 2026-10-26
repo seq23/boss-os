@@ -210,29 +210,18 @@ export function spread(picks, howMany) {
 const CLASS_LABEL = ["You owe them a reply", "Your rhythm has slipped", "The relationship lapsed"];
 
 /**
- * The note itself. Real names, real addresses, real dates — on her machine, to her own inbox.
- *
- * The addresses are allowed HERE and nowhere else, exactly as in `lp-outcomes.mjs`: Boss OS refuses
- * any payload containing an `@` and that guard is not weakened, it is simply not on this path.
+ * The note's text. ONE LINE PER PARAGRAPH, never hard-wrapped (26 Oct 2026): the intro was wrapped
+ * at 100 columns, and the plain-email path read each wrapped line as its own line, so the email
+ * showed "pick out the people worth a" and then a bullet "- Conversation — not everyone…". Line
+ * breaks here mean what they say. Pinned by tests/moniqueWeeklyNote.test.ts (text and HTML).
  */
-async function emailHer(picks, examined, considered) {
-  const SENDERS = sendersFor("Monique");
-  if (SENDERS.length === 0) {
-    console.error("NAMED STOP [NO_RESEND_KEY] neither BOSS_OS_MAIL_KEY nor BOSS_OS_FALLBACK_MAIL_KEY is set.");
-    console.error("  Run this through the vault: npm run people:recommend -- --send");
-    return false;
-  }
-  const RECIPIENTS = [process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", "sequoia@westpeek.ventures"];
-
-  const body = [
+export function weeklyNote(picks, examined, considered) {
+  return [
     "Sequoia,",
     "",
-    "This is Monique. Once a week I read your correspondence and pick out the people worth a",
-    `conversation — not everyone who has gone quiet, only the ones I can argue for. I looked at`,
-    `${examined} correspondents this week; ${considered} of them had a reason attached. Here are ${picks.length}.`,
+    `This is Monique. Once a week I read your correspondence and pick out the people worth a conversation — not everyone who has gone quiet, only the ones I can argue for. I looked at ${examined} correspondents this week; ${considered} of them had a reason attached. Here are ${picks.length}.`,
     "",
-    "Nothing here needs a decision from you and nothing has been sent to anybody. These are yours",
-    "to write, or to ignore — I will not raise the same person again for eight weeks either way.",
+    "Nothing here needs a decision from you and nothing has been sent to anybody. These are yours to write, or to ignore — I will not raise the same person again for eight weeks either way.",
     "",
     "— Monique, Director of Relationships",
     "",
@@ -247,6 +236,24 @@ async function emailHer(picks, examined, considered) {
       "",
     ]),
   ].join("\n");
+}
+
+/**
+ * The note itself. Real names, real addresses, real dates — on her machine, to her own inbox.
+ *
+ * The addresses are allowed HERE and nowhere else, exactly as in `lp-outcomes.mjs`: Boss OS refuses
+ * any payload containing an `@` and that guard is not weakened, it is simply not on this path.
+ */
+async function emailHer(picks, examined, considered) {
+  const SENDERS = sendersFor("Monique");
+  if (SENDERS.length === 0) {
+    console.error("NAMED STOP [NO_RESEND_KEY] neither BOSS_OS_MAIL_KEY nor BOSS_OS_FALLBACK_MAIL_KEY is set.");
+    console.error("  Run this through the vault: npm run people:recommend -- --send");
+    return false;
+  }
+  const RECIPIENTS = [process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", "sequoia@westpeek.ventures"];
+
+  const body = weeklyNote(picks, examined, considered);
 
   let lastErr = "";
   for (const sender of SENDERS) {
@@ -384,7 +391,9 @@ async function main() {
   if (!sent) process.exit(8);
 }
 
-main().catch((err) => {
-  console.error(`people-worth-a-call failed: ${err?.message ?? err}`);
-  process.exit(1);
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(`people-worth-a-call failed: ${err?.message ?? err}`);
+    process.exit(1);
+  });
+}

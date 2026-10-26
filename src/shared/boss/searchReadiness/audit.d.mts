@@ -40,4 +40,6 @@ export function morningLines(checklist: any, siteResults: any[], opts?: { previo
 export function summaryLines(siteResults: any[]): string[];
 export function workQueue(briefs: unknown[], opts?: { chunkSize?: number }): { total: number; workable: number; protected: number; no_repo: number; repos: { repo: string; n: number }[]; chunks: { repo: string; ids: string[] }[] };
 export function queueRunLine(args: { started: number; fixed: number; left: number; protectedLeft?: number; noRepo?: number }): string;
-export function repairLine(lastRepair: { fixed?: number } | null, left: number): string;
+export function repairLine(lastRepair: any, left: number, now?: number): string;
+export function repairsThisWeek(status: any, now?: number): number | null;
+export function nextFixStatus(prev: any, run: { started: number; fixed: number; left: number; protectedLeft?: number; noRepo?: number; done?: boolean; at?: string }): any;

@@ -106,8 +106,13 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    was not shown), and links to its own screen. The run posts the whole morning to Boss OS before it
    sends (`/api/boss/morning`, `src/worker/boss/routes/morning.ts`); Today lists the same decisions
    and every link opens that item (`/?morning=<day>&item=<id>`). Anything an employee can fix is a done
-   line (What happened / What we did / Status), never a decision — a task that failed is a fix job
-   and a done line the next morning (`failedTaskLines`). Pinned by
+   line, never a decision — a task that failed is ONE fix job per job family and a done line the next
+   morning (`failedTaskLines`, `fixJobsToOpen`). **Told once** (owner, 26 Oct 2026,
+   `src/shared/boss/mail/morningMemory.mjs`, pinned by `tests/morningMemory.test.ts`): Done for you
+   shows an item once, never twice in one email, one short whole sentence each, at most three, then
+   "+N more on Today ›" (the full What happened / What we did / Status stays on Today); a Decide item
+   she has already seen is one thin line on later days ("Still yours to answer: name · N days ·
+   Open ›"), kept, and not counted as a fresh decision in the subject. Pinned by
    `tests/morningFullContext.test.ts` ("Rule 0: everything awaiting her is in Decide").
 2. **Decide first, one-tap buttons, plain words.** `layoutEmail` / `layoutProblem`
    (`src/shared/boss/mail/plain.mjs`). Never Gmail ids, commands, /api paths, PR numbers, UTC times,

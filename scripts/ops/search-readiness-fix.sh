@@ -31,6 +31,19 @@ PARALLEL="${SR_PARALLEL:-3}"
 LOG_DIR="$HOME/Library/Logs/boss-sr-fix"
 STATE_DIR="$HOME/.boss-os/search-readiness"
 STATUS="$STATE_DIR/fix-status.json"
+# fix-status.json: the run in progress after each round, and every finished run of the last weeks
+# (nextFixStatus, audit.mjs), so the Monday email sums real numbers even when it reads mid-run.
+write_status() {
+  node -e '
+    const [status, started, fixed, left, prot, noRepo, done] = process.argv.slice(1);
+    import(process.cwd() + "/src/shared/boss/searchReadiness/audit.mjs").then(async (m) => {
+      const fs = await import("node:fs");
+      let prev = null; try { prev = JSON.parse(fs.readFileSync(status, "utf8")); } catch {}
+      const next = m.nextFixStatus(prev, { started: +started, fixed: +fixed, left: +left, protectedLeft: +prot, noRepo: +noRepo, done: done === "1" });
+      fs.writeFileSync(status, JSON.stringify(next, null, 2));
+      if (next.line) console.log(next.line);
+    });' "$STATUS" "$@"
+}
 # THE RUN RESUMES BY ITSELF (25 Oct 2026). A network outage stopped every pass at 18:20 that day, the
 # run ended "fixed=0 left=316" with exit 0, and nothing restarted it until a person did at 20:10.
 # MARK says "a run is unfinished" from the moment one starts until it reaches its end; RUN_LOCK holds
@@ -173,6 +186,8 @@ main() {
     P="$(plan)" || break
     LEFT="$(echo "$P" | grep '^QUEUE' | field workable)"; LEFT="${LEFT:-$BEFORE}"
     say "after round $ROUND: $LEFT workable left (was $BEFORE)"
+    # The run in progress is on the status file too, so a morning read mid-run says the real number.
+    write_status "$START" "$(( START - LEFT ))" "$LEFT" 0 0 0
     if [ "$NET_HIT" -gt 0 ]; then
       say "round $ROUND: $NET_HIT pass(es) lost the network; that is not \"fixed nothing\", so the next round re-runs them"
       continue
@@ -183,14 +198,7 @@ main() {
   Q="$(echo "$P" | grep '^QUEUE')"
   PROT="$(echo "$Q" | field protected)"; NOREPO="$(echo "$Q" | field no_repo)"
   FIXED=$(( START - LEFT )); [ "$FIXED" -ge 0 ] || FIXED=0
-  node -e '
-    const [status, started, fixed, left, prot, noRepo] = process.argv.slice(1);
-    import(process.cwd() + "/src/shared/boss/searchReadiness/audit.mjs").then(async (m) => {
-      const line = m.queueRunLine({ started: +started, fixed: +fixed, left: +left, protectedLeft: +prot, noRepo: +noRepo });
-      const fs = await import("node:fs");
-      fs.writeFileSync(status, JSON.stringify({ at: new Date().toISOString(), started: +started, fixed: +fixed, left: +left, protected: +prot, no_repo: +noRepo, line }, null, 2));
-      console.log(line);
-    });' "$STATUS" "$START" "$FIXED" "$LEFT" "${PROT:-0}" "${NOREPO:-0}" | tee -a "$LOG"
+  write_status "$START" "$FIXED" "$LEFT" "${PROT:-0}" "${NOREPO:-0}" 1 | tee -a "$LOG"
   say "SR-QUEUE-COMPLETE: started=$START fixed=$FIXED left=$LEFT protected=${PROT:-0} no_repo=${NOREPO:-0}"
   # RULE 0, WITH WORK LEFT: never a quiet exit 0. Named, non-zero (duty-run records it as failed and the
   # duty stays due), and on Danielle's repair desk. The run did reach its end, so the mark is cleared.

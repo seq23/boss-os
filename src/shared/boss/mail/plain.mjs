@@ -637,7 +637,17 @@ export function fromLegacy({ who, subject, text, refs = [] }) {
   const raw = String(text ?? "").replace(/\r/g, "");
   const allRefs = [...new Set([...refs, ...refsIn(subject), ...refsIn(raw)])];
   const name = String(who ?? "").trim();
-  const lines = raw.split("\n").map((l) => l.replace(/\s+$/, ""));
+  /*
+   * A HARD-WRAPPED PARAGRAPH IS ONE LINE (26 Oct 2026: Monique's weekly note showed "pick out the
+   * people worth a" and then a bullet "- Conversation — not everyone…"). A line that does not end a
+   * sentence, followed by one that starts in lower case, is the same sentence: joined, never bulleted.
+   */
+  const lines = [];
+  for (const l of raw.split("\n").map((x) => x.replace(/\s+$/, ""))) {
+    const prev = lines[lines.length - 1];
+    if (prev && prev.trim() && !/[.!?:]$/.test(prev.trim()) && !/^>/.test(prev.trim()) && /^\s*[a-z]/.test(l)) lines[lines.length - 1] = `${prev} ${l.trim()}`;
+    else lines.push(l);
+  }
   const needs = [];
   const details = [];
   let happened = "";

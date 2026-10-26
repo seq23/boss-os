@@ -39,6 +39,7 @@
  *   npm run your-day -- --dry-run    # print what would be sent, send nothing
  *   npm run your-day -- --preview <dir>   # write the HTML and text to <dir>, send nothing
  */
+import { doneForYou, failedDoneLine, jobFamily, splitRepeats, fixJobsToOpen } from "../../src/shared/boss/mail/morningMemory.mjs";
 import { MAX_TOUCHES } from "../../src/shared/boss/lp/plan.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -554,10 +555,21 @@ export function buildDay(data, now = Date.now()) {
   const replyHint = (d, n) => (String(d.key ?? "").startsWith("prospect-template:")
     ? `Reply "${n}: your changes" to change it, "${n}: try again" for a different draft, or "${n}: approved" to approve it.`
     : `Reply "${n}: …" to this email to answer this one.`);
-  const decide = decideRaw.map((d, i) => {
+  /*
+   * A DECIDE ITEM SHE HAS ALREADY SEEN IS ONE THIN LINE (owner, 26 Oct 2026: "kenneth goodwin should
+   * be a thin line not taking up much space after the first time"). Full the first morning; on later
+   * days "Still yours to answer: name · N days · Open ›", kept in the list, not counted as fresh.
+   */
+  const repeats = splitRepeats(decideRaw, { told: data.told?.decide ?? {}, today, now });
+  const decide = repeats.full.map((d, i) => {
     const id = idFor("decide", d.key ?? d.title);
     const screen = itemUrl(today, id);
     return { ...d, id, screen, details: [...(d.details ?? []), replyHint(d, i + 1)], buttons: [...(d.buttons ?? []), more(screen)] };
+  });
+  const stillYours = repeats.thin.map((d) => {
+    const id = idFor("decide", d.key ?? d.title);
+    const screen = itemUrl(today, id);
+    return { ...d, id, screen, buttons: [more(screen)] };
   });
 
   // 2. Deals: each opens its own screen there; the source email is one more tap from it.
@@ -599,19 +611,28 @@ export function buildDay(data, now = Date.now()) {
   const src = briefingSourceUrl(data.briefing);
   const briefTop = raw ? raw.map((l) => ({ runs: proseRuns(l, src) })) : null;
 
-  // 4. Done for you: what the team fixed or did, each What happened / What we did / Status when it can.
+  /*
+   * 4. Done for you (owner, 26 Oct 2026: "no need to repeat ever and do not use a lot of space"): each
+   * item once, the first morning after it happened; never twice in one email (a failed job's family
+   * is one line however often it failed); one short plain line each, at most three, then "+N more on
+   * Today ›". The full What happened / What we did / Status stays on Today (the digest), not here.
+   */
   const doneRaw = [];
   const bl = bounceLine(data.bounceFixes);
   if (bl) doneRaw.push({ text: bl, links: [] });
   doneRaw.push(...commentDoneLines(data, now));
-  doneRaw.push(...failedTaskLines(data.tasks, now).map(({ text }) => ({ text, links: [] })));
+  for (const f of failedTaskLines(data.tasks, now)) {
+    const t = (data.tasks ?? []).find((x) => x.id === f.id) ?? {};
+    doneRaw.push({ key: `failed:${jobFamily(t.title).toLowerCase()}`, text: failedDoneLine(t), full: f.text, links: [] });
+  }
   const prospects = prospectSection(data.prospects ?? null, now);
   const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
   for (const name of DONE_SOURCES.filter((n) => !(prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
-  const done = doneRaw.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
-  const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [...(l.links ?? []).slice(0, 1), { label: "See it", url: l.screen }] }));
-  if (done.length > MAX_DONE) doneShown.push({ text: `And ${done.length - MAX_DONE} more done for you.`, links: [{ label: "See them all on Today", url: `${ORIGIN}/?view=morning` }] });
+  const doneOnce = doneForYou(doneRaw, { told: new Set(data.told?.done ?? []), max: MAX_DONE });
+  const done = doneOnce.all.map((l) => { const id = idFor("done", l.text); return { ...l, id, screen: itemUrl(today, id) }; });
+  const doneShown = done.slice(0, MAX_DONE).map((l) => ({ text: l.text, links: [{ label: "See it", url: l.screen }] }));
+  if (doneOnce.more > 0) doneShown.push({ text: `+${doneOnce.more} more on Today`, links: [{ label: "Open ›", url: `${ORIGIN}/?view=morning` }] });
 
   // 4b. The grid repos: the weekly Search Readiness check (Mondays; owner, 25 Oct 2026). Its own short
   // section — what is broken, what was fixed, what is being built — never pooled into "Done for you",
@@ -663,6 +684,7 @@ export function buildDay(data, now = Date.now()) {
     happened: `Good morning. Here is your ${dayWords(today)}.${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
     decide,
     sections: [
+      ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({ text: d.thin.replace(/^Still yours to answer: /, ""), links: [{ label: "Open ›", url: d.screen }] })), empty: null }] : []),
       { title: `New deals since yesterday (${deals.length})`, note: deals.length > dealMax ? `The ${dealMax} newest are here; all ${deals.length} are on the Deals screen.` : null, rows: dealRowsAll.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size @ price" }, { key: "from", label: "From" }], data: dealRowsAll.slice(0, dealMax) } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
       { title: "Monique found", rows: foundGrid.length ? { columns: [{ key: "company", label: "Company" }, { key: "trade", label: "Seller → buyer" }, { key: "fit", label: "Fit" }], data: foundGrid } : null, items: foundShown(foundMax), link: m.monique_found?.link ?? null, empty: null },
       ...(prospects ? [prospectWords ? prospects : { ...prospects, full: undefined }] : []),
@@ -693,13 +715,16 @@ export function buildDay(data, now = Date.now()) {
     deals: deals.map(({ id, company, side, size, price, structure, from, when, received_on, url, screen }) => ({ id, company, side, size, price: price ?? "—", structure: structure ?? "—", from, when, received_on: received_on ?? null, email_url: /^https:\/\/mail\.google\.com\//.test(String(url ?? "")) ? url : null, screen })),
     found: found.map(({ id, text, links, deal, holders, screen }) => ({ id, text, links: links ?? [], deal: deal ?? null, holders, screen })),
     found_grid: foundGrid,
-    done: done.map(({ id, text, links, screen }) => ({ id, text, links: links ?? [], screen })),
+    done: done.map(({ id, text, full, links, screen }) => ({ id, text: full ?? text, links: links ?? [], screen })),
+    still_yours: stillYours.map(({ id, title, thin, screen }) => ({ id, title, line: thin, screen })),
     catchups: catchCards.map(({ id, title, body, details, draft, buttons, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, screen })),
     briefing: raw ? { for_day: data.briefing.for_day, top: raw.map((l) => proseText(proseRuns(l)).replace(/⁣/g, "")) } : null,
     prospects: prospects ? { items: prospects.items.map((i) => (typeof i === "string" ? i : i.text)), sent: (data.prospects?.sent ?? []).map((r) => ({ name: r.name, firm: r.firm, email: r.email, touch: r.touch_no, sent_at: r.sent_at, subject: r.sent_subject ?? r.subject, body: r.body ?? null })) } : null,
     eightraise: ps,
   };
-  return { ...laid, dropped, digest, cuts, bytes: bytes(laid) };
+  // What this email told her, so tomorrow's says it once more at most as a thin line (morningMemory.mjs).
+  const memory = { decide: repeats.memory, done: [...new Set([...(data.told?.done ?? []), ...doneOnce.keys])].slice(-500) };
+  return { ...laid, dropped, digest, cuts, bytes: bytes(laid), memory };
 }
 
 /**
@@ -778,12 +803,14 @@ async function main() {
 
   const api = await session();
   // Wait for Camille's briefing (lands about 07:10), sending the moment it does; 07:45 at the latest.
-  let data = await read(api, Date.now());
+  const toldFile = path.join(SENT_DIR, "told.json");
+  let told = { decide: {}, done: [] }; try { told = { ...told, ...JSON.parse(fs.readFileSync(toldFile, "utf8")) }; } catch { /* first run */ }
+  let data = { ...(await read(api, Date.now())), told };
   let decision = briefingDecision(data.briefing, Date.now());
   while (decision === "wait" && !DRY && !PREVIEW && !NOW_WAIT) {
     console.log("your-day: waiting for today's briefing");
     await new Promise((r) => setTimeout(r, BRIEFING_POLL_MS));
-    data = await read(api, Date.now());
+    data = { ...(await read(api, Date.now())), told };
     decision = briefingDecision(data.briefing, Date.now());
   }
   const now = Date.now();
@@ -806,13 +833,15 @@ async function main() {
   if (email.dropped.length) await fixJob(api, "A morning-email section wrote a line that is not plain", `Simone's morning email dropped these lines because they failed the plain-email check (src/shared/boss/mail/plain.mjs lineProblems): ${email.dropped.join(" | ")}. Fix the producer that wrote them (~/.boss-os/morning/<section>.json, src/shared/boss/mail/morning.mjs).`);
   // Every task that failed since yesterday is the team's to fix (its done line says so).
   const failMarks = path.join(SENT_DIR, "failed-told.json");
-  let told = []; try { told = JSON.parse(fs.readFileSync(failMarks, "utf8")); } catch { told = []; }
-  for (const f of failedTaskLines(data.tasks, now).filter((x) => !told.includes(x.id))) {
-    const t = (data.tasks ?? []).find((x) => x.id === f.id);
-    await fixJob(api, `Find why "${String(t?.title ?? "a task").slice(0, 60)}" failed`, `the task ${f.id} (${t?.employee_name ?? "an employee"}) failed: ${String(t?.error ?? "").slice(0, 400)}. Find the cause, fix it at source with a test, and run the job again or close it with the reason.`, "failed_task");
-    told.push(f.id);
+  let failTold = []; try { failTold = JSON.parse(fs.readFileSync(failMarks, "utf8")); } catch { failTold = []; }
+  // ONE fix job per failed job family, and none while a repair for that family is still open (26 Oct 2026).
+  const failedNow = failedTaskLines(data.tasks, now);
+  for (const j of fixJobsToOpen(failedNow, { tasks: data.tasks, repoChanges: data.repoChanges, told: failTold, now })) {
+    const t = j.task;
+    await fixJob(api, `Find why "${j.family.slice(0, 60)}" failed`, `the task ${j.id} (${t?.employee_name ?? "an employee"}) failed: ${String(t?.error ?? "").slice(0, 400)}. Find the cause, fix it at source with a test, and run the job again or close it with the reason.`, "failed_task");
   }
-  try { fs.mkdirSync(SENT_DIR, { recursive: true }); fs.writeFileSync(failMarks, JSON.stringify(told.slice(-500))); } catch { /* best effort */ }
+  failTold.push(...failedNow.map((f) => f.id));
+  try { fs.mkdirSync(SENT_DIR, { recursive: true }); fs.writeFileSync(failMarks, JSON.stringify(failTold.slice(-500))); } catch { /* best effort */ }
   if (d.error) await fixJob(api, "Valerie's list did not load for the morning email", `the Porch & Party owner feed answered: ${d.error}. Simone's morning email said so in one line. Fix the read (PNP_OWNER_FEED_TOKEN, ${FEED}).`);
 
   // The morning goes to Boss OS FIRST: every link in the email opens one of its items, and Today
@@ -824,6 +853,7 @@ async function main() {
   console.log(`your-day: sent "${email.subject}" from ${r.from}`);
   if (kept) await api.post(`/morning/${email.digest.day}/sent`, {}).catch((e) => console.error(`your-day: the morning was not marked sent (${e.message})`));
   clearToldSections(TOLD_ONCE);
+  try { fs.writeFileSync(toldFile, JSON.stringify(email.memory)); } catch (e) { console.error(`your-day: what was told was not kept (${e.message})`); }
   fs.mkdirSync(SENT_DIR, { recursive: true });
   fs.writeFileSync(marker, new Date(now).toISOString());
 }
