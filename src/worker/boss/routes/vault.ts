@@ -194,6 +194,8 @@ const SNAPSHOT_TABLES = [
   "boss_mail_refs",
   "boss_commands",
   "warm_references",
+  "waiting_on",
+  "preseed_watch",
   // 0294 (boss fix L) — the LP tracker, prospects and their touches, the approved prospect email,
   // her name rules, the 8Raise ledger and the catch-up record. Parents before children: prospects
   // before prospect_touches. None of it re-derives: decisions she tapped, touches already sent.

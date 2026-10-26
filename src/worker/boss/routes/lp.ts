@@ -25,7 +25,7 @@
  */
 
 import { Hono } from "hono";
-import { backfillWarmReferences, listWarmReferences, markWarmReferences } from "../lp/references";
+import { backfillWarmReferences, listWarmReferences, markWarmReferences, recordWarmReferences } from "../lp/references";
 import type { Env, Vars } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -214,6 +214,11 @@ lp.post("/prospects/import", async (c) => {
 
 /** Warm references (Simone's meeting prep): the list, her Mac's link checks, the 1 Sep backfill. */
 lp.get("/references", async (c) => ok(c, { rows: await listWarmReferences(c.env.DB) }));
+lp.post("/references", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  if (!Array.isArray(b?.rows)) throw badRequest("rows[] is required");
+  return ok(c, { recorded: await recordWarmReferences(c.env.DB, b.rows.slice(0, 2000)) });
+});
 lp.post("/references/checks", async (c) => {
   const b = await c.req.json<any>().catch(() => null);
   if (!Array.isArray(b?.checks)) throw badRequest("checks[] is required");

@@ -131,7 +131,7 @@ function loadKnownReplies() {
 const GMAIL = "https://www.googleapis.com/auth/gmail.readonly";
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-async function accessToken(creds, scope, sub) {
+export async function accessToken(creds, scope, sub) {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claims = b64url(JSON.stringify({
@@ -374,7 +374,7 @@ export function unansweredSection(f) {
  *                                  held draft or sent email whole (`quoted: true` keeps every line)
  *   sentWordsTo(emails)            every email she sent each prospect, oldest first, with its words
  */
-async function contentToken() {
+export async function contentToken() {
   const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
   if (!raw) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault");
   return accessToken(JSON.parse(raw), GMAIL, MAILBOX);

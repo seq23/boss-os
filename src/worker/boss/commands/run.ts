@@ -19,6 +19,7 @@
  *   cant_yet → one line, and a Danielle job to add the ability. Never silence, never a bare "can't".
  */
 import type { Env } from "../env";
+import { todoEditsIn, matchTodo } from "../../../shared/boss/waiting/register.mjs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
@@ -368,6 +369,26 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
   if (!["boss", "simone"].includes(local)) return null;
   const tags = (`${input.subject}\n${input.text}`.match(/(?:^|\s)#([a-z][a-z0-9_-]*)/gi) ?? []).map((t) => t.trim().slice(1).toLowerCase());
   if (tags.some((t) => t !== "simone")) return null;
+  // HER OWN LIST, EDITED BY REPLY (owner, 26 Oct 2026): "add: X" / "done: X" to Simone, including a
+  // reply to the morning email, changes "Yours this week" (waiting_on rows she owns) and nothing else.
+  const edits = todoEditsIn(input.text);
+  const open = edits.add.length || edits.done.length
+    ? (await env.DB.prepare(`SELECT id, kind, what, state FROM waiting_on WHERE kind = 'her_todo' AND state = 'open'`).all<any>()).results ?? []
+    : [];
+  edits.done = edits.done.filter((w) => matchTodo(open, w));
+  if (edits.add.length || edits.done.length) {
+    const said: string[] = [];
+    for (const what of edits.add) {
+      await env.DB.prepare(`INSERT INTO waiting_on (id, kind, what, owner, surfaces_in, created_at, updated_at) VALUES (?, 'her_todo', ?, 'sequoia', 'Simone''s morning email: Yours this week', ?, ?)`)
+        .bind(newId("wo"), what.slice(0, 300), input.now, input.now).run();
+      said.push(`Added to your list: ${what}.`);
+    }
+    for (const words of edits.done) {
+      const hit = matchTodo(open, words);
+      if (hit) { await env.DB.prepare(`UPDATE waiting_on SET state = 'done', updated_at = ? WHERE id = ?`).bind(input.now, hit.id).run(); said.push(`Done and off your list: ${hit.what}.`); }
+    }
+    return { reply: said.join("\n"), outcome: "COMMAND_REPLY", commandIds: [], taskId: null };
+  }
   if (input.refs.some((r) => !r.startsWith("cmd_"))) return null;
   const found = commandsIn({ subject: input.subject, text: input.text, now: input.now });
   if (found.length === 0) return null;

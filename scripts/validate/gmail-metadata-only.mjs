@@ -374,6 +374,41 @@ const CONTENT_EXCEPTIONS = new Map([
       ],
     },
   ],
+  /*
+   * ── warm-references.mjs · HER OWN WARM LINES, FOR MEETING PREP (owner, 26 Oct 2026) ──
+   * Reads HER OWN sent words (quoted text and signature cut, through lp-positive's messageWords) to
+   * find the line where she referenced someone's episode or article and its link, and To/Cc headers
+   * to know whom it went to. Stores only that one line and the link, per recipient.
+   */
+  [
+    "warm-references.mjs",
+    {
+      why: "Simone's meeting prep quotes back the exact warm line she sent someone; the line is inside the message.",
+      invariants: [
+        [(src) => /in:sent/.test(src), "it must search her SENT mail only"],
+        [(src) => /quoted: false/.test(src), "it must read her own words, never the quoted thread"],
+        [(src) => /metadataHeaders=To&metadataHeaders=Cc/.test(src) && !/metadataHeaders=Subject/.test(src), "its header read must be To and Cc only"],
+        [(src) => /ids\.length < 2000/.test(src), "it must bound how many messages it reads"],
+      ],
+    },
+  ],
+  /*
+   * ── preseed-watch.mjs · MONIQUE'S PRE-SEED WATCH (owner-approved 26 Oct 2026) ──
+   * Which company a pitch is about, its sector and round are in the subject and the first line; no
+   * arrangement of From/To/Date says "pre-seed". Reads subject and snippet only (never a body),
+   * bounded, and keeps company, sector, round, sender and date.
+   */
+  [
+    "preseed-watch.mjs",
+    {
+      why: "The pre-seed list she asked for needs each pitch's subject and first line; a body is never read.",
+      invariants: [
+        [(src) => /format=metadata/.test(src) && !/format=full|format=raw|messageWords/.test(src), "it must read metadata and the snippet only, never a body"],
+        [(src) => /gmail\.readonly/.test(src), "it must ask for a read-only scope"],
+        [(src) => /ids\.length < 1500/.test(src), "it must bound how many messages it reads"],
+      ],
+    },
+  ],
 ]);
 
 const installer = existsSync(join(ROOT, "scripts/ops/install-agent-launchd.sh"))

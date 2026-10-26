@@ -653,6 +653,8 @@ export const api = {
   dealHolders: () => call<{ holders: any[] }>("/capital/holders"), // boss fix D
   // boss fix L: the Deals page LP and Prospects tabs.
   lpReplies: () => call<{ rows: any[] }>("/lp/replies"), // boss fix L
+  waitingOn: () => call<{ items: any[] }>("/waiting-on"), // Zora's register (26 Oct 2026)
+  preseed: () => call<{ week: string | null; crossed: any[]; funded: any[]; compare: any }>("/capital/preseed"), // Monique's pre-seed watch
   prospects: () => call<{ rows: any[]; approved: any; pending: any }>("/lp/prospects"), // boss fix L
   prospectActivity: (since = 0) => call<any>(`/lp/prospects/activity?since=${since}`),
   // The morning email as sent (24 Oct 2026): Today's list and every item's own screen.

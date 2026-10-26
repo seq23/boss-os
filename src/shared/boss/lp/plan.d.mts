@@ -71,3 +71,6 @@ export const NB_FRESH_DAYS: number;
 export function verdictGate(p: any, opts?: { paused?: boolean; now?: number }): "go" | "invalid" | "risky" | "unverified";
 export type ProspectForecast = { go: number; first: number; follow: number; invalid: number; risky: number; unverified: number; bounced: number; paused: string | null; blocked: string[] };
 export function approveOutcome(f: ProspectForecast | null | undefined): { headline: string; lines: string[] };
+export declare const LP_NUDGE_DAYS: number;
+export declare function lpNudgeBody(r: { name?: string | null }): string;
+export declare function lpNudgeItems(rows: any[], now?: number): any[];
