@@ -39,4 +39,20 @@ export function errandRefusal(i?: { sender?: string; subject?: string; text?: st
 export function errandIn(i?: { sender?: string; subject?: string; text?: string }): { to: string; ask: string } | null;
 export function errandText(request: string): string;
 export function errandProblems(i?: { subject?: string; request?: string }): string[];
-export function readErrandReply(text: string, address?: string): { kind: "card" | "alternative" | "confirmed" | "other"; what_they_said: string; what_you_do: string };
+export interface ErrandOption { key: string; time: string; label: string | null; fee: string | null }
+export interface ErrandOffer { text: string; greet: string | null; needs: string[]; rules: string[]; cancel_rule: string[]; asks: boolean; confirms: boolean; options: ErrandOption[]; fees: string[]; unavailable: boolean; policy: boolean }
+export function theirWords(text: string): { text: string; greet: string | null };
+export function errandOffer(text: string): ErrandOffer;
+export function optionText(o: ErrandOption): string;
+export function readErrandReply(text: string, address?: string): { kind: "card" | "decide" | "confirmed" | "other"; what_they_said: string; what_you_do: string; offer: ErrandOffer };
+export function errandAnswerIn(text: string, offer?: { options?: ErrandOption[]; needs?: string[] }): { choice: ErrandOption | null; phone: string | null; card: boolean; missing: string[]; cancel: boolean; keep: boolean };
+export function partyIn(words: string): number | null;
+export function errandDateIn(words: string, sentAt: number, tz?: string): { y: number; m: number; d: number } | null;
+export const ERRAND_TZ: string;
+export const REMINDER_LEAD_MS: number;
+export function bookingAt(date: { y: number; m: number; d: number } | null, option: { time: string } | null, tz?: string): { at: number; date: { y: number; m: number; d: number }; time: string; tz: string } | null;
+export function reminderDueAt(bookingAtMs: number): number;
+export function bookingWhen(at: number, tz?: string): string;
+export function errandFollowUpText(a: { greet?: string | null; choice: ErrandOption | null; when?: string | null; party?: number | null; phone?: string | null; offer?: Partial<ErrandOffer> | null }): string;
+export function errandCancelText(a: { greet?: string | null; what?: string | null; when?: string | null; party?: number | null }): string;
+export function followUpProblems(text: string): string[];

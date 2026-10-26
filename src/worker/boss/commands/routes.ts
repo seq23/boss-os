@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
-import { macWork, cancelCommand, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent } from "./run";
+import { macWork, cancelCommand, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent, errandFollowedUp, errandRemindersDue, errandReminded } from "./run";
 
 export const commands = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -55,6 +55,17 @@ commands.post("/:id/errand-sent", async (c) => {
   if (!b?.message_id || !b?.subject || !b?.text) throw badRequest("message_id, subject and text are all required");
   return ok(c, { recorded: await errandSent(c.env, c.req.param("id"), { message_id: b.message_id, subject: b.subject, text: b.text, request: b.request ?? null }) });
 });
+
+// Her answer or cancellation went to the business in their thread.
+commands.post("/:id/errand-followed-up", async (c) => {
+  const b = await c.req.json<{ message_id?: string }>().catch(() => null);
+  if (!b?.message_id) throw badRequest("message_id is required");
+  return ok(c, { recorded: await errandFollowedUp(c.env, c.req.param("id"), { message_id: b.message_id }) });
+});
+
+// "Do you still want to go?": the reminders due now (28 hours before each booking), and each one sent.
+commands.post("/errand-reminders", async (c) => ok(c, { reminders: await errandRemindersDue(c.env) }));
+commands.post("/:id/reminded", async (c) => ok(c, { recorded: await errandReminded(c.env, c.req.param("id")) }));
 
 commands.post("/:id/cancel", async (c) => ok(c, { line: await cancelCommand(c.env, c.req.param("id")) }));
 
