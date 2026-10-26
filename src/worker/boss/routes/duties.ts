@@ -51,7 +51,8 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest, notFound } from "../lib/http";
 import { materialiseDueDuties } from "../duties/materialise";
-import { isDue, nextDueAt } from "../duties/cadence";
+import { isDue, nextDueAt, EARLY_RUN_GRACE_MS } from "../duties/cadence";
+export { EARLY_RUN_GRACE_MS };
 import { admitTask } from "../tasks/admit";
 import {
   dutyBrief, editDuty, employeeDuties, loadDuty, pauseDuty, removeDuty, teamCards, undoDuty, type EditInput,
@@ -104,7 +105,6 @@ export function advance(
  * too.) A Mac that travels east fires early by the zone difference; EARLY_RUN_GRACE_MS covers
  * Central → Europe. A run more than that early is a genuine extra run and does not consume the slot.
  */
-export const EARLY_RUN_GRACE_MS = 8 * 3_600_000;
 
 export function creditFrom(nextDueAt: number | null, now: number): number {
   return nextDueAt !== null && nextDueAt > now && nextDueAt - now <= EARLY_RUN_GRACE_MS ? nextDueAt : now;

@@ -40,7 +40,7 @@ import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
-  REGISTERED_REPOS, isRepair, planWaitsForOwner,
+  REGISTERED_REPOS, isRepair, planWaitsForOwner, namesPostLandStep,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, filesAt, FALLBACK_STOP } from "./notify.mjs";
@@ -553,6 +553,18 @@ export function stopWords(tag) {
 }
 
 async function fail(row, tag, why, log) {
+  /*
+   * A REPAIR NEVER EMAILS HER A DECIDE (owner, 25 Oct 2026; 26 Oct: "Try again or drop the boss-os
+   * change" reached her twice for Camille's report, naming no change). The stop is recorded on the
+   * change and its task; the morning's one "Done for you" line carries it, and the failed task's
+   * family is reopened as ONE fix job, never one per failure.
+   */
+  if (isRepair(row)) {
+    const recorded = await api(`/${row.id}/failed`, { failure: `NAMED STOP [${tag}] ${why}`, notified_message_id: null, run_log: log });
+    if (!recorded.ok) say(`NAMED STOP [FAILURE_NOT_RECORDED] ${recorded.status} ${recorded.error ?? ""}`);
+    say(`NAMED STOP [${tag}] ${why} (a repair: recorded, not emailed)`);
+    return;
+  }
   // R7/R8 (docs/SERVICE_RULES.md): the three parts and the clearing step stay — now as What happened /
   // What we did / Status, and the clearing step is a tap on the change's page (or the reply, as before).
   const laid = stoppedMail({
@@ -783,12 +795,19 @@ async function runPhase(claim) {
      * long before a merge — and says what is missing.
      */
     const step = out.post_land_step && typeof out.post_land_step === "object" ? out.post_land_step : null;
-    const namesStep = /(after (the )?land(ing)?|post[- ]land|once (it|this) (is )?(landed|merged)|after (it|this) (is )?(landed|merged))\b/i.test(`${out.plan_text ?? ""}\n${row.instruction}`);
+    // A sentence saying nothing runs after land is not a step (namesPostLandStep, lane.mjs, 26 Oct 2026).
+    let namesStep = namesPostLandStep(`${out.plan_text ?? ""}\n${row.instruction}`);
+    if (namesStep && !(step && typeof step.command === "string" && step.command.trim()) && isRepair(row)) {
+      // REPAIRS NEVER STOP HERE: a repair whose plan names a step without a command resolves to
+      // "nothing runs after land", recorded in the log, and goes on to build.
+      say(`POST-LAND: ${row.id} is a repair; its plan names a step with no command, so nothing runs after land.`);
+      namesStep = false;
+    }
     if (namesStep && !(step && typeof step.command === "string" && step.command.trim())) {
       await failOut("POST_LAND_STEP_UNRESOLVED", `the plan (or her instruction) names a step to run after landing and resolves no command for it. Name it exactly in plan.json as post_land_step: { command, proof } — or state in the plan that nothing runs after land. Nothing was built.`, log);
       return;
     }
-    if (step && !namesStep) { await failOut("POST_LAND_STEP_UNNAMED", `plan.json carries a post_land_step (\`${String(step.command).slice(0, 120)}\`) that neither her instruction nor the plan text names. Only a step she or the plan named runs after land.`, log); return; }
+    if (step && !namesStep && !isRepair(row)) { await failOut("POST_LAND_STEP_UNNAMED", `plan.json carries a post_land_step (\`${String(step.command).slice(0, 120)}\`) that neither her instruction nor the plan text names. Only a step she or the plan named runs after land.`, log); return; }
     const ready = out.publish_ready === true;
     const placeholders = Array.isArray(out.placeholders) ? out.placeholders.map(String) : [];
     if (!ready && placeholders.length === 0) placeholders.push("(the plan marked itself not publish-ready without naming what would ship as a placeholder)");

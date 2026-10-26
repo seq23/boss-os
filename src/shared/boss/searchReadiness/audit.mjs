@@ -1003,9 +1003,36 @@ export function workQueue(briefs, { chunkSize = 10 } = {}) {
  * fixed last week, M left". N comes from the last repair run's status file; M is what this
  * morning's audit queued for her. No status file yet says so rather than inventing a zero.
  */
-export function repairLine(lastRepair, left) {
-  const fixed = lastRepair && Number.isFinite(Number(lastRepair.fixed)) ? Number(lastRepair.fixed) : null;
-  return `Danielle fixes these every Tuesday: ${fixed === null ? "no repair run on record yet" : `${fixed} fixed last week`}, ${left} left.`;
+export function repairLine(lastRepair, left, now = Date.now()) {
+  /*
+   * THE REAL NUMBER, NOT THE LAST FILE'S (26 Oct 2026). The Monday email said "0 fixed last week, 17
+   * left" while the overnight run was fixing 129: the audit read fix-status.json at 06:00, mid-run,
+   * and the file still held an older run's count. The status now keeps every run of the last week
+   * (`history`) and the run in progress (`running`), and this sums them.
+   */
+  const weekFixed = repairsThisWeek(lastRepair, now);
+  const running = lastRepair?.running ? " Danielle is fixing them now." : "";
+  return `Danielle fixes these every Tuesday: ${weekFixed === null ? "no repair run on record yet" : `${weekFixed} fixed last week`}, ${left} left.${running}`;
+}
+
+const WEEK_MS = 7 * 86_400_000;
+
+/** Fixes in the last seven days: every finished run in `history`, plus the run in progress. */
+export function repairsThisWeek(status, now = Date.now()) {
+  if (!status) return null;
+  const recent = (status.history ?? []).filter((h) => Date.parse(h.at) > now - WEEK_MS);
+  if (!recent.length && !status.running && !Array.isArray(status.history)) {
+    return Number.isFinite(Number(status.fixed)) ? Number(status.fixed) : null; // a status written before history existed
+  }
+  return recent.reduce((n, h) => n + (Number(h.fixed) || 0), 0) + (status.running ? Number(status.running.fixed) || 0 : 0);
+}
+
+/** The status file after a round (`running`) or at the end of a run (`history` + the run's own line). */
+export function nextFixStatus(prev, { started, fixed, left, protectedLeft = 0, noRepo = 0, done = false, at = new Date().toISOString() }) {
+  const history = (prev?.history ?? []).filter((h) => Date.parse(h.at) > Date.parse(at) - 4 * WEEK_MS);
+  if (!done) return { ...(prev ?? {}), history, running: { at, started, fixed } };
+  const line = queueRunLine({ started, fixed, left, protectedLeft, noRepo });
+  return { at, started, fixed, left, protected: protectedLeft, no_repo: noRepo, line, history: [...history, { at, fixed }], running: null };
 }
 
 /** The plain-English line for the morning email: what the queue run did today. No ids, no commands. */

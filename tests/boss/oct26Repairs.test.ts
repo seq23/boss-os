@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiJson, row, stubFetch } from "./helpers";
 import { creditFrom, EARLY_RUN_GRACE_MS } from "../../src/worker/boss/routes/duties";
+import { dutyStaleness } from "../../src/worker/boss/duties/staleness";
 import { credentialAlerts } from "../../src/worker/boss/today/credentials";
 
 /**
@@ -39,6 +40,14 @@ describe("an early run answers for its slot", () => {
 
   it("the 23 Oct shape: a run one hour before its slot advances the clock to the next Friday", async () => {
     expect(await ran(SLOT - 3_600_000, SLOT)).toBe(SLOT + 7 * 86_400_000);
+  });
+
+  it("staleness agrees: the 23 Oct early run is not a missed run three days later (Today said 'missed 1')", () => {
+    const duty: any = { name: "Archive audit", suspended: 0, local_hour: 8, local_minute: 40, timezone: "America/Chicago", cadence: "weekly", weekday: 5, weekdays: null, last_run_at: SLOT - 3_600_000, created_at: SLOT - 30 * 86_400_000 };
+    const s = dutyStaleness(duty, SLOT + 69 * 3_600_000);
+    expect(s.stale).toBe(false);
+    expect(s.next_expected).toBe(SLOT + 7 * 86_400_000);
+    expect(dutyStaleness({ ...duty, last_run_at: SLOT - 2 * 86_400_000 }, SLOT + 69 * 3_600_000).stale).toBe(true);
   });
 
   it("NEGATIVE: a run two days ahead of its slot does not consume it", async () => {

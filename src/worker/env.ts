@@ -16,6 +16,9 @@ export interface Env {
    * why every external provider path is UNPROVEN — CREDENTIAL GATE. Never log or echo these.
    */
   OPENROUTER_API_KEY?: string;
+  /** Boss OS's frontier coaching backends (passed through by bossMount.toBossEnv). */
+  ANTHROPIC_API_KEY?: string;
+  OPENAI_API_KEY?: string;
   FIREWORKS_API_KEY?: string;
   AI_PROVIDER_API_KEY?: string;
   /** Specialist lane (P23). No vendor account exists; these are names only. */

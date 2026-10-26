@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
-  morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice,
+  morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice, nextFixStatus,
   indexnowKeyFiles, INDEXNOW_KEY_NAME,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { renderChecklistPage, loadTemplate, standingsSummary } from "../src/shared/boss/searchReadiness/page.mjs";
@@ -483,6 +483,14 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     const lines = morningLines(checklist, [{ site, results: [{ id: "a5", status: "fail", detail: "y" }] }], { queued: 12, lastRepair: { fixed: 230 } });
     expect(lines).toContain("Danielle fixes these every Tuesday: 230 fixed last week, 12 left.");
     expect(queueRunLine({ started: 242, fixed: 230, left: 12, protectedLeft: 2, noRepo: 13 })).toMatch(/Spry Labs download page/);
+  });
+  it("the line sums the week's runs and the run in progress, never a stale file's count (26 Oct 2026: '0 fixed' mid-run while 129 were fixed)", () => {
+    const at = (iso: string) => ({ at: iso });
+    let st = nextFixStatus({ at: "2026-10-19T10:00:00Z", fixed: 0 }, { started: 139, fixed: 83, left: 56, ...at("2026-10-26T05:56:00Z") });
+    expect(repairLine(st, 17, Date.parse("2026-10-26T10:01:00Z"))).toBe("Danielle fixes these every Tuesday: 83 fixed last week, 17 left. Danielle is fixing them now.");
+    st = nextFixStatus(st, { started: 139, fixed: 129, left: 10, protectedLeft: 4, done: true, ...at("2026-10-26T10:36:00Z") });
+    expect(repairLine(st, 10, Date.parse("2026-10-26T11:00:00Z"))).toBe("Danielle fixes these every Tuesday: 129 fixed last week, 10 left.");
+    expect(repairLine(st, 10, Date.parse("2026-11-03T11:00:00Z"))).toBe("Danielle fixes these every Tuesday: 0 fixed last week, 10 left.");
   });
   it("launchd only ticks and asks the duty row; the audit stays Monday; the fixer takes a one-repo scope", () => {
     const installer = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");

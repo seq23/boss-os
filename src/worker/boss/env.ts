@@ -20,6 +20,8 @@ export interface Env {
    * the point of use, and "the key is not set" is a better error than "the Worker would not start".
    */
   OPENAI_API_KEY?: string;
+  /** The OpenRouter backend's key (bk_openrouter), passed through by bossMount.toBossEnv. */
+  OPENROUTER_API_KEY?: string;
   /**
    * The gsc-bot service account, as the vault holds it, so the Worker can create a Gmail DRAFT in
    * her own mailbox on the green button (`wealth/gmailDraft.ts`). One scope, `gmail.compose`, and

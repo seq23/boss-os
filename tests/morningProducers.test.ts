@@ -127,7 +127,7 @@ describe("D and L sections reach Simone's morning email through E's writer", () 
     expect(t.indexOf("Decide")).toBeLessThan(t.indexOf("New deals since yesterday"));
     // One match for the one buyer-seller pair (D), as ONE grid row and never in Decide (25 Oct 2026).
     expect(t).not.toContain("a buyer and a seller who could trade");
-    expect(t.match(/^- Company A · .* → .* · Size . Price . Age . — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?tab=capital&view=matches&match=/gm)).toHaveLength(1);
+    expect(t.match(/^- Company A · .* → .* · (size fits|fills part|size small), [^—]+ — Open ›: https:\/\/boss\.sequoiataylor\.com\/\?tab=capital&view=matches&match=/gm)).toHaveLength(1);
     expect(t).toContain("Company A · Buy · $1B · Broker One (Firm X)");
     expect(t).not.toMatch(/@\s*(?:·|—|$)/m);
     // An LP draft whose words are not on the row has no "Send as is": nothing goes that was not shown.

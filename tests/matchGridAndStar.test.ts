@@ -68,7 +68,7 @@ describe("no match ever reaches Decide (25 Oct 2026)", () => {
     expect(e.text.split("\n")[2]).toBe("Nothing to decide — this is just so you know.");
   });
   it("the grid shape: company | seller → buyer | fit dots | Open › to the trade's card, in text and HTML", () => {
-    expect(e.text).toContain("- ⭐ Company Z · Broker Two, Firm Y $300M at $101/share → Broker One, Firm X $1B at $100/share · Size ◐ Price ● Age ● — Open ›: https://boss.sequoiataylor.com/?tab=capital&view=matches&match=b%7Cs");
+    expect(e.text).toContain("- ⭐ Company Z · Broker Two, Firm Y $300M at $101/share → Broker One, Firm X $1B at $100/share · fills part, prices close, fresh — Open ›: https://boss.sequoiataylor.com/?tab=capital&view=matches&match=b%7Cs");
     const table = e.html.slice(e.html.indexOf("Monique found"));
     expect(table).toMatch(/<th[^>]*>Company<\/th><th[^>]*>Seller → buyer<\/th><th[^>]*>Fit<\/th>/);
     expect(table).toMatch(/>Open ›<\/a>/);
