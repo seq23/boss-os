@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice,
+  indexnowKeyFiles, INDEXNOW_KEY_NAME,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { renderChecklistPage, loadTemplate } from "../src/shared/boss/searchReadiness/page.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -228,6 +229,49 @@ describe("checks catch what they guard", () => {
     // A repo with no key file at all still fails for that reason.
     expect(CHECKS.indexnow_key!(baseCtx({ repo: { ok: true, indexnowKeys: [] } }) as any).detail)
       .toMatch(/no IndexNow key file in the repo/);
+  });
+
+  it("an IndexNow key may be a UUID, and only a file whose body is its own key counts", () => {
+    // porchandparty901.com's key IS a UUID: 5f1f13a4-...-9c2d90c3b7d2.txt, committed at the root of
+    // p-n-p, served 200 with its key inside, submitted by that repo's deploy lane and guarded by
+    // that repo's own validator. The detector was lowercase hex with no dashes, so it did not match,
+    // and e3 and i8 failed every run with "no IndexNow key file in the repo" - two fix briefs a week
+    // against a site that had one all along (26 Oct 2026). IndexNow's rule is 8-128 characters of
+    // a-z, A-Z, 0-9 and dashes.
+    const uuid = "5f1f13a4-3d84-4d13-8ed9-9c2d90c3b7d2";
+    const hex = "200dca426298c70aabc048344605cccae8dabc0b460f1b3e21eb6e857ef83af1";
+    const nested = "aplayermode/1cf2f6839abec33933cb3e6ea81027b8";
+    const tree: Record<string, string> = {
+      [`${uuid}.txt`]: `${uuid}\n`,
+      [`${hex}.txt`]: hex,
+      [`${nested}.txt`]: nested.split("/").pop()!,
+      "indexnow.txt": "indexnow",
+      // Allowing dashes is not enough on its own: these are all 8-128 characters of the same
+      // alphabet, and only the body test tells them apart from a key.
+      "llms-full.txt": "# everything about the site",
+      "llms.txt": "# llms",
+      "robots.txt": "User-agent: *",
+      "apple-touch-icon.txt": "not a key",
+    };
+    expect(indexnowKeyFiles(Object.keys(tree), (f: string) => tree[f])).toEqual([
+      `${uuid}.txt`, `${hex}.txt`, `${nested}.txt`, "indexnow.txt",
+    ]);
+    // The UUID the regression was about matches by name as well.
+    expect(INDEXNOW_KEY_NAME.test(`${uuid}.txt`)).toBe(true);
+    // A key file whose body is NOT its key is not a key file: that is exactly how a search engine
+    // verifies ownership, so a repo that fails it would fail verification too.
+    expect(indexnowKeyFiles([`${uuid}.txt`], () => "something else")).toEqual([]);
+    // Too short to be a key at all.
+    expect(INDEXNOW_KEY_NAME.test("short.txt")).toBe(false);
+    // With no reader, the name shape is all there is, and the caller is told as much in the comment.
+    expect(indexnowKeyFiles([`${uuid}.txt`, "robots.txt"], undefined)).toEqual([`${uuid}.txt`]);
+    // And the check itself passes once such a key answers on the host.
+    const r = CHECKS.indexnow_key!(baseCtx({
+      repo: { ok: true, indexnowKeys: [uuid] },
+      files: { [`/${uuid}.txt`]: { status: 200, text: `${uuid}\n` } },
+    }) as any);
+    expect(r.status).toBe("pass");
+    expect(r.detail).toContain(uuid);
   });
 
   it("aplayermode.com is mapped to the repo that serves it, not to the app repo", () => {

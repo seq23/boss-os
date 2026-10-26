@@ -697,6 +697,39 @@ export const CHECKS = {
 export const GSC_TRUTH_NAMES = ["gsc_truth.json", "gsc_search_analytics_export.json"];
 export const FRESH_FILE_NAMES = [...GSC_TRUTH_NAMES, "index_coverage.json"];
 
+/**
+ * The IndexNow key files a repository holds.
+ *
+ * IndexNow's rule for a key is 8-128 characters of a-z, A-Z, 0-9 and dashes, so a UUID is a valid
+ * key. The old detector was /(^|\/)[0-9a-f]{32,64}\.txt$/ - lowercase hex, no dashes - and
+ * porchandparty901.com's key is a UUID: 5f1f13a4-...-9c2d90c3b7d2.txt, committed at the root of
+ * p-n-p, served 200 with its key inside, submitted by that repo's deploy lane and guarded by that
+ * repo's own validator, which accepts dashes. It did not match, so items e3 and i8 failed every run
+ * with "no IndexNow key file in the repo" and wrote two fix briefs a week against a site that had
+ * one all along (26 Oct 2026). A checker that invents work is worse than one that misses something.
+ *
+ * Allowing dashes alone is not enough to be right, though: `llms-full.txt` is 8-128 characters of
+ * exactly that alphabet. The name shape cannot tell a key from any other hyphenated text file, so
+ * this uses IndexNow's actual contract - A KEY FILE'S BODY IS ITS OWN KEY - which is the same test
+ * p-n-p's validator applies and the same one the search engine applies when it verifies ownership.
+ * `robots.txt`, `llms.txt`, `llms-full.txt` and a `CNAME` all fail it. `indexnow.txt` is accepted
+ * by name because the checklist names that form, and by body like any other.
+ *
+ * `show` reads a file out of the tree; when it is not available (a caller with only a file list)
+ * the name shape alone is used, and the caller is trusting a weaker signal on purpose.
+ */
+export const INDEXNOW_KEY_NAME = /(^|\/)(indexnow|[A-Za-z0-9][A-Za-z0-9-]{6,126}[A-Za-z0-9])\.txt$/;
+export function indexnowKeyFiles(files, show) {
+  const named = (files ?? []).filter((f) => INDEXNOW_KEY_NAME.test(f));
+  if (typeof show !== "function") return named;
+  return named.filter((f) => {
+    const key = f.split("/").pop().replace(/\.txt$/, "");
+    let body = null;
+    try { body = show(f); } catch { return false; }
+    return typeof body === "string" && body.trim() === key;
+  });
+}
+
 function repoFresh(ctx, names) {
   const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
   const all = names.flatMap((n) => r.fresh?.[n] ?? []);
