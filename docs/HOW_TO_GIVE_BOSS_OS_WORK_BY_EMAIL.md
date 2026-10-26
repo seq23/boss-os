@@ -1,6 +1,6 @@
 # How to give Boss OS work by email
 
-_22 October 2026. A test (`tests/emailHowTo.test.ts`) reads this page: the address, the example
+_22 October 2026; simone@ and the Tell Simone box added 26 October 2026. A test (`tests/emailHowTo.test.ts`) reads this page: the address, the example
 emails and who they reach, the reply words and the secret line are checked against the code, so the
 page cannot drift from what the mailbox does._
 
@@ -9,10 +9,17 @@ page cannot drift from what the mailbox does._
 **boss@sequoiataylor.com**, from one of your own addresses: seq.taylor@gmail.com,
 sequoiataylor@icloud.com or staylor@spry.vc. Mail from anyone else is recorded and refused.
 
+**simone@sequoiataylor.com does exactly the same thing as boss@.** Use whichever you like: it is one
+front door.
+
 You do not need to name anybody. Simone (Chief of Staff) reads it, splits it into its asks, and gives
 each ask to the employee who can do it. If you want a particular person, write to them directly:
-simone@, danielle@, camille@, monique@, zora@, toni@, imani@ or kendra@sequoiataylor.com, or put their
+danielle@, camille@, monique@, zora@, toni@, imani@ or kendra@sequoiataylor.com, or put their
 name with a # in front (#danielle). Both are optional shortcuts.
+
+**Or use the "Tell Simone" box at the top of Today** in Boss OS. It is the same as emailing
+simone@: the same split, the same people, the same reports back by email. You see who has each job
+on the screen as soon as you send.
 
 ## Three example emails
 

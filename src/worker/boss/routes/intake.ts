@@ -8,7 +8,7 @@ import { isLane } from "../../../shared/boss/lanes";
 import { classify, KIND_TO_DEPARTMENT } from "../intake/classify";
 import { INTAKE_KINDS } from "../../../shared/boss/governance";
 import { handleBossInboundMail, consoleMessageId } from "../intake/inboundMail";
-import { BOSS_INTAKE_MAILBOX, BOSS_INTAKE_SENDERS } from "../../../shared/boss/intake/mail.mjs";
+import { BOSS_INTAKE_MAILBOX, BOSS_INTAKE_SENDERS, SIMONE_MAILBOX } from "../../../shared/boss/intake/mail.mjs";
 
 export const intake = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -317,6 +317,42 @@ intake.post("/mail", async (c) => {
   }, c.env);
 
   return ok(c, result, 201);
+});
+
+/**
+ * `POST /api/intake/simone` — THE "TELL SIMONE" BOX ON TODAY (owner, 26 Oct 2026).
+ *
+ * "Same as emailing simone@sequoiataylor.com", and it is: the text becomes a message to simone@
+ * from her own address and goes through `handleBossInboundMail`, the one intake. Simone splits it
+ * into its asks and hands each to the seat that can do it, the jobs carry `source:
+ * boss_inbound_mail` so the tail follows them like any emailed job, and the answer is the same
+ * per-job handoff the reply email is built from. No routing here; there is nothing to drift.
+ * `tests/boss/tellSimone.test.ts` sends the same text both ways and requires the same jobs.
+ *
+ * No subject: the box has none, and an email with none is read the same way (the ask is the title).
+ * Same authorisation as `/mail` above: the session gate in front of `/api/*`, sender fixed to hers.
+ */
+intake.post("/simone", async (c) => {
+  const b = await c.req.json<{ text?: string }>().catch(() => null);
+  const text = String(b?.text ?? "");
+  if (!text.trim()) {
+    throw badRequest("Nothing to hand over", "Type the task, question or duty first, the way you would write it in an email.");
+  }
+  const from = BOSS_INTAKE_SENDERS[0]!;
+  const raw = `From: ${from}\r\nTo: ${SIMONE_MAILBOX}\r\nSubject: \r\n\r\n${text}`;
+  const result = await handleBossInboundMail({
+    from,
+    to: SIMONE_MAILBOX,
+    headers: new Headers({
+      from,
+      subject: "",
+      "x-boss-intake-origin": "console",
+      "authentication-results": "boss-os-console; dmarc=pass (owner session, not SMTP)",
+    }),
+    raw: new Response(raw).body!,
+    rawSize: new TextEncoder().encode(raw).length,
+  }, c.env);
+  return ok(c, { mailId: result.mailId, outcome: result.outcome, jobs: result.jobs ?? [], reply: result.reply }, 201);
 });
 
 /**

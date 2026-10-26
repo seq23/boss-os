@@ -1651,3 +1651,18 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .mi-more { margin: 10px 0 0; }
 .mi-more summary { cursor: pointer; font-size: 14px; padding: 8px 0; color: var(--ink); }
 .row-open { background: none; border: 1px solid var(--line); border-radius: 2px; padding: 6px 10px; cursor: pointer; font: inherit; font-size: 13px; color: var(--ink); white-space: nowrap; }
+
+/* ─── "Tell Simone" at the top of Today (26 Oct 2026, approved mock-up) ─────── */
+.tell-simone { margin-top: 0; display: grid; gap: 8px; }
+.tell-simone-h { font-family: var(--display); font-size: 18px; margin: 0; color: var(--ink); }
+.tell-simone-hint { margin: 0; }
+.tell-simone-box { width: 100%; min-height: 96px; box-sizing: border-box; padding: 10px; font: inherit; font-size: 16px; color: var(--ink); background: var(--card-2, var(--card)); border: 1px solid var(--line); border-radius: 3px; resize: vertical; }
+.tell-simone-box:focus { outline: none; border-color: var(--gold); }
+.tell-simone-btns { margin: 4px 0 0; }
+.tell-simone-btns > .btn { flex: 0 1 auto; }
+.tell-simone-done { display: grid; gap: 6px; }
+.tell-simone-ok { margin: 0; font-weight: 700; color: var(--ok); }
+.tell-simone-job { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 14px; color: var(--ink); }
+.tell-simone-job > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.tell-simone-who { font-weight: 700; white-space: nowrap; }
+.tell-simone-reply { margin: 0; white-space: pre-wrap; font-size: 14px; color: var(--ink); }

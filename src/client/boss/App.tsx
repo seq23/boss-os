@@ -61,7 +61,13 @@ export default function App() {
     const t = q.get("tab");
     if (t && t in TITLES) setTab(t as TabId);
     if (t === "inbox" && q.get("approval")) setOpenApproval(q.get("approval"));
-    const onPop = () => { setRoute(readRoute()); setFocus(readFocus()); };
+    const onPop = () => {
+      setRoute(readRoute());
+      const f = readFocus();
+      setFocus(f);
+      // A link to a place on Today (the Tell Simone box from an employee page) opens Today.
+      if (f) { setTab("today"); setSettingsOpen(false); setOpenApproval(null); }
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
@@ -73,6 +79,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pending, setPending] = useState(0);
   const [openApproval, setOpenApproval] = useState<string | null>(null);
+  // Bumped by Today's "Open Recent work"; Team scrolls to its Recent work list when it changes.
+  const [recentFocus, setRecentFocus] = useState(0);
   const [inboxKey, setInboxKey] = useState(0);
   const [offline, setOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine);
   const [waiting, setWaiting] = useState(0);
@@ -208,7 +216,12 @@ export default function App() {
               setSettingsOpen(false);
             }} />
       ) : tab === "today" ? (
-        <Today focus={focus} onOpenOperations={() => { setTeamStart("duties"); setTab("team"); }} />
+        <Today
+          focus={focus}
+          onOpenOperations={() => { setTeamStart("duties"); setTab("team"); }}
+          // "Open Recent work" after telling Simone: Your team, at its Recent work list.
+          onOpenRecentWork={() => { setTeamStart("team"); setTab("team"); setRecentFocus((n) => n + 1); }}
+        />
       ) : tab === "inbox" ? (
         openApproval ? (
           <ApprovalDetail
@@ -224,7 +237,7 @@ export default function App() {
       ) : tab === "spirit" ? (
         <Spirit />
       ) : tab === "team" ? (
-        <Team key={teamStart} start={teamStart} onOpenDeals={(v) => { setCapitalStart(v); setTab("capital"); }} />
+        <Team key={teamStart} start={teamStart} focusRecent={recentFocus} onOpenDeals={(v) => { setCapitalStart(v); setTab("capital"); }} />
       ) : tab === "memory" ? (
         <Memory />
       ) : tab === "trading" ? (

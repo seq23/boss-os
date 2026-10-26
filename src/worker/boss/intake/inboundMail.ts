@@ -15,7 +15,7 @@ import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
 import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
 import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
-import { triage, triageLines, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
+import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
 import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
 import { closeDirectiveFor } from "../../../shared/boss/intake/close.mjs";
@@ -108,6 +108,23 @@ export interface BossMailResult {
   messageId?: string | null;
   /** Who signs the reply: the employee the message reached. */
   signer?: string | null;
+  /**
+   * The handoff, one row per job: who has what. The same list the reply's lines are made from, so
+   * the "Tell Simone" box on Today shows exactly what an email reply would say. Empty when nothing
+   * was opened (a question back, an answer filed on an existing card, a refusal): read `reply`.
+   */
+  jobs?: HandoffJob[];
+}
+
+export interface HandoffJob {
+  title: string;
+  employeeId: string | null;
+  employee: string;
+  taskId: string | null;
+  /** A standing duty rather than a one-off job. */
+  duty: boolean;
+  /** Null when it started; the reason when it did not. */
+  failure: string | null;
 }
 
 /** The subject she meant: a forward's own subject when she forwarded something. */
@@ -498,7 +515,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   if (command) {
     const commandReply = [command.reply, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: command.outcome, why: `Simone did it: ${command.commandIds.join(", ")}`, taskId: command.taskId, employeeId: "emp_chief", objectKey, reply: commandReply });
-    return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone" };
+    return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone", jobs: command.jobs ?? [] };
   }
 
   const constraints = standingConstraintsIn(readable);
@@ -821,13 +838,21 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     route.outcome === "DEFAULTED" && !handoffNote && !followed && !filedByVerb && !bookFailure && !question && Boolean(readable || subject)
       ? triage({ subject: trueSubject, text: readable || trueSubject, roster })
       : [];
+  // A reply to Simone's daily or weekly email ("move the KDP item to Monday") carries the email
+  // it answers. Only that email: it is built from Boss OS rows with nothing from the fund, so it
+  // is safe as model input; other emails' text stays in boss_mail_refs (LOCAL_ONLY for AI).
+  // One string for the whole-message task and every triaged job, so simone@ and boss@ replies keep it.
+  const replyingTo = threadRefs.context && threadRefs.refs.some((r) => r.startsWith("yd_")) ? `\n\nShe is replying to this email from Boss OS:\n${threadRefs.context}` : "";
   const triageTasks: Array<{ job: TriageJob<BossSeat>; taskId: string | null; failure: string | null }> = [];
   // Admitted INSIDE the one guarded admission branch below, never beside it (validate:book-verbs).
   const admitTriaged = async () => {
     const preApproved = preApprovalIn(`${subject}\n${readable}`);
     for (const [i, job] of triaged.entries()) {
-      const title = (strippedSubject(trueSubject) || `Mail from ${sender}`) + (triaged.length > 1 ? ` (${i + 1} of ${triaged.length})` : "");
-      let body = job.text;
+      // No subject (the Tell Simone box, or a phone email without one): the ask itself is the title.
+      const title = strippedSubject(trueSubject)
+        ? strippedSubject(trueSubject) + (triaged.length > 1 ? ` (${i + 1} of ${triaged.length})` : "")
+        : shortTitle(job.ask, 80) || `Mail from ${sender}`;
+      let body = job.text + replyingTo;
       // "your call" anywhere in her email pre-approves every job in it.
       if (preApproved && !preApprovalIn(body)) body = `${body}\n\n(Her email said "${preApproved}": pre-approved.)`;
       // Camille's executor is the research page; a question she was handed IS one.
@@ -868,7 +893,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     if (triaged.length) await admitTriaged();
     else try {
       const admitted = await admitTask(env, {
-        title: strippedSubject(trueSubject) || `Mail from ${sender}`,
+        title: strippedSubject(trueSubject) || shortTitle(readable, 80) || `Mail from ${sender}`,
         lane: route.seat.lane,
         employee_id: route.seat.id,
         input: {
@@ -892,10 +917,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           body: oversize
             ? `The message is ${(message.rawSize / 1024 / 1024).toFixed(1)}MB and was not read here.${objectKey ? ` The whole of it is kept at ${objectKey}.` : " It could not be stored either — nothing but this card survives it."}`
             : (taskBody || `The message carried no readable text — ${read?.parts ?? 0} MIME part(s) and nothing in any of them.${objectKey ? ` It is kept exactly as it arrived at ${objectKey}.` : ""}`)
-              // A reply to Simone's daily or weekly email ("move the KDP item to Monday") carries the email
-              // it answers. Only that email: it is built from Boss OS rows with nothing from the fund, so it
-              // is safe as model input; other emails' text stays in boss_mail_refs (LOCAL_ONLY for AI).
-              + (threadRefs.context && threadRefs.refs.some((r) => r.startsWith("yd_")) ? `\n\nShe is replying to this email from Boss OS:\n${threadRefs.context}` : ""),
+              + replyingTo,
           // The original, byte for byte. Re-extractable, and the reason a parser bug is repairable.
           ...(objectKey ? { raw_message: objectKey } : {}),
           ...(read ? { body_format: read.format, mime_parts: read.parts } : {}),
@@ -1040,7 +1062,15 @@ function headline(text: string): string {
   });
 
   const signerId = dutyNote?.employeeId ?? route.seat.id;
-  return { mailId, outcome, employeeId: signerId, taskId, reply, messageId, signer: roster.find((s) => s.id === signerId)?.name ?? route.seat.name ?? "Simone" };
+  const nameOf = (id: string | null) => roster.find((s) => s.id === id)?.name ?? route.seat.name ?? "Simone";
+  const jobs: HandoffJob[] = triageTasks.length
+    ? triageTasks.map((t) => ({ title: shortTitle(t.job.ask), employeeId: t.job.seat.id, employee: t.job.seat.name, taskId: t.taskId, duty: false, failure: t.failure }))
+    : dutyNote && (dutyNote.outcome === "DUTY_CREATED" || dutyNote.outcome === "DUTY_DRAFTED")
+      ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyNote.employeeId, employee: nameOf(dutyNote.employeeId), taskId: null, duty: true, failure: null }]
+      : taskId || (admitFailure && !question && !filedByVerb)
+        ? [{ title: shortTitle(strippedSubject(trueSubject) || readable), employeeId: route.seat.id, employee: route.seat.name, taskId, duty: false, failure: taskId ? null : admitFailure }]
+        : [];
+  return { mailId, outcome, employeeId: signerId, taskId, reply, messageId, signer: nameOf(signerId), jobs };
 }
 
 /**

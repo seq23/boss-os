@@ -185,3 +185,16 @@ export function oneLine(s) {
   const para = String(s ?? "").replace(/\r/g, "").split(/\n\s*\n/).map((p) => p.trim()).find(Boolean) ?? "";
   return para.replace(/\s*\n\s*/g, " ").replace(/\s{2,}/g, " ").trim();
 }
+
+/**
+ * A job's short title for a row on a screen ("Tell Simone" on Today): the ask's first paragraph on
+ * one line, list numbering dropped, cut at a word boundary. A screen row has room for ~60 characters;
+ * the whole ask is on the job itself.
+ */
+export function shortTitle(s, max = 60) {
+  const line = oneLine(s).replace(/^\s*(?:\d+[.)]|[-*•])\s+/, "");
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max + 1);
+  const at = cut.lastIndexOf(" ");
+  return `${(at > max / 2 ? cut.slice(0, at) : line.slice(0, max)).replace(/[\s,.;:—-]+$/, "")}…`;
+}

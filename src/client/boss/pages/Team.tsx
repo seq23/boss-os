@@ -11,7 +11,7 @@ import { EmployeePage } from "./EmployeePage";
 
 export type TeamView = "team" | "duties" | "owns" | "outreach" | "prompts" | "capabilities";
 
-export function Team({ start = "team", onOpenDeals = () => {} }: { start?: TeamView; onOpenDeals?: (view: "lp" | "prospects") => void } = {}) {
+export function Team({ start = "team", focusRecent = 0, onOpenDeals = () => {} }: { start?: TeamView; focusRecent?: number; onOpenDeals?: (view: "lp" | "prospects") => void } = {}) {
   const [view, setView] = useState<TeamView>(start);
   // Builder U: one page per employee, opened from her card; ← Back returns to the same cards.
   const [employee, setEmployee] = useState<string | null>(null);
@@ -40,7 +40,7 @@ export function Team({ start = "team", onOpenDeals = () => {} }: { start?: TeamV
         <button className="btn" aria-pressed={view === "prompts"} onClick={() => setView("prompts")}>Prompts</button>
         <button className="btn" aria-pressed={view === "capabilities"} onClick={() => setView("capabilities")}>Capabilities</button>
       </div>
-      {view === "team" ? <><YourTeam onOpenEmployee={setEmployee} onOpenDeals={onOpenDeals} /><Roster /></>
+      {view === "team" ? <><YourTeam onOpenEmployee={setEmployee} onOpenDeals={onOpenDeals} /><Roster focusRecent={focusRecent} /></>
         : view === "duties" ? <Duties onOpenOutreach={() => setView("outreach")} />
         : view === "owns" ? <Owns />
         : view === "outreach" ? <OutreachDesk />
@@ -180,8 +180,9 @@ function Capabilities() {
   );
 }
 
-function Roster() {
+function Roster({ focusRecent = 0 }: { focusRecent?: number }) {
   const [tasks, setTasks] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [sprawl, setSprawl] = useState<any>(null);
   const [error, setError] = useState<unknown>(null);
@@ -192,9 +193,14 @@ function Roster() {
     api.moniqueOutreach().then(setOutreach).catch(() => setOutreach(null));
     Promise.all([api.tasks(), api.templates(), api.sprawl()])
       .then(([t, tp, s]) => { setTasks(t); setTemplates(tp); setSprawl(s); })
-      .catch((e) => { setError(e); });
+      .catch((e) => { setError(e); })
+      .finally(() => setLoaded(true));
   }
   useEffect(load, []);
+  // Today's "Open Recent work" (after telling Simone): once the list is in, show it.
+  useEffect(() => {
+    if (focusRecent && loaded) document.getElementById("recent-work")?.scrollIntoView({ block: "start" });
+  }, [focusRecent, loaded]);
 
   return (
     <>
@@ -244,7 +250,7 @@ function Roster() {
         </div>
       )}
 
-      <p className="eyebrow">Recent work</p>
+      <p className="eyebrow" id="recent-work">Recent work</p>
       {tasks.length === 0 ? (
         <Empty title="No tasks yet" hint="Queued work shows here with what it cost." />
       ) : (

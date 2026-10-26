@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BOSS_INTAKE_MAILBOX, BOSS_INTAKE_SENDERS } from "../src/shared/boss/intake/mail.mjs";
+import { BOSS_INTAKE_MAILBOX, BOSS_INTAKE_SENDERS, SIMONE_MAILBOX, routeToSeat } from "../src/shared/boss/intake/mail.mjs";
 import { triage } from "../src/shared/boss/intake/triage.mjs";
 import { dutyRequestIn } from "../src/shared/boss/duties/lane.mjs";
 import { readReply } from "../src/shared/boss/repoChange/lane.mjs";
@@ -46,6 +46,29 @@ describe("the email how-to page matches the mailbox", () => {
     expect(inboxes.length).toBe(8);
     for (const a of inboxes) expect(DOC).toContain(a.split("@")[0] + "@");
     expect(DOC).not.toMatch(/westpeek|joinwestpeek/i);
+  });
+
+  it("says simone@ is boss@, and the router agrees: same outcome, same seat, same triage for every example", () => {
+    expect(DOC).toContain(`**${SIMONE_MAILBOX} does exactly the same thing as boss@.**`);
+    expect(DOC).toMatch(/"Tell Simone" box at the top of Today/);
+    // simone@ is not listed among the direct-to-one-person addresses any more.
+    const direct = /write to them directly:\n?([^.]+)\./.exec(DOC)?.[1] ?? "";
+    expect(direct).toContain("danielle@");
+    expect(direct).not.toContain("simone@");
+    const ex = examples();
+    expect(ex.length).toBe(3);
+    for (const e of ex) {
+      const text = `${e.subject}\n${e.body}`;
+      const viaBoss = routeToSeat(text, ROSTER, BOSS_INTAKE_MAILBOX)!;
+      const viaSimone = routeToSeat(text, ROSTER, SIMONE_MAILBOX)!;
+      expect(viaSimone.outcome, e.subject).toBe("DEFAULTED");
+      expect(viaSimone.outcome).toBe(viaBoss.outcome);
+      expect(viaSimone.seat.id).toBe(viaBoss.seat.id);
+      expect(viaSimone.tag).toBe(viaBoss.tag);
+    }
+    // Every OTHER name@ still routes straight to its person.
+    expect(routeToSeat("look at this", ROSTER, "danielle@sequoiataylor.com")!.seat.name).toBe("Danielle");
+    expect(routeToSeat("look at this", ROSTER, "danielle@sequoiataylor.com")!.outcome).toBe("ROUTED");
   });
 
   it("has three examples, and each reaches the seat the page says", () => {

@@ -18,6 +18,14 @@ export interface RewriteProgress {
   sentence: string | null;
 }
 
+/** What "Tell Simone" answers: the per-job handoff, the same rows her email reply is built from. */
+export interface TellSimoneResult {
+  mailId: string;
+  outcome: string;
+  jobs: { title: string; employeeId: string | null; employee: string; taskId: string | null; duty: boolean; failure: string | null }[];
+  reply: string | null;
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -237,6 +245,9 @@ export const api = {
    * the question no longer needs one and opens nothing. A question typed into Boss OS had no email
    * to reply to, so until this the alert asked her to use a door that did not exist.
    */
+  /** The "Tell Simone" box on Today: the same intake as an email to simone@ (POST /api/intake/simone). */
+  tellSimone: (text: string) => call<TellSimoneResult>("/intake/simone", post("", { text })),
+
   answerQuestion: (id: string, body: { answer?: string; withdraw?: string }) =>
     call<{ answered_at: number | null; opened_work: boolean; note: string }>(`/intake/questions/${encodeURIComponent(id)}/answer`, post("", body)),
 

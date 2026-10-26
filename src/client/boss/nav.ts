@@ -7,6 +7,7 @@
  *   /?employee=<id>             one employee's open work (Today's "Monique: 1 open")
  *   /?view=briefing             Today, opened at Camille's briefing
  *   /?view=morning              Today, opened at "This morning's email"
+ *   /?view=tell                 Today, at the "Tell Simone" box, cursor in it
  *
  * `go` moves there without reloading; the browser's Back returns to where she was.
  */
@@ -28,10 +29,13 @@ export function readRoute(search = typeof window === "undefined" ? "" : window.l
   return null;
 }
 
-export function readFocus(search = typeof window === "undefined" ? "" : window.location.search): "briefing" | "morning" | null {
+export function readFocus(search = typeof window === "undefined" ? "" : window.location.search): "briefing" | "morning" | "tell" | null {
   const v = new URLSearchParams(search).get("view");
-  return v === "briefing" || v === "morning" ? v : null;
+  return v === "briefing" || v === "morning" || v === "tell" ? v : null;
 }
+
+/** Today, scrolled to the "Tell Simone" box with the cursor in it (an employee page's "Tell Simone ↑"). */
+export const tellSimoneHref = () => "/?view=tell";
 
 export function go(href: string) {
   window.history.pushState({}, "", href);

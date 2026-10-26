@@ -227,5 +227,26 @@ for (const vp of [PHONE, LAPTOP]) {
       await expect(alerts.locator(".notice").first()).toContainText(/check\(s\) re-run/);
       if (vp.name === "phone") await expectNoSidewaysScroll(page);
     });
+
+    test("Tell Simone sits at the very top, hands off the jobs, and offers the way back", async ({ page }) => {
+      await unlock(page);
+      await tab(page, "Today");
+      const box = page.getByTestId("tell-simone");
+      await expect(box).toBeVisible();
+      // First thing on Today: nothing on the page sits above it.
+      const top = await box.boundingBox();
+      const date = await page.locator("main.page .eyebrow").first().boundingBox();
+      expect(top!.y).toBeLessThan(date!.y);
+      await expect(box).toContainText("Same as emailing simone@sequoiataylor.com.");
+      await box.locator("textarea").fill("What are the three cheapest ways to host a static site with a custom domain? E2E");
+      await box.getByRole("button", { name: "Send to Simone" }).click();
+      await expect(box).toContainText(/✓ Simone has it: 1 job/, { timeout: 15_000 });
+      await expect(box).toContainText("Each one reports back by email when it's done or needs you.");
+      await expect(box.locator(".tell-simone-job")).toHaveCount(1);
+      await expect(box.getByRole("button", { name: "Open Recent work" })).toBeVisible();
+      await box.getByRole("button", { name: "Tell Simone something else" }).click();
+      await expect(box.locator("textarea")).toBeFocused();
+      if (vp.name === "phone") await expectNoSidewaysScroll(page);
+    });
   });
 }

@@ -329,7 +329,21 @@ async function cantYetLine(env: Env, row: CommandRow, what: string, now: number)
 
 // ─── From her email ────────────────────────────────────────────────────────
 
-export interface CommandMailResult { reply: string; outcome: "COMMAND" | "COMMAND_REPLY"; commandIds: string[]; taskId: string | null }
+export interface CommandMailResult {
+  reply: string; outcome: "COMMAND" | "COMMAND_REPLY"; commandIds: string[]; taskId: string | null;
+  /** One row per command for the handoff screen: what it is and who has it (Simone, or Danielle for repo work). */
+  jobs?: Array<{ title: string; employeeId: string; employee: string; taskId: string | null; duty: false; failure: null }>;
+}
+
+/** A command's short title for the handoff list. */
+function commandTitle(kind: string, spec: Json): string {
+  if (kind === "lookup") return `Find ${spec.name ?? "their"}'s email`;
+  if (kind === "invite") return `Invite ${spec.guest_name ?? spec.guest_email ?? "a guest"}`;
+  if (kind === "repo") return `${spec.product}: ${String(spec.instruction ?? "").slice(0, 50)}`;
+  if (kind === "access_code") return `Access code${spec.code ? ` ${spec.code}` : ""}`;
+  if (kind === "email") return `Email to ${spec.recipient_name ?? spec.to ?? "them"}`;
+  return String(spec.what ?? kind).slice(0, 60);
+}
 
 /**
  * The intake's door into this file. A reply on a command's thread answers that command; a new email
@@ -393,7 +407,12 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
   await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: input.mailId, action: "commands", detail: { commands: found.map((c, i) => ({ id: ids[i], kind: c.kind })) } });
   const refs = ids.map((id) => `[${id}]`).join(" ");
   const reply = lines.length === 1 ? `${lines[0]} ${refs}` : `On it. Here's each part:\n${lines.map((l) => `- ${l}`).join("\n")}\n${refs}`;
-  return { reply, outcome: "COMMAND", commandIds: ids, taskId };
+  const jobs = found.map((c) => ({
+    title: commandTitle(c.kind, c.spec as Json),
+    employeeId: c.kind === "repo" ? "emp_repo" : "emp_chief", employee: c.kind === "repo" ? "Danielle" : "Simone",
+    taskId: null, duty: false as const, failure: null,
+  }));
+  return { reply, outcome: "COMMAND", commandIds: ids, taskId, jobs };
 }
 
 /** Her reply on a command's thread. The newest open command it can apply to takes it. */
