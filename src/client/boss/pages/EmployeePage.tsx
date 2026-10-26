@@ -62,6 +62,8 @@ export function EmployeePage({ id, onBack }: { id: string; onBack: () => void })
         <DutyCard key={d.id} duty={d} open={open === d.id} onToggle={() => setOpen(open === d.id ? null : d.id)} onChanged={load} onError={setError} />
       ))}
 
+      {e.id === "emp_knowledge" && <WaitingOnRegister />}
+
       <section className="panel" data-testid="employee-tell-simone" aria-label={`Give ${e.name} a one-off task`}>
         <p className="row-title" style={{ marginTop: 0 }}>Give {e.name} a one-off task</p>
         <p className="row-sub">Goes through Simone, so it lands with the right person even if it isn&apos;t {e.name}&apos;s.</p>
@@ -274,6 +276,36 @@ function AddDuty({ employee, onDone, onError }: { employee: any; onDone: () => v
       <button className="btn btn-approve" disabled={busy || phrase.trim().length < 8} onClick={add}>Add duty</button>
       {said && <div className={said.ok ? "notice" : "notice notice-hint-box"} role="status" style={{ marginTop: 10 }}>{said.text}</div>}
       <p className="row-sub">Simone checks that {employee.name} can actually do it before it starts, and tells you in one line if it belongs to someone else.</p>
+    </section>
+  );
+}
+
+/**
+ * ZORA'S REGISTER (owner-approved 26 Oct 2026): everything Boss OS is waiting on, who owns it, the
+ * date, and what happens on that date. Read only; Zora's daily run acts on it.
+ */
+const OWNER_NAME: Record<string, string> = { emp_chief: "Simone", emp_relationship: "Monique", emp_knowledge: "Zora", emp_repo: "Danielle", emp_continuity: "Kendra", emp_risk: "Toni", emp_research: "Camille", emp_practice: "Imani", sequoia: "You" };
+const STATE_WORDS: Record<string, string> = { open: "Waiting", actioned: "Started", done: "Done", repair: "Being fixed" };
+export function WaitingOnRegister() {
+  const [items, setItems] = useState<any[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { api.waitingOn().then((d) => setItems(d.items ?? [])).catch(() => setFailed(true)); }, []);
+  return (
+    <section className="panel" data-testid="waiting-on-register" aria-label="What we are waiting on">
+      <p className="row-title" style={{ marginTop: 0 }}>What we are waiting on</p>
+      <p className="row-sub">Every item has an owner and a date. On the date, its next step starts by itself.</p>
+      {failed ? <p className="row-sub">The list could not be read just now. This is not saying it is empty.</p>
+        : !items ? <Loading />
+        : items.length === 0 ? <Empty title="Nothing is waiting" hint="New waits are added here as they come up." />
+        : items.map((i) => (
+          <div key={i.id} className="row" style={{ padding: "8px 0" }}>
+            <div className="row-title">{i.what}</div>
+            <div className="row-sub">
+              {OWNER_NAME[i.owner] ?? "No owner yet (being fixed)"} · {i.due_on ? `on ${new Date(`${i.due_on}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "ongoing"} · {STATE_WORDS[i.state] ?? i.state}
+            </div>
+            {i.action && <div className="row-sub">Then: {i.action}</div>}
+          </div>
+        ))}
     </section>
   );
 }

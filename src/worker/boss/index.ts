@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, TaskMessage, Vars } from "./env";
+import { waitingOn } from "./routes/waitingOn";
 import { requireSession, readSession, signIn, signOut, setSessionCookie } from "./auth";
 import { errorBody, ok } from "./lib/http";
 import { logEvent } from "./lib/log";
@@ -151,6 +152,7 @@ app.route("/api/judgement", judgement);
 app.route("/api/lp", lp);
 // The diary: what she has coming up, what she typed, and a link where a packet exists.
 app.route("/api/diary", diaryRoutes);
+app.route("/api/waiting-on", waitingOn);
 // The register of owned work. The escalating half of it lands on Today; this is the list itself.
 app.route("/api/deliverables", deliverables);
 // Danielle's weekly Ahrefs run reports back here. A local job, because reading her mailbox and

@@ -49,6 +49,7 @@ import { createHash } from "node:crypto";
 import { layoutEmail, clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence } from "../../src/shared/boss/mail/plain.mjs";
 import { readMorningSections, clearToldSections } from "../../src/shared/boss/mail/morning.mjs";
 import { templateDecide } from "./lp-prospects.mjs";
+import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const FEED = process.env.PNP_OWNER_FEED_URL ?? "https://porchandparty901.com/api/owner-feed";
@@ -518,6 +519,7 @@ export function eightRaiseLine(credits) {
  * the email opens that item's own screen, and Today lists exactly the email's decisions.
  */
 export function buildDay(data, now = Date.now()) {
+  const yours = yoursThisWeek(data.waiting ?? [], now);
   const today = dayOf(now);
   const p = parts(now);
   const monday = p.weekday === "Monday";
@@ -704,6 +706,9 @@ export function buildDay(data, now = Date.now()) {
       { title: "Done for you", tone: "done", items: doneShown, empty: null },
       ...(gridRepos ? [gridRepos] : []),
       { title: "Catch up with", cards: catchCards, items: catchLines, empty: null },
+      // Her own to-dos (owner, 26 Oct 2026): told once, then Mondays or two days before a date. Reply
+      // "add to my list: …" or "done: …" to change it.
+      ...(yours.length ? [{ title: "Yours this week", note: "Reply \"add to my list: …\" or \"done: …\" to change it.", items: yours.map((i) => `${i.what}${i.due_on ? ` (by ${dayWords(i.due_on, { weekday: false })})` : ""}`), empty: null }] : []),
       ...(monday ? [{ title: "This week", items: deadlines, empty: "No deadlines this week." }] : []),
       { title: "Porch & Party: To do for Valerie", note: val ? `From the Porch & Party site at ${timeOf(now)}. Valerie gets her own copy at 7 am.` : null, boxed: true, items: val ?? [], empty: val ? "All clear for Valerie today." : "Valerie's list did not load this morning; the team is fixing it and Valerie still gets her own copy at 7 am." },
     ],
@@ -735,7 +740,7 @@ export function buildDay(data, now = Date.now()) {
   };
   // What this email told her, so tomorrow's says it once more at most as a thin line (morningMemory.mjs).
   const memory = { decide: repeats.memory, done: [...new Set([...(data.told?.done ?? []), ...doneOnce.keys])].slice(-500) };
-  return { ...laid, dropped, digest, cuts, bytes: bytes(laid), memory };
+  return { ...laid, dropped, digest, cuts, bytes: bytes(laid), memory, yoursTold: yours.map((i) => i.id) };
 }
 
 /**
@@ -771,10 +776,11 @@ async function read(api, now) {
   const settings = await api.get("/system/settings").catch(() => []);
   const spirit = await api.get("/spirit/day").catch((e) => { console.error(`your-day: spirit day not read (${e.message})`); return null; });
   const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
+  const waiting = await api.get("/waiting-on").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the waiting-on register not read (${e.message})`); return []; });
   const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
   const { sections, skipped } = readMorningSections({ now });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, morning: sections };
+  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, morning: sections };
 }
 
 async function feedOf(range) {
@@ -864,6 +870,7 @@ async function main() {
   console.log(`your-day: sent "${email.subject}" from ${r.from}`);
   if (kept) await api.post(`/morning/${email.digest.day}/sent`, {}).catch((e) => console.error(`your-day: the morning was not marked sent (${e.message})`));
   clearToldSections(TOLD_ONCE);
+  for (const id of email.yoursTold ?? []) await api.post(`/waiting-on/${id}`, { told_at: now }).catch((e) => console.error(`your-day: "yours this week" not marked told (${e.message})`));
   try { fs.writeFileSync(toldFile, JSON.stringify(email.memory)); } catch (e) { console.error(`your-day: what was told was not kept (${e.message})`); }
   fs.mkdirSync(SENT_DIR, { recursive: true });
   fs.writeFileSync(marker, new Date(now).toISOString());

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type RewriteProgress } from "../api";
+import { PreseedTab } from "./deals/PreseedTab";
 import { Empty, Loading } from "../components/Shell";
 import { LpTab } from "./deals/LpTab";
 import { ProspectsTab } from "./deals/ProspectsTab";
@@ -69,7 +70,7 @@ const day = (ts: number | null) => (ts ? new Date(ts).toLocaleDateString() : "â€
  * her inbox from the last ~6 months, one row each â€” then the holders Monique found, then L's LP
  * replies and Prospects tabs. The older desk, return and ledger views stay behind them.
  */
-type View = "grid" | "matches" | "archive" | "holders" | "lp" | "prospects" | "desk" | "return" | "ledger";
+type View = "grid" | "matches" | "archive" | "holders" | "lp" | "prospects" | "preseed" | "desk" | "return" | "ledger";
 
 const VIEW_LABEL: Record<View, string> = {
   grid: "Grid",
@@ -78,6 +79,7 @@ const VIEW_LABEL: Record<View, string> = {
   holders: "Holders Monique found",
   lp: "LP replies",
   prospects: "Prospects",
+  preseed: "Pre-seed watch",
   desk: "The desk",
   return: "Return",
   ledger: "Ledger",
@@ -108,6 +110,7 @@ export function Capital({ start }: { start?: View } = {}) {
         : view === "holders" ? <HoldersFound />
         : view === "lp" ? <LaterTab what="LP replies" />
         : view === "prospects" ? <LaterTab what="Prospects" />
+        : view === "preseed" ? <PreseedTab />
         : view === "desk" ? <Buyers />
         : view === "return" ? <ReturnLedger />
         : <Ledger />}

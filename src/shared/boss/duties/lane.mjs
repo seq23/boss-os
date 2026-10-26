@@ -259,6 +259,9 @@ const pad = (n) => String(n).padStart(2, "0");
  */
 export const INSTALLED_LOCAL_JOBS = [
   "meeting-prep.mjs",
+  "mac-cleanup.mjs",
+  "preseed-watch.mjs",
+  "waiting-on.mjs",
   "ahrefs-audit-fix.sh",
   "search-readiness-fix.sh",
   "archive-audit.mjs",

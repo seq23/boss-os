@@ -46,3 +46,22 @@ export async function markWarmReferences(db: D1Database, checks: Array<{ email: 
   }
   return n;
 }
+
+/** Warm lines her Mac found in her own sent mail (already link-checked there). Upsert by person and link. */
+export async function recordWarmReferences(db: D1Database, rows: Array<{ email: string; line: string; url: string; sent_at: number; verified?: boolean | null; source?: string }>): Promise<number> {
+  let n = 0;
+  for (const r of rows) {
+    const email = String(r?.email ?? "").toLowerCase().trim();
+    const url = String(r?.url ?? "").trim();
+    const line = String(r?.line ?? "").trim().slice(0, 400);
+    if (!email.includes("@") || !/^https?:\/\/\S+$/.test(url) || !line || !(Number(r?.sent_at) > 0)) continue;
+    await db.prepare(
+      `INSERT INTO warm_references (id, email, line, url, source, sent_at, verified, checked_at, created_at) VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(email, url) DO UPDATE SET line = excluded.line, sent_at = MAX(warm_references.sent_at, excluded.sent_at),
+           verified = COALESCE(excluded.verified, warm_references.verified), checked_at = COALESCE(excluded.checked_at, warm_references.checked_at)`,
+    ).bind(newId("wrf"), email, line, url, String(r.source ?? "sent_mail").slice(0, 40), Math.floor(Number(r.sent_at)),
+      r.verified === true ? 1 : r.verified === false ? 0 : null, r.verified == null ? null : Date.now(), Date.now()).run();
+    n += 1;
+  }
+  return n;
+}

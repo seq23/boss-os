@@ -60,6 +60,42 @@ export function lpReplyBody({ name, bucket }) {
 
 /** A held reply that has sat this long goes to the top of Decide. */
 export const LP_UNSENT_URGENT_DAYS = 2;
+/** Days after her reply with no answer before ONE gentle nudge is drafted for her yes (26 Oct 2026). */
+export const LP_NUDGE_DAYS = 7;
+
+/** The nudge, a fixed template (no model, no names to a model). */
+export function lpNudgeBody({ name }) {
+  return [
+    `Hi ${firstName(name)},`,
+    "",
+    "Just floating this back up in case it got buried. Happy to find 20 minutes whenever suits you.",
+    "",
+    "Best,",
+    "Sequoia",
+  ].join("\n");
+}
+
+/**
+ * ONE GENTLE NUDGE, FOR HER YES (owner, 26 Oct 2026). Her reply went and nothing came back in
+ * LP_NUDGE_DAYS: a Decide item with the nudge word for word and their thread. Once only: a row that
+ * has been nudged (`nudged_at`) or that wrote back is never nudged again.
+ */
+export function lpNudgeItems(rows, now = Date.now()) {
+  return (rows ?? [])
+    // Shown for one week from day 7, then dropped: one nudge offered once, never a nag.
+    .filter((r) => { const d = daysSince(r.sent_at, now) ?? 0; return r.status === "sent" && !r.nudged_at && d >= LP_NUDGE_DAYS && d < 2 * LP_NUDGE_DAYS; })
+    .map((r) => ({
+      key: `lpnudge:${r.id ?? r.address}`,
+      title: `No answer in ${daysSince(r.sent_at, now)} days: nudge ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}?`,
+      body: `You replied on ${new Date(Number(r.sent_at)).toISOString().slice(0, 10)} and nothing has come back. One gentle nudge, only if you say yes.`,
+      details: [`Their email: ${r.address}`, `Who: ${lpWho(r)}.`],
+      draft: { heading: "The nudge, word for word", text: lpNudgeBody(r) },
+      priority: 4,
+      buttons: [
+        ...(r.thread_id ? [{ label: "Open their thread to send it", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) }] : []),
+      ],
+    }));
+}
 
 export function tapUrl(token, action, origin = ORIGIN) {
   // A page path, never /api (the plain-email gate holds a link to an API path); bossMount.ts serves it.

@@ -58,6 +58,7 @@ const SAMPLES: Record<string, Array<{ who: string; subject: string; text: string
   "scripts/ops/people-worth-a-call.mjs": [{ who: "Monique", subject: "5 people worth a conversation this week", text: "Five people are worth a call this week.\n\n1. A. Person — Example Partners\n   Why now: they asked about secondaries last month.\n   What to say: a quick hello and the new fund note." }],
   // Toni sends only money at risk now, as a problem email (prelaid); the legacy shape still has to pass.
   "scripts/ops/risk-watch.mjs": [{ who: "Toni", subject: "Paid AI calls are being charged — the team is on it", text: "New OpenRouter spend of $0.01 since the last check.\n\nThe team is switching the job back to a free model.\n\n— Toni" }],
+  "scripts/ops/mac-cleanup.mjs": [{ who: "Simone", subject: "Mac disk: 14 GB free", text: "Mac disk: 14 GB free; cleaned 6.5 GB; biggest: Caches 40 GB." }],
   "scripts/ops/meeting-prep.mjs": [{ who: "Simone", subject: "Prep: Kate Example (GEM), Fri 30 Oct, 12pm", text: "Your prep for Kate Example and Sequoia." }],
   "scripts/ops/your-day.mjs": [{ who: "Simone", subject: "Friday: 2 decisions", text: "Good morning. Here is your Friday, October 23." }],
 };

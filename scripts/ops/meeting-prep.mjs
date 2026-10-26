@@ -162,6 +162,19 @@ async function main() {
   if (due.length === 0) { console.log(`meeting-prep: read ${cal.read} calendar(s), ${cal.events.length} event(s); no meeting due a prep now.`); return; }
 
   const api = await session();
+  // From now on, every warm line she sends is on that person's record: her sent mail since the last
+  // scan, once a day (warm-references.mjs; the backfill from 1 Sep is the first scan).
+  const today = new Date(now).toISOString().slice(0, 10);
+  const scanState = readJson(path.join(DIR, "scan.json"), { last: "2026-09-01" });
+  if (scanState.last !== today && !DRY && !PREVIEW) {
+    try {
+      const { scanSent } = await import("./warm-references.mjs");
+      const { rows } = await scanSent(scanState.last);
+      if (rows.length) await api.post("/lp/references", { rows });
+      writeJson(path.join(DIR, "scan.json"), { last: today });
+      console.log(`meeting-prep: ${rows.length} warm line(s) from her sent mail stored`);
+    } catch (e) { console.error(`meeting-prep: sent mail not scanned for warm lines (${e.message})`); }
+  }
   const data = await readRecords(api);
   const cache = readJson(CACHE, {});
   data.summaries = {};

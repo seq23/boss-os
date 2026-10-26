@@ -149,6 +149,22 @@ capital.post("/brokerage-pointer", async (c) => {
 // The Deals page reads these; `npm run capital:grid` on her Mac writes the grid and the holders.
 // Behind the same session as every other Boss OS route. See src/worker/boss/capital/grid.ts.
 
+/** Monique's Pre-seed watch (26 Oct 2026): the newest week's two lists and the comparison. */
+capital.get("/preseed", async (c) => {
+  const row = await c.env.DB.prepare(`SELECT * FROM preseed_watch ORDER BY week DESC LIMIT 1`).first<any>();
+  const parse = (s: string | null, d: any) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
+  return ok(c, row ? { week: row.week, crossed: parse(row.crossed, []), funded: parse(row.funded, []), compare: parse(row.compare, {}) } : { week: null, crossed: [], funded: [], compare: {} });
+});
+capital.post("/preseed", async (c) => {
+  const b = await c.req.json<any>().catch(() => null);
+  const week = String(b?.week ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week) || !Array.isArray(b?.crossed) || !Array.isArray(b?.funded)) throw badRequest("week, crossed[] and funded[] are required");
+  await c.env.DB.prepare(`INSERT INTO preseed_watch (week, crossed, funded, compare, created_at) VALUES (?,?,?,?,?)
+      ON CONFLICT(week) DO UPDATE SET crossed = excluded.crossed, funded = excluded.funded, compare = excluded.compare, created_at = excluded.created_at`)
+    .bind(week, JSON.stringify(b.crossed.slice(0, 300)), JSON.stringify(b.funded.slice(0, 200)), JSON.stringify(b.compare ?? {}), Date.now()).run();
+  return ok(c, { week }, 201);
+});
+
 capital.get("/deals", async (c) => ok(c, await dealGrid(c.env)));
 
 capital.post("/deals", async (c) => {

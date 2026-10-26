@@ -192,7 +192,8 @@ export function buildPrep(event, data = {}, { herAddresses = [] } = {}) {
   const guests = others(event, herAddresses);
   const lead = guests[0] ?? null;
   const titleName = nameFromTitle(event.title);
-  const leadName = lead?.name || titleName || null;
+  // A calendar often puts the address in the name field: that is not a name.
+  const leadName = (lead?.name && !String(lead.name).includes("@") ? lead.name : null) || titleName || null;
   const rec = recordsFor({ email: lead?.email ?? null, name: leadName }, data);
   const name = leadName ?? rec.prospect?.name ?? rec.lp?.name ?? rec.person?.full_name ?? null;
   const firm = rec.prospect?.firm ?? rec.lp?.firm ?? rec.person?.organization_name ?? rec.deals[0]?.from_firm ?? null;

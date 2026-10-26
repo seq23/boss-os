@@ -71,6 +71,8 @@ describe("meeting prep: the email", () => {
     // No name on the invite: the title without her name, never a bare address.
     const solo = { ...terri, title: "Sequoia + Jo (Fake Co)", attendees: [{ email: "jo@fakeco.example" }] };
     expect(buildPrep(solo, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 2pm");
+    // The invite's name field holding the address is not a name.
+    expect(buildPrep({ ...solo, attendees: [{ email: "jo@fakeco.example", name: "jo@fakeco.example" }] }, {}, { herAddresses: ME }).subject).toBe("Prep: Jo (Fake Co), Fri 30 Oct, 2pm");
   });
 
   it("carries every section with something real, in order, and passes the plain-email gate", () => {

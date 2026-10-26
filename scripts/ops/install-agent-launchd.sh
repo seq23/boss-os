@@ -1103,6 +1103,11 @@ install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery
 # Central time (from 18:00 Central, tomorrow's meetings; any hour, a meeting added for later today),
 # so the Mac's own zone (Eastern) cannot move it. Reports to duty_meeting_prep (migration 0312).
 install_l_job com.seq.boss-meeting-prep "duty-run.sh meeting-prep.mjs -- npm run --silent meeting-prep" '<dict><key>Minute</key><integer>5</integer></dict>' meeting-prep
+# 26 Oct 2026 (owner-approved, "build it all"): Zora's register daily 07:00, Kendra's Mac clean-up
+# Sundays 09:00, Monique's pre-seed watch Mondays 07:30 (all Central; lint_plist moves them to the Mac's zone).
+install_l_job com.seq.boss-waiting-on "duty-run.sh waiting-on.mjs -- npm run --silent waiting-on" '<dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>' waiting-on
+install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>' mac-cleanup
+install_l_job com.seq.boss-preseed-watch "duty-run.sh preseed-watch.mjs -- npm run --silent preseed:watch" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' preseed-watch
 install_l_job com.seq.boss-catchups "duty-run.sh lp-catchups.mjs -- npm run --silent lp:catchups" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>' lp-catchups
 install_l_job com.seq.boss-eightraise "duty-run.sh lp-eightraise.mjs -- npm run --silent lp:eightraise" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>' lp-eightraise
 # end boss fix L
@@ -1453,6 +1458,9 @@ require_loaded "$CW_LABEL"
 # WITH THE JOB, 22 October: Simone's Your day.
 require_loaded "$YOURDAY_LABEL"
 require_loaded com.seq.boss-meeting-prep
+require_loaded com.seq.boss-waiting-on
+require_loaded com.seq.boss-mac-cleanup
+require_loaded com.seq.boss-preseed-watch
 # WITH THE JOB, 25 October: Simone does it by email.
 require_loaded "$SIMONE_CMD_LABEL"
 
