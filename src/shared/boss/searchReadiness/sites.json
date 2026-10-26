@@ -203,7 +203,9 @@
       "name": "Oakland, TN",
       "slug": "oakland-tn",
       "lat": 35.229,
-      "lng": -89.5151
+      "lng": -89.5151,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: no licensed community of its own, and building its assisted living and memory care pages would take the site past the cadence gate's maintainable ceiling of 195 URLs; both 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Atoka, TN",
@@ -215,7 +217,9 @@
       "name": "Munford, TN",
       "slug": "munford-tn",
       "lat": 35.4492,
-      "lng": -89.8151
+      "lng": -89.8151,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: no licensed community of its own, and building its assisted living and memory care pages would take the site past the cadence gate's maintainable ceiling of 195 URLs; both 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Covington, TN",
@@ -227,19 +231,25 @@
       "name": "Rossville, TN",
       "slug": "rossville-tn",
       "lat": 35.0423,
-      "lng": -89.5426
+      "lng": -89.5426,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: no licensed community of its own, and building its assisted living and memory care pages would take the site past the cadence gate's maintainable ceiling of 195 URLs; both 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Eads, TN",
       "slug": "eads-tn",
       "lat": 35.1834,
-      "lng": -89.6537
+      "lng": -89.6537,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: no licensed community of its own, and building its assisted living and memory care pages would take the site past the cadence gate's maintainable ceiling of 195 URLs; both 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Brighton, TN",
       "slug": "brighton-tn",
       "lat": 35.4831,
-      "lng": -89.7251
+      "lng": -89.7251,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: no licensed community of its own, and building its assisted living and memory care pages would take the site past the cadence gate's maintainable ceiling of 195 URLs; both 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Southaven, MS",
@@ -269,49 +279,65 @@
       "name": "Walls, MS",
       "slug": "walls-ms",
       "lat": 34.9582,
-      "lng": -90.1526
+      "lng": -90.1526,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: no licensed community of its own, and building its assisted living and memory care pages would take the site past the cadence gate's maintainable ceiling of 195 URLs; both 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Nesbit, MS",
       "slug": "nesbit-ms",
       "lat": 34.8932,
-      "lng": -90.0115
+      "lng": -90.0115,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: no licensed community of its own, and building its assisted living and memory care pages would take the site past the cadence gate's maintainable ceiling of 195 URLs; both 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Byhalia, MS",
       "slug": "byhalia-ms",
       "lat": 34.8723,
-      "lng": -89.6906
+      "lng": -89.6906,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: no licensed community of its own, and building its assisted living and memory care pages would take the site past the cadence gate's maintainable ceiling of 195 URLs; both 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Tunica, MS",
       "slug": "tunica-ms",
       "lat": 34.6851,
-      "lng": -90.3829
+      "lng": -90.3829,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: Tunica County, MS is outside the licence registries the site carries (TN HFC: Shelby, Tipton, Fayette; MSDH: DeSoto, Marshall), so its assisted living and memory care pages 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Senatobia, MS",
       "slug": "senatobia-ms",
       "lat": 34.6176,
-      "lng": -89.9687
+      "lng": -89.9687,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: Tate County, MS is outside the licence registries the site carries (TN HFC: Shelby, Tipton, Fayette; MSDH: DeSoto, Marshall), so its assisted living and memory care pages 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "West Memphis, AR",
       "slug": "west-memphis-ar",
       "lat": 35.1465,
-      "lng": -90.1845
+      "lng": -90.1845,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: Crittenden County, AR is outside the licence registries the site carries (TN HFC: Shelby, Tipton, Fayette; MSDH: DeSoto, Marshall), so its assisted living and memory care pages 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Marion, AR",
       "slug": "marion-ar",
       "lat": 35.2145,
-      "lng": -90.1965
+      "lng": -90.1965,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: Crittenden County, AR is outside the licence registries the site carries (TN HFC: Shelby, Tipton, Fayette; MSDH: DeSoto, Marshall), so its assisted living and memory care pages 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      },
      {
       "name": "Earle, AR",
       "slug": "earle-ar",
       "lat": 35.2751,
-      "lng": -90.4668
+      "lng": -90.4668,
+      "services": [],
+      "services_why": "Folded 26 Oct 2026: Crittenden County, AR is outside the licence registries the site carries (TN HFC: Shelby, Tipton, Fayette; MSDH: DeSoto, Marshall), so its assisted living and memory care pages 301 to the nearest town with licensed supply (local-guides-generator senior_living_v1.json legacyRedirects). The town page stays."
      }
     ],
     "neighborhoods": [
@@ -445,7 +471,7 @@
      "town": "/{town}/",
      "neighborhood": "/{slug}/",
      "anchor": "/{slug}/",
-     "service_town": "/{town}/{service}/"
+     "service_town": "/{service}-{town}/"
     }
    }
   },

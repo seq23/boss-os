@@ -94,7 +94,10 @@ export function expandCoverage(site, repoCities = null) {
     const p = c.url_patterns ?? {};
     for (const t of c.towns ?? []) {
       if (p.town) out.push({ kind: "town", name: t.name, path: fill(p.town, { town: t.slug, slug: t.slug }) });
-      if (p.service_town) for (const s of c.services ?? []) out.push({ kind: "service_town", name: `${s.name} in ${t.name}`, path: fill(p.service_town, { town: t.slug, service: s.slug }) });
+      // A town may name the services it carries (`services`: slugs, with `services_why`):
+      // a service x town page folded into a nearby hub by a 301 is not a coverage target.
+      const svc = Array.isArray(t.services) ? (c.services ?? []).filter((s) => t.services.includes(s.slug)) : (c.services ?? []);
+      if (p.service_town) for (const s of svc) out.push({ kind: "service_town", name: `${s.name} in ${t.name}`, path: fill(p.service_town, { town: t.slug, service: s.slug }) });
     }
     if (p.neighborhood) for (const n of c.neighborhoods ?? []) out.push({ kind: "neighborhood", name: n.name, path: fill(p.neighborhood, { slug: n.slug }) });
     if (p.anchor) for (const a of c.anchors ?? []) out.push({ kind: "anchor", name: a.name, path: fill(p.anchor, { slug: a.slug }) });
@@ -119,6 +122,7 @@ export function coverageProblems(site) {
     if (!(c.neighborhoods?.length >= 1)) p.push("hyperlocal needs neighborhoods");
     if (!(c.anchors?.length >= 1)) p.push("hyperlocal needs local anchors (hospitals, venues)");
     if (!(c.services?.length >= 1) || !c.url_patterns?.service_town) p.push("hyperlocal needs services and a service_town pattern");
+    for (const t of c.towns ?? []) if (Array.isArray(t.services) && !(String(t.services_why ?? "").length >= 20)) p.push(`town ${t.slug} narrows its services without a reason (services_why)`);
   } else if (c.model !== "not_local") p.push(`unknown coverage model ${c.model}`);
   return p;
 }
