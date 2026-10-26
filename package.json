@@ -213,7 +213,7 @@
     "validate:fruitless-pass": "node scripts/validate/a-fruitless-audit-pass-is-loud.mjs && node scripts/validate/a-fruitless-audit-pass-is-loud.mjs --self-test",
     "validate:prospect-names": "node scripts/validate/prospect-names-are-examples.mjs && node scripts/validate/prospect-names-are-examples.mjs --self-test",
     "validate:non-answer": "node scripts/validate/a-non-answer-is-not-a-draft.mjs && node scripts/validate/a-non-answer-is-not-a-draft.mjs --self-test",
-    "sites:audit": "node scripts/vault/vault.mjs run -- node scripts/ops/search-readiness-audit.mjs",
+    "sites:audit": "bash scripts/ops/self-update-checkout.sh && node scripts/vault/vault.mjs run -- node scripts/ops/search-readiness-audit.mjs",
     "sites:fix-queue": "node scripts/ops/search-readiness-audit.mjs --queue",
     "sites:page": "node scripts/ops/search-readiness-page.mjs"
   },

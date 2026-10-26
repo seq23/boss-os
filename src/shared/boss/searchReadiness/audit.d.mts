@@ -1,8 +1,12 @@
 /** Types for the Search Readiness audit's pure half (audit.mjs). Loose on purpose: the shapes are JSON. */
 export const CHECKLIST_PATH: string;
 export const SITES_PATH: string;
-export function loadChecklist(): any;
-export function loadSites(): any;
+export function loadChecklist(raw?: string | null): any;
+export function loadSites(raw?: string | null): any;
+/** Which definition the audit measures with: origin's, never a stale checkout's. */
+export function definitionChoice(a: { local?: string | null; remote?: string | null; path?: string }): {
+  text: string | null; source: "origin" | "checkout" | "none"; stale: boolean; unverified?: boolean; why: string;
+};
 export const STATUS: readonly string[];
 export const GSC_TRUTH_NAMES: string[];
 export const FRESH_FILE_NAMES: string[];

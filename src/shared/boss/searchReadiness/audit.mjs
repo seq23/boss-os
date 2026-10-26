@@ -22,8 +22,32 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const CHECKLIST_PATH = join(HERE, "checklist.json");
 export const SITES_PATH = join(HERE, "sites.json");
-export const loadChecklist = () => JSON.parse(readFileSync(CHECKLIST_PATH, "utf8"));
-export const loadSites = () => JSON.parse(readFileSync(SITES_PATH, "utf8"));
+export const loadChecklist = (raw) => JSON.parse(raw ?? readFileSync(CHECKLIST_PATH, "utf8"));
+export const loadSites = (raw) => JSON.parse(raw ?? readFileSync(SITES_PATH, "utf8"));
+
+/**
+ * WHICH DEFINITION THE AUDIT MEASURES WITH — the branch's, never a stale checkout's.
+ *
+ * 26 Oct 2026: the audit runs from her own boss-os checkout (launchd, `com.seq.boss-sites-audit`),
+ * which nothing updates. That checkout sat at #147 while main held the corrected aplayermode.com
+ * mapping (#148, 25 Oct), so the run measured the apex against seq23/aplayer-mode — a repo that
+ * never served that host — and wrote five fix briefs (e3, e4, e5, i3, i6) for files that were
+ * present all along in the repo that does serve it. A stale definition does not fail; it invents
+ * work. So the runner reads checklist.json and sites.json from origin/<default> and measures with
+ * those, saying so when they differ from the checkout.
+ *
+ * Pure on purpose: the git read lives in the runner, the decision is tested here.
+ * `remote` is the text at origin/<default> (null when git could not be read), `local` the checkout's.
+ */
+export function definitionChoice({ local, remote, path = "" } = {}) {
+  const parses = (t) => { if (typeof t !== "string" || !t.trim()) return null; try { JSON.parse(t); return t; } catch { return null; } };
+  const r = parses(remote), l = parses(local);
+  if (!l && !r) return { text: null, source: "none", stale: false, why: `neither the checkout nor origin holds readable JSON at ${path}` };
+  if (!r) return { text: l, source: "checkout", stale: false, unverified: true, why: `origin's ${path} could not be read; measured with the checkout's copy` };
+  if (!l) return { text: r, source: "origin", stale: true, why: `the checkout has no readable ${path}; measured with origin's` };
+  if (r === l) return { text: l, source: "checkout", stale: false, why: `${path} matches origin` };
+  return { text: r, source: "origin", stale: true, why: `the checkout's ${path} differs from origin; measured with origin's` };
+}
 
 /** Item statuses. Only `fail` makes a fix brief; `not_checked` and `no_repo` are said, never passed. */
 export const STATUS = Object.freeze(["pass", "fail", "not_checked", "no_repo", "skipped"]);

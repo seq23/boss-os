@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
-  morningLines, haversineMiles, workQueue, queueRunLine, repairLine,
+  morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { renderChecklistPage, loadTemplate } from "../src/shared/boss/searchReadiness/page.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -280,6 +280,91 @@ describe("CLAUDE.md says the rule, and the rule is this code", () => {
     const sec = md.slice(md.indexOf("## Search Readiness"));
     expect(sec.length).toBeGreaterThan(200);
     for (const s of ["checklist.json", "sites.json", "npm run sites:audit", "fix-queue.json", "npm run sites:page", "grid repos", "tests/searchReadiness.test.ts"]) expect(sec).toContain(s);
+  });
+});
+
+describe("the run measures with the branch's definition, never a stale checkout's (26 Oct 2026)", () => {
+  // Her checkout runs the audit under launchd and nothing updates it. On 26 Oct it sat at #147
+  // while main held the corrected aplayermode.com → sprylabs-hpc-site mapping, so the run measured
+  // the apex against the Expo app repo and wrote five fix briefs (e3, e4, e5, i3, i6) for files
+  // that were present all along in the repo that serves that host. Stale definitions invent work.
+  const stale = JSON.stringify({ grid_repos: [{ domain: "aplayermode.com", repo: "aplayer-mode" }] });
+  const fixed = JSON.stringify({ grid_repos: [{ domain: "aplayermode.com", repo: "sprylabs-hpc-site" }] });
+
+  it("prefers origin's copy when the checkout has drifted, and says so", () => {
+    const c = definitionChoice({ local: stale, remote: fixed, path: "sites.json" });
+    expect(c.source).toBe("origin");
+    expect(c.stale).toBe(true);
+    expect(JSON.parse(c.text!).grid_repos[0].repo).toBe("sprylabs-hpc-site");
+    expect(c.why).toMatch(/differs from origin/);
+  });
+
+  it("is quiet when the checkout matches origin", () => {
+    const c = definitionChoice({ local: fixed, remote: fixed, path: "sites.json" });
+    expect(c).toMatchObject({ source: "checkout", stale: false });
+  });
+
+  it("measures with the checkout, marked unverified, when origin cannot be read (offline)", () => {
+    const c = definitionChoice({ local: fixed, remote: null, path: "sites.json" });
+    expect(c).toMatchObject({ source: "checkout", stale: false, unverified: true });
+    expect(c.text).toBe(fixed);
+  });
+
+  it("never measures with half-written JSON: a broken copy is not a definition", () => {
+    expect(definitionChoice({ local: fixed, remote: "{ not json", path: "sites.json" }))
+      .toMatchObject({ source: "checkout", unverified: true });
+    expect(definitionChoice({ local: "{ not json", remote: fixed, path: "sites.json" }))
+      .toMatchObject({ source: "origin", stale: true });
+    expect(definitionChoice({ local: "", remote: "", path: "sites.json" }))
+      .toMatchObject({ source: "none", text: null });
+  });
+
+  it("the runner reads both definition files from origin and records which it used", () => {
+    const runner = readFileSync("scripts/ops/search-readiness-audit.mjs", "utf8");
+    expect(runner).toMatch(/definitionChoice/);
+    expect(runner).toMatch(/CHECKLIST_PATH/);
+    expect(runner).toMatch(/SITES_PATH/);
+    // The results and the queue carry the definition, so a brief can be traced to what made it.
+    expect(runner).toMatch(/definition: defs\.source/);
+    expect(runner.match(/definition: defs\.source/g)!.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("CLAUDE.md states the rule", () => {
+    const md = readFileSync("CLAUDE.md", "utf8");
+    const sec = md.slice(md.indexOf("## Search Readiness"));
+    expect(sec).toMatch(/origin/);
+    expect(sec).toMatch(/stale/i);
+  });
+});
+
+describe("the scheduled audit runs current code (26 Oct 2026)", () => {
+  // definitionChoice fixes the DATA. The CODE is loaded before any of it can run, and the launchd
+  // job (com.seq.boss-sites-audit) runs npm run sites:audit in her own checkout, which nothing
+  // updated: it sat at #147. sites:audit now fast-forwards that checkout first — and only that.
+  const sh = readFileSync("scripts/ops/self-update-checkout.sh", "utf8");
+
+  it("sites:audit fast-forwards before it measures", () => {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    expect(pkg.scripts["sites:audit"]).toContain("scripts/ops/self-update-checkout.sh");
+    expect(pkg.scripts["sites:audit"]).toContain("search-readiness-audit.mjs");
+    expect(pkg.scripts["sites:audit"].indexOf("self-update-checkout"))
+      .toBeLessThan(pkg.scripts["sites:audit"].indexOf("search-readiness-audit"));
+  });
+
+  it("it is a fast-forward on the default branch of a clean tree, and nothing else", () => {
+    expect(sh).toContain("merge --ff-only");
+    expect(sh).toContain("git status --porcelain");          // dirty tree: left alone
+    expect(sh).toContain("merge-base --is-ancestor");        // strict fast-forward only
+    expect(sh).toMatch(/not \$DEFAULT; left alone/);         // never a branch switch
+    // Her checkout is never rewritten, rebased, stashed or committed into by this script.
+    for (const forbidden of ["reset --hard", "git rebase", "git stash", "git commit", "checkout -B", "push"]) {
+      expect(sh, `${forbidden} must never appear in the self-update step`).not.toContain(forbidden);
+    }
+  });
+
+  it("every refusal exits 0, so the audit always runs", () => {
+    expect(sh.match(/exit 0/g)!.length).toBeGreaterThanOrEqual(7);
+    expect(sh).not.toMatch(/exit [1-9]/);
   });
 });
 

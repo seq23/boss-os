@@ -35,10 +35,11 @@ import { createSign } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, summaryLines,
-  metaContent, links, tags, FRESH_FILE_NAMES,
+  metaContent, links, tags, FRESH_FILE_NAMES, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 
 const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "search-readiness");
@@ -167,6 +168,42 @@ async function psi(host) {
     const c = JSON.parse(r.text).lighthouseResult.categories;
     return { ok: true, scores: { performance: Math.round(c.performance.score * 100), seo: Math.round(c.seo.score * 100), accessibility: Math.round(c.accessibility.score * 100) } };
   } catch { return { ok: false, why: "PageSpeed Insights answered without scores" }; }
+}
+
+// ─── the definition this run measures with (origin's, never a stale checkout's) ───
+
+// Her checkout runs the audit (launchd) and nothing updates it. On 26 Oct 2026 it sat at #147 while
+// main held the corrected aplayermode.com → sprylabs-hpc-site mapping, and the run wrote five fix
+// briefs against a repo that never served that host. The definition files are read from
+// origin/<default> every run; the checkout only supplies the code.
+const SELF = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+function definitions() {
+  const git = (...a) => spawnSync("git", ["-C", SELF, ...a], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  const fetched = git("fetch", "-q", "--no-tags", "origin");
+  const head = git("symbolic-ref", "--short", "refs/remotes/origin/HEAD").stdout.trim().replace(/^origin\//, "")
+    || git("rev-parse", "--abbrev-ref", "HEAD").stdout.trim() || "main";
+  const ref = `origin/${head}`;
+  const rel = (abs) => abs.slice(SELF.length).replace(/^\/+/, "");
+  const pick = (abs) => {
+    const path = rel(abs);
+    const o = git("show", `${ref}:${path}`);
+    const choice = definitionChoice({
+      local: existsSync(abs) ? readFileSync(abs, "utf8") : null,
+      remote: o.status === 0 ? o.stdout : null,
+      path,
+    });
+    if (!choice.text) stop(2, "NO_DEFINITION", choice.why);
+    if (choice.stale) say(`DEFINITION: ${choice.why} (${ref})`);
+    else if (choice.unverified) say(`DEFINITION: ${choice.why}${fetched.status === 0 ? "" : " — git fetch failed"}`);
+    return choice;
+  };
+  const c = pick(CHECKLIST_PATH), si = pick(SITES_PATH);
+  return {
+    checklist: loadChecklist(c.text),
+    sites: loadSites(si.text),
+    source: { ref, checklist: c.source, sites: si.source, stale: Boolean(c.stale || si.stale) },
+  };
 }
 
 // ─── repos (own blobless clones; read only) ──────────────────────────────────
@@ -329,8 +366,9 @@ async function main() {
     for (const b of v.briefs) say(`- ${b.domain} [${b.repo ?? "no repo"}] ${b.item_id} ${b.item_title}${b.protected ? " (PROTECTED)" : ""}: ${b.failure.slice(0, 160)}${b.missing_urls.length ? ` | ${b.missing_urls.length} missing URLs` : ""}`);
     return;
   }
-  const checklist = loadChecklist();
-  const { grid_repos } = loadSites();
+  const defs = definitions();
+  const checklist = defs.checklist;
+  const { grid_repos } = defs.sites;
   const only = opt("--site");
   const sites = only ? grid_repos.filter((s) => s.domain === only) : grid_repos;
   if (!sites.length) stop(2, "NO_SITES", only ? `no grid repo site is called ${only}` : "sites.json lists no grid repo sites");
@@ -361,12 +399,14 @@ async function main() {
   const previous = existsSync(prevPath) ? JSON.parse(readFileSync(prevPath, "utf8")) : null;
   const report = {
     day, at: new Date().toISOString(), checklist_items: checklist.items.length,
+    // Which definition measured this run, so a brief can always be traced to the sites.json that made it.
+    definition: defs.source,
     sites: siteResults.map((s) => ({ ...s, failing: s.results.filter((r) => r.status === "fail").map((r) => r.id) })),
   };
   writeJson(join(OUT, `results-${day}.json`), report);
   if (!only) writeJson(prevPath, report);
   const briefs = fixBriefs(checklist, siteResults);
-  if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
+  if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, definition: defs.source, consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
 
   const fails = siteResults.reduce((n, s) => n + s.results.filter((r) => r.status === "fail").length, 0);
   say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} briefs=${briefs.length} → ${join(OUT, `results-${day}.json`)}`);
