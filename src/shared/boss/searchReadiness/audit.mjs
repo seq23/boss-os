@@ -477,10 +477,15 @@ export const CHECKS = {
   },
   indexnow_key(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
-    const key = r.indexnowKey;
-    if (!key) return fail("no IndexNow key file in the repo");
-    const f = ctx.files[`/${key}.txt`];
-    return f?.status === 200 && f.text.includes(key) ? pass(`IndexNow key served at /${key}.txt`) : fail(`/${key}.txt answered ${f?.status ?? "nothing"}`, { missing: [`https://${ctx.host}/${key}.txt`] });
+    // A repo may hold one key per host it serves (a key is valid only on the host that serves it),
+    // so this host passes when ANY of the repo's key files answers here with its key inside.
+    // Reading only the first key failed every other host on a shared repo (aplayermode.com, 25 Oct 2026).
+    const keys = r.indexnowKeys?.length ? r.indexnowKeys : (r.indexnowKey ? [r.indexnowKey] : []);
+    if (!keys.length) return fail("no IndexNow key file in the repo");
+    const served = keys.find((k) => { const f = ctx.files[`/${k}.txt`]; return f?.status === 200 && String(f.text ?? "").includes(k); });
+    if (served) return pass(`IndexNow key served at /${served}.txt`);
+    const tried = keys.map((k) => `/${k}.txt answered ${ctx.files[`/${k}.txt`]?.status ?? "nothing"}`);
+    return fail(`no IndexNow key file answers on this host (${tried.join("; ")})`, { missing: keys.map((k) => `https://${ctx.host}/${k}.txt`) });
   },
   gsc_truth_fresh: (ctx) => repoFresh(ctx, GSC_TRUTH_NAMES),
   index_coverage_fresh: (ctx) => repoFresh(ctx, ["index_coverage.json"]),

@@ -170,6 +170,43 @@ describe("checks catch what they guard", () => {
     expect(CHECKS.canonical_self(ctx).status).toBe("fail");
   });
 
+  it("a repo serving several hosts passes e3 on the key that answers on THIS host", () => {
+    // sprylabs-hpc-site's shape: one key at the root for two hosts, a second under aplayermode/ for
+    // the third, because an IndexNow key is valid only on the host that serves it. Reading only the
+    // first key reported "no IndexNow key file" on a host whose key was live (25 Oct 2026).
+    const root = "200dca426298c70aabc048344605cccae8dabc0b460f1b3e21eb6e857ef83af1";
+    const own = "1cf2f6839abec33933cb3e6ea81027b8";
+    const repo = { ok: true, indexnowKey: root, indexnowKeys: [root, own] };
+    const served = CHECKS.indexnow_key!(baseCtx({ repo, files: {
+      [`/${root}.txt`]: { status: 404, text: "" },
+      [`/${own}.txt`]: { status: 200, text: own },
+    } }) as any);
+    expect(served.status).toBe("pass");
+    expect(served.detail).toContain(own);
+    const none = CHECKS.indexnow_key!(baseCtx({ repo, files: {
+      [`/${root}.txt`]: { status: 404, text: "" },
+      [`/${own}.txt`]: { status: 404, text: "" },
+    } }) as any);
+    expect(none.status).toBe("fail");
+    expect(none.detail).toMatch(/no IndexNow key file answers on this host/);
+    expect(none.missing).toHaveLength(2);
+    // A repo with no key file at all still fails for that reason.
+    expect(CHECKS.indexnow_key!(baseCtx({ repo: { ok: true, indexnowKeys: [] } }) as any).detail)
+      .toMatch(/no IndexNow key file in the repo/);
+  });
+
+  it("aplayermode.com is mapped to the repo that serves it, not to the app repo", () => {
+    // The apex is answered by workers/aplayermode-com in sprylabs-hpc-site; seq23/aplayer-mode is
+    // the Expo app and the API (app./api. hosts). The wrong mapping failed six repo-side items
+    // (e3, e4, e5, i3, i6, i8) against a repo that never served this host (25 Oct 2026).
+    const apm = sites.grid_repos.find((s: any) => s.domain === "aplayermode.com");
+    expect(apm.repo).toBe("sprylabs-hpc-site");
+    expect(apm._repo_why).toMatch(/workers\/aplayermode-com/);
+    // Every grid site's repo is one the audit can read: a repo name no other site uses is fine,
+    // but a site must never name a repo that holds no site at all.
+    for (const s of sites.grid_repos as any[]) expect(typeof s.repo === "string" && s.repo.length > 0).toBe(true);
+  });
+
   it("a protected page is left out of cosmetic items, and its failure brief carries the rule", () => {
     const spry = sites.grid_repos.find((s: any) => s.domain === "spryexecutiveos.com");
     const bare = page("https://spryexecutiveos.com/download", "<h1>Buy</h1><img src=a.png>");
