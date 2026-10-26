@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  dutiesDueToday, mergeOperations, nextRunFrom, parseOutboundMap, pauseControl, synopsis,
+  dutiesDueToday, mergeOperations, nextRunFrom, parseOutboundMap, pauseControl, synopsis, failedRunItems,
   type MapRow, type OperationsLedgers, type OwnersFile,
 } from "../src/shared/boss/operations";
 
@@ -67,6 +67,20 @@ describe("the operations merge", () => {
     expect(s.running).toBe("Running today: 1 duties · 1 scheduled email paths · 1 off");
     expect(s.sent).toBe("Sent today: outreach 12 (1 failed) · task notices 3");
     expect(s.needs).toBe("Needs you: 1 unassigned · 4 failed runs · 4 named stops");
+  });
+
+  it("the failed-runs count opens one line per failure, what and why, never more lines than it counts (26 Oct 2026)", () => {
+    const one: OperationsLedgers = {
+      ...LEDGERS, outreach: { ...LEDGERS.outreach, failed: 0 }, task_notices: { ...LEDGERS.task_notices, failed: 0 },
+      runs: { duty_failed_today: 1, cron_failed_today: 0 },
+      failed_today: [{ kind: "duty", name: "Monique's Sunday mailbox sweep", reason: "NAMED STOP [SWEEP_DID_NOT_COMPLETE] no sentinel", at: NOW - 60_000, duty_id: "duty_mailbox_sweep", employee_id: "emp_relationship" }],
+    };
+    const s = synopsis({ rows: [], unassigned: [], dutiesToday: 0, ledgers: one });
+    expect(s.needs).toBe("Needs you: 0 unassigned · 1 failed run · 4 named stops");
+    expect(s.failed).toEqual([{ what: "\"Monique's Sunday mailbox sweep\"", why: "NAMED STOP [SWEEP_DID_NOT_COMPLETE] no sentinel", at: NOW - 60_000, employeeId: "emp_relationship" }]);
+    // The fixture's 2 duty failures, 1 outreach and 1 notice with no detail rows still each get a line.
+    const all = failedRunItems(LEDGERS);
+    expect(all.map((f) => f.what)).toEqual(["2 more scheduled runs", "1 outreach email", "1 task notice"]);
   });
 });
 

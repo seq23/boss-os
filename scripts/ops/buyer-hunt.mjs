@@ -67,6 +67,7 @@ import { namesOnce } from "./notify.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { researchLot, renderFilings, renderReach, recordFound } from "./filing-hunt.mjs";
 import { mirrorOrStop } from "./lib/book-mirror.mjs";
+import { herLots } from "./lib/her-lots.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -208,16 +209,14 @@ function renderAsset(lot, inbox, filings, contacts) {
 // ─── The run ─────────────────────────────────────────────────────────────────
 
 async function main() {
-  const book = loadBook();
+  /*
+   * INBOX FIRST, THE BOOK IS AN OPTIONAL EXTRA (owner, 26 Oct 2026: "Yes, inbox only"; lib/her-lots.mjs).
+   * Nothing of hers on this side anywhere is still a NAMED STOP, never an empty result — but it no
+   * longer asks her for a book: Monique works from the inbox grid.
+   */
+  const book = ONE_ASSET ? loadBook() : herLots(HER_SIDE, { book: loadBook() });
   if (!book) {
-    /*
-     * NO BOOK IS A NAMED STOP, NOT AN EMPTY RESULT. Hunting buyers for nothing would print "no
-     * candidates" from a search that was never run — the empty-loop pass, and the one failure that
-     * would look exactly like a quiet week.
-     */
-    console.error(`NAMED STOP [NO_BOOK] no live book at ${BOOK_FILE}.`);
-    console.error("  Email it to boss@sequoiataylor.com with #monique, or put it in that file in your");
-    console.error("  own words — one line per name, e.g. 'Anthropic IPO shares $2B, and separately $500M'.");
+    console.error(`NAMED STOP [NO_SELL_SIDE] nothing of yours on the ${HER_SIDE} side in the inbox grid (and no book adds any). Nothing to hunt for this week.`);
     process.exit(5);
   }
   /*

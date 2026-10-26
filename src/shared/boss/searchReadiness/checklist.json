@@ -1,5 +1,5 @@
 {
- "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (72 = the page's 71 plus j9) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
+ "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (76 = the page's 71 plus j9 and the four 26 Oct 2026 lessons (b10, e9, h6, j10)) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
  "version": 1,
  "page_item_count": 71,
  "kinds": [
@@ -487,6 +487,27 @@
    }
   },
   {
+   "id": "b10",
+   "phase": "B",
+   "title": "Every page title names its own site, never a sibling's",
+   "title_html": "Every page title names its own site, never a sibling's",
+   "burned": true,
+   "why_html": "A shared template once stamped one site's brand onto another's pages. The search result then credits the wrong site, and the two sites compete for one name.",
+   "how_html": "Validator: every built title contains the host's own brand (its name, <code>og:site_name</code> or Organization name) and no other portfolio site's name.",
+   "check": {
+    "mode": "auto",
+    "type": "title_names_own_site",
+    "source": "html",
+    "how": "Every sampled page's title contains this site's own name (host, og:site_name or Organization name) and no other grid site's name.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
    "id": "c1",
    "phase": "C",
    "title": "Organization (or the publication's own editorial company) with name, url, logo, sameAs",
@@ -801,7 +822,7 @@
     "mode": "auto",
     "type": "clarity",
     "source": "html",
-    "how": "The homepage loads Microsoft Clarity (clarity.ms) directly or through its loader file.",
+    "how": "The homepage, or a sampled page where visitors fill a form or buy, loads Microsoft Clarity (clarity.ms) directly or through its loader file.",
     "applies_to": [
      "guide",
      "hyperlocal",
@@ -844,6 +865,27 @@
     "how": "A hyperlocal business site links Google Maps (maps.google.com/?cid= or google.com/maps) from the homepage or its LocalBusiness hasMap.",
     "applies_to": [
      "hyperlocal"
+    ]
+   }
+  },
+  {
+   "id": "e9",
+   "phase": "E",
+   "title": "Clarity loads only on pages where visitors fill a form or buy",
+   "title_html": "Clarity loads only on pages where visitors fill a form or buy",
+   "burned": false,
+   "why_html": "Session recording is for watching people get stuck on the step that earns money. Anywhere else it is page weight, a consent question and data nobody reads.",
+   "how_html": "Load the Clarity tag from the form and checkout templates only. <code>curl -s HOST/some-article/ | grep -c clarity</code> → 0 on a page with no form.",
+   "check": {
+    "mode": "auto",
+    "type": "clarity_scoped",
+    "source": "html",
+    "how": "Every sampled page that loads Microsoft Clarity carries a form or a buy link (a checkout, cart, Gumroad or Stripe link).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
     ]
    }
   },
@@ -1156,6 +1198,27 @@
    }
   },
   {
+   "id": "h6",
+   "phase": "H",
+   "title": "A cached build is keyed on every tracked file except the workflows",
+   "title_html": "A cached build is keyed on every tracked file except the workflows",
+   "burned": true,
+   "why_html": "A key that leaves out a committed file lets a commit that changed only that file restore the previous commit's build over its own (sprylabs-hpc-site, 25 Oct 2026). Too broad costs a rebuild; too narrow ships a stale site.",
+   "how_html": "The key is a hash of <code>git ls-files -s</code> with only <code>.github/workflows/</code> left out (or <code>hashFiles('**', '!.github/workflows/**')</code>), and a guard proves the listing covers the tree.",
+   "check": {
+    "mode": "auto",
+    "type": "build_cache_key",
+    "source": "repo",
+    "how": "Every workflow cache that restores a build is keyed on a hash of every tracked file except .github/workflows (git ls-files, or hashFiles('**', '!.github/workflows/**')).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
    "id": "j1",
    "phase": "J",
    "title": "Brief the new vertical from the built pages of an existing one, not from memory",
@@ -1310,6 +1373,27 @@
     "applies_to": [
      "hyperlocal",
      "guide"
+    ]
+   }
+  },
+  {
+   "id": "j10",
+   "phase": "J",
+   "title": "Junk lead domains are blocked through a site setting, never written into public code",
+   "title_html": "Junk lead domains are blocked through a site setting (<code>BLOCKED_LEAD_DOMAINS</code>), never written into public code",
+   "burned": false,
+   "why_html": "The repos are public and the list names real organisations. A blocklist in code publishes who is being turned away and needs a deploy to change.",
+   "how_html": "Every lead endpoint reads the deployment variable <code>BLOCKED_LEAD_DOMAINS</code> (comma-separated) and drops a match quietly; no source file holds a list of blocked email domains.",
+   "check": {
+    "mode": "auto",
+    "type": "blocked_lead_domains",
+    "source": "repo",
+    "how": "A repo with a lead endpoint reads BLOCKED_LEAD_DOMAINS, and no source file carries a hardcoded list of blocked email domains.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
     ]
    }
   },

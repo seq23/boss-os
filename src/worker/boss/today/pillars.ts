@@ -250,9 +250,8 @@ export async function brokerageMove(
    * leaves a real gap at the other end: Monique matches on size, so a lot with no number is
    * inventory that cannot be worked. It is hers to close, in one line, and nobody else can.
    *
-   * THE BOOK'S AGE IS NOT CHECKED HERE. A stale book is machinery-adjacent nagging and already has
-   * a home in `capital/bookNag.ts` on the alert surface. Two places raising the same fact is the
-   * defect this repository names; one fact, one place.
+   * THE BOOK'S AGE IS NEVER CHECKED, HERE OR ANYWHERE (owner, 26 Oct 2026: "Yes, inbox only").
+   * Monique works from the inbox deal grid; a book is an optional extra, so its age is not a fault.
    */
   const sizeless = await env.DB
     .prepare(

@@ -1,5 +1,14 @@
 /**
  * HER LIVE BOOK — the sell-side inventory she actually has, read out of an email.
+
+ * ─── OWNER, 26 OCTOBER 2026: "Yes, inbox only." ─────────────────────────────
+ * Monique works from her inbox deal flow (the deal grid and its matches). A book she emails is still
+ * accepted, parsed here and versioned, and joins the grid and the hunts as an OPTIONAL extra
+ * (scripts/ops/lib/her-lots.mjs); it is never required and never asked for. The 10 September rule
+ * ("If she does not send a book for 7 days, Monique must ASK HER for it") and its Today nag
+ * (capital/bookNag.ts) are retired. Pinned by tests/inboxOnlyBook.test.ts and
+ * tests/boss/bossInboundMail.test.ts ("no book nag, however old the book").
+ *
  *
  * Owner, 10 September 2026, dictating today's book:
  *

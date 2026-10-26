@@ -8,6 +8,9 @@
  *
  *   inflight <repo> <term...>   an open PR or branch in that repo already touching this? -> IN_FLIGHT
  *   land <findings.json>        every `fixed_pr`: `gh pr checks --watch --fail-fast`, then `~/bin/land`
+ *                               — ONCE PER PULL REQUEST, however many rows it fixed, one LAND line each
+ *   scope <repo> [ids]          the queue briefs a scoped pass was handed: its search evidence
+ *   repo-for <domain>           which repository serves a domain, from the one list (domainRepos.mjs)
  *   verdict <findings.json>     RULE 0: a pass that left fixable defects unfixed exits RED, named
  *
  * WHY LANDING MOVED IN HERE. The first version of this duty said "IT MERGES NOTHING. She merges."
@@ -23,6 +26,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mayAutoFix } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
+import { scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
+import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 
 /** Dispositions that are a CONFIRMED site defect in a repo the fixer may change. */
 const FIXABLE_LEFT = new Set(["surfaced"]);
@@ -111,9 +116,22 @@ export function inflight(repo, terms) {
  * both see it. `run` is injectable for the test.
  */
 export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT_LAND_BIN ?? join(homedir(), "bin/land") } = {}) {
+  /*
+   * ONE LAND PER PULL REQUEST (26 Oct 2026). A PR that fixes five briefs is five `fixed_pr` rows, and
+   * this used to watch checks and run ~/bin/land once per ROW: five lands of one PR, four of them
+   * "already MERGED … nothing to merge", and five identical LAND lines in the log. The first row's
+   * outcome is now written onto every row that shares its pr_url.
+   */
+  const done = new Map();
   for (const f of payload.findings ?? []) {
     if (f.disposition !== "fixed_pr" || !f.pr_url || f.land === "landed") continue;
     if (!mayAutoFix(f.repo)) { f.land = "refused_policy"; continue; }
+    const prior = done.get(f.pr_url);
+    if (prior) {
+      f.land = prior.land; f.land_detail = prior.land_detail;
+      if (prior.suggested_action) f.suggested_action = prior.suggested_action;
+      continue;
+    }
     const num = /\/pull\/(\d+)/.exec(f.pr_url)?.[1];
     const cwd = f.worktree && existsSync(f.worktree) ? f.worktree
       : join(process.env.AUDIT_GITHUB_ROOT ?? join(homedir(), "GitHub"), String(f.repo));
@@ -121,16 +139,24 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
     if (checks.status !== 0) {
       f.land = "checks_red";
       f.land_detail = lastLine(checks.out);
-      continue;
+    } else {
+      const landed = run("timeout", ["3600", landBin, num], cwd);
+      f.land = landed.status === 0 ? "landed" : "land_refused";
+      f.land_detail = lastLine(landed.out);
+      if (f.land === "landed") {
+        f.suggested_action = `Landed ${f.pr_url} through ~/bin/land: checks green, merged, main watched, deployed. Nothing to do.`;
+      }
     }
-    const landed = run("timeout", ["3600", landBin, num], cwd);
-    f.land = landed.status === 0 ? "landed" : "land_refused";
-    f.land_detail = lastLine(landed.out);
-    if (f.land === "landed") {
-      f.suggested_action = `Landed ${f.pr_url} through ~/bin/land: checks green, merged, main watched, deployed. Nothing to do.`;
-    }
+    done.set(f.pr_url, { land: f.land, land_detail: f.land_detail, suggested_action: f.land === "landed" ? f.suggested_action : null });
   }
   return payload;
+}
+
+/** One `LAND <repo> <pr>: <outcome>` line per pull request, never one per row. */
+export function landLines(payload) {
+  const seen = new Map();
+  for (const f of payload.findings ?? []) if (f.disposition === "fixed_pr" && f.pr_url && !seen.has(f.pr_url)) seen.set(f.pr_url, `LAND ${f.repo} ${f.pr_url}: ${f.land}`);
+  return [...seen.values()];
 }
 
 function defaultRun(cmd, args, cwd) {
@@ -156,12 +182,20 @@ if (isMain) {
     const payload = JSON.parse(readFileSync(rest[0], "utf8"));
     landAll(payload);
     writeFileSync(rest[0], JSON.stringify(payload, null, 2));
-    for (const f of payload.findings ?? []) if (f.disposition === "fixed_pr") console.log(`LAND ${f.repo} ${f.pr_url}: ${f.land}`);
+    for (const l of landLines(payload)) console.log(l);
+  } else if (cmd === "scope") {
+    const queueFile = process.env.SR_QUEUE_FILE ?? join(homedir(), ".boss-os/search-readiness/fix-queue.json");
+    const snap = scopeSnapshot({ queue: JSON.parse(readFileSync(queueFile, "utf8")), queueFile, repo: rest[0], briefIds: String(rest[1] ?? "").split(/[\s,]+/).filter(Boolean) });
+    console.log(JSON.stringify(snap, null, 2));
+  } else if (cmd === "repo-for") {
+    const r = repoForDomain(rest[0]);
+    console.log(r ? (r.repo ? `REPO ${r.repo} (${r.source})` : `NO_REPO ${r.why}`) : "UNKNOWN: this domain is in neither sites.json nor AUDITED_ELSEWHERE (src/shared/boss/siteAudit/domainRepos.mjs); add it there with its repo or the reason it has none.");
+    process.exit(r ? 0 : 3);
   } else if (cmd === "inflight") {
     const hit = inflight(rest[0], rest.slice(1));
     console.log(hit ? `IN_FLIGHT ${hit.kind} ${hit.ref}${hit.title ? ` — ${hit.title}` : ""}` : "CLEAR");
   } else {
-    console.error("usage: site-audit-lib.mjs verdict|land <findings.json> | inflight <repo> <term...>");
+    console.error("usage: site-audit-lib.mjs verdict|land <findings.json> | inflight <repo> <term...> | scope <repo> [ids] | repo-for <domain>");
     process.exit(2);
   }
 }

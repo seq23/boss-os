@@ -39,6 +39,8 @@ import { logEvent } from "../lib/log";
 import { ok, badRequest } from "../lib/http";
 import { nextDueAt } from "../duties/cadence";
 import { mayAutoFix, whyNoAutoFix, DISPOSITIONS } from "../../../shared/boss/siteAudit/repoPolicy.mjs";
+import { carriesAddress, searchEvidenceGap, findingItemId } from "../../../shared/boss/siteAudit/evidence.mjs";
+import { repoForDomain, domainOfRow } from "../../../shared/boss/siteAudit/domainRepos.mjs";
 
 export const siteAudit = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -89,7 +91,8 @@ siteAudit.post("/site-audit-findings", async (c) => {
   for (const [i, f] of rows.entries()) {
     for (const field of TEXT_FIELDS) {
       const v = f?.[field];
-      if (typeof v === "string" && v.includes("@")) {
+      // An ADDRESS, not any '@': JSON-LD's @type and @id are what structured-data findings name.
+      if (carriesAddress(v)) {
         throw badRequest(
           `Finding ${i + 1} carries an address in ${field}, so the whole batch was refused`,
           "Boss OS stores public domains and repository names here, never an address. Nothing was written.",
@@ -99,6 +102,14 @@ siteAudit.post("/site-audit-findings", async (c) => {
   }
 
   const now = Date.now();
+  /*
+   * WHEN THE PASS RAN, not when it reported. A report re-delivered hours later (26 Oct 2026: seven
+   * queue passes refused overnight, sent again in the morning) must not supersede rows a LATER pass
+   * already wrote. The reporter sends the findings file's write time; anything outside the last week
+   * or in the future is ignored and the arrival time is used.
+   */
+  const ranAtRaw = Number(b?.ran_at);
+  const ranAt = Number.isFinite(ranAtRaw) && ranAtRaw <= now && ranAtRaw > now - 7 * 86_400_000 ? Math.trunc(ranAtRaw) : now;
   const runId = typeof b?.run_id === "string" && b.run_id.trim() ? b.run_id.trim().slice(0, 64) : null;
   if (!runId) {
     throw badRequest("Every run identifies itself", "Send a run_id, so each finding traces back to the run that produced it.");
@@ -113,10 +124,17 @@ siteAudit.post("/site-audit-findings", async (c) => {
    */
   const searched = b?.searched;
   const searchedJson = searched && typeof searched === "object" ? JSON.stringify(searched).slice(0, 4000) : null;
-  if (!searchedJson || searchedJson === "{}") {
+  /*
+   * AND THE EVIDENCE FITS THE KIND OF PASS (26 Oct 2026). A mailbox pass names the mailbox, the
+   * queries, the date range and the message count; a Search Readiness queue pass names the queue
+   * file, when it was written, the repo and the brief ids. One rule, shared with the reporter
+   * (`searchEvidenceGap`), so the two cannot disagree about what counts.
+   */
+  const gap = searchEvidenceGap(searched);
+  if (!searchedJson || searchedJson === "{}" || gap) {
     throw badRequest(
       "A report without its search evidence was refused",
-      "Send { searched: { mailbox, queries, since, until, messages } }. 'I looked and found nothing' is not a finding unless it says where it looked.",
+      `${gap ?? "`searched` is empty"}. 'I looked and found nothing' is not a finding unless it says where it looked.`,
     );
   }
 
@@ -172,14 +190,33 @@ siteAudit.post("/site-audit-findings", async (c) => {
       }
     }
 
-    const mappedBy = repo ? (text(f?.mapped_by, 32) === "repo_identity" ? "repo_identity" : "unmapped") : null;
-    if (repo && mappedBy !== "repo_identity") {
-      /*
-       * A REPOSITORY MATCHED BY ANYTHING BUT ITS OWN DECLARED DOMAIN IS A GUESS. That is how a PR
-       * ends up in the wrong repo, and the names in this portfolio are similar enough for it to
-       * happen — `dentistryguides` and `thedentistryguides` are two different Ahrefs projects.
-       */
-      refused.push(`finding ${i + 1}: names repository ${repo} without REPO_IDENTITY.md evidence for the domain. A resemblance is not a mapping.`);
+    /*
+     * ONE LIST SAYS WHICH REPO SERVES A DOMAIN (shared/boss/siteAudit/domainRepos.mjs, built from the
+     * grid manifest). A repository is mapped by its own REPO_IDENTITY.md or by that list, never by a
+     * resemblance — `dentistryguides` and `thedentistryguides` are two different domains.
+     */
+    const listed = repoForDomain(domainOfRow({ domain: text(f?.domain, 200), project }));
+    const claimed = text(f?.mapped_by, 32);
+    const mappedBy = !repo ? null
+      : claimed === "repo_identity" ? "repo_identity"
+      : listed?.repo === repo ? "grid_manifest"
+      : "unmapped";
+    if (repo && mappedBy === "unmapped") {
+      refused.push(`finding ${i + 1}: names repository ${repo} without REPO_IDENTITY.md evidence or a grid-manifest entry for the domain. A resemblance is not a mapping.`);
+      continue;
+    }
+    /*
+     * A "NO REPOSITORY" ROW FOR A DOMAIN THE LIST MAPS IS A CONTRADICTION, and it is the one that put
+     * "Porchandparty901 … no repository claims that domain" on Today for five weeks while
+     * seq23/p-n-p served it. Refused with the repo named, so the next pass fixes it there.
+     */
+    if (disposition === "no_repo" && listed?.repo) {
+      refused.push(`finding ${i + 1}: says no repository serves ${domainOfRow({ domain: text(f?.domain, 200), project })}, but ${listed.repo} does (${listed.source}). Report it against ${listed.repo}.`);
+      continue;
+    }
+    // An off-limits row for a repository the fixer may change is stale policy, not a finding.
+    if (disposition === "off_limits" && repo && mayAutoFix(repo)) {
+      refused.push(`finding ${i + 1}: calls ${repo} off limits, but it is not on the fixer's list (repoPolicy.mjs). Fix it there.`);
       continue;
     }
 
@@ -211,10 +248,47 @@ siteAudit.post("/site-audit-findings", async (c) => {
       .bind(
         newId("saf"), project, text(f?.domain, 200), repo, mappedBy, disposition, headline, because, action,
         prUrl, num(f?.health_score), num(f?.errors), text(f?.message_id, 64), num(f?.reported_at),
-        searchedJson, runId, now, now,
+        searchedJson, runId, ranAt, now,
       )
       .run();
     written++;
+
+    /*
+     * A NEWER ROW SUPERSEDES THE OLDER ONES ABOUT THE SAME THING (26 Oct 2026). Rows were never
+     * retired, so Today's "left for a person" line counted 49 rows: Ahrefs mail from September that
+     * later passes had re-read, and one checklist item reworded by three passes (j9 for
+     * dentistryguides.com, three times). A checklist row retires the older live rows of its own
+     * project and item; an Ahrefs row retires the older live rows of its project from earlier runs.
+     */
+    const itemId = findingItemId({ project, headline });
+    const item = itemId ? itemId.slice(itemId.lastIndexOf("-") + 1) : null;
+    const note = `superseded ${new Date(now).toISOString().slice(0, 10)} by run ${runId}`;
+    if (item) {
+      await c.env.DB
+        .prepare(
+          `UPDATE site_audit_findings SET archived_at = ?, updated_at = ?, notes = ?
+            WHERE project = ? AND headline <> ? AND archived_at IS NULL AND lower(headline) LIKE ? AND found_at <= ?`,
+        )
+        .bind(now, now, note, project, headline, `${item}:%`, ranAt)
+        .run();
+      // And a re-delivered row that a later pass has already superseded is recorded, but not live.
+      await c.env.DB
+        .prepare(
+          `UPDATE site_audit_findings SET archived_at = ?, notes = 'superseded by a later pass on arrival'
+            WHERE project = ? AND headline = ? AND archived_at IS NULL
+              AND EXISTS (SELECT 1 FROM site_audit_findings o WHERE o.project = ? AND o.headline <> ? AND lower(o.headline) LIKE ? AND o.found_at > ? AND o.archived_at IS NULL)`,
+        )
+        .bind(now, project, headline, project, headline, `${item}:%`, ranAt)
+        .run();
+    } else if (!project.startsWith("checklist:")) {
+      await c.env.DB
+        .prepare(
+          `UPDATE site_audit_findings SET archived_at = ?, updated_at = ?, notes = ?
+            WHERE project = ? AND archived_at IS NULL AND COALESCE(run_id, '') <> ? AND found_at < ?`,
+        )
+        .bind(now, now, note, project, runId, ranAt)
+        .run();
+    }
   }
 
   /*

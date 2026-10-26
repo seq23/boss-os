@@ -54,7 +54,6 @@ const BOSS_INTAKE = [
   "src/shared/boss/intake/liveBook.mjs",
   "src/worker/boss/intake/inboundMail.ts",
   "src/worker/boss/capital/book.ts",
-  "src/worker/boss/capital/bookNag.ts",
 ];
 
 /** West Peek's intake. Foreign code in this repo; readable, copyable, never importable from Boss OS. */

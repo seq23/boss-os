@@ -35,6 +35,7 @@ import type { Env, Vars } from "../env";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest } from "../lib/http";
+import { probeWorkerCredentials } from "../today/workerCredentialProbes";
 
 export const credentials = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -180,6 +181,14 @@ credentials.post("/probe", async (c) => {
       detail: { woken, because: "the credential it waits on is live" },
     }).catch(() => {});
   }
+
+  /*
+   * AND THE CREDENTIALS ONLY THE WORKER HOLDS (26 Oct 2026). The Mac cannot see a Worker secret, so
+   * the Anthropic and OpenAI keys were never checked by anything. Each report from the Mac is the
+   * Worker's cue to probe its own (a free model-list read), so `npm run credentials:check` clears or
+   * confirms those alerts too.
+   */
+  for (const w of await probeWorkerCredentials(c.env, now)) applied.push({ id: w.id, state: w.state });
 
   const dead = applied.filter((p) => p.state === "dead");
   await logEvent(c.env.DB, {

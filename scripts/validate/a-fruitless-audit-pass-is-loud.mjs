@@ -172,7 +172,9 @@ export function theQuerySurfacesWhatNeedsAPerson(db, sql) {
   if (got.has("off_limits")) {
     bad.push("an ARCHIVED finding still reaches her, so nothing can ever be put away and the surface only grows.");
   }
-  const ids = rows.map((r) => String(r.worst_project ?? ""));
+  // The query returns rows (26 Oct 2026: grouping moved into code, auditFindingAlerts), so the
+  // project is `project`; a grouped query named it `worst_project`. Either way a dismissed one fails.
+  const ids = rows.map((r) => String(r.project ?? r.worst_project ?? ""));
   if (ids.some((p) => p.includes("Dismissed"))) {
     bad.push("a DISMISSED finding still reaches her. Dismissing it is the decision; repeating it overrules her.");
   }

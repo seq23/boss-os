@@ -141,6 +141,12 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
 1. **One definition.** `src/shared/boss/searchReadiness/checklist.json` holds every item (the page's
    71 plus j9, hyperlocal coverage) as an automatic check or a manual item with its reason.
    `npm run sites:page -- --out <path>` renders the pinned page from it; edit the JSON, never the page.
+   The page also carries "Where every site stands", one row per site counted from the newest
+   `results-<day>.json` (`--results <file>` to pick one). Four lessons of 26 Oct 2026 are automatic
+   items, each pinned by a check test: b10 every title names its own site, never a sibling's; e9
+   Clarity loads only where a visitor fills a form or buys; h6 a cached build is keyed on every
+   tracked file except the workflows; j10 junk lead domains are blocked through the site setting
+   `BLOCKED_LEAD_DOMAINS`, never written into public code.
 2. **The grid repos** are `src/shared/boss/searchReadiness/sites.json`: category (side business,
    client, own business), kind, and a coverage entry for every site. Hyperlocal sites list the towns
    inside their radius, the neighborhoods, the local anchors and the service × town pages; the

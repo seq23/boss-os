@@ -364,7 +364,11 @@ async function main() {
   });
   if (!res.ok) throw new Error(`credential probe failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
 
-  const dead = probes.filter((p) => p.state === "dead");
+  // The Worker probes the credentials only it holds (the Anthropic and OpenAI keys) on this report.
+  const back = await res.json().catch(() => null);
+  const mine = new Set(probes.map((p) => p.id));
+  for (const a of back?.data?.applied ?? []) if (!mine.has(a.id)) console.log(`${a.id}: ${a.state} — probed by the Worker, which holds that key.`);
+  const dead = [...probes, ...(back?.data?.applied ?? []).filter((a) => !mine.has(a.id))].filter((p) => p.state === "dead");
   console.log(
     dead.length === 0
       ? `Reported ${probes.length} credential probe(s) to Boss OS. None dead.`

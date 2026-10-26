@@ -139,3 +139,12 @@ async function completeWithSearch(req: CompletionRequest, ctx: AdapterContext) {
     extraCostMicros: searches * WEB_SEARCH_CALL_MICROS,
   };
 }
+
+/**
+ * Is this key alive? A GET of the model list: free, no tokens, nothing of hers in it. Used by the
+ * credential register (today/workerCredentialProbes.ts), which may not name a vendor host itself.
+ */
+export async function probeOpenAiKey(baseUrl: string, apiKey: string): Promise<number> {
+  const res = await fetch(`${baseUrl}/models`, { headers: { authorization: `Bearer ${apiKey}` } });
+  return res.status;
+}

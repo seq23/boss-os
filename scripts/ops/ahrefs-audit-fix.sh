@@ -128,7 +128,15 @@ say "off limits to the fixer: $NO_AUTO_FIX"
 # `ahrefs-audit-report.mjs` refuses a findings file older than the run, which is the backstop.
 # Deleting it here is the belt: a run that crashes halfway cannot leave last week's findings looking
 # like this week's, and "nothing was written" is then unambiguous on disk as well as in the reporter.
-rm -f "$OUT_DIR/findings.json"
+rm -f "$OUT_DIR/findings.json" "$OUT_DIR/scope.json"
+
+# A QUEUE PASS'S EVIDENCE IS WRITTEN BEFORE IT STARTS (26 Oct 2026). It reads no mailbox, so what it
+# looked at is the queue and the briefs it was handed. The reporter sends this snapshot as `searched`
+# (evidence.mjs `queueEvidence`), so the evidence never depends on how the model worded its own.
+if [ -n "${SR_SCOPE_REPO:-}" ]; then
+  node "$REPO/scripts/ops/site-audit-lib.mjs" scope "$SR_SCOPE_REPO" "${SR_SCOPE_BRIEFS:-}" > "$OUT_DIR/scope.json" 2>>"$RUN_LOG" \
+    || say "NAMED STOP [NO_SCOPE_SNAPSHOT] the queue could not be read before the pass; the reporter will read it again."
+fi
 
 say "=== ahrefs audit pass starting (model $MODEL) ==="
 cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }

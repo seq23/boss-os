@@ -337,6 +337,19 @@ to her" and pinned by tests and `validate:email-plain`:
 - **Comment watch**: a sweep's repeats are dropped and the digest is written in one batch (the
   21 Oct digest said 2 over 1 row); comments Monique leaves alone are a done line, not a task.
 
+### 26 October 2026 — the fixer's reports reach Boss OS, and Today says only what is true now
+
+- **Queue passes report.** A Search Readiness queue pass reads no mailbox, so its evidence is the
+  queue snapshot the runner writes (`scope.json`; `src/shared/boss/siteAudit/evidence.mjs`); mailbox
+  passes keep the full rule, now actually checked. An address is refused, `@type` is not. One land
+  and one LAND line per PR. Pinned by `tests/siteAuditEvidence.test.ts`, `tests/boss/oct26Repairs.test.ts`.
+- **One domain → repo list** (`src/shared/boss/siteAudit/domainRepos.mjs`, from `sites.json` plus
+  the non-grid domains with their reason); the ingest refuses a `no_repo` row the list maps, rows
+  supersede older ones about the same thing by pass time, and Today checks rows against both lists.
+- **An early run is its slot's run** (8 h grace; her Mac on Eastern fired Central duties an hour
+  early). **The Worker probes the keys only it holds** (Anthropic, OpenAI) on every credential report.
+  **Operations' failed-run count opens its detail** on Today.
+
 ### Monique's outreach — fully automatic, braked in code (9 October 2026)
 
 **Owner: "u do it all".** Monique writes to businesses for ten side businesses (five local guides,

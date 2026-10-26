@@ -632,16 +632,14 @@ async function main() {
   } else {
     // The pulled mirror is the book when there is one — see lib/book-mirror.mjs for the week this cost.
     const { mirrorOrStop } = await import("./lib/book-mirror.mjs");
+    // Inbox first; the book (mirror, or her own book.txt) is an optional extra (owner, 26 Oct 2026; lib/her-lots.mjs).
     const mirror = argOf("book") ? null : mirrorOrStop();
-    if (mirror) {
-      lots = mirror.positions.filter((l) => l.side === HER_SIDE);
-    } else {
-      if (!fs.existsSync(BOOK_TEXT)) {
-        console.error(`NAMED STOP [NO_BOOK] ${BOOK_TEXT} does not exist and no --asset was given.`);
-        console.error("  Email your book to boss@sequoiataylor.com with #monique, or pass --asset and --size.");
-        process.exit(5);
-      }
-      lots = parseLiveBook(fs.readFileSync(BOOK_TEXT, "utf8")).positions.filter((l) => l.side === HER_SIDE);
+    const book = mirror ?? (fs.existsSync(BOOK_TEXT) ? { ...parseLiveBook(fs.readFileSync(BOOK_TEXT, "utf8")), source: BOOK_TEXT } : null);
+    const { herLots } = await import("./lib/her-lots.mjs");
+    lots = herLots(HER_SIDE, { book })?.positions ?? [];
+    if (!lots.length) {
+      console.error(`NAMED STOP [NO_SELL_SIDE] nothing of yours on the ${HER_SIDE} side in the inbox grid (and no book adds any), and no --asset was given.`);
+      process.exit(5);
     }
   }
   if (lots.length === 0) {

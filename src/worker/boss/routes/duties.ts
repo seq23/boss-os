@@ -94,6 +94,23 @@ export function advance(
 }
 
 /**
+ * WHICH SLOT A RUN ANSWERS FOR. A run that lands a little BEFORE its due time is that slot's run.
+ *
+ * 23 Oct 2026: her Mac was on Eastern time. launchd fires on the Mac's wall clock, the duty is kept
+ * in Central, so the weekly archive audit fired at 08:40 Eastern = 07:40 Central, an hour before its
+ * 08:40 Central slot. The run succeeded, but `advance(now)` found the slot still ahead and left it
+ * there; an hour later the slot passed with "no run", and Today said "missed 1 scheduled run" for
+ * three days about a duty that had run. (The mailbox sweep, the same evening, fired an hour early
+ * too.) A Mac that travels east fires early by the zone difference; EARLY_RUN_GRACE_MS covers
+ * Central → Europe. A run more than that early is a genuine extra run and does not consume the slot.
+ */
+export const EARLY_RUN_GRACE_MS = 8 * 3_600_000;
+
+export function creditFrom(nextDueAt: number | null, now: number): number {
+  return nextDueAt !== null && nextDueAt > now && nextDueAt - now <= EARLY_RUN_GRACE_MS ? nextDueAt : now;
+}
+
+/**
  * "This launchd job just finished, and here is how it went."
  *
  * The wrapper posts the SCRIPT NAME, never a duty id. That is the whole of the no-second-list
@@ -124,7 +141,7 @@ duties.post("/ran", async (c) => {
    */
   const matches = await c.env.DB
     .prepare(
-      `SELECT id, local_hour, local_minute, timezone, cadence, weekday, weekdays, last_run_at, executor
+      `SELECT id, local_hour, local_minute, timezone, cadence, weekday, weekdays, last_run_at, next_due_at, executor
          FROM standing_duties
         WHERE json_extract(task_input, '$.local_job') = ?`,
     )
@@ -171,7 +188,7 @@ duties.post("/ran", async (c) => {
     .run();
 
   if (outcome === "ok") {
-    const next = advance(duty, now);
+    const next = advance(duty, creditFrom(duty.next_due_at ?? null, now));
     await c.env.DB
       .prepare(
         next === null

@@ -530,7 +530,49 @@ export const CHECKS = {
     // 2026: Clarity only where visitors fill a form or buy; how-we-know's audience is on YouTube).
     if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
     const h = ctx.home?.html ?? "";
-    return /clarity\.ms|clarity\.js|\/clarity[-.]|microsoft clarity/i.test(h) || ctx.files.__clarity_loader ? pass("Clarity loads on the homepage") : fail("the homepage does not load Clarity");
+    if (CLARITY_RE.test(h) || ctx.files?.__clarity_loader) return pass("Clarity loads on the homepage");
+    // Clarity belongs on the pages where visitors fill a form or buy (e9), so one of those loading it
+    // is Clarity installed, whether or not the homepage is such a page.
+    const scoped = (ctx.pages ?? []).find((p) => p.status === 200 && p.html && CLARITY_RE.test(p.html) && formOrBuy(p.html, p.url));
+    return scoped ? pass(`Clarity loads on ${scoped.url}, a page where visitors fill a form or buy`) : fail("neither the homepage nor any sampled form or buy page loads Clarity");
+  },
+  /*
+   * e9 — CLARITY ONLY WHERE A VISITOR FILLS A FORM OR BUYS (owner, 25 Oct 2026). Session recording
+   * is for watching people get stuck on the step that earns money; anywhere else it is weight on the
+   * page and data nobody reads. Any sampled page that loads Clarity must carry a form or a buy link.
+   */
+  clarity_scoped(ctx) {
+    if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
+    const loading = okPages(ctx).filter((p) => CLARITY_RE.test(p.html));
+    if (!loading.length) return pass("no sampled page loads Clarity outside a form or buy page");
+    const bad = loading.filter((p) => !formOrBuy(p.html, p.url)).map((p) => p.url);
+    return bad.length
+      ? fail(`Clarity loads on ${bad.length} page${bad.length === 1 ? "" : "s"} with no form and no buy link: ${list(bad)}`, { evidence: bad })
+      : pass(`Clarity loads only on form or buy pages (${loading.length} sampled)`);
+  },
+  /*
+   * b10 — EVERY TITLE NAMES ITS OWN SITE, NEVER A SIBLING'S. A shared template once stamped one
+   * site's brand onto another's pages, so search results credited the wrong site. The brand is the
+   * host's own name (or the homepage's og:site_name / Organization name); a sibling is any other
+   * grid site whose name is not part of this one's.
+   */
+  title_names_own_site(ctx) {
+    const norm = (t) => String(t ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const stem = (h) => norm(String(h).replace(/^www\./, "").split(".")[0]);
+    const own = stem(ctx.host);
+    const home = ctx.home?.html ?? "";
+    const brands = [own, ...metaContent(home, "og:site_name").map(norm), ...deepNodes(jsonLd(home).nodes, /^(Organization|WebSite)$/).map((n) => norm(n?.name))].filter((b) => b.length >= 4);
+    const siblings = (ctx.portfolio ?? []).map(stem).filter((s) => s.length >= 6 && s !== own && !brands.some((b) => b.includes(s)));
+    const bad = [], seen = new Set();
+    for (const p of okPages(ctx)) {
+      const key = String(p.url).replace(/[?#].*$/, "").replace(/\/+$/, "");
+      if (seen.has(key)) continue; seen.add(key);
+      const t = norm(titleOf(p.html));
+      const sib = siblings.find((s) => t.includes(s));
+      if (sib) bad.push(`${p.url} title names ${sib}`);
+      else if (!brands.some((b) => t.includes(b))) bad.push(`${p.url} title does not name the site`);
+    }
+    return bad.length ? fail(list(bad), { evidence: bad }) : pass("every sampled title names this site and no sibling");
   },
   gbp_maps_link(ctx) {
     const h = ctx.home?.html ?? "";
@@ -678,6 +720,40 @@ export const CHECKS = {
     if (k.status === "no_repo") return c.status === "pass" ? { status: "no_repo", detail: k.detail } : fail(c.detail);
     return fail([c, k].filter((x) => x.status !== "pass").map((x) => x.detail).join("; "), { missing: k.missing });
   },
+  /*
+   * h6 — A CACHED BUILD IS KEYED ON EVERY TRACKED FILE EXCEPT THE WORKFLOWS (sprylabs-hpc-site #147,
+   * 25 Oct 2026). The key left out committed artifacts/, a commit that changed only one of them hit
+   * the cache, and the restored tree put the previous commit's bytes back over the checkout. Too broad
+   * costs a rebuild; too narrow ships a stale tree. Workflows are the one exclusion: no producer reads
+   * them and a restored tree must never overwrite them.
+   */
+  build_cache_key(ctx) {
+    const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const caches = buildCaches(r.workflows ?? []);
+    if (!caches.length) return pass("no workflow restores a cached build");
+    const hashers = (r.files ?? []).filter((f) => /(^|\/)(\.github\/scripts|scripts|tools)\/[^/]*(hash|cache|key)[^/]*\.(sh|m?js|py|ts)$/i.test(f)).slice(0, 12);
+    const texts = [...(r.workflows ?? []).map((w) => w.text), ...hashers.map((f) => r.show?.(f) ?? "")];
+    const wholeTree = texts.some((t) => wholeTreeKey(t));
+    const bad = caches.filter((c) => !wholeTreeKey(c.key) && !wholeTree).map((c) => `${c.workflow} caches ${c.path} under a key that does not hash every tracked file (${c.key.slice(0, 80)})`);
+    return bad.length ? fail(list(bad, 3), { evidence: bad }) : pass(`${caches.length} build cache${caches.length === 1 ? "" : "s"} keyed on every tracked file except the workflows`);
+  },
+  /*
+   * j10 — JUNK LEAD DOMAINS ARE BLOCKED THROUGH A SITE SETTING, NEVER IN PUBLIC CODE (owner, 26 Oct
+   * 2026). The repos are public and the list names real organisations, so it lives only in the
+   * deployment's BLOCKED_LEAD_DOMAINS variable (comma-separated). A lead endpoint must read that
+   * variable, and no source file may carry a hardcoded list of blocked email domains.
+   */
+  blocked_lead_domains(ctx) {
+    const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const src = (r.files ?? []).filter((f) => /\.(m?js|ts|py)$/.test(f) && !/(^|\/)(node_modules|dist|build|tests?|__tests__)\//.test(f) && !/\.test\./.test(f));
+    const leadFiles = src.filter((f) => /^(functions|src|lib|workers?|api|server)\//.test(f) && /(lead|request-assistance|intake|inquir|quote|contact)/i.test(f)).slice(0, 15);
+    if (!leadFiles.length) return pass("no lead endpoint in this repo");
+    const listy = src.filter((f) => /(lead|block|junk|spam|deny|ban)/i.test(f)).slice(0, 25);
+    const hard = [...new Set([...leadFiles, ...listy])].filter((f) => HARDCODED_DOMAIN_LIST.test(r.show?.(f) ?? ""));
+    if (hard.length) return fail(`a blocked-domain list is written into public code: ${list(hard, 3)}`, { evidence: hard });
+    const reads = src.filter((f) => /BLOCKED_LEAD_DOMAINS/.test(r.show?.(f) ?? "")).slice(0, 3);
+    return reads.length ? pass(`the lead endpoint reads BLOCKED_LEAD_DOMAINS (${reads.join(", ")})`) : fail(`no lead endpoint reads BLOCKED_LEAD_DOMAINS (${list(leadFiles, 3)})`);
+  },
   weekly_report_workflow(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
     const weekly = (w) => [...w.text.matchAll(/cron:\s*['"]([^'"]+)['"]/g)].some((m) => { const f = m[1].trim().split(/\s+/); return f.length === 5 && f[4] !== "*" && f[2] === "*"; });
@@ -692,6 +768,46 @@ export const CHECKS = {
     return why.length ? fail(why.join("; ")) : pass("zero-paid doc and CLAUDE.md line present");
   },
 };
+
+export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]|microsoft clarity/i;
+
+/** A page where a visitor fills a form or buys: a real <form>, or a link to a checkout. */
+export function formOrBuy(html, base = "https://x.invalid/") {
+  if (/<form\b/i.test(String(html))) return true;
+  return links(html, base).some((l) => /(^|\.)(gumroad\.com|stripe\.com|paypal\.com|lemonsqueezy\.com|square\.link|checkout\.shopify\.com)$/.test(l.host) || /\/(checkout|cart|buy|order|book(ing)?)(\/|$|\?)/i.test(new URL(l.url).pathname));
+}
+
+/** actions/cache steps in workflows that hold a BUILD (not dependencies or model downloads). */
+export function buildCaches(workflows) {
+  const out = [];
+  for (const w of workflows) {
+    const lines = String(w.text ?? "").split("\n");
+    lines.forEach((line, i) => {
+      if (!/uses:\s*actions\/cache(\/restore)?@/.test(line)) return;
+      const block = lines.slice(i + 1, i + 14).join("\n");
+      const path = /\bpath:\s*\|?\s*([^\n]+(?:\n\s{10,}[^\n:]+)*)/.exec(block)?.[1]?.trim() ?? "";
+      const key = /\bkey:\s*([^\n]+)/.exec(block)?.[1]?.trim() ?? "";
+      if (!path || /node_modules|\.npm\b|pip|~\/\.cache|huggingface|playwright|\.cargo|gradle|vlm|whisper/i.test(path)) return;
+      if (!/build|dist|_site|\bout\b|public|tree|\.next|\.astro|site|render|\.tar/i.test(path)) return;
+      out.push({ workflow: w.name, path, key });
+    });
+  }
+  return out;
+}
+
+/** Does this text build a cache key over every tracked file, excluding only .github/workflows? */
+export function wholeTreeKey(text) {
+  const t = String(text ?? "");
+  if (/hashFiles\(\s*['"]\*\*(\/\*)?['"]\s*,\s*['"]!\.github\/workflows\/\*\*['"]\s*\)/.test(t)) return true;
+  if (!/git\s+ls-files/.test(t)) return false;
+  if (!/\.github\/workflows/.test(t)) return false;
+  // Any other exclusion of tracked paths from the listing makes the key too narrow.
+  const excl = [...t.matchAll(/grep\s+-[a-zA-Z]*v[a-zA-Z]*\s+(['"])(.*?)\1/g)].map((m) => m[2]);
+  return excl.every((e) => /\.github\/workflows/.test(e) && !/\|/.test(e.replace(/\\\|/g, "")));
+}
+
+/** A literal list of email domains next to a block/junk/spam/deny name. */
+export const HARDCODED_DOMAIN_LIST = /(block|junk|spam|deny|ban)\w*\s*[:=]\s*(?:new\s+Set\(\s*)?\[\s*(?:['"`][a-z0-9.-]+\.[a-z]{2,}['"`]\s*,\s*)+['"`][a-z0-9.-]+\.[a-z]{2,}['"`]/i;
 
 /** The daily Search Console truth file: the checklist's name, and the generator's name for the same file. */
 export const GSC_TRUTH_NAMES = ["gsc_truth.json", "gsc_search_analytics_export.json"];
@@ -779,7 +895,9 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
       // A KNOWN LIMIT is a failure the repo cannot fix at source (the host decides it, or it waits on a
       // named stop), recorded on the site in sites.json with its reason. It stays in the results and
       // the queue, so it is never hidden, but it is not workable: no pass is spent on it.
-      const limit = (s.site.known_limits ?? []).find((k) => k.item === r.id) ?? null;
+      // A known limit with review_after stops excusing the item on that date, so a limit set from a
+      // measurement is measured again rather than kept for ever (26 Oct 2026).
+      const limit = (s.site.known_limits ?? []).find((k) => k.item === r.id && !(k.review_after && Date.parse(k.review_after) <= now)) ?? null;
       const prot = (s.site.protected_pages ?? []).filter((pp) => [r.detail, ...(r.evidence ?? []), ...(r.missing ?? [])].join(" ").includes(pp.path));
       briefs.push({
         id: `sr-${s.site.domain}-${r.id}`,

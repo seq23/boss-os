@@ -182,6 +182,31 @@ export interface OperationsLedgers {
   named_stops: number;
   /** Latest wrapper outcome per launchd script, joined to a path by the script it cites. */
   local_jobs: Array<{ local_job: string; outcome: string; finished_at: number; reason: string | null }>;
+  /** Today's failed runs, each with what ran and why it failed, so the count can open its detail. */
+  failed_today?: Array<{ kind: "duty" | "cron"; name: string; reason: string | null; at: number; duty_id?: string | null; employee_id?: string | null }>;
+}
+
+/** One failed run as Today shows it when she opens the count (owner, 26 Oct 2026: "I couldn't click it"). */
+export interface FailedRun { what: string; why: string; at: number | null; employeeId: string | null }
+
+/**
+ * Every failure behind the "N failed runs" count, one line each. The count and this list are built
+ * from the same ledgers, so the number never promises more lines than it opens.
+ */
+export function failedRunItems(l: OperationsLedgers | null): FailedRun[] {
+  if (!l) return [];
+  const out: FailedRun[] = (l.failed_today ?? []).map((f) => ({
+    what: f.kind === "cron" ? "The maintenance run" : `"${f.name}"`,
+    why: f.reason ?? "No reason was recorded.",
+    at: f.at,
+    employeeId: f.employee_id ?? null,
+  }));
+  const counted = l.runs.duty_failed_today + l.runs.cron_failed_today;
+  const listed = out.length;
+  if (counted > listed) out.push({ what: `${counted - listed} more scheduled run${counted - listed === 1 ? "" : "s"}`, why: "Failed today; Team → Duties has each one.", at: null, employeeId: null });
+  if (l.outreach.failed > 0) out.push({ what: `${l.outreach.failed} outreach email${l.outreach.failed === 1 ? "" : "s"}`, why: "Did not send today; Team → Outreach has each one.", at: l.outreach.last?.at ?? null, employeeId: "emp_relationship" });
+  if (l.task_notices.failed > 0) out.push({ what: `${l.task_notices.failed} task notice${l.task_notices.failed === 1 ? "" : "s"}`, why: "Did not send today.", at: l.task_notices.last?.at ?? null, employeeId: null });
+  return out;
 }
 
 export interface OperationsRow {
@@ -262,6 +287,8 @@ export interface Synopsis {
   running: string;
   sent: string;
   needs: string;
+  /** What the failed-runs count opens: one line per failure. */
+  failed: FailedRun[];
   counts: {
     dutiesToday: number;
     pathsScheduled: number;
@@ -309,7 +336,8 @@ export function synopsis(input: {
     sent: l
       ? `Sent today: outreach ${counts.outreachSent}${counts.outreachFailed ? ` (${counts.outreachFailed} failed)` : ""} · task notices ${counts.noticesSent}`
       : "Sent today: ledgers not loaded",
-    needs: `Needs you: ${counts.unassigned} unassigned · ${counts.failedRuns} failed runs · ${counts.namedStops} named stops`,
+    needs: `Needs you: ${counts.unassigned} unassigned · ${counts.failedRuns} failed run${counts.failedRuns === 1 ? "" : "s"} · ${counts.namedStops} named stop${counts.namedStops === 1 ? "" : "s"}`,
+    failed: failedRunItems(l),
     counts,
   };
 }

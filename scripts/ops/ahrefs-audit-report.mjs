@@ -23,17 +23,28 @@
  * ─── AND THE SEARCH EVIDENCE IS NOT OPTIONAL ────────────────────────────────
  *
  * Owner's standing correction after five false alarms in this portfolio: a bare "nothing found" is
- * not acceptable and has been wrong before. `searched` carries the mailbox, the queries, the date
- * range and the message count, and both this script and the endpoint refuse a report without it.
+ * not acceptable and has been wrong before. A MAILBOX pass's `searched` carries the mailbox, the
+ * queries, the date range and the message count. A QUEUE pass (SR_SCOPE_REPO set: the daily Search
+ * Readiness run, which reads no mailbox) carries the queue file, when it was written, the repo and
+ * the brief ids — built here from the runner's scope snapshot, never from the model's wording
+ * (26 Oct 2026: seven queue passes were refused under the mailbox rule and 129 fixes never reached
+ * Boss OS). Both this script and the endpoint refuse a report without its kind's evidence
+ * (`searchEvidenceGap`, src/shared/boss/siteAudit/evidence.mjs).
  */
 
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { mayAutoFix, whyNoAutoFix, DISPOSITIONS } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
+import { carriesAddress, searchEvidenceGap, queueEvidence, scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
+import { repoForDomain, domainOfRow } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
 const DIR = process.env.BOSS_OS_SITE_AUDIT_DIR ?? `${process.env.HOME}/.boss-os/site-audit`;
 const FILE = join(DIR, "findings.json");
+/** Written by ahrefs-audit-fix.sh before a scoped pass starts: which queue briefs it was handed. */
+const SCOPE_FILE = join(DIR, "scope.json");
+const QUEUE_FILE = process.env.SR_QUEUE_FILE ?? `${process.env.HOME}/.boss-os/search-readiness/fix-queue.json`;
+const SCOPE_REPO = process.env.SR_SCOPE_REPO || null;
 
 /**
  * How old a findings file may be and still count as this run's.
@@ -88,19 +99,44 @@ async function main() {
       "shape of a job that runs and does nothing.");
   }
 
-  const searched = payload?.searched;
-  if (!searched || typeof searched !== "object" || !searched.queries || !searched.mailbox) {
+  /*
+   * THE EVIDENCE FITS THE PASS. A queue pass reads no mailbox, so its evidence is the queue and the
+   * briefs it was handed — from the runner's snapshot, or from the queue itself when no snapshot was
+   * written (a re-delivery by hand). The model's own `searched` is not sent for a queue pass.
+   */
+  let searched = payload?.searched;
+  if (SCOPE_REPO) {
+    let scope = null;
+    try { scope = JSON.parse(await readFile(SCOPE_FILE, "utf8")); } catch { /* no snapshot */ }
+    if (!scope) {
+      try { scope = scopeSnapshot({ queue: JSON.parse(await readFile(QUEUE_FILE, "utf8")), queueFile: QUEUE_FILE, repo: SCOPE_REPO, briefIds: (process.env.SR_SCOPE_BRIEFS ?? "").split(/[\s,]+/).filter(Boolean) }); }
+      catch { scope = { queue_file: QUEUE_FILE, repo: SCOPE_REPO, item_ids: [] }; }
+    }
+    searched = queueEvidence({ scope, repo: SCOPE_REPO, findings });
+  }
+  const gap = searchEvidenceGap(searched);
+  if (gap) {
     stop(11, "NO_SEARCH_EVIDENCE",
-      "`searched` must carry the mailbox, the queries, the date range and the message count.",
+      `${gap}.`,
       "A bare 'nothing found' is not acceptable and has been wrong in this portfolio before.");
+  }
+
+  /*
+   * ONE LIST SAYS WHICH REPO SERVES A DOMAIN (src/shared/boss/siteAudit/domainRepos.mjs, built from
+   * sites.json). A row whose repo is the one that list names is mapped by it; the endpoint checks
+   * the same list. A queue pass maps from the grid manifest by construction, and on 26 Oct 2026 the
+   * endpoint refused a whole pass for writing "wrangler_toml" there.
+   */
+  for (const f of findings) {
+    if (f?.repo && f.mapped_by !== "repo_identity" && repoForDomain(domainOfRow(f))?.repo === f.repo) f.mapped_by = "grid_manifest";
   }
 
   for (const [i, f] of findings.entries()) {
     for (const field of TEXT_FIELDS) {
       const v = f?.[field];
-      if (typeof v === "string" && v.includes("@")) {
+      if (carriesAddress(v)) {
         stop(12, `ADDRESS_IN_${field.toUpperCase()}`,
-          `Finding ${i + 1} carries an '@'. This table holds public domains and repository names.`,
+          `Finding ${i + 1} carries an email address. This table holds public domains and repository names.`,
           "THE WHOLE BATCH was refused — nothing was sent.");
       }
     }
@@ -134,9 +170,9 @@ async function main() {
           `Finding ${i + 1} claims a fix in ${f?.repo} and names no pull request.`,
           "An unverifiable fix is not recorded.");
       }
-      if (f?.mapped_by !== "repo_identity") {
+      if (f?.mapped_by !== "repo_identity" && f?.mapped_by !== "grid_manifest") {
         stop(17, "REPO_MATCHED_BY_RESEMBLANCE",
-          `Finding ${i + 1} names ${f?.repo} without REPO_IDENTITY.md evidence for the domain.`,
+          `Finding ${i + 1} names ${f?.repo} without REPO_IDENTITY.md or grid-manifest evidence for the domain.`,
           "dentistryguides and thedentistryguides are two different projects. A resemblance is not a mapping.");
       }
     }
@@ -159,7 +195,8 @@ async function main() {
   const res = await fetch(`${ORIGIN}/api/boss/engineering/site-audit-findings`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ run_id: payload.run_id ?? null, searched, findings }),
+    // ran_at: when the pass wrote its findings, so a late re-delivery never supersedes a later pass.
+    body: JSON.stringify({ run_id: payload.run_id ?? null, ran_at: Math.trunc(info.mtimeMs), searched, findings }),
   });
   if (!res.ok) throw new Error(`site audit findings failed (${res.status}): ${(await res.text()).slice(0, 400)}`);
 

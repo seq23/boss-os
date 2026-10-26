@@ -14,6 +14,7 @@ import { WIRING_BY_BACKEND } from "../router/backends";
 // One statement of which tiers a vendor gives away, shared with the router and the guard.
 import { routeIsBilled } from "../backends/guard";
 import { dayIdInZone, wallClock, zonedTime } from "../../../shared/boss/timezone";
+import { auditFindingAlerts } from "../../../shared/boss/siteAudit/todayAlerts.mjs";
 import { ok, badRequest, notFound, conflict } from "../lib/http";
 import { runPromotionSweep } from "./memory";
 import { applyLoopActionToFollowUp, surfaceOverdueFollowUps } from "../relationships/follow_ups";
@@ -23,7 +24,6 @@ import { pendingApprovals } from "../approvals/pending";
 import { ensureRunOfShow, readRunOfShow, closeBlocksForGate, RUN_OF_SHOW } from "../today/runOfShow";
 import { coachingFocus, lensFor } from "../today/faculty";
 import { deliverableAlerts } from "../today/deliverables";
-import { bookNagAlerts } from "../capital/bookNag";
 import { outreachStopAlerts } from "../today/outreachStops";
 import { unansweredQuestionAlerts } from "../intake/questions";
 import { credentialAlerts } from "../today/credentials";
@@ -839,16 +839,16 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
      * AND IT IS AN ALERT, NEVER A CONTRACT LINE. Her rule, 13 September 2026: "something not
      * working should never be in today's contract it should be in the inbox."
      */
-    reads.all<{ disposition: string; n: number; worst_project: string; worst_errors: number | null }>(A, () => env.DB.prepare(
-      `SELECT disposition,
-              COUNT(*) AS n,
-              project AS worst_project,
-              MAX(COALESCE(errors, 0)) AS worst_errors
+    /*
+     * ROWS, NOT A GROUP BY (26 Oct 2026). Whether a row still needs her depends on the one domain →
+     * repo list and the off-limits list, which live in code (auditFindingAlerts), not in SQL.
+     */
+    reads.all<{ disposition: string; project: string; domain: string | null; repo: string | null; errors: number | null }>(A, () => env.DB.prepare(
+      `SELECT disposition, project, domain, repo, errors
          FROM site_audit_findings
         WHERE archived_at IS NULL
           AND status = 'new'
-          AND disposition IN ('no_repo', 'surfaced', 'off_limits')
-        GROUP BY disposition`,
+          AND disposition IN ('no_repo', 'surfaced', 'off_limits')`,
     )),
 
     reads.first<{ ts: number }>(A, () => env.DB.prepare(
@@ -1048,17 +1048,16 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
   // The five read-time producers run in parallel, and only when the alerts block is wanted: each
   // is its own handful of reads, and in series they were the slowest stretch of the assembler.
   // The credential, question and dismissal reads ride in one batch with each other; the deliverable
-  // producer keeps its own two (it writes between them) and the book nag reads no table.
+  // producer keeps its own two (it writes between them).
   const alertReads = batchReads(db);
   const dismissalsP = A ? alertReads.all<any>(true, () => dismissalsStatement(env, now)) : undefined;
   const produced = !A ? [] : (await Promise.all([
     deliverableAlerts(env, now).catch(() => []),
     credentialAlerts(env, now, alertReads).catch(() => []),
-    bookNagAlerts(env, now).catch(() => []),
     unansweredQuestionAlerts(env, now, alertReads).catch(() => []),
     outreachStopAlerts(env).catch(() => []),
     alertReads.flush(),
-  ])).slice(0, 5) as { severity: string; text: string; source_type: string; source_id: string | null }[][];
+  ])).slice(0, 4) as { severity: string; text: string; source_type: string; source_id: string | null }[][];
   for (const list of produced) alerts.push(...list);
 
   /*
@@ -1078,10 +1077,9 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
    * not share a failure mode with the work: the report reaches her whether or not the mailbox does.
    */
   /*
-   * MONIQUE ASKING FOR THE BOOK. Evaluated on read, beside the other two, for the same reason: a
-   * standing ask that depends on a cron dies with the cron and says nothing. See capital/bookNag.ts
-   * for why this is not an `owned_deliverables` row — that mechanism completes, and this condition
-   * comes back every week.
+   * NO BOOK NAG (owner, 26 Oct 2026: "Yes, inbox only"). Monique works from the inbox deal grid; a
+   * book she emails is an optional extra, and its age raises nothing here or anywhere. The 10 Sep
+   * 2026 "ask her for it every 7 days" rule and capital/bookNag.ts are retired; see lib/her-lots.mjs.
    */
   /*
    * AN EMPLOYEE WAITING ON AN ANSWER. Same mechanism and the same reason: a question asked by mail
@@ -1142,29 +1140,8 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
    * observation, and an alert that only names a defect class sends her to ask somebody what it
    * means.
    */
-  for (const f of auditFindings.results ?? []) {
-    const site = f.worst_project;
-    const many = f.n === 1 ? "" : ` (${f.n} sites in all)`;
-    const errs = (f.worst_errors ?? 0) > 0 ? `${f.worst_errors} errors` : "errors";
-    if (f.disposition === "no_repo") {
-      alerts.push({
-        severity: "high",
-        text: `Danielle found ${errs} on ${site}${many} and no repository claims that domain, so she could not fix it. Tell her which project owns the site, or say it is not one of ours.`,
-        source_type: "tasks", source_id: "duty_site_audit_repair",
-      });
-    } else if (f.disposition === "off_limits") {
-      alerts.push({
-        severity: "medium",
-        text: `Danielle found ${errs} on ${site}${many} in a repository on the fixer's off-limits list, so she changed nothing. Somebody has to fix these by hand or take the repository off that list.`,
-        source_type: "tasks", source_id: "duty_site_audit_repair",
-      });
-    } else {
-      alerts.push({
-        severity: "medium",
-        text: `Danielle found ${errs} on ${site}${many} that she could not safely fix on her own and left for a person to decide.`,
-        source_type: "tasks", source_id: "duty_site_audit_repair",
-      });
-    }
+  for (const a of auditFindingAlerts(auditFindings.results ?? [])) {
+    alerts.push({ severity: a.severity, text: a.text, source_type: "tasks", source_id: "duty_site_audit_repair" });
   }
 
   /*

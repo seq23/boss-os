@@ -44,13 +44,14 @@ capital.get("/book", async (c) => {
   /*
    * NO BOOK IS AN ANSWER WITH A REASON, NOT AN EMPTY LIST. A caller handed `{ lines: [] }` cannot
    * tell "she has never sent one" from "she has nothing to sell", and those need opposite responses
-   * — one is a question for her and the other is a quiet week.
+   * — one is "no optional extra" and the other is a quiet week. Never a question for her (owner,
+   * 26 Oct 2026: "Yes, inbox only"; the hunts and the grid work from the inbox deal flow).
    */
   if (!live) {
     return ok(c, {
       book: null,
       lines: [],
-      why: "No live book has ever been filed. Email it to boss@sequoiataylor.com with #monique.",
+      why: "No book has been filed. Monique works from the inbox deal grid; a book is an optional extra.",
     });
   }
   const lines = await currentBookLines(c.env);
