@@ -87,14 +87,19 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
          draft_message_id = COALESCE(excluded.draft_message_id, lp_reply_drafts.draft_message_id),
          body_hash = COALESCE(excluded.body_hash, lp_reply_drafts.body_hash),
          status = CASE WHEN lp_reply_drafts.status = 'skipped' AND excluded.status IN ('drafted','not_answered')
-                       THEN 'skipped' ELSE excluded.status END,
+                       THEN 'skipped'
+                       -- Her own words held in their thread (lp/decideReply.ts) wait for her tap; a read
+                       -- that still sees "they wrote again" does not take them off her email.
+                       WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
+                       THEN 'drafted' ELSE excluded.status END,
          tap_token = COALESCE(lp_reply_drafts.tap_token, excluded.tap_token),
          drafted_at = COALESCE(lp_reply_drafts.drafted_at, excluded.drafted_at),
          sent_at = COALESCE(excluded.sent_at, lp_reply_drafts.sent_at),
          last_reply_at = excluded.last_reply_at, updated_at = excluded.updated_at,
          -- The held draft word for word (0296). NULL when she edited it in Gmail: then the morning email
          -- shows no "Send as is", because it could not show what would be sent.
-         draft_body = excluded.draft_body,
+         draft_body = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
+                           THEN lp_reply_drafts.draft_body ELSE excluded.draft_body END,
          said = COALESCE(excluded.said, lp_reply_drafts.said),
          last_reply_text = COALESCE(excluded.last_reply_text, lp_reply_drafts.last_reply_text)`,
     ).bind(

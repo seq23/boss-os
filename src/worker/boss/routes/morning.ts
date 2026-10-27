@@ -27,9 +27,18 @@ const MAX_PAYLOAD = 900_000;
 
 interface Row { day: string; payload: string; sent_at: number | null; created_at: number; updated_at: number }
 
-function view(r: Row) {
-  let payload: unknown = null;
+/**
+ * A card she answered by reply ("N: …", lp/decideReply.ts) leaves Decide at once and is kept under
+ * `answered`, so its screen still opens. The stored list keeps its order: the numbers in the email
+ * she is answering never shift under her.
+ */
+export function view(r: Row) {
+  let payload: any = null;
   try { payload = JSON.parse(r.payload); } catch { payload = null; }
+  if (payload && Array.isArray(payload.decide)) {
+    const answered = payload.decide.filter((d: any) => d?.answered_at);
+    payload = { ...payload, decide: payload.decide.filter((d: any) => !d?.answered_at), answered };
+  }
   return { day: r.day, sent_at: r.sent_at, updated_at: r.updated_at, payload };
 }
 

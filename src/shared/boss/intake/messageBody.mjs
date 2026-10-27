@@ -321,6 +321,24 @@ export function stripSignature(text) {
 }
 
 /**
+ * HER OWN WORDS, NEVER THE EMAIL SHE IS ANSWERING (27 Oct 2026).
+ *
+ * A reply carries the whole email it answers under "On … wrote:" and `>` lines. On 27 Oct 2026 her
+ * "2: Hi …, Tuesday at 9am works" on Simone's morning email was handed to Monique "Matched on:
+ * seller, shares" and queued a $200M seller hunt: those words were only in the quoted morning
+ * (the new-deals grid), never in hers. Every keyword reader (routing, handoff, hunt, triage, list
+ * edits, numbered answers) reads THIS, never `readable`. One rule, used everywhere, so a lane cannot
+ * strip one way and its neighbour another. A forwarded message is not a quote: its body stays.
+ */
+export const QUOTE_START = /\n[ \t]*On [^\n]{4,200}?(?:\n[^\n]{0,200}?){0,2}?wrote:[ \t]*(?=\n|$)|\n[ \t]*-{2,}[ \t]*Original Message|\n[ \t]*>/i;
+
+export function ownWords(text) {
+  const t = `\n${String(text ?? "").replace(/\r\n?/g, "\n")}`;
+  const m = QUOTE_START.exec(t);
+  return (m ? t.slice(0, m.index) : t).trim();
+}
+
+/**
  * What goes on the work card: readable, decoded, and without the trailer.
  *
  * ONE FUNCTION, so the intake and the guard that checks the intake can never mean two different

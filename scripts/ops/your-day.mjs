@@ -727,7 +727,8 @@ export function buildDay(data, now = Date.now()) {
 
   const digest = {
     day: today, subject: laid.subject, built_at: new Date(now).toISOString(),
-    decide: decide.map(({ id, title, body, details, draft, buttons, plan, from, screen }) => ({ id, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, plan: plan ?? null, from: from ?? "boss", screen })),
+    // `key` rides along so her "N: …" reply reaches the card it numbers (src/worker/boss/lp/decideReply.ts).
+    decide: decide.map(({ id, key, title, body, details, draft, buttons, plan, from, screen }) => ({ id, key: key ?? null, title, body: body ?? "", details: details ?? [], draft: draft ?? null, buttons, plan: plan ?? null, from: from ?? "boss", screen })),
     deals: deals.map(({ id, company, side, size, price, structure, from, when, received_on, url, screen }) => ({ id, company, side, size, price: price ?? "—", structure: structure ?? "—", from, when, received_on: received_on ?? null, email_url: /^https:\/\/mail\.google\.com\//.test(String(url ?? "")) ? url : null, screen })),
     found: found.map(({ id, text, links, deal, holders, screen }) => ({ id, text, links: links ?? [], deal: deal ?? null, holders, screen })),
     found_grid: foundGrid,

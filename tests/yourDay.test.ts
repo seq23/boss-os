@@ -81,6 +81,10 @@ describe("the one morning email", () => {
     expect(screens.every((u) => /^https:\/\/boss\.sequoiataylor\.com\/\?morning=2026-10-23&item=decide-[0-9a-f]{10}$/.test(u!))).toBe(true);
     expect(e.digest.decide.map((d: any) => d.screen)).toEqual(screens);
     expect(e.digest.decide.map((d: any) => d.title)).toEqual(numbered.map((l) => l.replace(/^\d+\. /, "")));
+    // Each kept card carries its key, so her "N: …" reply reaches the card it numbers (27 Oct 2026:
+    // without it no numbered answer could ever resolve, src/worker/boss/lp/decideReply.ts).
+    expect(e.digest.decide.map((d: any) => d.key)).toContain("approval:apr_x1");
+    expect(e.digest.decide.some((d: any) => String(d.key).startsWith("rc:"))).toBe(true);
     // An Inbox approval opens that approval, never the home page.
     expect(decide).toContain("Open it to approve or decline: https://boss.sequoiataylor.com/?tab=inbox&approval=apr_x1");
     expect(decide).not.toMatch(/: https:\/\/boss\.sequoiataylor\.com\/\n/);
