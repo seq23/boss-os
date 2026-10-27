@@ -30,4 +30,7 @@ export const ERRAND_FROM: string;
 export const ERRAND_REPLY_TO: string;
 export function errandMail(i: { to: string; subject: string; text: string; cc?: string[]; inReplyTo?: string | null }): { from: string; to: string[]; reply_to: string; subject: string; text: string; cc?: string[]; headers?: Record<string, string> };
 export function errandPayloadProblems(p: Record<string, any>, o?: { owner?: string }): string[];
-export function postErrandMail(payload: Record<string, any>, fetchImpl?: typeof fetch, o?: { key?: string }): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
+export function postErrandMail(payload: Record<string, any>, fetchImpl?: typeof fetch, o?: { key?: string; commandId?: string | null }): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
+
+export function archiveSentMail(payload: Record<string, any>, id: string, fetchImpl?: typeof fetch, opts?: { commandId?: string | null; key?: string | null }): Promise<boolean>;
+export function flushSentMail(fetchImpl?: typeof fetch, directory?: string): Promise<boolean>;

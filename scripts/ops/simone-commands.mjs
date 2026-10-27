@@ -28,7 +28,7 @@
  *   npm run -s vault:run -- node scripts/ops/simone-commands.mjs
  */
 import { bossApi, askClaudeJson, googleToken, gmailHeaders, OWNER_TO } from "./lib/duty-kit.mjs";
-import { sendersFor, employeeMail, postEmployeeMail, errandMail, postErrandMail } from "./notify.mjs";
+import { sendersFor, employeeMail, postEmployeeMail, flushSentMail, errandMail, postErrandMail } from "./notify.mjs";
 import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
 import { finishPrep } from "./meeting-prep.mjs";
 import { PRODUCT_REPOS, ACCESS_CODE_SHAPE, errandText, errandProblems, followUpProblems, OWNER_TZ } from "../../src/shared/boss/commands/parse.mjs";
@@ -141,6 +141,7 @@ export function noticeArgs(id, notice, to = OWNER_TO) {
 }
 
 async function main() {
+  await flushSentMail();
   const api = await bossApi();
   const work = await api.post("/commands/tick");
   let did = 0;
@@ -174,7 +175,8 @@ async function main() {
       await api.post(`/commands/${e.id}/failed`, { why: built ? `the request was not fit to send (${built.problems.join("; ")})` : (r.why ?? "no request came back") });
       failures.push(e.id); continue;
     }
-    const sent = await postErrandMail(errandMail({ to: e.spec.to, subject: built.subject, text: built.text }));
+    if ((await api.get(`/commands/${e.id}`)).state !== "queued") continue;
+    const sent = await postErrandMail(errandMail({ to: e.spec.to, subject: built.subject, text: built.text }), fetch, { commandId: e.id });
     if (sent.ok) { await api.post(`/commands/${e.id}/errand-sent`, { message_id: sent.id, subject: built.subject, text: built.text, request: built.request }); did++; }
     else { await api.post(`/commands/${e.id}/failed`, { why: `the send was refused (${sent.error})` }); failures.push(e.id); }
   }
@@ -184,7 +186,8 @@ async function main() {
   for (const f of work.errand_follow_ups ?? []) {
     const problems = followUpProblems(f.text);
     if (problems.length) { await api.post(`/commands/${f.id}/failed`, { why: `the follow-up was not fit to send (${problems.join("; ")})` }); failures.push(f.id); continue; }
-    const sent = await postErrandMail(errandMail({ to: f.to, subject: f.subject, text: f.text, inReplyTo: f.in_reply_to }));
+    if ((await api.get(`/commands/${f.id}`)).state !== "follow_up") continue;
+    const sent = await postErrandMail(errandMail({ to: f.to, subject: f.subject, text: f.text, inReplyTo: f.in_reply_to }), fetch, { commandId: f.id });
     if (sent.ok) { await api.post(`/commands/${f.id}/errand-followed-up`, { message_id: sent.id }); did++; }
     else { console.error(`NAMED STOP [ERRAND_FOLLOW_UP_NOT_SENT] ${f.id}: ${sent.error}`); failures.push(f.id); }
   }
@@ -213,6 +216,7 @@ async function main() {
   const again = (work.lookups?.length || work.drafts?.length || work.codes?.length || work.errands?.length || work.errand_follow_ups?.length || did) ? await api.post("/commands/tick") : work;
   const [simone] = sendersFor("Simone");
   for (const n of again.notices ?? []) {
+    if ((await api.get(`/commands/${n.id}`)).result?.owner_handling) continue;
     const res = await postEmployeeMail(simone, employeeMail(simone, noticeArgs(n.id, n.notice)));
     if (res.ok) {
       // An errand's answer also goes into her morning email: a line, or a Decide item for a card ask.
