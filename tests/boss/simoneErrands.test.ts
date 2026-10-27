@@ -79,7 +79,8 @@ describe("her errand by email", () => {
     expect(res.outcome).toBe("ERRAND_REPLY");
     expect(res.reply).toBeNull();
     const row = await env.DB.prepare(`SELECT * FROM boss_commands WHERE id = ?`).bind(id).first<any>();
-    expect(row.state).toBe("replied");
+    expect(row.state).toBe("needs_card");
+    expect(JSON.parse(row.result).booking?.confirmed ?? false).toBe(false);
     expect(row.notice_state).toBe("due");
     const notice = JSON.parse(row.notice);
     expect(notice.subject).toBe("Your request needs you: they want a card");
