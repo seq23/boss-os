@@ -34,5 +34,7 @@ export declare function decodeBase64Text(text: string): string;
 export declare function htmlToText(html: string): string;
 export declare function readableText(raw: string): ReadableText;
 export declare function stripSignature(text: string): string;
+export declare const QUOTE_START: RegExp;
+export declare function ownWords(text: string | null | undefined): string;
 export declare function taskBodyFrom(raw: string): TaskBody;
 export declare function mimeTellsIn(body: string | null | undefined): string[];

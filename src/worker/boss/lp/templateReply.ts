@@ -19,21 +19,12 @@ import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { approveTemplate, redraftTemplate, followUpsReleased } from "./desk";
 import { renderProspect, tapUrl } from "../../../shared/boss/lp/plan.mjs";
+import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
+import { decideCardOf } from "./decideReply";
 
 /** "5: …", "#5 …", "5. …", "5) …" at the start of her reply. */
 export const NUMBERED_REPLY_RE = /^\s*#?(\d{1,2})\s*(?::|\.|\)|-|—|\s)\s*([\s\S]*)$/;
 const TEMPLATE_ID_RE = /\b(ptp_[a-z0-9]{6,40})\b/i;
-
-/** The card a numbered reply names, from the newest morning she was sent. */
-async function cardOf(env: Env, n: number): Promise<{ key: string; title: string } | null> {
-  const r = await env.DB.prepare(`SELECT payload FROM morning_digests ORDER BY day DESC LIMIT 1`).first<{ payload: string }>();
-  if (!r) return null;
-  try {
-    const p = JSON.parse(r.payload);
-    const d = (p?.decide ?? [])[n - 1];
-    return d?.key ? { key: String(d.key), title: String(d.title ?? "") } : null;
-  } catch { return null; }
-}
 
 /** Her words that are a rule for every future email, not a one-off edit. */
 const GENERAL = /\b(?:never|always|every(?:\s+(?:email|template|time))?|from now on|in future|going forward|don't ever)\b/i;
@@ -63,15 +54,15 @@ export function redraftReply(tpl: any, opts: { applied?: string[]; kept?: string
   ].join("\n");
 }
 
-export async function prospectTemplateFromMail(env: Env, text: string, now = Date.now()): Promise<{ note: string; outcome: string } | null> {
+export async function prospectTemplateFromMail(env: Env, text: string, now = Date.now(), day: string | null = null): Promise<{ note: string; outcome: string } | null> {
   // Her words only: never the quoted morning email under them.
-  const her = String(text ?? "").split(/\n\s*On .{4,200} wrote:\s*\n|\n-{2,}\s*Original Message|\n>/i)[0]!.trim();
+  const her = ownWords(text);
   let templateId: string | null = null;
   let words = her;
   const numbered = NUMBERED_REPLY_RE.exec(her);
   if (numbered) {
-    const card = await cardOf(env, Number(numbered[1]));
-    if (card?.key.startsWith("prospect-template:")) { templateId = card.key.slice("prospect-template:".length); words = numbered[2]!.trim(); }
+    const card = await decideCardOf(env, Number(numbered[1]), day);
+    if (card?.key?.startsWith("prospect-template:")) { templateId = card.key.slice("prospect-template:".length); words = numbered[2]!.trim(); }
   }
   if (!templateId) {
     const id = TEMPLATE_ID_RE.exec(her)?.[1];

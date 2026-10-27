@@ -305,3 +305,53 @@ export async function createDraftForOutreach(
   });
   return { ...outcome, gmail_drafts_id: id, already: false };
 }
+
+/**
+ * HER WORDS, HELD AS A REPLY IN THE PERSON'S OWN THREAD (27 Oct 2026). Her numbered answer to an LP
+ * Decide card ("2: Hi …") becomes the held draft the one-tap "Send as is" already sends
+ * (routes/lpTap.ts → drafts.send, pinned to the message id returned here). Nothing is sent here: the
+ * delegation grants gmail.compose, and drafts.create / drafts.update are all this calls. An existing
+ * held draft is replaced in place, so her mailbox never keeps two replies to one person.
+ */
+export function threadReplyMime(r: { to: string; subject: string; inReplyTo?: string | null; body: string }): string {
+  const subject = /^\s*re:/i.test(r.subject) ? r.subject : `Re: ${r.subject}`.trim();
+  return [
+    `To: ${r.to}`,
+    `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+    ...(r.inReplyTo ? [`In-Reply-To: ${r.inReplyTo}`, `References: ${r.inReplyTo}`] : []),
+    `Content-Type: text/plain; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    ``,
+    btoa(unescape(encodeURIComponent(r.body))),
+  ].join("\r\n");
+}
+
+export async function holdThreadReply(
+  env: Env,
+  mailbox: string,
+  r: { draftId?: string | null; to: string; subject: string; inReplyTo?: string | null; threadId?: string | null; body: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true; draftId: string; messageId: string | null } | { ok: false; why: string }> {
+  const creds = serviceAccountFrom(env);
+  if (!creds) return { ok: false, why: "the Google key is not on the Worker" };
+  const tok = await mintComposeToken(creds, mailbox, fetchImpl).catch(() => null);
+  if (!tok) return { ok: false, why: "Google could not be reached" };
+  if (!tok.ok) return { ok: false, why: `Google refused the sign-in (${tok.status})` };
+  const message = { raw: b64url(threadReplyMime(r)), ...(r.threadId ? { threadId: r.threadId } : {}) };
+  const call = (url: string, method: string, body: unknown) => fetchImpl(url, {
+    method, headers: { authorization: `Bearer ${tok.token}`, "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  try {
+    let res = r.draftId
+      ? await call(`${DRAFTS_ENDPOINT}/${encodeURIComponent(r.draftId)}`, "PUT", { id: r.draftId, message })
+      : null;
+    // The held draft was sent or deleted by hand: a fresh one in the same thread.
+    if (!res || res.status === 404) res = await call(DRAFTS_ENDPOINT, "POST", { message });
+    if (!res.ok) return { ok: false, why: `Gmail refused the draft (${res.status})` };
+    const j = (await res.json().catch(() => ({}))) as { id?: string; message?: { id?: string } };
+    if (!j.id) return { ok: false, why: "Gmail answered without a draft" };
+    return { ok: true, draftId: j.id, messageId: j.message?.id ?? null };
+  } catch (err) {
+    return { ok: false, why: `Gmail could not be reached (${(err as Error)?.message ?? err})` };
+  }
+}

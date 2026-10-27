@@ -48,7 +48,7 @@ function Draft({ draft }: { draft: { heading?: string; text: string } | null }) 
 }
 
 function find(payload: any, id: string): { kind: string; item: any } | null {
-  for (const kind of ["decide", "deals", "found", "done", "catchups"]) {
+  for (const kind of ["decide", "answered", "deals", "found", "done", "catchups"]) {
     const it = (payload?.[kind] ?? []).find((x: any) => x.id === id);
     if (it) return { kind, item: it };
   }
@@ -56,7 +56,7 @@ function find(payload: any, id: string): { kind: string; item: any } | null {
 }
 
 const KIND_LABEL: Record<string, string> = {
-  decide: "A decision for you", deals: "A new deal", found: "Something Monique found",
+  decide: "A decision for you", answered: "A decision you answered", deals: "A new deal", found: "Something Monique found",
   done: "Done for you", catchups: "Someone to catch up with",
 };
 

@@ -14,7 +14,7 @@ import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/li
 import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
 import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
-import { taskBodyFrom } from "../../../shared/boss/intake/messageBody.mjs";
+import { taskBodyFrom, ownWords } from "../../../shared/boss/intake/messageBody.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
 import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
@@ -28,6 +28,7 @@ import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
 import { dismissFromMail } from "../capital/dismiss";
 import { prospectTemplateFromMail } from "../lp/templateReply";
+import { decideAnswerFromMail, morningDayOf } from "../lp/decideReply";
 import { secretDoor } from "../service/secretHandoff";
 import { answerBlockFromMail } from "../service/blockReply";
 import { recordConstraints } from "../service/constraints";
@@ -475,6 +476,14 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const read = rawMessage ? taskBodyFrom(rawMessage) : null;
   const readable = read?.readable ?? "";
   const taskBody = read?.body ?? "";
+  /*
+   * HER WORDS, NOT THE EMAIL SHE IS ANSWERING (27 Oct 2026). Every keyword reader below (routing,
+   * handoff, the hunt, triage, list edits, a close, a book guess, a deadline, "your call") reads
+   * `own`. Her "2: …" on the morning email was handed to Monique "Matched on: seller, shares" and
+   * queued a $200M seller hunt from the QUOTED deals grid. `readable` still feeds the lanes that
+   * read a whole thread on purpose and the card's stored text.
+   */
+  const own = ownWords(readable);
 
   if (secrets?.line && secrets.onlySecrets) {
     await finish({ outcome: "SECRET_STORED", why: secrets.line, objectKey, reply: secrets.line });
@@ -504,7 +513,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * Monique email. Applied to D1 at once; Monique confirms in one line. When the edits are all the
    * reply said, nothing else opens; otherwise the rest of the message goes on as ordinary work.
    */
-  const listEdit = readable ? await listEditsFromMail(env, readable, mailId, now) : null;
+  const listEdit = own ? await listEditsFromMail(env, own, mailId, now) : null;
   if (listEdit?.onlyEdits) {
     await finish({ outcome: "LIST_EDITED", why: listEdit.note, objectKey, reply: listEdit.note });
     return { mailId, outcome: "LIST_EDITED", employeeId: null, taskId: null, reply: listEdit.note, messageId, signer: "Monique" };
@@ -517,6 +526,20 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     await finish({ outcome: "BLOCK_ANSWERED", why: blockAnswer.note, taskId: blockAnswer.taskId, objectKey, reply: blockReply });
     await audit(env.DB, { actor: "boss", lane: "ops", entityType: "inbound_mail", entityId: mailId, action: "block_answered", detail: { task_id: blockAnswer.taskId, door: blockAnswer.door } });
     return { mailId, outcome: "BLOCK_ANSWERED", employeeId: null, taskId: blockAnswer.taskId, reply: blockReply, messageId, signer: "Simone" };
+  }
+
+  /*
+   * HER "N: …" ON A MORNING DECIDE CARD REACHES THAT CARD (27 Oct 2026), before any command reader
+   * or desk sees it: an LP card holds her words as the reply in their thread for her one tap; a
+   * task card goes to that task's door; any other card keeps her words. Never a hunt or a new job.
+   */
+  const decideAnswer = own
+    ? await decideAnswerFromMail(env, { text: own, refs: threadRefs.refs, subject, mailId, now })
+    : null;
+  if (decideAnswer) {
+    const decideReply = [decideAnswer.note, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
+    await finish({ outcome: decideAnswer.outcome, why: decideAnswer.note, taskId: decideAnswer.taskId, employeeId: "emp_chief", objectKey, reply: decideReply });
+    return { mailId, outcome: decideAnswer.outcome, employeeId: "emp_chief", taskId: decideAnswer.taskId, reply: decideReply, messageId, signer: "Simone" };
   }
 
   // R19 — a line she marks `Always:` / `Never:` / `Standing rule:` / `Constraint:` is registered once and rides on every run.
@@ -535,17 +558,17 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone", jobs: command.jobs ?? [] };
   }
 
-  const constraints = standingConstraintsIn(readable);
+  const constraints = standingConstraintsIn(own);
   const constraintsAdded = constraints.length ? await recordConstraints(env, constraints, "email", mailId) : 0;
   const constraintNote = constraints.length
     ? `Standing rule${constraints.length === 1 ? "" : "s"} noted for every employee from now on: ${constraints.join(" · ")}${constraintsAdded < constraints.length ? " (some were already on record)" : ""}.`
     : null;
   // R12 — a deadline in her words rides on the task and is stated to the employee.
-  const due = dueTimeIn(`${subject}\n${readable}`, new Date(now));
+  const due = dueTimeIn(`${subject}\n${own}`, new Date(now));
 
   const origin = readable ? forwardedOrigin(readable) : null;
   const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
-  const haystack = `${subject}\n${readable}`;
+  const haystack = `${subject}\n${own}`;
   const route = routeToSeat(haystack, roster, to)!;
 
   /*
@@ -567,7 +590,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   let handoffNote: string | null = null;
   const handoff = handoffFor({
-    text: readable, subject: trueSubject, fromDepartment: route.seat.department ?? "",
+    text: own, subject: trueSubject, fromDepartment: route.seat.department ?? "",
     outcome: route.outcome,
   });
   if (handoff) {
@@ -617,7 +640,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * search run over nothing, reported as a quiet week.
    */
   const hunt = route.seat.department === "Relationships"
-    ? huntRequestIn(`${trueSubject}\n${readable}`)
+    ? huntRequestIn(`${trueSubject}\n${own}`)
     : null;
 
   /*
@@ -641,7 +664,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       .prepare(`SELECT id, name FROM owned_deliverables WHERE employee_id = ? AND state IN ('open','blocked') ORDER BY created_at`)
       .bind(route.seat.id)
       .all<{ id: string; name: string }>();
-    const close = closeDirectiveFor({ subject: trueSubject, text: readable, deliverables: owned.results ?? [] });
+    const close = closeDirectiveFor({ subject: trueSubject, text: own, deliverables: owned.results ?? [] });
     if (close && "ambiguous" in close) {
       const names = (owned.results ?? []).filter((d) => close.ambiguous.includes(d.id)).map((d) => `"${d.name}"`);
       closeQuestion =
@@ -665,13 +688,13 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     const result = await applyBookDirective(env, directive, mailId, now);
     if (result.failed) bookFailure = result.note;
     else bookNote = result.note;
-  } else if (readable && route.outcome !== "AMBIGUOUS" && looksLikeBook(route, readable)) {
+  } else if (own && route.outcome !== "AMBIGUOUS" && looksLikeBook(route, own)) {
     /*
      * NOT A BLOCKER ON THIS PATH. She did not ask for a book operation here — this branch GUESSED
      * that she meant one — so a refusal is something to tell her about while the message still
      * becomes ordinary work. Only an explicit verb earns the right to stop the message.
      */
-    const stored = await storeLiveBook(env, { text: readable, mailId, now });
+    const stored = await storeLiveBook(env, { text: own, mailId, now });
     bookNote = stored.note;
   }
 
@@ -755,7 +778,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const dismissAnswer = !planAnswer && !commentAnswer && !kdpAnswer
     // …and her numbered answer to the prospect-email card ("5: try again"), the same way (25 Oct 2026).
-    ? (await dismissFromMail(env, readable, now)) ?? (await prospectTemplateFromMail(env, readable, now))
+    ? (await dismissFromMail(env, own, now)) ?? (await prospectTemplateFromMail(env, own, now, morningDayOf(threadRefs.refs)))
     : null;
 
   /*
@@ -853,7 +876,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    */
   const triaged: Array<TriageJob<BossSeat>> =
     route.outcome === "DEFAULTED" && !handoffNote && !followed && !filedByVerb && !bookFailure && !question && Boolean(readable || subject)
-      ? triage({ subject: trueSubject, text: readable || trueSubject, roster })
+      ? triage({ subject: trueSubject, text: own || trueSubject, roster })
       : [];
   // A reply to Simone's daily or weekly email ("move the KDP item to Monday") carries the email
   // it answers. Only that email: it is built from Boss OS rows with nothing from the fund, so it
@@ -863,7 +886,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const triageTasks: Array<{ job: TriageJob<BossSeat>; taskId: string | null; failure: string | null }> = [];
   // Admitted INSIDE the one guarded admission branch below, never beside it (validate:book-verbs).
   const admitTriaged = async () => {
-    const preApproved = preApprovalIn(`${subject}\n${readable}`);
+    const preApproved = preApprovalIn(`${subject}\n${own}`);
     for (const [i, job] of triaged.entries()) {
       // No subject (the Tell Simone box, or a phone email without one): the ask itself is the title.
       const title = strippedSubject(trueSubject)
