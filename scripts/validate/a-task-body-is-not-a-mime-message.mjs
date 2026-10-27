@@ -240,7 +240,7 @@ if (process.argv.includes("--self-test")) {
   ), true);
   expect("external archives cannot hide a missing authorised oversize original", handlerUsesIt(
     realHandler?.replace(/await env\.VAULT\.put\(objectKey,[\s\S]*?\}\);/, "objectKey = null;") ?? null,
-  ).length > 0, true);
+  ), true);
   expect("a handler that stops keeping the original under the cap", handlerUsesIt(
     realHandler?.replace(/await env\.VAULT\.put\(key,[\s\S]*?\}\);/, "objectKey = null;") ?? null,
   ), true);
