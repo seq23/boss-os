@@ -218,3 +218,10 @@ it("reads a formerly misconfirmed card row honestly without rewriting the stored
   const [due] = await errandRemindersDue(env as never, Date.parse("2026-10-28T21:00:00Z"));
   expect(due!.notice.happened).toContain("NOT confirmed");
 });
+
+it("a named venue wins over the shared owner name when she has two live errands", async () => {
+  await seed("cmd_lantern");
+  await seed("cmd_other", { spec: { to: "booking@other.example.test" }, result: { request: "a table at The Other Room on Thursday, October 29" } });
+  expect((await openErrandFor(env as never, "booking@sevenrooms.com", Date.now(), { text: "Dear Alex Example, The Lantern Room needs your card." }))?.id).toBe("cmd_lantern");
+  expect(await openErrandFor(env as never, "booking@sevenrooms.com", Date.now(), { text: "Dear Alex Example, please add your card." })).toBeNull();
+});

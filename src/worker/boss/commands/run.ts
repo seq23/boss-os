@@ -638,6 +638,7 @@ export async function openErrandFor(env: Env, sender: string, now = Date.now(), 
     `SELECT c.*, m.from_addr AS owner_email FROM boss_commands c LEFT JOIN boss_inbound_mail m ON m.id = c.mail_id WHERE c.kind = 'errand' AND c.state IN (${ERRAND_LIVE.map(() => "?").join(",")}) AND c.updated_at > ? ORDER BY c.updated_at DESC LIMIT 50`,
   ).bind(...ERRAND_LIVE, now - ERRAND_WATCH_MS).all<CommandRow & { owner_email: string | null }>();
   const matches: CommandRow[] = [];
+  const venues: CommandRow[] = []; const owners: CommandRow[] = [];
   for (const r of results ?? []) {
     const to = String(j(r.spec).to ?? "").toLowerCase();
     if (!to) continue;
@@ -647,13 +648,18 @@ export async function openErrandFor(env: Env, sender: string, now = Date.now(), 
       const venue = String(result.request ?? spec.ask ?? "").match(/\bat\s+(.+?)\s+on\b/i)?.[1];
       const domainName = to.split("@")[1]?.split(".")[0];
       const ownerName = String(result.text ?? "").match(/assistant to\s+([^\r\n]+)/i)?.[1];
-      const identities = [venue, domainName, spec.venue, spec.owner_name, spec.owner_email, ownerName, r.owner_email, String(spec.owner_name ?? ownerName ?? "").trim().split(/\s+/)[0]].filter((v) => v && String(v).length >= 4);
+      const venueNames = [venue, domainName, spec.venue];
+      const ownerNames = [spec.owner_name, spec.owner_email, ownerName, r.owner_email, String(spec.owner_name ?? ownerName ?? "").trim().split(/\s+/)[0]];
       const content = `${message.subject ?? ""}\n${message.text ?? ""}`.toLowerCase();
       const normal = (v: string) => v.toLowerCase().replace(/[^a-z0-9@]+/g, " ").trim();
-      if (identities.some((v) => ` ${normal(content)} `.includes(` ${normal(String(v))} `))) matches.push(r);
+      const names = (values: unknown[]) => values.some((v) => v && String(v).length >= 4 && ` ${normal(content)} `.includes(` ${normal(String(v))} `));
+      if (names(venueNames)) venues.push(r);
+      else if (names(ownerNames)) owners.push(r);
     }
   }
-  return matches.length === 1 ? matches[0]! : null;
+  // A named venue resolves two live errands for the same owner; her name alone never guesses.
+  const best = matches.length ? matches : venues.length ? venues : owners;
+  return best.length === 1 ? best[0]! : null;
 }
 
 export function isBookingPlatform(sender: string): boolean {
