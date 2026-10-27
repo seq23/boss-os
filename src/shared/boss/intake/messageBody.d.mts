@@ -29,8 +29,8 @@ export interface TaskBody {
 export declare const MAX_READABLE_BYTES: number;
 export declare const MIME_TELLS: ReadonlyArray<{ name: string; test: RegExp }>;
 
-export declare function decodeQuotedPrintable(text: string): string;
-export declare function decodeBase64Text(text: string): string;
+export declare function decodeQuotedPrintable(text: string, charset?: string | null): string;
+export declare function decodeBase64Text(text: string, charset?: string | null): string;
 export declare function htmlToText(html: string): string;
 export declare function readableText(raw: string): ReadableText;
 export declare function stripSignature(text: string): string;

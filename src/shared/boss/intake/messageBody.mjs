@@ -109,7 +109,7 @@ function leafParts(section, boundary, depth = 0, out = []) {
  * is one word split across a line, and leaving the break in produces text that reads as a typo in
  * her instruction rather than as a decoding failure.
  */
-export function decodeQuotedPrintable(text) {
+export function decodeQuotedPrintable(text, charset) {
   const joined = String(text ?? "").replace(/=\r?\n/g, "");
   const bytes = [];
   for (let i = 0; i < joined.length; i += 1) {
@@ -124,16 +124,16 @@ export function decodeQuotedPrintable(text) {
     // Already a decoded character (a client that lied about its encoding); keep it as UTF-8 bytes.
     for (const b of new TextEncoder().encode(c)) bytes.push(b);
   }
-  return utf8(Uint8Array.from(bytes));
+  return utf8(Uint8Array.from(bytes), charset);
 }
 
 /** Base64 to text. Whitespace is stripped first — a MIME body is wrapped at 76 columns. */
-export function decodeBase64Text(text) {
+export function decodeBase64Text(text, charset) {
   const clean = String(text ?? "").replace(/[^A-Za-z0-9+/=]/g, "");
   if (!clean) return "";
   try {
     const bin = atob(clean);
-    return utf8(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+    return utf8(Uint8Array.from(bin, (c) => c.charCodeAt(0)), charset);
   } catch {
     /*
      * A TRUNCATED BASE64 PART IS NOT A REASON TO LOSE THE MESSAGE. Returning "" here would be a
@@ -144,9 +144,42 @@ export function decodeBase64Text(text) {
   }
 }
 
-function utf8(bytes) {
-  try { return new TextDecoder("utf-8", { fatal: false }).decode(bytes); }
-  catch { return String.fromCharCode(...bytes); }
+/** One `TextDecoder` per label: cheap to reuse, and a bad label only ever fails once. */
+const DECODERS = new Map();
+function decoderFor(label) {
+  let d = DECODERS.get(label);
+  if (d === undefined) {
+    try { d = new TextDecoder(label, { fatal: true }); } catch { d = null; }
+    DECODERS.set(label, d);
+  }
+  return d;
+}
+
+/**
+ * THE PART'S OWN CHARSET WINS (26 Oct 2026 held mail: a windows-1252 em dash and curly apostrophe,
+ * declared or not, came out as U+FFFD because this always decoded as UTF-8). A declared non-UTF-8
+ * charset decodes as itself; an undeclared or UTF-8-declared part that is not actually valid UTF-8
+ * (a client that lied) falls back to windows-1252, the one real mail clients actually emit — never
+ * a guess beyond that, and never a change to the bytes themselves.
+ */
+function utf8(bytes, charset) {
+  const label = String(charset ?? "").trim().toLowerCase();
+  if (label && !["utf-8", "utf8", "us-ascii", "ascii"].includes(label)) {
+    const d = decoderFor(label);
+    if (d) { try { return d.decode(bytes); } catch { /* fall through to UTF-8 / windows-1252 */ } }
+  }
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch {
+    const fallback = decoderFor("windows-1252");
+    if (fallback) { try { return fallback.decode(bytes); } catch { /* fall through */ } }
+    return String.fromCharCode(...bytes);
+  }
+}
+
+/** The charset a `Content-Type` header declares, lower-cased. Null when it names none. */
+function charsetIn(contentType) {
+  const m = /charset\s*=\s*"?([^";\s]+)"?/i.exec(String(contentType ?? ""));
+  return m ? m[1].toLowerCase() : null;
 }
 
 /** The named entities a mail client actually emits, plus every numeric one. */
@@ -198,12 +231,13 @@ function textOfPart(part) {
   // A .txt or .csv sent as an attachment is a file, not the message.
   if (disposition.startsWith("attachment")) return null;
 
+  const charset = charsetIn(headerIn(part, "content-type"));
   const encoding = (headerIn(part, "content-transfer-encoding") ?? "").toLowerCase();
   const raw = bodyOf(part);
   const decoded = encoding.includes("base64")
-    ? decodeBase64Text(raw)
+    ? decodeBase64Text(raw, charset)
     : encoding.includes("quoted-printable")
-      ? decodeQuotedPrintable(raw)
+      ? decodeQuotedPrintable(raw, charset)
       : raw;
   return { html: type.startsWith("text/html"), text: decoded };
 }
@@ -224,11 +258,12 @@ export function readableText(raw) {
   if (!boundary) {
     const encoding = (headerIn(source, "content-transfer-encoding") ?? "").toLowerCase();
     const type = (headerIn(source, "content-type") ?? "").toLowerCase();
+    const charset = charsetIn(headerIn(source, "content-type"));
     const body = bodyOf(source);
     const decoded = encoding.includes("base64")
-      ? decodeBase64Text(body)
+      ? decodeBase64Text(body, charset)
       : encoding.includes("quoted-printable")
-        ? decodeQuotedPrintable(body)
+        ? decodeQuotedPrintable(body, charset)
         : body;
     const text = type.startsWith("text/html") ? htmlToText(decoded) : decoded;
     return { text: cap(text.trim()), format: type.startsWith("text/html") ? "html" : "plain", parts: 1 };

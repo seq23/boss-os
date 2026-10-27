@@ -124,6 +124,13 @@ describe("the guard sees the problem", () => {
     expect(cleanText("Run npm run capital:match -- --not 3 to hide it.")).not.toMatch(/npm|--/);
     expect(cleanText("Done at 14:05 UTC.")).toMatch(/^Done at \d{1,2}:05 am\.$/);
   });
+  it("a lost byte is never a black diamond in her mail (26 Oct 2026 held mail: windows-1252 bytes decoded as UTF-8)", () => {
+    expect(cleanText("check spam/junk folders � our automated emails are often rerouted")).toBe("check spam/junk folders our automated emails are often rerouted");
+    expect(cleanText("less than 24 hours� notice")).toBe("less than 24 hours notice");
+    const laid = fromLegacy({ who: "Simone", subject: "They answered your request", text: "They want a card. Their note: spam/junk folders � our emails� rerouted." });
+    expect(laid.text).not.toContain("�");
+    expect(laid.html).not.toContain("�");
+  });
 });
 
 describe("every sender, through the one layout, is plain", () => {

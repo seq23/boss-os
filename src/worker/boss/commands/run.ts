@@ -24,7 +24,7 @@ import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
 import {
-  commandsIn, commandReplyIn, ownWords, readErrandReply, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
+  commandsIn, commandReplyIn, ownWords, readErrandReply, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, errandReplyNotice, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
 } from "../../../shared/boss/commands/parse.mjs";
 import { clashes, createInvite, replaceGuest, deleteInvite, sendOne } from "./google";
 
@@ -261,10 +261,12 @@ export async function bounced(env: Env, id: string, address: string, now = Date.
   const spec = j(row.spec);
   await save(env, id, { state: "bounced", result: { ...j(row.result), bounced: address, bounced_at: now } }, now);
   const what = row.kind === "invite" ? `The invite to ${spec.guest_name ?? address}` : `The email to ${spec.recipient_name ?? address}`;
+  const body = row.kind === "invite" ? "Reply with it and I'll put them on the same invite (no new event)." : "Reply with it and I'll send the same email there.";
   await owe(env, id, {
     subject: `${what} bounced`,
     happened: `${what} bounced: ${address} doesn't take mail. What's the right address?`,
-    details: [row.kind === "invite" ? "Reply with it and I'll put them on the same invite (no new event)." : "Reply with it and I'll send the same email there."],
+    details: [body],
+    decide: [{ title: "What's the right address?", body }],
   });
 }
 
@@ -710,25 +712,12 @@ export async function errandReplied(env: Env, row: CommandRow, reply: { from: st
   }, now);
   const fresh = (await getCommand(env, row.id))!;
   const token = kind === "decide" || confirmed ? await ensureTap(env, fresh, now) : null;
-  const when = booking?.at ? bookingWhen(booking.at, booking.tz ?? ERRAND_TZ) : null;
-  const doNow = kind === "confirmed" || (confirmed && kind !== "card")
-    ? `Nothing. They confirmed ${when ?? (one ? one.time : "it")}. ${booking?.at && confirmed ? " I'll check with you 28 hours before." : ""}${offer.cancel_rule.length ? ` Cancelling: ${offer.cancel_rule.join(" ")}` : ""}`
-    : read.what_you_do;
-  const details = [`What I asked for: ${asked}`, `What they said: ${read.what_they_said}`, `What you need to do: ${doNow}`, ...unproven];
-  const subject = kind === "card" ? "Your request needs you: they want a card"
-    : kind === "confirmed" || (confirmed && booking?.at) ? "Your request is booked"
-    : kind === "decide" ? (offer.options.length > 1 ? "Your request needs you: pick a time" : "Your request needs you: they asked something")
-    : "They answered your request";
-  await owe(env, row.id, {
-    subject,
-    happened: `${spec.to} answered the request I sent for you.`,
-    details,
-    morning: kind === "card"
-      ? { decide: { title: `${spec.to} wants a card or deposit to hold your request`, body: `${read.what_they_said} Only you can give that.`, buttons: [{ label: "Write to them", url: `mailto:${spec.to}` }], priority: 2 } }
-      : decideOpen && token
-        ? { decide: { title: `${spec.to} answered your request: ${offer.options.length > 1 ? "pick a time" : "they need something from you"}`, body: read.what_you_do, buttons: [{ label: "Answer Simone", url: tapUrl(token, "answer") }, { label: "Cancel it", url: tapUrl(token, "cancel") }], priority: 2 } }
-        : { line: `${spec.to} answered your request: ${subject === "Your request is booked" ? `it's booked${when ? `, ${when}` : ""}` : doNow}` },
+  const notice = errandReplyNotice({
+    to: spec.to, asked, read, kind, confirmed, booking, decideOpen, unproven,
+    answerUrl: decideOpen && token ? tapUrl(token, "answer") : null,
+    cancelUrl: decideOpen && token ? tapUrl(token, "cancel") : null,
   });
+  await owe(env, row.id, notice);
   await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_answered", detail: { kind, confirmed, from: reply.from, dmarc: reply.dmarc } });
 }
 

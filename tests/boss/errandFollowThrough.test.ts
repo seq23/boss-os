@@ -61,7 +61,13 @@ describe("their answer with options", () => {
     expect(notice.details[2]).toContain("3) 11:00 pm (DJ set)");
     expect(notice.details[2]).toContain("your phone number and which time you want");
     expect(notice.morning.decide.buttons.map((b: any) => b.label)).toEqual(["Answer Simone", "Cancel it"]);
+    // The SAME card, not a second copy noticeArgs never read (26 Oct 2026 held mail): one list.
+    expect(notice.decide).toEqual([notice.morning.decide]);
     expect((await result(id)).thread).toMatchObject({ message_id: VENUE_MESSAGE_ID, greet: "Jamie" });
+    // The real notice, through the real gate, using its own `decide` — never "nothing to decide".
+    const laid = layoutEmail({ who: "Simone", subject: notice.subject, happened: notice.happened, details: notice.details ?? [], decide: (notice.decide ?? []) as never, refs: [id] });
+    expect(plainProblems(laid)).toEqual([]);
+    expect(laid.text.split("\n")[2]).toBe("Decide (1)");
   });
 });
 
