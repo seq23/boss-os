@@ -64,6 +64,8 @@ export function errandReplyNotice(i: {
   decideOpen: boolean;
   unproven?: string[];
   originalUrl?: string | null;
+  commandId?: string | null;
+  commandUrl?: string | null;
   answerUrl?: string | null;
   cancelUrl?: string | null;
 }): { subject: string; happened: string; details: string[]; decide: Record<string, any>[]; morning: { line?: string; decide?: Record<string, any> } };

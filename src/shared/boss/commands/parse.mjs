@@ -757,7 +757,7 @@ export function bookingWhen(at, tz = ERRAND_TZ) {
  * independent copies of the same information. `answerUrl`/`cancelUrl` are built by the caller
  * (they need a persisted tap token); passing neither leaves the Decide item without buttons. Pure.
  */
-export function errandReplyNotice({ to, asked, read, kind, confirmed, booking, decideOpen, unproven = [], answerUrl = null, cancelUrl = null, originalUrl = null }) {
+export function errandReplyNotice({ to, asked, read, kind, confirmed, booking, decideOpen, unproven = [], answerUrl = null, cancelUrl = null, originalUrl = null, commandId = null, commandUrl = null }) {
   const offer = read.offer;
   const when = booking?.at ? bookingWhen(booking.at, booking.tz ?? ERRAND_TZ) : null;
   const doNow = kind === "confirmed" || (confirmed && kind !== "card")
@@ -773,6 +773,7 @@ export function errandReplyNotice({ to, asked, read, kind, confirmed, booking, d
     : decideOpen && answerUrl && cancelUrl
       ? { title: `${to} answered your request: ${offer.options.length > 1 ? "pick a time" : "they need something from you"}`, body: read.what_you_do, buttons: [{ label: "Answer Simone", url: answerUrl }, { label: "Cancel it", url: cancelUrl }], priority: 2 }
       : null;
+  if (card && commandId) { card.key = `errand:${commandId}`; if (commandUrl) card.screen = commandUrl; }
   return {
     subject,
     happened: `${to} answered the request I sent for you.`,

@@ -737,6 +737,7 @@ export async function errandReplied(env: Env, row: CommandRow, reply: { from: st
   const token = kind === "decide" || confirmed ? await ensureTap(env, fresh, now) : null;
   const notice = errandReplyNotice({
     to: spec.to, asked, read, kind, confirmed, booking, decideOpen, unproven,
+    commandId: row.id, commandUrl: `${ORIGIN}/?command=${encodeURIComponent(row.id)}`,
     originalUrl: reply.mailId ? `${ORIGIN}/?mail=${encodeURIComponent(reply.mailId)}` : `${ORIGIN}/?command=${encodeURIComponent(row.id)}`,
     answerUrl: decideOpen && token ? tapUrl(token, "answer") : null,
     cancelUrl: decideOpen && token ? tapUrl(token, "cancel") : null,

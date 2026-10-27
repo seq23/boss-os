@@ -5,7 +5,7 @@ import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail"
 import { commandFromMail, errandReplied, getCommand, macWork, openErrandFor, errandRemindersDue, errandFollowedUp } from "../../src/worker/boss/commands/run";
 import { mailHistory, recordSentMail, replyWithHistory, stageSentMail } from "../../src/worker/boss/mail/history";
 import { BOSS_INTAKE_MAILBOX } from "../../src/shared/boss/intake/mail.mjs";
-import { readErrandReply, errandReplyNotice } from "../../src/shared/boss/commands/parse.mjs";
+import { readErrandReply, errandReplyNotice, ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
 import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 
 const NOW = Date.parse("2026-10-27T12:00:00Z");
@@ -21,7 +21,7 @@ function incoming(from: string, text: string, subject = "The Lantern Room", html
   return { raw, message: { from, to: BOSS_INTAKE_MAILBOX, headers, raw: new Response(raw).body!, rawSize: new TextEncoder().encode(raw).length } };
 }
 beforeEach(async () => {
-  await env.DB.exec("DELETE FROM boss_sent_mail; DELETE FROM boss_inbound_mail; DELETE FROM boss_commands; DELETE FROM boss_mail_senders;");
+  await env.DB.exec("DELETE FROM boss_sent_mail; DELETE FROM boss_inbound_mail; DELETE FROM boss_commands; DELETE FROM boss_mail_senders; DELETE FROM boss_mail_refs; DELETE FROM morning_digests;");
 });
 
 describe("booking platforms only join an identifiable errand", () => {
@@ -56,6 +56,8 @@ it("archives the full raw errand email and quotes exact words, link and expiry i
   const notice = JSON.parse(row.notice!);
   expect(notice.details[1]).toBe(`What they said: ${CARD}\n\nVenue signature.\n${"Extra terms. ".repeat(800).trim()}`);
   expect(notice.details.join("\n")).toContain(`/?mail=${handled.mailId}`);
+  expect(notice.decide[0].key).toBe("errand:cmd_mail1");
+  expect(notice.decide[0].screen).toContain("?command=cmd_mail1");
   expect(notice.decide[0].buttons[0]).toEqual({ label: "Open their card link", url: "https://secure.sevenrooms.com/card/fake-token?test=1&guest=2" });
   expect(notice.details.join("\n")).not.toMatch(/write to them|They confirmed/i);
   const original = await api(`/api/mail/${handled.mailId}/original`);
@@ -224,4 +226,23 @@ it("a named venue wins over the shared owner name when she has two live errands"
   await seed("cmd_other", { spec: { to: "booking@other.example.test" }, result: { request: "a table at The Other Room on Thursday, October 29" } });
   expect((await openErrandFor(env as never, "booking@sevenrooms.com", Date.now(), { text: "Dear Alex Example, The Lantern Room needs your card." }))?.id).toBe("cmd_lantern");
   expect(await openErrandFor(env as never, "booking@sevenrooms.com", Date.now(), { text: "Dear Alex Example, please add your card." })).toBeNull();
+});
+
+it.each([true, false])("a numbered morning reply stands down its errand through the real intake (keyed: %s)", async (keyed) => {
+  await seed("cmd_target");
+  if (keyed) await seed("cmd_newer", { spec: { to: "other@example.test" } });
+  const card = { ...(keyed ? { key: "errand:cmd_target" } : {}), title: `${VENUE} wants a card or deposit to hold your request` };
+  const now = Date.now();
+  await env.DB.prepare(`INSERT OR REPLACE INTO morning_digests (day, payload, sent_at, created_at, updated_at) VALUES ('2026-10-27',?,?,?,?)`).bind(JSON.stringify({ decide: [{ title: "A different decision" }, card] }), now, now, now).run();
+  await env.DB.prepare(`INSERT INTO boss_mail_refs (message_id, refs, created_at) VALUES ('<morning-fixture@example.test>','yd_20261027',?)`).bind(now).run();
+  const { message } = incoming(ERRAND_SENDERS[0]!, "2: I'll handle it", "Re: Tuesday: your morning");
+  message.headers.set("references", "<morning-fixture@example.test>"); message.headers.set("in-reply-to", "<morning-fixture@example.test>");
+  const reply = await handleBossInboundMail(message as never, env as never);
+  expect(reply.outcome).toBe("DECIDE_ANSWERED");
+  expect((await getCommand(env as never, "cmd_target"))!.state).toBe("done");
+  if (keyed) expect((await getCommand(env as never, "cmd_newer"))!.state).toBe("sent");
+  expect((await macWork(env as never)).errand_follow_ups).toEqual([]);
+  const morning = await env.DB.prepare(`SELECT payload FROM morning_digests WHERE day = '2026-10-27'`).first<any>();
+  expect(JSON.parse(morning.payload).decide[1].answered_at).toBeTruthy();
+  expect((await env.DB.prepare(`SELECT COUNT(*) n FROM boss_sent_mail`).first<any>()).n).toBe(0);
 });
