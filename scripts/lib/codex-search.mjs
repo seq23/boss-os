@@ -75,14 +75,27 @@ export function parseCodexSearch(stdout) {
  * `--json`, and refusing every briefing on a format change would be a worse fault than the one this exists for. The
  * caller records that nothing was counted.
  *
+ * ZERO SEARCHES SPLITS ON AN OBSERVED FACT, NEVER ON KEYWORD-READING THE MODEL'S WORDS (27 Oct 2026).
+ * `researchWasSeen` once told her a report "made up a figure" even when the run produced no deliverable
+ * at all — a refusal, not a fabrication, and the wrong fix went looking in this file twice because the
+ * sentence read like a grade of the model's prose rather than an observation. `delivered` is the one
+ * fact that tells the two apart: whether a `delivers.json` is actually on disk, read by the caller
+ * before this is called, never guessed from the model's words here. The run FAILS either way.
+ *
  * @param {ReturnType<typeof parseCodexSearch>} parsed
+ * @param {{ delivered?: boolean }} [opts] whether a deliverable file was found on disk; defaults to
+ *   `true` so every existing caller and pin keeps today's sentence until it says otherwise.
  */
-export function researchWasSeen(parsed) {
+export function researchWasSeen(parsed, { delivered = true } = {}) {
   if (!parsed.jsonl) return { ok: true, searches: null };
   if (parsed.terminal === "failed") {
     return { ok: false, reason: `Codex reported an error before it finished its turn: ${parsed.errorText.slice(0, 300) || "no reason given"}.` };
   }
   if (parsed.events < 1) {
+    if (!delivered) {
+      const lastMessage = (parsed.answer || parsed.errorText || "").trim().slice(0, 300) || "(no message)";
+      return { ok: false, reason: `Codex produced no report and ran no search. Its own account: ${lastMessage}` };
+    }
     return {
       ok: false,
       reason:

@@ -253,7 +253,7 @@ export async function codexExecutor(
    * the run FAILS with the sentence below, so the Today screen says what happened instead of showing figures nothing
    * read. A stream that could not be read as JSON is not judged (the caller is told nothing was counted).
    */
-  const seen = stream ? researchWasSeen(stream) : { ok: true, searches: null };
+  const seen = stream ? researchWasSeen(stream, { delivered: delivers !== null }) : { ok: true, searches: null };
   let searchRefusal = null;
   // A TIMEOUT DOES NOT EXCUSE IT (review of #57): a run killed on its leash after writing a `complete` report with no search on
   // the record would otherwise be filed as a success, because the runner lets a finished deliverable outrank exit 124.

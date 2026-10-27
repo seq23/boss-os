@@ -9,4 +9,7 @@ export interface CodexSearchParse {
   jsonl: boolean;
 }
 export function parseCodexSearch(stdout: string): CodexSearchParse;
-export function researchWasSeen(parsed: CodexSearchParse): { ok: true; searches: number | null } | { ok: false; reason: string };
+export function researchWasSeen(
+  parsed: CodexSearchParse,
+  opts?: { delivered?: boolean },
+): { ok: true; searches: number | null } | { ok: false; reason: string };

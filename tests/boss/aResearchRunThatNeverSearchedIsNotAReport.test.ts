@@ -80,12 +80,25 @@ describe("the CLI's own record of what the seat searched", () => {
   });
 
   it("is not fooled by an answer with no searches, a failed turn, or output that is not a JSON stream", () => {
-    const none = researchWasSeen(parseCodexSearch(withoutSearches));
+    const none = researchWasSeen(parseCodexSearch(withoutSearches), { delivered: true });
     expect(none.ok).toBe(false);
     expect((none as any).reason).toMatch(/without running a single web search/);
     expect(researchWasSeen(parseCodexSearch('{"type":"turn.failed","error":{"message":"network down"}}')).ok).toBe(false);
     // A CLI that ignored --json is not judged: refusing every briefing on a format change is the worse fault.
     expect(researchWasSeen(parseCodexSearch("The reserve ratio is 0.35."))).toEqual({ ok: true, searches: null });
+  });
+
+  it("with nothing delivered, zero searches fails on an OBSERVED absence, never on a claim of fabrication (27 Oct 2026)", () => {
+    const refused = researchWasSeen(parseCodexSearch(withoutSearches), { delivered: false });
+    expect(refused.ok).toBe(false);
+    expect((refused as any).reason).toMatch(/produced no report and ran no search/);
+    expect((refused as any).reason).not.toMatch(/made up/);
+    // Its own last message is quoted as evidence, not trusted as a grade.
+    expect((refused as any).reason).toContain(parseCodexSearch(withoutSearches).answer.slice(0, 50));
+  });
+
+  it("delivered defaults to true, so every existing caller keeps today's sentence", () => {
+    expect(researchWasSeen(parseCodexSearch(withoutSearches))).toEqual(researchWasSeen(parseCodexSearch(withoutSearches), { delivered: true }));
   });
 });
 
@@ -122,6 +135,14 @@ describe("the Codex adapter on a research run", () => {
     expect(out.search_refused).toBe(true);
     expect(out.delivers).toBeNull();
     expect(out.error).toMatch(/without running a single web search/);
+  });
+
+  it("a run that neither searched nor wrote a deliverable fails on observed absence, not a fabrication claim (27 Oct 2026)", async () => {
+    const out = await run(withoutSearches, { delivers: null });
+    expect(out.search_refused).toBe(true);
+    expect(out.delivers).toBeNull();
+    expect(out.error).toMatch(/produced no report and ran no search/);
+    expect(out.error).not.toMatch(/made up/);
   });
 
   it("a run killed on its time limit that DID search keeps its report", async () => {
