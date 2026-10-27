@@ -198,7 +198,7 @@ Do NOT read Gmail this pass. This week's Ahrefs reports are summarised in $AHREF
 place of the mail, find the exact URLs on each live site, and fix at source as section 1 says."
   say "mail pass from digest: $AHREFS_DIGEST"
 fi
-run_codex() { "$CODEX" exec -s danger-full-access -c model_reasoning_effort=high "$PROMPT_TEXT" < /dev/null >> "$RUN_LOG" 2>&1; }
+run_codex() { "$CODEX" exec --skip-git-repo-check -s danger-full-access -c model_reasoning_effort=high "$PROMPT_TEXT" < /dev/null >> "$RUN_LOG" 2>&1; }
 run_claude() { "$CLAUDE" -p "$PROMPT_TEXT" --model "$MODEL" --max-turns "$MAX_TURNS" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1; }
 if [ "$RUNNER" = "codex" ]; then run_codex; else run_claude; fi
 RC=$?
