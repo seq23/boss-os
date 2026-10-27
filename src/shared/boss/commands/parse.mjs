@@ -630,7 +630,10 @@ export const optionText = (o) => `${o.time}${o.label || o.fee ? ` (${[o.label, o
  * "other" otherwise. Their whole answer is kept (up to 6,000 characters, cut only at a sentence).
  */
 export function paymentLinksIn(text) {
-  return [...new Set(String(text ?? "").match(/https?:\/\/[^\s<>"']+/gi) ?? [])].map((u) => u.replace(/[).,;]+$/, ""));
+  const links = [...new Set(String(text ?? "").match(/https?:\/\/[^\s<>"']+/gi) ?? [])].map((u) => u.replace(/[).,;]+$/, ""));
+  const cardLinks = links.filter((url) => /card|pay|secure|deposit|guarantee/i.test(url));
+  // A venue's menu or home page is still quoted, but must not displace its actual card link.
+  return cardLinks.length ? cardLinks : links;
 }
 
 export function readErrandReply(text, address = "them", subject = "") {

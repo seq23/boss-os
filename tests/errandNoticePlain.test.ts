@@ -122,3 +122,13 @@ describe("the exact held case (9657424a30f0b162.json), rebuilt from the club's w
     expect(laid.html).not.toContain("�");
   });
 });
+
+it("the card button opens the secure card link instead of the venue homepage", () => {
+  const words = "Credit card required. Our home: https://venue.example.test/menu . Add your card: https://secure.sevenrooms.com/card/fake . Expires October 28 at noon.";
+  const read = readErrandReply(words, VENUE);
+  const notice = errandReplyNotice({ to: VENUE, asked: "A table", read, kind: read.kind, confirmed: false, decideOpen: false });
+  expect(notice.decide[0]!.buttons).toEqual([{ label: "Open their card link", url: "https://secure.sevenrooms.com/card/fake" }]);
+  expect(notice.details[1]).toContain("https://venue.example.test/menu");
+  expect(notice.details[1]).toContain("Expires October 28 at noon.");
+  expect(mailGate(laidFor(notice))).toEqual([]);
+});
