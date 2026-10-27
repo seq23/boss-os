@@ -4,6 +4,8 @@ import { Shell, type TabId } from "./components/Shell";
 import { ScreenBoundary } from "./components/ScreenBoundary";
 import { Lock } from "./pages/Lock";
 import { Today } from "./pages/Today";
+import { CommandPage } from "./pages/CommandPage";
+import { MailPage } from "./pages/MailPage";
 import { Inbox } from "./pages/Inbox";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { Capital } from "./pages/Capital";
@@ -182,7 +184,7 @@ export default function App() {
     );
 
   const lane = tab === "trading" ? "trading" : "ops";
-  const title = route ? (route.kind === "morning" ? "This morning" : route.kind === "task" ? "The work" : "Open work")
+  const title = route ? (route.kind === "morning" ? "This morning" : route.kind === "task" ? "The work" : route.kind === "command" ? "Your request" : route.kind === "mail" ? "Your email" : "Open work")
     : settingsOpen ? "Settings" : openApproval && tab === "inbox" ? "Docket" : TITLES[tab];
 
   return (
@@ -206,6 +208,8 @@ export default function App() {
       <ScreenBoundary key={route ? JSON.stringify(route) : settingsOpen ? "settings" : tab} screen={settingsOpen ? "Settings" : title}>
       {route ? (
         route.kind === "morning" ? <MorningItem day={route.day} id={route.item} />
+          : route.kind === "command" ? <CommandPage id={route.id} />
+          : route.kind === "mail" ? <MailPage id={route.id} />
           : route.kind === "task" ? <WorkItem taskId={route.id} />
           : <WorkItem employeeId={route.id} />
       ) : settingsOpen ? (
@@ -230,7 +234,7 @@ export default function App() {
             onDecided={() => setInboxKey((k) => k + 1)}
           />
         ) : (
-          <Inbox key={inboxKey} onCountChange={setPending} onOpen={setOpenApproval} />
+          <Inbox onBack={() => setTab("today")} key={inboxKey} onCountChange={setPending} onOpen={setOpenApproval} />
         )
       ) : tab === "capital" ? (
         <Capital key={capitalStart ?? "default"} start={capitalStart} />

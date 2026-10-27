@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
-import { go, tellSimoneHref } from "../nav";
+import { go, tellSimoneHref, commandHref, taskHref } from "../nav";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? "am" : "pm"}`;
@@ -29,13 +29,14 @@ const ADD_WHEN: { key: string; label: string; overrides: Record<string, unknown>
 
 export function EmployeePage({ id, onBack }: { id: string; onBack: () => void }) {
   const [data, setData] = useState<{ employee: any; duties: any[]; removed: any[] } | null>(null);
+  const [recentError, setRecentError] = useState<unknown>(null);
   const [extra, setExtra] = useState<any>(null);
   const [error, setError] = useState<unknown>(null);
   const [open, setOpen] = useState<string | null>(null);
 
   function load() {
     api.employeeDuties(id).then(setData).catch((e) => { setError(e); setData(null); });
-    api.employee(id).then(setExtra).catch(() => setExtra(null));
+    api.employee(id).then((r) => { setExtra(r); setRecentError(null); }).catch((e) => { setExtra(null); setRecentError(e); });
   }
   useEffect(load, [id]);
 
@@ -81,13 +82,14 @@ export function EmployeePage({ id, onBack }: { id: string; onBack: () => void })
 
       <p className="eyebrow" style={{ marginTop: 18 }}>What she is for</p>
       <p className="charter">{e.charter ?? "No charter recorded."}</p>
-      {extra && (extra.recent_tasks ?? []).length > 0 && (
+      <ErrorNotice error={recentError} onDismiss={() => setRecentError(null)} />
+      {extra && (extra.recent_work ?? extra.recent_tasks ?? []).length > 0 && (
         <>
           <p className="eyebrow">Recent work</p>
-          {extra.recent_tasks.slice(0, 6).map((t: any) => (
+          {(extra.recent_work ?? extra.recent_tasks ?? []).slice(0, 20).map((t: any) => (
             <div className="row" key={t.id}>
               <div className="row-main">
-                <div className="row-title">{t.title}</div>
+                <a className="row-title" href={t.type === "command" ? commandHref(t.id) : taskHref(t.id)} onClick={(ev) => { ev.preventDefault(); go(t.type === "command" ? commandHref(t.id) : taskHref(t.id)); }}>{t.title}</a>
                 <div className="row-sub">{String(t.status).replace(/_/g, " ")} · {when(t.created_at)}</div>
               </div>
             </div>
