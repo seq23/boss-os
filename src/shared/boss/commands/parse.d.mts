@@ -53,6 +53,18 @@ export const REMINDER_LEAD_MS: number;
 export function bookingAt(date: { y: number; m: number; d: number } | null, option: { time: string } | null, tz?: string): { at: number; date: { y: number; m: number; d: number }; time: string; tz: string } | null;
 export function reminderDueAt(bookingAtMs: number): number;
 export function bookingWhen(at: number, tz?: string): string;
+export function errandReplyNotice(i: {
+  to: string;
+  asked: string;
+  read: { kind: "card" | "decide" | "confirmed" | "other"; what_they_said: string; what_you_do: string; offer: ErrandOffer };
+  kind: string;
+  confirmed: boolean;
+  booking?: { at?: number; tz?: string } | null;
+  decideOpen: boolean;
+  unproven?: string[];
+  answerUrl?: string | null;
+  cancelUrl?: string | null;
+}): { subject: string; happened: string; details: string[]; decide: Record<string, any>[]; morning: { line?: string; decide?: Record<string, any> } };
 export function errandFollowUpText(a: { greet?: string | null; choice: ErrandOption | null; when?: string | null; party?: number | null; phone?: string | null; offer?: Partial<ErrandOffer> | null }): string;
 export function errandCancelText(a: { greet?: string | null; what?: string | null; when?: string | null; party?: number | null }): string;
 export function followUpProblems(text: string): string[];

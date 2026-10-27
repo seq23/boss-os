@@ -128,9 +128,16 @@ export function buildErrand(json) {
   return { subject, request, text: errandText(request), problems: errandProblems({ subject, request }) };
 }
 
-/** The employeeMail arguments for a notice the Worker laid out. Pure; the gate and the send are postEmployeeMail's. */
+/**
+ * The employeeMail arguments for a notice the Worker laid out. Pure; the gate and the send are
+ * postEmployeeMail's. A notice stored before `errandReplyNotice` carried its Decide card only in
+ * `morning.decide`, with no top-level `decide` — that older shape is read too (as one item, not a
+ * second list), so a row still `notice_state = 'due'` from before this change sends correctly on
+ * the next tick rather than needing a one-off fix.
+ */
 export function noticeArgs(id, notice, to = OWNER_TO) {
-  return { to, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide: notice.decide ?? [] }, refs: [id] };
+  const decide = notice.decide ?? (notice.morning?.decide ? [notice.morning.decide] : []);
+  return { to, subject: notice.subject, layout: { happened: notice.happened, details: notice.details ?? [], decide }, refs: [id] };
 }
 
 async function main() {

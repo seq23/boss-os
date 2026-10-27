@@ -641,7 +641,12 @@ export function readErrandReply(text, address = "them") {
   if (offer.confirms && opts.length === 1 && !offer.asks && offer.needs.length === 0 && !decide) {
     return { kind: "confirmed", what_they_said: said, what_you_do: `Nothing. They confirmed ${opts[0].time}.`, offer };
   }
-  if (!decide) return { kind: "other", what_they_said: said, what_you_do: `Read what they said, and answer ${at} if it needs you.`, offer };
+  /*
+   * NEVER "IF IT NEEDS YOU" (found in passing, 26 Oct 2026): that exact phrase is what the gate's
+   * contradiction check looks for, and this kind always ships with an empty `decide` — "nothing to
+   * decide" right next to a line that says she may be needed. Said instead as a plain next step.
+   */
+  if (!decide) return { kind: "other", what_they_said: said, what_you_do: `Read what they said, and reply to ${at} if anything there calls for one.`, offer };
   const parts = [];
   if (offer.confirms && opts.length === 1 && !offer.asks && offer.needs.length === 0) parts.push(`They confirmed ${optionText(opts[0])}, with conditions.`);
   else if (opts.length > 1) parts.push(`They offered ${opts.length} times: ${opts.map((o, i) => `${i + 1}) ${optionText(o)}`).join("; ")}.`);
@@ -730,6 +735,42 @@ export function bookingWhen(at, tz = ERRAND_TZ) {
   const day = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric" }).format(new Date(at));
   const time = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(new Date(at)).replace(/\s?([AP])M$/, (_, x) => ` ${x.toLowerCase()}m`);
   return `${day} at ${time}`;
+}
+
+/**
+ * THE WHOLE NOTICE FOR AN ERRAND'S ANSWER, ONE DECIDE CARD BUILT ONCE (26 Oct 2026 held mail: a
+ * card reply read "needs a look" beside "nothing needed" because the Decide card lived only in
+ * `morning.decide`, which the top-level `decide` noticeArgs reads was never told about). The same
+ * card object is handed back as both `decide[0]` (what the gate and a direct Worker read check)
+ * and `morning.decide` (the older shape `noticeArgs` has always read) — one card, not two
+ * independent copies of the same information. `answerUrl`/`cancelUrl` are built by the caller
+ * (they need a persisted tap token); passing neither leaves the Decide item without buttons. Pure.
+ */
+export function errandReplyNotice({ to, asked, read, kind, confirmed, booking, decideOpen, unproven = [], answerUrl = null, cancelUrl = null }) {
+  const offer = read.offer;
+  const when = booking?.at ? bookingWhen(booking.at, booking.tz ?? ERRAND_TZ) : null;
+  const doNow = kind === "confirmed" || (confirmed && kind !== "card")
+    ? `Nothing. They confirmed ${when ?? (offer.options.length === 1 ? offer.options[0].time : "it")}.${booking?.at && confirmed ? " I'll check with you 28 hours before." : ""}${offer.cancel_rule.length ? ` Cancelling: ${offer.cancel_rule.join(" ")}` : ""}`
+    : read.what_you_do;
+  const details = [`What I asked for: ${asked}`, `What they said: ${read.what_they_said}`, `What you need to do: ${doNow}`, ...unproven];
+  const subject = kind === "card" ? "Your request needs you: they want a card"
+    : kind === "confirmed" || (confirmed && booking?.at) ? "Your request is booked"
+    : kind === "decide" ? (offer.options.length > 1 ? "Your request needs you: pick a time" : "Your request needs you: they asked something")
+    : "They answered your request";
+  const card = kind === "card"
+    ? { title: `${to} wants a card or deposit to hold your request`, body: `${read.what_they_said} Only you can give that.`, buttons: [{ label: "Write to them", url: `mailto:${to}` }], priority: 2 }
+    : decideOpen && answerUrl && cancelUrl
+      ? { title: `${to} answered your request: ${offer.options.length > 1 ? "pick a time" : "they need something from you"}`, body: read.what_you_do, buttons: [{ label: "Answer Simone", url: answerUrl }, { label: "Cancel it", url: cancelUrl }], priority: 2 }
+      : null;
+  return {
+    subject,
+    happened: `${to} answered the request I sent for you.`,
+    details,
+    decide: card ? [card] : [],
+    morning: card
+      ? { decide: card }
+      : { line: `${to} answered your request: ${subject === "Your request is booked" ? `it's booked${when ? `, ${when}` : ""}` : doNow}` },
+  };
 }
 
 const SIGN = ["Thank you,", "Simone", "Assistant to Sequoia Taylor"];

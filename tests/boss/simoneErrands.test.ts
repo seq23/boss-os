@@ -12,6 +12,7 @@ import { macWork, errandSent } from "../../src/worker/boss/commands/run";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { classify } from "../../src/worker/boss/intake/classify";
 import { ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
+import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 
 const HER = ERRAND_SENDERS[0]!;
 const BIZ = "reservations@club.example.test";
@@ -86,6 +87,12 @@ describe("her errand by email", () => {
     expect(notice.details[1]).toMatch(/^What they said: We can hold a table at 8:30/);
     expect(notice.details[2]).toMatch(/^What you need to do: .*Only you can give that/);
     expect(notice.morning.decide.buttons[0].url).toBe(`mailto:${BIZ}`);
+    // The same card is the email's own Decide item, never only the morning copy (26 Oct 2026 held
+    // mail: "needs a look" beside "nothing needed" because this list stayed empty).
+    expect(notice.decide).toEqual([notice.morning.decide]);
+    const laid = layoutEmail({ who: "Simone", subject: notice.subject, happened: notice.happened, details: notice.details ?? [], decide: notice.decide, refs: [id] });
+    expect(plainProblems(laid)).toEqual([]);
+    expect(laid.text.split("\n")[2]).toBe("Decide (1)");
     const inbound = await env.DB.prepare(`SELECT outcome, reply_state FROM boss_inbound_mail ORDER BY received_at DESC LIMIT 1`).first<any>();
     expect(inbound).toEqual({ outcome: "ERRAND_REPLY", reply_state: "none_due" });
   });

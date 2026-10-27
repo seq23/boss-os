@@ -12,6 +12,7 @@ import { api } from "./helpers";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { recordMailRefs } from "../../src/worker/boss/intake/mailRefs";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
+import { layoutEmail, plainProblems } from "../../src/shared/boss/mail/plain.mjs";
 
 const NOW = Date.parse("2026-10-25T17:00:00Z"); // a Sunday, noon Central
 
@@ -140,7 +141,15 @@ describe("1. a calendar invite by email", () => {
     const row = await command(id);
     expect(row.state).toBe("bounced");
     expect(row.notice_state).toBe("due");
-    expect(JSON.parse(row.notice).happened).toMatch(/bounced.*What's the right address/);
+    const notice = JSON.parse(row.notice);
+    expect(notice.happened).toMatch(/bounced.*What's the right address/);
+    // A question is never "nothing to decide" (found in passing, 26 Oct 2026): the bounce notice
+    // carries its own Decide card, and the real notice passes the real gate with it.
+    expect(notice.decide).toHaveLength(1);
+    expect(notice.decide[0].title).toBe("What's the right address?");
+    const laid = layoutEmail({ who: "Simone", subject: notice.subject, happened: notice.happened, details: notice.details ?? [], decide: notice.decide, refs: [id] });
+    expect(plainProblems(laid)).toEqual([]);
+    expect(laid.text.split("\n")[2]).toBe("Decide (1)");
     const fixed = await replyTo(first, id, "Sorry, it's right@example.com");
     expect(fixed.res.reply).toMatch(/Updated the same invite: right@example.com/);
     expect(inserts()).toHaveLength(1);

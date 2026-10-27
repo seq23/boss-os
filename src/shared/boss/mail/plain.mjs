@@ -186,7 +186,9 @@ export function cleanText(input, { prose = false } = {}) {
   if (input === null || input === undefined) return "";
   if (prose) return cleanProse(input);
   const { out, restore } = protect(String(input));
-  let s = out;
+  // A byte lost upstream (a client that lied about its charset) is a replacement character here,
+  // never shown as a black diamond: dropped, with the spacing around it tidied to one space.
+  let s = out.replace(/\s*�\s*/g, " ");
   const wasAllCaps = /[A-Z]{3}/.test(s) && !/[a-z]/.test(s.replace(/\u0000\d+\u0000/g, ""));
   // A whole sentence that reads as a command to type — bare, backticked, bracketed or quoted —
   // is dropped here so every sender agrees with the gate, not only `fromLegacy`'s own line pass.
@@ -241,7 +243,7 @@ export function cleanText(input, { prose = false } = {}) {
  */
 function cleanProse(input) {
   const { out, restore } = protect(String(input));
-  let s = out.replace(/\u2063/g, "");
+  let s = out.replace(/\s*\ufffd\s*/g, " ").replace(/\u2063/g, "");
   s = dropCommandSentences(s);
   s = s.replace(COMMAND_SPAN, (m) => (m.startsWith("`") && !COMMAND_RE.test(m) ? m : "")).replace(/`/g, "");
   s = s.replace(/\s*\(\s*(?:(?:GET|POST|PUT|PATCH|DELETE)\s+)?\/api\/[^)]*\)/g, "").replace(/(?:\b(?:GET|POST|PUT|PATCH|DELETE)\s+)?(?<![\w.])\/api\/[\w/:.?=&-]*/g, "");
