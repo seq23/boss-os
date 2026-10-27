@@ -106,7 +106,19 @@ gh_ready; GH_RC=$?
 # Gmail here is a claude.ai connector, not a local MCP server. A lapsed login would make this job
 # silently find nothing for ever — indistinguishable from a week with no findings, which is the one
 # confusion this whole duty is written to prevent.
-if ! security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; then
+# WHICH AI RUNS THE PASS (owner, 27 Oct 2026: "openai should do them" while her Claude usage is
+# spent). BOSS_AI_RUNNER=codex runs the same prompt through Codex on her ChatGPT plan. Codex cannot
+# reach the claude.ai Gmail connector, so on Codex only the scoped Search Readiness passes run (they
+# never read mail); an unscoped Ahrefs-mail pass on Codex is a NAMED STOP, not a silent skip.
+RUNNER="${BOSS_AI_RUNNER:-claude}"
+if [ "$RUNNER" = "codex" ]; then
+  CODEX="$(command -v codex || echo /opt/homebrew/bin/codex)"
+  if [ -z "${SR_SCOPE_REPO:-}" ]; then
+    say "NAMED STOP [MAIL_PASS_NEEDS_CLAUDE] the Ahrefs-mail pass reads Gmail through the claude.ai connector, which Codex cannot reach."
+    exit 12
+  fi
+  "$CODEX" login status >/dev/null 2>&1 || { say "NAMED STOP [CODEX_NOT_AUTHENTICATED] run: codex login"; exit 13; }
+elif ! security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; then
   say "NAMED STOP [CLAUDE_NOT_AUTHENTICATED] cannot read credentials from the login keychain."
   say "  Mac may be at the login window with the keychain locked, or the session signed out."
   say "  Danielle's duty stays overdue and Today will say so, which is correct."
@@ -138,7 +150,7 @@ if [ -n "${SR_SCOPE_REPO:-}" ]; then
     || say "NAMED STOP [NO_SCOPE_SNAPSHOT] the queue could not be read before the pass; the reporter will read it again."
 fi
 
-say "=== ahrefs audit pass starting (model $MODEL) ==="
+say "=== ahrefs audit pass starting (runner $RUNNER, model $([ "$RUNNER" = codex ] && echo codex-default || echo "$MODEL")) ==="
 cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 
 # THE PROMPT'S PATHS FOLLOW $REPO. It names ~/GitHub/boss-os/scripts/ops/… for the crawler, the
@@ -168,8 +180,12 @@ briefs go to the next pass. Open the PR and get it green before you finish, so n
   fi
   say "scoped pass: Search Readiness queue, repo $SR_SCOPE_REPO"
 fi
+if [ "$RUNNER" = "codex" ]; then
+  "$CODEX" exec -s danger-full-access -c model_reasoning_effort=high "$PROMPT_TEXT" < /dev/null >> "$RUN_LOG" 2>&1
+else
 "$CLAUDE" -p "$PROMPT_TEXT" \
   --model "$MODEL" --max-turns "$MAX_TURNS" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
+fi
 RC=$?
 say "=== claude exited rc=$RC ==="
 
