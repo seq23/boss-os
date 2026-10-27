@@ -163,6 +163,7 @@ export function handlerUsesIt(source) {
   // External errand/refused mail now also archives here. Its puts cannot stand in for the
   // authorised under-cap and oversize paths this guard has always required.
   if (!/env\.VAULT\.put\(key,\s*rawMessage/.test(source)) bad.push("The authorised under-cap original is not kept.");
+  if (!/env\.VAULT\.put\(objectKey,\s*sized\.readable/.test(source)) bad.push("The authorised oversize original is not kept.");
   const putCount = (source.match(/env\.VAULT\.put\(/g) ?? []).length;
   if (putCount < 2) {
     bad.push(
@@ -237,6 +238,9 @@ if (process.argv.includes("--self-test")) {
   expect("a handler that never calls the extractor", handlerUsesIt(
     realHandler?.replace(/taskBodyFrom\(/g, "noop(") ?? null,
   ), true);
+  expect("external archives cannot hide a missing authorised oversize original", handlerUsesIt(
+    realHandler?.replace(/await env\.VAULT\.put\(objectKey,[\s\S]*?\}\);/, "objectKey = null;") ?? null,
+  ).length > 0, true);
   expect("a handler that stops keeping the original under the cap", handlerUsesIt(
     realHandler?.replace(/await env\.VAULT\.put\(key,[\s\S]*?\}\);/, "objectKey = null;") ?? null,
   ), true);
