@@ -53,6 +53,8 @@ it("archives the full raw errand email and quotes exact words, link and expiry i
   expect(await (await env.VAULT.get(saved.object_key))!.text()).toBe(raw);
   const row = (await getCommand(env as never, "cmd_mail1"))!;
   expect(row.state).toBe("needs_card");
+  expect(JSON.parse(row.result).replies[0].text).toHaveLength(8000);
+  expect(JSON.parse(row.result).replies[0].mail_id).toBe(handled.mailId);
   const notice = JSON.parse(row.notice!);
   expect(notice.details[1]).toBe(`What they said: ${CARD}\n\nVenue signature.\n${"Extra terms. ".repeat(800).trim()}`);
   expect(notice.details.join("\n")).toContain(`/?mail=${handled.mailId}`);

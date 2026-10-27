@@ -697,7 +697,8 @@ export async function errandReplied(env: Env, row: CommandRow, reply: { from: st
   const spec = j(row.spec); const result = j(row.result);
   const read = readErrandReply(reply.text || reply.subject, spec.to, reply.subject);
   const offer = read.offer;
-  const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text, mail_id: reply.mailId ?? null, kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];
+  // Full originals live in R2; keep this operational preview bounded as a thread grows.
+  const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 8000), mail_id: reply.mailId ?? null, kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];
   const thread = { message_id: reply.messageId ?? result.thread?.message_id ?? null, subject: /^re:/i.test(reply.subject) ? reply.subject.slice(0, 200) : `Re: ${String(result.subject ?? reply.subject).slice(0, 196)}`, greet: offer.greet ?? result.thread?.greet ?? null };
   const asked = String(result.request ?? spec.ask ?? "").slice(0, 300);
   const unproven = reply.dmarc ? [] : ["Their email could not be fully proven to come from them, so check it before acting on it."];
