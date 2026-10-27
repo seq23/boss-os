@@ -251,7 +251,7 @@ export async function archiveSentMail(payload, id, fetchImpl = fetch, { commandI
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const file = join(directory, `${createHash("sha256").update(id).digest("hex")}.json`);
   const refs = String(payload.headers?.["X-Boss-Ref"] ?? "").split(/\s+/);
-  const record = { provider_id: id, message_id: id, from: payload.from, to: [...(payload.to ?? []), ...(payload.cc ?? []), ...(payload.bcc ?? [])].join(", "), subject: payload.subject, text: payload.text ?? "", html: payload.html ?? null,
+  const record = { provider_id: id, message_id: id, from: payload.from, employee_address: payload.reply_to ?? payload.from, to: [...(payload.to ?? []), ...(payload.cc ?? []), ...(payload.bcc ?? [])].join(", "), subject: payload.subject, text: payload.text ?? "", html: payload.html ?? null,
     command_id: commandId ?? refs.find((r) => r.startsWith("cmd_")) ?? null, in_reply_to: payload.headers?.["In-Reply-To"] ?? null, sent_at: Date.now() };
   writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
   // The provider receipt id is not the RFC Message-ID her reply will carry in References.

@@ -248,3 +248,10 @@ it.each([true, false])("a numbered morning reply stands down its errand through 
   expect(JSON.parse(morning.payload).decide[1].answered_at).toBeTruthy();
   expect((await env.DB.prepare(`SELECT COUNT(*) n FROM boss_sent_mail`).first<any>()).n).toBe(0);
 });
+
+it("a shared fallback sender is still filtered under the employee whose Reply-To it uses", async () => {
+  await recordSentMail(env as never, { message_id: "<fallback@example.test>", from: "relay@example.test", employee_address: "simone@example.test", to: VENUE, subject: "Your update", text: "From your assistant" });
+  const history = await mailHistory(env as never, { employee: "emp_chief" });
+  expect(history.sent).toHaveLength(1);
+  expect(history.sent[0]!.from_addr).toBe("relay@example.test");
+});

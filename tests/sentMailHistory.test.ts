@@ -30,7 +30,7 @@ describe("every accepted Mac email reaches history", () => {
     const res = await postEmployeeMail(sender, payload, fetcher);
     expect(res.ok).toBe(true);
     const archive = sent.find((r) => r.url.endsWith("/mail/sent"));
-    expect(archive?.body).toMatchObject({ from: sender.from, to: "owner@example.test", text: payload.text, html: payload.html });
+    expect(archive?.body).toMatchObject({ from: sender.from, employee_address: sender.reply_to, to: "owner@example.test", text: payload.text, html: payload.html });
     expect(readdirSync(dir)).toEqual([]);
   });
   it("archives the errand's exact words and thread association", async () => {
