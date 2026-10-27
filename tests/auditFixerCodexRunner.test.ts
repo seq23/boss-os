@@ -10,7 +10,7 @@ const script = readFileSync("scripts/ops/ahrefs-audit-fix.sh", "utf8");
 describe("audit fixer: runners and the automatic fallback", () => {
   it("runs the same prompt through codex exec", () => {
     expect(script).toContain('RUNNER="${BOSS_AI_RUNNER:-claude}"');
-    expect(script).toMatch(/run_codex\(\) \{ "\$CODEX" exec -s danger-full-access -c model_reasoning_effort=high "\$PROMPT_TEXT" < \/dev\/null >> "\$RUN_LOG"/);
+    expect(script).toMatch(/run_codex\(\) \{ "\$CODEX" exec --skip-git-repo-check -s danger-full-access -c model_reasoning_effort=high "\$PROMPT_TEXT" < \/dev\/null >> "\$RUN_LOG"/);
   });
   it("auto: Claude first, Codex when Claude is signed out", () => {
     expect(script).toMatch(/if \[ "\$RUNNER" = "auto" \]; then\n  if claude_signed_in; then RUNNER="claude"; FALLBACK="codex"; else .*RUNNER="codex"/);
