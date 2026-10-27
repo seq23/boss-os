@@ -638,12 +638,12 @@ export function paymentLinksIn(text) {
 
 export function readErrandReply(text, address = "them", subject = "") {
   const offer = errandOffer(`${subject}\n${text}`);
-  const t = offer.text.replace(/\s+/g, " ").trim() || String(text ?? "").replace(/\s+/g, " ").trim();
-  const said = theirWords(text).text || String(text ?? "").trim();
+  const said = ownWords(text).trim();
+  const t = said.replace(/\s+/g, " ").trim();
   const at = address && address !== "them" ? `them at ${address}` : "them";
   const opts = offer.options;
   const charges = [...opts.filter((o) => o.fee).map((o) => `${o.time}: ${o.fee}`), ...offer.fees];
-  const card = offer.needs.some((n) => /card/.test(n));
+  const card = CARD_ASK_RE.test(t) || offer.needs.some((n) => /card/.test(n));
   const choice = opts.length > 1 || offer.unavailable;
   const decide = card || choice || offer.asks || offer.needs.length > 0 || charges.length > 0 || offer.cancel_rule.length > 0 || offer.policy;
   if (offer.confirms && opts.length === 1 && !offer.asks && offer.needs.length === 0 && !decide) {
@@ -665,7 +665,7 @@ export function readErrandReply(text, address = "them", subject = "") {
   const needs = offer.needs.filter((n) => !/card/.test(n));
   if (needs.length) parts.push(`To book, they need ${needs.join(" and ")}.`);
   if (card) {
-    const links = paymentLinksIn(text);
+    const links = paymentLinksIn(said);
     const guarantee = /(?:only|solely)[^.\n]*(?:no[ -]?show|cancel)|(?:no[ -]?show|cancel)[^.\n]*(?:only|guarantee)|(?:guarantee)[^.\n]*(?:no[ -]?show|cancel)/i.test(t);
     const upfront = /\b(?:charged|due|payable)\s+(?:now|today|in\s+advance)\b|\bprepay|\b(?:fee|deposit)\s+(?:is\s+)?(?:required|due)\b/i.test(t);
     parts.push(guarantee ? "They ask for a card as a no-show or cancellation guarantee. You are charged only under their no-show or cancellation terms below." : upfront ? "They ask you to pay a fee or deposit now. Their exact amount and terms are below." : "They ask for a card or payment. Check their exact fee and cancellation terms below before you continue.");

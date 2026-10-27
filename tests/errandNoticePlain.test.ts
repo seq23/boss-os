@@ -132,3 +132,14 @@ it("the card button opens the secure card link instead of the venue homepage", (
   expect(notice.details[1]).toContain("Expires October 28 at noon.");
   expect(mailGate(laidFor(notice))).toEqual([]);
 });
+
+it("keeps the card link, expiry and guarantee below a venue signature, but excludes quoted history", () => {
+  const words = "Your reservation is confirmed for 9pm.\n\nWarmly,\nMorgan Example\n\nCredit Card required. Only charged for a no-show or cancellation. https://secure.sevenrooms.com/card/fake expires tomorrow at noon.";
+  const read = readErrandReply(words + "\n\nOn Monday, someone wrote:\n> Old words and https://pay.example.test/old", VENUE);
+  expect(read.kind).toBe("card");
+  expect(read.what_they_said).toBe(words);
+  expect(read.what_you_do).toContain("no-show or cancellation guarantee");
+  expect(read.what_you_do).not.toContain("https://pay.example.test/old");
+  const notice = errandReplyNotice({ to: VENUE, asked: "A table", read, kind: read.kind, confirmed: false, decideOpen: false });
+  expect(notice.decide[0]!.buttons).toEqual([{ label: "Open their card link", url: "https://secure.sevenrooms.com/card/fake" }]);
+});
