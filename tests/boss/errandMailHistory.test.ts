@@ -159,7 +159,7 @@ it("the exact guarantee and fee stay distinct, with their expiry, through the pl
     const read = readErrandReply(words, VENUE);
     const n = errandReplyNotice({ to: VENUE, asked: "A table", read, kind: read.kind, confirmed: false, decideOpen: false });
     expect(n.details[1]).toBe(`What they said: ${words}`);
-    expect(n.details[2]).toContain(words === CARD ? "no-show or cancellation guarantee" : "exact fee and cancellation terms");
+    expect(n.details[2]).toContain(words === CARD ? "no-show or cancellation guarantee" : "pay a fee or deposit now");
     expect(plainProblems(layoutEmail({ who: "Simone", ...n, decide: n.decide as never }))).toEqual([]);
     expect(n.decide[0]!.buttons[0].label).toBe("Open their card link");
   }

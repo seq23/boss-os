@@ -664,7 +664,8 @@ export function readErrandReply(text, address = "them", subject = "") {
   if (card) {
     const links = paymentLinksIn(text);
     const guarantee = /(?:only|solely)[^.\n]*(?:no[ -]?show|cancel)|(?:no[ -]?show|cancel)[^.\n]*(?:only|guarantee)|(?:guarantee)[^.\n]*(?:no[ -]?show|cancel)/i.test(t);
-    parts.push(guarantee ? "They ask for a card as a no-show or cancellation guarantee. You are charged only under their no-show or cancellation terms below." : "They ask for a card or payment. Check their exact fee and cancellation terms below before you continue.");
+    const upfront = /\b(?:charged|due|payable)\s+(?:now|today|in\s+advance)\b|\bprepay|\b(?:fee|deposit)\s+(?:is\s+)?(?:required|due)\b/i.test(t);
+    parts.push(guarantee ? "They ask for a card as a no-show or cancellation guarantee. You are charged only under their no-show or cancellation terms below." : upfront ? "They ask you to pay a fee or deposit now. Their exact amount and terms are below." : "They ask for a card or payment. Check their exact fee and cancellation terms below before you continue.");
     parts.push(`Only you can give that card or make a payment; no one on your team will. ${links.length ? `Tap their card link: ${links.join(" ")}` : `Ask ${at} how to give it securely.`}`);
   }
   else parts.push(`Reply to this email with ${needs.length ? needs.map((n) => n.replace(/^your /, "your ")).join(" and ") : "what you want"} (for example "${opts.length > 1 ? `${opts.length}, ` : ""}${needs.includes("your phone number") ? "my number is …" : "yes"}"), and Simone sends it to them in the same thread. Reply "cancel" to drop it.`);
