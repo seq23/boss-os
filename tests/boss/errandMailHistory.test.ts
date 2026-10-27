@@ -29,6 +29,7 @@ describe("booking platforms only join an identifiable errand", () => {
     await seed();
     expect((await openErrandFor(env as never, `booking@${domain}`, Date.now(), { subject: "The Lantern Room needs a card" }))?.id).toBe("cmd_mail1");
     expect((await openErrandFor(env as never, `booking@${domain}`, Date.now(), { text: "Dear Alex Example, please finish this booking." }))?.id).toBe("cmd_mail1");
+    expect((await openErrandFor(env as never, `booking@${domain}`, Date.now(), { text: "Dear Alex, please finish this booking." }))?.id).toBe("cmd_mail1");
     expect(await openErrandFor(env as never, `booking@${domain}`, Date.now(), { text: "A different venue needs a card" })).toBeNull();
   });
   it("refuses lookalike domains, arbitrary senders, expired threads and ambiguous owner matches", async () => {
