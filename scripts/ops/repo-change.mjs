@@ -796,7 +796,11 @@ async function runPhase(claim) {
      */
     const step = out.post_land_step && typeof out.post_land_step === "object" ? out.post_land_step : null;
     // A sentence saying nothing runs after land is not a step (namesPostLandStep, lane.mjs, 26 Oct 2026).
-    let namesStep = namesPostLandStep(`${out.plan_text ?? ""}\n${row.instruction}`);
+    // A repair's "instruction" is Boss OS's own machine text quoting the failed task's error — which
+    // can quote this very stop's sentence, naming a step by complaining one was named. Boss OS
+    // quoting its own complaint is not her naming a step, so a repair reads its plan alone; her own
+    // instruction is always read (27 Oct 2026 — otherwise this stop repairs itself forever).
+    let namesStep = namesPostLandStep(isRepair(row) ? String(out.plan_text ?? "") : `${out.plan_text ?? ""}\n${row.instruction}`);
     if (namesStep && !(step && typeof step.command === "string" && step.command.trim()) && isRepair(row)) {
       // REPAIRS NEVER STOP HERE: a repair whose plan names a step without a command resolves to
       // "nothing runs after land", recorded in the log, and goes on to build.

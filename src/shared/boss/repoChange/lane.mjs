@@ -521,8 +521,30 @@ export function claimIsLive(row, now = Date.now()) {
 const POST_LAND_WORDS = /(after (the )?land(ing)?|post[- ]land|once (it|this) (is )?(landed|merged)|after (it|this) (is )?(landed|merged))\b/i;
 const POST_LAND_NONE = /\b(nothing|no (step|command|script|job|action)s?|no post[- ]land (step|command)s?|none)\b[^.\n]{0,40}\b(runs?|is run|to run|happens?|needed|required|after|post[- ]land)\b|\bno post[- ]land\b|post[- ]land( step)?:\s*(none|nothing|n\/a)\b/i;
 
+/**
+ * THE GENERAL NONE RULE (27 Oct 2026). `POST_LAND_NONE` above reads a negation only when one of five
+ * nouns follows "no" — so "No re-run command runs after landing: the duty's own next scheduled run
+ * exercises the change." and three more ordinary English negations read as NAMING a step. A sentence
+ * also reads as *none* when its first negator (no|not|none|nothing|never|neither) stands BEFORE the
+ * after-land phrase AND the sentence names nothing runnable — no backticked command, no script path,
+ * no package-runner invocation. A sentence that names an actual command still NAMES a step however
+ * it is negated ("No one else can do it, so after landing run `bin/publish`"), so the 21 Sep catch
+ * (a step named with no command resolved for it) is never traded away by this union.
+ */
+const NEGATOR = /\b(no|not|none|nothing|never|neither)\b/i;
+const RUNNABLE_SIGN = /`[^`\n]+`|\b[\w./-]+\.(?:mjs|cjs|js|ts|tsx|py|sh|rb|go)\b|\bnpm\s+run\b|\bnpx\b|\byarn\b|\bpnpm\b|\bbin\/\S+|\bscripts\/\S+|\.venv\/bin\/\S+|\bnode\s+\S+|\bmake\s+\S+/i;
+
+function readsAsNone(sentence) {
+  if (POST_LAND_NONE.test(sentence)) return true;
+  const phraseMatch = POST_LAND_WORDS.exec(sentence);
+  if (!phraseMatch) return false;
+  const negatorMatch = NEGATOR.exec(sentence);
+  if (!negatorMatch || negatorMatch.index >= phraseMatch.index) return false;
+  return !RUNNABLE_SIGN.test(sentence);
+}
+
 export function namesPostLandStep(text) {
   return String(text ?? "")
     .split(/(?<=[.!?])\s+|\n+/)
-    .some((sentence) => POST_LAND_WORDS.test(sentence) && !POST_LAND_NONE.test(sentence));
+    .some((sentence) => POST_LAND_WORDS.test(sentence) && !readsAsNone(sentence));
 }
