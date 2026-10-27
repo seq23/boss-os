@@ -106,19 +106,31 @@ gh_ready; GH_RC=$?
 # Gmail here is a claude.ai connector, not a local MCP server. A lapsed login would make this job
 # silently find nothing for ever — indistinguishable from a week with no findings, which is the one
 # confusion this whole duty is written to prevent.
-# WHICH AI RUNS THE PASS (owner, 27 Oct 2026: "openai should do them" while her Claude usage is
-# spent). BOSS_AI_RUNNER=codex runs the same prompt through Codex on her ChatGPT plan. Codex cannot
-# reach the claude.ai Gmail connector, so on Codex only the scoped Search Readiness passes run (they
-# never read mail); an unscoped Ahrefs-mail pass on Codex is a NAMED STOP, not a silent skip.
+# WHICH AI RUNS THE PASS (owner, 27 Oct 2026: "openai should do them", then "an automated fallback").
+# BOSS_AI_RUNNER: claude | codex | auto (the launchd jobs use auto).
+#   auto  = Claude first; if Claude is signed out, or the run ends without its sentinel because Claude's
+#           usage ran out, the SAME pass reruns on Codex (her ChatGPT plan) when Codex can do it.
+# Codex cannot reach the claude.ai Gmail connector, so Codex runs a pass only when it needs no mail:
+# a scoped Search Readiness pass, or a mail pass handed AHREFS_DIGEST (a file of that week's Ahrefs
+# reports gathered by someone who can read the mail). Otherwise Codex is a NAMED STOP, never a silent skip.
 RUNNER="${BOSS_AI_RUNNER:-claude}"
+CODEX="$(command -v codex || echo /opt/homebrew/bin/codex)"
+codex_can_run() {
+  [ -n "${SR_SCOPE_REPO:-}" ] && return 0
+  [ -n "${AHREFS_DIGEST:-}" ] && [ -s "$AHREFS_DIGEST" ] && return 0
+  return 1
+}
+claude_signed_in() { security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; }
+if [ "$RUNNER" = "auto" ]; then
+  if claude_signed_in; then RUNNER="claude"; FALLBACK="codex"; else say "Claude is signed out; trying Codex."; RUNNER="codex"; FALLBACK=""; fi
+fi
 if [ "$RUNNER" = "codex" ]; then
-  CODEX="$(command -v codex || echo /opt/homebrew/bin/codex)"
-  if [ -z "${SR_SCOPE_REPO:-}" ]; then
-    say "NAMED STOP [MAIL_PASS_NEEDS_CLAUDE] the Ahrefs-mail pass reads Gmail through the claude.ai connector, which Codex cannot reach."
+  if ! codex_can_run; then
+    say "NAMED STOP [MAIL_PASS_NEEDS_CLAUDE] the Ahrefs-mail pass reads Gmail through the claude.ai connector, which Codex cannot reach, and no AHREFS_DIGEST was given."
     exit 12
   fi
   "$CODEX" login status >/dev/null 2>&1 || { say "NAMED STOP [CODEX_NOT_AUTHENTICATED] run: codex login"; exit 13; }
-elif ! security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; then
+elif ! claude_signed_in; then
   say "NAMED STOP [CLAUDE_NOT_AUTHENTICATED] cannot read credentials from the login keychain."
   say "  Mac may be at the login window with the keychain locked, or the session signed out."
   say "  Danielle's duty stays overdue and Today will say so, which is correct."
@@ -180,14 +192,27 @@ briefs go to the next pass. Open the PR and get it green before you finish, so n
   fi
   say "scoped pass: Search Readiness queue, repo $SR_SCOPE_REPO"
 fi
-if [ "$RUNNER" = "codex" ]; then
-  "$CODEX" exec -s danger-full-access -c model_reasoning_effort=high "$PROMPT_TEXT" < /dev/null >> "$RUN_LOG" 2>&1
-else
-"$CLAUDE" -p "$PROMPT_TEXT" \
-  --model "$MODEL" --max-turns "$MAX_TURNS" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
+if [ -n "${AHREFS_DIGEST:-}" ] && [ -s "$AHREFS_DIGEST" ] && [ -z "${SR_SCOPE_REPO:-}" ]; then
+  PROMPT_TEXT="$PROMPT_TEXT
+Do NOT read Gmail this pass. This week's Ahrefs reports are summarised in $AHREFS_DIGEST: read it in
+place of the mail, find the exact URLs on each live site, and fix at source as section 1 says."
+  say "mail pass from digest: $AHREFS_DIGEST"
 fi
+run_codex() { "$CODEX" exec -s danger-full-access -c model_reasoning_effort=high "$PROMPT_TEXT" < /dev/null >> "$RUN_LOG" 2>&1; }
+run_claude() { "$CLAUDE" -p "$PROMPT_TEXT" --model "$MODEL" --max-turns "$MAX_TURNS" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1; }
+if [ "$RUNNER" = "codex" ]; then run_codex; else run_claude; fi
 RC=$?
-say "=== claude exited rc=$RC ==="
+# THE FALLBACK: Claude ran out of usage before finishing, so the same pass goes to Codex.
+if [ "${FALLBACK:-}" = "codex" ] && ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG" \
+   && grep -qiE "usage limit|limit reached|out of (extra )?usage|rate.?limit|credit balance" "$RUN_LOG"; then
+  if codex_can_run && "$CODEX" login status >/dev/null 2>&1; then
+    say "=== Claude ran out of usage (rc=$RC); rerunning the same pass on Codex ==="
+    RUNNER="codex"; run_codex; RC=$?
+  else
+    say "NAMED STOP [FALLBACK_UNAVAILABLE] Claude ran out of usage and Codex cannot take this pass (mail pass without a digest, or Codex signed out)."
+  fi
+fi
+say "=== $RUNNER exited rc=$RC ==="
 
 if ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG"; then
   say "NAMED STOP [AUDIT_DID_NOT_COMPLETE] no sentinel in the log — the run started and never reached"
