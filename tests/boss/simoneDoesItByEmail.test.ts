@@ -266,6 +266,9 @@ describe("2. find a person, make a code, email them — never to a guessed addre
     const sent = await replyTo(first, email.id, "send");
     expect(sent.res.reply).toMatch(/Sent to them@example.com from sequoia@westpeek.ventures/);
     expect(sends()).toHaveLength(1);
+    const history = await env.DB.prepare(`SELECT object_key, command_id FROM boss_sent_mail WHERE message_id = 'msg_fake1'`).first<any>();
+    expect(history.command_id).toBe(email.id);
+    expect(JSON.parse(await (await env.VAULT.get(history.object_key))!.text()).text).toBe(JSON.parse((await command(email.id)).result).draft_text);
     const token = (await command(email.id)).tap_token;
     expect(await (await api(`/api/auth/tap/${token}?do=send`, { method: "POST" })).text()).toContain("done its job");
     expect(sends()).toHaveLength(1);

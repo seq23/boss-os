@@ -193,6 +193,7 @@ const SNAPSHOT_TABLES = [
   // a reply to an email sent before the restore no longer finds its job.
   "boss_mail_refs",
   "boss_commands",
+  "boss_sent_mail", "boss_mail_senders",
   "warm_references",
   "waiting_on",
   "preseed_watch",

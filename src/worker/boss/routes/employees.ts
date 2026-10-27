@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
+import { batchReads } from "../lib/batchReads";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
@@ -290,11 +291,12 @@ employees.get("/:id", async (c) => {
   const id = c.req.param("id");
   const employee = await c.env.DB.prepare(`SELECT * FROM employees WHERE id = ?`).bind(id).first();
   if (!employee) throw notFound("No employee with that id");
-  const [reviews, recent, spend] = await Promise.all([
-    c.env.DB.prepare(`SELECT * FROM employee_reviews WHERE employee_id = ? ORDER BY ts DESC LIMIT 10`).bind(id).all(),
-    c.env.DB.prepare(`SELECT id, title, status, cost_micros, created_at FROM tasks WHERE employee_id = ? ORDER BY created_at DESC LIMIT 20`).bind(id).all(),
-    c.env.DB.prepare(`SELECT COALESCE(SUM(cost_micros),0) AS total FROM usage_ledger WHERE employee_id = ?`).bind(id).first<{ total: number }>(),
-  ]);
+  const reads = batchReads(c.env.DB);
+  const reviewsP = reads.all(true, () => c.env.DB.prepare(`SELECT * FROM employee_reviews WHERE employee_id = ? ORDER BY ts DESC LIMIT 10`).bind(id));
+  const recentP = reads.all<{ id: string; title: string; status: string; cost_micros: number; created_at: number }>(true, () => c.env.DB.prepare(`SELECT id, title, status, cost_micros, created_at FROM tasks WHERE employee_id = ? ORDER BY created_at DESC LIMIT 20`).bind(id));
+  const spendP = reads.first<{ total: number }>(true, () => c.env.DB.prepare(`SELECT COALESCE(SUM(cost_micros),0) AS total FROM usage_ledger WHERE employee_id = ?`).bind(id));
+  const commandsP = reads.all<{ id: string; kind: string; status: string; spec: string; created_at: number }>(true, () => c.env.DB.prepare(`SELECT id, kind, state AS status, spec, created_at FROM boss_commands WHERE (CASE WHEN kind = 'repo' THEN 'emp_repo' ELSE 'emp_chief' END) = ? ORDER BY created_at DESC LIMIT 20`).bind(id));
+
   /*
    * THE DUTIES SHE OWNS, AND THE DOCUMENTS SHE WORKS FROM.
    *
@@ -307,14 +309,12 @@ employees.get("/:id", async (c) => {
    * reach - the charter behind an endpoint nothing called, and the spec at a repository path that
    * means nothing to anyone without a checkout.
    */
-  const duties = await c.env.DB
-    .prepare(
-      `SELECT id, name, local_hour, local_minute, timezone, cadence, next_due_at, last_run_at,
-              suspended, success_criteria, task_input
-         FROM standing_duties WHERE employee_id = ? ORDER BY next_due_at`,
-    )
-    .bind(id)
-    .all<{ task_input: string | null }>();
+  const dutiesP = reads.all<{ task_input: string | null }>(true, () => c.env.DB.prepare(
+    `SELECT id, name, local_hour, local_minute, timezone, cadence, next_due_at, last_run_at,
+            suspended, success_criteria, task_input FROM standing_duties WHERE employee_id = ? ORDER BY next_due_at`,
+  ).bind(id));
+  await reads.flush();
+  const [reviews, recent, spend, commands, duties] = await Promise.all([reviewsP, recentP, spendP, commandsP, dutiesP]);
 
   // The spec paths a duty names, surfaced as data rather than left buried in its input JSON. The
   // reader still cannot open the file from here - it lives in the repository - but she can at least
@@ -335,6 +335,10 @@ employees.get("/:id", async (c) => {
     employee,
     reviews: reviews.results ?? [],
     recent_tasks: recent.results ?? [],
+    recent_work: [...(recent.results ?? []).map((t) => ({ ...t, type: "task" })), ...(commands.results ?? []).map((r) => {
+      const spec = JSON.parse(r.spec);
+      return { id: r.id, title: spec.ask ?? spec.title ?? spec.who ?? spec.name ?? r.kind.replace(/_/g, " "), status: r.status, created_at: r.created_at, type: "command" };
+    })].sort((a, b) => Number(b.created_at) - Number(a.created_at)).slice(0, 20),
     lifetime_cost_micros: spend?.total ?? 0,
     duties: duties.results ?? [],
     specs: [...specs],

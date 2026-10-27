@@ -32,7 +32,7 @@
  * only for system mail that no employee owns.
  */
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -244,6 +244,44 @@ const BOSS_ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.co
  * job without any code in the subject. A refs record that fails is said on stderr by name; the
  * email itself has gone and is not retried.
  */
+/** Durable private retry copies: an archive outage must never cause the email to be sent twice. */
+export async function archiveSentMail(payload, id, fetchImpl = fetch, { commandId = null, key = null } = {}) {
+  if (!id) throw new Error("The accepted email has no identifier.");
+  const directory = process.env.BOSS_OS_SENT_MAIL_DIR ?? join(homedir(), ".boss-os", "sent-mail-pending");
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const file = join(directory, `${createHash("sha256").update(id).digest("hex")}.json`);
+  const refs = String(payload.headers?.["X-Boss-Ref"] ?? "").split(/\s+/);
+  const record = { provider_id: id, message_id: id, from: payload.from, employee_address: payload.reply_to ?? payload.from, to: [...(payload.to ?? []), ...(payload.cc ?? []), ...(payload.bcc ?? [])].join(", "), subject: payload.subject, text: payload.text ?? "", html: payload.html ?? null,
+    command_id: commandId ?? refs.find((r) => r.startsWith("cmd_")) ?? null, in_reply_to: payload.headers?.["In-Reply-To"] ?? null, sent_at: Date.now() };
+  writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
+  // The provider receipt id is not the RFC Message-ID her reply will carry in References.
+  if (key) {
+    try {
+      const got = await fetchImpl(`${RESEND}/${id}`, { headers: { authorization: `Bearer ${key}` } });
+      const metadata = got.ok ? await got.json() : null;
+      if (metadata?.message_id) { record.message_id = metadata.message_id; writeFileSync(file, JSON.stringify(record), { mode: 0o600 }); }
+    } catch { /* The receipt and exact words remain durable; an unavailable read cannot resend. */ }
+  }
+  return flushSentMail(fetchImpl, directory);
+}
+export async function flushSentMail(fetchImpl = fetch, directory = process.env.BOSS_OS_SENT_MAIL_DIR ?? join(homedir(), ".boss-os", "sent-mail-pending")) {
+  if (!process.env.BOSS_PASSCODE || !existsSync(directory)) return false;
+  try {
+    const cookie = await bossCookieFor(fetchImpl);
+    for (const name of readdirSync(directory).filter((n) => n.endsWith(".json"))) {
+      const file = join(directory, name);
+      const record = JSON.parse(readFileSync(file, "utf8"));
+      const r = await fetchImpl(`${BOSS_ORIGIN}/api/boss/mail/sent`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(record) });
+      if (!r.ok) throw new Error(`Mail history refused the record (${r.status})`);
+      unlinkSync(file);
+    }
+    return true;
+  } catch (e) {
+    console.error(`Mail history is waiting to be saved; its private retry copy is kept: ${e?.message ?? e}`);
+    return false;
+  }
+}
+
 export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { context = null } = {}) {
   const ready = plainOrSimplified(payload);
   if (ready.held) return holdMail(sender, payload, ready.held, fetchImpl);
@@ -254,6 +292,10 @@ export async function postEmployeeMail(sender, payload, fetchImpl = fetch, { con
     headers: { "content-type": "application/json", authorization: `Bearer ${sender.key}` },
     body: JSON.stringify(payload),
   });
+  if (res.ok) {
+    const id = typeof res.clone === "function" ? (await res.clone().json().catch(() => ({})))?.id : null;
+    if (id) await archiveSentMail(payload, id, fetchImpl, { key: sender.key });
+  }
   const refs = String(payload?.headers?.["X-Boss-Ref"] ?? "").split(/\s+/).filter(Boolean);
   if (res.ok && refs.length) {
     let why;
@@ -418,12 +460,13 @@ export function errandPayloadProblems(p, { owner = process.env.BOSS_NOTIFY_TO ??
   return out;
 }
 /** The one POST of an errand to Resend. `{ ok, id }` or `{ ok: false, error }`; a payload that fails its check is never sent. */
-export async function postErrandMail(payload, fetchImpl = fetch, { key = process.env.BOSS_OS_MAIL_KEY } = {}) {
+export async function postErrandMail(payload, fetchImpl = fetch, { key = process.env.BOSS_OS_MAIL_KEY, commandId = null } = {}) {
   const problems = errandPayloadProblems(payload);
   if (problems.length) return { ok: false, error: `refused before sending: ${problems.join("; ")}` };
   if (!key) return { ok: false, error: "no BOSS_OS_MAIL_KEY in the environment (run through the vault)" };
   const res = await fetchImpl(RESEND, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${key}` }, body: JSON.stringify(payload) });
   const body = await res.json().catch(() => ({}));
+  if (res.ok && body?.id) await archiveSentMail(payload, body.id, fetchImpl, { commandId, key });
   return res.ok && body?.id ? { ok: true, id: body.id } : { ok: false, error: `${res.status} ${String(body?.message ?? "").slice(0, 200)}` };
 }
 

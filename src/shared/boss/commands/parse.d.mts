@@ -44,7 +44,8 @@ export interface ErrandOffer { text: string; greet: string | null; needs: string
 export function theirWords(text: string): { text: string; greet: string | null };
 export function errandOffer(text: string): ErrandOffer;
 export function optionText(o: ErrandOption): string;
-export function readErrandReply(text: string, address?: string): { kind: "card" | "decide" | "confirmed" | "other"; what_they_said: string; what_you_do: string; offer: ErrandOffer };
+export function paymentLinksIn(text: string): string[];
+export function readErrandReply(text: string, address?: string, subject?: string): { kind: "card" | "decide" | "confirmed" | "other"; what_they_said: string; what_you_do: string; offer: ErrandOffer };
 export function errandAnswerIn(text: string, offer?: { options?: ErrandOption[]; needs?: string[] }): { choice: ErrandOption | null; phone: string | null; card: boolean; missing: string[]; cancel: boolean; keep: boolean };
 export function partyIn(words: string): number | null;
 export function errandDateIn(words: string, sentAt: number, tz?: string): { y: number; m: number; d: number } | null;
@@ -62,6 +63,9 @@ export function errandReplyNotice(i: {
   booking?: { at?: number; tz?: string } | null;
   decideOpen: boolean;
   unproven?: string[];
+  originalUrl?: string | null;
+  commandId?: string | null;
+  commandUrl?: string | null;
   answerUrl?: string | null;
   cancelUrl?: string | null;
 }): { subject: string; happened: string; details: string[]; decide: Record<string, any>[]; morning: { line?: string; decide?: Record<string, any> } };

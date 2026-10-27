@@ -15,6 +15,8 @@ export type Route =
   | { kind: "morning"; day: string; item: string }
   | { kind: "task"; id: string }
   | { kind: "employee"; id: string }
+  | { kind: "command"; id: string }
+  | { kind: "mail"; id: string }
   | null;
 
 export function readRoute(search = typeof window === "undefined" ? "" : window.location.search): Route {
@@ -22,6 +24,10 @@ export function readRoute(search = typeof window === "undefined" ? "" : window.l
   const day = q.get("morning");
   const item = q.get("item");
   if (day && item && /^\d{4}-\d{2}-\d{2}$/.test(day)) return { kind: "morning", day, item };
+  const command = q.get("command");
+  if (command) return { kind: "command", id: command };
+  const mail = q.get("mail");
+  if (mail) return { kind: "mail", id: mail };
   const task = q.get("task");
   if (task) return { kind: "task", id: task };
   const employee = q.get("employee");
@@ -45,3 +51,5 @@ export function go(href: string) {
 export const morningHref = (day: string, item: string) => `/?morning=${encodeURIComponent(day)}&item=${encodeURIComponent(item)}`;
 export const taskHref = (id: string) => `/?task=${encodeURIComponent(id)}`;
 export const employeeHref = (id: string) => `/?employee=${encodeURIComponent(id)}`;
+
+export const commandHref = (id: string) => `/?command=${encodeURIComponent(id)}`;

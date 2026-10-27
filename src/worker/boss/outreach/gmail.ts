@@ -13,6 +13,9 @@
  * Reading is narrow on purpose: only messages in threads outreach started, and bounce notices. A
  * message in that mailbox that belongs to no outreach thread is never fetched.
  */
+import { stageSentMail } from "../mail/history";
+import { readableText } from "../../../shared/boss/intake/messageBody.mjs";
+import { decodeMimeHeader } from "../../../shared/boss/intake/mail.mjs";
 import type { Env } from "../env";
 import { serviceAccountFrom, type ServiceAccount } from "../wealth/gmailDraft";
 import { OUTREACH_MAILBOX, assertOutreachMailboxAllowed, assertSenderAllowed, type Business } from "./catalog";
@@ -83,11 +86,11 @@ async function mintToken(creds: ServiceAccount, scope: string, fetchImpl: typeof
 
 export class GmailSession {
   private tokens = new Map<string, string>();
-  constructor(private creds: ServiceAccount, private fetchImpl: typeof fetch) {}
+  constructor(private creds: ServiceAccount, private fetchImpl: typeof fetch, private env: Env) {}
 
   static from(env: Env, fetchImpl: typeof fetch = fetch): GmailSession | null {
     const creds = serviceAccountFrom(env);
-    return creds ? new GmailSession(creds, fetchImpl) : null;
+    return creds ? new GmailSession(creds, fetchImpl, env) : null;
   }
 
   private async token(scope: string): Promise<string> {
@@ -104,14 +107,16 @@ export class GmailSession {
     assertSenderAllowed(business);
     if (!raw.includes(`<${business.sender}>`)) throw new Error(`Refused: the message is not From ${business.sender}.`);
     const token = await this.token(SCOPE_COMPOSE);
+    const receipt = await stageSentMail(this.env, { from: business.sender, to: raw.match(/^To: (.+)/m)?.[1]?.trim() ?? "", subject: decodeMimeHeader(raw.match(/^Subject: (.+)/m)?.[1]?.trim() ?? ""), text: readableText(raw, { full: true }).text, raw, thread_id: threadId, employee_id: "emp_relationship" });
     const res = await timed(this.fetchImpl, `${GMAIL}/messages/send`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(threadId ? { raw: base64url(raw), threadId } : { raw: base64url(raw) }),
     });
     const text = await res.text();
-    if (!res.ok) throw new Error(`Gmail refused the send (${res.status}): ${text.slice(0, 200)}`);
+    if (!res.ok) { await receipt.failed(); throw new Error(`Gmail refused the send (${res.status}): ${text.slice(0, 200)}`); }
     const j = JSON.parse(text) as { id: string; threadId: string };
+    await receipt.accepted(j.id);
     return { id: j.id, threadId: j.threadId };
   }
 

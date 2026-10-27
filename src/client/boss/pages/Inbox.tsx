@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MailSections } from "../components/MailThread";
+import { go } from "../nav";
 import { api, type RewriteProgress } from "../api";
 import { Docket } from "../components/Docket";
 import { JudgementDocket } from "../components/JudgementDocket";
@@ -76,9 +78,10 @@ function ageWords(ms: number): string {
   return `${mins} minute${mins === 1 ? "" : "s"}`;
 }
 
-export function Inbox({ onCountChange, onOpen }: {
+export function Inbox({ onCountChange, onOpen, onBack }: {
   onCountChange: (n: number) => void;
   onOpen: (id: string) => void;
+  onBack?: () => void;
 }) {
   const [items, setItems] = useState<any[] | null>(null);
   /*
@@ -372,9 +375,11 @@ export function Inbox({ onCountChange, onOpen }: {
 
   return (
     <>
+      <button className="btn btn-small back-link" onClick={() => onBack ? onBack() : go("/?view=morning")}>← Back</button>
+      <h2>Approvals</h2>
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
       {flash && (
-        <div className="notice" style={{ borderColor: "var(--reject)" }}>
+        <div className="notice" style={{ borderColor: "var(--gold)" }}>
           {flash}
           <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">✕</button>
         </div>
@@ -540,19 +545,6 @@ export function Inbox({ onCountChange, onOpen }: {
         *
         * Below the decisions, because a decision outranks a notification.
         */}
-      {(notices?.length ?? 0) > 0 && (
-        <>
-          <p className="eyebrow">Just so you know — nothing here needs an answer · {notices!.length}</p>
-          {notices!.map((n) => <Docket key={n.id} approval={n} onDecide={decide} onOpen={onOpen} />)}
-        </>
-      )}
-      {notices === null && !error && (
-        <div className="row-sub">
-          What your employees have told you could not be read just now, so this is not saying they
-          have told you nothing.
-        </div>
-      )}
-
       {items === null ? (
         <>
           <p className="eyebrow">Waiting on you</p>
@@ -609,6 +601,22 @@ export function Inbox({ onCountChange, onOpen }: {
           What you put off could not be read just now, so this is not saying there is nothing put off.
         </div>
       )}
+      <h2>Notices</h2>
+      {(notices?.length ?? 0) > 0 && (
+        <>
+          <p className="eyebrow">Just so you know — nothing here needs an answer · {notices!.length}</p>
+          {notices!.map((n) => <Docket key={n.id} approval={n} onDecide={decide} onOpen={onOpen} />)}
+        </>
+      )}
+      {notices === null && !error && (
+        <div className="row-sub">
+          What your employees have told you could not be read just now, so this is not saying they
+          have told you nothing.
+        </div>
+      )}
+
+      {notices?.length === 0 && <p className="row-sub">No notices waiting.</p>}
+      <MailSections />
     </>
   );
 }

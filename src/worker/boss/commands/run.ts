@@ -163,7 +163,7 @@ export async function sendApprovedEmail(env: Env, id: string, now = Date.now()):
     await save(env, id, { state: "held" }, now);
     return { sent: false, line: `Held until Danielle's change is live (${gate.what}). It goes on its own the moment it lands, exactly as you saw it.` };
   }
-  const out = await sendOne(env, { from: spec.from_mailbox, to: spec.to, subject: result.draft_subject, text: result.draft_text });
+  const out = await sendOne(env, { from: spec.from_mailbox, to: spec.to, subject: result.draft_subject, text: result.draft_text, command_id: row.id });
   if (!out.ok) {
     await save(env, id, { state: "approved", result: { ...result, send_error: out.why } }, now);
     return { sent: false, line: `Not sent yet: ${out.why}. Danielle has it, and it goes once that is fixed.` };
@@ -358,7 +358,7 @@ function commandTitle(kind: string, spec: Json): string {
  * The intake's door into this file. A reply on a command's thread answers that command; a new email
  * with commands in it creates them. Null means "not a command" and the ordinary triage takes it.
  */
-export async function commandFromMail(env: Env, input: { subject: string; text: string; mailId: string; sender: string; refs: string[]; now: number; to?: string }): Promise<CommandMailResult | null> {
+export async function commandFromMail(env: Env, input: { subject: string; text: string; mailId: string; sender: string; refs: string[]; now: number; to?: string; ownerName?: string }): Promise<CommandMailResult | null> {
   const cmdRefs = input.refs.filter((r) => r.startsWith("cmd_"));
   if (cmdRefs.length) {
     const rows: CommandRow[] = [];
@@ -404,6 +404,7 @@ export async function commandFromMail(env: Env, input: { subject: string; text: 
   const ids = found.map(() => newId("cmd"));
   const now = input.now;
   for (const [i, c] of found.entries()) {
+    if (c.kind === "errand") { c.spec.owner_email = input.sender; if (input.ownerName) c.spec.owner_name = input.ownerName; }
     await env.DB.prepare(`INSERT INTO boss_commands (id, mail_id, kind, state, spec, waits_on, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`)
       .bind(ids[i], input.mailId, c.kind, "new", JSON.stringify(c.spec), c.waits_on.map((r: number) => ids[r]).join(",") || null, now, now).run();
   }
@@ -624,25 +625,45 @@ export const ERRAND_WATCH_MS = 21 * 86_400_000;
 const FREE_MAIL_RE = /@(?:gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|aol|proton|protonmail|live|msn|gmx)\.[a-z.]+$/i;
 
 /** Every state in which an errand still has a live thread with the business. */
-const ERRAND_LIVE = ["sent", "replied", "follow_up", "booked", "cancel_sent"];
+const ERRAND_LIVE = ["sent", "replied", "follow_up", "booked", "needs_card", "cancel_sent"];
 
 /**
  * The sent errand a stranger's email answers: from the address Simone wrote to, or — for a business
  * domain — anyone at that domain (the club's host answers for reservations@). Null when it answers none.
  */
-export async function openErrandFor(env: Env, sender: string, now = Date.now()): Promise<CommandRow | null> {
+export async function openErrandFor(env: Env, sender: string, now = Date.now(), message: { subject?: string; text?: string } = {}): Promise<CommandRow | null> {
   const from = String(sender ?? "").trim().toLowerCase();
   if (!from.includes("@")) return null;
   const { results } = await env.DB.prepare(
-    `SELECT * FROM boss_commands WHERE kind = 'errand' AND state IN (${ERRAND_LIVE.map(() => "?").join(",")}) AND updated_at > ? ORDER BY updated_at DESC LIMIT 50`,
-  ).bind(...ERRAND_LIVE, now - ERRAND_WATCH_MS).all<CommandRow>();
+    `SELECT c.*, m.from_addr AS owner_email FROM boss_commands c LEFT JOIN boss_inbound_mail m ON m.id = c.mail_id WHERE c.kind = 'errand' AND c.state IN (${ERRAND_LIVE.map(() => "?").join(",")}) AND c.updated_at > ? ORDER BY c.updated_at DESC LIMIT 50`,
+  ).bind(...ERRAND_LIVE, now - ERRAND_WATCH_MS).all<CommandRow & { owner_email: string | null }>();
+  const matches: CommandRow[] = [];
+  const venues: CommandRow[] = []; const owners: CommandRow[] = [];
   for (const r of results ?? []) {
     const to = String(j(r.spec).to ?? "").toLowerCase();
     if (!to) continue;
-    if (to === from) return r;
-    if (!FREE_MAIL_RE.test(to) && from.endsWith(`@${to.split("@")[1]}`)) return r;
+    if (to === from || (!FREE_MAIL_RE.test(to) && from.endsWith(`@${to.split("@")[1]}`))) matches.push(r);
+    else if (isBookingPlatform(from)) {
+      const spec = j(r.spec); const result = j(r.result);
+      const venue = String(result.request ?? spec.ask ?? "").match(/\bat\s+(.+?)\s+on\b/i)?.[1];
+      const domainName = to.split("@")[1]?.split(".")[0];
+      const ownerName = String(result.text ?? "").match(/assistant to\s+([^\r\n]+)/i)?.[1];
+      const venueNames = [venue, domainName, spec.venue];
+      const ownerNames = [spec.owner_name, spec.owner_email, ownerName, r.owner_email, String(spec.owner_name ?? ownerName ?? "").trim().split(/\s+/)[0]];
+      const content = `${message.subject ?? ""}\n${message.text ?? ""}`.toLowerCase();
+      const normal = (v: string) => v.toLowerCase().replace(/[^a-z0-9@]+/g, " ").trim();
+      const names = (values: unknown[]) => values.some((v) => v && String(v).length >= 4 && ` ${normal(content)} `.includes(` ${normal(String(v))} `));
+      if (names(venueNames)) venues.push(r);
+      else if (names(ownerNames)) owners.push(r);
+    }
   }
-  return null;
+  // A named venue resolves two live errands for the same owner; her name alone never guesses.
+  const best = matches.length ? matches : venues.length ? venues : owners;
+  return best.length === 1 ? best[0]! : null;
+}
+
+export function isBookingPlatform(sender: string): boolean {
+  return /@(?:[a-z0-9-]+\.)*(?:sevenrooms\.com|opentable\.com|resy\.com|exploretock\.com|tock\.com|tock\.to)$/i.test(sender);
 }
 
 /** The Mac sent it: the provider's id and the exact words go on the row, and the watch starts. */
@@ -671,11 +692,13 @@ async function ensureTap(env: Env, row: CommandRow, now: number): Promise<string
  * a choice, a question or a fee is a Decide item she answers by replying, and a card or deposit is
  * hers, never an agent's. Nothing goes back to them from here: her reply is what sends a follow-up.
  */
-export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean; messageId?: string | null }, now = Date.now()): Promise<void> {
+export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean; messageId?: string | null; mailId?: string }, now = Date.now()): Promise<void> {
+  if (row.state === "done") return;
   const spec = j(row.spec); const result = j(row.result);
-  const read = readErrandReply(reply.text || reply.subject, spec.to);
+  const read = readErrandReply(reply.text || reply.subject, spec.to, reply.subject);
   const offer = read.offer;
-  const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 8000), kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];
+  // Full originals live in R2; keep this operational preview bounded as a thread grows.
+  const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 8000), mail_id: reply.mailId ?? null, kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];
   const thread = { message_id: reply.messageId ?? result.thread?.message_id ?? null, subject: /^re:/i.test(reply.subject) ? reply.subject.slice(0, 200) : `Re: ${String(result.subject ?? reply.subject).slice(0, 196)}`, greet: offer.greet ?? result.thread?.greet ?? null };
   const asked = String(result.request ?? spec.ask ?? "").slice(0, 300);
   const unproven = reply.dmarc ? [] : ["Their email could not be fully proven to come from them, so check it before acting on it."];
@@ -697,23 +720,26 @@ export async function errandReplied(env: Env, row: CommandRow, reply: { from: st
   const date = errandDateIn(errandWords(spec, result), result.sent_at ?? row.created_at, ERRAND_TZ);
   const one = offer.options.length === 1 ? offer.options[0] : null;
   const pending = result.booking && !result.booking.confirmed ? result.booking : null;
-  const confirmsPending = pending && offer.confirms && !offer.asks && (!one || one.time === pending.time);
+  const confirmsPending = read.kind !== "card" && pending && offer.confirms && !offer.asks && (!one || one.time === pending.time);
   let booking = result.booking ?? null;
   if (read.kind === "confirmed" && one && date) booking = { ...(bookingAt(date, one, ERRAND_TZ) ?? {}), label: one.label, confirmed: true };
   else if (confirmsPending) booking = { ...pending, confirmed: true };
-  else if (offer.confirms && one && date && !offer.asks) booking = { ...(bookingAt(date, one, ERRAND_TZ) ?? {}), label: one.label, confirmed: true };
-  const confirmed = Boolean(booking?.confirmed) && (read.kind === "confirmed" || confirmsPending || (offer.confirms && !offer.asks));
+  else if (read.kind !== "card" && offer.confirms && one && date && !offer.asks) booking = { ...(bookingAt(date, one, ERRAND_TZ) ?? {}), label: one.label, confirmed: true };
+  if (read.kind === "card" && booking) booking = { ...booking, confirmed: false };
+  const confirmed = read.kind !== "card" && Boolean(booking?.confirmed) && (read.kind === "confirmed" || confirmsPending || (offer.confirms && !offer.asks));
   const kind = confirmsPending && read.kind !== "card" && !offer.asks ? "confirmed" : read.kind;
   const rules = { rules: offer.rules.length ? offer.rules : (result.rules ?? []), cancel_rule: offer.cancel_rule.length ? offer.cancel_rule : (result.cancel_rule ?? []) };
   const decideOpen = kind === "decide" && !confirmed;
   await save(env, row.id, {
-    state: confirmed ? "booked" : "replied",
+    state: read.kind === "card" ? "needs_card" : confirmed ? "booked" : "replied",
     result: { ...result, replies, thread, ...rules, booking: confirmed ? booking : (booking ?? null), decide_open: decideOpen, offer: { options: offer.options, needs: offer.needs, rules: offer.rules, cancel_rule: offer.cancel_rule, greet: offer.greet } },
   }, now);
   const fresh = (await getCommand(env, row.id))!;
   const token = kind === "decide" || confirmed ? await ensureTap(env, fresh, now) : null;
   const notice = errandReplyNotice({
     to: spec.to, asked, read, kind, confirmed, booking, decideOpen, unproven,
+    commandId: row.id, commandUrl: `${ORIGIN}/?command=${encodeURIComponent(row.id)}`,
+    originalUrl: reply.mailId ? `${ORIGIN}/?mail=${encodeURIComponent(reply.mailId)}` : `${ORIGIN}/?command=${encodeURIComponent(row.id)}`,
     answerUrl: decideOpen && token ? tapUrl(token, "answer") : null,
     cancelUrl: decideOpen && token ? tapUrl(token, "cancel") : null,
   });
@@ -731,6 +757,8 @@ async function answerErrand(env: Env, row: CommandRow, said: Json, raw: string, 
   const spec = j(row.spec); const result = j(row.result);
   const offer = result.offer ?? { options: [], needs: [] };
   const a = errandAnswerIn(raw, offer);
+  if (said.verb === "handle_self") return handleErrandSelf(env, row.id, now);
+  if (row.state === "done") return "Owner is handling this herself. Simone has stood down.";
   const cancel = said.verb === "cancel" || a.cancel;
   if (cancel && row.state === "queued") { await save(env, row.id, { state: "cancelled" }, now); return "Cancelled. Nothing was sent."; }
   if (cancel && ["cancel_sent", "cancelled"].includes(row.state)) return `Already cancelled with ${spec.to}.`;
@@ -764,7 +792,7 @@ export async function errandFollowedUp(env: Env, id: string, out: { message_id: 
   if (!row || row.kind !== "errand" || row.state !== "follow_up") return false;
   const result = j(row.result); const spec = j(row.spec);
   const p = result.pending ?? {};
-  const follow_ups = [...(result.follow_ups ?? []), { message_id: out.message_id, sent_at: now, purpose: p.purpose, in_reply_to: result.thread?.message_id ?? null }];
+  const follow_ups = [...(result.follow_ups ?? []), { message_id: out.message_id, sent_at: now, purpose: p.purpose, text: p.text ?? null, subject: p.subject ?? null, in_reply_to: result.thread?.message_id ?? null }];
   await save(env, id, { state: p.purpose === "cancel" ? "cancel_sent" : "sent", result: { ...result, follow_ups, pending: null, status: p.purpose === "cancel" ? "waiting for them to confirm the cancellation" : "waiting for their confirmation" } }, now);
   await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: id, action: p.purpose === "cancel" ? "errand_cancel_sent" : "errand_follow_up_sent", detail: { to: spec.to, message_id: out.message_id } });
   if (p.purpose === "cancel") await owe(env, id, { subject: "Cancelling your booking", happened: `I asked ${spec.to} to cancel, in the same thread. I'll tell you when they confirm.`, details: [`What I sent: ${String(p.text ?? "").replace(/\s+/g, " ").trim()}`] });
@@ -780,7 +808,7 @@ export async function errandFollowedUp(env: Env, id: string, out: { message_id: 
  */
 export async function errandRemindersDue(env: Env, now = Date.now()): Promise<Array<{ id: string; notice: Notice }>> {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM boss_commands WHERE kind = 'errand' AND state IN ('sent','replied','follow_up','booked') ORDER BY updated_at DESC LIMIT 200`,
+    `SELECT * FROM boss_commands WHERE kind = 'errand' AND state IN ('sent','replied','follow_up','booked','needs_card') ORDER BY updated_at DESC LIMIT 200`,
   ).all<CommandRow>();
   const due: Array<{ id: string; notice: Notice }> = [];
   for (const row of results ?? []) {
@@ -800,7 +828,7 @@ export function reminderNotice(spec: Json, result: Json, token: string): Notice 
   const cancel: string[] = result.cancel_rule ?? [];
   return {
     subject: `Do you still want to go? ${when}`,
-    happened: `Your booking is in 28 hours. ${b.confirmed ? "They have confirmed it." : "They have NOT confirmed it yet: I asked them to, and I'm watching for their answer."}`,
+    happened: `Your booking is in 28 hours. ${b.confirmed && result.replies?.at(-1)?.kind !== "card" && !result.offer?.needs?.some((n: string) => /card/.test(n)) ? "They have confirmed it." : "They have NOT confirmed it yet: I asked them to, and I'm watching for their answer."}`,
     details: [
       `What: ${what}`,
       `Where: ${String(result.request ?? "").match(/\bat\s+([A-Z][^,]+?)\s+on\b/)?.[1] ?? "the place you asked for"} (${spec.to})`,
@@ -823,8 +851,20 @@ export async function errandReminded(env: Env, id: string, now = Date.now()): Pr
   await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: id, action: "errand_reminder_sent", detail: {} });
   return true;
 }
+/** Stand down without contacting the venue, including any queued notices and follow-ups. */
+export async function handleErrandSelf(env: Env, id: string, now = Date.now()): Promise<string> {
+  const row = await getCommand(env, id);
+  if (!row || row.kind !== "errand") return "No such errand.";
+  await save(env, id, { state: "done", result: { ...j(row.result), pending: null, decide_open: false, owner_handling: true, status: "Owner is handling this herself" } }, now);
+  await env.DB.prepare(`UPDATE boss_commands SET notice = NULL, notice_state = 'sent' WHERE id = ?`).bind(id).run();
+  await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: id, action: "errand_owner_handling" });
+  return "Owner is handling this herself. Simone has stood down; no email or reminder will be sent.";
+}
+
 /** Her tap or her reply on an errand, from the tap page: keep, cancel, or her answer in words. */
-export async function errandTap(env: Env, row: CommandRow, action: "keep" | "cancel" | "answer", words = "", now = Date.now()): Promise<string> {
+export async function errandTap(env: Env, row: CommandRow, action: "keep" | "cancel" | "answer" | "handle_self", words = "", now = Date.now()): Promise<string> {
+  if (action === "handle_self") return handleErrandSelf(env, row.id, now);
+  if (row.state === "done") return "Owner is handling this herself. Simone has stood down.";
   if (action === "keep") return "Kept. Nothing changes.";
   if (action === "cancel") return (await answerErrand(env, row, { verb: "cancel" }, "cancel", now)) ?? "Nothing to cancel on this one.";
   return (await answerErrand(env, row, { verb: "note" }, words, now)) ?? "Got it, but there was nothing open to answer.";

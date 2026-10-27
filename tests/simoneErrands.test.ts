@@ -99,7 +99,7 @@ describe("the send: from Simone, Reply-To Simone, no Cc to the owner by default"
     expect(calls).toHaveLength(0);
     const ok = await postErrandMail(errandMail({ to: "res@club.example.test", subject: "s", text: "t" }), fake, { key: "k" });
     expect(ok).toEqual({ ok: true, id: "em_1" });
-    expect(calls).toEqual(["https://api.resend.com/emails"]);
+    expect(calls).toEqual(["https://api.resend.com/emails", "https://api.resend.com/emails/em_1"]);
   });
 });
 

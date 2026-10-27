@@ -21,6 +21,7 @@ async function main() {
   let sent = 0;
   const failed = [];
   for (const r of reminders ?? []) {
+    if ((await api.get(`/commands/${r.id}`)).result?.owner_handling) continue;
     const res = await postEmployeeMail(simone, employeeMail(simone, noticeArgs(r.id, r.notice)));
     if (res.ok) { await api.post(`/commands/${r.id}/reminded`); sent++; }
     else failed.push(`${r.id} (${res.status ?? res.error ?? "refused"})`);

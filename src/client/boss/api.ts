@@ -99,6 +99,12 @@ async function captureOffline<T>(
 }
 
 export const api = {
+  mail: (filter: { employee?: string; counterpart?: string; command?: string; thread?: string } = {}) => call<any>(`/mail?${new URLSearchParams(Object.entries(filter).filter(([, v]) => Boolean(v)))}`),
+  mailItem: (id: string) => call<any>(`/mail/${encodeURIComponent(id)}`),
+  admitSender: (id: string) => call<{ line: string }>(`/mail/${encodeURIComponent(id)}/admit`, post("")),
+  command: (id: string) => call<any>(`/commands/${encodeURIComponent(id)}`),
+  handleErrandSelf: (id: string) => call<{ line: string }>(`/commands/${encodeURIComponent(id)}/handle-self`, post("")),
+  answerErrand: (id: string, action: string, words = "") => call<{ line: string }>(`/commands/${encodeURIComponent(id)}/answer`, post("", { action, words })),
   authState: () => call<{ unlocked: boolean }>("/auth/state"),
   /**
    * Fire a standing duty now, outside its clock. The Worker route (`POST /api/duties/:id/run-now`) has existed since the briefing

@@ -22,6 +22,8 @@ import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
 import { gmailDraftUrl, gmailThreadUrl, tapUrl } from "../../../shared/boss/lp/plan.mjs";
 import { holdThreadReply } from "../wealth/gmailDraft";
 import { answerBlockFromMail } from "../service/blockReply";
+import { commandReplyIn } from "../../../shared/boss/commands/parse.mjs";
+import { getCommand, handleErrandSelf } from "../commands/run";
 import { tapToken } from "./desk";
 
 /** "2: …", "#2: …", "2. …", "2) …", "2 - …": a number, a mark, then her words. Never "2 people …". */
@@ -133,6 +135,24 @@ export async function decideAnswerFromMail(
   const words = m[2]!.trim();
   const card = await decideCardOf(env, n, day);
   if (!card || card.key?.startsWith("prospect-template:")) return null; // templateReply.ts's
+  if (commandReplyIn(words)?.verb === "handle_self") {
+    let errandId = /^errand:(cmd_[a-z0-9_]+)$/i.exec(card.key ?? "")?.[1] ?? null;
+    // Older morning cards predate keys. An exact business address and ONE live errand can still
+    // identify theirs; two errands at that business are left for the owner to open explicitly.
+    if (!errandId && !card.key) {
+      const address = /^([^\s<>]+@[^\s<>]+)\s+(?:wants a card|answered your request)/i.exec(card.title)?.[1];
+      if (address) {
+        const found = await env.DB.prepare(`SELECT id FROM boss_commands WHERE kind = 'errand' AND state IN ('queued','sent','replied','follow_up','booked','needs_card','cancel_sent') AND lower(json_extract(spec, '$.to')) = ? LIMIT 2`).bind(address.toLowerCase()).all<{ id: string }>();
+        if (found.results.length === 1) errandId = found.results[0]!.id;
+      }
+    }
+    const errand = errandId ? await getCommand(env, errandId) : null;
+    if (errand?.kind === "errand") {
+      const note = await handleErrandSelf(env, errand.id, input.now);
+      await markCard(env, card, { words, answered: true, note }, input.now);
+      return { outcome: "DECIDE_ANSWERED", taskId: null, note };
+    }
+  }
   const lp = await lpRowOf(env, card);
   if (lp) return { outcome: "DECIDE_ANSWERED", taskId: null, note: await answerLp(env, card, n, lp, words, input.now, fetchImpl) };
 

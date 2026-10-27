@@ -423,6 +423,7 @@ export function commandReplyIn(text, now = Date.now()) {
   const t = ownWords(text);
   if (!t) return null;
   const first = t.split("\n").find((l) => l.trim()) ?? "";
+  if (/^\s*(?:(?:N|[1-9]\d*):\s*)?(?:dismiss|I[’\']?ll handle it|I am handling it myself|I[’\']m handling it myself)\b/i.test(first)) return { verb: "handle_self" };
   if (/^\s*(?:cancel|never\s?mind|stop|don'?t send|do not send|skip)\b/i.test(first)) return { verb: "cancel" };
   if (/^\s*(?:send(?: it| as is)?|yes,?\s+send|go ahead(?: and send)?|looks good,? send)\b[\s.!]*$/i.test(first)) return { verb: "send" };
   if (/^\s*(?:try again|redo|start again|another version|rewrite it)\b/i.test(first)) return { verb: "retry" };
@@ -526,7 +527,7 @@ export function errandProblems({ subject = "", request = "" } = {}) {
  * offers a choice, asks for something, or names a fee, deposit or cancellation charge is hers to
  * decide, with every option, fee and request listed in plain words. Their whole answer is kept.
  */
-const CARD_ASK_RE = /\b(?:credit\s+card|card\s+(?:number|details|on\s+file|to\s+(?:hold|secure|guarantee))|deposit|prepay(?:ment)?|pre-?authori[sz](?:e|ation)|payment\s+(?:details|information|link))\b/i;
+const CARD_ASK_RE = /\b(?:credit\s+card|card\s+(?:required|number|details|on\s+file|to\s+(?:hold|secure|guarantee))|deposit|prepay(?:ment)?|pre-?authori[sz](?:e|ation)|payment\s+(?:details|information|link))\b/i;
 const CONFIRMED_RE = /\b(?:(?:is|are|has\s+been|have\s+been|now)\s+(?:confirmed|booked|reserved)|confirmed\s+(?:for|your|you|a|the)|we(?:'ve|\s+have)\s+(?:booked|reserved|confirmed)|you(?:'re|\s+are)\s+(?:all\s+)?(?:set|booked|confirmed)|(?:look|looking)\s+forward\s+to\s+(?:seeing|welcoming|hosting)|see\s+you\s+(?:on|then|thursday|friday|saturday|sunday|monday|tuesday|wednesday))\b/i;
 const UNAVAILABLE_RE = /\b(?:fully\s+booked|no\s+availability|not\s+available|unavailable|waitlist|wait\s+list|instead|alternative|only\s+have|would\s+\d{1,2}(?::\d\d)?\s*(?:am|pm)?\s+work)\b/i;
 const ASK_RE = /\?|\b(?:please\s+(?:provide|send|share|let\s+(?:us|me)\s+know|advise|reply|confirm|choose|select)|kindly\s+(?:provide|send|share|confirm|let)|should\s+you\s+wish|if\s+you\s+(?:would\s+like|wish)\s+to\s+proceed|we\s+(?:will\s+)?(?:need|require)|let\s+(?:us|me)\s+know\s+(?:which|what|your|if))\b/i;
@@ -628,14 +629,21 @@ export const optionText = (o) => `${o.time}${o.label || o.fee ? ` (${[o.label, o
  * a card or deposit (always hers, never an agent's); "decide" for choices, questions or fees;
  * "other" otherwise. Their whole answer is kept (up to 6,000 characters, cut only at a sentence).
  */
-export function readErrandReply(text, address = "them") {
-  const offer = errandOffer(text);
-  const t = offer.text.replace(/\s+/g, " ").trim() || String(text ?? "").replace(/\s+/g, " ").trim();
-  const said = t.length > 6000 ? `${t.slice(0, 6000).replace(/[^.!?]*$/, "")} (Their full email is on Boss OS.)` : t;
+export function paymentLinksIn(text) {
+  const links = [...new Set(String(text ?? "").match(/https?:\/\/[^\s<>"']+/gi) ?? [])].map((u) => u.replace(/[).,;]+$/, ""));
+  const cardLinks = links.filter((url) => /card|pay|secure|deposit|guarantee/i.test(url));
+  // A venue's menu or home page is still quoted, but must not displace its actual card link.
+  return cardLinks.length ? cardLinks : links;
+}
+
+export function readErrandReply(text, address = "them", subject = "") {
+  const offer = errandOffer(`${subject}\n${text}`);
+  const said = ownWords(text).trim();
+  const t = said.replace(/\s+/g, " ").trim();
   const at = address && address !== "them" ? `them at ${address}` : "them";
   const opts = offer.options;
   const charges = [...opts.filter((o) => o.fee).map((o) => `${o.time}: ${o.fee}`), ...offer.fees];
-  const card = offer.needs.some((n) => /card/.test(n));
+  const card = CARD_ASK_RE.test(t) || offer.needs.some((n) => /card/.test(n));
   const choice = opts.length > 1 || offer.unavailable;
   const decide = card || choice || offer.asks || offer.needs.length > 0 || charges.length > 0 || offer.cancel_rule.length > 0 || offer.policy;
   if (offer.confirms && opts.length === 1 && !offer.asks && offer.needs.length === 0 && !decide) {
@@ -656,7 +664,13 @@ export function readErrandReply(text, address = "them") {
   if (offer.rules.length) parts.push(`Their rules: ${offer.rules.join(" ")}`);
   const needs = offer.needs.filter((n) => !/card/.test(n));
   if (needs.length) parts.push(`To book, they need ${needs.join(" and ")}.`);
-  if (card) parts.push(`They want a card or deposit. Only you can give that; no one on your team will. If you want it, write to ${at}.`);
+  if (card) {
+    const links = paymentLinksIn(said);
+    const guarantee = /(?:only|solely)[^.\n]*(?:no[ -]?show|cancel)|(?:no[ -]?show|cancel)[^.\n]*(?:only|guarantee)|(?:guarantee)[^.\n]*(?:no[ -]?show|cancel)/i.test(t);
+    const upfront = /\b(?:charged|due|payable)\s+(?:now|today|in\s+advance)\b|\bprepay|\b(?:fee|deposit)\s+(?:is\s+)?(?:required|due)\b/i.test(t);
+    parts.push(guarantee ? "They ask for a card as a no-show or cancellation guarantee. You are charged only under their no-show or cancellation terms below." : upfront ? "They ask you to pay a fee or deposit now. Their exact amount and terms are below." : "They ask for a card or payment. Check their exact fee and cancellation terms below before you continue.");
+    parts.push(`Only you can give that card or make a payment; no one on your team will. ${links.length ? `Tap their card link: ${links.join(" ")}` : `Ask ${at} how to give it securely.`}`);
+  }
   else parts.push(`Reply to this email with ${needs.length ? needs.map((n) => n.replace(/^your /, "your ")).join(" and ") : "what you want"} (for example "${opts.length > 1 ? `${opts.length}, ` : ""}${needs.includes("your phone number") ? "my number is …" : "yes"}"), and Simone sends it to them in the same thread. Reply "cancel" to drop it.`);
   return { kind: card ? "card" : "decide", what_they_said: said, what_you_do: parts.join(" "), offer };
 }
@@ -746,22 +760,23 @@ export function bookingWhen(at, tz = ERRAND_TZ) {
  * independent copies of the same information. `answerUrl`/`cancelUrl` are built by the caller
  * (they need a persisted tap token); passing neither leaves the Decide item without buttons. Pure.
  */
-export function errandReplyNotice({ to, asked, read, kind, confirmed, booking, decideOpen, unproven = [], answerUrl = null, cancelUrl = null }) {
+export function errandReplyNotice({ to, asked, read, kind, confirmed, booking, decideOpen, unproven = [], answerUrl = null, cancelUrl = null, originalUrl = null, commandId = null, commandUrl = null }) {
   const offer = read.offer;
   const when = booking?.at ? bookingWhen(booking.at, booking.tz ?? ERRAND_TZ) : null;
   const doNow = kind === "confirmed" || (confirmed && kind !== "card")
     ? `Nothing. They confirmed ${when ?? (offer.options.length === 1 ? offer.options[0].time : "it")}.${booking?.at && confirmed ? " I'll check with you 28 hours before." : ""}${offer.cancel_rule.length ? ` Cancelling: ${offer.cancel_rule.join(" ")}` : ""}`
     : read.what_you_do;
-  const details = [`What I asked for: ${asked}`, `What they said: ${read.what_they_said}`, `What you need to do: ${doNow}`, ...unproven];
+  const details = [`What I asked for: ${asked}`, `What they said: ${read.what_they_said}`, `What you need to do: ${doNow}`, ...unproven, ...(originalUrl ? [`View the original email: ${originalUrl}`] : [])];
   const subject = kind === "card" ? "Your request needs you: they want a card"
     : kind === "confirmed" || (confirmed && booking?.at) ? "Your request is booked"
     : kind === "decide" ? (offer.options.length > 1 ? "Your request needs you: pick a time" : "Your request needs you: they asked something")
     : "They answered your request";
   const card = kind === "card"
-    ? { title: `${to} wants a card or deposit to hold your request`, body: `${read.what_they_said} Only you can give that.`, buttons: [{ label: "Write to them", url: `mailto:${to}` }], priority: 2 }
+    ? { title: `${to} wants a card or deposit to hold your request`, body: `${read.what_they_said} Only you can give that.`, buttons: paymentLinksIn(read.what_they_said).length ? paymentLinksIn(read.what_they_said).map((url) => ({ label: "Open their card link", url })) : [{ label: "Ask how to give a card securely", url: `mailto:${to}` }], priority: 2 }
     : decideOpen && answerUrl && cancelUrl
       ? { title: `${to} answered your request: ${offer.options.length > 1 ? "pick a time" : "they need something from you"}`, body: read.what_you_do, buttons: [{ label: "Answer Simone", url: answerUrl }, { label: "Cancel it", url: cancelUrl }], priority: 2 }
       : null;
+  if (card && commandId) { card.key = `errand:${commandId}`; if (commandUrl) card.screen = commandUrl; }
   return {
     subject,
     happened: `${to} answered the request I sent for you.`,
