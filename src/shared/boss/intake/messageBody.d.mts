@@ -32,7 +32,7 @@ export declare const MIME_TELLS: ReadonlyArray<{ name: string; test: RegExp }>;
 export declare function decodeQuotedPrintable(text: string, charset?: string | null): string;
 export declare function decodeBase64Text(text: string, charset?: string | null): string;
 export declare function htmlToText(html: string): string;
-export declare function readableText(raw: string): ReadableText;
+export declare function readableText(raw: string, options?: { full?: boolean }): ReadableText;
 export declare function stripSignature(text: string): string;
 export declare const QUOTE_START: RegExp;
 export declare function ownWords(text: string | null | undefined): string;

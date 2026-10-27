@@ -14,7 +14,7 @@ import { parseLiveBook, readBookDirective } from "../../../shared/boss/intake/li
 import type { BookDirective } from "../../../shared/boss/intake/liveBook.mjs";
 import { clarificationFor, isReplyMessage } from "../../../shared/boss/intake/clarify.mjs";
 import { handoffFor, seatInDepartment, huntRequestIn } from "../../../shared/boss/intake/handoff.mjs";
-import { taskBodyFrom, ownWords } from "../../../shared/boss/intake/messageBody.mjs";
+import { taskBodyFrom, ownWords, readableText } from "../../../shared/boss/intake/messageBody.mjs";
 import { triage, triageLines, shortTitle, type TriageJob } from "../../../shared/boss/intake/triage.mjs";
 import { parseResearchPage } from "../../../shared/boss/research/page.mjs";
 import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
@@ -308,16 +308,20 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * A row left saying `due` is therefore a handler that returned and a send that never resolved —
    * a visible loose end, in the shape this file already uses for an outcome stuck at RECEIVED.
    */
+  const chain = chainIds(message.headers.get("references"), message.headers.get("in-reply-to"));
+  const parent = chain.length ? await env.DB.prepare(`SELECT thread_id FROM boss_inbound_mail WHERE message_id = ? UNION ALL SELECT thread_id FROM boss_sent_mail WHERE message_id = ? LIMIT 1`).bind(chain[chain.length - 1], chain[chain.length - 1]).first<{ thread_id: string }>() : null;
+  const threadId = parent?.thread_id ?? chain[0] ?? messageId ?? mailId;
   const recordArrival = async (outcome: string, why: string) => {
     await env.DB.prepare(
       `INSERT INTO boss_inbound_mail
-         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+         (id, received_at, to_addr, from_addr, dmarc_pass, authorised, subject, outcome, why, bytes, message_id, reply_state, thread_id, in_reply_to)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       mailId, now, to, sender, dmarc ? 1 : 0, authorised ? 1 : 0, subject.slice(0, 400),
       outcome, why.slice(0, 1000), message.rawSize, messageId,
       // An unauthorised sender is answered with silence on purpose; that is not a reply that failed.
       authorised ? "due" : "none_due",
+      threadId, message.headers.get("in-reply-to"),
     ).run();
   };
 
@@ -351,13 +355,33 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * and only HER reply sends anything back, in their thread (src/worker/boss/commands/run.ts
    * errandReplied, answerErrand).
    */
-  const errand = !isOwner(sender) && message.rawSize <= MAX_BODY_BYTES ? await openErrandFor(env, sender, now) : null;
-  if (errand) {
-    const raw = await new Response(message.raw).text();
-    const text = taskBodyFrom(raw)?.readable ?? "";
+  const externalBytes = !isOwner(sender) && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
+  const externalRaw = externalBytes === null ? null : new TextDecoder().decode(externalBytes);
+  const externalText = externalRaw === null ? "" : readableText(externalRaw, { full: true }).text;
+  const errand = !isOwner(sender) ? await openErrandFor(env, sender, now, { subject, text: externalText }) : null;
+  const externalKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
+  const keepExternal = async () => {
+    if (externalRaw !== null) await env.VAULT.put(externalKey, externalBytes!, { httpMetadata: { contentType: "message/rfc822" } });
+    else {
+      const sized = new FixedLengthStream(message.rawSize);
+      const pumped = message.raw.pipeTo(sized.writable);
+      await env.VAULT.put(externalKey, sized.readable, { httpMetadata: { contentType: "message/rfc822" } });
+      await pumped;
+    }
+    await env.DB.prepare(`UPDATE boss_inbound_mail SET object_key = ? WHERE id = ?`).bind(externalKey, mailId).run();
+  };
+  const admitted = !authorised && !errand ? await env.DB.prepare(`SELECT address FROM boss_mail_senders WHERE address = ?`).bind(sender).first() : null;
+  if (errand || admitted) {
+    const text = externalText || "This email is too large to show here. Tap View the original email to read it.";
     await recordArrival("ERRAND_REPLY", `From ${sender}, answering a request Simone sent for you. Read and told to you; nothing was run or sent back.`);
-    await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId }, now);
-    await finish({ outcome: "ERRAND_REPLY", why: `Their answer to Simone's request ${errand.id}, told to you plainly.`, employeeId: "emp_chief", reply: null });
+    await keepExternal();
+    if (!errand) {
+      await finish({ outcome: "ADMITTED_MAIL", why: "Owner let this sender in for reading; nothing was run or sent.", objectKey: externalKey, reply: null });
+      return { mailId, outcome: "ADMITTED_MAIL", employeeId: null, taskId: null, reply: null };
+    }
+    await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(errand.id, errand.id, mailId).run();
+    await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId, mailId }, now);
+    await finish({ outcome: "ERRAND_REPLY", why: `Their answer to Simone's request ${errand.id}, told to you plainly.`, employeeId: "emp_chief", objectKey: externalKey, reply: null });
     return { mailId, outcome: "ERRAND_REPLY", employeeId: "emp_chief", taskId: null, reply: null };
   }
 
@@ -366,6 +390,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       ? `From ${sender}, which is one of yours, but DMARC did not pass — so the address was not proven and nothing was run.`
       : `From ${sender}, which is not one of your addresses. Recorded and refused.`;
     await recordArrival("REFUSED_SENDER", why);
+    // Keeping mail is not authority to execute its contents or to answer its sender.
+    await keepExternal();
     await audit(env.DB, {
       actor: "system", lane: "ops", entityType: "inbound_mail", entityId: mailId,
       action: "refused", detail: { from: sender, dmarc, to },
@@ -550,9 +576,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * the email goes on exactly as before. src/worker/boss/commands/run.ts.
    */
   const command = readable || subject
-    ? await commandFromMail(env, { subject: trueSubjectOf(readable, subject), text: readable, mailId, sender, refs: threadRefs.refs, now, to })
+    ? await commandFromMail(env, { subject: trueSubjectOf(readable, subject), text: readable, mailId, sender, refs: threadRefs.refs, now, to, ownerName: (message.headers.get("from") ?? "").replace(/<[^>]*>/g, "").replace(/^"|"$/g, "").trim() })
     : null;
   if (command) {
+    if (command.commandIds.length === 1) await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(command.commandIds[0], command.commandIds[0], mailId).run();
     const commandReply = [command.reply, ...(secrets?.line ? ["", secrets.line] : [])].join("\n");
     await finish({ outcome: command.outcome, why: `Simone did it: ${command.commandIds.join(", ")}`, taskId: command.taskId, employeeId: "emp_chief", objectKey, reply: commandReply });
     return { mailId, outcome: command.outcome, employeeId: "emp_chief", taskId: command.taskId, reply: commandReply, messageId, signer: "Simone", jobs: command.jobs ?? [] };

@@ -13,6 +13,7 @@
  *
  * Every failure is returned as a sentence, never thrown with a token or key inside it.
  */
+import { stageSentMail } from "../mail/history";
 import type { Env } from "../env";
 import { serviceAccountFrom, mintComposeToken, type ServiceAccount } from "../wealth/gmailDraft";
 import { WORKSPACE_MAILBOXES } from "../../../shared/boss/commands/parse.mjs";
@@ -149,17 +150,19 @@ function mime(input: { from: string; to: string; subject: string; text: string }
 /**
  * Send one email she approved. Called ONLY from `sendApprovedEmail` (./run.ts) after her Send.
  */
-export async function sendOne(env: Env, input: { from: string; to: string; subject: string; text: string }): Promise<{ ok: true; messageId: string } | { ok: false; why: string }> {
+export async function sendOne(env: Env, input: { from: string; to: string; subject: string; text: string; command_id?: string }): Promise<{ ok: true; messageId: string } | { ok: false; why: string }> {
   if (!mailboxAllowed(input.from)) return { ok: false, why: `${input.from} is not a mailbox Simone may send from` };
   const creds = serviceAccountFrom(env);
   if (!creds) return { ok: false, why: "the Google key is not on the Worker" };
   const tok = await mintComposeToken(creds, input.from, fetchImpl);
   if (!tok.ok) return { ok: false, why: `Google refused the sign-in (${tok.status})` };
+  const receipt = await stageSentMail(env, { ...input, employee_id: "emp_chief" });
   const res = await fetchImpl(GMAIL_SEND, {
     method: "POST", headers: { authorization: `Bearer ${tok.token}`, "content-type": "application/json" },
     body: JSON.stringify({ raw: b64url(mime(input)) }),
   });
-  if (!res.ok) return { ok: false, why: `Gmail refused it (${res.status})` };
+  if (!res.ok) { await receipt.failed(); return { ok: false, why: `Gmail refused it (${res.status})` }; }
   const j = (await res.json().catch(() => ({}))) as { id?: string };
+  await receipt.accepted(String(j.id));
   return { ok: true, messageId: String(j.id ?? "") };
 }

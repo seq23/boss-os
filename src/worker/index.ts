@@ -8,6 +8,7 @@ import { INTAKE_MAILBOX } from "../shared/intake/emailTriggers";
  */
 import { handleBossInboundMail, isBossMailbox } from "./boss/intake/inboundMail";
 import { BOSS_INTAKE_MAILBOX, decodeMimeHeader } from "../shared/boss/intake/mail.mjs";
+import { replyWithHistory } from "./boss/mail/history";
 import { plainReply } from "./boss/intake/mailRefs";
 // The structured event spine, for the one thing in this file that writes to it: a reply that did
 // not go. Everything else here logs through the handlers it calls.
@@ -1495,13 +1496,10 @@ export default {
          * in this thread quotes in References, so "approved" still lands on the draft it answers.
          */
         const laid = await plainReply(env.WP_OS_DB, { text: replyText, subject, signer: result.signer, messageId: result.messageId, from: BOSS_INTAKE_MAILBOX });
-        await message.reply({
-          from: BOSS_INTAKE_MAILBOX,
-          subject,
-          text: laid.text,
-          html: laid.html,
-        }).then(
-          () => recordReply("sent", null),
+        await replyWithHistory(message, toBossEnvForCron(env), { message_id: `reply:${result.mailId}`, from: BOSS_INTAKE_MAILBOX, to: message.from, subject, text: laid.text, html: laid.html, in_reply_to: result.messageId ?? null, employee_id: result.employeeId }).then(
+          async () => {
+            await recordReply("sent", null);
+          },
           // A failed reply must not also lose the work. The row and the task already exist; this
           // records that she was not told, AND what stopped it, rather than pretending she was.
           async (err: unknown) => {

@@ -8,8 +8,9 @@
  */
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
+import { mailHistory } from "../mail/history";
 import { ok, badRequest } from "../lib/http";
-import { macWork, cancelCommand, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent, errandFollowedUp, errandRemindersDue, errandReminded, openMeetingPrep, prepFinished, prepMentions } from "./run";
+import { macWork, cancelCommand, errandTap, handleErrandSelf, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent, errandFollowedUp, errandRemindersDue, errandReminded, openMeetingPrep, prepFinished, prepMentions } from "./run";
 
 export const commands = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -30,7 +31,26 @@ commands.post("/:id/prep-done", async (c) => {
 commands.get("/:id", async (c) => {
   const row = await getCommand(c.env, c.req.param("id"));
   if (!row) throw badRequest("no such command");
-  return ok(c, { ...row, spec: JSON.parse(row.spec), result: JSON.parse(row.result) });
+  const spec = JSON.parse(row.spec); const result = JSON.parse(row.result);
+  // Older rows may carry the former card-as-confirmation bug. Tell the truth on read, without
+  // rewriting any production errand: a later genuine confirmation replaces the card reply.
+  const cardPending = result.replies?.at(-1)?.kind === "card" || result.offer?.needs?.some((n: string) => /card/.test(n));
+  const state = cardPending && ["sent", "replied", "booked"].includes(row.state) ? "needs_card" : row.state;
+  if (cardPending && result.booking) result.booking = { ...result.booking, confirmed: false };
+  const history = await mailHistory(c.env, { command: row.id });
+  // Older errands predate the mail ledger. Show the copies kept with the errand, labelled as
+  // such, rather than presenting their existing correspondence as an empty thread.
+  const known = new Set(history.threads.flatMap((t) => t.messages.flatMap((m) => [m.id, m.message_id])));
+  const legacy = [];
+  if (row.kind === "errand") {
+    if (result.text && !known.has(result.message_id)) legacy.push({ id: result.message_id ?? `${row.id}:sent`, direction: "sent", at: result.sent_at ?? row.created_at, from_addr: "Simone", to_addr: spec.to, subject: result.subject ?? "Your request", body: result.text });
+    for (const r of result.replies ?? []) if (!known.has(r.mail_id ?? r.message_id)) legacy.push({ id: r.mail_id ?? r.message_id ?? `${row.id}:${r.at}`, direction: "received", at: r.at, from_addr: r.from, to_addr: "Simone", subject: r.subject, body: r.text });
+    for (const f of result.follow_ups ?? []) if (f.text && !known.has(f.message_id)) legacy.push({ id: f.message_id, direction: "sent", at: f.sent_at, from_addr: "Simone", to_addr: spec.to, subject: f.subject, body: f.text });
+  }
+  const copies = legacy.map((m) => ({ ...m, message_id: m.id, employee_id: "emp_chief", object_key: null, thread_id: row.id, command_id: row.id, outcome: null, original_url: null }));
+  if (copies.length) history.threads.push({ id: `${row.id}:older-copies`, at: Math.max(...copies.map((m) => m.at)), messages: copies.sort((a, b) => a.at - b.at) });
+  history.threads.sort((a, b) => b.at - a.at);
+  return ok(c, { ...row, state, spec, result, mail: history });
 });
 
 commands.post("/:id/lookup", async (c) => {
@@ -79,6 +99,14 @@ commands.post("/:id/errand-followed-up", async (c) => {
 commands.post("/errand-reminders", async (c) => ok(c, { reminders: await errandRemindersDue(c.env) }));
 commands.post("/:id/reminded", async (c) => ok(c, { recorded: await errandReminded(c.env, c.req.param("id")) }));
 
+commands.post("/:id/handle-self", async (c) => ok(c, { line: await handleErrandSelf(c.env, c.req.param("id")) }));
+commands.post("/:id/answer", async (c) => {
+  const b = await c.req.json<{ words?: string; action?: string }>();
+  const row = await getCommand(c.env, c.req.param("id"));
+  if (!row || row.kind !== "errand") throw badRequest("No such errand.");
+  if (b.action && !["keep", "cancel", "answer"].includes(b.action)) throw badRequest("Choose keep, cancel or answer.");
+  return ok(c, { line: await errandTap(c.env, row, b.action as "keep" | "cancel" | "answer" || "answer", String(b.words ?? "").slice(0, 2000)) });
+});
 commands.post("/:id/cancel", async (c) => ok(c, { line: await cancelCommand(c.env, c.req.param("id")) }));
 
 commands.post("/:id/noticed", async (c) => {

@@ -160,6 +160,9 @@ export function handlerUsesIt(source) {
   if (!/env\.VAULT\.put\(/.test(source)) {
     bad.push(`${HANDLER} never writes the message to R2, so the original is lost and a future extraction bug is unrepairable.`);
   }
+  // External errand/refused mail now also archives here. Its puts cannot stand in for the
+  // authorised under-cap and oversize paths this guard has always required.
+  if (!/env\.VAULT\.put\(key,\s*rawMessage/.test(source)) bad.push("The authorised under-cap original is not kept.");
   const putCount = (source.match(/env\.VAULT\.put\(/g) ?? []).length;
   if (putCount < 2) {
     bad.push(

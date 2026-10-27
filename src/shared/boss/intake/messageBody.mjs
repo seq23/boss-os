@@ -213,6 +213,7 @@ export function htmlToText(html) {
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, "");
   const broken = withoutInvisible
+    .replace(/<a\b[^>]*href=["'](https?:\/\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, url, label) => `${label} (${url})`)
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|li|tr|h[1-6]|blockquote|table)\s*>/gi, "\n")
     .replace(/<(hr|li)\b[^>]*>/gi, "\n");
@@ -250,7 +251,8 @@ function textOfPart(part) {
  * followed by a second, uglier copy of her instruction. The plain part wins outright when there is
  * one anywhere in the message.
  */
-export function readableText(raw) {
+export function readableText(raw, { full = false } = {}) {
+  const keep = full ? (text) => text : cap;
   const source = String(raw ?? "");
   const headerBlock = unfoldHeaders(source);
   const boundary = boundaryIn(headerBlock);
@@ -266,7 +268,7 @@ export function readableText(raw) {
         ? decodeQuotedPrintable(body, charset)
         : body;
     const text = type.startsWith("text/html") ? htmlToText(decoded) : decoded;
-    return { text: cap(text.trim()), format: type.startsWith("text/html") ? "html" : "plain", parts: 1 };
+    return { text: keep(text.trim()), format: type.startsWith("text/html") ? "html" : "plain", parts: 1 };
   }
 
   const plain = [];
@@ -278,8 +280,18 @@ export function readableText(raw) {
     (got.html ? html : plain).push(got.text);
   }
 
-  if (plain.length) return { text: cap(plain.join("\n\n").trim()), format: "plain", parts: leaves.length };
-  if (html.length) return { text: cap(htmlToText(html.join("\n")).trim()), format: "html", parts: leaves.length };
+  if (plain.length) {
+    const text = plain.join("\n\n").trim();
+    // Some booking platforms put the secure link only in their HTML alternative. In a mail
+    // viewer, prefer that complete alternative over a plain part that loses the action.
+    if (full && html.length) {
+      const alternative = htmlToText(html.join("\n")).trim();
+      const links = alternative.match(/https?:\/\/[^\s<>"']+/g) ?? [];
+      if (links.some((link) => !text.includes(link))) return { text: alternative, format: "html", parts: leaves.length };
+    }
+    return { text: keep(text), format: "plain", parts: leaves.length };
+  }
+  if (html.length) return { text: keep(htmlToText(html.join("\n")).trim()), format: "html", parts: leaves.length };
   return { text: "", format: "none", parts: leaves.length };
 }
 

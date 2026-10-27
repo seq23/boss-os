@@ -34,7 +34,7 @@ describe("the card notice: one Decide card, not a morning-only copy", () => {
     expect(notice.subject).toBe("Your request needs you: they want a card");
     expect(notice.decide).toHaveLength(1);
     expect(notice.decide[0]).toEqual(notice.morning.decide);
-    expect(notice.decide[0]!.buttons).toEqual([{ label: "Write to them", url: `mailto:${VENUE}` }]);
+    expect(notice.decide[0]!.buttons).toEqual([{ label: "Ask how to give a card securely", url: `mailto:${VENUE}` }]);
   });
   it("passes the real gate, with Decide (1) first — never held for 'nothing needed'", () => {
     const laid = laidFor(notice);

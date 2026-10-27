@@ -193,9 +193,13 @@ describe("no sender can skip the layout", () => {
   });
   it("the Worker's one reply sends what plainReply laid out", () => {
     const src = readFileSync(join(ROOT, "src/worker/index.ts"), "utf8");
-    expect((src.match(/message\.reply\(/g) ?? []).length).toBe(1);
+    const history = readFileSync(join(ROOT, "src/worker/boss/mail/history.ts"), "utf8");
+    expect((src.match(/replyWithHistory\(message,/g) ?? []).length).toBe(1);
+    expect((src.match(/message\.reply\(/g) ?? []).length).toBe(0);
+    expect((history.match(/message\.reply\(/g) ?? []).length).toBe(1);
+    expect(history).toMatch(/await message\.reply\(\{ from: mail\.from, subject: mail\.subject, text: mail\.text, html: mail\.html \}\)/);
     expect(src).toMatch(/const laid = await plainReply\(/);
-    expect(src).toMatch(/text: laid\.text,\s*\n\s*html: laid\.html,/);
+    expect(src).toMatch(/replyWithHistory\(message,[^\n]*text: laid\.text, html: laid\.html/);
   });
 });
 

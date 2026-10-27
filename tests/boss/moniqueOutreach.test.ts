@@ -461,6 +461,9 @@ describe("the tick", () => {
     expect(real.every((s) => s.from === "st@time-2-read.com")).toBe(true);
     expect(real[0]!.raw).toMatch(/List-Unsubscribe/);
     expect(r.sent).toBe(real.length);
+    const history = await env.DB.prepare(`SELECT object_key, employee_id FROM boss_sent_mail WHERE to_addr = ?`).bind(real[0]!.to).first<any>();
+    expect(history.employee_id).toBe("emp_relationship");
+    expect(JSON.parse(await (await env.VAULT.get(history.object_key))!.text()).raw).toBe(real[0]!.raw);
     // Run the rest of the day: the cap holds at 10.
     for (let h = 1; h <= 7; h++) await runOutreachTick(await tickEnv(), TUESDAY_10AM + h * 3_600_000, g.fetchImpl);
     expect(g.sends.filter((s) => !s.to.startsWith("cryptoclearr")).length).toBe(10);
