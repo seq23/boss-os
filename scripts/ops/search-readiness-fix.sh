@@ -99,6 +99,19 @@ resume_if_unfinished() {
     say "resume check: the run is alive (pid $pid); not starting a second one"; return 0
   fi
   if [ -d "$RUN_LOCK" ]; then say "resume check: stale run lock (pid ${pid:-none} is dead); clearing it"; rm -rf "$RUN_LOCK"; fi
+  # THE AI ALLOWANCE RESETS AT A KNOWN TIME, NOT "NOW" (28 Oct 2026). A pass that hit its usage limit
+  # wrote the reset time here; starting a run before then just hits the same limit in seconds.
+  if [ -f "$STATE_DIR/retry-after" ]; then
+    local retry_at retry_epoch now_epoch
+    retry_at="$(cat "$STATE_DIR/retry-after")"
+    retry_epoch="$(date -j -f "%I:%M %p" "$retry_at" +%s 2>/dev/null)"
+    now_epoch="$(date +%s)"
+    if [ -n "$retry_epoch" ] && [ "$now_epoch" -lt "$retry_epoch" ]; then
+      say "resume check: waiting until $retry_at (the AI allowance resets then)"
+      return 0
+    fi
+    rm -f "$STATE_DIR/retry-after"
+  fi
   old="$(mark_field pid)"
   say "resume check: unfinished run found (pid ${old:-?} is gone, last state: $(mark_field reason)); resuming it"
   # Through duty-run.sh, so her pause on the employee page is honoured and D1 hears the outcome.
@@ -107,7 +120,7 @@ resume_if_unfinished() {
   if [ -f "$MARK" ] && [ "$(mark_field pid)" = "$old" ]; then
     # The run never started (the duty is paused or removed): stop asking, say so once.
     say "NAMED STOP [RESUME_NOT_STARTED] duty-run did not start the run (rc=$rc; the duty may be paused); the unfinished mark is cleared so this does not repeat. See $LOG_DIR/../boss-duty/."
-    rm -f "$MARK"
+    rm -f "$MARK" "$STATE_DIR/retry-after"
   fi
   return "$rc"
 }
@@ -150,6 +163,15 @@ net_gate() {
 
 main() {
   if [ "${1:-}" = "--resume-if-unfinished" ]; then resume_if_unfinished; return $?; fi
+  # A RUN THAT ALREADY ENDED WITH WORK LEFT CAN BE HANDED BACK TO THE STANDING RESUME JOB (28 Oct
+  # 2026): write the unfinished mark by hand, same shape resume_if_unfinished expects, so
+  # com.seq.boss-sr-resume picks it up within 15 minutes instead of waiting for next Tuesday.
+  if [ "${1:-}" = "--rearm" ]; then
+    RUN_STARTED="$(date +%Y-%m-%dT%H:%M:%S)"
+    mark "rearmed"
+    say "REARMED"
+    return 0
+  fi
   take_run_lock
   REPORTED="$(mark_field reported)"
   [ "${1:-}" = "--resume" ] && say "resuming an unfinished run (last state: $(mark_field reason))"
@@ -163,7 +185,7 @@ main() {
 
   wait_for_unscoped_pass
   audit
-  P="$(plan)" || { say "NAMED STOP [NO_QUEUE] the audit left no fix queue to plan from"; report_stop NO_QUEUE "the audit left no fix queue to plan from."; rm -f "$MARK"; exit 3; }
+  P="$(plan)" || { say "NAMED STOP [NO_QUEUE] the audit left no fix queue to plan from"; report_stop NO_QUEUE "the audit left no fix queue to plan from."; rm -f "$MARK" "$STATE_DIR/retry-after"; exit 3; }
   START="$(echo "$P" | grep '^QUEUE' | field workable)"; START="${START:-0}"
   say "queue: $(echo "$P" | grep '^QUEUE')"
   LEFT="$START"; STALLED=0; ROUND=0
@@ -182,6 +204,16 @@ main() {
     done
     wait
     NET_HIT="$(awk '$2==13' "$RCS" | wc -l | tr -d ' ')"
+    RCS_COUNT="$(wc -l < "$RCS" | tr -d ' ')"
+    # A ROUND WHERE EVERY PASS IS WAITING ON A SPENT AI ALLOWANCE DOES NOT BURN THE REMAINING ROUNDS
+    # IN SECONDS (28 Oct 2026, SR_QUEUE_STALLED with 25 of 60 fixed: round 2's passes all exited 13 in
+    # under a minute and the run spun to "fixed nothing" instead of waiting for the reset). The
+    # retry-after file is only ever written by that cause, never by a genuine network blip (which
+    # keeps retrying next round, unchanged below), so its presence is the signal.
+    if [ "$NET_HIT" -gt 0 ] && [ "$NET_HIT" -eq "$RCS_COUNT" ] && [ -f "$STATE_DIR/retry-after" ]; then
+      RETRY_AT="$(cat "$STATE_DIR/retry-after")"
+      stop_unfinished AI_USAGE_EXHAUSTED "every pass this round is waiting on an AI usage reset (back at $RETRY_AT); the run resumes by itself after that."
+    fi
     audit
     P="$(plan)" || break
     LEFT="$(echo "$P" | grep '^QUEUE' | field workable)"; LEFT="${LEFT:-$BEFORE}"
@@ -189,7 +221,7 @@ main() {
     # The run in progress is on the status file too, so a morning read mid-run says the real number.
     write_status "$START" "$(( START - LEFT ))" "$LEFT" 0 0 0
     if [ "$NET_HIT" -gt 0 ]; then
-      say "round $ROUND: $NET_HIT pass(es) lost the network; that is not \"fixed nothing\", so the next round re-runs them"
+      say "round $ROUND: $NET_HIT pass(es) lost the network or hit a usage limit; that is not \"fixed nothing\", so the next round re-runs them"
       continue
     fi
     [ "$LEFT" -lt "$BEFORE" ] || { STALLED=1; say "round $ROUND fixed nothing; stopping until tomorrow rather than spinning"; break; }
@@ -206,10 +238,10 @@ main() {
     if [ "$STALLED" -eq 1 ]; then CODE=SR_QUEUE_STALLED; WHY="round $ROUND fixed nothing"; else CODE=SR_ROUNDS_SPENT; WHY="all $MAX_ROUNDS rounds ran"; fi
     say "NAMED STOP [$CODE] $LEFT workable briefs left ($WHY; $FIXED fixed of $START). See $LOG."
     report_stop "$CODE" "$LEFT workable briefs left ($WHY; $FIXED fixed of $START)."
-    rm -f "$MARK"
+    rm -f "$MARK" "$STATE_DIR/retry-after"
     exit 14
   fi
-  rm -f "$MARK"
+  rm -f "$MARK" "$STATE_DIR/retry-after"
   [ "$START" -gt 0 ] || say "NAMED STOP [QUEUE_EMPTY] nothing workable in the queue today; that is a result, not a skip."
   exit 0
 }

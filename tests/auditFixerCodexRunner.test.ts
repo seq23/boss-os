@@ -17,10 +17,25 @@ describe("audit fixer: runners and the automatic fallback", () => {
   });
   it("auto: a Claude run that ran out of usage reruns the same pass on Codex", () => {
     const fb = script.slice(script.indexOf("# THE FALLBACK"));
-    expect(fb).toContain('[ "${FALLBACK:-}" = "codex" ] && ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG"');
-    expect(fb).toMatch(/usage limit\|limit reached/);
+    expect(fb).toContain('[ "${FALLBACK:-}" = "codex" ] && ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"');
     expect(fb).toContain('RUNNER="codex"; run_codex; RC=$?');
     expect(fb).toContain("NAMED STOP [FALLBACK_UNAVAILABLE]");
+  });
+  it("the other direction: a Codex pass that runs out of usage, with Claude signed in, reruns once on Claude", () => {
+    expect(script).toContain('if [ "$RUNNER" = "codex" ] && [ -z "${FALLBACK:-}" ] && claude_signed_in; then');
+    expect(script).toContain('FALLBACK="claude"');
+    const fb = script.slice(script.indexOf("# THE FALLBACK"));
+    expect(fb).toContain('elif [ "${FALLBACK:-}" = "claude" ] && ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then');
+    expect(fb).toContain('RUNNER="claude"; run_claude; RC=$?');
+  });
+  it("the sentinel is a result, not the prompt's own <n> template echoed by codex exec", () => {
+    expect(script).toContain("has_sentinel() { grep -qE 'AHREFS-AUDIT-COMPLETE: projects=[0-9]' \"$1\"; }");
+    expect(script).toMatch(/usage_exhausted\(\) \{ grep -qiE "usage limit\|limit reached\|out of \(extra \)\?usage\|rate\.\?limit\|credit balance" "\$1"; \}/);
+    expect(script).not.toMatch(/grep -q "AHREFS-AUDIT-COMPLETE:"/);
+  });
+  it("every runner out of usage: NAMED STOP [AI_USAGE_EXHAUSTED], exit 13, never a stack trace from a missing findings file", () => {
+    expect(script).toContain("NAMED STOP [AI_USAGE_EXHAUSTED]");
+    expect(script).toMatch(/USAGE_EXHAUSTED=1[\s\S]*?exit 13/);
   });
   it("Codex takes a mail pass only with a digest, else a named stop", () => {
     expect(script).toMatch(/codex_can_run\(\) \{\n  \[ -n "\$\{SR_SCOPE_REPO:-\}" \] && return 0\n  \[ -n "\$\{AHREFS_DIGEST:-\}" \] && \[ -s "\$AHREFS_DIGEST" \] && return 0\n  return 1\n\}/);

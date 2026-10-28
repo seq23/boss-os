@@ -79,6 +79,17 @@ RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"
 mkdir -p "$LOG_DIR" "$OUT_DIR"
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$RUN_LOG"; }
 
+# THE SENTINEL MUST BE A RESULT, NOT THE PROMPT'S OWN TEMPLATE (28 Oct 2026). `codex exec` echoes the
+# prompt it was given into the run log, and the prompt carries the completion sentinel as a template
+# with literal `<n>` placeholders so the model knows the shape to fill in. A loose `grep -q
+# "AHREFS-AUDIT-COMPLETE:"` matches that echo before the model ever runs, so a pass that did nothing
+# (hit its usage limit in the first second) was judged as a finished one and sent on to land a
+# findings file that was never written. Real numbers only.
+has_sentinel() { grep -qE 'AHREFS-AUDIT-COMPLETE: projects=[0-9]' "$1"; }
+# A SPENT AI ALLOWANCE IS "RETRY LATER", NOT "NOTHING LEFT TO TRY" (28 Oct 2026). Same message either
+# runner prints when its usage is gone for the day.
+usage_exhausted() { grep -qiE "usage limit|limit reached|out of (extra )?usage|rate.?limit|credit balance" "$1"; }
+
 # Two runs in the same minute shared a log file once and the second inherited the first's sentinel.
 # Seconds and pid in the name; a lock directory for the run itself.
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -109,7 +120,9 @@ gh_ready; GH_RC=$?
 # WHICH AI RUNS THE PASS (owner, 27 Oct 2026: "openai should do them", then "an automated fallback").
 # BOSS_AI_RUNNER: claude | codex | auto (the launchd jobs use auto).
 #   auto  = Claude first; if Claude is signed out, or the run ends without its sentinel because Claude's
-#           usage ran out, the SAME pass reruns on Codex (her ChatGPT plan) when Codex can do it.
+#           usage ran out, the SAME pass reruns on Codex (her ChatGPT plan) when Codex can do it — and
+#           the reverse (28 Oct 2026): a pass handed RUNNER=codex that runs out of usage reruns once on
+#           Claude when Claude is signed in, whatever BOSS_AI_RUNNER says.
 # Codex cannot reach the claude.ai Gmail connector, so Codex runs a pass only when it needs no mail:
 # a scoped Search Readiness pass, or a mail pass handed AHREFS_DIGEST (a file of that week's Ahrefs
 # reports gathered by someone who can read the mail). Otherwise Codex is a NAMED STOP, never a silent skip.
@@ -135,6 +148,13 @@ elif ! claude_signed_in; then
   say "  Mac may be at the login window with the keychain locked, or the session signed out."
   say "  Danielle's duty stays overdue and Today will say so, which is correct."
   exit 10
+fi
+# THE OTHER DIRECTION OF THE FALLBACK (28 Oct 2026). RUNNER=codex here means either auto-with-Claude-
+# signed-out (FALLBACK already "", correctly: Claude cannot take it either) or an explicit
+# BOSS_AI_RUNNER=codex — which is what the installed plists carried on 28 Oct. If Claude is signed in,
+# a codex pass that runs out of usage gets one rerun on Claude, whatever the plist says.
+if [ "$RUNNER" = "codex" ] && [ -z "${FALLBACK:-}" ] && claude_signed_in; then
+  FALLBACK="claude"
 fi
 
 # ─── THE OFF-LIMITS REPOSITORY, READ FROM THE ONE LIST ──────────────────────
@@ -203,20 +223,46 @@ run_claude() { "$CLAUDE" -p "$PROMPT_TEXT" --model "$MODEL" --max-turns "$MAX_TU
 if [ "$RUNNER" = "codex" ]; then run_codex; else run_claude; fi
 RC=$?
 # THE FALLBACK: Claude ran out of usage before finishing, so the same pass goes to Codex.
-if [ "${FALLBACK:-}" = "codex" ] && ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG" \
-   && grep -qiE "usage limit|limit reached|out of (extra )?usage|rate.?limit|credit balance" "$RUN_LOG"; then
+if [ "${FALLBACK:-}" = "codex" ] && ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then
   if codex_can_run && "$CODEX" login status >/dev/null 2>&1; then
     say "=== Claude ran out of usage (rc=$RC); rerunning the same pass on Codex ==="
     RUNNER="codex"; run_codex; RC=$?
   else
     say "NAMED STOP [FALLBACK_UNAVAILABLE] Claude ran out of usage and Codex cannot take this pass (mail pass without a digest, or Codex signed out)."
   fi
+# THE OTHER DIRECTION: Codex ran out of usage and Claude can take this pass (it reads mail too).
+elif [ "${FALLBACK:-}" = "claude" ] && ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then
+  say "=== Codex ran out of usage (rc=$RC); rerunning the same pass on Claude ==="
+  RUNNER="claude"; run_claude; RC=$?
 fi
 say "=== $RUNNER exited rc=$RC ==="
 
-if ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG"; then
-  say "NAMED STOP [AUDIT_DID_NOT_COMPLETE] no sentinel in the log — the run started and never reached"
-  say "  its end, so its silence is not evidence that there was nothing to fix."
+SENTINEL_OK=1
+if ! has_sentinel "$RUN_LOG"; then
+  SENTINEL_OK=0
+elif [ ! -f "$OUT_DIR/findings.json" ]; then
+  SENTINEL_OK=0
+  say "NAMED STOP [AUDIT_DID_NOT_COMPLETE] the sentinel printed but findings.json was never written — treating this as unfinished, not a quiet success."
+fi
+
+if [ "$SENTINEL_OK" -eq 0 ]; then
+  # A SPENT AI ALLOWANCE IS RETRY-LATER, NOT "NOTHING LEFT TO TRY" (28 Oct 2026). Every runner this
+  # pass could use is out of usage: salvage what ran, write when it resets, and exit 13 so the caller
+  # (search-readiness-fix.sh) treats this round as blocked rather than as a round that fixed nothing.
+  USAGE_EXHAUSTED=0
+  if ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then
+    USAGE_EXHAUSTED=1
+    RETRY_LINE="$(grep -o 'try again at [0-9][0-9:]* *[AaPp][Mm]' "$RUN_LOG" | tail -1)"
+    RETRY_AT="${RETRY_LINE#try again at }"
+    say "NAMED STOP [AI_USAGE_EXHAUSTED] every runner available to this pass is out of usage${RETRY_AT:+; it says to try again at $RETRY_AT}."
+    if [ -n "$RETRY_AT" ]; then
+      mkdir -p "$HOME/.boss-os/search-readiness"
+      echo "$RETRY_AT" > "$HOME/.boss-os/search-readiness/retry-after"
+    fi
+  else
+    say "NAMED STOP [AUDIT_DID_NOT_COMPLETE] no sentinel in the log — the run started and never reached"
+    say "  its end, so its silence is not evidence that there was nothing to fix."
+  fi
   # NOTHING IT DID IS LOST (25 Oct 2026). Round 1 of the first full Search Readiness run hit its
   # turn limit with 63 files changed and none committed, and the runner moved on. Every worktree
   # this pass cut is committed, pushed and opened as a DRAFT "Salvaged:" PR, which the next scoped
@@ -225,13 +271,16 @@ if ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG"; then
   # A PASS THAT LOST THE NETWORK waits for it first, so its salvage can push, then exits 13: the
   # runner re-plans that chunk instead of counting it as "fixed nothing".
   NET_LOST=0
-  if ! net_up; then
+  if [ "$USAGE_EXHAUSTED" -eq 0 ] && ! net_up; then
     NET_LOST=1
     wait_for_network "saving this pass's work" || say "the network is still down; salvaging what can be saved locally"
   fi
   SINCE="$(basename "$RUN_LOG" | sed -E 's/^([0-9]{4})-([0-9]{2})-([0-9]{2})-([0-9]{6}).*/\1\2\3-\4/')"
   node "$REPO/scripts/ops/salvage-pass-worktrees.mjs" --since "$SINCE" ${SR_SCOPE_REPO:+--repo "$SR_SCOPE_REPO"} 2>&1 | tee -a "$RUN_LOG" | sed 's/^/  /'
   [ "${PIPESTATUS[0]}" -eq 0 ] || say "NAMED STOP [SALVAGE_FAILED] a worktree of this pass could not be saved; see the SALVAGE lines above."
+  if [ "$USAGE_EXHAUSTED" -eq 1 ]; then
+    exit 13
+  fi
   if [ "$NET_LOST" -eq 1 ]; then
     say "NAMED STOP [NETWORK_LOST_MID_PASS] the pass ended because the network went away, not because the work was done; the runner re-runs it."
     exit 13
@@ -239,7 +288,7 @@ if ! grep -q "AHREFS-AUDIT-COMPLETE:" "$RUN_LOG"; then
   exit 9
 fi
 
-say "sentinel: $(grep -o 'AHREFS-AUDIT-COMPLETE:.*' "$RUN_LOG" | tail -1)"
+say "sentinel: $(grep -oE 'AHREFS-AUDIT-COMPLETE: projects=[0-9].*' "$RUN_LOG" | tail -1)"
 ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 
 # LAND EVERY FIX. Deterministic, not left to the model: checks to green, then ~/bin/land.
