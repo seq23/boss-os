@@ -597,6 +597,30 @@ describe("the 26 Oct 2026 lessons catch what they guard", () => {
     expect(CHECKS.clarity_scoped!({ site: t2r, pages: [buy] } as any).status).toBe("pass");
   });
 
+  /*
+   * 28 Oct 2026, horselegalguide.com: e6/i8 and e9 were jointly unsatisfiable on a site with no form
+   * and no buy link. The homepage is sampled, so Clarity there failed e9 and Clarity nowhere failed
+   * e6 — whatever the repo did, one check was red. Seven other grid sites carried the same pair of
+   * briefs. e9 is the owner's ruling ("Clarity only where visitors fill a form or buy", 25 Oct 2026),
+   * so e6 yields to it: a sample with no such page is correctly without Clarity. An unknown sample
+   * still fails, so a site that was never crawled cannot pass by accident.
+   */
+  it("e6 and e9 are never both red: a site with no form or buy page passes e6, an unknown sample still fails", () => {
+    const plain = (p: string) => at(`https://horselegalguide.com${p}`, html("Equine law at Horse Legal Guide", '<a href="https://wisecovington.com">Learn more</a>'));
+    const noMoneyStep = [plain("/"), plain("/boarding/")];
+    for (const homeHtml of ["<html></html>", html("Equine law at Horse Legal Guide", "x", CLARITY)]) {
+      const ctx = { site: { domain: "horselegalguide.com" }, home: { html: homeHtml }, files: {}, pages: noMoneyStep } as any;
+      expect(CHECKS.clarity!(ctx).status).toBe("pass");
+      expect(CHECKS.clarity_indexnow).toBeTypeOf("function");
+    }
+    // A form anywhere in the sample puts the demand back: that site must carry Clarity on it.
+    const withForm = [plain("/"), at("https://horselegalguide.com/ask/", html("Ask Horse Legal Guide", '<form action="/api/lead"><input name=email></form>'))];
+    expect(CHECKS.clarity!({ site: { domain: "horselegalguide.com" }, home: { html: "<html></html>" }, files: {}, pages: withForm } as any).status).toBe("fail");
+    // No sample at all is not evidence of a site without a money step.
+    expect(CHECKS.clarity!({ site: { domain: "horselegalguide.com" }, home: { html: "<html></html>" }, files: {} } as any).status).toBe("fail");
+    expect(CHECKS.clarity!({ site: { domain: "horselegalguide.com" }, home: { html: "<html></html>" }, files: {}, pages: [] } as any).status).toBe("fail");
+  });
+
   it("b10: a title naming a sibling site fails, one naming neither fails, one naming its own site passes", () => {
     const ctx = (title: string) => ({ host: "dentistryguides.com", home: { html: html("Dentistry Guides") }, portfolio: ["dentistryguides.com", "theaccidentguides.com", "uscisexam.com"],
       pages: [at("https://dentistryguides.com/a/", html(title))] }) as any;
