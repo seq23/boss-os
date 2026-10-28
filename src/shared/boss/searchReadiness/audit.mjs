@@ -538,7 +538,18 @@ export const CHECKS = {
     // Clarity belongs on the pages where visitors fill a form or buy (e9), so one of those loading it
     // is Clarity installed, whether or not the homepage is such a page.
     const scoped = (ctx.pages ?? []).find((p) => p.status === 200 && p.html && CLARITY_RE.test(p.html) && formOrBuy(p.html, p.url));
-    return scoped ? pass(`Clarity loads on ${scoped.url}, a page where visitors fill a form or buy`) : fail("neither the homepage nor any sampled form or buy page loads Clarity");
+    if (scoped) return pass(`Clarity loads on ${scoped.url}, a page where visitors fill a form or buy`);
+    // A site with no form and no buy link anywhere in the sample has nowhere e9 allows Clarity to
+    // sit: the homepage is sampled too, so installing it there fails e9 and leaving it off fails
+    // this check. Demanding it anyway made e6/i8 and e9 jointly unsatisfiable (horselegalguide.com,
+    // 28 Oct 2026, after PR #58 scoped that repo's installer to form/buy pages). The owner's ruling
+    // is the scope one - "Clarity only where visitors fill a form or buy" (25 Oct 2026) - so a site
+    // with no such page is correctly without Clarity. An empty or absent sample is not evidence of
+    // that, and still fails.
+    const sampled = (ctx.pages ?? []).filter((p) => p.status === 200 && p.html);
+    if (sampled.length && !sampled.some((p) => formOrBuy(p.html, p.url)))
+      return pass("no sampled page has a form or a buy link, so e9 leaves Clarity no page it may sit on");
+    return fail("neither the homepage nor any sampled form or buy page loads Clarity");
   },
   /*
    * e9 — CLARITY ONLY WHERE A VISITOR FILLS A FORM OR BUYS (owner, 25 Oct 2026). Session recording
@@ -720,7 +731,9 @@ export const CHECKS = {
   },
   clarity_indexnow(ctx) {
     const c = CHECKS.clarity(ctx), k = CHECKS.indexnow_key(ctx);
-    if (c.status === "pass" && k.status === "pass") return pass("Clarity and the IndexNow key are live (Bing is account-side, not read)");
+    // Say which way Clarity passed: on a site with no money step e6 passes without a tag, and
+    // "Clarity is live" would be a false sentence on the owner's grid page.
+    if (c.status === "pass" && k.status === "pass") return pass(`${c.detail}; the IndexNow key answers (Bing is account-side, not read)`);
     if (k.status === "no_repo") return c.status === "pass" ? { status: "no_repo", detail: k.detail } : fail(c.detail);
     return fail([c, k].filter((x) => x.status !== "pass").map((x) => x.detail).join("; "), { missing: k.missing });
   },
