@@ -173,6 +173,14 @@ const lastLine = (s) => String(s ?? "").trim().split("\n").filter(Boolean).pop()
 const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop());
 if (isMain) {
   const [cmd, ...rest] = process.argv.slice(2);
+  if ((cmd === "verdict" || cmd === "land") && !existsSync(rest[0])) {
+    // A RUN THAT NEVER WROTE A FINDINGS FILE IS UNFINISHED, NOT A CRASH (28 Oct 2026). A false
+    // sentinel match once let an incomplete pass reach here, and `readFileSync` threw an ENOENT with
+    // a Node stack — indistinguishable from "ran and fixed nothing" to the shell around it. Named,
+    // not a stack trace: Rule 0.
+    console.log(`NAMED STOP [NO_FINDINGS_FILE] ${rest[0]}`);
+    process.exit(9);
+  }
   if (cmd === "verdict") {
     const v = runVerdict(JSON.parse(readFileSync(rest[0], "utf8")));
     console.log(`AUDIT-VERDICT: ${v.red ? "RED" : "GREEN"} fixed=${v.fixed} ${Object.entries(v.counts).map(([k, n]) => `${k}=${n}`).join(" ")}`);

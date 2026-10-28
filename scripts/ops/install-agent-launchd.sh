@@ -565,6 +565,8 @@ cat > "$SRF_PLIST" <<SRFEOF
   <array>
     <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_AI_RUNNER</key><string>auto</string></dict>
   <key>StandardOutPath</key><string>$LOGS/sr-fix.log</string>
   <key>StandardErrorPath</key><string>$LOGS/sr-fix.err</string>
   <key>RunAtLoad</key><false/>
@@ -602,6 +604,8 @@ cat > "$SRR_PLIST" <<SRREOF
   <key>KeepAlive</key>
   <dict><key>PathState</key><dict><key>$HOME/.boss-os/search-readiness/run-unfinished.json</key><true/></dict></dict>
   <key>ThrottleInterval</key><integer>900</integer>
+  <key>EnvironmentVariables</key>
+  <dict><key>BOSS_AI_RUNNER</key><string>auto</string></dict>
   <key>StandardOutPath</key><string>$LOGS/sr-resume.log</string>
   <key>StandardErrorPath</key><string>$LOGS/sr-resume.err</string>
 </dict></plist>
