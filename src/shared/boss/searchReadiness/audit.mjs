@@ -463,14 +463,16 @@ export const CHECKS = {
     const bad = [];
     for (const p of okPages(ctx)) {
       const nodes = jsonLd(p.html).nodes, text = visibleText(p.html).toLowerCase();
+      // Porch prices are printed as "$1,200+", while Offer.price is 1200.
+      // Compare whole numeric amounts, so 11,200 or 1,200.50 cannot stand in for 1200.
+      const amounts = new Set([...text.matchAll(/\b\d+(?:,\d{3})*(?:\.\d+)?\b/g)].map((m) => Number(m[0].replace(/,/g, ""))));
       for (const q of deepNodes(nodes, /^Question$/)) {
         const n = String(q.name ?? "").toLowerCase().replace(/\s+/g, " ").trim();
         if (n && !text.includes(n.slice(0, 60))) bad.push(`${p.url}: FAQ "${n.slice(0, 40)}" not visible`);
       }
       for (const o of deepNodes(nodes, /^Offer$/)) {
         const price = o.price; if (price === undefined || Number(price) === 0) continue;
-        const s = String(price).replace(/\.0+$/, "");
-        if (!text.includes(s)) bad.push(`${p.url}: schema price ${price} not on the page`);
+        if (!amounts.has(Number(price))) bad.push(`${p.url}: schema price ${price} not on the page`);
       }
     }
     return bad.length ? fail(list(bad), { evidence: bad }) : pass("every FAQ and price in schema is on the page");
@@ -534,10 +536,10 @@ export const CHECKS = {
     // 2026: Clarity only where visitors fill a form or buy; how-we-know's audience is on YouTube).
     if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
     const h = ctx.home?.html ?? "";
-    if (CLARITY_RE.test(h) || ctx.files?.__clarity_loader) return pass("Clarity loads on the homepage");
+    if (loadsClarity(h) || ctx.files?.__clarity_loader) return pass("Clarity loads on the homepage");
     // Clarity belongs on the pages where visitors fill a form or buy (e9), so one of those loading it
     // is Clarity installed, whether or not the homepage is such a page.
-    const scoped = (ctx.pages ?? []).find((p) => p.status === 200 && p.html && CLARITY_RE.test(p.html) && formOrBuy(p.html, p.url));
+    const scoped = (ctx.pages ?? []).find((p) => p.status === 200 && p.html && loadsClarity(p.html) && formOrBuy(p.html, p.url));
     if (scoped) return pass(`Clarity loads on ${scoped.url}, a page where visitors fill a form or buy`);
     // A site with no form and no buy link anywhere in the sample has nowhere e9 allows Clarity to
     // sit: the homepage is sampled too, so installing it there fails e9 and leaving it off fails
@@ -558,7 +560,7 @@ export const CHECKS = {
    */
   clarity_scoped(ctx) {
     if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
-    const loading = okPages(ctx).filter((p) => CLARITY_RE.test(p.html));
+    const loading = okPages(ctx).filter((p) => loadsClarity(p.html));
     if (!loading.length) return pass("no sampled page loads Clarity outside a form or buy page");
     const bad = loading.filter((p) => !formOrBuy(p.html, p.url)).map((p) => p.url);
     return bad.length
@@ -786,7 +788,18 @@ export const CHECKS = {
   },
 };
 
-export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]|microsoft clarity/i;
+export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]/i;
+
+/** Privacy disclosures and documentation links do not load a recording script. */
+export function loadsClarity(html) {
+  const active = String(html ?? "").replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+  return [...active.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].some((m) => {
+    const a = attrs(m[1]);
+    if (a.type && !/^(?:module|(?:text|application)\/(?:java|ecma)script)$/i.test(a.type.trim())) return false;
+    return CLARITY_RE.test(a.src ?? "") || (!a.src && CLARITY_RE.test(m[2]));
+  });
+}
 
 /** A page where a visitor fills a form or buys: a real <form>, or a link to a checkout. */
 export function formOrBuy(html, base = "https://x.invalid/") {
