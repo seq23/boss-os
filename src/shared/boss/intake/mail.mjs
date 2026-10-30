@@ -52,7 +52,8 @@ export const SIMONE_MAILBOX = "simone@sequoiataylor.com";
 export const BOSS_INTAKE_DOMAIN = "sequoiataylor.com";
 
 /**
- * Addresses that may give this system instructions.
+ * Built-in addresses that may give this system instructions. The coordinator may extend them
+ * through BOSS_EXTRA_OWNER_SENDERS without putting private addresses in this public repository.
  *
  * THIS IS THE AUTHORISATION. Not the tag, not the mailbox, not the subject line. The same three
  * addresses `boss/routes/packets.ts` already treats as hers, kept as a copy for the same reason the
@@ -304,8 +305,12 @@ export function dmarcPassed(authResults) {
   return /\bdmarc\s*=\s*pass\b/i.test(String(authResults ?? ""));
 }
 
-/** Is this address one of hers? Case-folded, because mail clients are not consistent about it. */
-export function isOwner(address) {
+/**
+ * Is this address one of hers? Worker callers pass the binding explicitly; Mac callers read the
+ * same name from their environment (including vault:run). Never infer authority from the body.
+ */
+export function isOwner(address, extraOwnerSenders = typeof process === "undefined" ? "" : process.env.BOSS_EXTRA_OWNER_SENDERS) {
   const a = String(address ?? "").trim().toLowerCase();
-  return a.length > 0 && BOSS_INTAKE_SENDERS.includes(a);
+  const extra = String(extraOwnerSenders ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return a.length > 0 && (BOSS_INTAKE_SENDERS.includes(a) || extra.includes(a));
 }

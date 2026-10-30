@@ -149,9 +149,11 @@ export function authorisationIsTheSender(handlerSource) {
   const bad = [];
 
   // Behaviour: neither predicate can be satisfied by anything a stranger controls in the body.
-  if (isOwner("attacker@example.com")) bad.push("isOwner() accepted an address that is not hers.");
-  if (isOwner("")) bad.push("isOwner() accepted an empty address.");
-  if (!BOSS_INTAKE_SENDERS.every((a) => isOwner(a))) bad.push("isOwner() rejects an address on its own allowlist.");
+  if (isOwner("attacker@example.com", "")) bad.push("isOwner() accepted an address that is not hers.");
+  if (isOwner("", " , , ")) bad.push("isOwner() accepted an empty address.");
+  if (!BOSS_INTAKE_SENDERS.every((a) => isOwner(a, ""))) bad.push("isOwner() rejects an address on its own allowlist.");
+  if (!isOwner("work@example.com", " , WORK@EXAMPLE.COM , ")) bad.push("isOwner() rejects a configured owner address.");
+  if (isOwner("attacker@example.com", "work@example.com")) bad.push("isOwner() accepts an unconfigured address.");
   if (dmarcPassed(null)) bad.push("dmarcPassed() treated a MISSING Authentication-Results header as a pass — an unchecked message would be trusted.");
   if (dmarcPassed("spf=pass; dkim=pass")) bad.push("dmarcPassed() accepted SPF and DKIM without DMARC — those authenticate the envelope, not the From: header the allowlist trusts.");
   if (dmarcPassed("dmarc=fail")) bad.push("dmarcPassed() accepted an explicit dmarc=fail.");
@@ -265,10 +267,10 @@ if (process.argv.includes("--self-test")) {
   expect("the real handler authorises on the sender first", authorisationIsTheSender(realHandler), false);
   expect("a handler that reads the roster before authorising", authorisationIsTheSender(
     realHandler?.replace("const authorised =", "const __moved =")
-      .replace("const roster = await activeRoster(env);", "const roster = await activeRoster(env);\n  const authorised = isOwner(sender) && dmarc;") ?? null,
+      .replace("const roster = await activeRoster(env);", 'const roster = await activeRoster(env);\n  const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;') ?? null,
   ), true);
   expect("a handler where the TAG grants entry", authorisationIsTheSender(
-    realHandler?.replace("const authorised = isOwner(sender) && dmarc;", "const authorised = isOwner(sender) || tag === '#monique';") ?? null,
+    realHandler?.replace('const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;', "const authorised = isOwner(sender) || tag === '#monique';") ?? null,
   ), true);
 
   if (failed) { console.error(`EMPLOYEE TAG SELF-TEST FAILED (${failed})`); process.exit(1); }
