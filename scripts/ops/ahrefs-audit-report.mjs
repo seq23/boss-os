@@ -58,6 +58,18 @@ const MAX_AGE_MS = Number(process.env.BOSS_OS_SITE_AUDIT_MAX_AGE_MS ?? 6 * 60 * 
 
 const DISPOSITION_SET = new Set(DISPOSITIONS);
 
+/** No new fix is needed for these outcomes; a blank model field must not lose the report. */
+const DEFAULT_ACTIONS = new Map([
+  ["fixed_pr", "A fix was opened; we'll confirm the result next week."],
+  ["off_limits", "This repository is outside the automatic repair scope, so we logged it and will check again next week."],
+  ["no_repo", "No repo is linked to this site, so we logged it and will check again next week."],
+  ["none", "Nothing to change: the audit found no site defect to fix."],
+  ["ahrefs_side", "The site is reachable; we'll check whether Ahrefs can crawl it next week."],
+  ["client_repo", "This client repository is report-only, so we logged the finding without changing the site."],
+  ["in_flight", "A fix is already open; we'll confirm it next week."],
+  ["ahrefs_credits", "Ahrefs ran out of crawl credits; we'll check the next audit without buying more credits."],
+]);
+
 /** Everything a person reads. An address in any of them refuses the whole batch. */
 const TEXT_FIELDS = ["project", "domain", "repo", "headline", "because", "suggested_action", "notes"];
 
@@ -144,6 +156,9 @@ async function main() {
       stop(13, "BAD_DISPOSITION",
         `Finding ${i + 1} has disposition "${f?.disposition}". One of: ${DISPOSITIONS.join(", ")}.`);
     }
+    if (f.suggested_action == null || (typeof f.suggested_action === "string" && !f.suggested_action.trim())) {
+      f.suggested_action = DEFAULT_ACTIONS.get(f.disposition) ?? f.suggested_action;
+    }
     for (const field of ["project", "headline", "because", "suggested_action"]) {
       if (typeof f?.[field] !== "string" || !f[field].trim()) {
         stop(14, "INCOMPLETE_FINDING",
@@ -206,6 +221,9 @@ async function main() {
   console.log(`Reported to Boss OS: ${written} finding(s) written from ${findings.length} sent.`);
   for (const r of refused) console.log(`  refused: ${r}`);
   if (refused.length) console.log(`NAMED STOP [ROWS_REFUSED] ${refused.length} row(s) did not reach Boss OS; each reason is above.`);
+  if (written !== findings.length || refused.length) {
+    stop(19, "REPORT_NOT_DELIVERED", `Expected ${findings.length} finding(s) written; received ${written}, with ${refused.length} refused.`);
+  }
 
   /*
    * SAY WHAT HAPPENED TO EACH PR, FROM THE ROW. This used to print "opened and NOT merged" for every

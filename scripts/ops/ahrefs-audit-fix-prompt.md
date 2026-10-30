@@ -273,6 +273,14 @@ Write `~/.boss-os/site-audit/findings.json` and nothing else. Shape:
 **A week with no findings writes ONE row**, `disposition: "none"`, with the search evidence in
 `because` — never an empty array.
 
+**Every finding must include a non-blank `suggested_action`**, in plain English, even when no
+new fix is needed. For `none`, say that nothing needs changing; for `no_repo`, say that no repo is
+linked and we will check next week; for `in_flight`, say that a fix is already open and we will
+confirm it next week. For `fixed_pr`, describe the follow-up on the fix; for `off_limits` and
+`client_repo`, explain that it was logged without changing the site; for `ahrefs_side` and
+`ahrefs_credits`, describe checking the next crawl without buying credits. For `surfaced`, name
+the actual next action needed to fix the confirmed defect. Never leave this field null or blank.
+
 `disposition` is one of `fixed_pr`, `surfaced`, `off_limits`, `no_repo`, `none`, `ahrefs_side`,
 `client_repo`, `in_flight`, `ahrefs_credits`. `surfaced` now means: a defect YOUR crawl confirmed, in
 a fixable repo, that you could not fix — say exactly why in `because`. **If fixed=0 while anything

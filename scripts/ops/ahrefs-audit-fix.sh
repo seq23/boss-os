@@ -294,8 +294,9 @@ ln -sf "$RUN_LOG" "$LOG_DIR/latest.log"
 # LAND EVERY FIX. Deterministic, not left to the model: checks to green, then ~/bin/land.
 node "$REPO/scripts/ops/site-audit-lib.mjs" land "$OUT_DIR/findings.json" 2>&1 | tee -a "$RUN_LOG" | grep '^LAND ' || true
 
-# `;` NOT `&&`. A Boss OS that is unreachable must not turn a completed pass into a failed one — the
-# report is a separate claim and fails separately, loudly, in this log.
+# Report even when the pass's verdict is red. Delivery and repair are separate claims; check both
+# before exiting so a completed pass whose report never arrived cannot quietly succeed.
+REPORT_RC=1
 if [ -d "$REPO" ]; then
   (cd "$REPO" && npm run --silent vault:run -- node scripts/ops/ahrefs-audit-report.mjs >> "$RUN_LOG" 2>&1)
   REPORT_RC=$?
@@ -310,6 +311,7 @@ node "$REPO/scripts/ops/site-audit-lib.mjs" verdict "$OUT_DIR/findings.json" 2>&
 VERDICT_RC=${PIPESTATUS[0]}
 [ $RC -ne 0 ] && exit $RC
 [ $VERDICT_RC -eq 0 ] || { say "NAMED STOP [AUDIT_PASS_RED] see the AUDIT-VERDICT lines above."; exit 12; }
+[ $REPORT_RC -eq 0 ] || exit "$REPORT_RC"
 exit 0
 }
 

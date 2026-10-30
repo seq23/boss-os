@@ -3,7 +3,7 @@
  * 10, 11, 12, 14). Synthetic data only: invented people at example.com. The repo is public.
  */
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../../src/worker/boss/index";
 import { apiJson } from "./helpers";
 import {
@@ -398,8 +398,14 @@ describe("routes and the one-tap links", () => {
       "Why only confirmed addresses: bounce rate 9.1% (2 of 22 in 14 days) is over 3%.",
     ]);
     // The tap page says the same thing the moment she approves.
-    const page = await tap(`/api/auth/tap/${(t as any).template.tap_token}?do=approve`, "POST");
-    expect(page.text).toContain("the follow-up goes to the 15 addresses NeverBounce confirmed");
+    // Use the cohort's date here too: the route reads Date.now(), and real time ages its brake out.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(WED_10AM);
+    try {
+      const page = await tap(`/api/auth/tap/${(t as any).template.tap_token}?do=approve`, "POST");
+      expect(page.text).toContain("the follow-up goes to the 15 addresses NeverBounce confirmed");
+    } finally {
+      clock.mockRestore();
+    }
     const plan = await prospectPlan(env.DB, WED_10AM);
     expect(plan.stops).toEqual([]);
     expect(plan.sends).toHaveLength(15);
