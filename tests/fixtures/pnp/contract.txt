@@ -1,0 +1,15 @@
+Approved email text (synthetic identities only):
+  Subject: Christmas decor for {Company}?
+  Hi {First},\n\nI run Example Decor, a Memphis decorating team. {line}\n\nEach December we put up Christmas decor for
+  offices and lobbies (tree, garland, entry and reception styling) and decorate company holiday parties. We set everything
+  up before anyone arrives and take it all down after.\n\nWe keep it small, just 4 business bookings this December, mostly
+  weekday installs so your office isn't disrupted.\n\nIf {Company} has anything planned, send your date and space here and
+  we'll come back with ideas and a quote:\nexample.test/request\n\nAlex\nExample Decor
+  Building-manager variant: middle paragraph becomes "Each December we decorate building lobbies (tree, garland, entry and
+  front-desk styling) for the season, installed on a weekday morning and taken down in January."
+  Follow-up (the only one, ~5 days later, same thread, Subject "Re: Christmas decor for {Company}?"):
+  Hi {First}, bringing this back up in case holiday decor is still on your list. We only take 4 business jobs in December,
+  so earlier dates are easier to hold.\n\nIf it's not for this year, no worries at all.\n\nAlex\nExample Decor
+
+FOOTER (synthetic), on the first email AND the follow-up:
+  Footer text: "Example Decor · {mailing_address} · Reply "remove" and we'll stop." Added by the sender, never by the caller.

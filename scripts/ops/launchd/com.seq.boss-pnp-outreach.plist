@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.seq.boss-pnp-outreach</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>-lc</string>
+    <string>cd "$BOSS_OS_REPO" &amp;&amp; bash scripts/ops/__COMMAND__</string>
+  </array>
+  <key>EnvironmentVariables</key><dict><key>BOSS_OS_REPO</key><string>__REPO__</string></dict>
+  <key>StartCalendarInterval</key><array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>20</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>20</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>20</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>20</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>20</integer></dict>
+  </array>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>__LOGS__/launchd.log</string>
+  <key>StandardErrorPath</key><string>__LOGS__/launchd.err</string>
+</dict></plist>

@@ -220,7 +220,8 @@
     "validate:non-answer": "node scripts/validate/a-non-answer-is-not-a-draft.mjs && node scripts/validate/a-non-answer-is-not-a-draft.mjs --self-test",
     "sites:audit": "bash scripts/ops/self-update-checkout.sh && node scripts/vault/vault.mjs run -- node scripts/ops/search-readiness-audit.mjs",
     "sites:fix-queue": "node scripts/ops/search-readiness-audit.mjs --queue",
-    "sites:page": "node scripts/ops/search-readiness-page.mjs"
+    "sites:page": "node scripts/ops/search-readiness-page.mjs",
+    "pnp:outreach": "node scripts/vault/vault.mjs run -- node scripts/ops/pnp-corporate-outreach.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

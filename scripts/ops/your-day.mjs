@@ -498,7 +498,7 @@ export function failedTaskLines(tasks, now = Date.now()) {
     .map((t) => ({ id: t.id, text: `What happened: ${t.employee_name ?? "A teammate"}'s "${String(t.title).slice(0, 80)}" stopped (${String(t.error ?? "no reason given").split("\n")[0].slice(0, 120)}). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed; nothing needed from you.` }));
 }
 
-const DONE_SOURCES = ["bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];
+const DONE_SOURCES = ["pnp_outreach", "bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];
 const MAX_DONE = 3;
 
 /** 8Raise is said only when something is wrong (owner, 24 Oct 2026: "drop the footer unless"). */
@@ -807,7 +807,7 @@ async function postDigest(api, digest) {
 }
 
 /** The morning sections this email told her once and clears after it goes (producers that append). */
-const TOLD_ONCE = ["tail", "risk", "archive", "notices", "grid_repos"];
+const TOLD_ONCE = ["pnp_outreach", "tail", "risk", "archive", "notices", "grid_repos"];
 
 async function main() {
   const DRY = process.argv.includes("--dry-run");

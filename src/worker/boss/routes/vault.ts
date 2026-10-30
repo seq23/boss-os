@@ -321,6 +321,9 @@ const SNAPSHOT_TABLES = [
   "outreach_settings", "outreach_domain_state", "outreach_slices", "outreach_candidates",
   "outreach_prospects", "outreach_suppression", "outreach_sends", "outreach_replies", "outreach_bounce_fixes", // boss fix E (0292)
   "referral_partners", "referral_conversions", "referral_payouts",
+  // Camille's office Christmas outreach (0318): which companies were written to, and when, must
+  // survive a restore, or a rebuilt database would write to them a second time.
+  "pnp_outreach_prospects",
 ] as const;
 
 const SNAPSHOT_VERSION = 2;

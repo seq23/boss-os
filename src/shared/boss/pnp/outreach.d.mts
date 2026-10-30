@@ -1,0 +1,14 @@
+export const DAILY_FIRST_CAP: number;
+export const DAILY_FOLLOWUP_CAP: number;
+export function chicagoDay(now: number): string;
+export function weekday(now: number): boolean;
+export function dayStart(now: number): number;
+export function emailDomain(email: string): string;
+export function stopReason(status: any, now: number): string | null;
+export function contactRules(status: any): string[];
+export function blocked(row: any, status: any): string | null;
+export function validProspect(row: any): boolean;
+export function parseContract(source: string): { subject: string; party: string; lobby: string; followup: string };
+export function renderEmail(template: any, row: any, followup?: boolean): { subject: string; text: string };
+export function planSends(rows: any[], status: any, now: number): { row: any; touch: number }[];
+export function assertStatus(s: any): any;
