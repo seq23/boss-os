@@ -65,6 +65,7 @@ import { reapSilentRuns } from "./backends/reap";
 import { newId } from "./lib/id";
 import { lpTap } from "./routes/lpTap"; // boss fix L
 import { morning } from "./routes/morning";
+import { pnpOutreach } from "./routes/pnpOutreach";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -151,6 +152,7 @@ app.route("/api/judgement", judgement);
 // Monique's LP reply digest. Dormant until Scooter grants the West Peek delegation; the credential
 // prober is what wakes it, not a person remembering.
 app.route("/api/lp", lp);
+app.route("/api/pnp-outreach", pnpOutreach);
 // The diary: what she has coming up, what she typed, and a link where a packet exists.
 app.route("/api/diary", diaryRoutes);
 app.route("/api/waiting-on", waitingOn);

@@ -1103,6 +1103,13 @@ LJEOF
 }
 install_l_job com.seq.boss-prospects "duty-run.sh lp-prospects.mjs -- npm run --silent lp:prospects -- --live" '<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>' lp-prospects
 install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery.mjs -- npm run --silent lp:discover -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>' lp-discovery
+# Seasonal corporate outreach. The renderer shares the checked-in plist template, and only writes.
+# The template runs duty-run.sh pnp-corporate-outreach.mjs -- npm run --silent pnp:outreach -- --live
+PNP_PLIST="$HOME/Library/LaunchAgents/com.seq.boss-pnp-outreach.plist"
+BOSS_OS_REPO="$REPO" node "$REPO/scripts/ops/render-pnp-outreach-plist.mjs" --out "$PNP_PLIST"
+launchctl unload "$PNP_PLIST" 2>/dev/null || true
+lint_plist "$PNP_PLIST"
+launchctl load "$PNP_PLIST"
 # SIMONE'S MEETING PREP (owner-approved 26 Oct 2026): every hour at :05. The script decides by
 # Central time (from 18:00 Central, tomorrow's meetings; any hour, a meeting added for later today),
 # so the Mac's own zone (Eastern) cannot move it. Reports to duty_meeting_prep (migration 0312).

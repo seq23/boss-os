@@ -280,6 +280,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "lp-eightraise.mjs", // boss fix L
   "lp-prospect-discovery.mjs", // boss fix L
   "lp-prospects.mjs", // boss fix L
+  "pnp-corporate-outreach.mjs",
   "lp-tracker-sync.mjs",
   "mailbox-sweep.sh",
   "outside-locks.mjs",
