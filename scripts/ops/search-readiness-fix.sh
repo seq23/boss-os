@@ -31,15 +31,20 @@ PARALLEL="${SR_PARALLEL:-3}"
 LOG_DIR="$HOME/Library/Logs/boss-sr-fix"
 STATE_DIR="$HOME/.boss-os/search-readiness"
 STATUS="$STATE_DIR/fix-status.json"
+# landed-this-run.json: fix-queue brief ids this run has already fixed and landed, whose sites have
+# not rebuilt yet — read by search-readiness-audit.mjs --plan (SR_SET_ASIDE_FILE) so the next round's
+# plan does not hand them out again, and so a round that lands a fix counts as progress even though
+# the live audit's count cannot move until the site republishes (30 Oct 2026, see repo_worker below).
+SET_ASIDE="$STATE_DIR/landed-this-run.json"
 # fix-status.json: the run in progress after each round, and every finished run of the last weeks
 # (nextFixStatus, audit.mjs), so the Monday email sums real numbers even when it reads mid-run.
 write_status() {
   node -e '
-    const [status, started, fixed, left, prot, noRepo, done] = process.argv.slice(1);
+    const [status, started, fixed, left, prot, noRepo, awaiting, done] = process.argv.slice(1);
     import(process.cwd() + "/src/shared/boss/searchReadiness/audit.mjs").then(async (m) => {
       const fs = await import("node:fs");
       let prev = null; try { prev = JSON.parse(fs.readFileSync(status, "utf8")); } catch {}
-      const next = m.nextFixStatus(prev, { started: +started, fixed: +fixed, left: +left, protectedLeft: +prot, noRepo: +noRepo, done: done === "1" });
+      const next = m.nextFixStatus(prev, { started: +started, fixed: +fixed, left: +left, protectedLeft: +prot, noRepo: +noRepo, awaitingRepublish: +awaiting, done: done === "1" });
       fs.writeFileSync(status, JSON.stringify(next, null, 2));
       if (next.line) console.log(next.line);
     });' "$STATUS" "$@"
@@ -61,9 +66,11 @@ source "$REPO/scripts/ops/lib/net-wait.sh"
 
 # One repo's chunks of this round, one pass after another (never two passes on one repo at once).
 # Each pass's exit code goes to $RCS, so a pass that lost the network (13) is told apart from one
-# that fixed nothing.
+# that fixed nothing. Read BEFORE the next chunk's `rm -f findings.json` (ahrefs-audit-fix.sh)
+# overwrites this repo's scoped findings: every id this pass fixed and landed goes to $LANDED_RCS,
+# a plain line of space-joined ids — short enough that concurrent workers' appends never interleave.
 repo_worker() {
-  local round="$1" r="$2" lines="$3" n ids rr rc
+  local round="$1" r="$2" lines="$3" n ids rr rc landed
   while read -r rr n ids; do
     [ -n "$rr" ] || continue
     say "round $round: $rr ($n briefs)"
@@ -71,6 +78,8 @@ repo_worker() {
     rc=$?
     say "  $rr pass exited rc=$rc"
     echo "$rr $rc" >> "$RCS"
+    landed="$(node scripts/ops/site-audit-lib.mjs landed-ids "$HOME/.boss-os/site-audit/sr-$rr/findings.json" 2>/dev/null)"
+    [ -n "$landed" ] && echo "$landed" >> "$LANDED_RCS"
   done <<< "$lines"
 }
 
@@ -134,7 +143,7 @@ take_run_lock() {
     mkdir "$RUN_LOCK" 2>/dev/null || { say "NAMED STOP [NO_RUN_LOCK] $RUN_LOCK"; exit 3; }
   fi
   echo $$ > "$RUN_LOCK/pid"
-  trap 'rm -rf "$RUN_LOCK" "${RCS:-}"' EXIT
+  trap 'rm -rf "$RUN_LOCK" "${RCS:-}" "${LANDED_RCS:-}"' EXIT
 }
 
 # Each stop with work left is reported ONCE (per stop code, across resumes) to the repair path.
@@ -174,10 +183,18 @@ main() {
   fi
   take_run_lock
   REPORTED="$(mark_field reported)"
-  [ "${1:-}" = "--resume" ] && say "resuming an unfinished run (last state: $(mark_field reason))"
+  if [ "${1:-}" = "--resume" ]; then
+    say "resuming an unfinished run (last state: $(mark_field reason))"
+    [ -f "$SET_ASIDE" ] || echo "[]" > "$SET_ASIDE"
+  else
+    # A FRESH RUN STARTS WITH NOTHING SET ASIDE. A resume is the same run continuing, so its
+    # already-landed-but-not-republished ids stay excused; only a new run forgets them.
+    echo "[]" > "$SET_ASIDE"
+  fi
   RUN_STARTED="$(date +%Y-%m-%dT%H:%M:%S)"
   mark running
   RCS="$LOG_DIR/.rcs-$$"
+  LANDED_RCS="$LOG_DIR/.landed-$$"
 
   audit() { net_gate "the audit"; npm run --silent sites:audit >> "$LOG" 2>&1 || say "audit pass returned non-zero (see log); planning from the queue it left"; }
   plan() { node scripts/ops/search-readiness-audit.mjs --plan 2>>"$LOG"; }
@@ -195,6 +212,7 @@ main() {
     [ -n "$CHUNKS" ] || break
     BEFORE="$LEFT"
     : > "$RCS"
+    : > "$LANDED_RCS"
     # One worker per repo, in the plan's order (largest first, so the longest repo starts first),
     # at most $PARALLEL at a time. `jobs -rp` and a short sleep, not `wait -n`: /bin/bash on macOS
     # is 3.2, which has no `wait -n`.
@@ -214,34 +232,57 @@ main() {
       RETRY_AT="$(cat "$STATE_DIR/retry-after")"
       stop_unfinished AI_USAGE_EXHAUSTED "every pass this round is waiting on an AI usage reset (back at $RETRY_AT); the run resumes by itself after that."
     fi
+    # MERGE THIS ROUND'S LANDED IDS INTO THE SET-ASIDE FILE before the next plan() reads it, so a
+    # brief that just landed is never handed out again while its site waits to rebuild.
+    ROUND_LANDED=0
+    if [ -s "$LANDED_RCS" ]; then
+      ROUND_LANDED="$(tr ' ' '\n' < "$LANDED_RCS" | grep -c .)"
+      node -e '
+        const fs = require("fs");
+        const [file, ...ids] = process.argv.slice(1);
+        let arr = []; try { arr = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+        fs.writeFileSync(file, JSON.stringify([...new Set([...arr, ...ids])]));
+      ' "$SET_ASIDE" $(cat "$LANDED_RCS")
+    fi
     audit
     P="$(plan)" || break
     LEFT="$(echo "$P" | grep '^QUEUE' | field workable)"; LEFT="${LEFT:-$BEFORE}"
-    say "after round $ROUND: $LEFT workable left (was $BEFORE)"
+    AWAITING="$(echo "$P" | grep '^QUEUE' | field awaiting_republish)"; AWAITING="${AWAITING:-0}"
+    say "after round $ROUND: $LEFT workable left (was $BEFORE); $ROUND_LANDED fixed and landed this round, $AWAITING awaiting republish in all"
     # The run in progress is on the status file too, so a morning read mid-run says the real number.
-    write_status "$START" "$(( START - LEFT ))" "$LEFT" 0 0 0
+    # FIXED excludes AWAITING: a landed PR is a real claim about the PR, never a claim the site shows it.
+    write_status "$START" "$(( START - LEFT - AWAITING ))" "$LEFT" 0 0 "$AWAITING" 0
     if [ "$NET_HIT" -gt 0 ]; then
       say "round $ROUND: $NET_HIT pass(es) lost the network or hit a usage limit; that is not \"fixed nothing\", so the next round re-runs them"
       continue
     fi
-    [ "$LEFT" -lt "$BEFORE" ] || { STALLED=1; say "round $ROUND fixed nothing; stopping until tomorrow rather than spinning"; break; }
+    # PROGRESS IS THE WORKABLE COUNT FALLING, OR A FIX LANDING (30 Oct 2026). a6's sitemap dates
+    # only move on republish, so a round that landed real fixes can look identical to one that did
+    # nothing if judged by the live count alone; it is not a stall, only ROUND_LANDED tells the two apart.
+    if [ "$LEFT" -lt "$BEFORE" ] || [ "$ROUND_LANDED" -gt 0 ]; then
+      continue
+    fi
+    STALLED=1; say "round $ROUND fixed nothing; stopping until tomorrow rather than spinning"; break
   done
 
   Q="$(echo "$P" | grep '^QUEUE')"
   PROT="$(echo "$Q" | field protected)"; NOREPO="$(echo "$Q" | field no_repo)"
-  FIXED=$(( START - LEFT )); [ "$FIXED" -ge 0 ] || FIXED=0
-  write_status "$START" "$FIXED" "$LEFT" "${PROT:-0}" "${NOREPO:-0}" 1 | tee -a "$LOG"
-  say "SR-QUEUE-COMPLETE: started=$START fixed=$FIXED left=$LEFT protected=${PROT:-0} no_repo=${NOREPO:-0}"
+  AWAITING="$(echo "$Q" | field awaiting_republish)"; AWAITING="${AWAITING:-0}"
+  FIXED=$(( START - LEFT - AWAITING )); [ "$FIXED" -ge 0 ] || FIXED=0
+  write_status "$START" "$FIXED" "$LEFT" "${PROT:-0}" "${NOREPO:-0}" "$AWAITING" 1 | tee -a "$LOG"
+  say "SR-QUEUE-COMPLETE: started=$START fixed=$FIXED left=$LEFT awaiting_republish=$AWAITING protected=${PROT:-0} no_repo=${NOREPO:-0}"
   # RULE 0, WITH WORK LEFT: never a quiet exit 0. Named, non-zero (duty-run records it as failed and the
   # duty stays due), and on Danielle's repair desk. The run did reach its end, so the mark is cleared.
   if [ "$LEFT" -gt 0 ]; then
     if [ "$STALLED" -eq 1 ]; then CODE=SR_QUEUE_STALLED; WHY="round $ROUND fixed nothing"; else CODE=SR_ROUNDS_SPENT; WHY="all $MAX_ROUNDS rounds ran"; fi
-    say "NAMED STOP [$CODE] $LEFT workable briefs left ($WHY; $FIXED fixed of $START). See $LOG."
-    report_stop "$CODE" "$LEFT workable briefs left ($WHY; $FIXED fixed of $START)."
+    say "NAMED STOP [$CODE] $LEFT workable briefs left ($WHY; $FIXED fixed of $START, $AWAITING awaiting republish). See $LOG."
+    report_stop "$CODE" "$LEFT workable briefs left ($WHY; $FIXED fixed of $START, $AWAITING awaiting republish)."
     rm -f "$MARK" "$STATE_DIR/retry-after"
+    echo "[]" > "$SET_ASIDE"
     exit 14
   fi
   rm -f "$MARK" "$STATE_DIR/retry-after"
+  echo "[]" > "$SET_ASIDE"
   [ "$START" -gt 0 ] || say "NAMED STOP [QUEUE_EMPTY] nothing workable in the queue today; that is a result, not a skip."
   exit 0
 }

@@ -357,10 +357,15 @@ async function main() {
     const q = join(OUT, "fix-queue.json");
     if (!existsSync(q)) stop(3, "NO_QUEUE", `${q} does not exist yet; run npm run sites:audit first.`);
     const { workQueue } = await import("../../src/shared/boss/searchReadiness/audit.mjs");
-    const w = workQueue(JSON.parse(readFileSync(q, "utf8")).briefs);
+    // SR_SET_ASIDE_FILE: briefs search-readiness-fix.sh already fixed and landed this run, whose
+    // sites have not rebuilt yet — read so the plan does not hand them out again as workable.
+    const asideFile = process.env.SR_SET_ASIDE_FILE ?? join(homedir(), ".boss-os/search-readiness/landed-this-run.json");
+    let setAside = [];
+    if (existsSync(asideFile)) { try { setAside = JSON.parse(readFileSync(asideFile, "utf8")); } catch {} }
+    const w = workQueue(JSON.parse(readFileSync(q, "utf8")).briefs, { setAside });
     for (const r of w.repos) console.log(`REPO ${r.repo} ${r.n}`);
     for (const c of w.chunks) console.log(`CHUNK ${c.repo} ${c.ids.length} ${c.ids.join(",")}`);
-    console.log(`QUEUE total=${w.total} workable=${w.workable} protected=${w.protected} no_repo=${w.no_repo}`);
+    console.log(`QUEUE total=${w.total} workable=${w.workable} protected=${w.protected} no_repo=${w.no_repo} awaiting_republish=${w.awaiting_republish}`);
     return;
   }
   if (flag("--queue")) {
