@@ -6,6 +6,7 @@ PRESENT / MISSING / UNPROVEN (UNPROVEN = cannot be confirmed without credentials
 
 | Variable | Secret? | Phase first required | Consumed by | Status |
 |---|---|---|---|---|
+| `BOSS_EXTRA_OWNER_SENDERS` | yes (vault / Worker secret) | Boss intake (optional) | `isOwner`, Worker intake via `bossMount`, Mac Node callers via environment | UNPROVEN live — coordinator supplies the value |
 | `WP_OS_ENV` | no | P1 | worker runtime (`local`/`preview`/`production`) | PRESENT (wrangler.toml) |
 | `CLOUDFLARE_ACCOUNT_ID` | no | P1 (remote only) | wrangler/deploy | MISSING — CREDENTIAL GATE |
 | `CLOUDFLARE_API_TOKEN` | yes (vault) | P1 (remote only) / `vault:sync:cloudflare` | wrangler, Cloudflare API | MISSING — CREDENTIAL GATE |

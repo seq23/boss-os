@@ -12,6 +12,8 @@ export interface Env {
   BOSS_DOMAIN?: string;
   BOSS_PASSCODE: string;
   SESSION_SECRET: string;
+  /** Optional comma-separated owner addresses, in addition to the built-in intake list. */
+  BOSS_EXTRA_OWNER_SENDERS?: string;
   FIREWORKS_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   /**

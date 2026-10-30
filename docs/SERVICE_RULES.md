@@ -90,9 +90,10 @@ Each is deliberate; the reason is the line after the dash.
   `validate:notice-not-approval`. The friction rule still applies inside it: the wait is three
   parts (`TIER2_DECISION`), her reply is recorded, and only that one kind may name Boss OS as where it
   clears (`inBossOs`). A reply never releases a task held in `awaiting_approval`.
-- **D2 · R2 — one principal, her own addresses.** West Peek OS has two partners; Boss OS has her
-  three personal addresses in `BOSS_INTAKE_SENDERS`. Her West Peek address stays off it — the
-  two businesses never blend — and nothing in this change widens it.
+- **D2 · R2 — one principal, her own addresses.** Boss OS retains `BOSS_INTAKE_SENDERS` and also
+  accepts the coordinator-configured `BOSS_EXTRA_OWNER_SENDERS` Worker secret / Mac environment
+  variable. It is comma-separated, trimmed and case-folded; empty or unset preserves the built-in
+  list. DMARC must still pass. Email content can never add a sender or grant authority.
 - **D3 · R8 — the mailbox is boss@sequoiataylor.com**, and a reply finds its task by the `[tsk_…]`
   token in the subject (a repo change keeps its `[rc_…]` token and `repoChange/answer.ts`).
 - **D4 · R18 — no Drive upload.** The only Drive delegation on her Mac is West Peek's

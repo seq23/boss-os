@@ -253,7 +253,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const subject = decodeMimeHeader(message.headers.get("subject") ?? "");
   const sender = senderOf(message);
   const dmarc = dmarcPassed(message.headers.get("authentication-results"));
-  const authorised = isOwner(sender) && dmarc;
+  const authorised = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && dmarc;
 
   /*
    * ─── THE ARRIVAL IS RECORDED FIRST, AND THE OUTCOME IS FILLED IN AFTER ────
@@ -355,10 +355,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
    * and only HER reply sends anything back, in their thread (src/worker/boss/commands/run.ts
    * errandReplied, answerErrand).
    */
-  const externalBytes = !isOwner(sender) && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
+  const externalBytes = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") && message.rawSize <= MAX_BODY_BYTES ? await new Response(message.raw).arrayBuffer() : null;
   const externalRaw = externalBytes === null ? null : new TextDecoder().decode(externalBytes);
   const externalText = externalRaw === null ? "" : readableText(externalRaw, { full: true }).text;
-  const errand = !isOwner(sender) ? await openErrandFor(env, sender, now, { subject, text: externalText }) : null;
+  const errand = !isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "") ? await openErrandFor(env, sender, now, { subject, text: externalText }) : null;
   const externalKey = `boss-inbound-mail/${new Date(now).toISOString().slice(0, 10)}/${mailId}.eml`;
   const keepExternal = async () => {
     if (externalRaw !== null) await env.VAULT.put(externalKey, externalBytes!, { httpMetadata: { contentType: "message/rfc822" } });
@@ -386,7 +386,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   }
 
   if (!authorised) {
-    const why = isOwner(sender)
+    const why = isOwner(sender, env.BOSS_EXTRA_OWNER_SENDERS ?? "")
       ? `From ${sender}, which is one of yours, but DMARC did not pass — so the address was not proven and nothing was run.`
       : `From ${sender}, which is not one of your addresses. Recorded and refused.`;
     await recordArrival("REFUSED_SENDER", why);

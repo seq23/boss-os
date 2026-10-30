@@ -83,8 +83,10 @@ const FOREIGN_BINDING = /env\.(?!WP_OS_)(?:[A-Z][A-Z0-9_]{2,})\b/;
  *   on its own account — not a handle on another repository's storage — which is the thing this
  *   scan exists to prevent. It is declared in src/worker/env.ts and reachable only from
  *   effects/cloudflareEmailClient.ts, and being a binding it adds no egress surface at all.
+ * - BOSS_EXTRA_OWNER_SENDERS: this Worker's own private intake sender configuration, also read
+ *   through process.env by Mac callers. It is a declared setting, not another system's storage.
  */
-const DECLARED_NON_STORAGE_BINDINGS = /env\.(ASSETS|OPENROUTER_API_KEY|FIREWORKS_API_KEY|AI_PROVIDER_API_KEY|HARVEY_API_KEY|NORM_API_KEY|RESEND_API_KEY|RUNWARE_API_KEY|CF_ACCESS_CLIENT_ID|CF_ACCESS_CLIENT_SECRET|EMAIL|GOOGLE_OAUTH_CLIENT_ID|GOOGLE_OAUTH_CLIENT_SECRET)\b/;
+const DECLARED_NON_STORAGE_BINDINGS = /env\.(ASSETS|OPENROUTER_API_KEY|FIREWORKS_API_KEY|AI_PROVIDER_API_KEY|HARVEY_API_KEY|NORM_API_KEY|RESEND_API_KEY|RUNWARE_API_KEY|CF_ACCESS_CLIENT_ID|CF_ACCESS_CLIENT_SECRET|EMAIL|GOOGLE_OAUTH_CLIENT_ID|GOOGLE_OAUTH_CLIENT_SECRET|BOSS_EXTRA_OWNER_SENDERS)\b/;
 const NETWORK_OS_HOST = /(network-os[a-z0-9.-]*\.(?:com|dev|net|io|workers\.dev)|api\.westpeeknetwork)/i;
 
 function listSourceFiles() {
@@ -196,6 +198,8 @@ function selfTest() {
     "src/worker/services/portfolio.ts": "await env.WP_OS_DB.prepare('SELECT 1').first();",
     // P16: a declared provider credential is not another system's storage.
     "src/worker/ai/routing.ts": "const key = env.OPENROUTER_API_KEY;",
+    // Boss intake's own private sender configuration, also read by Mac-side Node callers.
+    "src/shared/boss/intake/mail.mjs": "const extra = process.env.BOSS_EXTRA_OWNER_SENDERS;",
     /*
      * THE GRID NAMES WHAT IS OUT OF SCOPE, AND NAMING IS NOT COUPLING. An exclusion that is merely
      * an absence is picked up again by the next scope that says "all her repos" — which is exactly
@@ -229,6 +233,14 @@ function selfTest() {
     "foreign storage binding alongside a declared credential binding": {
       ...clean,
       "src/worker/ai/routing.ts": "const k = env.OPENROUTER_API_KEY;\nawait env.PARTNER_DB.prepare('SELECT 1').all();",
+    },
+    "foreign storage alongside the owner sender setting": {
+      ...clean,
+      "src/shared/boss/intake/mail.mjs": "const extra = process.env.BOSS_EXTRA_OWNER_SENDERS;\nawait env.PARTNER_DB.prepare('SELECT 1').all();",
+    },
+    "an undeclared setting with the owner sender prefix": {
+      ...clean,
+      "src/shared/boss/intake/mail.mjs": "const extra = env.BOSS_EXTRA_OWNER_SENDERS_DB;",
     },
   };
   for (const [name, files] of Object.entries(cases)) {

@@ -46,4 +46,4 @@ export declare function decodeMimeHeader(value: string): string;
 export declare function extractAddress(header: string | null | undefined): string | null;
 export declare function strippedSubject(subject: string): string;
 export declare function dmarcPassed(authResults: string | null | undefined): boolean;
-export declare function isOwner(address: string | null | undefined): boolean;
+export declare function isOwner(address: string | null | undefined, extraOwnerSenders?: string): boolean;
