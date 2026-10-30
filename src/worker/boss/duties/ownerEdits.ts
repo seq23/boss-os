@@ -300,17 +300,8 @@ export async function teamCards(env: Env, now = Date.now()) {
   });
 }
 
-/** One employee's page: every duty with what it does, the instructions it follows, when it runs. */
-export async function employeeDuties(env: Env, employeeId: string, now = Date.now()) {
-  const e = await env.DB.prepare(`SELECT id, name, role, charter FROM employees WHERE id = ?`).bind(employeeId).first<any>();
-  if (!e) throw notFound("No employee with that id");
-  const rows = (await env.DB.prepare(`SELECT * FROM standing_duties WHERE employee_id = ? ORDER BY name`).bind(employeeId).all<OwnedDuty>()).results ?? [];
-  const counts = new Map<string, { n: number; last: number }>();
-  for (const r of (await env.DB.prepare(
-    `SELECT duty_id, COUNT(*) AS n, MAX(created_at) AS last FROM duty_versions
-      WHERE duty_id IN (SELECT id FROM standing_duties WHERE employee_id = ?) AND action != 'original' GROUP BY duty_id`,
-  ).bind(employeeId).all<any>()).results ?? []) counts.set(r.duty_id, { n: r.n, last: r.last });
-  const shape = (d: OwnedDuty) => {
+/** One duty as the owner's pages show it: what it does, the instructions it follows, when it runs. */
+function shapeDuty(d: OwnedDuty, counts: Map<string, { n: number; last: number }>, now: number) {
     const input = inputOf(d);
     const v = counts.get(d.id);
     return {
@@ -330,10 +321,63 @@ export async function employeeDuties(env: Env, employeeId: string, now = Date.no
       last_changed_at: v?.last ?? null,
       last_run_at: d.last_run_at, last_outcome: d.last_outcome, next_due_at: d.next_due_at,
     };
-  };
+}
+
+async function versionCounts(env: Env, employeeId: string | null) {
+  const counts = new Map<string, { n: number; last: number }>();
+  for (const r of (await env.DB.prepare(
+    `SELECT duty_id, COUNT(*) AS n, MAX(created_at) AS last FROM duty_versions
+      WHERE (?1 IS NULL OR duty_id IN (SELECT id FROM standing_duties WHERE employee_id = ?1)) AND action != 'original' GROUP BY duty_id`,
+  ).bind(employeeId).all<any>()).results ?? []) counts.set(r.duty_id, { n: r.n, last: r.last });
+  return counts;
+}
+
+/** One employee's page: every duty with what it does, the instructions it follows, when it runs. */
+export async function employeeDuties(env: Env, employeeId: string, now = Date.now()) {
+  const e = await env.DB.prepare(`SELECT id, name, role, charter FROM employees WHERE id = ?`).bind(employeeId).first<any>();
+  if (!e) throw notFound("No employee with that id");
+  const rows = (await env.DB.prepare(`SELECT * FROM standing_duties WHERE employee_id = ? ORDER BY name`).bind(employeeId).all<OwnedDuty>()).results ?? [];
+  const counts = await versionCounts(env, employeeId);
+  const shape = (d: OwnedDuty) => shapeDuty(d, counts, now);
   return {
     employee: { id: e.id, name: e.name, role: e.role, charter: e.charter },
     duties: rows.filter((d) => !d.removed_at).map(shape),
     removed: rows.filter((d) => d.removed_at).map(shape),
   };
+}
+
+/** A plain example, never invented: the duty's own written example, else what its last good run said. */
+function exampleOf(d: OwnedDuty, lastSaid: string | null): string | null {
+  const input = inputOf(d);
+  if (typeof input.example === "string" && input.example.trim()) return input.example.trim();
+  const said = String(lastSaid ?? "").replace(/\s+/g, " ").trim();
+  return said ? `Last time it reported: "${said.slice(0, 240)}${said.length > 240 ? "…" : ""}"` : null;
+}
+
+/**
+ * The Team page's duties grid: every standing duty of every active employee in one list, each with
+ * its owner, cadence and last run, plus everything the duty editor needs (the same shape the
+ * employee page edits), so a change made in either place is the same change.
+ */
+export async function allDuties(env: Env, now = Date.now()) {
+  const [people, rows, said] = await Promise.all([
+    env.DB.prepare(`SELECT id, name, role FROM employees WHERE lifecycle NOT IN ('retired','merged')`).all<any>(),
+    env.DB.prepare(`SELECT * FROM standing_duties WHERE removed_at IS NULL`).all<OwnedDuty>(),
+    env.DB.prepare(
+      `SELECT r.duty_id, r.reason FROM duty_runs r
+        JOIN (SELECT duty_id, MAX(finished_at) AS at FROM duty_runs WHERE outcome = 'ok' AND reason IS NOT NULL AND trim(reason) != '' GROUP BY duty_id) m
+          ON m.duty_id = r.duty_id AND m.at = r.finished_at
+        WHERE r.outcome = 'ok'`,
+    ).all<any>(),
+  ]);
+  const who = new Map((people.results ?? []).map((e: any) => [e.id, e]));
+  const lastSaid = new Map((said.results ?? []).map((r: any) => [r.duty_id, r.reason as string]));
+  const counts = await versionCounts(env, null);
+  return (rows.results ?? [])
+    .filter((d) => who.has(d.employee_id))
+    .map((d) => {
+      const e: any = who.get(d.employee_id);
+      return { ...shapeDuty(d, counts, now), owner: { id: e.id, name: e.name, role: e.role }, example: exampleOf(d, lastSaid.get(d.id) ?? null) };
+    })
+    .sort((a, b) => a.owner.name.localeCompare(b.owner.name) || a.name.localeCompare(b.name));
 }

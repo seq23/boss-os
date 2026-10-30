@@ -9,6 +9,10 @@
  * in place. The same D1 tables are edited by email reply (capital_party_lists, prospect_name_rules,
  * prospect_templates), so a change made either way shows in both.
  *
+ * Between them, the duties grid (30 Oct 2026): every employee's standing duties in one list, each
+ * row saying the duty in plain words, who owns it, how often it runs and how its last run went.
+ * Tapping a row opens "what this means", an example, and the same editor the employee page uses.
+ *
  * Make it calm: phone first (one column at 390 px), labelled actions, the editor opens under its own
  * card and stays there after a change, red only for a real failure.
  */
@@ -17,6 +21,7 @@ import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { MONIQUE_MONTHLY, EIGHTRAISE_BUDGET } from "../../../shared/boss/lp/plan.mjs";
+import { DutyBody } from "./EmployeePage";
 
 const at = (ms: number) => new Date(ms).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
 const day = (ms?: number | null) => (ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—");
@@ -52,8 +57,70 @@ export function YourTeam({ onOpenEmployee, onOpenDeals }: { onOpenEmployee: (id:
           ))}
         </div>
       )}
+      <p className="eyebrow" style={{ marginTop: 22 }}>Every standing duty, in one list</p>
+      <DutiesGrid />
       <p className="eyebrow" style={{ marginTop: 22 }}>Lists Monique keeps for you (edit here, or reply to any Monique email)</p>
       <MoniqueLists onOpenDeals={onOpenDeals} />
+    </div>
+  );
+}
+
+/** How the last run went, in words with their one colour: green done, red did not finish, grey otherwise. */
+export function lastRunWords(d: { paused?: boolean; last_run_at?: number | null; last_outcome?: string | null }): { words: string; tone: "good" | "bad" | "quiet" } {
+  if (d.paused) return { words: "Paused", tone: "quiet" };
+  if (!d.last_run_at) return { words: "Not run yet", tone: "quiet" };
+  if (d.last_outcome === "failed") return { words: `Did not finish ${day(d.last_run_at)}`, tone: "bad" };
+  return { words: `Done ${day(d.last_run_at)}`, tone: "good" };
+}
+
+function DutiesGrid() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [who, setWho] = useState("everyone");
+  const [open, setOpen] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const load = () => { api.allDuties().then((r) => setRows(r.duties)).catch((e) => { setError(e); setRows([]); }); };
+  useEffect(load, []);
+  if (rows === null) return <Loading />;
+  const owners = [...new Map(rows.map((d) => [d.owner.id, d.owner.name])).entries()];
+  const shown = who === "everyone" ? rows : rows.filter((d) => d.owner.id === who);
+  const failed = shown.filter((d) => !d.paused && d.last_outcome === "failed").length;
+  const paused = shown.filter((d) => d.paused).length;
+  return (
+    <div data-testid="duties-grid">
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+      <p className="row-sub" data-testid="duties-summary" style={{ margin: "0 0 8px" }}>
+        {shown.length} {shown.length === 1 ? "duty" : "duties"}
+        {failed ? <> · <span className="state-bad">{failed} did not finish last time</span></> : " · all finished last time"}
+        {paused ? ` · ${paused} paused` : ""}
+      </p>
+      <label className="field" style={{ maxWidth: 320 }}>
+        <span>Show duties for: tap to choose</span>
+        <select value={who} onChange={(e) => { setWho(e.target.value); setOpen(null); }} data-testid="duties-filter">
+          <option value="everyone">Everyone</option>
+          {owners.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+      </label>
+      {shown.length === 0 ? <Empty title="No standing duties" hint="Duties appear here once an employee has one." /> : (
+        <div className="duties-grid" role="list">
+          <div className="duties-grid-head" aria-hidden="true"><span>Duty</span><span>Who</span><span>How often</span><span>Last run</span></div>
+          {shown.map((d) => {
+            const last = lastRunWords(d);
+            const isOpen = open === d.id;
+            return (
+              <section key={d.id} className="panel duties-grid-row" role="listitem" data-testid="duties-grid-row" aria-label={`${d.name}, ${d.owner.name}`}>
+                <button className="duties-grid-line" onClick={() => setOpen(isOpen ? null : d.id)} aria-expanded={isOpen}>
+                  <span className="row-title">{d.name}</span>
+                  <span className="row-sub">{d.owner.name}</span>
+                  <span className="row-sub">{d.schedule_words}</span>
+                  <span className={last.tone === "good" ? "state-good" : last.tone === "bad" ? "state-bad" : "row-sub"} data-testid="duty-last-run">{last.words}</span>
+                  <span className="duty-card-hint duties-grid-open">{isOpen ? "✕ Close" : "Show what this means ▾"}</span>
+                </button>
+                {isOpen && <DutyBody duty={d} example onChanged={load} onError={setError} />}
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

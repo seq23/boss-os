@@ -55,7 +55,7 @@ import { isDue, nextDueAt, EARLY_RUN_GRACE_MS } from "../duties/cadence";
 export { EARLY_RUN_GRACE_MS };
 import { admitTask } from "../tasks/admit";
 import {
-  dutyBrief, editDuty, employeeDuties, loadDuty, pauseDuty, removeDuty, teamCards, undoDuty, type EditInput,
+  dutyBrief, editDuty, employeeDuties, loadDuty, pauseDuty, removeDuty, teamCards, allDuties, undoDuty, type EditInput,
 } from "../duties/ownerEdits";
 
 export const duties = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -481,6 +481,9 @@ duties.get("/runs", async (c) => {
 // src/worker/boss/duties/ownerEdits.ts.
 
 duties.get("/team", async (c) => ok(c, { team: await teamCards(c.env) }));
+
+// The Team page's duties grid: every employee's standing duties in one list.
+duties.get("/all", async (c) => ok(c, { duties: await allDuties(c.env) }));
 
 duties.get("/employee/:id", async (c) => ok(c, await employeeDuties(c.env, c.req.param("id"))));
 

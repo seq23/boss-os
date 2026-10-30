@@ -41,6 +41,7 @@ import { nextDueAt } from "../duties/cadence";
 import { mayAutoFix, whyNoAutoFix, DISPOSITIONS } from "../../../shared/boss/siteAudit/repoPolicy.mjs";
 import { carriesAddress, searchEvidenceGap, findingItemId } from "../../../shared/boss/siteAudit/evidence.mjs";
 import { repoForDomain, domainOfRow } from "../../../shared/boss/siteAudit/domainRepos.mjs";
+import { fillBlankFields } from "../../../shared/boss/siteAudit/defaultActions.mjs";
 
 export const siteAudit = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -148,7 +149,9 @@ siteAudit.post("/site-audit-findings", async (c) => {
   let written = 0;
   const refused: string[] = [];
 
-  for (const [i, f] of rows.entries()) {
+  for (const [i, raw] of rows.entries()) {
+    // The same defaults as the reporter: a blank next action or reason is filled, never refused.
+    const f: any = fillBlankFields(raw);
     const disposition = String(f?.disposition ?? "");
     const project = text(f?.project, 120);
     const headline = text(f?.headline, 300);

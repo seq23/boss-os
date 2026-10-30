@@ -155,6 +155,37 @@ describe("the pages read real D1", () => {
     expect(after.removed.map((d: any) => d.id)).toContain(MAC_FIXED);
   });
 
+  it("the Team page's duties grid: every active employee's duties in one list, with owner, cadence, last run and an example", async () => {
+    await env.DB.prepare(`DELETE FROM duty_runs WHERE duty_id = ?`).bind(MAC_FIXED).run();
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO duty_runs (id, duty_id, local_job, finished_at, created_at, outcome, reason) VALUES ('dr_grid_1', ?, 'x', 1000, 1000, 'ok', 'Older words.')`).bind(MAC_FIXED),
+      env.DB.prepare(`INSERT INTO duty_runs (id, duty_id, local_job, finished_at, created_at, outcome, reason) VALUES ('dr_grid_2', ?, 'x', 2000, 2000, 'ok', '  Sent   3 notes.  ')`).bind(MAC_FIXED),
+      env.DB.prepare(`INSERT INTO duty_runs (id, duty_id, local_job, finished_at, created_at, outcome, reason) VALUES ('dr_grid_3', ?, 'x', 3000, 3000, 'failed', 'A failure is never the example.')`).bind(MAC_FIXED),
+    ]);
+    const { status, body } = await apiJson<any>("/api/duties/all");
+    expect(status).toBe(200);
+    const expected = await all<{ id: string }>(
+      `SELECT d.id FROM standing_duties d JOIN employees e ON e.id = d.employee_id WHERE d.removed_at IS NULL AND e.lifecycle NOT IN ('retired','merged')`);
+    expect(expected.length).toBeGreaterThan(5);
+    expect(body.data.duties.map((d: any) => d.id).sort()).toEqual(expected.map((d) => d.id).sort());
+    const fixed = body.data.duties.find((d: any) => d.id === MAC_FIXED);
+    expect(fixed.owner.name).toBe("Monique");
+    expect(typeof fixed.schedule_words).toBe("string"); expect(fixed.schedule_words.length).toBeGreaterThan(3);
+    expect(fixed.what.length).toBeGreaterThan(10);
+    expect(fixed.example).toBe('Last time it reported: "Sent 3 notes."');
+    expect(fixed.instructions.source).toBe("fixed");
+    // Sorted by owner, then duty, so one person's duties sit together.
+    const keys = body.data.duties.map((d: any) => `${d.owner.name}\u0000${d.name}`);
+    expect(keys).toEqual([...keys].sort((a: string, b: string) => a.localeCompare(b)));
+    // The grid edits through the same routes: a change and a removal show on the next read.
+    await apiJson<any>(`/api/duties/${MAC_PROMPT}/edit`, { method: "POST", body: { instructions: "Grid words." } });
+    await apiJson<any>(`/api/duties/${MAC_FIXED}/remove`, { method: "POST", body: { confirm: true } });
+    const after = (await apiJson<any>("/api/duties/all")).body.data.duties;
+    expect(after.find((d: any) => d.id === MAC_PROMPT).instructions).toMatchObject({ source: "owner", text: "Grid words." });
+    expect(after.find((d: any) => d.id === MAC_PROMPT).changes).toBe(1);
+    expect(after.map((d: any) => d.id)).not.toContain(MAC_FIXED);
+  });
+
   it("a remove without confirmation is refused at the route", async () => {
     const r = await apiJson<any>(`/api/duties/${MAC_FIXED}/remove`, { method: "POST", body: {} });
     expect(r.status).toBe(400);

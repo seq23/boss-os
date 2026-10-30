@@ -89,22 +89,33 @@ describe("audit actions match the disposition", () => {
         reply = { written: 1, refused: [] };
         const before = posts.length;
         const result = await report([{ ...finding, disposition, suggested_action: blank }]);
-        if (disposition === "surfaced") {
-          expect(result.code, result.out).toBe(14);
-          expect(result.out).toContain("INCOMPLETE_FINDING");
-          expect(posts).toHaveLength(before);
-        } else {
-          expect(result.code, result.out).toBe(0);
-          expect(posts).toHaveLength(before + 1);
-          expect(posts.at(-1).findings).toEqual([{ ...finding, disposition, suggested_action: defaults[disposition] }]);
-          expect(result.out).toContain("1 finding(s) written from 1 sent");
-        }
+        // Every outcome has a plain-English default; a confirmed defect's names the defect (30 Oct 2026).
+        const expected = disposition === "surfaced" ? `Fix this on the site: ${finding.headline}. It goes into the next fix pass.` : defaults[disposition];
+        expect(expected).toBeTruthy();
+        expect(result.code, result.out).toBe(0);
+        expect(posts).toHaveLength(before + 1);
+        expect(posts.at(-1).findings).toEqual([{ ...finding, disposition, suggested_action: expected }]);
+        expect(result.out).toContain("1 finding(s) written from 1 sent");
       });
     }
   }
-  it.each(["project", "headline", "because"])("still refuses a blank %s", async (field) => {
+  it.each(["project", "headline"])("still refuses a blank %s: no default can say what was found", async (field) => {
     const before = posts.length;
     const result = await report([{ ...finding, [field]: " " }]);
+    expect(result.code, result.out).toBe(14);
+    expect(posts).toHaveLength(before);
+  });
+  it.each([" ", null, undefined])("a blank reason (%j) gets its plain-English default and is delivered", async (blank) => {
+    reply = { written: 1, refused: [] };
+    const before = posts.length;
+    const result = await report([{ ...finding, because: blank }]);
+    expect(result.code, result.out).toBe(0);
+    expect(posts).toHaveLength(before + 1);
+    expect(posts.at(-1).findings).toEqual([{ ...finding, because: "The weekly site audit flagged this; it gave no further reason." }]);
+  });
+  it("a confirmed defect with no headline and no action is still refused, never guessed", async () => {
+    const before = posts.length;
+    const result = await report([{ ...finding, disposition: "surfaced", headline: "", suggested_action: "" }]);
     expect(result.code, result.out).toBe(14);
     expect(posts).toHaveLength(before);
   });
