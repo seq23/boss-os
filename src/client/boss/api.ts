@@ -671,6 +671,7 @@ export const api = {
 
   // ── Builder U (23 Oct 2026, boards 7 + 8): Your team, one page per employee, the lists Monique keeps. ──
   teamCards: () => call<{ team: any[] }>("/duties/team"),
+  allDuties: () => call<{ duties: any[] }>("/duties/all"),
   employeeDuties: (id: string) => call<{ employee: any; duties: any[]; removed: any[] }>(`/duties/employee/${encodeURIComponent(id)}`),
   editDuty: (id: string, body: { instructions?: string; schedule?: string; hour?: number; minute?: number }) =>
     call<{ duty_id: string; changed: string[]; version: number | null }>(`/duties/${encodeURIComponent(id)}/edit`, post("", body)),

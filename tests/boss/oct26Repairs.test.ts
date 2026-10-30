@@ -118,6 +118,18 @@ describe("the site-audit ingest", () => {
     expect(res.body.data.refused.join(" ")).toMatch(/p-n-p does/);
   });
 
+  it("a blank next action or reason is filled with its plain-English default, the reporter's same words; a blank headline is refused", async () => {
+    const res = await apiJson<any>("/api/engineering/site-audit-findings", { method: "POST", body: {
+      run_id: "blank-fields", searched: queueSearched,
+      findings: [f({ headline: "j9: blank fields filled", because: "  ", suggested_action: null }), f({ headline: " ", suggested_action: "" })],
+    } });
+    expect(res.status).toBe(201);
+    expect(res.body.data.written).toBe(1);
+    expect(res.body.data.refused).toHaveLength(1);
+    const r = await row<{ because: string; suggested_action: string }>(`SELECT because, suggested_action FROM site_audit_findings WHERE headline = 'j9: blank fields filled'`);
+    expect(r).toEqual({ because: "The weekly site audit flagged this; it gave no further reason.", suggested_action: "Fix this on the site: j9: blank fields filled. It goes into the next fix pass." });
+  });
+
   it("a late re-delivery of an older pass never supersedes what a later pass already wrote", async () => {
     const now = Date.now();
     await apiJson("/api/engineering/site-audit-findings", { method: "POST", body: { run_id: "late-new", ran_at: now - 60_000, searched: queueSearched, findings: [f({ headline: "j9: newest wording" })] } });

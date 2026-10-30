@@ -102,6 +102,26 @@ export function EmployeePage({ id, onBack }: { id: string; onBack: () => void })
 }
 
 function DutyCard({ duty: d, open, onToggle, onChanged, onError }: { duty: any; open: boolean; onToggle: () => void; onChanged: () => void; onError: (e: unknown) => void }) {
+  return (
+    <section className="panel duty-card" data-testid="duty-card" aria-label={d.name}>
+      <button className="duty-card-head" onClick={onToggle} aria-expanded={open}>
+        <span className="row-title">{d.name}</span>
+        <span className="row-sub">
+          {d.schedule_words} · {d.paused ? <span className="pill">Paused</span> : <span className="pill state-good">On</span>}
+          {" · "}<span className="duty-card-hint">{open ? "Close ▴" : "Open ▾"}</span>
+        </span>
+      </button>
+      {open && <DutyBody duty={d} onChanged={onChanged} onError={onError} />}
+    </section>
+  );
+}
+
+/**
+ * The open duty: what it does, its instructions or the ask-Danielle box, when it runs, and Save /
+ * Undo / Pause / Remove. Shared by this page and the Team page's duties grid, so both edit the same
+ * way. With `example`, it says "What this means" and adds the duty's example line.
+ */
+export function DutyBody({ duty: d, onChanged, onError, example = false }: { duty: any; onChanged: () => void; onError: (e: unknown) => void; example?: boolean }) {
   const ins = d.instructions;
   const [text, setText] = useState<string>(ins.text ?? "");
   const [choice, setChoice] = useState<string>(d.choice);
@@ -129,17 +149,13 @@ function DutyCard({ duty: d, open, onToggle, onChanged, onError }: { duty: any; 
   });
 
   return (
-    <section className="panel duty-card" data-testid="duty-card" aria-label={d.name}>
-      <button className="duty-card-head" onClick={onToggle} aria-expanded={open}>
-        <span className="row-title">{d.name}</span>
-        <span className="row-sub">
-          {d.schedule_words} · {d.paused ? <span className="pill">Paused</span> : <span className="pill state-good">On</span>}
-          {" · "}<span className="duty-card-hint">{open ? "Close ▴" : "Open ▾"}</span>
-        </span>
-      </button>
-      {open && (
         <div className="duty-card-body">
-          <p style={{ margin: 0 }}><b>What it does:</b> {d.what}</p>
+          <p style={{ margin: 0 }}><b>{example ? "What this means:" : "What it does:"}</b> {d.what}</p>
+          {example && (
+            <p className="row-sub" style={{ margin: 0 }} data-testid="duty-example">
+              <b>Example:</b> {d.example ?? "An example appears here after its first finished run."}
+            </p>
+          )}
           {d.sends && <p className="row-sub" style={{ margin: 0 }}><b>Where it goes:</b> {d.sends}</p>}
           <p className="row-sub" style={{ margin: 0 }}>
             {d.runs_on === "mac" ? "Runs on your Mac." : "Runs in Boss OS."}
@@ -218,8 +234,6 @@ function DutyCard({ duty: d, open, onToggle, onChanged, onError }: { duty: any; 
             {d.changes > 0 ? `Last changed by you on ${day(d.last_changed_at)}. ` : ""}Every version is kept. Removing asks you to confirm first.
           </p>
         </div>
-      )}
-    </section>
   );
 }
 
