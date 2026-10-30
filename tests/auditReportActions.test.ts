@@ -140,8 +140,8 @@ echo 'AHREFS-AUDIT-COMPLETE: projects=3 fixed=0 surfaced=0 off_limits=0 no_repo=
   return { home, env: { HOME: home, PATH: `${bin}:${process.env.PATH}`, BOSS_OS_REPO: ROOT,
     BOSS_AI_RUNNER: "codex", AHREFS_DIGEST: join(home, "digest.txt"),
     AUDIT_FIXTURE_SUMMARY: JSON.stringify(summary([
-      { ...finding, disposition: "none", suggested_action: null, repo: null, pr_url: null },
-      { ...finding, disposition: "no_repo", suggested_action: "", repo: null, pr_url: null },
+      { ...finding, project: "Fixture audit summary", headline: "Nothing to change", disposition: "none", suggested_action: null, repo: null, pr_url: null },
+      { ...finding, project: "Unlinked fixture site", headline: "No linked repository", disposition: "no_repo", suggested_action: "", repo: null, pr_url: null },
       { ...finding, disposition: "in_flight", suggested_action: " \t", notes: null },
     ])) } };
 }
