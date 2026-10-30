@@ -1004,13 +1004,21 @@ export function summaryLines(siteResults) {
  * What the daily queue run still has to do. A brief is WORKABLE when it names a repo and is not on a
  * protected page; protected briefs (the Spry Labs download page) are fixed only on their own, and
  * no_repo briefs have nowhere to land. Those two are what may be left when the run says "done".
+ *
+ * `setAside` (30 Oct 2026) names briefs this run already fixed and landed, whose sites have not yet
+ * rebuilt to show it — a6's sitemap dates only move on republish, so the live audit still finds them
+ * failing minutes after the merge. They are WORKABLE's complement, not a defect: counted separately
+ * as `awaiting_republish`, never re-queued, never counted as left to do.
  */
-export function workQueue(briefs, { chunkSize = 10 } = {}) {
+export function workQueue(briefs, { chunkSize = 10, setAside = [] } = {}) {
   const list = Array.isArray(briefs) ? briefs : [];
+  const aside = new Set(setAside);
   const isProtected = (b) => Array.isArray(b.protected) ? b.protected.length > 0 : Boolean(b.protected);
   const noRepo = list.filter((b) => !b.repo || b.disposition === "no_repo");
   const prot = list.filter((b) => b.repo && b.disposition !== "no_repo" && isProtected(b));
-  const workable = list.filter((b) => b.repo && b.disposition === "fix" && !isProtected(b));
+  const fixable = list.filter((b) => b.repo && b.disposition === "fix" && !isProtected(b));
+  const awaiting = fixable.filter((b) => aside.has(b.id));
+  const workable = fixable.filter((b) => !aside.has(b.id));
   const byRepo = {};
   for (const b of workable) byRepo[b.repo] = (byRepo[b.repo] ?? 0) + 1;
   const repos = Object.entries(byRepo).sort((a, b) => b[1] - a[1]).map(([repo, n]) => ({ repo, n }));
@@ -1025,7 +1033,7 @@ export function workQueue(briefs, { chunkSize = 10 } = {}) {
     const ids = workable.filter((b) => b.repo === repo).map((b) => b.id);
     for (let i = 0; i < ids.length; i += chunkSize) chunks.push({ repo, ids: ids.slice(i, i + chunkSize) });
   }
-  return { total: list.length, workable: workable.length, protected: prot.length, no_repo: noRepo.length, repos, chunks };
+  return { total: list.length, workable: workable.length, protected: prot.length, no_repo: noRepo.length, awaiting_republish: awaiting.length, repos, chunks };
 }
 
 /**
@@ -1058,16 +1066,21 @@ export function repairsThisWeek(status, now = Date.now()) {
 }
 
 /** The status file after a round (`running`) or at the end of a run (`history` + the run's own line). */
-export function nextFixStatus(prev, { started, fixed, left, protectedLeft = 0, noRepo = 0, done = false, at = new Date().toISOString() }) {
+export function nextFixStatus(prev, { started, fixed, left, protectedLeft = 0, noRepo = 0, awaitingRepublish = 0, done = false, at = new Date().toISOString() }) {
   const history = (prev?.history ?? []).filter((h) => Date.parse(h.at) > Date.parse(at) - 4 * WEEK_MS);
   if (!done) return { ...(prev ?? {}), history, running: { at, started, fixed } };
-  const line = queueRunLine({ started, fixed, left, protectedLeft, noRepo });
-  return { at, started, fixed, left, protected: protectedLeft, no_repo: noRepo, line, history: [...history, { at, fixed }], running: null };
+  const line = queueRunLine({ started, fixed, left, protectedLeft, noRepo, awaitingRepublish });
+  return { at, started, fixed, left, protected: protectedLeft, no_repo: noRepo, awaiting_republish: awaitingRepublish, line, history: [...history, { at, fixed }], running: null };
 }
 
-/** The plain-English line for the morning email: what the queue run did today. No ids, no commands. */
-export function queueRunLine({ started, fixed, left, protectedLeft = 0, noRepo = 0 }) {
+/**
+ * The plain-English line for the morning email: what the queue run did today. No ids, no commands.
+ * `awaitingRepublish` is never folded into "fixed and live" and never into "still to do" — a landed
+ * fix is a real claim about the PR, not about what the site shows yet (30 Oct 2026).
+ */
+export function queueRunLine({ started, fixed, left, protectedLeft = 0, noRepo = 0, awaitingRepublish = 0 }) {
   const parts = [`Search fixes today: ${fixed} of ${started} fixed and live.`];
+  if (awaitingRepublish) parts.push(`${awaitingRepublish} more ${awaitingRepublish === 1 ? "is" : "are"} fixed and landed; ${awaitingRepublish === 1 ? "its site" : "their sites"} will show it at the next rebuild.`);
   if (left > 0) parts.push(`${left} still to do; Danielle carries on tomorrow morning.`);
   else parts.push("Nothing left that can be fixed automatically.");
   const kept = [];

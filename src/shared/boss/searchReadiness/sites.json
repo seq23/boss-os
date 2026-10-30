@@ -743,7 +743,9 @@
    },
    "known_limits": [
     { "item": "a1", "why": "Hosted on Lovable, which answers the www host with its own 302; the repo cannot set a 301 there." },
-    { "item": "a9", "why": "Lovable serves the app shell with 200 for every unknown path; a real 404 status is not configurable from the repo." }
+    { "item": "a9", "why": "Lovable serves the app shell with 200 for every unknown path; a real 404 status is not configurable from the repo." },
+    { "item": "b10", "why": "The at-source fix merged in dailystory PR #124 (28 Oct 2026, src/pages/Accessibility.tsx names Time-2-Read in its own title) but Lovable publishes this site outside GitHub Actions, so a repo merge does not reach production; production still serves the old shell 5+ hours after the merge.", "review_after": "2026-11-13" },
+    { "item": "e9", "why": "Same cause as b10: Clarity is already scoped to LoginScreen only (useParentFormClarity) in the merged source, but Lovable's own publish step is what ships it, and that has not run since the fix merged.", "review_after": "2026-11-13" }
    ]
   },
   {

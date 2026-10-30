@@ -496,6 +496,18 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     expect(workQueue([]).repos).toEqual([]);
     expect(workQueue(undefined as any).workable).toBe(0);
   });
+  it("a brief fixed and landed this run is set aside: never workable, never re-chunked, counted as awaiting_republish (30 Oct 2026)", () => {
+    const b = [
+      { id: "sr-uscisexam.com-a6-1", repo: "local-guides-generator", disposition: "fix" },
+      { id: "sr-uscisexam.com-a6-2", repo: "local-guides-generator", disposition: "fix" },
+      { id: "sr-uscisexam.com-a6-3", repo: "local-guides-generator", disposition: "fix" },
+    ];
+    const w = workQueue(b, { setAside: ["sr-uscisexam.com-a6-1", "sr-uscisexam.com-a6-2"] });
+    expect(w).toMatchObject({ total: 3, workable: 1, awaiting_republish: 2 });
+    expect(w.chunks.flatMap((c) => c.ids)).toEqual(["sr-uscisexam.com-a6-3"]);
+    // NEGATIVE: an id that is not in the queue at all (already republished, so it dropped out) is not invented a count.
+    expect(workQueue(b, { setAside: ["sr-not-in-queue"] }).awaiting_republish).toBe(0);
+  });
   it("the Monday email says it in her words: \"Danielle fixes these every Tuesday: N fixed last week, M left\"", () => {
     const line = repairLine({ fixed: 230 }, 12);
     expect(line).toBe("Danielle fixes these every Tuesday: 230 fixed last week, 12 left.");
@@ -505,6 +517,13 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     expect(lines).toContain("Danielle fixes these every Tuesday: 230 fixed last week, 12 left.");
     expect(queueRunLine({ started: 242, fixed: 230, left: 12, protectedLeft: 2, noRepo: 13 })).toMatch(/Spry Labs download page/);
   });
+  it("a landed fix that has not republished yet is said plainly, and never folded into 'fixed and live' or 'still to do' (30 Oct 2026)", () => {
+    const line = queueRunLine({ started: 18, fixed: 6, left: 12, awaitingRepublish: 4 });
+    expect(line).toBe("Search fixes today: 6 of 18 fixed and live. 4 more are fixed and landed; their sites will show it at the next rebuild. 12 still to do; Danielle carries on tomorrow morning.");
+    expect(lineProblems(line)).toEqual([]);
+    expect(queueRunLine({ started: 1, fixed: 0, left: 0, awaitingRepublish: 1 })).toMatch(/^Search fixes today: 0 of 1 fixed and live\. 1 more is fixed and landed; its site will show it at the next rebuild\./);
+    expect(queueRunLine({ started: 10, fixed: 10, left: 0 })).not.toMatch(/awaiting|rebuild/);
+  });
   it("the line sums the week's runs and the run in progress, never a stale file's count (26 Oct 2026: '0 fixed' mid-run while 129 were fixed)", () => {
     const at = (iso: string) => ({ at: iso });
     let st = nextFixStatus({ at: "2026-10-19T10:00:00Z", fixed: 0 }, { started: 139, fixed: 83, left: 56, ...at("2026-10-26T05:56:00Z") });
@@ -512,6 +531,10 @@ describe("the fix queue is worked to empty, then weekly on Tuesday (owner, 25 Oc
     st = nextFixStatus(st, { started: 139, fixed: 129, left: 10, protectedLeft: 4, done: true, ...at("2026-10-26T10:36:00Z") });
     expect(repairLine(st, 10, Date.parse("2026-10-26T11:00:00Z"))).toBe("Danielle fixes these every Tuesday: 129 fixed last week, 10 left.");
     expect(repairLine(st, 10, Date.parse("2026-11-03T11:00:00Z"))).toBe("Danielle fixes these every Tuesday: 0 fixed last week, 10 left.");
+    // nextFixStatus carries awaiting_republish onto the finished status so a mid-run read sees it too.
+    const done = nextFixStatus(null, { started: 18, fixed: 6, left: 12, awaitingRepublish: 4, done: true, ...at("2026-10-30T12:00:00Z") });
+    expect(done.awaiting_republish).toBe(4);
+    expect(done.line).toMatch(/4 more are fixed and landed/);
   });
   it("launchd only ticks and asks the duty row; the audit stays Monday; the fixer takes a one-repo scope", () => {
     const installer = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");
@@ -555,14 +578,28 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
   });
   it("a known limit stays in the queue with its reason and is never workable", () => {
     const site = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
-    expect(site.known_limits.map((k: any) => k.item).sort()).toEqual(["a1", "a9"]);
-    const results = ["a1", "a9", "b1", "e6", "i8", "i10"].map((id) => ({ id, status: "fail", detail: "x" }));
+    expect(site.known_limits.map((k: any) => k.item).sort()).toEqual(["a1", "a9", "b10", "e9"]);
+    const results = ["a1", "a9", "b1", "e6", "i8", "i10", "b10", "e9"].map((id) => ({ id, status: "fail", detail: "x" }));
     const briefs = fixBriefs(checklist, [{ site, host: site.domain, results }]);
     const by = Object.fromEntries(briefs.map((b: any) => [b.item_id, b]));
-    for (const id of ["a1", "a9"]) { expect(by[id].disposition).toBe("known_limit"); expect(by[id].known_limit.length).toBeGreaterThan(20); }
+    for (const id of ["a1", "a9", "b10", "e9"]) { expect(by[id].disposition).toBe("known_limit"); expect(by[id].known_limit.length).toBeGreaterThan(20); }
     // Clarity went live on time-2-read.com on 25 Oct 2026 (project z3erswoh8e): a failing e6/i8 is real fix work, never excused.
     for (const id of ["b1", "e6", "i8"]) expect(by[id].disposition).toBe("fix");
-    expect(workQueue(briefs)).toMatchObject({ total: 6, workable: 4 });
+    expect(workQueue(briefs)).toMatchObject({ total: 8, workable: 4 });
+  });
+
+  it("b10 and e9 on time-2-read.com are a host limit, not an excuse forever: the fix merged, Lovable's own publish is the gap, and it is measured again on review_after (30 Oct 2026)", () => {
+    const site = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
+    const limits = Object.fromEntries(site.known_limits.map((k: any) => [k.item, k]));
+    for (const id of ["b10", "e9"]) {
+      expect(limits[id].review_after).toBe("2026-11-13");
+      expect(limits[id].why).toMatch(/dailystory PR #124|Lovable/);
+    }
+    const results = [{ id: "b10", status: "fail", detail: "x" }, { id: "e9", status: "fail", detail: "y" }];
+    const before = fixBriefs(checklist, [{ site, host: site.domain, results }], { now: Date.parse("2026-10-30T12:00:00Z") });
+    expect(before.every((b: any) => b.disposition === "known_limit")).toBe(true);
+    const after = fixBriefs(checklist, [{ site, host: site.domain, results }], { now: Date.parse("2026-11-14T12:00:00Z") });
+    expect(after.every((b: any) => b.disposition === "fix")).toBe(true);
   });
 
   it("a known limit set from a measurement or a dated decision expires on review_after and is worked again (26 Oct 2026)", () => {

@@ -20,7 +20,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error — plain .mjs with no types; the functions under test are the ones the runner calls.
-import { runVerdict, landAll, matchInFlight } from "../scripts/ops/site-audit-lib.mjs";
+import { runVerdict, landAll, matchInFlight, landedIds } from "../scripts/ops/site-audit-lib.mjs";
 import { mayAutoFix, NO_AUTO_FIX_REPOS } from "../src/shared/boss/siteAudit/repoPolicy.mjs";
 
 const ROOT = join(__dirname, "..");
@@ -196,6 +196,66 @@ describe("IN_FLIGHT: an open PR or branch already touching it is skipped", () =>
     expect(matchInFlight(prs, [], ["footer.html"])?.kind).toBe("pr");
     expect(matchInFlight([], ["main", "fix/email-protection-links"], ["email-protection"])).toEqual({ kind: "branch", ref: "fix/email-protection-links" });
     expect(matchInFlight(prs, ["main"], [])).toBeNull();
+  });
+
+  it("a branch with no commits of its own (ahead: 0) is never IN_FLIGHT — merged or stale, not work in progress (30 Oct 2026)", () => {
+    expect(matchInFlight([], [{ name: "feat/clarity-tag-install", ahead: 0 }], ["clarity"])).toBeNull();
+    expect(matchInFlight([], [{ name: "feat/clarity-tag-install", ahead: 3 }], ["clarity"])).toEqual({ kind: "branch", ref: "feat/clarity-tag-install" });
+    // a bare string (no ahead known) still matches, as before — only an enriched zero-ahead object is excluded.
+    expect(matchInFlight([], ["feat/clarity-tag-install"], ["clarity"])?.kind).toBe("branch");
+    // a zero-ahead branch does not hide a REAL match further down the list.
+    expect(matchInFlight([], [{ name: "feat/clarity-tag-install", ahead: 0 }, { name: "fix/clarity-real", ahead: 5 }], ["clarity"]))
+      .toEqual({ kind: "branch", ref: "fix/clarity-real" });
+  });
+});
+
+describe("IN_FLIGHT_STALE: dead evidence is RED, not GREEN (30 Oct 2026)", () => {
+  // The exact shape the 30 Oct pass wrote for dream-wedding-builder's six wedding Clarity briefs:
+  // feat/clarity-tag-install merged two days earlier (ahead_by: 0), and the run still skipped them.
+  const staleBranchRow = {
+    disposition: "in_flight", repo: "dream-wedding-builder", project: "checklist:weddingchecklistpdf.com",
+    headline: "IN_FLIGHT: e6: Clarity installation flagged as missing",
+    in_flight: { kind: "branch", ref: "feat/clarity-tag-install", comparison_to_main: { status: "behind", ahead_by: 0, behind_by: 303 }, open_prs: 0 },
+  };
+
+  it("a branch with ahead_by: 0 is RED, named IN_FLIGHT_STALE", () => {
+    const v = runVerdict({ findings: [staleBranchRow] });
+    expect(v.red).toBe(true);
+    expect(v.reasons.join("\n")).toMatch(/^IN_FLIGHT_STALE: checklist:weddingchecklistpdf\.com/m);
+  });
+
+  it("a merged or closed PR match is RED too", () => {
+    const mergedPr = { disposition: "in_flight", repo: "WPP-llm", project: "checklist:x.com", headline: "IN_FLIGHT: a6: x",
+      in_flight: { kind: "pr", ref: "https://github.com/seq23/WPP-llm/pull/10", pr_state: "MERGED" } };
+    expect(runVerdict({ findings: [mergedPr] }).reasons.join("\n")).toMatch(/^IN_FLIGHT_STALE/m);
+    const closedPr = { ...mergedPr, in_flight: { ...mergedPr.in_flight, pr_state: "CLOSED" } };
+    expect(runVerdict({ findings: [closedPr] }).reasons.join("\n")).toMatch(/^IN_FLIGHT_STALE/m);
+  });
+
+  it("a genuine open PR in-flight row still exits GREEN", () => {
+    const openPrRow = { disposition: "in_flight", repo: "WPP-llm", project: "checklist:x.com", headline: "IN_FLIGHT: a6: x",
+      in_flight: { kind: "pr", ref: "https://github.com/seq23/WPP-llm/pull/11" } };
+    expect(runVerdict({ findings: [openPrRow] }).red).toBe(false);
+    // and a branch genuinely ahead of main is not stale either.
+    const realBranchRow = { ...staleBranchRow, in_flight: { ...staleBranchRow.in_flight, comparison_to_main: { status: "ahead", ahead_by: 2, behind_by: 1 } } };
+    expect(runVerdict({ findings: [realBranchRow] }).red).toBe(false);
+  });
+});
+
+describe("landed-ids: what a pass fixed and landed, for the set-aside file (30 Oct 2026)", () => {
+  it("picks up fixed_pr rows that landed, skips everything else, and derives the fix-queue brief id", () => {
+    const payload = { findings: [
+      { disposition: "fixed_pr", land: "landed", project: "checklist:uscisexam.com", headline: "a6: stop sitemap index dates following the build clock" },
+      { disposition: "fixed_pr", land: "checks_red", project: "checklist:uscisexam.com", headline: "a7: not landed" },
+      { disposition: "surfaced", project: "checklist:uscisexam.com", headline: "a8: could not fix" },
+    ] };
+    expect(landedIds(payload)).toEqual(["sr-uscisexam.com-a6"]);
+  });
+
+  it("the CLI prints nothing, not an error, when findings.json does not exist", () => {
+    const r = spawnSync("node", [join(ROOT, "scripts/ops/site-audit-lib.mjs"), "landed-ids", "/nonexistent/findings.json"], { encoding: "utf8" });
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe("");
   });
 });
 

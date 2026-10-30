@@ -19,6 +19,13 @@
  * in passing need no yes — and left every fix it might have made waiting on her. It still never
  * calls a bare merge or a deploy itself: `~/bin/land` refuses rather than guesses (not green, head
  * moved, main red), watches main to a terminal state and deploys, and that is the only door.
+ *
+ * IN_FLIGHT MEANS WORK OF ITS OWN, NOT A NAME MATCH (30 Oct 2026). `matchInFlight` used to return any
+ * remote branch whose NAME contained a brief's term, merged or not — dream-wedding-builder kept 33
+ * merged branches, six of them Danielle's own `danielle/site-audit-*`, and every one was a permanent
+ * false "someone is already on it". `feat/clarity-tag-install` matched "clarity" two days after its
+ * PR merged (`ahead_by: 0, behind_by: 303`) and six real briefs were skipped three rounds running —
+ * `AUDIT-VERDICT: GREEN fixed=0 in_flight=6`, a pass that ran and did nothing, which Rule 0 forbids.
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -26,7 +33,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mayAutoFix } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
-import { scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
+import { scopeSnapshot, findingItemId } from "../../src/shared/boss/siteAudit/evidence.mjs";
 import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
 
 /** Dispositions that are a CONFIRMED site defect in a repo the fixer may change. */
@@ -38,6 +45,8 @@ const NEEDS_CRAWL = new Set(["surfaced", "fixed_pr"]);
  * RULE 0 for the pass. Returns { red, reasons, counts }.
  *
  *   FIXABLE_LEFT_UNFIXED  fixed=0 while a confirmed, fixable defect was surfaced — the 15/16 Oct shape
+ *   IN_FLIGHT_STALE       skipped as "in flight" on a branch with no commits of its own, or a merged
+ *                         or closed PR — dead evidence, not work in progress — the 30 Oct shape
  *   NOT_LANDED            a PR was opened and did not land: work left waiting on her
  *   NOT_CRAWLED           a row claims a defect (or a fix) with no crawl of the live site behind it
  *   NOT_PROBED            an Ahrefs-side crawl failure asserted with no outside probe behind it
@@ -53,6 +62,15 @@ export function runVerdict(payload) {
     const who = `${f.project ?? "?"} (${f.repo ?? f.domain ?? "no repo"}) — ${f.headline ?? ""}`;
     if (FIXABLE_LEFT.has(f.disposition) && fixed === 0 && mayAutoFix(f.repo)) {
       reasons.push(`FIXABLE_LEFT_UNFIXED: ${who}: ${f.because ?? "no reason given"}`);
+    }
+    if (f.disposition === "in_flight" && mayAutoFix(f.repo)) {
+      const ahead = Number(f.in_flight?.comparison_to_main?.ahead_by);
+      const prState = String(f.in_flight?.pr_state ?? "").toUpperCase();
+      if (f.in_flight?.kind === "branch" && Number.isFinite(ahead) && ahead === 0) {
+        reasons.push(`IN_FLIGHT_STALE: ${who}: skipped on branch ${f.in_flight?.ref ?? "?"}, which is ${ahead} commits ahead of main — merged or stale, not work in progress.`);
+      } else if (f.in_flight?.kind === "pr" && (prState === "MERGED" || prState === "CLOSED")) {
+        reasons.push(`IN_FLIGHT_STALE: ${who}: skipped on ${f.in_flight?.ref ?? "a pull request"}, which is already ${prState.toLowerCase()} — not work in progress.`);
+      }
     }
     if (f.disposition === "fixed_pr" && f.land !== "landed") {
       reasons.push(`NOT_LANDED: ${who}: ${f.pr_url ?? "no PR"} is ${f.land ?? "not landed"}${f.land_detail ? ` (${f.land_detail})` : ""}`);
@@ -83,6 +101,10 @@ export function repoSlug(repo, root = process.env.AUDIT_GITHUB_ROOT ?? join(home
  * `inflight()` below feeds it from `gh`. Other agents fix the same sites (16 Oct 2026: dead outbound
  * and email-protection links in local-guides-generator and WPP-llm, the theindustryguides link in
  * LGCV); a duplicate PR from Danielle collides with theirs.
+ *
+ * A branch is either a bare name (unknown ahead — matches as before, for callers with no commit
+ * count to give) or `{ name, ahead }`; a branch with `ahead === 0` has no commits of its own — merged
+ * into the default branch or never diverged from it — and is never work in progress (30 Oct 2026).
  */
 export function matchInFlight(prs, branches, terms) {
   const t = terms.map((x) => String(x).toLowerCase()).filter(Boolean);
@@ -95,8 +117,11 @@ export function matchInFlight(prs, branches, terms) {
     }
   }
   for (const b of branches) {
-    if (/^(main|master|gh-pages)$/.test(b)) continue;
-    if (hit(b)) return { kind: "branch", ref: b };
+    const name = typeof b === "string" ? b : b.name;
+    if (/^(main|master|gh-pages)$/.test(name)) continue;
+    if (!hit(name)) continue;
+    if (typeof b === "object" && Number(b.ahead) === 0) continue;
+    return { kind: "branch", ref: name };
   }
   return null;
 }
@@ -105,8 +130,26 @@ export function inflight(repo, terms) {
   const slug = repoSlug(repo);
   const prs = JSON.parse(execFileSync("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "50",
     "--json", "number,title,body,headRefName,url,files"], { encoding: "utf8" }));
-  const branches = JSON.parse(execFileSync("gh", ["api", `repos/${slug}/branches?per_page=100`, "--jq", "[.[].name]"],
+  const names = JSON.parse(execFileSync("gh", ["api", `repos/${slug}/branches?per_page=100`, "--jq", "[.[].name]"],
     { encoding: "utf8" }));
+  /*
+   * ONLY THE NAME-MATCHED CANDIDATES PAY FOR A COMPARE READ (30 Oct 2026): resolving every branch's
+   * ahead-of-default would be dozens of extra `gh api` calls on a repo like dream-wedding-builder (33
+   * branches); a branch that does not match no term is never in play anyway.
+   */
+  const t = terms.map((x) => String(x).toLowerCase()).filter(Boolean);
+  const candidates = names.filter((name) => !/^(main|master|gh-pages)$/.test(name) && t.some((x) => name.toLowerCase().includes(x)));
+  let defaultBranch = null;
+  const branches = names.map((name) => {
+    if (!candidates.includes(name)) return name;
+    try {
+      defaultBranch ??= execFileSync("gh", ["api", `repos/${slug}`, "--jq", ".default_branch"], { encoding: "utf8" }).trim();
+      const cmp = JSON.parse(execFileSync("gh", ["api", `repos/${slug}/compare/${defaultBranch}...${name}`], { encoding: "utf8" }));
+      return { name, ahead: cmp.ahead_by };
+    } catch {
+      return name; // the compare read failed; fall back to a name match rather than a false CLEAR
+    }
+  });
   return matchInFlight(prs, branches, terms);
 }
 
@@ -159,6 +202,19 @@ export function landLines(payload) {
   return [...seen.values()];
 }
 
+/**
+ * Fix-queue brief ids (`sr-<domain>-<item>`) for every row this pass landed — read by
+ * `search-readiness-fix.sh` after each chunk, before the next chunk's `rm -f findings.json`
+ * overwrites them, and merged into the run's set-aside file so a brief that is fixed and landed but
+ * not yet republished counts as progress instead of a stall (30 Oct 2026).
+ */
+export function landedIds(payload) {
+  return (payload.findings ?? [])
+    .filter((f) => f.disposition === "fixed_pr" && f.land === "landed")
+    .map(findingItemId)
+    .filter(Boolean);
+}
+
 function defaultRun(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
@@ -202,8 +258,14 @@ if (isMain) {
   } else if (cmd === "inflight") {
     const hit = inflight(rest[0], rest.slice(1));
     console.log(hit ? `IN_FLIGHT ${hit.kind} ${hit.ref}${hit.title ? ` — ${hit.title}` : ""}` : "CLEAR");
+  } else if (cmd === "landed-ids") {
+    // Missing or unreadable is silence, not an error: a pass that stopped before writing
+    // findings.json landed nothing, which is exactly what an empty line means here.
+    let ids = [];
+    try { ids = landedIds(JSON.parse(readFileSync(rest[0], "utf8"))); } catch {}
+    if (ids.length) console.log(ids.join(" "));
   } else {
-    console.error("usage: site-audit-lib.mjs verdict|land <findings.json> | inflight <repo> <term...> | scope <repo> [ids] | repo-for <domain>");
+    console.error("usage: site-audit-lib.mjs verdict|land <findings.json> | inflight <repo> <term...> | scope <repo> [ids] | repo-for <domain> | landed-ids <findings.json>");
     process.exit(2);
   }
 }
