@@ -53,6 +53,14 @@ for (const vp of [PHONE, LAPTOP]) {
       await expect(result).toBeVisible();
       await expectNear(page, send, result, 900);
 
+      // The list reads it back FIRST, and only then does the journey read D1 out of band. The form
+      // reloads the list 1.2s after a send; `queryLocalD1` opens the same SQLite file in a second
+      // workerd process, and when the two overlapped (CI, 31 Oct 2026, run 41173926460) the page's
+      // GET /api/tasks failed with SQLITE_BUSY, the list kept its old rows, and this row never came.
+      // Waiting for the page to finish its own read keeps the two processes off the file at once.
+      const row = page.locator("main.page .row", { hasText: TITLE });
+      await expect(row).toBeVisible({ timeout: 15_000 });
+
       const rows = queryLocalD1<{ id: string; status: string; employee_id: string | null; input: string }>(
         `SELECT id, status, employee_id, input FROM tasks WHERE title = '${TITLE}'`,
       );
@@ -60,10 +68,8 @@ for (const vp of [PHONE, LAPTOP]) {
       expect(rows[0]!.employee_id, "an owner was suggested").toBeTruthy();
       expect(JSON.parse(rows[0]!.input).prompt).toContain("Cite the page");
 
-      // The list reads it back. With no model behind wrangler dev the drain must FAIL IT BY NAME —
-      // never leave it 'running' for ever, never say it succeeded.
-      const row = page.locator("main.page .row", { hasText: TITLE });
-      await expect(row).toBeVisible({ timeout: 15_000 });
+      // With no model behind wrangler dev the drain must FAIL IT BY NAME — never leave it 'running'
+      // for ever, never say it succeeded.
       await expect.poll(
         () => queryLocalD1<{ status: string }>(`SELECT status FROM tasks WHERE title = '${TITLE}'`)[0]!.status,
         { timeout: 30_000 },
