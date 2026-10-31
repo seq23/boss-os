@@ -26,6 +26,8 @@ import {
 import { METHOD_PLANETS, STATION_UNCERTAINTY_HOURS, planetPosition, ZODIAC_SIGNS } from "../spirit/planets";
 import { astroDashboard } from "../spirit/dashboard";
 import { travelMap } from "../spirit/travelMap";
+import { ancestralHourNow, ancestralHourState, claimReminder, markAncestralHourDone, reminderSent } from "../spirit/ancestralHour";
+import { ORIGIN } from "../commands/run";
 import { dayIdInZone, monthRange, OWNER_TIMEZONE, OWNER_TIMEZONE_LABEL, weekIdInZone } from "../../../shared/boss/timezone";
 import {
   gratitudeFor, MANIFESTATION_SEQUENCE, HARD_DAY_FLOOR, SEQUENCE_MINUTES,
@@ -203,6 +205,9 @@ spirit.get("/day", async (c) => {
 
   return ok(c, {
     ...signal,
+    // The end-of-month countdown (owner, 31 Oct 2026), from the one rule in spirit/ancestralHour.ts.
+    // Simone's morning email reads it for its above-the-fold line and its month line.
+    ancestral_hour: ancestralHourState(id, signal.ancestors.minutes),
     sky,
     dashboard,
     map,
@@ -1005,6 +1010,33 @@ spirit.delete("/contributions/:id", async (c) => {
 });
 
 // ─── Ancestors — gentle, monthly, unscored ────────────────────────────────────
+
+// ─── The ancestral hour at the end of the month (owner, 31 Oct 2026) ─────────
+//
+// The Today card reads GET; its "Done ✓" and the reminder email's one tap both reach
+// markAncestralHourDone. The Mac's errand-reminders tick (every 10 minutes) claims the day's reminder
+// email here and reports it sent: one row per Central day, so it never goes twice.
+
+spirit.get("/ancestral-hour", async (c) => ok(c, await ancestralHourNow(c.env.DB)));
+
+spirit.post("/ancestral-hour/done", async (c) => {
+  const r = await markAncestralHourDone(c.env.DB, "today");
+  if (r.recorded) await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "ancestor_entries", entityId: r.state.month, action: "ancestral_hour_done", detail: { source: "today" } });
+  return ok(c, r);
+});
+
+spirit.post("/ancestral-hour/reminder", async (c) => {
+  const r = await claimReminder(c.env.DB, ORIGIN);
+  return ok(c, r.due ? { due: true, day: r.day, kind: r.kind, notice: r.notice } : { due: false, day: r.day, reason: r.reason });
+});
+
+spirit.post("/ancestral-hour/reminder/:day/sent", async (c) => {
+  const day = c.req.param("day");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw badRequest("A day is YYYY-MM-DD");
+  const recorded = await reminderSent(c.env.DB, day);
+  if (recorded) await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "ancestral_hour_reminders", entityId: day, action: "ancestral_hour_reminder_sent" });
+  return ok(c, { recorded });
+});
 
 spirit.get("/ancestors", async (c) => {
   const month = c.req.query("month") ?? monthId(Date.now());

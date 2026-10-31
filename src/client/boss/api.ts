@@ -151,6 +151,9 @@ export const api = {
   markRotationDone: (done: boolean) => call<any>("/today/movement/done", post("", { done })),
   // The ancestor hour. `ts` is the day and time SHE names, never the moment of recording.
   recordAncestorHour: (body: unknown) => call<any>("/spirit/ancestors", post("", body)),
+  // The end-of-month ancestral hour (owner, 31 Oct 2026): Today's card and its "Done ✓".
+  ancestralHour: () => call<any>("/spirit/ancestral-hour"),
+  ancestralHourDone: () => call<any>("/spirit/ancestral-hour/done", post("")),
 
   status: () => call<any>("/system/status"),
   health: () => call<any>("/system/health"),

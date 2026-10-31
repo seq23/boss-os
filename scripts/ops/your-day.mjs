@@ -439,6 +439,18 @@ function whenWords(at, now) {
 }
 
 /**
+ * THE ANCESTRAL HOUR, ABOVE THE FOLD (owner, 31 Oct 2026: "on the last day of the month and 3 days
+ * before u should make the ancestral hour urgent and noticeable"). In the window and not yet done, one
+ * line right after the greeting with the same countdown as the Today card — the Worker computes it
+ * (`ancestral_hour` on /spirit/day, spirit/ancestralHour.ts); this only says it. Done → no line. Pure.
+ */
+export function ancestralLine(day) {
+  const a = day?.ancestral_hour;
+  if (!a?.show || a.done || !a.headline) return null;
+  return `${a.headline}. When it's finished, tap Done on Today or in the reminder email.`;
+}
+
+/**
  * THE SPIRIT SECTION, built exactly like the sample she approved: the money-map week, the next
  * major lunar event, today's sky in one plain line, the morning practice in one line, the gratitude
  * sentence, this month's Ancestors hour and Contribution, and the week's practice in one line — then
@@ -469,8 +481,9 @@ export function spiritSection(day, week, now = Date.now()) {
   const anc = day.ancestors;
   const con = day.contribution;
   if (anc || con) {
+    // The Worker's one rule (spirit/ancestralHour.ts) when it sent it; the same count otherwise.
     const [y, mo] = dayOf(now).split("-").map(Number);
-    const left = new Date(Date.UTC(y, mo, 0)).getUTCDate() - Number(dayOf(now).slice(8, 10));
+    const left = Number.isInteger(day.ancestral_hour?.days_left) ? day.ancestral_hour.days_left : new Date(Date.UTC(y, mo, 0)).getUTCDate() - Number(dayOf(now).slice(8, 10));
     items.push(`This month · ${plural(left, "day")} left: 🕯 Ancestors hour: ${anc?.minutes ?? 0} of ${anc?.target_minutes ?? 60} min · 🤝 Contribution: ${con?.count ?? 0} of ${con?.minimum ?? 1}.`);
   }
   /*
@@ -638,6 +651,7 @@ export function buildDay(data, now = Date.now()) {
   }
   const prospects = prospectSection(data.prospects ?? null, now);
   const spirit = spiritSection(data.spirit ?? null, data.practiceWeek ?? null, now);
+  const ancestral = ancestralLine(data.spirit ?? null);
   // The prospects producer's count line is in "Prospect emails" when that loaded; not said twice.
   for (const name of DONE_SOURCES.filter((n) => !(prospects && n === "prospects"))) for (const l of m[name]?.lines ?? []) doneRaw.push(typeof l === "string" ? { text: l, links: [] } : { links: [], ...l });
   const doneOnce = doneForYou(doneRaw, { told: new Set(data.told?.done ?? []), max: MAX_DONE });
@@ -694,7 +708,7 @@ export function buildDay(data, now = Date.now()) {
     kind: "morning",
     maxDecide: Infinity,
     subject,
-    happened: `Good morning. Here is your ${dayWords(today)}.${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
+    happened: `Good morning. Here is your ${dayWords(today)}.${ancestral ? ` ${ancestral}` : ""}${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
     decide,
     sections: [
       ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({ text: d.thin.replace(/^Still yours to answer: /, ""), links: [{ label: "Open ›", url: d.screen }] })), empty: null }] : []),
