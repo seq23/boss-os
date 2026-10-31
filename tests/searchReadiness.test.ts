@@ -702,7 +702,25 @@ describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority 
     expect(by["porchandparty901.com"].entity_parent).toBe("own");
     expect(by["virtualagency-os.com"].entity_parent).toBe("own");
     for (const d of ["horselegalguide.com", "hicksconsulting.org"]) expect(by[d].entity_parent).toBe("client");
-    expect(sites.grid_repos.filter((x: any) => x.category === "side_business").every((x: any) => x.entity_parent === "spry-labs")).toBe(true);
+    // Every side business names Spry Labs as its parent EXCEPT the three authority-network
+    // publications, whose parent claim the owner withdrew on 11 Oct 2026 (and which
+    // authority-backlink-network's validate_no_parent_company.py refuses to republish). A side
+    // business may read "own" only as one of those three, and only with entity_parent_why on the
+    // row saying which decision made it true — so nothing else can quietly opt out.
+    const noParent = ["founderoperatorlibrary.com", "memphisvendorlibrary.com", "professionalresourcelibrary.com"];
+    for (const s of sites.grid_repos.filter((x: any) => x.category === "side_business")) {
+      expect(s.entity_parent, s.domain).toBe(noParent.includes(s.domain) ? "own" : "spry-labs");
+    }
+    for (const d of noParent) {
+      expect(by[d].repo).toBe("authority-backlink-network");
+      expect(by[d].entity_parent_why, d).toMatch(/11 Oct 2026/);
+      expect(by[d].entity_parent_why, d).toMatch(/validate_no_parent_company/);
+      // k1 finds the entity file only where the row names it: these are data/entities/<domain>.json.
+      expect(by[d].entity_file, d).toBe(`data/entities/${d}.json`);
+    }
+    expect(sites.grid_repos.filter((x: any) => x.entity_parent === "own" && x.category === "side_business").map((x: any) => x.domain).sort()).toEqual(noParent);
+    const claudeMd = readFileSync("CLAUDE.md", "utf8");
+    expect(claudeMd.slice(claudeMd.indexOf("## Search Readiness"))).toMatch(/withdrew their parent-company claim on 11 Oct 2026/);
     expect(sites.grid_repos.filter((x: any) => x.ymyl).map((x: any) => x.domain).sort()).toEqual(["approvalprep.com", "dentistryguides.com", "hormonesivhair.com", "horselegalguide.com", "memphisseniorcarehomes.com", "neuroevalguides.com", "theaccidentguides.com", "uscisexam.com"]);
     expect(SPRY_LABS_ID).toBe(SPRY);
   });

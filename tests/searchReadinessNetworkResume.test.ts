@@ -33,6 +33,12 @@ printf 200`);
 [ "\${FAKE_GH_LOGGED_IN:-1}" = 1 ]`);
   w("claude", "exit 0");
   w("security", "exit 1"); // past the gh check, the fixer stops at CLAUDE_NOT_AUTHENTICATED (exit 10)
+  // `codex` is stubbed as INSTALLED BUT SIGNED OUT, because the real one must never be reached:
+  // these tests run on her Mac from inside a Boss OS pass, where codex is on PATH and the pass's own
+  // BOSS_AI_RUNNER / SR_SCOPE_REPO are in the environment. Leaking those sent the fixer down the
+  // auto -> Codex branch and the run ended CODEX_NOT_AUTHENTICATED (13) where the test wanted 10 —
+  // green in CI only because no codex binary exists there. runFixer now pins the runner per case.
+  w("codex", `if [ "$1 $2" = "login status" ]; then [ "\${FAKE_CODEX_LOGGED_IN:-0}" = 1 ]; exit $?; fi\nexit 0`);
   return { bin, net };
 }
 
@@ -48,7 +54,11 @@ function runFixer(down: string, loggedIn: boolean, extra: Record<string, string>
   const { bin, net } = fakeBin(home);
   writeFileSync(net, down);
   const r = spawnSync("/bin/bash", [join(ops, "ahrefs-audit-fix.sh")], {
-    env: { ...(process.env as Record<string, string>), ...FAST, ...extra, HOME: home, PATH: `${bin}:${process.env.PATH}`,
+    env: { ...(process.env as Record<string, string>), ...FAST,
+      // The runner choice is part of the case, never inherited: a pass that runs these tests has its
+      // own BOSS_AI_RUNNER, SR_SCOPE_REPO and AHREFS_DIGEST in the environment.
+      BOSS_AI_RUNNER: "claude", SR_SCOPE_REPO: "", AHREFS_DIGEST: "", ...extra,
+      HOME: home, PATH: `${bin}:${process.env.PATH}`,
       BOSS_OS_REPO: join(home, "boss-os"), AHREFS_AUDIT_PROMPT: join(home, "prompt.md"), FAKE_GH_LOGGED_IN: loggedIn ? "1" : "0" },
     encoding: "utf8", timeout: 60000,
   });
@@ -78,6 +88,21 @@ describe("ahrefs-audit-fix.sh tells the network apart from the gh login", () => 
     expect(out).not.toMatch(/GH_NOT_AUTHENTICATED/);
     expect(rc).toBe(13);
     expect(Date.now() - t0).toBeLessThan(30000);
+  }, 60000);
+
+  it("the runner choice comes from the case, not from the pass that runs the test (auto -> Codex stops are named)", () => {
+    // auto + Claude signed out + a scoped pass: Codex is allowed to run, and signed out it is a
+    // named stop, exit 13 — never a silent skip, and never read as the network being down.
+    const codexOut = runFixer("0", true, { BOSS_AI_RUNNER: "auto", SR_SCOPE_REPO: "authority-backlink-network" });
+    expect(codexOut.out).toMatch(/Claude is signed out; trying Codex/);
+    expect(codexOut.out).toMatch(/NAMED STOP \[CODEX_NOT_AUTHENTICATED\] run: codex login/);
+    expect(codexOut.rc, codexOut.out).toBe(13);
+    // auto + Claude signed out + a MAIL pass: Codex cannot read the mail, so it stops at 12.
+    const mail = runFixer("0", true, { BOSS_AI_RUNNER: "auto" });
+    expect(mail.out).toMatch(/NAMED STOP \[MAIL_PASS_NEEDS_CLAUDE\]/);
+    expect(mail.rc, mail.out).toBe(12);
+    // And the default case above really is the Claude branch: it reaches the keychain stop (10).
+    expect(runFixer("0", true).rc).toBe(10);
   }, 60000);
 
   it("the default wait is about two hours, backing off, and the body is one parsed function", () => {
