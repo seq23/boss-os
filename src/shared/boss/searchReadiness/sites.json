@@ -1,5 +1,5 @@
 {
- "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry. entity_parent (31 Oct 2026, authority audit): spry-labs = a side business whose entity points parentOrganization at Spry Labs (https://billionairehighperformancecoach.com/spry-labs#organization), directly or through a grid parent such as The Industry Guides; client = a friend's business, never the Spry Labs parent; own = her own business outside Spry Labs (Porch & Party, Virtual Agency OS), never the Spry Labs parent. ymyl: true marks a medical, legal or financial site whose pages need a named reviewer (k5). entity_file names the entity file when it is not called entity.json.",
+ "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry. entity_parent (31 Oct 2026, authority audit): spry-labs = a side business whose entity points parentOrganization at Spry Labs (https://billionairehighperformancecoach.com/spry-labs#organization), directly or through a grid parent such as The Industry Guides; client = a friend's business, never the Spry Labs parent; own = her own business outside Spry Labs (Porch & Party, Virtual Agency OS) or a side business whose parent claim the owner has withdrawn (the three authority-network publications, 11 Oct 2026; entity_parent_why says so on the row), never the Spry Labs parent. ymyl: true marks a medical, legal or financial site whose pages need a named reviewer (k5). entity_file names the entity file when it is not called entity.json.",
  "never": [
   "westpeek.",
   "joinwestpeek.",
@@ -805,7 +805,9 @@
    "domain": "professionalresourcelibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
-   "entity_parent": "spry-labs",
+   "entity_parent": "own",
+   "entity_parent_why": "The three authority-network publications name NO parent: the owner withdrew the parent-company claim on 11 Oct 2026 ('followed links, no Spry Labs mention') and the network is separately owned (owner, 27 Oct 2026). authority-backlink-network enforces it with scripts/validators/validate_no_parent_company.py, which fails the build if the name or a parentOrganization key reappears in published output. 'own' is what that makes true; 'spry-labs' here asked the repo to republish a withdrawn claim.",
+   "entity_file": "data/entities/professionalresourcelibrary.com.json",
    "kind": "authority",
    "roles": [
     "linker"
@@ -820,7 +822,9 @@
    "domain": "founderoperatorlibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
-   "entity_parent": "spry-labs",
+   "entity_parent": "own",
+   "entity_parent_why": "The three authority-network publications name NO parent: the owner withdrew the parent-company claim on 11 Oct 2026 ('followed links, no Spry Labs mention') and the network is separately owned (owner, 27 Oct 2026). authority-backlink-network enforces it with scripts/validators/validate_no_parent_company.py, which fails the build if the name or a parentOrganization key reappears in published output. 'own' is what that makes true; 'spry-labs' here asked the repo to republish a withdrawn claim.",
+   "entity_file": "data/entities/founderoperatorlibrary.com.json",
    "kind": "authority",
    "roles": [
     "linker"
@@ -835,7 +839,9 @@
    "domain": "memphisvendorlibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
-   "entity_parent": "spry-labs",
+   "entity_parent": "own",
+   "entity_parent_why": "The three authority-network publications name NO parent: the owner withdrew the parent-company claim on 11 Oct 2026 ('followed links, no Spry Labs mention') and the network is separately owned (owner, 27 Oct 2026). authority-backlink-network enforces it with scripts/validators/validate_no_parent_company.py, which fails the build if the name or a parentOrganization key reappears in published output. 'own' is what that makes true; 'spry-labs' here asked the repo to republish a withdrawn claim.",
+   "entity_file": "data/entities/memphisvendorlibrary.com.json",
    "kind": "authority",
    "roles": [
     "linker"

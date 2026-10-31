@@ -180,7 +180,10 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    external profile resolves (a login-walled platform alone is unverifiable, never a pass), k4 the
    `entity_parent` in sites.json holds (`spry-labs`: parentOrganization reaches
    billionairehighperformancecoach.com/spry-labs, directly or through a grid parent; `client` and `own`:
-   never Spry Labs, so the friends' businesses and Porch & Party never carry it), k5 a `ymyl: true` site's
+   never Spry Labs, so the friends' businesses and Porch & Party never carry it; the three authority-network
+   publications are `own` too, because the owner withdrew their parent-company claim on 11 Oct 2026 and
+   `authority-backlink-network` fails its own build if it reappears, so a side business may hold `own` when
+   `entity_parent_why` on its row says why), k5 a `ymyl: true` site's
    content pages name a reviewer listed with written consent in the repo's `reviewers.json`, k6 the weekly
    entity-backlink-watch is green and under eight days old. a1-a6 were taken, hence K. k5 with no
    reviewer is a **named stop** (`OWNER_REVIEWER_NEEDED`, disposition `named_stop`): said every week,
