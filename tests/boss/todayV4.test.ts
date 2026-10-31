@@ -98,12 +98,14 @@ describe("Still waiting on you: carried across mornings", () => {
 
   it("counts the wait from when it really began, not from the first morning kept (live said 7 days of a card titled \"Waiting 13 days\" four days before)", async () => {
     // A card whose title carried "Waiting 13 days" on a morning 4 days ago, first kept 7 days ago.
-    await morning(back(7), [{ id: "decide-carried", title: "Waiting 9 days: Approve the example contract", from: "boss" }]);
-    await morning(back(4), [{ id: "decide-carried", title: "Waiting 13 days: Approve the example contract", from: "boss" }]);
-    // An LP who wrote again 19 days ago; the card first appeared 7 days ago with no count in its title.
+    // An LP who wrote again 19 days ago; their card first appeared 7 days ago with no count in its title.
     await lp("lpr_old", "replied_again", { name: "Old Person" });
     await env.DB.prepare(`UPDATE lp_reply_drafts SET last_reply_at = ? WHERE id = 'lpr_old'`).bind(Date.parse(`${back(19)}T15:00:00Z`)).run();
-    await morning(back(7), [{ id: "decide-oldlp", key: "lp-again:lpr_old", title: "Answer Old Person: they wrote back after your reply", from: "lp" }]);
+    await morning(back(7), [
+      { id: "decide-carried", title: "Waiting 9 days: Approve the example contract", from: "boss" },
+      { id: "decide-oldlp", key: "lp-again:lpr_old", title: "Answer Old Person: they wrote back after your reply", from: "lp" },
+    ]);
+    await morning(back(4), [{ id: "decide-carried", title: "Waiting 13 days: Approve the example contract", from: "boss" }]);
     const { items } = await waitingOnYou(env as any, TODAY);
     const carried = items.find((i) => i.id === "decide-carried")!;
     expect(carried).toMatchObject({ first_day: back(7), wait_from: back(17), days: 17 });
@@ -244,7 +246,8 @@ describe("Coaching: the question fits her life, and the coach sees counts only",
     expect(sig).toMatchObject({ appAwayDays: 0, talksMissed: 0 });
     const live = chooseQuestion(sig).question;
     expect(live).toContain(`hasn't been done since ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(back(54).slice(5, 7)) - 1]} ${Number(back(54).slice(8, 10))} (54 days)`);
-    expect(live).toContain("the night gate hasn't been done once in the 90 days on record");
+    // The longer, costlier run leads (90 × 1.5 > 53 × 2); the other is named beside it.
+    expect(live).toMatch(/^The night gate hasn't been done once in the 90 days on record, and the morning gate hasn't been done since /);
   });
 
   it("never mentions body, weight or food, in any question it can ask", () => {
