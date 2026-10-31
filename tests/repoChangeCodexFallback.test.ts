@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { codexExecArgs, codexSeatUsable, gitCommonDirs, runWithCodexFallback, type RunResult } from "../scripts/lib/codex-seat.mjs";
+import { CODEX_BUILD_NOTE, codexExecArgs, codexSeatUsable, finishCodexBuild, runWithCodexFallback, type RunResult } from "../scripts/lib/codex-seat.mjs";
 import { readFileSync } from "node:fs";
 // @ts-expect-error — plain ESM with no declaration file
 import { claudeSpentUsage as spentOf } from "../scripts/ops/repo-change.mjs";
@@ -161,48 +161,84 @@ describe("the Codex run itself", () => {
   });
 });
 
-describe("a linked worktree commits into the ORIGINAL repository's .git — so that must be writable (PR #213 review)", () => {
-  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } }).trim();
-  const gitDirOf = (dir: string): string | null => {
+describe("Codex edits; the runner commits, pushes and opens the PR — never merges (31 Oct 2026)", () => {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }).trim();
+
+  function scratch() {
+    const root = realpathSync(mkdtempSync(path.join(tmpdir(), "codex-finish-")));
+    const origin = path.join(root, "origin.git");
+    git(root, "init", "-q", "--bare", "-b", "main", origin);
+    const main = path.join(root, "main");
+    git(root, "clone", "-q", origin, main);
+    git(main, "commit", "-q", "--allow-empty", "-m", "init");
+    git(main, "push", "-q", "origin", "HEAD:main");
+    const wt = path.join(root, "wt");
+    git(main, "worktree", "add", "-q", wt, "-b", "work/rc-probe", "origin/main");
+    const gh: string[][] = [];
+    const run = (cmd: string, args: string[], o: { cwd: string }) => {
+      if (cmd === "gh") {
+        gh.push(args);
+        if (args[1] === "view") return { status: 1, stdout: "", stderr: "no pull requests found" };
+        return { status: 0, stdout: "https://github.com/seq23/probe/pull/7\n", stderr: "" };
+      }
+      try { return { status: 0, stdout: execFileSync(cmd, args, { cwd: o.cwd, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] }), stderr: "" }; }
+      catch (e: any) { return { status: e.status ?? 1, stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? "") }; }
+    };
+    return { root, origin, main, wt, gh, run };
+  }
+
+  it("turns Codex's uncommitted edits (and its GIT_METADATA_READ_ONLY block) into a commit, a pushed branch and a PR", () => {
+    const s = scratch();
     try {
-      return execFileSync("git", ["-C", dir, "rev-parse", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
-    } catch {
-      return null;
-    }
-  };
-
-  it("names the original repo's .git for a linked worktree, and nothing for a folder that is no repository", () => {
-    const root = realpathSync(mkdtempSync(path.join(tmpdir(), "wt-")));
-    try {
-      const repo = path.join(root, "repo");
-      mkdirSync(repo);
-      git(repo, "init", "-q", "-b", "main");
-      writeFileSync(path.join(repo, "a.txt"), "a");
-      git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A");
-      git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init");
-      const worktree = path.join(root, "wt");
-      git(repo, "worktree", "add", "-q", "-b", "job", worktree);
-      const jobDir = path.join(root, "job");
-      mkdirSync(jobDir);
-
-      const dirs = gitCommonDirs([worktree, jobDir], gitDirOf);
-      expect(dirs, "the worktree's commits go into the original repo's .git").toEqual([path.join(repo, ".git")]);
-      // Proof the premise is real: the linked worktree's own index lives UNDER that directory, outside the worktree.
-      const perWorktree = git(worktree, "rev-parse", "--git-dir");
-      expect(realpathSync(perWorktree).startsWith(path.join(repo, ".git"))).toBe(true);
-      expect(realpathSync(perWorktree).startsWith(worktree)).toBe(false);
-
-      // And the arguments Codex is started with carry it as a writable folder.
-      const args = codexExecArgs([jobDir, ...dirs]);
-      expect(args.join(" ")).toContain(`--add-dir ${path.join(repo, ".git")}`);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+      writeFileSync(path.join(s.wt, "fix.txt"), "the repair");
+      const out = { branch: "work/rc-probe", blocked: { tag: "GIT_METADATA_READ_ONLY", why: "index.lock denied" }, proof: { validators_passed: true }, pr_title: "Repair the probe" };
+      const fin = finishCodexBuild({ cwd: s.wt, repo: "probe", branch: "work/rc-probe", out, run: s.run });
+      expect(fin.ok).toBe(true);
+      if (!fin.ok) return;
+      expect(fin.result.pr_number).toBe(7);
+      expect(fin.result.blocked).toBeUndefined();
+      expect(git(s.wt, "status", "--porcelain")).toBe("");
+      expect(git(s.wt, "log", "-1", "--format=%s")).toBe("Repair the probe");
+      expect(git(s.root, "--git-dir", s.origin, "rev-parse", "refs/heads/work/rc-probe")).toBe(git(s.wt, "rev-parse", "HEAD"));
+      // main on the remote never moved, and nothing asked gh to merge.
+      expect(git(s.root, "--git-dir", s.origin, "log", "--format=%s", "main")).toBe("init");
+      expect(s.gh.some((a) => a.includes("merge"))).toBe(false);
+      expect(s.gh.find((a) => a[1] === "create")).toEqual(expect.arrayContaining(["--base", "main", "--head", "work/rc-probe"]));
+    } finally { rmSync(s.root, { recursive: true, force: true }); }
   });
 
-  it("de-duplicates, and tolerates a probe that throws", () => {
-    expect(gitCommonDirs(["/a", "/a/b"], () => "/r/.git")).toEqual(["/r/.git"]);
-    expect(gitCommonDirs(["/a"], () => { throw new Error("no git"); })).toEqual([]);
-    expect(gitCommonDirs(["/a"], () => "")).toEqual([]);
+  it("refuses main, respects a real block, and names an empty build", () => {
+    const s = scratch();
+    try {
+      expect(finishCodexBuild({ cwd: s.main, repo: "probe", branch: "main", out: {}, run: s.run })).toMatchObject({ ok: false, tag: "REFUSED_PROTECTED_BRANCH" });
+      writeFileSync(path.join(s.wt, "x.txt"), "x");
+      expect(finishCodexBuild({ cwd: s.wt, repo: "probe", branch: "work/rc-probe", out: { blocked: { tag: "VALIDATOR_RED", why: "npm run validate failed" } }, run: s.run })).toMatchObject({ ok: false, tag: "CODEX_BLOCKED" });
+      expect(git(s.wt, "status", "--porcelain")).not.toBe("");
+      rmSync(path.join(s.wt, "x.txt"));
+      expect(finishCodexBuild({ cwd: s.wt, repo: "probe", branch: "work/rc-probe", out: {}, run: s.run })).toMatchObject({ ok: false, tag: "NO_CHANGES" });
+      expect(finishCodexBuild({ cwd: s.wt, repo: "probe", branch: "work/rc-probe", out: null, run: s.run })).toMatchObject({ ok: false, tag: "NO_RESULT_FILE" });
+      expect(s.gh).toEqual([]);
+    } finally { rmSync(s.root, { recursive: true, force: true }); }
+  });
+
+  it("names no git directory as writable to Codex, tells a build it does not commit, and lets a land phase wait", async () => {
+    const src = readFileSync(new URL("../scripts/ops/repo-change.mjs", import.meta.url), "utf8");
+    expect(src).not.toMatch(/git-common-dir/);
+    expect(src).toMatch(/if \(phase === "build"\) prompt = `\$\{prompt\}\$\{CODEX_BUILD_NOTE\}`/);
+    expect(src).toMatch(/phase === "build" && servedBy === "codex" && buildPath\) \{\n\s+const fin = finishCodexBuild\(/);
+    expect(CODEX_BUILD_NOTE).toMatch(/runner commits, pushes/);
+    const calls: string[] = [];
+    const r = await runWithCodexFallback({
+      runClaude: async () => ({ code: 1, out: LIMIT_JSON, err: "" }),
+      runCodex: async () => (calls.push("codex"), ok()),
+      limited: claudeSpentUsage,
+      usable: () => ({ ok: true, why: "" }),
+      supports: async () => null,
+      phase: "land",
+    });
+    expect(calls).toEqual([]);
+    expect(r.waitForSeat).toBe(true);
+    expect(r.err).toContain("waits for it");
   });
 });
