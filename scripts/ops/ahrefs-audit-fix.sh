@@ -203,7 +203,7 @@ if [ -n "${SR_SCOPE_REPO:-}" ]; then
 Work ONLY section 1b, and ONLY the briefs in ~/.boss-os/search-readiness/fix-queue.json whose
 \`repo\` is \`$SR_SCOPE_REPO\`. Do not read the Ahrefs mail this pass. Fix EVERY such brief that is not
 \`protected\` — batch them into as few PRs as the repo's own validators allow, and get each green.
-Skip any brief with \`protected\` set; record it as surfaced with the reason. Record every brief in
+Skip any brief with \`protected\` set; record it as off_limits with the reason (it is fixed only on its own pass). Record every brief in
 findings.json as section 1b says. End with the usual completion sentinel."
   if [ -n "${SR_SCOPE_BRIEFS:-}" ]; then
     PROMPT_TEXT="$PROMPT_TEXT

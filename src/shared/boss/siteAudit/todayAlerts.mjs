@@ -51,7 +51,7 @@ export function auditFindingAlerts(rows) {
   }
   if (live.surfaced.length) {
     const s = summary(live.surfaced);
-    out.push({ severity: "medium", text: `Danielle left ${s.count} finding${s.count === 1 ? "" : "s"} on ${new Set(live.surfaced.map(pretty)).size} site${new Set(live.surfaced.map(pretty)).size === 1 ? "" : "s"} for a person to decide; the worst is ${s.errs} on ${s.site}.` });
+    out.push({ severity: "medium", text: `Danielle has ${s.count} finding${s.count === 1 ? "" : "s"} on ${new Set(live.surfaced.map(pretty)).size} site${new Set(live.surfaced.map(pretty)).size === 1 ? "" : "s"} she has not fixed yet; the worst is ${s.errs} on ${s.site}. They are hers to decide and fix, never yours (31 Oct 2026); her next pass works them.` });
   }
   return out;
 }

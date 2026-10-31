@@ -145,7 +145,7 @@ describe("Today says only what is still true", () => {
   });
   it("counts sites, not rows", () => {
     const many = [50, 4, 4, 3].map((errors, i) => ({ disposition: "surfaced", project: i === 0 ? "Theaccidentguides" : "Porchandparty901", domain: null, repo: null, errors }));
-    expect(auditFindingAlerts(many)[0]!.text).toBe("Danielle left 4 findings on 2 sites for a person to decide; the worst is 50 errors on theaccidentguides.com.");
+    expect(auditFindingAlerts(many)[0]!.text).toBe("Danielle has 4 findings on 2 sites she has not fixed yet; the worst is 50 errors on theaccidentguides.com. They are hers to decide and fix, never yours (31 Oct 2026); her next pass works them.");
   });
 });
 

@@ -44,7 +44,7 @@ import {
   BRIEFING_SECTIONS, orderSections, missingSections, groundInsight,
   withheldForSourcing, reportStanding,
 } from "../today/briefing";
-import { dutyStaleness } from "../duties/staleness";
+import { dutyStaleness, staleDutyAlertText } from "../duties/staleness";
 import { roster, type EmployeeDutyRow, type EmployeeRow } from "../today/roster";
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
@@ -797,7 +797,8 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
        */
       `SELECT d.id, d.name, d.employee_id, d.cadence, d.weekday, d.weekdays,
               d.local_hour, d.local_minute, d.timezone,
-              d.suspended, d.last_run_at, d.created_at, t.status AS last_task_status
+              d.suspended, d.last_run_at, d.created_at, d.last_outcome, d.last_outcome_at, d.last_failure_reason,
+              t.status AS last_task_status
          FROM standing_duties d
     LEFT JOIN tasks t ON t.id = d.last_task_id
         WHERE d.suspended = 0`,
@@ -1121,13 +1122,7 @@ export async function assembleDayFlow(env: Env, day: DayRow, only?: readonly Blo
   for (const d of staleDuties.results ?? []) {
     const late = dutyStaleness(d, now);
     if (!late.stale) continue;
-    alerts.push({
-      severity: "high",
-      text: d.last_run_at
-        ? `${late.reason} Its next scheduled run is ${late.next_expected ? new Date(late.next_expected).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "not computable"}.`
-        : `"${d.name}" has never fired since it was created, and ${late.missed} scheduled run${late.missed === 1 ? "" : "s"} have gone by.`,
-      source_type: "tasks", source_id: d.id,
-    });
+    alerts.push({ severity: "high", text: staleDutyAlertText(d, late), source_type: "tasks", source_id: d.id });
   }
   /*
    * ── AND WHAT THE PASS FOUND THAT SHE HAS TO DECIDE ────────────────────────
