@@ -38,3 +38,5 @@ export const MAX_PROSPECT_SENDS: number;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const CUT_ORDER: ReadonlyArray<[string, Record<string, any>]>;
 export function lawLine(law: { n: number; title: string; text: string } | null | undefined): string | null;
+export declare const oneLine: (t: string | null | undefined) => string;
+export declare function carriedLines(carried: any[], opts: { shown?: Set<string>; keys?: Set<string>; today: string }): any[];

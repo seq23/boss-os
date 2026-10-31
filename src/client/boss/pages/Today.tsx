@@ -7,6 +7,7 @@ import { BodyContractView } from "./BodyContract";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
 import { AncestralHourCard } from "../components/AncestralHourCard";
+import { LunationBlock, type Lunation } from "../components/Lunation";
 import { usd } from "../../../shared/boss/types";
 import { TodayList, GateEditor, GateCreator, AddToToday, Sheet, clock, type DayContext, type Gate, type ListData } from "../components/TodayList";
 
@@ -109,6 +110,10 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
   const [error, setError] = useState<unknown>(null);
   const [coach, setCoach] = useState<"morning" | "evening" | null>(focus === "coach" ? (new Date().getHours() >= 17 ? "evening" : "morning") : null);
   const [sheet, setSheet] = useState<null | { kind: "edit"; gate: Gate; items: any[] } | { kind: "create" } | { kind: "add" }>(null);
+  const [lunation, setLunation] = useState<Lunation | null>(null);
+  const [fullBrief, setFullBrief] = useState(false);
+  // "✎ Change it" in the morning email opens Today on that person (/?waiting=<id>).
+  const [waitingFocus] = useState<string | null>(() => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("waiting")));
 
   const loadList = useCallback(async () => {
     try { const l = await api.practiceList(); setList(l); onNeedsYou?.(l.needs_you); } catch (e) { setError(e); }
@@ -127,7 +132,13 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
     await loadList();
   }, [loadList]);
 
-  useEffect(() => { void load(); api.morningLatest().then(setMorning).catch(() => setMorning(null)); }, [load]);
+  useEffect(() => {
+    void load();
+    api.morningLatest().then(setMorning).catch(() => setMorning(null));
+    // The cycle she is in, from the same reading Spirit shows (components/Lunation.tsx).
+    api.spiritDay().then((d: any) => setLunation(d?.current_lunation ?? null)).catch(() => setLunation(null));
+  }, [load]);
+  const setListAndCount = (l: ListData) => { setList(l); onNeedsYou?.(l.needs_you); };
 
   async function tick(key: string, done: boolean) {
     try { const l = await api.practiceTick(key, done); setList(l); onNeedsYou?.(l.needs_you); } catch (e) { setError(e); }
@@ -153,7 +164,7 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
     law: focusC?.law ? { n: focusC.law.n, title: focusC.law.title, text: focusC.law.text } : null,
     // An empty pillar contributes nothing: "Nothing is owed" is not a priority.
     priorities: (contract?.contract?.priorities ?? []).filter((p: string) => !/^Nothing is owed/i.test(p)),
-    // The leads review is the Wealth block's own sub-item; any other first money move rides the Brokerage block.
+    // The leads review is the Wealth block's own sub-item; any other first money move is folded into Core business.
     firstMove: pillars?.wealth?.action && !/^Review \d+ candidate/.test(pillars.wealth.action)
       ? { action: pillars.wealth.action, why: pillars.wealth.why ? String(pillars.wealth.why).replace(/§[\d.]+\s*[—-]\s*/g, "") : null } : null,
     limits,
@@ -162,15 +173,16 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
   if (!list && !day) return error ? <ErrorNotice error={error} /> : <Loading />;
 
   const nudge = list?.coach.nudge ?? null;
-  const points = (brief?.sections?.[0]?.bullets ?? []).slice(0, 2).map(leadOf);
-  const lawTick = list?.ticks["morning:law"] ?? null;
   const done: any[] = morning?.payload?.done ?? [];
   const diaryRows = dedupeDiary(meetings?.diary ?? []);
   const next = diaryRows[0];
-  const win = spirit?.windows?.[0];
-  const spiritLine = spirit?.moon
-    ? `${spirit.moon.phase} in ${spirit.moon.sign}${win ? ` · ${String(win.detail?.window_type ?? "").replace(/^./, (x: string) => x.toUpperCase()) || "A"} window until ${new Date(win.ends_at).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}` : ""}`
-    : null;
+  // The briefing's 1-minute summary is shown; the rest opens inline (Today v4).
+  const sections: any[] = brief?.sections ?? [];
+  const summaryAt = sections.findIndex((x: any) => x?.key === "one_minute_summary" || /one[- ]minute|1[- ]minute/i.test(String(x?.heading ?? "")));
+  const summary = sections[summaryAt >= 0 ? summaryAt : 0] ?? null;
+  const rest = sections.filter((_: any, i: number) => i !== (summaryAt >= 0 ? summaryAt : 0));
+  const q = list?.coach_question ?? null;
+  const coachPhase = () => (new Date().getHours() >= 17 ? "evening" : "morning");
 
   return (
     <>
@@ -184,7 +196,7 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
 
       <div className="today-summary" data-testid="today-summary">
         <strong>{day ? shortDate(day.date_ts) : ""}</strong>
-        {list && <span>· {list.needs_you} for you · {list.done} of {list.total} done</span>}
+        {list && <span>· {list.needs_you} need you · {list.done} of {list.total} done</span>}
         {nudge && (
           <button className="nudge" onClick={() => setCoach(nudge)} data-testid="coach-nudge">
             {nudge === "morning" ? "☀" : "🌙"} Your coach is waiting · Start ›
@@ -192,95 +204,91 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
         )}
       </div>
 
-      {/* The ancestral hour (Imani's monthly practice): in the last days of the month only, near the top. */}
+      {/* The ancestral hour: a thin banner, only on the last day of the month and the 3 days before. */}
       <AncestralHourCard />
 
-      <div className="today-grid">
-        <div className="today-side">
-          {brief && (brief.headline || brief.summary) && (
-            <div className="t-card" data-testid="briefing-excerpt" id="briefing">
-              <div className="t-head">
-                <span className="t-k">Briefing{brief.generated_at ? ` · ${new Date(brief.generated_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : ""}</span>
-                <button className="t-link" onClick={() => go("/?view=briefing")}>Read the full briefing ›</button>
-              </div>
-              <p className="t-headline">{brief.headline ?? brief.summary}</p>
-              {points.length > 0 && <ul>{points.map((p: string, i: number) => <li key={i}>{p}</li>)}</ul>}
+      {/* 1. TODAY'S CONTRACT — first, always. */}
+      {list && (
+        <TodayList
+          list={list} ctx={ctx} onTick={(k, d) => void tick(k, d)} onChanged={() => void load()} onError={setError}
+          onList={setListAndCount} waitingFocus={waitingFocus}
+          onCoach={setCoach} openGate={gateFocus}
+          onEditGate={(gate, items) => setSheet({ kind: "edit", gate, items })}
+          onCreateGate={() => setSheet({ kind: "create" })}
+          onAddLoop={() => setSheet({ kind: "add" })}
+        />
+      )}
+      {list && list.needs_you === 0 && <p className="all-clear" data-testid="all-clear">All clear today: nothing is waiting on you.</p>}
+
+      {/* 2. BRIEFING — the headline and the 1-minute summary; the rest opens right here. */}
+      {brief && (brief.headline || brief.summary) && (
+        <section className="t-card" data-testid="briefing-excerpt" id="briefing" aria-label="Briefing">
+          <h2 className="t-section-h">Briefing</h2>
+          <p className="t-headline">{brief.headline ?? brief.summary}</p>
+          {summary && (
+            <div data-testid="briefing-summary">
+              <div className="t-k">1-minute summary</div>
+              {summary.so_what && <div className="t-row-sub">{summary.so_what}</div>}
+              {Array.isArray(summary.bullets) && <ul>{summary.bullets.map((b: string, i: number) => <li key={i}>{leadOf(b)}</li>)}</ul>}
+              {!summary.bullets && summary.body && <div className="today-4">{summary.body}</div>}
             </div>
           )}
-          {brief?.reason && !brief.headline && (
-            <div className="t-card"><span className="t-k">Briefing</span><div className="t-row-sub">{brief.reason}</div></div>
+          {rest.length > 0 && (
+            <button className="t-link" onClick={() => setFullBrief(!fullBrief)} aria-expanded={fullBrief} data-testid="briefing-more">
+              {fullBrief ? "Show less ▴" : "Show full briefing ▾"}
+            </button>
           )}
+          {fullBrief && <div data-testid="briefing-full">{rest.map((sec: any, i: number) => renderSection(sec, i))}</div>}
+        </section>
+      )}
+      {brief?.reason && !brief.headline && (
+        <section className="t-card" aria-label="Briefing"><h2 className="t-section-h">Briefing</h2><div className="t-row-sub">{brief.reason}</div></section>
+      )}
 
-          {focusC?.law && (
-            <div className="t-card law-card" data-testid="law-card">
-              <span className="t-k">Today&apos;s coaching law</span>
-              <p className="law-title">Law {focusC.law.n} · {focusC.law.title}</p>
-              <p className="law-text">{focusC.law.text}</p>
-              <div className="t-actions">
-                <button className="done-btn" aria-pressed={Boolean(lawTick)} onClick={() => void tick("morning:law", !lawTick)} data-testid="law-read-aloud">
-                  {lawTick ? `✓ Read aloud ${clock(lawTick)}` : "Read it aloud ✓"}
-                </button>
-                <button className="t-link" onClick={() => setCoach(new Date().getHours() >= 17 ? "evening" : "morning")}>Talk it through with your coach ›</button>
-              </div>
-              {lens && <div className="t-row-sub">Lens: {(lens.prompts ?? [])[0] ?? lens.track}</div>}
-              <details>
-                <summary className="t-link">See all laws ▾</summary>
-                <div className="t-row-sub" style={{ marginTop: 6 }}><strong>{focusC.mode}</strong> · {focusC.because}</div>
-                <ol style={{ margin: "6px 0", paddingLeft: 18, fontSize: 14 }}>
-                  {(focusC.rules ?? []).map((r: string, i: number) => <li key={i}>{r}</li>)}
-                  {focusC.law.because && <li>Why Law {focusC.law.n} today: {focusC.law.because}</li>}
-                </ol>
-                {lens && <div className="t-row-sub">Thinking lens · {lens.track}: {(lens.prompts ?? []).join(" · ")}</div>}
-              </details>
-            </div>
-          )}
+      {/* 3. SPIRIT — the exact lunation block the Spirit page builds. */}
+      <section className="t-card" data-testid="spirit-card" aria-label="Spirit">
+        <h2 className="t-section-h">Spirit</h2>
+        {lunation ? <LunationBlock lunation={lunation} advisory={false} /> : <div className="t-row-sub">The sky is on the Spirit page.</div>}
+        <button className="t-link" onClick={() => go("/?tab=spirit")}>Open Spirit for more ›</button>
+      </section>
 
-          {spiritLine && (
-            <div className="t-card spirit-line" data-testid="spirit-line">
-              <span>{spiritLine}</span>
-              <button className="t-link" onClick={() => go("/?tab=spirit")}>Open Spirit ›</button>
-            </div>
-          )}
-        </div>
-
-        <div className="today-main">
-          {list && (
-            <TodayList
-              list={list} ctx={ctx} onTick={(k, d) => void tick(k, d)} onChanged={() => void load()} onError={setError}
-              onCoach={setCoach} openGate={gateFocus}
-              onEditGate={(gate, items) => setSheet({ kind: "edit", gate, items })}
-              onCreateGate={() => setSheet({ kind: "create" })}
-              onAddLoop={() => setSheet({ kind: "add" })}
-            />
-          )}
-          {list && list.needs_you === 0 && <p className="all-clear" data-testid="all-clear">All clear today: nothing is waiting on you.</p>}
-
-          <div className="t-below">
-            <details data-testid="coming-up">
-              <summary>
-                Coming up · {meetings?.diary_summary?.startsWith("Nothing today") || !next ? "nothing today" : ""}
-                {next ? ` next ${new Date(next.scheduled_at).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}, ${next.title}` : ""} · Show ▾
-              </summary>
-              {meetings && <Diary content={{ ...meetings, diary: diaryRows, calendar: null }} onChanged={() => void load()} onError={setError} />}
-            </details>
-            {done.length > 0 && (
-              <details data-testid="done-for-you">
-                <summary>Done for you ({doneLines(done).length}) · tap to show ▾</summary>
-                {doneLines(done).map((d, i) => (
-                  <button key={i} className="row mi-row" onClick={() => d.id && go(morningHref(morning.day, d.id))}>
-                    <span className="row-main"><span className="row-title">{d.text}</span></span>
-                    <span className="row-val">Open ›</span>
-                  </button>
-                ))}
-              </details>
-            )}
+      {/* 4. COACHING — her 1:1: one question from what is going on, and the talk. */}
+      {q && (
+        <section className="t-card coach-card" data-testid="coach-card" aria-label="Coaching">
+          <h2 className="t-section-h">Coaching</h2>
+          <div className="t-k">Today&apos;s question · picked from your week</div>
+          <p className="coach-q" data-testid="coach-question">{q.question}</p>
+          <div className="t-actions">
+            <button className="btn btn-approve" onClick={() => setCoach(coachPhase())} data-testid="coach-talk">💬 Talk it through (1:1)</button>
           </div>
-        </div>
+          {focusC?.law && <div className="t-row-sub law-line" data-testid="law-line">Law {focusC.law.n} · {focusC.law.title}: {focusC.law.text}</div>}
+        </section>
+      )}
+
+      <div className="t-below">
+        <details data-testid="coming-up">
+          <summary>
+            Coming up · {meetings?.diary_summary?.startsWith("Nothing today") || !next ? "nothing today" : ""}
+            {next ? ` next ${new Date(next.scheduled_at).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}, ${next.title}` : ""} · Show ▾
+          </summary>
+          {meetings && <Diary content={{ ...meetings, diary: diaryRows, calendar: null }} onChanged={() => void load()} onError={setError} />}
+        </details>
+        {done.length > 0 && (
+          <details data-testid="done-for-you">
+            <summary>Done for you ({doneLines(done).length}) · tap to show ▾</summary>
+            {doneLines(done).map((d, i) => (
+              <button key={i} className="row mi-row" onClick={() => d.id && go(morningHref(morning.day, d.id))}>
+                <span className="row-main"><span className="row-title">{d.text}</span></span>
+                <span className="row-val">Open ›</span>
+              </button>
+            ))}
+          </details>
+        )}
       </div>
 
       {coach && (
         <Sheet title={coach === "evening" ? "🌙 Evening coaching" : "☀ Morning coaching"} onClose={() => { setCoach(null); void loadList(); }} testId="coach-sheet">
-          <Coaching phase={coach} onTalked={() => void loadList()} />
+          <Coaching phase={coach} onTalked={() => void loadList()} opening={list?.coach_question?.question ?? null} />
         </Sheet>
       )}
       {sheet?.kind === "edit" && (

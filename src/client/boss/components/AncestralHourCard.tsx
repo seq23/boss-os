@@ -24,47 +24,36 @@ type State = {
   headline: string | null;
   line: string | null;
   month_name: string;
+  is_last_day?: boolean;
+  days_left?: number;
 };
+
+/**
+ * TODAY v4 (owner, 31 Oct 2026): A THIN BANNER, NOT A CARD. One line and "Log it ›", only on the last
+ * day of the month and the 3 days before (the Worker's window, spirit/ancestralHour.ts), and only
+ * while the hour is not logged. Outside that, it is not on Today at all. Red only on the last day.
+ */
+export function ancestralBannerText(s: Pick<State, "is_last_day" | "days_left">): string {
+  return s.is_last_day
+    ? "🔥 Last day of the month: ancestral hour not logged yet"
+    : `🕯 Ancestral hour: ${s.days_left} day${s.days_left === 1 ? "" : "s"} left this month, not logged yet`;
+}
 
 export function AncestralHourCard() {
   const [s, setS] = useState<State | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    api.ancestralHour().then((r) => { if (live) setS(r as State); }).catch(() => { /* a card that cannot load stays out of the way */ });
+    api.ancestralHour().then((r) => { if (live) setS(r as State); }).catch(() => { /* a banner that cannot load stays out of the way */ });
     return () => { live = false; };
   }, []);
 
-  if (!s || !s.show || !s.headline) return null;
-
-  const done = async () => {
-    setBusy(true);
-    setErr(null);
-    try {
-      const r = await api.ancestralHourDone();
-      setS(r.state as State);
-    } catch (e) {
-      setErr(e instanceof Error ? `Not recorded: ${e.message}` : "Not recorded. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
+  if (!s || !s.show || s.done) return null;
 
   return (
-    <div className={`ancestral-card ancestral-${s.tone ?? "warm"}`} data-testid="ancestral-hour">
-      <p className="ancestral-head">{s.headline}</p>
-      {s.line && <p className="ancestral-line">{s.line}</p>}
-      {err && <p className="ancestral-line">{err}</p>}
-      <div className="btn-row">
-        {!s.done && (
-          <button className="btn btn-approve" disabled={busy} onClick={() => void done()}>
-            {busy ? "Recording…" : "Done ✓"}
-          </button>
-        )}
-        <button className="btn" onClick={() => go("/?tab=spirit")}>Open Spirit ›</button>
-      </div>
+    <div className={`ancestral-banner ancestral-${s.is_last_day ? "alarm" : "warm"}`} data-testid="ancestral-hour">
+      <span>{ancestralBannerText(s)}</span>
+      <button className="t-link" onClick={() => go("/?tab=spirit")}>Log it ›</button>
     </div>
   );
 }

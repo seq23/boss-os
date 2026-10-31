@@ -1753,24 +1753,16 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 }
 
 /*
- * THE ANCESTRAL HOUR CARD (owner, 31 Oct 2026). Near the top of Today in the last four days of the
- * month. Gold while there are days left, red only on the last day and not yet done, green once done.
- * Large type so it is seen on a phone at 390px; the buttons wrap rather than overflow.
+ * THE ANCESTRAL HOUR BANNER (Today v4, 31 Oct 2026). One thin line and "Log it ›", only in the last
+ * days of the month while the hour is not logged. Gold with days left; red only on the last day.
  */
-.ancestral-card {
-  margin: 12px 0 18px;
-  padding: 14px 16px;
+.ancestral-banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px;
+  margin: 8px 0 12px; padding: 8px 12px; font-size: 15px; line-height: 1.35;
   background: color-mix(in srgb, var(--gold) 12%, var(--card));
-  border: 2px solid var(--gold);
-  border-radius: 6px;
+  border: 1px solid var(--gold); border-radius: 6px; overflow-wrap: anywhere;
 }
-.ancestral-alarm { background: color-mix(in srgb, var(--reject) 10%, var(--card)); border-color: var(--reject); }
-.ancestral-done { background: var(--card); border: 1px solid color-mix(in srgb, var(--ok) 55%, var(--line)); }
-.ancestral-head { margin: 0 0 6px; font-size: 20px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
-.ancestral-alarm .ancestral-head { color: var(--reject); }
-.ancestral-done .ancestral-head { font-size: 16px; color: var(--ok); }
-.ancestral-line { margin: 0; font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
-.ancestral-card .btn-row { margin-bottom: 0; }
+.ancestral-banner.ancestral-alarm { background: color-mix(in srgb, var(--reject) 8%, var(--card)); border-color: var(--reject); color: var(--reject); font-weight: 600; }
 
 /* ─── The new Today (owner approved the mock-up, 31 Oct 2026) ─────────────────── */
 
@@ -1814,13 +1806,9 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .t-card ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 14px; }
 .t-link { background: none; border: none; padding: 0; font: inherit; font-size: 13px; color: var(--gold-deep); font-weight: 600; cursor: pointer; text-align: left; }
 .t-headline { font-family: "Cormorant Garamond", Georgia, serif; font-size: 19px; line-height: 1.2; margin: 0; }
-.law-card { border: 2px solid var(--gold); }
-.law-card .law-title { font-size: 17px; font-weight: 700; margin: 0; }
-.law-card .law-text { font-size: 15px; margin: 0; }
 .t-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.spirit-line { font-size: 14px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
 
-.t-list-h { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+.t-list-h { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); font-weight: 600; margin: 12px 0 8px; }
 .t-row { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
 .t-row.is-gate { border-left: 3px solid var(--gold); }
 .t-row-top { display: grid; grid-template-columns: 30px 1fr auto; gap: 8px; align-items: start; }
@@ -1851,8 +1839,23 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .t-below summary { cursor: pointer; font-size: 14px; }
 .all-clear { text-align: center; color: var(--ok); font-weight: 600; padding: 14px 0; }
 .t-input { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; background: var(--card-2); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 14px; }
-@media (min-width: 1100px) {
-  .today-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; }
-  .today-grid .today-main { grid-column: 1; grid-row: 1; }
-  .today-grid .today-side { grid-column: 2; grid-row: 1; position: sticky; top: 12px; }
-}
+
+
+/* ─── Today v4 (owner approved the mock-up, 31 Oct 2026): contract first, then Briefing, Spirit, Coaching ─── */
+.t-section-h { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); font-weight: 600; margin: 0; }
+.coach-card { border: 1px solid var(--gold); }
+.coach-q { font-size: 17px; line-height: 1.35; margin: 0; font-weight: 600; }
+.law-line { font-size: 12px; }
+.w-part { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.w-part:first-child { border-top: none; padding-top: 0; }
+.w-part-h { display: grid; grid-template-columns: 24px 1fr; gap: 8px; align-items: center; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.w-part-h .tick { width: 20px; height: 20px; font-size: 11px; line-height: 15px; }
+.w-indent { margin-left: 32px; font-size: 14px; overflow-wrap: anywhere; }
+.waiting { display: grid; gap: 10px; }
+.waiting-item { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 14px; }
+.t-head-line { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.reply { display: grid; gap: 6px; }
+.reply-text summary { cursor: pointer; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.reply-full { white-space: pre-wrap; font-size: 14px; margin: 6px 0 0; padding: 8px 10px; background: var(--card-2); border-radius: 6px; overflow-wrap: anywhere; }
+.reply-edit { min-height: 120px; resize: vertical; }
+.food-order { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LunationBlock, lunationAt, lunationDeg, lunationWhen } from "../components/Lunation";
 import { api } from "../api";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice } from "../components/Notice";
@@ -93,27 +94,10 @@ export function Spirit() {
    * wondering which clock a time is on — so both are printed and both are labelled, which costs one
    * short line and removes the only real ambiguity in the whole block.
    */
-  const at = (ts: number) => {
-    const opts: Intl.DateTimeFormatOptions = { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" };
-    /*
-     * HER ZONE, NOT THE BROWSER'S — which is what the rest of this file already does and this
-     * helper did not. `toLocaleString(undefined, …)` renders in whatever zone the device is in, so
-     * the one block she asked to be prominent would have shifted by an hour the moment she opened
-     * it on a laptop in another city, silently, with "your clock is shown above" printed under it.
-     * The header of this file states the rule; this helper was the exception nobody had noticed.
-     */
-    const local = `${inOwnerZone(ts, opts)} ${OWNER_TIMEZONE_LABEL}`;
-    const eastern = new Date(ts).toLocaleString("en-US", { ...opts, timeZone: "America/New_York" });
-    return { local, eastern };
-  };
-
-  /** Degrees AND arcminutes, the precision rule this page already holds for the ephemeris. */
-  const deg = (d: number) =>
-    `${Math.floor(d)}°${String(Math.round((d - Math.floor(d)) * 60)).padStart(2, "0")}′`;
-  const when = (ts: number) => {
-    const days = Math.round((ts - Date.now()) / 86_400_000);
-    return days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
-  };
+  // One definition of how the sky's times print, shared with Today (components/Lunation.tsx).
+  const at = lunationAt;
+  const deg = lunationDeg;
+  const when = lunationWhen;
 
   return (
     <>
@@ -181,20 +165,7 @@ export function Spirit() {
          * drift against a 29.53-day month and be wrong by a day every couple of cycles.
          */
         <div className="panel">
-          <div style={{ fontSize: "1.5rem", fontWeight: 600, lineHeight: 1.2 }}>{lunation.current.label}</div>
-          <div style={{ fontSize: "1.05rem", marginTop: 4 }}>
-            The cycle you are in — {lunation.days_since === 0 ? "today" : `day ${lunation.days_since + 1}`} of it.
-          </div>
-          <div className="row-sub">
-            {at(lunation.current.at).local} · {at(lunation.current.at).eastern} Eastern ·{" "}
-            {deg(lunation.current.degrees_in_sign)} {lunation.current.sign}
-          </div>
-          <div className="row-sub" style={{ marginTop: 6 }}>
-            It runs until the {lunation.next.label} — {at(lunation.next.at).local}, {when(lunation.next.at)}.
-          </div>
-          <div className="row-sub" style={{ marginTop: 8 }}>
-            Advisory only — context, never a cause and never a permission.
-          </div>
+          <LunationBlock lunation={lunation} />
         </div>
       ) : (
         /*

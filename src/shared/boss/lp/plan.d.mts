@@ -73,4 +73,5 @@ export type ProspectForecast = { go: number; first: number; follow: number; inva
 export function approveOutcome(f: ProspectForecast | null | undefined): { headline: string; lines: string[] };
 export declare const LP_NUDGE_DAYS: number;
 export declare function lpNudgeBody(r: { name?: string | null }): string;
+export declare function lpAgainBody(r: { name?: string | null }): string;
 export declare function lpNudgeItems(rows: any[], now?: number): any[];

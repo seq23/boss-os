@@ -148,6 +148,13 @@ export const api = {
   practiceList: () => call<any>("/practice/list"),
   practiceTick: (key: string, done = true) => call<any>("/practice/tick", post("", { key, done })),
   practiceOpened: () => call<any>("/practice/opened", post("", {})),
+  // Today v4: "Still waiting on you" (✓ Send as is, ✎ Change it, dismiss), and the food row.
+  waitingSend: (id: string) => call<any>(`/practice/waiting/${encodeURIComponent(id)}/send`, post("", {})),
+  waitingChange: (id: string, words: string) => call<any>(`/practice/waiting/${encodeURIComponent(id)}/change`, post("", { words })),
+  waitingDismiss: (id: string) => call<any>(`/practice/waiting/${encodeURIComponent(id)}/dismiss`, post("", {})),
+  foodAnother: () => call<any>("/practice/food/another", post("", {})),
+  foodWhere: (body: { home?: string; away?: string; until?: string }) =>
+    call<any>("/practice/food/where", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
   saveGate: (gate: string, items: unknown[], scope: "default" | "today" | "reset") =>
     call<any>(`/practice/gates/${gate}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ items, scope }) }),
   createGate: (body: { name: string; at_minute: number; checks: string[] }) => call<any>("/practice/custom-gates", post("", body)),
@@ -161,7 +168,6 @@ export const api = {
   recordAncestorHour: (body: unknown) => call<any>("/spirit/ancestors", post("", body)),
   // The end-of-month ancestral hour (owner, 31 Oct 2026): Today's card and its "Done ✓".
   ancestralHour: () => call<any>("/spirit/ancestral-hour"),
-  ancestralHourDone: () => call<any>("/spirit/ancestral-hour/done", post("")),
 
   status: () => call<any>("/system/status"),
   health: () => call<any>("/system/health"),
@@ -674,7 +680,7 @@ export const api = {
   preseed: () => call<{ week: string | null; crossed: any[]; funded: any[]; compare: any }>("/capital/preseed"), // Monique's pre-seed watch
   prospects: () => call<{ rows: any[]; approved: any; pending: any }>("/lp/prospects"), // boss fix L
   prospectActivity: (since = 0) => call<any>(`/lp/prospects/activity?since=${since}`),
-  // The morning email as sent (24 Oct 2026): Today's list and every item's own screen.
+  // The morning email as sent (24 Oct 2026): Today's contract and every item's own screen.
   morningLatest: () => call<{ day: string; sent_at: number | null; payload: any } | null>("/morning/latest"),
   morningDay: (day: string) => call<{ day: string; sent_at: number | null; payload: any }>(`/morning/${encodeURIComponent(day)}`),
   commentDigests: () => call<{ digests: any[] }>("/comment-watch-items"),

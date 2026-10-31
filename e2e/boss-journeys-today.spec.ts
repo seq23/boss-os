@@ -5,10 +5,11 @@ import { unlock, tab, expectNoSidewaysScroll, PHONE, LAPTOP } from "./support/bo
 /**
  * THE NEW TODAY, AS SHE USES IT (owner approved the mock-up, 31 Oct 2026).
  *
- * One list she can tick: the Morning gate first, the Midday gate in the middle, the Night gate last.
- * Above it the summary line, the briefing excerpt, the bold coaching law and one Spirit line. System
- * health lives on Systems. Tell Simone floats on every tab. Every journey below writes to D1 and reads
- * it back: a screen that only looked right is not a pass.
+ * Today v4 (owner approved the mock-up, 31 Oct 2026): "Today's contract" FIRST — one list she can tick,
+ * the Morning gate first, the Midday gate in the middle, the Night gate last, one 💰 Wealth block, the
+ * 🥑 food row — then Briefing, Spirit and Coaching, in that order. System health lives on Systems. Tell
+ * Simone floats on every tab. Every journey below writes to D1 and reads it back: a screen that only
+ * looked right is not a pass.
  */
 
 import { dayIdInZone } from "../src/shared/boss/timezone";
@@ -26,6 +27,7 @@ function cleanSql(): string {
     `DELETE FROM diary_entries WHERE title LIKE 'E2E meeting %'`,
     `DELETE FROM alert_dismissals WHERE reason LIKE 'E2E %'`,
     `DELETE FROM mailbox_findings WHERE id = 'mbf_e2e_pair'`,
+    `DELETE FROM food_orders WHERE day = '${DAY}'`,
   ].join("; ");
 }
 
@@ -37,37 +39,59 @@ for (const vp of [PHONE, LAPTOP]) {
     });
     test.afterAll(() => { provisionLocalD1(cleanSql()); });
 
-    test("opens on the summary, the law and one list with the gates first, middle and last; system health is gone", async ({ page }) => {
+    test("opens on the summary and Today's contract, then Briefing, Spirit and Coaching; system health is gone", async ({ page }) => {
       await unlock(page);
       await tab(page, "Today");
       const summary = page.getByTestId("today-summary");
-      await expect(summary).toContainText(/\d+ for you · \d+ of \d+ done/, { timeout: 15_000 });
-      const law = page.getByTestId("law-card");
-      await expect(law).toContainText(/Law \d+ · /);
-      await expect(law.getByRole("button", { name: "Read it aloud ✓" })).toBeVisible();
-      await expect(law.getByRole("button", { name: "Talk it through with your coach ›" })).toBeVisible();
+      await expect(summary).toContainText(/\d+ need you · \d+ of \d+ done/, { timeout: 15_000 });
+      const contract = page.getByTestId("today-list");
+      await expect(contract.getByRole("heading", { name: "Today's contract" })).toBeVisible();
 
-      const rows = page.getByTestId("today-list").locator(".t-row");
+      const rows = contract.locator(".t-row:not(.waiting)");
       const keys = await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
       expect(keys[0]).toBe("row-gate:morning");
       expect(keys[keys.length - 1]).toBe("row-gate:night");
       expect(keys).toContain("row-gate:midday");
       // Every row has a circle, labelled with what tapping it does.
-      expect(await rows.locator(".tick").count()).toBe(keys.length);
+      expect(await rows.locator(".t-row-top > .tick").count()).toBe(keys.length);
+      // ONE Wealth block, Core then Side; no "Brokerage block" row anywhere.
+      const wealth = page.getByTestId("row-wealth");
+      await expect(wealth).toContainText("💰 Wealth block");
+      await expect(wealth.getByTestId("part-core")).toContainText("Core business");
+      await expect(wealth.getByTestId("part-side")).toContainText("Side business");
+      await expect(wealth.getByTestId("side-pick")).toContainText("Why:");
+      await expect(contract).not.toContainText("Brokerage block");
 
       // The summary count is the list's count: the rows that need her.
-      const n = Number(/(\d+) for you/.exec(await summary.innerText())![1]);
+      const n = Number(/(\d+) need you/.exec(await summary.innerText())![1]);
       const api = await page.request.get("/api/boss/practice/list");
       expect((await api.json()).data.needs_you).toBe(n);
+
+      // In this order: the contract, Briefing, Spirit, Coaching.
+      const coach = page.getByTestId("coach-card");
+      await expect(coach.getByTestId("coach-question")).toContainText("?");
+      await expect(coach.getByRole("button", { name: "💬 Talk it through (1:1)" })).toBeVisible();
+      await expect(coach.getByTestId("law-line")).toContainText(/Law \d+ · /);
+      const spirit = page.getByTestId("spirit-card");
+      await expect(spirit.getByRole("button", { name: "Open Spirit for more ›" })).toBeVisible();
+      const y = async (l: ReturnType<typeof page.getByTestId>) => (await l.boundingBox())!.y;
+      const order = [await y(contract), await y(spirit), await y(coach)];
+      expect([...order].sort((p, q) => p - q)).toEqual(order);
+      const brief = page.getByTestId("briefing-excerpt");
+      if (await brief.count()) {
+        const by = await y(brief);
+        expect(by).toBeGreaterThan(order[0]!);
+        expect(by).toBeLessThan(order[1]!);
+      }
 
       // Off Today, to Systems: no alerts card, no roll call, no Operations panel, no empty cards.
       const main = page.locator("main.page");
       await expect(main.locator("h3", { hasText: /Critical Alerts|AI Employee Status|Approval Inbox|Open Loops|Run of Show|Today's Contract/ })).toHaveCount(0);
       await expect(page.getByTestId("today-operations")).toHaveCount(0);
+      await expect(page.getByTestId("law-card")).toHaveCount(0);
       for (const gone of [/Nothing is hanging/, /Nothing is waiting on you\./, /Running today:/]) await expect(main).not.toContainText(gone);
-      // The summary and the law are on the first screen.
-      const lawBox = (await law.boundingBox())!;
-      expect(lawBox.y).toBeLessThan(vp.height);
+      // The contract starts on the first screen.
+      expect((await contract.boundingBox())!.y).toBeLessThan(vp.height);
       if (vp.name === "phone") await expectNoSidewaysScroll(page);
     });
 
@@ -88,7 +112,9 @@ for (const vp of [PHONE, LAPTOP]) {
       await expect(row("morning").getByRole("button", { name: "Agree the day" })).toHaveCount(0);
 
       await row("midday").getByRole("button", { name: "Tap to open ▾" }).click();
-      await expect(row("midday")).toContainText("one keto meal");
+      // Food lives on its own 15:00 row, never inside a gate.
+      await expect(row("midday")).toContainText("Movement break");
+      await expect(row("midday")).not.toContainText(/keto/i);
       await row("midday").getByLabel("What changed").fill("E2E: nothing; the plan stands");
       await row("midday").getByRole("button", { name: "Reset", exact: true }).click();
       await expect(row("midday").locator(".t-row-time")).toContainText("✓", { timeout: 15_000 });
@@ -118,17 +144,35 @@ for (const vp of [PHONE, LAPTOP]) {
       expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM gate_entries WHERE day_id = '${DAY}'`)[0]!.n).toBeGreaterThanOrEqual(3);
     });
 
-    test("a tick stamps the time, and the law's tick is one tick on the card and in the gate", async ({ page }) => {
+    test("a tick stamps the time in D1, and morning coaching is the Morning gate's last step", async ({ page }) => {
       await unlock(page);
       await tab(page, "Today");
-      await page.getByTestId("law-read-aloud").click();
-      await expect(page.getByTestId("law-read-aloud")).toContainText("✓ Read aloud");
-      expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM today_ticks WHERE day_id = '${DAY}' AND item_key = 'morning:law'`)[0]!.n).toBe(1);
-      await page.getByTestId("row-gate:morning").getByRole("button", { name: "Tap to open ▾" }).click();
-      await expect(page.locator('[data-tick="morning:law"]')).toContainText("✓");
-      await page.locator('[data-tick="morning:law"]').click();
-      await expect(page.getByTestId("law-read-aloud")).toHaveText("Read it aloud ✓");
-      expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM today_ticks WHERE day_id = '${DAY}' AND item_key = 'morning:law'`)[0]!.n).toBe(0);
+      const morning = page.getByTestId("row-gate:morning");
+      await expect(morning).toContainText("1 Gratitude sentence aloud · 2 Meditation · 3 Movement · 4 Medicine · 5 Blood pressure tea · 6 Morning coaching (last)");
+      await morning.getByRole("button", { name: "Tap to open ▾" }).click();
+      const steps = await page.getByTestId("gate-body-morning").locator(".gate-step").evaluateAll((els) => els.map((e) => e.textContent ?? ""));
+      expect(steps[steps.length - 1]).toContain("Morning coaching");
+      expect(steps.some((t) => t.includes("Blood pressure tea"))).toBe(true);
+      await page.locator('[data-tick="morning:gratitude"]').click();
+      await expect(page.locator('[data-tick="morning:gratitude"]')).toContainText("✓");
+      expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM today_ticks WHERE day_id = '${DAY}' AND item_key = 'morning:gratitude'`)[0]!.n).toBe(1);
+      await page.locator('[data-tick="morning:gratitude"]').click();
+      await expect(page.locator('[data-tick="morning:gratitude"]')).toHaveText("Say it aloud ✓");
+      expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM today_ticks WHERE day_id = '${DAY}' AND item_key = 'morning:gratitude'`)[0]!.n).toBe(0);
+      // The Night gate never holds the blood pressure tea.
+      await expect(page.getByTestId("row-gate:night")).not.toContainText(/tea/i);
+    });
+
+    test("🥑 the food row names a restaurant order; Another place swaps it, and both reach D1", async ({ page }) => {
+      await unlock(page);
+      await tab(page, "Today");
+      const food = page.getByTestId("food-row");
+      await expect(food).toContainText("Today's keto order:", { timeout: 15_000 });
+      await expect(food).toContainText(/about \d+g net carbs/);
+      const before = (await food.locator(".food-order").innerText());
+      await food.getByTestId("food-another").click();
+      await expect(food.locator(".food-order")).not.toHaveText(before, { timeout: 15_000 });
+      expect(queryLocalD1<{ n: number }>(`SELECT COUNT(*) AS n FROM food_orders WHERE day = '${DAY}'`)[0]!.n).toBe(2);
     });
 
     test("Edit gate: remove an item, save as my default, and reset to Boss OS's default", async ({ page }) => {
@@ -183,7 +227,7 @@ for (const vp of [PHONE, LAPTOP]) {
       expect(queryLocalD1<{ status: string }>(`SELECT status FROM open_loops WHERE title = 'E2E loop to tick'`)[0]!.status).toBe("resolved");
     });
 
-    test("Monique's find — both sides of a trade in her own mailbox — is the Brokerage block's first money move", async ({ page }) => {
+    test("Monique's find — both sides of a trade in her own mailbox — is folded into Core business as the first money move", async ({ page }) => {
       const now = Date.now();
       provisionLocalD1(
         `INSERT INTO mailbox_findings (id, kind, subject_code, counterpart_code, headline, because, suggested_action, evidence, subject_matter, confidence, status, found_at, updated_at)

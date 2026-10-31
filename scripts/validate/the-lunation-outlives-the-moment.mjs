@@ -54,6 +54,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ASTRO = "src/worker/boss/spirit/astro.ts";
 const DAY = "src/worker/boss/spirit/day.ts";
 const PAGE = "src/client/boss/pages/Spirit.tsx";
+/*
+ * THE BLOCK IS SHARED NOW (Today v4, 31 Oct 2026): Spirit and Today render the same lunation block from
+ * `components/Lunation.tsx`. The page is read TOGETHER with that component, and only when the page
+ * actually renders `<LunationBlock lunation={lunation}` — an import alone proves nothing is on screen.
+ */
+const SHARED = "src/client/boss/components/Lunation.tsx";
+export function pageWithShared(page, shared) {
+  return /<LunationBlock\s+lunation=\{lunation\}/.test(page) && shared ? `${page}\n${shared}` : page;
+}
 
 /** A fixed-length window standing in for "until the next lunation". */
 const FIXED_WINDOW = [
@@ -334,6 +343,17 @@ export function currentLunation(ts: number): CurrentLunation {
       input: with_({ page: goodPage.replace("{deg(lunation.current.degrees_in_sign)}", "{lunation.current.degrees_in_sign.toFixed(1)}°").replace(' + "′"', "") }),
       expect: 1,
     },
+    // Today v4: the shared block counts only when the page renders it with the lunation.
+    {
+      name: "the page imports the shared block but never renders it",
+      input: with_({ page: pageWithShared(`import { LunationBlock } from "../components/Lunation";\nconst lunation = signal.current_lunation ?? null;\n<div>{major ? "never a cause and never a permission" : null}</div>`, goodPage) }),
+      expect: 1,
+    },
+    {
+      name: "the page renders the shared block, which holds the label, the window, the disclaimer and arcminutes",
+      input: with_({ page: pageWithShared(`const lunation = signal.current_lunation ?? null;\n<p>never a cause and never a permission</p>\n<LunationBlock lunation={lunation} />`, goodPage) }),
+      expect: 0,
+    },
   ];
 
   let failed = 0;
@@ -367,7 +387,7 @@ if (process.argv.includes("--self-test")) {
   const problems = check({
     astro: readFileSync(join(ROOT, ASTRO), "utf8"),
     day: readFileSync(join(ROOT, DAY), "utf8"),
-    page: readFileSync(join(ROOT, PAGE), "utf8"),
+    page: pageWithShared(readFileSync(join(ROOT, PAGE), "utf8"), existsSync(join(ROOT, SHARED)) ? readFileSync(join(ROOT, SHARED), "utf8") : null),
   });
 
   if (problems.length) {

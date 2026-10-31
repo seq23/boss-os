@@ -23,10 +23,14 @@ import { ErrorNotice } from "../components/Notice";
 
 type Turn = { role: "coach" | "her"; text: string };
 
-export function Coaching({ onModeSet, phase = "morning", onTalked }: { onModeSet?: () => void; phase?: "morning" | "evening"; onTalked?: () => void }) {
+export function Coaching({ onModeSet, phase = "morning", onTalked, opening = null }: {
+  onModeSet?: () => void; phase?: "morning" | "evening"; onTalked?: () => void;
+  /** Today v4: the Coaching card's question opens the talk (counts only; the coach is told the same situation by the Worker). */
+  opening?: string | null;
+}) {
   const evening = phase === "evening";
   const [state, setState] = useState<any>(null);
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [turns, setTurns] = useState<Turn[]>(() => (opening ? [{ role: "coach", text: opening }] : []));
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState<string | null>(null);

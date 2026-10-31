@@ -189,6 +189,28 @@ export interface RouteRequest {
   webSearch?: boolean;
   /** Overrides the route's output limit. A briefing is far longer than the route's default reply. */
   maxOutputTokens?: number;
+  /**
+   * $0 ONLY. Every candidate that is not free is passed over, whatever the spend lever says. For
+   * routine work (Today's food row) that must never cost money.
+   */
+  freeOnly?: boolean;
+  /**
+   * A DRAFT THAT INVOLVES AN LP OR DEAL TERMS (owner, Today v4, 31 Oct 2026). Written on her Claude
+   * seat only — never Codex/ChatGPT, never a free or training route, never a cloud model. The Worker
+   * has no Claude seat, so the router refuses it outright: FAIL CLOSED (`confidentialDraftRefusal`).
+   */
+  confidentialDraft?: boolean;
+}
+
+/**
+ * THE ONE REFUSAL FOR AN LP / DEAL-TERMS DRAFT ON THE WORKER'S ROUTER. Pure, so the sentence is pinned.
+ * The Mac's seat ladder has its own guard (`confidentialLadder`, duties/seatOrder.ts).
+ */
+export function confidentialDraftRefusal(): { message: string; hint: string } {
+  return {
+    message: "An LP or deal-terms draft is written on the Claude seat only, so no cloud model may write it",
+    hint: "Run it on the Claude seat on her Mac, or write it from a fixed template.",
+  };
 }
 
 export interface RouteResult {
@@ -413,6 +435,15 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
 
   const risk = opts.risk ?? "low";
   const sensitivity = opts.sensitivity ?? "private";
+  if (opts.confidentialDraft) {
+    const r = confidentialDraftRefusal();
+    await recordDecision(db, {
+      lane: opts.lane, taskId: opts.taskId, employeeId: opts.employeeId, intakeKind: opts.intakeKind, risk, sensitivity,
+      costMode: "n/a", routeId: opts.routeId, modelAccess: "private_model_only",
+      outcome: "blocked_policy", reason: r.message, candidates: [],
+    });
+    throw new RoutingBlocked(r.message, "blocked_policy", r.hint);
+  }
   const costMode = opts.costMode ?? (await getSetting(db, "cost_mode")) ?? "NORMAL";
   const policy = costPolicy(costMode);
   const base = {
@@ -777,6 +808,10 @@ export async function routeCompletion(env: Env, opts: RouteRequest): Promise<Rou
 
     const free = verdictBackend.cost_basis.free;
     const backendName = def.providerName;
+    if (opts.freeOnly && !free) {
+      note("budget", "rejected", `${model.display_name} costs money and this run is $0 only.`, { estimate_micros: estimate, free });
+      continue;
+    }
 
     /*
      * ─── AT FREE_ONLY, A PROTECTED JOB DOES NOT QUIETLY TAKE THE FREE SEAT ───
