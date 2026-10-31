@@ -1859,3 +1859,4 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .reply-full { white-space: pre-wrap; font-size: 14px; margin: 6px 0 0; padding: 8px 10px; background: var(--card-2); border-radius: 6px; overflow-wrap: anywhere; }
 .reply-edit { min-height: 120px; resize: vertical; }
 .food-order { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.send-btn { border-color: var(--ok); color: var(--ok); font-weight: 600; font-size: 14px; padding: 6px 12px; }

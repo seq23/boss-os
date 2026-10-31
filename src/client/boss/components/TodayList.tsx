@@ -101,12 +101,12 @@ export function ReplyActions({ id, reply, onList, onTick, onError, startEditing 
       <div className="t-actions">
         {editing ? (
           <>
-            <button className="btn btn-approve" disabled={busy || !words.trim()} onClick={async () => { const r = await run(() => api.waitingChange(id, words)); if (r?.held) setEditing(false); }}>Show the new version</button>
+            <button className="done-btn send-btn" disabled={busy || !words.trim()} onClick={async () => { const r = await run(() => api.waitingChange(id, words)); if (r?.held) setEditing(false); }}>Show the new version</button>
             <button className="done-btn" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
           </>
         ) : (
           <>
-            {reply.can_send && <button className="btn btn-approve" disabled={busy} onClick={() => void run(() => api.waitingSend(id))} data-testid={`send-${id}`}>✓ Send as is</button>}
+            {reply.can_send && <button className="done-btn send-btn" disabled={busy} onClick={() => void run(() => api.waitingSend(id))} data-testid={`send-${id}`}>✓ Send as is</button>}
             <button className="done-btn" disabled={busy} onClick={() => setEditing(true)} data-testid={`change-${id}`}>✎ Change it</button>
             <button className="done-btn" disabled={busy} onClick={() => onTick(`notnow:${id}`, true)} data-testid={`notnow-${id}`}>Not now</button>
           </>
@@ -165,7 +165,7 @@ function FoodRow({ r, onList, onError }: { r: Row; onList: (l: ListData) => void
           <div className="food-order"><strong>Today&apos;s keto order:</strong> {f.place}: {f.order} · about {f.carbs}g net carbs</div>
           <details><summary className="t-link">Why it works ▾</summary><div className="t-row-sub">{f.why}</div></details>
           <div className="t-actions">
-            <button className="btn btn-approve" disabled={busy} onClick={() => void act(() => api.runOfShowBlock("food_guardrail_check", { done: !r.done_at }).then(() => api.practiceList()))}>{r.done_at ? `✓ On track ${clock(r.done_at)}` : "✓ On track"}</button>
+            <button className="done-btn send-btn" disabled={busy} onClick={() => void act(() => api.runOfShowBlock("food_guardrail_check", { done: !r.done_at }).then(() => api.practiceList()))}>{r.done_at ? `✓ On track ${clock(r.done_at)}` : "✓ On track"}</button>
             <button className="done-btn" disabled={busy} onClick={() => void act(() => api.foodAnother())} data-testid="food-another">Another place</button>
           </div>
           <div className="t-row-sub">{whereLine} · <button className="t-link" onClick={() => setWhere(!where)}>Change ✎</button></div>

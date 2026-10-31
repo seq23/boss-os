@@ -55,6 +55,13 @@ export interface SideSignals {
   lastPicked: Record<string, string>;
 }
 
+/**
+ * PLAIN WORDS ONLY (make-it-calm). The reading behind "broken" can be a workflow file or a repo name;
+ * none of that reaches her screen (31 Oct 2026, the first live pick printed a workflow path). The
+ * detail lives on Systems → Health, one tap away.
+ */
+export const brokenLine = (name: string) => `${name}: a site check is red. Open it and see what needs you`;
+
 export interface SidePick { key: string | null; name: string | null; line: string; why: string; signal: SideSignal; href: string | null }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -70,7 +77,7 @@ export function pickSide(sig: SideSignals, today: string, weekday: number): Side
     line: `${leads.b.name}: ${plural(leads.n, "lead")} to answer`, why: `it has leads waiting${quiet(leads.b)}` };
   const broken = all.find((b) => sig.broken[b.key]);
   if (broken) return { key: broken.key, name: broken.name, signal: "broken", href: "/?tab=systems&section=health",
-    line: `${broken.name}: ${sig.broken[broken.key]}`, why: "its site needs a look before it costs you visitors" };
+    line: brokenLine(broken.name), why: "its site needs a look before it costs you visitors" };
   const revenue = top((b) => sig.revenue[b.key] ?? 0);
   if (revenue) return { key: revenue.b.key, name: revenue.b.name, signal: "revenue", href: revenue.b.href,
     line: `${revenue.b.name}: money is coming in, so push what is working`, why: "it brought in money this month" };
@@ -109,8 +116,7 @@ export async function sideSignals(env: Env, today: string, now = Date.now()): Pr
     if (n) sig.leads[b.key] = n;
     const warn = health.find((h) => b.grid.includes(h.property_key) && h.state === "warn");
     const red = obs.find((o) => b.grid.includes(o.property_key));
-    if (warn) sig.broken[b.key] = "its site check is red: " + String(warn.summary).replace(/\.$/, "").slice(0, 90);
-    else if (red) sig.broken[b.key] = String(red.headline).replace(/\.$/, "").slice(0, 100);
+    if (warn || red) sig.broken[b.key] = "red";
     const rev = returns.filter((r) => b.lines.includes(r.line)).reduce((s, r) => s + Number(r.n ?? 0), 0);
     if (rev) sig.revenue[b.key] = rev;
   }
@@ -124,7 +130,9 @@ export async function sideBusinessToday(env: Env, today: string, weekday: number
     .first<{ business_key: string; line: string; why: string; signal: SideSignal }>().catch(() => null);
   if (kept) {
     const b = SIDE_BUSINESSES.find((x) => x.key === kept.business_key) ?? null;
-    return { key: b?.key ?? null, name: b?.name ?? null, line: kept.line, why: kept.why, signal: kept.signal, href: b ? (kept.signal === "broken" ? "/?tab=systems&section=health" : b.href) : null };
+    // A kept "broken" pick is re-worded on read, so a line kept before the plain-words rule never shows.
+    const line = kept.signal === "broken" && b ? brokenLine(b.name) : kept.line;
+    return { key: b?.key ?? null, name: b?.name ?? null, line, why: kept.why, signal: kept.signal, href: b ? (kept.signal === "broken" ? "/?tab=systems&section=health" : b.href) : null };
   }
   const pick = pickSide(await sideSignals(env, today, now), today, weekday);
   await env.DB.prepare(`INSERT INTO side_business_days (day, business_key, line, why, signal, created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(day) DO NOTHING`)
