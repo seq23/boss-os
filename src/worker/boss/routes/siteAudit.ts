@@ -382,11 +382,19 @@ siteAudit.post("/site-audit-findings/:id/:action", async (c) => {
   if (!STATUS_SET.has(action)) {
     throw badRequest("Unknown action", "A finding can be marked 'acted' or 'dismissed'.");
   }
+  /*
+   * A DECISION CARRIES ITS REASON (31 Oct 2026). Sixteen findings were decided in one pass ("acted":
+   * fixed and live; "dismissed": a platform limit, a transient, the protected page). The reason goes on
+   * the row's notes and the audit log, so the record says why a finding left the screen.
+   */
+  const b = await c.req.json<any>().catch(() => null);
+  const reason = String(b?.reason ?? "").trim().slice(0, 1000);
   const now = Date.now();
   const res = await c.env.DB
-    .prepare(`UPDATE site_audit_findings SET status = ?, updated_at = ?, archived_at = ? WHERE id = ?`)
-    .bind(action, now, action === "new" ? null : now, id)
+    .prepare(`UPDATE site_audit_findings SET status = ?, updated_at = ?, archived_at = ?, notes = COALESCE(?, notes) WHERE id = ?`)
+    .bind(action, now, action === "new" ? null : now, reason || null, id)
     .run();
   if (!res.meta.changes) throw badRequest("No such finding", "It may already have been archived.");
-  return ok(c, { id, status: action });
+  await audit(c.env.DB, { actor: "boss", lane: "ops", entityType: "site_audit_finding", entityId: id, action: `finding_${action}`, detail: reason ? { reason } : undefined });
+  return ok(c, { id, status: action, reason: reason || null });
 });

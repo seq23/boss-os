@@ -232,13 +232,21 @@ main() {
   FIXED=$(( START - LEFT )); [ "$FIXED" -ge 0 ] || FIXED=0
   write_status "$START" "$FIXED" "$LEFT" "${PROT:-0}" "${NOREPO:-0}" 1 | tee -a "$LOG"
   say "SR-QUEUE-COMPLETE: started=$START fixed=$FIXED left=$LEFT protected=${PROT:-0} no_repo=${NOREPO:-0}"
-  # RULE 0, WITH WORK LEFT: never a quiet exit 0. Named, non-zero (duty-run records it as failed and the
-  # duty stays due), and on Danielle's repair desk. The run did reach its end, so the mark is cleared.
+  # RULE 0, WITH WORK LEFT: never a quiet exit 0. Named, on Danielle's repair desk, and non-zero unless
+  # the queue stalled (see below). The run did reach its end, so the mark is cleared.
   if [ "$LEFT" -gt 0 ]; then
     if [ "$STALLED" -eq 1 ]; then CODE=SR_QUEUE_STALLED; WHY="round $ROUND fixed nothing"; else CODE=SR_ROUNDS_SPENT; WHY="all $MAX_ROUNDS rounds ran"; fi
     say "NAMED STOP [$CODE] $LEFT workable briefs left ($WHY; $FIXED fixed of $START). See $LOG."
     report_stop "$CODE" "$LEFT workable briefs left ($WHY; $FIXED fixed of $START)."
     rm -f "$MARK" "$STATE_DIR/retry-after"
+    # A STALLED QUEUE IS THE DUTY'S OWN END STATE, NOT A FAILED RUN (31 Oct 2026). The duty's success
+    # criterion (migration 0305) is "round after round, until none is left OR A ROUND FIXES NOTHING".
+    # Exiting 14 here recorded every such run as failed, so last_run_at never moved, the weekly duty
+    # stayed due and re-ran EVERY morning on the same briefs (28-31 Oct, burning her AI seat), each
+    # failure opened a "find why it failed" fix job, and Today said "never fired". The leftover is
+    # already named above and on Danielle's repair desk (report_stop); the duty is done until Tuesday.
+    # SR_ROUNDS_SPENT (every round still fixing when the rounds ran out) stays 14: that run is unfinished.
+    [ "$STALLED" -eq 1 ] && exit 0
     exit 14
   fi
   rm -f "$MARK" "$STATE_DIR/retry-after"

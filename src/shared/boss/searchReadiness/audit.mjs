@@ -1266,7 +1266,7 @@ export function nextFixStatus(prev, { started, fixed, left, protectedLeft = 0, n
 /** The plain-English line for the morning email: what the queue run did today. No ids, no commands. */
 export function queueRunLine({ started, fixed, left, protectedLeft = 0, noRepo = 0 }) {
   const parts = [`Search fixes today: ${fixed} of ${started} fixed and live.`];
-  if (left > 0) parts.push(`${left} still to do; Danielle carries on tomorrow morning.`);
+  if (left > 0) parts.push(`${left} still to do; Danielle picks them up on her next run.`);
   else parts.push("Nothing left that can be fixed automatically.");
   const kept = [];
   if (protectedLeft) kept.push(`${protectedLeft} on the Spry Labs download page, which is only ever changed on its own`);

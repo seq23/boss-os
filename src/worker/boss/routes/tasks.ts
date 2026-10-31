@@ -210,22 +210,32 @@ tasks.post("/:id/hunt-result", async (c) => {
   return ok(c, { recorded: true, task_id: id });
 });
 
+/*
+ * A CANCEL CARRIES ITS REASON (31 Oct 2026). Four failed tasks sat on Today with "requeue or cancel";
+ * cancelling one wrote only "Cancelled by the Boss", so the record could not say WHY the work was no
+ * longer wanted (its cause fixed at source, superseded, done another way). The reason is optional for
+ * her button and stored on the row, the task event and the audit log alike.
+ */
 tasks.post("/:id/cancel", async (c) => {
   const id = c.req.param("id");
+  const b = await c.req.json<any>().catch(() => null);
+  const reason = String(b?.reason ?? "").trim().slice(0, 500);
   const now = Date.now();
   const res = await c.env.DB
     .prepare(
-      `UPDATE tasks SET status = 'cancelled', finished_at = COALESCE(finished_at, ?), error = 'Cancelled by the Boss'
+      `UPDATE tasks SET status = 'cancelled', finished_at = COALESCE(finished_at, ?), error = ?
         WHERE id = ? AND status NOT IN ('done','cancelled')`,
     )
-    .bind(now, id)
+    .bind(now, reason ? `Cancelled by the Boss: ${reason}` : "Cancelled by the Boss", id)
     .run();
   if (!res.meta.changes) throw conflict("That task is already finished or cancelled");
+  const task = await c.env.DB.prepare(`SELECT lane FROM tasks WHERE id = ?`).bind(id).first<{ lane: string }>();
   await c.env.DB
-    .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'cancelled',NULL)`)
-    .bind(newId("tev"), id, now)
+    .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'cancelled',?)`)
+    .bind(newId("tev"), id, now, reason ? JSON.stringify({ reason }) : null)
     .run();
-  return ok(c, { cancelled: true });
+  await audit(c.env.DB, { actor: "boss", lane: task?.lane ?? "ops", entityType: "task", entityId: id, action: "cancelled", detail: reason ? { reason } : undefined });
+  return ok(c, { cancelled: true, reason: reason || null });
 });
 
 /** Picks the existing employee whose department owns this kind of work. */

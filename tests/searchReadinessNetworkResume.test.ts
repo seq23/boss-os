@@ -233,14 +233,31 @@ describe("search-readiness-fix.sh waits out the network and resumes by itself", 
     expect(u.read("plan-n")).toBe("");
   }, 60000);
 
-  it("work left when the run ends is never a quiet exit 0: named, non-zero, on Danielle's repair desk", () => {
+  /*
+   * A STALLED QUEUE IS THE DUTY'S OWN END STATE (31 Oct 2026). Exit 14 here recorded every stalled run
+   * as failed, so the weekly duty never moved last_run_at, re-ran every morning on the same briefs and
+   * read "never fired" on Today. It is still never QUIET: the named stop is printed and on the desk.
+   */
+  it("a stalled queue ends the run, never quietly: named, on Danielle's repair desk, exit 0 so the duty is done until Tuesday", () => {
     const t = runnerTree({ plans: [FOUR] });
     const { rc, out } = t.run();
     expect(out).toMatch(/fixed nothing; stopping/);
     expect(out).toMatch(/NAMED STOP \[SR_QUEUE_STALLED\] 4 workable briefs left/);
-    expect(rc).toBe(14);
+    expect(rc).toBe(0);
     expect(t.read("reported").trim()).toBe("SR_QUEUE_STALLED");
     expect(existsSync(t.mark)).toBe(false);
+  }, 60000);
+
+  it("rounds spent while every round still fixed something is unfinished: named, non-zero (14), on the desk", () => {
+    const THREE = "QUEUE total=3 workable=3 protected=0 no_repo=0\nCHUNK a 3 sr-1";
+    const TWO = "QUEUE total=2 workable=2 protected=0 no_repo=0\nCHUNK a 2 sr-1";
+    const ONE = "QUEUE total=1 workable=1 protected=0 no_repo=0\nCHUNK a 1 sr-1";
+    const t = runnerTree({ plans: [FOUR, THREE, TWO, ONE] });
+    const { rc, out } = t.run();
+    expect(out).not.toMatch(/fixed nothing/);
+    expect(out).toMatch(/NAMED STOP \[SR_ROUNDS_SPENT\] 1 workable briefs left/);
+    expect(rc).toBe(14);
+    expect(t.read("reported").trim()).toBe("SR_ROUNDS_SPENT");
   }, 60000);
 
   it("the installer keeps a KeepAlive on the unfinished mark, throttled to 15 minutes, naming no duty", () => {

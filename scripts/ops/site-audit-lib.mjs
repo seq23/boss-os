@@ -41,7 +41,19 @@ const NEEDS_CRAWL = new Set(["surfaced", "fixed_pr"]);
  *   NOT_LANDED            a PR was opened and did not land: work left waiting on her
  *   NOT_CRAWLED           a row claims a defect (or a fix) with no crawl of the live site behind it
  *   NOT_PROBED            an Ahrefs-side crawl failure asserted with no outside probe behind it
+ *   OWNER_ASKED           a row's next action is the owner's: Danielle decides, she never parks it
+ *                         "for a person" (31 Oct 2026, 16 findings; see OWNER_ACTOR)
  */
+/*
+ * NOTHING WAITS ON THE OWNER (31 Oct 2026). Sixteen rows sat on Today as "left for a person to
+ * decide": "Owner creates one real profile…", "Publish … through the Lovable release path", a check
+ * that clears itself on Monday, the protected page. Every one had a decision Danielle could make (use
+ * the precedent the grid already passes with, dispatch the job now, record the platform limit, leave
+ * the protected page to its own pass). A row whose next action names the owner as the one to act is
+ * that parking, so the pass is RED and comes back to her, never to Sequoia.
+ */
+export const OWNER_ACTOR = /^\s*(?:the\s+)?(?:owner|sequoia|she|you)\b|\b(?:ask|tell|needs?|waits? (?:on|for))\s+(?:her|the owner|sequoia)\b|\b(?:owner|sequoia) (?:creates?|decides?|must|needs?|should|publishes?|adds?|signs?|approves?|chooses?)\b|for a person to decide/i;
+
 export function runVerdict(payload) {
   const findings = Array.isArray(payload?.findings) ? payload.findings : [];
   const counts = {};
@@ -59,6 +71,9 @@ export function runVerdict(payload) {
     }
     if (NEEDS_CRAWL.has(f.disposition) && !(f.crawl && Number(f.crawl.pages_crawled) > 0)) {
       reasons.push(`NOT_CRAWLED: ${who}: no crawl of the live site recorded, so the row rests on the Ahrefs mail alone.`);
+    }
+    if (OWNER_ACTOR.test(String(f.suggested_action ?? ""))) {
+      reasons.push(`OWNER_ASKED: ${who}: the next action is left to the owner ("${String(f.suggested_action).slice(0, 120)}"). Decide it: fix it, dispatch it, record the limit as none, or leave a protected page as off_limits.`);
     }
     if (f.disposition === "ahrefs_side" && !(f.probe && f.probe.verdict === "AHREFS_SIDE_CRAWL_FAILURE")) {
       reasons.push(`NOT_PROBED: ${who}: called an Ahrefs-side crawl failure without an outside probe saying so.`);

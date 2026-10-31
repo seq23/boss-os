@@ -57,6 +57,10 @@ export interface DutyStalenessRow {
   suspended: number | boolean;
   last_run_at: number | null;
   created_at: number | null;
+  /** The last run REPORTED, ok or failed (routes/duties.ts /ran). Optional: older readers omit it. */
+  last_outcome?: string | null;
+  last_outcome_at?: number | null;
+  last_failure_reason?: string | null;
 }
 
 export interface DutyStaleness {
@@ -181,4 +185,29 @@ export function dutyStaleness(duty: DutyStalenessRow, now = Date.now()): DutySta
       : `"${duty.name}" is on schedule.`;
 
   return { stale, missed, missed_since: firstMissed, next_expected: next, reason };
+}
+
+const utcMinute = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+
+/**
+ * THE WORDS ON TODAY FOR A STALE DUTY, and "never fired" only when nothing ever reported a run.
+ *
+ * 31 Oct 2026: duty_search_readiness_repair read "has never fired since it was created" at HIGH while
+ * duty_runs held seven runs of it. `last_run_at` moves only on a run that finished ok (on purpose: a
+ * failed run must not look like a run), and every one of those runs had ended with work left, so the
+ * alert sent her looking for a dead clock when the clock was fine and the runs were the problem. A
+ * reported run is evidence the clock fired; the alert says so and quotes why the last one did not
+ * finish, which is where the fix is.
+ */
+export function staleDutyAlertText(duty: DutyStalenessRow, late: DutyStaleness): string {
+  const gone = `${late.missed} scheduled run${late.missed === 1 ? " has" : "s have"} gone by`;
+  if (duty.last_run_at) {
+    return `${late.reason} Its next scheduled run is ${late.next_expected ? utcMinute(late.next_expected) : "not computable"}.`;
+  }
+  if (duty.last_outcome_at) {
+    const why = (duty.last_failure_reason ?? "").trim();
+    return `"${duty.name}" fires, but no run has finished cleanly since it was created (last ${utcMinute(duty.last_outcome_at)}` +
+      `${why ? `: ${why.slice(0, 200)}` : ""}), and ${gone}.`;
+  }
+  return `"${duty.name}" has never fired since it was created, and ${gone}.`;
 }

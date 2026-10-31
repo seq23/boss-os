@@ -13,7 +13,7 @@ import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { badRequest, notFound } from "../lib/http";
-import { isDue, nextDueAt, type DutySchedule } from "./cadence";
+import { EARLY_RUN_GRACE_MS, isDue, nextDueAt, type DutySchedule } from "./cadence";
 import { composeBriefingPrompt, ctDayLabel } from "./briefingSpec";
 import {
   DUTY_PROMPT_FILES, choiceOf, choicesFor, localDate, macDueToday, scheduleFromChoice, scheduleWords, timeEditable,
@@ -245,7 +245,18 @@ export async function dutyBrief(env: Env, localJob: string, now = Date.now()) {
   if (rows.length > 1) throw badRequest(`${rows.length} duties name "${localJob}" as their local job`, `They are: ${rows.map((r) => r.id).join(", ")}.`);
   const d = rows[0]!;
   const ownerSchedule = d.owner_schedule_at !== null && d.owner_schedule_at !== undefined;
-  const due = d.suspended ? false : ownerSchedule ? macDueToday(d, now) : isDue(d.next_due_at, false, now);
+  /*
+   * DUE WITHIN THE EARLY-RUN GRACE, THE SAME WINDOW THE RUN RECORDER CREDITS (31 Oct 2026).
+   *
+   * launchd ticks on the Mac's wall clock and duties are kept in Central. Her Mac is on Eastern, so the
+   * daily 07:30 tick for duty_search_readiness_repair (Tuesday 07:30 Central) asked at 06:30 Central,
+   * was told "not due", and the Tuesday slot passed with no run: Today said "never fired, 1 scheduled
+   * run gone by" about a duty created two days before. A run inside EARLY_RUN_GRACE_MS of its slot
+   * already counts as that slot's run (`creditFrom`, routes/duties.ts), so the gate that decides
+   * whether to start it must use the same window, or a duty whose tick falls before its slot can never
+   * run on its own day.
+   */
+  const due = d.suspended ? false : ownerSchedule ? macDueToday(d, now) : isDue(d.next_due_at, false, now + EARLY_RUN_GRACE_MS);
   const top = await env.DB.prepare(`SELECT MAX(version) AS v FROM duty_versions WHERE duty_id = ?`).bind(d.id).first<{ v: number | null }>();
   return {
     duty_id: d.id,

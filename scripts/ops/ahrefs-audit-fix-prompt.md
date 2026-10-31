@@ -286,6 +286,21 @@ the actual next action needed to fix the confirmed defect. Never leave this fiel
 a fixable repo, that you could not fix — say exactly why in `because`. **If fixed=0 while anything
 is surfaced, the run is RED** (`FIXABLE_LEFT_UNFIXED`), so surface only what you truly cannot fix.
 
+**You decide; nothing is left for a person** (31 Oct 2026, sixteen rows parked "for a person to
+decide"). Never write a `suggested_action` whose actor is the owner ("Owner creates…", "ask her…"): the
+run turns RED (`OWNER_ASKED`). Decide every brief with this ladder, and say why in `because`:
+1. **Fix it** at source → `fixed_pr`, landed. Where the grid already passes the same check, copy that
+   precedent (e.g. an external profile in `sameAs`: a passing site uses its public source repository).
+2. **A scheduled job has simply not run yet** (k6 and the like) → dispatch it now (`gh workflow run`)
+   and record `in_flight` with the run URL; never "clears itself on Monday".
+3. **The fix is merged but the host publishes by hand** (Lovable) → `in_flight`, the publish named as
+   Danielle's next step, never the owner's.
+4. **A platform limit no repository change can move** (a hosting redirect code, a SPA's soft 404) →
+   apply any in-repo mitigation that exists, then `none` with the limit named in `because`.
+5. **A protected page** (the Spry Labs download page) → `off_limits`: it is fixed only on its own pass.
+6. Only a secret or an account she alone holds may stop, and that is a named stop line in the closing
+   sentinel, never a row asking her.
+
 **Never ask her for something already true** (26 Oct 2026: three asks, all false). Before any row or
 closing line asks her to grant Search Console access, add a property, or withdraw a sitemap, re-read it
 in THIS run as the gsc-bot service account: `sites.list` (is `sc-domain:<domain>` there?) and a
