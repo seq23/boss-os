@@ -82,7 +82,10 @@ async function main() {
     return;
   }
   const { followUps } = await import("./lp-followups.mjs");
-  const { rows, stops } = await followUps(people, { skipped });
+  // Where she is (Boss OS's "where I am until") and the times each LP was last offered: the held reply
+  // offers times in her zone that day, and a pick of one of them becomes a one-tap confirmation + invite.
+  const offered = Object.fromEntries((prior.rows ?? []).filter((r) => r.offered_slots).map((r) => [r.address, r.offered_slots]));
+  const { rows, stops } = await followUps(people, { skipped, where: prior.where ?? null, offered });
   const after = await api.post("/lp/replies", { rows });
   const file = writeMorning("lp", lpMorning(after.rows ?? []));
   for (const s of stops) console.log(`note: ${s}`);

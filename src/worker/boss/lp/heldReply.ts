@@ -3,6 +3,7 @@ import { audit } from "../lib/audit";
 import { holdThreadReply } from "../wealth/gmailDraft";
 import { sendDraft, lpReplyClosed } from "../routes/lpTap";
 import { tapToken } from "./desk";
+import { inviteGate, sendInvite } from "./schedule";
 
 /**
  * ✓ SEND AS IS / ✎ CHANGE IT, FROM TODAY (owner, Today v4, 31 Oct 2026).
@@ -28,6 +29,12 @@ export async function sendHeldLp(env: Env, row: any, now = Date.now(), fetchImpl
   const who = row.name || "them";
   if (lpReplyClosed(row) && row.status !== "replied_again") return { ok: false, line: row.status === "skipped" ? "That reply was skipped." : "That reply has already gone." };
   if (!row.draft_id || !row.draft_body || !row.draft_message_id) return { ok: false, line: "No reply is ready in their thread yet. Tap Change it to write one." };
+  // A reply confirming a time they picked goes only if that time is still free (it promises an invite).
+  const gate = await inviteGate(env, row, now);
+  if (!gate.ok) {
+    await env.DB.prepare(`UPDATE lp_reply_drafts SET send_error = ?, updated_at = ? WHERE id = ?`).bind(gate.why.slice(0, 300), now, row.id).run();
+    return { ok: false, line: `Not sent: ${gate.why}.` };
+  }
   const r = await sendDraft(env, row.reply_from, row.draft_id, fetchImpl, row.draft_message_id);
   if (!r.ok) {
     await env.DB.prepare(`UPDATE lp_reply_drafts SET decision = 'send', decided_at = ?, send_error = ?, updated_at = ? WHERE id = ?`).bind(now, r.why ?? null, now, row.id).run();
@@ -36,7 +43,9 @@ export async function sendHeldLp(env: Env, row: any, now = Date.now(), fetchImpl
   }
   await env.DB.prepare(`UPDATE lp_reply_drafts SET status = 'sent', decision = 'send', decided_at = ?, sent_at = ?, send_error = NULL, updated_at = ? WHERE id = ?`).bind(now, now, now, row.id).run();
   await audit(env.DB, { actor: "owner", lane: "ops", entityType: "lp_reply_drafts", entityId: row.id, action: "sent", detail: { via: "today" } });
-  return { ok: true, line: `Sent to ${who}, in their thread.` };
+  // The same tap sends the calendar invite when the reply confirmed a time they picked.
+  const inv = await sendInvite(env, row, now);
+  return { ok: true, line: `Sent to ${who}, in their thread.${inv.line}` };
 }
 
 export async function holdHerWords(env: Env, row: any, words: string, now = Date.now(), fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; line: string; text: string | null }> {
@@ -51,8 +60,10 @@ export async function holdHerWords(env: Env, row: any, words: string, now = Date
     return { ok: false, line: `Your words could not be put in their thread: ${held.why}. Nothing was sent.`, text: null };
   }
   await env.DB.prepare(
+    // Her own words replace the held reply, so no invite rides on the tap any more (she may have
+    // changed the time); she sends the invite herself, or the next morning's read offers it again.
     `UPDATE lp_reply_drafts SET draft_id = ?, draft_message_id = ?, draft_body = ?, status = 'drafted', decision = 'edit',
-       decided_at = ?, drafted_at = ?, send_error = NULL, tap_token = COALESCE(tap_token, ?), updated_at = ? WHERE id = ?`,
+       decided_at = ?, drafted_at = ?, send_error = NULL, tap_token = COALESCE(tap_token, ?), picked_start = NULL, picked_zone = NULL, updated_at = ? WHERE id = ?`,
   ).bind(held.draftId, held.messageId, text, now, now, tapToken(), now, row.id).run();
   await audit(env.DB, { actor: "owner", lane: "ops", entityType: "lp_reply_drafts", entityId: row.id, action: "her_words_held", detail: { via: "today", draft_id: held.draftId } });
   return { ok: true, line: "Here is the new version, in their thread. Tap Send as is to send it.", text };

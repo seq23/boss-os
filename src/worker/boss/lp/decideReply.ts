@@ -98,8 +98,9 @@ async function answerLp(env: Env, card: DecideCard, n: number, row: any, words: 
   const token = row.tap_token || tapToken();
   // `decision = 'edit'`: these are her own words, so the morning read never puts a template over them.
   await env.DB.prepare(
+    // Her words replace the held reply: no invite rides on the tap any more (lp/schedule.ts).
     `UPDATE lp_reply_drafts SET draft_id = ?, draft_message_id = ?, draft_body = ?, status = 'drafted', decision = 'edit',
-       decided_at = ?, drafted_at = ?, send_error = NULL, tap_token = ?, updated_at = ? WHERE id = ?`,
+       decided_at = ?, drafted_at = ?, send_error = NULL, tap_token = ?, picked_start = NULL, picked_zone = NULL, updated_at = ? WHERE id = ?`,
   ).bind(held.draftId, held.messageId, words.slice(0, 6000), now, now, token, now, row.id).run();
   await audit(env.DB, { actor: "owner", lane: "ops", entityType: "lp_reply_drafts", entityId: row.id, action: "her_words_held", detail: { via: "numbered_reply", draft_id: held.draftId } });
   const note = [

@@ -25,6 +25,7 @@ import { approveOutcome } from "../../../shared/boss/lp/plan.mjs";
 import { dismissMatch } from "../capital/dismiss";
 import { isCommandToken, commandTapGet, commandTapPost } from "../commands/tap";
 import { isAncestralToken, markAncestralHourDone, reminderByToken } from "../spirit/ancestralHour";
+import { inviteGate, sendInvite } from "../lp/schedule";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -187,6 +188,12 @@ lpTap.post("/:token", async (c) => {
   // A reply whose words the email could not show (an edited draft, a prospect's reply) is never sent by a tap.
   if (f.kind !== "lp" || !row.draft_body || !row.draft_message_id) return c.html(page("Open it in Gmail to send", "This reply was not shown word for word in your email, so it is not sent from here. Open the draft in Gmail and press Send when it reads right."));
   const mailbox = row.reply_from;
+  // A reply confirming a time they picked goes only if that time is still free: it promises an invite.
+  const gate = await inviteGate(c.env, row, now);
+  if (!gate.ok) {
+    await db.prepare(`UPDATE lp_reply_drafts SET send_error = ?, updated_at = ? WHERE id = ?`).bind(gate.why.slice(0, 300), now, row.id).run();
+    return c.html(page("Not sent", `${gate.why}.`));
+  }
   const r = await sendDraft(c.env, mailbox, row.draft_id, fetch, row.draft_message_id);
   if (!r.ok) {
     if (f.kind === "lp") {
@@ -201,5 +208,7 @@ lpTap.post("/:token", async (c) => {
     await db.prepare(`UPDATE prospects SET draft_id = NULL, draft_tap_token = NULL, updated_at = ? WHERE id = ?`).bind(now, row.id).run();
   }
   await audit(db, { actor: "owner", lane: "ops", entityType: table, entityId: row.id, action: "sent", detail: { via: "one_tap" } });
-  return c.html(page("Sent", "Your reply went in their thread."));
+  // The same tap sends the calendar invite when the reply confirmed a time they picked.
+  const inv = await sendInvite(c.env, row, now);
+  return c.html(page("Sent", `Your reply went in their thread.${inv.line}`));
 });

@@ -49,7 +49,7 @@ const HORIZON_DAYS = Number(process.env.CALENDAR_HORIZON_DAYS ?? 28);
  * the feed report the SAME id for the same event, so the second source updates the first rather
  * than duplicating it.
  */
-const CAL_SUBJECTS = (process.env.CALENDAR_SUBJECTS ?? "sequoia@westpeek.ventures,staylor@spry.vc")
+export const CAL_SUBJECTS = (process.env.CALENDAR_SUBJECTS ?? "sequoia@westpeek.ventures,staylor@spry.vc")
   .split(",").map((s) => s.trim()).filter(Boolean);
 const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 
@@ -57,7 +57,7 @@ const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").
 
 /** A signed assertion for one impersonated calendar. Written out for the same reason every other
  *  credential path here is: a dependency on this path is a supply-chain surface. */
-async function calendarToken(creds, subject) {
+export async function calendarToken(creds, subject) {
   const { createSign } = await import("node:crypto");
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));

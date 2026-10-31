@@ -17,7 +17,14 @@
  * tracker's "Scheduled" status is set only by something that can see it.
  *
  * Each unanswered, unpassed reply gets ONE draft in the mailbox's Drafts, offering 2–3 open times
- * from her calendar (free/busy only). The draft is refreshed with new times only when the old ones
+ * from her calendars (free/busy only, BOTH Workspace calendars merged, in the zone she is in that day,
+ * inside her working hours: lp-calendar.mjs + src/shared/boss/lp/schedule.mjs).
+ *
+ * ─── SCHEDULING, ONE TAP (owner, 31 Oct 2026) ──────────────────────────────
+ * Someone who wrote back after her reply gets a reply held for their new message. When their words
+ * are warm about meeting ("happy to chat, when works?", `wantsToMeet`), that reply offers 2–3 open
+ * times; when they pick one of the times she offered (`pickedSlot`), still free, it is a short
+ * confirmation, and the SAME tap that sends it sends the calendar invite (Worker, lp/schedule.ts). The draft is refreshed with new times only when the old ones
  * have passed AND she has not edited it; a draft she deleted is made again next Tuesday, because the
  * reply is still unanswered — the way to stop it is to answer or label it "pass".
  *
@@ -40,13 +47,18 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { lpReplyBody, lpAgainBody } from "../../src/shared/boss/lp/plan.mjs";
+import {
+  instantIn, openSlots, slotText, slotsFrom, zoneResolver, wantsToMeet, pickedSlot, proposedFit, lpTimesBody, lpConfirmBody, SLOT_MINUTES,
+} from "../../src/shared/boss/lp/schedule.mjs";
+import { herBusyAndZone } from "./lp-calendar.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
 const STATE = path.join(OUT_DIR, "followups.json");
 const READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const DRAFT_SCOPE = "https://www.googleapis.com/auth/gmail.compose";
-const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+// The zone a test or a caller with no "where she is" falls back to; her real zone comes from her
+// calendar setting and the "where I am until" setting (zoneResolver), never from this line.
 const TZ = "America/Chicago";
 const DAY = 86_400_000;
 export const PASS_LABELS = Object.freeze(["pass", "lp-pass"]);
@@ -65,51 +77,23 @@ export function firstName(name) {
   return /^[A-Za-z][A-Za-z'’-]{0,30}$/.test(w) ? w : "there";
 }
 
-/** Chicago wall-clock parts for an instant. */
-function chicago(t) {
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const p = Object.fromEntries(f.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
-  return { weekday: p.weekday, ymd: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), minute: Number(p.minute) };
-}
-
 /** The instant of a Chicago wall-clock time on a Chicago date (DST-safe by search). */
 export function chicagoInstant(ymd, hour, minute) {
-  const guess = Date.parse(`${ymd}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`);
-  for (const off of [5, 6]) {
-    const t = guess + off * 3600_000;
-    const c = chicago(t);
-    if (c.ymd === ymd && c.hour === hour && c.minute === minute) return t;
-  }
-  return guess + 6 * 3600_000;
+  return instantIn(TZ, ymd, hour, minute) ?? Date.parse(`${ymd}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`);
 }
 
 /**
- * Up to three open 30-minute slots, each on a different weekday, starting two working days out,
- * at 10:00, 11:30 or 14:00 Chicago. `busy` is [[start, end]] in ms. Pure.
+ * Up to three open slots in one zone (ms), each on a different weekday, from two working days out,
+ * inside her working hours. The run itself uses `openSlots` with her zone per day; this is that
+ * rule with the zone fixed, kept for callers that pass a bare busy list.
  */
-export function pickSlots(busy, now = Date.now(), want = 3) {
-  const out = [];
-  const usedDays = new Set();
-  let workdays = 0;
-  for (let d = 1; d <= 21 && out.length < want; d += 1) {
-    const day = chicago(now + d * DAY);
-    if (day.weekday === "Sat" || day.weekday === "Sun") continue;
-    workdays += 1;
-    if (workdays < 2) continue;
-    for (const [h, m] of [[10, 0], [11, 30], [14, 0]]) {
-      if (usedDays.has(day.ymd)) break;
-      const s = chicagoInstant(day.ymd, h, m);
-      const e = s + 30 * 60_000;
-      if ((busy ?? []).some(([bs, be]) => bs < e && be > s)) continue;
-      out.push(s);
-      usedDays.add(day.ymd);
-    }
-  }
-  return out;
+export function pickSlots(busy, now = Date.now(), want = 3, zone = TZ) {
+  return openSlots(busy, { now, zoneOn: () => zone, want }).map((x) => x.start);
 }
 
+/** A slot as the reply says it: "Thursday, October 29 at 2:00 PM Central". Bare ms are Central. */
 export function slotLine(t) {
-  return new Date(t).toLocaleString("en-US", { timeZone: TZ, weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }) + " Central";
+  return slotText(typeof t === "number" ? { start: t, zone: TZ } : t);
 }
 
 /**
@@ -202,16 +186,6 @@ function rawDraft({ to, subject, inReplyTo, body }) {
   return b64url(lines.join("\r\n"));
 }
 
-async function freeBusy(tok, now) {
-  const j = await call(tok, "https://www.googleapis.com/calendar/v3/freeBusy", {
-    method: "POST",
-    body: JSON.stringify({ timeMin: new Date(now).toISOString(), timeMax: new Date(now + 21 * DAY).toISOString(), timeZone: TZ, items: [{ id: MAILBOX }] }),
-  });
-  const cal = j?.calendars?.[MAILBOX];
-  if (!cal || cal.errors?.length) throw new Error("calendar free/busy not readable");
-  return (cal.busy ?? []).map((b) => [Date.parse(b.start), Date.parse(b.end)]);
-}
-
 /**
  * One pass over the running list. For each positive reply: sent (by her, after their reply) → Sent,
  * or "They replied again" when they wrote after her answer; labelled pass, or skipped in Boss OS →
@@ -223,36 +197,66 @@ async function freeBusy(tok, now) {
  * (shown as it stands in Gmail now, so an edit there is what her email shows); replaced with a fresh
  * one the moment they write again. Returns null when no draft could be held.
  */
-async function againDraft(draftTok, state, p, th, now) {
+/**
+ * What the reply to their new message says. Pure. A pick of one of her offered times that is still
+ * free and still ahead → a confirmation (the tap also sends the invite); warm words about meeting →
+ * 2–3 open times; anything else → the plain "when suits you" reply.
+ */
+export function againReply({ name, said, offered = [], slots = [], busy = null, now = Date.now(), zoneOn = null }) {
+  const pick = busy ? pickedSlot(said, offered) : null;
+  const stillFree = pick && pick.start > now + 3 * 3600_000
+    && !busy.some(([bs, be]) => bs < pick.start + SLOT_MINUTES * 60_000 && be > pick.start);
+  if (stillFree) return { kind: "confirm", body: lpConfirmBody({ name, slot: pick }), picked: pick, offered };
+  // THEY proposed times ("my availability (PT): 11/3 – 10 am …"): the earliest that is free on both
+  // her calendars and inside her working hours in her zone that day is confirmed; the tap sends the invite.
+  const theirs = proposedFit(said, { busy, zoneOn, now });
+  if (theirs) return { kind: "confirm", body: lpConfirmBody({ name, slot: theirs }), picked: { start: theirs.start, zone: theirs.zone }, offered };
+  if (wantsToMeet(said) && slots.length) return { kind: "times", body: lpTimesBody({ name, slots }), picked: null, offered: slots };
+  return { kind: "plain", body: lpAgainBody({ name }), picked: null, offered };
+}
+
+async function againDraft(draftTok, state, p, th, now, plan) {
   state.again = state.again ?? {};
   const had = state.again[p.address];
   const existing = had ? await call(draftTok, `${GMAIL}/drafts/${had.id}?format=metadata`).catch(() => null) : null;
-  if (existing && had.for_at === (th?.at ?? null)) {
+  const unedited = existing && existing.message?.id === had?.message_id;
+  // Times offered that have all passed, in a draft she has not touched, are offered afresh.
+  const stale = had?.kind === "times" && unedited && slotsFrom(had.offered).every((x) => x.start < now + 86_400_000);
+  if (existing && had.for_at === (th?.at ?? null) && !stale) {
     const mid = existing.message?.id ?? had.message_id;
-    return { id: had.id, message_id: mid, hash: had.hash, body: await draftWords(mid) };
+    return { id: had.id, message_id: mid, hash: had.hash, body: await draftWords(mid), kind: had.kind ?? "plain", picked: had.picked ?? null, offered: slotsFrom(had.offered) };
   }
-  const body = lpAgainBody({ name: p.name });
+  const body = plan.body;
   const message = { raw: rawDraft({ to: p.address, subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
   const res = existing
     ? await call(draftTok, `${GMAIL}/drafts/${had.id}`, { method: "PUT", body: JSON.stringify({ id: had.id, message }) }).catch(() => null)
     : await call(draftTok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message }) }).catch(() => null);
   if (!res?.id) return null;
-  state.again[p.address] = { id: res.id, message_id: res.message?.id ?? null, for_at: th?.at ?? null, hash: hashOf(body), at: new Date(now).toISOString() };
-  return { id: res.id, message_id: res.message?.id ?? null, hash: hashOf(body), body };
+  state.again[p.address] = { id: res.id, message_id: res.message?.id ?? null, for_at: th?.at ?? null, hash: hashOf(body), at: new Date(now).toISOString(), kind: plan.kind, picked: plan.picked, offered: plan.offered };
+  if (plan.kind === "times") state.offered = { ...(state.offered ?? {}), [p.address]: plan.offered };
+  return { id: res.id, message_id: res.message?.id ?? null, hash: hashOf(body), body, kind: plan.kind, picked: plan.picked, offered: plan.offered };
 }
 
-export async function followUps(people, { now = Date.now(), skipped = new Set() } = {}) {
+/**
+ * `where` is Boss OS's "where I am until" (`away_city`, `away_until`); `offered` maps an address to
+ * the times her last reply offered (D1's `offered_slots`), for a Mac whose state file is fresh.
+ */
+export async function followUps(people, { now = Date.now(), skipped = new Set(), where = null, offered = {} } = {}) {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] GSC_SERVICE_ACCOUNT_JSON is not in the vault run");
   const read = await token(creds, READ_SCOPE);
   const stops = [];
   let draftTok = null;
   try { draftTok = await token(creds, DRAFT_SCOPE); } catch (e) { stops.push(`Replies cannot be held as drafts (${e.message}); the tracker still lists every unanswered reply.`); }
-  let busy = null;
-  try { busy = await freeBusy(await token(creds, CAL_SCOPE), now); } catch (e) { stops.push(`Your calendar could not be read for open times (${e.message}); replies ask for their times instead.`); }
-  const slots = busy ? pickSlots(busy, now) : [];
+  // Both calendars or none (fail closed), in the zone she is in on each day, inside her working hours.
+  const cal = await herBusyAndZone(creds, { now }).catch((e) => ({ busy: null, homeZone: null, why: String(e?.message ?? e) }));
+  const busy = cal.busy;
+  if (!busy) stops.push(`Your calendars could not both be read for open times (${cal.why}); replies ask for their times instead.`);
+  const zoneOn = zoneResolver({ awayCity: where?.away_city ?? null, awayUntil: where?.away_until ?? null, homeZone: cal.homeZone ?? null });
+  const slots = busy ? openSlots(busy, { now, zoneOn }) : [];
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, "utf8")) : { drafts: {} };
   state.drafts = state.drafts ?? {};
+  state.offered = state.offered ?? {};
   const rows = [];
   const counts = { sent: 0, replied_again: 0, scheduled: 0, skipped: 0, drafted: 0, not_answered: 0, made: 0, refreshed: 0, kept: 0 };
   for (const p of people) {
@@ -276,10 +280,16 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
       const lastReplyText = status === "replied_again" && th?.id ? await latestWords(th.id) : null;
       // EVERY WAITING REPLY HAS A READY DRAFT (Today v4): one held in their thread for their new message,
       // redrafted when they write again. A fixed template; nothing is sent here.
-      const again = status === "replied_again" && draftTok ? await againDraft(draftTok, state, p, th, now) : null;
+      const plan = status === "replied_again"
+        ? againReply({ name: p.name, said: lastReplyText, offered: slotsFrom(state.offered[p.address] ?? offered[p.address]), slots, busy, now, zoneOn })
+        : null;
+      const again = plan && draftTok ? await againDraft(draftTok, state, p, th, now, plan) : null;
       if (status !== "replied_again") delete state.again?.[p.address];
       rows.push({ ...base, status, sent_at: sentAt, last_reply_text: lastReplyText,
-        ...(again ? { draft_id: again.id, draft_message_id: again.message_id, body_hash: again.hash, draft_body: again.body } : {}) });
+        ...(again ? { draft_id: again.id, draft_message_id: again.message_id, body_hash: again.hash, draft_body: again.body } : {}),
+        offered_slots: (again?.offered ?? []).length ? JSON.stringify(again.offered) : (state.offered[p.address] ? JSON.stringify(state.offered[p.address]) : null),
+        picked_start: again?.picked?.start ?? null, picked_zone: again?.picked?.zone ?? null });
+      if (again) counts[`again_${again.kind}`] = (counts[`again_${again.kind}`] ?? 0) + 1;
       continue;
     }
     const passed = (await search(read, `from:${p.address} (${PASS_LABELS.map((l) => `label:${l}`).join(" OR ")})`)).length > 0;
@@ -293,7 +303,7 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
     if (draftTok) {
       const had = state.drafts[p.address];
       const existing = had ? await call(draftTok, `${GMAIL}/drafts/${had.id}?format=metadata`).catch(() => null) : null;
-      const stale = had && (had.slots ?? []).length && had.slots.every((t) => t < now + DAY);
+      const stale = had && (had.slots ?? []).length && had.slots.every((t) => (t?.start ?? t) < now + DAY);
       const unedited = existing && existing.message?.id === had?.message_id;
       // A kept draft is shown as it stands in Gmail NOW, word for word, pinned to its message id: the
       // tap sends it only if that id has not changed since the email showed it (owner, 24 Oct 2026).
@@ -306,6 +316,7 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
           : await call(draftTok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message }) });
         if (res?.id) {
           state.drafts[p.address] = { id: res.id, message_id: res.message?.id ?? null, slots, hash: hashOf(body), body, at: new Date(now).toISOString() };
+          if (slots.length) state.offered[p.address] = slots;
           if (existing) counts.refreshed += 1; else counts.made += 1;
           held = { id: res.id, message_id: res.message?.id ?? null, hash: hashOf(body), body };
         }
@@ -313,11 +324,13 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
     }
     const status = held ? "drafted" : "not_answered";
     counts[status] += 1;
-    rows.push({ ...base, status, draft_id: held?.id ?? null, draft_message_id: held?.message_id ?? null, body_hash: held?.hash ?? null, draft_body: held?.body ?? null });
+    const offeredHere = state.offered[p.address];
+    rows.push({ ...base, status, draft_id: held?.id ?? null, draft_message_id: held?.message_id ?? null, body_hash: held?.hash ?? null, draft_body: held?.body ?? null,
+      offered_slots: offeredHere ? JSON.stringify(offeredHere) : null, picked_start: null, picked_zone: null });
   }
   state.updated_at = new Date(now).toISOString();
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(STATE, JSON.stringify(state, null, 2), "utf8");
-  console.log(`LP replies: ${counts.drafted} held, ${counts.sent} sent, ${counts.replied_again} replied again, ${counts.skipped} skipped, ${counts.not_answered} without a draft; drafts ${counts.made} new, ${counts.refreshed} refreshed, ${counts.kept} kept; ${stops.length} stop(s).`);
+  console.log(`LP replies: ${counts.drafted} held, ${counts.sent} sent, ${counts.replied_again} replied again, ${counts.skipped} skipped, ${counts.not_answered} without a draft; drafts ${counts.made} new, ${counts.refreshed} refreshed, ${counts.kept} kept; wrote-again replies ${counts.again_times ?? 0} offering times, ${counts.again_confirm ?? 0} confirming a time; ${slots.length} open time(s); ${stops.length} stop(s).`);
   return { rows, stops, counts, unanswered: unansweredOrder(rows.filter((r) => ["drafted", "not_answered"].includes(r.status)).map((r) => ({ ...r, draft: r.status === "drafted" ? "waiting" : "none" })), now) };
 }

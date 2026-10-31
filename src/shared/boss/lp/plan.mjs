@@ -9,6 +9,8 @@
  */
 import { quotedSentence } from "../mail/plain.mjs";
 import { isRoleMailbox } from "../people/role.mjs";
+// Function-level use only (schedule.mjs reads firstName from here): the cycle is safe in ESM.
+import { slotText, slotsFrom } from "./schedule.mjs";
 
 export const LP_MAILBOX = "sequoia@westpeek.ventures";
 /**
@@ -188,9 +190,19 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
      * is the only way it leaves.
      */
     const waited = daysSince(r.last_reply_at ?? r.updated_at, now) ?? 0;
+    /*
+     * SCHEDULING, ONE TAP (owner, 31 Oct 2026): they picked one of her times → the held reply confirms
+     * it and Send as is ALSO sends the calendar invite (said on the card, so nothing goes unseen);
+     * they asked to find a time → the held reply offers 2–3 open times from her calendars.
+     */
+    const picked = ready && Number(r.picked_start) > 0 && r.picked_zone ? { start: Number(r.picked_start), zone: String(r.picked_zone) } : null;
+    const offered = ready && !picked ? slotsFrom(r.offered_slots).filter((x) => r.draft_body.includes(slotText(x))) : [];
     items.push({
       key: `lp-again:${r.id ?? r.address}`,
-      title: `${waited >= 1 ? `Waiting ${waited} day${waited === 1 ? "" : "s"}: ` : ""}Answer ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}: they wrote back after your reply`,
+      title: `${waited >= 1 ? `Waiting ${waited} day${waited === 1 ? "" : "s"}: ` : ""}${picked
+        ? `${r.name || "An LP"}${r.firm ? ` at ${r.firm}` : ""} picked ${slotText(picked)}: confirm and send the invite`
+        : offered.length ? `${r.name || "An LP"}${r.firm ? ` at ${r.firm}` : ""} wants to find a time: your reply offers ${offered.length} times`
+        : `Answer ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}: they wrote back after your reply`}`,
       noDismiss: true,
       body: `Who: ${lpWho(r)}.`,
       details: [
@@ -198,6 +210,8 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
         ...(said ? [`What they wrote: ${quotedSentence(said0)}`] : []),
         `History: they answered your outreach on ${r.first_seen}; you replied${r.sent_at ? ` on ${new Date(Number(r.sent_at)).toISOString().slice(0, 10)}` : ""}; they wrote again${r.last_reply_at ? ` on ${new Date(Number(r.last_reply_at)).toISOString().slice(0, 10)}` : ""}.`,
         ready ? `Your reply goes from ${r.reply_from ?? LP_MAILBOX}, in their thread.` : "No reply is drafted for this one yet: it needs your own words.",
+        ...(picked ? [`Send as is also sends the calendar invite for ${slotText(picked)} (30 minutes, with a video link) from ${r.reply_from ?? LP_MAILBOX}, only if that time is still free.`] : []),
+        ...(offered.length ? ["The times are open on both your calendars, in your working hours, in the time zone you are in that day."] : []),
       ],
       draft: ready ? { heading: "Your reply, word for word (Send as is sends exactly this)", text: r.draft_body } : null,
       priority: 4 + Math.min(waited, 60),

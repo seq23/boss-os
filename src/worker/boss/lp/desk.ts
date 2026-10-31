@@ -57,6 +57,8 @@ export interface LpRowIn {
   draft_id?: string | null; draft_message_id?: string | null; body_hash?: string | null;
   status: string; first_seen: string; drafted_at?: number | null; sent_at?: number | null; last_reply_at?: number | null;
   draft_body?: string | null; said?: string | null; last_reply_text?: string | null;
+  /** The times her held reply offers (JSON [{start, zone}]) and the one they picked (lp/schedule.mjs). */
+  offered_slots?: string | null; picked_start?: number | null; picked_zone?: string | null;
 }
 
 /** A mailbox address as stored: lower case, an address only, or null. */
@@ -77,8 +79,8 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
     stmts.push(db.prepare(
       `INSERT INTO lp_reply_drafts (id, address, name, firm, bucket, quote, reply_from, thread_id, in_reply_to, subject,
          draft_id, draft_message_id, body_hash, status, tap_token, first_seen, drafted_at, sent_at, last_reply_at, created_at, updated_at,
-         draft_body, said, last_reply_text)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         draft_body, said, last_reply_text, offered_slots, picked_start, picked_zone)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(address) DO UPDATE SET
          name = excluded.name, firm = COALESCE(excluded.firm, lp_reply_drafts.firm), bucket = excluded.bucket,
          quote = excluded.quote, reply_from = excluded.reply_from, thread_id = excluded.thread_id,
@@ -101,7 +103,14 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
          draft_body = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
                            THEN lp_reply_drafts.draft_body ELSE excluded.draft_body END,
          said = COALESCE(excluded.said, lp_reply_drafts.said),
-         last_reply_text = COALESCE(excluded.last_reply_text, lp_reply_drafts.last_reply_text)`,
+         last_reply_text = COALESCE(excluded.last_reply_text, lp_reply_drafts.last_reply_text),
+         -- The times offered are kept until a new offer; the pick is the morning read's, each morning,
+         -- except under her own words (then no invite rides on the tap: lp/schedule.ts).
+         offered_slots = COALESCE(excluded.offered_slots, lp_reply_drafts.offered_slots),
+         picked_start = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
+                             THEN NULL ELSE excluded.picked_start END,
+         picked_zone = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
+                            THEN NULL ELSE excluded.picked_zone END`,
     ).bind(
       newId("lpr"), address, r.name ?? null, r.firm ?? null, r.bucket, r.quote ? String(r.quote).slice(0, 300) : null,
       String(r.reply_from).toLowerCase(), r.thread_id ?? null, r.in_reply_to ?? null, r.subject ?? null,
@@ -109,6 +118,9 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
       r.first_seen, r.drafted_at ?? (r.status === "drafted" ? now : null), r.sent_at ?? null, r.last_reply_at ?? null, now, now,
       r.draft_body ? String(r.draft_body).slice(0, 6000) : null, r.said ? String(r.said).slice(0, 1200) : null,
       r.last_reply_text ? String(r.last_reply_text).slice(0, 1200) : null,
+      r.offered_slots ? String(r.offered_slots).slice(0, 600) : null,
+      Number.isFinite(Number(r.picked_start)) && Number(r.picked_start) > 0 ? Number(r.picked_start) : null,
+      r.picked_start && r.picked_zone ? String(r.picked_zone).slice(0, 60) : null,
     ));
   }
   if (stmts.length) await db.batch(stmts);
