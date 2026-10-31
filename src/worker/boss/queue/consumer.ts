@@ -1,4 +1,4 @@
-import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT } from "../duties/seatOrder";
+import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT, isConfidentialDraft, confidentialLadder } from "../duties/seatOrder";
 import type { Env, TaskMessage } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -180,7 +180,9 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     ? input.backend_ladder.filter((x: unknown): x is string => typeof x === "string")
     : typeof input.backend_id === "string" ? [input.backend_id] : [];
   // Her switch, "Use OpenAI first for everything" (24 Oct 2026), applied in this one place.
-  const ladder = orderSeats(baseLadder, isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
+  // An LP or deal-terms draft: Claude's seat only, never reordered, never a cloud rung (seatOrder.ts).
+  const confidential = isConfidentialDraft(input as any);
+  const ladder = confidential ? confidentialLadder(baseLadder) : orderSeats(baseLadder, isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
   const refusals: { backend_id: string; refused: string }[] = [];
   const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
     ? ((input.requested as any).model_by_backend as Record<string, string | null>)
@@ -240,6 +242,13 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     return;
   }
 
+  if (confidential) {
+    // FAIL CLOSED: an LP / deal-terms draft that Claude's seat did not take is never sent anywhere else.
+    await failTask(env, task, employee, envelope, costMode,
+      [refusals.map((r) => `${r.backend_id}: ${r.refused}`).join(" | "), "an LP or deal-terms draft runs on the Claude seat only"].filter(Boolean).join(" | "),
+      "Run it when the Claude seat on her Mac is free. It is never moved to another seat or a cloud model.");
+    return;
+  }
   if (ladder.length > 0 && !input.cloud_fallback) {
     /*
      * A REFUSAL FAILS THE TASK WITH EVERY REFUSAL SENTENCE ON IT. The alternative — a run recorded
@@ -302,6 +311,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       modelAccess: task.model_access ?? null,
       // A seat duty that reached the cloud is strong-model work: Claude first, OpenAI second, when paid.
       preferStrongVendors: ladder.length > 0,
+      confidentialDraft: confidential,
       costMode,
       budgetMicros: envelope?.budget_micros ?? 0,
       cloudForRestrictedAllowed: Boolean(envelope?.cloud_for_restricted_allowed),

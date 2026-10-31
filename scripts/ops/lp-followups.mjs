@@ -39,7 +39,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { lpReplyBody } from "../../src/shared/boss/lp/plan.mjs";
+import { lpReplyBody, lpAgainBody } from "../../src/shared/boss/lp/plan.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
@@ -218,6 +218,29 @@ async function freeBusy(tok, now) {
  * Skipped; otherwise ONE held draft in their thread → Drafted. Returns the tracker rows Boss OS
  * keeps (names stay in D1 and on her Mac; the console prints counts only).
  */
+/**
+ * The reply held for someone who wrote back after hers. Kept while it answers their newest message
+ * (shown as it stands in Gmail now, so an edit there is what her email shows); replaced with a fresh
+ * one the moment they write again. Returns null when no draft could be held.
+ */
+async function againDraft(draftTok, state, p, th, now) {
+  state.again = state.again ?? {};
+  const had = state.again[p.address];
+  const existing = had ? await call(draftTok, `${GMAIL}/drafts/${had.id}?format=metadata`).catch(() => null) : null;
+  if (existing && had.for_at === (th?.at ?? null)) {
+    const mid = existing.message?.id ?? had.message_id;
+    return { id: had.id, message_id: mid, hash: had.hash, body: await draftWords(mid) };
+  }
+  const body = lpAgainBody({ name: p.name });
+  const message = { raw: rawDraft({ to: p.address, subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
+  const res = existing
+    ? await call(draftTok, `${GMAIL}/drafts/${had.id}`, { method: "PUT", body: JSON.stringify({ id: had.id, message }) }).catch(() => null)
+    : await call(draftTok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message }) }).catch(() => null);
+  if (!res?.id) return null;
+  state.again[p.address] = { id: res.id, message_id: res.message?.id ?? null, for_at: th?.at ?? null, hash: hashOf(body), at: new Date(now).toISOString() };
+  return { id: res.id, message_id: res.message?.id ?? null, hash: hashOf(body), body };
+}
+
 export async function followUps(people, { now = Date.now(), skipped = new Set() } = {}) {
   const creds = JSON.parse(process.env.GSC_SERVICE_ACCOUNT_JSON ?? "null");
   if (!creds) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] GSC_SERVICE_ACCOUNT_JSON is not in the vault run");
@@ -231,7 +254,7 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, "utf8")) : { drafts: {} };
   state.drafts = state.drafts ?? {};
   const rows = [];
-  const counts = { sent: 0, replied_again: 0, skipped: 0, drafted: 0, not_answered: 0, made: 0, refreshed: 0, kept: 0 };
+  const counts = { sent: 0, replied_again: 0, scheduled: 0, skipped: 0, drafted: 0, not_answered: 0, made: 0, refreshed: 0, kept: 0 };
   for (const p of people) {
     const after = gdate(p.first_seen);
     const th = await threadOf(read, p.address);
@@ -244,12 +267,19 @@ export async function followUps(people, { now = Date.now(), skipped = new Set() 
     if (mine) {
       const meta = await call(read, `${GMAIL}/messages/${mine.id}?format=metadata&metadataHeaders=Date`);
       const sentAt = Number(meta?.internalDate ?? 0) || null;
-      const status = th?.at && sentAt && th.at > sentAt ? "replied_again" : "sent";
-      counts[status] += 1;
+      let status = th?.at && sentAt && th.at > sentAt ? "replied_again" : "sent";
+      // A reply she has already SCHEDULED in Gmail is handled: it leaves "Still waiting on you" (Today v4).
+      if (status === "replied_again" && (await search(read, `in:scheduled to:${p.address}`).catch(() => [])).length) status = "scheduled";
+      counts[status] = (counts[status] ?? 0) + 1;
       delete state.drafts[p.address];
       // What they said after her reply, in their own words: the morning email's one line for it.
       const lastReplyText = status === "replied_again" && th?.id ? await latestWords(th.id) : null;
-      rows.push({ ...base, status, sent_at: sentAt, last_reply_text: lastReplyText });
+      // EVERY WAITING REPLY HAS A READY DRAFT (Today v4): one held in their thread for their new message,
+      // redrafted when they write again. A fixed template; nothing is sent here.
+      const again = status === "replied_again" && draftTok ? await againDraft(draftTok, state, p, th, now) : null;
+      if (status !== "replied_again") delete state.again?.[p.address];
+      rows.push({ ...base, status, sent_at: sentAt, last_reply_text: lastReplyText,
+        ...(again ? { draft_id: again.id, draft_message_id: again.message_id, body_hash: again.hash, draft_body: again.body } : {}) });
       continue;
     }
     const passed = (await search(read, `from:${p.address} (${PASS_LABELS.map((l) => `label:${l}`).join(" OR ")})`)).length > 0;

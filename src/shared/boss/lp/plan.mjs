@@ -58,6 +58,22 @@ export function lpReplyBody({ name, bucket }) {
   ].join("\n");
 }
 
+/**
+ * THE REPLY HELD FOR SOMEONE WHO WROTE BACK AGAIN (owner, Today v4, 31 Oct 2026: "every waiting reply
+ * has a ready draft in that person's own Gmail thread, redrafted if they write again"). A fixed
+ * template — no model, no name to a model — that she sends as is or changes in her own words.
+ */
+export function lpAgainBody({ name }) {
+  return [
+    `Hi ${firstName(name)},`,
+    "",
+    "Thank you for your patience, and for your note. I wanted to come back to you properly: would you have 20 minutes in the next week or so? Send me a couple of times that suit and we'll make it work.",
+    "",
+    "Best,",
+    "Sequoia",
+  ].join("\n");
+}
+
 /** A held reply that has sat this long goes to the top of Decide. */
 export const LP_UNSENT_URGENT_DAYS = 2;
 /** Days after her reply with no answer before ONE gentle nudge is drafted for her yes (26 Oct 2026). */
@@ -164,6 +180,8 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
   for (const r of (rows ?? []).filter((x) => x.status === "replied_again")) {
     const said0 = r.last_reply_text || r.said || r.quote;
     const said = trimEnd(said0);
+    // A reply to their new message held in the thread (Today v4): shown word for word, one tap sends it.
+    const ready = Boolean(r.draft_body && r.draft_message_id && r.tap_token);
     /*
      * IT STAYS IN DECIDE EVERY DAY UNTIL SHE ANSWERS, AND GETS LOUDER (owner, 25 Oct 2026): "Waiting
      * N days:" counts from their last message, and the card carries NO Skip or Dismiss — answering
@@ -179,10 +197,14 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
         `Their email: ${r.address}`,
         ...(said ? [`What they wrote: ${quotedSentence(said0)}`] : []),
         `History: they answered your outreach on ${r.first_seen}; you replied${r.sent_at ? ` on ${new Date(Number(r.sent_at)).toISOString().slice(0, 10)}` : ""}; they wrote again${r.last_reply_at ? ` on ${new Date(Number(r.last_reply_at)).toISOString().slice(0, 10)}` : ""}.`,
-        "No reply is drafted for this one: it needs your own words.",
+        ready ? `Your reply goes from ${r.reply_from ?? LP_MAILBOX}, in their thread.` : "No reply is drafted for this one yet: it needs your own words.",
       ],
+      draft: ready ? { heading: "Your reply, word for word (Send as is sends exactly this)", text: r.draft_body } : null,
       priority: 4 + Math.min(waited, 60),
-      buttons: [{ label: "Open the thread and reply", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) }],
+      buttons: [
+        ...(ready ? [{ label: "Send as is", url: tapUrl(r.tap_token, "send", origin) }, { label: "Change it", url: `${origin}/?tab=today` }] : []),
+        { label: ready ? "Open their email" : "Open the thread and reply", url: gmailThreadUrl(r.thread_id, r.reply_from ?? LP_MAILBOX) },
+      ],
     });
   }
   return items;

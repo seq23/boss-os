@@ -6,15 +6,26 @@ import { dayIdInZone } from "../../../shared/boss/timezone";
 import { buildTodayList, cleanGateItems, GATE_NAMES, MAX_CUSTOM_CHECKS, type GateName } from "../today/list";
 import { dueNudges, markNudgeSent, recordEngagement, type DueNudge } from "../practice/lapse";
 import { ancestralUrgent } from "../practice/ancestralUrgent";
+import { waitingOnYou } from "../today/waiting";
+import { foodToday, cityNeedsPlaces, generateLocalPlaces, HOME_CITY_KEY, AWAY_CITY_KEY, AWAY_UNTIL_KEY } from "../today/food";
+import { setSetting } from "../lib/settings";
+import { lpRow, sendHeldLp, holdHerWords } from "../lp/heldReply";
+import { tapUrl } from "../../../shared/boss/lp/plan.mjs";
 
 /**
- * /api/practice — the new Today's list, its ticks, her gates, and the practice emails.
+ * /api/practice — Today's contract (the one list), its ticks, her gates, and the practice emails.
  *
  *   GET  /list                       Today's one list and its one "needs you" count
  *   POST /tick                       { key, done } — a gate step, a Wealth sub-item, "Read it aloud ✓"
  *   POST /opened                     the app was opened (that it happened; nothing else)
  *   PUT  /gates/:gate                { items, scope: "default" | "today" | "reset" }
  *   POST /custom-gates               { name, at_minute, checks[] } — "+ Create a gate"
+ *   GET  /waiting                    every unanswered Decide item across mornings (the morning email's carry-over)
+ *   POST /waiting/:id/send           ✓ Send as is — the reply held in that person's own thread
+ *   POST /waiting/:id/change         ✎ Change it — { words }: her words held in the thread, shown back
+ *   POST /waiting/:id/dismiss        off "Still waiting on you" for good ("Not now" is a tick: notnow:<id>)
+ *   POST /food/another               the food row's "Another place"
+ *   PUT  /food/where                 { home?, away?, until? } — her home city, and "where I am until"
  *   POST /nudges/due                 the Mac's tick asks what practice email is due, and claims it
  *   POST /nudges/:day/:kind/sent     …and says it went
  *
@@ -25,7 +36,87 @@ export const practice = new Hono<{ Bindings: Env; Variables: Vars }>();
 const TICK_KEY = /^[a-z_]+(?::[A-Za-z0-9_\-]{1,64}){0,3}$/;
 const ORIGIN = "https://boss.sequoiataylor.com";
 
-practice.get("/list", async (c) => ok(c, await buildTodayList(c.env)));
+practice.get("/list", async (c) => {
+  const list = await buildTodayList(c.env);
+  // A city with no hand-written places: a $0 lane may write some, in the background (today/food.ts).
+  const city = list.rows.find((r) => r.kind === "food")?.food?.where.city ?? null;
+  if (city && (await cityNeedsPlaces(c.env, city))) {
+    try { c.executionCtx.waitUntil(generateLocalPlaces(c.env, city, list.day_id)); } catch { /* no context in tests */ }
+  }
+  return ok(c, list);
+});
+
+/** The item behind a "Still waiting on you" line (or a new Decide line), with its LP row when it has one. */
+async function waitingItem(env: Env, id: string) {
+  const { items } = await waitingOnYou(env, dayIdInZone(Date.now()), { includeSnoozed: true });
+  return items.find((w) => w.id === id) ?? null;
+}
+
+practice.get("/waiting", async (c) => {
+  const { items, latest } = await waitingOnYou(c.env, dayIdInZone(Date.now()));
+  return ok(c, {
+    latest,
+    items: items.map((w) => ({
+      id: w.id, key: w.key, title: w.title, days: w.days, first_day: w.first_day, wealth: w.wealth,
+      reply: w.reply ? { text: w.reply.text, can_send: w.reply.can_send } : null,
+      // The morning email's one-tap page: the same token the held reply's own card carries.
+      send_url: w.reply?.can_send && w.reply.tap_token ? tapUrl(w.reply.tap_token, "send", ORIGIN) : null,
+      change_url: `${ORIGIN}/?waiting=${encodeURIComponent(w.id)}`,
+    })),
+  });
+});
+
+practice.post("/waiting/:id/send", async (c) => {
+  const w = await waitingItem(c.env, c.req.param("id"));
+  if (!w?.reply) throw badRequest("There is no reply to send for that item.", "Open it to answer it.");
+  const row = await lpRow(c.env, w.reply.lp_id);
+  if (!row) throw badRequest("That reply is no longer on the tracker.");
+  const r = await sendHeldLp(c.env, row);
+  return ok(c, { sent: r.ok, line: r.line, list: await buildTodayList(c.env) });
+});
+
+practice.post("/waiting/:id/change", async (c) => {
+  const b = await c.req.json<{ words?: string }>().catch(() => ({}) as { words?: string });
+  const w = await waitingItem(c.env, c.req.param("id"));
+  if (!w?.reply) throw badRequest("There is no reply to change for that item.", "Open it to answer it.");
+  const row = await lpRow(c.env, w.reply.lp_id);
+  if (!row) throw badRequest("That reply is no longer on the tracker.");
+  const r = await holdHerWords(c.env, row, String(b.words ?? ""));
+  return ok(c, { held: r.ok, line: r.line, text: r.text, list: await buildTodayList(c.env) });
+});
+
+practice.post("/waiting/:id/dismiss", async (c) => {
+  const id = c.req.param("id");
+  if (!/^[a-z]+-[a-z0-9]{6,32}$/.test(id)) throw badRequest("That is not a morning item.");
+  await c.env.DB.prepare(`INSERT INTO decide_dismissed (item_id, dismissed_at) VALUES (?, ?) ON CONFLICT(item_id) DO NOTHING`).bind(id, Date.now()).run();
+  await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "morning_item", entityId: id, action: "dismissed" });
+  return ok(c, await buildTodayList(c.env));
+});
+
+practice.post("/food/another", async (c) => {
+  await foodToday(c.env, dayIdInZone(Date.now()), { another: true });
+  return ok(c, await buildTodayList(c.env));
+});
+
+const CITY_RE = /^[A-Za-z][A-Za-z .,'-]{1,59}$/;
+practice.put("/food/where", async (c) => {
+  const b = await c.req.json<{ home?: string | null; away?: string | null; until?: string | null }>().catch(() => ({}) as any);
+  if (b.home !== undefined) {
+    const home = String(b.home ?? "").trim();
+    if (home && !CITY_RE.test(home)) throw badRequest("Type a city, like Memphis, TN.");
+    await setSetting(c.env.DB, HOME_CITY_KEY, home);
+  }
+  if (b.away !== undefined) {
+    const away = String(b.away ?? "").trim();
+    const until = String(b.until ?? "").trim();
+    if (away && !CITY_RE.test(away)) throw badRequest("Type a city, like New York, NY.");
+    if (away && !/^\d{4}-\d{2}-\d{2}$/.test(until)) throw badRequest("Pick the last day you are there.");
+    await setSetting(c.env.DB, AWAY_CITY_KEY, away);
+    await setSetting(c.env.DB, AWAY_UNTIL_KEY, away ? until : "");
+  }
+  await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "setting", entityId: "food_where", action: "updated" });
+  return ok(c, await buildTodayList(c.env));
+});
 
 practice.post("/tick", async (c) => {
   const b = await c.req.json<{ key?: string; done?: boolean }>().catch(() => ({}) as { key?: string; done?: boolean });

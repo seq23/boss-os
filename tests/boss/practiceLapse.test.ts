@@ -186,8 +186,10 @@ describe("Today's one list", () => {
   });
 
   it("keeps the default gates, lets her save her own as the default, and never loses a required item", async () => {
-    expect(GATE_DEFAULTS.morning.map((i) => i.kind)).toEqual(["coach", "gratitude", "practice", "law", "move", "water", "agree"]);
-    expect(GATE_DEFAULTS.midday.map((i) => i.kind)).toEqual(["water_mid", "meal", "stand", "law_check", "what_changed"]);
+    // Today v4 (owner, 31 Oct 2026): gratitude, meditation, movement, medicine, the blood pressure tea,
+    // then morning coaching ALWAYS last. Food left the Midday gate for its own 15:00 row.
+    expect(GATE_DEFAULTS.morning.map((i) => i.kind)).toEqual(["gratitude", "practice", "move", "water", "bp_tea", "agree", "coach"]);
+    expect(GATE_DEFAULTS.midday.map((i) => i.kind)).toEqual(["water_mid", "stand", "law_check", "what_changed"]);
     expect(GATE_DEFAULTS.night.map((i) => i.kind)).toEqual(["coach_evening", "floors", "attention", "law_reflect", "grateful", "tomorrow"]);
     const cleaned = cleanGateItems("morning", [{ key: "law" }, { key: "custom:abcd1234", label: "Light the candle" }]);
     expect(Array.isArray(cleaned) && cleaned.map((i) => i.key)).toEqual(["law", "custom:abcd1234", "agree"]);

@@ -310,6 +310,9 @@ const SNAPSHOT_TABLES = [
   // The new Today (31 Oct 2026): her saved gates, a day's ticks, that she engaged (never what she said),
   // and which practice emails went.
   "gate_templates", "gate_days", "today_ticks", "practice_engagement", "practice_nudges",
+  // Today v4 (0321): dismissed morning items, the day's side business, the food rows' history (no
+  // repeat inside 60 days survives a restore), and the local places a $0 lane wrote.
+  "decide_dismissed", "side_business_days", "food_orders", "food_places",
   "trading_engines", "kill_switch_probes", "deployment_stages", "strategy_desks",
   "promotion_scorecards", "scale_rungs", "trading_sequence", "trading_nevers",
   "sovereignty_packages", "sovereignty_drills",

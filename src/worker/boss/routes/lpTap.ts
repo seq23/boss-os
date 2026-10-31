@@ -87,7 +87,7 @@ lpTap.get("/:token", async (c) => {
 });
 
 /** Send a held Gmail draft from the mailbox it sits in. */
-async function sendDraft(env: Env, mailbox: string, draftId: string, fetchImpl: typeof fetch = fetch, expectMessageId: string | null = null): Promise<{ ok: boolean; why?: string; messageId?: string }> {
+export async function sendDraft(env: Env, mailbox: string, draftId: string, fetchImpl: typeof fetch = fetch, expectMessageId: string | null = null): Promise<{ ok: boolean; why?: string; messageId?: string }> {
   if (!WEST_PEEK.test(mailbox)) return { ok: false, why: "that reply does not sit in a West Peek mailbox" };
   const creds = serviceAccountFrom(env);
   if (!creds) return { ok: false, why: "the Google key is not on the Worker" };
@@ -112,6 +112,13 @@ async function sendDraft(env: Env, mailbox: string, draftId: string, fetchImpl: 
   if (!res.ok) return { ok: false, why: res.status === 404 ? "the draft is no longer in Gmail (sent or deleted by hand)" : `Gmail refused it (${res.status})` };
   const j = (await res.json().catch(() => ({}))) as { id?: string };
   return { ok: true, messageId: j.id };
+}
+
+/** Is this LP row's reply closed (sent, skipped, scheduled, or wrote back with nothing held yet)? */
+export function lpReplyClosed(row: { status: string; draft_body?: string | null }): boolean {
+  if (["sent", "skipped", "scheduled"].includes(row.status)) return true;
+  if (row.status === "replied_again") return !row.draft_body;
+  return false;
 }
 
 lpTap.post("/:token", async (c) => {
@@ -161,7 +168,8 @@ lpTap.post("/:token", async (c) => {
 
   const row = f.row;
   const table = f.kind === "lp" ? "lp_reply_drafts" : "prospects";
-  const done = f.kind === "lp" ? ["sent", "skipped", "replied_again"].includes(row.status) : ["replied", "opted_out", "bounced", "done"].includes(row.status) && !row.draft_id;
+  // A row that wrote back again is live once a reply to their new message is held (Today v4).
+  const done = f.kind === "lp" ? lpReplyClosed(row) : ["replied", "opted_out", "bounced", "done"].includes(row.status) && !row.draft_id;
   if (done) return c.html(page(row.status === "skipped" ? "Already skipped" : "Already sent", "Nothing else to do here."));
 
   if (action === "skip") {

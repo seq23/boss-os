@@ -595,6 +595,13 @@ export function buildDay(data, now = Date.now()) {
     const screen = itemUrl(today, id);
     return { ...d, id, screen, buttons: [more(screen)] };
   });
+  stillYours.push(...carriedLines(data.carried ?? [], { shown: new Set([...decide, ...stillYours].map((d) => d.id)), keys: new Set(decideRaw.map((d) => d.key).filter(Boolean)), today }));
+  // A held reply rides its line: "✓ Send as is" only with the words shown word for word (CLAUDE.md:
+  // "Send as is" never sends what was not shown), then "✎ Change it" on Today.
+  for (const d of stillYours) {
+    const c = (data.carried ?? []).find((x) => x.id === d.id);
+    if (c?.send_url && c.reply?.text) { d.reply_text = c.reply.text; d.send_url = c.send_url; d.change_url = c.change_url; }
+  }
 
   // 2. Deals: each opens its own screen there; the source email is one more tap from it.
   const deals = (m.deals?.rows ?? []).map((r) => {
@@ -711,7 +718,10 @@ export function buildDay(data, now = Date.now()) {
     happened: `${lawLine(data.law) ? `${lawLine(data.law)} ` : ""}Good morning. Here is your ${dayWords(today)}.${ancestral ? ` ${ancestral}` : ""}${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
     decide,
     sections: [
-      ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({ text: d.thin.replace(/^Still yours to answer: /, ""), links: [{ label: "Open ›", url: d.screen }] })), empty: null }] : []),
+      ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({
+        text: `${d.thin.replace(/^Still yours to answer: /, "")}${d.reply_text ? `. Your reply, word for word: “${oneLine(d.reply_text)}”` : ""}`,
+        links: [...(d.send_url ? [{ label: "✓ Send as is", url: d.send_url }, { label: "✎ Change it", url: d.change_url }] : []), { label: "Open ›", url: d.screen }],
+      })), empty: null }] : []),
       { title: `New deals since yesterday (${deals.length})`, note: deals.length > dealMax ? `The ${dealMax} newest are here; all ${deals.length} are on the Deals screen.` : null, rows: dealRowsAll.length ? { columns: [{ key: "company", label: "Company" }, { key: "side", label: "Side" }, { key: "size", label: "Size @ price" }, { key: "from", label: "From" }], data: dealRowsAll.slice(0, dealMax) } : null, link: m.deals?.link ?? null, empty: m.deals ? "No new deals since yesterday." : null },
       { title: "Monique found", rows: foundGrid.length ? { columns: [{ key: "company", label: "Company" }, { key: "trade", label: "Seller → buyer" }, { key: "fit", label: "Fit" }], data: foundGrid } : null, items: foundShown(foundMax), link: m.monique_found?.link ?? null, empty: null },
       ...(prospects ? [prospectWords ? prospects : { ...prospects, full: undefined }] : []),
@@ -763,6 +773,25 @@ export function buildDay(data, now = Date.now()) {
  * titles and the people in them) stays out of it. Everything else is Boss OS's own rows, the section
  * files and Valerie's list.
  */
+/** A held reply on one line, every word kept. */
+export const oneLine = (t) => String(t ?? "").split(/\n+/).map((l) => l.trim()).filter(Boolean).join(" ");
+
+/**
+ * THE CARRY-OVER IN THE EMAIL (owner, Today v4, 31 Oct 2026): every Decide item Boss OS still holds
+ * as unanswered (`/practice/waiting`, src/worker/boss/today/waiting.ts) and that this morning's
+ * producers did not send again is one thin "Still yours to answer" line, "waiting N days" from the
+ * morning it first appeared. Pure, so it is pinned (tests/boss/todayV4.test.ts).
+ */
+export function carriedLines(carried, { shown = new Set(), keys = new Set(), today }) {
+  return (carried ?? [])
+    .filter((c) => c?.id && !shown.has(c.id) && !(c.key && keys.has(c.key)))
+    .map((c) => ({
+      id: c.id, key: c.key ?? null, title: c.title, screen: `${ORIGIN}/?waiting=${encodeURIComponent(c.id)}`,
+      thin: `Still yours to answer: ${c.title} · waiting ${c.days} day${c.days === 1 ? "" : "s"}`,
+      buttons: [], first_day: c.first_day ?? today,
+    }));
+}
+
 export function replyContext(text) {
   return String(text).split("\n").map((line) => line.replace(/\s*On your calendar: .*$/, "")).join("\n");
 }
@@ -803,10 +832,12 @@ async function read(api, now) {
   const spirit = await api.get("/spirit/day").catch((e) => { console.error(`your-day: spirit day not read (${e.message})`); return null; });
   const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
   const waiting = await api.get("/waiting-on").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the waiting-on register not read (${e.message})`); return []; });
+  // Every unanswered Decide item from earlier mornings (Today v4: they never drop off), with one-tap send.
+  const carried = await api.get("/practice/waiting").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the carried decisions not read (${e.message})`); return []; });
   const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
   const { sections, skipped } = readMorningSections({ now });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, morning: sections };
+  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: sections };
 }
 
 async function feedOf(range) {
@@ -890,7 +921,7 @@ async function main() {
   // The morning goes to Boss OS FIRST: every link in the email opens one of its items, and Today
   // lists its decisions. A failed post still sends (the email carries everything) and opens a fix job.
   const kept = await postDigest(api, email.digest);
-  if (!kept) await fixJob(api, "The morning email's screens were not saved", `Simone's morning email (scripts/ops/your-day.mjs) could not post its items to Boss OS (POST /morning), so its "See everything" links and Today's list are empty for ${email.digest.day}. Find why and fix it at source (src/worker/boss/routes/morning.ts).`);
+  if (!kept) await fixJob(api, "The morning email's screens were not saved", `Simone's morning email (scripts/ops/your-day.mjs) could not post its items to Boss OS (POST /morning), so its "See everything" links and Today's contract are empty for ${email.digest.day}. Find why and fix it at source (src/worker/boss/routes/morning.ts).`);
   const r = await sendAsEmployee("Simone", { to: process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com", subject: email.subject, text: email.text, prelaid: email, context: replyContext(email.text) });
   if (!r.ok) { console.error(`NAMED STOP [SEND_REFUSED] "${email.subject}" was not sent: ${r.error}`); process.exit(9); }
   console.log(`your-day: sent "${email.subject}" from ${r.from}`);

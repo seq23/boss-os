@@ -2,7 +2,7 @@
  * EVERY ITEM IN HER MORNING EMAIL HAS ITS OWN SCREEN (owner, 24 Oct 2026).
  *
  * "every item in the email links to its own Boss OS screen where she can learn more (no link to the
- * home page)". The email, Today's list and these screens read ONE record — the morning as Simone
+ * home page)". The email, Today's contract and these screens read ONE record — the morning as Simone
  * built it (GET /morning/:day, written by scripts/ops/your-day.mjs before the email goes) — so they
  * cannot disagree about what is waiting for her.
  *

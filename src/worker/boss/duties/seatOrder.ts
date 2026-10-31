@@ -19,3 +19,18 @@ export function orderSeats(ladder: string[], openaiFirst: boolean): string[] {
 }
 
 export const isOn = (v: string | null | undefined) => v === "on" || v === "true";
+
+/**
+ * AN LP OR DEAL-TERMS DRAFT RUNS ON THE CLAUDE SEAT ONLY (owner, Today v4, 31 Oct 2026): never Codex /
+ * ChatGPT, never a free or training route, never a cloud rung. A task marks itself with
+ * `input.confidential_draft = true` (or `input.draft_kind` "lp_reply" / "deal_terms"); its ladder is cut
+ * to Claude's seat, the "OpenAI first" switch cannot reorder it, and the cloud fallback is off. A ladder
+ * without Claude's seat becomes EMPTY: the task fails closed, it is never moved to another seat.
+ */
+export const CONFIDENTIAL_DRAFT_KINDS = ["lp_reply", "deal_terms"] as const;
+export function isConfidentialDraft(input: { confidential_draft?: unknown; draft_kind?: unknown } | null | undefined): boolean {
+  return input?.confidential_draft === true || (CONFIDENTIAL_DRAFT_KINDS as readonly string[]).includes(String(input?.draft_kind ?? ""));
+}
+export function confidentialLadder(ladder: string[]): string[] {
+  return ladder.filter((x) => x === CLAUDE_SEAT);
+}

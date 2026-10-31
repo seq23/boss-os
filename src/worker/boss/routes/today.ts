@@ -50,6 +50,7 @@ import { roster, type EmployeeDutyRow, type EmployeeRow } from "../today/roster"
 import { adjustToday } from "../today/adjust";
 import { anchorStreak, stalledDeals } from "../today/close";
 import { scoreDay, FLOORS } from "../today/verdict";
+import { coachSituation } from "../today/coachQuestion";
 
 export const today = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -3067,10 +3068,12 @@ today.post("/coaching/turn", async (c) => {
     .first<{ morning_contract: string | null; day_mode: string | null }>();
   // The coach is told the SAME number her badge shows. A model briefed on a count nobody else can
   // see would talk to her about an inbox that does not exist.
-  const [loops, approvals, focus] = await Promise.all([
+  const [loops, approvals, focus, situation] = await Promise.all([
     c.env.DB.prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'open'`).first<{ n: number }>(),
     pendingApprovals(c.env.DB),
     coachingFocus(c.env, day, dayRow?.day_mode ?? null).catch(() => null),
+    // Today v4: the situation behind the Coaching card's question — counts only, never a name.
+    coachSituation(c.env, day).catch(() => null),
   ]);
 
   const system = buildCoachingPrompt({
@@ -3081,6 +3084,7 @@ today.post("/coaching/turn", async (c) => {
     dayMode: (dayRow?.day_mode as any) ?? null,
     phase,
     law: focus ? `Law ${focus.law.n}, ${focus.law.title}: ${focus.law.text}` : null,
+    situation,
   });
 
   // Only the current turn and at most two prior exchanges travel. A morning is not a transcript.

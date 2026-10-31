@@ -211,7 +211,7 @@ test.describe("Boss OS surface", () => {
     await unlock(page);
     await tab(page, "Today");
     /*
-     * "+ Add to today" (the new Today, 31 Oct 2026): an open loop is a row in Today's list, added from
+     * "+ Add to today" (the new Today, 31 Oct 2026): an open loop is a row in Today's contract, added from
      * a sheet under the list. The empty "Open Loops" card is gone; the row is the loop.
      */
     const unique = `E2E loop ${Date.now()}`;
@@ -242,7 +242,7 @@ test.describe("Boss OS surface", () => {
   test("a capture written offline is kept, and lands in D1 when the connection returns", async ({ page, context }) => {
     await unlock(page);
     await tab(page, "Today");
-    // "+ Add to today" is the open-loop capture now (31 Oct 2026): a sheet under Today's list.
+    // "+ Add to today" is the open-loop capture now (31 Oct 2026): a sheet under Today's contract.
     await page.getByTestId("add-to-today").click();
     await expect(page.getByLabel("New item for today")).toBeVisible({ timeout: 15_000 });
 
