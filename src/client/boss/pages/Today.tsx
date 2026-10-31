@@ -107,7 +107,7 @@ export function Today({ onOpenOperations, onOpenRecentWork, focus = null }: { on
   const tell = <TellSimone focus={focus === "tell"} onOpenRecentWork={onOpenRecentWork} />;
   // The end-of-month ancestral hour (owner, 31 Oct 2026): one self-contained card, near the top, never waiting on the day.
   const ancestral = <AncestralHourCard />;
-  if (!data) return <>{tell}{ancestral}{error ? <ErrorNotice error={error} /> : <Loading />}</>;
+  if (!data) return <>{ancestral}{tell}{error ? <ErrorNotice error={error} /> : <Loading />}</>;
 
   const { day, blocks, limits } = data;
   const done = {
@@ -132,6 +132,12 @@ export function Today({ onOpenOperations, onOpenRecentWork, focus = null }: { on
 
   return (
     <>
+      {/*
+        * FIRST ON THE PAGE, and above the notices rather than between them and the gates: a gate's
+        * "recorded" notice must stay next to the gate she tapped (e2e Today phone, 600px), so the
+        * card may not sit in that gap. It renders nothing outside the month's last four days.
+        */}
+      {ancestral}
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
       {flash && (
         <div className="notice" style={{ borderColor: "var(--ok)" }}>
@@ -141,8 +147,6 @@ export function Today({ onOpenOperations, onOpenRecentWork, focus = null }: { on
       )}
 
       {tell}
-
-      {ancestral}
 
       <p className="eyebrow">
         {new Date(day.date_ts).toLocaleDateString(undefined, {
