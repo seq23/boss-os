@@ -9,6 +9,9 @@
  *
  * Colour means one thing (make-it-calm): gold while there are days left; red only on the last day
  * and not yet done; green once it is done.
+ *
+ * NO role="status": the page has one live status region (the offline sync bar), and a second one
+ * made "the status" ambiguous for anything reading the page (e2e boss-surface, 31 Oct 2026).
  */
 import { useEffect, useState } from "react";
 import { api } from "../api";
@@ -50,7 +53,7 @@ export function AncestralHourCard() {
   };
 
   return (
-    <div className={`ancestral-card ancestral-${s.tone ?? "warm"}`} data-testid="ancestral-hour" role="status">
+    <div className={`ancestral-card ancestral-${s.tone ?? "warm"}`} data-testid="ancestral-hour">
       <p className="ancestral-head">{s.headline}</p>
       {s.line && <p className="ancestral-line">{s.line}</p>}
       {err && <p className="ancestral-line">{err}</p>}
