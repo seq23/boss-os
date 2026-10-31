@@ -52,7 +52,7 @@ import { seatEnv } from "./lib/seat-env.mjs";
 import { layoutEmail, layoutProblem, refsIn } from "../../src/shared/boss/mail/plain.mjs";
 import { repairReport, plainSentence, ownerTextProblems } from "../../src/shared/boss/repoChange/repairReport.mjs";
 import { detectUsageLimit } from "../lib/seat-usage-limit.mjs";
-import { codexExecArgs, codexSeatUsable, gitCommonDirs, helpMentions, runWithCodexFallback } from "../lib/codex-seat.mjs";
+import { CODEX_BUILD_NOTE, codexExecArgs, codexSeatUsable, finishCodexBuild, helpMentions, runWithCodexFallback } from "../lib/codex-seat.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -307,11 +307,10 @@ async function codexLacks(flags) {
 
 /** Run `codex exec` in the same working directory with the same prompt on stdin. */
 function spawnCodex({ phase, prompt, cwd, log, timeoutMin, addDirs }) {
-  // The worktree's commits are written into the ORIGINAL repository's .git, outside every folder the
-  // sandbox would otherwise let Codex write — so each repository's git directory is named too.
-  const dirs = [cwd, ...(addDirs ?? [])];
-  const found = new Map(dirs.map((d) => [d, spawnSync("git", ["-C", d, "rev-parse", "--git-common-dir"], { encoding: "utf8" }).stdout?.trim() || null]));
-  const writable = [...new Set([...(addDirs ?? []), ...gitCommonDirs(dirs, (d) => found.get(d) ?? null)])];
+  // Only the job folder is added: no git directory (31 Oct 2026). Codex's sandbox keeps git metadata
+  // read-only even when it is named, so Codex EDITS and the runner commits (finishCodexBuild).
+  const writable = [...new Set(addDirs ?? [])];
+  if (phase === "build") prompt = `${prompt}${CODEX_BUILD_NOTE}`;
   return new Promise((resolve) => {
     appendFileSync(log, `\n=== ${phase} handed to Codex ${new Date().toISOString()} cwd=${cwd} writable=${writable.join(",")}\n`);
     // No OPENAI_* either: Codex must use the ChatGPT Plus login in ~/.codex, never bill an API key.
@@ -345,6 +344,7 @@ function runClaude(opts) {
     supports: codexLacks,
     addDirs: opts.addDirs ?? [],
     onLine: (line) => appendFileSync(opts.log, `${line}\n`),
+    phase: opts.phase,
   });
 }
 
@@ -721,7 +721,7 @@ async function runPhase(claim) {
       : "no — ask what policy says to ask.",
   };
   const prompt = phasePrompt(phase, vars);
-  const { rc, timedOut } = unreported
+  const { rc, timedOut, servedBy, waitForSeat } = unreported
     ? (say(`reusing the unreported ${phase}.json from the previous tick; claude is not run again`), { rc: 0, timedOut: false })
     : await runClaude({
       phase, prompt, cwd: (phase === "build" ? buildPath : repoPath) ?? dir, log,
@@ -729,6 +729,27 @@ async function runPhase(claim) {
       addDirs: [dir],
     });
   let out = readJson(outFile);
+  /*
+   * A BUILD CODEX EDITED IS COMMITTED, PUSHED AND OPENED BY THE RUNNER (31 Oct 2026). Codex's sandbox
+   * cannot write git metadata (rc_m62y71yasdwmdp7k: a finished repair, GIT_METADATA_READ_ONLY, no PR),
+   * so this process — outside the sandbox — does the git steps after Codex exits. It never merges; the
+   * PR goes through the checks watch and the LAND phase's `~/bin/land` like every other build.
+   */
+  if (phase === "build" && servedBy === "codex" && buildPath) {
+    const fin = finishCodexBuild({ cwd: buildPath, repo, branch, out, run: (cmd, args, o) => spawnSync(cmd, args, { cwd: o.cwd, encoding: "utf8" }) });
+    if (fin.ok) {
+      out = fin.result;
+      writeFileSync(outFile, JSON.stringify(out, null, 2));
+      appendFileSync(log, `=== Codex edited; the runner committed, pushed ${out.branch} and opened ${out.pr_url}\n`);
+    } else {
+      appendFileSync(log, `=== the runner did not open a PR for Codex's build: [${fin.tag}] ${fin.why}\n`);
+    }
+  }
+  if (!out && waitForSeat) {
+    await release(row, `Claude Code is out of usage and ${phase} waits for its reset (Codex cannot run ${phase}: its sandbox cannot write the git metadata ~/bin/land needs)`, log);
+    say(`${row.id} ${phase} waits for the Claude seat to reset; released, not failed.`);
+    return;
+  }
   if (!out) {
     const why = timedOut ? `the ${phase} phase hit its ${PHASE_TIMEOUT_MIN[phase]}-minute wall and was stopped` : `claude exited ${rc} and wrote no ${phase}.json`;
     const behind = stateBehind({ phase, dir, repo, repoPath, buildPath, branch });

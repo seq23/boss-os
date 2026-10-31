@@ -2,7 +2,18 @@
 export declare function codexOnSubscription(authJsonText: string): boolean;
 export declare function codexSeatUsable(home?: string): { ok: boolean; why: string };
 export declare function codexExecArgs(addDirs?: string[]): string[];
-export declare function gitCommonDirs(dirs: string[], gitDirOf: (dir: string) => string | null): string[];
+export declare const CODEX_CANNOT_RUN_PHASES: readonly string[];
+export declare const CODEX_BUILD_NOTE: string;
+export declare function isGitSandboxBlock(blocked: unknown): boolean;
+export interface SpawnLike { status: number | null; stdout?: string; stderr?: string }
+export declare function finishCodexBuild(args: {
+  cwd: string;
+  repo: string;
+  branch: string | null;
+  out: Record<string, unknown> | null;
+  run: (cmd: string, args: string[], opts: { cwd: string }) => SpawnLike;
+  base?: string;
+}): { ok: true; result: Record<string, unknown> & { branch: string; pr_url: string; pr_number: number } } | { ok: false; tag: string; why: string };
 export declare function helpMentions(helpText: string | undefined, flag: string): boolean;
 export interface RunResult {
   code: number | null;
@@ -12,6 +23,8 @@ export interface RunResult {
 export interface FallbackResult extends RunResult {
   servedBy: "claude" | "codex";
   handedOver: boolean;
+  /** True when Claude's seat is spent on a phase Codex cannot run (land): the phase waits for the reset. */
+  waitForSeat?: boolean;
 }
 export declare function runWithCodexFallback(deps: {
   runClaude: () => Promise<RunResult>;
@@ -23,4 +36,5 @@ export declare function runWithCodexFallback(deps: {
   supports: (flags: string[]) => Promise<string | null>;
   addDirs?: string[];
   onLine?: (line: string) => void;
+  phase?: string | null;
 }): Promise<FallbackResult>;
