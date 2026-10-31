@@ -21,6 +21,8 @@ import { preApprovalIn } from "../../../shared/boss/repoChange/lane.mjs";
 import { closeDirectiveFor } from "../../../shared/boss/intake/close.mjs";
 import { storeLiveBook, amendLiveBook, removeFromLiveBook, type StoredBook } from "../capital/book";
 import { listEditsFromMail } from "../capital/grid"; // boss fix D
+import { brainEditsFromMail } from "../brains/store";
+import { parseBrainEdits } from "../../../shared/boss/brains/brain.mjs";
 import { stopDeliverable } from "../today/deliverables";
 import { answerFromMail } from "../repoChange/answer";
 import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
@@ -543,6 +545,20 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   if (listEdit?.onlyEdits) {
     await finish({ outcome: "LIST_EDITED", why: listEdit.note, objectKey, reply: listEdit.note });
     return { mailId, outcome: "LIST_EDITED", employeeId: null, taskId: null, reply: listEdit.note, messageId, signer: "Monique" };
+  }
+  /*
+   * ─── HER BRAIN EDITS, IN PROSE (31 Oct 2026) ───────────────────────────────
+   *
+   * "P&P brain: add settled decision …", "time-2-read priorities: 1 … 2 …", "spry brain: set
+   * revenue to …". Applied to that brain's section at once, a revision noted "by email", and Simone
+   * confirms in the reply. A message that names a brain and a section IS a brain edit: the words
+   * under the line belong to it (src/shared/boss/brains/brain.mjs, parseBrainEdits).
+   */
+  const brainText = own && parseBrainEdits(own).length ? own : parseBrainEdits(subject.replace(/^((re|fwd?)\s*:\s*)+/i, "")).length ? subject.replace(/^((re|fwd?)\s*:\s*)+/i, "") : null;
+  const brainEdit = brainText ? await brainEditsFromMail(env, brainText, mailId, now) : null;
+  if (brainEdit) {
+    await finish({ outcome: "BRAIN_EDITED", why: brainEdit.note, objectKey, reply: brainEdit.note });
+    return { mailId, outcome: "BRAIN_EDITED", employeeId: null, taskId: null, reply: brainEdit.note, messageId, signer: "Simone" };
   }
   const blockAnswer = readable || subject
     ? await answerBlockFromMail(env, { subject: subject + laneTail, text: readable, mailId, now })

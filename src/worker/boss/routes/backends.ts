@@ -45,6 +45,8 @@ import {
   type BackendRequest,
 } from "../backends/guard";
 import { eligibleFor } from "../backends/registry";
+import { deepStrip } from "../backends/dispatch";
+import { CLAUDE_SEAT } from "../duties/seatOrder";
 import { afterResult } from "../service/afterResult";
 import type { AiProcessing } from "../policy/airlock";
 import type { Sensitivity } from "../../../shared/boss/governance";
@@ -474,6 +476,9 @@ backends.post("/claim", async (c) => {
 
     let requested: any = {};
     try { requested = JSON.parse(run.requested); } catch { requested = {}; }
+    // A run parked for the Claude seat and handed down to another seat loses its private spans here,
+    // before the envelope exists (brains, 31 Oct 2026; fail closed).
+    if (backendId !== CLAUDE_SEAT) requested = deepStrip(requested);
 
     const receipt = typeof requested.receipt === "string" ? requested.receipt : null;
     const receiptRow = receipt

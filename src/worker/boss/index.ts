@@ -67,6 +67,8 @@ import { newId } from "./lib/id";
 import { lpTap } from "./routes/lpTap"; // boss fix L
 import { morning } from "./routes/morning";
 import { pnpOutreach } from "./routes/pnpOutreach";
+import { brains } from "./routes/brains";
+import { runBrainsCohesion } from "./brains/store";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -244,6 +246,8 @@ app.route("/api/grid/health", gridHealth);
 app.route("/api/auth/tap", lpTap); // boss fix L
 // The morning email as sent (24 Oct 2026): every link in it opens its item; Today lists its decisions.
 app.route("/api/morning", morning);
+// Brains (31 Oct 2026): one document per business, read first by every employee (routes/brains.ts).
+app.route("/api/brains", brains);
 //
 // === end Her jobs ===
 
@@ -404,6 +408,11 @@ export async function runDuties(env: Env, now = Date.now()) {
    */
   const { materialiseRewrites } = await import("./wealth/rewrite");
   await materialiseRewrites(env, now).catch(() => ({ queued: 0, requeued: 0 }));
+  // The weekly brains check (Mondays, her clock, once a week) rides this hourly tick, not a cron of
+  // its own. A failure is logged and never stops the duties below.
+  await runBrainsCohesion(env, now).catch((err) => logEvent(env.DB, {
+    level: "warn", scope: "cron", event: "brains_cohesion_failed", detail: { message: err instanceof Error ? err.message : String(err) },
+  }).catch(() => {}));
   return materialiseDueDuties(env, now);
 }
 

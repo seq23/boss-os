@@ -6,6 +6,8 @@ import { checkBackend, getBackend } from "./registry";
 import { recordRefusal } from "./guard";
 import type { AiProcessing } from "../policy/airlock";
 import type { Sensitivity } from "../../../shared/boss/governance";
+import { CLAUDE_SEAT } from "../duties/seatOrder";
+import { stripConfidential } from "../../../shared/boss/brains/brain.mjs";
 
 /**
  * DISPATCHING A RUN FOR A TASK THAT ALREADY EXISTS.
@@ -146,15 +148,25 @@ export async function dispatchRunForTask(env: Env, input: DispatchInput): Promis
       JSON.stringify({ backend_id: input.backendId, task_id: input.taskId, kind: input.kind, title: input.title, origin: "queue_consumer" }))
     .run();
 
-  const requested = {
-    instruction: input.prompt,
-    ...(input.firmContext ? { firm_context: input.firmContext } : {}),
+  /*
+   * PRIVATE SPANS REACH THE CLAUDE SEAT ONLY (brains, 31 Oct 2026). This row IS the request a seat
+   * claims, so the cut happens before it exists: any other seat gets the words with every
+   * `<!-- confidential -->` span removed (fail closed: an unclosed mark cuts everything after it).
+   */
+  const keepPrivate = input.backendId === CLAUDE_SEAT;
+  const prompt = keepPrivate ? input.prompt : stripConfidential(input.prompt);
+  const firmContext = input.firmContext ? (keepPrivate ? input.firmContext : stripConfidential(input.firmContext)) : "";
+  const built = {
+    instruction: prompt,
+    ...(firmContext ? { firm_context: firmContext } : {}),
     instruction_origin: "standing_duty",
     kind: input.kind,
     receipt,
     title: input.title,
     ...(input.requested ?? {}),
   };
+  // Every string in the request, not only the instruction: a caller's own `requested` fields too.
+  const requested = keepPrivate ? built : deepStrip(built);
 
   await env.DB
     .prepare(
@@ -195,4 +207,14 @@ async function monthSpend(env: Env, backendId: string): Promise<number> {
 /** Kept so a caller that genuinely wants an exception gets the same sentence. */
 export function refusalError(refused: string, runId: string): never {
   throw conflict(refused, `Recorded as run ${runId}. Nothing was queued.`);
+}
+
+/** Every string inside a value with its private spans cut (fail closed, brain.mjs `stripConfidential`). */
+export function deepStrip<T>(value: T): T {
+  if (typeof value === "string") return stripConfidential(value) as unknown as T;
+  if (Array.isArray(value)) return value.map((v) => deepStrip(v)) as unknown as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, deepStrip(v)])) as T;
+  }
+  return value;
 }

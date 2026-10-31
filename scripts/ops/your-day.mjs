@@ -531,6 +531,52 @@ export function eightRaiseLine(credits) {
  * with its full context and an id, which the run posts to Boss OS before it sends — so every link in
  * the email opens that item's own screen, and Today lists exactly the email's decisions.
  */
+export const BRAINS_URL = `${ORIGIN}/?tab=brains`;
+export const SCOREBOARD_URL = `${ORIGIN}/?tab=brains&view=scoreboard`;
+/** Key numbers per business in the monthly grid: the first few rows of its Numbers table. */
+export const SCOREBOARD_KEY_METRICS = 3;
+
+/**
+ * MONDAYS: ONE PLAIN LINE ABOUT THE BRAINS (owner, 31 Oct 2026). "Brains: all fresh", or what is
+ * stale and how many gaps are left. Never red. A check that did not load says so plainly, rather
+ * than leaving the line out (Rule 0).
+ */
+export function brainsSectionFor(data, now = Date.now()) {
+  if (parts(now).weekday !== "Monday") return null;
+  const line = data.brainsCheck?.line ?? "Brains: the weekly check did not load this morning; the team is looking.";
+  return { title: "Brains", tone: "done", items: [{ text: line, links: [{ label: "Open Brains ›", url: BRAINS_URL }] }], empty: null };
+}
+
+/**
+ * THE 1ST OF THE MONTH: ONE CALM GRID, business × key numbers, from each brain's Numbers table.
+ * "not tracked yet" where a value is missing; never an invented number.
+ */
+export function scoreboardSectionFor(data, now = Date.now()) {
+  if (!/-01$/.test(parts(now).date)) return null;
+  const rows = data.scoreboard;
+  if (!Array.isArray(rows)) {
+    return { title: "Scoreboard", items: [{ text: "The scoreboard did not load this morning; it is on its page.", links: [{ label: "Open the scoreboard ›", url: SCOREBOARD_URL }] }], empty: null };
+  }
+  const byBiz = new Map();
+  for (const r of rows) {
+    const list = byBiz.get(r.business) ?? [];
+    list.push(r);
+    byBiz.set(r.business, list);
+  }
+  const data2 = [...byBiz.entries()].map(([business, list]) => {
+    const tracked = list.filter((r) => r.metric);
+    const shown = tracked.slice(0, SCOREBOARD_KEY_METRICS).map((r) => `${r.metric}: ${r.value ?? "not tracked yet"}`);
+    const latest = tracked.map((r) => r.last_updated).filter(Boolean).sort().pop() ?? null; // ISO days sort as dates
+    return { business, numbers: shown.length ? shown.join(" · ") : "not tracked yet", updated: !latest ? "not yet" : /^\d{4}-\d{2}-\d{2}$/.test(latest) ? dayWords(latest, { weekday: false }) : latest };
+  });
+  return {
+    title: "Scoreboard: this month",
+    rows: { columns: [{ key: "business", label: "Business" }, { key: "numbers", label: "Key numbers" }, { key: "updated", label: "Last updated" }], data: data2 },
+    link: { label: "See the full scoreboard →", url: SCOREBOARD_URL },
+    empty: null,
+  };
+}
+
 export function buildDay(data, now = Date.now()) {
   const yours = yoursThisWeek(data.waiting ?? [], now);
   const today = dayOf(now);
@@ -672,6 +718,10 @@ export function buildDay(data, now = Date.now()) {
   const gridLines = (m.grid_repos?.lines ?? []).slice(0, 4).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
   const gridRepos = gridLines.length ? { title: "The grid repos: this week's search check", tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
 
+  // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
+  const brainsSection = brainsSectionFor(data, now);
+  const scoreSection = scoreboardSectionFor(data, now);
+
   // 5. Catch up with.
   const catchCards = (m.catchups?.decide ?? []).map((d) => { const id = idFor("catchup", d.key ?? d.title); const screen = itemUrl(today, id); return { ...d, id, screen, buttons: [...(d.buttons ?? []), more(screen)] }; });
   const catchLines = (m.catchups?.lines ?? []).map((l) => (typeof l === "string" ? l : l));
@@ -729,6 +779,8 @@ export function buildDay(data, now = Date.now()) {
       { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
       { title: "Done for you", tone: "done", items: doneShown, empty: null },
       ...(gridRepos ? [gridRepos] : []),
+      ...(scoreSection ? [scoreSection] : []),
+      ...(brainsSection ? [brainsSection] : []),
       { title: "Catch up with", cards: catchCards, items: catchLines, empty: null },
       // Her own to-dos (owner, 26 Oct 2026): told once, then Mondays or two days before a date. Reply
       // "add to my list: …" or "done: …" to change it.
@@ -835,9 +887,12 @@ async function read(api, now) {
   // Every unanswered Decide item from earlier mornings (Today v4: they never drop off), with one-tap send.
   const carried = await api.get("/practice/waiting").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the carried decisions not read (${e.message})`); return []; });
   const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
+  // Brains (31 Oct 2026): Monday's one-line check and, on the 1st, the scoreboard grid.
+  const brainsCheck = await api.get("/brains/cohesion").catch((e) => { console.error(`your-day: brains check not read (${e.message})`); return null; });
+  const scoreboard = await api.get("/brains/scoreboard").then((d) => d?.rows ?? null).catch((e) => { console.error(`your-day: scoreboard not read (${e.message})`); return null; });
   const { sections, skipped } = readMorningSections({ now });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: sections };
+  return { brainsCheck, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: sections };
 }
 
 async function feedOf(range) {

@@ -14,6 +14,7 @@ import { Capital } from "./pages/Capital";
 import { Spirit } from "./pages/Spirit";
 import { Team, type TeamView } from "./pages/Team";
 import { Memory } from "./pages/Memory";
+import { Brains } from "./pages/Brains";
 import { Trading } from "./pages/Trading";
 import { Vault } from "./pages/Vault";
 import { Settings } from "./pages/Settings";
@@ -41,7 +42,7 @@ import { readRoute, readFocus, readGateFocus, type Route } from "./nav";
  */
 const TITLES: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
 
@@ -288,6 +289,8 @@ export default function App() {
         <Spirit />
       ) : tab === "team" ? (
         <Team key={teamStart} start={teamStart} focusRecent={recentFocus} onOpenDeals={(v) => { setCapitalStart(v); setTab("capital"); }} />
+      ) : tab === "brains" ? (
+        <Brains />
       ) : tab === "memory" ? (
         <Memory />
       ) : tab === "trading" ? (

@@ -1860,3 +1860,39 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .reply-edit { min-height: 120px; resize: vertical; }
 .food-order { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 .send-btn { border-color: var(--ok); color: var(--ok); font-weight: 600; font-size: 14px; padding: 6px 12px; }
+
+/* ─── Brains (31 Oct 2026): one document per business. Phone first, calm: yellow = a gap to fill,
+   green = filled in, never red. ─────────────────────────────────────────────────────────────── */
+.brains { display: flex; flex-direction: column; gap: 10px; }
+.brain-summary { font-size: 17px; margin: 0; color: var(--ink); }
+.brain-hint { font-size: 14px; color: var(--muted); margin: 0 0 6px; }
+.brain-cards { display: flex; flex-direction: column; gap: 10px; }
+.brain-card {
+  all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
+  padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 3px;
+}
+.brain-card-title { font-family: var(--display); font-size: 20px; color: var(--ink); }
+.brain-card-line { font-size: 14px; color: var(--muted); margin: 0; }
+.brain-card-open { font-size: 14px; color: var(--ink); text-decoration: underline; margin-top: 4px; }
+.brain-warn { color: var(--gold-deep); }
+.brain-ok { color: var(--ok); }
+.brain-quiet { color: var(--muted); }
+.brain-title { font-family: var(--display); font-size: 26px; margin: 0; }
+.brain-section { scroll-margin-top: 80px; }
+.brain-section-h { font-family: var(--display); font-size: 20px; margin: 0 0 8px; }
+.brain-p { margin: 0 0 8px; line-height: 1.5; }
+.brain-ul, .brain-ol { margin: 0 0 8px; padding-left: 22px; line-height: 1.5; }
+.brain-gap { background: color-mix(in srgb, var(--gold) 35%, transparent); color: var(--ink); padding: 1px 4px; border-radius: 2px; }
+.brain-fill { flex: 0 0 auto; margin: 2px 0; }
+.brain-saved { font-size: 14px; color: var(--ok); margin: 0 0 8px; }
+.brain-input { width: 100%; box-sizing: border-box; font-family: var(--body); font-size: 16px; padding: 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--card-2); color: var(--ink); }
+.brain-private { border-left: 2px solid var(--muted); background: var(--card-2); padding: 8px 10px; margin: 0 0 8px; }
+.brain-private-l { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.brain-expander { background: var(--card); border: 1px solid var(--line); border-radius: 3px; padding: 12px 14px; }
+.brain-expander > summary { cursor: pointer; font-size: 15px; color: var(--ink); }
+.brain-rev { margin: 10px 0 0; font-size: 14px; }
+.brain-rev > summary { cursor: pointer; color: var(--ink); }
+.brain-pre { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: var(--card-2); padding: 8px; overflow-x: auto; }
+.brain-tablewrap { overflow-x: auto; margin: 0 0 8px; }
+.brain-table { border-collapse: collapse; font-size: 14px; width: 100%; }
+.brain-table th, .brain-table td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }

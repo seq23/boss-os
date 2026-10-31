@@ -101,7 +101,7 @@ function useReadingPosition() {
   return { progress, scrollable, atEnd };
 }
 
-export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "memory" | "trading" | "vault" | "systems";
+export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "memory" | "trading" | "vault" | "systems";
 
 const ICONS: Record<TabId, ReactNode> = {
   today: <path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.5 2" />,
@@ -109,6 +109,7 @@ const ICONS: Record<TabId, ReactNode> = {
   capital: <path d="M4 20V10M10 20V5M16 20v-7M22 20V8M3 20h18" />,
   spirit: <path d="M17 3a9 9 0 11-9 15.9A9 9 0 0017 3zM19.5 14l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" />,
   team: <path d="M8 11a3 3 0 100-6 3 3 0 000 6zM3 20a5 5 0 0110 0M16 12a3 3 0 100-6M15 20a5 5 0 016-4" />,
+  brains: <path d="M9 4a3 3 0 00-3 3 3 3 0 00-2 5 3 3 0 002 5 3 3 0 006 1V5a3 3 0 00-3-1zM15 4a3 3 0 013 3 3 3 0 012 5 3 3 0 01-2 5 3 3 0 01-6 1" />,
   memory: <path d="M12 4v16M12 7a3 3 0 013-3h4v13h-4a3 3 0 00-3 3M12 7a3 3 0 00-3-3H5v13h4a3 3 0 013 3" />,
   trading: <path d="M3 17l5-6 4 3 5-8M21 6h-4M21 6v4" />,
   vault: <path d="M4 4h16v16H4zM12 9a3 3 0 100 6 3 3 0 000-6zM12 15v3" />,
@@ -118,17 +119,17 @@ const ICONS: Record<TabId, ReactNode> = {
 /** Canon §15: Today is the default operating screen, and so the first tab. */
 const LABELS: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
 
 /*
  * FIVE TABS AND "☰ MORE" (owner approved the new Today, 31 Oct 2026). Nine tabs in two rows took
- * ~250 of the phone's 844px. Today, Inbox, Capital and Spirit stay one tap away; Team, Memory,
+ * ~250 of the phone's 844px. Today, Inbox, Capital and Spirit stay one tap away; Team, Brains, Memory,
  * Trading, Vault, Systems and Operations (the settings) are in "☰ More", two taps away.
  */
 export const PRIMARY_TABS: readonly TabId[] = ["today", "inbox", "capital", "spirit"];
-export const MORE_TABS: readonly TabId[] = ["team", "memory", "trading", "vault", "systems"];
+export const MORE_TABS: readonly TabId[] = ["team", "brains", "memory", "trading", "vault", "systems"];
 
 export function Shell({
   tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, onBack, children,
