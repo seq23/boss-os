@@ -39,7 +39,7 @@ export function LpTab() {
     <div data-testid="lp-tab">
       <p className="row-sub" style={{ marginBottom: 10 }}>Checked every morning against sequoia@westpeek.ventures (sent mail). A reply you scheduled in Gmail shows as waiting until it goes out.</p>
       <div className="panel" style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <table className="phone-cards" style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr>{["LP", "They replied", "Status", "When", "Next"].map((h) => <th key={h} style={{ textAlign: "left", padding: "9px 10px", fontSize: 12 }}>{h}</th>)}</tr>
           </thead>
@@ -48,8 +48,8 @@ export function LpTab() {
               const draft = r.status === "drafted";
               return (
                 <tr key={r.id}>
-                  <td style={{ padding: "9px 10px" }}><b>{r.name || "—"}</b>{r.firm ? ` · ${r.firm}` : ""}<div className="row-sub">{r.address}</div></td>
-                  <td style={{ padding: "9px 10px" }}>{r.first_seen}{r.quote ? ` · "${String(r.quote).slice(0, 80)}"` : ""}
+                  <td data-label="LP" style={{ padding: "9px 10px" }}><b>{r.name || "—"}</b>{r.firm ? ` · ${r.firm}` : ""}<div className="row-sub">{r.address}</div></td>
+                  <td data-label="They replied" style={{ padding: "9px 10px" }}>{r.first_seen}{r.quote ? ` · "${String(r.quote).slice(0, 80)}"` : ""}
                     {r.said || r.draft_body || r.last_reply_text ? (
                       <details className="mi-more">
                         <summary>Show what they wrote{r.draft_body ? " and your reply" : ""} ▾</summary>
@@ -59,9 +59,9 @@ export function LpTab() {
                       </details>
                     ) : null}
                   </td>
-                  <td style={{ padding: "9px 10px" }}><span className={PILL[r.status] ?? "pill"}>{r.status_label}</span>{r.send_error ? <div className="row-sub">Not sent: {r.send_error}</div> : null}</td>
-                  <td style={{ padding: "9px 10px" }}>{r.status === "sent" || r.status === "replied_again" ? day(r.sent_at) : "—"}</td>
-                  <td style={{ padding: "9px 10px" }}>
+                  <td data-label="Status" style={{ padding: "9px 10px" }}><span className={PILL[r.status] ?? "pill"}>{r.status_label}</span>{r.send_error ? <div className="row-sub">Not sent: {r.send_error}</div> : null}</td>
+                  <td data-label="When" style={{ padding: "9px 10px" }}>{r.status === "sent" || r.status === "replied_again" ? day(r.sent_at) : "—"}</td>
+                  <td data-label="Next" style={{ padding: "9px 10px" }}>
                     <a href={draft ? gmailDraftUrl(r.draft_message_id) : gmailThreadUrl(r.thread_id)} target="_blank" rel="noreferrer">{draft ? "Open the draft" : "Open the email"}</a>
                   </td>
                 </tr>

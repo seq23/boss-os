@@ -88,22 +88,22 @@ export function ProspectsTab() {
         {select("Side", side, setSide, Object.entries(SIDE).filter(([k]) => k !== "unknown"))}
       </div>
       <div className="panel" style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <table className="phone-cards" style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr>{["Prospect", "Email", "Found via", "Touches", "Last sent", "Sent from", "Side", "Status", "Next touch"].map((h) => <th key={h} style={{ textAlign: "left", padding: "9px 10px", fontSize: 12 }}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {shown.map((p) => (
               <tr key={p.id}>
-                <td style={{ padding: "9px 10px" }}><b>{p.name || "—"}</b>{p.firm ? ` · ${p.firm}` : ""}</td>
-                <td style={{ padding: "9px 10px" }}>{p.email ?? "—"}</td>
-                <td style={{ padding: "9px 10px" }}>{sourceLabel(p.source)}</td>
-                <td style={{ padding: "9px 10px" }}>{p.touches} of {MAX_TOUCHES}</td>
-                <td style={{ padding: "9px 10px" }}>{p.thread_id ? <a href={gmailThreadUrl(p.thread_id)} target="_blank" rel="noreferrer">{day(p.last_touch_at)}</a> : day(p.last_touch_at)}</td>
-                <td style={{ padding: "9px 10px" }}>{p.sent_from ?? (p.touches > 0 ? "not read yet" : "—")}</td>
-                <td style={{ padding: "9px 10px" }}>{SIDE[p.side] ?? "—"}</td>
-                <td style={{ padding: "9px 10px" }}>{STATUS[p.status] ?? p.status}{p.reply_note ? <div className="row-sub">"{String(p.reply_note).slice(0, 80)}"</div> : null}</td>
-                <td style={{ padding: "9px 10px" }}>{nextTouchLabel(p)}</td>
+                <td data-label="Prospect" style={{ padding: "9px 10px" }}><b>{p.name || "—"}</b>{p.firm ? ` · ${p.firm}` : ""}</td>
+                <td data-label="Email" style={{ padding: "9px 10px" }}>{p.email ?? "—"}</td>
+                <td data-label="Found via" style={{ padding: "9px 10px" }}>{sourceLabel(p.source)}</td>
+                <td data-label="Touches" style={{ padding: "9px 10px" }}>{p.touches} of {MAX_TOUCHES}</td>
+                <td data-label="Last sent" style={{ padding: "9px 10px" }}>{p.thread_id ? <a href={gmailThreadUrl(p.thread_id)} target="_blank" rel="noreferrer">{day(p.last_touch_at)}</a> : day(p.last_touch_at)}</td>
+                <td data-label="Sent from" style={{ padding: "9px 10px" }}>{p.sent_from ?? (p.touches > 0 ? "not read yet" : "—")}</td>
+                <td data-label="Side" style={{ padding: "9px 10px" }}>{SIDE[p.side] ?? "—"}</td>
+                <td data-label="Status" style={{ padding: "9px 10px" }}>{STATUS[p.status] ?? p.status}{p.reply_note ? <div className="row-sub">"{String(p.reply_note).slice(0, 80)}"</div> : null}</td>
+                <td data-label="Next touch" style={{ padding: "9px 10px" }}>{nextTouchLabel(p)}</td>
               </tr>
             ))}
           </tbody>

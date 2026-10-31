@@ -594,7 +594,7 @@ function renderSection(sec: any, i: number, insight?: any) {
           {sec.table_built_by === "system" && (
             <p className="brief-cite">Figures fetched by the system from the feeds in the source list, not typed by the run.</p>
           )}
-          <table className="brief-table">
+          <table className="brief-table phone-cards">
             {Array.isArray(sec.table.columns) && sec.table.columns.length > 0 && (
               <thead>
                 <tr>{sec.table.columns.map((col: string, j: number) => <th key={j}>{col}</th>)}</tr>
@@ -603,7 +603,7 @@ function renderSection(sec: any, i: number, insight?: any) {
             <tbody>
               {sec.table.rows.map((row: any, j: number) => (
                 <tr key={j}>
-                  {(Array.isArray(row) ? row : [row]).map((cell: any, k: number) => <td key={k}>{String(cell)}</td>)}
+                  {(Array.isArray(row) ? row : [row]).map((cell: any, k: number) => <td key={k} data-label={Array.isArray(sec.table.columns) ? sec.table.columns[k] : undefined}>{String(cell)}</td>)}
                 </tr>
               ))}
             </tbody>

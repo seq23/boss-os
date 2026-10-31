@@ -1681,3 +1681,73 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .tell-simone-job > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .tell-simone-who { font-weight: 700; white-space: nowrap; }
 .tell-simone-reply { margin: 0; white-space: pre-wrap; font-size: 14px; color: var(--ink); }
+
+/*
+ * ─── THE PHONE SWEEP (31 Oct 2026) ─────────────────────────────────────────
+ *
+ * Her iPhone shot of Spirit: "Somatic — today's rotation" printed each movement one word per line
+ * and the monospace "Came up …; nothing was recorded either way." ran 67px off the card. The cause
+ * was shared, not Spirit's: `.row-val` is `nowrap`, so a sentence in it refused to wrap, pushed the
+ * flexed `.row-main` down to nothing, and overflowed the page — and an iPhone answers a page wider
+ * than the screen by zooming out, which is the "column narrower than the screen" she saw. The same
+ * shape broke Vault (a 70-character filename, page 309px too wide). Fixed here, once, for every row;
+ * `e2e/boss-phone-layout.spec.ts` fails any tab that brings it back.
+ */
+
+/* A word longer than its line breaks instead of pushing the page sideways. Only when it must:
+   `break-word` leaves ordinary wrapping and min-content sizing exactly as they were. */
+.page { overflow-wrap: break-word; }
+
+/* A sentence in the value slot is a note, not a figure: it reads in the body face and wraps. */
+.row-note { font-family: var(--body); white-space: normal; text-align: left; }
+
+/* A text link standing on its own line gets a finger-sized target. */
+.tap-link { display: inline-block; padding: 12px 0; }
+
+@media (max-width: 600px) {
+  /*
+   * A ROW MAY BREAK INTO TWO LINES, AND THE LABEL KEEPS ITS WIDTH. The label never shrinks below
+   * 8rem, so it can no longer collapse to a word per line; whatever does not fit beside it (a
+   * status line, a sentence) moves underneath at full width. A short value ("2 min", "25 KB") still
+   * fits beside the label, so nothing that was right moves.
+   */
+  .row { flex-wrap: wrap; row-gap: 4px; }
+  .row-main { flex: 1 1 0; min-width: 8rem; }
+  .row-val { white-space: normal; min-width: 0; max-width: 100%; }
+  .row-note { flex: 1 1 100%; }
+
+  /* Dense lines that were set in mono read in the body face on a phone. */
+  .brief-edition, .brief-numbers { font-family: var(--body); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+
+  /* Tap targets: "Tap to open ▾" and the numbered citations were 16px and 6px tall. */
+  .docket-more { padding: 12px 0; margin-top: 0; }
+  .brief-ref a { display: inline-block; padding: 6px 4px; margin: -6px -2px; line-height: 1; }
+  .brief-sources li { margin-bottom: 0; }
+  .brief-sources a { display: inline-block; padding: 8px 0; }
+
+  /*
+   * A TABLE BECOMES A LIST OF CARDS. Eight columns in 350px squeezed every cell to a word per line
+   * and hid half the columns off the right edge. Each row is one card; each cell carries its own
+   * column name (`data-label`), so nothing depends on a header that is no longer beside it.
+   */
+  table.phone-cards, .phone-cards tbody, .phone-cards tr, .phone-cards td { display: block; width: auto; }
+  .phone-cards thead { display: none; }
+  .phone-cards tr { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .phone-cards tr:last-child { border-bottom: none; }
+  .phone-cards td { padding: 3px 0 !important; border-bottom: none; }
+  .phone-cards td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .phone-cards td:first-child::before { display: none; }
+  .phone-cards td:first-child { font-size: 16px; }
+  .phone-cards td a { display: inline-block; padding: 10px 0; }
+
+  /* A row's name that opens it ("Money" on Spirit, Memory and Capital) was 23px tall. */
+  button.row-title { min-height: 44px; }
+}

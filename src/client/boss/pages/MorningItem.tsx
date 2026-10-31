@@ -120,11 +120,11 @@ function FoundView({ f }: { f: any }) {
         <>
           <p className="eyebrow">The funds, from their public filings (not confirmed sellers)</p>
           <div className="brief-tablewrap">
-            <table className="brief-table">
+            <table className="brief-table phone-cards">
               <thead><tr><th>Fund</th><th>Manager</th><th>Holds</th><th>As of</th><th>Filing</th></tr></thead>
               <tbody>
                 {f.holders.map((h: any, i: number) => (
-                  <tr key={i}><td>{h.fund}</td><td>{h.manager}</td><td>{h.value}</td><td>{h.as_of}</td><td>{h.url ? <a href={h.url} target="_blank" rel="noreferrer">Open the filing</a> : "—"}</td></tr>
+                  <tr key={i}><td data-label="Fund">{h.fund}</td><td data-label="Manager">{h.manager}</td><td data-label="Holds">{h.value}</td><td data-label="As of">{h.as_of}</td><td data-label="Filing">{h.url ? <a href={h.url} target="_blank" rel="noreferrer">Open the filing</a> : "—"}</td></tr>
                 ))}
               </tbody>
             </table>
