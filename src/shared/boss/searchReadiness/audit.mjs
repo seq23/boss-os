@@ -208,6 +208,13 @@ const pass = (detail, extra = {}) => ({ status: "pass", detail, ...extra });
 const fail = (detail, extra = {}) => ({ status: "fail", detail, ...extra });
 const notChecked = (detail) => ({ status: "not_checked", detail });
 const okPages = (ctx) => ctx.pages.filter((p) => p.status === 200 && p.html);
+/*
+ * The URL a page's HTML actually came from. Our fetches follow redirects, so a record's `url` is what
+ * was asked for and `final` is what answered; two requests that land on one page must count as one
+ * page. canonical_self has read it this way since 26 Oct 2026.
+ */
+const pageUrl = (p) => p.final ?? p.url;
+const urlKey = (u) => String(u).replace(/[?#].*$/, "").replace(/\/+$/, "");
 const list = (arr, n = 5) => arr.slice(0, n).join("; ") + (arr.length > n ? `; and ${arr.length - n} more` : "");
 
 export const CHECKS = {
@@ -322,18 +329,27 @@ export const CHECKS = {
   },
   title_band(ctx) {
     const bad = [], seen = {};
-    // Distinct URLs, not page entries. The page list is the homepage, the sitemap sample and two
-    // coverage town pages, and the sample can draw the homepage or a town page again: on 25 Oct 2026
-    // time-2-read.com, memphisseniorcarehomes.com and neuroevalguides.com each "shared a title" with
-    // themselves, and the fixer was briefed to fix a duplicate that did not exist.
-    const norm = (u) => String(u).replace(/[?#].*$/, "").replace(/\/+$/, "");
+    // Distinct PAGES, keyed on the URL the HTML actually came from, not the one that was requested.
+    // The page list is the homepage, the sitemap sample and two coverage town pages, and the sample
+    // can draw the homepage or a town page again: on 25 Oct 2026 time-2-read.com,
+    // memphisseniorcarehomes.com and neuroevalguides.com each "shared a title" with themselves, and
+    // the fixer was briefed to fix a duplicate that did not exist. Deduplicating on the requested URL
+    // fixed only half of that. Our fetches follow redirects, so a host whose / answers 308 to its one
+    // money page hands the same HTML back twice under two different request URLs: on 31 Oct 2026
+    // weddingbudgetspreadsheet.com was briefed for a duplicate title on
+    // https://weddingbudgetspreadsheet.com/ and .../wedding-budget-spreadsheet, which are one page -
+    // the first is a 308 to the second - and its own crawl of all 25 URLs found no duplicate title at
+    // all. Those 308 roots are correct, not a defect (the same three sites, 26 Oct 2026, under
+    // canonical_self). `final` is the fetch's resolved URL; `url` is the fallback for records that
+    // carry no redirect information, exactly as canonical_self reads it.
+    const served = (p) => pageUrl(p);
     const checked = new Set();
     for (const p of okPages(ctx)) {
-      if (checked.has(norm(p.url))) continue;
-      checked.add(norm(p.url));
+      if (checked.has(norm(served(p)))) continue;
+      checked.add(norm(served(p)));
       const t = titleOf(p.html);
-      if (t.length < 30 || t.length > 65) bad.push(`${p.url} title is ${t.length} chars`);
-      (seen[t] ??= []).push(p.url);
+      if (t.length < 30 || t.length > 65) bad.push(`${served(p)} title is ${t.length} chars`);
+      (seen[t] ??= []).push(served(p));
     }
     for (const [t, us] of Object.entries(seen)) if (us.length > 1) bad.push(`"${t.slice(0, 50)}" on ${us.length} pages (${us.slice(0, 3).join(", ")})`);
     return bad.length ? fail(list(bad), { evidence: bad }) : pass("titles 30–65 characters and unique");
@@ -582,13 +598,15 @@ export const CHECKS = {
     const brands = [own, ...metaContent(home, "og:site_name").map(norm), ...deepNodes(jsonLd(home).nodes, /^(Organization|WebSite)$/).map((n) => norm(n?.name))].filter((b) => b.length >= 4);
     const siblings = (ctx.portfolio ?? []).map(stem).filter((s) => s.length >= 6 && s !== own && !brands.some((b) => b.includes(s)));
     const bad = [], seen = new Set();
+    // Same keying as title_band: the URL the HTML came from, so a 308 root and its target are one
+    // page and are judged, and reported, once.
     for (const p of okPages(ctx)) {
-      const key = String(p.url).replace(/[?#].*$/, "").replace(/\/+$/, "");
-      if (seen.has(key)) continue; seen.add(key);
+      const served = pageUrl(p);
+      if (seen.has(urlKey(served))) continue; seen.add(urlKey(served));
       const t = norm(titleOf(p.html));
       const sib = siblings.find((s) => t.includes(s));
-      if (sib) bad.push(`${p.url} title names ${sib}`);
-      else if (!brands.some((b) => t.includes(b))) bad.push(`${p.url} title does not name the site`);
+      if (sib) bad.push(`${served} title names ${sib}`);
+      else if (!brands.some((b) => t.includes(b))) bad.push(`${served} title does not name the site`);
     }
     return bad.length ? fail(list(bad), { evidence: bad }) : pass("every sampled title names this site and no sibling");
   },

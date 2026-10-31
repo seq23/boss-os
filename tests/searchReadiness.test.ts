@@ -546,6 +546,58 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     expect(two.status).toBe("fail");
     expect(two.detail).toMatch(/on 2 pages \(https:\/\/time-2-read\.com\/, https:\/\/time-2-read\.com\/about\)/);
   });
+
+  /*
+   * 31 Oct 2026. Deduplicating on the REQUESTED url fixed only half of 25 Oct. Our fetches follow
+   * redirects, so a host whose / answers 308 to its one money page hands the same HTML back twice
+   * under two different request urls. weddingbudgetspreadsheet.com was briefed for a duplicate title
+   * on https://weddingbudgetspreadsheet.com/ and .../wedding-budget-spreadsheet - one page, the
+   * first a 308 to the second - while its own crawl of all 25 urls found no duplicate title at all.
+   * canonical_self has read `final` since 26 Oct 2026; these two checks now do too.
+   */
+  it("a 308 root and its target are one page, not a duplicate title", () => {
+    const t = "Wedding Budget Spreadsheet: What to Track + Paid Product Preview";
+    const one = CHECKS.title_band!({ pages: [
+      { url: "https://weddingbudgetspreadsheet.com/", final: "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet", redirected: true, status: 200, html: html(t) },
+      { url: "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet", final: "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet", status: 200, html: html(t) },
+    ] } as any);
+    expect(one.status).toBe("pass");
+    // The page is reported by the url that answered, never the one that only redirected.
+    const short = CHECKS.title_band!({ pages: [
+      { url: "https://weddingbudgetspreadsheet.com/", final: "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet", redirected: true, status: 200, html: html("Too short") },
+    ] } as any);
+    expect(short.status).toBe("fail");
+    expect(short.detail).toContain("https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet");
+    // Two genuinely different pages sharing a title are still a duplicate.
+    const real = CHECKS.title_band!({ pages: [
+      { url: "https://weddingbudgetspreadsheet.com/a", final: "https://weddingbudgetspreadsheet.com/a", status: 200, html: html(t) },
+      { url: "https://weddingbudgetspreadsheet.com/b", final: "https://weddingbudgetspreadsheet.com/b", status: 200, html: html(t) },
+    ] } as any);
+    expect(real.status).toBe("fail");
+    expect(real.detail).toMatch(/on 2 pages/);
+    // A record with no redirect information still falls back to its requested url.
+    const legacy = CHECKS.title_band!({ pages: [
+      { url: "https://time-2-read.com/about", status: 200, html: html("Too short") },
+    ] } as any);
+    expect(legacy.detail).toContain("https://time-2-read.com/about");
+  });
+
+  it("b10 judges a 308 root once, by the url that answered", () => {
+    const ctx = {
+      host: "weddingbudgetspreadsheet.com",
+      portfolio: ["weddingbudgetspreadsheet.com", "weddingchecklistpdf.com"],
+      home: { html: html("Wedding Budget Spreadsheet") },
+      pages: [
+        { url: "https://weddingbudgetspreadsheet.com/", final: "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet", redirected: true, status: 200, html: html("A page that names nobody") },
+        { url: "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet", final: "https://weddingbudgetspreadsheet.com/wedding-budget-spreadsheet", status: 200, html: html("A page that names nobody") },
+      ],
+    };
+    const r = CHECKS.title_names_own_site!(ctx as any);
+    expect(r.status).toBe("fail");
+    // One complaint, about the url that served the HTML - not two about one page.
+    expect(r.evidence!.length).toBe(1);
+    expect(r.evidence![0]).toContain("/wedding-budget-spreadsheet");
+  });
   it("a site marked clarity: false passes the Clarity check with its reason; any other site still needs Clarity", () => {
     const hwk = sites.grid_repos.find((s: any) => s.domain === "howweknowdeep.com");
     expect(hwk.clarity).toBe(false);
