@@ -311,7 +311,7 @@ const SNAPSHOT_TABLES = [
   "promotion_scorecards", "scale_rungs", "trading_sequence", "trading_nevers",
   "sovereignty_packages", "sovereignty_drills",
   "manifestations", "manifestation_evidence", "rituals", "ritual_runs",
-  "dream_entries", "contributions", "ancestor_entries",
+  "dream_entries", "contributions", "ancestor_entries", "ancestral_hour_reminders",
   "astro_calendar", "astro_days",
   "trading_accounts", "trading_strategies", "trading_signals", "trading_orders",
   "trading_positions", "trading_fills", "trading_authority", "trading_incidents",

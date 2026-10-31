@@ -39,11 +39,11 @@ async function main() {
  * month's hour is done, never twice for one day (`POST /spirit/ancestral-hour/reminder` claims the
  * day) — and this sends it from Imani, who owns the practice, to the owner only, then reports it sent.
  */
-export async function ancestralReminder(api, send = postEmployeeMail, senders = sendersFor) {
+export async function ancestralReminder(api, fetchImpl = fetch, senders = sendersFor) {
   const r = await api.post("/spirit/ancestral-hour/reminder");
   if (!r?.due) return { line: `Ancestral hour: no reminder due (${r?.reason ?? "no answer"}).`, sent: false };
   const [imani] = senders("Imani");
-  const res = await send(imani, employeeMail(imani, { to: OWNER_TO, subject: r.notice.subject, layout: { happened: r.notice.happened, details: r.notice.details ?? [], decide: r.notice.decide ?? [] } }));
+  const res = await postEmployeeMail(imani, employeeMail(imani, { to: OWNER_TO, subject: r.notice.subject, layout: { happened: r.notice.happened, details: r.notice.details ?? [], decide: r.notice.decide ?? [] } }), fetchImpl);
   if (!res.ok) return { line: "Ancestral hour: reminder NOT sent.", failed: `ancestral-hour ${r.day} (${res.status ?? res.error ?? "refused"})`, sent: false };
   await api.post(`/spirit/ancestral-hour/reminder/${r.day}/sent`);
   return { line: `Ancestral hour: reminder sent for ${r.day}.`, sent: true };

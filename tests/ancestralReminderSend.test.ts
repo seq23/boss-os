@@ -16,25 +16,27 @@ describe("the ancestral-hour reminder send", () => {
   it("due: one email to the owner only, from Imani, then reported sent", async () => {
     const api = fakeApi({ due: true, day: "2026-10-31", kind: "last", notice });
     const sent: any[] = [];
-    const r = await ancestralReminder(api, async (s: any, p: any) => { sent.push({ s, p }); return { ok: true }; }, senders);
+    const r = await ancestralReminder(api, (async (_u: string, init: any) => { sent.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); }) as any, senders);
     expect(r.sent).toBe(true);
+    // Through postEmployeeMail, so the plain-email gate passed it: one email, to the owner only, from Imani.
     expect(sent).toHaveLength(1);
-    expect(sent[0].s.name).toBe("Imani");
-    expect([sent[0].p.to].flat()).toEqual([process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com"]);
-    expect(sent[0].p.subject).toBe(notice.subject);
-    expect(sent[0].p.text).toContain("Done ✓");
+    expect(sent[0].from).toContain("imani@sequoiataylor.com");
+    expect([sent[0].to].flat()).toEqual([process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com"]);
+    expect(sent[0].cc ?? sent[0].bcc ?? null).toBeNull();
+    expect(sent[0].subject).toBe(notice.subject);
+    expect(sent[0].text).toContain("Done ✓");
     expect(api.posts).toEqual(["/spirit/ancestral-hour/reminder", "/spirit/ancestral-hour/reminder/2026-10-31/sent"]);
   });
   it("not due: nothing sent, the reason said", async () => {
     const api = fakeApi({ due: false, day: "2026-10-31", reason: "done" });
     let calls = 0;
-    const r = await ancestralReminder(api, async () => { calls++; return { ok: true }; }, senders);
+    const r = await ancestralReminder(api, (async () => { calls++; return new Response("{}"); }) as any, senders);
     expect(calls).toBe(0);
     expect(r.line).toContain("done");
   });
   it("a refused send is not reported sent, and is named", async () => {
     const api = fakeApi({ due: true, day: "2026-10-31", kind: "last", notice });
-    const r = await ancestralReminder(api, async () => ({ ok: false, status: 403 }), senders);
+    const r = await ancestralReminder(api, (async () => new Response("no", { status: 403 })) as any, senders);
     expect(r.failed).toContain("403");
     expect(api.posts).toEqual(["/spirit/ancestral-hour/reminder"]);
   });
