@@ -9,7 +9,13 @@ import { daysBetween } from "../practice/lapse";
  * while it was still hers to answer. Now every morning kept in the last `CARRY_DAYS` is read:
  *
  *   - one item per morning id (`decide-…`, stable across mornings), the NEWEST full copy kept;
- *   - "waiting N days" counts from the FIRST morning it appeared in;
+ *   - "waiting N days" counts from when the wait REALLY began (`wait_from`), the earliest of: the
+ *     person's unanswered message on the LP record (`last_reply_at` for someone who wrote back again,
+ *     `first_seen` for a reply never sent: the same sources `lp/plan.mjs` titles count from); the
+ *     largest "Waiting N days:" any morning's copy carried, taken back N days from that morning; and
+ *     the first morning it appeared in. Mornings are kept only since 24 Oct 2026, so counting from
+ *     the first morning alone said "7 days" for a card whose own title read "Waiting 13 days" on
+ *     27 Oct (31 Oct 2026, owner);
  *   - it stays until it is answered (on any morning's copy, or underneath: the reply went) or
  *     dismissed (`decide_dismissed`);
  *   - "Not now" is a tick (`notnow:<id>`) for today only: tomorrow it is back.
@@ -44,6 +50,8 @@ export interface WaitingItem {
   from: string;
   first_day: string;
   newest_day: string;
+  /** The day the wait really began (see the header); `days` counts from it. */
+  wait_from: string;
   days: number;
   href: string;
   reply: WaitingReply | null;
@@ -73,7 +81,20 @@ function lpNameOf(title: string): { name: string; again: boolean } | null {
   return m ? { name: m[2]!.trim(), again: /^answer/i.test(m[1]!) } : null;
 }
 
-interface Raw { id: string; key: string | null; title: string; body: string; from: string; first: string; newest: string; full: boolean; answered: boolean }
+interface Raw { id: string; key: string | null; title: string; body: string; from: string; first: string; newest: string; full: boolean; answered: boolean; waitFrom: string }
+
+const shiftDay = (day: string, n: number) => new Date(Date.parse(`${day}T12:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+const earlier = (a: string, b: string | null | undefined) => (b && b < a ? b : a);
+
+/** The day a copy's own "Waiting N days" (title, or the "· N days" of a still-yours line) says the wait began. */
+export function carriedStart(day: string, ...texts: unknown[]): string | null {
+  let best: string | null = null;
+  for (const t of texts) {
+    const m = /^Waiting (\d+) days?:/i.exec(String(t ?? "")) ?? /·\s*(\d+) days?\s*$/.exec(String(t ?? ""));
+    if (m) best = earlier(shiftDay(day, Number(m[1])), best ?? "9999-12-31");
+  }
+  return best;
+}
 
 /** Pure: fold the kept mornings (oldest first) into one record per item id. */
 export function foldMornings(mornings: { day: string; decide: any[]; still: any[] }[]): Map<string, Raw> {
@@ -86,14 +107,16 @@ export function foldMornings(mornings: { day: string; decide: any[]; still: any[
         id: d.id, key: d.key ?? r?.key ?? null, title: cleanTitle(d.title), body: String(d.body ?? r?.body ?? ""),
         from: String(d.from ?? r?.from ?? "boss"), first: r?.first ?? m.day, newest: m.day, full: true,
         answered: Boolean(r?.answered || d.answered_at),
+        waitFrom: earlier(earlier(r?.waitFrom ?? m.day, m.day), carriedStart(m.day, d.title)),
       });
     }
     for (const s of m.still ?? []) {
       if (!s?.id) continue;
       const r = out.get(s.id);
+      const carried = carriedStart(m.day, s.title, s.line);
       out.set(s.id, r
-        ? { ...r, newest: m.day }
-        : { id: s.id, key: null, title: cleanTitle(s.title ?? s.line ?? ""), body: "", from: /\(LP\)/.test(String(s.line ?? "")) ? "lp" : "boss", first: m.day, newest: m.day, full: false, answered: false });
+        ? { ...r, newest: m.day, waitFrom: earlier(r.waitFrom, carried) }
+        : { id: s.id, key: null, title: cleanTitle(s.title ?? s.line ?? ""), body: "", from: /\(LP\)/.test(String(s.line ?? "")) ? "lp" : "boss", first: m.day, newest: m.day, full: false, answered: false, waitFrom: earlier(m.day, carried) });
     }
   }
   return out;
@@ -106,7 +129,7 @@ export async function waitingOnYou(env: Env, today: string, opts: { includeSnooz
     db.prepare(`SELECT day, json_extract(payload, '$.decide') AS decide, json_extract(payload, '$.still_yours') AS still FROM morning_digests WHERE day >= ? ORDER BY day ASC`).bind(since),
     db.prepare(`SELECT item_id FROM decide_dismissed`),
     db.prepare(`SELECT item_key FROM today_ticks WHERE day_id = ? AND item_key LIKE 'notnow:%'`).bind(today),
-    db.prepare(`SELECT id, address, name, status, decision, draft_id, draft_message_id, draft_body, tap_token, thread_id, reply_from FROM lp_reply_drafts`),
+    db.prepare(`SELECT id, address, name, status, decision, draft_id, draft_message_id, draft_body, tap_token, thread_id, reply_from, first_seen, last_reply_at FROM lp_reply_drafts`),
     db.prepare(`SELECT id, state, lower(json_extract(spec, '$.to')) AS addr FROM boss_commands WHERE kind = 'errand'`),
     db.prepare(`SELECT COUNT(*) AS n FROM prospect_templates WHERE status = 'pending'`),
   ]);
@@ -144,12 +167,18 @@ export async function waitingOnYou(env: Env, today: string, opts: { includeSnooz
       if (!mine.length || mine.every((e) => ["done", "cancelled", "failed"].includes(e.state))) continue;
     }
     let reply: WaitingReply | null = null;
+    let waitFrom = r.waitFrom;
     const lpCard = r.from === "lp" || /^lp(-again)?:/.test(r.key ?? "");
     if (lpCard) {
       const row = lpOf(r);
       if (row) {
         // Handled underneath: the reply went, was skipped, or is scheduled to go.
         if (["sent", "skipped", "scheduled"].includes(row.status)) continue;
+        // The person's unanswered message, as the LP pipeline counts it (`lp/plan.mjs`).
+        const theirs = row.status === "replied_again"
+          ? (Number(row.last_reply_at) > 0 ? new Date(Number(row.last_reply_at)).toISOString().slice(0, 10) : null)
+          : (/^\d{4}-\d{2}-\d{2}$/.test(String(row.first_seen ?? "")) ? String(row.first_seen) : null);
+        if (theirs && theirs <= today) waitFrom = earlier(waitFrom, theirs);
         const sendable = Boolean(row.draft_id && row.draft_body && row.draft_message_id && row.tap_token)
           && (row.status === "drafted" || row.status === "replied_again");
         reply = {
@@ -163,7 +192,7 @@ export async function waitingOnYou(env: Env, today: string, opts: { includeSnooz
     }
     const item: WaitingItem = {
       id: r.id, key: r.key, title: r.title, body: r.body.split(/(?<=[.!?])\s/)[0] ?? "", from: r.from,
-      first_day: r.first, newest_day: r.newest, days: Math.max(0, daysBetween(r.first, today)),
+      first_day: r.first, newest_day: r.newest, wait_from: waitFrom, days: Math.max(0, daysBetween(waitFrom, today)),
       href: `/?morning=${encodeURIComponent(r.newest)}&item=${encodeURIComponent(r.id)}`,
       reply, wealth: isWealthItem(r),
     };
@@ -174,6 +203,7 @@ export async function waitingOnYou(env: Env, today: string, opts: { includeSnooz
         // Keep the older start (they have waited since then) and the newer card.
         const keep = prev.newest_day >= item.newest_day ? prev : item;
         keep.first_day = prev.first_day < item.first_day ? prev.first_day : item.first_day;
+        keep.wait_from = prev.wait_from < item.wait_from ? prev.wait_from : item.wait_from;
         keep.days = Math.max(prev.days, item.days);
         perLp.set(reply.lp_id, keep);
         continue;
