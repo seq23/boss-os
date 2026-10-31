@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice, nextFixStatus,
-  indexnowKeyFiles, INDEXNOW_KEY_NAME,
+  indexnowKeyFiles, INDEXNOW_KEY_NAME, entityFor, namedPeople, SPRY_LABS_ID, ENTITY_PARENTS,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { renderChecklistPage, loadTemplate, standingsSummary } from "../src/shared/boss/searchReadiness/page.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -47,7 +47,7 @@ describe("the manifest holds every item on the page", () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of PAGE_IDS) expect(ids, `item ${id} was lost from the manifest`).toContain(id);
     // The four lessons of 26 Oct 2026, each an automatic check (never prose only).
-    expect(ids.length).toBeGreaterThanOrEqual(76);
+    expect(ids.length).toBeGreaterThanOrEqual(82);
     const lessons = { b10: ["B", "title_names_own_site", "html"], e9: ["E", "clarity_scoped", "html"], h6: ["H", "build_cache_key", "repo"], j10: ["J", "blocked_lead_domains", "repo"] } as const;
     for (const [id, [phase, type, source]] of Object.entries(lessons)) {
       const it = checklist.items.find((i: any) => i.id === id);
@@ -434,6 +434,9 @@ describe("the run measures with the branch's definition, never a stale checkout'
     const sec = md.slice(md.indexOf("## Search Readiness"));
     expect(sec).toMatch(/origin/);
     expect(sec).toMatch(/stale/i);
+    expect(sec).toMatch(/entity_parent/);
+    expect(sec).toMatch(/OWNER_REVIEWER_NEEDED/);
+    expect(sec).toMatch(/never Spry Labs/);
   });
 });
 
@@ -669,5 +672,140 @@ describe("the page shows where every site stands, counted from the results file"
     expect((out.match(/<tr data-site=/g) ?? []).length).toBe(2);
     expect(out).toMatch(/<b>b1<\/b> Title 30/);
     expect(renderChecklistPage(checklist, loadTemplate())).not.toContain('id="standings"');
+  });
+});
+
+describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority audit)", () => {
+  const AUTH = { k1: ["entity_json", "repo"], k2: ["same_as_not_self", "schema"], k3: ["same_as_resolves", "http"], k4: ["parent_organization", "schema"], k5: ["ymyl_reviewer", "schema"], k6: ["entity_watch_green", "github"] } as const;
+  const SPRY = "https://billionairehighperformancecoach.com/spry-labs#organization";
+  const ld = (...nodes: any[]) => `<html><head><script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@graph": nodes })}</script></head><body>x</body></html>`;
+  const page = (url: string, html: string) => ({ url, final: url, status: 200, html });
+  const repo = (files: Record<string, any>, extra: any = {}) => ({ ok: true, files: Object.keys(files), show: (f: string) => (f in files ? (typeof files[f] === "string" ? files[f] : JSON.stringify(files[f])) : null), workflows: [], ...extra });
+  const ctxOf = (o: any) => ({ host: o.site.domain, pages: [], files: {}, portfolio: sites.grid_repos.map((x: any) => x.domain), now: Date.parse("2026-10-31T12:00:00Z"), ...o }) as any;
+
+  it("six automatic items, every one implemented, in their own phase (a1–a6 were taken by Host and crawl)", () => {
+    expect(checklist.phases.map((p: any) => p.id)).toContain("K");
+    for (const [id, [type, source]] of Object.entries(AUTH)) {
+      const it = checklist.items.find((i: any) => i.id === id);
+      expect(it, `authority item ${id} was lost`).toBeTruthy();
+      expect(it.phase).toBe("K");
+      expect(it.check).toMatchObject({ mode: "auto", type, source });
+      expect(typeof CHECKS[type]).toBe("function");
+    }
+    expect(checklist.items.find((i: any) => i.id === "k5").check.applies_to).toEqual(["flag:ymyl"]);
+  });
+
+  it("every grid site names its entity_parent; friends' businesses are client and Porch & Party is never Spry Labs", () => {
+    for (const s of sites.grid_repos) expect(ENTITY_PARENTS, s.domain).toContain(s.entity_parent);
+    for (const s of sites.grid_repos.filter((x: any) => x.category === "client")) expect(s.entity_parent, s.domain).toBe("client");
+    const by = Object.fromEntries(sites.grid_repos.map((x: any) => [x.domain, x]));
+    expect(by["porchandparty901.com"].entity_parent).toBe("own");
+    expect(by["virtualagency-os.com"].entity_parent).toBe("own");
+    for (const d of ["horselegalguide.com", "hicksconsulting.org"]) expect(by[d].entity_parent).toBe("client");
+    expect(sites.grid_repos.filter((x: any) => x.category === "side_business").every((x: any) => x.entity_parent === "spry-labs")).toBe(true);
+    expect(sites.grid_repos.filter((x: any) => x.ymyl).map((x: any) => x.domain).sort()).toEqual(["approvalprep.com", "dentistryguides.com", "hormonesivhair.com", "horselegalguide.com", "memphisseniorcarehomes.com", "neuroevalguides.com", "theaccidentguides.com", "uscisexam.com"]);
+    expect(SPRY_LABS_ID).toBe(SPRY);
+  });
+
+  it("k5 reaches only the YMYL sites; k4 reaches every site", () => {
+    const k5 = checklist.items.find((i: any) => i.id === "k5");
+    expect(applies(k5, { kind: "guide", ymyl: true })).toBe(true);
+    expect(applies(k5, { kind: "guide" })).toBe(false);
+    expect(applies(checklist.items.find((i: any) => i.id === "k4"), { kind: "brand" })).toBe(true);
+  });
+
+  it("entityFor finds a site keyed under sites, a per-site file by its url, or a recorded entity_file; never a stranger's file", () => {
+    const r = repo({ "config/entity.json": { "@id": SPRY, name: "Spry Labs", url: "https://billionairehighperformancecoach.com/spry-labs", own_hosts: ["billionairehighperformancecoach.com", "aplayermode.com"], sites: { "aplayermode.com": { name: "A Player Mode", sameAs: [] } } },
+      "data/entity/dentistry/entity.json": { name: "The Dentistry Guides", url: "https://dentistryguides.com/", sameAs: [] } });
+    expect(entityFor(r, { domain: "aplayermode.com" })).toMatchObject({ path: "config/entity.json", node: { name: "A Player Mode" } });
+    expect(entityFor(r, { domain: "www.dentistryguides.com" })).toMatchObject({ path: "data/entity/dentistry/entity.json" });
+    expect(entityFor(r, { domain: "theaccidentguides.com" })).toBeNull();
+    expect(entityFor(repo({ "data/entities/org_schema.json": { name: "H", sameAs: [] } }), { domain: "h.org", entity_file: "data/entities/org_schema.json" })).toMatchObject({ node: { name: "H" } });
+  });
+
+  it("k1: no entity file fails; one without a sameAs list fails; a whole one passes", () => {
+    const site = { domain: "a.com" };
+    expect(CHECKS.entity_json!(ctxOf({ site, repo: repo({ "README.md": "x" }) })).status).toBe("fail");
+    expect(CHECKS.entity_json!(ctxOf({ site, repo: repo({ "entity.json": { name: "A", url: "https://a.com/" } }) })).detail).toMatch(/no sameAs list/);
+    expect(CHECKS.entity_json!(ctxOf({ site, repo: repo({ "entity.json": { name: "A", url: "https://a.com/", sameAs: [], profiles_pending: [] } }) })).status).toBe("pass");
+    expect(CHECKS.entity_json!(ctxOf({ site, repo: { ok: false, noRepo: true, why: "none" } })).status).toBe("no_repo");
+  });
+
+  it("k2: sameAs on the site's own host or a sibling own_host fails; external profiles pass; nothing at all is said, never passed", () => {
+    const site = { domain: "a.com" };
+    const ent = repo({ "entity.json": { name: "A", url: "https://a.com/", own_hosts: ["a.com", "b.com"], sameAs: ["https://www.pinterest.com/a/"] } });
+    expect(CHECKS.same_as_not_self!(ctxOf({ site, repo: ent, pages: [page("https://a.com/", ld({ "@type": "Organization", sameAs: ["https://a.com/about"] }))] })).status).toBe("fail");
+    expect(CHECKS.same_as_not_self!(ctxOf({ site, repo: ent, pages: [page("https://a.com/", ld({ "@type": "Organization", sameAs: ["https://b.com/"] }))] })).detail).toMatch(/b\.com/);
+    expect(CHECKS.same_as_not_self!(ctxOf({ site, repo: ent, pages: [page("https://a.com/", ld({ "@type": "Organization", sameAs: ["https://www.pinterest.com/a/"] }))] })).status).toBe("pass");
+    expect(CHECKS.same_as_not_self!(ctxOf({ site, repo: repo({}), pages: [page("https://a.com/", ld({ "@type": "Organization" }))] })).status).toBe("not_checked");
+  });
+
+  it("k3: one resolving external profile passes; none listed or all dead fails; only login-walled ones is unverifiable, never a pass", () => {
+    const site = { domain: "a.com" };
+    const run = (probes: any) => CHECKS.same_as_resolves!(ctxOf({ site, files: { __same_as: probes } }));
+    expect(run([{ url: "https://www.pinterest.com/a/", status: 200 }]).status).toBe("pass");
+    expect(run([]).status).toBe("fail");
+    expect(run([{ url: "https://www.youtube.com/@gone", status: 404 }]).status).toBe("fail");
+    expect(run([{ url: "https://www.instagram.com/a", status: 429 }]).status).toBe("not_checked");
+    expect(run([{ url: "https://www.instagram.com/a", status: 404 }]).status).toBe("fail");
+    expect(CHECKS.same_as_resolves!(ctxOf({ site })).status).toBe("not_checked");
+  });
+
+  it("k4: a side business pointing at Spry Labs (directly or through a grid parent) passes; none fails; a client naming Spry Labs fails", () => {
+    const spry = { domain: "weddingchecklistpdf.com", entity_parent: "spry-labs" };
+    const file = { brand: { "@id": "https://weddingchecklistpdf.com/#organization", parentOrganization: SPRY }, sites: { "weddingchecklistpdf.com": { name: "W", sameAs: [], parentOrganization: "https://weddingchecklistpdf.com/#organization" } } };
+    const chained = ld({ "@type": "Organization", "@id": "https://weddingchecklistpdf.com/#organization", name: "DWB", parentOrganization: { "@id": SPRY } }, { "@type": "WebSite", publisher: { "@id": "https://weddingchecklistpdf.com/#organization" } });
+    expect(CHECKS.parent_organization!(ctxOf({ site: spry, repo: repo({ "data/seo/entity.json": file }), pages: [page("https://weddingchecklistpdf.com/", chained)] })).status).toBe("pass");
+    const guide = { domain: "dentistryguides.com", entity_parent: "spry-labs" };
+    const viaHub = ld({ "@type": "Organization", name: "D", parentOrganization: { "@id": "https://theindustryguides.com/#organization" } });
+    expect(CHECKS.parent_organization!(ctxOf({ site: guide, repo: repo({ "entity.json": { name: "D", url: "https://dentistryguides.com/", sameAs: [], parentOrganization: { "@id": "https://theindustryguides.com/#organization" } } }), pages: [page("https://dentistryguides.com/", viaHub)] })).status).toBe("pass");
+    const orphan = CHECKS.parent_organization!(ctxOf({ site: guide, repo: repo({ "entity.json": { name: "D", url: "https://dentistryguides.com/", sameAs: [] } }), pages: [page("https://dentistryguides.com/", ld({ "@type": "Organization", name: "D" }))] }));
+    expect(orphan.status).toBe("fail");
+    expect(orphan.detail).toMatch(/no parentOrganization/);
+    const client = { domain: "horselegalguide.com", entity_parent: "client" };
+    expect(CHECKS.parent_organization!(ctxOf({ site: client, repo: repo({}), pages: [page("https://horselegalguide.com/", ld({ "@type": "Organization", name: "H", parentOrganization: { "@id": SPRY } }))] })).detail).toMatch(/never name Spry Labs/);
+    expect(CHECKS.parent_organization!(ctxOf({ site: client, repo: repo({}), pages: [page("https://horselegalguide.com/", ld({ "@type": "Organization", name: "H" }))] })).status).toBe("pass");
+    expect(CHECKS.parent_organization!(ctxOf({ site: { domain: "x.com" }, repo: repo({}) })).detail).toMatch(/no entity_parent/);
+  });
+
+  it("k5: no reviewer is a named stop never worked; a person not in reviewers.json with written consent is a fix; a consenting reviewer passes", () => {
+    const site = { domain: "dentistryguides.com", repo: "local-guides-generator", category: "side_business", ymyl: true };
+    const art = (person?: any) => page("https://dentistryguides.com/guides/x/", ld({ "@type": "MedicalWebPage", name: "x", ...(person ? { reviewedBy: person } : {}) }));
+    const about = page("https://dentistryguides.com/about/", ld({ "@type": "AboutPage" }));
+    const roster = (reviewers: any[]) => repo({ "data/entity/dentistry/reviewers.json": { reviewers } });
+    const none = CHECKS.ymyl_reviewer!(ctxOf({ site, repo: roster([]), pages: [about, art()] }));
+    expect(none.status).toBe("fail");
+    expect(none.named_stop).toMatch(/^OWNER_REVIEWER_NEEDED/);
+    expect(none.detail).toMatch(/1 of 1 content pages/);
+    const briefs = fixBriefs(checklist, [{ site, host: site.domain, results: [{ id: "k5", ...none }] }]);
+    expect(briefs[0]).toMatchObject({ disposition: "named_stop", named_stop: expect.stringMatching(/Never a fix brief/) });
+    expect(workQueue(briefs)).toMatchObject({ total: 1, workable: 0 });
+    const invented = CHECKS.ymyl_reviewer!(ctxOf({ site, repo: roster([]), pages: [art({ "@type": "Person", name: "Dr. Nobody" })] }));
+    expect(invented.status).toBe("fail");
+    expect(invented.named_stop).toBeUndefined();
+    expect(invented.detail).toMatch(/not in reviewers\.json/);
+    const real = roster([{ name: "Dr. Real", credential: "DDS", consent: { written: true, date: "2026-10-31", record: "x" } }]);
+    expect(CHECKS.ymyl_reviewer!(ctxOf({ site, repo: real, pages: [art({ "@type": "Person", name: "Dr. Real" })] })).status).toBe("pass");
+    const unsigned = roster([{ name: "Dr. Real", consent: { written: false } }]);
+    expect(CHECKS.ymyl_reviewer!(ctxOf({ site, repo: unsigned, pages: [art({ "@type": "Person", name: "Dr. Real" })] })).status).toBe("fail");
+    expect(CHECKS.ymyl_reviewer!(ctxOf({ site, repo: real, pages: [about] })).status).toBe("not_checked");
+    // An author counts only with a credential; an uncredentialed byline is not a reviewer.
+    expect(namedPeople([{ "@type": "Article", author: { "@type": "Person", name: "A" } }])).toEqual([]);
+    expect(namedPeople([{ "@type": "Article", author: { "@type": "Person", name: "A", jobTitle: "Attorney" } }])).toEqual(["A"]);
+  });
+
+  it("k6: no watch, no schedule, a red or stale newest run fails; a green run this week passes", () => {
+    const site = { domain: "a.com" };
+    const wf = (text: string) => [{ name: "entity-backlink-watch.yml", text }];
+    const good = "on:\n  schedule:\n    - cron: '0 7 * * 1'\n  workflow_dispatch:\n";
+    const run = (workflows: any[], runs?: any) => CHECKS.entity_watch_green!(ctxOf({ site, repo: repo({}, { workflows, entityWatchRuns: runs }) }));
+    expect(run([]).detail).toMatch(/no entity-backlink-watch workflow/);
+    expect(run(wf("on:\n  workflow_dispatch:\n"), {}).detail).toMatch(/no schedule/);
+    expect(run(wf(good), { "entity-backlink-watch.yml": null }).detail).toMatch(/never run/);
+    expect(run(wf(good), { "entity-backlink-watch.yml": { conclusion: "failure", status: "completed", createdAt: "2026-10-30T07:00:00Z" } }).status).toBe("fail");
+    expect(run(wf(good), { "entity-backlink-watch.yml": { conclusion: "success", status: "completed", createdAt: "2026-10-01T07:00:00Z" } }).detail).toMatch(/days ago/);
+    expect(run(wf(good), { "entity-backlink-watch.yml": { conclusion: "success", status: "completed", createdAt: "2026-10-30T07:00:00Z" } }).status).toBe("pass");
+    expect(run(wf(good)).status).toBe("not_checked");
+    expect(CHECKS.entity_watch_green!(ctxOf({ site, repo: repo({}, { workflows: [{ name: "entity_backlink_watch.yml", text: good }], entityWatchRuns: { "entity_backlink_watch.yml": { conclusion: "success", createdAt: "2026-10-31T07:00:00Z" } } }) })).status).toBe("pass");
   });
 });

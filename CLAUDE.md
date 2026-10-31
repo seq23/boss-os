@@ -175,3 +175,13 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    because the code is loaded before any definition can be read: default branch only, clean tree only,
    strict fast-forward only, every refusal exits 0 so the audit still runs. Never a reset, rebase,
    stash, commit or branch switch in her checkout.
+6. **Authority and entity, phase K (31 Oct 2026, the authority audit).** k1 an `entity.json` holds the
+   site (or the `entity_file` sites.json names), k2 no `sameAs` on the site's own hosts, k3 at least one
+   external profile resolves (a login-walled platform alone is unverifiable, never a pass), k4 the
+   `entity_parent` in sites.json holds (`spry-labs`: parentOrganization reaches
+   billionairehighperformancecoach.com/spry-labs, directly or through a grid parent; `client` and `own`:
+   never Spry Labs, so the friends' businesses and Porch & Party never carry it), k5 a `ymyl: true` site's
+   content pages name a reviewer listed with written consent in the repo's `reviewers.json`, k6 the weekly
+   entity-backlink-watch is green and under eight days old. a1-a6 were taken, hence K. k5 with no
+   reviewer is a **named stop** (`OWNER_REVIEWER_NEEDED`, disposition `named_stop`): said every week,
+   never worked, because nobody invents a person. Pinned by `tests/searchReadiness.test.ts`.

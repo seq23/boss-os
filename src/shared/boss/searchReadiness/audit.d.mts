@@ -44,3 +44,16 @@ export function repairLine(lastRepair: any, left: number, now?: number): string;
 export function repairsThisWeek(status: any, now?: number): number | null;
 export function nextFixStatus(prev: any, run: { started: number; fixed: number; left: number; protectedLeft?: number; noRepo?: number; done?: boolean; at?: string }): any;
 export declare function passingItems(siteResults: any[]): Array<{ project: string; item: string }>;
+/** K · Authority and entity (31 Oct 2026): the Spry Labs entity home and the entity helpers. */
+export const SPRY_LABS_ID: string;
+export const ENTITY_PARENTS: readonly ("spry-labs" | "client" | "own")[];
+export const ENTITY_FILE_RE: RegExp;
+export const ENTITY_WATCH_RE: RegExp;
+export const JS_WALLED: RegExp;
+export const REVIEWER_STOP: string;
+export function bare(host: string): string;
+export function hostOf(url: string): string;
+export function liveSameAs(html: string): string[];
+export function entityFor(repo: any, site: any): { path: string; node: any; root: any } | null;
+export function namedPeople(nodes: any[]): string[];
+export function reviewerRoster(repo: any): Set<string> | null;
