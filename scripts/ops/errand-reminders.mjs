@@ -13,6 +13,7 @@
 import { bossApi, OWNER_TO } from "./lib/duty-kit.mjs";
 import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 import { noticeArgs } from "./simone-commands.mjs";
+import { practiceNudges } from "./practice-nudges.mjs";
 
 async function main() {
   const api = await bossApi();
@@ -28,8 +29,11 @@ async function main() {
   }
   const ancestral = await ancestralReminder(api);
   if (ancestral.failed) failed.push(ancestral.failed);
+  // The practice emails (the lapse ladder, the midday push, the ancestral hour's 6pm warning) ride this tick too.
+  const practice = await practiceNudges(api);
+  failed.push(...practice.failed);
   if (failed.length) { console.error(`NAMED STOP [REMINDER_NOT_SENT] ${failed.join(", ")}`); process.exit(1); }
-  console.log(`${sent ? `ERRAND-REMINDERS: ${sent} reminder(s) sent.` : "ERRAND-REMINDERS: checked; no booking is 28 hours away."} ${ancestral.line}`);
+  console.log(`${sent ? `ERRAND-REMINDERS: ${sent} reminder(s) sent.` : "ERRAND-REMINDERS: checked; no booking is 28 hours away."} ${ancestral.line} ${practice.line}`);
 }
 
 /**

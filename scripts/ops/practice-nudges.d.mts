@@ -1,0 +1,2 @@
+export function practiceLayout(notice: { subject: string; happened: string; details?: string[]; decide?: unknown[] }): { to: string; subject: string; layout: any };
+export function practiceNudges(api: { post: (path: string, body?: unknown) => Promise<any> }, deliver?: (sender: any, notice: any) => Promise<{ ok: boolean; status?: number; error?: string }>, senders?: (who: string) => any[]): Promise<{ line: string; failed: string[] }>;

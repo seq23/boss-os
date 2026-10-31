@@ -1,3 +1,4 @@
+import { tab } from "./support/boss";
 import { test, expect, type Page } from "@playwright/test";
 
 /**
@@ -27,7 +28,7 @@ async function unlock(page: Page) {
 }
 
 async function openProperties(page: Page) {
-  await page.getByRole("button", { name: "Systems", exact: true }).click();
+  await tab(page, "Systems");
   await page.getByRole("tab", { name: "Properties" }).click();
   await expect(page.getByTestId("property-health-totals")).toBeVisible({ timeout: 15_000 });
 }

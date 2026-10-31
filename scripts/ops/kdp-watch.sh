@@ -106,7 +106,7 @@ STOPEOF
 
 What to do: $action
 
-This is on Today under Critical Alerts, which is the record. This email is only the nudge." >> "$RUN_LOG" 2>&1 \
+This is on Systems → Alerts and team, which is the record. This email is only the nudge." >> "$RUN_LOG" 2>&1 \
       || say "  (the email push also failed; Boss OS still has it)"
   else
     say "  AND COULD NOT REPORT IT EITHER: no repo at $REPO."

@@ -57,7 +57,8 @@ for (const vp of [PHONE, LAPTOP]) {
       // Four decisions + one notice are pending; the count says how many need an ANSWER.
       await expect(masthead).toContainText(/waiting on you/);
       await expect(masthead).toContainText(/oldest 3 days/);
-      const badge = page.locator("nav .tab-badge");
+      // The Inbox tab's own badge (Today carries its "needs you" count too, since 31 Oct 2026).
+      const badge = page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: /Inbox/ }).locator(".tab-badge");
       await expect(badge).toBeVisible();
       const n = Number((await masthead.locator(".masthead-n").innerText()).trim());
       expect(n).toBeGreaterThanOrEqual(4);

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
+import { tab } from "./support/boss";
 import { provisionLocalD1, queryLocalD1 } from "./support/provision";
 import { OWNER_OK_CROSSINGS, fundCrossings } from "../tests/helpers/fundCrossings";
 
@@ -30,13 +31,6 @@ async function unlock(page: Page) {
   await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
 }
 
-async function tab(page: Page, label: string) {
-  const nav = page.getByRole("navigation", { name: "Sections" });
-  const toggle = page.getByTestId("nav-toggle");
-  if (await toggle.isVisible().catch(() => false)) await toggle.click();
-  await nav.getByRole("button", { name: label, exact: true }).click();
-  await expect(page.locator("main.page")).toBeVisible();
-}
 
 function cleanSql(): string {
   return [
@@ -162,6 +156,12 @@ test.describe("Team → Duties", () => {
    */
   test("the operations synopsis and the map's sending paths sit beside the duties, each under its owner", async ({ page }) => {
     await unlock(page);
+    // System health left Today (31 Oct 2026): the synopsis sits on Systems → Alerts and team, and it
+    // is NOT on Today any more.
+    await expect(page.getByTestId("today-list")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("today-operations")).toHaveCount(0);
+    await tab(page, "Systems");
+    await page.getByRole("tab", { name: "Alerts and team" }).click();
     await expect(page.getByTestId("today-operations")).toContainText(/Running today: \d+ duties/);
     await page.getByTestId("open-operations").click();
     await expect(page.getByTestId("ops-running")).toContainText(/Running today: \d+ duties · \d+ scheduled email paths · \d+ off/);

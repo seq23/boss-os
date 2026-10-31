@@ -6,6 +6,7 @@ import { Panel, Row, asList, text, usePanel } from "../components/panels";
 import { BackendRegistry, Launch, Watch } from "./Backends";
 import { PropertyHealth } from "../components/PropertyHealth";
 import { RepoChanges } from "../components/RepoChanges";
+import { SystemHealth } from "./Today";
 
 /**
  * The seven subsystems that had an API and no screen.
@@ -21,12 +22,15 @@ import { RepoChanges } from "../components/RepoChanges";
  * fabricates a number the server did not send.
  */
 type SectionId =
+  | "health"
   | "launch" | "watch" | "properties" | "backends"
   | "costs"
   | "airlock" | "router" | "intake" | "governance" | "knowledge" | "prompt"
   | "quant" | "bridge" | "capability" | "runtimes" | "sync" | "publishing";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
+  // Moved off Today, 31 Oct 2026: alerts, the team roll call, continuity, trading, Operations.
+  { id: "health", label: "Alerts and team" },
   /*
    * STAGE 3 — DISPATCH, AND WATCHING IT. These three lead because they are the only sections you
    * ACT in; everything after them is machinery you inspect. They arrive as sections rather than a
@@ -74,8 +78,13 @@ const SECTIONS: { id: SectionId; label: string }[] = [
 
 export function Systems() {
   // A link to one repo change (`?tab=systems&change=<id>`) opens the section that holds it.
-  const [section, setSection] = useState<SectionId>(() =>
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("change") ? "properties" : "launch");
+  const [section, setSection] = useState<SectionId>(() => {
+    if (typeof window === "undefined") return "launch";
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("change")) return "properties";
+    // Today's red banner ("⚠ 1 to check first … Open ›") lands on the alerts it summarises.
+    return q.get("section") === "health" ? "health" : "launch";
+  });
   return (
     <>
       <div className="seg" role="tablist" aria-label="Systems">
@@ -91,6 +100,7 @@ export function Systems() {
           </button>
         ))}
       </div>
+      {section === "health" && <SystemHealth />}
       {section === "launch" && <Launch />}
       {section === "watch" && <Watch />}
       {section === "properties" && <><PropertyHealth /><RepoChanges /></>}

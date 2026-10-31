@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { provisionLocalD1, queryLocalD1 } from "./support/provision";
-import { unlock, tab, expectNoSidewaysScroll, expectNear, PHONE, LAPTOP } from "./support/boss";
+import { unlock, tab, expectNoSidewaysScroll, expectNear, PHONE, LAPTOP, openSettings } from "./support/boss";
 
 /**
  * SYSTEMS, SETTINGS AND THE LOCK — the levers she actually pulls.
@@ -73,7 +73,7 @@ for (const vp of [PHONE, LAPTOP]) {
       // Settings shows the same two truths, from the same table, after a reload.
       await page.reload();
       await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible({ timeout: 15_000 });
-      await page.getByRole("button", { name: "Open settings" }).click();
+      await openSettings(page);
       await expect(page.locator("main.page")).toContainText("High performance");
       await expect(page.locator("main.page .row", { hasText: "High performance" })).toContainText(/current/i);
       await expect(page.locator(".lever-btn[aria-pressed='true']")).toContainText(/moderate/i);
@@ -122,7 +122,7 @@ for (const vp of [PHONE, LAPTOP]) {
 
     test("Settings' five panels name their state, Health re-runs, and Lock actually locks", async ({ page }) => {
       await unlock(page);
-      await page.getByRole("button", { name: "Open settings" }).click();
+      await openSettings(page);
       for (const p of ["Overview", "Cost", "Audit", "Diagnostics"]) {
         await page.locator("main.page .seg-btn", { hasText: new RegExp(`^${p}$`, "i") }).click();
         await expect.poll(async () => page.locator("main.page .skel").count(), { timeout: 15_000 }).toBe(0);

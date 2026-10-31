@@ -37,3 +37,4 @@ export const MAX_FOUND_LINES: number;
 export const MAX_PROSPECT_SENDS: number;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const CUT_ORDER: ReadonlyArray<[string, Record<string, any>]>;
+export function lawLine(law: { n: number; title: string; text: string } | null | undefined): string | null;

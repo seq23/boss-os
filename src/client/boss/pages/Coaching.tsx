@@ -23,7 +23,8 @@ import { ErrorNotice } from "../components/Notice";
 
 type Turn = { role: "coach" | "her"; text: string };
 
-export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
+export function Coaching({ onModeSet, phase = "morning", onTalked }: { onModeSet?: () => void; phase?: "morning" | "evening"; onTalked?: () => void }) {
+  const evening = phase === "evening";
   const [state, setState] = useState<any>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
@@ -69,13 +70,16 @@ export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
     try {
       const res = await api.coachingTurn({
         text,
+        phase,
         turn: exchanges + 1,
         // Only the last two exchanges travel. A morning is not a transcript, and a context window
         // that grows every day is one nobody bounded.
         recent: turns.slice(-4).map((t) => ({ role: t.role, text: t.text })),
       });
-      if (res.ended) setEnded(res.reason === "exit_phrase" ? "You called it. Go." : "That is five. Go.");
+      if (res.ended) setEnded(evening ? (res.reason === "exit_phrase" ? "That's the day. Close it." : "That is five. Close the day.") : (res.reason === "exit_phrase" ? "You called it. Go." : "That is five. Go."));
       else setTurns((t) => [...t, { role: "coach", text: res.reply }]);
+      // The talk happened: the server recorded that (and only that), so the gate's ✓ can show it.
+      onTalked?.();
     } catch (e) {
       setError(e);
     } finally {
@@ -135,18 +139,16 @@ export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
               Backends and provision its models, then come back.
             </p>
           ) : (
+            /*
+             * ONE BUTTON, "START ›" (31 Oct 2026, the new Today). It used to be one identical "Start
+             * coaching" button per backend, three in a row, with nothing to tell them apart. Tapping
+             * Start is today's consent, given to the backend Systems names for coaching (the free
+             * Cloudflare route unless she changed it), and nothing she says is stored.
+             */
             <div className="btn-row">
-              {backends.map((b) => (
-                <button key={b.id} className="btn btn-approve" onClick={() => void approve(b.id)}>
-                  {/*
-                    * THE LABEL SAYS WHAT PRESSING IT CAUSES. It used to read "APPROVE WORKERS AI —
-                    * FREE", which names a Cloudflare inference product — an implementation detail —
-                    * and made the vendor half the button. "Free" is kept because she cares about
-                    * cost, and demoted to where a note belongs.
-                    */}
-                  {state?.action_label ?? "Start coaching"}
-                </button>
-              ))}
+              <button className="btn btn-approve" data-testid="coach-start" onClick={() => void approve((backends.find((b) => b.id === state?.coaching_backend) ?? backends[0])!.id)}>
+                {state?.action_label ?? "Start coaching"} ›
+              </button>
             </div>
           )}
 
@@ -162,11 +164,12 @@ export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
         </div>
       ) : (
         <>
-          <div className="coach-log" role="log" aria-label="Morning coaching">
+          <div className="coach-log" role="log" aria-label={evening ? "Evening coaching" : "Morning coaching"}>
             {turns.length === 0 && (
               <p className="row-sub">
-                Say how you are landing this morning. One question at a time, five at most — or say
-                “I’m ready” and go.
+                {evening
+                  ? "How did the day you agreed this morning actually go? One question at a time, five at most — or say “I’m ready” to close."
+                  : "Say how you are landing this morning. One question at a time, five at most — or say “I’m ready” and go."}
               </p>
             )}
             {turns.map((t, i) => (
@@ -185,7 +188,7 @@ export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
-                  placeholder={`${exchanges} of ${state?.max_turns ?? 5} — or an exit phrase`}
+                  placeholder="Type, or say “I’m ready” to finish"
                   disabled={busy}
                   aria-label="What you want to say"
                 />
@@ -202,6 +205,10 @@ export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
             * correctly is her own first instruction in that protocol: "This is a Recovery Day, not
             * a failed day."
             */}
+          <p className="row-sub" data-testid="coach-nothing-saved">
+            Nothing you say is saved. End any time with “I’m ready”. 🎤 Talking out loud: planned, not built yet.
+          </p>
+          {!evening && <>
           <p className="eyebrow">How today runs</p>
           <div className="btn-row">
             {(["full", "mvd", "recovery"] as const).map((m) => (
@@ -220,6 +227,7 @@ export function Coaching({ onModeSet }: { onModeSet?: () => void }) {
               ? `Today is a ${state.day_mode === "mvd" ? "minimum viable" : state.day_mode} day${state.day_mode_source === "coaching" ? ", from this conversation" : ", because you said so"}.`
               : "A minimum viable day and a recovery day are still days. Continuity over intensity."}
           </p>
+          </>}
         </>
       )}
     </div>

@@ -21,12 +21,31 @@ export async function unlock(page: Page) {
   await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
 }
 
+/**
+ * FIVE TABS AND "☰ MORE" (owner approved the new Today, 31 Oct 2026). Today, Inbox, Capital and
+ * Spirit are in the bar; Team, Memory, Trading, Vault and Systems sit in "☰ More". This walks the way
+ * she does: straight to a bar tab, or More first. A tab that is in neither fails here.
+ */
+export const BAR_TABS = ["Today", "Inbox", "Capital", "Spirit"] as const;
+export const MORE_TABS = ["Team", "Memory", "Trading", "Vault", "Systems"] as const;
+
 export async function tab(page: Page, label: string) {
-  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: label, exact: true }).click();
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  if ((MORE_TABS as readonly string[]).includes(label)) {
+    await nav.getByRole("button", { name: "☰ More", exact: true }).click();
+    await expect(page.getByTestId("more-panel")).toBeVisible();
+  }
+  await nav.getByRole("button", { name: label, exact: true }).click();
   await expect(page.locator("main.page")).toBeVisible();
+  await expect(page.getByTestId("more-panel")).toHaveCount(0);
 }
 
-/** Boss OS's page must never scroll sideways at phone width — that is content falling off the edge. */
+/** Settings (the old "Operations" chip) lives in "☰ More" → Operations. */
+export async function openSettings(page: Page) {
+  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "☰ More", exact: true }).click();
+  await page.getByRole("button", { name: "Open settings" }).click();
+}
+
 export async function expectNoSidewaysScroll(page: Page) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow, "horizontal overflow in px").toBe(0);

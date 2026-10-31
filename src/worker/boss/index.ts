@@ -20,6 +20,7 @@ import {
 import { trading } from "./routes/trading";
 import { system } from "./routes/system";
 import { today, assembleDayFlow, dayId, ensureDay } from "./routes/today";
+import { practice } from "./routes/practice";
 import { relationships } from "./routes/relationships";
 import { knowledge } from "./routes/knowledge";
 import { spirit } from "./routes/spirit";
@@ -130,6 +131,7 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.route("/api/today", today);
+app.route("/api/practice", practice);
 app.route("/api/approvals", approvals);
 app.route("/api/employees", employees);
 app.route("/api/tasks", tasks);

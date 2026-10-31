@@ -3,7 +3,9 @@ import { api } from "./api";
 import { Shell, type TabId } from "./components/Shell";
 import { ScreenBoundary } from "./components/ScreenBoundary";
 import { Lock } from "./pages/Lock";
-import { Today } from "./pages/Today";
+import { Today, BriefingPage } from "./pages/Today";
+import { TellSimone } from "./components/TellSimone";
+import { Sheet } from "./components/TodayList";
 import { CommandPage } from "./pages/CommandPage";
 import { MailPage } from "./pages/MailPage";
 import { Inbox } from "./pages/Inbox";
@@ -18,7 +20,7 @@ import { Settings } from "./pages/Settings";
 import { Systems } from "./pages/Systems";
 import { startAutoFlush, pendingCount } from "./offline/outbox";
 import { MorningItem, WorkItem } from "./pages/MorningItem";
-import { readRoute, readFocus, type Route } from "./nav";
+import { readRoute, readFocus, readGateFocus, type Route } from "./nav";
 
 /*
  * ─── THE PEOPLE TAB IS GONE, AND THE RECORD IS NOT ──────────────────────────
@@ -58,6 +60,11 @@ export default function App() {
    */
   const [route, setRoute] = useState<Route>(() => readRoute());
   const [focus, setFocus] = useState(() => readFocus());
+  const [gateFocus, setGateFocus] = useState(() => readGateFocus());
+  // THE FLOATING "✎ TELL SIMONE" (31 Oct 2026): one tap from any tab, a sheet over the page.
+  const [tellOpen, setTellOpen] = useState(() => readFocus() === "tell");
+  // Today's one "needs you" count, on the Today tab wherever she is.
+  const [needsYou, setNeedsYou] = useState(0);
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const t = q.get("tab");
@@ -67,11 +74,14 @@ export default function App() {
       setRoute(readRoute());
       const f = readFocus();
       setFocus(f);
-      // A link to a place on Today (the Tell Simone box from an employee page) opens Today.
-      if (f) { setTab("today"); setSettingsOpen(false); setOpenApproval(null); }
-      // A link to a tab (Today's ancestral-hour card → "Open Spirit ›") opens that tab.
-      const t2 = new URLSearchParams(window.location.search).get("tab");
-      if (!f && t2 && t2 in TITLES) { setTab(t2 as TabId); setSettingsOpen(false); setOpenApproval(null); }
+      setGateFocus(readGateFocus());
+      if (f === "tell") setTellOpen(true);
+      // A link to a place on Today (a coach talk, a gate, the briefing) opens Today.
+      if (f && f !== "tell") { setTab("today"); setSettingsOpen(false); setOpenApproval(null); }
+      // In-app links carry a tab too (Today's "Open Spirit ›", a lead's "Open ›", an approval row).
+      const q = new URLSearchParams(window.location.search);
+      const t = q.get("tab");
+      if (!f && t && t in TITLES) { setTab(t as TabId); setSettingsOpen(false); setOpenApproval(t === "inbox" ? q.get("approval") : null); if (t === "team") setTeamStart(q.get("team") === "duties" ? "duties" : "team"); }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -166,6 +176,28 @@ export default function App() {
    * A FAILED READ CLEARS THE BADGE RATHER THAN KEEPING THE OLD ONE. A stale number is
    * indistinguishable from a fresh one, and this whole defect is what that costs.
    */
+  /*
+   * THAT SHE OPENED THE APP (31 Oct 2026, the tough-love emails). One ping when the app is unlocked
+   * and again when it comes back to the front, at most every 20 minutes. It records a day and a time.
+   */
+  useEffect(() => {
+    if (!unlocked) return;
+    let last = 0;
+    const ping = () => {
+      if (document.visibilityState !== "visible" || Date.now() - last < 20 * 60_000) return;
+      last = Date.now();
+      void api.practiceOpened().catch(() => undefined);
+    };
+    ping();
+    document.addEventListener("visibilitychange", ping);
+    return () => document.removeEventListener("visibilitychange", ping);
+  }, [unlocked]);
+
+  useEffect(() => {
+    if (!unlocked || tab === "today") return;
+    api.practiceList().then((l) => setNeedsYou(l?.needs_you ?? 0)).catch(() => undefined);
+  }, [unlocked, tab]);
+
   useEffect(() => {
     if (!unlocked) return;
     api.status()
@@ -188,13 +220,13 @@ export default function App() {
 
   const lane = tab === "trading" ? "trading" : "ops";
   const title = route ? (route.kind === "morning" ? "This morning" : route.kind === "task" ? "The work" : route.kind === "command" ? "Your request" : route.kind === "mail" ? "Your email" : "Open work")
-    : settingsOpen ? "Settings" : openApproval && tab === "inbox" ? "Docket" : TITLES[tab];
+    : settingsOpen ? "Settings" : tab === "today" && focus === "briefing" ? "Briefing" : openApproval && tab === "inbox" ? "Docket" : TITLES[tab];
 
   return (
     <Shell
       tab={tab}
       onTab={(t) => { closeRoute(); setTab(t); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); }}
-      onBack={route || tab !== "today" || settingsOpen ? () => { closeRoute(); setTab("today"); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); } : undefined}
+      onBack={route || tab !== "today" || settingsOpen || focus === "briefing" ? () => { closeRoute(); if (focus) { window.history.pushState({}, "", "/"); setFocus(null); setGateFocus(null); } setTab("today"); setTeamStart("team"); setCapitalStart(undefined); setSettingsOpen(false); setOpenApproval(null); } : undefined}
       title={title}
       lane={lane}
       pending={pending}
@@ -202,6 +234,13 @@ export default function App() {
       waiting={waiting}
       onSettings={() => { setSettingsOpen((v) => !v); setOpenApproval(null); }}
       settingsOpen={settingsOpen}
+      needsYou={needsYou}
+      onTellSimone={() => setTellOpen(true)}
+      sheet={tellOpen ? (
+        <Sheet title="Tell Simone" onClose={() => setTellOpen(false)} testId="tell-sheet">
+          <TellSimone focus onOpenRecentWork={() => { setTellOpen(false); setTeamStart("team"); setTab("team"); setRecentFocus((n) => n + 1); }} />
+        </Sheet>
+      ) : null}
     >
       {/*
         * KEYED ON THE SCREEN, so navigating away clears a failure rather than carrying it. See
@@ -222,9 +261,13 @@ export default function App() {
               setUnlocked(false);
               setSettingsOpen(false);
             }} />
+      ) : tab === "today" && focus === "briefing" ? (
+        <BriefingPage />
       ) : tab === "today" ? (
         <Today
           focus={focus}
+          gateFocus={gateFocus}
+          onNeedsYou={setNeedsYou}
           onOpenOperations={() => { setTeamStart("duties"); setTab("team"); }}
           // "Open Recent work" after telling Simone: Your team, at its Recent work list.
           onOpenRecentWork={() => { setTeamStart("team"); setTab("team"); setRecentFocus((n) => n + 1); }}

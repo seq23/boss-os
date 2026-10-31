@@ -350,6 +350,28 @@ to her" and pinned by tests and `validate:email-plain`:
   early). **The Worker probes the keys only it holds** (Anthropic, OpenAI) on every credential report.
   **Operations' failed-run count opens its detail** on Today.
 
+
+### 31 October 2026 — the new Today, and the tough-love consistency emails
+
+- **Today is one list** (owner approved the mock-up, 31 Oct 2026). Summary line ("N for you · X of Y
+  done", a gold "Your coach is waiting · Start ›" when the talk is late), the ancestral-hour card in its
+  window, a two-point briefing excerpt, the bold coaching law ("Read it aloud ✓" is the same tick as the
+  Morning gate's), one Spirit line, then Today's list: the Morning gate first, the Midday gate in the
+  middle, the Night gate last, every Decide item, a Wealth block (LP replies + the leads), approvals and
+  open loops as rows, the day's other blocks by time. One "needs you" count, from
+  `src/worker/boss/today/list.ts` (`/api/boss/practice/list`), on the summary and the Today tab.
+- **The gates are default checklists she can edit** ("Save as my default", "Just for today", "Reset to
+  Boss OS default"; migration 0320) and still record through the same three gate routes. Morning and
+  evening coaching open the Morning and Night gates; the chat records only THAT she talked.
+- **Off Today:** critical alerts, the team roll call, Operations, continuity and trading are on Systems →
+  Alerts and team. A red banner on Today only for a critical alert nobody on the team can clear.
+- **Five tabs and "☰ More"**; a floating "✎ Tell Simone" on every tab opens the box as a sheet.
+- **The coaching chain was checked live on 31 Oct**: a consented turn answered on Workers AI (Llama 3.3
+  70B, free). The Claude and Codex seats are Mac queue lanes polled every five minutes and would need
+  her words stored in a queue row to reach them, which coaching's LOCAL_ONLY rule forbids, so the chat
+  stays on the free Cloudflare route. Talking out loud (voice) is planned, not built.
+- **The practice emails** (CLAUDE.md, "Emails to her" rule 7): the lapse ladder, the midday push and the
+  ancestral hour's last-day 6pm warning, from Imani, to her only.
 ### Monique's outreach — fully automatic, braked in code (9 October 2026)
 
 **Owner: "u do it all".** Monique writes to businesses for ten side businesses (five local guides,

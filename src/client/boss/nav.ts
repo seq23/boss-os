@@ -35,9 +35,21 @@ export function readRoute(search = typeof window === "undefined" ? "" : window.l
   return null;
 }
 
-export function readFocus(search = typeof window === "undefined" ? "" : window.location.search): "briefing" | "morning" | "tell" | null {
+export type Focus = "briefing" | "morning" | "tell" | "coach" | "gate";
+
+/**
+ * `?view=coach` opens a coach talk (the tough-love emails' "5-minute coach talk ›"), `?view=gate&gate=
+ * morning` opens today's Morning gate in the list (their "Open today's Morning gate ›").
+ */
+export function readFocus(search = typeof window === "undefined" ? "" : window.location.search): Focus | null {
   const v = new URLSearchParams(search).get("view");
-  return v === "briefing" || v === "morning" || v === "tell" ? v : null;
+  return v === "briefing" || v === "morning" || v === "tell" || v === "coach" || v === "gate" ? v : null;
+}
+
+export function readGateFocus(search = typeof window === "undefined" ? "" : window.location.search): "morning" | "midday" | "night" | null {
+  const q = new URLSearchParams(search);
+  const g = q.get("gate");
+  return q.get("view") === "gate" && (g === "morning" || g === "midday" || g === "night") ? g : null;
 }
 
 /** Today, scrolled to the "Tell Simone" box with the cursor in it (an employee page's "Tell Simone ↑"). */
