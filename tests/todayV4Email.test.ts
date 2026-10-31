@@ -28,10 +28,10 @@ describe("the morning email carries what is still unanswered", () => {
   it("an LP who wrote back again: the held reply is shown word for word and one tap sends it", () => {
     const body = lpAgainBody({ name: "Ann Example" });
     expect(body).toMatch(/^Hi Ann,/);
-    const [item] = lpDecideItems([{ id: "lpr_a", address: "ann@example.org", name: "Ann Example", status: "replied_again", thread_id: "t1", reply_from: "sequoia@westpeek.ventures", draft_body: body, draft_message_id: "m1", tap_token: "tok_abcdefghijklmnopqrstuv", first_seen: "2026-10-01", last_reply_at: Date.now() - 3 * 86_400_000 }]);
+    const item: any = lpDecideItems([{ id: "lpr_a", address: "ann@example.org", name: "Ann Example", status: "replied_again", thread_id: "t1", reply_from: "sequoia@westpeek.ventures", draft_body: body, draft_message_id: "m1", tap_token: "tok_abcdefghijklmnopqrstuv", first_seen: "2026-10-01", last_reply_at: Date.now() - 3 * 86_400_000 }])[0];
     expect(item.draft.text).toBe(body);
     expect(item.buttons[0]).toMatchObject({ label: "Send as is" });
-    const [none] = lpDecideItems([{ id: "lpr_b", address: "b@example.org", name: "B", status: "replied_again", thread_id: "t2", first_seen: "2026-10-01", last_reply_at: Date.now() }]);
+    const none: any = lpDecideItems([{ id: "lpr_b", address: "b@example.org", name: "B", status: "replied_again", thread_id: "t2", first_seen: "2026-10-01", last_reply_at: Date.now() }])[0];
     expect(none.draft).toBeNull();
     expect(none.buttons.map((b: any) => b.label)).toEqual(["Open the thread and reply"]);
   });
