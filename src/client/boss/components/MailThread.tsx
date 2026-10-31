@@ -21,7 +21,7 @@ export function MailThread({ thread, direction, onChanged }: { thread: any; dire
       <p className="row-sub">From {m.from_addr} → {m.to_addr}</p>
       {m.body === null ? <p>The saved copy is unavailable. This does not mean the email was empty.</p> : <MailWords text={m.body} />}
       {m.body !== null && !m.original_url && <p className="row-sub">This is the copy kept with the errand. The original email was not saved at the time.</p>}
-      {m.original_url && <p><a href={m.original_url}>View the original email</a></p>}
+      {m.original_url && <p><a className="tap-link" href={m.original_url}>View the original email</a></p>}
       {m.command_id && <p><a href={commandHref(m.command_id)} onClick={(e) => { e.preventDefault(); go(commandHref(m.command_id)); }}>Open this errand or request →</a></p>}
       {m.outcome === "REFUSED_SENDER" && <div>
         <p>This sender has not been let in. Tap below to keep reading their emails here. Their emails cannot instruct your team.</p>

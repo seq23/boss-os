@@ -290,7 +290,7 @@ export function Spirit() {
                       <div className="row-sub">{sq.title}: {sq.movement}</div>
                     </div>
                     {/* The novelty engine saying why, so a rotation is visibly a rotation. */}
-                    <div className="row-val">{sq.because}</div>
+                    <div className="row-val row-note">{sq.because}</div>
                   </div>
                 ))}
               </>

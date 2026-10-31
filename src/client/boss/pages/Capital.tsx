@@ -675,7 +675,7 @@ function Buyers() {
                   </button>
                 </div>
               ) : (
-                <div className="row-val">{w.why_class}</div>
+                <div className="row-val row-note">{w.why_class}</div>
               )}
             </div>
           ))}
@@ -1721,21 +1721,21 @@ function DealGrid({ archive = false, onArchive }: { archive?: boolean; onArchive
         </label>
       </div>
       <div className="brief-tablewrap">
-        <table className="brief-table">
+        <table className="brief-table phone-cards">
           <thead>
             <tr><th>Company</th><th>Side</th><th>Size</th><th>Price / valuation</th><th>Structure &amp; fees</th><th>From</th><th>When</th><th>Email</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
-                <td><b>{r.company}</b></td>
-                <td>{sideLabel(r)}{r.rainmaker && r.side !== "yours" ? <span className="pill">Rainmaker</span> : null}</td>
-                <td>{r.size_text}</td>
-                <td>{r.price_text}</td>
-                <td>{r.structure_text}</td>
-                <td>{r.from_text}</td>
-                <td>{ago(r.received_on)}{archive ? <span className="pill">old</span> : null}</td>
-                <td>{r.email_url ? <a href={r.email_url} target="_blank" rel="noreferrer">Open the email</a> : "—"}</td>
+                <td data-label="Company"><b>{r.company}</b></td>
+                <td data-label="Side">{sideLabel(r)}{r.rainmaker && r.side !== "yours" ? <span className="pill">Rainmaker</span> : null}</td>
+                <td data-label="Size">{r.size_text}</td>
+                <td data-label="Price / valuation">{r.price_text}</td>
+                <td data-label="Structure & fees">{r.structure_text}</td>
+                <td data-label="From">{r.from_text}</td>
+                <td data-label="When">{ago(r.received_on)}{archive ? <span className="pill">old</span> : null}</td>
+                <td data-label="Email">{r.email_url ? <a href={r.email_url} target="_blank" rel="noreferrer">Open the email</a> : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -1779,17 +1779,17 @@ function HoldersFound() {
             <h3>{co}</h3>
             {funds.length ? <p className="row-sub">{funds.length} fund{funds.length === 1 ? "" : "s"} hold {moneyShort(sum)} between them, from their latest public filings.</p> : null}
             <div className="brief-tablewrap">
-              <table className="brief-table">
+              <table className="brief-table phone-cards">
                 <thead><tr><th>Fund</th><th>Manager</th><th>Holds</th><th>As of</th><th>Contact</th><th>Filing</th></tr></thead>
                 <tbody>
                   {[...funds, ...spvs].map((h, i) => (
                     <tr key={`${co}-${i}`}>
-                      <td>{h.fund}{h.kind === "form_d" ? <span className="pill">SPV</span> : null}</td>
-                      <td>{h.manager ?? "—"}</td>
-                      <td>{h.value_usd ? moneyShort(h.value_usd) : "—"}</td>
-                      <td>{h.as_of ?? "—"}</td>
-                      <td>{h.contact ?? "—"}</td>
-                      <td><a href={h.filing_url} target="_blank" rel="noreferrer">Open the filing</a></td>
+                      <td data-label="Fund">{h.fund}{h.kind === "form_d" ? <span className="pill">SPV</span> : null}</td>
+                      <td data-label="Manager">{h.manager ?? "—"}</td>
+                      <td data-label="Holds">{h.value_usd ? moneyShort(h.value_usd) : "—"}</td>
+                      <td data-label="As of">{h.as_of ?? "—"}</td>
+                      <td data-label="Contact">{h.contact ?? "—"}</td>
+                      <td data-label="Filing"><a href={h.filing_url} target="_blank" rel="noreferrer">Open the filing</a></td>
                     </tr>
                   ))}
                 </tbody>
