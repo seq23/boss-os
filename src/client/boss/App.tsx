@@ -69,6 +69,9 @@ export default function App() {
       setFocus(f);
       // A link to a place on Today (the Tell Simone box from an employee page) opens Today.
       if (f) { setTab("today"); setSettingsOpen(false); setOpenApproval(null); }
+      // A link to a tab (Today's ancestral-hour card → "Open Spirit ›") opens that tab.
+      const t2 = new URLSearchParams(window.location.search).get("tab");
+      if (!f && t2 && t2 in TITLES) { setTab(t2 as TabId); setSettingsOpen(false); setOpenApproval(null); }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);

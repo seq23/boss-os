@@ -8,6 +8,7 @@ import { BodyContractView } from "./BodyContract";
 import { Empty, Loading } from "../components/Shell";
 import { ErrorNotice, InfoNotice } from "../components/Notice";
 import { TellSimone } from "../components/TellSimone";
+import { AncestralHourCard } from "../components/AncestralHourCard";
 import { usd } from "../../../shared/boss/types";
 
 /**
@@ -104,7 +105,9 @@ export function Today({ onOpenOperations, onOpenRecentWork, focus = null }: { on
 
   // The box comes first and never waits on the day: she can hand Simone work while Today loads, or if it fails.
   const tell = <TellSimone focus={focus === "tell"} onOpenRecentWork={onOpenRecentWork} />;
-  if (!data) return <>{tell}{error ? <ErrorNotice error={error} /> : <Loading />}</>;
+  // The end-of-month ancestral hour (owner, 31 Oct 2026): one self-contained card, near the top, never waiting on the day.
+  const ancestral = <AncestralHourCard />;
+  if (!data) return <>{tell}{ancestral}{error ? <ErrorNotice error={error} /> : <Loading />}</>;
 
   const { day, blocks, limits } = data;
   const done = {
@@ -138,6 +141,8 @@ export function Today({ onOpenOperations, onOpenRecentWork, focus = null }: { on
       )}
 
       {tell}
+
+      {ancestral}
 
       <p className="eyebrow">
         {new Date(day.date_ts).toLocaleDateString(undefined, {

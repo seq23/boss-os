@@ -1751,3 +1751,23 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
   /* A row's name that opens it ("Money" on Spirit, Memory and Capital) was 23px tall. */
   button.row-title { min-height: 44px; }
 }
+
+/*
+ * THE ANCESTRAL HOUR CARD (owner, 31 Oct 2026). Near the top of Today in the last four days of the
+ * month. Gold while there are days left, red only on the last day and not yet done, green once done.
+ * Large type so it is seen on a phone at 390px; the buttons wrap rather than overflow.
+ */
+.ancestral-card {
+  margin: 12px 0 18px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--gold) 12%, var(--card));
+  border: 2px solid var(--gold);
+  border-radius: 6px;
+}
+.ancestral-alarm { background: color-mix(in srgb, var(--reject) 10%, var(--card)); border-color: var(--reject); }
+.ancestral-done { background: var(--card); border: 1px solid color-mix(in srgb, var(--ok) 55%, var(--line)); }
+.ancestral-head { margin: 0 0 6px; font-size: 20px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
+.ancestral-alarm .ancestral-head { color: var(--reject); }
+.ancestral-done .ancestral-head { font-size: 16px; color: var(--ok); }
+.ancestral-line { margin: 0; font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
+.ancestral-card .btn-row { margin-bottom: 0; }

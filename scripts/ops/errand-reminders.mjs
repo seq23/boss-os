@@ -10,7 +10,7 @@
  * never goes twice. Her "cancel" (tap or reply) has Simone cancel with the business in their thread.
  * A run with nothing due says so by name and exits 0: the check itself is the work.
  */
-import { bossApi } from "./lib/duty-kit.mjs";
+import { bossApi, OWNER_TO } from "./lib/duty-kit.mjs";
 import { sendersFor, employeeMail, postEmployeeMail } from "./notify.mjs";
 import { noticeArgs } from "./simone-commands.mjs";
 
@@ -26,8 +26,27 @@ async function main() {
     if (res.ok) { await api.post(`/commands/${r.id}/reminded`); sent++; }
     else failed.push(`${r.id} (${res.status ?? res.error ?? "refused"})`);
   }
+  const ancestral = await ancestralReminder(api);
+  if (ancestral.failed) failed.push(ancestral.failed);
   if (failed.length) { console.error(`NAMED STOP [REMINDER_NOT_SENT] ${failed.join(", ")}`); process.exit(1); }
-  console.log(sent ? `ERRAND-REMINDERS: ${sent} reminder(s) sent.` : "ERRAND-REMINDERS: checked; no booking is 28 hours away.");
+  console.log(`${sent ? `ERRAND-REMINDERS: ${sent} reminder(s) sent.` : "ERRAND-REMINDERS: checked; no booking is 28 hours away."} ${ancestral.line}`);
+}
+
+/**
+ * THE ANCESTRAL HOUR (owner, 31 Oct 2026: "on the last day of the month and 3 days before ... maybe
+ * email a reminder"). Rides this tick rather than a scheduler of its own. Boss OS decides whether one
+ * is due — the first and last day of the end-of-month window, from 10:00 Central, never when the
+ * month's hour is done, never twice for one day (`POST /spirit/ancestral-hour/reminder` claims the
+ * day) — and this sends it from Imani, who owns the practice, to the owner only, then reports it sent.
+ */
+export async function ancestralReminder(api, fetchImpl = fetch, senders = sendersFor) {
+  const r = await api.post("/spirit/ancestral-hour/reminder");
+  if (!r?.due) return { line: `Ancestral hour: no reminder due (${r?.reason ?? "no answer"}).`, sent: false };
+  const [imani] = senders("Imani");
+  const res = await postEmployeeMail(imani, employeeMail(imani, { to: OWNER_TO, subject: r.notice.subject, layout: { happened: r.notice.happened, details: r.notice.details ?? [], decide: r.notice.decide ?? [] } }), fetchImpl);
+  if (!res.ok) return { line: "Ancestral hour: reminder NOT sent.", failed: `ancestral-hour ${r.day} (${res.status ?? res.error ?? "refused"})`, sent: false };
+  await api.post(`/spirit/ancestral-hour/reminder/${r.day}/sent`);
+  return { line: `Ancestral hour: reminder sent for ${r.day}.`, sent: true };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

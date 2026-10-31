@@ -26,6 +26,7 @@ export const CHANNEL: string;
 export function replyContext(text: string): string;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function spiritSection(day: any, week: any, now?: number): any;
+export function ancestralLine(day: any): string | null;
 export function valerieItems(feed: { items?: any[] } | null | undefined, now?: number): string[] | null;
 export const SPIRIT_LINK_LABEL: string;
 export function failedTaskLines(tasks: unknown[], now?: number): Array<{ id: string; text: string }>;

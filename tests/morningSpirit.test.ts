@@ -3,7 +3,8 @@
  * Synthetic data only.
  */
 import { describe, expect, it } from "vitest";
-import { buildDay, spiritSection, failedTaskLines } from "../scripts/ops/your-day.mjs";
+import { buildDay, spiritSection, failedTaskLines, ancestralLine } from "../scripts/ops/your-day.mjs";
+import { ancestralHourState } from "../src/worker/boss/spirit/ancestralHour";
 
 const NOW = Date.parse("2026-10-24T12:15:00Z");
 const DAY = {
@@ -53,6 +54,29 @@ describe("the Spirit section, as she approved it", () => {
     }
     expect(t).toContain("See the full sky, body and practice in Boss OS →: https://boss.sequoiataylor.com/?tab=spirit");
     expect(e.problems).toEqual([]);
+  });
+});
+
+describe("the ancestral hour above the fold (owner, 31 Oct 2026)", () => {
+  it("in the window and not done: one line right after the greeting, the same countdown as Today", () => {
+    expect(ancestralLine({ ancestral_hour: ancestralHourState("2026-10-31", 0) })).toBe(
+      "🕯 Ancestral hour: today is the last day. When it's finished, tap Done on Today or in the reminder email.",
+    );
+    const e = buildDay({ diary: [], tasks: [], approvals: [], repoChanges: [], briefing: null, feed: { items: [] }, morning: {}, spirit: { ...DAY, ancestral_hour: ancestralHourState("2026-10-28", 0) }, practiceWeek: WEEK }, NOW);
+    const t = e.text.replace(/\u2063/g, "");
+    const line = "🕯 Ancestral hour: 3 days left this month.";
+    expect(t.indexOf(line)).toBeGreaterThan(-1);
+    expect(t.indexOf(line)).toBeLessThan(t.indexOf("✨ Spirit"));
+    expect(t.split("\n").slice(0, 2).join(" ")).toContain(line);
+    expect(e.html).toContain("Ancestral hour: 3 days left this month");
+    expect(e.problems).toEqual([]);
+    // The month line counts with the same rule.
+    expect(t).toContain("This month · 3 days left: 🕯 Ancestors hour: 0 of 60 min");
+  });
+  it("done, or outside the window: no line", () => {
+    expect(ancestralLine({ ancestral_hour: ancestralHourState("2026-10-31", 60) })).toBeNull();
+    expect(ancestralLine({ ancestral_hour: ancestralHourState("2026-10-20", 0) })).toBeNull();
+    expect(ancestralLine(null)).toBeNull();
   });
 });
 

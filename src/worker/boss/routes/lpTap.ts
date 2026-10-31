@@ -24,6 +24,7 @@ import { redraftReply } from "../lp/templateReply";
 import { approveOutcome } from "../../../shared/boss/lp/plan.mjs";
 import { dismissMatch } from "../capital/dismiss";
 import { isCommandToken, commandTapGet, commandTapPost } from "../commands/tap";
+import { isAncestralToken, markAncestralHourDone, reminderByToken } from "../spirit/ancestralHour";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -69,6 +70,12 @@ const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Sk
 lpTap.get("/:token", async (c) => {
   // Simone's Send / Change / Try again on a draft she wrote for a person (commands/tap.ts).
   if (isCommandToken(c.req.param("token"))) return commandTapGet(c, c.req.param("token"));
+  // The ancestral-hour reminder's "Done ✓" (owner, 31 Oct 2026). A GET never acts: it posts itself.
+  if (isAncestralToken(c.req.param("token"))) {
+    const known = await reminderByToken(c.env.DB, c.req.param("token"));
+    if (!known || c.req.query("do") !== "done") return c.html(page("This link has done its job", "Nothing else to do here."), 200);
+    return c.html(page("Marking your ancestral hour done…", "One moment.", { action: "?do=done", label: "Tap to confirm" }));
+  }
   const action = c.req.query("do") ?? "";
   const f = await find(c.env.DB, c.req.param("token"));
   if (!f) return c.html(page("This link has done its job", "Nothing else to do here."), 200);
@@ -109,6 +116,13 @@ async function sendDraft(env: Env, mailbox: string, draftId: string, fetchImpl: 
 
 lpTap.post("/:token", async (c) => {
   if (isCommandToken(c.req.param("token"))) return commandTapPost(c, c.req.param("token"));
+  if (isAncestralToken(c.req.param("token"))) {
+    const known = await reminderByToken(c.env.DB, c.req.param("token"));
+    if (!known || c.req.query("do") !== "done") return c.html(page("This link has done its job", "Nothing else to do here."));
+    const r = await markAncestralHourDone(c.env.DB, "email");
+    if (r.recorded) await audit(c.env.DB, { actor: "owner", lane: "ops", entityType: "ancestor_entries", entityId: r.state.month, action: "ancestral_hour_done", detail: { source: "email" } });
+    return c.html(page("Done ✓", `Your ancestral hour is recorded for ${r.state.month_name}. No more reminders this month.`));
+  }
   const action = c.req.query("do") ?? "";
   const db = c.env.DB;
   const f = await find(db, c.req.param("token"));
