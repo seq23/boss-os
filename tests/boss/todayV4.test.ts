@@ -4,7 +4,7 @@ import { apiJson } from "./helpers";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { waitingOnYou, foldMornings } from "../../src/worker/boss/today/waiting";
 import { GATE_DEFAULTS, cleanGateItems, normaliseGate, BP_TEA_MORNING_SINCE, gateLine, type GateItem } from "../../src/worker/boss/today/list";
-import { chooseQuestion, problems, coachSituation, runBack, type CoachSignals } from "../../src/worker/boss/today/coachQuestion";
+import { chooseQuestion, problems, coachSituation, coachSignals, runBack, gateFact, type CoachSignals } from "../../src/worker/boss/today/coachQuestion";
 import { buildCoachingPrompt } from "../../src/worker/boss/coaching/session";
 import { CHAINS, LOCAL, choosePlace, foodToday, placeKey, whereToday, usablePlace, NO_REPEAT_DAYS } from "../../src/worker/boss/today/food";
 import { pickSide, SIDE_BUSINESSES, brokenLine } from "../../src/worker/boss/today/sideBusiness";
@@ -92,6 +92,29 @@ describe("Still waiting on you: carried across mornings", () => {
     expect(x.newest).toBe("2026-10-30");
     expect(x.body).toBe("newer");
     expect(x.title).toBe("Reply to A");
+    // The wait began when the card's own count says, not on the first morning kept: 24 Oct − 3 = 21 Oct.
+    expect(x.waitFrom).toBe("2026-10-21");
+  });
+
+  it("counts the wait from when it really began, not from the first morning kept (live said 7 days of a card titled \"Waiting 13 days\" four days before)", async () => {
+    // A card whose title carried "Waiting 13 days" on a morning 4 days ago, first kept 7 days ago.
+    // An LP who wrote again 19 days ago; their card first appeared 7 days ago with no count in its title.
+    await lp("lpr_old", "replied_again", { name: "Old Person" });
+    await env.DB.prepare(`UPDATE lp_reply_drafts SET last_reply_at = ? WHERE id = 'lpr_old'`).bind(Date.parse(`${back(19)}T15:00:00Z`)).run();
+    await morning(back(7), [
+      { id: "decide-carried", title: "Waiting 9 days: Approve the example contract", from: "boss" },
+      { id: "decide-oldlp", key: "lp-again:lpr_old", title: "Answer Old Person: they wrote back after your reply", from: "lp" },
+    ]);
+    await morning(back(4), [{ id: "decide-carried", title: "Waiting 13 days: Approve the example contract", from: "boss" }]);
+    const { items } = await waitingOnYou(env as any, TODAY);
+    const carried = items.find((i) => i.id === "decide-carried")!;
+    expect(carried).toMatchObject({ first_day: back(7), wait_from: back(17), days: 17 });
+    const old = items.find((i) => i.id === "decide-oldlp")!;
+    expect(old).toMatchObject({ first_day: back(7), wait_from: back(19), days: 19 });
+    // The longest wait leads, and Today shows the same count.
+    expect(items[0]!.id).toBe("decide-oldlp");
+    const list = (await apiJson("/api/practice/list")).body.data;
+    expect(list.waiting.find((w: any) => w.id === "decide-carried").days).toBe(17);
   });
 
   it("\"Not now\" hides it for today only; it is back tomorrow. Dismiss is for good", async () => {
@@ -168,7 +191,7 @@ describe("One 💰 Wealth block", () => {
 });
 
 describe("Coaching: the question fits her life, and the coach sees counts only", () => {
-  const calm: CoachSignals = { appAwayDays: 0, morningGateMissed: 0, nightGateMissed: 0, talksMissed: 0, waitingDays: 0, waitingWho: null, noMoneyMoveDays: 0, ancestralDaysLeft: null, meetingsToday: 0, streakDays: 0 };
+  const calm: CoachSignals = { appAwayDays: 0, morningGateMissed: 0, nightGateMissed: 0, morningGateLast: null, nightGateLast: null, talksMissed: 0, waitingDays: 0, waitingWho: null, noMoneyMoveDays: 0, ancestralDaysLeft: null, meetingsToday: 0, streakDays: 0 };
 
   it("the longest-running and costliest problem wins", () => {
     const q = chooseQuestion({ ...calm, waitingDays: 17, waitingWho: "an LP", morningGateMissed: 2, appAwayDays: 2 });
@@ -194,7 +217,37 @@ describe("Coaching: the question fits her life, and the coach sees counts only",
     expect(runBack("2026-10-31", none, (r) => !r, "2026-10-31")).toBe(0);
     expect(runBack("2026-10-31", none, (r) => !r, "2026-10-28")).toBe(3);
     expect(runBack("2026-10-31", none, (r) => !r, null)).toBe(0);
-    expect(runBack("2026-12-31", none, (r) => !r, "2026-01-01")).toBe(30);
+    // No cap: the run is exact back to the record's first day (a 30-day look-back said "30").
+    expect(runBack("2026-12-31", none, (r) => !r, "2026-01-01")).toBe(364);
+  });
+
+  it("counts a gate run exactly to its last completion and says a long one plainly (live said \"30 days running\" of a gate last done 54 days before)", async () => {
+    const T = "2026-10-31";
+    const rows = new Map<string, Record<string, unknown>>([["2026-09-07", { m: 1 }]]);
+    expect(runBack(T, rows, (r) => !r?.m, "2026-08-01")).toBe(53);
+    expect(gateFact("morning", 53, "2026-09-07")).toBe("the morning gate hasn't been done since Sep 7 (54 days)");
+    expect(gateFact("night", 91, null)).toBe("the night gate hasn't been done once in the 91 days on record");
+    expect(gateFact("morning", 3, "2026-10-27")).toBe("the morning gate was skipped 3 days running");
+    const q = chooseQuestion({ ...calm, morningGateMissed: 53, morningGateLast: "2026-09-07" });
+    expect(q.kind).toBe("morning_gate");
+    expect(q.question).toMatch(/^The morning gate hasn't been done since Sep 7 \(54 days\)\./);
+    expect(q.question).not.toMatch(/30 days/);
+
+    // From D1: the morning gate last done 54 days ago, the night gate never, records from 90 days ago.
+    await env.DB.prepare(`DELETE FROM days`).run();
+    await env.DB.prepare(`DELETE FROM practice_engagement`).run();
+    for (const [n, m] of [[90, null], [54, 1]] as const) {
+      const id = back(n);
+      await env.DB.prepare(`INSERT INTO days (id, date_ts, created_at, morning_completed_at, midday_completed_at) VALUES (?,?,1,?,?)`).bind(id, Date.parse(`${id}T00:00:00Z`), m, m ? null : 1).run();
+    }
+    const sig = await coachSignals(env as any, TODAY, null);
+    expect(sig).toMatchObject({ morningGateMissed: 53, morningGateLast: back(54), nightGateMissed: 90, nightGateLast: null, streakDays: 0 });
+    // Opens and talks were never recorded: nothing is counted for them.
+    expect(sig).toMatchObject({ appAwayDays: 0, talksMissed: 0 });
+    const live = chooseQuestion(sig).question;
+    expect(live).toContain(`hasn't been done since ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(back(54).slice(5, 7)) - 1]} ${Number(back(54).slice(8, 10))} (54 days)`);
+    // The longer, costlier run leads (90 × 1.5 > 53 × 2); the other is named beside it.
+    expect(live).toMatch(/^The night gate hasn't been done once in the 90 days on record, and the morning gate hasn't been done since /);
   });
 
   it("never mentions body, weight or food, in any question it can ask", () => {

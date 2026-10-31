@@ -259,7 +259,7 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
           <div className="t-k">Today&apos;s question · picked from your week</div>
           <p className="coach-q" data-testid="coach-question">{q.question}</p>
           <div className="t-actions">
-            <button className="btn btn-approve" onClick={() => setCoach(coachPhase())} data-testid="coach-talk">💬 Talk it through (1:1)</button>
+            <button className="done-btn send-btn" onClick={() => setCoach(coachPhase())} data-testid="coach-talk">💬 Talk it through (1:1)</button>
           </div>
           {focusC?.law && <div className="t-row-sub law-line" data-testid="law-line">Law {focusC.law.n} · {focusC.law.title}: {focusC.law.text}</div>}
         </section>
