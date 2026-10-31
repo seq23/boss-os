@@ -56,7 +56,8 @@ export const STATUS = Object.freeze(["pass", "fail", "not_checked", "no_repo", "
 
 export function applies(item, site) {
   const a = item.check?.applies_to ?? [];
-  return a.includes(site.kind) || (site.roles ?? []).some((r) => a.includes(`role:${r}`));
+  // `flag:ymyl` reaches only the sites sites.json marks ymyl: true (medical, legal, financial; k5).
+  return a.includes(site.kind) || (site.roles ?? []).some((r) => a.includes(`role:${r}`)) || (site.ymyl === true && a.includes("flag:ymyl"));
 }
 
 // ─── Coverage ────────────────────────────────────────────────────────────────
@@ -786,7 +787,201 @@ export const CHECKS = {
     if (!/nothing paid/i.test(r.claudeMd ?? "")) why.push('CLAUDE.md does not say "nothing paid"');
     return why.length ? fail(why.join("; ")) : pass("zero-paid doc and CLAUDE.md line present");
   },
+
+  // ─── K · Authority and entity (31 Oct 2026, the authority audit) ───────────
+  entity_json(ctx) {
+    const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const e = entityFor(r, ctx.site);
+    if (!e) return fail(ctx.site.entity_file ? `${ctx.site.entity_file} is missing or not JSON` : `no entity.json in the repo holds ${ctx.site.domain}`);
+    const why = [];
+    if (!e.node.name) why.push("no name");
+    if (!Array.isArray(e.node.sameAs)) why.push("no sameAs list");
+    return why.length ? fail(`${e.path} (${ctx.site.domain}): ${why.join(", ")}`) : pass(`${e.path} holds ${ctx.site.domain}: ${e.node.sameAs.length} sameAs, ${(e.node.profiles_pending ?? []).length} pending`);
+  },
+  same_as_not_self(ctx) {
+    const e = entityFor(ctx.repo, ctx.site);
+    const own = ownHosts(ctx, e);
+    const pages = okPages(ctx);
+    const bad = [];
+    let n = 0;
+    for (const u of e?.node?.sameAs ?? []) { n++; if (own.has(hostOf(u))) bad.push(`${e.path}: ${u}`); }
+    for (const p of pages) for (const u of liveSameAs(p.html)) { n++; if (own.has(hostOf(u))) bad.push(`${p.final ?? p.url}: ${u}`); }
+    const uniq = [...new Set(bad)];
+    if (uniq.length) return fail(`sameAs points at the site itself: ${list(uniq)}`, { evidence: uniq });
+    if (!n) return notChecked("no sameAs anywhere to read (k3 fails for that)");
+    return pass(`${n} sameAs URLs read${e ? ` in ${e.path} and` : ""} on ${pages.length} pages; none is this site's own host`);
+  },
+  same_as_resolves(ctx) {
+    const probes = ctx.files?.__same_as;
+    if (!probes) return notChecked("the sameAs profiles were not fetched");
+    if (!probes.length) return fail("the live JSON-LD lists no external profile in sameAs (only the site itself, a grid sibling, or nothing)");
+    const ok = probes.filter((p) => p.status >= 200 && p.status < 300);
+    const walled = probes.filter((p) => !ok.includes(p) && JS_WALLED.test(hostOf(p.url)) && p.status && ![404, 410].includes(p.status));
+    const dead = probes.filter((p) => !ok.includes(p) && !walled.includes(p));
+    const say = (arr) => list(arr.map((p) => `${p.url} (${p.status ?? p.error})`));
+    if (ok.length) return pass(`${ok.length} of ${probes.length} external profiles resolve: ${list(ok.map((p) => p.url), 3)}${dead.length ? `; dead: ${say(dead)}` : ""}`);
+    // A login-walled platform (Instagram, LinkedIn, Gumroad, Maps) refusing a robot is UNVERIFIABLE: said, never passed.
+    if (!dead.length) return notChecked(`unverifiable: ${say(walled)} refuse an automated read; the repo's own weekly watch records them`);
+    return fail(`no external profile resolves: ${say(dead)}`, { evidence: dead.map((p) => p.url) });
+  },
+  parent_organization(ctx) {
+    const want = ctx.site.entity_parent;
+    if (!ENTITY_PARENTS.includes(want)) return fail(`sites.json gives ${ctx.site.domain} no entity_parent (one of ${ENTITY_PARENTS.join(", ")})`);
+    const r = ctx.repo;
+    const e = entityFor(r, ctx.site);
+    const pages = okPages(ctx);
+    if (want !== "spry-labs") {
+      // A friend's business (client) or her own business outside Spry Labs never carries the Spry Labs parent.
+      const bad = [];
+      if (e && JSON.stringify(e.node).includes(SPRY_LABS_HOME)) bad.push(e.path);
+      for (const p of pages) if (JSON.stringify(jsonLd(p.html).nodes).includes(SPRY_LABS_HOME)) bad.push(p.final ?? p.url);
+      if (bad.length) return fail(`a ${want} site must never name Spry Labs as its parent: ${list(bad)}`, { evidence: bad });
+      return pages.length || e ? pass(`${want}: no Spry Labs parent in ${e ? `${e.path} or ` : ""}${pages.length} pages`) : notChecked("no entity file and no page to read");
+    }
+    const own = ownHosts(ctx, e);
+    // The parent is Spry Labs, a grid parent on another host (The Industry Guides), or a brand node on this
+    // host that itself points there (dream-wedding-builder: each site → Dream Wedding Builder → Spry Labs).
+    const grid = (ctx.portfolio ?? []).map(bare);
+    const okParent = (v, byId = new Map(), depth = 0) => {
+      const id = idOf(v); if (!id || depth > 3) return false;
+      const h = hostOf(id);
+      if (id.includes(SPRY_LABS_HOME) || (!own.has(h) && grid.includes(h))) return true;
+      const up = byId.get(id);
+      return Boolean(up) && okParent(up.parentOrganization, byId, depth + 1);
+    };
+    const idsIn = (x) => new Map(deepNodesAny(x).filter((n) => typeof n["@id"] === "string").map((n) => [n["@id"], n]));
+    const isSpry = (n) => String(idOf(n) ?? "").includes(SPRY_LABS_HOME);
+    const why = [];
+    if (!r?.ok) why.push(r?.noRepo ? "no repo to hold entity.json" : "the repo was not read");
+    else if (!e) why.push("no entity.json for this site");
+    else if (!isSpry(e.node) && !okParent(e.node.parentOrganization, idsIn(e.root))) why.push(`${e.path} has no parentOrganization pointing at Spry Labs or a grid parent (${idOf(e.node.parentOrganization) ?? "none"})`);
+    if (!pages.length) return why.length ? fail(why.join("; ")) : notChecked("no page to read");
+    // A page passes when a node on it names the parent; on the Spry Labs sites themselves the
+    // Organization node that IS Spry Labs counts too (it is the parent, not a child of it).
+    const live = pages.filter((p) => { const nodes = jsonLd(p.html).nodes; const byId = idsIn(nodes); return deepNodes(nodes, /./).some((n) => okParent(n.parentOrganization, byId) || (isSpry(n) && typesOf(n).some((t) => /Organization/.test(t)))); });
+    if (!live.length) why.push(`none of ${pages.length} sampled pages' JSON-LD carries parentOrganization pointing at Spry Labs or a grid parent`);
+    return why.length ? fail(why.join("; "), { evidence: pages.filter((p) => !live.includes(p)).map((p) => p.final ?? p.url).slice(0, 10) }) : pass(`parent set in ${e.path} and on ${live.length} of ${pages.length} pages`);
+  },
+  ymyl_reviewer(ctx) {
+    // Content pages only: the home page and the pages about the site itself (about, editorial policy,
+    // methodology, how we verify) give no medical, legal or financial advice of their own.
+    const pages = okPages(ctx).filter((p) => { try { const u = new URL(p.final ?? p.url); return u.pathname !== "/" && !isUtility(u.href) && !SELF_PAGE.test(u.pathname); } catch { return false; } });
+    if (!pages.length) return notChecked("no sampled content page to read");
+    const consent = reviewerRoster(ctx.repo);
+    const missing = [], invented = [];
+    for (const p of pages) {
+      const names = namedPeople(jsonLd(p.html).nodes);
+      if (!names.length) { missing.push(p.final ?? p.url); continue; }
+      if (consent) for (const nm of names) if (!consent.has(nm.toLowerCase())) invented.push(`${p.final ?? p.url}: ${nm}`);
+    }
+    if (invented.length) return fail(`a page names a person who is not in reviewers.json with written consent (remove the person from the page; never invent one): ${list(invented)}`, { evidence: invented });
+    if (missing.length) return fail(`${missing.length} of ${pages.length} content pages name no reviewer: ${list(missing, 3)}`, { evidence: missing, named_stop: REVIEWER_STOP });
+    return pass(`${pages.length} content pages each name a reviewer${consent ? " listed with written consent" : ""}`);
+  },
+  entity_watch_green(ctx) {
+    const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const w = r.workflows.find((x) => ENTITY_WATCH_RE.test(x.name));
+    if (!w) return fail("no entity-backlink-watch workflow in .github/workflows");
+    const why = [];
+    if (!/schedule:/.test(w.text) || !/cron:/.test(w.text)) why.push("no schedule");
+    if (!/workflow_dispatch/.test(w.text)) why.push("no workflow_dispatch");
+    if (why.length) return fail(`${w.name}: ${why.join(", ")}`);
+    const run = r.entityWatchRuns?.[w.name];
+    if (run === undefined) return notChecked(`the runs of ${w.name} were not read`);
+    if (run === null) return fail(`${w.name} has never run`);
+    const days = (ctx.now - Date.parse(run.createdAt)) / 86_400_000;
+    if (run.conclusion !== "success") return fail(`${w.name}'s newest run (${run.createdAt.slice(0, 10)}) is ${run.conclusion || run.status}`);
+    if (!(days <= 8)) return fail(`${w.name} last ran ${Math.round(days)} days ago (weekly means under 8)`);
+    return pass(`${w.name} green ${days.toFixed(1)} days ago`);
+  },
 };
+
+// ─── Authority and entity helpers (k1–k6) ────────────────────────────────────
+
+/** The Spry Labs entity home every side business points parentOrganization at (owner, 30 Oct 2026). */
+export const SPRY_LABS_ID = "https://billionairehighperformancecoach.com/spry-labs#organization";
+const SPRY_LABS_HOME = "billionairehighperformancecoach.com/spry-labs";
+/** sites.json `entity_parent`: spry-labs (side businesses), client (friends' businesses), own (hers, outside Spry Labs). */
+export const ENTITY_PARENTS = Object.freeze(["spry-labs", "client", "own"]);
+export const ENTITY_FILE_RE = /(^|\/)entity\.json$/;
+export const ENTITY_WATCH_RE = /^entity[-_]backlink[-_]watch\.ya?ml$/;
+/** Platforms that refuse a robot or render in JS: a non-404 answer is unverifiable, not dead. */
+export const JS_WALLED = /(^|\.)(instagram\.com|facebook\.com|linkedin\.com|gumroad\.com|tiktok\.com|x\.com|twitter\.com|maps\.google\.com|g\.page|crunchbase\.com)$|^google\.com$/;
+const SELF_PAGE = /^\/(about|editorial-policy|methodology|how-we-verify|how-we-work|corrections|authors?|team)(\/|\.html)?$/i;
+export const REVIEWER_STOP = "OWNER_REVIEWER_NEEDED: a real, credentialed reviewer agrees in writing and is added to the repo's reviewers.json; until then the page keeps its honest editorial-desk byline. Never a fix brief: nobody invents a person.";
+
+export const bare = (h) => String(h ?? "").toLowerCase().replace(/^www\./, "");
+export const hostOf = (u) => { try { return bare(new URL(u).hostname); } catch { return ""; } };
+const idOf = (v) => (typeof v === "string" ? v : v && typeof v === "object" ? v["@id"] ?? v.url ?? null : null);
+
+/** Every sameAs URL in a page's JSON-LD, nested nodes included. */
+export function liveSameAs(html) {
+  const out = new Set();
+  for (const n of deepNodes(jsonLd(html).nodes, /./)) for (const u of [].concat(n.sameAs ?? [])) if (typeof u === "string") out.add(u);
+  return [...out];
+}
+
+/**
+ * The site's own entry in the repo's entity file. A multi-site repo keys each site under `sites`
+ * (sprylabs-hpc-site config/entity.json, dream-wedding-builder) or keeps one file per site whose url
+ * names its host (local-guides-generator data/entity/<pack>/entity.json). `entity_file` in sites.json
+ * names a file not called entity.json (hicksconsulting.org: data/entities/org_schema.json).
+ */
+export function entityFor(repo, site) {
+  if (!repo?.ok || !site) return null;
+  const domain = bare(site.domain);
+  const paths = site.entity_file ? [site.entity_file] : repo.files.filter((f) => ENTITY_FILE_RE.test(f) && !/(^|\/)node_modules\//.test(f)).slice(0, 60);
+  const parsed = [];
+  for (const path of paths) {
+    let json; try { json = JSON.parse(repo.show(path) ?? ""); } catch { continue; }
+    if (!json || typeof json !== "object" || Array.isArray(json)) continue;
+    const keyed = json.sites && typeof json.sites === "object" ? Object.entries(json.sites).find(([k]) => bare(k) === domain)?.[1] : null;
+    if (keyed && typeof keyed === "object") return { path, node: keyed, root: json };
+    const names = [json.url, json["@id"]].map(hostOf).concat(bare(json.domain ?? ""), (json.own_hosts ?? []).map(bare));
+    if (names.includes(domain)) return { path, node: json, root: json };
+    parsed.push({ path, node: json, root: json });
+  }
+  return site.entity_file || parsed.length === 1 ? parsed[0] ?? null : null;
+}
+
+/** Every object in a JSON value (typed or not): the entity file's nodes carry @id but no @type. */
+function deepNodesAny(x, out = [], seen = new Set()) {
+  if (!x || typeof x !== "object" || seen.has(x)) return out;
+  seen.add(x);
+  if (!Array.isArray(x)) out.push(x);
+  for (const v of Object.values(x)) deepNodesAny(v, out, seen);
+  return out;
+}
+
+function ownHosts(ctx, e) {
+  return new Set([bare(ctx.host), bare(ctx.site?.domain), ...(e?.root?.own_hosts ?? []), ...(e?.node?.own_hosts ?? [])].map(bare).filter(Boolean));
+}
+
+/** Named people on a page: every reviewedBy Person, and every author Person with a credential. */
+export function namedPeople(nodes) {
+  const all = deepNodes(nodes, /./);
+  const byId = new Map(all.filter((n) => n["@id"]).map((n) => [n["@id"], n]));
+  const person = (v) => { const n = typeof v === "string" ? byId.get(v) : v?.["@id"] && !v.name ? byId.get(v["@id"]) ?? v : v; return n && typesOf(n).includes("Person") && n.name ? n : null; };
+  const out = new Set();
+  for (const n of all) {
+    for (const v of [].concat(n.reviewedBy ?? [])) { const p = person(v); if (p) out.add(String(p.name).trim()); }
+    for (const v of [].concat(n.author ?? [])) { const p = person(v); if (p && (p.jobTitle || p.hasCredential || p.honorificSuffix || p.hasOccupation)) out.add(String(p.name).trim()); }
+  }
+  return [...out];
+}
+
+/** Names in the repo's reviewers.json files with written consent; null when the repo keeps none. */
+export function reviewerRoster(repo) {
+  if (!repo?.ok) return null;
+  const files = repo.files.filter((f) => /(^|\/)reviewers\.json$/.test(f) && !/node_modules\//.test(f));
+  if (!files.length) return null;
+  const names = new Set();
+  for (const f of files) {
+    let j; try { j = JSON.parse(repo.show(f) ?? ""); } catch { continue; }
+    for (const r of Array.isArray(j) ? j : j?.reviewers ?? []) if (r?.name && r?.consent?.written === true) names.add(String(r.name).trim().toLowerCase());
+  }
+  return names;
+}
 
 export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]/i;
 
@@ -948,8 +1143,11 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         missing_urls: r.missing ?? [],
         evidence: (r.evidence ?? []).slice(0, 25),
         protected: prot.length ? prot.map((pp) => ({ path: pp.path, rule: pp.rule, buy_link: pp.buy_link, sha256: pp.sha256 })) : null,
-        disposition: !s.site.repo ? "no_repo" : limit ? "known_limit" : "fix",
+        // A NAMED STOP is a failure only the owner can clear (k5: a real reviewer's written consent).
+        // It stays in the queue so it is said every week, but no fix pass is ever spent on it.
+        disposition: !s.site.repo ? "no_repo" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
         ...(limit ? { known_limit: limit.why } : {}),
+        ...(r.named_stop ? { named_stop: r.named_stop } : {}),
       });
     }
   }

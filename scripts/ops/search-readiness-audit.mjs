@@ -38,7 +38,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { passingItems,
-  loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, summaryLines,
+  loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, summaryLines, liveSameAs, hostOf, bare, entityFor, ENTITY_WATCH_RE,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 
@@ -46,6 +46,8 @@ const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "sea
 const REPOS = join(OUT, "repos");
 const OWNER = "seq23";
 const UA = "Mozilla/5.0 (compatible; BossOS-SearchReadiness/1.0; +https://boss.sequoiataylor.com)";
+// A social profile answers a robot UA with a login wall; the sameAs probe (k3) reads as a browser does.
+const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
@@ -56,10 +58,10 @@ const stop = (code, tag, why) => { console.error(`NAMED STOP [${tag}] ${why}`); 
 
 // ─── fetching ─────────────────────────────────────────────────────────────────
 
-async function get(url, { redirect = "follow", timeout = 20_000, text = true, method = "GET", accept = "text/html,application/xml,text/plain,*/*" } = {}) {
+async function get(url, { redirect = "follow", timeout = 20_000, text = true, method = "GET", accept = "text/html,application/xml,text/plain,*/*", ua = UA } = {}) {
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), timeout);
   try {
-    const res = await fetch(url, { method, redirect, signal: ctl.signal, headers: { "user-agent": UA, accept } });
+    const res = await fetch(url, { method, redirect, signal: ctl.signal, headers: { "user-agent": ua, accept } });
     const headers = Object.fromEntries(res.headers.entries());
     const body = text && method !== "HEAD" ? await res.text().catch(() => "") : "";
     return { url, status: res.status, final: res.url, redirected: res.redirected, location: headers.location ?? null, type: headers["content-type"] ?? "", headers, text: body };
@@ -248,7 +250,13 @@ async function readRepo(name) {
   const view = spawnSync("gh", ["repo", "view", `${OWNER}/${name}`, "--json", "visibility", "--jq", ".visibility"], { encoding: "utf8" });
   const runs = spawnSync("gh", ["run", "list", "-R", `${OWNER}/${name}`, "--event", "pull_request", "--status", "completed", "--limit", "5", "--json", "createdAt,updatedAt"], { encoding: "utf8" });
   let prRunMinutes = null; try { prRunMinutes = JSON.parse(runs.stdout || "[]").map((x) => (Date.parse(x.updatedAt) - Date.parse(x.createdAt)) / 60_000); } catch { /* gh not signed in */ }
-  const v = { ok: true, ref, files, show, workflows, fresh, indexnowKey, indexnowKeys, scriptsMentioningGscTruth, visibility: view.status === 0 ? view.stdout.trim() : null, prRunMinutes, llmRouting: show("config/llm_routing.json"), claudeMd: show("CLAUDE.md") };
+  // k6: the newest run of the weekly entity-backlink-watch, per workflow file (null = never ran).
+  const entityWatchRuns = {};
+  for (const w of workflows.filter((x) => ENTITY_WATCH_RE.test(x.name))) {
+    const o = spawnSync("gh", ["run", "list", "-R", `${OWNER}/${name}`, "--workflow", w.name, "--limit", "1", "--json", "conclusion,status,createdAt"], { encoding: "utf8" });
+    if (o.status === 0) { try { entityWatchRuns[w.name] = JSON.parse(o.stdout || "[]")[0] ?? null; } catch { /* left unread: not_checked */ } }
+  }
+  const v = { ok: true, ref, files, show, workflows, entityWatchRuns, fresh, indexnowKey, indexnowKeys, scriptsMentioningGscTruth, visibility: view.status === 0 ? view.stdout.trim() : null, prRunMinutes, llmRouting: show("config/llm_routing.json"), claudeMd: show("CLAUDE.md") };
   repoCache.set(name, v);
   return v;
 }
@@ -313,6 +321,13 @@ async function auditSite(site, checklist, g, gscSites, portfolio) {
   if (applies({ check: { applies_to: ["authority", "role:companion"] } }, site)) {
     const outs = [...new Set(pages.flatMap((p) => (p.html ? links(p.html, p.url) : [])).filter((l) => portfolio.includes(l.host) && l.host !== host.replace(/^www\./, "")).map((l) => l.url))].slice(0, 15);
     files.__targets = await pool(outs, 6, async (u) => { const r = await get(u, { text: false }); return { url: u, status: r.status, error: r.error }; });
+  }
+  // k3: every external sameAs in the live JSON-LD (never this site, never a grid sibling), fetched as a browser.
+  if (checklist.items.some((i) => i.check.type === "same_as_resolves" && applies(i, site))) {
+    const own = new Set([bare(host), bare(site.domain), ...((entityFor(repo, site)?.root?.own_hosts) ?? []).map(bare)]);
+    const grid = new Set(portfolio.map(bare));
+    const ext = [...new Set(pages.flatMap((p) => (p.status === 200 && p.html ? liveSameAs(p.html) : [])))].filter((u) => { const h = hostOf(u); return h && !own.has(h) && !grid.has(h); }).slice(0, 12);
+    files.__same_as = await pool(ext, 4, async (u) => { const r = await get(u, { text: false, ua: BROWSER_UA }); return { url: u, status: r.status, error: r.error }; });
   }
   const needsCrawl = checklist.items.some((i) => i.check.type === "no_orphans" && applies(i, site));
   const crawled = needsCrawl && home.status === 200 ? await crawl(host, home.html, CRAWL_CAP) : null;

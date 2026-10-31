@@ -1,5 +1,5 @@
 {
- "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry.",
+ "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry. entity_parent (31 Oct 2026, authority audit): spry-labs = a side business whose entity points parentOrganization at Spry Labs (https://billionairehighperformancecoach.com/spry-labs#organization), directly or through a grid parent such as The Industry Guides; client = a friend's business, never the Spry Labs parent; own = her own business outside Spry Labs (Porch & Party, Virtual Agency OS), never the Spry Labs parent. ymyl: true marks a medical, legal or financial site whose pages need a named reviewer (k5). entity_file names the entity file when it is not called entity.json.",
  "never": [
   "westpeek.",
   "joinwestpeek.",
@@ -17,6 +17,7 @@
    "domain": "theindustryguides.com",
    "repo": "local-guides-citation-velocity",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "guide",
    "roles": [
     "companion"
@@ -31,6 +32,8 @@
    "domain": "uscisexam.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "entity_parent": "spry-labs",
+   "ymyl": true,
    "kind": "guide",
    "roles": [
     "generator"
@@ -50,11 +53,21 @@
   {
    "domain": "dentistryguides.com",
    "known_limits": [
-    { "item": "a3", "why": "Owner decision, 9 Oct 2026, recorded and machine-checked in local-guides-generator (data/research/dentistry/vertical_status.json, held by its hard-fail research contract): only metros with sourced research are indexed; every other dentistry city page stays published but noindexed until its research file exists.", "review_after": "2027-01-09" },
-    { "item": "j9", "why": "Same owner decision, 9 Oct 2026: unresearched dentistry city pages are noindex, so the generator correctly keeps them out of the sitemap. A city joins the sitemap when its research file is written, never by filling the template.", "review_after": "2027-01-09" }
+    {
+     "item": "a3",
+     "why": "Owner decision, 9 Oct 2026, recorded and machine-checked in local-guides-generator (data/research/dentistry/vertical_status.json, held by its hard-fail research contract): only metros with sourced research are indexed; every other dentistry city page stays published but noindexed until its research file exists.",
+     "review_after": "2027-01-09"
+    },
+    {
+     "item": "j9",
+     "why": "Same owner decision, 9 Oct 2026: unresearched dentistry city pages are noindex, so the generator correctly keeps them out of the sitemap. A city joins the sitemap when its research file is written, never by filling the template.",
+     "review_after": "2027-01-09"
+    }
    ],
    "repo": "local-guides-generator",
    "category": "side_business",
+   "entity_parent": "spry-labs",
+   "ymyl": true,
    "kind": "guide",
    "roles": [
     "generator"
@@ -75,6 +88,8 @@
    "domain": "theaccidentguides.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "entity_parent": "spry-labs",
+   "ymyl": true,
    "kind": "guide",
    "roles": [
     "generator"
@@ -95,6 +110,8 @@
    "domain": "neuroevalguides.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "entity_parent": "spry-labs",
+   "ymyl": true,
    "kind": "guide",
    "roles": [
     "generator"
@@ -115,6 +132,8 @@
    "domain": "hormonesivhair.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "entity_parent": "spry-labs",
+   "ymyl": true,
    "kind": "guide",
    "roles": [
     "generator"
@@ -135,6 +154,8 @@
    "domain": "memphisseniorcarehomes.com",
    "repo": "local-guides-generator",
    "category": "side_business",
+   "entity_parent": "spry-labs",
+   "ymyl": true,
    "kind": "hyperlocal",
    "roles": [
     "generator",
@@ -478,10 +499,15 @@
   {
    "domain": "porchandparty901.com",
    "known_limits": [
-    { "item": "j9", "why": "New pages are frozen by the repo's own measured cadence gate (data/cadence/policy.json, 11 Oct 2026): Search Console showed 0 searches a month for the town targets and the library is already 37 pages over what it can keep current. The gate reopens itself on measured demand; this limit is measured again on review_after.", "review_after": "2027-01-11" }
+    {
+     "item": "j9",
+     "why": "New pages are frozen by the repo's own measured cadence gate (data/cadence/policy.json, 11 Oct 2026): Search Console showed 0 searches a month for the town targets and the library is already 37 pages over what it can keep current. The gate reopens itself on measured demand; this limit is measured again on review_after.",
+     "review_after": "2027-01-11"
+    }
    ],
    "repo": "p-n-p",
    "category": "own_business",
+   "entity_parent": "own",
    "kind": "hyperlocal",
    "roles": [],
    "label": "Porch & Party",
@@ -661,6 +687,8 @@
    "domain": "approvalprep.com",
    "repo": "approvalprep",
    "category": "side_business",
+   "entity_parent": "spry-labs",
+   "ymyl": true,
    "kind": "brand",
    "roles": [],
    "label": "ApprovalPrep",
@@ -673,6 +701,7 @@
    "domain": "weddingchecklistpdf.com",
    "repo": "dream-wedding-builder",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "Wedding checklist PDF",
@@ -685,6 +714,7 @@
    "domain": "weddingbudgetspreadsheet.com",
    "repo": "dream-wedding-builder",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "Wedding budget spreadsheet",
@@ -697,6 +727,7 @@
    "domain": "weddingseatingchartmaker.com",
    "repo": "dream-wedding-builder",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "Wedding seating chart maker",
@@ -709,6 +740,7 @@
    "domain": "weddingtimelinetemplate.com",
    "repo": "dream-wedding-builder",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "Wedding timeline template",
@@ -722,6 +754,7 @@
    "_repo_why": "The apex is NOT served by seq23/aplayer-mode (that repo is the Expo app and the API, on app.aplayermode.com and api.aplayermode.com). aplayermode.com/* is answered by workers/aplayermode-com in sprylabs-hpc-site, whose aplayermode/ directory holds the page, its robots.txt, sitemap.xml, llms.txt and its OWN IndexNow key. Corrected 25 Oct 2026 after the repo-side items (e3, e4, e5, i3, i6, i8) all failed against a repo that never served this host.",
    "repo": "sprylabs-hpc-site",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "A Player Mode",
@@ -734,6 +767,7 @@
    "domain": "time-2-read.com",
    "repo": "dailystory",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "Time2Read",
@@ -742,14 +776,21 @@
     "why": "A subscription product; no place-based pages."
    },
    "known_limits": [
-    { "item": "a1", "why": "Hosted on Lovable, which answers the www host with its own 302; the repo cannot set a 301 there." },
-    { "item": "a9", "why": "Lovable serves the app shell with 200 for every unknown path; a real 404 status is not configurable from the repo." }
+    {
+     "item": "a1",
+     "why": "Hosted on Lovable, which answers the www host with its own 302; the repo cannot set a 301 there."
+    },
+    {
+     "item": "a9",
+     "why": "Lovable serves the app shell with 200 for every unknown path; a real 404 status is not configurable from the repo."
+    }
    ]
   },
   {
    "domain": "howweknowdeep.com",
    "repo": "how-we-know",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "How We Know (the channel's website)",
@@ -764,6 +805,7 @@
    "domain": "professionalresourcelibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "authority",
    "roles": [
     "linker"
@@ -778,6 +820,7 @@
    "domain": "founderoperatorlibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "authority",
    "roles": [
     "linker"
@@ -792,6 +835,7 @@
    "domain": "memphisvendorlibrary.com",
    "repo": "authority-backlink-network",
    "category": "side_business",
+   "entity_parent": "spry-labs",
    "kind": "authority",
    "roles": [
     "linker"
@@ -806,6 +850,8 @@
    "domain": "horselegalguide.com",
    "repo": "horse-legal-guide-velocity",
    "category": "client",
+   "entity_parent": "client",
+   "ymyl": true,
    "kind": "guide",
    "roles": [],
    "label": "Horse Legal Guide",
@@ -818,6 +864,8 @@
    "domain": "hicksconsulting.org",
    "repo": "hicks-consulting-canonical",
    "category": "client",
+   "entity_parent": "client",
+   "entity_file": "data/entities/org_schema.json",
    "kind": "brand",
    "roles": [],
    "label": "Hicks Consulting",
@@ -830,6 +878,7 @@
    "domain": "virtualagency-os.com",
    "repo": "WPP-llm",
    "category": "own_business",
+   "entity_parent": "own",
    "kind": "brand",
    "roles": [],
    "label": "Virtual Agency OS",
@@ -842,6 +891,7 @@
    "domain": "billionairehighperformancecoach.com",
    "repo": "sprylabs-hpc-site",
    "category": "own_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "Spry Labs HPC (Billionaire High Performance Coach)",
@@ -856,8 +906,16 @@
      "buy_link": "https://sprylabs.gumroad.com/l/billionaire-high-performance-coach",
      "rule": "PROTECTED (owner, 25 Oct 2026): the page behind the portfolio's only two verified sales. A failure on it is fixed on its own, deliberately, in a single-page change: check the Gumroad buy link answers before and after, and never touch it in a bulk or cosmetic fix. Cosmetic-only items are skipped on it.",
      "accepted_exceptions": [
-      { "item": "b2", "decided": "2026-10-26", "why": "Accepted exception (owner, 26 Oct 2026): a protected page; its meta description stays as it is." },
-      { "item": "c1", "decided": "2026-10-26", "why": "Accepted exception (owner, 26 Oct 2026): a protected page; no Organization markup is added to it." }
+      {
+       "item": "b2",
+       "decided": "2026-10-26",
+       "why": "Accepted exception (owner, 26 Oct 2026): a protected page; its meta description stays as it is."
+      },
+      {
+       "item": "c1",
+       "decided": "2026-10-26",
+       "why": "Accepted exception (owner, 26 Oct 2026): a protected page; no Organization markup is added to it."
+      }
      ]
     }
    ],
@@ -870,6 +928,7 @@
    "domain": "spryexecutiveos.com",
    "repo": "sprylabs-hpc-site",
    "category": "own_business",
+   "entity_parent": "spry-labs",
    "kind": "brand",
    "roles": [],
    "label": "Spry Executive OS",
@@ -884,8 +943,16 @@
      "buy_link": "https://sprylabs.gumroad.com/l/billionaire-high-performance-coach",
      "rule": "PROTECTED (owner, 25 Oct 2026): the page behind the portfolio's only two verified sales. A failure on it is fixed on its own, deliberately, in a single-page change: check the Gumroad buy link answers before and after, and never touch it in a bulk or cosmetic fix. Cosmetic-only items are skipped on it.",
      "accepted_exceptions": [
-      { "item": "b2", "decided": "2026-10-26", "why": "Accepted exception (owner, 26 Oct 2026): a protected page; its meta description stays as it is." },
-      { "item": "c1", "decided": "2026-10-26", "why": "Accepted exception (owner, 26 Oct 2026): a protected page; no Organization markup is added to it." }
+      {
+       "item": "b2",
+       "decided": "2026-10-26",
+       "why": "Accepted exception (owner, 26 Oct 2026): a protected page; its meta description stays as it is."
+      },
+      {
+       "item": "c1",
+       "decided": "2026-10-26",
+       "why": "Accepted exception (owner, 26 Oct 2026): a protected page; no Organization markup is added to it."
+      }
      ]
     }
    ],

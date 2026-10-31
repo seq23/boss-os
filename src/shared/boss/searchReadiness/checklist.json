@@ -1,5 +1,5 @@
 {
- "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (76 = the page's 71 plus j9 and the four 26 Oct 2026 lessons (b10, e9, h6, j10)) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
+ "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (82 = the page's 71 plus j9, the four 26 Oct 2026 lessons (b10, e9, h6, j10) and the six authority items k1-k6 of 31 Oct 2026) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
  "version": 1,
  "page_item_count": 71,
  "kinds": [
@@ -70,6 +70,11 @@
    "id": "I",
    "title": "I · The $0 posture in a new repo",
    "when": "first day, before any content job runs"
+  },
+  {
+   "id": "K",
+   "title": "K · Authority and entity",
+   "when": "one entity.json per site, then a weekly watch"
   }
  ],
  "items": [
@@ -1591,6 +1596,129 @@
     "type": "zero_paid_doc",
     "source": "repo",
     "how": "docs/cost/zero-paid-llm.md exists and CLAUDE.md says \"nothing paid\" (any case).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "k1",
+   "phase": "K",
+   "title": "The site's identity lives in one entity.json",
+   "title_html": "The site's identity lives in one entity.json",
+   "burned": false,
+   "why_html": "Search engines and AI knowledge graphs reconcile a brand against one consistent identity. When name, logo, description and profiles are written in several generators, they drift apart (the authority audit of 30 Oct 2026 found 16 of 24 sites with no external identity at all).",
+   "how_html": "One <code>entity.json</code> per site in the repo: <code>@id</code>, name, logo, a one-line description, <code>sameAs[]</code> (real profiles only), <code>parentOrganization</code> and <code>profiles_pending[]</code>. A multi-site repo keys each site under <code>sites</code> or keeps one file per site.",
+   "check": {
+    "mode": "auto",
+    "type": "entity_json",
+    "source": "repo",
+    "how": "The repo holds an entity.json (or the site's recorded entity_file) whose entry for this site has a name and a sameAs list.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "k2",
+   "phase": "K",
+   "title": "sameAs never points at the site itself",
+   "title_html": "sameAs never points at the site itself",
+   "burned": false,
+   "why_html": "sameAs says 'this entity is also that profile'. A sameAs to the site's own pages, or to one of its own hosts, tells the knowledge graph nothing and reads as padding.",
+   "how_html": "No <code>sameAs</code> URL in <code>entity.json</code> or in the live JSON-LD is on this site's own host (or any host the entity lists in <code>own_hosts</code>).",
+   "check": {
+    "mode": "auto",
+    "type": "same_as_not_self",
+    "source": "schema",
+    "how": "No sameAs URL in the site's entity.json or in any sampled page's JSON-LD is on the site's own host or own_hosts.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "k3",
+   "phase": "K",
+   "title": "At least one external profile in sameAs really resolves",
+   "title_html": "At least one external profile in sameAs really resolves",
+   "burned": false,
+   "why_html": "Without one live profile outside the site (a Pinterest, YouTube, Facebook, store or company page), the brand has nothing independent to be reconciled against. A dead profile in sameAs is worse than none.",
+   "how_html": "Fetch every external <code>sameAs</code> URL in the live JSON-LD; at least one answers 2xx after redirects. Grid sibling sites do not count: they are the same owner, not an external profile.",
+   "check": {
+    "mode": "auto",
+    "type": "same_as_resolves",
+    "source": "http",
+    "how": "At least one sameAs URL in the live JSON-LD, on a host that is neither this site nor another grid site, answers 2xx after redirects.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "k4",
+   "phase": "K",
+   "title": "A side business names Spry Labs as its parent; a client site or Porch & Party never does",
+   "title_html": "A side business names Spry Labs as its parent; a client site or Porch & Party never does",
+   "burned": false,
+   "why_html": "The businesses were islands. One parent entity (Spry Labs, home at billionairehighperformancecoach.com/spry-labs) ties them into one graph. Client sites belong to their own firms, and Porch & Party is its own local business, so they must never carry that parent.",
+   "how_html": "<code>entity_parent</code> in <code>sites.json</code> says which: <code>spry-labs</code> sites set <code>parentOrganization</code> (to Spry Labs, or to a grid parent that itself points there) in <code>entity.json</code> and in the live JSON-LD; <code>client</code> and <code>own</code> sites reference Spry Labs nowhere.",
+   "check": {
+    "mode": "auto",
+    "type": "parent_organization",
+    "source": "schema",
+    "how": "entity_parent spry-labs: entity.json and the live JSON-LD carry parentOrganization (Spry Labs or a grid parent). client or own: neither mentions Spry Labs.",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "k5",
+   "phase": "K",
+   "title": "A medical, legal or financial page names a real reviewer",
+   "title_html": "A medical, legal or financial page names a real reviewer",
+   "burned": false,
+   "why_html": "Google weighs experience and expertise most on pages that affect health, money or legal outcomes. An organization byline is honest but weak; an invented person is worse than none.",
+   "how_html": "Each sampled content page of a YMYL site (<code>ymyl: true</code> in <code>sites.json</code>) carries a <code>reviewedBy</code> Person, or an author Person with a credential, who is listed in the repo's <code>reviewers.json</code> with written consent. Until a real reviewer agrees in writing this is a named stop for the owner, never a fix: nobody invents a person.",
+   "check": {
+    "mode": "auto",
+    "type": "ymyl_reviewer",
+    "source": "schema",
+    "how": "Every sampled content page of a YMYL site names a Person (reviewedBy, or a credentialed author); a Person not in the repo's reviewers.json with written consent fails. No reviewer yet is a named stop for the owner.",
+    "applies_to": [
+     "flag:ymyl"
+    ]
+   }
+  },
+  {
+   "id": "k6",
+   "phase": "K",
+   "title": "The weekly link-back watch exists and is green",
+   "title_html": "The weekly link-back watch exists and is green",
+   "burned": false,
+   "why_html": "Profiles die, get renamed or stop linking back, and nothing notices. A scheduled watch that fetches every sameAs, checks the link-back and promotes pending profiles keeps the identity from drifting.",
+   "how_html": "A workflow named <code>entity-backlink-watch</code> (or <code>entity_backlink_watch</code>) with a <code>schedule</code> and <code>workflow_dispatch</code>; its newest run is a success and less than eight days old.",
+   "check": {
+    "mode": "auto",
+    "type": "entity_watch_green",
+    "source": "github",
+    "how": "The repo has an entity-backlink-watch workflow with a schedule and workflow_dispatch, and its newest run succeeded within the last eight days.",
     "applies_to": [
      "guide",
      "hyperlocal",
