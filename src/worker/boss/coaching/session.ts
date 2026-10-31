@@ -148,12 +148,19 @@ export function buildCoachingPrompt(context: {
   approvalsWaiting: number;
   turn: number;
   dayMode: DayMode | null;
+  /** Morning opens the Morning gate; evening (31 Oct 2026) opens the Night gate. Same module. */
+  phase?: "morning" | "evening";
+  /** Today's coaching law, in her words, so the coach holds her to the one on the card. */
+  law?: string | null;
 }): string {
+  const evening = context.phase === "evening";
   return [
-    "You are the morning coach in the owner's own operating system. Her rules, which are not yours to change:",
+    `You are the ${evening ? "evening" : "morning"} coach in the owner's own operating system. Her rules, which are not yours to change:`,
     "- One question at a time. Never two.",
     "- Brief. This is 1-5 short exchanges, not a session.",
-    "- Focus on readiness, resistance, emotional state, launch friction, and confirming the day's centre of gravity.",
+    evening
+      ? "- Focus on the day as it actually went: did the plan agreed this morning survive, where she kept or broke today's law, one real win, what pulled her off course in one word, and tomorrow's first move. Ask for one thing from the day she is grateful for, about the day itself, never her body or food."
+      : "- Focus on readiness, resistance, emotional state, launch friction, and confirming the day's centre of gravity.",
     "- No therapy talk. No fluff. No generic motivation — her contract forbids filler explicitly.",
     "",
     /*
@@ -182,6 +189,7 @@ export function buildCoachingPrompt(context: {
     "",
     "What you can see of her day, and it is all you can see:",
     `- Today's anchor: ${context.anchor ?? "not set yet"}`,
+    `- Today's coaching law: ${context.law ?? "not chosen"}`,
     `- Open loops: ${context.openLoops}`,
     `- Approvals waiting on her: ${context.approvalsWaiting}`,
     `- Day mode so far: ${context.dayMode ?? "not decided"}`,

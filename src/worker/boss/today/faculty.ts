@@ -171,6 +171,20 @@ export const LAWS = [
   { n: 10, title: "Resume, Don’t Rebuild", text: "After drift, resume from the current system. Do not restart it." },
 ];
 
+/**
+ * HER COMMITMENTS, VERBATIM FROM THE CANON (docs/boss/A_PLAYER_MODE_OS_CONTRACT.md §9.2, "Standards
+ * Into Behavior"). The lapse emails quote these and the laws above back at her: her own words used
+ * against the drift, never ours. `tests/boss/practiceLapse.test.ts` checks every line is still in the
+ * contract word for word, so an edit here that paraphrases her fails the build.
+ */
+export const COMMITMENTS = [
+  { title: "Discipline", text: "execute the planned action without renegotiation." },
+  { title: "Consistency", text: "preserve continuity even when intensity drops." },
+  { title: "A-player behavior", text: "honest prioritization, clean follow-through, reduced drama, no fake work, recovery when needed, restart after misses." },
+  { title: "Self-command", text: "do the next aligned action even when mood is not ideal." },
+  { title: "Follow-through", text: "close loops, not just start them." },
+] as const;
+
 export interface CoachingFocus {
   mode: Mode;
   /** Why this mode, in a sentence, from the day's own state. */

@@ -170,7 +170,7 @@ function actionFor(
       headline: "The last check could not run.",
       detail:
         check.next_action ??
-        "Something the watcher depends on was unavailable, so nothing was learned about the case and the quiet is not good news. See Critical Alerts on Today for which credential, and the exact steps to restore it.",
+        "Something the watcher depends on was unavailable, so nothing was learned about the case and the quiet is not good news. See Systems → Alerts and team for which credential, and the exact steps to restore it.",
     };
   }
 

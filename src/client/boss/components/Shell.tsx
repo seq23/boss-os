@@ -122,9 +122,24 @@ const LABELS: Record<TabId, string> = {
   systems: "Systems",
 };
 
+/*
+ * FIVE TABS AND "☰ MORE" (owner approved the new Today, 31 Oct 2026). Nine tabs in two rows took
+ * ~250 of the phone's 844px. Today, Inbox, Capital and Spirit stay one tap away; Team, Memory,
+ * Trading, Vault, Systems and Operations (the settings) are in "☰ More", two taps away.
+ */
+export const PRIMARY_TABS: readonly TabId[] = ["today", "inbox", "capital", "spirit"];
+export const MORE_TABS: readonly TabId[] = ["team", "memory", "trading", "vault", "systems"];
+
 export function Shell({
   tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, onBack, children,
+  needsYou = 0, onTellSimone, sheet = null,
 }: {
+  /** Today's one "needs you" count (/practice/list), on the Today tab. */
+  needsYou?: number;
+  /** The floating "✎ Tell Simone" button, on every tab. */
+  onTellSimone?: () => void;
+  /** An overlay sheet (Tell Simone, a coach talk) drawn above the page. */
+  sheet?: ReactNode;
   tab: TabId;
   onTab: (t: TabId) => void;
   title: string;
@@ -141,6 +156,7 @@ export function Shell({
   children: ReactNode;
 }) {
   const { navRef, shellRef } = useMeasuredNav();
+  const [moreOpen, setMoreOpen] = useState(false);
   const { progress, scrollable, atEnd } = useReadingPosition();
 
   return (
@@ -169,14 +185,9 @@ export function Shell({
       <div className="railgauge" aria-hidden="true" />
       <header className="topbar">
         <h1>{title}</h1>
-        <button
-          className="lane-chip"
-          onClick={onSettings}
-          aria-pressed={settingsOpen}
-          aria-label={settingsOpen ? "Close settings" : "Open settings"}
-        >
-          {settingsOpen ? "✕ Close" : lane === "trading" ? "Trading" : "Operations"}
-        </button>
+        {settingsOpen && (
+          <button className="lane-chip" onClick={onSettings} aria-pressed="true" aria-label="Close settings">✕ Close</button>
+        )}
       </header>
 
       {/*
@@ -226,22 +237,49 @@ export function Shell({
         */}
       <div className="page-scrim" aria-hidden="true" />
 
+      {onTellSimone && !sheet && !moreOpen && (
+        <button className="fab" onClick={onTellSimone} data-testid="tell-simone-fab">✎ Tell Simone</button>
+      )}
+
+      {sheet}
+
       <nav className="tabs" aria-label="Sections" ref={navRef}>
-        {(Object.keys(LABELS) as TabId[]).map((id) => (
+        {moreOpen && (
+          <div className="more-panel" data-testid="more-panel">
+            {MORE_TABS.map((id) => (
+              <button key={id} className="more-item" aria-current={tab === id ? "page" : undefined} onClick={() => { setMoreOpen(false); onTab(id); }}>
+                {LABELS[id]}
+              </button>
+            ))}
+            <button className="more-item" aria-label="Open settings" onClick={() => { setMoreOpen(false); onSettings(); }}>Operations</button>
+          </div>
+        )}
+        {PRIMARY_TABS.map((id) => (
           <button
             key={id}
             className="tab"
             aria-current={tab === id ? "page" : undefined}
-            onClick={() => onTab(id)}
+            onClick={() => { setMoreOpen(false); onTab(id); }}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
                  strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               {ICONS[id]}
             </svg>
             {id === "inbox" && pending > 0 && <span className="tab-badge">{pending}</span>}
+            {id === "today" && needsYou > 0 && <span className="tab-badge" data-testid="today-badge">{needsYou}</span>}
             {LABELS[id]}
           </button>
         ))}
+        <button
+          className="tab"
+          aria-current={MORE_TABS.includes(tab) ? "page" : undefined}
+          aria-expanded={moreOpen}
+          aria-label="☰ More"
+          onClick={() => setMoreOpen((v) => !v)}
+        >
+          <span className="tab-more-icon" aria-hidden="true">☰</span>
+          More
+        </button>
       </nav>
     </div>
   );

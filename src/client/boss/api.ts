@@ -143,6 +143,14 @@ export const api = {
   // Served rather than restated in the client: a screen that spelled the five floors itself would
   // be a second copy of her contract, free to drift from the one that scores the day.
   floors: () => call<any>("/today/floors"),
+  // The new Today (31 Oct 2026): one list, its ticks, her gates. `practiceList` is the one source of
+  // every "needs you" count on any screen.
+  practiceList: () => call<any>("/practice/list"),
+  practiceTick: (key: string, done = true) => call<any>("/practice/tick", post("", { key, done })),
+  practiceOpened: () => call<any>("/practice/opened", post("", {})),
+  saveGate: (gate: string, items: unknown[], scope: "default" | "today" | "reset") =>
+    call<any>(`/practice/gates/${gate}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ items, scope }) }),
+  createGate: (body: { name: string; at_minute: number; checks: string[] }) => call<any>("/practice/custom-gates", post("", body)),
   /*
    * THE FIRST RECORD OF DOING IN BOSS OS. Until this existed, every "because" line under the
    * somatic lanes was a guess: the log held which movement was OFFERED and nothing held whether she

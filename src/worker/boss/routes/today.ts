@@ -10,6 +10,7 @@ import {
 } from "../coaching/session";
 import { assertMayReachExternalModel } from "../policy/airlock";
 import { runCoachingTurn } from "../coaching/run";
+import { recordEngagement } from "../practice/lapse";
 import { WIRING_BY_BACKEND } from "../router/backends";
 // One statement of which tiers a vendor gives away, shared with the router and the guard.
 import { routeIsBilled } from "../backends/guard";
@@ -3030,15 +3031,22 @@ today.post("/coaching/consent", async (c) => {
  */
 today.post("/coaching/turn", async (c) => {
   const day = dayId(Date.now());
-  const body = await c.req.json<{ text?: string; turn?: number; recent?: { role: string; text: string }[] }>()
+  const body = await c.req.json<{ text?: string; turn?: number; phase?: string; recent?: { role: string; text: string }[] }>()
     .catch(() => ({}) as any);
 
   const text = String(body.text ?? "").trim();
   if (!text) throw badRequest("Nothing was said.", "Type something, or use an exit phrase to finish.");
+  const phase: "morning" | "evening" = body.phase === "evening" ? "evening" : "morning";
+  /*
+   * THAT SHE TALKED, NEVER WHAT SHE SAID (31 Oct 2026, the tough-love emails track "the last
+   * coaching talk"). `practice_engagement` gets a day, a kind and a time — no text, no length, no
+   * model reply. The conversation itself stays in her browser, as it always has.
+   */
+  const talked = () => recordEngagement(c.env, phase === "evening" ? "coach_evening" : "coach_morning");
 
   // An exit phrase ends the coaching without reaching a model at all. Her own words, her own rule,
-  // and no reason to spend a call on them.
-  if (isExit(text)) return ok(c, { ended: true, reason: "exit_phrase", reply: null });
+  // and no reason to spend a call on them. "I'm ready" is still a talk that happened.
+  if (isExit(text)) { await talked(); return ok(c, { ended: true, reason: "exit_phrase", reply: null }); }
 
   const turn = Number(body.turn ?? 1);
   if (turn > MAX_TURNS) {
@@ -3051,6 +3059,7 @@ today.post("/coaching/turn", async (c) => {
   }
 
   await assertMayReachExternalModel(c.env.DB, "coaching_turns", null, true);
+  await talked();
 
   const dayRow = await c.env.DB
     .prepare(`SELECT morning_contract, day_mode FROM days WHERE id = ?`)
@@ -3058,9 +3067,10 @@ today.post("/coaching/turn", async (c) => {
     .first<{ morning_contract: string | null; day_mode: string | null }>();
   // The coach is told the SAME number her badge shows. A model briefed on a count nobody else can
   // see would talk to her about an inbox that does not exist.
-  const [loops, approvals] = await Promise.all([
+  const [loops, approvals, focus] = await Promise.all([
     c.env.DB.prepare(`SELECT COUNT(*) AS n FROM open_loops WHERE status = 'open'`).first<{ n: number }>(),
     pendingApprovals(c.env.DB),
+    coachingFocus(c.env, day, dayRow?.day_mode ?? null).catch(() => null),
   ]);
 
   const system = buildCoachingPrompt({
@@ -3069,6 +3079,8 @@ today.post("/coaching/turn", async (c) => {
     approvalsWaiting: approvals.total,
     turn,
     dayMode: (dayRow?.day_mode as any) ?? null,
+    phase,
+    law: focus ? `Law ${focus.law.n}, ${focus.law.title}: ${focus.law.text}` : null,
   });
 
   // Only the current turn and at most two prior exchanges travel. A morning is not a transcript.

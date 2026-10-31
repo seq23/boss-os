@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { tab } from "./support/boss";
 import { provisionLocalD1, queryLocalD1 } from "./support/provision";
 
 /**
@@ -25,13 +26,6 @@ async function unlock(page: Page) {
   await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
 }
 
-async function tab(page: Page, label: string) {
-  const nav = page.getByRole("navigation", { name: "Sections" });
-  const toggle = page.getByTestId("nav-toggle");
-  if (await toggle.isVisible().catch(() => false)) await toggle.click();
-  await nav.getByRole("button", { name: label, exact: true }).click();
-  await expect(page.locator("main.page")).toBeVisible();
-}
 
 /**
  * THE DESK, BEHIND THE GRID (boss fix D, 23 Oct 2026): the Deals/Capital page now opens on the Grid,

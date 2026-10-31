@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MorningBlock } from "./MorningItem";
-import { go, employeeHref } from "../nav";
+import { go, employeeHref, morningHref } from "../nav";
 import { api } from "../api";
 import { buildOperations } from "../operationsSource";
 import { Coaching } from "./Coaching";
 import { BodyContractView } from "./BodyContract";
 import { Empty, Loading } from "../components/Shell";
-import { ErrorNotice, InfoNotice } from "../components/Notice";
-import { TellSimone } from "../components/TellSimone";
+import { ErrorNotice } from "../components/Notice";
 import { AncestralHourCard } from "../components/AncestralHourCard";
 import { usd } from "../../../shared/boss/types";
+import { TodayList, GateEditor, GateCreator, AddToToday, Sheet, clock, type DayContext, type Gate, type ListData } from "../components/TodayList";
 
 /**
  * Today — canon §15.
@@ -56,154 +55,292 @@ export const TODAY_GROUPS: readonly (readonly string[])[] = [
 const time = (ms: number) =>
   new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
-export function Today({ onOpenOperations, onOpenRecentWork, focus = null }: { onOpenOperations?: () => void; onOpenRecentWork?: () => void; focus?: "briefing" | "morning" | "tell" | null } = {}) {
-  const [data, setData] = useState<Payload | null>(null);
+/** The groups the new Today reads. System health (alerts' detail, the roster, continuity, trading) moved to Systems. */
+const TODAY_PAGE_GROUPS = TODAY_GROUPS.filter((g) => !g.includes("approval_inbox"));
+
+const shortDate = (ts: number) =>
+  new Date(ts).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" });
+
+/** "**The AI trade is being repriced.** Friday's…" → "The AI trade is being repriced." */
+const leadOf = (bullet: string) => {
+  const m = /\*\*(.+?)\*\*/.exec(bullet);
+  return (m ? m[1]! : bullet.split(/(?<=[.!?])\s/)[0]!).replace(/\[\d+\]/g, "").trim();
+};
+
+/**
+ * COMING UP, ONE MEETING ONCE. Her Wednesday showed "Scooter Sync 8:00" from the calendar and "West
+ * Peek partner meeting 9:00 · standing" an hour later, every week: the same meeting from two
+ * sources. A standing entry whose person is named in a calendar entry on the same day is folded
+ * into it ("… · and the standing partner meeting, 9:00").
+ */
+export function dedupeDiary(rows: any[]): any[] {
+  const dayOf = (ms: number) => new Date(ms).toDateString();
+  const out = rows.filter((r) => !r.standing).map((r) => ({ ...r }));
+  for (const st of rows.filter((r) => r.standing)) {
+    const who = String(st.with ?? "").toLowerCase();
+    const twin = who ? out.find((r) => dayOf(r.scheduled_at) === dayOf(st.scheduled_at) && `${r.title} ${r.with ?? ""}`.toLowerCase().includes(who)) : null;
+    if (twin) twin.also = `and the standing ${String(st.title).replace(/^West Peek /, "").toLowerCase()}, ${new Date(st.scheduled_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+    else out.push({ ...st });
+  }
+  return out.sort((a, b) => a.scheduled_at - b.scheduled_at);
+}
+
+/** Done for you, with the receipts rolled into one line. */
+export function doneLines(done: { id: string; text: string }[]): { id: string | null; text: string }[] {
+  const receipts = done.filter((d) => /^New receipt from /i.test(d.text));
+  const rest = done.filter((d) => !/^New receipt from /i.test(d.text)).map((d) => ({ id: d.id, text: d.text }));
+  if (!receipts.length) return rest;
+  const from = receipts.map((r) => /^New receipt from ([^:]+?)(?:\.[a-z]+)*:/i.exec(r.text)?.[1] ?? "a sender")
+    .map((d) => d.replace(/mail$/i, "")).map((d) => d.charAt(0).toUpperCase() + d.slice(1));
+  return [...rest, { id: receipts[0]!.id, text: `${receipts.length} receipt${receipts.length === 1 ? "" : "s"} filed (${[...new Set(from)].join(", ")}).` }];
+}
+
+export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus = null, onNeedsYou, gateFocus = null }: {
+  onOpenOperations?: () => void; onOpenRecentWork?: () => void;
+  focus?: "briefing" | "morning" | "tell" | "coach" | "gate" | null;
+  onNeedsYou?: (n: number) => void;
+  gateFocus?: Gate | null;
+} = {}) {
+  const [blocks, setBlocks] = useState<Record<string, any>>({});
+  const [day, setDay] = useState<any>(null);
+  const [limits, setLimits] = useState<DayContext["limits"]>({ morning_priorities: 3, midday_checks: 3, night_review_prompts: 3 });
+  const [list, setList] = useState<ListData | null>(null);
+  const [morning, setMorning] = useState<any>(undefined);
   const [error, setError] = useState<unknown>(null);
-  const [flash, setFlash] = useState<string | null>(null);
-  const [gate, setGate] = useState<"morning" | "midday" | "night" | null>(null);
+  const [coach, setCoach] = useState<"morning" | "evening" | null>(focus === "coach" ? (new Date().getHours() >= 17 ? "evening" : "morning") : null);
+  const [sheet, setSheet] = useState<null | { kind: "edit"; gate: Gate; items: any[] } | { kind: "create" } | { kind: "add" }>(null);
 
-  /*
-   * SEVEN REQUESTS, ONE SCREEN.
-   *
-   * Boss OS runs on Cloudflare's Free plan, which allows a request 10 ms of CPU, and the owner keeps
-   * it there. Fetching the whole day in one request cost ~18 ms and Cloudflare killed it — that was
-   * the 403 on this tab. So the thirteen blocks are asked for in groups, all at once, and stitched
-   * back together here in canon's order. Nothing is missing from the result; it just arrives in
-   * parallel.
-   *
-   * A group that fails does not take the screen with it: the blocks that arrived render, and the
-   * failure is shown as a notice naming what it was. A blank tab was the defect; a tab with twelve
-   * blocks and one sentence is the fix.
-   */
+  const loadList = useCallback(async () => {
+    try { const l = await api.practiceList(); setList(l); onNeedsYou?.(l.needs_you); } catch (e) { setError(e); }
+  }, [onNeedsYou]);
+
   const load = useCallback(async () => {
-    const settled = await Promise.allSettled(
-      TODAY_GROUPS.map((group) => api.todayBlocks(group)),
-    );
+    const settled = await Promise.allSettled(TODAY_PAGE_GROUPS.map((g) => api.todayBlocks(g)));
     const good = settled.filter((r): r is PromiseFulfilledResult<Payload> => r.status === "fulfilled").map((r) => r.value);
-    const bad = settled.filter((r): r is PromiseRejectedResult => r.status === "rejected");
-
-    if (good.length === 0) {
-      setError(bad[0]?.reason ?? new Error("Today could not be loaded"));
-      setData((prev) => prev);
-      return;
+    const bad = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (good.length) {
+      setBlocks(Object.fromEntries(good.flatMap((p) => p.blocks).map((b) => [b.key, b])));
+      setDay(good[good.length - 1]!.day);
+      setLimits(good[good.length - 1]!.limits);
     }
+    setError(bad ? bad.reason : null);
+    await loadList();
+  }, [loadList]);
 
-    const blocks = good.flatMap((p) => p.blocks).sort((a, b) => a.order - b.order);
-    // Every group carries the day and its gates; the freshest answer is the one to show.
-    const latest = good[good.length - 1]!;
-    setData({ day: latest.day, blocks, gates: latest.gates, limits: latest.limits });
-    setError(bad.length > 0 ? bad[0]!.reason : null);
-  }, []);
+  useEffect(() => { void load(); api.morningLatest().then(setMorning).catch(() => setMorning(null)); }, [load]);
 
-  useEffect(() => { load(); }, [load]);
-  // Her email's "Read the full briefing" and "See them all on Today" open Today at that place.
-  useEffect(() => {
-    if (!data || !focus || focus === "tell") return;
-    const el = document.getElementById(focus);
-    if (el) el.scrollIntoView({ block: "start" });
-  }, [data, focus]);
+  async function tick(key: string, done: boolean) {
+    try { const l = await api.practiceTick(key, done); setList(l); onNeedsYou?.(l.needs_you); } catch (e) { setError(e); }
+  }
 
-  // The box comes first and never waits on the day: she can hand Simone work while Today loads, or if it fails.
-  const tell = <TellSimone focus={focus === "tell"} onOpenRecentWork={onOpenRecentWork} />;
-  // The end-of-month ancestral hour (owner, 31 Oct 2026): one self-contained card, near the top, never waiting on the day.
-  const ancestral = <AncestralHourCard />;
-  if (!data) return <>{ancestral}{tell}{error ? <ErrorNotice error={error} /> : <Loading />}</>;
+  const c = (k: string) => blocks[k]?.content ?? null;
+  const contract = c("todays_contract");
+  const pillars = contract?.agenda?.pillars ?? null;
+  const focusC = c("coaching_focus");
+  const lens = c("daily_thinking_lens");
+  const brief = c("executive_briefing");
+  const spirit = c("spirit_signal");
+  const meetings = c("meetings");
+  // RED ONLY FOR A REAL ALARM THAT IS HERS (make-it-calm): a critical alert nobody on the team can
+  // clear. A dead key, a blocked deliverable or a stalled duty is the team's, and lives on Systems.
+  const TEAM_FIXES = new Set(["credentials", "deliverables", "tasks", "duties", "standing_duties", "site_audit"]);
+  const alerts: any[] = (c("critical_alerts")?.alerts ?? []).filter((a: any) => a.severity === "critical" && !TEAM_FIXES.has(a.source_type));
 
-  const { day, blocks, limits } = data;
-  const done = {
-    morning: Boolean(day?.morning_completed_at),
-    midday: Boolean(day?.midday_completed_at),
-    night: Boolean(day?.night_completed_at),
+  const ctx: DayContext = {
+    gratitude: pillars?.spirit?.available === false ? null : (pillars?.spirit?.action ?? null),
+    practice: pillars?.spirit?.detail ?? [],
+    body: pillars?.body ?? null,
+    law: focusC?.law ? { n: focusC.law.n, title: focusC.law.title, text: focusC.law.text } : null,
+    // An empty pillar contributes nothing: "Nothing is owed" is not a priority.
+    priorities: (contract?.contract?.priorities ?? []).filter((p: string) => !/^Nothing is owed/i.test(p)),
+    // The leads review is the Wealth block's own sub-item; any other first money move rides the Brokerage block.
+    firstMove: pillars?.wealth?.action && !/^Review \d+ candidate/.test(pillars.wealth.action)
+      ? { action: pillars.wealth.action, why: pillars.wealth.why ? String(pillars.wealth.why).replace(/§[\d.]+\s*[—-]\s*/g, "") : null } : null,
+    limits,
   };
 
-  async function run(which: "morning" | "midday" | "night", body: unknown) {
-    setError(null);
-    try {
-      if (which === "morning") await api.morningGate(body);
-      else if (which === "midday") await api.middayGate(body);
-      else await api.nightGate(body);
-      setGate(null);
-      setFlash(`${which[0]!.toUpperCase()}${which.slice(1)} gate recorded.`);
-      await load();
-    } catch (e) {
-      setError(e);
-    }
-  }
+  if (!list && !day) return error ? <ErrorNotice error={error} /> : <Loading />;
+
+  const nudge = list?.coach.nudge ?? null;
+  const points = (brief?.sections?.[0]?.bullets ?? []).slice(0, 2).map(leadOf);
+  const lawTick = list?.ticks["morning:law"] ?? null;
+  const done: any[] = morning?.payload?.done ?? [];
+  const diaryRows = dedupeDiary(meetings?.diary ?? []);
+  const next = diaryRows[0];
+  const win = spirit?.windows?.[0];
+  const spiritLine = spirit?.moon
+    ? `${spirit.moon.phase} in ${spirit.moon.sign}${win ? ` · ${String(win.detail?.window_type ?? "").replace(/^./, (x: string) => x.toUpperCase()) || "A"} window until ${new Date(win.ends_at).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}` : ""}`
+    : null;
 
   return (
     <>
-      {/*
-        * FIRST ON THE PAGE, and above the notices rather than between them and the gates: a gate's
-        * "recorded" notice must stay next to the gate she tapped (e2e Today phone, 600px), so the
-        * card may not sit in that gap. It renders nothing outside the month's last four days.
-        */}
-      {ancestral}
       <ErrorNotice error={error} onDismiss={() => setError(null)} />
-      {flash && (
-        <div className="notice" style={{ borderColor: "var(--ok)" }}>
-          {flash}
-          <button className="notice-x" onClick={() => setFlash(null)} aria-label="Dismiss">✕</button>
+      {alerts.length > 0 && (
+        <div className="alarm-banner" role="alert" data-testid="alarm-banner">
+          ⚠ {alerts.length} to check first: {String(alerts[0].text).split(/(?<=[.!?])\s/)[0]}{" "}
+          <button className="t-link" onClick={() => go("/?tab=systems&section=health")}>Open ›</button>
         </div>
       )}
 
-      {tell}
-
-      <p className="eyebrow">
-        {new Date(day.date_ts).toLocaleDateString(undefined, {
-          weekday: "long", month: "long", day: "numeric", timeZone: "UTC",
-        })}
-      </p>
-
-      <div className="stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        {(["morning", "midday", "night"] as const).map((g) => (
-          <button
-            key={g}
-            className="stat"
-            style={{ textAlign: "left", cursor: done[g] ? "default" : "pointer", font: "inherit", color: "inherit" }}
-            onClick={() => !done[g] && setGate(gate === g ? null : g)}
-            aria-pressed={gate === g}
-            disabled={done[g]}
-          >
-            <div className="stat-n" style={{ fontSize: 15, color: done[g] ? "var(--ok)" : "var(--gold)" }}>
-              {done[g] ? time(day[`${g}_completed_at`]) : "Open"}
-            </div>
-            <div className="stat-l">{g === "midday" ? "Midday reset" : `${g} gate`}</div>
+      <div className="today-summary" data-testid="today-summary">
+        <strong>{day ? shortDate(day.date_ts) : ""}</strong>
+        {list && <span>· {list.needs_you} for you · {list.done} of {list.total} done</span>}
+        {nudge && (
+          <button className="nudge" onClick={() => setCoach(nudge)} data-testid="coach-nudge">
+            {nudge === "morning" ? "☀" : "🌙"} Your coach is waiting · Start ›
           </button>
-        ))}
+        )}
       </div>
 
-      {/*
-        * MANDATORY MORNING COACHING, after the gate rather than instead of it.
-        *
-        * Her §15.6 puts it AFTER the Daily Anchor, Pillar Contracts and Run of Show are printed —
-        * "before execution begins", not before the day is described. So it sits under the Morning
-        * Gate form: she sees what the day is, then is asked how she is landing in it.
-        */}
-      {gate === "morning" && <MorningForm max={limits.morning_priorities} onRun={(b) => run("morning", b)} />}
-      {gate === "morning" && <Coaching onModeSet={load} />}
-      {gate === "midday" && <MiddayForm max={limits.midday_checks} onRun={(b) => run("midday", b)} />}
-      {gate === "night" && (
-        <NightForm max={limits.night_review_prompts} maxSeed={limits.morning_priorities} onRun={(b) => run("night", b)} />
+      {/* The ancestral hour (Imani's monthly practice): in the last days of the month only, near the top. */}
+      <AncestralHourCard />
+
+      <div className="today-grid">
+        <div className="today-side">
+          {brief && (brief.headline || brief.summary) && (
+            <div className="t-card" data-testid="briefing-excerpt" id="briefing">
+              <div className="t-head">
+                <span className="t-k">Briefing{brief.generated_at ? ` · ${new Date(brief.generated_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : ""}</span>
+                <button className="t-link" onClick={() => go("/?view=briefing")}>Read the full briefing ›</button>
+              </div>
+              <p className="t-headline">{brief.headline ?? brief.summary}</p>
+              {points.length > 0 && <ul>{points.map((p: string, i: number) => <li key={i}>{p}</li>)}</ul>}
+            </div>
+          )}
+          {brief?.reason && !brief.headline && (
+            <div className="t-card"><span className="t-k">Briefing</span><div className="t-row-sub">{brief.reason}</div></div>
+          )}
+
+          {focusC?.law && (
+            <div className="t-card law-card" data-testid="law-card">
+              <span className="t-k">Today&apos;s coaching law</span>
+              <p className="law-title">Law {focusC.law.n} · {focusC.law.title}</p>
+              <p className="law-text">{focusC.law.text}</p>
+              <div className="t-actions">
+                <button className="done-btn" aria-pressed={Boolean(lawTick)} onClick={() => void tick("morning:law", !lawTick)} data-testid="law-read-aloud">
+                  {lawTick ? `✓ Read aloud ${clock(lawTick)}` : "Read it aloud ✓"}
+                </button>
+                <button className="t-link" onClick={() => setCoach(new Date().getHours() >= 17 ? "evening" : "morning")}>Talk it through with your coach ›</button>
+              </div>
+              {lens && <div className="t-row-sub">Lens: {(lens.prompts ?? [])[0] ?? lens.track}</div>}
+              <details>
+                <summary className="t-link">See all laws ▾</summary>
+                <div className="t-row-sub" style={{ marginTop: 6 }}><strong>{focusC.mode}</strong> · {focusC.because}</div>
+                <ol style={{ margin: "6px 0", paddingLeft: 18, fontSize: 14 }}>
+                  {(focusC.rules ?? []).map((r: string, i: number) => <li key={i}>{r}</li>)}
+                  {focusC.law.because && <li>Why Law {focusC.law.n} today: {focusC.law.because}</li>}
+                </ol>
+                {lens && <div className="t-row-sub">Thinking lens · {lens.track}: {(lens.prompts ?? []).join(" · ")}</div>}
+              </details>
+            </div>
+          )}
+
+          {spiritLine && (
+            <div className="t-card spirit-line" data-testid="spirit-line">
+              <span>{spiritLine}</span>
+              <button className="t-link" onClick={() => go("/?tab=spirit")}>Open Spirit ›</button>
+            </div>
+          )}
+        </div>
+
+        <div className="today-main">
+          {list && (
+            <TodayList
+              list={list} ctx={ctx} onTick={(k, d) => void tick(k, d)} onChanged={() => void load()} onError={setError}
+              onCoach={setCoach} openGate={gateFocus}
+              onEditGate={(gate, items) => setSheet({ kind: "edit", gate, items })}
+              onCreateGate={() => setSheet({ kind: "create" })}
+              onAddLoop={() => setSheet({ kind: "add" })}
+            />
+          )}
+          {list && list.needs_you === 0 && <p className="all-clear" data-testid="all-clear">All clear today: nothing is waiting on you.</p>}
+
+          <div className="t-below">
+            <details data-testid="coming-up">
+              <summary>
+                Coming up · {meetings?.diary_summary?.startsWith("Nothing today") || !next ? "nothing today" : ""}
+                {next ? ` next ${new Date(next.scheduled_at).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}, ${next.title}` : ""} · Show ▾
+              </summary>
+              {meetings && <Diary content={{ ...meetings, diary: diaryRows, calendar: null }} onChanged={() => void load()} onError={setError} />}
+            </details>
+            {done.length > 0 && (
+              <details data-testid="done-for-you">
+                <summary>Done for you ({doneLines(done).length}) · tap to show ▾</summary>
+                {doneLines(done).map((d, i) => (
+                  <button key={i} className="row mi-row" onClick={() => d.id && go(morningHref(morning.day, d.id))}>
+                    <span className="row-main"><span className="row-title">{d.text}</span></span>
+                    <span className="row-val">Open ›</span>
+                  </button>
+                ))}
+              </details>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {coach && (
+        <Sheet title={coach === "evening" ? "🌙 Evening coaching" : "☀ Morning coaching"} onClose={() => { setCoach(null); void loadList(); }} testId="coach-sheet">
+          <Coaching phase={coach} onTalked={() => void loadList()} />
+        </Sheet>
       )}
-
-      {/*
-        * THIS MORNING'S EMAIL (24 Oct 2026). Her email said "6 decisions" and Today showed none: the
-        * email was built from files on her Mac that Today never saw. Simone now keeps the morning in
-        * Boss OS before she sends it, and this lists the very same decisions, each opening its screen.
-        */}
-      <div className="docket" data-testid="today-morning">
-        <div className="docket-head"><h3 style={{ margin: 0 }}>This morning&apos;s email</h3></div>
-        <MorningBlock />
-      </div>
-
-      <OperationsLine onOpen={onOpenOperations} />
-
-      {blocks.map((b) => (
-        <BlockCard key={b.key} block={b} onChanged={load} onError={setError} open={focus === "briefing" && b.key === "executive_briefing"} />
-      ))}
+      {sheet?.kind === "edit" && (
+        <Sheet title="Edit gate" onClose={() => setSheet(null)} testId="edit-sheet">
+          <GateEditor gate={sheet.gate} items={sheet.items} onClose={() => setSheet(null)} onError={setError}
+            onSaved={(l) => { setList(l); onNeedsYou?.(l.needs_you); setSheet(null); }} />
+        </Sheet>
+      )}
+      {sheet?.kind === "create" && (
+        <Sheet title="+ Create a gate" onClose={() => setSheet(null)} testId="create-sheet">
+          <GateCreator onError={setError} onSaved={(l) => { setList(l); setSheet(null); }} />
+        </Sheet>
+      )}
+      {sheet?.kind === "add" && (
+        <Sheet title="+ Add to today" onClose={() => setSheet(null)} testId="add-sheet">
+          <AddToToday onError={setError} onSaved={() => { setSheet(null); void loadList(); }} />
+        </Sheet>
+      )}
     </>
   );
 }
+
+/** "Read the full briefing ›": the whole report, word for word, on its own page, with its run button. */
+export function BriefingPage() {
+  const [block, setBlock] = useState<Block | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const load = useCallback(async () => {
+    try { const p = await api.todayBlocks(["executive_briefing"]); setBlock(p.blocks[0] ?? null); } catch (e) { setError(e); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  if (!block) return error ? <ErrorNotice error={error} /> : <Loading />;
+  return <BlockCard block={block} onChanged={load} onError={setError} open />;
+}
+
+/**
+ * SYSTEM HEALTH, OFF TODAY (owner, 31 Oct 2026). Critical alerts, the team's roll call, continuity
+ * and trading moved here from Today, with every button they had (Mark resolved, Dismiss, Refresh).
+ * A real alarm still shows on Today as a thin red banner that links here.
+ */
+export function SystemHealth({ onOpenOperations }: { onOpenOperations?: () => void }) {
+  const [blocks, setBlocks] = useState<Block[]>([]);
+  const [error, setError] = useState<unknown>(null);
+  const load = useCallback(async () => {
+    const groups = TODAY_GROUPS.filter((g) => g.includes("critical_alerts") || g.includes("approval_inbox"));
+    const settled = await Promise.allSettled(groups.map((g) => api.todayBlocks(g)));
+    const good = settled.filter((r): r is PromiseFulfilledResult<Payload> => r.status === "fulfilled").map((r) => r.value);
+    setBlocks(good.flatMap((p) => p.blocks).filter((b) => b.key !== "approval_inbox").sort((a, b) => a.order - b.order));
+    const bad = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    setError(bad ? bad.reason : null);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  return (
+    <div data-testid="system-health">
+      <ErrorNotice error={error} onDismiss={() => setError(null)} />
+      <OperationsLine onOpen={onOpenOperations ?? (() => go("/?tab=team&team=duties"))} />
+      {blocks.map((b) => <BlockCard key={b.key} block={b} onChanged={load} onError={setError} />)}
+    </div>
+  );
+}
+
 
 /**
  * The two "when relevant" elements disappear when they are not relevant, which
@@ -1735,237 +1872,6 @@ function Loops({ loops, onChanged, onError }: {
         <button className="btn" disabled={busy || !title.trim()}>Add</button>
       </form>
     </>
-  );
-}
-
-// ─── Gate flows ───────────────────────────────────────────────────────────────
-
-function Lines({ value, onChange, max, label }: {
-  value: string[];
-  onChange: (v: string[]) => void;
-  max: number;
-  label: string;
-}) {
-  return (
-    <>
-      {value.map((v, i) => (
-        <input
-          key={i}
-          value={v}
-          onChange={(e) => onChange(value.map((x, j) => (j === i ? e.target.value : x)))}
-          placeholder={`${label} ${i + 1}`}
-          aria-label={`${label} ${i + 1}`}
-          style={{ display: "block", width: "100%", marginTop: 8, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
-        />
-      ))}
-      {value.length < max && (
-        <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => onChange([...value, ""])}>
-          Add {label.toLowerCase()}
-        </button>
-      )}
-    </>
-  );
-}
-
-function MorningForm({ max, onRun }: { max: number; onRun: (b: unknown) => void }) {
-  const [priorities, setPriorities] = useState<string[]>([""]);
-  const [identity, setIdentity] = useState("");
-  const [state, setState] = useState("");
-  const [bodyFloor, setBodyFloor] = useState("");
-  const [revenue, setRevenue] = useState("");
-  const [commitment, setCommitment] = useState("");
-  const filled = priorities.filter((p) => p.trim());
-
-  return (
-    <form
-      className="docket"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onRun({
-          priorities: filled,
-          identity_cue: identity || undefined,
-          state: state || undefined,
-          body_floor: bodyFloor || undefined,
-          revenue_reality: revenue || undefined,
-          commitment: commitment || undefined,
-        });
-      }}
-    >
-      <h3 style={{ marginTop: 0 }}>Morning Gate</h3>
-      <InfoNotice>Three priorities at most. Choosing them is the work.</InfoNotice>
-      <Lines value={priorities} onChange={setPriorities} max={max} label="Priority" />
-      {[
-        ["Identity cue", identity, setIdentity],
-        ["State", state, setState],
-        ["Body floor", bodyFloor, setBodyFloor],
-        ["Revenue reality", revenue, setRevenue],
-        ["Today's commitment", commitment, setCommitment],
-      ].map(([label, value, set]: any) => (
-        <input
-          key={label}
-          value={value}
-          onChange={(e) => set(e.target.value)}
-          placeholder={label}
-          aria-label={label}
-          style={{ display: "block", width: "100%", marginTop: 8, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
-        />
-      ))}
-      <div className="decide">
-        <button className="btn btn-approve" disabled={filled.length === 0}>Agree the day</button>
-      </div>
-    </form>
-  );
-}
-
-function MiddayForm({ max, onRun }: { max: number; onRun: (b: unknown) => void }) {
-  const [checks, setChecks] = useState<string[]>([""]);
-  const [adjustments, setAdjustments] = useState("");
-  const filled = checks.filter((c) => c.trim());
-
-  return (
-    <form
-      className="docket"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onRun({ checks: filled.map((text) => ({ text, done: false })), adjustments: adjustments || undefined });
-      }}
-    >
-      <h3 style={{ marginTop: 0 }}>Midday Reset</h3>
-      <InfoNotice>Three checks at most, and the approval sweep runs with them.</InfoNotice>
-      <Lines value={checks} onChange={setChecks} max={max} label="Check" />
-      <input
-        value={adjustments}
-        onChange={(e) => setAdjustments(e.target.value)}
-        placeholder="What changed"
-        aria-label="What changed"
-        style={{ display: "block", width: "100%", marginTop: 8, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
-      />
-      <div className="decide">
-        <button className="btn btn-approve" disabled={filled.length === 0}>Reset</button>
-      </div>
-    </form>
-  );
-}
-
-function NightForm({ max, maxSeed, onRun }: { max: number; maxSeed: number; onRun: (b: unknown) => void }) {
-  const [attention, setAttention] = useState([{ focus_area: "", pct: "" }]);
-  const [review, setReview] = useState<string[]>([""]);
-  const [seed, setSeed] = useState<string[]>([""]);
-  const [note, setNote] = useState("");
-
-  const allocated = attention.reduce((sum, a) => sum + (Number(a.pct) || 0), 0);
-  const usable = attention.filter((a) => a.focus_area.trim() && Number(a.pct) > 0);
-
-  /*
-   * THE FIVE FLOORS, ASKED RATHER THAN INFERRED.
-   *
-   * §14.2: "Ask what was completed before assigning a verdict. Do not guess completion." So the
-   * three-state control is the design, not a UI nicety — met, missed, and NOT ANSWERED are three
-   * different things, and a checkbox would collapse the last two into "missed" and quietly
-   * manufacture the guess the rule forbids. Unanswered is the default and it stays that way unless
-   * she touches it.
-   *
-   * The floor list is fetched rather than written here, so this screen cannot drift from the
-   * contract that scores the day.
-   */
-  const [floors, setFloors] = useState<{ key: string; title: string; floor: string }[]>([]);
-  const [reported, setReported] = useState<Record<string, boolean | undefined>>({});
-  useEffect(() => { api.floors().then((f: any) => setFloors(f.floors)).catch(() => setFloors([])); }, []);
-
-  const answered = Object.values(reported).filter((v) => v !== undefined).length;
-
-  return (
-    <form
-      className="docket"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onRun({
-          attention: usable.map((a) => ({ focus_area: a.focus_area.trim(), pct: Number(a.pct) })),
-          review: review.filter((r) => r.trim()),
-          evidence: note ? { note } : undefined,
-          tomorrow_seed: { priorities: seed.filter((s) => s.trim()) },
-          // Sent only when she answered something. An empty object would look like a report of
-          // five unknowns rather than a night she chose not to score.
-          floors: answered > 0 ? reported : undefined,
-        });
-      }}
-    >
-      <h3 style={{ marginTop: 0 }}>Night Gate</h3>
-      <InfoNotice tone={allocated > 100 ? "reject" : "brass"}>
-        Attention allocation: {allocated}% of the day accounted for.
-      </InfoNotice>
-
-      {attention.map((a, i) => (
-        <div key={i} style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <input
-            value={a.focus_area}
-            onChange={(e) => setAttention(attention.map((x, j) => (j === i ? { ...x, focus_area: e.target.value } : x)))}
-            placeholder="Where the attention went"
-            aria-label={`Focus area ${i + 1}`}
-            style={{ flex: 1, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px" }}
-          />
-          <input
-            value={a.pct}
-            onChange={(e) => setAttention(attention.map((x, j) => (j === i ? { ...x, pct: e.target.value } : x)))}
-            placeholder="%"
-            inputMode="numeric"
-            aria-label={`Percentage ${i + 1}`}
-            style={{ width: 64, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px" }}
-          />
-        </div>
-      ))}
-      <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => setAttention([...attention, { focus_area: "", pct: "" }])}>
-        Add focus area
-      </button>
-
-      <p className="eyebrow" style={{ marginTop: 14 }}>Floors</p>
-      {floors.map((f) => (
-        <div className="row" key={f.key}>
-          <div className="row-main">
-            <div className="row-title">{f.title}</div>
-            <div className="row-sub">{f.floor}</div>
-          </div>
-          <div className="btn-row">
-            {([["met", true], ["missed", false]] as const).map(([label, value]) => (
-              <button
-                key={label}
-                type="button"
-                className="btn"
-                aria-pressed={reported[f.key] === value}
-                // Pressing the active answer clears it. Nothing else can return a floor to
-                // unanswered, and she should never be trapped into a claim by a mis-tap.
-                onClick={() => setReported((r) => ({ ...r, [f.key]: r[f.key] === value ? undefined : value }))}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      <p className="row-sub">
-        {answered === 0
-          ? "Answer none of these and the day closes unscored. That is allowed."
-          : `${answered} of ${floors.length} answered. The rest stay unanswered rather than counting as missed.`}
-      </p>
-
-      <p className="eyebrow" style={{ marginTop: 14 }}>Review</p>
-      <Lines value={review} onChange={setReview} max={max} label="Prompt" />
-
-      <p className="eyebrow" style={{ marginTop: 14 }}>Seed tomorrow</p>
-      <Lines value={seed} onChange={setSeed} max={maxSeed} label="Priority" />
-
-      <input
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        placeholder="Evidence from the day"
-        aria-label="Evidence from the day"
-        style={{ display: "block", width: "100%", marginTop: 8, background: "var(--card-2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: 3, padding: "8px 10px", boxSizing: "border-box" }}
-      />
-
-      <div className="decide">
-        <button className="btn btn-approve" disabled={usable.length === 0 || allocated > 100}>Close the day</button>
-      </div>
-    </form>
   );
 }
 

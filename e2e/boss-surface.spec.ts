@@ -1,3 +1,4 @@
+import { tab } from "./support/boss";
 import { test, expect, type Page } from "@playwright/test";
 
 /**
@@ -55,9 +56,11 @@ test.describe("Boss OS surface", () => {
      * spelled out rather than derived from LABELS on purpose: a test that reads the same constant
      * the nav reads would still pass if every tab vanished.
      */
+    // Five in the bar (four tabs and "☰ More"); the other five sit in More (31 Oct 2026).
+    await expect(page.getByRole("navigation", { name: "Sections" }).locator(":scope > button")).toHaveCount(5);
     const tabs = ["Today", "Inbox", "Capital", "Spirit", "Team", "Memory", "Trading", "Vault", "Systems"];
     for (const label of tabs) {
-      await page.getByRole("button", { name: label, exact: true }).click();
+      await tab(page, label);
       const main = page.locator("main.page");
       await expect(main).toBeVisible();
       /*
@@ -102,7 +105,7 @@ test.describe("Boss OS surface", () => {
     // Deliberately the tall ones. Today carries thirteen blocks and Vault a snapshot list, which
     // is where the overlap was first visible.
     for (const label of ["Today", "Systems", "Vault", "Capital"]) {
-      await page.getByRole("button", { name: label, exact: true }).click();
+      await tab(page, label);
 
       /*
        * MEASURE A PAGE THAT HAS ARRIVED, NOT ONE THAT IS STILL ARRIVING.
@@ -132,6 +135,8 @@ test.describe("Boss OS surface", () => {
       await expect(page.locator("main.page > .skel")).toHaveCount(0, { timeout: 15_000 });
       await expect.poll(async () => (await page.locator("main.page").innerText()).trim().length).toBeGreaterThan(0);
 
+      // Today fills in from several reads; measure the page she ends up with, not a half-loaded one.
+      await page.waitForLoadState("networkidle");
       await page.keyboard.press("End");
       await page.mouse.wheel(0, 4000);
       await page.waitForTimeout(400);
@@ -184,7 +189,7 @@ test.describe("Boss OS surface", () => {
 
   test("all seven Systems panels reach their endpoint and name what they found", async ({ page }) => {
     await unlock(page);
-    await page.getByRole("button", { name: "Systems", exact: true }).click();
+    await tab(page, "Systems");
 
     for (const label of ["Airlock", "Governance", "Knowledge", "Prompts", "Quant", "Bridge", "Capability", "Runtimes", "Sync"]) {
       await page.getByRole("tab", { name: label }).click();
@@ -204,40 +209,17 @@ test.describe("Boss OS surface", () => {
 
   test("an open loop survives a reload, because it was written to D1", async ({ page }) => {
     await unlock(page);
-    await page.getByRole("button", { name: "Today", exact: true }).click();
-
+    await tab(page, "Today");
     /*
-     * Open loops live inside the day-flow block's <details>, which is closed on arrival. That is
-     * the product's own shape - Today leads with the gates, and the block opens on demand - so the
-     * journey opens it the way a person does rather than reaching past the interface.
+     * "+ Add to today" (the new Today, 31 Oct 2026): an open loop is a row in Today's list, added from
+     * a sheet under the list. The empty "Open Loops" card is gone; the row is the loop.
      */
     const unique = `E2E loop ${Date.now()}`;
-    const openLoops = async () => {
-      const holder = page.locator("details", { has: page.getByLabel("New open loop") });
-      await expect(holder).toHaveCount(1, { timeout: 15_000 });
-      if (!(await holder.getByLabel("New open loop").isVisible())) {
-        await holder.locator("summary").click();
-      }
-    };
-    await openLoops();
-    const field = page.getByLabel("New open loop");
-    await expect(field).toBeVisible({ timeout: 15_000 });
-    await field.fill(unique);
-    await page.getByRole("button", { name: "Add", exact: true }).click();
-    /*
-     * EXACT, BECAUSE THE LOOP APPEARS TWICE AND THAT IS CORRECT BEHAVIOUR.
-     *
-     * A newly opened loop shows in the list AND raises an alert reading "Close: <title>", so a
-     * substring match resolves to two elements and Playwright's strict mode fails the whole journey.
-     * This has been red on main since before today's work — verified by running the same test at the
-     * previous commit in a scratch worktree, where it fails identically.
-     *
-     * THE FIX IS THE ASSERTION, NOT THE PRODUCT. Both renders are wanted: the row is the loop and
-     * the alert is the nudge to close it. What was wrong was a test that could not say which one it
-     * meant, and it would have gone on failing for whichever reason came along next.
-     */
-    await expect(page.getByText(unique, { exact: true })).toBeVisible({ timeout: 15_000 });
-
+    await page.getByTestId("add-to-today").click();
+    await page.getByLabel("New item for today").fill(unique);
+    await page.getByTestId("add-to-today-sheet").getByRole("button", { name: "Add", exact: true }).click();
+    const row = page.getByTestId("today-list").locator(".t-row", { hasText: unique });
+    await expect(row).toBeVisible({ timeout: 15_000 });
     /*
      * A FULL RELOAD, not a re-render. Client state does not survive one, so if the loop is still
      * there it came back out of the database - which is the only version of "it persisted" worth
@@ -245,9 +227,8 @@ test.describe("Boss OS surface", () => {
      */
     await page.reload();
     await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible({ timeout: 15_000 });
-    await page.getByRole("button", { name: "Today", exact: true }).click();
-    await openLoops();
-    await expect(page.getByText(unique, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await tab(page, "Today");
+    await expect(page.getByTestId("today-list").locator(".t-row", { hasText: unique })).toBeVisible({ timeout: 15_000 });
   });
 
   /**
@@ -260,23 +241,21 @@ test.describe("Boss OS surface", () => {
    */
   test("a capture written offline is kept, and lands in D1 when the connection returns", async ({ page, context }) => {
     await unlock(page);
-    await page.getByRole("button", { name: "Today", exact: true }).click();
-    const openLoops = async () => {
-      const holder = page.locator("details", { has: page.getByLabel("New open loop") });
-      await expect(holder).toHaveCount(1, { timeout: 15_000 });
-      if (!(await holder.getByLabel("New open loop").isVisible())) await holder.locator("summary").click();
-    };
-    await openLoops();
+    await tab(page, "Today");
+    // "+ Add to today" is the open-loop capture now (31 Oct 2026): a sheet under Today's list.
+    await page.getByTestId("add-to-today").click();
+    await expect(page.getByLabel("New item for today")).toBeVisible({ timeout: 15_000 });
 
     const unique = `Offline capture ${Date.now()}`;
     await context.setOffline(true);
 
-    await page.getByLabel("New open loop").fill(unique);
-    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByLabel("New item for today").fill(unique);
+    await page.getByTestId("add-to-today-sheet").getByRole("button", { name: "Add", exact: true }).click();
 
     // It says so. Silence here is the failure: a reader who cannot tell "saved" from "kept" either
     // stops trusting the app or writes the same thing twice.
-    const bar = page.getByRole("status");
+    // The sync bar, by what it says: the ancestral-hour card is a status too, at the end of the month.
+    const bar = page.getByRole("status").filter({ hasText: /Offline|Back online|waiting to send/ });
     await expect(bar).toContainText("Offline", { timeout: 15_000 });
     await expect(bar).toContainText("1 waiting to send", { timeout: 15_000 });
 
@@ -290,9 +269,8 @@ test.describe("Boss OS surface", () => {
      */
     await page.reload();
     await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible({ timeout: 15_000 });
-    await page.getByRole("button", { name: "Today", exact: true }).click();
-    await openLoops();
-    await expect(page.getByText(unique)).toBeVisible({ timeout: 15_000 });
+    await tab(page, "Today");
+    await expect(page.getByTestId("today-list").locator(".t-row", { hasText: unique })).toBeVisible({ timeout: 15_000 });
   });
 
   test("offline reads are not served from a cache pretending to be current", async ({ page, context }) => {
@@ -310,7 +288,7 @@ test.describe("Boss OS surface", () => {
     await page.reload();
     // The shell still opens — that part is cached and is allowed to be.
     await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible({ timeout: 20_000 });
-    await page.getByRole("button", { name: "Systems", exact: true }).click();
+    await tab(page, "Systems");
     await page.getByRole("tab", { name: "Governance" }).click();
     // …and the data says it could not be reached, rather than showing yesterday's answer as today's.
     await expect(page.locator("main.page")).toContainText(/could not be reached/i, { timeout: 20_000 });

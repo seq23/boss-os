@@ -307,6 +307,9 @@ const SNAPSHOT_TABLES = [
   // would silently reset the rotation, and the day after a restore would repeat the day before it.
   "run_of_show",
   "movement_log",
+  // The new Today (31 Oct 2026): her saved gates, a day's ticks, that she engaged (never what she said),
+  // and which practice emails went.
+  "gate_templates", "gate_days", "today_ticks", "practice_engagement", "practice_nudges",
   "trading_engines", "kill_switch_probes", "deployment_stages", "strategy_desks",
   "promotion_scorecards", "scale_rungs", "trading_sequence", "trading_nevers",
   "sovereignty_packages", "sovereignty_drills",

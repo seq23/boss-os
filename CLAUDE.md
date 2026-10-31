@@ -138,6 +138,18 @@ pinned by `tests/plainEmail.test.ts` ("the rules in CLAUDE.md"), which reads thi
    `MAX_PROSPECT_SENDS`); past the budget `CUT_ORDER` cuts the prospect emails' words, then Monique's
    lines to three, then the deal rows to five. **Decisions are never cut.** Pinned by
    `tests/morningSizeAndMatches.test.ts` (a heavy-day fixture that fails over 80KB).
+7. **The practice emails** (owner, 31 Oct 2026: "when i go on long streaks of not opening the boss os app
+   and not doing coaching and not hitting my gates u should email me … I need tough love sometimes").
+   From Imani, Director of Practice, to her only, through `scripts/ops/practice-nudges.mjs` on the
+   errand-reminders tick; Boss OS decides and claims each one (`src/worker/boss/practice/lapse.ts`,
+   `practice_nudges`, one per kind per day). The lapse ladder: day 2 firm, day 4 tough love, day 7 and
+   every 3 days after a hard truth, from 10:00 Central, reset the moment she opens the app, talks to the
+   coach or closes a gate. Each states the streak, quotes one of HER laws or contract commitments
+   (`LAWS`, `COMMITMENTS` in `today/faculty.ts`), gives one A-player line from `practice/lines.ts`
+   (never body, weight or food; never cruel; no hustle clichés) and ONE tiny action with a link. The
+   midday push carries the day's law while the Midday gate is open. Only THAT she engaged is stored
+   (`practice_engagement`), never what she said: coaching stays LOCAL_ONLY. Pinned by
+   `tests/boss/practiceLapse.test.ts`.
 
 ## Search Readiness: the checklist enforces itself on the grid repos
 

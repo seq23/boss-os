@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { provisionLocalD1, queryLocalD1 } from "./support/provision";
-import { unlock, tab, expectNoSidewaysScroll, PHONE, LAPTOP } from "./support/boss";
+import { unlock, tab, expectNoSidewaysScroll, PHONE, LAPTOP, openSettings } from "./support/boss";
 
 /**
  * THE REMAINING BUTTONS — every one she can press that has not had its own journey yet.
@@ -87,7 +87,7 @@ for (const vp of [PHONE, LAPTOP]) {
 
     test("Settings › Governance records a state, posts a notice to the firm, and runs the sentinel", async ({ page }) => {
       await unlock(page);
-      await page.getByRole("button", { name: "Open settings" }).click();
+      await openSettings(page);
       const gov = page.locator("main.page .seg-btn", { hasText: /^governance$/i });
       test.skip(!(await gov.count()), "no governance panel on Settings in this build");
       await gov.click();

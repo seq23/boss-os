@@ -708,7 +708,7 @@ export function buildDay(data, now = Date.now()) {
     kind: "morning",
     maxDecide: Infinity,
     subject,
-    happened: `Good morning. Here is your ${dayWords(today)}.${ancestral ? ` ${ancestral}` : ""}${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
+    happened: `${lawLine(data.law) ? `${lawLine(data.law)} ` : ""}Good morning. Here is your ${dayWords(today)}.${ancestral ? ` ${ancestral}` : ""}${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
     decide,
     sections: [
       ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({ text: d.thin.replace(/^Still yours to answer: /, ""), links: [{ label: "Open ›", url: d.screen }] })), empty: null }] : []),
@@ -780,6 +780,17 @@ async function session() {
 }
 
 const briefingOf = (today) => today.blocks.find((b) => b.key === "executive_briefing")?.content ?? null;
+const lawOf = (today) => today.blocks.find((b) => b.key === "coaching_focus")?.content?.law ?? null;
+
+/**
+ * TODAY'S LAW, THE EMAIL'S FIRST LINE (owner approved the new Today, 31 Oct 2026: "the law in the
+ * morning email's first line"). The same law as the bold card on Today, read from the same block.
+ * `null` when the coaching focus did not load: the email then opens as it always did.
+ */
+export function lawLine(law) {
+  if (!law?.n || !law?.title || !law?.text) return null;
+  return `Today's law, Law ${law.n}, ${law.title}: "${law.text}" Read it aloud.`;
+}
 
 async function read(api, now) {
   const [today, diary, tasks, approvals, rc] = await Promise.all([api.get("/today"), api.get("/diary"), api.get("/tasks"), api.get("/approvals"), api.get("/repo-changes")]);
@@ -795,7 +806,7 @@ async function read(api, now) {
   const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
   const { sections, skipped } = readMorningSections({ now });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, morning: sections };
+  return { diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, morning: sections };
 }
 
 async function feedOf(range) {
