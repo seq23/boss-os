@@ -372,6 +372,20 @@ to her" and pinned by tests and `validate:email-plain`:
   stays on the free Cloudflare route. Talking out loud (voice) is planned, not built.
 - **The practice emails** (CLAUDE.md, "Emails to her" rule 7): the lapse ladder, the midday push and the
   ancestral hour's last-day 6pm warning, from Imani, to her only.
+### 31 October 2026 — LP scheduling, one tap
+
+- **An LP who writes back warmly about meeting gets a reply with 2–3 real times.** Monique's 06:15 run
+  (`scripts/ops/lp-followups.mjs`) reads free/busy from BOTH Workspace calendars, merged once
+  (`scripts/ops/lp-calendar.mjs`), and offers open times inside her working hours in the zone she is in
+  THAT day: the "where I am until" setting (`food_away_city` / `food_away_until`, sent to the Mac on
+  `GET /lp/replies`) while it holds, her Google Calendar's own zone after; an unknown city or an
+  unreadable calendar offers none (fail closed). Rules in `src/shared/boss/lp/schedule.mjs`.
+- **When they pick one of her times**, the held reply confirms it, and the same "Send as is" tap sends
+  the calendar invite from the mailbox they wrote to, only if the time is still free
+  (`src/worker/boss/lp/schedule.ts`; migration 0322). Her own words replace the pick: then no invite rides.
+- Fixed templates, no model; an LP scheduling draft is a confidential kind (Claude seat only; the
+  Worker's router refuses it). Pinned by `tests/lpScheduling.test.ts` and `tests/boss/lpSchedulingTap.test.ts`.
+
 ### Monique's outreach — fully automatic, braked in code (9 October 2026)
 
 **Owner: "u do it all".** Monique writes to businesses for ten side businesses (five local guides,

@@ -32,6 +32,7 @@ import { audit } from "../lib/audit";
 import { logEvent } from "../lib/log";
 import { ok, badRequest } from "../lib/http";
 import { nextDueAt } from "../duties/cadence";
+import { whereSheIs } from "../lp/schedule";
 // boss fix L
 import {
   upsertLpRows, listLpRows, importProspects, prospectPlan, prospectsToVerify, recordVerdicts, recordProspectEvents, suppressAddresses, proposeTemplate,
@@ -173,7 +174,11 @@ lp.get("/replies", async (c) => {
       draft_message_id: r.draft_message_id, send_error: r.send_error,
       said: r.said, draft_body: r.draft_body, last_reply_text: r.last_reply_text, last_reply_at: r.last_reply_at,
       reply_from: r.reply_from, subject: r.subject,
+      offered_slots: r.offered_slots ?? null, picked_start: r.picked_start ?? null, picked_zone: r.picked_zone ?? null,
+      invite_sent_at: r.invite_sent_at ?? null,
     })),
+    // Where she is, for the Mac's LP run: times are offered in her zone on each day (lp/schedule.mjs).
+    where: await whereSheIs(c.env.DB),
   });
 });
 

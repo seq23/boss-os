@@ -27,7 +27,7 @@ export const isOn = (v: string | null | undefined) => v === "on" || v === "true"
  * to Claude's seat, the "OpenAI first" switch cannot reorder it, and the cloud fallback is off. A ladder
  * without Claude's seat becomes EMPTY: the task fails closed, it is never moved to another seat.
  */
-export const CONFIDENTIAL_DRAFT_KINDS = ["lp_reply", "deal_terms"] as const;
+export const CONFIDENTIAL_DRAFT_KINDS = ["lp_reply", "lp_scheduling", "deal_terms"] as const;
 export function isConfidentialDraft(input: { confidential_draft?: unknown; draft_kind?: unknown } | null | undefined): boolean {
   return input?.confidential_draft === true || (CONFIDENTIAL_DRAFT_KINDS as readonly string[]).includes(String(input?.draft_kind ?? ""));
 }
