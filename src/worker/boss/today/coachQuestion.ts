@@ -83,11 +83,18 @@ export function chooseQuestion(s: CoachSignals): CoachQuestion {
   };
 }
 
-/** How many consecutive days before `today` match `pred`, reading back from yesterday. */
-function runBack(today: string, rows: Map<string, Record<string, unknown>>, pred: (r: Record<string, unknown> | undefined) => boolean, max = 30): number {
+/**
+ * How many consecutive days before `today` match `pred`, reading back from yesterday — and NEVER past
+ * `since`, the first day the thing was recorded at all. A day before tracking began is not a day she
+ * skipped (31 Oct 2026, the first live read said "the app went unopened for 30 days" on the day the
+ * opens started being recorded).
+ */
+export function runBack(today: string, rows: Map<string, Record<string, unknown>>, pred: (r: Record<string, unknown> | undefined) => boolean, since: string | null, max = 30): number {
+  if (!since) return 0;
   let n = 0;
   for (let i = 1; i <= max; i++) {
     const d = new Date(Date.parse(`${today}T12:00:00Z`) - i * 86_400_000).toISOString().slice(0, 10);
+    if (d < since) break;
     if (!pred(rows.get(d))) break;
     n += 1;
   }
@@ -99,33 +106,37 @@ export async function coachSignals(env: Env, today: string, waiting: { days: num
   const db = env.DB;
   const since = new Date(Date.parse(`${today}T12:00:00Z`) - 31 * 86_400_000).toISOString().slice(0, 10);
   const dayStart = Date.parse(`${today}T05:00:00Z`);
-  const [daysR, engR, rosR, ancR, calR] = await db.batch([
+  const [daysR, engR, rosR, ancR, calR, firstR] = await db.batch([
     db.prepare(`SELECT id, morning_completed_at AS m, night_completed_at AS n FROM days WHERE id >= ? AND id < ?`).bind(since, today),
     db.prepare(`SELECT day_id, kind FROM practice_engagement WHERE day_id >= ?`).bind(since),
     db.prepare(`SELECT MAX(day_id) AS d FROM run_of_show WHERE block_key = 'first_wealth_block' AND done_at IS NOT NULL`),
     db.prepare(`SELECT COALESCE(SUM(minutes), 0) AS m FROM ancestor_entries WHERE month = ?`).bind(today.slice(0, 7)),
     db.prepare(`SELECT COUNT(*) AS n FROM diary_entries WHERE cancelled_at IS NULL AND scheduled_at >= ? AND scheduled_at < ?`).bind(dayStart, dayStart + 86_400_000),
+    // Where each record begins: engagement (opens, talks) and gates (the first day any gate closed).
+    db.prepare(`SELECT (SELECT MIN(day_id) FROM practice_engagement) AS eng, (SELECT MIN(id) FROM days WHERE morning_completed_at IS NOT NULL OR midday_completed_at IS NOT NULL OR night_completed_at IS NOT NULL) AS gate`),
   ]).catch(() => [] as any[]);
   const dayRows = new Map<string, Record<string, unknown>>(((daysR?.results ?? []) as any[]).map((r) => [r.id, r]));
   const eng = (engR?.results ?? []) as { day_id: string; kind: string }[];
   const engDays = (kinds: string[]) => new Map(eng.filter((e) => kinds.includes(e.kind)).map((e) => [e.day_id, { x: 1 }] as [string, Record<string, unknown>]));
   const opened = engDays(["app_open", "coach_morning", "coach_evening"]);
   const talked = engDays(["coach_morning", "coach_evening"]);
-  const tracking = eng.length > 0;
+  const first = ((firstR?.results?.[0] ?? {}) as { eng?: string | null; gate?: string | null });
+  const engSince = first.eng ?? null;
+  const gateSince = first.gate ?? null;
   const lastMove = ((rosR?.results?.[0] ?? {}) as { d?: string | null }).d ?? null;
   const minutes = Number(((ancR?.results?.[0] ?? {}) as { m?: number }).m ?? 0);
   const anc = ancestralHourState(today, minutes);
   return {
-    appAwayDays: tracking ? runBack(today, opened, (r) => !r) : 0,
-    morningGateMissed: runBack(today, dayRows, (r) => !r?.m),
-    nightGateMissed: runBack(today, dayRows, (r) => !r?.n),
-    talksMissed: tracking ? runBack(today, talked, (r) => !r) : 0,
+    appAwayDays: runBack(today, opened, (r) => !r, engSince),
+    morningGateMissed: runBack(today, dayRows, (r) => !r?.m, gateSince),
+    nightGateMissed: runBack(today, dayRows, (r) => !r?.n, gateSince),
+    talksMissed: runBack(today, talked, (r) => !r, engSince),
     waitingDays: waiting?.days ?? 0,
     waitingWho: waiting ? (waiting.lp ? "an LP" : "someone") : null,
     noMoneyMoveDays: lastMove ? Math.max(0, daysBetween(lastMove, today)) : 0,
     ancestralDaysLeft: anc.show && !anc.done ? anc.days_left : null,
     meetingsToday: Number(((calR?.results?.[0] ?? {}) as { n?: number }).n ?? 0),
-    streakDays: runBack(today, dayRows, (r) => Boolean(r?.m)),
+    streakDays: runBack(today, dayRows, (r) => Boolean(r?.m), gateSince),
   };
 }
 

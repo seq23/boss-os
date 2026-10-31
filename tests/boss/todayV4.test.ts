@@ -4,10 +4,10 @@ import { apiJson } from "./helpers";
 import { dayIdInZone } from "../../src/shared/boss/timezone";
 import { waitingOnYou, foldMornings } from "../../src/worker/boss/today/waiting";
 import { GATE_DEFAULTS, cleanGateItems, normaliseGate, BP_TEA_MORNING_SINCE, gateLine, type GateItem } from "../../src/worker/boss/today/list";
-import { chooseQuestion, problems, coachSituation, type CoachSignals } from "../../src/worker/boss/today/coachQuestion";
+import { chooseQuestion, problems, coachSituation, runBack, type CoachSignals } from "../../src/worker/boss/today/coachQuestion";
 import { buildCoachingPrompt } from "../../src/worker/boss/coaching/session";
 import { CHAINS, LOCAL, choosePlace, foodToday, placeKey, whereToday, usablePlace, NO_REPEAT_DAYS } from "../../src/worker/boss/today/food";
-import { pickSide, SIDE_BUSINESSES } from "../../src/worker/boss/today/sideBusiness";
+import { pickSide, SIDE_BUSINESSES, brokenLine } from "../../src/worker/boss/today/sideBusiness";
 import { confidentialLadder, isConfidentialDraft, orderSeats, CLAUDE_SEAT, OPENAI_SEAT } from "../../src/worker/boss/duties/seatOrder";
 import { routeCompletion } from "../../src/worker/boss/router";
 import { LINES, BANNED_WORDS } from "../../src/worker/boss/practice/lines";
@@ -152,7 +152,11 @@ describe("One 💰 Wealth block", () => {
   it("picks the side business from real signals, says why, and leans side on weekends", () => {
     const none = { leads: {}, broken: {}, revenue: {}, lastPicked: {} };
     expect(pickSide({ ...none, leads: { industry_guides: 2 } }, "2026-11-02", 1)).toMatchObject({ key: "industry_guides", signal: "leads", why: expect.stringContaining("leads waiting") });
-    expect(pickSide({ ...none, broken: { approvalprep: "its site check is red" } }, "2026-11-02", 1)).toMatchObject({ key: "approvalprep", signal: "broken" });
+    const broken = pickSide({ ...none, broken: { approvalprep: "red" } }, "2026-11-02", 1);
+    expect(broken).toMatchObject({ key: "approvalprep", signal: "broken" });
+    // Plain words on her screen: never a file, a path or a repo name.
+    for (const b of SIDE_BUSINESSES) expect(brokenLine(b.name)).not.toMatch(/[/\\]|\.ya?ml|\.github|seq23|workflow/i);
+    expect(broken.line).toBe(brokenLine("ApprovalPrep"));
     expect(pickSide({ ...none, revenue: { a_player_mode: 3 } }, "2026-11-02", 1)).toMatchObject({ key: "a_player_mode", signal: "revenue" });
     // A quiet weekday: Core business has the day. A quiet Saturday: the one left alone longest.
     expect(pickSide(none, "2026-11-02", 1)).toMatchObject({ key: null, signal: "none" });
@@ -183,6 +187,14 @@ describe("Coaching: the question fits her life, and the coach sees counts only",
     expect(a.signature).not.toBe(b.signature);
     expect(a.question).not.toBe(b.question);
     expect(chooseQuestion({ ...calm, morningGateMissed: 3 }).question).toBe(a.question);
+  });
+
+  it("never counts a day before the record began as a day skipped (the first live read said 30)", () => {
+    const none = new Map<string, Record<string, unknown>>();
+    expect(runBack("2026-10-31", none, (r) => !r, "2026-10-31")).toBe(0);
+    expect(runBack("2026-10-31", none, (r) => !r, "2026-10-28")).toBe(3);
+    expect(runBack("2026-10-31", none, (r) => !r, null)).toBe(0);
+    expect(runBack("2026-12-31", none, (r) => !r, "2026-01-01")).toBe(30);
   });
 
   it("never mentions body, weight or food, in any question it can ask", () => {
