@@ -50,10 +50,13 @@ for (const vp of [PHONE, LAPTOP]) {
       await expect.poll(async () => cards.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(11);
       const titles = await cards.locator("h3").allInnerTexts();
       for (const t of titles) expect(t.trim().length, `a block has a title`).toBeGreaterThan(0);
-      // Every block says something under its title. A title over a blank is the defect.
+      // Every block says something under its title. A title over a blank is the defect. A block that
+      // loads its own body (This morning's email reads /morning/latest) shows a skeleton for a moment,
+      // and its title alone is exactly 20 characters: read once, a slow fetch failed this with
+      // "Received: 20" (CI, 30 Oct 2026, run 41143147435). Each block must SETTLE into a body; one
+      // that stays a bare title still fails.
       for (const card of await cards.all()) {
-        const text = (await card.innerText()).trim();
-        expect(text.length, "block body").toBeGreaterThan(20);
+        await expect.poll(async () => (await card.innerText()).trim().length, { message: "block body" }).toBeGreaterThan(20);
       }
       // The briefing: no report locally, so the block must name the reason rather than shrug.
       const briefing = cards.filter({ has: page.locator("h3", { hasText: /briefing|intelligence/i }) }).first();
