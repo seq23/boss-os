@@ -141,21 +141,13 @@
           ]
         },
         {
-          "time": "6:50",
-          "tag": "sv",
-          "text": "Filing research: which funds hold what you're selling, and who there can sign",
-          "emails": false,
-          "refs": [
-            "filing-research"
-          ]
-        },
-        {
           "time": "7:00",
           "tag": "sv",
-          "text": "Buyers for what you're selling: funds that hold it, plus brokers in your contacts already working it (two emails merged into one)",
+          "text": "Buyers for what you're selling: one email, people in your own mail who want it and funds that hold it (two emails merged into one)",
           "emails": true,
           "refs": [
-            "buyer-hunt"
+            "buyer-hunt",
+            "filing-research"
           ]
         },
         {
@@ -323,10 +315,11 @@
         {
           "time": "7:00",
           "tag": "sv",
-          "text": "NEW: Sellers for what your LPs want to buy (the mirror of Tuesday)",
+          "text": "Sellers for what your LPs want to buy: one email, the mirror of Tuesday for your buy orders",
           "emails": true,
-          "refs": [],
-          "pending": true
+          "refs": [
+            "seller-hunt"
+          ]
         },
         {
           "time": "7:30",
@@ -1219,15 +1212,15 @@
     },
     {
       "id": "buyer-hunt",
-      "name": "Buyer hunt",
-      "what": "Which brokers in your ledger are already working what you are selling.",
+      "name": "Buyers for what you are selling",
+      "what": "One Tuesday email, two sections: people in your own mail who want what you are selling, and funds that report holding it.",
       "business": "brokerage",
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
         "tue 07:00"
       ],
-      "emails": false,
+      "emails": true,
       "heavy": false,
       "trigger": {
         "duty": "duty_buyer_hunt",
@@ -1936,13 +1929,13 @@
     },
     {
       "id": "filing-research",
-      "name": "Who holds what you are selling",
-      "what": "Danielle reads public filings for funds that hold your names and who there can sign.",
+      "name": "Buyers for what you are selling: the funds section",
+      "what": "Danielle reads the public SEC fund filings for funds that hold what you are selling: the second section of Tuesday's email.",
       "business": "brokerage",
       "brand": "Brokerage",
       "system": "mac",
       "slots": [
-        "tue 06:50"
+        "tue 07:00"
       ],
       "emails": false,
       "heavy": false,
@@ -1950,12 +1943,7 @@
         "duty": "duty_filing_research",
         "launchd": [
           "com.seq.boss-capital-buyers"
-        ],
-        "ticks": {
-          "com.seq.boss-capital-buyers": [
-            "tue 07:00"
-          ]
-        }
+        ]
       }
     },
     {
@@ -3341,12 +3329,12 @@
     {
       "id": "prospects",
       "name": "Prospect emails",
-      "what": "Monique's approved note and its two follow-ups, under the limits.",
+      "what": "Monique's approved note and its one follow-up, weekdays only, under the limits.",
       "business": "west-peek-ventures",
       "brand": "West Peek Ventures",
       "system": "mac",
       "slots": [
-        "daily 09:30"
+        "mon,tue,wed,thu,fri 09:30"
       ],
       "emails": false,
       "heavy": false,
@@ -3489,6 +3477,25 @@
       "trigger": {
         "launchd": [
           "ventures.westpeek.os.seat-claimer"
+        ]
+      }
+    },
+    {
+      "id": "seller-hunt",
+      "name": "Sellers for what your LPs want to buy",
+      "what": "One Thursday email, the mirror of Tuesday for your buy orders: people in your own mail who hold or can source it, and funds that report holding it.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "thu 07:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_seller_hunt",
+        "launchd": [
+          "com.seq.boss-capital-sellers"
         ]
       }
     },
