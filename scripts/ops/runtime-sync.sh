@@ -14,12 +14,13 @@
 #                      job's stray edit can never pin the runtime to stale code again;
 #   * behind         → hard reset to origin/main (no merge, nothing of anyone's is lost: see above);
 #   * lockfile moved → npm ci, so code and node_modules always match.
-#   * any launchd plist still pointing at ~/GitHub/boss-os → named, every run, until repointed.
+#   * any launchd plist still pointing at ~/GitHub/boss-os → repointed and reloaded (a running job waits
+#                      for a later tick); only a repoint that fails is named.
 # Every problem is a NAMED line in the log and one line in the morning email's "notices" section.
 #
 #   BOSS_OS_RUNTIME (default ~/.boss-os/runtime)   BOSS_OS_WORKING (default ~/GitHub/boss-os)
 #   BOSS_OS_RUNTIME_SALVAGE (default ~/.boss-os/runtime-salvage)   BOSS_OS_LAUNCH_AGENTS (default ~/Library/LaunchAgents)
-#   BOSS_OS_RUNTIME_NO_NPM=1 skips npm ci (tests only).
+#   BOSS_OS_RUNTIME_NO_NPM=1 skips npm ci; BOSS_OS_RUNTIME_NO_LAUNCHCTL=1 rewrites plists without reloading (tests only).
 #
 # Exit: 0 = runtime is on origin/main; 3 = could not reach origin (runtime left as it was, said so);
 # 4 = clone / reset / npm ci failed (NAMED STOP). The whole body is one function so a reset that
@@ -84,12 +85,26 @@ main() {
     fi
   fi
 
-  # A plist still pointing at her working checkout is the defect coming back: name each one.
+  # A plist still pointing at her working checkout is the defect coming back (an old installer, a job
+  # that was running when install-runtime.sh ran): repoint it here and reload it. A job running right
+  # now is left until a later tick (bootout would kill it); only a repoint that FAILS reaches her email.
   if [ -d "$AGENTS_DIR" ]; then
-    local P
+    local P L
     for P in "$AGENTS_DIR"/com.seq.*.plist; do
       [ -f "$P" ] || continue
-      grep -qE "$WORKING([/<&\" ]|$)" "$P" 2>/dev/null && note "NAMED STOP [PLIST_RUNS_WORKING_CHECKOUT] $(basename "$P") runs from $WORKING, not the runtime; rerun scripts/ops/install-runtime.sh"
+      grep -qE "$WORKING([/<&\" ]|$)" "$P" 2>/dev/null || continue
+      L="$(basename "$P" .plist)"
+      if [ -z "${BOSS_OS_RUNTIME_NO_LAUNCHCTL:-}" ] && launchctl list 2>/dev/null | awk -v l="$L" '$3 == l && $1 != "-" { f = 1 } END { exit !f }'; then
+        say "$L still runs from $WORKING; it is running now, so it is repointed on a later tick"
+        continue
+      fi
+      W="$WORKING" R="$RT" perl -pi -e 's#\Q$ENV{W}\E(?=[/<&" ]|$)#$ENV{R}#g' "$P"
+      if [ -n "${BOSS_OS_RUNTIME_NO_LAUNCHCTL:-}" ]; then say "repointed $L to $RT (not reloaded: no launchctl)"; continue; fi
+      if plutil -lint "$P" >/dev/null 2>&1 && { launchctl bootout "gui/$(id -u)/$L" 2>/dev/null; launchctl bootstrap "gui/$(id -u)" "$P" 2>/dev/null; launchctl print "gui/$(id -u)/$L" >/dev/null 2>&1; }; then
+        say "repointed $L to $RT and reloaded it"
+      else
+        note "NAMED STOP [PLIST_REPOINT_FAILED] $L was moved to $RT but did not load again; run scripts/ops/install-runtime.sh"
+      fi
     done
   fi
 
