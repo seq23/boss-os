@@ -45,3 +45,19 @@ export function decisionLine(text: string, today: string): string;
 export function applyEdit(md: string, edit: BrainEdit, today: string): string;
 export function shortName(b: { slug: string; title: string }): string;
 export function cohesionLine(brains: { slug: string; title: string; body_md: string; updated_at: number }[], now?: number): string;
+export const MAC_CHECK_FIELDS: readonly string[];
+export interface MacCheck {
+  strays_moved?: { from: string; to: string }[];
+  memory_index_lines?: number;
+  memory_index_too_big?: boolean;
+  repos_checked?: number;
+  repos_missing_pointer?: string[];
+  skills_checked?: number;
+  skills_flagged?: { skill: string; phrase: string }[];
+  copy_age_hours?: number | null;
+  copy_restarted?: boolean;
+  copy_fresh_after?: boolean;
+  unchecked?: string[];
+}
+export function cohesionCheckLine(brains: { slug: string; title: string; body_md: string; updated_at: number }[], mac: MacCheck | null, now?: number): string;
+export function staleBit(brains: { slug: string; title: string; updated_at: number }[], now?: number): string | null;

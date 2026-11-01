@@ -5,7 +5,7 @@ import { getSetting, setSetting } from "../lib/settings";
 import { notFound } from "../lib/http";
 import { dayIdInZone, wallClock } from "../../../shared/boss/timezone";
 import {
-  BRAIN_SLUGS, applyEdit, brainBlock, brainsFor, cohesionLine, daysSince, isStale, missingCount,
+  BRAIN_SLUGS, applyEdit, brainBlock, brainsFor, cohesionCheckLine, cohesionLine, type MacCheck, daysSince, isStale, missingCount,
   parseBrainEdits, scoreboardRows, shortName, whosWhoBlock, TEAM_SLUG, type BrainEdit, type BrainRow,
 } from "../../../shared/boss/brains/brain.mjs";
 
@@ -146,9 +146,56 @@ export async function runBrainsCohesion(env: Env, now = Date.now()) {
   return { ran: true as const, ...(await computeCohesion(env, now)) };
 }
 
-/** What the Monday email reads: this week's check, computed now if the tick has not run yet. */
+// ─── The Mac half: memory, repo pointers, skills, the local copy ─────────────
+
+export const MAC_COHESION_KEY = "brains_cohesion_mac";
+const MAX_LIST = 200;
+const str = (v: unknown, n = 300) => String(v ?? "").slice(0, n);
+const list = (v: unknown) => (Array.isArray(v) ? v.slice(0, MAX_LIST) : []);
+
+/**
+ * Keep what the Mac's Monday check found (scripts/brains/cohesion-check.mjs). The week is stamped
+ * from the moment it ARRIVED, never from a date the Mac claims, so a stale report cannot pass for
+ * this week's.
+ */
+export async function recordMacCohesion(env: Env, body: unknown, now = Date.now()) {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const rec: MacCheck & { week: string; at: number } = {
+    week: weekOf(now), at: now,
+    strays_moved: list(b.strays_moved).map((x: any) => ({ from: str(x?.from), to: str(x?.to) })),
+    memory_index_lines: Number(b.memory_index_lines) || 0,
+    memory_index_too_big: b.memory_index_too_big === true,
+    repos_checked: Number(b.repos_checked) || 0,
+    repos_missing_pointer: list(b.repos_missing_pointer).map((x) => str(x, 100)),
+    skills_checked: Number(b.skills_checked) || 0,
+    skills_flagged: list(b.skills_flagged).map((x: any) => ({ skill: str(x?.skill, 100), phrase: str(x?.phrase, 100) })),
+    copy_age_hours: b.copy_age_hours == null ? null : Number(b.copy_age_hours),
+    copy_restarted: b.copy_restarted === true,
+    copy_fresh_after: b.copy_fresh_after === true,
+    unchecked: list(b.unchecked).map((x) => str(x, 100)),
+  };
+  await setSetting(env.DB, MAC_COHESION_KEY, JSON.stringify(rec));
+  await audit(env.DB, { actor: "mac", lane: "ops", entityType: "brain", entityId: "cohesion", action: "mac_cohesion_recorded", detail: { week: rec.week } });
+  return rec;
+}
+
+/** This week's Mac record, or null (it did not run, or it ran last week). */
+export async function macCohesionThisWeek(env: Env, now = Date.now()): Promise<(MacCheck & { week: string; at: number }) | null> {
+  const raw = await getSetting(env.DB, MAC_COHESION_KEY);
+  try { if (raw) { const r = JSON.parse(raw); if (r.week === weekOf(now)) return r; } } catch { /* unreadable = not run */ }
+  return null;
+}
+
+/**
+ * What the Monday email reads: ONE line for the whole setup (`line`), from this week's brains check
+ * (computed now if the tick has not run yet) and this week's Mac check. `brains_line` keeps the
+ * brains-only words.
+ */
 export async function currentCohesion(env: Env, now = Date.now()) {
   const prev = await getSetting(env.DB, COHESION_KEY);
-  try { if (prev) { const r = JSON.parse(prev); if (r.week === weekOf(now)) return r; } } catch { /* recompute */ }
-  return computeCohesion(env, now);
+  let rec: any = null;
+  try { if (prev) { const r = JSON.parse(prev); if (r.week === weekOf(now)) rec = r; } } catch { /* recompute */ }
+  if (!rec) rec = await computeCohesion(env, now);
+  const [brains, mac] = await Promise.all([allBrains(env), macCohesionThisWeek(env, now)]);
+  return { ...rec, brains_line: rec.line, line: cohesionCheckLine(brains, mac, now), mac };
 }

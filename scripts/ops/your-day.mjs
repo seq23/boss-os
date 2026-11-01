@@ -537,14 +537,16 @@ export const SCOREBOARD_URL = `${ORIGIN}/?tab=brains&view=scoreboard`;
 export const SCOREBOARD_KEY_METRICS = 3;
 
 /**
- * MONDAYS: ONE PLAIN LINE ABOUT THE BRAINS (owner, 31 Oct 2026). "Brains: all fresh", or what is
- * stale and how many gaps are left. Never red. A check that did not load says so plainly, rather
- * than leaving the line out (Rule 0).
+ * MONDAYS: ONE PLAIN LINE ABOUT THE WHOLE SETUP (owner, 31 Oct 2026; Company Brains plan step 10).
+ * "Cohesion: all clear", or what the check fixed and what it could not: stale brains, memory strays,
+ * repos missing their brain pointer, skills that contradict the house rules, a stale local copy
+ * (`cohesionCheckLine`). Never red. A check that did not load, or a Mac check that did not run this
+ * week, says so plainly rather than leaving the line out (Rule 0).
  */
 export function brainsSectionFor(data, now = Date.now()) {
   if (parts(now).weekday !== "Monday") return null;
-  const line = data.brainsCheck?.line ?? "Brains: the weekly check did not load this morning; the team is looking.";
-  return { title: "Brains", tone: "done", items: [{ text: line, links: [{ label: "Open Brains ›", url: BRAINS_URL }] }], empty: null };
+  const line = data.brainsCheck?.line ?? "Cohesion: the weekly check did not load this morning; the team is looking.";
+  return { title: "Weekly check", tone: "done", items: [{ text: line, links: [{ label: "Open Brains ›", url: BRAINS_URL }] }], empty: null };
 }
 
 /**

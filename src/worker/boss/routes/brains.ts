@@ -2,14 +2,15 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
 import { canonicalSection, replaceSection, parseSections, SECTIONS, BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
-import { allBrains, currentCohesion, listEntry, oneBrain, revisions, saveBrain, scoreboard } from "../brains/store";
+import { allBrains, currentCohesion, recordMacCohesion, listEntry, oneBrain, revisions, saveBrain, scoreboard } from "../brains/store";
 
 /**
  * /api/boss/brains — one document per business, read first by every employee.
  *
  *   GET  /                      every brain: slug, title, updated_at, missing_count, stale (90+ days)
  *   GET  /scoreboard            one row per tracked metric from each Numbers table; "not tracked yet" otherwise
- *   GET  /cohesion              this week's Monday check line
+ *   GET  /cohesion              this week's Monday check: one line for the whole setup
+ *   POST /cohesion/mac          what the Mac's Monday check found (scripts/brains/cohesion-check.mjs)
  *   GET  /:slug                 one brain, whole, with its sections
  *   PUT  /:slug                 { body_md } or { section, text } (+ note) — records a revision
  *   GET  /:slug/revisions       its history, newest first
@@ -29,6 +30,13 @@ brains.get("/", async (c) => {
 brains.get("/scoreboard", async (c) => ok(c, { rows: await scoreboard(c.env) }));
 
 brains.get("/cohesion", async (c) => ok(c, await currentCohesion(c.env)));
+
+brains.post("/cohesion/mac", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== "object") throw badRequest("Send what the Mac check found");
+  const rec = await recordMacCohesion(c.env, body);
+  return ok(c, { recorded: rec, ...(await currentCohesion(c.env)) });
+});
 
 brains.get("/:slug", async (c) => {
   const b = await oneBrain(c.env, c.req.param("slug"));

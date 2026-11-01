@@ -1,0 +1,16 @@
+import type { MacCheck } from "../../src/shared/boss/brains/brain.mjs";
+export const HOME_PROJECT: string;
+export const MEMORY_INDEX_MAX_LINES: number;
+export const ACTIVE_DAYS: number;
+export const COPY_MAX_HOURS: number;
+export const POINTER: RegExp;
+export const PULL_LABEL: string;
+export const BAD_SKILL_PHRASES: readonly { phrase: string; why: string }[];
+type Strays = { from: string; to: string }[];
+export function checkMemory(o: { home: string; today: string; dryRun?: boolean }): { strays_moved: Strays; memory_index_lines: number; memory_index_too_big: boolean; unchecked: string[] };
+export function checkRepos(o: { home: string; now?: number; lastCommit?: (dir: string) => number | null }): { repos_checked: number; repos_missing_pointer: string[]; unchecked: string[] };
+export function checkSkills(o: { home: string }): { skills_checked: number; skills_flagged: { skill: string; phrase: string }[]; unchecked: string[] };
+export function copyAgeHours(home: string, now?: number): number | null;
+export function checkCopy(o: { home: string; restart?: () => void; wait?: (home: string) => Promise<number | null> }): Promise<{ copy_age_hours: number | null; copy_restarted: boolean; copy_fresh_after: boolean }>;
+export function runChecks(o?: { home?: string; now?: number; dryRun?: boolean; lastCommit?: (dir: string) => number | null; restart?: () => void; wait?: (home: string) => Promise<number | null> }): Promise<MacCheck & { strays_moved: Strays; repos_missing_pointer: string[]; skills_flagged: { skill: string; phrase: string }[]; unchecked: string[]; memory_index_lines: number; repos_checked: number; skills_checked: number }>;
+export function post(record: unknown, o?: { passcode?: string; fetchImpl?: typeof fetch; origin?: string }): Promise<any>;

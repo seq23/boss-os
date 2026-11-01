@@ -10,7 +10,7 @@ import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail"
 import { buildPrompt, buildPromptParts } from "../../src/worker/boss/queue/consumer";
 import { routeCompletion } from "../../src/worker/boss/router";
 import { dispatchRunForTask } from "../../src/worker/boss/backends/dispatch";
-import { runBrainsCohesion, currentCohesion, COHESION_KEY } from "../../src/worker/boss/brains/store";
+import { runBrainsCohesion, currentCohesion, recordMacCohesion, COHESION_KEY } from "../../src/worker/boss/brains/store";
 import { BRAINS, seedFor, CONFIDENTIAL_OPEN, CONFIDENTIAL_CLOSE } from "../../src/shared/boss/brains/brain.mjs";
 
 const SECRET = "Synthetic LP Zeta commits 40 at a 2x step-up";
@@ -219,10 +219,26 @@ describe("the Monday check rides the hourly tick", () => {
   it("one plain line: stale and gaps, or all fresh — never red", async () => {
     await env.DB.prepare(`UPDATE brains SET updated_at = ? WHERE slug = 'porch-and-party'`).bind(MONDAY - 94 * 86_400_000).run();
     const r = await currentCohesion(env as any, MONDAY);
-    expect(r.line).toBe("Brains: P&P brain not updated in 94 days · 64 gaps across 8 brains");
+    expect(r.brains_line).toBe("Brains: P&P brain not updated in 94 days · 64 gaps across 8 brains");
+    // Rule 0: no Mac record this week — the one line says so, and still carries the stale brain.
+    expect(r.line).toMatch(/^Cohesion: the Mac's weekly check did not run this week.*; P&P brain not updated in 94 days$/);
     await env.DB.prepare(`UPDATE brains SET body_md = '# x', updated_at = ?`).bind(MONDAY).run();
     await env.DB.prepare(`DELETE FROM settings WHERE key = ?`).bind(COHESION_KEY).run();
-    expect((await apiJson<any>("/api/brains/cohesion")).body.data.line).toMatch(/^Brains: /);
-    expect((await currentCohesion(env as any, MONDAY)).line).toBe("Brains: all fresh");
+    expect((await apiJson<any>("/api/brains/cohesion")).body.data.line).toMatch(/^Cohesion: /);
+    expect((await currentCohesion(env as any, MONDAY)).brains_line).toBe("Brains: all fresh");
+    expect((await currentCohesion(env as any, MONDAY)).line).not.toMatch(/all clear/);
+  });
+
+  it("the Mac posts its check; this week's record makes the line, last week's never does", async () => {
+    const LAST_MONDAY = MONDAY - 7 * 86_400_000;
+    await recordMacCohesion(env as any, { strays_moved: [], repos_missing_pointer: [], skills_flagged: [], copy_fresh_after: true, unchecked: [] }, LAST_MONDAY);
+    expect((await currentCohesion(env as any, MONDAY)).line).toMatch(/did not run this week/);
+    const res = await apiJson<any>("/api/brains/cohesion/mac", { method: "POST", body: { strays_moved: [{ from: "a", to: "b" }], repos_missing_pointer: ["dream-wedding-builder"], skills_flagged: [], copy_fresh_after: true, unchecked: [] } });
+    expect(res.status).toBe(200);
+    expect(res.body.data.recorded.repos_missing_pointer).toEqual(["dream-wedding-builder"]);
+    expect(res.body.data.line).toBe("Cohesion: moved 1 stray memory note to the archive; the dream-wedding-builder repo is missing its brain pointer");
+    await recordMacCohesion(env as any, { strays_moved: [], repos_missing_pointer: [], skills_flagged: [], copy_fresh_after: true, unchecked: [] }, MONDAY);
+    expect((await currentCohesion(env as any, MONDAY)).line).toBe("Cohesion: all clear");
+    expect((await apiJson<any>("/api/brains/cohesion/mac", { method: "POST", body: "nope" })).status).toBe(400);
   });
 });
