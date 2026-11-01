@@ -178,3 +178,15 @@ violations) on breach and proves its own detection with a self-test fixture run.
   pointer to land, no restated threshold — and runs its table (17 cases, 5 broken gates).
   `docs/DEPLOYING.md` must name the gate. **Rule 0: a missing deploy.yml, a missing gate or an
   empty table hard-fails.** 29-fixture self-test.
+
+- `migrations-keep-their-data.mjs` (`npm run validate:migrations-keep-data`, in `validate:scans`,
+  1 Nov 2026) — no migration deletes a table, a column or a table's rows by accident. Every
+  `migrations/*.sql` new or changed against the base (PR base in CI, the replaced commit on a push,
+  `origin/main` locally, uncommitted and untracked files included) fails on DROP TABLE, ALTER TABLE
+  … DROP, DELETE FROM without WHERE, TRUNCATE, and a rebuild (`_new` + INSERT … SELECT + DROP +
+  RENAME, or the copy-aside variant) whose new table lacks a column the old one had — old columns
+  replayed from every earlier migration. Passes only with
+  `-- destructive-ok: <reason> (backed up: <where>)`. History is grandfathered. **Rule 0: zero
+  migrations or zero replayed tables hard-fails; no base is the named stop
+  `MIGRATION_GUARD_NO_BASE`.** 31-check self-test, including a throwaway git repo proving only
+  new/changed files are checked.

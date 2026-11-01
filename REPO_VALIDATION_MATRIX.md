@@ -58,6 +58,7 @@ credentials except `validate:value-shapes`, noted below.
 
 | 
 | `npm run validate:gate-parity` | `npm run validate` and `ci.yml` run the SAME set of scans — every CI step is in the chain, CI runs the `validate:scans` union, and `validate` stays scans + typecheck + tests. 7-fixture self-test. Rule 0: zero CI steps or zero registered scans hard-fails | that any individual scan is *correct*, only that the gate you can run is the gate that runs |
+| `npm run validate:migrations-keep-data` (1 Nov 2026) | no new or changed migration drops a table or column, deletes every row, truncates, or rebuilds a table without one of its columns — unless it carries `-- destructive-ok: <reason> (backed up: <where>)`; history grandfathered; 31-check self-test | that the backup named in the annotation exists or restores, or that an UPDATE without WHERE is safe |
 
 | 
 | 
