@@ -1303,7 +1303,16 @@ install_l_job com.seq.boss-waiting-on "duty-run.sh waiting-on.mjs -- npm run --s
 # SIMONE'S "DO YOU STILL WANT TO GO?" (owner, 26 Oct 2026: "a reminder 28 hrs before"): every 10
 # minutes, every hour, so the email lands within ten minutes of 28 hours before the booking. Reports
 # to duty_errand_reminders (migration 0315).
-install_l_job com.seq.boss-errand-reminders "duty-run.sh errand-reminders.mjs -- npm run --silent errand-reminders" '<dict><key>Minute</key><integer>0</integer></dict><dict><key>Minute</key><integer>10</integer></dict><dict><key>Minute</key><integer>20</integer></dict><dict><key>Minute</key><integer>30</integer></dict><dict><key>Minute</key><integer>40</integer></dict><dict><key>Minute</key><integer>50</integer></dict>' errand-reminders
+# MOVED TO THE CLOUD (owner-approved 1 Nov 2026): errand reminders run on GitHub Actions,
+# .github/workflows/job-errand-reminders.yml, same ten-minute tick, same duty. The Mac copy is unloaded
+# and its plist archived (never deleted), so the two can never both be live; verified gone below.
+ERRAND_LABEL="com.seq.boss-errand-reminders"
+cloud_moved() {
+  local label="$1" plist="$HOME/Library/LaunchAgents/$1.plist" archive="$HOME/Archive/launchagents-retired-2026-11-01"
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  if [ -f "$plist" ]; then mkdir -p "$archive" && mv "$plist" "$archive/" && echo "Moved $label to the cloud; plist archived."; fi
+}
+cloud_moved "$ERRAND_LABEL"
 install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>' mac-cleanup
 install_l_job com.seq.boss-preseed-watch "duty-run.sh preseed-watch.mjs -- npm run --silent preseed:watch" '<dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' preseed-watch
 install_l_job com.seq.boss-catchups "duty-run.sh lp-catchups.mjs -- npm run --silent lp:catchups" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>' lp-catchups
@@ -1660,6 +1669,7 @@ require_loaded "$LOCKS_LABEL"
 # written the other plists — which is how a verifier that lies teaches people to stop reading it.
 checked="$checked !$KDP_LABEL"
 loaded "$KDP_LABEL" && missing="$missing $KDP_LABEL(should-be-retired)"
+require_gone "$ERRAND_LABEL"
 require_loaded "$MAILBOX_LABEL"
 require_loaded "$CRED_LABEL"
 require_loaded "$LP_LABEL"

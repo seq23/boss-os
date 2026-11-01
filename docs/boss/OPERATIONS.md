@@ -922,3 +922,21 @@ Kept: the `meeting_packets` table and its backups (past packets stay on record),
 standing Wednesday meeting with Scooter, and the agenda items. A machine that still has the old job
 loaded loses it the next time `install-agent-launchd.sh` runs, or by hand:
 `launchctl unload ~/Library/LaunchAgents/com.seq.boss-packet.plist && rm ~/Library/LaunchAgents/com.seq.boss-packet.plist`.
+
+## Jobs that run in the cloud, not on her Mac (1 Nov 2026)
+
+Owner-approved: a job that does not need her Mac runs on GitHub Actions, so a closed lid costs nothing.
+- **One runner**: `.github/workflows/cloud-job.yml` (shared) + one `job-<name>.yml` per job holding its
+  schedule (Central via `timezone: America/Chicago`, or a tick like every 10 minutes). The command is
+  the same one launchd ran, through `duty-run.sh`, so the duty row still records every run.
+- **`scripts/ops/cloud-job.sh`** keeps the job's output out of the public Actions log (one line: exit
+  code and NAMED STOP code) and stores the full log privately in R2 at
+  `boss-os-documents/job-state/logs/<job>/`. A job's `--state a,b` dirs (`~/.boss-os/a`, `~/.boss-os/b`)
+  are pulled from and pushed to `job-state/dirs/<dir>.tgz`; an unseeded dir is `NAMED STOP [STATE_NOT_SEEDED]`.
+- **Secrets** are repo secrets copied from the vault unseen (`vault:run` + `gh secret set` from a pipe);
+  `vault:run` passes the environment through only on a runner with `BOSS_OS_CLOUD_RUN=1` (`isCloudRun`).
+- **Never both live**: the installer's `cloud_moved <label>` unloads the Mac copy and moves its plist to
+  `~/Archive/launchagents-retired-2026-11-01/`; `validate:launchd-duty-link` counts `duty-run.sh` across
+  the installer and `job-*.yml` and fails on two.
+- **Moved so far**: errand reminders (`job-errand-reminders.yml`).
+- **Read a run's private log**: `npm run -s vault:run -- npx wrangler r2 object get boss-os-documents/job-state/logs/<job>/<stamp>.log --remote --pipe`.

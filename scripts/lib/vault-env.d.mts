@@ -9,3 +9,4 @@ export function handedOffNames(path?: string): Set<string>;
 export const FUND_TEAM_KEYS: readonly string[];
 export function isWestPeekKey(name: string): boolean;
 export function bossOsProcessEnv<T extends Record<string, unknown>>(env: T): Partial<T>;
+export function isCloudRun(env?: Record<string, string | undefined>, plat?: string): boolean;

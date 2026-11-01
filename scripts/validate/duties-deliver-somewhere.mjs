@@ -259,7 +259,10 @@ function scan() {
   const tables = createdTables(allSql);
   const deliverSrc = read(DELIVER);
   const callerSrc = read(CALLER);
-  const installerSrc = existsSync(join(ROOT, INSTALLER)) ? read(INSTALLER) : "";
+  // A local job is installed on her Mac (the installer) or runs on GitHub Actions (a job-*.yml, 1 Nov 2026).
+  const wfDir = join(ROOT, ".github", "workflows");
+  const cloudJobs = existsSync(wfDir) ? readdirSync(wfDir).filter((f) => /^job-.+\.ya?ml$/.test(f)).map((f) => read(`.github/workflows/${f}`)).join("\n") : "";
+  const installerSrc = (existsSync(join(ROOT, INSTALLER)) ? read(INSTALLER) : "") + "\n" + cloudJobs;
   const handlers = handlersIn(deliverSrc);
 
   const problems = [];
@@ -472,7 +475,7 @@ function scan() {
         );
       } else if (!installerSrc.includes(job)) {
         problems.push(
-          `${duty.id} (${duty.file}): local job ${job} is not named by ${INSTALLER}.\n` +
+          `${duty.id} (${duty.file}): local job ${job} is not named by ${INSTALLER} or a .github/workflows/job-*.yml.\n` +
           `      Nothing installs or repairs it, so the duty has an owner and no executor.`,
         );
       } else {

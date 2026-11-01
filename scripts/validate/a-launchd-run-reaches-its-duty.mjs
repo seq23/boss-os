@@ -119,6 +119,12 @@ export function retiredIn(sql) {
   return out;
 }
 
+/** The cloud jobs' workflow files, repo-relative. */
+export function cloudJobWorkflows(root = ROOT) {
+  const dir = join(root, ".github", "workflows");
+  return existsSync(dir) ? readdirSync(dir).filter((f) => /^job-.+\.ya?ml$/.test(f)).sort().map((f) => `.github/workflows/${f}`) : [];
+}
+
 /** Is a duty's declaration an `executor = 'local_job'` one? */
 export function isLocalJob(text) {
   return /'local_job'\s*,\s*'[A-Za-z0-9_.-]+\.(?:sh|mjs)'/.test(text) || /'local_job'/.test(text);
@@ -158,7 +164,12 @@ function scan() {
   }
   if (problems.length) return { declared, wrapped: [], problems };
 
-  const installer = read(INSTALLER);
+  /*
+   * A job runs on her Mac (the installer) OR on GitHub Actions (.github/workflows/job-*.yml, moved
+   * 1 Nov 2026), never both: both places are counted together, so a job left in the installer after
+   * its cloud workflow lands is "wrapped 2 times" and fails here — the two would both send.
+   */
+  const installer = read(INSTALLER) + "\n" + cloudJobWorkflows().map((f) => read(f)).join("\n");
   const wrapped = wrappedJobs(installer);
 
   // 1. Every wrapped token resolves to a duty that exists.

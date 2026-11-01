@@ -254,11 +254,11 @@ async function main() {
       const sep = rest[0] === "--" ? 1 : 0;
       const childArgs = rest.slice(sep);
       if (childArgs.length === 0) fail("usage: vault:run -- <command> [args...]");
-      const key = loadMasterKey();
-      const secrets = readVault(key);
+      const { bossOsProcessEnv, isCloudRun } = await import("../lib/vault-env.mjs");
+      // A cloud run (GitHub Actions) has no Keychain: its secrets came from repo secrets already.
+      const secrets = isCloudRun() ? {} : readVault(loadMasterKey());
       // A West Peek key (the fund's Resend team, any WP_ credential) never reaches a Boss OS
       // process, whether it came from the shared vault or from the calling shell.
-      const { bossOsProcessEnv } = await import("../lib/vault-env.mjs");
       const child = spawn(childArgs[0], childArgs.slice(1), {
         stdio: "inherit",
         env: bossOsProcessEnv({ ...process.env, ...secrets }),

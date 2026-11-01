@@ -107,6 +107,10 @@ describe("the Schedule manifest", () => {
     expect(cronProblems(m, "boss-os", files, chicagoOffset())).toEqual([]);
     // NEGATIVE: a cron the manifest does not carry.
     expect(cronProblems(m, "boss-os", [...files, { file: ".github/workflows/x.yml", crons: ["0 3 * * 1"], gated: {} }]).join()).toMatch(/no Schedule row names it/);
+    // NEGATIVE: a cloud job's file ticks (trigger.ticks) are held to its real crons, not the duty's slot.
+    const moved = { ...m, rows: m.rows.map((r: any) => (r.trigger?.ticks?.[".github/workflows/job-errand-reminders.yml"]
+      ? { ...r, trigger: { ...r.trigger, ticks: { ".github/workflows/job-errand-reminders.yml": ["hourly :00"] } } } : r)) };
+    expect(cronProblems(moved, "boss-os", files, chicagoOffset()).join()).toMatch(/errand-reminders: says hourly :00, but its crons fire every 10m/);
   });
 
   it("every line of the approved week names jobs that really run that day, at that time", () => {

@@ -1880,7 +1880,7 @@
       "what": "Asks if you still want to go, 28 hours before a booking.",
       "business": "personal",
       "brand": "Boss OS",
-      "system": "mac",
+      "system": "github",
       "slots": [
         "daily 00:00"
       ],
@@ -1888,17 +1888,14 @@
       "heavy": false,
       "trigger": {
         "duty": "duty_errand_reminders",
-        "launchd": [
-          "com.seq.boss-errand-reminders"
+        "repo": "boss-os",
+        "file": ".github/workflows/job-errand-reminders.yml",
+        "crons": [
+          "*/10 * * * *"
         ],
         "ticks": {
-          "com.seq.boss-errand-reminders": [
-            "hourly :00",
-            "hourly :10",
-            "hourly :20",
-            "hourly :30",
-            "hourly :40",
-            "hourly :50"
+          ".github/workflows/job-errand-reminders.yml": [
+            "every 10m"
           ]
         }
       }

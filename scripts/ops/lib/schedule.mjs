@@ -340,7 +340,8 @@ export function cronProblems(m, repo, files, utcOffset = chicagoOffset()) {
       for (const c of r.trigger.crons) if (!crons.includes(c)) out.push(`${r.id}: cron "${c}" is no longer in ${repo}/${file}`);
       const live = activeCrons({ crons: r.trigger.crons, gated: f.gated }, utcOffset);
       const real = canonical(live.flatMap((c) => cronEvents(c, utcOffset)));
-      if (!sameSlots(real, r.slots)) out.push(`${r.id}: says ${r.slots.join(" + ")}, but its crons fire ${real.join(" + ")} Central now`);
+      const want = labelSlots(r, file); // a duty row keeps the duty's own slot; its file's ticks are under trigger.ticks
+      if (!sameSlots(real, want)) out.push(`${r.id}: says ${want.join(" + ")}, but its crons fire ${real.join(" + ")} Central now`);
     }
   }
   const scheduled = new Set(files.filter((f) => f.crons.length).map((f) => f.file));

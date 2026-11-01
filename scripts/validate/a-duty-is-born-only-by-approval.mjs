@@ -225,7 +225,7 @@ export function ruleFailures(l = lane) {
 
 function selfTest() {
   const files = readWorker();
-  const installer = readFileSync(join(ROOT, INSTALLER), "utf8");
+  const installer = installerAndCloudJobs();
   const base = problemsIn(files, installer, lane.INSTALLED_LOCAL_JOBS);
   const cases = [];
   const expectFail = (name, mutated, installerText = installer, manifest = lane.INSTALLED_LOCAL_JOBS, pattern) => {
@@ -275,7 +275,15 @@ if (process.argv.includes("--self-test")) {
 }
 
 const files = readWorker();
-const installer = readFileSync(join(ROOT, INSTALLER), "utf8");
+/** The installer plus every cloud job workflow (.github/workflows/job-*.yml, 1 Nov 2026): a local job runs in one of them. */
+function installerAndCloudJobs() {
+  const wf = join(ROOT, ".github", "workflows");
+  let cloud = "";
+  try { cloud = readdirSync(wf).filter((f) => /^job-.+\.ya?ml$/.test(f)).map((f) => readFileSync(join(wf, f), "utf8")).join("\n"); } catch { cloud = ""; }
+  return readFileSync(join(ROOT, INSTALLER), "utf8") + "\n" + cloud;
+}
+
+const installer = installerAndCloudJobs();
 const { problems, writers, callers, installed } = problemsIn(files, installer, lane.INSTALLED_LOCAL_JOBS);
 const rules = ruleFailures();
 if (FIXTURES.length === 0) { console.error("RULE 0: no rule fixtures."); process.exit(2); }

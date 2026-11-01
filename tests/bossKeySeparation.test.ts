@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { FUND_TEAM_KEYS, bossOsProcessEnv, isWestPeekKey } from "../scripts/lib/vault-env.mjs";
+import { FUND_TEAM_KEYS, bossOsProcessEnv, isCloudRun, isWestPeekKey } from "../scripts/lib/vault-env.mjs";
 
 /**
  * NO WEST PEEK KEY CAN REACH A BOSS OS PROCESS (owner, 22 Oct 2026).
@@ -77,5 +77,14 @@ describe("door 3 — no Boss OS file reads a West Peek key", () => {
     expect(filesReadingWestPeekKeys([{ file: "a.mjs", source: "key: process.env.RESEND_API_KEY," }])).toEqual(["a.mjs"]);
     expect(filesReadingWestPeekKeys([{ file: "b.mjs", source: 'process.env["WP_OS_SECRET_HANDOFF_KEY"]' }])).toEqual(["b.mjs"]);
     expect(filesReadingWestPeekKeys([{ file: "c.mjs", source: 'const env = { RESEND_API_KEY: "not-a-real-key" };' }])).toEqual([]);
+  });
+});
+
+describe("a cloud run passes the vault through only on GitHub Actions (1 Nov 2026)", () => {
+  it("needs the runner, the workflow's flag and a non-Mac host, all three", () => {
+    expect(isCloudRun({ GITHUB_ACTIONS: "true", BOSS_OS_CLOUD_RUN: "1" }, "linux")).toBe(true);
+    expect(isCloudRun({ BOSS_OS_CLOUD_RUN: "1" }, "linux")).toBe(false);
+    expect(isCloudRun({ GITHUB_ACTIONS: "true" }, "linux")).toBe(false);
+    expect(isCloudRun({ GITHUB_ACTIONS: "true", BOSS_OS_CLOUD_RUN: "1" }, "darwin")).toBe(false);
   });
 });
