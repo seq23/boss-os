@@ -26,6 +26,7 @@ import { parseBrainEdits } from "../../../shared/boss/brains/brain.mjs";
 import { stopDeliverable } from "../today/deliverables";
 import { answerFromMail } from "../repoChange/answer";
 import { answerDutyFromMail, newDutyFromMail } from "../duties/mailLane";
+import { editDutyFromMail } from "../duties/editByMail";
 import { answerCommentWatchFromMail } from "../commentWatch/answer";
 import { answerKdpFromMail } from "../kdp/answer";
 import { dismissFromMail } from "../capital/dismiss";
@@ -851,7 +852,15 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
   const dutyRequest = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer ? null : await newDutyFromMail(env, {
     roster, subject: trueSubject, text: readable, mailId, messageId, now, sender,
   });
-  const dutyNote = dutyAnswer ?? dutyRequest;
+  /*
+   * HER RULING ON A DUTY SHE ALREADY HAS (1 Nov 2026): "change Camille's Marketplace listings duty …"
+   * changes THAT duty (its instructions, or the code that runs it), never a research page that says
+   * "done" over nothing. Below the refusal for the same reason as the two doors above.
+   */
+  const dutyEdit = planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyAnswer || dutyRequest ? null : await editDutyFromMail(env, {
+    roster, subject: trueSubject, text: own || readable, mailId, now, sender,
+  });
+  const dutyNote = dutyAnswer ?? dutyRequest ?? dutyEdit;
 
   const question = bookFailure || closedNote || planAnswer || commentAnswer || kdpAnswer || dismissAnswer || dutyNote ? null : clarificationFor({
     subject: trueSubject, body: readable, department: route.seat.department ?? "",
@@ -876,7 +885,8 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     }
   }
 
-  let taskId: string | null = null;
+  // A ruling on a fixed-step duty opened Danielle's change: that is this mail's job.
+  let taskId: string | null = dutyEdit?.taskId ?? null;
   let admitFailure: string | null = null;
   /*
    * A FAILED VERB OPENS NO WORK, AND THAT IS THE WHOLE POINT OF THE VERB.
@@ -1159,6 +1169,8 @@ function headline(text: string): string {
     ? triageTasks.map((t) => ({ title: shortTitle(t.job.ask), employeeId: t.job.seat.id, employee: t.job.seat.name, taskId: t.taskId, duty: false, failure: t.failure }))
     : dutyNote && (dutyNote.outcome === "DUTY_CREATED" || dutyNote.outcome === "DUTY_DRAFTED")
       ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyNote.employeeId, employee: nameOf(dutyNote.employeeId), taskId: null, duty: true, failure: null }]
+      : dutyEdit?.outcome === "DUTY_CHANGE_ROUTED"
+        ? [{ title: shortTitle(readable || trueSubject), employeeId: dutyEdit.employeeId, employee: nameOf(dutyEdit.employeeId), taskId: dutyEdit.taskId, duty: false, failure: null }]
       : taskId || (admitFailure && !question && !filedByVerb)
         ? [{ title: shortTitle(strippedSubject(trueSubject) || readable), employeeId: route.seat.id, employee: route.seat.name, taskId, duty: false, failure: taskId ? null : admitFailure }]
         : [];

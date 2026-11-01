@@ -67,6 +67,27 @@ describe("an approval exists when her answer changes what happens next", () => {
     expect(runNeedsHerDecision(JSON.stringify({ delivers: RESEARCH_PAGE_DELIVERS }), { files_touched: [] }, []).delivers).toBe(RESEARCH_PAGE_DELIVERS);
   });
 
+  /*
+   * 1 NOV 2026: her ruling became a research page whose summary said "Done as you ruled" while its
+   * own gaps said the change "still has to be built". Accepted as done, nothing changed.
+   */
+  it("never accepts as done a research page whose own gaps say the asked-for change was not made", async () => {
+    const { readResearchDelivery } = await import("../../src/shared/boss/research/page.mjs");
+    const delivers = {
+      status: "partial",
+      research_page: { title: "Marketplace listings use real work", summary: "Done as you ruled: every refresh now uses real photos.", markdown: "x".repeat(120) },
+      gaps: ["The duty change itself still has to be built into the listings job; this research run cannot change code."],
+    };
+    const verdict = runNeedsHerDecision(JSON.stringify({ delivers: "research_page" }), { files_touched: [], delivers }, []);
+    expect(verdict.needed).toBe(true);
+    expect(verdict.reason).toContain("was not made");
+    const page = readResearchDelivery(delivers);
+    expect(page.ok && page.page.summary).toMatch(/^Not done yet: /);
+    // An ordinary gap (a figure not confirmed) is still a delivered page, accepted where it lands.
+    const ordinary = { ...delivers, gaps: ["Could not confirm the 2025 rental price index; no public source."] };
+    expect(runNeedsHerDecision(JSON.stringify({ delivers: "research_page" }), { files_touched: [], delivers: ordinary }, []).needed).toBe(false);
+  });
+
   it("raises one when the run wrote files outside its own workspace", () => {
     const verdict = runNeedsHerDecision(
       JSON.stringify({ delivers: "executive_reports" }),

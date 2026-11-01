@@ -935,7 +935,7 @@ async function postDigest(api, digest) {
 }
 
 /** The morning sections this email told her once and clears after it goes (producers that append). */
-const TOLD_ONCE = ["pnp_outreach", "tail", "risk", "archive", "notices", "grid_repos"];
+const TOLD_ONCE = ["pnp_outreach", "pnp_marketplace", "tail", "risk", "archive", "notices", "grid_repos"];
 
 async function main() {
   const DRY = process.argv.includes("--dry-run");

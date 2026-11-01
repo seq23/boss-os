@@ -19,3 +19,5 @@ export function renderResearchPageHtml(args: {
   title: string; summary?: string; markdown: string; sources?: { title: string; url: string }[];
   gaps?: string[]; question?: string; delivered_at?: number | null;
 }): string;
+
+export function actionNotTaken(payload: unknown): string | null;
