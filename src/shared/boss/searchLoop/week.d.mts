@@ -4,7 +4,7 @@ export const LOOP_SCHEMA: string;
 export const LOOP_ENGINE_REPO: string;
 export const LOOP_MAX_AGE_DAYS: number;
 export const PACE: Readonly<{ start: number; step: number; cap: number; min: number }>;
-export const HELD_STATES: readonly string[];
+export const LOOP_STATES: readonly string[];
 export const NUMBER_FIELDS: readonly string[];
 export function weekProblem(week: unknown, opts?: { now?: number; maxAgeDays?: number }): string | null;
 export function weekFor(weeks: any[] | null | undefined, opts: { domain: string; repo?: string | null; now?: number; maxAgeDays?: number }): { week?: any; problem?: string; none?: true };
