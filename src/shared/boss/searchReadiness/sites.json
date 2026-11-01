@@ -769,6 +769,8 @@
     "linker"
    ],
    "label": "Professional Resource Library",
+   "clarity": false,
+   "clarity_why": "no page on this publication carries a form or a buy link (0 of 649, verified 28 Oct 2026); it is a linker whose job is citations, so Clarity has nothing to record here (e9, owner 25 Oct 2026)",
    "coverage": {
     "model": "not_local",
     "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."
@@ -783,6 +785,8 @@
     "linker"
    ],
    "label": "Founder Operator Library",
+   "clarity": false,
+   "clarity_why": "no page on this publication carries a form or a buy link (0 of 649, verified 28 Oct 2026); it is a linker whose job is citations, so Clarity has nothing to record here (e9, owner 25 Oct 2026)",
    "coverage": {
     "model": "not_local",
     "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."
@@ -797,6 +801,8 @@
     "linker"
    ],
    "label": "Memphis Vendor Library",
+   "clarity": false,
+   "clarity_why": "no page on this publication carries a form or a buy link (0 of 649, verified 28 Oct 2026); it is a linker whose job is citations, so Clarity has nothing to record here (e9, owner 25 Oct 2026)",
    "coverage": {
     "model": "not_local",
     "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."

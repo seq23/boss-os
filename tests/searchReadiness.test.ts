@@ -551,7 +551,27 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     expect(off.detail).toMatch(/YouTube/);
     const t2r = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
     expect(CHECKS.clarity!({ site: t2r, home: { html: "<html></html>" }, files: {} } as any).status).toBe("fail");
-    expect(sites.grid_repos.filter((s: any) => s.clarity === false).map((s: any) => s.domain)).toEqual(["howweknowdeep.com"]);
+    // The three authority libraries carry no form and no buy link on any of their 649 pages
+    // (verified 28 Oct 2026), so under e9 Clarity has nothing to record there. Marking them off is
+    // what makes e6/e9/i8 satisfiable at once: i8 wants Clarity on the homepage, e9 forbids it on a
+    // page with no form, and neither can be met by a site with no conversion step at all.
+    const LIBRARIES = ["founderoperatorlibrary.com", "memphisvendorlibrary.com", "professionalresourcelibrary.com"];
+    expect(sites.grid_repos.filter((s: any) => s.clarity === false).map((s: any) => s.domain).sort())
+      .toEqual(["howweknowdeep.com", ...LIBRARIES].sort());
+    // Every site switched off says why, in its own words, and the reason survives into the detail.
+    for (const s of sites.grid_repos.filter((x: any) => x.clarity === false)) {
+      expect(String(s.clarity_why ?? "").length).toBeGreaterThan(30);
+      const blank = { site: s, home: { html: "<html></html>" }, files: {}, pages: [] } as any;
+      for (const id of ["clarity", "clarity_scoped"]) {
+        const got = (CHECKS as any)[id](blank);
+        expect(got.status, `${s.domain} ${id}`).toBe("pass");
+      }
+      expect(CHECKS.clarity!(blank).detail).toContain(s.clarity_why);
+    }
+    // Switching a site off never excuses a page that still ships the tag: e9 is unchanged for every
+    // site that uses Clarity, so this is a narrower registry, not a looser check.
+    const stray = { url: "https://time-2-read.com/blog/a/", status: 200, html: '<html><head><title>t</title></head><body><script src="https://www.clarity.ms/tag/abc"></script></body></html>' };
+    expect(CHECKS.clarity_scoped!({ site: t2r, pages: [stray] } as any).status).toBe("fail");
   });
   it("a known limit stays in the queue with its reason and is never workable", () => {
     const site = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
