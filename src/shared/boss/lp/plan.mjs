@@ -41,11 +41,13 @@ export function firstName(name) {
 
 /**
  * Her outreach voice for an LP who answered warmly: "we", "more than $100M in secondary
- * transactions", never a fund size, a short call ask. A FIXED TEMPLATE — no model writes any part of
- * it, so an LP's name never reaches a route that might train on it.
+ * transactions", never a fund size. A call only when THEY asked for one (bucket "call"): then always
+ * yes, with times (owner, 1 Nov 2026: agents never suggest a call). A FIXED TEMPLATE — no model
+ * writes any part of it, so an LP's name never reaches a route that might train on it.
  */
 export function lpReplyBody({ name, bucket }) {
-  const opener = bucket === "call"
+  const call = bucket === "call";
+  const opener = call
     ? "Thank you for getting back to me. I'd love to find a time to talk."
     : "Thank you for the reply, and for being open to staying in touch.";
   return [
@@ -53,7 +55,9 @@ export function lpReplyBody({ name, bucket }) {
     "",
     `${opener} We've done more than $100M in secondary transactions and are exploring what comes next with a small group of LPs.`,
     "",
-    "Would you have 20 minutes in the next couple of weeks for a short call? Send me a couple of times that suit and we'll make it work.",
+    call
+      ? "Would you have 20 minutes in the next couple of weeks for a short call? Send me a couple of times that suit and we'll make it work."
+      : "I'll keep you posted as it takes shape. If anything you hold or want is on your mind, just reply here.",
     "",
     "Best,",
     "Sequoia",
@@ -65,11 +69,13 @@ export function lpReplyBody({ name, bucket }) {
  * has a ready draft in that person's own Gmail thread, redrafted if they write again"). A fixed
  * template — no model, no name to a model — that she sends as is or changes in her own words.
  */
-export function lpAgainBody({ name }) {
+export function lpAgainBody({ name, wantsCall = false }) {
   return [
     `Hi ${firstName(name)},`,
     "",
-    "Thank you for your patience, and for your note. I wanted to come back to you properly: would you have 20 minutes in the next week or so? Send me a couple of times that suit and we'll make it work.",
+    wantsCall
+      ? "Thank you for your patience, and for your note. I wanted to come back to you properly: would you have 20 minutes in the next week or so? Send me a couple of times that suit and we'll make it work."
+      : "Thank you for your patience, and for your note. I wanted to come back to you properly: tell me what would be most useful and I'll send it over here.",
     "",
     "Best,",
     "Sequoia",
@@ -82,11 +88,13 @@ export const LP_UNSENT_URGENT_DAYS = 2;
 export const LP_NUDGE_DAYS = 7;
 
 /** The nudge, a fixed template (no model, no names to a model). */
-export function lpNudgeBody({ name }) {
+export function lpNudgeBody({ name, bucket }) {
   return [
     `Hi ${firstName(name)},`,
     "",
-    "Just floating this back up in case it got buried. Happy to find 20 minutes whenever suits you.",
+    bucket === "call"
+      ? "Just floating this back up in case it got buried. Happy to find 20 minutes whenever suits you."
+      : "Just floating this back up in case it got buried. Happy to pick it up here whenever suits you.",
     "",
     "Best,",
     "Sequoia",
@@ -275,7 +283,10 @@ export const PROSPECT_BANNED = Object.freeze([
 ]);
 /** The ask must invite either direction. */
 export const EITHER_SIDE = /\badd or trim\b|\beither side\b|\bbuying or selling\b/i;
-export const CHAT_ASK = /\b(15|20) minutes\b.*\b(compare notes|chat|catch up)\b|\b(compare notes|quick chat)\b/i;
+/** A prospect email never suggests a call (owner, 1 Nov 2026); a call happens only when they ask. */
+export const CALL_ASK = /\b(?:\d+|a few) minutes\b|\b(?:quick|short|brief) (?:call|chat)\b|\bhop on\b|\bon a call\b|\bcall work\b|\bfind (?:a )?time\b/i;
+/** True when either email of a template suggests a call (a template written before 1 Nov 2026). */
+export const templateAsksForCall = (t) => CALL_ASK.test(String(t?.body ?? "")) || CALL_ASK.test(String(t?.follow_up ?? ""));
 export const PROSPECT_WORD_CAP = 90;
 export const OPT_OUT_LINE = "If this isn't relevant, just reply \"no thanks\" and I won't write again.";
 export const SIGNATURE = "Sequoia Taylor\nWest Peek Ventures";
@@ -352,7 +363,7 @@ export const PROSPECT_VARIANTS = Object.freeze([
       "",
       "I hope you don't mind the direct note. We've done more than $100M in secondary transactions, and I've been wanting to meet more people who think about late-stage private companies the way you do.",
       "",
-      "{names_line} Would love to find 15 minutes to compare notes, and I'm happy to talk about what you're looking to add or trim.",
+      "{names_line} If you're looking to add or trim, just reply with what's on your mind and I'll send over what we're seeing.",
       "",
       SIGNATURE,
       "",
@@ -361,7 +372,7 @@ export const PROSPECT_VARIANTS = Object.freeze([
     follow_up: [
       "Hi {first},",
       "",
-      "Just floating this back up. {names_line} We've done more than $100M in secondary transactions, and I'd love to find 15 minutes to compare notes on what you're looking to add or trim.",
+      "Just floating this back up. {names_line} We've done more than $100M in secondary transactions; if you're looking to add or trim, a one-line reply is all it takes.",
       "",
       SIGNATURE,
       "",
@@ -373,7 +384,7 @@ export const PROSPECT_VARIANTS = Object.freeze([
     body: [
       "Hi {first},",
       "",
-      "Would you be open to 15 minutes to compare notes on late-stage private companies? {names_line}",
+      "Would you be open to trading notes on late-stage private companies over email? {names_line}",
       "",
       "We've done more than $100M in secondary transactions, so if you're thinking about what to add or trim, we may be able to help.",
       "",
@@ -384,7 +395,7 @@ export const PROSPECT_VARIANTS = Object.freeze([
     follow_up: [
       "Hi {first},",
       "",
-      "A quick nudge on this. We've done more than $100M in secondary transactions, and I'd value 15 minutes to compare notes on what you're looking to add or trim. {names_line}",
+      "A quick nudge on this. We've done more than $100M in secondary transactions, and I'd value hearing what you're looking to add or trim. A one-line reply is plenty. {names_line}",
       "",
       SIGNATURE,
       "",
@@ -398,7 +409,7 @@ export const PROSPECT_VARIANTS = Object.freeze([
       "",
       "{names_line} That's part of a wider book we work across; we've done more than $100M in secondary transactions.",
       "",
-      "If you're weighing what to add or trim, could we find 15 minutes to compare notes?",
+      "If you're weighing what to add or trim, just reply here and I'll share what we're seeing.",
       "",
       SIGNATURE,
       "",
@@ -407,7 +418,7 @@ export const PROSPECT_VARIANTS = Object.freeze([
     follow_up: [
       "Hi {first},",
       "",
-      "Circling back once. If it's useful, I'd be glad to find 15 minutes to compare notes on what you're looking to add or trim. We've done more than $100M in secondary transactions. {names_line}",
+      "Circling back once. If it's useful, reply with what you're looking to add or trim and I'll share what we're seeing. We've done more than $100M in secondary transactions. {names_line}",
       "",
       SIGNATURE,
       "",
@@ -493,13 +504,14 @@ export function wordCount(body) {
 
 /**
  * Everything wrong with a rendered prospect email. Empty = it may be shown to her for approval.
- * Pinned by tests: banned sales phrases, the chat ask, the $100M line, "we", the word cap, the opt-out.
+ * Pinned by tests: banned sales phrases, no call ask, the $100M line, "we", the word cap, the opt-out.
  */
 export function prospectProblems({ subject, body }, names = null) {
   const out = [];
   const text = `${subject}\n${body}`;
   for (const re of PROSPECT_BANNED) if (re.test(body)) out.push(`uses a sales phrase (${re.source})`);
-  if (!CHAT_ASK.test(body)) out.push("has no soft chat ask");
+  const call = CALL_ASK.exec(body);
+  if (call) out.push(`suggests a call ("${call[0]}"): never suggest one; say yes only when they ask`);
   if (!EITHER_SIDE.test(body)) out.push("does not invite either side (add or trim)");
   if (!/more than \$100M in secondary transactions/.test(body)) out.push('is missing "more than $100M in secondary transactions"');
   if (!/\b[Ww]e('ve|'re| have| are)?\b/.test(body)) out.push('does not speak as "we"');
@@ -749,7 +761,7 @@ export function pickCatchups(candidates, history, lists, now = Date.now()) {
 }
 
 export function catchupNote({ name, reason }) {
-  return [`Hi ${firstName(name)},`, "", `It's been a while. ${reason} Would love to catch up for 15 minutes if you have time in the next couple of weeks.`, "", "Best,", "Sequoia"].join("\n");
+  return [`Hi ${firstName(name)},`, "", `It's been a while. ${reason} Would love to hear what you're working on; a reply here whenever suits is perfect.`, "", "Best,", "Sequoia"].join("\n");
 }
 
 /* ─── Her NeverBounce, before every touch, and what Approve will do (24 Oct 2026) ───────────

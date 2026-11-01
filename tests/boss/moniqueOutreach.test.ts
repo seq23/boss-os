@@ -1132,7 +1132,6 @@ describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 
             // 16 Oct 2026; it is the ONE exemption, and it is pinned to say exactly that price.
             if (pitch === "B") expect(message, at).toContain("Meeting them is a flat $800, or one month's rent only if they move in.");
             else expect(message, at).not.toContain("$");
-            expect(message, at).toMatch(/call( work)?\? Or just reply here/);
           } else {
             expect(m.subject, at).toBe("Re: quick question for Acme Dental");
           }

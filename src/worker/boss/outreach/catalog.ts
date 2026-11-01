@@ -176,8 +176,8 @@ const GUIDE_FOLLOW_UPS = (g: GuideVoice): [Step, Step] => [
       "Hi {org} team,\n\nI wrote last week but know inboxes get busy, so here's the short version. I run " +
       `${g.brand} (${g.domain}), a digital guide built to come up when ${g.who} ask ChatGPT, Google and other AI ` +
       `assistants about ${g.topic}, and it sends them to ${g.providers} in their area.${g.listing ? ` ${g.listing}` : ""}\n\n` +
-      `I'd like ${g.yours} on our {metro} pages. On a 15-minute call I'd show you what people are asking and where ` +
-      `you'd appear. If you'd rather read first: {offer_url}. ${g.price}\n\nWould a quick call work? Or just reply here.`,
+      `I'd like ${g.yours} on our {metro} pages. What people are asking, and where you'd appear: {offer_url}. ` +
+      `${g.price}\n\nReply here and I'll set it up.`,
   },
   {
     afterDays: 7,
@@ -185,7 +185,7 @@ const GUIDE_FOLLOW_UPS = (g: GuideVoice): [Step, Step] => [
     body:
       `Hi {org} team,\n\nLast note from me. ${g.brand} (${g.domain}) is a digital guide built to come up when ` +
       `${g.who} ask ChatGPT, Google and other AI assistants about ${g.short}, and I'd still like ${g.yours} on our ` +
-      `{metro} pages.${g.listing ? ` ${g.listing}` : ""} If the timing is ever better, just reply and we'll find 15 minutes.\n\nThanks either way.`,
+      `{metro} pages.${g.listing ? ` ${g.listing}` : ""} If the timing is ever better, just reply and I'll set it up.\n\nThanks either way.`,
   },
 ];
 
@@ -231,8 +231,7 @@ export const BUSINESSES: Business[] = [
           "Hi {org} team,\n\nI run USCIS Exam Guides (uscisexam.com), a digital guide for green-card " +
           "applicants. It's built to come up when people ask ChatGPT, Google and other AI assistants about the " +
           "I-693 medical exam, and it points them to civil surgeons in their city.\n\nWe're building out our " +
-          "{metro} pages and I'd like your practice on them. Would you have 15 minutes for a quick call? Or " +
-          "just reply here if that's easier.",
+          "{metro} pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UPS({ brand: "USCIS Exam Guides", domain: "uscisexam.com", who: "people", topic: "the I-693 medical exam", short: "the I-693 medical exam", providers: "civil surgeons", yours: "your practice", price: GUIDE_PRICE }),
     ],
@@ -260,8 +259,7 @@ export const BUSINESSES: Business[] = [
           "Hi {org} team,\n\nI run The Dentistry Guides (dentistryguides.com), a digital guide built to come " +
           "up when people ask ChatGPT, Google and other AI assistants about implants, veneers and what they " +
           "cost. It helps patients compare their options and find a dentist in their city.\n\nWe're building " +
-          "out our {metro} pages and I'd like your practice on them. Could we find 15 minutes for a quick " +
-          "call? Or just reply here.",
+          "out our {metro} pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UPS({ brand: "The Dentistry Guides", domain: "dentistryguides.com", who: "people", topic: "implants, veneers and what they cost", short: "implants, veneers and what they cost", providers: "practices", yours: "your practice", price: GUIDE_PRICE }),
     ],
@@ -289,7 +287,7 @@ export const BUSINESSES: Business[] = [
           "Hi {org} team,\n\nI run Hormone Optimization Guides (hormonesivhair.com), a digital guide built to " +
           "come up when people ask ChatGPT, Google and other AI assistants about TRT, HRT and IV therapy: " +
           "what's safe, what it costs, and who to see.\n\nWe're building out our {metro} pages and your clinic " +
-          "is one I'd like to include. Open to a quick 15-minute call? Or just reply here.",
+          "is one I'd like to include. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UPS({ brand: "Hormone Optimization Guides", domain: "hormonesivhair.com", who: "people", topic: "TRT, HRT and IV therapy", short: "TRT, HRT and IV therapy", providers: "clinics", yours: "your clinic", price: GUIDE_PRICE }),
     ],
@@ -337,7 +335,7 @@ export const BUSINESSES: Business[] = [
           "Hi {org} team,\n\nI run Neuro Evaluation Guides (neuroevalguides.com), a digital guide built to " +
           "come up when parents and adults ask ChatGPT, Google and other AI assistants about ADHD and autism: " +
           "getting evaluated, and finding ongoing therapy once they have answers. " + NEURO_LISTING + "\n\nWe're building out our {metro} " +
-          "pages and I'd like your practice on them. Would a quick 15-minute call work? Or just reply here.",
+          "pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UPS({ brand: "Neuro Evaluation Guides", domain: "neuroevalguides.com", who: "families", topic: "ADHD/autism evaluations and ongoing therapy", short: "ADHD/autism evaluations and ongoing therapy", providers: "practices", yours: "your practice", price: GUIDE_PRICE, listing: NEURO_LISTING }),
     ],
@@ -364,8 +362,8 @@ export const BUSINESSES: Business[] = [
         body:
           "Hi {org} team,\n\nI run The Accident Guides (theaccidentguides.com), a digital guide built to come " +
           "up when people ask ChatGPT, Google and other AI assistants what to do after a car or work accident: " +
-          "deadlines, costs, and when to call a lawyer.\n\nWe're building out our {metro} pages and want one " +
-          "firm to point people to. Could we find 15 minutes for a quick call? Or just reply here.",
+          "deadlines, costs, and when to call a lawyer.\n\nWe're building out our {metro} pages and I'd like " +
+          "your firm listed on them. Want me to set up a listing for you? Just reply here.",
       },
       ...GUIDE_FOLLOW_UPS({ brand: "The Accident Guides", domain: "theaccidentguides.com", who: "people", topic: "what to do after a car or work accident", short: "what to do after an accident", providers: "firms", yours: "your firm", price: "It's free for the first two months, then $499/month for the state." }),
     ],
@@ -405,7 +403,7 @@ export const BUSINESSES: Business[] = [
           "built to come up when families ask ChatGPT, Google and other AI assistants about assisted living " +
           "and memory care around Memphis. It walks them through care levels and costs, then connects them " +
           "with communities.\n\nI'm looking for one community to work with closely on the families who fit. " +
-          "Could we find 15 minutes for a quick call? Or just reply here.",
+          "If that might be you, just reply here.",
       },
       ...GUIDE_FOLLOW_UPS(SENIOR_VOICE("assisted living and memory care", "It's free for the first two months, then $249 a month on a six-month term, plus one month's rent when a family we send moves in.")),
     ],
@@ -421,7 +419,7 @@ export const BUSINESSES: Business[] = [
             "built to come up when families ask ChatGPT, Google and other AI assistants about senior care around " +
             "Memphis.\n\nWhen a family fits your community, we can send a short note with their care level, " +
             "budget and timeline, no names. Meeting them is a flat $800, or one month's rent only if they move " +
-            "in. Worth a quick call? Or just reply here.",
+            "in. Want the next family who fits? Just reply here.",
         },
         ...GUIDE_FOLLOW_UPS(SENIOR_VOICE("senior care", "Meeting a family is a flat $800, or one month's rent only if they move in. Nothing monthly.", "senior care around Memphis")),
       ],

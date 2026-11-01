@@ -44,7 +44,6 @@ export function check({ template, lpBody, installer, tapSrc, eightSrc, files, P 
   examined++;
   if (!/more than \$100M in secondary transactions/.test(lpBody)) bad.push('LP reply: missing "more than $100M in secondary transactions"');
   if (!/\bwe('ve|'ll| are| have)?\b/i.test(lpBody)) bad.push('LP reply: does not speak as "we"');
-  if (!/\bcall\b/i.test(lpBody)) bad.push("LP reply: no short call ask");
   if (/\bfund (size|of \$)|\$\d[\d,.]*\s?(m|mm|b|bn|million|billion)\s+fund\b/i.test(lpBody)) bad.push("LP reply: names a fund size");
 
   examined++;
@@ -109,9 +108,9 @@ if (process.argv.includes("--self-test")) {
   const base = real();
   const T = plan.DEFAULT_PROSPECT_TEMPLATE;
   const cases = [
-    ["a direct sales ask", { template: { ...T, body: T.body.replace("Would love", "Do you want to buy? Would love") } }, /sales phrase/],
+    ["a direct sales ask", { template: { ...T, body: T.body.replace("I hope", "Do you want to buy? I hope") } }, /sales phrase/],
     ["buyer-only wording", { template: { ...T, follow_up: T.follow_up.replace("Just floating", "As a buyer, just floating") } }, /sales phrase/],
-    ["no chat ask", { template: { ...T, body: T.body.replace(/Would love to find 15 minutes to compare notes, and /, "") } }, /chat ask/],
+    ["a call ask", { template: { ...T, body: T.body.replace("I hope", "Could we find 15 minutes for a quick call? I hope") } }, /suggests a call/],
     ["no either-side invitation", { template: { ...T, body: T.body.replace("add or trim", "add") } }, /either side/],
     ["too long", { template: { ...T, body: T.body.replace("I hope you don't mind the direct note.", "I hope you don't mind the direct note. ".repeat(12)) } }, /words/],
     ["an LP reply with a fund size", { lpBody: "We have a $50M fund and did more than $100M in secondary transactions; a call?" }, /fund size/],

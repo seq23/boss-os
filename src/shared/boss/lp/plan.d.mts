@@ -23,7 +23,8 @@ export const FEATURE_STALE_DAYS: number;
 export const PROSPECT_KINDS: readonly string[];
 export const PROSPECT_BANNED: readonly RegExp[];
 export const EITHER_SIDE: RegExp;
-export const CHAT_ASK: RegExp;
+export const CALL_ASK: RegExp;
+export function templateAsksForCall(t: { body?: string | null; follow_up?: string | null } | null | undefined): boolean;
 export const PROSPECT_WORD_CAP: number;
 export const OPT_OUT_LINE: string;
 export const SIGNATURE: string;
@@ -72,6 +73,6 @@ export function verdictGate(p: any, opts?: { paused?: boolean; now?: number }): 
 export type ProspectForecast = { go: number; first: number; follow: number; invalid: number; risky: number; unverified: number; bounced: number; paused: string | null; blocked: string[] };
 export function approveOutcome(f: ProspectForecast | null | undefined): { headline: string; lines: string[] };
 export declare const LP_NUDGE_DAYS: number;
-export declare function lpNudgeBody(r: { name?: string | null }): string;
-export declare function lpAgainBody(r: { name?: string | null }): string;
+export declare function lpNudgeBody(r: { name?: string | null; bucket?: string | null }): string;
+export declare function lpAgainBody(r: { name?: string | null; wantsCall?: boolean }): string;
 export declare function lpNudgeItems(rows: any[], now?: number): any[];
