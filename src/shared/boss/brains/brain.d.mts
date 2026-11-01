@@ -5,6 +5,9 @@ export interface BrainEdit { slug: string; section: string; op: "add" | "replace
 export interface ScoreRow { slug: string; business: string; metric: string | null; value: string | null; words: string; last_updated: string | null }
 export const BRAINS: readonly BrainMeta[];
 export const BRAIN_SLUGS: readonly string[];
+export const RETIRED_BRAINS: Readonly<Record<string, string>>;
+export function resolveBrainSlug(slug: string | null | undefined): string;
+export function historySlugsFor(slug: string): string[];
 export const NOT_A_BUSINESS: readonly string[];
 export const BUSINESS_SLUGS: readonly string[];
 export const PLAIN_DOCS: readonly string[];

@@ -216,10 +216,15 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
 Owner, 31 Oct 2026 ("time to work"). One definition, `src/shared/boss/brains/brain.mjs`; stored in D1
 (`brains`, `brain_revisions`, migration 0323); pinned by `tests/brains.test.ts` (which reads this
 section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
-1. **Nine brains.** Seven businesses, in scoreboard order (`brokerage`, `west-peek-ventures` — the fund,
-   TLC & Rooms and westpeek.live — `porch-and-party`, `time-2-read`, `industry-guides`, `spry`,
-   `friends`), `personal` (Boss OS itself,
-   Spirit, gates, coaching, her schedule) and `team` (who's who across her AI teams, a plain document).
+1. **Nine brains.** Seven businesses, in scoreboard order (`brokerage` — Spry Ventures (spry.vc), the
+   brokerage, priority 1 — `west-peek-ventures` — the fund ONLY — `west-peek` — the community: Rooms,
+   TLC, westpeek.live, the join site — `porch-and-party`, `time-2-read` — a Spry Labs company — `spry` —
+   Spry Labs, the umbrella for every side business, holding the Industry Guides — `friends`), `personal`
+   (Boss OS itself, Spirit, gates, coaching, her schedule) and `team` (who's who across her AI teams, a
+   plain document). Restructured by the owner on 1 Nov 2026 (migration 0326): the fund and the community
+   are separate brains that link to each other and never repeat each other's facts; `industry-guides` is
+   RETIRED into `spry` (`RETIRED_BRAINS`): its row and revisions stay as history, GET/PUT on the slug
+   resolve to `spry`, and nothing lists, scores or reads it.
    Every brain but `team` has the eight sections in order: Company, Numbers, Priorities, People, Voice,
    Settled decisions, Open questions, Who does what. Gaps are written `[MISSING]`; Settled decisions
    lines read `- YYYY-MM-DD — decision — why`; Numbers is `| Metric | Definition | Source | Value | Last updated |`.
@@ -231,8 +236,8 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    `dispatchRunForTask` (the row a non-Claude seat claims) and `/backends/claim` (a run handed down to
    another seat). An unclosed mark cuts everything after it.
 4. **Every employee reads first** (`buildPromptParts`): the brain(s) of the business(es) they serve
-   (`EMPLOYEE_BRAINS`; Camille P&P, Monique the brokerage, West Peek Ventures, time-2-read and the
-   Industry Guides — she runs their outreach; Simone, Danielle and Zora read every business summarised, Simone also
+   (`EMPLOYEE_BRAINS`; Camille P&P, Monique the brokerage, the fund, the community (her TLC/Rooms-related
+   work), time-2-read and Spry Labs — she runs their outreach; Simone, Danielle and Zora read every business summarised, Simone also
    `personal`) and a short who's-who from `team`.
 5. **Edits** on the Brains screen (one section at a time, history kept) or by email to Simone
    ("P&P brain: add settled decision …", "time-2-read priorities: 1 … 2 …", "spry brain: set Sales to
