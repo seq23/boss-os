@@ -390,8 +390,7 @@
           "emails": false,
           "refs": [
             "wpp-llm-credential-check"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "8:00",
@@ -441,8 +440,16 @@
           "tag": "sl",
           "text": "Weekly upkeep and growth checks for every side business, 15 min apart: whether AI answers cite each site, Pinterest results (where the site posts there), ApprovalPrep's own checks and Dream Wedding's Pinterest refill",
           "emails": false,
-          "refs": [],
-          "pending": true
+          "refs": [
+            "approvalprep-entity-backlink-watch",
+            "approvalprep-page-refresh-queue",
+            "approvalprep-weekly-growth-ops",
+            "approvalprep-growth-health-refresh",
+            "approvalprep-citation-os-weekly",
+            "approvalprep-pinterest-metrics",
+            "approvalprep-competitor-watch-refresh",
+            "dream-wedding-builder-pinterest-drip"
+          ]
         },
         {
           "time": "4:00",
@@ -1493,7 +1500,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "mon 07:41"
+        "thu 07:40"
       ],
       "emails": false,
       "heavy": false,
@@ -1501,7 +1508,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/entity-backlink-watch.yml",
         "crons": [
-          "41 13 * * 1"
+          "CRON_TZ=America/Chicago 40 7 * * 4"
         ]
       }
     },
@@ -1533,7 +1540,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 00:15"
+        "daily 01:15"
       ],
       "emails": false,
       "heavy": false,
@@ -1541,7 +1548,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/monitor-ai-visual.yml",
         "crons": [
-          "15 6 * * *"
+          "CRON_TZ=America/Chicago 15 1 * * *"
         ]
       }
     },
@@ -1553,7 +1560,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 00:00"
+        "daily 01:00"
       ],
       "emails": false,
       "heavy": true,
@@ -1561,7 +1568,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/monitor-runware-generate.yml",
         "crons": [
-          "0 6 * * *"
+          "CRON_TZ=America/Chicago 0 1 * * *"
         ]
       }
     },
@@ -1573,7 +1580,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 00:30"
+        "daily 01:30"
       ],
       "emails": false,
       "heavy": false,
@@ -1581,7 +1588,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/monitor-template-ab.yml",
         "crons": [
-          "30 6 * * *"
+          "CRON_TZ=America/Chicago 30 1 * * *"
         ]
       }
     },
@@ -1593,7 +1600,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 00:45"
+        "daily 01:45"
       ],
       "emails": false,
       "heavy": false,
@@ -1601,7 +1608,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/monitor-template-cd.yml",
         "crons": [
-          "45 6 * * *"
+          "CRON_TZ=America/Chicago 45 1 * * *"
         ]
       }
     },
@@ -1633,7 +1640,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 00:40"
+        "daily 01:40"
       ],
       "emails": false,
       "heavy": true,
@@ -1641,7 +1648,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/search-console-daily.yml",
         "crons": [
-          "40 6 * * *"
+          "CRON_TZ=America/Chicago 40 1 * * *"
         ]
       }
     },
@@ -1653,7 +1660,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "daily 23:41"
+        "daily 00:41"
       ],
       "emails": false,
       "heavy": false,
@@ -1661,27 +1668,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/supabase-keep-alive.yml",
         "crons": [
-          "41 5 * * *"
-        ]
-      }
-    },
-    {
-      "id": "dailystory-tts-usage-report",
-      "name": "TTS usage report",
-      "what": "TTS usage report",
-      "business": "time-2-read",
-      "brand": "Time-2-Read",
-      "system": "github",
-      "slots": [
-        "mon 08:00"
-      ],
-      "emails": false,
-      "heavy": false,
-      "trigger": {
-        "repo": "dailystory",
-        "file": ".github/workflows/tts-usage-report.yml",
-        "crons": [
-          "0 14 * * 1"
+          "CRON_TZ=America/Chicago 41 0 * * *"
         ]
       }
     },
@@ -3858,7 +3845,7 @@
       "brand": "westpeek.live",
       "system": "github",
       "slots": [
-        "daily 01:17"
+        "daily 02:17"
       ],
       "emails": false,
       "heavy": true,
@@ -3866,7 +3853,7 @@
         "repo": "westpeek-live",
         "file": ".github/workflows/browser-e2e.yml",
         "crons": [
-          "17 7 * * *"
+          "CRON_TZ=America/Chicago 17 2 * * *"
         ]
       }
     },
@@ -4246,7 +4233,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "daily 06:15"
+        "daily 07:15"
       ],
       "emails": false,
       "heavy": false,
@@ -4254,7 +4241,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/ci.yml",
         "crons": [
-          "15 12 * * *"
+          "CRON_TZ=America/Chicago 15 7 * * *"
         ]
       }
     },
@@ -4266,7 +4253,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "mon 07:45"
+        "fri 07:45"
       ],
       "emails": false,
       "heavy": false,
@@ -4274,7 +4261,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/credential-check.yml",
         "crons": [
-          "45 13 * * 1"
+          "CRON_TZ=America/Chicago 45 7 * * 5"
         ]
       }
     },
@@ -4286,7 +4273,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "mon 08:20"
+        "thu 08:00"
       ],
       "emails": false,
       "heavy": false,
@@ -4294,7 +4281,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/entity-backlink-watch.yml",
         "crons": [
-          "20 14 * * 1"
+          "CRON_TZ=America/Chicago 0 8 * * 4"
         ]
       }
     },
@@ -4306,8 +4293,8 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "daily 02:35",
-        "daily 14:35"
+        "daily 03:35",
+        "daily 15:35"
       ],
       "emails": false,
       "heavy": false,
@@ -4315,7 +4302,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/programmatic-release.yml",
         "crons": [
-          "35 8,20 * * *"
+          "CRON_TZ=America/Chicago 35 3,15 * * *"
         ]
       }
     },
@@ -4327,8 +4314,8 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "daily 01:10",
-        "daily 13:10"
+        "daily 02:10",
+        "daily 14:10"
       ],
       "emails": false,
       "heavy": true,
@@ -4336,7 +4323,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/query-intelligence.yml",
         "crons": [
-          "10 7,19 * * *"
+          "CRON_TZ=America/Chicago 10 2,14 * * *"
         ]
       }
     },
@@ -4348,7 +4335,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "daily 04:40"
+        "daily 05:40"
       ],
       "emails": false,
       "heavy": false,
@@ -4356,7 +4343,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/search-repair-retest.yml",
         "crons": [
-          "40 10 * * *"
+          "CRON_TZ=America/Chicago 40 5 * * *"
         ]
       }
     },
@@ -4368,7 +4355,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "wed 10:26"
+        "wed 11:26"
       ],
       "emails": false,
       "heavy": false,
@@ -4376,7 +4363,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/self-heal.yml",
         "crons": [
-          "26 16 * * 3"
+          "CRON_TZ=America/Chicago 26 11 * * 3"
         ]
       }
     },
