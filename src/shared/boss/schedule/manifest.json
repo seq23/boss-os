@@ -3773,7 +3773,7 @@
     {
       "id": "t2r-numbers",
       "name": "Time-2-Read numbers",
-      "what": "Reads Time-2-Read's money numbers into its brain.",
+      "what": "Reads Time-2-Read's paying subscribers, monthly revenue and signups into the brain.",
       "business": "time-2-read",
       "brand": "Time-2-Read",
       "system": "mac",
