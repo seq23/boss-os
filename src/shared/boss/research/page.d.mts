@@ -6,6 +6,7 @@ export const RESEARCH_PAGE_DIR: string;
 export const RESEARCH_PAGE_REQUESTED: Readonly<{ repo_path: string; allowed_paths: readonly string[]; web_tools: readonly string[]; max_seconds: number }>;
 export const RESEARCH_PAGE_ROUTE: string;
 export const BOSS_ORIGIN: string;
+export const RESEARCH_PAGE_PAGE_PATH: string;
 export function parseResearchPage(parts: unknown): { question: string } | null;
 export function researchPageUrl(id: string): string;
 export function composeResearchPrompt(args: { id: string; question: string }): string;

@@ -42,6 +42,15 @@ export const RESEARCH_PAGE_REQUESTED = Object.freeze({
 });
 export const RESEARCH_PAGE_ROUTE = "/api/boss/research/pages";
 export const BOSS_ORIGIN = "https://boss.sequoiataylor.com";
+/**
+ * HER LINKS ARE PAGES, NEVER /api PATHS (rule 13, 23 Oct 2026). `researchPageUrl` used to hand the
+ * run `BOSS_ORIGIN + RESEARCH_PAGE_ROUTE`, i.e. an /api path, so every research delivery produced an
+ * email the plain-email gate had to refuse (held mail, 1 Nov 2026: 9755e2553df7b488.json,
+ * f1ea62c2edaacc01.json). `RESEARCH_PAGE_ROUTE` stays the API route the handler is mounted at;
+ * `RESEARCH_PAGE_PAGE_PATH` is the address a person reads, mapped back to it by
+ * `researchPageToBossPath` in src/worker/bossMount.ts.
+ */
+export const RESEARCH_PAGE_PAGE_PATH = "/research";
 
 /** `research: <q>`, `research page: <q>`, `#camille research <q>`, `research on <q>`. */
 const RESEARCH_RE = /(?:^|\n|#camille\s+)\s*research(?:\s+page)?(?:\s*[:\-–—]\s*|\s+(?:on|about|into)\s+|\s+(?=[a-z0-9"'“]))([\s\S]{8,2000})/i;
@@ -59,9 +68,9 @@ export function parseResearchPage(parts) {
   return { question: question.slice(0, 2000) };
 }
 
-/** The page's own address — what the run puts at the end of its reply, and what Zora files. */
+/** The page's own address — what the run puts at the end of its reply, and what Zora files. A page, never an /api path. */
 export function researchPageUrl(id) {
-  return `${BOSS_ORIGIN}${RESEARCH_PAGE_ROUTE}/${encodeURIComponent(String(id))}`;
+  return `${BOSS_ORIGIN}${RESEARCH_PAGE_PAGE_PATH}/${encodeURIComponent(String(id))}`;
 }
 
 /** The instruction the seat run is handed. The delivery shape is stated exactly; nothing is left to guess. */

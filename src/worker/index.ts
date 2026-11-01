@@ -29,7 +29,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, tapPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1286,6 +1286,14 @@ export async function handleRequest(
   if (tapPath) {
     const inner = new URL(url.toString());
     inner.pathname = tapPath;
+    return handleBossRequest(new Request(inner.toString(), request), env);
+  }
+
+  // A research page's address (`/research/<id>`) is a page too, the same way (bossMount.ts).
+  const researchPath = researchPageToBossPath(url.pathname);
+  if (researchPath) {
+    const inner = new URL(url.toString());
+    inner.pathname = researchPath;
     return handleBossRequest(new Request(inner.toString(), request), env);
   }
 
