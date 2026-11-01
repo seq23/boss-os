@@ -1,0 +1,25 @@
+name: job · errand reminders · every 10 min
+
+# Simone's "do you still want to go?" email 28 hours before a booking, and Imani's practice nudges
+# (owner, 26 Oct 2026 and 31 Oct 2026). Moved off her Mac 1 Nov 2026 (was launchd
+# com.seq.boss-errand-reminders, same ten-minute tick). Reports to duty_errand_reminders.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-errand-reminders
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/cloud-job.yml
+    secrets: inherit
+    with:
+      job: errand-reminders
+      timeout: 10
+      command: bash scripts/ops/duty-run.sh errand-reminders.mjs -- npm run --silent errand-reminders

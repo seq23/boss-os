@@ -764,9 +764,8 @@
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
       "when": "28 hours before each booking",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-errand-reminders (every 10 minutes)",
-      "pause": "launchctl bootout gui/501/com.seq.boss-errand-reminders",
-      "launchd": ["com.seq.boss-errand-reminders"],
+      "runs": "github", "trigger": "GitHub Actions job-errand-reminders.yml (every 10 minutes)",
+      "pause": "disable the job-errand-reminders workflow on GitHub",
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/errand-reminders.mjs"] }]
     },
     {
@@ -796,9 +795,8 @@
       "sender": "Imani", "owner": "Imani",
       "from": "Imani <imani@sequoiataylor.com>", "to": "You",
       "when": "From 10:00 AM, at most one a day, only while you are drifting",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-errand-reminders (practice-nudges)",
-      "pause": "Open the app, talk to the coach or close a gate; or launchctl bootout gui/501/com.seq.boss-errand-reminders",
-      "launchd": ["com.seq.boss-errand-reminders"],
+      "runs": "github", "trigger": "GitHub Actions job-errand-reminders.yml (practice-nudges)",
+      "pause": "Open the app, talk to the coach or close a gate; or disable the job-errand-reminders workflow on GitHub",
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/practice-nudges.mjs", "src/worker/boss/practice/lapse.ts"] }]
     },
     {
@@ -807,9 +805,8 @@
       "sender": "Imani", "owner": "Imani",
       "from": "Imani <imani@sequoiataylor.com>", "to": "You",
       "when": "Noon to 3:00 PM, once, while the Midday gate is open",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-errand-reminders (practice-nudges)",
+      "runs": "github", "trigger": "GitHub Actions job-errand-reminders.yml (practice-nudges)",
       "pause": "Close the Midday gate",
-      "launchd": ["com.seq.boss-errand-reminders"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/practice-nudges.mjs"] }]
     },
     {
@@ -818,9 +815,8 @@
       "sender": "Imani", "owner": "Imani",
       "from": "Imani <imani@sequoiataylor.com>", "to": "You",
       "when": "Twice at the end of each month, from 10:00 AM, until it is done",
-      "runs": "mac", "trigger": "Mac job com.seq.boss-errand-reminders",
+      "runs": "github", "trigger": "GitHub Actions job-errand-reminders.yml",
       "pause": "Tap Done ✓",
-      "launchd": ["com.seq.boss-errand-reminders"],
       "code": [{ "repo": "boss-os", "paths": ["scripts/ops/errand-reminders.mjs", "src/worker/boss/spirit/ancestralHour.ts"] }]
     },
     {

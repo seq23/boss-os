@@ -122,3 +122,16 @@ export function bossOsProcessEnv(env) {
   for (const [k, v] of Object.entries(env ?? {})) if (!isWestPeekKey(k)) out[k] = v;
   return out;
 }
+
+/**
+ * A CLOUD RUN of a Boss OS job (1 Nov 2026: jobs that do not need her Mac run on GitHub Actions).
+ *
+ * There is no Keychain on a runner, so the vault cannot open. The workflow injects the few secrets
+ * the job needs from repo secrets instead; `vault:run` then passes the environment through
+ * (still filtered by `bossOsProcessEnv`). It is cloud mode ONLY when all three hold: a GitHub
+ * Actions runner, the workflow's explicit BOSS_OS_CLOUD_RUN=1, and not macOS — so a Mac shell
+ * that sets the flag by mistake still fails closed on the Keychain, as before.
+ */
+export function isCloudRun(env = process.env, plat = process.platform) {
+  return env.GITHUB_ACTIONS === "true" && env.BOSS_OS_CLOUD_RUN === "1" && plat !== "darwin";
+}

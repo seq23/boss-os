@@ -1,0 +1,62 @@
+name: cloud job (shared runner)
+
+# The one way a Boss OS job runs off her Mac (owner-approved 1 Nov 2026). Each job-*.yml file holds a
+# job's schedule in Central time and calls this with the job's name and command; this checks out
+# main, installs, and runs it through scripts/ops/cloud-job.sh, which keeps everything the job prints
+# out of this public log (it goes to a private log in R2) and carries its state between runs.
+#
+# A job is EITHER here OR in scripts/ops/install-agent-launchd.sh, never both:
+# scripts/validate/a-launchd-run-reaches-its-duty.mjs counts duty-run.sh across both and fails on two.
+
+on:
+  workflow_call:
+    inputs:
+      job:
+        type: string
+        required: true
+      command:
+        type: string
+        required: true
+      state:
+        type: string
+        required: false
+        default: ""
+      timeout:
+        type: number
+        required: false
+        default: 20
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund > /dev/null
+      - name: Run ${{ inputs.job }}
+        env:
+          BOSS_OS_CLOUD_RUN: "1"
+          JOB: ${{ inputs.job }}
+          STATE: ${{ inputs.state }}
+          COMMAND: ${{ inputs.command }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.BOSS_JOBS_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BOSS_PASSCODE: ${{ secrets.BOSS_PASSCODE }}
+          BOSS_OS_MAIL_KEY: ${{ secrets.BOSS_OS_MAIL_KEY }}
+          BOSS_OS_FALLBACK_MAIL_KEY: ${{ secrets.BOSS_OS_FALLBACK_MAIL_KEY }}
+        run: |
+          if [ -n "$STATE" ]; then
+            bash scripts/ops/cloud-job.sh "$JOB" --state "$STATE" -- bash -c "$COMMAND"
+          else
+            bash scripts/ops/cloud-job.sh "$JOB" -- bash -c "$COMMAND"
+          fi
