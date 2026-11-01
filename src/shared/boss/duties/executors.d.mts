@@ -1,5 +1,5 @@
 /** Types for the executor record. See executors.mjs for why it exists. */
-export type Capability = "owner_account_web" | "colleague_work" | "repo_change" | "research_page" | "owner_spend";
+export type Capability = "owner_account_web" | "owner_chrome" | "colleague_work" | "repo_change" | "research_page" | "owner_spend";
 export const NEVER_SPEND_RULE: string;
 export const SPEND_STEP_RE: RegExp;
 export function spendStepIn(text: unknown): string | null;

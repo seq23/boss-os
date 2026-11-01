@@ -125,6 +125,7 @@ export const REQUIRED_FORBIDDEN: string[];
 export const REFUSAL: Record<string, string>;
 /** The only web tools an envelope may ask for. Anything else is an escalation, not a typo. */
 export const ALLOWED_WEB_TOOLS: string[];
+export const CHROME_SEAT: "bk_claude_code";
 export function fenceUntrusted(text: unknown, opts?: { sentinel?: string }): { sentinel: string; fenced: string };
 export function buildPrompt(envelope: Envelope, opts?: { sentinel?: string }): { sentinel: string; prompt: string };
 export function scanCommand(command: unknown, forbidden?: string[]): string[];

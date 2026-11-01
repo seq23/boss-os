@@ -1141,6 +1141,8 @@ SIMONE_CMD_LABEL="com.seq.boss-simone-commands"
 MAILTAIL_LABEL="com.seq.boss-mail-tail"
 # Camille's research pages run in their own folder (RESEARCH_PAGE_DIR in src/shared/boss/research/page.mjs).
 mkdir -p "$HOME/.boss-os/research"
+# Her Chrome jobs too (CHROME_JOB_DIR in src/shared/boss/intake/chromeJob.mjs).
+mkdir -p "$HOME/.boss-os/chrome-jobs"
 BOSS_OS_REPO="$REPO" bash "$REPO/scripts/ops/install-boss-mail-tail.sh"
 
 # ─── Monique's comment watch ─────────────────────────────────────────────────

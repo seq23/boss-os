@@ -19,6 +19,9 @@
  * roster is skipped rather than guessed (`triage` takes the roster read from D1).
  */
 
+import { chromeJobIn } from "./chromeJob.mjs";
+import { executorsFor } from "../duties/executors.mjs";
+
 /**
  * The seats and what each one does, in her words (the 22 Oct brief). `signals` are scored: each
  * distinct match is one point; `strong` matches are three. Order breaks ties.
@@ -69,6 +72,20 @@ export const TRIAGE_SEATS = Object.freeze([
 
 const CHIEF = "emp_chief";
 
+/**
+ * A JOB IN HER CHROME GOES TO THE SEAT THAT WORKS IN HER CHROME (1 Nov 2026), whatever else the words
+ * score: the seat holding `owner_chrome` in SEAT_EXECUTORS. "Camille does the Facebook listings there"
+ * once scored as a research ask and became a research page that cannot touch Chrome.
+ */
+function chromeSeat(text, live) {
+  if (!chromeJobIn(text)) return null;
+  for (const [id, cmd] of executorsFor("owner_chrome")) {
+    const seat = live.get(id);
+    if (seat) return { seat, score: 3, matched: ["chrome"], closest: false, chrome: true, why: `${seat.name} works in your Chrome (${cmd.split(" (")[0]}).` };
+  }
+  return null;
+}
+
 /** Score one ask against each seat. Pure. */
 export function scoreAsk(text) {
   const t = String(text ?? "").replace(/#[a-z0-9][a-z0-9_-]*/gi, " ");
@@ -84,6 +101,8 @@ export function seatForAsk(text, roster) {
   const live = new Map((roster ?? []).filter((s) => s && s.id && s.name).map((s) => [s.id, s]));
   if (live.size === 0) return null;
   const chief = live.get(CHIEF) ?? [...live.values()].find((s) => /chief of staff/i.test(String(s.role ?? ""))) ?? [...live.values()][0];
+  const chrome = chromeSeat(text, live);
+  if (chrome) return chrome;
   const scored = scoreAsk(text).filter((x) => live.has(x.id));
   let best = null;
   for (const x of scored) if (x.score > 0 && (!best || x.score > best.score)) best = x;
@@ -158,13 +177,13 @@ export function triage({ subject = "", text = "", roster = [] } = {}) {
     const pick = seatForAsk(judged, roster);
     if (!pick) return [];
     const last = jobs[jobs.length - 1];
-    if (last && last.seat.id === pick.seat.id) { last.asks.push(ask); continue; }
-    jobs.push({ seat: pick.seat, asks: [ask], why: pick.why, closest: pick.closest });
+    if (last && last.seat.id === pick.seat.id && Boolean(last.chrome) === Boolean(pick.chrome)) { last.asks.push(ask); continue; }
+    jobs.push({ seat: pick.seat, asks: [ask], why: pick.why, closest: pick.closest, ...(pick.chrome ? { chrome: true } : {}) });
   }
   // One job: the whole email is the ask, preamble included.
   const whole = String(text ?? "").trim() || String(subject ?? "").trim();
   return jobs.map((j) => ({
-    seat: j.seat, why: j.why, closest: j.closest,
+    seat: j.seat, why: j.why, closest: j.closest, ...(j.chrome ? { chrome: true } : {}),
     ask: jobs.length === 1 ? whole : j.asks.join("\n"),
     text: [context, ...j.asks].filter(Boolean).join("\n\n"),
   }));

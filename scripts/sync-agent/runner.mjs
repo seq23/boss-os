@@ -79,6 +79,7 @@ export const REFUSAL = {
   NO_ALLOWED_PATHS: "no_allowed_paths",
   MATERIALS_NOT_ABSOLUTE: "materials_not_absolute",
   WEB_TOOL_NOT_ALLOWED: "web_tool_not_allowed",
+  BROWSER_NOT_ALLOWED: "browser_not_allowed",
   MATERIAL_UNREADABLE: "material_unreadable",
   FORBIDDEN_LIST_NARROWED: "forbidden_list_narrowed",
   FORBIDDEN_COMMAND: "verification_command_forbidden",
@@ -114,6 +115,12 @@ const KNOWN_KEYS = new Set([
    */
   "materials", "web_tools",
   /*
+   * `browser` (1 Nov 2026): "chrome" only, on Claude's seat only — a Chrome job runs in her own Chrome
+   * through Claude in Chrome (src/shared/boss/intake/chromeJob.mjs), the executor her Marketplace
+   * listings already use. Any other value, or any other seat, is refused below.
+   */
+  "browser",
+  /*
    * `firm_context` (25 Oct 2026): the firm's standing notices and service practices, written only by
    * the owner (owner-only governance API; practices in git). It is placed ABOVE the fence, as the
    * operator's own rules. Inside the fence it read as text claiming authority and Codex refused the
@@ -121,6 +128,9 @@ const KNOWN_KEYS = new Set([
    */
   "firm_context",
 ]);
+
+/** The one seat whose CLI has Claude in Chrome. */
+export const CHROME_SEAT = "bk_claude_code";
 
 /** The only web tools an envelope may ask for. Anything else is an escalation, not a typo. */
 export const ALLOWED_WEB_TOOLS = ["WebSearch", "WebFetch"];
@@ -273,6 +283,12 @@ export function validateEnvelope(envelope, backend = {}) {
   if (envelope.web_tools !== undefined) {
     if (!Array.isArray(envelope.web_tools) || envelope.web_tools.some((t) => !ALLOWED_WEB_TOOLS.includes(t))) {
       return refuse(REFUSAL.WEB_TOOL_NOT_ALLOWED, `web_tools may only contain ${ALLOWED_WEB_TOOLS.join(", ")}`);
+    }
+  }
+
+  if (envelope.browser !== undefined) {
+    if (envelope.browser !== "chrome" || envelope.backend_id !== CHROME_SEAT) {
+      return refuse(REFUSAL.BROWSER_NOT_ALLOWED, `browser may only be "chrome", on ${CHROME_SEAT}`);
     }
   }
 

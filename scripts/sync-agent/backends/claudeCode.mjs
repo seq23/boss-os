@@ -89,7 +89,12 @@ export function buildArgs(envelope, { model } = {}) {
    * tool nobody reviewed. Both are read-only: they fetch, they do not act, and the deny list above
    * is untouched by this.
    */
-  const web = Array.isArray(envelope?.web_tools) ? envelope.web_tools : [];
+  const web = Array.isArray(envelope?.web_tools) ? [...envelope.web_tools] : [];
+  /*
+   * A CHROME JOB (1 Nov 2026): her own Chrome through Claude in Chrome, the same flags her Marketplace
+   * listings run with (~/bin/pnp-listings.sh). The runner admits `browser: "chrome"` on this seat only.
+   */
+  if (envelope?.browser === "chrome") { args.push("--chrome"); web.push("mcp__claude-in-chrome__*"); }
   if (web.length) args.push("--allowedTools", ...web);
 
   if (model ?? envelope?.model) args.push("--model", String(model ?? envelope.model));
@@ -132,6 +137,11 @@ export function parseCliJson(stdout) {
  */
 export async function claudeCodeExecutor({ envelope, prompt, cwd }, { spawnImpl, binary = "claude", readDelivers = defaultReadDelivers } = {}) {
   const spawn = spawnImpl ?? (await import("node:child_process")).spawn;
+  // Claude in Chrome needs her Chrome open (pnp-listings.sh opens it the same way). Real runs only.
+  if (envelope?.browser === "chrome" && !spawnImpl) {
+    await new Promise((resolve) => { const o = spawn("open", ["-ga", "Google Chrome"], { stdio: "ignore" }); o.on("close", resolve); o.on("error", resolve); });
+    await new Promise((resolve) => setTimeout(resolve, 20_000));
+  }
   const args = buildArgs(envelope);
   const timeoutMs = Math.max(1, Number(envelope?.max_seconds ?? 900)) * 1000;
 

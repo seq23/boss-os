@@ -183,7 +183,10 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   // Her switch, "Use OpenAI first for everything" (24 Oct 2026), applied in this one place.
   // An LP or deal-terms draft: Claude's seat only, never reordered, never a cloud rung (seatOrder.ts).
   const confidential = isConfidentialDraft(input as any);
-  const ladder = confidential ? confidentialLadder(baseLadder) : orderSeats(baseLadder, isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
+  // A Chrome job (1 Nov 2026) runs in her Chrome through Claude in Chrome: Claude's seat only. Codex
+  // has no Chrome, and the "OpenAI first" switch handed the first one to it.
+  const claudeOnly = confidential || input.chrome_job === true;
+  const ladder = claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
   const refusals: { backend_id: string; refused: string }[] = [];
   const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
     ? ((input.requested as any).model_by_backend as Record<string, string | null>)
@@ -210,7 +213,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       // Scheduled: a duty made this, so the budget may refuse it. Work she asks for arrives through
       // POST /backends/dispatch instead and is never gated — and so is a research page she asked
       // Camille for by email (22 Oct 2026): her ask is not a duty, and the budget stops duties only.
-      scheduled: !(input.research_page && typeof input.research_page === "object"),
+      scheduled: !(input.research_page && typeof input.research_page === "object") && input.chrome_job !== true,
       taskId: task.id,
       lane: task.lane,
       backendId,

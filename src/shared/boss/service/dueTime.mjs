@@ -18,7 +18,10 @@ function chicagoParts(at) {
   const y = Number(p.year), m = Number(p.month), d = Number(p.day), h = Number(p.hour) % 24, min = Number(p.minute);
   const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(String(p.weekday));
   const asUtc = Date.UTC(y, m - 1, d, h, min);
-  const offsetMin = Math.round((asUtc - at.getTime()) / 60_000);
+  // Against the instant floored to its minute: the wall clock above has no seconds, so an email that
+  // arrived at :45 seconds rounded the offset a minute off and every deadline read hh:01 (1 Nov 2026,
+  // "due 2026-11-01T23:01Z").
+  const offsetMin = Math.round((asUtc - Math.floor(at.getTime() / 60_000) * 60_000) / 60_000);
   return { y, m, d, h, min, dow, offsetMin };
 }
 
@@ -86,6 +89,62 @@ export function dueTimeIn(text, now = new Date()) {
     return { due_at: due, due_words: explicitDate[0], priority: days <= 2 ? "URGENT" : "HIGH" };
   }
   return null;
+}
+
+/**
+ * NOT BEFORE A TIME SHE NAMED (1 Nov 2026). "One-time Chrome job for tomorrow, Monday 2 Nov, after 9am
+ * Central" ran at once as due "today" URGENT — "today" elsewhere in the email ("Pinterest refused this
+ * one today") won, and nothing in the door read a START time at all. A start time is a word that
+ * holds the work back — "after 9am", "not before 10:30am", "no earlier than noon" — plus the day it
+ * belongs to in the same sentence: an explicit date ("2 Nov", "Nov 2"), "tomorrow", or a weekday. No
+ * day word: today if that time is still ahead, otherwise tomorrow. `{ at, words }` (ISO UTC) or null.
+ */
+export function notBeforeIn(text, now = new Date()) {
+  const t = String(text ?? "").replace(/\s+/g, " ");
+  const start = /\b(?:after|not before|no earlier than|starting at)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon)\b/i.exec(t);
+  if (!start) return null;
+  const sentenceStart = Math.max(t.lastIndexOf(".", start.index), t.lastIndexOf("\n", start.index)) + 1;
+  const after = t.slice(start.index);
+  const end = after.search(/[.!?](?:\s|$)/);
+  const sentence = t.slice(sentenceStart, end < 0 ? t.length : start.index + end);
+  const { y, m, d, dow, h: nowH, min: nowMin } = chicagoParts(now);
+  const tm = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(start[1]);
+  const hh = tm ? (Number(tm[1]) % 12) + (tm[3].toLowerCase() === "pm" ? 12 : 0) : 12;
+  const mm = tm && tm[2] ? Number(tm[2]) : 0;
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const dm = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i.exec(sentence);
+  const md = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/i.exec(sentence);
+  let ymd = null;
+  let day = "";
+  if (dm || md) {
+    day = (dm ?? md)[0];
+    const month = MONTHS.indexOf((dm ? dm[2] : md[1]).slice(0, 3).toLowerCase()) + 1;
+    const date = Number(dm ? dm[1] : md[2]);
+    const year = month < m || (month === m && date < d) ? y + 1 : y;
+    ymd = [year, month, date];
+  } else if (/\btomorrow\b/i.test(sentence)) { ymd = [y, m, d + 1]; day = "tomorrow"; }
+  else {
+    const wd = /\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i.exec(sentence);
+    if (wd) { ymd = [y, m, d + ((DAYS.indexOf(wd[1].toLowerCase()) - dow + 7) % 7)]; day = wd[1]; }
+    else ymd = [y, m, d + (hh * 60 + mm > nowH * 60 + nowMin ? 0 : 1)];
+  }
+  const at = chicagoToIso(now, ymd[0], ymd[1], ymd[2], hh, mm);
+  return { at, words: `${day ? `${day}, ` : ""}${start[0]}` };
+}
+
+/**
+ * The deadline, once a start time is known: a deadline before the work may begin is not hers (the
+ * "today" of the 1 Nov incident), so it becomes the end of the start day (17:00 Central, or two
+ * hours after a late start), HIGH, in the start sentence's words. Pure.
+ */
+export function heldDue(due, notBefore) {
+  if (!notBefore) return due ?? null;
+  const start = Date.parse(notBefore.at);
+  if (due && Date.parse(due.due_at) > start) return due;
+  const p = chicagoParts(new Date(start));
+  const fivePm = Date.parse(chicagoToIso(new Date(start), p.y, p.m, p.d, 17, 0));
+  const dueAt = Math.max(fivePm, start + 2 * 3_600_000);
+  return { due_at: new Date(dueAt).toISOString(), due_words: notBefore.words, priority: "HIGH" };
 }
 
 /** "due Mon 6 Oct, 9:00 CT (your words: 'by Monday morning')" — for an email line. */
