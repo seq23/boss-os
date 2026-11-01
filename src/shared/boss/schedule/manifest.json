@@ -4433,10 +4433,10 @@
     {
       "id": "your-day",
       "name": "Your morning email",
-      "what": "Simone's one morning email.",
+      "what": "Simone's one morning email (07:50 is a safety tick; it sends nothing once the day's email went).",
       "business": "personal",
       "brand": "Boss OS",
-      "system": "mac",
+      "system": "github",
       "slots": [
         "daily 06:40"
       ],
@@ -4444,9 +4444,18 @@
       "heavy": false,
       "trigger": {
         "duty": "duty_your_day",
-        "launchd": [
-          "com.seq.boss-your-day"
-        ]
+        "repo": "boss-os",
+        "file": ".github/workflows/job-your-day.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 40 6 * * *",
+          "CRON_TZ=America/Chicago 50 7 * * *"
+        ],
+        "ticks": {
+          ".github/workflows/job-your-day.yml": [
+            "daily 06:40",
+            "daily 07:50"
+          ]
+        }
       }
     },
     {

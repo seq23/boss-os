@@ -21,9 +21,14 @@ if (!process.env.BOSS_PASSCODE) { if (cloud) fail("no BOSS_PASSCODE on the runne
 const { script, ...req } = JSON.parse(raw);
 // The job's own name: the cloud runner's job id, else the script that wrote.
 const job = process.env.BOSS_MORNING_JOB || process.env.JOB || script || "unknown";
-try {
-  const api = await bossApi();
-  await api.post("/morning/sections", { ...req, job });
-} catch (e) {
-  fail(e?.message ?? e);
+// Three tries (a network blip at 05:30 must not cost the morning its section): 0s, 3s, 12s.
+let last = null;
+for (const wait of [0, 3_000, 12_000]) {
+  if (wait) await new Promise((r) => setTimeout(r, wait));
+  try {
+    const api = await bossApi();
+    await api.post("/morning/sections", { ...req, job });
+    process.exit(0);
+  } catch (e) { last = e; if (/→ 4\d\d/.test(String(e?.message))) break; /* refused, not a blip */ }
 }
+fail(last?.message ?? last);
