@@ -484,6 +484,22 @@ describe("Camille's research page link, never an /api path (repair, 1 Nov 2026)"
     expect(plainProblems(laid)).toEqual([]);
   });
 
+  /**
+   * THE LANE THAT ACTUALLY HELD f1ea62c2edaacc01.json NEVER WENT THROUGH `cleanText`/`fromLegacy`
+   * (repair, 1 Nov 2026). `scripts/ops/notify.mjs`'s `plainOrSimplified` calls `simplifyForOwner`
+   * directly on the raw text Camille wrote; `simplifyForOwner`'s own per-line check judged the line
+   * before any rewrite ran, so it still saw the raw /api link, moved the whole "Page: …" line into
+   * the attachment, and she lost the link into a file instead of reading it in the email. Fixed by
+   * rewriting a known link before judging the line, not after.
+   */
+  it("simplifyForOwner — the function the actual sender calls — rewrites the research page link in place, never moves it to the attachment", () => {
+    const s = simplifyForOwner({ subject: "Done: One-time Chrome job", text: HELD_TEXT });
+    expect(s.text).toContain("https://boss.sequoiataylor.com/research/rpg_m6c03jvnpq9w0tan");
+    expect(s.text).not.toMatch(/\/api\//);
+    expect(s.details).toEqual([]);
+    expect(plainProblems({ subject: s.subject, text: s.text, html: s.html })).toEqual([]);
+  });
+
   it("any OTHER absolute /api link is moved into the attached details, never holds the whole email", () => {
     const text = `${OK}\nDetails:\n- See https://boss.sequoiataylor.com/api/boss/something/else for the record.`;
     expect(plainProblems({ subject: "Ok", text }).join(" | ")).toMatch(/a link to an API path/);
