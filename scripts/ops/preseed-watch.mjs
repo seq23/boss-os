@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * MONIQUE'S PRE-SEED WATCH (owner-approved 26 Oct 2026). Mondays 07:30 Central, launchd
+ * MONIQUE'S PRE-SEED WATCH (owner-approved 26 Oct 2026). Tuesdays 07:30 Central (Mondays until the rebalanced week, 1 Nov 2026), launchd
  * com.seq.boss-preseed-watch through duty-run.sh → duty_preseed_watch.
  *
  * 1. Crossed your desk: pre-seed and seed pitches in her Workspace mailboxes (West Peek, Spry) —

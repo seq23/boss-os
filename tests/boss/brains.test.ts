@@ -10,7 +10,7 @@ import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail"
 import { buildPrompt, buildPromptParts } from "../../src/worker/boss/queue/consumer";
 import { routeCompletion } from "../../src/worker/boss/router";
 import { dispatchRunForTask } from "../../src/worker/boss/backends/dispatch";
-import { runBrainsCohesion, currentCohesion, recordMacCohesion, COHESION_KEY } from "../../src/worker/boss/brains/store";
+import { runBrainsCohesion, currentCohesion, recordMacCohesion, macCheckWeek, COHESION_KEY } from "../../src/worker/boss/brains/store";
 import { BRAINS, seedFor, CONFIDENTIAL_OPEN, CONFIDENTIAL_CLOSE } from "../../src/shared/boss/brains/brain.mjs";
 
 const SECRET = "Synthetic LP Zeta commits 40 at a 2x step-up";
@@ -269,6 +269,21 @@ describe("the Monday check rides the hourly tick", () => {
     expect(res.body.data.recorded.repos_missing_pointer).toEqual(["dream-wedding-builder"]);
     expect(res.body.data.line).toBe("Cohesion: moved 1 stray memory note to the archive; the dream-wedding-builder repo is missing its brain pointer");
     await recordMacCohesion(env as any, { strays_moved: [], repos_missing_pointer: [], skills_flagged: [], copy_fresh_after: true, unchecked: [] }, MONDAY);
+    expect((await currentCohesion(env as any, MONDAY)).line).toBe("Cohesion: all clear");
+    // Read on the Sunday evening it ran, it counts too (the API answers the same day).
+    await env.DB.prepare(`DELETE FROM settings WHERE key LIKE '%cohesion%'`).run();
+    await recordMacCohesion(env as any, { strays_moved: [], repos_missing_pointer: [], skills_flagged: [], copy_fresh_after: true, unchecked: [] }, MONDAY - 15 * 3_600_000 + 45 * 60_000);
+    expect((await currentCohesion(env as any, MONDAY - 15 * 3_600_000 + 50 * 60_000)).line).toBe("Cohesion: all clear");
+    // The check runs Sunday 18:45 Central: that record counts for the week starting next morning,
+    // and a Sunday record from a week earlier never does.
+    const SUNDAY_EVENING = MONDAY - 15 * 3_600_000 + 45 * 60_000; // Sun 1 Nov 18:45 Central
+    expect(macCheckWeek(SUNDAY_EVENING)).toBe("2026-11-02");
+    expect(macCheckWeek(MONDAY)).toBe("2026-11-02");
+    expect(macCheckWeek(SUNDAY_EVENING - 7 * 86_400_000)).toBe("2026-10-26");
+    await env.DB.prepare(`DELETE FROM settings WHERE key LIKE '%cohesion%'`).run();
+    await recordMacCohesion(env as any, { strays_moved: [], repos_missing_pointer: [], skills_flagged: [], copy_fresh_after: true, unchecked: [] }, SUNDAY_EVENING - 7 * 86_400_000);
+    expect((await currentCohesion(env as any, MONDAY)).line).toMatch(/did not run this week/);
+    await recordMacCohesion(env as any, { strays_moved: [], repos_missing_pointer: [], skills_flagged: [], copy_fresh_after: true, unchecked: [] }, SUNDAY_EVENING);
     expect((await currentCohesion(env as any, MONDAY)).line).toBe("Cohesion: all clear");
     expect((await apiJson<any>("/api/brains/cohesion/mac", { method: "POST", body: "nope" })).status).toBe(400);
   });

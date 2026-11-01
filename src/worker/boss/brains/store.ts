@@ -163,14 +163,23 @@ const str = (v: unknown, n = 300) => String(v ?? "").slice(0, n);
 const list = (v: unknown) => (Array.isArray(v) ? v.slice(0, MAX_LIST) : []);
 
 /**
- * Keep what the Mac's Monday check found (scripts/brains/cohesion-check.mjs). The week is stamped
+ * Keep what the Mac's Sunday-evening check found (scripts/brains/cohesion-check.mjs). The week is stamped
  * from the moment it ARRIVED, never from a date the Mac claims, so a stale report cannot pass for
  * this week's.
  */
+/**
+ * The week a Mac check counts for. It runs SUNDAY evening (owner's rebalanced week, 1 Nov 2026) so
+ * Monday's email carries it: a check that arrives on a Sunday counts for the week that starts the
+ * next morning. Any other day counts for its own week.
+ */
+export function macCheckWeek(now: number): string {
+  return weekOf(wallClock(now).dow === 0 ? now + 86_400_000 : now);
+}
+
 export async function recordMacCohesion(env: Env, body: unknown, now = Date.now()) {
   const b = (body ?? {}) as Record<string, unknown>;
   const rec: MacCheck & { week: string; at: number } = {
-    week: weekOf(now), at: now,
+    week: macCheckWeek(now), at: now,
     strays_moved: list(b.strays_moved).map((x: any) => ({ from: str(x?.from), to: str(x?.to) })),
     memory_index_lines: Number(b.memory_index_lines) || 0,
     memory_index_too_big: b.memory_index_too_big === true,
@@ -191,7 +200,9 @@ export async function recordMacCohesion(env: Env, body: unknown, now = Date.now(
 /** This week's Mac record, or null (it did not run, or it ran last week). */
 export async function macCohesionThisWeek(env: Env, now = Date.now()): Promise<(MacCheck & { week: string; at: number }) | null> {
   const raw = await getSetting(env.DB, MAC_COHESION_KEY);
-  try { if (raw) { const r = JSON.parse(raw); if (r.week === weekOf(now)) return r; } } catch { /* unreadable = not run */ }
+  // A Sunday-evening check is stamped for the coming week (macCheckWeek); on that Sunday it is
+  // also the current one, so the line read that evening shows it rather than "did not run".
+  try { if (raw) { const r = JSON.parse(raw); if (r.week === weekOf(now) || r.week === macCheckWeek(now)) return r; } } catch { /* unreadable = not run */ }
   return null;
 }
 

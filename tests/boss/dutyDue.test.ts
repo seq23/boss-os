@@ -161,7 +161,8 @@ describe("duty_site_audit_repair after 0246", () => {
      * happens to choose. `validate:audit-fixer` holds the same line from outside the database.
      */
     expect(duty?.weekday).toBe(4);
-    expect(duty?.local_hour).toBe(6);
+    // 05:00 Central since the approved week (1 Nov 2026; 0327); its plist always fired then.
+    expect(duty?.local_hour).toBe(5);
     expect(duty?.local_job).toBe("ahrefs-audit-fix.sh");
 
     // ── THE 0197 RULE: the seed agrees with the cadence, which is the original defect. ──
@@ -169,9 +170,9 @@ describe("duty_site_audit_repair after 0246", () => {
     // A Thursday, because that is the day the cadence names. 4 = Thursday, 0 = Sunday.
     expect(new Date(duty.next_due_at).getUTCDay()).toBe(4);
     /*
-     * 11:00 UTC is 06:00 America/Chicago in summer and one hour EARLY in winter — deliberately the
-     * safe direction, because the daily tick asks "am I due?" at 06:00 local and must already find
-     * yes. Seeding late would settle the run permanently on Friday.
+     * 11:00 UTC is 05:00 America/Chicago in winter (0327 moved the pass from 06:00 to 05:00) and one
+     * hour EARLY in summer — the safe direction, because the daily tick asks "am I due?" at 05:00
+     * local and must already find yes. Seeding late would settle the run permanently on Friday.
      */
     expect(new Date(duty.next_due_at).getUTCHours()).toBe(11);
     /*

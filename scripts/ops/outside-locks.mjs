@@ -2,7 +2,7 @@
 /**
  * TONI'S WEEKLY OUTSIDE-LOCKS CHECK (owner, 22 Oct 2026).
  *
- * duty_outside_locks (migration 0288), Mondays 08:40 CT on her Mac through duty-run.sh, `ops` lane —
+ * duty_outside_locks (migration 0288), Fridays 08:40 CT on her Mac (Mondays until the rebalanced week, 1 Nov 2026) through duty-run.sh, `ops` lane —
  * Toni's trading lane is untouched. A lock someone else put on one of her accounts — a LinkedIn
  * restriction, a KDP title review, a suspension at Google, YouTube, Pinterest, Etsy or Meta — arrives
  * as an email and sits there. This reads for those notices in the last 8 days:
