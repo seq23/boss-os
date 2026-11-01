@@ -48,7 +48,7 @@ the clock change), and How We Know's draft is shown at Monday 12am. All times ar
 | 5:30 | Spry Ventures · brokerage | Brokerage sourcing sweep |  |
 | 6:45 | Spry Labs · side businesses | Spry heartbeat: are all side-business sites up and working |  |
 | 7:00 | Spry Labs · side businesses | What Google Search saw last week, for each site |  |
-| 7:00–8:00 | Spry Labs · side businesses | Five side businesses each work out their weekly results: A Player Mode, Creator Network, Citation Velocity, the Spry Labs site, Local Guides |  |
+| 7:00–8:00 | Spry Labs · side businesses | Seven side businesses each work out their weekly results: A Player Mode, Creator Network, Citation Velocity, the Spry Labs site, Local Guides, ApprovalPrep, Dream Wedding |  |
 | 8:15 | Spry Labs · side businesses | ONE "Spry Labs weekly" email: results for every side business (A Player Mode, Creator Network, Citation Velocity, Spry Labs site, Local Guides, ApprovalPrep, Dream Wedding, How We Know). Replaces 7 separate emails. | ✉ yes |
 | 10:23 | Porch & Party | Checks which outside sites link to the P&P site |  |
 | 10:00–10:30 | Spry Labs · side businesses | Sites fix their own small problems (Dream Wedding, backlink network, P&P, westpeek) |  |
@@ -88,7 +88,7 @@ the clock change), and How We Know's draft is shown at Monday 12am. All times ar
 
 | Time | Whose | What | Emails you |
 |---|---|---|---|
-| 4:00–8:00 | Spry Labs · side businesses | Weekly upkeep and growth checks for every side business, 15 min apart: whether AI answers cite each site, Pinterest results (where the site posts there), ApprovalPrep's own checks and Dream Wedding's Pinterest refill |  |
+| 4:00–8:00 | Spry Labs · side businesses | Weekly upkeep for the side businesses, 15 min apart: ApprovalPrep's own weekly checks (Search Console results, Pinterest visits, the page refresh queue) and Dream Wedding's Pinterest refill |  |
 | 5:00 | Spry Labs · side businesses | How We Know: scores which topics people want |  |
 
 ## Sunday

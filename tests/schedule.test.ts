@@ -166,6 +166,27 @@ describe("the Spry Labs weekly", () => {
     expect(m.rows.find((r: any) => r.id === "spry-weekly").slots).toEqual(["wed 08:15"]);
   });
 
+  it("every Wednesday source is ready on the slot it promises, before 08:15, on the week's 7:00–8:00 line", () => {
+    const wed = m.week.find((d: any) => d.day === "wed").items.find((i: any) => i.time === "7:00–8:00" && i.refs.includes("aplayer-mode-weekly-outcome-report"));
+    const timed = SPRY_WEEKLY.sources.filter((s: any) => /^\d\d:\d\d$/.test(s.ready_by_ct));
+    expect(timed.map((s: any) => s.repo)).toEqual(expect.arrayContaining(["approvalprep", "dream-wedding-builder"]));
+    for (const s of timed) {
+      const row = m.rows.find((r: any) => r.trigger.repo === s.repo && r.trigger.file === s.workflow);
+      expect(row.slots, s.key).toContain(`wed ${s.ready_by_ct}`);
+      expect(s.ready_by_ct < "08:15", s.key).toBe(true);
+      expect(wed.refs, s.key).toContain(row.id);
+    }
+    expect(new Set(timed.map((s: any) => s.ready_by_ct)).size).toBe(timed.length);
+  });
+
+  it("a business's four own lines (sales, search, Pinterest, pages) all reach the email", () => {
+    const notes = ["Sales: 1 paid order this week.", "Search: not read: no record.", "Pinterest (week to Oct 31): 2 visits from pins.", "Pages this week: 3 pages refreshed."];
+    const mail = composeSpryWeekly({ approvalprep: fresh([{ host: "approvalprep.com", state: "fine", why: [] }], { notes }) }, { now });
+    const section = mail.sections.find((s: any) => s.title === "ApprovalPrep");
+    for (const n of notes) expect(section!.items).toContain(n);
+    expect(mail.sections.find((s: any) => s.title === "Dream Wedding")!.items[0]).toMatch(/^No report this week/);
+  });
+
   it("rule 0: a report that did not arrive is a plain line, never silence", () => {
     const mail = composeSpryWeekly({ "aplayer-mode": fresh([{ host: "aplayermode.com", state: "fine", why: [] }]) }, { now });
     expect(mail.sections).toHaveLength(SPRY_WEEKLY.sources.length);
