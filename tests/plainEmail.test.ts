@@ -19,7 +19,7 @@ import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { plainProblems, fromLegacy, layoutEmail, layoutProblem, lineProblems, JARGON, cleanSubject, cleanText, refsIn, DECIDE_HEADING, NOTHING_TO_DECIDE } from "../src/shared/boss/mail/plain.mjs";
+import { plainProblems, fromLegacy, layoutEmail, layoutProblem, lineProblems, JARGON, cleanSubject, cleanText, refsIn, DECIDE_HEADING, NOTHING_TO_DECIDE, simplifyForOwner } from "../src/shared/boss/mail/plain.mjs";
 import { sendersFor, employeeMail, namesOnce, postEmployeeMail, mailGate, plainOrSimplified } from "../scripts/ops/notify.mjs";
 import { INBOX } from "../scripts/validate/email-plain.mjs";
 
@@ -450,5 +450,46 @@ describe("Danielle's plan email", () => {
     expect(laid.problems).toEqual([]);
     expect(laid.text.length).toBeLessThanOrEqual(9000);
     expect(laid.text).not.toMatch(/self-test/);
+  });
+});
+
+/**
+ * A RESEARCH PAGE'S OWN LINK HELD THE WHOLE EMAIL (repair, 1 Nov 2026 — held mail
+ * 9755e2553df7b488.json, f1ea62c2edaacc01.json). The research lane's own closing line, "Page:
+ * https://boss.sequoiataylor.com/api/boss/research/pages/<id>", is an /api path: rule 13 refuses it,
+ * and `API_PATH_RE`'s line-level check (used by `simplifyForOwner`) never saw it either, because the
+ * slash in "…sequoiataylor.com/api/boss/…" is preceded by "m", not whitespace — so nothing could be
+ * moved into the attachment and the whole email held. `researchPageUrl` now hands the run a page
+ * address (src/shared/boss/research/page.mjs), and `cleanText`/`cleanProse` rewrite any surviving
+ * /api link of that shape on sight (src/shared/boss/mail/plain.mjs `pageLinkFor`, inside `protect`);
+ * any OTHER absolute /api link is moved into the attached details instead of holding the email.
+ */
+describe("Camille's research page link, never an /api path (repair, 1 Nov 2026)", () => {
+  // Word for word, the line that held the email (~/.boss-os/held-mail/9755e2553df7b488.json).
+  const HELD_TEXT = 'I\'ve written a file, but the faith feed is not connected yet: the job runs tomorrow, so the page is the plan for it.\n\nDecide (1)\n1. Reply to this email and your answer goes straight back to this job.\n\nDetails:\n- Status is "partial".\n- ✅ nothing needed from you\n- Page: https://boss.sequoiataylor.com/api/boss/research/pages/rpg_m6c03jvnpq9w0tan\n\n— Camille';
+
+  it("before the fix, it was held for exactly the one reason recorded: a link to an API path", () => {
+    expect(plainProblems({ subject: "Done: One-time Chrome job", text: HELD_TEXT }).join(" | ")).toMatch(/a link to an API path/);
+  });
+
+  it("a bare rewrite of the line carries the page address, never the /api path it reaches", () => {
+    expect(cleanText("Page: https://boss.sequoiataylor.com/api/boss/research/pages/rpg_m6c03jvnpq9w0tan"))
+      .toBe("Page: https://boss.sequoiataylor.com/research/rpg_m6c03jvnpq9w0tan");
+  });
+
+  it("the held email's own words, laid out again through the fixed cleaner, carry the page link and pass the gate clean", () => {
+    const laid = fromLegacy({ who: "Camille", subject: "Done: One-time Chrome job", text: HELD_TEXT });
+    expect(laid.text).toContain("https://boss.sequoiataylor.com/research/rpg_m6c03jvnpq9w0tan");
+    expect(laid.text).not.toMatch(/\/api\//);
+    expect(plainProblems(laid)).toEqual([]);
+  });
+
+  it("any OTHER absolute /api link is moved into the attached details, never holds the whole email", () => {
+    const text = `${OK}\nDetails:\n- See https://boss.sequoiataylor.com/api/boss/something/else for the record.`;
+    expect(plainProblems({ subject: "Ok", text }).join(" | ")).toMatch(/a link to an API path/);
+    const s = simplifyForOwner({ subject: "Ok", text });
+    expect(s.text).not.toMatch(/\/api\//);
+    expect(s.details.some((d: string) => /\/api\//.test(d))).toBe(true);
+    expect(plainProblems({ subject: s.subject, text: s.text, html: s.html })).toEqual([]);
   });
 });

@@ -132,6 +132,19 @@ export function tapPageToBossPath(pathname: string): string | null {
 }
 
 /**
+ * HER RESEARCH PAGES ARE PAGES, NOT /api PATHS (repair, 1 Nov 2026 — held mail
+ * 9755e2553df7b488.json, f1ea62c2edaacc01.json: every research delivery's own line,
+ * `Page: https://boss.sequoiataylor.com/api/boss/research/pages/<id>`, tripped rule 13 and held the
+ * whole email). Same shape as `tapPageToBossPath`: a plain address, mapped to the existing
+ * session-gated handler — never a new door. Ids are `rpg_…`.
+ */
+export const RESEARCH_PAGE_PATH_RE = /^\/research\/([A-Za-z0-9_-]{3,64})$/;
+export function researchPageToBossPath(pathname: string): string | null {
+  const m = RESEARCH_PAGE_PATH_RE.exec(pathname);
+  return m ? `/api/boss/research/pages/${m[1]}` : null;
+}
+
+/**
  * Hand the request to Boss OS with the mount prefix removed, so its routes and its tests see the
  * same paths they always did.
  */

@@ -111,6 +111,30 @@ const PR_NUMBER_RE = /\bPRs?\s*#?\d+\b|\bpull request\s*#?\d+\b|(?:^|[\s(])#\d+\
 const UTC_RE = /\bUTC\b|\bGMT\b|\b\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?Z\b/;
 const TAG_RE = /(?:^|\s)#[a-z][a-z0-9_-]*/i;
 const COULD_NOT_READ_RE = /\bI could(?: not|n['’]t) read\b/i;
+/**
+ * A LINK TO HER RESEARCH PAGE IS WRITTEN AS THE PAGE, NEVER THE /api PATH IT REACHES (repair,
+ * 1 Nov 2026 — held mail 9755e2553df7b488.json, f1ea62c2edaacc01.json: the research lane's own
+ * closing line, "Page: https://boss.sequoiataylor.com/api/boss/research/pages/<id>", tripped rule
+ * 13 every time and held the whole email). The inverse of `researchPageToBossPath`
+ * (src/worker/bossMount.ts). Applied inside `protect()`, below, so every sender's text AND the HTML
+ * built from it carry the rewrite — including the two emails already written and held, repaired on
+ * their way out rather than losing their link into an attachment.
+ */
+const RESEARCH_PAGE_API_RE = /^(https?:\/\/[^/\s]+)\/api\/boss\/research\/pages\/([A-Za-z0-9_-]{3,64})$/;
+function pageLinkFor(url) {
+  const m = RESEARCH_PAGE_API_RE.exec(url);
+  return m ? `${m[1]}/research/${m[2]}` : url;
+}
+/**
+ * AN ABSOLUTE LINK WHOSE PATH STARTS /api/ (repair, 1 Nov 2026). `API_PATH_RE` above only sees a
+ * BARE /api/ path — in "…sequoiataylor.com/api/boss/…" the slash is preceded by "m", not
+ * whitespace — so a full link carrying one never failed the per-line checks `simplifyForOwner`
+ * uses (`contentProblems` runs on text that has already had every URL stripped by `visibleText`,
+ * so it can never see the link itself). Read with `linksIn`, below, on the RAW line and the whole
+ * email alike, so one shared rule decides both "move this line" and "hold this email". The CAN-SPAM
+ * unsubscribe link is the one exception.
+ */
+const isApiLink = (u) => /^https?:\/\/[^/]+\/api\//.test(u) && !/\/api\/outreach\/u\//.test(u);
 
 /** The caps the gate holds an email to. */
 export const MAX_TEXT_CHARS = 9000;
@@ -166,7 +190,7 @@ function protect(s) {
   const kept = [];
   const keep = (m) => { kept.push(m); return `\u0000${kept.length - 1}\u0000`; };
   // `SECRET NAME=<value>` is a line she types exactly, so the key's name is kept as written.
-  const out = String(s).replace(SECRET_LINE_RE, keep).replace(URL_RE, keep).replace(EMAIL_RE, keep);
+  const out = String(s).replace(SECRET_LINE_RE, keep).replace(URL_RE, (u) => keep(pageLinkFor(u))).replace(EMAIL_RE, keep);
   return { out, restore: (t) => t.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[Number(i)]) };
 }
 
@@ -789,7 +813,7 @@ export function plainProblems({ subject, text, html, kind = null }) {
   if (body.length > cap) problems.push(`longer than ${cap} characters`);
   const bare = body.split("\n").filter((l) => /^\s*(?:[-*•]\s*)?(?:https?:\/\/|mailto:)\S+\s*$/.test(l)).length;
   if (bare >= 3) problems.push(`a dump of ${bare} bare links`);
-  const api = linksIn({ text, html }).find((u) => /^https?:\/\/[^/]+\/api\//.test(u) && !/\/api\/outreach\/u\//.test(u));
+  const api = linksIn({ text, html }).find(isApiLink);
   if (api) problems.push(`a link to an API path: "${api}"`);
   // The shape: Decide first (or "nothing to decide"); a problem email in its three parts.
   const lines = body.split("\n");
@@ -826,7 +850,7 @@ export function simplifyForOwner({ subject, text, html = null, kind = null }) {
   const out = [];
   for (const [i, line] of String(text ?? "").split("\n").entries()) {
     // The line as written, not as the cleaner would have it: what she would read is what is checked.
-    const probs = line.trim() ? contentProblems(visibleText({ text: line }, { prose: "drop" })) : [];
+    const probs = line.trim() ? [...contentProblems(visibleText({ text: line }, { prose: "drop" })), ...(linksIn({ text: line }).some(isApiLink) ? ["API path"] : [])] : [];
     if (!probs.length) { out.push(line); continue; }
     moved.push(line);
     const label = /^((?:\d+\. )?[A-Z][A-Za-z ]{2,30}:)\s/.exec(line)?.[1];

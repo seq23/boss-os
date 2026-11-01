@@ -7,8 +7,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  composeResearchPrompt, markdownToHtml, parseResearchPage, readResearchDelivery, renderResearchPageHtml, researchPageUrl,
+  composeResearchPrompt, markdownToHtml, parseResearchPage, readResearchDelivery, renderResearchPageHtml, researchPageUrl, RESEARCH_PAGE_ROUTE,
 } from "../src/shared/boss/research/page.mjs";
+import { researchPageToBossPath } from "../src/worker/bossMount";
 
 const read = (rel: string) => readFileSync(join(__dirname, "..", rel), "utf8");
 
@@ -22,12 +23,15 @@ describe("research page: the ask", () => {
     expect(parseResearchPage("thanks for the research yesterday, all good")).toBeNull();
     expect(parseResearchPage("research: ok")).toBeNull();
   });
-  it("tells the seat the exact delivery and the page address", () => {
+  it("tells the seat the exact delivery and the page address — a page, never an /api path (repair, 1 Nov 2026 held mail)", () => {
     const p = composeResearchPrompt({ id: "rpg_abc", question: "Q?" });
     expect(p).toContain('"research_page"');
     expect(p).toContain("delivers.json");
     expect(p).toContain(`Page: ${researchPageUrl("rpg_abc")}`);
-    expect(researchPageUrl("rpg_abc")).toBe("https://boss.sequoiataylor.com/api/boss/research/pages/rpg_abc");
+    expect(researchPageUrl("rpg_abc")).toBe("https://boss.sequoiataylor.com/research/rpg_abc");
+    expect(researchPageUrl("rpg_abc")).not.toMatch(/\/api\//);
+    // It still maps back to the route the handler is mounted at — a plain address cannot point nowhere.
+    expect(researchPageToBossPath("/research/rpg_abc")).toBe(`${RESEARCH_PAGE_ROUTE}/rpg_abc`);
   });
 });
 
