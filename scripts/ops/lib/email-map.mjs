@@ -89,7 +89,8 @@ export function shapeProblems(manifest) {
 
 /** Where a repo's checkout lives on her Mac: a sibling of this checkout, or ~/<repo>, or ~/bin. */
 export function repoDir(repo, root) {
-  if (repo === "~/bin") return path.join(homedir(), "bin");
+  // ~/bin is her Mac's, not a repo: on a CI runner (which has a ~/bin of its own) it is "not on this Mac".
+  if (repo === "~/bin") return !process.env.CI && existsSync(path.join(homedir(), "bin")) ? path.join(homedir(), "bin") : null;
   for (const d of [path.resolve(root, "..", repo), path.join(homedir(), "GitHub", repo), path.join(homedir(), repo)]) {
     if (existsSync(path.join(d, ".git"))) return d;
   }
