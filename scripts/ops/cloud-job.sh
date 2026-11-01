@@ -47,7 +47,13 @@ LOG="$RUNNER_TEMP/cloud-job-$JOB-$STAMP.log"
 export BOSS_OS_REPO="${BOSS_OS_REPO:-$GITHUB_WORKSPACE}"
 mkdir -p "$STATE_HOME"
 
-r2() { npx --no-install wrangler r2 object "$@" --remote >>"$LOG" 2>&1; }
+R2LOG="$RUNNER_TEMP/cloud-job-r2.log"
+# wrangler's own errors carry no job data, so a failed R2 call may print its last error line publicly.
+r2() {
+  npx --no-install wrangler r2 object "$@" --remote >"$R2LOG" 2>&1 && return 0
+  echo "cloud-job $JOB: R2 $1 failed: $(grep -E 'ERROR|✘|rror' "$R2LOG" | tail -1 | cut -c1-200)"
+  return 1
+}
 
 # ── pull state ──
 IFS=',' read -r -a DIRS <<<"$STATE_DIRS"

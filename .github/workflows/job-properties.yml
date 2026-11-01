@@ -1,0 +1,26 @@
+name: job · Spry heartbeat and properties · wed 06:45 CT
+
+# Camille's weekly read of the Spry Labs sites: the heartbeat (gh reads of each repo) and the Search
+# Console movement week over week. Moved off her Mac 1 Nov 2026 (was launchd com.seq.boss-properties,
+# same Wednesday 06:45 Central). Same commands as launchd ran.
+on:
+  schedule:
+    - cron: '45 6 * * 3'  # America/Chicago, all year
+      timezone: America/Chicago
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-properties
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/cloud-job.yml
+    secrets: inherit
+    with:
+      job: properties
+      timeout: 20
+      command: npm run --silent spry:heartbeat; npm run --silent properties

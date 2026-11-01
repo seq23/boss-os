@@ -3252,15 +3252,17 @@
       "what": "Checks every Spry Labs site and its numbers.",
       "business": "spry",
       "brand": "Spry Labs",
-      "system": "mac",
+      "system": "github",
       "slots": [
         "wed 06:45"
       ],
       "emails": true,
       "heavy": false,
       "trigger": {
-        "launchd": [
-          "com.seq.boss-properties"
+        "repo": "boss-os",
+        "file": ".github/workflows/job-properties.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 45 6 * * 3"
         ]
       }
     },
@@ -3792,15 +3794,17 @@
       "what": "Reads Time-2-Read's paying subscribers, monthly revenue and signups into the brain.",
       "business": "time-2-read",
       "brand": "Time-2-Read",
-      "system": "mac",
+      "system": "github",
       "slots": [
         "wed 07:30"
       ],
       "emails": false,
       "heavy": false,
       "trigger": {
-        "launchd": [
-          "com.seq.boss-t2r-numbers"
+        "repo": "boss-os",
+        "file": ".github/workflows/job-t2r-numbers.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 30 7 * * 3"
         ]
       }
     },
