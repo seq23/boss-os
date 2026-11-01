@@ -2032,7 +2032,8 @@ today.post("/loops/:id/:action", async (c) => {
 
   let carriedId: string | null = null;
   if (action === "defer") {
-    const tomorrow = await ensureDay(c.env.DB, dayId(now + DAY_MS));
+    // The next DATE, not now + 24 h: on the day the clocks fall back that is still today (1 Nov 2026).
+    const tomorrow = await ensureDay(c.env.DB, nextDayId(dayId(now)));
     carriedId = newId("loop");
     statements.push(
       c.env.DB
