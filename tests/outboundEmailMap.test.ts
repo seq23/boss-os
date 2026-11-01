@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/notify.mjs";
 import { BUSINESSES } from "../src/worker/boss/outreach/catalog";
 import { OWNER_OK_CROSSINGS, fundCrossings } from "./helpers/fundCrossings";
-import { addressProblems, checkOtherRepos, citedIn, isScanned as mapScanned, readManifest, sends, shapeProblems, uncovered } from "../scripts/ops/lib/email-map.mjs";
+import { CLIENT_REPO_EXCLUSION, CREATOR_STUDIO_REPOS, addressProblems, checkOtherRepos, citedIn, clientRepoProblems, isClientRepo, isScanned as mapScanned, readManifest, sends, shapeProblems, uncovered } from "../scripts/ops/lib/email-map.mjs";
 
 /**
  * docs/OUTBOUND_EMAIL_MAP.md is read by code, so it is a rule and not a wish (owner, 12 Oct 2026:
@@ -481,6 +481,24 @@ describe("the Email Map page's manifest covers every sender", () => {
     expect(uncovered([{ file: "tests/x.test.ts", source: "sendAsEmployee(" }], manifest, "boss-os")).toEqual([]);
     expect(addressProblems({ rows: [{ to: "someone@gmail.com" }] })).toHaveLength(1);
     expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, pause: "" }] }).length).toBeGreaterThan(0);
+  });
+
+  // Owner's standing rule: client repos (horse, hicks, client micro-sites) are never listed,
+  // scheduled or raised in Boss OS; creator-studios work is the one exception (22 Oct 2026).
+  it("names no client repo: not in a row, not in a scanned repo, not in the audit document", () => {
+    expect(CLIENT_REPO_EXCLUSION.length, "the client-repo exclusion derived from grid.mjs/repoPolicy.mjs is empty").toBeGreaterThan(2);
+    expect(clientRepoProblems(manifest, [...new Set(manifest.rows.flatMap((r) => r.code.map((c) => c.repo)))])).toEqual([]);
+    const doc = MAP.toLowerCase();
+    expect(CLIENT_REPO_EXCLUSION.filter((c) => doc.includes(c.toLowerCase()))).toEqual([]);
+    expect(doc).not.toMatch(/\bhorse|\bhicks/);
+  });
+
+  it("the client-repo guard bites, and lets creator studios through", () => {
+    const row = { ...manifest.rows[0]!, id: "probe", code: [{ repo: "horse-legal-guide-velocity", paths: ["x.py"] }] };
+    expect(clientRepoProblems({ rows: [row] }).length).toBeGreaterThan(0);
+    expect(clientRepoProblems({ rows: [] }, ["hicks-consulting-canonical"]).length).toBe(1);
+    expect(isClientRepo("seq23/charm-nest-site")).toBe(true);
+    for (const r of CREATOR_STUDIO_REPOS) expect(isClientRepo(r), r).toBe(false);
   });
 
   it("the page renders the manifest itself and sits in ☰ More next to Brains", () => {
