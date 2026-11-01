@@ -603,6 +603,16 @@
       "code": [{ "repo": "approvalprep", "paths": ["functions/api/resend-download-email.js"] }]
     },
     {
+      "id": "approvalprep-email-nurture", "business": "industry-guides",
+      "what": "ApprovalPrep free-sample series: the sample at once, then one email every 3 days about one paid kit, stopping on purchase, unsubscribe or the last step",
+      "sender": "The site (no employee)", "owner": "Danielle",
+      "from": "ApprovalPrep <hello@approvalprep.com>", "to": "A person who asked for the free sample",
+      "when": "Due steps sent at 8:17, 13:17 and 18:17 Central",
+      "runs": "github", "trigger": "GitHub Action email-nurture.yml (calls the site's /api/nurture-run)",
+      "pause": "Disable email-nurture.yml in approvalprep",
+      "code": [{ "repo": "approvalprep", "paths": ["functions/_runtime/nurture.js", ".github/workflows/email-nurture.yml"] }]
+    },
+    {
       "id": "approvalprep-notification-dispatch", "business": "industry-guides",
       "what": "ApprovalPrep weekly notification dispatch (records only, sends nothing)",
       "sender": "Nobody", "owner": "Danielle",

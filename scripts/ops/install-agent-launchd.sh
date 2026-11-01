@@ -1364,7 +1364,8 @@ launchctl load "$PNP_PLIST"
 install_l_job com.seq.boss-meeting-prep "duty-run.sh meeting-prep.mjs -- npm run --silent meeting-prep" '<dict><key>Minute</key><integer>5</integer></dict>' meeting-prep
 # 26 Oct 2026 (owner-approved, "build it all"): Zora's register daily 07:00, Kendra's Mac clean-up
 # Sundays 09:00, Monique's pre-seed watch Tuesdays 07:30 (all Central; lint_plist moves them to the Mac's zone).
-install_l_job com.seq.boss-waiting-on "duty-run.sh waiting-on.mjs -- npm run --silent waiting-on" '<dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>' waiting-on
+# MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-waiting-on.yml, daily 07:00 Central, same duty.
+cloud_moved com.seq.boss-waiting-on
 # SIMONE'S "DO YOU STILL WANT TO GO?" (owner, 26 Oct 2026: "a reminder 28 hrs before"): every 10
 # minutes, every hour, so the email lands within ten minutes of 28 hours before the booking. Reports
 # to duty_errand_reminders (migration 0315).
@@ -1374,8 +1375,10 @@ install_l_job com.seq.boss-waiting-on "duty-run.sh waiting-on.mjs -- npm run --s
 ERRAND_LABEL="com.seq.boss-errand-reminders"
 cloud_moved "$ERRAND_LABEL"
 install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>' mac-cleanup
-install_l_job com.seq.boss-preseed-watch "duty-run.sh preseed-watch.mjs -- npm run --silent preseed:watch" '<dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' preseed-watch
-install_l_job com.seq.boss-catchups "duty-run.sh lp-catchups.mjs -- npm run --silent lp:catchups" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>' lp-catchups
+# MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-preseed-watch.yml, Tuesday 07:30 Central, state preseed.
+cloud_moved com.seq.boss-preseed-watch
+# MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-catchups.yml, daily 06:20 Central, same duty.
+cloud_moved com.seq.boss-catchups
 install_l_job com.seq.boss-eightraise "duty-run.sh lp-eightraise.mjs -- npm run --silent lp:eightraise" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>' lp-eightraise
 # end boss fix L
 
@@ -1765,9 +1768,9 @@ require_loaded "$CW_LABEL"
 # WITH THE JOB, 22 October: Simone's Your day.
 require_loaded "$YOURDAY_LABEL"
 require_loaded com.seq.boss-meeting-prep
-require_loaded com.seq.boss-waiting-on
+require_gone com.seq.boss-waiting-on
 require_loaded com.seq.boss-mac-cleanup
-require_loaded com.seq.boss-preseed-watch
+require_gone com.seq.boss-preseed-watch
 # WITH THE JOB, 25 October: Simone does it by email.
 require_loaded "$SIMONE_CMD_LABEL"
 # WITH THE JOBS, 31 October: the brains copy and the Monday cohesion check.

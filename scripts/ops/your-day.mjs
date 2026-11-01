@@ -913,7 +913,10 @@ async function read(api, now) {
   // Monique's Time-2-Read groups (31 Oct 2026): Monday's one line.
   const t2rGroups = await api.get("/t2r-groups/summary").catch((e) => { console.error(`your-day: t2r groups not read (${e.message})`); return null; });
   const scoreboard = await api.get("/brains/scoreboard").then((d) => d?.rows ?? null).catch((e) => { console.error(`your-day: scoreboard not read (${e.message})`); return null; });
-  const { sections, skipped } = readMorningSections({ now });
+  // The sections live in Boss OS (1 Nov 2026, so cloud producers reach the email); the Mac files are
+  // the cutover fallback, newer copy wins per section. A store that cannot be read leaves the files.
+  const store = await api.get("/morning/sections").then((d) => d?.rows ?? []).catch((e) => { console.error(`your-day: the morning sections in Boss OS not read (${e.message}); the Mac files only`); return null; });
+  const { sections, skipped } = readMorningSections({ now, store });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
   return { brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: sections };
 }
@@ -1005,6 +1008,7 @@ async function main() {
   console.log(`your-day: sent "${email.subject}" from ${r.from}`);
   if (kept) await api.post(`/morning/${email.digest.day}/sent`, {}).catch((e) => console.error(`your-day: the morning was not marked sent (${e.message})`));
   clearToldSections(TOLD_ONCE);
+  await api.post("/morning/sections/told", { sections: TOLD_ONCE }).catch((e) => console.error(`your-day: the told sections not marked in Boss OS (${e.message})`));
   for (const id of email.yoursTold ?? []) await api.post(`/waiting-on/${id}`, { told_at: now }).catch((e) => console.error(`your-day: "yours this week" not marked told (${e.message})`));
   try { fs.writeFileSync(toldFile, JSON.stringify(email.memory)); } catch (e) { console.error(`your-day: what was told was not kept (${e.message})`); }
   fs.mkdirSync(SENT_DIR, { recursive: true });

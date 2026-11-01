@@ -1,0 +1,32 @@
+name: job · Pre-seed watch · tue 07:30 CT
+
+# Monique's pre-seed watch: the two mailboxes (service-account delegation) against the market's funded
+# rounds; one line into the morning email. Moved off her Mac 1 Nov 2026 (was launchd
+# com.seq.boss-preseed-watch, same Tuesday 07:30 Central). Its week marker rides in R2 as cloud state.
+on:
+  schedule:
+    - cron: '30 7 * * 2'  # America/Chicago, all year
+      timezone: America/Chicago
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: "Proof run: reads everything, records and writes nothing (no duty row)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-preseed-watch
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/cloud-job.yml
+    secrets: inherit
+    with:
+      job: preseed-watch
+      state: preseed
+      timeout: 20
+      command: ${{ inputs.dry && 'npm run --silent preseed:watch -- --dry-run' || 'bash scripts/ops/duty-run.sh preseed-watch.mjs -- npm run --silent preseed:watch' }}

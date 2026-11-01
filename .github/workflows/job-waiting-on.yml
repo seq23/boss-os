@@ -1,0 +1,26 @@
+name: job · Zora's waiting-on register · daily 07:00 CT
+
+# Zora's register: an item due today is opened as a task for its owner; a measurement adds one line to the
+# morning email through the Boss OS morning sections store. Moved off her Mac 1 Nov 2026 (was launchd
+# com.seq.boss-waiting-on, same daily 07:00 Central). Same command as launchd ran.
+on:
+  schedule:
+    - cron: '0 7 * * *'  # America/Chicago, all year
+      timezone: America/Chicago
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-waiting-on
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/cloud-job.yml
+    secrets: inherit
+    with:
+      job: waiting-on
+      timeout: 15
+      command: bash scripts/ops/duty-run.sh waiting-on.mjs -- npm run --silent waiting-on

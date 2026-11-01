@@ -269,7 +269,8 @@
       "owner": "Camille · your morning email",
       "result": "Google impressions, then requests from those pages",
       "jobs": [
-        "p-n-p-authority-daily"
+        "p-n-p-authority-daily",
+        "p-n-p-search-loop"
       ],
       "start": "2026-11-01",
       "first": {
@@ -457,17 +458,19 @@
         "local-guides-citation-velocity-search-intelligence-loop",
         "local-guides-citation-velocity-search-outcomes-weekly",
         "local-guides-generator-rotating-refresh",
-        "local-guides-generator-ingestion-sync",
         "sprylabs-hpc-site-search-intelligence",
         "sprylabs-hpc-site-search-loop",
         "sprylabs-hpc-site-spry-content-release",
         "sprylabs-hpc-site-daily-citation-intelligence",
-        "wpp-llm-programmatic-release",
         "wpp-llm-query-intelligence",
         "wpp-llm-search-repair-retest",
         "search-readiness-repair",
         "sr-resume",
-        "site-audit-repair"
+        "site-audit-repair",
+        "wpp-llm-search-loop",
+        "local-guides-generator-search-loop",
+        "local-guides-citation-velocity-search-loop",
+        "dream-wedding-builder-search-loop"
       ],
       "start": "2026-11-01",
       "first": {
@@ -505,7 +508,9 @@
         "sprylabs-hpc-site-search-loop",
         "local-guides-citation-velocity-search-intelligence-loop",
         "dream-wedding-builder-search-intelligence",
-        "wpp-llm-programmatic-release"
+        "wpp-llm-search-loop",
+        "local-guides-citation-velocity-search-loop",
+        "dream-wedding-builder-search-loop"
       ]
     },
     {
@@ -516,7 +521,8 @@
       "result": "Sample downloads and signups, then paid sales",
       "jobs": [
         "approvalprep-notification-dispatch",
-        "dream-wedding-builder-wrangler-jsonc"
+        "dream-wedding-builder-wrangler-jsonc",
+        "approvalprep-email-nurture"
       ],
       "start": "2026-11-01",
       "first": {
@@ -882,7 +888,8 @@
       "owner": "Monique · Wednesday Time-2-Read numbers",
       "result": "Paid subscriptions",
       "jobs": [
-        "dailystory-lifecycle-emails"
+        "dailystory-lifecycle-emails",
+        "heygetonmylevel-search-loop"
       ],
       "start": "2026-11-01",
       "first": {

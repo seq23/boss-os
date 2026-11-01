@@ -40,6 +40,9 @@ describe("the Schedule manifest", () => {
     expect(scheduleCategoryProblems(rows, [], cats)).toEqual([]);
     expect(scheduleCategoryProblems({ rows: [...rows.rows, { trigger: { repo: "stray-repo" } }] }, [], cats).join(" ")).toMatch(/stray-repo/);
     expect(scheduleCategoryProblems(rows, ["any-scanned-repo"], cats)).toEqual([]); // scans are not judged, rows are
+    // A client line whose note runs past its parentheses into prose still names its repo (1 Nov 2026).
+    const messy = parseRepoCategories("## Repo categories\n**Mine**\n- A: alpha-repo\n**Friends & clients**\n- Clients: client-repo (site **x.org** — note). **Client's Place: x.org is the main site (owner, 1 Nov: \"ok\"); more** (note), other-client\n**The system**\n- boss-os\n");
+    expect((messy as any).friends).toEqual(["client-repo", "other-client"]);
     expect(scheduleCategoryProblems(rows, [], parseRepoCategories("# no section"))[0]).toMatch(/NAMED STOP \[NO_REPO_CATEGORIES\]/);
   });
 

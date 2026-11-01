@@ -1209,7 +1209,7 @@
       "what": "Who is worth a catch-up, only when there is a live reason.",
       "business": "west-peek-ventures",
       "brand": "West Peek Ventures",
-      "system": "mac",
+      "system": "github",
       "slots": [
         "daily 06:20"
       ],
@@ -1217,8 +1217,10 @@
       "heavy": false,
       "trigger": {
         "duty": "duty_catchups",
-        "launchd": [
-          "com.seq.boss-catchups"
+        "repo": "boss-os",
+        "file": ".github/workflows/job-catchups.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 20 6 * * *"
         ]
       }
     },
@@ -1763,7 +1765,7 @@
       "brand": "Dream Wedding",
       "system": "github",
       "slots": [
-        "sat 06:40"
+        "daily 07:20"
       ],
       "emails": false,
       "heavy": false,
@@ -1771,7 +1773,7 @@
         "repo": "dream-wedding-builder",
         "file": ".github/workflows/pinterest-drip.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 6 * * 6"
+          "CRON_TZ=America/Chicago 20 7 * * *"
         ]
       }
     },
@@ -2707,26 +2709,6 @@
       }
     },
     {
-      "id": "local-guides-generator-ingestion-sync",
-      "name": "Ingestion Sync",
-      "what": "Ingestion Sync",
-      "business": "spry",
-      "brand": "Local guides",
-      "system": "github",
-      "slots": [
-        "daily 07:15"
-      ],
-      "emails": false,
-      "heavy": false,
-      "trigger": {
-        "repo": "local-guides-generator",
-        "file": ".github/workflows/ingestion_sync.yml",
-        "crons": [
-          "15 13 * * *"
-        ]
-      }
-    },
-    {
       "id": "local-guides-generator-production-http-evidence",
       "name": "Production HTTP Evidence",
       "what": "Production HTTP Evidence",
@@ -3305,7 +3287,7 @@
       "what": "New pre-seed rounds worth knowing about.",
       "business": "west-peek-ventures",
       "brand": "West Peek Ventures",
-      "system": "mac",
+      "system": "github",
       "slots": [
         "tue 07:30"
       ],
@@ -3313,8 +3295,10 @@
       "heavy": false,
       "trigger": {
         "duty": "duty_preseed_watch",
-        "launchd": [
-          "com.seq.boss-preseed-watch"
+        "repo": "boss-os",
+        "file": ".github/workflows/job-preseed-watch.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 30 7 * * 2"
         ]
       }
     },
@@ -3902,7 +3886,7 @@
       "what": "Nothing that waits goes unowned.",
       "business": "personal",
       "brand": "Boss OS",
-      "system": "mac",
+      "system": "github",
       "slots": [
         "daily 07:00"
       ],
@@ -3910,8 +3894,10 @@
       "heavy": false,
       "trigger": {
         "duty": "duty_waiting_on",
-        "launchd": [
-          "com.seq.boss-waiting-on"
+        "repo": "boss-os",
+        "file": ".github/workflows/job-waiting-on.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 7 * * *"
         ]
       }
     },
@@ -4384,27 +4370,6 @@
       }
     },
     {
-      "id": "wpp-llm-programmatic-release",
-      "name": "Programmatic Content Release - Full Flow 90 Day",
-      "what": "Publishes the next pages.",
-      "business": "spry",
-      "brand": "WPP",
-      "system": "github",
-      "slots": [
-        "daily 03:35",
-        "daily 15:35"
-      ],
-      "emails": false,
-      "heavy": false,
-      "trigger": {
-        "repo": "WPP-llm",
-        "file": ".github/workflows/programmatic-release.yml",
-        "crons": [
-          "CRON_TZ=America/Chicago 35 3,15 * * *"
-        ]
-      }
-    },
-    {
       "id": "wpp-llm-query-intelligence",
       "name": "Query Intelligence - GSC Gemini and $0 Signals",
       "what": "Reads Search Console and finds what to improve.",
@@ -4526,6 +4491,148 @@
         "file": ".github/workflows/mode-sync.yml",
         "crons": [
           "7 * * * *"
+        ]
+      }
+    },
+    {
+      "id": "wpp-llm-search-loop",
+      "name": "Search loop",
+      "what": "Finds easy searches and publishes gated question pages (the shared search loop) on westpeek; replaced its own release, query and repair lanes.",
+      "business": "spry",
+      "brand": "WPP",
+      "system": "github",
+      "slots": [
+        "daily 03:35"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "WPP-llm",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 35 3 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-generator-search-loop",
+      "name": "Search loop",
+      "what": "Checks and repairs the six guide sites' pages and fills missing guides (the shared search loop).",
+      "business": "spry",
+      "brand": "Local guides",
+      "system": "github",
+      "slots": [
+        "daily 09:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-generator",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "41 15 * * *"
+        ]
+      }
+    },
+    {
+      "id": "p-n-p-search-loop",
+      "name": "Search loop",
+      "what": "Finds easy searches and publishes gated question pages (the shared search loop) on porchandparty901.com, each ending in the quote request.",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "github",
+      "slots": [
+        "daily 07:29"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "p-n-p",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 29 7 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-citation-velocity-search-loop",
+      "name": "Search loop",
+      "what": "Finds easy searches and publishes gated question pages (the shared search loop) on theindustryguides.com.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "github",
+      "slots": [
+        "daily 07:47"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-citation-velocity",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "47 13 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-search-loop",
+      "name": "Search loop",
+      "what": "Finds easy searches and publishes gated question pages (the shared search loop) on the wedding sites.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "daily 06:11"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 11 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "heygetonmylevel-search-loop",
+      "name": "Search loop",
+      "what": "Finds easy searches and publishes gated question pages (the shared search loop) on learn.heygetonmylevel.com.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 05:47"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "heygetonmylevel",
+        "file": ".github/workflows/search-loop.yml",
+        "crons": [
+          "47 11 * * *"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-email-nurture",
+      "name": "Email nurture tick",
+      "what": "Sends the free-sample email series steps that are due (one email per 3 days per address, stops on purchase or unsubscribe).",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "daily 08:17",
+        "daily 13:17",
+        "daily 18:17"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/email-nurture.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 17 8,13,18 * * *"
         ]
       }
     }
