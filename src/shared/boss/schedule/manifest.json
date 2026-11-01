@@ -3248,6 +3248,42 @@
       }
     },
     {
+      "id": "scorecard",
+      "name": "Scorecard",
+      "what": "Reads every initiative's real number and judges it on Mondays: version B once, then pause; no number goes to repairs. Its section is in Monday's morning email.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 06:10"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-scorecard"
+        ]
+      }
+    },
+    {
+      "id": "scorecard-sweep",
+      "name": "Scorecard stray sweep",
+      "what": "Kendra compares everything running with the Scorecard; anything with no row gets a default row, logged.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "day1 09:45"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-scorecard-sweep"
+        ]
+      }
+    },
+    {
       "id": "practice-week",
       "name": "Practice: the week ahead",
       "what": "Imani plans the week's practice.",

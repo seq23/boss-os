@@ -43,6 +43,9 @@ export const MORNING_SECTIONS = Object.freeze([
   "pnp_outreach",
   // Camille's Marketplace listings: the at-most-weekly ask for new real-job photos (scripts/ops/pnp-photo-ask.mjs).
   "pnp_marketplace",
+  // Mondays: "📊 Scorecard: N on track, M need a look" (scripts/ops/scorecard-monday.mjs; owner ruling, 1 Nov 2026).
+  // Carries its own `title`; lists only switches, pauses and rows with no number.
+  "scorecard",
 ]);
 export const STALE_MS = 30 * 3_600_000;
 

@@ -714,6 +714,73 @@ lint_plist "$PNP_PHOTOS_PLIST"
 launchctl load "$PNP_PHOTOS_PLIST"
 echo "Installed $PNP_PHOTOS_LABEL — daily 06:20 Central."
 
+# ─── The Scorecard — daily 06:10 Central; Mondays it judges (owner ruling, 1 Nov 2026) ───────────────
+#
+# "Nothing runs unmeasured": every initiative's real number is read through the vault and judged on
+# Mondays (version B once, then pause; no number = repairs), and the section lands in Simone's 06:40
+# email. Other days it only switches back on what she restarted with the one-tap link. On the Mac
+# because every reader's key lives in the vault here. scripts/ops/scorecard-monday.mjs.
+SCORECARD_LABEL="com.seq.boss-scorecard"
+SCORECARD_PLIST="$HOME/Library/LaunchAgents/$SCORECARD_LABEL.plist"
+SCORECARD_LOGS="$HOME/Library/Logs/boss-scorecard"
+mkdir -p "$SCORECARD_LOGS"
+cat > "$SCORECARD_PLIST" <<SCOREEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SCORECARD_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent scorecard:monday</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>10</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>$SCORECARD_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$SCORECARD_LOGS/launchd.err</string>
+</dict></plist>
+SCOREEOF
+launchctl unload "$SCORECARD_PLIST" 2>/dev/null || true
+lint_plist "$SCORECARD_PLIST"
+launchctl load "$SCORECARD_PLIST"
+echo "Installed $SCORECARD_LABEL — daily 06:10 Central (judges on Mondays)."
+
+# ─── Kendra's stray sweep — the 1st of each month, 09:45 Central (owner ruling, 1 Nov 2026) ─────────
+#
+# Compares everything running (the Schedule, this Mac's launchd jobs, every repo's GitHub and Worker
+# crons) with the Scorecard; anything running with no row gets a default row in Boss OS, logged.
+# scripts/ops/scorecard-sweep.mjs.
+SCSWEEP_LABEL="com.seq.boss-scorecard-sweep"
+SCSWEEP_PLIST="$HOME/Library/LaunchAgents/$SCSWEEP_LABEL.plist"
+SCSWEEP_LOGS="$HOME/Library/Logs/boss-scorecard-sweep"
+mkdir -p "$SCSWEEP_LOGS"
+cat > "$SCSWEEP_PLIST" <<SCSWEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SCSWEEP_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent scorecard:sweep</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>$SCSWEEP_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$SCSWEEP_LOGS/launchd.err</string>
+</dict></plist>
+SCSWEOF
+launchctl unload "$SCSWEEP_PLIST" 2>/dev/null || true
+lint_plist "$SCSWEEP_PLIST"
+launchctl load "$SCSWEEP_PLIST"
+echo "Installed $SCSWEEP_LABEL — the 1st of each month, 09:45 Central."
+
 # ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
 #
 # Owner, 25 Oct 2026: the queue was worked to empty that day; after that it runs WEEKLY, Tuesday 06:30
@@ -1708,6 +1775,8 @@ require_loaded "$BRAINS_PULL_LABEL"
 require_loaded "$COHESION_LABEL"
 # WITH THE JOB, 1 November: real job photos first, before the Marketplace listings run.
 require_loaded "$PNP_PHOTOS_LABEL"
+require_loaded "$SCORECARD_LABEL"
+require_loaded "$SCSWEEP_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.

@@ -731,6 +731,11 @@ export function buildDay(data, now = Date.now()) {
   const gridLines = (m.grid_repos?.lines ?? []).slice(0, 4).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
   const gridRepos = gridLines.length ? { title: "The grid repos: this week's search check", tone: "done", items: gridLines, link: m.grid_repos?.link ?? null, empty: null } : null;
 
+  // 4b'. The Scorecard (Mondays; owner ruling, 1 Nov 2026): its own section with its own count title —
+  // switches, pauses and rows with no number only; a quiet week is one line.
+  const scLines = (m.scorecard?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
+  const scorecardSection = scLines.length ? { title: m.scorecard.title ?? "📊 Scorecard", tone: "done", items: scLines, empty: null } : null;
+
   // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
   const brainsSection = brainsSectionFor(data, now);
   const t2rGroupsSection = t2rGroupsSectionFor(data, now);
@@ -793,6 +798,7 @@ export function buildDay(data, now = Date.now()) {
       { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
       { title: "Done for you", tone: "done", items: doneShown, empty: null },
       ...(gridRepos ? [gridRepos] : []),
+      ...(scorecardSection ? [scorecardSection] : []),
       ...(scoreSection ? [scoreSection] : []),
       ...(brainsSection ? [brainsSection] : []),
       ...(t2rGroupsSection ? [t2rGroupsSection] : []),

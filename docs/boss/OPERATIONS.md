@@ -940,3 +940,11 @@ Owner-approved: a job that does not need her Mac runs on GitHub Actions, so a cl
 - **Moved so far**: errand reminders (`job-errand-reminders.yml`), Spry heartbeat and properties
   (`job-properties.yml`), Time-2-Read numbers (`job-t2r-numbers.yml`, state `t2r-test-accounts.txt`).
 - **Read a run's private log**: `npm run -s vault:run -- npx wrangler r2 object get boss-os-documents/job-state/logs/<job>/<stamp>.log --remote --pipe`.
+
+## The Scorecard (1 Nov 2026)
+
+How it works and how to add a row: see the "The Scorecard" section of the repo's `CLAUDE.md`. To add an
+initiative, add a row to `src/shared/boss/scorecard/manifest.json` in the same PR as its job (a reader id
+from `READER_IDS`, a D1 query returning one number `n`, floors, version B). A source needing a key the
+vault lacks shows "No number" with `NAMED STOP [KEY_MISSING]` naming the key. Dry run:
+`npm run scorecard:monday -- --dry`. Restart links are `/tap/sc…` (routes/scorecard.ts).

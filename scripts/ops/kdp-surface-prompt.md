@@ -199,6 +199,15 @@ and Amazon is looking at it. Check the bookshelf each run; file `acted` when it 
 her only if Amazon asks for more or refuses — then `facts_changed` says what changed. Anything else
 about it is refused (`IN_REVIEW_IS_PROGRESS`).
 
+## Units sold, for the Scorecard (owner ruling, 1 Nov 2026: "nothing runs unmeasured")
+
+Once a run, read the KDP Reports page for units sold (`npm run browser:read -- --profile simone --url
+https://kdp.amazon.com/en_US/reports-new`), every title together, by day for the last 60 days, and write
+`~/.boss-os/kdp/units.json` as `{ "at": "<now, ISO>", "days": { "YYYY-MM-DD": <units that day>, ... } }`
+(a day with no sales may be left out). Numbers only: no title, no buyer, no money. If the page cannot be
+read, leave the old file as it is and say so in one line of your report; the Scorecard then shows the
+KDP row as "No number" and the team repairs it. This never changes what you report about Amazon's mail.
+
 ## The file — every run, before your final line
 
 Everything you read stays on this machine. Write `~/.boss-os/kdp/surface.json`:

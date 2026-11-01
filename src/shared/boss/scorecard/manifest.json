@@ -1,0 +1,1394 @@
+{
+  "_note": "THE SCORECARD (owner ruling, 1 Nov 2026: \"nothing runs unmeasured\"; plan https://claude.ai/artifact/NA78ECyBGeB5aHfWkeGqZe). One row per initiative: the result that counts (never activity), a code-readable source (a reader id in scripts/ops/lib/scorecard-readers.mjs), a first floor by day 30 and a real floor by day 60 (slow channels say longer), a version B written at build time, and an owner. Every job in src/shared/boss/schedule/manifest.json is in exactly one row's jobs OR in exempt with its reason; tests/scorecard.test.ts fails the build otherwise. A new scheduled job, sender, outreach series, pin feed or page loop gets its row here in the same PR. The Monday run (scripts/ops/scorecard-monday.mjs) reads every row; state and history live in Boss OS (GET /api/boss/scorecard), not in this file.",
+  "approved": {
+    "on": "2026-11-01",
+    "artifact": "https://claude.ai/artifact/NA78ECyBGeB5aHfWkeGqZe"
+  },
+  "businesses": [
+    {
+      "key": "brokerage",
+      "label": "Brokerage"
+    },
+    {
+      "key": "west-peek-ventures",
+      "label": "West Peek Ventures"
+    },
+    {
+      "key": "west-peek",
+      "label": "West Peek"
+    },
+    {
+      "key": "porch-and-party",
+      "label": "Porch & Party"
+    },
+    {
+      "key": "spry",
+      "label": "Spry Labs"
+    },
+    {
+      "key": "time-2-read",
+      "label": "Time-2-Read"
+    }
+  ],
+  "defaults": {
+    "versionBDays": 30,
+    "stuckWeeks": 3
+  },
+  "rows": [
+    {
+      "id": "brokerage-prospect-emails",
+      "initiative": "Prospect emails",
+      "business": "brokerage",
+      "owner": "Monique · your morning email",
+      "result": "Replies from the people we write to, then live conversations",
+      "jobs": [
+        "prospects",
+        "prospect-discovery"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "replies in the last 30 days",
+        "unit": "%",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT CASE WHEN SUM(touches > 0) = 0 THEN NULL ELSE ROUND(100.0 * SUM(status IN ('replied','interested')) / SUM(touches > 0), 1) END AS n FROM prospects WHERE first_sent_at >= :since_ms",
+          "days": 30
+        }
+      },
+      "real": {
+        "label": "live conversations this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT COUNT(*) AS n FROM prospects WHERE status = 'interested' AND updated_at >= :since_ms",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "A new opener and subject line set."
+      }
+    },
+    {
+      "id": "brokerage-deal-matches",
+      "initiative": "Monique's deal matches",
+      "business": "brokerage",
+      "owner": "Monique · your morning email",
+      "result": "Matches you act on, then deals in talks",
+      "jobs": [
+        "inbound-supply",
+        "ledger-hunt",
+        "buyer-hunt",
+        "seller-hunt",
+        "filing-research",
+        "interest-nudge",
+        "brokerage-sourcing",
+        "hunt-ondemand",
+        "people-worth-a-call",
+        "crossmatch"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "matches acted on this month",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT (SELECT COUNT(*) FROM buyer_outreach_drafts WHERE approved_at >= :since_ms) + (SELECT COUNT(*) FROM audit_log WHERE entity_type = 'capital_match' AND action <> 'dismissed' AND ts >= :since_ms) AS n",
+          "days": 30
+        }
+      },
+      "real": {
+        "label": "intros sent in the last 90 days",
+        "by": 90,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT COUNT(*) AS n FROM buyer_outreach_drafts WHERE sent_at >= :since_ms",
+          "days": 90
+        }
+      },
+      "versionB": {
+        "text": "A wider size and price band."
+      },
+      "pause": []
+    },
+    {
+      "id": "fund-lp-drip",
+      "initiative": "Fund I LP drip (Twin)",
+      "business": "west-peek-ventures",
+      "owner": "Monique · your morning email",
+      "result": "Replies, then calls booked",
+      "jobs": [
+        "lp-daily"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "of LP emails replied to",
+        "unit": "%",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 3
+        },
+        "reader": "lp-outcomes",
+        "params": {
+          "metric": "reply_rate",
+          "maxAgeDays": 9
+        }
+      },
+      "real": {
+        "label": "calls booked this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT COUNT(*) AS n FROM lp_reply_drafts WHERE invite_sent_at >= :since_ms",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "A new first email and a new audience slice."
+      }
+    },
+    {
+      "id": "tlc-brand-outreach",
+      "initiative": "TLC brand outreach (Wynn)",
+      "business": "west-peek",
+      "owner": "Wynn · Monday roundup",
+      "result": "Brand replies, then signed sponsors",
+      "jobs": [
+        "wpos-tlc-brand-batch",
+        "wpos-tlc-drip",
+        "wpos-tlc-roundup",
+        "wpos-tlc-daily",
+        "wpos-tlc-topics",
+        "wpos-tlc-trend-story"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "of pitched brands replied (60 days)",
+        "unit": "%",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 10
+        },
+        "reader": "d1",
+        "params": {
+          "db": "west-peek-os-db",
+          "sql": "SELECT CASE WHEN COUNT(*) = 0 THEN NULL ELSE ROUND(100.0 * SUM(replied_at IS NOT NULL) / COUNT(*), 1) END AS n FROM tlc_deal WHERE first_sent_at IS NOT NULL AND datetime(first_sent_at) >= datetime(:since_iso)",
+          "days": 60
+        }
+      },
+      "real": {
+        "label": "sponsors signed in the last 60 days (one per event)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "west-peek-os-db",
+          "sql": "SELECT COUNT(*) AS n FROM tlc_deal WHERE yes_at IS NOT NULL AND datetime(yes_at) >= datetime(:since_iso)",
+          "days": 60
+        }
+      },
+      "versionB": {
+        "text": "A new brand list and a new first email."
+      },
+      "pause": []
+    },
+    {
+      "id": "pnp-christmas-outreach",
+      "initiative": "Camille's Christmas office outreach",
+      "business": "porch-and-party",
+      "owner": "Camille · your morning email",
+      "result": "Replies, then bookings",
+      "jobs": [
+        "pnp-corporate-outreach"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "office replies so far",
+        "by": "2026-11-20",
+        "floor": {
+          "op": ">=",
+          "value": 3
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT COUNT(*) AS n FROM pnp_outreach_prospects WHERE state = 'replied'"
+        }
+      },
+      "real": {
+        "label": "office booking requests since 1 Nov",
+        "by": "2026-12-05",
+        "floor": {
+          "op": ">=",
+          "value": 4
+        },
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE corporate = 1 AND is_test = 0 AND datetime(submitted_at) >= datetime('2026-11-01')"
+        }
+      },
+      "versionB": {
+        "text": "A lobby-only offer to a new office list."
+      }
+    },
+    {
+      "id": "pnp-search-pages",
+      "initiative": "Porch & Party search pages (new)",
+      "business": "porch-and-party",
+      "owner": "Camille · your morning email",
+      "result": "Google impressions, then requests from those pages",
+      "jobs": [
+        "p-n-p-authority-daily"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "Google impressions (28 days)",
+        "by": 45,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "porchandparty901.com"
+          ],
+          "metric": "impressions",
+          "days": 28
+        }
+      },
+      "real": {
+        "label": "requests from Google this month",
+        "by": 90,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE source_tag = 'google' AND is_test = 0 AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "A new topic set."
+      }
+    },
+    {
+      "id": "pnp-studio-clips",
+      "initiative": "P&P Studio clips",
+      "business": "porch-and-party",
+      "owner": "Camille · your morning email",
+      "result": "Views and saves per clip, then requests from social",
+      "jobs": [],
+      "start": null,
+      "startWhen": {
+        "label": "Instagram and TikTok posting starts",
+        "reader": "d1",
+        "params": {
+          "db": "creator-studios-sample1-db",
+          "sql": "SELECT MIN(posted_at) AS n FROM posts WHERE status = 'posted' AND platform IN ('instagram','tiktok')"
+        }
+      },
+      "first": {
+        "label": "average views per clip, rising",
+        "by": 30,
+        "floor": {
+          "op": "rising"
+        },
+        "reader": "d1",
+        "params": {
+          "db": "creator-studios-sample1-db",
+          "sql": "SELECT ROUND(AVG(v), 1) AS n FROM (SELECT MAX(m.views) + MAX(m.saves) * 0 AS v FROM metrics m JOIN posts p ON p.id = m.post_id WHERE p.platform IN ('instagram','tiktok') GROUP BY m.post_id)"
+        }
+      },
+      "real": {
+        "label": "requests from Instagram or TikTok this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "pnp-admin",
+          "sql": "SELECT COUNT(*) AS n FROM requests WHERE source_tag IN ('instagram','tiktok') AND is_test = 0 AND datetime(submitted_at) >= datetime(:since_iso)",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "A new clip style: a different hook in the first 2 seconds, a different length, a new voice-over angle."
+      },
+      "pause": []
+    },
+    {
+      "id": "spry-pinterest",
+      "initiative": "Pinterest × 3 (ApprovalPrep, Wedding, A Player Mode)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Pin visits, then signups and sales from them",
+      "jobs": [
+        "approvalprep-pinterest-metrics",
+        "approvalprep-pinterest-refill",
+        "dream-wedding-builder-pinterest-drip"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "pin visits a week, weakest account",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 10
+        },
+        "reader": "repo-json",
+        "params": {
+          "combine": "min",
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "approvalprep",
+              "path": "data/pinterest/metrics.json",
+              "field": "weeks.0.pinterestViews",
+              "at": "updatedAt"
+            },
+            {
+              "repo": "dream-wedding-builder",
+              "path": "reports/pinterest/metrics.json",
+              "field": "total",
+              "at": "generated_at"
+            },
+            {
+              "repo": "sprylabs-hpc-site",
+              "path": "reports/pinterest/aplayermode_metrics.json",
+              "field": "total",
+              "at": "generated_at"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "signups from pins this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "sum",
+        "params": {
+          "of": [
+            {
+              "reader": "d1",
+              "params": {
+                "db": "dream-wedding-builder",
+                "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE source LIKE '%pinterest%' AND datetime(created_at) >= datetime(:since_iso)",
+                "days": 30
+              }
+            },
+            {
+              "reader": "d1",
+              "params": {
+                "db": "approvalprep-products",
+                "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE source LIKE '%pinterest%' AND datetime(created_at) >= datetime(:since_iso)",
+                "days": 30
+              }
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "A new pin format: taller images, the question as the headline, a different board mix."
+      },
+      "pause": [
+        "approvalprep-pinterest-refill",
+        "dream-wedding-builder-pinterest-drip"
+      ]
+    },
+    {
+      "id": "spry-search-pages",
+      "initiative": "Search pages on each Spry Labs site",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Impressions, then clicks, then the site's one action",
+      "jobs": [
+        "approvalprep-search-loop",
+        "approvalprep-content-opportunity-analysis",
+        "approvalprep-page-refresh-queue",
+        "approvalprep-competitor-watch-refresh",
+        "approvalprep-growth-maintenance-analysis",
+        "approvalprep-intelligence-ingest-free-sources",
+        "approvalprep-citation-os-weekly",
+        "dream-wedding-builder-search-intelligence",
+        "dream-wedding-builder-full-safe-autonomy",
+        "dream-wedding-builder-authority-preflight-validation",
+        "local-guides-citation-velocity-daily-citation-intelligence",
+        "local-guides-citation-velocity-query-evidence-refresh",
+        "local-guides-citation-velocity-search-intelligence-loop",
+        "local-guides-citation-velocity-search-outcomes-weekly",
+        "local-guides-generator-rotating-refresh",
+        "local-guides-generator-ingestion-sync",
+        "sprylabs-hpc-site-search-intelligence",
+        "sprylabs-hpc-site-search-loop",
+        "sprylabs-hpc-site-spry-content-release",
+        "sprylabs-hpc-site-daily-citation-intelligence",
+        "wpp-llm-programmatic-release",
+        "wpp-llm-query-intelligence",
+        "wpp-llm-search-repair-retest",
+        "search-readiness-repair",
+        "sr-resume",
+        "site-audit-repair"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "Google impressions across the sites (28 days), rising",
+        "by": 45,
+        "floor": {
+          "op": "rising"
+        },
+        "reader": "gsc",
+        "params": {
+          "sitesFrom": "spry-labs",
+          "metric": "impressions",
+          "days": 28
+        }
+      },
+      "real": {
+        "label": "Google clicks across the sites (28 days)",
+        "by": 90,
+        "floor": {
+          "op": ">=",
+          "value": 10
+        },
+        "reader": "gsc",
+        "params": {
+          "sitesFrom": "spry-labs",
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      "versionB": {
+        "text": "A new topic set from the sites' own Search Console queries."
+      },
+      "pause": [
+        "approvalprep-search-loop",
+        "sprylabs-hpc-site-search-loop",
+        "local-guides-citation-velocity-search-intelligence-loop",
+        "dream-wedding-builder-search-intelligence",
+        "wpp-llm-programmatic-release"
+      ]
+    },
+    {
+      "id": "spry-samples-email",
+      "initiative": "Free sample + email series (BHPC, Wedding, ApprovalPrep)",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Sample downloads and signups, then paid sales",
+      "jobs": [
+        "approvalprep-notification-dispatch",
+        "dream-wedding-builder-wrangler-jsonc"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "free downloads and signups a week",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "sum",
+        "params": {
+          "of": [
+            {
+              "reader": "gumroad",
+              "params": {
+                "kind": "free",
+                "days": 7
+              }
+            },
+            {
+              "reader": "d1",
+              "params": {
+                "db": "dream-wedding-builder",
+                "sql": "SELECT COUNT(*) AS n FROM builder_signups WHERE datetime(created_at) >= datetime(:since_iso)",
+                "days": 7
+              }
+            },
+            {
+              "reader": "d1",
+              "params": {
+                "db": "approvalprep-products",
+                "sql": "SELECT COUNT(*) AS n FROM email_signups WHERE datetime(created_at) >= datetime(:since_iso)",
+                "days": 7
+              }
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "paid sales this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "sum",
+        "params": {
+          "of": [
+            {
+              "reader": "gumroad",
+              "params": {
+                "kind": "paid",
+                "days": 30
+              }
+            },
+            {
+              "reader": "d1",
+              "params": {
+                "db": "dream-wedding-builder",
+                "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND datetime(created_at) >= datetime(:since_iso)",
+                "days": 30
+              }
+            },
+            {
+              "reader": "d1",
+              "params": {
+                "db": "approvalprep-products",
+                "sql": "SELECT COUNT(*) AS n FROM download_entitlements WHERE payment_status = 'paid' AND revoked_at IS NULL AND datetime(created_at) >= datetime(:since_iso)",
+                "days": 30
+              }
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "A new sample page and a new first email."
+      },
+      "pause": []
+    },
+    {
+      "id": "spry-kdp",
+      "initiative": "KDP books",
+      "business": "spry",
+      "owner": "Simone · monthly KDP check",
+      "result": "Units sold",
+      "jobs": [
+        "kdp-publish",
+        "kdp-surface"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "books sold in the last 60 days",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "kdp-units",
+        "params": {
+          "days": 60,
+          "maxAgeDays": 35
+        }
+      },
+      "real": {
+        "label": "books sold this month",
+        "by": 120,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "kdp-units",
+        "params": {
+          "days": 30,
+          "maxAgeDays": 35
+        }
+      },
+      "versionB": {
+        "text": "A new cover, title and description."
+      }
+    },
+    {
+      "id": "industry-guides-leads",
+      "initiative": "Industry guides lead pages",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Leads, then paid placements",
+      "jobs": [
+        "local-guides-generator-senior-tick"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "lead requests a week",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 2
+        },
+        "reader": "airtable",
+        "params": {
+          "key": "AIRTABLE_LKG_LEADS_TOKEN",
+          "base": "appDgpv4F5ORCtUU3",
+          "table": "Lead Requests",
+          "days": 7
+        }
+      },
+      "real": {
+        "label": "paid placements this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "stripe",
+        "params": {
+          "key": "STRIPE_INDUSTRY_GUIDES_LIVE_SECRET",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "A new lead-page layout."
+      },
+      "pause": []
+    },
+    {
+      "id": "authority-backlinks",
+      "initiative": "Authority backlink network",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Links to your sites, then visits through them",
+      "jobs": [
+        "authority-backlink-network-authority-post-publish-distributi",
+        "authority-backlink-network-authority-v4-autopilot",
+        "authority-backlink-network-journalist-query-scan",
+        "authority-backlink-network-social-autopost",
+        "authority-backlink-network-uscis-changelog",
+        "link-prospects"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "new live links (8 weeks)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "delta": 56,
+        "reader": "repo-json",
+        "params": {
+          "files": [
+            {
+              "repo": "authority-backlink-network",
+              "path": "data/backlink-self-heal-latest.json",
+              "field": "rows_considered"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "Google clicks to the three libraries (28 days)",
+        "by": 90,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "professionalresourcelibrary.com",
+            "founderoperatorlibrary.com",
+            "memphisvendorlibrary.com"
+          ],
+          "metric": "clicks",
+          "days": 28
+        }
+      },
+      "versionB": {
+        "text": "New publication topics."
+      },
+      "pause": [
+        "authority-backlink-network-authority-v4-autopilot",
+        "authority-backlink-network-authority-post-publish-distributi"
+      ]
+    },
+    {
+      "id": "how-we-know-youtube",
+      "initiative": "How We Know (YouTube)",
+      "business": "spry",
+      "owner": "Spry Labs · Sunday digest",
+      "result": "Views, then subscribers",
+      "jobs": [
+        "how-we-know-loop-demand",
+        "how-we-know-loop-food-author",
+        "how-we-know-loop-fri-measure",
+        "how-we-know-loop-fri-publish",
+        "how-we-know-loop-imagery-harvest",
+        "how-we-know-loop-mon-draft",
+        "how-we-know-loop-monthly-review",
+        "how-we-know-loop-quarterly-taxonomy-refresh",
+        "how-we-know-loop-reach",
+        "how-we-know-loop-repackage",
+        "how-we-know-loop-sat-score",
+        "how-we-know-loop-shorts-cloud",
+        "how-we-know-loop-sun-digest",
+        "how-we-know-loop-sun-rank",
+        "how-we-know-loop-upload-cloud",
+        "howweknow-backfill",
+        "howweknow-batch",
+        "howweknow-batch-resume",
+        "howweknow-food",
+        "howweknow-food-resume",
+        "howweknow-nightquit",
+        "shorts-arm",
+        "youtube-comment-watch"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "views in the last 4 weeks",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 500
+        },
+        "delta": 28,
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "how-we-know",
+              "path": "loop/state/channel_stats.json",
+              "field": "views",
+              "at": "at"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "new subscribers in the last 4 weeks",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 20
+        },
+        "delta": 28,
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "how-we-know",
+              "path": "loop/state/channel_stats.json",
+              "field": "subscribers",
+              "at": "at"
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "A new thumbnail and title style."
+      },
+      "pause": [
+        "how-we-know-loop-upload-cloud",
+        "how-we-know-loop-shorts-cloud",
+        "how-we-know-loop-fri-publish"
+      ]
+    },
+    {
+      "id": "t2r-institutional",
+      "initiative": "Time-2-Read institutional sales (Monique)",
+      "business": "time-2-read",
+      "owner": "Monique · your morning email",
+      "result": "Replies, then demos, then a paid pilot",
+      "jobs": [
+        "t2r-groups"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "of institutional emails replied to (30 days)",
+        "unit": "%",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT CASE WHEN s.n = 0 THEN NULL ELSE ROUND(100.0 * r.n / s.n, 1) END AS n FROM (SELECT COUNT(*) AS n FROM outreach_sends WHERE business_key IN ('time2read','time2read_groups') AND is_test = 0 AND status = 'sent' AND sent_at >= :since_ms) s, (SELECT COUNT(*) AS n FROM outreach_replies WHERE business_key IN ('time2read','time2read_groups') AND classification IN ('interested','not_now','wrong_person') AND received_at >= :since_ms) r",
+          "days": 30
+        }
+      },
+      "real": {
+        "label": "interested replies (demo asks) this month",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "d1",
+        "params": {
+          "db": "boss-os",
+          "sql": "SELECT COUNT(*) AS n FROM outreach_replies WHERE business_key IN ('time2read','time2read_groups') AND classification = 'interested' AND received_at >= :since_ms",
+          "days": 30
+        }
+      },
+      "versionB": {
+        "text": "A new segment: homeschool pods first, then districts."
+      },
+      "pause": [
+        {
+          "outreach": "time2read"
+        },
+        {
+          "outreach": "time2read_groups"
+        },
+        "t2r-groups"
+      ]
+    },
+    {
+      "id": "t2r-parent-signups",
+      "initiative": "Time-2-Read parent sign-ups",
+      "business": "time-2-read",
+      "owner": "Monique · Wednesday Time-2-Read numbers",
+      "result": "Paid subscriptions",
+      "jobs": [
+        "dailystory-lifecycle-emails"
+      ],
+      "start": "2026-11-01",
+      "first": {
+        "label": "free sign-ups a week",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 5
+        },
+        "reader": "t2r",
+        "params": {
+          "metric": "signups",
+          "days": 7
+        }
+      },
+      "real": {
+        "label": "new paying parents a week",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 1
+        },
+        "reader": "t2r",
+        "params": {
+          "metric": "paid",
+          "days": 7
+        }
+      },
+      "versionB": {
+        "text": "A new free-trial path."
+      },
+      "pause": []
+    }
+  ],
+  "exempt": {
+    "agent": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "agent-poll": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "aplayer-mode-services-api-wrangler-jsonc": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "aplayer-mode-supabase-keep-alive": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "aplayer-mode-weekly-outcome-report": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "approvalprep-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "approvalprep-post-deploy-live-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "approvalprep-spry-weekly-summary": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "archive-audit": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "authority-backlink-network-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "authority-backlink-network-post-deploy-live-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "authority-backlink-network-self-heal": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "boss-os-wrangler-toml": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "brains-pull": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "catchups": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "ci-sweep": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "drive-backup": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "ci-sweep-resume": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "ci-sweep-retry": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "cohesion": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "creator-network-daily-creator-network": {
+      "kind": "excluded",
+      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
+    },
+    "creator-network-weekly-owner-report": {
+      "kind": "excluded",
+      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
+    },
+    "creator-studios-e2e": {
+      "kind": "excluded",
+      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
+    },
+    "creator-studios-golden-set": {
+      "kind": "excluded",
+      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
+    },
+    "creator-studios-parity": {
+      "kind": "excluded",
+      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
+    },
+    "creator-studios-wrangler-jsonc": {
+      "kind": "excluded",
+      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
+    },
+    "credentials": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dailystory-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dailystory-monitor-ai-visual": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dailystory-monitor-runware-generate": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dailystory-monitor-template-ab": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dailystory-monitor-template-cd": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dailystory-prerender-live-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dailystory-search-console-daily": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "dailystory-supabase-keep-alive": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dev-housekeeping": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dream-wedding-builder-ci": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dream-wedding-builder-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dream-wedding-builder-self-heal": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "dream-wedding-builder-spry-weekly-summary": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "eightraise-budget": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "errand-reminders": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "exec-intel": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "grid-watch": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "how-we-know-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "how-we-know-search-console-daily": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "how-we-know-site-post-deploy-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "local-guides-citation-velocity-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "local-guides-citation-velocity-post-deploy-live-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "local-guides-generator-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "local-guides-generator-production-http-evidence": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "local-guides-generator-weekly-outcome-report": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "local-jobs": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "mac-cleanup": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "mail-tail": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "runtime-sync": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "mailbox-sweep": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "meet-listener": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "meeting-prep": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "mercedes-creator-dashboard-wrangler-jsonc": {
+      "kind": "excluded",
+      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
+    },
+    "network": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "outside-locks": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "p-n-p-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "p-n-p-inventory-poll": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "p-n-p-live-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "p-n-p-monthly-audit": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "p-n-p-self-heal": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "p-n-p-workers-pnp-mailer-wrangler-toml": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "pnp-marketplace": {
+      "kind": "excluded",
+      "why": "Porch & Party Facebook Marketplace: no scorecard row, it performs (your ruling, 1 Nov 2026)."
+    },
+    "pnp-photo-ask": {
+      "kind": "excluded",
+      "why": "Porch & Party Facebook Marketplace: no scorecard row, it performs (your ruling, 1 Nov 2026)."
+    },
+    "practice-week": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "preseed-watch": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "properties": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "property-gsc": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "property-uptime": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "repo-change": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "risk-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "scooter-sheet": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "scooter-watch": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "scooter-watch-digest": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "seat-claimer": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "sheila-creator-dashboard-wrangler-jsonc": {
+      "kind": "excluded",
+      "why": "The friends' creator studios: left out of the scorecard (your ruling, 1 Nov 2026)."
+    },
+    "simone-commands": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "sites-audit": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "spry-weekly": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "sprylabs-hpc-site-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "sprylabs-hpc-site-main-validation-sentinel": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "sprylabs-hpc-site-weekly-outcome-report": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "t2r-numbers": {
+      "kind": "system",
+      "why": "Measures or reports; the rows it feeds are judged instead."
+    },
+    "tool-scout": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "waiting-on": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "west-peek-os-wrangler-toml": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "westpeek-live-browser-e2e": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpos-calendar-sync": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpos-daily-intelligence": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpos-deck-reading": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-diagnostics-sweep": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpos-employee-work-sweep": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpos-meet-ingest": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpos-meeting-brief": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-monthly-room-proposal": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-network-sync": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpos-no-action-card-purge": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpos-productions-customer-ideas": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-productions-hire-search": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-productions-intro-note": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-productions-monthly": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-productions-press-pitches": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-wednesday-prep": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpos-weekly-mp-review": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "wpp-llm-ci": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpp-llm-credential-check": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpp-llm-entity-backlink-watch": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "wpp-llm-self-heal": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "your-day": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
+    },
+    "search-loop-mode-sync": {
+      "kind": "system",
+      "why": "Keeps the system running or checks it; it has no customer result of its own."
+    },
+    "scorecard": {
+      "kind": "system",
+      "why": "The Scorecard's own Monday run: it measures the other rows."
+    },
+    "scorecard-sweep": {
+      "kind": "system",
+      "why": "The Scorecard's monthly stray sweep: it finds things running with no row."
+    }
+  }
+}

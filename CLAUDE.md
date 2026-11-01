@@ -381,3 +381,18 @@ central matrix). Pinned by `tests/validatorMatrix.test.ts` and `tests/boss/valid
 4. **Flagged, never blocking**: a matrix row its repo does not carry, or a validator a repo carries
    that the matrix lacks, is one clause in Simone's Monday cohesion line. Duplicates across repos are
    shown on the page as candidates for one shared check.
+
+## The Scorecard: nothing runs unmeasured
+
+Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/scorecard.test.ts`:
+1. **One list.** `src/shared/boss/scorecard/manifest.json`: one row per initiative (result that counts,
+   a reader per floor, day-30 and day-60 floors, version B, owner). Every Schedule job is in exactly one
+   row's `jobs` or in `exempt` with a kind and a reason; a new job, sender, outreach series, pin feed or
+   page loop with neither fails the build. Rules: `src/shared/boss/scorecard/scorecard.mjs`.
+2. **The Monday run** (`npm run scorecard:monday`, launchd `com.seq.boss-scorecard` daily 06:10 Central,
+   judging on Mondays; `-- --dry` judges and records nothing) reads each source
+   (`scripts/ops/lib/scorecard-readers.mjs`, counts only), applies the five states, pauses through each
+   job's own switch (never a deletion), records to `/api/boss/scorecard` and writes the "📊 Scorecard"
+   section of Simone's morning email. Zero rows or every row unreadable is a NAMED STOP.
+3. **The page** is ☰ More → Scorecard (`/?tab=scorecard`). **Kendra's sweep** (`npm run scorecard:sweep`,
+   the 1st, 09:45) gives anything running with no row a default row.
