@@ -40,7 +40,7 @@ describe("the operations merge", () => {
     expect(m.rows.length).toBeGreaterThan(0);
     expect(m.unassigned.map((r) => r.id)).toEqual([]);
     expect(m.bySeat.get("Monique")?.map((r) => r.id)).toContain("monique-outreach");
-    expect(m.bySeat.get("The client")?.map((r) => r.id).sort()).toEqual(["client-dashboards-mail", "client-publication-mail"]);
+    expect(m.bySeat.get("The client")?.map((r) => r.id).sort()).toEqual(["client-dashboards-mail"]);
     expect([...m.bySeat.keys()].filter((k) => !ROSTER.includes(k))).toEqual(["The client"]);
     expect(m.bySeat.get("Danielle")?.find((r) => r.id === "repo-change")?.lastOutcome).toMatch(/^failed .* — exit 1$/);
     expect(m.bySeat.get("Monique")?.find((r) => r.id === "monique-outreach")?.lastOutcome).toMatch(/^sent .* · sending live$/);

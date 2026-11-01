@@ -5,9 +5,9 @@
     { "key": "west-peek-ventures", "label": "West Peek Ventures", "blurb": "The fund, TLC and Rooms, westpeek.live: the West Peek OS team (Porter, Wynn, Parker) and Monique's LP work." },
     { "key": "porch-and-party", "label": "Porch & Party", "blurb": "Valerie's business: her admin emails, customer emails, Camille's office outreach and the P&P Studio." },
     { "key": "time-2-read", "label": "Time-2-Read", "blurb": "Monique's groups and institutions outreach, and the app's own emails." },
-    { "key": "industry-guides", "label": "Industry Guides / Spry", "blurb": "The guides, their lead forms and outreach, and the Spry side businesses (ApprovalPrep, the wedding checklist, A Player Mode, Creator Studios, How We Know, Kindle)." },
+    { "key": "industry-guides", "label": "Industry Guides / Spry", "blurb": "The guides, their lead forms and outreach, and the Spry side businesses (ApprovalPrep, the wedding checklist, A Player Mode, How We Know, Kindle)." },
     { "key": "personal", "label": "Personal", "blurb": "Boss OS to you: Simone's morning email, Spirit, Brains, errands, practice and lapse emails, meeting prep, and the team's notices." },
-    { "key": "friends", "label": "Friends' businesses & clients", "blurb": "Client properties you look after. Their own mail, listed so the map is whole." }
+    { "key": "spry", "label": "Creator studios", "blurb": "Spry's creator studios: the shared studio app and the creator dashboards it runs for clients, with their sign-in codes, briefs, clips and weekly recaps." }
   ],
   "runs": {
     "cloud-cron": "In the cloud, on a schedule. Your Mac can be off.",
@@ -551,7 +551,7 @@
       "code": [{ "repo": "dream-wedding-builder", "paths": ["lib/delivery-email.ts", "lib/delivery-alert.ts", "lib/delivery-retry.ts"] }]
     },
     {
-      "id": "creator-studios-mail", "business": "industry-guides",
+      "id": "creator-studios-mail", "business": "spry",
       "what": "Creator Studios: sign-in codes, brief ready, clips ready, weekly recap, posting problems",
       "sender": "The studio (no employee)", "owner": "Danielle",
       "from": "The studio's sender", "to": "The studio's owner",
@@ -872,8 +872,8 @@
     },
 
     {
-      "id": "client-dashboards-mail", "business": "friends",
-      "what": "Client creator dashboards and studios: briefs and recaps",
+      "id": "client-dashboards-mail", "business": "spry",
+      "what": "Client creator dashboards: briefs and recaps",
       "sender": "The client's dashboard", "owner": "The client",
       "from": "The client's sender", "to": "The client",
       "when": "Hourly checks, a morning brief, Monday recap",
@@ -882,19 +882,6 @@
       "code": [
         { "repo": "mercedes-creator-dashboard", "paths": ["worker/services/email.ts", "scripts/staging-login-code.mjs"] },
         { "repo": "sheila-creator-dashboard", "paths": ["worker/services/email.ts", "scripts/staging-login-code.mjs"] }
-      ]
-    },
-    {
-      "id": "client-publication-mail", "business": "friends",
-      "what": "Client publication and approved-content notices",
-      "sender": "The client's site", "owner": "The client",
-      "from": "The client's sender", "to": "The client",
-      "when": "Daily",
-      "runs": "github", "trigger": "GitHub Actions in each client repo",
-      "pause": "gh workflow disable in that repo",
-      "code": [
-        { "repo": "horse-legal-guide-velocity", "paths": ["scripts/social/send_approved_content_email.py"] },
-        { "repo": "hicks-consulting-canonical", "paths": ["scripts/autonomy/lib/notification.mjs"] }
       ]
     }
   ]
