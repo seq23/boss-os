@@ -56,6 +56,16 @@ describe("meeting prep: one email per meeting, once", () => {
     expect(dueMeetings([{ ...kate, all_day: true }, { ...terri, title: "Focus time" }], { now: EVENING })).toEqual([]);
   });
 
+  it("work only: a brunch, a reservation or a birthday is never prepped; the same words with a work guest or work words are (owner, 1 Nov 2026)", () => {
+    const brunch = { calendar_uid: "b1", ical_uid: "b1@google.com", title: "Reservation at Fake Cafe", scheduled_at: FRI_NOON, duration_min: 90, location: null, attendees: [{ email: "me@example.com" }] };
+    const social = [brunch, { ...brunch, calendar_uid: "b2", ical_uid: "b2@google.com", title: "Sunday brunch w Kim" }, { ...brunch, calendar_uid: "b3", ical_uid: "b3@google.com", title: "Jo's birthday drinks" }];
+    const workBrunch = { ...brunch, calendar_uid: "b4", ical_uid: "b4@google.com", title: "Brunch with Kate", attendees: [{ email: "kate@gemfirm.example", name: "Kate Example" }] };
+    const due = dueMeetings([...social, workBrunch, terri], { now: EVENING, herAddresses: ME });
+    expect(due.map((e) => e.calendar_uid)).toEqual(["b4", "t1"]);
+    // A series or title she said was personal is never asked about again.
+    expect(dueMeetings([terri, { ...terri, calendar_uid: "t2", ical_uid: "t2@google.com", scheduled_at: FRI_NOON }], { now: EVENING, personal: { series: ["t1@google.com"], titles: [] } }).map((e) => e.calendar_uid)).toEqual(["t2"]);
+  });
+
   it("the ICS feed carries who is invited and the join link", () => {
     const ics = "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:z9@google.com\nSUMMARY:Call- Jo Fake\nDTSTART:20261030T170000Z\nDTEND:20261030T173000Z\nATTENDEE;CN=Jo Fake:mailto:jo@fake.example\nLOCATION:https://zoom.us/j/123\nEND:VEVENT\nEND:VCALENDAR";
     const [e] = parseIcs(ics, Date.parse("2026-10-29T12:00:00Z"), 5).events;

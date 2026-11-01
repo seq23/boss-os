@@ -18,7 +18,9 @@ export declare function offersFrom(o: { context?: any; firm?: string | null; lea
 export declare function sameCalendarEvent(a: any, b: any): boolean;
 export declare function dedupeEvents(events: any[]): any[];
 export declare function prepKey(e: any): string;
-export declare function dueMeetings(events: any[], opts?: { now?: number; sent?: Set<string>; day?: string | null }): any[];
+export declare function dueMeetings(events: any[], opts?: { now?: number; sent?: Set<string>; day?: string | null; herAddresses?: string[]; personal?: { series?: string[]; titles?: string[] } | null }): any[];
+export declare function meetingKind(event: any, opts?: { herAddresses?: string[]; personal?: { series?: string[]; titles?: string[] } | null }): "personal" | "work" | "unsure";
+export declare function ignoreReplyIn(text: unknown): boolean;
 export declare function nameFromTitle(title: unknown, herNames?: string[]): string | null;
 export declare function others(event: any, herAddresses?: string[]): any[];
 export declare function recordsFor(who: { email?: string | null; name?: string | null }, data: any): any;

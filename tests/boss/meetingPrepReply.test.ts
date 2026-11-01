@@ -8,7 +8,7 @@ import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleBossInboundMail } from "../../src/worker/boss/intake/inboundMail";
 import { recordMailRefs } from "../../src/worker/boss/intake/mailRefs";
-import { macWork, getCommand, openMeetingPrep, prepFinished, prepMentions } from "../../src/worker/boss/commands/run";
+import { macWork, getCommand, openMeetingPrep, prepFinished, prepMentions, personalPreps } from "../../src/worker/boss/commands/run";
 import { setCommandFetch } from "../../src/worker/boss/commands/google";
 import { ERRAND_SENDERS } from "../../src/shared/boss/commands/parse.mjs";
 
@@ -68,6 +68,17 @@ describe("the reply round trip", () => {
     await prepFinished(env as never, id, {});
     await herReply("cancel");
     expect((await getCommand(env as never, id))!.state).toBe("cancelled");
+  });
+
+  it("her 'ignore, it's a brunch' cancels the prep, no prep is written, and the event is remembered as personal (owner, 1 Nov 2026)", async () => {
+    const id = await openMeetingPrep(env as never, { key: "brunch1@google.com|2026-11-01", spec: { ...spec, who: "Reservation at Fake Cafe", event: { ...spec.event, title: "Reservation at Fake Cafe" } }, asked: true });
+    await recordMailRefs(env.DB, { messageId: PREP_ID, refs: [id] });
+    await herReply("Ignore this is brunch with a friend\n\n\nSent from my iPhone");
+    const row = (await getCommand(env as never, id))!;
+    expect(row.state).toBe("cancelled");
+    expect(JSON.parse(row.result).purpose).toBeUndefined();
+    expect((await macWork(env as never)).preps).toHaveLength(0);
+    expect(await personalPreps(env as never)).toEqual({ series: ["brunch1@google.com"], titles: ["Reservation at Fake Cafe"] });
   });
 
   it("a reply on a thread with no prep code is not taken as a prep answer", async () => {

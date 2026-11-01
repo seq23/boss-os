@@ -343,10 +343,14 @@ async function main() {
 
   const sentState = readJson(SENT, { keys: [] });
   const sent = new Set(DAY || PREVIEW || DRY || FORCE ? [] : sentState.keys);
-  const due = dueMeetings(cal.events, { now, sent, day: DAY }).filter((e) => !ONLY || String(e.title ?? "").toLowerCase().includes(ONLY.toLowerCase()));
-  if (due.length === 0) { console.log(`meeting-prep: read ${cal.read} calendar(s), ${cal.events.length} event(s); no meeting due a prep now.`); return; }
+  const pick = (personal) => dueMeetings(cal.events, { now, sent, day: DAY, herAddresses: HER_ADDRESSES, personal }).filter((e) => !ONLY || String(e.title ?? "").toLowerCase().includes(ONLY.toLowerCase()));
+  if (pick(null).length === 0) { console.log(`meeting-prep: read ${cal.read} calendar(s), ${cal.events.length} event(s); no meeting due a prep now.`); return; }
 
   const api = await session();
+  // What her "ignore" replies remembered as personal is never asked about again (owner, 1 Nov 2026).
+  const personal = await api.get("/commands/meeting-prep/personal").catch((e) => { console.error(`meeting-prep: her personal events were not read (${e.message}); the title rules still apply`); return null; });
+  const due = pick(personal);
+  if (due.length === 0) { console.log("meeting-prep: every meeting due is one she said is personal; nothing sent."); return; }
   // From now on, every warm line she sends is on that person's record: her sent mail since the last
   // scan, once a day (warm-references.mjs; the backfill from 1 Sep is the first scan).
   const today = new Date(now).toISOString().slice(0, 10);

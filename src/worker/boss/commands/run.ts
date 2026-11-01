@@ -20,6 +20,7 @@
  */
 import type { Env } from "../env";
 import { todoEditsIn, matchTodo } from "../../../shared/boss/waiting/register.mjs";
+import { ignoreReplyIn } from "../../../shared/boss/meetingPrep/prep.mjs";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
 import { admitTask } from "../tasks/admit";
@@ -894,6 +895,13 @@ export async function openMeetingPrep(env: Env, input: { key: string; spec: Json
 
 async function answerMeetingPrep(env: Env, row: CommandRow, said: Json, now: number): Promise<string | null> {
   const spec = j(row.spec); const result = j(row.result);
+  // "Ignore, it's just a brunch" is an answer, never the meeting's purpose (owner, 1 Nov 2026): the
+  // prep is cancelled and the event's series and title are remembered as hers, so it is never asked again.
+  if (ignoreReplyIn(String(said.raw ?? said.note ?? ""))) {
+    await save(env, row.id, { state: "cancelled", result: { ...result, personal: true, ignored_at: now } }, now);
+    await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "meeting_prep_ignored", detail: { key: spec.key ?? null } });
+    return "Got it, that one's personal. No prep, and I won't ask about it again.";
+  }
   if (said.verb === "cancel") {
     await save(env, row.id, { state: "cancelled" }, now);
     return "OK, I'll leave this meeting's prep as it is.";
@@ -903,6 +911,15 @@ async function answerMeetingPrep(env: Env, row: CommandRow, said: Json, now: num
   await save(env, row.id, { state: "queued", result: { ...result, purpose: words.slice(0, 2000), answered_at: now } }, now);
   await audit(env.DB, { actor: "owner", lane: "ops", entityType: "boss_command", entityId: row.id, action: "meeting_prep_purpose", detail: { key: spec.key ?? null } });
   return `Thanks. I'm writing your prep for ${spec.who ?? "the meeting"} with that now. It comes back to you in this thread before the meeting.`;
+}
+
+/** What her "ignore" replies remembered: the series (the event's own id) and the title of each. */
+export async function personalPreps(env: Env): Promise<{ series: string[]; titles: string[] }> {
+  const rows = (await env.DB.prepare(`SELECT json_extract(spec, '$.key') AS k, json_extract(spec, '$.event.title') AS t FROM boss_commands WHERE kind = 'meeting_prep' AND json_extract(result, '$.personal') = 1 ORDER BY updated_at DESC LIMIT 500`)
+    .all<{ k: string | null; t: string | null }>()).results ?? [];
+  const series = [...new Set(rows.map((r) => String(r.k ?? "").split("|")[0]!).filter(Boolean))];
+  const titles = [...new Set(rows.map((r) => String(r.t ?? "").trim()).filter(Boolean))];
+  return { series, titles };
 }
 
 /** The preps her answer is waiting on, each with the thread to answer in (oldest message first). */
