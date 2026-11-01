@@ -115,6 +115,20 @@ export function markdownToHtml(md) {
 }
 
 /**
+ * A PAGE IS NEVER "DONE" OVER A CHANGE THAT WAS NOT MADE (owner incident, 1 Nov 2026). A ruling
+ * reached Camille as research; the page's summary said "Done as you ruled" while its own gaps said
+ * "the duty change itself … still has to be built … this research run cannot change code". The gap
+ * that says an asked-for change was not made, or null. Read by `runNeedsHerDecision` (the task is not
+ * accepted as done) and by `readResearchDelivery` (the summary says so first). Pure.
+ */
+const NOT_TAKEN_RE = /\b(?:still\s+(?:has|have|needs?)\s+to\s+be\s+(?:built|made|changed|applied|done|wired|added|implemented|updated)|(?:can\s*not|cannot|can't|could\s+not|couldn't|did\s+not|didn't|was\s+not\s+able\s+to)\s+(?:change|edit|apply|build|update|implement|wire|make\s+the\s+change)|(?:was|were|is|are|has|have)\s+not\s+(?:yet\s+)?(?:been\s+)?(?:changed|applied|built|implemented|updated|wired|made))\b/i;
+export function actionNotTaken(payload) {
+  const gaps = payload && typeof payload === "object" && Array.isArray(payload.gaps) ? payload.gaps : [];
+  const hit = gaps.map((g) => String(g ?? "")).find((g) => NOT_TAKEN_RE.test(g));
+  return hit ? hit.slice(0, 500) : null;
+}
+
+/**
  * The delivered payload, checked. Returns `{ ok: true, page }` or `{ ok: false, why }` — a run that
  * delivered no page is a failure by name (Rule 0), never an empty page filed as done.
  */
@@ -131,7 +145,9 @@ export function readResearchDelivery(payload) {
     .slice(0, 60);
   const gaps = (Array.isArray(payload.gaps) ? payload.gaps : []).map((g) => String(g).slice(0, 500)).slice(0, 30);
   const status = payload.status === "complete" && gaps.length === 0 ? "complete" : "partial";
-  return { ok: true, page: { title, summary: typeof p.summary === "string" ? p.summary.trim().slice(0, 1000) : "", markdown, sources, gaps, status } };
+  const summary = typeof p.summary === "string" ? p.summary.trim().slice(0, 1000) : "";
+  const notTaken = actionNotTaken(payload);
+  return { ok: true, page: { title, summary: notTaken ? `Not done yet: ${notTaken}` : summary, markdown, sources, gaps, status } };
 }
 
 /** The whole page, self-contained, calm, readable on a phone. */

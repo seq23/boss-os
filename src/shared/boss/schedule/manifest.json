@@ -3212,6 +3212,24 @@
       }
     },
     {
+      "id": "pnp-photo-ask",
+      "name": "Marketplace listings: real job photos first",
+      "what": "Checks both real-job-photo sources before the listings run, and asks her for more at most once a week when nothing new has come in for two weeks (owner ruling, 1 Nov 2026).",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "mac",
+      "slots": [
+        "daily 06:20"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-pnp-photos"
+        ]
+      }
+    },
+    {
       "id": "practice-week",
       "name": "Practice: the week ahead",
       "what": "Imani plans the week's practice.",

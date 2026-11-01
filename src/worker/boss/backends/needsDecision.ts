@@ -1,3 +1,4 @@
+import { actionNotTaken } from "../../../shared/boss/research/page.mjs";
 /**
  * WHAT THE INBOX IS FOR, AND WHY THE EXECUTIVE REPORT WAS NEVER IT.
  *
@@ -131,6 +132,15 @@ export function runNeedsHerDecision(
       reason: `This run was contracted to deliver "${declared}", and nothing in Boss OS handles that — so its output landed nowhere`,
       delivers: null,
     };
+  }
+
+  /*
+   * A RESEARCH PAGE WHOSE OWN GAPS SAY THE CHANGE WAS NOT MADE IS NOT DONE (1 Nov 2026). Accepting it
+   * closed her ruling as "done" while nothing changed. It comes to her with the gap as the reason.
+   */
+  const notTaken = delivers === "research_page" ? actionNotTaken(evidence?.delivers) : null;
+  if (notTaken) {
+    return { needed: true, reason: `The page says the change you asked for was not made: ${notTaken}`, delivers };
   }
 
   if (delivers === null) {

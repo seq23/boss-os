@@ -41,6 +41,8 @@ export const MORNING_SECTIONS = Object.freeze([
   // Mondays: the weekly Search Readiness check of the grid repo sites (scripts/ops/search-readiness-audit.mjs).
   "grid_repos",
   "pnp_outreach",
+  // Camille's Marketplace listings: the at-most-weekly ask for new real-job photos (scripts/ops/pnp-photo-ask.mjs).
+  "pnp_marketplace",
 ]);
 export const STALE_MS = 30 * 3_600_000;
 

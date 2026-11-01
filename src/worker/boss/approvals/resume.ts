@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 import { recordDeliverableActivity } from "../today/deliverables";
 import { createDutyFromDraft, DutyCannotRun } from "../duties/create";
+import { editDuty } from "../duties/ownerEdits";
 import { createGmailDraft } from "../wealth/gmailDraft";
 import { OUTREACH_MAILBOX } from "../outreach/catalog";
 
@@ -384,6 +385,24 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
    * They were checked when the draft was raised. Between then and now, a handler could have been
    * removed or the schedule could have grown. Checking once is how a validator becomes a formality.
    */
+  /*
+   * HER RULING ON AN EXISTING DUTY, APPROVED (1 Nov 2026, duties/editByMail.ts). The instructions
+   * she read on the card are applied through `editDuty`, the employee page's own path, so the
+   * change is a `duty_versions` row and Undo on the page puts it back.
+   */
+  duty_edit: async (env, j, verdict, note, now) => {
+    if (verdict === "try_again") {
+      return { detail: note ? "Sent back. The duty is unchanged, and your note is on the record." : "Sent back. The duty is unchanged." };
+    }
+    const row = await env.DB.prepare(`SELECT resume_detail FROM judgement_calls WHERE id = ?`).bind(j.id).first<{ resume_detail: string | null }>();
+    let detail: { duty_id?: string; instructions?: string } | null = null;
+    try { detail = row?.resume_detail ? JSON.parse(row.resume_detail) : null; } catch { detail = null; }
+    if (!detail?.duty_id || !detail.instructions) {
+      throw new Error("The change this approval was for is missing, so nothing was applied. It stays on your screen.");
+    }
+    const r = await editDuty(env, detail.duty_id, { instructions: detail.instructions }, now);
+    return { detail: r.changed.length ? "Applied now. The duty carries your change; Undo on the employee page puts it back." : "The duty already says this; nothing needed changing.", duty_id: detail.duty_id };
+  },
   duty_created: async (env, j, verdict, note, now) => {
     if (verdict === "try_again") {
       await env.DB

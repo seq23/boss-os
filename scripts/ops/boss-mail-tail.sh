@@ -76,6 +76,8 @@ fi
 rm -rf "$FIXLOCK"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+LOCAL_STAMP="$(date +%Y%m%d-%H%M%S)"
+WORKTREE="$HOME/GitHub/.wt-danielle-boss-os-$LOCAL_STAMP"
 TAIL_LOG="$STATE_DIR/tail-$STAMP.jsonl"
 PROMPT_FILE="$STATE_DIR/tail-$STAMP.prompt.txt"
 REPORT_FILE="$STATE_DIR/report-$STAMP.txt"
@@ -109,13 +111,24 @@ wait; a question back to her for something her email already said; a repo the la
 named it plainly; a reply that opened a stray new job instead of reaching its own; a block email
 missing its plain-English reason or the exact reply that clears it; anything that ran and did nothing.
 
-Fix in the repo that owns the defect (usually $REPO; a job's own target repo when the defect is
-there): root cause, fix at source, never weaken or skip a test, guard the fix with a test, open a PR,
-run 'gh pr checks <pr>' yourself and land it with '$HOME/bin/land <pr>' (it watches main and
-deploys). Agents never spend money. Never echo a secret. Check open PRs and branches for a sibling
-fix before building one; never discard work you did not write.
+Fix in the repo that owns the defect (usually boss-os; a job's own target repo when the defect is
+there). For boss-os: WORK IN A WORKTREE, NEVER IN $REPO ITSELF — $REPO is your main checkout and
+must stay on main, clean, the whole time (a dirty $REPO makes other jobs read a stale checkout).
+First: 'git -C $REPO worktree add $WORKTREE -b fix/<short-slug> origin/main', then do every
+read, edit, build and test inside $WORKTREE, never in $REPO. Root cause, fix at source, never weaken
+or skip a test, guard the fix with a test. COMMIT inside $WORKTREE before any wait longer than a
+couple of minutes, and again before ending your turn for ANY reason — uncommitted work in a
+worktree nothing points at is work that can be lost. Push and open the PR yourself; run
+'gh pr checks <pr>' yourself and land it with '$HOME/bin/land <pr>' (it watches main and deploys).
+NEVER hand a fix to a background subagent and end your own turn to wait for it — finish the fix
+inline, in this same turn, or leave it visibly unfinished (committed, pushed, PR open) and say so in
+the report; a turn that ends with work still running in the background is a turn that can be killed
+before it reports. Agents never spend money. Never echo a secret. Check open PRs and branches for a
+sibling fix (including a worktree salvaged from an earlier killed run) before building one; never
+discard work you did not write.
 
-RECORD:
+RECORD — write BOTH of these before your very last message, even if a fix is still unfinished (say
+so in the report rather than omitting it):
   a. APPEND to $FIXLOG (never overwrite), under 150 words:
      ## <UTC time> — <mail id(s)>
      - **Her email:** <subject> → <seat(s)>
@@ -134,7 +147,7 @@ mkdir -p "$FIXLOCK"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$FIXLOCK/started_at"
 printf '%s\n' "$PENDING" | awk -F'\t' '{print $1}' >> "$TAILED_FILE"
 CLAUDE="${BOSS_MAIL_TAIL_CLAUDE_BIN:-$(command -v claude || echo /opt/homebrew/bin/claude)}"
-nohup bash "$REPO/scripts/ops/boss-mail-tail-run.sh" "$PROMPT_FILE" "$TAIL_LOG" "$FIXLOCK" "$CLAUDE" "$REPORT_FILE" "$SUBJECTS" </dev/null >/dev/null 2>&1 &
+nohup bash "$REPO/scripts/ops/boss-mail-tail-run.sh" "$PROMPT_FILE" "$TAIL_LOG" "$FIXLOCK" "$CLAUDE" "$REPORT_FILE" "$SUBJECTS" "$LOCAL_STAMP" </dev/null >/dev/null 2>&1 &
 echo "$!" > "$FIXLOCK/pid"
 disown "$!" 2>/dev/null
 echo "[tail] agent dispatched (pid $(cat "$FIXLOCK/pid")) for $COUNT email(s): $SUBJECTS"
