@@ -181,6 +181,32 @@ export async function admitTask(env: Env, b: AdmitInput): Promise<AdmitResult> {
   }
 
   /*
+   * ─── A JOB IN HER OWN CHROME IS A CHROME JOB, ON EVERY DOOR (1 Nov 2026) ─────────────────
+   *
+   * "One-time Chrome job … give it to whoever on the team already works in my Chrome" became a
+   * research page (WebSearch/WebFetch, no Chrome). Her explicit Chrome words win over the research
+   * reading: the task names Camille's Claude Code seat with `requested.browser: "chrome"`, which the
+   * queue keeps on Claude's seat only (consumer.ts) and the runner turns into Claude in Chrome
+   * (src/shared/boss/intake/chromeJob.mjs). Read before the research page, so it never becomes one.
+   */
+  const { chromeJobIn, composeChromePrompt, CHROME_JOB_SEAT, CHROME_JOB_BACKEND, CHROME_JOB_REQUESTED } =
+    await import("../../../shared/boss/intake/chromeJob.mjs");
+  const chromeAsk = !firmScan && !change && input.chrome_job === undefined && !(input.research_page && typeof input.research_page === "object") &&
+      input.delivers === undefined && input.backend_id === undefined && input.spec_module === undefined &&
+      (employeeHint === null || employeeHint === CHROME_JOB_SEAT) &&
+      chromeJobIn([b.title, input.body as string | undefined].filter(Boolean).join("\n"));
+  if (chromeAsk) {
+    const ask = String((input.body as string | undefined) ?? b.title).replace(/^\s*research(?:\s+page)?\s*[:\-–—]\s*/i, "");
+    Object.assign(input as Record<string, unknown>, {
+      chrome_job: true,
+      backend_id: CHROME_JOB_BACKEND,
+      requested: { ...CHROME_JOB_REQUESTED, allowed_paths: [...CHROME_JOB_REQUESTED.allowed_paths] },
+      prompt: composeChromePrompt({ ask }),
+    });
+    employeeHint = CHROME_JOB_SEAT;
+  }
+
+  /*
    * ─── "#camille research: <question>" IS A RESEARCH PAGE, ON EVERY DOOR (22 Oct 2026) ─────
    *
    * The owner: "give Camille a real executor for research deliverables (output: an HTML/markdown

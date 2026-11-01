@@ -32,6 +32,8 @@
  * to work. What may NEVER be handed over is a capability only one executor holds.
  */
 
+import { chromeJobIn } from "../intake/chromeJob.mjs";
+
 /**
  * Words that put the TASK ITSELF inside one of her own accounts. Matched on `what` only — the `why`
  * may mention Amazon ("Amazon rejects the cover") for work that is plainly a colleague's asset job.
@@ -39,7 +41,7 @@
 export const OWNER_ACCOUNT_WEB_RE =
   /\b(kdp|kindle direct|seller central|bookshelf|title-setup|details tab|(?:re)?publish(?:ing)?|press publish|sign[ -]?in|log[ -]?in|password|two[- ]factor|2fa)\b/i;
 
-export const CAPABILITIES = Object.freeze(["owner_account_web", "colleague_work", "repo_change", "research_page", "owner_spend"]);
+export const CAPABILITIES = Object.freeze(["owner_account_web", "owner_chrome", "colleague_work", "repo_change", "research_page", "owner_spend"]);
 
 /**
  * ─── AGENTS NEVER SPEND MONEY (owner, 22 Oct 2026) ─────────────────────────
@@ -91,6 +93,13 @@ export const SEAT_EXECUTORS = Object.freeze({
    */
   emp_research: Object.freeze({
     research_page: "Camille's Claude Code seat on her Mac (bk_claude_code, claimed through /backends/claim, delivers research_page): npm run agent:claim",
+    /*
+     * CAMILLE'S CHROME JOBS (1 Nov 2026). Work in the owner's own Chrome ("Chrome job", "in my
+     * Chrome") — the Chrome where Camille already runs the Marketplace listings. Parked for Claude's
+     * seat only, envelope `browser: "chrome"` → `claude --print --chrome` with the Claude in Chrome
+     * tools (src/shared/boss/intake/chromeJob.mjs).
+     */
+    owner_chrome: "Camille's Claude Code seat on her Mac with Claude in Chrome (bk_claude_code only, envelope browser: chrome): npm run agent:claim",
   }),
 });
 
@@ -98,6 +107,7 @@ export const SEAT_EXECUTORS = Object.freeze({
 export function requiredCapability({ what = "", why = "", requires = null } = {}) {
   // A spend step wins over everything: no label routes money around the rule.
   if (spendStepIn(what)) return "owner_spend";
+  if (chromeJobIn(what)) return "owner_chrome";
   if (OWNER_ACCOUNT_WEB_RE.test(String(what))) return "owner_account_web";
   if (requires && CAPABILITIES.includes(String(requires))) return String(requires);
   return "colleague_work";

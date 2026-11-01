@@ -36,7 +36,7 @@ import { answerBlockFromMail } from "../service/blockReply";
 import { recordConstraints } from "../service/constraints";
 import { recordDriveWatches } from "../service/macWaits";
 import { standingConstraintsIn } from "../../../shared/boss/service/practices.mjs";
-import { dueTimeIn, dueLine } from "../../../shared/boss/service/dueTime.mjs";
+import { dueTimeIn, dueLine, notBeforeIn, heldDue } from "../../../shared/boss/service/dueTime.mjs";
 import { commandFromMail, openErrandFor, errandReplied } from "../commands/run";
 
 /**
@@ -607,7 +607,11 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
     ? `Standing rule${constraints.length === 1 ? "" : "s"} noted for every employee from now on: ${constraints.join(" · ")}${constraintsAdded < constraints.length ? " (some were already on record)" : ""}.`
     : null;
   // R12 — a deadline in her words rides on the task and is stated to the employee.
-  const due = dueTimeIn(`${subject}\n${own}`, new Date(now));
+  // A start she named ("tomorrow … after 9am") holds the work until then, and a deadline before that
+  // start is not hers (1 Nov 2026: a past-tense "today" made a Monday job URGENT on Sunday).
+  const notBefore = notBeforeIn(`${subject}\n${own}`, new Date(now));
+  const due = heldDue(dueTimeIn(`${subject}\n${own}`, new Date(now)), notBefore);
+  const notBeforeMs = notBefore ? Date.parse(notBefore.at) : null;
 
   const origin = readable ? forwardedOrigin(readable) : null;
   const trueSubject = origin?.subject ? decodeMimeHeader(origin.subject) : subject;
@@ -939,10 +943,11 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       // "your call" anywhere in her email pre-approves every job in it.
       if (preApproved && !preApprovalIn(body)) body = `${body}\n\n(Her email said "${preApproved}": pre-approved.)`;
       // Camille's executor is the research page; a question she was handed IS one.
-      if (job.seat.id === "emp_research" && !parseResearchPage([title, body])) body = `research: ${body}`;
+      // Not a Chrome job: that is work in her Chrome, never a page (admitTask reads it, 1 Nov 2026).
+      if (job.seat.id === "emp_research" && !job.chrome && !parseResearchPage([title, body])) body = `research: ${body}`;
       try {
         const admitted = await admitTask(env, {
-          title, lane: job.seat.lane, employee_id: job.seat.id,
+          title, lane: job.seat.lane, employee_id: job.seat.id, not_before: notBeforeMs,
           input: {
             source: "boss_inbound_mail", mail_id: mailId, from: sender,
             ...(origin?.from ? { forwarded_from: origin.from } : {}),
@@ -951,6 +956,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
             triage: { part: i + 1, of: triaged.length, closest: job.closest },
             ...(job.seat.id === "emp_repo" ? { build_ask: true } : {}),
             ...(due ? { due } : {}),
+            ...(notBefore ? { not_before: notBefore } : {}),
             body,
             ...(objectKey ? { raw_message: objectKey } : {}),
           },
@@ -979,6 +985,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
         title: strippedSubject(trueSubject) || shortTitle(readable, 80) || `Mail from ${sender}`,
         lane: route.seat.lane,
         employee_id: route.seat.id,
+        not_before: notBeforeMs,
         input: {
           source: "boss_inbound_mail",
           mail_id: mailId,
@@ -992,6 +999,7 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
           ...(hunt ? { hunt } : {}),
           ...(bookNote ? { live_book: bookNote } : {}),
           ...(due ? { due } : {}),
+          ...(notBefore ? { not_before: notBefore } : {}),
           /*
            * `body` IS THE INSTRUCTION. Not the message, not the headers, not the markup — the words.
            * Guarded by `scripts/validate/a-task-body-is-not-a-mime-message.mjs`, which fails on a
@@ -1104,6 +1112,7 @@ function headline(text: string): string {
   const serviceLines = [
     ...(secrets?.line ? [secrets.line] : []),
     ...(constraintNote ? [constraintNote] : []),
+    ...(notBefore && taskId ? [`Held until ${dueLine({ due_at: notBefore.at, due_words: notBefore.words })!.replace(/^due /, "")}; nothing starts before then.`] : []),
     ...(due && taskId ? [`Deadline read from your words: ${dueLine(due)}.`] : []),
   ];
   const reply = stopped ? [

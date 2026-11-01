@@ -152,6 +152,42 @@ describe("an unknown tag is never guessed and never dropped", () => {
     expect(res.reply).not.toContain("Nobody here answers to");
   });
 
+  /*
+   * 1 NOV 2026, PRODUCTION: a Chrome job typed on Sunday for Monday 9am became a research page
+   * (WebSearch/WebFetch, no Chrome), due "today" URGENT from a past-tense "today", and ran at once.
+   * The same words (sanitized) must reach Camille's Chrome executor, held until Monday 9:00 Central.
+   */
+  it("a Chrome job for tomorrow after 9am goes to the seat in her Chrome, held until then, never a research page", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(Date.parse("2026-11-01T21:01:45Z")); // Sun 1 Nov, 15:01 CT
+    try {
+      const res = await handleBossInboundMail(mail({
+        subject: "",
+        body: "One-time Chrome job for tomorrow, Monday 2 Nov, after 9am Central — give it to whoever on the team already works in my Chrome (Camille does the Facebook listings there). Your call, no need to ask me.\n\n"
+          + "Task: in Pinterest, on the example account, connect the RSS feed for one board (Settings → Bulk create Pins → add feed). Pinterest refused this one today only because the feed was empty.\n\n"
+          + "Done = the feed shows as connected. If Pinterest still refuses it, try again Tuesday and tell me only if it fails twice. Do not change any other Pinterest setting.",
+      }), env as never);
+      expect(res.outcome).toBe("TRIAGED");
+      expect(res.employeeId).toBe("emp_research");
+      const task = await env.DB.prepare(`SELECT input FROM tasks WHERE id = ?`).bind(res.taskId).first<{ input: string }>();
+      const input = JSON.parse(task!.input);
+      expect(input.chrome_job).toBe(true);
+      expect(input.research_page).toBeUndefined();
+      expect(input.delivers).toBeUndefined();
+      expect(input.backend_id).toBe("bk_claude_code");
+      expect(input.requested.browser).toBe("chrome");
+      expect(input.requested.web_tools).toBeUndefined();
+      expect(input.body).not.toMatch(/^research/i);
+      expect(input.prompt).toContain("Claude in Chrome");
+      // Held until Monday 2 Nov 09:00 Central (CST, UTC-6), and the deadline is that day, not "today".
+      expect(input.not_before.at).toBe("2026-11-02T15:00:00.000Z");
+      expect(input.due.priority).toBe("HIGH");
+      expect(Date.parse(input.due.due_at)).toBeGreaterThan(Date.parse("2026-11-02T15:00:00.000Z"));
+      expect(res.reply).toContain("Held until Mon, Nov 2");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("still names the whole roster when it ALSO has to ask a question", async () => {
     const roster = await activeRoster(env as never);
     const res = await handleBossInboundMail(mail({ subject: "#gertrude please" }), env as never);

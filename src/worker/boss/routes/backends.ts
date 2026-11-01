@@ -542,6 +542,8 @@ backends.post("/claim", async (c) => {
      */
     if (Array.isArray(requested.materials) && requested.materials.length) envelope.materials = requested.materials;
     if (Array.isArray(requested.web_tools) && requested.web_tools.length) envelope.web_tools = requested.web_tools;
+    // A Chrome job (1 Nov 2026): passed through like web_tools; the runner admits it on Claude's seat only.
+    if (typeof requested.browser === "string" && requested.browser) envelope.browser = requested.browser;
 
     await c.env.DB
       .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'claimed',?)`)
