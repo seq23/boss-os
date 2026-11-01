@@ -76,7 +76,14 @@ async function main() {
   const prior = await api.get("/lp/replies");
   const skipped = new Set((prior.rows ?? []).filter((r) => r.status === "skipped").map((r) => r.address));
   const { refreshPositive } = await import("./lp-positive.mjs");
-  const { people } = await refreshPositive();
+  const { people, seenAddresses } = await refreshPositive();
+  // Every reply and opt-out on the drip's Reply Queue before its ~07:30 run (1 Nov 2026): a call-ask
+  // read on Friday was otherwise only queued by Tuesday's lp-outcomes, and got the final email Sunday.
+  // A failure here is loud in the log and never blocks the held replies below.
+  try {
+    const { syncReplies } = await import("./lp-bounces.mjs");
+    await syncReplies({ seenAddresses, people, commit: !dry });
+  } catch (e) { console.log(`note: ${e.message}`); }
   if (dry) {
     console.log(`DRY RUN: ${people.length} positive replies on the list; ${skipped.size} skipped in Boss OS. No draft written, nothing posted.`);
     return;

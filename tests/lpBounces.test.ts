@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  hardBouncedAddresses, twinReplyQueueRows, sendsAfterBounce, neverBounceVerdict, verifyFirstSends, NEVERBOUNCE_MAX_PER_RUN,
+  hardBouncedAddresses, twinReplyQueueRows, twinReplyQueueFromReplies, sendsAfterBounce, neverBounceVerdict, verifyFirstSends, NEVERBOUNCE_MAX_PER_RUN,
 } from "../src/shared/boss/lp/bounces.mjs";
 
 const GMAIL_DSN = [
@@ -129,5 +129,32 @@ describe("the bounce read runs before every sender in the mailbox", () => {
     const bounces = fs.readFileSync("scripts/ops/lp-bounces.mjs", "utf8");
     expect(bounces).toMatch(/Reply Queue/);
     expect(bounces).toMatch(/\/lp\/prospects\/suppress/);
+  });
+});
+
+describe("every reply, opt-out and call-ask goes on Reply Queue before the drip runs (1 Nov 2026)", () => {
+  it("queues people who wrote back, once each, in the tab's own columns with status new; skips autoresponders and screened-out mail", () => {
+    const sentRows = [sentRow("call.me@fo.example.com", "2"), sentRow("stop.it@endow.example.org", "1"), sentRow("ooo@pension.example.org")];
+    const replies = new Map<string, { bucket: string; when?: string; name?: string }>([
+      ["call.me@fo.example.com", { bucket: "call", when: "2026-10-30" }],
+      ["stop.it@endow.example.org", { bucket: "negative", when: "2026-10-31" }],
+      ["never.emailed@fo.example.com", { bucket: "warm", when: "2026-10-01", name: "Sam Sample" }],
+      ["ooo@pension.example.org", { bucket: "auto", when: "2026-10-31" }],
+      ["list@news.example.com", { bucket: "bulk_list_unsubscribe", when: "2026-10-31" }],
+      ["done.before@fo.example.com", { bucket: "other", when: "2026-09-01" }],
+    ]);
+    const rows = twinReplyQueueFromReplies({ sentRows, replies, queued: new Set(["done.before@fo.example.com"]) });
+    expect(rows.map((r) => r[0]).sort()).toEqual(["call.me@fo.example.com", "never.emailed@fo.example.com", "stop.it@endow.example.org"]);
+    for (const r of rows) { expect(r).toHaveLength(6); expect(r[5]).toBe("new"); }
+    const call = rows.find((r) => r[0] === "call.me@fo.example.com")!;
+    expect(call.slice(1, 4)).toEqual(["Pat Example", "Example Pension", "2026-10-30"]);
+    expect(rows.find((r) => r[0] === "never.emailed@fo.example.com")![1]).toBe("Sam Sample");
+    // Idempotent: a second run over the same mailbox, with today's rows now on the tab, adds nothing.
+    expect(twinReplyQueueFromReplies({ sentRows, replies, queued: new Set<string>([...rows.map((r) => String(r[0])), "done.before@fo.example.com"]) })).toEqual([]);
+  });
+
+  it("zero replies handed over is a named stop, never an empty success", () => {
+    expect(() => twinReplyQueueFromReplies({ sentRows: [], replies: new Map() })).toThrow(/NAMED STOP \[NO_REPLIES_READ\]/);
+    expect(() => twinReplyQueueFromReplies({ sentRows: [], replies: new Map([["a@b.example.com", { bucket: "auto" }]]) })).toThrow(/NO_REPLIES_READ/);
   });
 });

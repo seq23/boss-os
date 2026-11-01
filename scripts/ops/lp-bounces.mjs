@@ -23,7 +23,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { hardBouncedAddresses, twinReplyQueueRows, sendsAfterBounce } from "../../src/shared/boss/lp/bounces.mjs";
+import { hardBouncedAddresses, twinReplyQueueRows, twinReplyQueueFromReplies, sendsAfterBounce } from "../../src/shared/boss/lp/bounces.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures";
 const SHEET = process.env.LP_SOURCE_SHEET ?? "1Riww0SiaLb_vxHjUpruSdkNemBEndcQrDQgu7Ly9rRA";
@@ -137,6 +137,34 @@ export async function syncBounces({ days = 7, commit = false, api = null, log = 
   if (local.length) { fs.mkdirSync(OUT_DIR, { recursive: true }); fs.appendFileSync(suppressPath, `${local.join("\n")}\n`, { mode: 0o600 }); }
   log(`bounces written: ${queueRows.length} on Twin's Reply Queue, ${suppressed} newly suppressed in Boss OS, ${local.length} added to ${suppressPath}.`);
   return { notices, hard: hard.size, queued: queueRows.length, suppressed, after: after.length };
+}
+
+/**
+ * REPLIES ON REPLY QUEUE, EVERY MORNING (1 Nov 2026; rules: twinReplyQueueFromReplies in
+ * src/shared/boss/lp/bounces.mjs). `seenAddresses` is refreshPositive's read of the mailbox,
+ * `people` its running positive list. Appends only rows not already on the tab; never removes one.
+ */
+export async function syncReplies({ seenAddresses, people = [], commit = false, log = console.log } = {}) {
+  const raw = process.env.GSC_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("NAMED STOP [NO_SERVICE_ACCOUNT] run through the vault: npm run lp:daily");
+  const replies = new Map(seenAddresses ?? []);
+  for (const p of people ?? []) {
+    const a = String(p.address ?? "").toLowerCase();
+    if (a && !["call", "warm"].includes(replies.get(a)?.bucket)) replies.set(a, { bucket: p.bucket, when: p.first_seen, name: p.name });
+  }
+  const sheetTok = await accessToken(JSON.parse(raw), commit ? "https://www.googleapis.com/auth/spreadsheets" : "https://www.googleapis.com/auth/spreadsheets.readonly", null);
+  const sentRows = (await sheet(sheetTok, `${SENT_TAB}!A1:J6000`)).slice(1);
+  const queued = new Set((await sheet(sheetTok, `${REPLY_TAB}!A1:A3000`)).map((r) => String(r[0] ?? "").trim().toLowerCase()));
+  const rows = twinReplyQueueFromReplies({ sentRows, replies, queued });
+  if (!commit) { log(`DRY RUN: would queue ${rows.length} repl(ies) on the drip's Reply Queue.`); return { queued: 0, pending: rows.length }; }
+  if (rows.length) {
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET}/values/${encodeURIComponent(`${REPLY_TAB}!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      method: "POST", headers: { authorization: `Bearer ${sheetTok}`, "content-type": "application/json" }, body: JSON.stringify({ values: rows }),
+    });
+    if (!res.ok) throw new Error(`NAMED STOP [REPLY_QUEUE_WRITE] the drip's Reply Queue refused the append (${res.status}); ${rows.length} person(s) who wrote back would keep getting the drip.`);
+  }
+  log(`replies queued: ${rows.length} new on the drip's Reply Queue (counts only; names stay in the sheet).`);
+  return { queued: rows.length, pending: 0 };
 }
 
 async function main() {

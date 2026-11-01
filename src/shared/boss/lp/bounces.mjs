@@ -77,6 +77,53 @@ export function twinReplyQueueRows({ sentRows, hard, queued = new Set() }) {
 }
 
 /**
+ * REPLIES STOP THE DRIP TOO (1 Nov 2026). The drip's sender honours Reply Queue (it marks each
+ * "new" row "Processed" and closes the sequence), but replies only reached the tab from the Tuesday
+ * lp-outcomes run: a call-ask that came in on a Friday got the final soft close on the Sunday.
+ * lp-daily now queues every human reply each morning (06:15 Central, before the ~07:30 send).
+ *
+ * Which replies: the screened buckets a person wrote (call, warm, declined / asked to be removed,
+ * left the firm, anything else they typed). Autoresponders are not a reply and are not queued.
+ * `replies` = Map(address → { bucket, when }) from refreshPositive's `seenAddresses` (dropped
+ * messages carry their drop reason as the bucket, so they fall out here), plus the running
+ * positive list, which keeps every call / warm reply ever read, including ones the sender never
+ * emailed. One row per address, never one already on the tab. Same columns as the bounce rows.
+ *
+ * Zero replies in is a NAMED STOP, not an empty success: the mailbox holds dozens of replies, so a
+ * read that hands over none is a broken read. (All of them already queued → zero rows is correct.)
+ */
+export const REPLY_BUCKETS = new Set(["call", "warm", "negative", "departed", "other"]);
+const REPLY_NOTE = {
+  call: "Replied asking for a call: stop the drip; she answers and schedules it.",
+  warm: "Replied with interest: stop the drip; she answers in person.",
+  negative: "Declined or asked to be removed: stop the drip and never email again.",
+  departed: "Replied that the person has left the firm: stop the drip.",
+  other: "Replied: stop the drip; she answers in person.",
+};
+export function twinReplyQueueFromReplies({ sentRows, replies, queued = new Set() }) {
+  const usable = [...(replies ?? new Map())].filter(([a, r]) => String(a).includes("@") && REPLY_BUCKETS.has(r?.bucket));
+  if (!usable.length) throw new Error("NAMED STOP [NO_REPLIES_READ] the morning read handed over zero replies; the drip would not be told about anyone who wrote back.");
+  const byAddress = new Map();
+  for (const r of sentRows ?? []) {
+    const a = String(r?.[5] ?? "").trim().toLowerCase();
+    if (a.includes("@") && !byAddress.has(a)) byAddress.set(a, r);
+  }
+  const rows = [];
+  const seen = new Set(queued);
+  for (const [raw, r] of usable) {
+    const a = String(raw).trim().toLowerCase();
+    if (seen.has(a)) continue;
+    seen.add(a);
+    const s = byAddress.get(a);
+    rows.push([
+      a, s ? `${s[1] ?? ""} ${s[2] ?? ""}`.trim() : String(r.name ?? ""), s?.[3] ?? "", String(r.when ?? "").slice(0, 10),
+      REPLY_NOTE[r.bucket], "new",
+    ]);
+  }
+  return rows;
+}
+
+/**
  * How many emails went to an address AFTER it had hard-bounced. `sends` = [{to: [addr], at: ms}].
  * The measurement behind this fix, and the number that must stay at zero.
  */
