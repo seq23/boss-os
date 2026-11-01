@@ -602,6 +602,38 @@ lint_plist "$COHESION_PLIST"
 launchctl load "$COHESION_PLIST"
 echo "Installed $COHESION_LABEL — Monday 06:05 Central."
 
+# Time-2-Read's money numbers (owner's approval, 1 Nov 2026): paying subscribers, MRR, trial starts,
+# trial -> paid rate and free signups, read from the dailystory Supabase tables (and live Stripe once a
+# Time-2-Read restricted key is in the vault) into the time-2-read brain's Numbers rows, which the
+# Scoreboard reads. Wednesday 07:30 Central, ahead of the Wednesday Spry Labs weekly email. One vault
+# read per run (vault:run) carries BOSS_PASSCODE and DAILYSTORY_SUPABASE_SERVICE_ROLE_KEY. A source it
+# cannot read is a named "not read: <reason>" in the cell (scripts/brains/t2r-numbers.mjs).
+T2R_NUMBERS_LABEL="com.seq.boss-t2r-numbers"
+T2R_NUMBERS_PLIST="$HOME/Library/LaunchAgents/$T2R_NUMBERS_LABEL.plist"
+cat > "$T2R_NUMBERS_PLIST" <<T2RNEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$T2R_NUMBERS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- npm run --silent brains:t2r-numbers</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>$BRAINS_LOGS/t2r-numbers.log</string>
+  <key>StandardErrorPath</key><string>$BRAINS_LOGS/t2r-numbers.err</string>
+</dict></plist>
+T2RNEOF
+launchctl unload "$T2R_NUMBERS_PLIST" 2>/dev/null || true
+lint_plist "$T2R_NUMBERS_PLIST"
+launchctl load "$T2R_NUMBERS_PLIST"
+echo "Installed $T2R_NUMBERS_LABEL — Wednesday 07:30 Central."
+
 # ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
 #
 # Owner, 25 Oct 2026: the queue was worked to empty that day; after that it runs WEEKLY, Tuesday 07:30

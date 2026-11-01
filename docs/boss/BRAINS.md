@@ -63,6 +63,10 @@ route), `dispatchRunForTask` (any other seat's run row) and `/backends/claim` (a
   week stamped on arrival). `GET /cohesion` returns ONE `line` for the Monday email ("Cohesion: all
   clear", or what was fixed and what was not); with no Mac record this week it says the check did not
   run, never "all clear". Never red.
+- Time-2-Read's money rows (`npm run brains:t2r-numbers`, launchd `com.seq.boss-t2r-numbers`, Wednesday
+  07:30 Central): GET the brain, `setNumber` the five rows (Value and Last updated only), PUT
+  `{ section: "Numbers", text }`. Sources and exclusions are in `scripts/brains/t2r-numbers.mjs`'s header.
+  By hand: `npm run -s vault:run -- node scripts/brains/t2r-numbers.mjs --dry-run` prints without writing.
 
 ## Local copy
 
