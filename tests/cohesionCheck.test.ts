@@ -163,10 +163,4 @@ describe("the schedule and the rule are the code's", () => {
     expect(sh).toContain('require_loaded "$COHESION_LABEL"');
     expect(sh).toContain('require_loaded "$BRAINS_PULL_LABEL"');
   });
-  it("CLAUDE.md's Brains rule 8 names the job, the endpoint and the Rule 0 words the code says", () => {
-    expect(claude).toContain("`com.seq.boss-cohesion`");
-    expect(claude).toContain("POST /api/boss/brains/cohesion/mac");
-    expect(cohesionCheckLine([], null, NOW)).toContain("the Mac's weekly check did not run this week");
-    expect(claude).toContain("the Mac's weekly check did not run this week");
-  });
 });

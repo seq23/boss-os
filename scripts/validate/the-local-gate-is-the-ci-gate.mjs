@@ -119,7 +119,7 @@ function selfTest() {
   };
   const withoutBrandInScans = (() => {
     const p = JSON.parse(good.pkg);
-    p.scripts["validate:scans"] = p.scripts["validate:scans"].replace(" && npm run validate:brand", "");
+    p.scripts["validate:scans"] = p.scripts["validate:scans"].replace(" && npm run validate:network-boundary", "");
     return JSON.stringify(p, null, 2);
   })();
 

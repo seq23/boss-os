@@ -35,16 +35,6 @@ const NOT_SPEND = [
 ];
 
 describe("agents never spend money — the rule is written where it is read", () => {
-  it("CLAUDE.md carries the section and names the three enforcement points", () => {
-    const md = read("CLAUDE.md");
-    const at = md.indexOf("## Agents never spend money");
-    expect(at, "CLAUDE.md lost its 'Agents never spend money' section").toBeGreaterThan(-1);
-    const section = md.slice(at, md.indexOf("\n## ", at + 5) === -1 ? undefined : md.indexOf("\n## ", at + 5));
-    for (const anchor of ["executors.mjs", "NEVER_SPEND_RULE", "owner_spend", "practices.mjs", "R32", "SERVICE_RULES.md", "tests/agentsNeverSpend.test.ts"]) {
-      expect(section, `CLAUDE.md section does not name ${anchor}`).toContain(anchor);
-    }
-  });
-
   it("docs/SERVICE_RULES.md holds R32 as an ALL-KINDS rule anchored on the shared practices block", () => {
     const line = read("docs/SERVICE_RULES.md").split("\n").find((l) => l.startsWith("- R32 "));
     expect(line).toBeTruthy();

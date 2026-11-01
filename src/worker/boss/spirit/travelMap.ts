@@ -81,8 +81,7 @@ export const TRAVEL: Record<Exclude<TravelMark, 0>, { glyph: string; meaning: st
 /**
  * WHAT A WEEK WITH NO BAND SAYS. Not "—", not an empty cell, not a colour.
  *
- * The string is asserted by `scripts/validate/the-briefing-is-not-the-chart.mjs`, because the whole
- * point of `unset` is that it is VISIBLE. A blank cell and a green week look different; a blank
+ * The whole point of `unset` is that it is VISIBLE. A blank cell and a green week look different; a blank
  * cell and a broken lookup do not.
  */
 export const NOT_YET_GIVEN = "not yet given";

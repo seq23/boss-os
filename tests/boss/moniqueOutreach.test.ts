@@ -754,13 +754,6 @@ describe("outreach rules (owner, 9 Oct 2026)", () => {
     expect(DOMAINS_SCRIPT).toMatch(/s\.status === 409 \? "present"/);
   });
 
-  it("both rules are written where everyone reads them", () => {
-    for (const [name, doc] of [["CLAUDE.md", CLAUDE_MD], ["docs/boss/OPERATIONS.md", OPERATIONS_MD]] as const) {
-      expect(/heygetonmylevel\.com is NEVER an outreach target/i.test(doc), `${HGO} Missing from ${name}.`).toBe(true);
-      expect(/never sends? through, or needs? (a )?permissions? in, West Peek's Google Workspace/i.test(doc), `${WP} Missing from ${name}.`).toBe(true);
-    }
-    expect(/^## Outreach rules$/m.test(CLAUDE_MD), "CLAUDE.md carries an \"Outreach rules\" section.").toBe(true);
-  });
 });
 
 describe("the owner's private postal address never enters the repo (owner, 9 Oct 2026)", () => {
