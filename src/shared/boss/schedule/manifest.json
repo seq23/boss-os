@@ -1,0 +1,4421 @@
+{
+  "approved": {
+    "on": "2026-11-01",
+    "artifact": "https://claude.ai/artifact/3LT9vq9eGNvjHb5wndVH5W",
+    "doc": "docs/boss/WEEKLY_SCHEDULE.md"
+  },
+  "tags": {
+    "sv": {
+      "label": "Spry Ventures · brokerage",
+      "color": "#2d4f7c"
+    },
+    "wf": {
+      "label": "West Peek Ventures · fund",
+      "color": "#6a3d8a"
+    },
+    "wc": {
+      "label": "West Peek · community",
+      "color": "#8a3d5c"
+    },
+    "sl": {
+      "label": "Spry Labs · side businesses",
+      "color": "#2f5d50"
+    },
+    "t2r": {
+      "label": "Time-2-Read",
+      "color": "#a5531a"
+    },
+    "pp": {
+      "label": "Porch & Party",
+      "color": "#8a6d1a"
+    },
+    "cs": {
+      "label": "Creator studios",
+      "color": "#3d6a8a"
+    },
+    "me": {
+      "label": "You · personal",
+      "color": "#555555"
+    }
+  },
+  "week": [
+    {
+      "day": "mon",
+      "label": "Monday",
+      "items": [
+        {
+          "time": "Before 6am",
+          "tag": "cs",
+          "text": "Weekly recap emails go to Mercedes, Sheila and Hadiyah, 20 minutes apart (5:00 / 5:20 / 5:40). The P&P Studio recap to you is cancelled.",
+          "emails": false,
+          "refs": [
+            "creator-studios-wrangler-jsonc"
+          ]
+        },
+        {
+          "time": "5:30",
+          "tag": "sv",
+          "text": "Brokerage sourcing sweep: looks for new sellers and deals (also Wed and Fri)",
+          "emails": false,
+          "refs": [
+            "brokerage-sourcing"
+          ]
+        },
+        {
+          "time": "6:00",
+          "tag": "sl",
+          "text": "Search checklist audit of every side-business site",
+          "emails": true,
+          "refs": [
+            "sites-audit"
+          ]
+        },
+        {
+          "time": "7:00",
+          "tag": "sv",
+          "text": "Finds new prospect names from free sources",
+          "emails": false,
+          "refs": [
+            "prospect-discovery"
+          ]
+        },
+        {
+          "time": "7:00",
+          "tag": "wf",
+          "text": "Scooter watch digest: what Scooter-watch caught last week",
+          "emails": true,
+          "refs": [
+            "scooter-watch-digest"
+          ]
+        },
+        {
+          "time": "7:15",
+          "tag": "sv",
+          "text": "People worth a call this week, with the reason for each",
+          "emails": true,
+          "refs": [
+            "people-worth-a-call"
+          ]
+        },
+        {
+          "time": "8:00",
+          "tag": "me",
+          "text": "CI sweep: finds any repo with failing tests and fixes it (also Friday)",
+          "emails": false,
+          "refs": [
+            "ci-sweep"
+          ]
+        },
+        {
+          "time": "8:00",
+          "tag": "wc",
+          "text": "Wynn drafts this week's TLC brand emails for your approval",
+          "emails": false,
+          "refs": [
+            "wpos-tlc-brand-batch"
+          ]
+        },
+        {
+          "time": "8:30",
+          "tag": "wc",
+          "text": "Wynn's TLC roundup: who was emailed, who replied, what's pitched",
+          "emails": true,
+          "refs": [
+            "wpos-tlc-roundup"
+          ],
+          "pending": true
+        }
+      ]
+    },
+    {
+      "day": "tue",
+      "label": "Tuesday",
+      "items": [
+        {
+          "time": "6:30",
+          "tag": "sl",
+          "text": "Fixes the gaps Monday's search audit found, and puts the fixes live",
+          "emails": false,
+          "refs": [
+            "search-readiness-repair"
+          ]
+        },
+        {
+          "time": "6:50",
+          "tag": "sv",
+          "text": "Filing research: which funds hold what you're selling, and who there can sign",
+          "emails": false,
+          "refs": [
+            "filing-research"
+          ]
+        },
+        {
+          "time": "7:00",
+          "tag": "sv",
+          "text": "Buyers for what you're selling: funds that hold it, plus brokers in your contacts already working it (two emails merged into one)",
+          "emails": true,
+          "refs": [
+            "buyer-hunt"
+          ]
+        },
+        {
+          "time": "7:11",
+          "tag": "sl",
+          "text": "Backlink network: updates its USCIS form-and-fee page",
+          "emails": false,
+          "refs": [
+            "authority-backlink-network-uscis-changelog"
+          ],
+          "pending": true
+        },
+        {
+          "time": "7:15",
+          "tag": "wf",
+          "text": "Brings Scooter's LP tracker up to date before Wednesday's sync",
+          "emails": false,
+          "refs": [
+            "scooter-sheet"
+          ]
+        },
+        {
+          "time": "7:30",
+          "tag": "wf",
+          "text": "Pre-seed watch: new pre-seed companies worth knowing",
+          "emails": true,
+          "refs": [
+            "preseed-watch"
+          ]
+        },
+        {
+          "time": "9:00",
+          "tag": "wc",
+          "text": "westpeek.live: weekly hire search for Scooter",
+          "emails": false,
+          "refs": [
+            "wpos-productions-hire-search"
+          ],
+          "pending": true
+        },
+        {
+          "time": "10pm",
+          "tag": "sl",
+          "text": "How We Know: records the next food episode (also Thursday)",
+          "emails": false,
+          "refs": [
+            "howweknow-food"
+          ]
+        }
+      ]
+    },
+    {
+      "day": "wed",
+      "label": "Wednesday",
+      "items": [
+        {
+          "time": "5:30",
+          "tag": "sv",
+          "text": "Brokerage sourcing sweep",
+          "emails": false,
+          "refs": [
+            "brokerage-sourcing"
+          ]
+        },
+        {
+          "time": "6:45",
+          "tag": "sl",
+          "text": "Spry heartbeat: are all side-business sites up and working",
+          "emails": false,
+          "refs": [
+            "properties"
+          ]
+        },
+        {
+          "time": "7:00",
+          "tag": "sl",
+          "text": "What Google Search saw last week, for each site",
+          "emails": false,
+          "refs": [
+            "property-gsc"
+          ]
+        },
+        {
+          "time": "7:00–8:00",
+          "tag": "sl",
+          "text": "Five side businesses each work out their weekly results: A Player Mode, Creator Network, Citation Velocity, the Spry Labs site, Local Guides",
+          "emails": false,
+          "refs": [
+            "aplayer-mode-weekly-outcome-report",
+            "creator-network-weekly-owner-report",
+            "local-guides-citation-velocity-search-outcomes-weekly",
+            "sprylabs-hpc-site-weekly-outcome-report",
+            "local-guides-generator-weekly-outcome-report"
+          ]
+        },
+        {
+          "time": "8:15",
+          "tag": "sl",
+          "text": "ONE \"Spry Labs weekly\" email: results for every side business (A Player Mode, Creator Network, Citation Velocity, Spry Labs site, Local Guides, ApprovalPrep, Dream Wedding, How We Know). Replaces 7 separate emails.",
+          "emails": true,
+          "refs": [
+            "spry-weekly"
+          ]
+        },
+        {
+          "time": "9:23",
+          "tag": "pp",
+          "text": "Checks which outside sites link to the P&P site",
+          "emails": false,
+          "refs": [
+            "p-n-p-entity-backlink-watch"
+          ],
+          "pending": true
+        },
+        {
+          "time": "10:00–10:30",
+          "tag": "sl",
+          "text": "Sites fix their own small problems (Dream Wedding, backlink network, P&P, westpeek)",
+          "emails": false,
+          "refs": [
+            "dream-wedding-builder-self-heal",
+            "authority-backlink-network-self-heal",
+            "p-n-p-self-heal",
+            "wpp-llm-self-heal"
+          ],
+          "pending": true
+        },
+        {
+          "time": "2pm",
+          "tag": "sl",
+          "text": "How We Know: reads the YouTube channel's comments; acts only on your word",
+          "emails": false,
+          "refs": [
+            "youtube-comment-watch"
+          ]
+        }
+      ]
+    },
+    {
+      "day": "thu",
+      "label": "Thursday",
+      "items": [
+        {
+          "time": "5:00",
+          "tag": "sl",
+          "text": "Ahrefs audit: crawls each site, fixes problems at the source",
+          "emails": true,
+          "refs": [
+            "site-audit-repair"
+          ]
+        },
+        {
+          "time": "7:00–8:00",
+          "tag": "sl",
+          "text": "Checks which outside sites link to How We Know, Time-2-Read, Dream Wedding and westpeek, one every 20 min",
+          "emails": false,
+          "refs": [
+            "how-we-know-entity-backlink-watch",
+            "dailystory-entity-backlink-watch",
+            "dream-wedding-builder-entity-backlink-watch",
+            "wpp-llm-entity-backlink-watch"
+          ],
+          "pending": true
+        },
+        {
+          "time": "7:00",
+          "tag": "sv",
+          "text": "NEW: Sellers for what your LPs want to buy (the mirror of Tuesday)",
+          "emails": true,
+          "refs": [],
+          "pending": true
+        },
+        {
+          "time": "7:30",
+          "tag": "sl",
+          "text": "Backlink prospecting: finds new places to earn links",
+          "emails": false,
+          "refs": [
+            "link-prospects"
+          ]
+        },
+        {
+          "time": "8:00",
+          "tag": "me",
+          "text": "Tools worth knowing about this week",
+          "emails": true,
+          "refs": [
+            "tool-scout"
+          ]
+        },
+        {
+          "time": "10pm",
+          "tag": "sl",
+          "text": "How We Know: food episode session",
+          "emails": false,
+          "refs": [
+            "howweknow-food"
+          ]
+        }
+      ]
+    },
+    {
+      "day": "fri",
+      "label": "Friday",
+      "items": [
+        {
+          "time": "5:30",
+          "tag": "sv",
+          "text": "Brokerage sourcing sweep",
+          "emails": false,
+          "refs": [
+            "brokerage-sourcing"
+          ]
+        },
+        {
+          "time": "7:00",
+          "tag": "sl",
+          "text": "How We Know: this week's videos go public",
+          "emails": false,
+          "refs": [
+            "how-we-know-loop-fri-publish"
+          ],
+          "pending": true
+        },
+        {
+          "time": "7:00",
+          "tag": "sl",
+          "text": "Checks which outside sites link to Citation Velocity",
+          "emails": false,
+          "refs": [
+            "local-guides-citation-velocity-entity-backlink-watch"
+          ],
+          "pending": true
+        },
+        {
+          "time": "7:45",
+          "tag": "wc",
+          "text": "westpeek: checks its keys and passwords still work",
+          "emails": false,
+          "refs": [
+            "wpp-llm-credential-check"
+          ],
+          "pending": true
+        },
+        {
+          "time": "8:00",
+          "tag": "me",
+          "text": "CI sweep: fixes any repo with failing tests",
+          "emails": false,
+          "refs": [
+            "ci-sweep"
+          ]
+        },
+        {
+          "time": "8:40",
+          "tag": "me",
+          "text": "Outside locks: anyone put a lock on your accounts? Emails you only if yes",
+          "emails": true,
+          "refs": [
+            "outside-locks"
+          ]
+        },
+        {
+          "time": "8:40",
+          "tag": "me",
+          "text": "Archive check: nothing went stale, everything delivered can be found",
+          "emails": false,
+          "refs": [
+            "archive-audit"
+          ]
+        },
+        {
+          "time": "3pm",
+          "tag": "sl",
+          "text": "How We Know: measures how this week's videos did",
+          "emails": false,
+          "refs": [
+            "how-we-know-loop-fri-measure"
+          ],
+          "pending": true
+        }
+      ]
+    },
+    {
+      "day": "sat",
+      "label": "Saturday",
+      "items": [
+        {
+          "time": "4:00–8:00",
+          "tag": "sl",
+          "text": "Weekly upkeep and growth checks for every side business, 15 min apart: whether AI answers cite each site, Pinterest results (where the site posts there), ApprovalPrep's own checks and Dream Wedding's Pinterest refill",
+          "emails": false,
+          "refs": [],
+          "pending": true
+        },
+        {
+          "time": "4:00",
+          "tag": "sl",
+          "text": "How We Know: scores which topics people want",
+          "emails": false,
+          "refs": [
+            "how-we-know-loop-sat-score"
+          ],
+          "pending": true
+        }
+      ]
+    },
+    {
+      "day": "sun",
+      "label": "Sunday",
+      "items": [
+        {
+          "time": "4:00",
+          "tag": "sl",
+          "text": "How We Know: ranks next week's topics",
+          "emails": false,
+          "refs": [
+            "how-we-know-loop-sun-rank"
+          ],
+          "pending": true
+        },
+        {
+          "time": "7:30",
+          "tag": "sl",
+          "text": "Backlink network: checks who links to it",
+          "emails": false,
+          "refs": [
+            "authority-backlink-network-entity-backlink-watch"
+          ],
+          "pending": true
+        },
+        {
+          "time": "9:00",
+          "tag": "me",
+          "text": "Mac cleanup: keeps the disk from filling up",
+          "emails": false,
+          "refs": [
+            "mac-cleanup"
+          ]
+        },
+        {
+          "time": "5pm",
+          "tag": "me",
+          "text": "Practice: the week ahead",
+          "emails": true,
+          "refs": [
+            "practice-week"
+          ]
+        },
+        {
+          "time": "6:00pm",
+          "tag": "me",
+          "text": "Syncs your network contacts",
+          "emails": false,
+          "refs": [
+            "network"
+          ]
+        },
+        {
+          "time": "6:30pm",
+          "tag": "sv",
+          "text": "Mailbox sweep: missed deals, buyers going cold, connectors",
+          "emails": true,
+          "refs": [
+            "mailbox-sweep"
+          ]
+        },
+        {
+          "time": "6:45pm",
+          "tag": "me",
+          "text": "Cohesion check: brains, repos and rules still line up (its result goes in Monday's email)",
+          "emails": false,
+          "refs": [
+            "cohesion"
+          ]
+        },
+        {
+          "time": "11pm",
+          "tag": "sl",
+          "text": "How We Know: drafts next week's videos",
+          "emails": false,
+          "refs": [
+            "how-we-know-loop-mon-draft"
+          ],
+          "pending": true
+        }
+      ]
+    }
+  ],
+  "everyDay": [
+    "Your morning emails from Simone (Executive briefing, Spirit, decisions), at their usual times",
+    "Spry Ventures: Monique's morning LP run, with drafts for you to approve; new inbox supply matched to buyers and routed the same day; prospect emails on weekdays only (first note + 1 follow-up)",
+    "Time-2-Read: Monique contacts homeschool pods and institutions, weekdays 8:15",
+    "Porch & Party: Camille's Christmas office outreach, weekdays 10:20, until 4 bookings or 5 Dec",
+    "Spry Labs: each site publishes and checks its pages through the day (no emails)",
+    "West Peek: West Peek OS employees work through their cards every few minutes"
+  ],
+  "notShown": [
+    "Client sites: their jobs are recorded only in their own repos, never here (your rule).",
+    "Time-2-Read voice costs are no longer a weekly report: you hear about them only if the paid voice runs low on credits or a child gets switched to the browser voice.",
+    "Creator studio emails to you are cancelled, including P&P Studio. Sign-in codes still come."
+  ],
+  "about": "Every scheduled job across her systems, in Central time: Boss OS duties, the Mac's launchd jobs, GitHub Actions and Cloudflare crons in her repos, and West Peek OS's jobs. Client repos are never listed (clientRepoProblems). The Schedule page renders this and nothing else; tests/schedule.test.ts and npm run schedule:check hold it to the real triggers.",
+  "updated": "2026-11-01",
+  "businesses": [
+    {
+      "key": "brokerage",
+      "label": "Brokerage"
+    },
+    {
+      "key": "west-peek-ventures",
+      "label": "West Peek Ventures"
+    },
+    {
+      "key": "porch-and-party",
+      "label": "Porch & Party"
+    },
+    {
+      "key": "time-2-read",
+      "label": "Time-2-Read"
+    },
+    {
+      "key": "spry",
+      "label": "Spry Labs (side businesses)"
+    },
+    {
+      "key": "personal",
+      "label": "Personal & Boss OS"
+    }
+  ],
+  "systems": {
+    "boss-os": "Boss OS (the cloud)",
+    "mac": "Your Mac",
+    "github": "GitHub",
+    "cloudflare": "Cloudflare",
+    "west-peek-os": "West Peek OS"
+  },
+  "rows": [
+    {
+      "id": "agent",
+      "name": "Agent claim and task notices",
+      "what": "Your Mac picks up work Boss OS queued for it, and says when a task is stuck.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 06:05",
+        "daily 06:35",
+        "daily 06:50",
+        "daily 07:10",
+        "daily 12:35",
+        "daily 18:35"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-agent"
+        ]
+      }
+    },
+    {
+      "id": "agent-poll",
+      "name": "Agent poll",
+      "what": "Checks every few minutes for work queued for the Mac.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "every 300s"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-agent-poll"
+        ]
+      }
+    },
+    {
+      "id": "aplayer-mode-services-api-wrangler-jsonc",
+      "name": "A Player Mode API tick",
+      "what": "A Player Mode API tick",
+      "business": "spry",
+      "brand": "A Player Mode",
+      "system": "cloudflare",
+      "slots": [
+        "every 15m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "aplayer-mode",
+        "file": "services/api/wrangler.jsonc",
+        "crons": [
+          "*/15 * * * *"
+        ]
+      }
+    },
+    {
+      "id": "aplayer-mode-supabase-keep-alive",
+      "name": "Supabase keep-alive",
+      "what": "Keeps the database from going to sleep.",
+      "business": "spry",
+      "brand": "A Player Mode",
+      "system": "github",
+      "slots": [
+        "daily 23:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "aplayer-mode",
+        "file": ".github/workflows/supabase-keep-alive.yml",
+        "crons": [
+          "41 5 * * *"
+        ]
+      }
+    },
+    {
+      "id": "aplayer-mode-weekly-outcome-report",
+      "name": "Weekly Outcome Report",
+      "what": "Measures the week and hands it to the Spry Labs weekly email (no email of its own).",
+      "business": "spry",
+      "brand": "A Player Mode",
+      "system": "github",
+      "slots": [
+        "wed 07:13"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "aplayer-mode",
+        "file": ".github/workflows/weekly-outcome-report.yml",
+        "crons": [
+          "13 12 * * 3",
+          "13 13 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-citation-os-weekly",
+      "name": "Citation OS Weekly",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "sat 05:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/citation-os-weekly.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 40 5 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-competitor-watch-refresh",
+      "name": "Intelligence - Competitor Watch Refresh",
+      "what": "Intelligence - Competitor Watch Refresh",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "sat 06:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/competitor-watch-refresh.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 20 6 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-content-opportunity-analysis",
+      "name": "Intelligence - Content Opportunity Analysis",
+      "what": "Publishes the next pages.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "mon,tue,wed,thu,fri 04:27"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/content-opportunity-analysis.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 27 4 * * 1-5"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-entity-backlink-watch",
+      "name": "Entity Backlink Watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "sat 04:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 4 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-growth-health-refresh",
+      "name": "Growth Health Refresh",
+      "what": "Growth Health Refresh",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "sat 05:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/growth-health-refresh.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 20 5 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-growth-maintenance-analysis",
+      "name": "Intelligence - Growth Maintenance Analysis",
+      "what": "Intelligence - Growth Maintenance Analysis",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "tue,thu 05:43"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/growth-maintenance-analysis.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 43 5 * * 2,4"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-intelligence-ingest-free-sources",
+      "name": "Intelligence - Ingest Free Sources",
+      "what": "Intelligence - Ingest Free Sources",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "daily 03:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/intelligence-ingest-free-sources.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 17 3 * * *"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-notification-dispatch",
+      "name": "Notification Dispatch",
+      "what": "Notification Dispatch",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "fri 09:29"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/notification-dispatch.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 29 9 * * 5"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-page-refresh-queue",
+      "name": "Intelligence - Page Refresh Queue",
+      "what": "Intelligence - Page Refresh Queue",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "sat 04:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/page-refresh-queue.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 20 4 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-pinterest-metrics",
+      "name": "Pinterest Metrics",
+      "what": "Pinterest posts and numbers.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "sat 06:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/pinterest-metrics.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 6 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-pinterest-refill",
+      "name": "Pinterest Refill",
+      "what": "Pinterest posts and numbers.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "daily 06:05"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/pinterest-refill.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 5 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-post-deploy-live-check",
+      "name": "Post-deploy live check",
+      "what": "Checks the live site still works.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "daily 09:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/post-deploy-live-check.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 40 9 * * *"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-scheduled-content-release",
+      "name": "Scheduled Content Release",
+      "what": "Publishes the next pages.",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "daily 05:07"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/scheduled-content-release.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 7 5 * * *"
+        ]
+      }
+    },
+    {
+      "id": "approvalprep-weekly-growth-ops",
+      "name": "Weekly Growth Ops",
+      "what": "Weekly Growth Ops",
+      "business": "spry",
+      "brand": "ApprovalPrep",
+      "system": "github",
+      "slots": [
+        "sat 04:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "approvalprep",
+        "file": ".github/workflows/weekly-growth-ops.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 40 4 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "archive-audit",
+      "name": "Archive audit",
+      "what": "Nothing goes stale quietly, and everything delivered can be found.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "fri 08:40"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_archive_audit",
+        "launchd": [
+          "com.seq.boss-archive-audit"
+        ]
+      }
+    },
+    {
+      "id": "authority-backlink-network-authority-post-publish-distributi",
+      "name": "Authority Network Post-Publish Distribution",
+      "what": "Publishes the next pages.",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "daily 10:37"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/authority-post-publish-distribution.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 37 10 * * *"
+        ]
+      }
+    },
+    {
+      "id": "authority-backlink-network-authority-v4-autopilot",
+      "name": "Authority Network V4.2 Autopilot + Social Auto-Post",
+      "what": "Authority Network V4.2 Autopilot + Social Auto-Post",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "daily 09:22"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/authority-v4-autopilot.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 22 9 * * *"
+        ]
+      }
+    },
+    {
+      "id": "authority-backlink-network-entity-backlink-watch",
+      "name": "Entity backlink watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "sun 08:30"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 30 8 * * 0"
+        ]
+      }
+    },
+    {
+      "id": "authority-backlink-network-journalist-query-scan",
+      "name": "Journalist Query Scan",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "mon,tue,wed,thu,fri 07:00",
+        "mon,tue,wed,thu,fri 13:15"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/journalist-query-scan.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 7 * * 1-5",
+          "CRON_TZ=America/Chicago 15 13 * * 1-5"
+        ]
+      }
+    },
+    {
+      "id": "authority-backlink-network-post-deploy-live-check",
+      "name": "Post-Deploy Live Check",
+      "what": "Checks the live site still works.",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "daily 11:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/post-deploy-live-check.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 41 11 * * *"
+        ]
+      }
+    },
+    {
+      "id": "authority-backlink-network-self-heal",
+      "name": "Bounded Self-Healing",
+      "what": "Fixes small breakages on its own, within limits.",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "wed 11:34"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/self-heal.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 34 11 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "authority-backlink-network-social-autopost",
+      "name": "Social Auto-Post Only",
+      "what": "Social Auto-Post Only",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "daily 08:23",
+        "daily 11:17",
+        "daily 14:41",
+        "daily 17:09"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/social-autopost.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 23 8 * * *",
+          "CRON_TZ=America/Chicago 17 11 * * *",
+          "CRON_TZ=America/Chicago 41 14 * * *",
+          "CRON_TZ=America/Chicago 9 17 * * *"
+        ]
+      }
+    },
+    {
+      "id": "authority-backlink-network-uscis-changelog",
+      "name": "USCIS Form and Fee Changelog",
+      "what": "USCIS Form and Fee Changelog",
+      "business": "spry",
+      "brand": "Authority network",
+      "system": "github",
+      "slots": [
+        "tue 08:11"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "authority-backlink-network",
+        "file": ".github/workflows/uscis-changelog.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 11 8 * * 2"
+        ]
+      }
+    },
+    {
+      "id": "boss-os-wrangler-toml",
+      "name": "Boss OS hourly tick",
+      "what": "Boss OS hourly tick",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "cloudflare",
+      "slots": [
+        "hourly :00"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "repo": "boss-os",
+        "file": "wrangler.toml",
+        "crons": [
+          "0 * * * *"
+        ]
+      }
+    },
+    {
+      "id": "brains-pull",
+      "name": "Brains copy",
+      "what": "Copies the company brains to the Mac every hour.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "hourly :23"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-brains-pull"
+        ]
+      }
+    },
+    {
+      "id": "brokerage-sourcing",
+      "name": "Brokerage sourcing sweep",
+      "what": "Finds new institutional buyers for late-stage tech secondaries.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "boss-os",
+      "slots": [
+        "mon,wed,fri 05:30"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_brokerage_sourcing"
+      }
+    },
+    {
+      "id": "buyer-hunt",
+      "name": "Buyer hunt",
+      "what": "Which brokers in your ledger are already working what you are selling.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "tue 07:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_buyer_hunt",
+        "launchd": [
+          "com.seq.boss-capital-buyers"
+        ]
+      }
+    },
+    {
+      "id": "catchups",
+      "name": "Catch up with",
+      "what": "Who is worth a catch-up, only when there is a live reason.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "daily 06:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_catchups",
+        "launchd": [
+          "com.seq.boss-catchups"
+        ]
+      }
+    },
+    {
+      "id": "ci-sweep",
+      "name": "CI sweep",
+      "what": "Finds and fixes red checks across the repos.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "mon,fri 08:00"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.ci-sweep"
+        ]
+      }
+    },
+    {
+      "id": "ci-sweep-resume",
+      "name": "CI sweep resume",
+      "what": "Resumes a sweep the Mac's sleep interrupted.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "every 300s"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.ci-sweep-resume"
+        ]
+      }
+    },
+    {
+      "id": "ci-sweep-retry",
+      "name": "CI sweep retry",
+      "what": "Runs the sweep once more if the first did not end green.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "mon,fri 09:00"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.ci-sweep-retry"
+        ]
+      }
+    },
+    {
+      "id": "cohesion",
+      "name": "Cohesion check",
+      "what": "Checks memory, repo notes, skills and the brain copy, so Monday's email has its line.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "sun 18:45"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-cohesion"
+        ]
+      }
+    },
+    {
+      "id": "creator-network-daily-creator-network",
+      "name": "Daily Creator Network",
+      "what": "Daily Creator Network",
+      "business": "spry",
+      "brand": "Creator Network",
+      "system": "github",
+      "slots": [
+        "daily 06:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "repo": "creator-network",
+        "file": ".github/workflows/daily-creator-network.yml",
+        "crons": [
+          "0 12 * * *"
+        ]
+      }
+    },
+    {
+      "id": "creator-network-weekly-owner-report",
+      "name": "Weekly Owner Report",
+      "what": "Measures the week and hands it to the Spry Labs weekly email (no email of its own).",
+      "business": "spry",
+      "brand": "Creator Network",
+      "system": "github",
+      "slots": [
+        "wed 07:23"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "creator-network",
+        "file": ".github/workflows/weekly-owner-report.yml",
+        "crons": [
+          "23 12 * * 3",
+          "23 13 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "creator-studios-e2e",
+      "name": "e2e",
+      "what": "Runs the full browser tests.",
+      "business": "spry",
+      "brand": "Creator studios",
+      "system": "github",
+      "slots": [
+        "daily 02:17"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "creator-studios",
+        "file": ".github/workflows/e2e.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 17 2 * * *"
+        ]
+      }
+    },
+    {
+      "id": "creator-studios-golden-set",
+      "name": "golden-set",
+      "what": "Runs the full browser tests.",
+      "business": "spry",
+      "brand": "Creator studios",
+      "system": "github",
+      "slots": [
+        "mon 01:23"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "creator-studios",
+        "file": ".github/workflows/golden-set.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 23 1 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "creator-studios-parity",
+      "name": "parity",
+      "what": "Runs the full browser tests.",
+      "business": "spry",
+      "brand": "Creator studios",
+      "system": "github",
+      "slots": [
+        "daily 09:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "creator-studios",
+        "file": ".github/workflows/parity.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 17 9 * * *"
+        ]
+      }
+    },
+    {
+      "id": "creator-studios-wrangler-jsonc",
+      "name": "Studio briefs, recaps and posting",
+      "what": "Each studio's hourly posting sync, morning brief and Monday recap for its owner. The P&P Studio recap and briefs to you are removed (1 Nov 2026); sign-in codes still come.",
+      "business": "spry",
+      "brand": "Creator studios",
+      "system": "cloudflare",
+      "slots": [
+        "daily 07:30",
+        "hourly :00",
+        "mon 05:00-06:00/20m"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "creator-studios",
+        "file": "wrangler.jsonc",
+        "crons": [
+          "0 * * * *",
+          "30 13 * * *",
+          "0 12 * * 1",
+          "0 11 * * 1",
+          "20 11 * * 1",
+          "40 11 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "credentials",
+      "name": "Logins check",
+      "what": "Checks the logins this system runs on, and says when one dies.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 06:15"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_credentials",
+        "launchd": [
+          "com.seq.boss-credentials"
+        ]
+      }
+    },
+    {
+      "id": "crossmatch",
+      "name": "LP and buyer crossmatch",
+      "what": "Flags firms that are on both your Fund I LP list and your brokerage buyer list.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures · fund",
+      "system": "mac",
+      "slots": [
+        "tue 07:45"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-crossmatch"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-entity-backlink-watch",
+      "name": "entity backlink watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "mon 07:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "41 13 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-lifecycle-emails",
+      "name": "lifecycle emails",
+      "what": "lifecycle emails",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "hourly :23"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/lifecycle-emails.yml",
+        "crons": [
+          "23 * * * *"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-monitor-ai-visual",
+      "name": "Monitor AI Visual Scene Creator - ERROR-001 FIX",
+      "what": "Watches a service and flags a failure.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 00:15"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/monitor-ai-visual.yml",
+        "crons": [
+          "15 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-monitor-runware-generate",
+      "name": "Monitor Runware Generate Image",
+      "what": "Watches a service and flags a failure.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 00:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/monitor-runware-generate.yml",
+        "crons": [
+          "0 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-monitor-template-ab",
+      "name": "Monitor Template AB",
+      "what": "Watches a service and flags a failure.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 00:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/monitor-template-ab.yml",
+        "crons": [
+          "30 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-monitor-template-cd",
+      "name": "Monitor Template CD",
+      "what": "Watches a service and flags a failure.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 00:45"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/monitor-template-cd.yml",
+        "crons": [
+          "45 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-prerender-live-check",
+      "name": "Prerender live check",
+      "what": "Checks the live site still works.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 02:17-22:17/240m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/prerender-live-check.yml",
+        "crons": [
+          "17 */4 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-search-console-daily",
+      "name": "Search Console Daily",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 00:40"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/search-console-daily.yml",
+        "crons": [
+          "40 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-supabase-keep-alive",
+      "name": "Supabase keep-alive",
+      "what": "Keeps the database from going to sleep.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "daily 23:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/supabase-keep-alive.yml",
+        "crons": [
+          "41 5 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dailystory-tts-usage-report",
+      "name": "TTS usage report",
+      "what": "TTS usage report",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "github",
+      "slots": [
+        "mon 08:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dailystory",
+        "file": ".github/workflows/tts-usage-report.yml",
+        "crons": [
+          "0 14 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "dev-housekeeping",
+      "name": "Dev housekeeping",
+      "what": "Clears caches and old logs.",
+      "business": "personal",
+      "brand": "Repos",
+      "system": "mac",
+      "slots": [
+        "day1,day15 10:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.dev-housekeeping"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-authority-preflight-validation",
+      "name": "Authority Preflight Validation",
+      "what": "Authority Preflight Validation",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "daily 04:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/authority-preflight-validation.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 17 4 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-ci",
+      "name": "CI - Build and Validate",
+      "what": "Builds the site and runs its checks.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "daily 07:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/ci.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 40 7 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-entity-backlink-watch",
+      "name": "Entity Backlink Watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "fri 07:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 7 * * 5"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-full-safe-autonomy",
+      "name": "Full Safe Autonomy",
+      "what": "Full Safe Autonomy",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "daily 05:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/full-safe-autonomy.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 17 5 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-pinterest-drip",
+      "name": "Pinterest drip",
+      "what": "Pinterest posts and numbers.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "sat 06:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/pinterest-drip.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 40 6 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-search-intelligence",
+      "name": "Search Intelligence - Observe Diagnose Repair Retest",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "daily 06:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/search-intelligence.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 41 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-self-heal",
+      "name": "Bounded Self-Healing",
+      "what": "Fixes small breakages on its own, within limits.",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "wed 11:18"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/self-heal.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 18 11 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-wrangler-jsonc",
+      "name": "Delivery retry",
+      "what": "Delivery retry",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "cloudflare",
+      "slots": [
+        "hourly :00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": "wrangler.jsonc",
+        "crons": [
+          "0 * * * *"
+        ]
+      }
+    },
+    {
+      "id": "eightraise-budget",
+      "name": "8Raise credits",
+      "what": "Reads and logs the month's 8Raise credits for the morning email.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "daily 06:25"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_eightraise_budget",
+        "launchd": [
+          "com.seq.boss-eightraise"
+        ]
+      }
+    },
+    {
+      "id": "errand-reminders",
+      "name": "Errand reminders",
+      "what": "Asks if you still want to go, 28 hours before a booking.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 00:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_errand_reminders",
+        "launchd": [
+          "com.seq.boss-errand-reminders"
+        ],
+        "ticks": {
+          "com.seq.boss-errand-reminders": [
+            "hourly :00",
+            "hourly :10",
+            "hourly :20",
+            "hourly :30",
+            "hourly :40",
+            "hourly :50"
+          ]
+        }
+      }
+    },
+    {
+      "id": "exec-intel",
+      "name": "Executive Intelligence Report",
+      "what": "Camille's morning briefing: markets, news and what matters today.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "boss-os",
+      "slots": [
+        "daily 06:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_exec_intel"
+      }
+    },
+    {
+      "id": "filing-research",
+      "name": "Who holds what you are selling",
+      "what": "Danielle reads public filings for funds that hold your names and who there can sign.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "tue 06:50"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_filing_research",
+        "launchd": [
+          "com.seq.boss-capital-buyers"
+        ],
+        "ticks": {
+          "com.seq.boss-capital-buyers": [
+            "tue 07:00"
+          ]
+        }
+      }
+    },
+    {
+      "id": "grid-watch",
+      "name": "Grid watch",
+      "what": "What is going on across the sites, and the one thing that needs you.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "mac",
+      "slots": [
+        "daily 06:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_grid_watch",
+        "launchd": [
+          "com.seq.boss-grid"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-entity-backlink-watch",
+      "name": "site · entity backlink watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "thu 07:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 20 7 * * 4"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-demand",
+      "name": "loop · daily demand + Mon 08:30 CT email",
+      "what": "loop · daily demand + Mon 08:30 CT email",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 08:30"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-demand.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 30 8 * * *"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-food-author",
+      "name": "loop · Mon 14:00 CT · food author",
+      "what": "loop · Mon 14:00 CT · food author",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "mon 14:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-food-author.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 14 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-fri-measure",
+      "name": "loop · Fri 17:00 · measure",
+      "what": "loop · Fri 17:00 · measure",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "fri 16:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-fri-measure.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 16 * * 5"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-fri-publish",
+      "name": "loop · Fri 09:00 · flip to public",
+      "what": "loop · Fri 09:00 · flip to public",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "fri 08:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-fri-publish.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 8 * * 5"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-imagery-harvest",
+      "name": "loop · Sat 04:00 UTC · grow the rights-cleared footage pool",
+      "what": "loop · Sat 04:00 UTC · grow the rights-cleared footage pool",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "fri 23:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-imagery-harvest.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 23 * * 5"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-mon-draft",
+      "name": "loop · Mon 00:00 CT · draft, validate, gate",
+      "what": "Builds the site and runs its checks.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "mon 00:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-mon-draft.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 0 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-monthly-review",
+      "name": "loop · 1st 07:00 · monthly review",
+      "what": "loop · 1st 07:00 · monthly review",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "day1 02:12"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-monthly-review.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 12 2 1 * *"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-quarterly-taxonomy-refresh",
+      "name": "loop · Quarterly · refresh the candidate-niche taxonomy",
+      "what": "loop · Quarterly · refresh the candidate-niche taxonomy",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "day1 03:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-quarterly-taxonomy-refresh.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 3 1 1,4,7,10 *"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-reach",
+      "name": "loop · daily 10:00 CT · reach",
+      "what": "loop · daily 10:00 CT · reach",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 10:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-reach.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 10 * * *"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-repackage",
+      "name": "loop · daily 18:30 CT",
+      "what": "loop · daily 18:30 CT",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 18:30",
+        "tue,wed,thu,fri,sat,sun 03:30"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-repackage.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 30 18 * * *",
+          "CRON_TZ=America/Chicago 30 3 * * 0,2-6"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-sat-score",
+      "name": "loop · Sat 06:00 · score demand ÷ competition",
+      "what": "loop · Sat 06:00 · score demand ÷ competition",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "sat 05:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-sat-score.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 5 * * 6"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-shorts-cloud",
+      "name": "loop · daily 18:00 CT · publish a Short from R2",
+      "what": "Publishes the next pages.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 18:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-shorts-cloud.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 18 * * *"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-sun-digest",
+      "name": "Weekly digest",
+      "what": "Works out How We Know's week; its verdict goes into Wednesday's Spry Labs weekly (no email of its own).",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "sun 11:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-sun-digest.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 11 * * 0"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-sun-rank",
+      "name": "loop · Sun 06:00 · rank topics",
+      "what": "loop · Sun 06:00 · rank topics",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "sun 05:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-sun-rank.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 5 * * 0"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-loop-upload-cloud",
+      "name": "loop · daily 09:00 CT · upload from R2",
+      "what": "loop · daily 09:00 CT · upload from R2",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 09:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/loop-upload-cloud.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 9 * * *"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-search-console-daily",
+      "name": "search console · daily truth, coverage and sitemap status",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 04:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/search-console-daily.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 40 4 * * *"
+        ]
+      }
+    },
+    {
+      "id": "how-we-know-site-post-deploy-check",
+      "name": "site · post-deploy live check",
+      "what": "Checks the live site still works.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "github",
+      "slots": [
+        "daily 06:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "how-we-know",
+        "file": ".github/workflows/site-post-deploy-check.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 20 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "howweknow-backfill",
+      "name": "Upload lane",
+      "what": "Uploads the episodes that are ready.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "mac",
+      "slots": [
+        "daily 09:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.howweknow.backfill"
+        ]
+      }
+    },
+    {
+      "id": "howweknow-batch",
+      "name": "Night narration",
+      "what": "Narrates and renders the episodes overnight.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "mac",
+      "slots": [
+        "daily 23:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.howweknow.batch"
+        ]
+      }
+    },
+    {
+      "id": "howweknow-batch-resume",
+      "name": "Night narration resume",
+      "what": "Resumes a night a restart interrupted.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "mac",
+      "slots": [
+        "every 300s"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.howweknow.batch-resume"
+        ]
+      }
+    },
+    {
+      "id": "howweknow-food",
+      "name": "Food episode night",
+      "what": "Narrates and renders the week's food episode.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "mac",
+      "slots": [
+        "tue,thu 22:58"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.howweknow.food"
+        ]
+      }
+    },
+    {
+      "id": "howweknow-food-resume",
+      "name": "Food night resume",
+      "what": "Resumes a food night that died.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "mac",
+      "slots": [
+        "every 300s"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.howweknow.food-resume"
+        ]
+      }
+    },
+    {
+      "id": "howweknow-nightquit",
+      "name": "Quit apps before narration",
+      "what": "Quits Chrome, Signal and Spotify so the voice model has memory.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "mac",
+      "slots": [
+        "daily 22:55"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.howweknow.nightquit"
+        ]
+      }
+    },
+    {
+      "id": "hunt-ondemand",
+      "name": "Buyer hunt on request",
+      "what": "Runs a buyer hunt when you ask for one.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "every 300s"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-hunt-ondemand"
+        ]
+      }
+    },
+    {
+      "id": "inbound-supply",
+      "name": "New supply, matched",
+      "what": "Reads new deals in the mailbox and matches them against everyone who wanted them.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "daily 05:30"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_inbound_supply",
+        "launchd": [
+          "com.seq.boss-capital"
+        ]
+      }
+    },
+    {
+      "id": "interest-nudge",
+      "name": "Interest nudge",
+      "what": "Three people worth a note, chosen by their company.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "day1 07:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_interest_nudge",
+        "launchd": [
+          "com.seq.boss-capital-nudge"
+        ]
+      }
+    },
+    {
+      "id": "kdp-publish",
+      "name": "Kindle: publish",
+      "what": "Puts the approved covers up and publishes.",
+      "business": "spry",
+      "brand": "KDP books",
+      "system": "mac",
+      "slots": [
+        "day1 09:45"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_kdp_publish",
+        "launchd": [
+          "com.seq.kdp-publish"
+        ]
+      }
+    },
+    {
+      "id": "kdp-surface",
+      "name": "Kindle: what Amazon sent",
+      "what": "Reads everything Amazon sent and says what it means.",
+      "business": "spry",
+      "brand": "KDP books",
+      "system": "mac",
+      "slots": [
+        "day1 09:30"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_kdp_surface",
+        "launchd": [
+          "com.seq.kdp-surface"
+        ]
+      }
+    },
+    {
+      "id": "ledger-hunt",
+      "name": "Ledger hunt",
+      "what": "Who to route it to, the same day your mail names a side.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "daily 05:45"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_ledger_hunt",
+        "launchd": [
+          "com.seq.boss-capital"
+        ],
+        "ticks": {
+          "com.seq.boss-capital": [
+            "daily 05:30"
+          ]
+        }
+      }
+    },
+    {
+      "id": "link-prospects",
+      "name": "Backlink prospecting",
+      "what": "Finds sites worth asking for a link.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "boss-os",
+      "slots": [
+        "thu 07:30"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_link_prospects"
+      }
+    },
+    {
+      "id": "local-guides-citation-velocity-daily-citation-intelligence",
+      "name": "Daily Citation Intelligence",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "github",
+      "slots": [
+        "daily 07:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-citation-velocity",
+        "file": ".github/workflows/daily-citation-intelligence.yml",
+        "crons": [
+          "17 13 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-citation-velocity-entity-backlink-watch",
+      "name": "Entity backlink watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "github",
+      "slots": [
+        "mon 07:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-citation-velocity",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "40 13 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-citation-velocity-post-deploy-live-check",
+      "name": "post-deploy live check",
+      "what": "Checks the live site still works.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "github",
+      "slots": [
+        "daily 01:10"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-citation-velocity",
+        "file": ".github/workflows/post-deploy-live-check.yml",
+        "crons": [
+          "10 7 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-citation-velocity-query-evidence-refresh",
+      "name": "Query Evidence Refresh",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "github",
+      "slots": [
+        "daily 00:23"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "local-guides-citation-velocity",
+        "file": ".github/workflows/query-evidence-refresh.yml",
+        "crons": [
+          "23 6 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-citation-velocity-search-intelligence-loop",
+      "name": "Search Intelligence Closed Loop",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "github",
+      "slots": [
+        "daily 08:41"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-citation-velocity",
+        "file": ".github/workflows/search-intelligence-loop.yml",
+        "crons": [
+          "41 14 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-citation-velocity-search-outcomes-weekly",
+      "name": "Search Outcomes Weekly",
+      "what": "Measures the week and hands it to the Spry Labs weekly email (no email of its own).",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "github",
+      "slots": [
+        "thu,fri,sat,sun 06:30",
+        "wed 07:03",
+        "wed 11:00",
+        "wed 14:00",
+        "wed 17:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "local-guides-citation-velocity",
+        "file": ".github/workflows/search-outcomes-weekly.yml",
+        "crons": [
+          "3 12 * * 3",
+          "3 13 * * 3",
+          "0 17,20,23 * * 3",
+          "30 12 * * 0,4-6"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-generator-entity-backlink-watch",
+      "name": "Entity Backlink Watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "spry",
+      "brand": "Local guides",
+      "system": "github",
+      "slots": [
+        "wed,sun 23:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-generator",
+        "file": ".github/workflows/entity_backlink_watch.yml",
+        "crons": [
+          "40 5 * * 1",
+          "40 5 * * 4"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-generator-ingestion-sync",
+      "name": "Ingestion Sync",
+      "what": "Ingestion Sync",
+      "business": "spry",
+      "brand": "Local guides",
+      "system": "github",
+      "slots": [
+        "daily 07:15"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-generator",
+        "file": ".github/workflows/ingestion_sync.yml",
+        "crons": [
+          "15 13 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-generator-production-http-evidence",
+      "name": "Production HTTP Evidence",
+      "what": "Production HTTP Evidence",
+      "business": "spry",
+      "brand": "Local guides",
+      "system": "github",
+      "slots": [
+        "daily 05:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-generator",
+        "file": ".github/workflows/production-http-evidence.yml",
+        "crons": [
+          "17 11 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-generator-rotating-refresh",
+      "name": "Rotating Refresh",
+      "what": "Rotating Refresh",
+      "business": "spry",
+      "brand": "Local guides",
+      "system": "github",
+      "slots": [
+        "daily 07:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-generator",
+        "file": ".github/workflows/rotating_refresh.yml",
+        "crons": [
+          "30 13 * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-generator-senior-tick",
+      "name": "Senior lead tick",
+      "what": "Senior lead tick",
+      "business": "spry",
+      "brand": "Local guides",
+      "system": "github",
+      "slots": [
+        "every 15m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-generator",
+        "file": ".github/workflows/senior_tick.yml",
+        "crons": [
+          "*/15 * * * *"
+        ]
+      }
+    },
+    {
+      "id": "local-guides-generator-weekly-outcome-report",
+      "name": "Weekly Outcome Report",
+      "what": "Measures the week and hands it to the Spry Labs weekly email (no email of its own).",
+      "business": "spry",
+      "brand": "Local guides",
+      "system": "github",
+      "slots": [
+        "wed 07:43"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "local-guides-generator",
+        "file": ".github/workflows/weekly_outcome_report.yml",
+        "crons": [
+          "43 12 * * 3",
+          "43 13 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "local-jobs",
+      "name": "West Peek OS Mac jobs",
+      "what": "Runs West Peek OS's jobs that need the Mac.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "mac",
+      "slots": [
+        "always"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "ventures.westpeek.os.local-jobs"
+        ]
+      }
+    },
+    {
+      "id": "lp-daily",
+      "name": "Monique reads every reply to your Fund I drip",
+      "what": "Every morning she reads the replies to the Fund I drip (it runs in Twin), keeps the running list of positive replies on the Deals page, and holds a reply for each warm LP in your morning email.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures · fund",
+      "system": "mac",
+      "slots": [
+        "daily 06:15"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_lp_daily",
+        "launchd": [
+          "com.seq.boss-lp"
+        ]
+      }
+    },
+    {
+      "id": "mac-cleanup",
+      "name": "Mac cleanup",
+      "what": "Keeps the Mac's disk from filling up.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "sun 09:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_mac_cleanup",
+        "launchd": [
+          "com.seq.boss-mac-cleanup"
+        ]
+      }
+    },
+    {
+      "id": "mail-tail",
+      "name": "Mailbox tail",
+      "what": "Reads new brokerage mail as it arrives.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "every 900s"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-mail-tail"
+        ]
+      }
+    },
+    {
+      "id": "mailbox-sweep",
+      "name": "Mailbox sweep",
+      "what": "Missed deals, cooling buyers and connectors from the week's mail.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "sun 18:30"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_mailbox_sweep",
+        "launchd": [
+          "com.seq.boss-mailbox"
+        ]
+      }
+    },
+    {
+      "id": "meet-listener",
+      "name": "Meet listener",
+      "what": "Notices when a Meet call ends so it can be read.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "mac",
+      "slots": [
+        "always"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "ventures.westpeek.os.meet-listener"
+        ]
+      }
+    },
+    {
+      "id": "meeting-prep",
+      "name": "Meeting prep",
+      "what": "A prep note the evening before each call.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 18:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_meeting_prep",
+        "launchd": [
+          "com.seq.boss-meeting-prep"
+        ],
+        "ticks": {
+          "com.seq.boss-meeting-prep": [
+            "hourly :05"
+          ]
+        }
+      }
+    },
+    {
+      "id": "mercedes-creator-dashboard-wrangler-jsonc",
+      "name": "mercedes-creator-dashboard",
+      "what": "Old studio repo: its crons are still written here, but the studio now runs from creator-studios and this one is not deployed.",
+      "business": "spry",
+      "brand": "Creator studios",
+      "system": "cloudflare",
+      "slots": [
+        "daily 07:30",
+        "hourly :00",
+        "mon 06:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "mercedes-creator-dashboard",
+        "file": "wrangler.jsonc",
+        "crons": [
+          "0 * * * *",
+          "30 13 * * *",
+          "0 12 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "network",
+      "name": "Network contacts sync",
+      "what": "Brings the contacts list up to date.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "sun 18:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-network"
+        ]
+      }
+    },
+    {
+      "id": "outside-locks",
+      "name": "Outside locks",
+      "what": "Locks someone else put on your accounts, checked weekly.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "fri 08:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_outside_locks",
+        "launchd": [
+          "com.seq.boss-outside-locks"
+        ]
+      }
+    },
+    {
+      "id": "p-n-p-authority-daily",
+      "name": "Daily Authority Cycle",
+      "what": "Daily Authority Cycle",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "github",
+      "slots": [
+        "daily 10:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "p-n-p",
+        "file": ".github/workflows/authority-daily.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 10 * * *"
+        ]
+      }
+    },
+    {
+      "id": "p-n-p-entity-backlink-watch",
+      "name": "Entity Backlink Watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "github",
+      "slots": [
+        "wed 10:23"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "p-n-p",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 23 10 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "p-n-p-inventory-poll",
+      "name": "Inventory Poll",
+      "what": "Inventory Poll",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "github",
+      "slots": [
+        "every 5m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "p-n-p",
+        "file": ".github/workflows/inventory-poll.yml",
+        "crons": [
+          "*/5 * * * *"
+        ]
+      }
+    },
+    {
+      "id": "p-n-p-live-check",
+      "name": "Post-deploy live check",
+      "what": "Checks the live site still works.",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "github",
+      "slots": [
+        "daily 08:10"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "p-n-p",
+        "file": ".github/workflows/live-check.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 10 8 * * *"
+        ]
+      }
+    },
+    {
+      "id": "p-n-p-monthly-audit",
+      "name": "Monthly Authority Audit",
+      "what": "Monthly Authority Audit",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "github",
+      "slots": [
+        "day2 10:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "p-n-p",
+        "file": ".github/workflows/monthly-audit.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 0 10 2 * *"
+        ]
+      }
+    },
+    {
+      "id": "p-n-p-self-heal",
+      "name": "Bounded Self-Healing",
+      "what": "Fixes small breakages on its own, within limits.",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "github",
+      "slots": [
+        "wed 11:11"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "p-n-p",
+        "file": ".github/workflows/self-heal.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 11 11 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "p-n-p-workers-pnp-mailer-wrangler-toml",
+      "name": "P&P reminders",
+      "what": "P&P reminders",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "cloudflare",
+      "slots": [
+        "hourly :00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "p-n-p",
+        "file": "workers/pnp-mailer/wrangler.toml",
+        "crons": [
+          "0 * * * *"
+        ]
+      }
+    },
+    {
+      "id": "people-worth-a-call",
+      "name": "People worth a call",
+      "what": "Monique names a handful of people, with the reason for each.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "mon 07:15"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_people_worth_a_call",
+        "launchd": [
+          "com.seq.boss-people"
+        ]
+      }
+    },
+    {
+      "id": "pnp-corporate-outreach",
+      "name": "Office Christmas outreach",
+      "what": "Camille writes to offices about holiday events, under the sending limits.",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "mac",
+      "slots": [
+        "daily 10:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_pnp_corporate_outreach",
+        "launchd": [
+          "com.seq.boss-pnp-outreach"
+        ],
+        "ticks": {
+          "com.seq.boss-pnp-outreach": [
+            "mon,tue,wed,thu,fri 10:20"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pnp-marketplace",
+      "name": "Marketplace listings",
+      "what": "Renews and posts the Facebook Marketplace listings; emails only when a run fails.",
+      "business": "porch-and-party",
+      "brand": "Porch & Party",
+      "system": "mac",
+      "slots": [
+        "daily 13:40"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_pnp_marketplace",
+        "duty_born_live": true,
+        "launchd": [
+          "com.seq.boss-fb-renew"
+        ],
+        "ticks": {
+          "com.seq.boss-fb-renew": [
+            "daily 13:40"
+          ]
+        }
+      }
+    },
+    {
+      "id": "practice-week",
+      "name": "Practice: the week ahead",
+      "what": "Imani plans the week's practice.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "boss-os",
+      "slots": [
+        "sun 17:00"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_practice_week"
+      }
+    },
+    {
+      "id": "preseed-watch",
+      "name": "Pre-seed watch",
+      "what": "New pre-seed rounds worth knowing about.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "tue 07:30"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_preseed_watch",
+        "launchd": [
+          "com.seq.boss-preseed-watch"
+        ]
+      }
+    },
+    {
+      "id": "properties",
+      "name": "Spry heartbeat and properties",
+      "what": "Checks every Spry Labs site and its numbers.",
+      "business": "spry",
+      "brand": "Spry Labs",
+      "system": "mac",
+      "slots": [
+        "wed 06:45"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-properties"
+        ]
+      }
+    },
+    {
+      "id": "property-gsc",
+      "name": "Search Console week, per property",
+      "what": "Reads what Google Search saw last week for every site.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "boss-os",
+      "slots": [
+        "wed 07:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_property_gsc"
+      }
+    },
+    {
+      "id": "property-uptime",
+      "name": "Is every site up",
+      "what": "Opens each site's front page every morning.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "boss-os",
+      "slots": [
+        "daily 06:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_property_uptime"
+      }
+    },
+    {
+      "id": "prospect-discovery",
+      "name": "Prospect discovery",
+      "what": "New LP prospect names each week from free sources.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "mon 07:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_prospect_discovery",
+        "launchd": [
+          "com.seq.boss-prospect-discovery"
+        ]
+      }
+    },
+    {
+      "id": "prospects",
+      "name": "Prospect emails",
+      "what": "Monique's approved note and its two follow-ups, under the limits.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "daily 09:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_prospects",
+        "launchd": [
+          "com.seq.boss-prospects"
+        ]
+      }
+    },
+    {
+      "id": "repo-change",
+      "name": "Repo changes",
+      "what": "Danielle lands the code changes you asked for.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 06:00-22:40/20m"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-repo-change"
+        ]
+      }
+    },
+    {
+      "id": "risk-watch",
+      "name": "Risk watch",
+      "what": "Money and mail, watched daily; quiet unless something moves.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 08:20"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_risk_watch",
+        "launchd": [
+          "com.seq.boss-risk-watch"
+        ]
+      }
+    },
+    {
+      "id": "scooter-sheet",
+      "name": "Scooter's LP sheet",
+      "what": "Brings Scooter's LP tracker up to date before Wednesday's sync.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "tue 07:15"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_scooter_sheet",
+        "launchd": [
+          "com.seq.boss-scooter-sheet"
+        ]
+      }
+    },
+    {
+      "id": "scooter-watch",
+      "name": "Scooter watch",
+      "what": "Watches the partner mailbox for what needs a hand.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "every 900s"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.scooter-watch"
+        ]
+      }
+    },
+    {
+      "id": "scooter-watch-digest",
+      "name": "Scooter watch digest",
+      "what": "The week's partner-mail digest.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek Ventures",
+      "system": "mac",
+      "slots": [
+        "mon 07:00",
+        "mon 08:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.scooter-watch-digest"
+        ]
+      }
+    },
+    {
+      "id": "search-readiness-repair",
+      "name": "Search Readiness fix",
+      "what": "Fixes Monday's Search Readiness gaps at source and puts them live.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "mac",
+      "slots": [
+        "tue 06:30"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_search_readiness_repair",
+        "launchd": [
+          "com.seq.boss-sr-fix"
+        ],
+        "ticks": {
+          "com.seq.boss-sr-fix": [
+            "daily 06:30"
+          ]
+        }
+      }
+    },
+    {
+      "id": "seat-claimer",
+      "name": "West Peek OS seat",
+      "what": "Picks up West Peek OS work for the Claude seat.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "mac",
+      "slots": [
+        "always"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "ventures.westpeek.os.seat-claimer"
+        ]
+      }
+    },
+    {
+      "id": "sheila-creator-dashboard-wrangler-jsonc",
+      "name": "sheila-creator-dashboard",
+      "what": "Old studio repo: its crons are still written here, but the studio now runs from creator-studios and this one is not deployed.",
+      "business": "spry",
+      "brand": "Creator studios",
+      "system": "cloudflare",
+      "slots": [
+        "daily 07:30",
+        "hourly :00",
+        "mon 06:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "sheila-creator-dashboard",
+        "file": "wrangler.jsonc",
+        "crons": [
+          "0 * * * *",
+          "30 13 * * *",
+          "0 12 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "shorts-arm",
+      "name": "Shorts lane check",
+      "what": "Makes sure the evening Shorts have something to publish.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "mac",
+      "slots": [
+        "daily 10:11"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.shorts-arm"
+        ]
+      }
+    },
+    {
+      "id": "simone-commands",
+      "name": "Simone's inbox",
+      "what": "Reads what you emailed Simone and does it.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 06:00-23:50/10m"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-simone-commands"
+        ]
+      }
+    },
+    {
+      "id": "site-audit-repair",
+      "name": "Ahrefs audit fix",
+      "what": "Crawls the Ahrefs audits, fixes what they found and lands it.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "mac",
+      "slots": [
+        "thu 05:00"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_site_audit_repair",
+        "launchd": [
+          "com.seq.boss-ahrefs-audit"
+        ],
+        "ticks": {
+          "com.seq.boss-ahrefs-audit": [
+            "daily 05:00"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sites-audit",
+      "name": "Sites audit",
+      "what": "Runs the Search Readiness checklist on every site; feeds Tuesday's fix.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "mac",
+      "slots": [
+        "mon 06:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-sites-audit"
+        ]
+      }
+    },
+    {
+      "id": "spry-weekly",
+      "name": "Spry Labs weekly",
+      "what": "One email: a short section for each Spry Labs business's week.",
+      "business": "spry",
+      "brand": "Spry Labs",
+      "system": "mac",
+      "slots": [
+        "wed 08:15"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-spry-weekly"
+        ]
+      }
+    },
+    {
+      "id": "sprylabs-hpc-site-daily-citation-intelligence",
+      "name": "Daily Citation Intelligence",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "Spry Labs site",
+      "system": "github",
+      "slots": [
+        "daily 07:37"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/daily-citation-intelligence.yml",
+        "crons": [
+          "37 13 * * *"
+        ]
+      }
+    },
+    {
+      "id": "sprylabs-hpc-site-entity-backlink-watch",
+      "name": "Entity Backlink Watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "spry",
+      "brand": "Spry Labs site",
+      "system": "github",
+      "slots": [
+        "wed 08:17"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "17 14 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "sprylabs-hpc-site-main-validation-sentinel",
+      "name": "Main Validation Sentinel",
+      "what": "Main Validation Sentinel",
+      "business": "spry",
+      "brand": "Spry Labs site",
+      "system": "github",
+      "slots": [
+        "daily 02:17-22:17/240m"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/main-validation-sentinel.yml",
+        "crons": [
+          "17 */4 * * *"
+        ]
+      }
+    },
+    {
+      "id": "sprylabs-hpc-site-search-intelligence",
+      "name": "Search Intelligence Cycle",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "Spry Labs site",
+      "system": "github",
+      "slots": [
+        "daily 07:23"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/search-intelligence.yml",
+        "crons": [
+          "23 13 * * *"
+        ]
+      }
+    },
+    {
+      "id": "sprylabs-hpc-site-spry-content-release",
+      "name": "Spry Content Release",
+      "what": "Publishes the next pages.",
+      "business": "spry",
+      "brand": "Spry Labs site",
+      "system": "github",
+      "slots": [
+        "daily 08:17"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/spry-content-release.yml",
+        "crons": [
+          "17 14 * * *"
+        ]
+      }
+    },
+    {
+      "id": "sprylabs-hpc-site-weekly-outcome-report",
+      "name": "Weekly Outcome Report",
+      "what": "Measures the week and hands it to the Spry Labs weekly email (no email of its own).",
+      "business": "spry",
+      "brand": "Spry Labs site",
+      "system": "github",
+      "slots": [
+        "wed 07:33"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "sprylabs-hpc-site",
+        "file": ".github/workflows/weekly-outcome-report.yml",
+        "crons": [
+          "33 12 * * 3",
+          "33 13 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "sr-resume",
+      "name": "Search Readiness resume",
+      "what": "Picks up an unfinished Search Readiness fix.",
+      "business": "spry",
+      "brand": "Industry Guides",
+      "system": "mac",
+      "slots": [
+        "always"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-sr-resume"
+        ]
+      }
+    },
+    {
+      "id": "t2r-groups",
+      "name": "Time-2-Read groups",
+      "what": "Monique writes to homeschool pods, libraries and programs.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "mac",
+      "slots": [
+        "mon,tue,wed,thu,fri 08:15"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_t2r_groups",
+        "launchd": [
+          "com.seq.boss-t2r-groups"
+        ]
+      }
+    },
+    {
+      "id": "t2r-numbers",
+      "name": "Time-2-Read numbers",
+      "what": "Reads Time-2-Read's money numbers into its brain.",
+      "business": "time-2-read",
+      "brand": "Time-2-Read",
+      "system": "mac",
+      "slots": [
+        "wed 07:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-t2r-numbers"
+        ]
+      }
+    },
+    {
+      "id": "tool-scout",
+      "name": "Tools worth knowing about",
+      "what": "Kendra looks for tools worth your time.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "boss-os",
+      "slots": [
+        "thu 08:00"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "duty": "duty_tool_scout"
+      }
+    },
+    {
+      "id": "waiting-on",
+      "name": "Waiting on",
+      "what": "Nothing that waits goes unowned.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 07:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_waiting_on",
+        "launchd": [
+          "com.seq.boss-waiting-on"
+        ]
+      }
+    },
+    {
+      "id": "west-peek-os-wrangler-toml",
+      "name": "WPOS job tick",
+      "what": "WPOS job tick",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "cloudflare",
+      "slots": [
+        "every 1m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "west-peek-os",
+        "file": "wrangler.toml",
+        "crons": [
+          "* * * * *"
+        ]
+      }
+    },
+    {
+      "id": "westpeek-live-browser-e2e",
+      "name": "Browser suite",
+      "what": "Runs the full browser tests.",
+      "business": "west-peek-ventures",
+      "brand": "westpeek.live",
+      "system": "github",
+      "slots": [
+        "daily 01:17"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "westpeek-live",
+        "file": ".github/workflows/browser-e2e.yml",
+        "crons": [
+          "17 7 * * *"
+        ]
+      }
+    },
+    {
+      "id": "wpos-calendar-sync",
+      "name": "Reading the partners' calendars for Meet calls",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 60m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "wpos": "calendar_sync"
+      }
+    },
+    {
+      "id": "wpos-daily-intelligence",
+      "name": "Reading the intelligence sources",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 15m"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "daily_intelligence"
+      }
+    },
+    {
+      "id": "wpos-deck-reading",
+      "name": "Reading decks that arrived",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "daily 05:15"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "deck_reading"
+      }
+    },
+    {
+      "id": "wpos-diagnostics-sweep",
+      "name": "Diagnostics sweep",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 15m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "wpos": "diagnostics_sweep"
+      }
+    },
+    {
+      "id": "wpos-employee-work-sweep",
+      "name": "Working the cards employees own",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 5m"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "employee_work_sweep"
+      }
+    },
+    {
+      "id": "wpos-meet-ingest",
+      "name": "Reading Meet calls that ended",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 60m"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "meet_ingest"
+      }
+    },
+    {
+      "id": "wpos-meeting-brief",
+      "name": "Meeting briefs for the next 36 hours",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "daily 16:00"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "wpos": "meeting_brief"
+      }
+    },
+    {
+      "id": "wpos-monthly-room-proposal",
+      "name": "Rooms: mint the month's packets, and catch anything the request path m",
+      "what": "Rooms: mint the month's packets, and catch anything the requ",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 60m"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "monthly_room_proposal"
+      }
+    },
+    {
+      "id": "wpos-network-sync",
+      "name": "Loading the community from Network OS",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 15m"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "wpos": "network_sync"
+      }
+    },
+    {
+      "id": "wpos-no-action-card-purge",
+      "name": "Stowed card purge",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "daily 03:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "wpos": "no_action_card_purge"
+      }
+    },
+    {
+      "id": "wpos-productions-customer-ideas",
+      "name": "West Peek Productions: 10 customer ideas a month (Walker, for Scooter)",
+      "what": "West Peek Productions: 10 customer ideas a month (Walker, fo",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "daily 08:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "productions_customer_ideas"
+      }
+    },
+    {
+      "id": "wpos-productions-hire-search",
+      "name": "West Peek Productions: the weekly hire search (Walker, for Scooter)",
+      "what": "West Peek Productions: the weekly hire search (Walker, for S",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "mon 08:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "productions_hire_search"
+      }
+    },
+    {
+      "id": "wpos-productions-intro-note",
+      "name": "West Peek Productions: Walker introduces himself to Scooter (once)",
+      "what": "West Peek Productions: Walker introduces himself to Scooter ",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 1440m"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "productions_intro_note"
+      }
+    },
+    {
+      "id": "wpos-productions-monthly",
+      "name": "West Peek Productions: the month in one note (Walker, for Scooter)",
+      "what": "West Peek Productions: the month in one note (Walker, for Sc",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "day1 08:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "productions_monthly"
+      }
+    },
+    {
+      "id": "wpos-productions-press-pitches",
+      "name": "West Peek Productions: 5 press pitch drafts a month (Walker, for Scoot",
+      "what": "West Peek Productions: 5 press pitch drafts a month (Walker,",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "daily 08:10"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "productions_press_pitches"
+      }
+    },
+    {
+      "id": "wpos-tlc-brand-batch",
+      "name": "The Learning Club: Monday brand batch (Wynn)",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "mon 08:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "tlc_brand_batch"
+      }
+    },
+    {
+      "id": "wpos-tlc-daily",
+      "name": "The Learning Club: daily (booking packs, swap flags, go-ahead, drip)",
+      "what": "The Learning Club: daily (booking packs, swap flags, go-ahea",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "daily 07:30"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "tlc_daily"
+      }
+    },
+    {
+      "id": "wpos-tlc-drip",
+      "name": "The Learning Club: drip every half hour (Wynn)",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "every 30m"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "tlc_drip"
+      }
+    },
+    {
+      "id": "wpos-tlc-roundup",
+      "name": "Wynn's Monday roundup",
+      "what": "One weekly TLC roundup email to Sequoia",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "mon 08:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "wpos": "tlc_roundup"
+      }
+    },
+    {
+      "id": "wpos-tlc-topics",
+      "name": "The Learning Club: three topics ahead (Parker)",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "day1 08:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "tlc_topics"
+      }
+    },
+    {
+      "id": "wpos-tlc-trend-story",
+      "name": "The Learning Club: the trend story, quarterly (Wynn)",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "day1 09:00"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "wpos": "tlc_trend_story"
+      }
+    },
+    {
+      "id": "wpos-wednesday-prep",
+      "name": "Wednesday sync prep packets",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "daily 03:00"
+      ],
+      "emails": true,
+      "heavy": true,
+      "trigger": {
+        "wpos": "wednesday_prep"
+      }
+    },
+    {
+      "id": "wpos-weekly-mp-review",
+      "name": "Weekly MP operating review",
+      "what": "A West Peek OS job.",
+      "business": "west-peek-ventures",
+      "brand": "West Peek OS",
+      "system": "west-peek-os",
+      "slots": [
+        "daily 06:00"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "wpos": "weekly_mp_review"
+      }
+    },
+    {
+      "id": "wpp-llm-ci",
+      "name": "CI - Build and Validate",
+      "what": "Builds the site and runs its checks.",
+      "business": "spry",
+      "brand": "WPP",
+      "system": "github",
+      "slots": [
+        "daily 06:15"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "WPP-llm",
+        "file": ".github/workflows/ci.yml",
+        "crons": [
+          "15 12 * * *"
+        ]
+      }
+    },
+    {
+      "id": "wpp-llm-credential-check",
+      "name": "Credential Check - Secrets and Public Key Readiness",
+      "what": "Credential Check - Secrets and Public Key Readiness",
+      "business": "spry",
+      "brand": "WPP",
+      "system": "github",
+      "slots": [
+        "mon 07:45"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "WPP-llm",
+        "file": ".github/workflows/credential-check.yml",
+        "crons": [
+          "45 13 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "wpp-llm-entity-backlink-watch",
+      "name": "Entity Backlink Watch",
+      "what": "Checks who links to the site and that it is named right.",
+      "business": "spry",
+      "brand": "WPP",
+      "system": "github",
+      "slots": [
+        "mon 08:20"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "WPP-llm",
+        "file": ".github/workflows/entity-backlink-watch.yml",
+        "crons": [
+          "20 14 * * 1"
+        ]
+      }
+    },
+    {
+      "id": "wpp-llm-programmatic-release",
+      "name": "Programmatic Content Release - Full Flow 90 Day",
+      "what": "Publishes the next pages.",
+      "business": "spry",
+      "brand": "WPP",
+      "system": "github",
+      "slots": [
+        "daily 02:35",
+        "daily 14:35"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "WPP-llm",
+        "file": ".github/workflows/programmatic-release.yml",
+        "crons": [
+          "35 8,20 * * *"
+        ]
+      }
+    },
+    {
+      "id": "wpp-llm-query-intelligence",
+      "name": "Query Intelligence - GSC Gemini and $0 Signals",
+      "what": "Reads Search Console and finds what to improve.",
+      "business": "spry",
+      "brand": "WPP",
+      "system": "github",
+      "slots": [
+        "daily 01:10",
+        "daily 13:10"
+      ],
+      "emails": false,
+      "heavy": true,
+      "trigger": {
+        "repo": "WPP-llm",
+        "file": ".github/workflows/query-intelligence.yml",
+        "crons": [
+          "10 7,19 * * *"
+        ]
+      }
+    },
+    {
+      "id": "wpp-llm-search-repair-retest",
+      "name": "Search Repair and Retest - Diagnose, Bounded Repair, Delayed Retest",
+      "what": "Search Repair and Retest - Diagnose, Bounded Repair, Delayed Retest",
+      "business": "spry",
+      "brand": "WPP",
+      "system": "github",
+      "slots": [
+        "daily 04:40"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "WPP-llm",
+        "file": ".github/workflows/search-repair-retest.yml",
+        "crons": [
+          "40 10 * * *"
+        ]
+      }
+    },
+    {
+      "id": "wpp-llm-self-heal",
+      "name": "Bounded Self-Healing",
+      "what": "Fixes small breakages on its own, within limits.",
+      "business": "spry",
+      "brand": "WPP",
+      "system": "github",
+      "slots": [
+        "wed 10:26"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "WPP-llm",
+        "file": ".github/workflows/self-heal.yml",
+        "crons": [
+          "26 16 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "your-day",
+      "name": "Your morning email",
+      "what": "Simone's one morning email.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "daily 06:40"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_your_day",
+        "launchd": [
+          "com.seq.boss-your-day"
+        ]
+      }
+    },
+    {
+      "id": "youtube-comment-watch",
+      "name": "YouTube comment watch",
+      "what": "Reads the How We Know channel's comments; acts only on your word.",
+      "business": "spry",
+      "brand": "How We Know",
+      "system": "mac",
+      "slots": [
+        "wed 14:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_youtube_comment_watch",
+        "launchd": [
+          "com.seq.boss-comment-watch"
+        ],
+        "ticks": {
+          "com.seq.boss-comment-watch": [
+            "daily 14:05",
+            "daily 19:05"
+          ]
+        }
+      }
+    }
+  ]
+}

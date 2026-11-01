@@ -69,6 +69,8 @@
     "validate:reachable": "node scripts/validate/reachable.mjs",
     "contacts:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/contacts-sync.mjs",
     "spry:heartbeat": "node scripts/ops/spry-heartbeat.mjs",
+    "spry:weekly": "node scripts/vault/vault.mjs run -- node scripts/ops/spry-weekly.mjs",
+    "schedule:check": "node scripts/ops/schedule-check.mjs",
     "canon:sync": "node scripts/vault/vault.mjs run -- node scripts/ops/canon-sync.mjs",
     "kdp:check": "bash scripts/ops/kdp-watch.sh",
     "browser": "node scripts/ops/browser.mjs",

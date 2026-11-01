@@ -614,11 +614,19 @@ describe("the sourcing duty is scoped and honest about what it cannot do", () =>
     expect(input.prompt).toMatch(/DO NOT DELIVER ANY OF THEM AGAIN/);
   });
 
-  it("runs after the report so the two never contend for the single work slot", async () => {
-    const sourcing = await row<any>(`SELECT local_hour, local_minute FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
+  it("finishes before the report starts, so the two never contend for the single work slot", async () => {
+    /*
+     * 1 Nov 2026 (owner's rebalanced week): sourcing moved from 06:45 to 05:30, BEFORE the 06:00
+     * report, because the report regularly ran past 06:45 and the two met on the one seat. The rule
+     * is unchanged and now stricter: sourcing's start, plus its hard timeout, plus ten minutes for
+     * the seat to claim it, ends before the report begins.
+     */
+    const sourcing = await row<any>(`SELECT local_hour, local_minute, task_input FROM standing_duties WHERE id = 'duty_brokerage_sourcing'`);
     const report = await row<any>(`SELECT local_hour, local_minute FROM standing_duties WHERE id = 'duty_exec_intel'`);
     const mins = (d: any) => d.local_hour * 60 + d.local_minute;
-    expect(mins(sourcing)).toBeGreaterThan(mins(report));
+    const maxSeconds = Number(JSON.parse(sourcing.task_input).requested?.max_seconds);
+    expect(maxSeconds).toBeGreaterThan(0);
+    expect(mins(sourcing) + Math.ceil(maxSeconds / 60) + 10).toBeLessThanOrEqual(mins(report));
   });
 
   it("is told to write as it goes, because a timeout must degrade to partial", async () => {

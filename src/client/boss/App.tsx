@@ -16,6 +16,7 @@ import { Team, type TeamView } from "./pages/Team";
 import { Memory } from "./pages/Memory";
 import { Brains } from "./pages/Brains";
 import { EmailMap } from "./pages/EmailMap";
+import { Schedule } from "./pages/Schedule";
 import { Trading } from "./pages/Trading";
 import { Vault } from "./pages/Vault";
 import { Settings } from "./pages/Settings";
@@ -43,7 +44,7 @@ import { readRoute, readFocus, readGateFocus, type Route } from "./nav";
  */
 const TITLES: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", schedule: "Schedule", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
 
@@ -294,6 +295,8 @@ export default function App() {
         <Brains />
       ) : tab === "emails" ? (
         <EmailMap />
+      ) : tab === "schedule" ? (
+        <Schedule />
       ) : tab === "memory" ? (
         <Memory />
       ) : tab === "trading" ? (

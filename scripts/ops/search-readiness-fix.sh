@@ -8,7 +8,7 @@
 # nothing. Workable = names a repo and is not on a protected page. The Spry Labs download page
 # (protected) and the no_repo briefs are what may be left, and the morning line says so in words.
 #
-# Weekly, Tuesday 07:30 Central, from Monday's 06:00 audit queue (owner, 25 Oct 2026): the schedule is the
+# Weekly, Tuesday 06:30 Central (07:30 until 1 Nov 2026), from Monday's 06:00 audit queue (owner, 25 Oct 2026): the schedule is the
 # duty row duty_search_readiness_repair (migration 0305); launchd ticks daily and asks it. The status
 # file it writes is what the next Monday email reads. By hand: bash scripts/ops/search-readiness-fix.sh
 #

@@ -1911,3 +1911,15 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .email-map-dl dt { color: var(--muted); margin-top: 6px; }
 .email-map-dl dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 .email-map-code { font-family: var(--mono); font-size: 12px; }
+/* The Schedule (☰ More → Schedule, 1 Nov 2026): the approved week, one section per day. */
+.schedule-day > summary { display: flex; flex-direction: column; gap: 2px; }
+.schedule-rows { display: flex; flex-direction: column; margin-top: 8px; }
+.schedule-row { display: grid; grid-template-columns: 76px 1fr; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+.schedule-time { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.schedule-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.schedule-tag { align-self: flex-start; font-size: 12px; color: var(--ink); border-left: 3px solid var(--tag, var(--line)); padding: 0 6px; }
+.schedule-text { font-size: 16px; color: var(--ink); line-height: 1.4; overflow-wrap: anywhere; }
+.schedule-mail { align-self: flex-start; font-size: 13px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
+.schedule-list { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; color: var(--ink); }
+.schedule-system { margin-top: 8px; }
+.schedule-system > summary { display: flex; justify-content: space-between; gap: 8px; }

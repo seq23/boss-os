@@ -248,8 +248,8 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
 7. **Her local copy** is `npm run brains:pull` → `~/Brains/<slug>.md` (private spans kept; passcode
    injected as `BOSS_PASSCODE` by the caller), hourly at :23 from launchd `com.seq.boss-brains-pull`,
    installed by `scripts/ops/install-agent-launchd.sh`.
-8. **The Monday cohesion check** (plan step 10): launchd `com.seq.boss-cohesion`, Monday 06:05 Central
-   (before the 06:40 email), runs `npm run brains:cohesion` (`scripts/brains/cohesion-check.mjs`). It
+8. **The weekly cohesion check** (plan step 10): launchd `com.seq.boss-cohesion`, Sunday 18:45 Central
+   (counts for the week that starts Monday, so Monday's 06:40 email carries it; rebalanced week, 1 Nov 2026), runs `npm run brains:cohesion` (`scripts/brains/cohesion-check.mjs`). It
    moves memory strays (any `*.md` but `MEMORY.md` under `~/.claude/projects/*/memory/`) into
    `~/.claude/memory-archive/<date>/`, never deletes; flags a home `MEMORY.md` grown past an index,
    active repos under `~/GitHub` without a `## Company brain` section (client repos never named,
@@ -315,3 +315,28 @@ Owner, 31 Oct 2026: "one Email Map page inside Boss OS, all businesses". Pinned 
    customer, LP, prospect or investor name.
 4. `docs/OUTBOUND_EMAIL_MAP.md` stays the detailed audit of the Boss OS and side-business paths that
    Team → Duties reads; every Id there is a manifest row with the same owner.
+
+## The Schedule: every scheduled job, every system
+
+Owner approved the rebalanced week, 1 Nov 2026 ("record it somewhere the brain and the system doesn't
+forget"). Pinned by `tests/schedule.test.ts`, which reads this section's files:
+1. **One list.** `src/shared/boss/schedule/manifest.json`: the approved week (one line per job, her
+   words, "emails you"), "Every day", "Not shown", and every scheduled job (`rows`) with its slots in
+   Central and its real trigger (a duty, launchd labels, a repo file and its crons, or a West Peek OS
+   job). The page (☰ More → Schedule, `/?tab=schedule`, `src/client/boss/pages/Schedule.tsx`) renders
+   it and nothing else. The approved plan as approved is `docs/boss/WEEKLY_SCHEDULE.md`.
+2. **A new or moved job goes on it in the same PR.** The test fails when an installer launchd job or a
+   migration-built duty has no row or runs at another time; `npm run schedule:check` (on her Mac)
+   does the same against the live duties, the installed plists (each Hour moved back from the Mac's
+   zone, so an unpinned plist shows up an hour early) and the crons on every non-client repo's default
+   branch. A line of the week whose jobs are still moving in another repo is `pending` and printed as
+   WAITING, never passed silently.
+3. **Every Mac time is Central.** The installer writes Central hours and `lint_plist` moves them to the
+   Mac's zone (`scripts/ops/plist-central.mjs`); ~/bin and how-we-know install through the same file.
+4. **Client repos never appear** (`scheduleClientProblems`, the Email Map's exclusion).
+5. **The Spry Labs weekly** (Wednesdays 08:15 Central, `com.seq.boss-spry-weekly`,
+   `scripts/ops/spry-weekly.mjs`): each side business's repo computes its week on Wednesday morning,
+   sends no email, and uploads a `spry-weekly-summary` artifact (`src/shared/boss/spryWeekly/sources.mjs`);
+   Camille sends ONE email, a short section per business. A report that did not arrive is a plain line
+   and a fix job, never silence (rule 0).
+

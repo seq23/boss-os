@@ -16,6 +16,8 @@ import manifest from "@shared/boss/emailMap/manifest.json";
 export interface EmailRow {
   id: string; business: string; what: string; sender: string; owner: string; from: string; to: string;
   when: string; runs: string; trigger: string; pause: string; launchd?: string[];
+  /** Why a row runs outside any repo (an external tool), so the code scan expects no path. */
+  external_why?: string;
   code: Array<{ repo: string; paths: string[] }>;
 }
 export interface EmailManifest {
@@ -36,19 +38,21 @@ export const RUNS_SHORT: Record<string, string> = {
   session: "Claude session only",
   folded: "Inside the morning email",
   inert: "Switched off",
+  "spry-weekly": "Inside the Spry Labs weekly",
+  "external-tool": "An outside tool",
   "not-email": "Not an email",
 };
 
-const SENDS = (r: EmailRow) => r.runs !== "inert" && r.runs !== "not-email" && r.runs !== "folded";
+const SENDS = (r: EmailRow) => r.runs !== "inert" && r.runs !== "not-email" && r.runs !== "folded" && r.runs !== "spry-weekly";
 
 export function summaryLine(m: EmailManifest = EMAIL_MAP): string {
   const sending = m.rows.filter(SENDS);
   const mac = sending.filter((r) => r.runs === "mac").length;
-  const folded = m.rows.filter((r) => r.runs === "folded").length;
+  const folded = m.rows.filter((r) => r.runs === "folded" || r.runs === "spry-weekly").length;
   const off = m.rows.filter((r) => r.runs === "inert" || r.runs === "not-email").length;
   return `${sending.length} automated emails across ${m.businesses.length} businesses. ` +
     `${sending.length - mac} send from the cloud whatever your Mac is doing; ${mac} need your Mac awake. ` +
-    `${folded} more are lines inside Simone's morning email; ${off} ${off === 1 ? "is" : "are"} switched off or not email.`;
+    `${folded} more are lines inside a combined email (Simone's morning email or the Spry Labs weekly); ${off} ${off === 1 ? "is" : "are"} switched off or not email.`;
 }
 
 export function EmailMap() {

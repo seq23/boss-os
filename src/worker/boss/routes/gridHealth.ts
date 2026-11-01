@@ -42,7 +42,7 @@ interface Latest {
 /** What would produce a reading for a wired cell that has none yet — so "never read" says who. */
 const NEVER_READ_HINT: Record<string, string> = {
   uptime: "Not read yet. The Worker probes every canonical domain at 06:00 America/Chicago (duty_property_uptime); run it now from Duties.",
-  gsc: "Not read yet. The Worker reads Search Console on Monday at 07:00 America/Chicago (duty_property_gsc); run it now from Duties.",
+  gsc: "Not read yet. The Worker reads Search Console on Wednesday at 07:00 America/Chicago (duty_property_gsc); run it now from Duties.",
   github: "Not read yet. Her Mac's grid watch (grid-watch.mjs, 06:20 daily) posts the GitHub reading when it next runs.",
   cloudflare: "Not read yet. Her Mac's grid watch (grid-watch.mjs, 06:20 daily) posts the Cloudflare reading when it next runs.",
 };

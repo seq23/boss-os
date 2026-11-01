@@ -18,7 +18,9 @@
     "session": "Only while a Claude session is open.",
     "folded": "No email of its own: its lines go into Simone's morning email.",
     "inert": "Switched off. It looks like a sender and sends nothing.",
-    "not-email": "Not an email. Listed so nobody hunts for it."
+    "not-email": "Not an email. Listed so nobody hunts for it.",
+    "spry-weekly": "No email of its own: its week goes into the one Spry Labs weekly email (Wednesdays 8:15 AM).",
+    "external-tool": "In an outside tool, not in any repo of hers. Boss OS only reads what comes back."
   },
   "rows": [
     {
@@ -326,13 +328,13 @@
     },
     {
       "id": "pnp-studio-mail", "business": "porch-and-party",
-      "what": "P&P Studio: sign-in codes, brief ready, clips ready, the weekly recap and posting problems",
+      "what": "P&P Studio: sign-in codes only (the brief, clips-ready, recap and posting-problem emails to you are cancelled, 1 Nov 2026)",
       "sender": "P&P Studio (its own system)", "owner": "Danielle",
       "from": "The studio's sender (Creator Studios)", "to": "The studio's owner",
-      "when": "Hourly checks, a 7:30 AM brief, Monday recap",
+      "when": "When someone signs in",
       "runs": "cloud-cron", "trigger": "creator-studios Worker for pnpstudio.spryexecutiveos.com (the sample1studio deploy)",
       "pause": "Remove the studio's RESEND_API_KEY secret (sends are skipped) or its crons",
-      "code": [{ "repo": "creator-studios", "paths": ["worker/services/email.ts", "wrangler.jsonc"] }]
+      "code": [{"repo": "creator-studios", "paths": ["worker/services/email.ts", "wrangler.jsonc"]}]
     },
 
     {
@@ -499,26 +501,34 @@
     },
     {
       "id": "lgcv-search-outcomes-weekly", "business": "industry-guides",
-      "what": "Weekly search report for every portfolio site (red, watch, green)",
+      "what": "Weekly search report for every portfolio site, now a section of the Spry Labs weekly",
       "sender": "The Industry Guides (no employee)", "owner": "Camille",
-      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "You",
-      "when": "Mondays 8:00 AM",
-      "runs": "github", "trigger": "GitHub Action search-outcomes-weekly.yml",
+      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "No one directly (the Spry Labs weekly carries it)",
+      "when": "Wednesdays 7:03 AM, into the Spry Labs weekly",
+      "runs": "spry-weekly", "trigger": "GitHub Action search-outcomes-weekly.yml uploads its summary for Boss OS",
       "pause": "gh workflow disable search-outcomes-weekly.yml -R seq23/local-guides-citation-velocity",
-      "code": [{ "repo": "local-guides-citation-velocity", "paths": [".github/workflows/search-outcomes-weekly.yml", "scripts/search_console/search_outcomes_weekly.py"] }]
+      "code": [{"repo": "local-guides-citation-velocity", "paths": [".github/workflows/search-outcomes-weekly.yml", "scripts/search_console/search_outcomes_weekly.py", "scripts/search_console/spry_weekly_summary.mjs"]}]
     },
     {
       "id": "spry-weekly-outcomes", "business": "industry-guides",
-      "what": "Weekly search outcome report for A Player Mode and the Spry Labs site",
+      "what": "Weekly outcome reports for A Player Mode, Creator Network, the Spry Labs site and the local guides, now sections of the Spry Labs weekly",
       "sender": "The site (no employee)", "owner": "Camille",
-      "from": "The repo's report sender setting", "to": "The report address set on the repo",
-      "when": "Mondays 8:00 AM",
-      "runs": "github", "trigger": "GitHub Action weekly-outcome-report.yml in each repo",
-      "pause": "gh workflow disable weekly-outcome-report.yml in that repo",
-      "code": [
-        { "repo": "aplayer-mode", "paths": [".github/workflows/weekly-outcome-report.yml"] },
-        { "repo": "sprylabs-hpc-site", "paths": [".github/scripts/weekly_outcome_notify.mjs"] }
-      ]
+      "from": "The repo's report sender setting", "to": "No one directly (the Spry Labs weekly carries them)",
+      "when": "Wednesdays 7:13 to 7:43 AM, into the Spry Labs weekly",
+      "runs": "spry-weekly", "trigger": "GitHub Actions in each repo upload a summary for Boss OS instead of emailing",
+      "pause": "gh workflow disable the weekly report workflow in that repo",
+      "code": [{"repo": "aplayer-mode", "paths": [".github/workflows/weekly-outcome-report.yml", ".github/scripts/spry-weekly-summary.mjs"]}, {"repo": "sprylabs-hpc-site", "paths": [".github/scripts/weekly_outcome_notify.mjs", ".github/scripts/spry_weekly_summary.mjs"]}, {"repo": "creator-network", "paths": [".github/workflows/weekly-owner-report.yml", "reporting/weekly_owner/spry-weekly-summary.mjs"]}, {"repo": "local-guides-generator", "paths": [".github/workflows/weekly_outcome_report.yml", "scripts/ops/spry_weekly_summary.mjs"]}]
+    },
+    {
+      "id": "spry-labs-weekly", "business": "industry-guides",
+      "what": "The Spry Labs weekly: one email, a short section for each side business's week (a missing report is a plain line)",
+      "sender": "Camille", "owner": "Camille",
+      "from": "Camille <camille@sequoiataylor.com>", "to": "You",
+      "when": "Wednesdays 8:15 AM",
+      "runs": "mac", "trigger": "launchd com.seq.boss-spry-weekly reads each repo's spry-weekly-summary from GitHub",
+      "pause": "launchctl bootout gui/$(id -u)/com.seq.boss-spry-weekly",
+      "launchd": ["com.seq.boss-spry-weekly"],
+      "code": [{"repo": "boss-os", "paths": ["scripts/ops/spry-weekly.mjs", "src/shared/boss/spryWeekly/compose.mjs", "src/shared/boss/spryWeekly/sources.mjs"]}]
     },
     {
       "id": "approvalprep-download-email", "business": "industry-guides",
@@ -593,13 +603,13 @@
     },
     {
       "id": "hwk-sunday-digest", "business": "industry-guides",
-      "what": "How We Know: Sunday digest issue",
+      "what": "How We Know: the Sunday digest, now a section of the Spry Labs weekly (the issue stays as the record; it no longer emails you)",
       "sender": "GitHub", "owner": "Monique",
-      "from": "notifications@github.com", "to": "You",
-      "when": "Sundays 11:00 AM",
-      "runs": "github", "trigger": "GitHub Action loop-sun-digest.yml",
+      "from": "notifications@github.com", "to": "No one directly (the Spry Labs weekly carries it)",
+      "when": "Sundays 11:00 AM, into Wednesday's Spry Labs weekly",
+      "runs": "spry-weekly", "trigger": "GitHub Action loop-sun-digest.yml",
       "pause": "gh workflow disable loop-sun-digest.yml -R seq23/how-we-know",
-      "code": [{ "repo": "how-we-know", "paths": [".github/workflows/loop-sun-digest.yml"] }]
+      "code": [{"repo": "how-we-know", "paths": [".github/workflows/loop-sun-digest.yml", "loop/spry_weekly_summary.py"]}]
     },
     {
       "id": "hwk-monthly-review", "business": "industry-guides",
@@ -626,11 +636,11 @@
       "what": "Kindle: what this month's Amazon KDP mail means, and anything that needs you",
       "sender": "Simone", "owner": "Simone",
       "from": "Simone <simone@sequoiataylor.com>", "to": "You",
-      "when": "Monthly, the 1st at 8:30 AM",
+      "when": "Monthly, the 1st at 9:30 AM",
       "runs": "mac", "trigger": "Mac job com.seq.kdp-surface",
       "pause": "launchctl bootout gui/501/com.seq.kdp-surface",
       "launchd": ["com.seq.kdp-surface"],
-      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/kdp-surface.sh", "scripts/ops/kdp-surface-report.mjs"] }]
+      "code": [{"repo": "boss-os", "paths": ["scripts/ops/kdp-surface.sh", "scripts/ops/kdp-surface-report.mjs"]}]
     },
 
     {
@@ -844,11 +854,11 @@
       "what": "Red builds across the repos, as GitHub issues GitHub emails you",
       "sender": "GitHub", "owner": "Danielle",
       "from": "notifications@github.com", "to": "You",
-      "when": "Mondays and Fridays 7:00 AM (retry 8:00 AM)",
+      "when": "Mondays and Fridays 8:00 AM (retry 9:00 AM)",
       "runs": "mac", "trigger": "Mac job com.seq.ci-sweep",
       "pause": "launchctl bootout gui/501/com.seq.ci-sweep (and -retry, -resume)",
       "launchd": ["com.seq.ci-sweep", "com.seq.ci-sweep-retry"],
-      "code": [{ "repo": "~/bin", "paths": ["ci-sweep.sh"] }]
+      "code": [{"repo": "~/bin", "paths": ["ci-sweep.sh"]}]
     },
     {
       "id": "claude-gmail-connector", "business": "personal",
@@ -883,6 +893,17 @@
         { "repo": "mercedes-creator-dashboard", "paths": ["worker/services/email.ts", "scripts/staging-login-code.mjs"] },
         { "repo": "sheila-creator-dashboard", "paths": ["worker/services/email.ts", "scripts/staging-login-code.mjs"] }
       ]
+    },
+    {
+      "id": "fund-i-lp-drip-twin", "business": "west-peek-ventures",
+      "what": "Fund I LP drip (Twin)",
+      "sender": "Twin (an outside drip tool), from a West Peek mailbox", "owner": "Sequoia",
+      "from": "A West Peek mailbox, set in Twin", "to": "Prospective Fund I LPs",
+      "when": "On Twin's own drip schedule",
+      "runs": "external-tool", "trigger": "Twin's campaign. Boss OS only reads the replies (Monique, every morning)",
+      "pause": "In Twin: pause the campaign",
+      "external_why": "Twin is an outside tool, not code in any repo of hers, so there is no path to cite and the code scan expects none. Monique's daily read of the replies is com.seq.boss-lp (lp-daily.mjs).",
+      "code": [{"repo": "external", "paths": []}]
     }
   ]
 }

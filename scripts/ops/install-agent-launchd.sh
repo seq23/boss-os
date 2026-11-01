@@ -493,7 +493,7 @@ cat > "$PROPS_PLIST" <<PROPSEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGS/properties.log</string>
   <key>StandardErrorPath</key><string>$LOGS/properties.err</string>
@@ -504,7 +504,44 @@ PROPSEOF
 launchctl unload "$PROPS_PLIST" 2>/dev/null || true
 lint_plist "$PROPS_PLIST"
 launchctl load "$PROPS_PLIST"
-echo "Installed $PROPS_LABEL — Monday 07:00 Central."
+echo "Installed $PROPS_LABEL — Wednesday 06:45 Central (rebalanced week, 1 Nov 2026: Spry Labs day)."
+
+# ─── The Spry Labs weekly — one email, a short section per side business (owner, 1 Nov 2026) ────
+#
+# Wednesday 08:15 Central. The five weekly reports (A Player Mode, Creator Network, the portfolio's
+# search outcomes, the Spry Labs site, the local guides) each compute on Wednesday 07:03-07:43 and
+# upload a `spry-weekly-summary` artifact instead of emailing; scripts/ops/spry-weekly.mjs reads the
+# newest of each through `gh`, waits up to 25 minutes for a late one, and sends ONE email from
+# Camille. A report that never came is a plain line in that email and a fix job, never silence.
+SPRYWK_LABEL="com.seq.boss-spry-weekly"
+SPRYWK_PLIST="$HOME/Library/LaunchAgents/$SPRYWK_LABEL.plist"
+
+cat > "$SPRYWK_PLIST" <<SPRYWKEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SPRYWK_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent spry:weekly</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/spry-weekly.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/spry-weekly.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+SPRYWKEOF
+
+launchctl unload "$SPRYWK_PLIST" 2>/dev/null || true
+lint_plist "$SPRYWK_PLIST"
+launchctl load "$SPRYWK_PLIST"
+echo "Installed $SPRYWK_LABEL — Wednesday 08:15 Central (spry-weekly.mjs: the one Spry Labs weekly email)."
 
 # ─── The Search Readiness audit — every checklist item on every grid repo site, weekly ───────────
 #
@@ -545,8 +582,10 @@ echo "Installed $SR_LABEL — Monday 06:00 Central."
 #
 # Owner, 31 Oct 2026 (Company Brains plan). The pull writes ~/Brains/<slug>.md every hour at :23
 # (npm run brains:pull); it was installed by hand first and is written here so this file stays the one
-# list. The cohesion check (step 10) runs Monday 07:05 on the Mac's clock (Eastern) = 06:05 Central,
-# before Simone's 06:40 Central email, so that Monday's email carries this week's line. It moves
+# list. The cohesion check (step 10) runs SUNDAY 18:45 Central (owner's rebalanced week, 1 Nov 2026;
+# it was Monday 07:05, which lint_plist then moved to 08:05 Eastern = 07:05 Central, AFTER the 06:40
+# email it was meant to feed). A Sunday record counts for the week that starts next morning
+# (macCheckWeek), so Monday's email carries this week's line. It moves
 # memory strays to the archive, restarts a stale pull, and posts what it found to Boss OS
 # (scripts/brains/cohesion-check.mjs). Both through the vault for BOSS_PASSCODE.
 BRAINS_LOGS="$HOME/Library/Logs/boss-brains"
@@ -591,7 +630,7 @@ cat > "$COHESION_PLIST" <<COHEOF
     <string>cd $REPO &amp;&amp; npm run --silent vault:run -- npm run --silent brains:cohesion</string>
   </array>
   <key>StartCalendarInterval</key>
-  <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>5</integer></dict>
+  <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>45</integer></dict>
   <key>RunAtLoad</key><false/>
   <key>StandardOutPath</key><string>$BRAINS_LOGS/cohesion.log</string>
   <key>StandardErrorPath</key><string>$BRAINS_LOGS/cohesion.err</string>
@@ -600,7 +639,7 @@ COHEOF
 launchctl unload "$COHESION_PLIST" 2>/dev/null || true
 lint_plist "$COHESION_PLIST"
 launchctl load "$COHESION_PLIST"
-echo "Installed $COHESION_LABEL — Monday 06:05 Central."
+echo "Installed $COHESION_LABEL — Sunday 18:45 Central (counts for the week that starts Monday)."
 
 # Time-2-Read's money numbers (owner's approval, 1 Nov 2026): paying subscribers, MRR, trial starts,
 # trial -> paid rate and free signups, read from the dailystory Supabase tables (and live Stripe once a
@@ -636,8 +675,8 @@ echo "Installed $T2R_NUMBERS_LABEL — Wednesday 07:30 Central."
 
 # ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
 #
-# Owner, 25 Oct 2026: the queue was worked to empty that day; after that it runs WEEKLY, Tuesday 07:30
-# Central (Monday is crowded), working from Monday's 06:00 audit queue; the audit stays Monday. The
+# Owner, 25 Oct 2026: the queue was worked to empty that day; after that it runs WEEKLY, Tuesday 06:30
+# Central (07:30 until the approved week of 1 Nov 2026) (Monday is crowded), working from Monday's 06:00 audit queue; the audit stays Monday. The
 # schedule lives on duty_search_readiness_repair (migration 0305); launchd ticks daily and asks the row
 # (--only-if-due), the same shape as the Thursday Ahrefs pass. By hand: bash scripts/ops/search-readiness-fix.sh
 SRF_LABEL="com.seq.boss-sr-fix"
@@ -656,7 +695,7 @@ cat > "$SRF_PLIST" <<SRFEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_AI_RUNNER</key><string>auto</string></dict>
@@ -669,7 +708,7 @@ SRFEOF
 launchctl unload "$SRF_PLIST" 2>/dev/null || true
 lint_plist "$SRF_PLIST"
 launchctl load "$SRF_PLIST"
-echo "Installed $SRF_LABEL — daily 07:30 Central tick, weekly Tuesday work (asks the duty row)."
+echo "Installed $SRF_LABEL — daily 06:30 Central tick (approved week, 1 Nov 2026), weekly Tuesday work (asks the duty row)."
 
 # ─── The Search Readiness run resumes by itself (25 Oct 2026) ─────────────────────────────────────
 #
@@ -963,7 +1002,7 @@ cat > "$AHREFS_PLIST" <<AHREOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -976,7 +1015,7 @@ AHREOF
 launchctl unload "$AHREFS_PLIST" 2>/dev/null || true
 lint_plist "$AHREFS_PLIST"
 launchctl load "$AHREFS_PLIST"
-echo "Installed $AHREFS_LABEL — daily 06:00 Central tick, weekly Thursday work (asks the duty row)."
+echo "Installed $AHREFS_LABEL — daily 05:00 Central tick (approved week, 1 Nov 2026), weekly Thursday work (asks the duty row)."
 
 # ─── Danielle's on-demand repo-change lane ───────────────────────────────────
 #
@@ -1211,14 +1250,14 @@ launchctl load "$PNP_PLIST"
 # so the Mac's own zone (Eastern) cannot move it. Reports to duty_meeting_prep (migration 0312).
 install_l_job com.seq.boss-meeting-prep "duty-run.sh meeting-prep.mjs -- npm run --silent meeting-prep" '<dict><key>Minute</key><integer>5</integer></dict>' meeting-prep
 # 26 Oct 2026 (owner-approved, "build it all"): Zora's register daily 07:00, Kendra's Mac clean-up
-# Sundays 09:00, Monique's pre-seed watch Mondays 07:30 (all Central; lint_plist moves them to the Mac's zone).
+# Sundays 09:00, Monique's pre-seed watch Tuesdays 07:30 (all Central; lint_plist moves them to the Mac's zone).
 install_l_job com.seq.boss-waiting-on "duty-run.sh waiting-on.mjs -- npm run --silent waiting-on" '<dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>' waiting-on
 # SIMONE'S "DO YOU STILL WANT TO GO?" (owner, 26 Oct 2026: "a reminder 28 hrs before"): every 10
 # minutes, every hour, so the email lands within ten minutes of 28 hours before the booking. Reports
 # to duty_errand_reminders (migration 0315).
 install_l_job com.seq.boss-errand-reminders "duty-run.sh errand-reminders.mjs -- npm run --silent errand-reminders" '<dict><key>Minute</key><integer>0</integer></dict><dict><key>Minute</key><integer>10</integer></dict><dict><key>Minute</key><integer>20</integer></dict><dict><key>Minute</key><integer>30</integer></dict><dict><key>Minute</key><integer>40</integer></dict><dict><key>Minute</key><integer>50</integer></dict>' errand-reminders
 install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>' mac-cleanup
-install_l_job com.seq.boss-preseed-watch "duty-run.sh preseed-watch.mjs -- npm run --silent preseed:watch" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' preseed-watch
+install_l_job com.seq.boss-preseed-watch "duty-run.sh preseed-watch.mjs -- npm run --silent preseed:watch" '<dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' preseed-watch
 install_l_job com.seq.boss-catchups "duty-run.sh lp-catchups.mjs -- npm run --silent lp:catchups" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>' lp-catchups
 install_l_job com.seq.boss-eightraise "duty-run.sh lp-eightraise.mjs -- npm run --silent lp:eightraise" '<dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>' lp-eightraise
 # end boss fix L
@@ -1282,6 +1321,41 @@ POSITIVE_PLIST="$HOME/Library/LaunchAgents/$POSITIVE_LABEL.plist"
 launchctl unload "$POSITIVE_PLIST" 2>/dev/null || true
 rm -f "$POSITIVE_PLIST"
 echo "Removed $POSITIVE_LABEL — the weekly LP reminder email is retired."
+
+# ─── The LP / buyer crossmatch — firms on both the Fund I LP list and the brokerage buyer list ─────
+#
+# Owner, 1 Nov 2026 ("record it somewhere the brain and the system doesn't forget"). `npm run
+# crossmatch` (lp-buyer-crossmatch.mjs) was committed and ran only when someone typed it: "exists but
+# nothing invokes it". TUESDAY 07:45 CENTRAL, capital day: after the buyer hunt (07:00) and Scooter's
+# LP sheet (07:15) have brought both lists current. It posts firms and counts only; LP individuals
+# stay in ~/.boss-os/crossmatch on this Mac. No email.
+XMATCH_LABEL="com.seq.boss-crossmatch"
+XMATCH_PLIST="$HOME/Library/LaunchAgents/$XMATCH_LABEL.plist"
+cat > "$XMATCH_PLIST" <<XMATCHEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$XMATCH_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent crossmatch</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/crossmatch.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/crossmatch.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+XMATCHEOF
+launchctl unload "$XMATCH_PLIST" 2>/dev/null || true
+lint_plist "$XMATCH_PLIST"
+launchctl load "$XMATCH_PLIST"
+echo "Installed $XMATCH_LABEL — Tuesday 07:45 Central (lp-buyer-crossmatch.mjs; firms only, no email)."
 
 # ─── Toni's credential prober ────────────────────────────────────────────────
 #
@@ -1465,7 +1539,7 @@ cat > "$LOCKS_PLIST" <<LOCKSEOF
   </array>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>40</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>40</integer></dict>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>BOSS_OS_REPO</key><string>$REPO</string></dict>
@@ -1478,7 +1552,7 @@ LOCKSEOF
 launchctl unload "$LOCKS_PLIST" 2>/dev/null || true
 lint_plist "$LOCKS_PLIST"
 launchctl load "$LOCKS_PLIST"
-echo "Installed $LOCKS_LABEL — Monday 08:40 Central, reporting to duty_outside_locks (Toni)."
+echo "Installed $LOCKS_LABEL — Friday 08:40 Central (rebalanced week, 1 Nov 2026), reporting to duty_outside_locks (Toni)."
 
 echo "Installed $LABEL — fetches the sky and the market, then checks for queued work at 06:05, 06:35, 06:50, 07:10, 12:35 and 18:35 Central."
 echo "Device: $DEVICE_ID · logs: $LOGS/agent.log"
@@ -1519,6 +1593,8 @@ require_loaded "$LABEL"
 require_loaded "$POLL_LABEL"
 require_loaded "$NETWORK_LABEL"
 require_loaded "$PROPS_LABEL"
+require_loaded "$SPRYWK_LABEL"
+require_loaded "$XMATCH_LABEL"
 require_loaded "$SR_LABEL"
 require_loaded "$SRF_LABEL"
 require_loaded "$SRR_LABEL"

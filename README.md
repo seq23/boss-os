@@ -199,6 +199,15 @@ side-business paths. The side businesses themselves are reviewed in
 [SIDE_BUSINESS_REVIEW.md](docs/SIDE_BUSINESS_REVIEW.md) (living page:
 https://claude.ai/artifact/2XkmYNmppidkqr4SU8xwiv; a repo copy).
 
+## When everything runs
+
+Every scheduled job across her systems (Boss OS duties, the Mac's launchd jobs, GitHub Actions and
+Cloudflare crons in her repos, West Peek OS jobs; never a client's) is on the **Schedule page in Boss
+OS** (☰ More → Schedule, `/?tab=schedule`; approved 1 Nov 2026), generated from
+`src/shared/boss/schedule/manifest.json`. The approved week is kept as
+[WEEKLY_SCHEDULE.md](docs/boss/WEEKLY_SCHEDULE.md). `npm run schedule:check` holds the page to what
+really fires.
+
 **The rule:** any new or changed sender — in any repo, launchd job or Worker cron — is added to the
 map (the manifest, and the doc for a Boss OS or side-business path) in the same PR. `tests/outboundEmailMap.test.ts` enforces it for this
 repo: it checks every boss-os row's files exist, every Id appears once, and fails, by file name, on
