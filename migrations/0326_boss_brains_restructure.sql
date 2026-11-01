@@ -46,4 +46,4 @@ UPDATE brains SET title = 'Time-2-Read — a Spry Labs company' WHERE slug = 'ti
 UPDATE brains SET title = 'Spry Labs — the umbrella for every side business' WHERE slug = 'spry';
 UPDATE brains SET title = 'Industry Guides (retired 1 Nov 2026: now in Spry Labs)' WHERE slug = 'industry-guides';
 
-INSERT OR IGNORE INTO schema_version (migration) VALUES ('0325_boss_brains_restructure');
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0326_boss_brains_restructure');
