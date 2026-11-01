@@ -214,6 +214,10 @@ const SNAPSHOT_TABLES = [
   // week the impressions fell — exists only here, and a restore without it loses the trend the
   // card is there to show.
   "property_health_readings",
+  // 0323 — the brains: one document per business and every past version. NOT RE-DERIVABLE: she wrote
+  // them. Parents before children: brains before brain_revisions.
+  "brains",
+  "brain_revisions",
   // 0189 — things to raise with a standing counterpart. Losing these in a restore loses the half
   // that was never derivable: items said in passing that exist nowhere else, including the access
   // grant that unblocks reading LP replies. Everything else in the packet recomputes from records;

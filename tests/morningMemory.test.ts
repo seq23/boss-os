@@ -16,7 +16,15 @@ const base = (now: number, told?: any) => ({
   tasks: [failed("t1", "Executive Intelligence Report", now - 3_600_000), failed("t2", "Executive Intelligence Report", now - 7_200_000), failed("t3", 'Find why "Executive Intelligence Report" failed', now - 1_000)],
   morning: { lp: { section: "lp", at: new Date(now).toISOString(), decide: [lpDecide] }, tail: { section: "tail", at: new Date(now).toISOString(), lines: ["One. Two.", "Line b.", "Line c.", "Line d."] } },
 });
-const doneLines = (text: string) => text.slice(text.indexOf("Done for you"), text.indexOf("Porch & Party")).split("\n").filter((l) => l.startsWith("- "));
+// Only the "Done for you" section itself: from its heading to the blank line that ends it. (Reading on to
+// "Porch & Party" counted Monday's other sections, e.g. the Brains line, as done lines.)
+const doneLines = (text: string) => {
+  const at = text.indexOf("Done for you");
+  expect(at).toBeGreaterThanOrEqual(0);
+  const rest = text.slice(at);
+  const end = rest.indexOf("\n\n");
+  return (end < 0 ? rest : rest.slice(0, end)).split("\n").filter((l) => l.startsWith("- "));
+};
 
 describe("a Decide item she has already seen is one thin line", () => {
   const day1 = buildDay(base(MON), MON);
