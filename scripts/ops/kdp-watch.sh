@@ -24,7 +24,7 @@
 
 set -uo pipefail
 
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 PROMPT_FILE="${KDP_WATCH_PROMPT:-$REPO/scripts/ops/kdp-watch-prompt.md}"
 
 # THE MODEL IS NAMED, AND IT MATCHES THE DUTY ROW.

@@ -45,6 +45,14 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
   06:40 Central. Jobs that care about the hour decide it in Central themselves.
 
 ## Mac-side runs
+- **Every launchd job runs from `~/.boss-os/runtime`, never from `~/GitHub/boss-os`** (1 Nov 2026).
+  `com.seq.boss-runtime-sync` (`scripts/ops/runtime-sync.sh`, every 10 min) holds that clone at
+  origin/main: anything found on another branch or edited there is saved to
+  `~/.boss-os/runtime-salvage/<stamp>/` and reset, and any plist still pointing at the working checkout
+  is named in the log and the morning email. `bash scripts/ops/install-runtime.sh` (idempotent) clones
+  it and repoints the plists. Nobody works in the runtime: code changes go in a worktree from
+  origin/main (the mail tail's agent is told to cut one, `.wt-danielle-boss-os-<stamp>`).
+  Pinned by `tests/runtimeCheckout.test.ts`.
 - The Executive Intelligence Report is researched by Claude Code on the Mac: launchd
   `com.seq.boss-agent` runs `agent.mjs work-once` at the claim times; the run works in
   `~/.boss-os/reports` (not a repo, deliberately). A dispatch by hand needs

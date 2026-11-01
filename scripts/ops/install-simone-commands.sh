@@ -4,7 +4,7 @@
 # the Worker laid out. Never sends to a third party: every email to a person waits for her Send.
 # Called by install-agent-launchd.sh; safe to run on its own.
 set -euo pipefail
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 LABEL="com.seq.boss-simone-commands"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOGS="$HOME/Library/Logs/simone-commands"

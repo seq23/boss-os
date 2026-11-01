@@ -16,7 +16,7 @@
 #   boss-mail-tail-run.sh <prompt> <tail.jsonl> <lockdir> <claude> <report.txt> <subjects> <since>
 set -uo pipefail
 PROMPT_FILE="$1" TAIL_LOG="$2" FIXLOCK="$3" CLAUDE="$4" REPORT_FILE="$5" SUBJECT="${6:-your email}" SINCE="${7:-}"
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 LIB="$REPO/scripts/ops/lib/tail-report.mjs"
 STATE_DIR="$(dirname "$TAIL_LOG")"
 REPORT_LOG="$STATE_DIR/report.log"

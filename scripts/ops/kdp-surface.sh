@@ -18,7 +18,7 @@
 
 set -uo pipefail
 
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 PROMPT_FILE="${KDP_SURFACE_PROMPT:-${BOSS_DUTY_PROMPT_FILE:-$REPO/scripts/ops/kdp-surface-prompt.md}}"
 
 # THE MODEL IS NAMED AND MATCHES THE DUTY ROW. Deciding whether a message is promotional, an update
