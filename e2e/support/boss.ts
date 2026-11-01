@@ -27,7 +27,7 @@ export async function unlock(page: Page) {
  * she does: straight to a bar tab, or More first. A tab that is in neither fails here.
  */
 export const BAR_TABS = ["Today", "Inbox", "Capital", "Spirit"] as const;
-export const MORE_TABS = ["Team", "Brains", "Email Map", "Memory", "Trading", "Vault", "Systems"] as const;
+export const MORE_TABS = ["Team", "Brains", "Email Map", "Schedule", "Memory", "Trading", "Vault", "Systems"] as const;
 
 export async function tab(page: Page, label: string) {
   const nav = page.getByRole("navigation", { name: "Sections" });
