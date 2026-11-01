@@ -453,17 +453,77 @@ export function applyEdit(md, edit, today) {
 const SHORT = { "porch-and-party": "P&P", "west-peek-ventures": "West Peek Ventures", brokerage: "Brokerage" };
 export const shortName = (b) => SHORT[b.slug] ?? b.title;
 
+/** The stale-brain phrase both lines share, or null: "P&P brain not updated in 94 days". */
+export function staleBit(brains, now = Date.now()) {
+  const stale = brains.filter((b) => isStale(b.updated_at, now)).sort((a, b) => a.updated_at - b.updated_at);
+  if (stale.length === 1) return `${shortName(stale[0])} brain not updated in ${daysSince(stale[0].updated_at, now)} days`;
+  if (stale.length > 1) return `${stale.length} brains not updated in 90+ days (oldest: ${shortName(stale[0])}, ${daysSince(stale[0].updated_at, now)} days)`;
+  return null;
+}
+
 /**
- * One plain line for Simone's Monday email. Never red: "Brains: all fresh", or what is stale and how
+ * One plain line about the brains alone. Never red: "Brains: all fresh", or what is stale and how
  * many gaps are left, e.g. "P&P brain not updated in 94 days · 6 gaps across 3 brains".
  */
 export function cohesionLine(brains, now = Date.now()) {
-  const stale = brains.filter((b) => isStale(b.updated_at, now)).sort((a, b) => a.updated_at - b.updated_at);
   const gaps = brains.map((b) => ({ b, n: missingCount(b.body_md) })).filter((x) => x.n > 0);
   const total = gaps.reduce((s, x) => s + x.n, 0);
   const bits = [];
-  if (stale.length === 1) bits.push(`${shortName(stale[0])} brain not updated in ${daysSince(stale[0].updated_at, now)} days`);
-  else if (stale.length > 1) bits.push(`${stale.length} brains not updated in 90+ days (oldest: ${shortName(stale[0])}, ${daysSince(stale[0].updated_at, now)} days)`);
+  const stale = staleBit(brains, now);
+  if (stale) bits.push(stale);
   if (total > 0) bits.push(`${total} ${total === 1 ? "gap" : "gaps"} across ${gaps.length} ${gaps.length === 1 ? "brain" : "brains"}`);
   return bits.length ? `Brains: ${bits.join(" · ")}` : "Brains: all fresh";
+}
+
+// ─── The whole-setup check (the Mac half, owner's Company Brains plan step 10) ──────────────────
+
+/**
+ * What the Mac's Monday check sends (`scripts/brains/cohesion-check.mjs` → POST /brains/cohesion/mac).
+ * Every field is a plain list or number; names only, never contents.
+ */
+export const MAC_CHECK_FIELDS = Object.freeze([
+  "strays_moved", "memory_index_lines", "memory_index_too_big", "repos_checked", "repos_missing_pointer",
+  "skills_checked", "skills_flagged", "copy_age_hours", "copy_restarted", "copy_fresh_after", "unchecked",
+]);
+
+const names = (list, max = 3) => {
+  const l = list.slice(0, max);
+  const more = list.length - l.length;
+  if (more > 0) return `${l.join(", ")} and ${more} more`;
+  return l.length > 1 ? `${l.slice(0, -1).join(", ")} and ${l[l.length - 1]}` : (l[0] ?? "");
+};
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * ONE plain line for Simone's Monday email covering the whole setup: the brains (stale ones) and,
+ * from the Mac, memory, repo pointers, skills and the local brain copy. `mac` is this week's record
+ * or null. RULE 0: with no Mac record this week the line says so; it never says "all clear".
+ * Examples: "Cohesion: all clear", "Cohesion: moved 2 stray memory notes to the archive; the
+ * dream-wedding-builder repo is missing its brain pointer".
+ */
+export function cohesionCheckLine(brains, mac, now = Date.now()) {
+  const fixed = [];
+  const problems = [];
+  if (!mac) {
+    problems.push("the Mac's weekly check did not run this week, so memory, repo notes, skills and the brain copy went unchecked");
+  } else {
+    const strays = Array.isArray(mac.strays_moved) ? mac.strays_moved.length : 0;
+    if (strays) fixed.push(`moved ${plural(strays, "stray memory note")} to the archive`);
+    if (mac.copy_restarted && mac.copy_fresh_after) fixed.push("restarted the hourly brain copy");
+    if (mac.copy_restarted && !mac.copy_fresh_after) problems.push(`the brain copy on the Mac is ${Math.round(mac.copy_age_hours ?? 0)} hours old and a restart did not bring it back`);
+    if (mac.memory_index_too_big) problems.push(`the memory index has grown to ${mac.memory_index_lines} lines; it should stay a short index`);
+    const repos = Array.isArray(mac.repos_missing_pointer) ? mac.repos_missing_pointer : [];
+    if (repos.length === 1) problems.push(`the ${repos[0]} repo is missing its brain pointer`);
+    else if (repos.length > 1 && repos.length <= 3) problems.push(`the ${names(repos)} repos are missing their brain pointer`);
+    else if (repos.length > 3) problems.push(`${repos.length} repos are missing their brain pointer (${names(repos)})`);
+    const skills = [...new Set((Array.isArray(mac.skills_flagged) ? mac.skills_flagged : []).map((s) => s.skill ?? s))];
+    if (skills.length === 1) problems.push(`the ${skills[0]} skill has a rule that contradicts the house rules`);
+    else if (skills.length > 1) problems.push(`${skills.length} skills have rules that contradict the house rules (${names(skills)})`);
+    const unchecked = Array.isArray(mac.unchecked) ? mac.unchecked : [];
+    if (unchecked.length) problems.push(`${names(unchecked, 5)} could not be checked`);
+  }
+  const stale = staleBit(brains, now); // the brain staleness, reused from cohesionLine
+  if (stale) problems.push(stale);
+  if (!problems.length) return fixed.length ? `Cohesion: all clear (${fixed.join(" and ")})` : "Cohesion: all clear";
+  return `Cohesion: ${[...(fixed.length ? [fixed.join(" and ")] : []), ...problems].join("; ")}`;
 }

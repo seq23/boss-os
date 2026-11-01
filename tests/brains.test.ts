@@ -139,11 +139,12 @@ describe("Simone's morning email", () => {
   const TUESDAY = Date.parse("2026-11-03T13:00:00Z");
 
   it("Mondays carry one plain Brains line; other days none", () => {
-    const s = brainsSectionFor({ brainsCheck: { line: "Brains: all fresh" } }, MONDAY);
-    expect(s!.items[0].text).toBe("Brains: all fresh");
+    const s = brainsSectionFor({ brainsCheck: { line: "Cohesion: all clear" } }, MONDAY);
+    expect(s!.items[0].text).toBe("Cohesion: all clear");
     expect(s!.tone).not.toBe("alarm");
     expect(brainsSectionFor({ brainsCheck: { line: "x" } }, TUESDAY)).toBeNull();
-    expect(brainsSectionFor({}, MONDAY)!.items[0].text).toMatch(/did not load/);
+    expect(brainsSectionFor({}, MONDAY)!.items[0].text).toMatch(/^Cohesion: .*did not load/);
+    expect(brainsSectionFor({}, MONDAY)!.items[0].text).not.toMatch(/all clear/);
   });
 
   it("the 1st carries one grid, business × key numbers, with a link; never a made-up number", () => {

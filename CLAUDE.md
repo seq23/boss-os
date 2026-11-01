@@ -5,6 +5,14 @@ documents (`AGENTS.md` and friends) describe the inherited West Peek chassis; re
 Operating facts and traps (the `/api/boss/*` mount, the passcode, mail keys, cadence, Mac runs,
 lanes, performance) are in [`docs/boss/OPERATING_FACTS.md`](docs/boss/OPERATING_FACTS.md).
 
+## Company brain
+
+Boss OS is part of the `personal` brain (Boss OS itself, Spirit, gates, coaching, her schedule); the
+`team` brain is who's who across her AI teams. Read `~/Brains/personal.md` and `~/Brains/team.md`
+before work here, and the brain of whichever business a change serves. `~/Brains` is a read-only
+copy: business facts and rulings are edited in Boss OS (the Brains screen, or
+`PUT /api/boss/brains/<slug>`), never only in a session's memory; how this repo works stays in `docs/`.
+
 ## Outreach rules
 
 Monique's outreach sends automatically for the side businesses (owner, 9 Oct 2026: "u do it all").
@@ -231,9 +239,21 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    3"); every change is a revision, an email one noted "by email".
 6. **The scoreboard never invents a number**: "not tracked yet" when a Value is `[MISSING]`;
    `personal` and `team` are not on it. On the 1st, Simone's morning email carries one grid; on Mondays
-   one plain line from the weekly check (computed on the hourly tick, never red).
+   one plain line from the weekly check (rule 8, never red).
 7. **Her local copy** is `npm run brains:pull` → `~/Brains/<slug>.md` (private spans kept; passcode
-   injected as `BOSS_PASSCODE` by the caller; launchd is installed outside this repo).
+   injected as `BOSS_PASSCODE` by the caller), hourly at :23 from launchd `com.seq.boss-brains-pull`,
+   installed by `scripts/ops/install-agent-launchd.sh`.
+8. **The Monday cohesion check** (plan step 10): launchd `com.seq.boss-cohesion`, Monday 06:05 Central
+   (before the 06:40 email), runs `npm run brains:cohesion` (`scripts/brains/cohesion-check.mjs`). It
+   moves memory strays (any `*.md` but `MEMORY.md` under `~/.claude/projects/*/memory/`) into
+   `~/.claude/memory-archive/<date>/`, never deletes; flags a home `MEMORY.md` grown past an index,
+   active repos under `~/GitHub` without a `## Company brain` section (client repos never named,
+   `isClientRepo`), skills carrying a phrase that contradicts `~/.claude/CLAUDE.md`
+   (`BAD_SKILL_PHRASES`); restarts a `~/Brains` copy older than 2 hours. It posts to
+   `POST /api/boss/brains/cohesion/mac`; `GET /cohesion` folds it with the stale brains into ONE line
+   (`cohesionCheckLine`): "Cohesion: all clear", or what it fixed and what it could not. **Rule 0:** no
+   Mac record this week reads "the Mac's weekly check did not run this week", never "all clear".
+   Pinned by `tests/cohesionCheck.test.ts`.
 
 ## Time-2-Read groups & institutions: Monique's duty
 

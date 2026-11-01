@@ -541,6 +541,67 @@ lint_plist "$SR_PLIST"
 launchctl load "$SR_PLIST"
 echo "Installed $SR_LABEL — Monday 06:00 Central."
 
+# ─── The brains: the hourly local copy, and the Monday cohesion check ───────────────────────────
+#
+# Owner, 31 Oct 2026 (Company Brains plan). The pull writes ~/Brains/<slug>.md every hour at :23
+# (npm run brains:pull); it was installed by hand first and is written here so this file stays the one
+# list. The cohesion check (step 10) runs Monday 07:05 on the Mac's clock (Eastern) = 06:05 Central,
+# before Simone's 06:40 Central email, so that Monday's email carries this week's line. It moves
+# memory strays to the archive, restarts a stale pull, and posts what it found to Boss OS
+# (scripts/brains/cohesion-check.mjs). Both through the vault for BOSS_PASSCODE.
+BRAINS_LOGS="$HOME/Library/Logs/boss-brains"
+mkdir -p "$BRAINS_LOGS"
+BRAINS_PULL_LABEL="com.seq.boss-brains-pull"
+BRAINS_PULL_PLIST="$HOME/Library/LaunchAgents/$BRAINS_PULL_LABEL.plist"
+cat > "$BRAINS_PULL_PLIST" <<BPEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$BRAINS_PULL_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- npm run --silent brains:pull</string>
+  </array>
+  <key>StartCalendarInterval</key><dict><key>Minute</key><integer>23</integer></dict>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$BRAINS_LOGS/pull.log</string>
+  <key>StandardErrorPath</key><string>$BRAINS_LOGS/pull.err</string>
+</dict></plist>
+BPEOF
+launchctl unload "$BRAINS_PULL_PLIST" 2>/dev/null || true
+lint_plist "$BRAINS_PULL_PLIST"
+launchctl load "$BRAINS_PULL_PLIST"
+echo "Installed $BRAINS_PULL_LABEL — hourly at :23."
+
+COHESION_LABEL="com.seq.boss-cohesion"
+COHESION_PLIST="$HOME/Library/LaunchAgents/$COHESION_LABEL.plist"
+cat > "$COHESION_PLIST" <<COHEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$COHESION_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- npm run --silent brains:cohesion</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>5</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>$BRAINS_LOGS/cohesion.log</string>
+  <key>StandardErrorPath</key><string>$BRAINS_LOGS/cohesion.err</string>
+</dict></plist>
+COHEOF
+launchctl unload "$COHESION_PLIST" 2>/dev/null || true
+lint_plist "$COHESION_PLIST"
+launchctl load "$COHESION_PLIST"
+echo "Installed $COHESION_LABEL — Monday 06:05 Central."
+
 # ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
 #
 # Owner, 25 Oct 2026: the queue was worked to empty that day; after that it runs WEEKLY, Tuesday 07:30
@@ -1481,6 +1542,9 @@ require_loaded com.seq.boss-mac-cleanup
 require_loaded com.seq.boss-preseed-watch
 # WITH THE JOB, 25 October: Simone does it by email.
 require_loaded "$SIMONE_CMD_LABEL"
+# WITH THE JOBS, 31 October: the brains copy and the Monday cohesion check.
+require_loaded "$BRAINS_PULL_LABEL"
+require_loaded "$COHESION_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.

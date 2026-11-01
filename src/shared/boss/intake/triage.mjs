@@ -25,19 +25,19 @@
  */
 export const TRIAGE_SEATS = Object.freeze([
   Object.freeze({
-    id: "emp_repo", does: "builds and repo changes",
-    strong: /\b(build|rebuild|landing(?:\s+page)?|one[- ]page|website|web\s?site|site|studio|repo(?:sitory)?|deploy|pull request|github\.com|seq23\/)\b/gi,
+    id: "emp_repo", does: "builds, repo changes and the Ahrefs audit fixes",
+    strong: /\b(ahrefs|seo|build|rebuild|landing(?:\s+page)?|one[- ]page|website|web\s?site|site|studio|repo(?:sitory)?|deploy|pull request|github\.com|seq23\/)\b/gi,
     signals: /\b(page|app|feature|bug|fix|code|ship|launch|homepage|domain|branch|component|template|redesign|css|html|footer|header|form)\b/gi,
   }),
   Object.freeze({
-    id: "emp_research", does: "research",
-    strong: /\b(research|find out|look into|investigate|compare|comparison|what (?:is|are|does|do)|how (?:much|many|does|do|can)|which (?:is|are)|who (?:is|are))\b/gi,
+    id: "emp_research", does: "research, and Porch & Party's Marketplace listings and office outreach",
+    strong: /\b(marketplace|listings?|porch (?:&|and) party|p&p|research|find out|look into|investigate|compare|comparison|what (?:is|are|does|do)|how (?:much|many|does|do|can)|which (?:is|are)|who (?:is|are))\b/gi,
     signals: /\b(why|options|cheapest|best|markets?|analy[sz]e|analysis|study|sources?|evidence|landscape|benchmarks?|report on|what changed|trends?|news)\b|\?/gi,
   }),
   Object.freeze({
-    id: "emp_relationship", does: "outreach and relationships",
-    strong: /\b(outreach|reach out|pitch|introduce|introduction|intro to|follow up with|cold email|email (?:them|these|those|the list|people|prospects))\b/gi,
-    signals: /\b(prospects?|buyers?|sellers?|sponsors?|partners?|contacts?|leads?|networking|relationship)\b/gi,
+    id: "emp_relationship", does: "capital and LPs, institutional sales, outreach and relationships",
+    strong: /\b(outreach|reach out|pitch|introduce|introduction|intro to|follow up with|cold email|email (?:them|these|those|the list|people|prospects)|lps?|institutional sales|homeschool|co-?ops?|microschools?|time-?2-?read groups?)\b/gi,
+    signals: /\b(prospects?|buyers?|sellers?|sponsors?|partners?|contacts?|leads?|networking|relationship|capital|investors?|institutions?|libraries|tutoring)\b/gi,
   }),
   Object.freeze({
     id: "emp_chief", does: "scheduling and running the day",

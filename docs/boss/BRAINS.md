@@ -46,13 +46,20 @@ route), `dispatchRunForTask` (any other seat's run row) and `/backends/claim` (a
 - `GET /api/boss/brains/scoreboard`: one row per metric; "not tracked yet" when the Value is `[MISSING]`.
   On the 1st, Simone's morning email carries one grid (business × first three metrics) linking to
   `/?tab=brains&view=scoreboard`.
-- Mondays, on the hourly tick (`runDuties` → `runBrainsCohesion`), the check is kept in `settings`
-  (`brains_cohesion`); the Monday email shows its one line ("Brains: all fresh" or what is stale and how
-  many gaps). Never red.
+- Mondays, on the hourly tick (`runDuties` → `runBrainsCohesion`), the brains check is kept in `settings`
+  (`brains_cohesion`, `brains_line`: "Brains: all fresh" or what is stale and how many gaps).
+- The Mac's Monday cohesion check (`npm run brains:cohesion`, launchd `com.seq.boss-cohesion`, Monday
+  06:05 Central) checks memory strays (moved to `~/.claude/memory-archive/<date>/`), the memory index,
+  repo brain pointers, skills against `~/.claude/CLAUDE.md`, and the local copy's age (restarting
+  `com.seq.boss-brains-pull`), then posts to `POST /api/boss/brains/cohesion/mac` (`brains_cohesion_mac`,
+  week stamped on arrival). `GET /cohesion` returns ONE `line` for the Monday email ("Cohesion: all
+  clear", or what was fixed and what was not); with no Mac record this week it says the check did not
+  run, never "all clear". Never red.
 
 ## Local copy
 
 `BOSS_PASSCODE=… npm run brains:pull` writes `~/Brains/<slug>.md`, each headed
 `Source: Boss OS · pulled <timestamp> · edit in Boss OS, not here`, private spans kept. `--out <dir>` and
-`BOSS_ORIGIN` override. Exits non-zero with a named stop when nothing was written. The launchd job is
-installed by the coordinator, outside this repo; the passcode is injected by the caller.
+`BOSS_ORIGIN` override. Exits non-zero with a named stop when nothing was written. The launchd job
+(`com.seq.boss-brains-pull`, hourly at :23) is written by `scripts/ops/install-agent-launchd.sh`; the
+passcode is injected by the caller.
