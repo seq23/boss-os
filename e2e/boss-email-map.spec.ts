@@ -1,6 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { unlock, tab, expectNoSidewaysScroll, PHONE, LAPTOP } from "./support/boss";
-import manifest from "../src/shared/boss/emailMap/manifest.json";
+import { readFileSync } from "node:fs";
+
+// Read, never imported: Playwright's loader refuses a bare JSON import without `with { type: "json" }`.
+const manifest = JSON.parse(readFileSync(new URL("../src/shared/boss/emailMap/manifest.json", import.meta.url), "utf8")) as { businesses: unknown[]; rows: unknown[] };
 
 /**
  * THE EMAIL MAP, AS SHE USES IT (owner, 31 Oct 2026: "one Email Map page inside Boss OS, all
