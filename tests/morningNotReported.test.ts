@@ -38,7 +38,7 @@ describe("morning sections that did not report in", () => {
     const repairs = notReportedRepairs(r.missing, []);
     expect(repairs.map((x) => x.title)).toEqual(r.missing.map((m) => `The morning section "${m.name}" did not report in`));
     // A repair still open for a section is not opened again the next morning.
-    expect(notReportedRepairs(r.missing, [{ title: repairs[0].title, status: "queued" }])).toHaveLength(1);
+    expect(notReportedRepairs(r.missing, [{ title: repairs[0]!.title, status: "queued" }])).toHaveLength(1);
   });
 
   it("a weekly section is expected only on its day", () => {

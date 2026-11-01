@@ -48,3 +48,4 @@ export function brainsSectionFor(data: Record<string, unknown>, now?: number): a
 export function t2rGroupsSectionFor(data: Record<string, unknown>, now?: number): any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function scoreboardSectionFor(data: Record<string, unknown>, now?: number): any;
+export function notReportedRepairs(missing: Array<{ name: string; label: string }> | null | undefined, tasks?: Array<{ title?: string; status?: string }>): Array<{ title: string; prompt: string }>;
