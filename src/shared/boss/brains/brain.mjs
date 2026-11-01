@@ -544,6 +544,10 @@ export function cohesionCheckLine(brains, mac, now = Date.now()) {
     const skills = [...new Set((Array.isArray(mac.skills_flagged) ? mac.skills_flagged : []).map((s) => s.skill ?? s))];
     if (skills.length === 1) problems.push(`the ${skills[0]} skill has a rule that contradicts the house rules`);
     else if (skills.length > 1) problems.push(`${skills.length} skills have rules that contradict the house rules (${names(skills)})`);
+    // A skill copying a rule instead of pointing to it (1 Nov 2026): said, never blocking.
+    const restating = Array.isArray(mac.skills_restating) ? mac.skills_restating : [];
+    const restSkills = [...new Set(restating.map((s) => s.skill ?? s))];
+    if (restating.length) problems.push(`${plural(restating.length, "skill line")} ${restating.length === 1 ? "copies a rule" : "copy rules"} instead of pointing to ${restating.length === 1 ? "it" : "them"} (${names(restSkills)})`);
     const unchecked = Array.isArray(mac.unchecked) ? mac.unchecked : [];
     if (unchecked.length) problems.push(`${names(unchecked, 5)} could not be checked`);
   }
