@@ -175,6 +175,13 @@ async function repoJson(params, ctx) {
     try { text = ctx.gh(["api", `repos/seq23/${f.repo}/contents/${f.path}`, "-H", "Accept: application/vnd.github.raw"]); }
     catch { throw new NamedStop("REPORT_MISSING", `${f.repo} has no ${f.path} on its default branch.`); }
     let j; try { j = JSON.parse(text); } catch { throw new NamedStop("REPORT_UNREADABLE", `${f.repo}'s report is not JSON.`); }
+    if (f.date) {
+      // A start condition: a "YYYY-MM-DD" date once it has happened, null while it has not.
+      const d = pick(j, f.field);
+      if (d === null) return { raw: null };
+      if (typeof d !== "string" || !/^\d{4}-\d\d-\d\d/.test(d)) throw new NamedStop("REPORT_EMPTY", `${f.repo}'s report has no date at ${f.field}.`);
+      return { raw: d.slice(0, 10) };
+    }
     const v = Number(pick(j, f.field));
     if (!Number.isFinite(v)) throw new NamedStop("REPORT_EMPTY", `${f.repo}'s report has no number at ${f.field}.`);
     if (params.maxAgeDays && f.at) {

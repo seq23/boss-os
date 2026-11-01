@@ -830,6 +830,74 @@
       ]
     },
     {
+      "id": "keepmyproof-app",
+      "initiative": "KeepMyProof app",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Installs, then paid Plus buyers (free to paid)",
+      "jobs": [],
+      "start": null,
+      "startWhen": {
+        "label": "the app is live in the App Store",
+        "reader": "repo-json",
+        "params": {
+          "files": [
+            {
+              "repo": "keepmyproof",
+              "path": "metrics/store.json",
+              "field": "launchedOn",
+              "date": true
+            }
+          ]
+        }
+      },
+      "first": {
+        "label": "paid Plus buyers in the last 30 days",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 3
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "keepmyproof",
+              "path": "metrics/store.json",
+              "field": "paid30",
+              "at": "at"
+            }
+          ]
+        }
+      },
+      "real": {
+        "label": "free to paid in the last 60 days",
+        "unit": "%",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 2
+        },
+        "reader": "repo-json",
+        "params": {
+          "maxAgeDays": 9,
+          "files": [
+            {
+              "repo": "keepmyproof",
+              "path": "metrics/store.json",
+              "field": "freeToPaid60Pct",
+              "at": "at"
+            }
+          ]
+        }
+      },
+      "versionB": {
+        "text": "Free limit of 15 items instead of 25 (spec test, if under 2% with 500+ installs); if limit complaints top 5% of reviews, raise it to 50 instead."
+      },
+      "pause": []
+    },
+    {
       "id": "t2r-institutional",
       "initiative": "Time-2-Read institutional sales (Monique)",
       "business": "time-2-read",

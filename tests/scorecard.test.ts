@@ -153,6 +153,14 @@ describe("the five states", () => {
     expect(j.next).toBe("2026-12-20");
   });
 
+  it("a repo report can be a start condition: null until launch, then its date; anything else is a named stop", async () => {
+    const read = (json: string) => READERS["repo-json"]!({ files: [{ repo: "r", path: "p", field: "launchedOn", date: true }] }, { gh: () => json, now: Date.now() });
+    expect(await read('{"launchedOn":null}')).toEqual({ raw: null });
+    expect(await read('{"launchedOn":"2027-01-15T09:00:00Z"}')).toEqual({ raw: "2027-01-15" });
+    await expect(read('{"launchedOn":12}')).rejects.toThrow(/REPORT_EMPTY/);
+    await expect(read("{}")).rejects.toThrow(/REPORT_EMPTY/);
+  });
+
   it("a delta metric needs history before it can be judged, then judges the change", () => {
     const row = { ...ROW, first: { ...ROW.first, delta: 28 } };
     expect(judge({ row, record: null, reading: R(1000, 3), today: "2026-12-01" }).state).toBe("No number");
