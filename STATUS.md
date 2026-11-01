@@ -388,7 +388,9 @@ to her" and pinned by tests and `validate:email-plain`:
 
 ### 31 October 2026 — Brains: one document per business, read first
 
-- **Ten brains** in D1 (migration 0323: `brains`, `brain_revisions`): the eight businesses, `personal`
+- **Nine brains** in D1 (migration 0323: `brains`, `brain_revisions`): seven businesses (the brokerage;
+  West Peek Ventures holds the fund, TLC & Rooms and westpeek.live; P&P, Time-2-Read, Industry Guides,
+  Spry, Friends), `personal`
   and `team` (who's who). Seeded as skeletons only — the repo is public; real content is written in
   Boss OS. Definition and rules: `src/shared/boss/brains/brain.mjs`, CLAUDE.md "Brains", `docs/boss/BRAINS.md`.
 - **Screen:** ☰ More → Brains (`/?tab=brains`): one card per brain with "Updated N days ago" and

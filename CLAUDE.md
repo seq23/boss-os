@@ -206,8 +206,9 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
 Owner, 31 Oct 2026 ("time to work"). One definition, `src/shared/boss/brains/brain.mjs`; stored in D1
 (`brains`, `brain_revisions`, migration 0323); pinned by `tests/brains.test.ts` (which reads this
 section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
-1. **Ten brains.** Eight businesses (`west-peek-ventures`, `west-peek-events`, `porch-and-party`,
-   `time-2-read`, `industry-guides`, `spry`, `westpeek-live`, `friends`), `personal` (Boss OS itself,
+1. **Nine brains.** Seven businesses, in scoreboard order (`brokerage`, `west-peek-ventures` — the fund,
+   TLC & Rooms and westpeek.live — `porch-and-party`, `time-2-read`, `industry-guides`, `spry`,
+   `friends`), `personal` (Boss OS itself,
    Spirit, gates, coaching, her schedule) and `team` (who's who across her AI teams, a plain document).
    Every brain but `team` has the eight sections in order: Company, Numbers, Priorities, People, Voice,
    Settled decisions, Open questions, Who does what. Gaps are written `[MISSING]`; Settled decisions
@@ -220,7 +221,7 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    `dispatchRunForTask` (the row a non-Claude seat claims) and `/backends/claim` (a run handed down to
    another seat). An unclosed mark cuts everything after it.
 4. **Every employee reads first** (`buildPromptParts`): the brain(s) of the business(es) they serve
-   (`EMPLOYEE_BRAINS`; Simone, Danielle and Zora read every business summarised, Simone also
+   (`EMPLOYEE_BRAINS`; Camille P&P, Monique the brokerage and West Peek Ventures; Simone, Danielle and Zora read every business summarised, Simone also
    `personal`) and a short who's-who from `team`.
 5. **Edits** on the Brains screen (one section at a time, history kept) or by email to Simone
    ("P&P brain: add settled decision …", "time-2-read priorities: 1 … 2 …", "spry brain: set Sales to

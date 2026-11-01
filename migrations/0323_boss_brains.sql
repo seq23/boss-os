@@ -4,8 +4,9 @@
 -- (src/shared/boss/brains/brain.mjs holds the definition). The repo is public, so the seeds are the
 -- SKELETON only: every section present, every gap written [MISSING]. Real content is written in
 -- Boss OS (the Brains screen, or her email) and lives only in D1 and her private local copy.
--- Ten brains: the eight businesses, "personal" (Boss OS itself, Spirit, gates, coaching, her schedule)
--- and "team" (who's who across her AI teams), a plain document seeded with one placeholder line.
+-- Nine brains: seven businesses (the brokerage first; West Peek Ventures holds the fund, TLC & Rooms
+-- and westpeek.live), "personal" (Boss OS itself, Spirit, gates, coaching, her schedule) and "team"
+-- (who's who across her AI teams), a plain document seeded with one placeholder line.
 --
 --   brains            one row per business; body_md is the whole document
 --   brain_revisions   every change, the whole document as it became, who and how ("by email")
@@ -29,7 +30,7 @@ CREATE TABLE IF NOT EXISTS brain_revisions (
 CREATE INDEX IF NOT EXISTS idx_brain_revisions_slug ON brain_revisions (slug, changed_at DESC);
 
 INSERT OR IGNORE INTO brains (slug, title, body_md, updated_at, updated_by) VALUES
-  ('west-peek-ventures', 'West Peek Ventures', '# West Peek Ventures
+  ('brokerage', 'Brokerage (secondaries)', '# Brokerage (secondaries)
 
 ## Company
 [MISSING]
@@ -57,7 +58,7 @@ INSERT OR IGNORE INTO brains (slug, title, body_md, updated_at, updated_by) VALU
 ## Who does what
 [MISSING]
 ', CAST(unixepoch() AS INTEGER) * 1000, 'seed'),
-  ('west-peek-events', 'West Peek Events (TLC & Rooms)', '# West Peek Events (TLC & Rooms)
+  ('west-peek-ventures', 'West Peek Ventures (fund, TLC & Rooms, westpeek.live)', '# West Peek Ventures (fund, TLC & Rooms, westpeek.live)
 
 ## Company
 [MISSING]
@@ -170,34 +171,6 @@ INSERT OR IGNORE INTO brains (slug, title, body_md, updated_at, updated_by) VALU
 [MISSING]
 ', CAST(unixepoch() AS INTEGER) * 1000, 'seed'),
   ('spry', 'Spry', '# Spry
-
-## Company
-[MISSING]
-
-## Numbers
-| Metric | Definition | Source | Value | Last updated |
-|---|---|---|---|---|
-| [MISSING] | | | [MISSING] | |
-
-## Priorities
-[MISSING]
-
-## People
-[MISSING]
-
-## Voice
-[MISSING]
-
-## Settled decisions
-[MISSING]
-
-## Open questions
-[MISSING]
-
-## Who does what
-[MISSING]
-', CAST(unixepoch() AS INTEGER) * 1000, 'seed'),
-  ('westpeek-live', 'westpeek.live', '# westpeek.live
 
 ## Company
 [MISSING]

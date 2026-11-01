@@ -34,12 +34,13 @@ function mail(subject: string, body: string) {
 beforeEach(resetBrains);
 
 describe("the brains API", () => {
-  it("lists all ten, each with its gaps and a stale flag", async () => {
+  it("lists all nine, each with its gaps and a stale flag", async () => {
     const r = await apiJson<any>("/api/brains");
     expect(r.status).toBe(200);
     const list = r.body.data.brains;
     expect(list.map((b: any) => b.slug)).toEqual(BRAINS.map((b) => b.slug));
-    expect(list).toHaveLength(10);
+    expect(list).toHaveLength(9);
+    expect(list.slice(0, 2).map((b: any) => b.slug)).toEqual(["brokerage", "west-peek-ventures"]);
     const pnp = list.find((b: any) => b.slug === "porch-and-party");
     expect(pnp).toMatchObject({ title: "Porch & Party 901", missing_count: 8, stale: false });
     expect(list.find((b: any) => b.slug === "team").missing_count).toBe(0);
@@ -91,7 +92,7 @@ describe("the brains API", () => {
     ]);
     expect(rows.filter((r: any) => r.slug === "porch-and-party")).toEqual([expect.objectContaining({ metric: null, value: null, words: "not tracked yet" })]);
     expect(rows.some((r: any) => r.slug === "personal" || r.slug === "team")).toBe(false);
-    expect(new Set(rows.map((r: any) => r.slug)).size).toBe(8);
+    expect([...new Set(rows.map((r: any) => r.slug))]).toEqual(["brokerage", "west-peek-ventures", "porch-and-party", "time-2-read", "industry-guides", "spry", "friends"]);
   });
 });
 
@@ -143,7 +144,7 @@ describe("employees read their brains first", () => {
   it("Simone reads every business and Personal, summarised, but not the team doc as a business", async () => {
     const p = await buildPrompt(env as any, { id: "t3", title: "x", employee_id: "emp_chief" }, { prompt: "Plan the day." });
     expect(p).toContain("THE BUSINESSES YOU SERVE");
-    for (const t of ["### West Peek Ventures", "### Porch & Party 901", "### Friends' businesses", "### Personal"]) expect(p).toContain(t);
+    for (const t of ["### Brokerage (secondaries)", "### West Peek Ventures (fund, TLC & Rooms, westpeek.live)", "### Porch & Party 901", "### Friends' businesses", "### Personal"]) expect(p).toContain(t);
     expect(p).not.toContain("### Who's who");
     expect(p).toContain("Close the gates daily");
   });
@@ -211,14 +212,14 @@ describe("the Monday check rides the hourly tick", () => {
   it("runs once on a Monday, skips other days, and says why", async () => {
     expect(await runBrainsCohesion(env as any, TUESDAY)).toEqual({ ran: false, reason: "not_monday" });
     const first = await runBrainsCohesion(env as any, MONDAY);
-    expect(first).toMatchObject({ ran: true, week: "2026-11-02", brains: 10 });
+    expect(first).toMatchObject({ ran: true, week: "2026-11-02", brains: 9 });
     expect(await runBrainsCohesion(env as any, MONDAY + 3_600_000)).toEqual({ ran: false, reason: "done_this_week" });
   });
 
   it("one plain line: stale and gaps, or all fresh — never red", async () => {
     await env.DB.prepare(`UPDATE brains SET updated_at = ? WHERE slug = 'porch-and-party'`).bind(MONDAY - 94 * 86_400_000).run();
     const r = await currentCohesion(env as any, MONDAY);
-    expect(r.line).toBe("Brains: P&P brain not updated in 94 days · 72 gaps across 9 brains");
+    expect(r.line).toBe("Brains: P&P brain not updated in 94 days · 64 gaps across 8 brains");
     await env.DB.prepare(`UPDATE brains SET body_md = '# x', updated_at = ?`).bind(MONDAY).run();
     await env.DB.prepare(`DELETE FROM settings WHERE key = ?`).bind(COHESION_KEY).run();
     expect((await apiJson<any>("/api/brains/cohesion")).body.data.line).toMatch(/^Brains: /);

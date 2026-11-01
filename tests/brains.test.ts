@@ -22,7 +22,9 @@ describe("the rules in CLAUDE.md are the rules in code", () => {
     expect(section).toContain("<!-- confidential -->…<!-- /confidential -->");
     expect(B.CONFIDENTIAL_OPEN).toBe("<!-- confidential -->");
     expect(B.CONFIDENTIAL_CLOSE).toBe("<!-- /confidential -->");
-    expect(B.BRAINS).toHaveLength(10);
+    expect(B.BRAINS).toHaveLength(9);
+    expect(B.BRAIN_SLUGS).not.toContain("west-peek-events");
+    expect(B.BRAIN_SLUGS).not.toContain("westpeek-live");
   });
 });
 
@@ -69,9 +71,9 @@ describe("private spans", () => {
 });
 
 describe("who reads which brain", () => {
-  it("maps the roster: Camille P&P, Monique the fund, Simone everything plus personal, Toni nothing", () => {
+  it("maps the roster: Camille P&P, Monique the brokerage and the fund, Simone everything plus personal, Toni nothing", () => {
     expect(B.brainsFor("emp_research").slugs).toEqual(["porch-and-party"]);
-    expect(B.brainsFor("emp_relationship").slugs).toContain("west-peek-ventures");
+    expect(B.brainsFor("emp_relationship").slugs).toEqual(["brokerage", "west-peek-ventures"]);
     const simone = B.brainsFor("emp_chief");
     expect(simone.summarised).toBe(true);
     expect(simone.slugs).toEqual([...B.BUSINESS_SLUGS, "personal"]);
@@ -91,8 +93,9 @@ describe("edits in her words", () => {
     expect(B.brainSlugFor("P&P")).toBe("porch-and-party");
     expect(B.brainSlugFor("pnp")).toBe("porch-and-party");
     expect(B.brainSlugFor("time-2-read")).toBe("time-2-read");
-    expect(B.brainSlugFor("TLC")).toBe("west-peek-events");
-    expect(B.brainSlugFor("westpeek.live")).toBe("westpeek-live");
+    expect(B.brainSlugFor("TLC")).toBe("west-peek-ventures");
+    expect(B.brainSlugFor("westpeek.live")).toBe("west-peek-ventures");
+    expect(B.brainSlugFor("brokerage")).toBe("brokerage");
     expect(B.brainSlugFor("lunch")).toBeNull();
   });
   it("a settled decision becomes a dated line with its why", () => {

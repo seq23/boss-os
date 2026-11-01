@@ -18,11 +18,11 @@ for (const vp of [PHONE, LAPTOP]) {
     test.beforeEach(async ({ page }) => { clean(); await page.setViewportSize({ width: vp.width, height: vp.height }); });
     test.afterAll(() => { clean(); });
 
-    test("ten cards with their gaps; fill a gap, save, history, back", async ({ page }) => {
+    test("nine cards with their gaps; fill a gap, save, history, back", async ({ page }) => {
       await unlock(page);
       await tab(page, "Brains");
-      await expect(page.getByText(/^10 brains · /)).toBeVisible({ timeout: 15_000 });
-      await expect(page.locator(".brain-card")).toHaveCount(10);
+      await expect(page.getByText(/^9 brains · /)).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator(".brain-card")).toHaveCount(9);
       const card = page.getByTestId("brain-friends");
       await expect(card).toContainText("gaps to fill");
       await expect(card).toContainText("Tap to open ›");
@@ -48,7 +48,7 @@ for (const vp of [PHONE, LAPTOP]) {
       expect(rev.n).toBe(1);
 
       await page.getByRole("button", { name: "← Back to all brains" }).first().click();
-      await expect(page.locator(".brain-card")).toHaveCount(10);
+      await expect(page.locator(".brain-card")).toHaveCount(9);
     });
 
     test("the scoreboard says 'not tracked yet' and never invents a number", async ({ page }) => {
@@ -56,7 +56,7 @@ for (const vp of [PHONE, LAPTOP]) {
       await page.goto("/?tab=brains&view=scoreboard");
       const board = page.getByTestId("scoreboard");
       await expect(board).toHaveAttribute("open", "");
-      await expect(board.locator("tbody tr")).toHaveCount(8);
+      await expect(board.locator("tbody tr")).toHaveCount(7);
       await expect(board.locator("tbody")).toContainText("not tracked yet");
       await expect(board.locator("tbody")).not.toContainText("Personal");
       await expect(board.locator("tbody")).not.toContainText("Who");

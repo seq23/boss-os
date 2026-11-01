@@ -4,20 +4,21 @@ One markdown document per business — the single source of truth every Boss OS 
 Owner, 31 Oct 2026. The rules are in code (`src/shared/boss/brains/brain.mjs`) and pinned by the tests
 named in CLAUDE.md "Brains"; this page says how to use and operate it.
 
-## The ten brains
+## The nine brains
 
 | Slug | Title | Shape |
 |---|---|---|
-| `west-peek-ventures` | West Peek Ventures | eight sections |
-| `west-peek-events` | West Peek Events (TLC & Rooms) | eight sections |
+| `brokerage` | Brokerage (secondaries) | eight sections |
+| `west-peek-ventures` | West Peek Ventures (fund, TLC & Rooms, westpeek.live) | eight sections |
 | `porch-and-party` | Porch & Party 901 | eight sections |
 | `time-2-read` | Time-2-Read | eight sections |
 | `industry-guides` | Industry Guides | eight sections |
 | `spry` | Spry | eight sections |
-| `westpeek-live` | westpeek.live | eight sections |
 | `friends` | Friends' businesses | eight sections |
 | `personal` | Personal (Boss OS itself, Spirit, gates, coaching, her schedule) | eight sections, not on the scoreboard |
 | `team` | Who's who — your AI teams | one plain document, not on the scoreboard |
+
+The scoreboard lists the brokerage first, then West Peek Ventures, then the rest.
 
 Sections, in order: Company, Numbers, Priorities, People, Voice, Settled decisions, Open questions,
 Who does what. Gaps are `[MISSING]` (one line = one gap). Numbers is a table
@@ -26,10 +27,9 @@ Who does what. Gaps are `[MISSING]` (one line = one gap). Numbers is a table
 
 ## Who reads what
 
-`EMPLOYEE_BRAINS` in brain.mjs. Camille → Porch & Party. Monique → West Peek Ventures, West Peek Events,
-Time-2-Read, Industry Guides. Simone → every business and Personal, summarised. Danielle and Zora →
+`EMPLOYEE_BRAINS` in brain.mjs. Camille → Porch & Party. Monique → the brokerage and West Peek Ventures. Simone → every business and Personal, summarised. Danielle and Zora →
 every business, summarised. Kendra, Toni, Imani → none. Everyone → the who's-who excerpt from `team`.
-(Wynn is a West Peek OS employee, not on the Boss OS roster; West Peek Events is read by Monique and Simone.)
+(Wynn is a West Peek OS employee, not on the Boss OS roster; TLC & Rooms work lives in the West Peek Ventures brain, read by Monique and Simone.)
 
 Private spans reach `bk_claude_code` only. They are cut, fail closed, in `routeCompletion` (every cloud
 route), `dispatchRunForTask` (any other seat's run row) and `/backends/claim` (a run handed down).

@@ -12,13 +12,14 @@
 
 /** The eight businesses, in the order the screen and the scoreboard list them. */
 export const BRAINS = Object.freeze([
-  { slug: "west-peek-ventures", title: "West Peek Ventures" },
-  { slug: "west-peek-events", title: "West Peek Events (TLC & Rooms)" },
+  // The brokerage is its own business; West Peek Events (TLC & Rooms) and westpeek.live are part of
+  // West Peek Ventures (owner, 31 Oct 2026). Scoreboard order: brokerage, then the fund, then the rest.
+  { slug: "brokerage", title: "Brokerage (secondaries)" },
+  { slug: "west-peek-ventures", title: "West Peek Ventures (fund, TLC & Rooms, westpeek.live)" },
   { slug: "porch-and-party", title: "Porch & Party 901" },
   { slug: "time-2-read", title: "Time-2-Read" },
   { slug: "industry-guides", title: "Industry Guides" },
   { slug: "spry", title: "Spry" },
-  { slug: "westpeek-live", title: "westpeek.live" },
   { slug: "friends", title: "Friends' businesses" },
   // Not a business (coordinator, 31 Oct 2026): Boss OS itself, Spirit, gates, coaching, her schedule.
   { slug: "personal", title: "Personal" },
@@ -254,14 +255,14 @@ export function stripConfidential(text) {
  * "all" means every BUSINESS brain, summarised (Company, Priorities, Settled decisions); Simone
  * also reads "personal" (her own life and Boss OS itself), so hers is "all+personal". From the roster
  * (STATUS.md, migration 0175/0192): Simone is chief of staff to everything; Camille runs the
- * Porch & Party briefing and Marketplace; Monique runs relationships and outreach (West Peek's LPs
- * and Rooms, Time-2-Read, Industry Guides); Danielle fixes every grid repo; Zora keeps the archive.
+ * Porch & Party briefing and Marketplace; Monique runs the brokerage and West Peek's LPs (TLC and
+ * Rooms jobs read West Peek Ventures too); Danielle fixes every grid repo; Zora keeps the archive.
  * Kendra (systems), Toni (the isolated trading lane) and Imani (her own practice) serve no business.
  */
 export const EMPLOYEE_BRAINS = Object.freeze({
   emp_chief: "all+personal",
   emp_research: ["porch-and-party"],
-  emp_relationship: ["west-peek-ventures", "west-peek-events", "time-2-read", "industry-guides"],
+  emp_relationship: ["brokerage", "west-peek-ventures"],
   emp_repo: "all",
   emp_knowledge: "all",
   emp_continuity: [],
@@ -332,11 +333,10 @@ export function whosWhoBlock(teamDoc, { keepConfidential = false } = {}) {
 const BRAIN_ALIASES = [
   [/^(p ?& ?p|p ?and ?p|pnp|porch( ?(&|and) ?party)?( ?901)?)$/, "porch-and-party"],
   [/^(time ?-? ?2 ?-? ?read|time ?to ?read|t2r)$/, "time-2-read"],
-  [/^(wpv|west ?peek( ?ventures)?|the fund)$/, "west-peek-ventures"],
-  [/^(west ?peek ?events|events|tlc|rooms|tlc ?(&|and) ?rooms)$/, "west-peek-events"],
+  [/^(brokerage|the ?brokerage|secondaries|the ?desk)$/, "brokerage"],
+  [/^(wpv|west ?peek( ?ventures)?|the fund|west ?peek ?events|events|tlc|rooms|tlc ?(&|and) ?rooms|westpeek\.?live|wpl|west ?peek ?live)$/, "west-peek-ventures"],
   [/^(industry ?guides|guides|the ?industry ?guides)$/, "industry-guides"],
   [/^(spry|spry ?labs)$/, "spry"],
-  [/^(westpeek\.?live|wpl|west ?peek ?live)$/, "westpeek-live"],
   [/^(friends|friends'? ?businesses)$/, "friends"],
   [/^(personal|boss ?os)$/, "personal"],
   [/^(who'?s ?who)$/, "team"],
@@ -445,7 +445,7 @@ export function applyEdit(md, edit, today) {
 
 // ─── The Monday check ────────────────────────────────────────────────────────
 
-const SHORT = { "porch-and-party": "P&P", "west-peek-ventures": "West Peek Ventures", "west-peek-events": "West Peek Events" };
+const SHORT = { "porch-and-party": "P&P", "west-peek-ventures": "West Peek Ventures", brokerage: "Brokerage" };
 export const shortName = (b) => SHORT[b.slug] ?? b.title;
 
 /**
