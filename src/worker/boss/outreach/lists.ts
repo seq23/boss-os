@@ -11,7 +11,7 @@
  * Never her network, never client data: nothing here reads a mailbox, a contact list or a sheet.
  */
 import { newId } from "../lib/id";
-import { BUSINESSES, METROS, businessByKey, metrosFor, type Business, type Segment } from "./catalog";
+import { BUSINESSES, METROS, businessByKey, metrosFor, outreachStateBlock, type Business, type Segment } from "./catalog";
 import { isBusinessEmail, isSuppressed, normaliseEmail } from "./suppression";
 
 /** Public Overpass instances, tried in order (the main one refuses some clients with a 406). */
@@ -228,6 +228,11 @@ export async function crawlCandidates(db: D1Database, fetchImpl: typeof fetch, n
     const metro = METROS.find((m) => m.key === String(c.metro).split(":")[0]);
     if (!b || !seg || !metro) {
       await mark(db, c.id, "failed", "business, segment or metro no longer in the catalog", now);
+      continue;
+    }
+    const blocked = outreachStateBlock(b, c.metro);
+    if (blocked) {
+      await mark(db, c.id, "failed", `never written to: ${blocked}`, now);
       continue;
     }
     const outcome = await admitCandidate(db, fetchImpl, b, seg, metro.label, c, now);

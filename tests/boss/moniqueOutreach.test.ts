@@ -16,8 +16,8 @@ import GMAIL_SOURCE from "../../src/worker/boss/outreach/gmail.ts?raw";
 import DOMAINS_SCRIPT from "../../scripts/outreach/domains.mjs?raw";
 import CLAUDE_MD from "../../CLAUDE.md?raw";
 import OPERATIONS_MD from "../../docs/boss/OPERATIONS.md?raw";
-import { pickEmail, parseOverpass, parseDirectory, readDirectories } from "../../src/worker/boss/outreach/lists";
-import { METROS, NATIONAL_METROS, metrosFor } from "../../src/worker/boss/outreach/catalog";
+import { crawlCandidates, pickEmail, parseOverpass, parseDirectory, readDirectories } from "../../src/worker/boss/outreach/lists";
+import { METROS, NATIONAL_METROS, PI_NO_OUTREACH_STATES, metrosFor, outreachStateBlock } from "../../src/worker/boss/outreach/catalog";
 import { isSeatHolder, normaliseHolderDomain, parseSeat, pitchFor, readSeat, seatEndMonth, SEAT_OPEN } from "../../src/worker/boss/outreach/seat";
 import { runOutreachTick } from "../../src/worker/boss/outreach/engine";
 import { mailAuthGaps } from "../../src/worker/boss/outreach/mailauth";
@@ -979,9 +979,11 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     expect(inside([36.1627, -86.7816])).toBe(false);
     expect(inside([34.7465, -92.2896])).toBe(false);
     expect(metrosFor(MSCH).map((m) => m.key)).toEqual(["memphis"]);
-    for (const b of BUSINESSES.filter((x) => x.key !== "memphisseniorcarehomes")) {
+    for (const b of BUSINESSES.filter((x) => x.key !== "memphisseniorcarehomes" && !x.noOutreachStates)) {
       expect(metrosFor(b).map((m) => m.key), b.key).toEqual([...NATIONAL_METROS]);
     }
+    // The Accident Guides read only the national metros in no state PI outreach is barred from.
+    expect(metrosFor(businessByKey("theaccidentguides")!).map((m) => m.key)).toEqual(["nyc", "chicago"]);
   });
 
   it("writes to admissions and community relations first, on the community's own domain", () => {
@@ -1217,5 +1219,51 @@ describe("Neuro Evaluation Guides writes to evaluators AND therapy practices (ow
       checked++;
     }
     expect(checked).toBe(3);
+  });
+});
+
+describe("The Accident Guides never write to a PI firm in a barred state (owner, 1 Nov 2026)", () => {
+  beforeEach(reset);
+  const PI = () => businessByKey("theaccidentguides")!;
+
+  it("the barred states come from one list and every metro touching one is refused", () => {
+    expect(Object.keys(PI_NO_OUTREACH_STATES).sort()).toEqual(["CA", "CO", "FL", "KY", "MI", "RI", "TX"]);
+    expect(PI().noOutreachStates).toBe(PI_NO_OUTREACH_STATES);
+    for (const m of METROS) {
+      const barred = m.states.some((s) => s in PI_NO_OUTREACH_STATES);
+      expect(Boolean(outreachStateBlock(PI(), m.key)), m.key).toBe(barred);
+      expect(Boolean(outreachStateBlock(PI(), m.label)), m.label).toBe(barred);
+    }
+    // An unknown metro cannot be placed in a state, so it is refused; other businesses are untouched.
+    expect(outreachStateBlock(PI(), null)).toMatch(/cannot be checked/);
+    expect(outreachStateBlock(T2R, "Houston")).toBeNull();
+  });
+
+  it("queued prospects in a barred state are dropped with a logged reason, and nothing is sent to them", async () => {
+    await readyWithAddress("theaccidentguides");
+    const houston = await addProspect("theaccidentguides", "pi@houstonlaw.example");
+    const mid = await addProspect("theaccidentguides", "pi2@houstonlaw2.example", { state: "in_sequence", step: 1, next_due_at: TUESDAY_10AM + 3 * DAY_MS });
+    const chicago = await addProspect("theaccidentguides", "pi@chicagolaw.example");
+    await env.DB.prepare(`UPDATE outreach_prospects SET metro = 'Chicago' WHERE id = ?`).bind(chicago).run();
+    const g = fakeGmail();
+    const r = await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
+    expect(r.stateBlocked).toBe(2);
+    expect(g.sends.map((s) => s.to)).not.toContain("pi@houstonlaw.example");
+    for (const id of [houston, mid]) {
+      expect((await row<any>(`SELECT state, next_due_at FROM outreach_prospects WHERE id = ?`, id))).toMatchObject({ state: "done", next_due_at: null });
+    }
+    const logged = await env.DB.prepare(`SELECT detail FROM system_events WHERE event = 'prospect_state_blocked' AND entity_id = ?`).bind(houston).first<any>();
+    expect(JSON.parse(logged.detail).reason).toMatch(/Houston is in TX/);
+    expect((await row<any>(`SELECT state FROM outreach_prospects WHERE id = ?`, chicago)).state).not.toBe("done");
+  });
+
+  it("a candidate listed in a barred metro is never admitted as a prospect", async () => {
+    await env.DB.prepare(
+      `INSERT INTO outreach_candidates (id, business_key, segment, metro, org_name, website, listed_email, source_url, state, created_at, updated_at)
+       VALUES ('ocd_la', 'theaccidentguides', 'pi_firms', 'la:q1', 'LA Injury', 'https://lainjury.example', 'info@lainjury.example', 'https://osm.example', 'pending', ?, ?)`,
+    ).bind(TUESDAY_10AM, TUESDAY_10AM).run();
+    await crawlCandidates(env.DB, fakeGmail().fetchImpl, TUESDAY_10AM);
+    expect((await row<any>(`SELECT state, detail FROM outreach_candidates WHERE id = 'ocd_la'`)).detail).toMatch(/Los Angeles is in CA/);
+    expect(await row<any>(`SELECT id FROM outreach_prospects WHERE email = 'info@lainjury.example'`)).toBeFalsy();
   });
 });

@@ -26,7 +26,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
-import { BUSINESSES, TEST_RECIPIENTS, businessByKey, type Business } from "./catalog";
+import { BUSINESSES, TEST_RECIPIENTS, businessByKey, outreachStateBlock, type Business } from "./catalog";
 import {
   BOUNCE_WINDOW_MS, DAY_MS, chicagoParts, dailyCap, inSendWindow, pauseReason, refusal, sendsThisTick, type Sending,
 } from "./brakes";
@@ -95,6 +95,8 @@ export interface TickResult {
   bounceFixes?: { replaced: number; dropped: number };
   /** Time-2-Read groups made ready for the engine this tick (groups.ts). */
   groupsQueued?: number;
+  /** Queued prospects taken out this tick because their state is one the business never writes to. */
+  stateBlocked?: number;
 }
 
 export const NAMED_STOP_PREFIX = "NAMED STOP";
@@ -174,6 +176,13 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
     }
   }
 
+  // Prospects already queued in a state a business may never write to leave the queue, each logged.
+  try {
+    out.stateBlocked = await dropStateBlocked(db, now);
+  } catch (err) {
+    out.refused.stateBlocked = (err as Error).message;
+  }
+
   // Time-2-Read groups whose address and code are ready become prospects (groups.ts). Idempotent.
   try {
     out.groupsQueued = await queueReady(db, now);
@@ -245,6 +254,32 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
 
   await logEvent(db, { level: "info", scope: "outreach", event: "tick", detail: out }).catch(() => {});
   return out;
+}
+
+/**
+ * Takes every queued prospect (new or mid-sequence) in a state its business may never write to
+ * (catalog.ts `outreachStateBlock`) out of the queue, logging the reason for each. Idempotent.
+ */
+export async function dropStateBlocked(db: D1Database, now: number): Promise<number> {
+  let dropped = 0;
+  for (const b of BUSINESSES) {
+    if (!b.noOutreachStates) continue;
+    const rows = await db.prepare(
+      `SELECT id, metro FROM outreach_prospects WHERE business_key = ? AND state IN ('new','in_sequence')`,
+    ).bind(b.key).all<any>();
+    for (const p of rows.results ?? []) {
+      const reason = outreachStateBlock(b, p.metro);
+      if (!reason) continue;
+      await dropProspect(db, b, p.id, reason, now);
+      dropped += 1;
+    }
+  }
+  return dropped;
+}
+
+async function dropProspect(db: D1Database, b: Business, id: string, reason: string, now: number) {
+  await db.prepare(`UPDATE outreach_prospects SET state = 'done', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, id).run();
+  await logEvent(db, { level: "info", scope: "outreach", event: "prospect_state_blocked", entityId: id, detail: { business: b.key, reason } }).catch(() => {});
 }
 
 /** Businesses with fewer than a week of prospects waiting at the top of the ramp. */
@@ -440,6 +475,12 @@ async function sendForBusiness(
     if (p.step === 0 && newLeft <= 0) continue;
     if (await isSuppressed(db, p.email)) {
       await db.prepare(`UPDATE outreach_prospects SET state = 'suppressed', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
+      continue;
+    }
+    // A state the business may never write to: refused before anything is composed.
+    const blocked = outreachStateBlock(b, p.metro);
+    if (blocked) {
+      await dropProspect(db, b, p.id, blocked, now);
       continue;
     }
     // The seat holder is the business's paying partner: never cold-pitched, pitch A least of all.
