@@ -26,6 +26,7 @@
     "typecheck": "tsc --noEmit",
     "brains:pull": "node scripts/brains/pull.mjs",
     "brains:cohesion": "bash scripts/ops/self-update-checkout.sh && node scripts/brains/cohesion-check.mjs",
+    "brains:t2r-numbers": "bash scripts/ops/self-update-checkout.sh && node scripts/brains/t2r-numbers.mjs",
     "validate:brains": "node scripts/validate/brains.mjs && node scripts/validate/brains.mjs --self-test",
     "validate": "npm run validate:scans && npm run typecheck && npm run test",
     "validate:ai-boundary": "node scripts/validate/no-direct-provider-calls.mjs && node scripts/validate/no-direct-provider-calls.mjs --self-test && node scripts/seed/generate-ai-employee-seed.mjs --check",

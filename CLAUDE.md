@@ -259,6 +259,14 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    (`cohesionCheckLine`): "Cohesion: all clear", or what it fixed and what it could not. **Rule 0:** no
    Mac record this week reads "the Mac's weekly check did not run this week", never "all clear".
    Pinned by `tests/cohesionCheck.test.ts`.
+9. **Time-2-Read's money numbers, weekly** (owner, 1 Nov 2026): launchd `com.seq.boss-t2r-numbers`,
+   Wednesday 07:30 Central (before the Wednesday Spry Labs email), runs `npm run brains:t2r-numbers`
+   (`scripts/brains/t2r-numbers.mjs`). Paying subscribers, MRR (at the brain's List price) and free
+   signups come from the dailystory Supabase tables; trial starts and trial → paid need a LIVE
+   Time-2-Read Stripe key (`T2R_STRIPE_LIVE_RESTRICTED_KEY`; the test key is never used). Her own and
+   test accounts are excluded by `~/.boss-os/t2r-test-accounts.txt` on the Mac (never in the repo).
+   Only Value and Last updated change; aggregates only leave the Mac; a source it cannot read is
+   "not read: <reason>" in the cell. Pinned by `tests/t2rNumbers.test.ts`.
 
 ## Time-2-Read groups & institutions: Monique's duty
 
