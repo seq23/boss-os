@@ -214,7 +214,7 @@ describe("the brakes, as pure functions", () => {
     const uscis = businessByKey("uscisexam")!;
     expect(() => assertSenderAllowed({ ...uscis, sender: "hello@uscisexam.com" })).toThrow(/every guide sends from/);
     expect(Object.fromEntries(BUSINESSES.filter((b) => b.kind !== "local_guide").map((b) => [b.key, b.sender]))).toEqual({
-      time2read: "st@time-2-read.com", aplayermode: "hello@aplayermode.com", approvalprep: "hello@approvalprep.com", weddingchecklist: "hello@weddingchecklistpdf.com",
+      time2read: "st@time-2-read.com", time2read_groups: "st@time-2-read.com", aplayermode: "hello@aplayermode.com", approvalprep: "hello@approvalprep.com", weddingchecklist: "hello@weddingchecklistpdf.com",
     });
     // Every guide email answers to the umbrella address; a side business's does not.
     const m = composeEmail({ business: uscis, step: 0, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "t", postalAddress: "PO Box 1, Houston, TX 77002" });
@@ -309,8 +309,10 @@ describe("every email carries the unsubscribe link and the postal address", () =
     }
     expect(BUSINESSES.length).toBeGreaterThan(0);
     for (const b of BUSINESSES) {
-      for (const step of [0, 1, 2] as const) {
-        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello" });
+      // Every step a business HAS: three emails, or two for Time-2-Read groups (one follow-up, 31 Oct 2026).
+      expect(b.steps.length, b.key).toBe(b.key === "time2read_groups" ? 2 : 3);
+      for (const step of [...b.steps.keys()] as Array<0 | 1 | 2>) {
+        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q" });
         const plainFooter = m.body.slice(m.body.lastIndexOf("\n--\n"));
         const htmlFooter = /<p style="([^"]*)"[^>]*>([\s\S]*?)<\/p>\s*<\/body>/.exec(m.html)![2]!;
         // The guides are signed by S.L. Taylor over the umbrella company and the guide's domain (owner,
@@ -1145,8 +1147,9 @@ describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 
     const others = BUSINESSES.filter((b) => b.kind !== "local_guide");
     expect(others.length).toBeGreaterThan(0);
     for (const b of others) {
-      for (const step of [0, 1, 2] as const) {
-        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello" });
+      expect(b.steps.length, b.key).toBe(b.key === "time2read_groups" ? 2 : 3);
+      for (const step of [...b.steps.keys()] as Array<0 | 1 | 2>) {
+        const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q" });
         expect(m.body, b.key).toContain(`\n\n— The ${b.brand} team\n${b.domain}\n\n--\n`);
         expect(m.body, b.key).not.toContain("S.L. Taylor");
       }

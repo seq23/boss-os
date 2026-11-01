@@ -8,6 +8,7 @@
  */
 import { GUIDES_SIGNER, UMBRELLA_COMPANY, UMBRELLA_CONTACT, type Business } from "./catalog";
 import { seatEndMonth, type Pitch } from "./seat";
+import { GROUPS_KEY, outboundProblems } from "../../../shared/boss/t2rGroups/rules.mjs";
 
 /** The umbrella company and its one address live in catalog.ts (the senders use it); re-exported here. */
 export { UMBRELLA_COMPANY, UMBRELLA_CONTACT } from "./catalog";
@@ -51,6 +52,8 @@ export interface ComposeInput {
   pitch?: Pitch;
   /** The taken seat's end, YYYY-MM-DD. Pitch B names its month and refuses without it. */
   seatEnd?: string | null;
+  /** A Time-2-Read group's own trial code ({code}). Absent = the placeholder stays and the email is refused. */
+  groupCode?: string | null;
 }
 
 export interface Composed {
@@ -92,6 +95,7 @@ export function composeEmail(i: ComposeInput): Composed {
   }
   const steps = i.pitch === "B" && i.business.seat ? i.business.seat.taken : i.business.steps;
   const step = steps[i.step];
+  if (!step) throw new Error(`Refused: ${i.business.brand} has no email number ${i.step + 1}; its sequence is ${steps.length} emails.`);
   const vars: Record<string, string> = {
     org: i.org || "there",
     metro: i.metro,
@@ -100,11 +104,15 @@ export function composeEmail(i: ComposeInput): Composed {
     ref_link: i.refLink ?? "",
     subject: i.firstSubject ?? "",
     seat_end_month: i.seatEnd ? seatEndMonth(i.seatEnd) : "",
+    ...(i.groupCode ? { code: i.groupCode } : {}),
   };
   const subject = fill(step.subject, vars).trim();
   const unsub = unsubscribeUrl(i.unsubToken);
   const message = `${fill(step.body, vars)}\n\n${signatureFor(i.business)}`;
-  const why = `You are receiving this because ${vars.org} is publicly listed as a business we think we can help.`;
+  const isGroup = i.business.key === GROUPS_KEY;
+  const why = isGroup
+    ? `You are receiving this because ${vars.org} publishes this address for its families and members.`
+    : `You are receiving this because ${vars.org} is publicly listed as a business we think we can help.`;
   const body =
     `${message}\n\n--\n${why} Unsubscribe with one click: ${unsub}\n${companyLines(i.business, address).join("\n")}\n`;
   const html =
@@ -117,6 +125,12 @@ export function composeEmail(i: ComposeInput): Composed {
   // unsubscribe link and the company lines (for a local guide, the umbrella company and its contact).
   const left = /\{\w+\}/.exec(`${subject}\n${message}`);
   if (left) throw new Error(`Refused: ${left[0]} was left unfilled in ${i.business.brand}'s email.`);
+  // Time-2-Read groups (owner, 31 Oct 2026): no price, no call ask, no claim we never make.
+  if (isGroup) {
+    // Their own name is theirs, never our claim ("Reading Therapy Co-op" is not a medical claim).
+    const bad = outboundProblems(`${subject}\n${message}`.split(i.org || "there").join(""));
+    if (bad.length) throw new Error(`Refused: the Time2Read group email ${bad.join("; ")}.`);
+  }
   const footerLines = companyLines(i.business, address);
   if (!body.includes(unsub) || !html.includes(`href="${esc(unsub)}"`) || footerLines.some((l) => !body.includes(l) || !html.includes(esc(l)))) {
     throw new Error(`Refused: ${i.business.brand}'s email is missing its unsubscribe link or footer company line.`);

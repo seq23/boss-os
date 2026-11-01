@@ -224,7 +224,8 @@
     "sites:audit": "bash scripts/ops/self-update-checkout.sh && node scripts/vault/vault.mjs run -- node scripts/ops/search-readiness-audit.mjs",
     "sites:fix-queue": "node scripts/ops/search-readiness-audit.mjs --queue",
     "sites:page": "node scripts/ops/search-readiness-page.mjs",
-    "pnp:outreach": "node scripts/vault/vault.mjs run -- node scripts/ops/pnp-corporate-outreach.mjs"
+    "pnp:outreach": "node scripts/vault/vault.mjs run -- node scripts/ops/pnp-corporate-outreach.mjs",
+    "t2r:groups": "node scripts/vault/vault.mjs run -- node scripts/ops/t2r-groups.mjs"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.3.0",

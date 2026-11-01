@@ -182,8 +182,11 @@ export function numbersRows(md) {
   return rows;
 }
 
-/** Set one metric's value (adding the row when it is new), stamped with the day. */
-export function setNumber(md, metric, value, day) {
+/**
+ * Set one metric's value (adding the row when it is new), stamped with the day. A producer that feeds
+ * the metric may name its own definition and source (`with`), so the row says where the number came from.
+ */
+export function setNumber(md, metric, value, day, { definition = null, source = null } = {}) {
   const body = sectionBody(md, "Numbers") ?? "";
   const lines = body.split("\n").filter((l) => l.trim());
   const table = lines.filter((l) => l.trim().startsWith("|"));
@@ -197,9 +200,9 @@ export function setNumber(md, metric, value, day) {
     const c = cells(l);
     if ((c[0] ?? "").toLowerCase() !== want) return l;
     found = true;
-    return `| ${c[0]} | ${c[1] ?? ""} | ${c[2] ?? ""} | ${value} | ${day} |`;
+    return `| ${c[0]} | ${definition ?? c[1] ?? ""} | ${source ?? c[2] ?? ""} | ${value} | ${day} |`;
   });
-  if (!found) next.push(`| ${metric.trim()} | ${MISSING} | ${MISSING} | ${value} | ${day} |`);
+  if (!found) next.push(`| ${metric.trim()} | ${definition ?? MISSING} | ${source ?? MISSING} | ${value} | ${day} |`);
   return replaceSection(md, "Numbers", [...header, ...next, ...rest.filter((l) => l.trim() !== MISSING)].join("\n"));
 }
 
@@ -256,13 +259,15 @@ export function stripConfidential(text) {
  * also reads "personal" (her own life and Boss OS itself), so hers is "all+personal". From the roster
  * (STATUS.md, migration 0175/0192): Simone is chief of staff to everything; Camille runs the
  * Porch & Party briefing and Marketplace; Monique runs the brokerage and West Peek's LPs (TLC and
- * Rooms jobs read West Peek Ventures too); Danielle fixes every grid repo; Zora keeps the archive.
+ * Rooms jobs read West Peek Ventures too) AND the outreach for time-2-read (its groups and
+ * institutions, owner 31 Oct 2026) and the Industry Guides, so she reads those two brains as well;
+ * Danielle fixes every grid repo; Zora keeps the archive.
  * Kendra (systems), Toni (the isolated trading lane) and Imani (her own practice) serve no business.
  */
 export const EMPLOYEE_BRAINS = Object.freeze({
   emp_chief: "all+personal",
   emp_research: ["porch-and-party"],
-  emp_relationship: ["brokerage", "west-peek-ventures"],
+  emp_relationship: ["brokerage", "west-peek-ventures", "time-2-read", "industry-guides"],
   emp_repo: "all",
   emp_knowledge: "all",
   emp_continuity: [],

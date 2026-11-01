@@ -548,6 +548,17 @@ export function brainsSectionFor(data, now = Date.now()) {
 }
 
 /**
+ * MONDAYS: ONE PLAIN LINE ABOUT TIME-2-READ GROUPS (owner, 31 Oct 2026): "Time-2-Read groups: N
+ * emailed, N replied, N codes in use", from Monique's groups duty (the Worker's own counts). A count
+ * that did not load says so, rather than leaving the line out (Rule 0).
+ */
+export function t2rGroupsSectionFor(data, now = Date.now()) {
+  if (parts(now).weekday !== "Monday") return null;
+  const line = data.t2rGroups?.line ?? "Time-2-Read groups: the counts did not load this morning; the team is looking.";
+  return { title: "Time-2-Read groups", tone: "done", items: [{ text: line, links: [] }], empty: null };
+}
+
+/**
  * THE 1ST OF THE MONTH: ONE CALM GRID, business × key numbers, from each brain's Numbers table.
  * "not tracked yet" where a value is missing; never an invented number.
  */
@@ -720,6 +731,7 @@ export function buildDay(data, now = Date.now()) {
 
   // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
   const brainsSection = brainsSectionFor(data, now);
+  const t2rGroupsSection = t2rGroupsSectionFor(data, now);
   const scoreSection = scoreboardSectionFor(data, now);
 
   // 5. Catch up with.
@@ -781,6 +793,7 @@ export function buildDay(data, now = Date.now()) {
       ...(gridRepos ? [gridRepos] : []),
       ...(scoreSection ? [scoreSection] : []),
       ...(brainsSection ? [brainsSection] : []),
+      ...(t2rGroupsSection ? [t2rGroupsSection] : []),
       { title: "Catch up with", cards: catchCards, items: catchLines, empty: null },
       // Her own to-dos (owner, 26 Oct 2026): told once, then Mondays or two days before a date. Reply
       // "add to my list: …" or "done: …" to change it.
@@ -889,10 +902,12 @@ async function read(api, now) {
   const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
   // Brains (31 Oct 2026): Monday's one-line check and, on the 1st, the scoreboard grid.
   const brainsCheck = await api.get("/brains/cohesion").catch((e) => { console.error(`your-day: brains check not read (${e.message})`); return null; });
+  // Monique's Time-2-Read groups (31 Oct 2026): Monday's one line.
+  const t2rGroups = await api.get("/t2r-groups/summary").catch((e) => { console.error(`your-day: t2r groups not read (${e.message})`); return null; });
   const scoreboard = await api.get("/brains/scoreboard").then((d) => d?.rows ?? null).catch((e) => { console.error(`your-day: scoreboard not read (${e.message})`); return null; });
   const { sections, skipped } = readMorningSections({ now });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { brainsCheck, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: sections };
+  return { brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: sections };
 }
 
 async function feedOf(range) {

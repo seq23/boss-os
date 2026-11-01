@@ -39,6 +39,8 @@ import { isSuppressed, suppress } from "./suppression";
 import { fixBounces, recordBounce, recordRestart } from "./bounceFix";
 import { ensurePartner, runMonthlyPayouts } from "./referrals";
 import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Seat } from "./seat";
+import { feedScoreboard, groupSendGate, queueReady, summary as groupSummary } from "./groups";
+import { GROUPS_KEY, groupSizeIn, suggestedPrice, wantsPrice } from "../../../shared/boss/t2rGroups/rules.mjs";
 
 export interface OutreachSettings {
   killSwitch: boolean;
@@ -91,6 +93,8 @@ export interface TickResult {
   stops: Record<string, string>;
   /** The bounce agent this tick (bounceFix.ts): replacements found and bounced addresses dropped. */
   bounceFixes?: { replaced: number; dropped: number };
+  /** Time-2-Read groups made ready for the engine this tick (groups.ts). */
+  groupsQueued?: number;
 }
 
 export const NAMED_STOP_PREFIX = "NAMED STOP";
@@ -170,6 +174,13 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
     }
   }
 
+  // Time-2-Read groups whose address and code are ready become prospects (groups.ts). Idempotent.
+  try {
+    out.groupsQueued = await queueReady(db, now);
+  } catch (err) {
+    out.refused.groups = (err as Error).message;
+  }
+
   if (mailbox && !settings.killSwitch && settings.sending !== "off") {
     try {
       out.routesProven = await proveRoutes(env, mailbox, now);
@@ -225,6 +236,12 @@ export async function runOutreachTick(env: Env, now = Date.now(), fetchImpl: typ
   } catch (err) {
     out.refused.payouts = (err as Error).message;
   }
+  // The time-2-read scoreboard rows, fed from the groups duty; a revision only when a number moved.
+  try {
+    await feedScoreboard(env, now);
+  } catch (err) {
+    out.refused.scoreboard = (err as Error).message;
+  }
 
   await logEvent(db, { level: "info", scope: "outreach", event: "tick", detail: out }).catch(() => {});
   return out;
@@ -236,7 +253,8 @@ async function businessesShortOfProspects(db: D1Database): Promise<string[]> {
     `SELECT business_key, COUNT(*) AS n FROM outreach_prospects WHERE state = 'new' GROUP BY business_key`,
   ).all<{ business_key: string; n: number }>();
   const have = new Map((r.results ?? []).map((x) => [x.business_key, x.n]));
-  return BUSINESSES.filter((b) => (have.get(b.key) ?? 0) < 50).map((b) => b.key);
+  // A business with no public-listing segments (Time-2-Read groups: researched on the Mac) reads none.
+  return BUSINESSES.filter((b) => b.segments.length > 0 && (have.get(b.key) ?? 0) < 50).map((b) => b.key);
 }
 
 /** A business's route is ready only when it was proven for the sender it uses NOW. */
@@ -338,6 +356,24 @@ async function recordSend(
   ).bind(newId("osd"), key, prospectId, to, step, isTest ? 1 : 0, sent?.id ?? null, sent?.threadId ?? null, status, detail, now).run();
 }
 
+/** The last step a business sends: 1 for a one-follow-up business, 2 for the usual three emails. */
+export function lastStepOf(b: Business): number {
+  return b.steps.length - 1;
+}
+
+/** First emails still allowed today under a business's own weekday limit. Pure. */
+export function newAllowance(perDay: number, firstSentToday: number): number {
+  return Math.max(0, perDay - firstSentToday);
+}
+
+async function firstSendsToday(db: D1Database, key: string, now: number): Promise<number> {
+  const today = chicagoParts(now).day;
+  const r = await db.prepare(
+    `SELECT sent_at FROM outreach_sends WHERE business_key = ? AND is_test = 0 AND step = 0 AND status != 'failed' AND sent_at >= ?`,
+  ).bind(key, now - 2 * DAY_MS).all<{ sent_at: number }>();
+  return (r.results ?? []).filter((x) => chicagoParts(x.sent_at).day === today).length;
+}
+
 /** `stop` is the missing precondition that refused a business, or null when nothing was missing. */
 interface SendOutcome { sent: number; stop: string | null }
 
@@ -371,6 +407,8 @@ async function sendForBusiness(
   const cap = dailyCap(st.ramp_started_at, now);
   const today = await sentToday(db, b.key, now);
   const n = sendsThisTick(cap, today, now);
+  // First emails today, for a business with its own weekday limit on new ones (Time-2-Read groups: 10).
+  let newLeft = b.newPerDay === undefined ? Infinity : newAllowance(b.newPerDay, await firstSendsToday(db, b.key, now));
   if (n === 0) {
     refused[b.key] = "Outside the sending window, or today's cap is reached.";
     // In the window with nothing sent today, a zero is no cap at all: that is a stop, not a hold.
@@ -397,7 +435,9 @@ async function sendForBusiness(
   ).bind(b.key, now, n).all<any>();
 
   let sent = 0;
+  const last = lastStepOf(b);
   for (const p of due.results ?? []) {
+    if (p.step === 0 && newLeft <= 0) continue;
     if (await isSuppressed(db, p.email)) {
       await db.prepare(`UPDATE outreach_prospects SET state = 'suppressed', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
       continue;
@@ -407,21 +447,39 @@ async function sendForBusiness(
       await db.prepare(`UPDATE outreach_prospects SET state = 'done', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
       continue;
     }
-    const step = Math.min(p.step, 2) as 0 | 1 | 2;
+    // A sequence is exactly as long as the business's steps; a prospect past it is done, never written to.
+    if (p.step > last) {
+      await db.prepare(`UPDATE outreach_prospects SET state = 'done', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
+      continue;
+    }
+    const step = p.step as 0 | 1 | 2;
+    let groupCode: string | null = null;
+    if (b.key === GROUPS_KEY) {
+      const gate = await groupSendGate(db, p.id);
+      if ("refuse" in gate) {
+        // Taken out of the queue, said by name: a refused group never blocks the ones behind it.
+        refused[`${b.key}:${p.id}`] = gate.refuse;
+        await db.prepare(`UPDATE outreach_prospects SET state = 'done', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
+        await logEvent(db, { level: "warn", scope: "outreach", event: "group_send_refused", entityId: p.id, detail: { reason: gate.refuse } }).catch(() => {});
+        continue;
+      }
+      groupCode = gate.code;
+    }
     const mail = composeEmail({
       business: b, step, to: p.email, org: p.org_name ?? "", metro: p.metro ?? "", unsubToken: p.unsub_token,
       postalAddress: postal.address!, firstSubject: p.last_subject, inReplyTo: p.last_message_id,
-      pitch, seatEnd: seat.end,
+      pitch, seatEnd: seat.end, groupCode,
     });
     const res = await mailbox.send(b, mail.raw, p.thread_id);
     const messageId = step === 0 ? await mailbox.messageIdOf(res.id).catch(() => null) : p.last_message_id;
-    const next = step < 2 ? now + (b.steps[step + 1]?.afterDays ?? 4) * DAY_MS : null;
+    const next = step < last ? now + (b.steps[step + 1]?.afterDays ?? 4) * DAY_MS : null;
     await db.prepare(
       `UPDATE outreach_prospects SET state = ?, step = ?, next_due_at = ?, thread_id = ?, last_message_id = COALESCE(?, last_message_id),
               last_subject = COALESCE(last_subject, ?), updated_at = ? WHERE id = ?`,
-    ).bind(step < 2 ? "in_sequence" : "done", step + 1, next, res.threadId, messageId, mail.subject, now, p.id).run();
-    await recordSend(db, b.key, p.id, p.email, step, false, res, "sent", b.seat ? `pitch ${pitch}` : null, now);
+    ).bind(step < last ? "in_sequence" : "done", step + 1, next, res.threadId, messageId, mail.subject, now, p.id).run();
+    await recordSend(db, b.key, p.id, p.email, step, false, res, "sent", b.seat ? `pitch ${pitch}` : groupCode ? `code ${groupCode}` : null, now);
     sent += 1;
+    if (step === 0) newLeft -= 1;
   }
   if (sent > 0 && !st.ramp_started_at) {
     await db.prepare(`UPDATE outreach_domain_state SET ramp_started_at = ?, updated_at = ? WHERE business_key = ?`).bind(now, now, b.key).run();
@@ -470,7 +528,9 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
       await act(env, cls, prospect, from, msg, now);
     }
     if (!prospect && cls !== "bounce") continue;
-    const approvalId = cls === "interested" && prospect ? await raiseInterested(env, prospect, from, msg, now) : null;
+    // Time-2-Read groups: a question about the price or paying goes to her whatever else it said.
+    const groupPrice = prospect?.business_key === GROUPS_KEY && cls !== "bounce" && cls !== "auto_reply" && cls !== "unsubscribe" && cls !== "complaint" && wantsPrice(ownWords(msg.body));
+    const approvalId = (cls === "interested" || groupPrice) && prospect ? await raiseInterested(env, prospect, from, msg, now) : null;
     await db.prepare(
       `INSERT INTO outreach_replies (id, gmail_message_id, business_key, prospect_id, from_email, classification, excerpt, approval_id, received_at)
        VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(gmail_message_id) DO NOTHING`,
@@ -500,6 +560,7 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
   const b = businessByKey(p.business_key);
   if (!b) return null;
   const { raiseJudgementCall } = await import("../approvals/raise");
+  if (b.key === GROUPS_KEY) return raiseGroupReply(env, b, p, from, msg, now, raiseJudgementCall);
   let code: string | null = null;
   if (b.kind === "affiliate") code = (await ensurePartner(env.DB, b, p, now)).code;
   const link = code ? `${b.offerUrl}?ref=${code}` : b.offerUrl;
@@ -516,6 +577,42 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
     question:
       `${p.org_name ?? from} (${from}) replied to Monique's outreach for ${b.brand}:\n\n"${ownWords(msg.body).slice(0, 500)}"\n\n` +
       `Suggested next step: ${b.nextStep}\n\nApprove and the reply below goes to your drafts in ${"st@time-2-read.com"}, addressed to them:\n\n${reply}`,
+    resumeKind: "outreach_interested",
+    employeeId: "emp_relationship",
+    lane: "ops",
+    risk: "low",
+    resumeDetail: { prospect_id: p.id, to: from, subject: `Re: ${p.last_subject ?? b.brand}`, body: reply, business_key: b.key },
+  }, now);
+  return raised.approvalId;
+}
+
+/**
+ * A TIME-2-READ GROUP WROTE BACK (owner, 31 Oct 2026). Every real reply goes to her as one Decide
+ * card. A reply about the price or paying carries a SUGGESTED price for her — Monique never quotes:
+ * nothing is sent until she approves, and the approved words go to her drafts, not to them.
+ */
+async function raiseGroupReply(
+  env: Env, b: Business, p: any, from: string, msg: { body: string }, now: number,
+  raise: typeof import("../approvals/raise").raiseJudgementCall,
+): Promise<string | null> {
+  const words = ownWords(msg.body);
+  const g = await env.DB.prepare(`SELECT code, tier, kind, checkouts_started, signups FROM t2r_groups WHERE prospect_id = ?`).bind(p.id).first<any>();
+  const code = g?.code ?? null;
+  const price = wantsPrice(words);
+  const size = groupSizeIn(words);
+  const suggestion = suggestedPrice(size);
+  const used = g?.checkouts_started === null || g?.checkouts_started === undefined ? "not tracked yet" : `${g.checkouts_started} started, ${g.signups ?? 0} signed up`;
+  const reply = price
+    ? `Thank you for asking. For your group: ${suggestion.replace(/^Suggested:\s*/, "").replace(/\s+—.*$/, "")}.${code ? ` The trial code ${code} keeps working while you decide.` : ""}\n\n${signatureFor(b)}`
+    : `Thank you, so glad to hear it.${code ? ` Your families can start with the code ${code} at ${b.offerUrl}; it gives each family 15 days free.` : ""} Any other questions, just reply here.\n\n${signatureFor(b)}`;
+  const totals = await groupSummary(env.DB).catch(() => null);
+  const raised = await raise(env, {
+    title: price ? `Time2Read groups: ${p.org_name ?? from} asked the price` : `Time2Read groups: ${p.org_name ?? from} replied`,
+    question:
+      `${p.org_name ?? from} (${from}), a ${g?.kind ?? "group"} Monique wrote to, replied:\n\n"${words.slice(0, 500)}"\n\n` +
+      `Their code: ${code ?? "none yet"} (${used}).${totals ? ` All groups so far: ${totals.line}.` : ""}\n\n` +
+      (price ? `${suggestion} Monique never quotes a price; this is yours to set.\n\n` : "") +
+      `Approve and the reply below goes to your drafts in st@time-2-read.com, addressed to them:\n\n${reply}`,
     resumeKind: "outreach_interested",
     employeeId: "emp_relationship",
     lane: "ops",

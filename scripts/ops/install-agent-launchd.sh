@@ -1103,6 +1103,9 @@ LJEOF
 }
 install_l_job com.seq.boss-prospects "duty-run.sh lp-prospects.mjs -- npm run --silent lp:prospects -- --live" '<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>' lp-prospects
 install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery.mjs -- npm run --silent lp:discover -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>' lp-discovery
+# MONIQUE: TIME-2-READ GROUPS & INSTITUTIONS (owner, 31 Oct 2026). Weekdays 08:15 Central, before the
+# 09:00 outreach window: research, NeverBounce, each group's own code, queue. Reports to duty_t2r_groups (0324).
+install_l_job com.seq.boss-t2r-groups "duty-run.sh t2r-groups.mjs -- npm run --silent t2r:groups -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict><dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>' t2r-groups
 # Seasonal corporate outreach. The renderer shares the checked-in plist template, and only writes.
 # The template runs duty-run.sh pnp-corporate-outreach.mjs -- npm run --silent pnp:outreach -- --live
 PNP_PLIST="$HOME/Library/LaunchAgents/com.seq.boss-pnp-outreach.plist"

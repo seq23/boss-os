@@ -67,6 +67,7 @@ import { newId } from "./lib/id";
 import { lpTap } from "./routes/lpTap"; // boss fix L
 import { morning } from "./routes/morning";
 import { pnpOutreach } from "./routes/pnpOutreach";
+import { t2rGroups } from "./routes/t2rGroups";
 import { brains } from "./routes/brains";
 import { runBrainsCohesion } from "./brains/store";
 
@@ -157,6 +158,8 @@ app.route("/api/judgement", judgement);
 // prober is what wakes it, not a person remembering.
 app.route("/api/lp", lp);
 app.route("/api/pnp-outreach", pnpOutreach);
+// Monique's Time-2-Read groups & institutions: the Mac job's desk (owner, 31 Oct 2026).
+app.route("/api/t2r-groups", t2rGroups);
 // The diary: what she has coming up, what she typed, and a link where a packet exists.
 app.route("/api/diary", diaryRoutes);
 app.route("/api/waiting-on", waitingOn);

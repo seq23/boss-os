@@ -218,6 +218,11 @@ const SNAPSHOT_TABLES = [
   // them. Parents before children: brains before brain_revisions.
   "brains",
   "brain_revisions",
+  // 0324 — Time-2-Read groups: which tiers are on (her setting) and every group found, with the page its
+  // address came from, NeverBounce's word and its own trial code. NOT RE-DERIVABLE: the research is
+  // not repeatable and a code is a live row in time-2-read's table. Parents first: tiers before groups.
+  "t2r_group_tiers",
+  "t2r_groups",
   // 0189 — things to raise with a standing counterpart. Losing these in a restore loses the half
   // that was never derivable: items said in passing that exist nowhere else, including the access
   // grant that unblocks reading LP replies. Everything else in the packet recomputes from records;
