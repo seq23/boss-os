@@ -382,8 +382,7 @@
           "emails": false,
           "refs": [
             "local-guides-citation-velocity-entity-backlink-watch"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "7:45",
@@ -2572,7 +2571,7 @@
       "brand": "Industry Guides",
       "system": "github",
       "slots": [
-        "mon 07:40"
+        "fri 07:00"
       ],
       "emails": false,
       "heavy": false,
@@ -2580,7 +2579,7 @@
         "repo": "local-guides-citation-velocity",
         "file": ".github/workflows/entity-backlink-watch.yml",
         "crons": [
-          "40 13 * * 1"
+          "CRON_TZ=America/Chicago 0 7 * * 5"
         ]
       }
     },
