@@ -200,7 +200,9 @@ export async function recordMacCohesion(env: Env, body: unknown, now = Date.now(
 /** This week's Mac record, or null (it did not run, or it ran last week). */
 export async function macCohesionThisWeek(env: Env, now = Date.now()): Promise<(MacCheck & { week: string; at: number }) | null> {
   const raw = await getSetting(env.DB, MAC_COHESION_KEY);
-  try { if (raw) { const r = JSON.parse(raw); if (r.week === weekOf(now)) return r; } } catch { /* unreadable = not run */ }
+  // A Sunday-evening check is stamped for the coming week (macCheckWeek); on that Sunday it is
+  // also the current one, so the line read that evening shows it rather than "did not run".
+  try { if (raw) { const r = JSON.parse(raw); if (r.week === weekOf(now) || r.week === macCheckWeek(now)) return r; } } catch { /* unreadable = not run */ }
   return null;
 }
 

@@ -270,6 +270,10 @@ describe("the Monday check rides the hourly tick", () => {
     expect(res.body.data.line).toBe("Cohesion: moved 1 stray memory note to the archive; the dream-wedding-builder repo is missing its brain pointer");
     await recordMacCohesion(env as any, { strays_moved: [], repos_missing_pointer: [], skills_flagged: [], copy_fresh_after: true, unchecked: [] }, MONDAY);
     expect((await currentCohesion(env as any, MONDAY)).line).toBe("Cohesion: all clear");
+    // Read on the Sunday evening it ran, it counts too (the API answers the same day).
+    await env.DB.prepare(`DELETE FROM settings WHERE key LIKE '%cohesion%'`).run();
+    await recordMacCohesion(env as any, { strays_moved: [], repos_missing_pointer: [], skills_flagged: [], copy_fresh_after: true, unchecked: [] }, MONDAY - 15 * 3_600_000 + 45 * 60_000);
+    expect((await currentCohesion(env as any, MONDAY - 15 * 3_600_000 + 50 * 60_000)).line).toBe("Cohesion: all clear");
     // The check runs Sunday 18:45 Central: that record counts for the week starting next morning,
     // and a Sunday record from a week earlier never does.
     const SUNDAY_EVENING = MONDAY - 15 * 3_600_000 + 45 * 60_000; // Sun 1 Nov 18:45 Central
