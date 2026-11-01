@@ -2882,6 +2882,24 @@
       }
     },
     {
+      "id": "runtime-sync",
+      "name": "Jobs' checkout kept current",
+      "what": "Keeps the copy of Boss OS her Mac's jobs run from on the latest version, and saves anything left in it.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "mac",
+      "slots": [
+        "every 600s"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-runtime-sync"
+        ]
+      }
+    },
+    {
       "id": "mailbox-sweep",
       "name": "Mailbox sweep",
       "what": "Missed deals, cooling buyers and connectors from the week's mail.",
