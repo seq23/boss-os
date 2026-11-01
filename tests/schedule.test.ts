@@ -7,13 +7,14 @@
  * on her Mac against the live duties, the plists launchd holds, and every repo's default branch.
  * Each rule is also proven negatively: break the manifest, watch it fail.
  */
+import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   canonical, chicagoOffset, cronEvents, cronProblems, displayWindow, dutyProblems, dutySlots, gatedCrons, activeCrons,
-  installerJobs, launchdProblems, plistEvents, readSchedule, scheduleClientProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons,
+  installerJobs, launchdProblems, plistEvents, readSchedule, scheduleCategoryProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons,
 } from "../scripts/ops/lib/schedule.mjs";
 import { composeSpryWeekly, hostAllowed, loopSection, SPRY_WEEKLY } from "../src/shared/boss/spryWeekly/compose.mjs";
 import { createTestDb, disposeTestDb, type TestDb } from "./helpers/db";
@@ -27,11 +28,19 @@ const clone = () => JSON.parse(JSON.stringify(m));
 const INSTALLER_COMPUTED = ["com.seq.boss-repo-change"];
 
 describe("the Schedule manifest", () => {
-  it("every row is complete, and no client repo is named", () => {
+  it("every row is complete, and carries no owner address", () => {
     expect(m.rows.length).toBeGreaterThan(150);
     expect(shapeProblems(m)).toEqual([]);
-    expect(scheduleClientProblems(m)).toEqual([]);
-    expect(JSON.stringify(m).toLowerCase()).not.toMatch(/\bhorse|\bhicks|@gmail\.com|sequoia@/);
+    expect(JSON.stringify(m).toLowerCase()).not.toMatch(/@gmail\.com|sequoia@/);
+  });
+
+  it("every repo a row names must sit in one of her repo categories; unreadable categories stop by name", () => {
+    const cats = parseRepoCategories("## Repo categories\n**Mine**\n- A: alpha-repo, beta-repo (note)\n**Friends & clients**\n- F: friend-repo\n**The system**\n- seq-bin, boss-os\n## Next\n");
+    const rows = { rows: [{ trigger: { repo: "alpha-repo" } }, { trigger: { repo: "friend-repo" } }, { trigger: { repo: "boss-os" } }] };
+    expect(scheduleCategoryProblems(rows, [], cats)).toEqual([]);
+    expect(scheduleCategoryProblems({ rows: [...rows.rows, { trigger: { repo: "stray-repo" } }] }, [], cats).join(" ")).toMatch(/stray-repo/);
+    expect(scheduleCategoryProblems(rows, ["any-scanned-repo"], cats)).toEqual([]); // scans are not judged, rows are
+    expect(scheduleCategoryProblems(rows, [], parseRepoCategories("# no section"))[0]).toMatch(/NAMED STOP \[NO_REPO_CATEGORIES\]/);
   });
 
   it("every launchd job the installer writes has a row, at the Central time the installer writes", () => {

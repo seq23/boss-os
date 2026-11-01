@@ -15,6 +15,7 @@
  * the fetching and the writing. `scripts/ops/search-readiness-page.mjs` renders the page from the
  * same checklist.json, so the page and the checks are one definition.
  */
+import { categoryOf } from "../repos/categories.mjs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,11 +66,16 @@ export function applies(item, site) {
 }
 
 /**
- * CLIENT SITES ARE AUDITED, NEVER SHOWN (her standing rule; 1 Nov 2026: "client sites report in their
- * own repos, never Boss OS"). A `category: "client"` site is measured like any other, and its fix
- * briefs go to its own repo's lane, but it never appears on her page or in her email.
+ * WHERE A SITE SHOWS (owner, 1 Nov 2026: the client ban is replaced by her repo categories, read from
+ * the personal brain's "## Repo categories"; src/shared/boss/repos/categories.mjs). Every site is
+ * audited the same. "mine" sites are her standings and her email; "friends" sites show in their own
+ * "Friends' sites" section and reach her email only when something needs her; "system" repos only on
+ * failure. A repo in no category (or unreadable categories) shows as hers, never hidden.
  */
-export const shownToOwner = (site) => site?.category !== "client";
+export function siteSection(site, categories) {
+  const c = categoryOf(site?.repo, categories);
+  return c === "friends" || c === "system" ? c : "mine";
+}
 
 // ─── Coverage ────────────────────────────────────────────────────────────────
 
@@ -1346,9 +1352,12 @@ const short = (s) => s.domain;
  * broken, what was fixed, what is being built; plain words, no ids, no commands). `previous` is
  * last week's result so a fix can be named as fixed.
  */
-export function morningLines(checklist, allResults, { previous = null, queued = 0, lastRepair = null, max = 4 } = {}) {
-  // Client sites are audited but never named to her (shownToOwner).
-  const siteResults = (allResults ?? []).filter((x) => shownToOwner(x.site));
+export function morningLines(checklist, allResults, { previous = null, queued = 0, lastRepair = null, max = 4, categories = null } = {}) {
+  // Her own sites carry the routine lines; a friend's site only when it needs her (a named stop).
+  const mine = (x) => siteSection(x.site, categories) === "mine";
+  const siteResults = (allResults ?? []).filter(mine);
+  const needsHer = (allResults ?? []).filter((x) => siteSection(x.site, categories) === "friends")
+    .flatMap((x) => (x.results ?? []).filter((r) => r.status === "fail" && r.named_stop).map((r) => `${x.site.domain} (${r.named_stop})`));
   const byId = Object.fromEntries(checklist.items.map((i) => [i.id, i]));
   const failing = siteResults.map((s) => ({ s, f: s.results.filter((r) => r.status === "fail") }));
   const clean = failing.filter((x) => !x.f.length).length;
@@ -1362,13 +1371,15 @@ export function morningLines(checklist, allResults, { previous = null, queued = 
     lines.push(`Most to fix: ${top.join(", ")}.`);
   }
   if (previous) {
-    const was = new Set(previous.sites.filter((x) => shownToOwner(x.site)).flatMap((s) => s.results.filter((r) => r.status === "fail").map((r) => `${s.site.domain}|${r.id}`)));
+    const was = new Set(previous.sites.filter(mine).flatMap((s) => s.results.filter((r) => r.status === "fail").map((r) => `${s.site.domain}|${r.id}`)));
     const now = new Set(siteResults.flatMap((s) => s.results.filter((r) => r.status === "fail").map((r) => `${s.site.domain}|${r.id}`)));
     const fixed = [...was].filter((k) => !now.has(k)).length;
     if (fixed) lines.push(`Fixed since last week: ${fixed} gaps closed.`);
   }
   if (queued || lastRepair) lines.push(repairLine(lastRepair, queued));
-  return lines.slice(0, max);
+  const out = lines.slice(0, needsHer.length ? max - 1 : max);
+  if (needsHer.length) out.push(`Friends' sites that need you: ${needsHer.slice(0, 2).join(", ")}${needsHer.length > 2 ? `, and ${needsHer.length - 2} more` : ""}.`);
+  return out;
 }
 
 /** One line per site, for the log and the report: "domain: N failing (ids)". */

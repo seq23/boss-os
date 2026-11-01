@@ -29,6 +29,7 @@ function fakeHome() {
   put(join(home, ".claude", "skills", "clean", "SKILL.md"), "Merge on green.\n");
   put(join(home, ".claude", "skills", "old-gate", "SKILL.md"), "A Human merge gate applies.\n");
   put(join(home, "Brains", "team.md"));
+  put(join(home, "Brains", "personal.md"), "# Personal\n## Repo categories\n**Mine**\n- Biz: has-pointer, no-pointer, quiet-repo\n**Friends & clients**\n- Friends: horse-legal-guide-velocity (Claire)\n**The system**\n- boss-os\n");
   return home;
 }
 const lastCommit = (dir: string) => (dir.endsWith("quiet-repo") ? NOW - 400 * DAY : NOW - DAY);
@@ -87,7 +88,7 @@ describe("the Mac half", () => {
   it("restarts a stale brain copy and re-measures it", async () => {
     const home = fakeHome();
     const f = join(home, "Brains", "team.md");
-    utimesSync(f, new Date(Date.now() - 5 * 3_600_000), new Date(Date.now() - 5 * 3_600_000));
+    for (const g of [f, join(home, "Brains", "personal.md")]) utimesSync(g, new Date(Date.now() - 5 * 3_600_000), new Date(Date.now() - 5 * 3_600_000));
     let kicked = 0;
     const r = await checkCopy({ home, restart: () => { kicked++; utimesSync(f, new Date(), new Date()); }, wait: async () => 0 });
     expect(kicked).toBe(1);

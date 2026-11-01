@@ -1,3 +1,4 @@
+import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -6,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/notify.mjs";
 import { BUSINESSES } from "../src/worker/boss/outreach/catalog";
 import { OWNER_OK_CROSSINGS, fundCrossings } from "./helpers/fundCrossings";
-import { CLIENT_REPO_EXCLUSION, CREATOR_STUDIO_REPOS, addressProblems, checkOtherRepos, citedIn, clientRepoProblems, isClientRepo, isScanned as mapScanned, readManifest, sends, shapeProblems, uncovered } from "../scripts/ops/lib/email-map.mjs";
+import { addressProblems, categoryProblems, checkOtherRepos, citedIn, isClientRepo, isScanned as mapScanned, readManifest, sends, shapeProblems, uncovered } from "../scripts/ops/lib/email-map.mjs";
 
 /**
  * docs/OUTBOUND_EMAIL_MAP.md is read by code, so it is a rule and not a wish (owner, 12 Oct 2026:
@@ -483,22 +484,16 @@ describe("the Email Map page's manifest covers every sender", () => {
     expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, pause: "" }] }).length).toBeGreaterThan(0);
   });
 
-  // Owner's standing rule: client repos (horse, hicks, client micro-sites) are never listed,
-  // scheduled or raised in Boss OS; creator-studios work is the one exception (22 Oct 2026).
-  it("names no client repo: not in a row, not in a scanned repo, not in the audit document", () => {
-    expect(CLIENT_REPO_EXCLUSION.length, "the client-repo exclusion derived from grid.mjs/repoPolicy.mjs is empty").toBeGreaterThan(2);
-    expect(clientRepoProblems(manifest, [...new Set(manifest.rows.flatMap((r) => r.code.map((c) => c.repo)))])).toEqual([]);
-    const doc = MAP.toLowerCase();
-    expect(CLIENT_REPO_EXCLUSION.filter((c) => doc.includes(c.toLowerCase()))).toEqual([]);
-    expect(doc).not.toMatch(/\bhorse|\bhicks/);
-  });
-
-  it("the client-repo guard bites, and lets creator studios through", () => {
-    const row = { ...manifest.rows[0]!, id: "probe", code: [{ repo: "horse-legal-guide-velocity", paths: ["x.py"] }] };
-    expect(clientRepoProblems({ rows: [row] }).length).toBeGreaterThan(0);
-    expect(clientRepoProblems({ rows: [] }, ["hicks-consulting-canonical"]).length).toBe(1);
-    expect(isClientRepo("seq23/charm-nest-site")).toBe(true);
-    for (const r of CREATOR_STUDIO_REPOS) expect(isClientRepo(r), r).toBe(false);
+  // Owner, 1 Nov 2026: the client-repo ban is replaced by her repo categories (personal brain).
+  it("every cited or scanned repo must sit in a category; a Friends & clients repo is known by its category", () => {
+    const cats = parseRepoCategories("## Repo categories\n**Mine — hers**\n- Biz (x): mine-repo, other-mine\n**Friends & clients**\n- Friends: pal-repo (Pal)\n- Older (guess, confirm): old-site\n**The system**\n- boss-os (dash), seq-bin (~/bin: land, CI sweep)\n");
+    const row = (repo: string) => ({ ...manifest.rows[0]!, id: `probe-${repo}`, code: [{ repo, paths: ["x.py"] }] });
+    expect(categoryProblems({ rows: [row("mine-repo"), row("pal-repo"), row("~/bin"), row("external")] }, ["boss-os"], cats)).toEqual([]);
+    expect(categoryProblems({ rows: [row("unknown-repo")] }, [], cats).join(" ")).toMatch(/unknown-repo/);
+    expect(categoryProblems({ rows: [] }, [], parseRepoCategories(""))[0]).toMatch(/NAMED STOP \[NO_REPO_CATEGORIES\]/);
+    expect(isClientRepo("seq23/pal-repo", cats)).toBe(true);
+    expect(isClientRepo("old-site", cats)).toBe(true);
+    expect(isClientRepo("mine-repo", cats)).toBe(false);
   });
 
   it("the page renders the manifest itself and sits in ☰ More next to Brains", () => {

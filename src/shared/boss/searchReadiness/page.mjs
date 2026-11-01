@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { shownToOwner } from "./audit.mjs";
+import { siteSection } from "./audit.mjs";
 
 export const TEMPLATE_PATH = join(dirname(fileURLToPath(import.meta.url)), "page-template.html");
 export const loadTemplate = () => readFileSync(TEMPLATE_PATH, "utf8");
@@ -46,9 +46,9 @@ export function renderPhase(phase, items) {
  * (`~/.boss-os/search-readiness/results-<day>.json`): its repo, the automatic checks that passed of
  * those with a verdict, and each failing item by id and title. Counts are computed here, never typed.
  */
-export function standingsSummary(results) {
-  // Client sites are audited but never shown on her page (shownToOwner, 1 Nov 2026).
-  const sites = (results?.sites ?? []).filter((s) => shownToOwner(s.site));
+export function standingsSummary(results, { categories = null, section = "mine" } = {}) {
+  // Her sites and her friends' sites are counted apart (repo categories, personal brain; 1 Nov 2026).
+  const sites = (results?.sites ?? []).filter((s) => siteSection(s.site, categories) === section);
   let pass = 0, failing = 0, notChecked = 0;
   for (const s of sites) for (const r of s.results ?? []) {
     if (r.status === "pass") pass++; else if (r.status === "fail") failing++; else if (r.status === "not_checked") notChecked++;
@@ -56,10 +56,8 @@ export function standingsSummary(results) {
   return { sites: sites.length, checks: pass + failing, failing, notChecked, day: results?.day ?? null };
 }
 
-export function renderStandings(results, checklist) {
-  const title = Object.fromEntries(checklist.items.map((i) => [i.id, i.title]));
-  const sum = standingsSummary(results);
-  const rows = [...(results?.sites ?? [])].filter((s) => shownToOwner(s.site))
+function standingRows(sites, title) {
+  return [...sites]
     .sort((a, b) => (b.failing?.length ?? 0) - (a.failing?.length ?? 0) || String(a.site?.domain).localeCompare(String(b.site?.domain)))
     .map((s) => {
       const res = s.results ?? [];
@@ -73,22 +71,48 @@ export function renderStandings(results, checklist) {
       const loopNote = res.find((r) => r.status === "skipped")?.detail;
       return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
     });
+}
+
+function table(rows) {
   return [
-    `  <h2 id="standings">Where every site stands</h2>`,
-    `  <p data-standings="${sum.sites}/${sum.checks}/${sum.failing}">The Monday audit of ${esc(sum.day ?? "the latest week")}: <b>${sum.sites} sites, ${sum.checks} automatic checks with a verdict, ${sum.failing} failing</b>${sum.notChecked ? ` (${sum.notChecked} could not be checked that week)` : ""}. Every failure is a fix brief Danielle works on Tuesday.</p>`,
     `  <div class="tbl"><table class="standings">`,
     `    <thead><tr><th>Site</th><th>Repo</th><th>Passed</th><th>Failing</th></tr></thead>`,
     `    <tbody>`,
     ...rows,
     `    </tbody>`,
     `  </table></div>`,
+  ];
+}
+
+/**
+ * "Where every site stands" (her own sites), then "Friends' sites" apart: a friend's or client's site
+ * is audited the same and its standing is visible, but it is clearly not hers (repo categories,
+ * personal brain, 1 Nov 2026). Unreadable categories are said, and every site then shows as hers.
+ */
+export function renderStandings(results, checklist, { categories = null } = {}) {
+  const title = Object.fromEntries(checklist.items.map((i) => [i.id, i.title]));
+  const sum = standingsSummary(results, { categories });
+  const all = results?.sites ?? [];
+  const mine = all.filter((s) => siteSection(s.site, categories) === "mine");
+  const friends = all.filter((s) => siteSection(s.site, categories) === "friends");
+  const fsum = standingsSummary(results, { categories, section: "friends" });
+  return [
+    `  <h2 id="standings">Where every site stands</h2>`,
+    ...(categories?.problem ? [`  <p class="muted">Your repo categories could not be read (${esc(categories.problem)}), so every site is listed here.</p>`] : []),
+    `  <p data-standings="${sum.sites}/${sum.checks}/${sum.failing}">The Monday audit of ${esc(sum.day ?? "the latest week")}: <b>${sum.sites} sites, ${sum.checks} automatic checks with a verdict, ${sum.failing} failing</b>${sum.notChecked ? ` (${sum.notChecked} could not be checked that week)` : ""}. Every failure is a fix brief Danielle works on Tuesday.</p>`,
+    ...table(standingRows(mine, title)),
+    ...(friends.length ? [
+      `  <h2 id="friends-sites">Friends' sites</h2>`,
+      `  <p data-friends-standings="${fsum.sites}/${fsum.checks}/${fsum.failing}">Friends' and clients' sites, audited the same way. Their results stay in their own repos; you hear about one only when it needs you. <b>${fsum.sites} sites, ${fsum.failing} checks failing.</b></p>`,
+      ...table(standingRows(friends, title)),
+    ] : []),
   ].join("\n");
 }
 
-export function renderChecklistPage(checklist, template, { results = null } = {}) {
+export function renderChecklistPage(checklist, template, { results = null, categories = null } = {}) {
   let html = template;
   if (!html.includes("<!--STANDINGS-->")) throw new Error("the page template has no <!--STANDINGS-->");
-  html = html.replace("<!--STANDINGS-->", results ? renderStandings(results, checklist) : "");
+  html = html.replace("<!--STANDINGS-->", results ? renderStandings(results, checklist, { categories }) : "");
   for (const phase of checklist.phases) {
     const marker = `<!--PHASE:${phase.id}-->`;
     if (!html.includes(marker)) throw new Error(`the page template has no ${marker}`);

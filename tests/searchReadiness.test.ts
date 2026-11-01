@@ -12,8 +12,9 @@ import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice, nextFixStatus,
   indexnowKeyFiles, INDEXNOW_KEY_NAME, entityFor, namedPeople, SPRY_LABS_ID, ENTITY_PARENTS,
-  shownToOwner, loopConfigFor, oneActionOf, actionMatches,
+  siteSection, loopConfigFor, oneActionOf, actionMatches,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
+import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderChecklistPage, loadTemplate, standingsSummary, renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
 import { MORNING_SECTIONS } from "../src/shared/boss/mail/morning.mjs";
@@ -390,7 +391,7 @@ describe("CLAUDE.md says the rule, and the rule is this code", () => {
     const md = readFileSync("CLAUDE.md", "utf8");
     const sec = md.slice(md.indexOf("## Search Readiness"));
     expect(sec.length).toBeGreaterThan(200);
-    for (const s of ["checklist.json", "sites.json", "npm run sites:audit", "fix-queue.json", "npm run sites:page", "grid repos", "tests/searchReadiness.test.ts", "Where every site stands", "BLOCKED_LEAD_DOMAINS", "b10", "e9", "h6", "j10", "search_loop", "seq23/search-loop", "search-loop-week", "f12", "shownToOwner", "publish straight away"]) expect(sec).toContain(s);
+    for (const s of ["checklist.json", "sites.json", "npm run sites:audit", "fix-queue.json", "npm run sites:page", "grid repos", "tests/searchReadiness.test.ts", "Where every site stands", "BLOCKED_LEAD_DOMAINS", "b10", "e9", "h6", "j10", "search_loop", "seq23/search-loop", "search-loop-week", "f12", "siteSection", "publish straight away"]) expect(sec).toContain(s);
   });
 });
 
@@ -1019,25 +1020,35 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     expect(by["cynthiabrowndds.com"].repo).toBe("cynthia-brown-dds-site");
   });
 
-  it("client sites are audited but never shown to her: not on the page, not in the morning email", () => {
-    const client = sites.grid_repos.filter((s: any) => s.category === "client");
-    expect(client.map((s: any) => s.domain).sort()).toEqual(["cynthiabrowndds.com", "detoxdenver.org", "hicksconsulting.org", "horselegalguide.com"]);
-    for (const s of client) expect(shownToOwner(s)).toBe(false);
-    const results = sites.grid_repos.map((s: any) => ({ site: s, results: [{ id: "f12", status: "fail", detail: "x" }, { id: "a1", status: "fail", detail: "y" }] }));
-    const lines = morningLines(checklist, results, { previous: { sites: results.map((r: any) => ({ ...r, results: [...r.results, { id: "b1", status: "fail" }] })) } }).join(" ");
-    const html = renderStandings({ day: "2026-11-02", sites: results }, checklist);
-    for (const s of client) {
-      expect(lines).not.toContain(s.domain);
-      expect(html).not.toContain(s.domain);
-      expect(html).not.toContain(s.repo);
-    }
-    expect(lines).toContain(`all ${sites.grid_repos.length - client.length} grid repo sites`);
-    // The whole page (template lessons included) never names a client site or repo.
-    const page = renderChecklistPage(checklist, loadTemplate(), { results: { day: "2026-11-02", sites: results } });
-    for (const s of client) for (const name of [s.domain, s.repo]) expect(page, name).not.toContain(name);
-    expect(standingsSummary({ sites: results }).sites).toBe(sites.grid_repos.length - client.length);
-    // A report-only client repo's briefs are recorded, never worked.
-    const briefs = fixBriefs(checklist, results.filter((r: any) => r.site.repo === "dianne-place-recovery-services"));
+  it("repo categories (personal brain) decide: friends' sites show apart, and reach her email only when they need her", () => {
+    const CATS = parseRepoCategories("## Repo categories\n**Mine**\n- Biz: approvalprep, local-guides-generator\n**Friends & clients**\n- Friends: pal-site-repo (Pal)\n**The system**\n- boss-os\n");
+    const mineSite = { domain: "approvalprep.com", repo: "approvalprep", category: "side_business" };
+    const friend = { domain: "pal.example", repo: "pal-site-repo", category: "client" };
+    const unlisted = { domain: "new.example", repo: "brand-new-repo", category: "side_business" };
+    expect([mineSite, friend, unlisted].map((x) => siteSection(x, CATS))).toEqual(["mine", "friends", "mine"]);
+    const results = [mineSite, friend, unlisted].map((x) => ({ site: x, results: [{ id: "a1", status: "fail", detail: "y" }] }));
+    // The page: her sites in the standings, the friend's site in its own "Friends' sites" section, visible.
+    const html = renderStandings({ day: "2026-11-02", sites: results }, checklist, { categories: CATS });
+    const friendsAt = html.indexOf('id="friends-sites"');
+    expect(friendsAt).toBeGreaterThan(0);
+    expect(html.indexOf("pal.example")).toBeGreaterThan(friendsAt);
+    expect(html.indexOf("approvalprep.com")).toBeLessThan(friendsAt);
+    expect(html.indexOf("new.example")).toBeLessThan(friendsAt);
+    expect(standingsSummary({ sites: results }, { categories: CATS }).sites).toBe(2);
+    expect(standingsSummary({ sites: results }, { categories: CATS, section: "friends" }).sites).toBe(1);
+    const page = renderChecklistPage(checklist, loadTemplate(), { results: { day: "2026-11-02", sites: results }, categories: CATS });
+    expect(page).toContain("pal.example");
+    // The email: routine failures on a friend's site stay out; one that needs her (a named stop) comes in.
+    expect(morningLines(checklist, results, { categories: CATS }).join(" ")).not.toContain("pal.example");
+    const stop = results.map((r) => (r.site === friend ? { ...r, results: [{ id: "k5", status: "fail", detail: "z", named_stop: "a reviewer's written consent" }] } : r));
+    expect(morningLines(checklist, stop, { categories: CATS }).join(" ")).toMatch(/pal\.example \(a reviewer's written consent\)/);
+    expect(morningLines(checklist, results, { categories: CATS })[0]).toContain("all 2 grid repo sites");
+    // Categories that cannot be read hide nothing: every site shows as hers, and the page says why.
+    const bad = parseRepoCategories("");
+    expect(renderStandings({ sites: results }, checklist, { categories: bad })).toMatch(/could not be read/);
+    expect(standingsSummary({ sites: results }, { categories: bad }).sites).toBe(3);
+    // A report-only repo's briefs are recorded, never worked (the fixer's permission, unchanged).
+    const briefs = fixBriefs(checklist, sites.grid_repos.filter((x: any) => x.repo === "dianne-place-recovery-services").map((x: any) => ({ site: x, results: [{ id: "a1", status: "fail", detail: "y" }] })));
     expect(briefs.length).toBeGreaterThan(0);
     for (const b of briefs) expect(b.disposition).toBe("client_repo");
     expect(workQueue(briefs).workable).toBe(0);

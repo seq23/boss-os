@@ -27,7 +27,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { centralToLocalOffset } from "../plist-central.mjs";
-import { clientRepoProblems, isClientRepo, repoDir } from "./email-map.mjs";
+import { categoryProblems, isClientRepo, repoDir } from "./email-map.mjs";
 
 export const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -272,10 +272,10 @@ export function shapeProblems(m) {
   return out;
 }
 
-/** Client repos never appear (the Email Map's exclusion, one list). */
-export function scheduleClientProblems(m, scanned = []) {
+/** Every repo a schedule row or scan names sits in one of her repo categories (the personal brain). */
+export function scheduleCategoryProblems(m, scanned = [], cats) {
   const asMap = { rows: m.rows.map((r) => ({ ...r, code: r.trigger?.repo ? [{ repo: r.trigger.repo }] : [] })) };
-  return clientRepoProblems(asMap, scanned);
+  return cats === undefined ? categoryProblems(asMap, scanned) : categoryProblems(asMap, scanned, cats);
 }
 
 /** Rows naming a duty, by duty id. */
@@ -373,15 +373,19 @@ export function repoCronFiles(repo, root, { fetch = true, disabled = new Set() }
 /** Workflows GitHub has switched off in a repo (paths). Empty when gh cannot answer. */
 export function disabledWorkflows(owner, repo) {
   try {
-    const j = JSON.parse(execFileSync("gh", ["api", `repos/${owner}/${repo}/actions/workflows?per_page=100`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
+    const j = ghApiRetrying(`repos/${owner}/${repo}/actions/workflows?per_page=100`);
     return new Set((j.workflows ?? []).filter((w) => w.state !== "active").map((w) => w.path));
   } catch { return new Set(); }
 }
 
-/** Her repos that could carry a schedule: every non-archived repo of the owner that is not a client's. */
-export function candidateRepos(owner) {
+/**
+ * Her repos that could carry a schedule: every non-archived repo of the owner, except a Friends &
+ * clients repo (its jobs stay in its own repo) that no Schedule row names (`keep`: e.g. the creator
+ * studios, whose jobs Boss OS handles).
+ */
+export function candidateRepos(owner, keep = []) {
   const j = JSON.parse(execFileSync("gh", ["repo", "list", owner, "--limit", "300", "--json", "name,isArchived"], { encoding: "utf8" }));
-  return j.filter((r) => !r.isArchived).map((r) => r.name).filter((n) => !isClientRepo(n));
+  return j.filter((r) => !r.isArchived).map((r) => r.name).filter((n) => keep.includes(n) || !isClientRepo(n));
 }
 
 /** Where a repo's checkout is on her Mac (seq-bin is ~/bin), or null. */
@@ -390,9 +394,23 @@ export function scheduleRepoDir(repo, root) {
   return repoDir(repo, root);
 }
 
+/**
+ * `gh api` that waits out GitHub's rate limit (a burst of reads trips the secondary limit even with
+ * the hourly budget left; 1 Nov 2026 the check crashed on it): up to two 60-second waits, then throws.
+ */
+export function ghApiRetrying(p, { run = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 << 20 }), waitMs = 60_000, tries = 3 } = {}) {
+  for (let i = 1; ; i++) {
+    try { return JSON.parse(run(["api", p])); } catch (e) {
+      const said = `${e?.stdout ?? ""}${e?.stderr ?? ""}${e?.message ?? ""}`;
+      if (i >= tries || !/rate limit/i.test(said)) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+    }
+  }
+}
+
 /** A repo with no checkout here: its active scheduled workflows, read through the GitHub API. */
 export function repoCronFilesApi(owner, repo) {
-  const api = (p) => JSON.parse(execFileSync("gh", ["api", p], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 << 20 }));
+  const api = (p) => ghApiRetrying(p);
   const out = [];
   for (const w of api(`repos/${owner}/${repo}/actions/workflows?per_page=100`).workflows ?? []) {
     if (w.state !== "active" || !/^\.github\/workflows\//.test(w.path)) continue;

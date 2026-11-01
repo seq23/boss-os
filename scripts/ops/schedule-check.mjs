@@ -19,7 +19,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   candidateRepos, chicagoOffset, cronProblems, disabledWorkflows, dutyProblems, installedJobs, launchdProblems,
-  missingLabels, readSchedule, repoCronFiles, repoCronFilesApi, scheduleClientProblems, scheduleRepoDir, shapeProblems, weekProblems,
+  missingLabels, readSchedule, repoCronFiles, repoCronFilesApi, scheduleCategoryProblems, scheduleRepoDir, shapeProblems, weekProblems,
 } from "./lib/schedule.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -64,17 +64,19 @@ console.log(`launchd: ${Object.keys(jobs).length} jobs`);
 
 // ─── Crons in every repo of hers ─────────────────────────────────────────────
 let repos = [];
-try { repos = candidateRepos(OWNER); } catch (e) { problems.push(`gh repo list failed (${String(e?.message ?? e).slice(0, 80)}); the repos could not be read`); }
+try { repos = candidateRepos(OWNER, [...new Set(m.rows.map((r) => r.trigger?.repo).filter(Boolean))]); } catch (e) { problems.push(`gh repo list failed (${String(e?.message ?? e).slice(0, 80)}); the repos could not be read`); }
 const offset = chicagoOffset();
 let files = 0;
 for (const repo of repos) {
   const disabled = disabledWorkflows(OWNER, repo);
-  const list = scheduleRepoDir(repo, ROOT) ? repoCronFiles(repo, ROOT, { disabled }) : repoCronFilesApi(OWNER, repo);
+  let list;
+  try { list = scheduleRepoDir(repo, ROOT) ? repoCronFiles(repo, ROOT, { disabled }) : repoCronFilesApi(OWNER, repo); }
+  catch (e) { problems.push(`${repo}: its workflows could not be read from GitHub (${String(e?.message ?? e).split("\n")[0].slice(0, 120)})`); continue; }
   files += list.length;
   problems.push(...cronProblems(m, repo, list, offset));
 }
 for (const r of m.rows) if (r.trigger?.repo && !repos.includes(r.trigger.repo)) problems.push(`${r.id}: repo ${r.trigger.repo} is not one of hers any more (archived, renamed or a client's)`);
-problems.push(...scheduleClientProblems(m, repos));
+problems.push(...scheduleCategoryProblems(m, repos));
 checked += files;
 console.log(`repos: ${repos.length} read, ${files} scheduled files (Central is UTC${offset})`);
 

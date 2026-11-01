@@ -225,8 +225,11 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    site's newest `search-loop-week` artifact (`src/shared/boss/searchLoop/week.mjs`, fetched by
    `scripts/ops/lib/search-loop-week.mjs`); a site with none fails each by name, an unread one is not
    checked. The Wednesday Spry Labs email carries one "Search loop" line per Spry Labs site of hers.
-   **Client sites are audited, never shown** (`shownToOwner`): no client row on her page or in her
-   email, and a report-only client repo's briefs are `client_repo`, never worked.
+   **Repo categories decide where a site shows** (`siteSection`; the one list is the personal brain's
+   "## Repo categories", read on the Mac from ~/Brains/personal.md by `scripts/ops/lib/repo-categories.mjs`;
+   owner, 1 Nov 2026): her sites in "Where every site stands" and her email; Friends & clients in a
+   separate "Friends' sites" section, in her email only when one needs her (a named stop). A report-only
+   client repo's briefs are `client_repo`, never worked. Client data never feeds her own networks.
 
 ## Brains: one document per business, read first
 
