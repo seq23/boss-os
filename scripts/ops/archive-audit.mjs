@@ -252,6 +252,9 @@ async function main() {
     for (const f of plan.fixes) { const why = await fixJob(api, f); console.log(`  fix job: ${f.title}${why ? ` — NOT opened (${why})` : ""}`); }
     if (plan.lines.length && !toMorning("archive", { lines: plan.lines })) { console.error("state not saved."); process.exit(8); }
   }
+  // An empty "all clear" when there was nothing to say, so Saturday's email can tell a quiet week from
+  // a run that never reported in (morningSections.mjs MORNING_SECTION_SPECS). Appending nothing keeps any lines above.
+  if (!toMorning("archive", {})) { console.error("state not saved."); process.exit(8); }
   saveState("archive-audit", { at: new Date(now).toISOString(), states: stateMap(readings) });
   console.log(`ARCHIVE-AUDIT-COMPLETE: ${moved.length} moved, ${filed} filed`);
 }

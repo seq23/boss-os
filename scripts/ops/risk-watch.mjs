@@ -322,17 +322,21 @@ async function main() {
   console.log(`risk watch: ${readings.length} readings, ${readings.filter((r) => r.state === "alert").length} alerting, ${readings.filter((r) => r.state === "stop").length} unreadable, ${moved.length} moved since the last run.`);
   if (DRY) { console.log("RISK-WATCH-COMPLETE: dry"); return; }
 
+  let reported = false;
   if (moved.length) {
     const plan = planRisk(moved);
     for (const f of plan.fixes) { const why = api ? await fixJob(api, f) : "Boss OS was not reachable"; console.log(`  fix job: ${f.title}${why ? ` — NOT opened (${why})` : ""}`); }
     if (plan.lines.length || plan.decide.length) {
       if (!toMorning("risk", { lines: plan.lines, decide: plan.decide })) { console.error("state not saved so the next run says it again."); process.exit(8); }
+      reported = true;
     }
     if (plan.urgent) {
       const laid = layoutProblem({ who: "Toni", ...plan.urgent });
       if (!(await sendAs("Toni", { subject: laid.subject, text: laid.text, prelaid: laid }))) { console.error("NAMED STOP [NO_MAIL_SENT] money at risk and no email could be sent; state not saved so the next run says it again."); process.exit(8); }
     }
   }
+  // Nothing moved: an empty "all clear", so the morning email can tell a quiet day from a run that never reported in.
+  if (!reported && !toMorning("risk", {})) { console.error("state not saved."); process.exit(8); }
   saveState("risk-watch", { at: new Date(now).toISOString(), states: stateMap(readings), openrouter_usage: or.usage ?? prev.openrouter_usage ?? null });
   console.log(`RISK-WATCH-COMPLETE: ${moved.length} moved`);
 }
