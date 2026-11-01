@@ -39,7 +39,10 @@ export function parseRepoCategories(md) {
     while (/\([^()]*\)/.test(body)) body = body.replace(/\([^()]*\)/g, " ");
     const colon = body.indexOf(":");
     if (colon >= 0) body = body.slice(colon + 1);
-    for (const part of body.split(/,| and /)) {
+    // A repo's note can run on past its parentheses into prose ("dianne-place-recovery-services . **Dianne's
+    // Place: …" in the live brain, 1 Nov 2026, which left that client repo uncategorised and swept as hers):
+    // a sentence break ends a repo name the way a comma does.
+    for (const part of body.split(/,| and |\s\.(?=\s|$)/)) {
       const name = part.trim().replace(/[.;]+$/, "");
       if (REPO_NAME.test(name) && !out[cat].includes(name)) out[cat].push(name);
     }

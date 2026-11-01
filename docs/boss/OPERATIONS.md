@@ -939,6 +939,19 @@ Owner-approved: a job that does not need her Mac runs on GitHub Actions, so a cl
   the installer and `job-*.yml` and fails on two.
 - **Moved so far**: errand reminders (`job-errand-reminders.yml`), Spry heartbeat and properties
   (`job-properties.yml`), Time-2-Read numbers (`job-t2r-numbers.yml`, state `t2r-test-accounts.txt`).
+- **Moved 1 Nov 2026, second pass**: Zora's waiting-on (`job-waiting-on.yml`), Catch up with
+  (`job-catchups.yml`), pre-seed watch (`job-preseed-watch.yml`, state `preseed`).
+- **Morning sections live in Boss OS** (D1 `morning_sections`, migration 0330): every
+  `writeMorningSection`/`addMorningLines` also posts to `POST /api/boss/morning/sections` (through
+  `scripts/ops/lib/morning-push.mjs`; append is merged server-side, so Mac and cloud writers share a
+  section). `your-day` reads `GET /morning/sections` plus the Mac files, the newer copy of each section
+  winning whole, and marks the told ones (`POST /morning/sections/told`). A cloud writer whose post fails
+  stops by name (`MORNING_STORE_UNREACHED`); on the Mac the file stands.
+- **Stay on the Mac, and why**: capital-nudge (reads the interest ledger and CONTACTS.json, which by
+  her rule never leave the Mac); pnp-outreach (its research runs through the Codex / Claude Code seats);
+  the LP family — lp (lp-daily), prospects, prospect-discovery, scooter-sheet — share `~/.boss-os/lp`
+  with each other and the Mac scorecard reader, so they move together or not at all; your-day until a
+  cloud-assembled morning has matched the Mac's.
 - **Read a run's private log**: `npm run -s vault:run -- npx wrangler r2 object get boss-os-documents/job-state/logs/<job>/<stamp>.log --remote --pipe`.
 
 ## The Scorecard (1 Nov 2026)

@@ -161,6 +161,9 @@ const SNAPSHOT_TABLES = [
   // 0296 — the morning email as it went (every decision with its context) and the current buy↔sell
   // matches. The morning is not re-derivable once the section files on her Mac are cleared.
   "morning_digests",
+  // 0330 — the morning email's sections before it goes (the Mac→cloud move): what each job wrote for
+  // the next morning. Lose them in a rebuild and that morning's email is missing its sections.
+  "morning_sections",
   "capital_matches",
   "capital_match_taps",
   "capital_dismissed",

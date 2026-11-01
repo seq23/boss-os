@@ -26,6 +26,7 @@ import os from "node:os";
 import path from "node:path";
 import { bossApi } from "./lib/duty-kit.mjs";
 import { writeMorning } from "./lp-daily.mjs";
+import { newerSections } from "../../src/shared/boss/mail/morningSections.mjs";
 import { catchupNote, pickCatchups } from "../../src/shared/boss/lp/plan.mjs";
 
 const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
@@ -78,18 +79,27 @@ export function catchupsMorning(picked, now = Date.now()) {
 }
 
 async function main() {
+  const DRY = process.argv.includes("--dry");
   const api = await bossApi();
   const lists = await api.get("/lp/exclusions");
   let picked = [];
   if (!lists.established) {
     console.log(`held: ${lists.note}; nobody suggested today.`);
   } else {
-    let deals = null;
-    try { deals = JSON.parse(fs.readFileSync(path.join(MORNING_DIR, "deals.json"), "utf8")); } catch { /* not written yet */ }
+    // Monique's deals section: the Mac file and/or Boss OS's copy (1 Nov 2026: this job may run on a
+    // cloud runner, where only Boss OS has it); the newer copy wins. Neither readable is a named stop.
+    let file = null;
+    try { file = JSON.parse(fs.readFileSync(path.join(MORNING_DIR, "deals.json"), "utf8")); } catch { /* not written yet */ }
+    const store = await api.get("/morning/sections").then((d) => d?.rows ?? []).catch((e) => { if (!file) throw new Error(`NAMED STOP [DEALS_NOT_READ] no deals file here and Boss OS's morning sections not read (${e.message})`); return []; });
+    const kept = store.find((r) => r.section === "deals")?.body ?? null;
+    const deals = newerSections(file ? { deals: file } : {}, kept ? { deals: kept } : {}).deals ?? null;
     const history = (await api.get("/lp/catchups/history")).rows ?? [];
     picked = pickCatchups(catchupCandidates(deals?.rows ?? []), history, lists);
+    // --dry (the first cloud run's proof, 1 Nov 2026): picks and says how many; records and writes nothing.
+    if (DRY) { console.log(`LP-CATCHUPS-DRY: ${picked.length} would be suggested (deals section ${deals ? "read" : "absent"}); nothing recorded or written.`); return; }
     if (picked.length) await api.post("/lp/catchups/record", { rows: picked.map((p) => ({ person_key: p.email, reason_type: p.reason_type })) });
   }
+  if (DRY) { console.log(`LP-CATCHUPS-DRY: held; nothing recorded or written.`); return; }
   const file = writeMorning("catchups", catchupsMorning(picked));
   console.log(`LP-CATCHUPS-COMPLETE: ${picked.length} suggested; ${file}`);
 }

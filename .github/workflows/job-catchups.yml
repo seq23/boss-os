@@ -1,0 +1,31 @@
+name: job · Catch up with · daily 06:20 CT
+
+# Who is worth a catch-up, for the morning email's "Catch up with" (the morning sections store; Monique's
+# deals section is read from Boss OS). Moved off her Mac 1 Nov 2026 (was launchd com.seq.boss-catchups,
+# same daily 06:20 Central). Same command as launchd ran.
+on:
+  schedule:
+    - cron: '20 6 * * *'  # America/Chicago, all year
+      timezone: America/Chicago
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: "Proof run: reads everything, records and writes nothing (no duty row)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-catchups
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/cloud-job.yml
+    secrets: inherit
+    with:
+      job: catchups
+      timeout: 15
+      command: ${{ inputs.dry && 'npm run --silent lp:catchups -- --dry' || 'bash scripts/ops/duty-run.sh lp-catchups.mjs -- npm run --silent lp:catchups' }}
