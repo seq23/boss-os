@@ -7,7 +7,7 @@ import { bouncedAddress, classifyReply } from "../../src/worker/boss/outreach/cl
 import { composeEmail, footerCompany, UMBRELLA_COMPANY, UMBRELLA_CONTACT } from "../../src/worker/boss/outreach/compose";
 import { isSuppressed, suppress, isBusinessEmail } from "../../src/worker/boss/outreach/suppression";
 import {
-  GUIDES_SENDER, NEURO_QUALIFY, assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
+  GUIDES_SENDER, MAX_FOLLOW_UPS, NEURO_QUALIFY, assertOutreachMailboxAllowed, assertOutreachSetupTarget, assertSenderAllowed, businessByKey, BUSINESSES, OUTREACH_MAILBOX,
 } from "../../src/worker/boss/outreach/catalog";
 import CATALOG_SOURCE from "../../src/worker/boss/outreach/catalog.ts?raw";
 const OUTREACH_SOURCES = import.meta.glob("../../src/worker/boss/outreach/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
@@ -309,9 +309,9 @@ describe("every email carries the unsubscribe link and the postal address", () =
     }
     expect(BUSINESSES.length).toBeGreaterThan(0);
     for (const b of BUSINESSES) {
-      // Every step a business HAS: three emails, or two for Time-2-Read groups (one follow-up, 31 Oct 2026).
-      expect(b.steps.length, b.key).toBe(b.key === "time2read_groups" ? 2 : 3);
-      for (const step of [...b.steps.keys()] as Array<0 | 1 | 2>) {
+      // Every step a business HAS: the first email and ONE follow-up (R-EML-04, 1 Nov 2026).
+      expect(b.steps.length, b.key).toBe(MAX_FOLLOW_UPS + 1);
+      for (const step of [...b.steps.keys()] as Array<0 | 1>) {
         const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q" });
         const plainFooter = m.body.slice(m.body.lastIndexOf("\n--\n"));
         const htmlFooter = /<p style="([^"]*)"[^>]*>([\s\S]*?)<\/p>\s*<\/body>/.exec(m.html)![2]!;
@@ -469,6 +469,34 @@ describe("the tick", () => {
     // Run the rest of the day: the cap holds at 10.
     for (let h = 1; h <= 7; h++) await runOutreachTick(await tickEnv(), TUESDAY_10AM + h * 3_600_000, g.fetchImpl);
     expect(g.sends.filter((s) => !s.to.startsWith("cryptoclearr")).length).toBe(10);
+  });
+
+  it("ONE follow-up, whatever a catalog holds: a sequence with two follow-ups never sends or schedules the second (R-EML-04)", async () => {
+    await readyWithAddress("time2read");
+    // A catalog entry that still carries a second follow-up (as the guides did until 1 Nov 2026).
+    const steps = T2R.steps as unknown as Array<(typeof T2R.steps)[0]>;
+    steps.push({ afterDays: 7, subject: "Re: {subject}", body: "Hi {org} team,\n\nA second follow-up." });
+    try {
+      expect(MAX_FOLLOW_UPS).toBe(1);
+      await addProspect("time2read", "first@school.example", { state: "in_sequence", step: 1, thread_id: "th-first", next_due_at: TUESDAY_10AM });
+      await addProspect("time2read", "queued@school.example", { state: "in_sequence", step: 2, thread_id: "th-queued", next_due_at: TUESDAY_10AM });
+      const g = fakeGmail();
+      await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
+      for (let d = 1; d <= 14; d++) await runOutreachTick(await tickEnv(), TUESDAY_10AM + d * DAY_MS, g.fetchImpl);
+      // The one follow-up goes; the sequence then ends with nothing scheduled.
+      expect(g.sends.filter((s) => s.to === "first@school.example")).toHaveLength(1);
+      expect(await row<any>(`SELECT state, step, next_due_at FROM outreach_prospects WHERE email = 'first@school.example'`))
+        .toEqual({ state: "done", step: 2, next_due_at: null });
+      // A second follow-up already queued is cancelled, never sent.
+      expect(g.sends.filter((s) => s.to === "queued@school.example")).toHaveLength(0);
+      expect(await row<any>(`SELECT state, next_due_at FROM outreach_prospects WHERE email = 'queued@school.example'`))
+        .toEqual({ state: "done", next_due_at: null });
+      // And compose refuses to write it at all.
+      expect(() => composeEmail({ business: T2R, step: 2 as 1, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: "1 Example Street, Houston, TX 77002", firstSubject: "Hello" }))
+        .toThrow(/second follow-up/);
+    } finally {
+      steps.pop();
+    }
   });
 
   it("a domain without SPF, Google DKIM and DMARC sends nothing live — and a failed DNS lookup fails closed", async () => {
@@ -921,7 +949,7 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
 
   it("every email it composes, both pitches, carries the guides footer and the unsubscribe link — or is refused", () => {
     for (const pitch of ["A", "B"] as const) {
-      for (const step of [0, 1, 2] as const) {
+      for (const step of [0, 1] as const) {
         const m = composeEmail({
           business: MSCH, step, to: "a@acme.example", org: "Oak Court", metro: "Memphis", unsubToken: "tok123",
           postalAddress: ADDR, firstSubject: "Hello", pitch, seatEnd: pitch === "B" ? "2027-03-31" : null,
@@ -944,7 +972,7 @@ describe("Memphis Senior Care Homes: the seat decides the pitch", () => {
     const base = { business: MSCH, step: 0 as const, to: "a@acme.example", org: "Oak Court", metro: "Memphis", unsubToken: "tok123", postalAddress: ADDR };
     expect(() => composeEmail({ ...base, pitch: "B" })).toThrow(/end/);
     expect(() => composeEmail({ ...base, business: T2R, pitch: "B", seatEnd: "2027-03-31" })).toThrow(/no pitch B/);
-    const broken = { ...MSCH, steps: [{ ...MSCH.steps[0], body: "Hi {org}, see {nope}." }, MSCH.steps[1], MSCH.steps[2]] as typeof MSCH.steps };
+    const broken = { ...MSCH, steps: [{ ...MSCH.steps[0], body: "Hi {org}, see {nope}." }, MSCH.steps[1]] as typeof MSCH.steps };
     expect(() => composeEmail({ ...base, business: broken })).toThrow(/\{nope\} was left unfilled/);
     expect(() => composeEmail({ ...base, unsubToken: "" })).toThrow(/unsubscribe/);
   });
@@ -1096,7 +1124,7 @@ describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 
     for (const b of guides) {
       const pitches: Array<"A" | "B"> = b.seat ? ["A", "B"] : ["A"];
       for (const pitch of pitches) {
-        for (const step of [0, 1, 2] as const) {
+        for (const step of [0, 1] as const) {
           const m = composeEmail({
             business: b, step, to: "a@acme.example", org: "Acme Dental", metro: "Houston", unsubToken: "tok123",
             postalAddress: addr, firstSubject: "quick question for Acme Dental", pitch, seatEnd: pitch === "B" ? "2027-03-31" : null,
@@ -1134,15 +1162,15 @@ describe("the Industry Guides read like a person, signed S.L. Taylor (owner, 16 
         }
       }
     }
-    expect(checked).toBe(GUIDE_KEYS.length * 3 + 3); // hard-fail on zero; pitch B counted
+    expect(checked).toBe(GUIDE_KEYS.length * 2 + 2); // hard-fail on zero; pitch B counted
   });
 
   it("the other businesses keep their own team's signature, and never S.L. Taylor", () => {
     const others = BUSINESSES.filter((b) => b.kind !== "local_guide");
     expect(others.length).toBeGreaterThan(0);
     for (const b of others) {
-      expect(b.steps.length, b.key).toBe(b.key === "time2read_groups" ? 2 : 3);
-      for (const step of [...b.steps.keys()] as Array<0 | 1 | 2>) {
+      expect(b.steps.length, b.key).toBe(MAX_FOLLOW_UPS + 1);
+      for (const step of [...b.steps.keys()] as Array<0 | 1>) {
         const m = composeEmail({ business: b, step, to: "a@acme.example", org: "Acme", metro: "Houston", unsubToken: "tok123", postalAddress: addr, firstSubject: "Hello", groupCode: "ACME15K7Q" });
         expect(m.body, b.key).toContain(`\n\n— The ${b.brand} team\n${b.domain}\n\n--\n`);
         expect(m.body, b.key).not.toContain("S.L. Taylor");
@@ -1196,7 +1224,7 @@ describe("Neuro Evaluation Guides writes to evaluators AND therapy practices (ow
   it("every step names both audiences and that a listing shows evaluation, therapy or both", () => {
     const b = businessByKey("neuroevalguides")!;
     let checked = 0;
-    for (const step of [0, 1, 2] as const) {
+    for (const step of [0, 1] as const) {
       const m = composeEmail({
         business: b, step, to: "a@acme.example", org: "Acme Therapy", metro: "Houston", unsubToken: "tok123",
         postalAddress: "PO Box 1, Houston, TX 77002", firstSubject: "families looking for ADHD and autism care in Houston", pitch: "A", seatEnd: null,
@@ -1210,7 +1238,7 @@ describe("Neuro Evaluation Guides writes to evaluators AND therapy practices (ow
       }
       checked++;
     }
-    expect(checked).toBe(3);
+    expect(checked).toBe(2);
   });
 });
 

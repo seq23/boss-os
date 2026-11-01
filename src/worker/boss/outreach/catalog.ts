@@ -2,7 +2,7 @@
  * MONIQUE'S OUTREACH: THE ONE LIST OF BUSINESSES (owner, 9 Oct 2026: "u do it all").
  *
  * Every business, its sending address, its offer, who it writes to, where those addresses are read
- * from, and the three emails it sends. The database holds only STATE keyed by `key`
+ * from, and the two emails it sends (the first and one follow-up). The database holds only STATE keyed by `key`
  * (`outreach_domain_state`, `outreach_prospects`), so this file and the tables can never disagree
  * about which businesses exist.
  *
@@ -119,6 +119,12 @@ export interface Segment {
   preferRoles?: string[];
 }
 
+/**
+ * ONE FOLLOW-UP, EVERY BUSINESS (standing rule, risk brain R-EML-04, 1 Nov 2026): the first email and
+ * one follow-up, never a second. The engine stops every sequence here and compose refuses a later step.
+ */
+export const MAX_FOLLOW_UPS = 1;
+
 export interface Step {
   /** Days after the previous step. Step 0 is 0. */
   afterDays: number;
@@ -137,11 +143,11 @@ export interface Business {
   offer: string;
   segments: Segment[];
   /**
-   * Placeholders: {org} {metro} {brand} {offer_url} {ref_link} {code}. Three emails, or TWO for a
-   * business that allows one follow-up only (Time-2-Read groups, owner 31 Oct 2026). The engine sends
-   * exactly `steps.length` emails, never more.
+   * Placeholders: {org} {metro} {brand} {offer_url} {ref_link} {code}. TWO emails: the first and ONE
+   * follow-up (her standing rule, risk brain R-EML-04, 1 Nov 2026). The engine never sends past
+   * `MAX_FOLLOW_UPS` whatever this array holds (engine.ts `lastStepOf`, compose.ts refuses).
    */
-  steps: [Step, Step, Step] | [Step, Step];
+  steps: [Step, Step];
   /** At most this many FIRST emails a weekday, on top of the ramp (Time-2-Read groups: 10). */
   newPerDay?: number;
   /** What the owner's card suggests when someone says yes. */
@@ -154,7 +160,7 @@ export interface Business {
    * `steps` (pitch A, the seat). Seat taken → `taken` (pitch B, the open round). Placeholder
    * {seat_end_month} is the seat's end, e.g. "March 2027".
    */
-  seat?: { url: string; taken: [Step, Step, Step] };
+  seat?: { url: string; taken: [Step, Step] };
   /**
    * A licensed-facility directory the business's own site publishes (public JSON, $0): ONE list,
    * kept in one place. Read daily by lists.ts: a row with a public business email becomes a
@@ -170,7 +176,7 @@ export interface Business {
  * copy she approved that day, verbatim). A person picking up a conversation and offering a quick
  * call, signed S.L. Taylor. Every step says plainly what the guide is (a digital guide built to come
  * up when people ask ChatGPT, Google and other AI assistants) and names its domain, because people
- * rarely read the first email: day 4 stands alone and re-explains everything, day 7 briefly. The
+ * rarely read the first email: the one follow-up (day 4) stands alone and re-explains everything. The
  * first email names no price and has an honest subject (never a fake "Re:"), except the seat-taken
  * pitch B, which keeps its price by her design. Pinned per guide, per step, per pitch by
  * tests/boss/moniqueOutreach.test.ts.
@@ -182,22 +188,20 @@ interface GuideVoice {
   who: string;
   /** The topic phrase from that guide's first email. */
   topic: string;
-  /** The short topic for the day-7 note. */
-  short: string;
   /** "practices", "clinics", "firms", "communities". */
   providers: string;
   /** "your practice", "your clinic", "your firm", "your community". */
   yours: string;
   /** The day-4 price line. */
   price: string;
-  /** Optional sentence after the guide's description in day 4 and day 7 (e.g. what a listing shows). */
+  /** Optional sentence after the guide's description in the follow-up (e.g. what a listing shows). */
   listing?: string;
 }
 
 const GUIDE_PRICE = "It's free for the first two months, then $249 a month.";
 
-/** Day 4 (stands alone) and day 7 (stands alone, briefly), in the approved wording. */
-const GUIDE_FOLLOW_UPS = (g: GuideVoice): [Step, Step] => [
+/** The one follow-up (day 4): it stands alone and re-explains everything, in the approved wording. */
+const GUIDE_FOLLOW_UP = (g: GuideVoice): [Step] => [
   {
     afterDays: 4,
     subject: "Re: {subject}",
@@ -208,18 +212,10 @@ const GUIDE_FOLLOW_UPS = (g: GuideVoice): [Step, Step] => [
       `I'd like ${g.yours} on our {metro} pages. What people are asking, and where you'd appear: {offer_url}. ` +
       `${g.price}\n\nReply here and I'll set it up.`,
   },
-  {
-    afterDays: 7,
-    subject: "Re: {subject}",
-    body:
-      `Hi {org} team,\n\nLast note from me. ${g.brand} (${g.domain}) is a digital guide built to come up when ` +
-      `${g.who} ask ChatGPT, Google and other AI assistants about ${g.short}, and I'd still like ${g.yours} on our ` +
-      `{metro} pages.${g.listing ? ` ${g.listing}` : ""} If the timing is ever better, just reply and I'll set it up.\n\nThanks either way.`,
-  },
 ];
 
-const SENIOR_VOICE = (topic: string, price: string, short = topic): GuideVoice => ({
-  brand: "Memphis Senior Care Homes", domain: "memphisseniorcarehomes.com", who: "families", topic, short,
+const SENIOR_VOICE = (topic: string, price: string): GuideVoice => ({
+  brand: "Memphis Senior Care Homes", domain: "memphisseniorcarehomes.com", who: "families", topic,
   providers: "communities", yours: "your community", price,
 });
 
@@ -262,7 +258,7 @@ export const BUSINESSES: Business[] = [
           "I-693 medical exam, and it points them to civil surgeons in their city.\n\nWe're building out our " +
           "{metro} pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
-      ...GUIDE_FOLLOW_UPS({ brand: "USCIS Exam Guides", domain: "uscisexam.com", who: "people", topic: "the I-693 medical exam", short: "the I-693 medical exam", providers: "civil surgeons", yours: "your practice", price: GUIDE_PRICE }),
+      ...GUIDE_FOLLOW_UP({ brand: "USCIS Exam Guides", domain: "uscisexam.com", who: "people", topic: "the I-693 medical exam", providers: "civil surgeons", yours: "your practice", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -290,7 +286,7 @@ export const BUSINESSES: Business[] = [
           "cost. It helps patients compare their options and find a dentist in their city.\n\nWe're building " +
           "out our {metro} pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
-      ...GUIDE_FOLLOW_UPS({ brand: "The Dentistry Guides", domain: "dentistryguides.com", who: "people", topic: "implants, veneers and what they cost", short: "implants, veneers and what they cost", providers: "practices", yours: "your practice", price: GUIDE_PRICE }),
+      ...GUIDE_FOLLOW_UP({ brand: "The Dentistry Guides", domain: "dentistryguides.com", who: "people", topic: "implants, veneers and what they cost", providers: "practices", yours: "your practice", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -318,7 +314,7 @@ export const BUSINESSES: Business[] = [
           "what's safe, what it costs, and who to see.\n\nWe're building out our {metro} pages and your clinic " +
           "is one I'd like to include. Want me to set up a listing for you? Just reply here.",
       },
-      ...GUIDE_FOLLOW_UPS({ brand: "Hormone Optimization Guides", domain: "hormonesivhair.com", who: "people", topic: "TRT, HRT and IV therapy", short: "TRT, HRT and IV therapy", providers: "clinics", yours: "your clinic", price: GUIDE_PRICE }),
+      ...GUIDE_FOLLOW_UP({ brand: "Hormone Optimization Guides", domain: "hormonesivhair.com", who: "people", topic: "TRT, HRT and IV therapy", providers: "clinics", yours: "your clinic", price: GUIDE_PRICE }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -366,7 +362,7 @@ export const BUSINESSES: Business[] = [
           "getting evaluated, and finding ongoing therapy once they have answers. " + NEURO_LISTING + "\n\nWe're building out our {metro} " +
           "pages and I'd like your practice on them. Want me to set up a listing for you? Just reply here.",
       },
-      ...GUIDE_FOLLOW_UPS({ brand: "Neuro Evaluation Guides", domain: "neuroevalguides.com", who: "families", topic: "ADHD/autism evaluations and ongoing therapy", short: "ADHD/autism evaluations and ongoing therapy", providers: "practices", yours: "your practice", price: GUIDE_PRICE, listing: NEURO_LISTING }),
+      ...GUIDE_FOLLOW_UP({ brand: "Neuro Evaluation Guides", domain: "neuroevalguides.com", who: "families", topic: "ADHD/autism evaluations and ongoing therapy", providers: "practices", yours: "your practice", price: GUIDE_PRICE, listing: NEURO_LISTING }),
     ],
     nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months.",
   },
@@ -377,7 +373,7 @@ export const BUSINESSES: Business[] = [
     kind: "local_guide",
     sender: GUIDES_SENDER,
     offerUrl: "https://theaccidentguides.com/for-providers/",
-    offer: "Featured injury-firm listing, 2 months free, then $499/month per state",
+    offer: "Featured injury-firm listing, 2 months free, then $499/month per firm (statewide, not exclusive)",
     segments: [{
       key: "pi_firms",
       label: "Personal-injury law firms",
@@ -395,9 +391,9 @@ export const BUSINESSES: Business[] = [
           "deadlines, costs, and when to call a lawyer.\n\nWe're building out our {metro} pages and I'd like " +
           "your firm listed on them. Want me to set up a listing for you? Just reply here.",
       },
-      ...GUIDE_FOLLOW_UPS({ brand: "The Accident Guides", domain: "theaccidentguides.com", who: "people", topic: "what to do after a car or work accident", short: "what to do after an accident", providers: "firms", yours: "your firm", price: "It's free for the first two months, then $499/month for the state." }),
+      ...GUIDE_FOLLOW_UP({ brand: "The Accident Guides", domain: "theaccidentguides.com", who: "people", topic: "what to do after a car or work accident", providers: "firms", yours: "your firm", price: "It's free for the first two months, then $499/month per firm for a statewide listing. It isn't exclusive: other firms may list too." }),
     ],
-    nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months (state-wide, $499 after).",
+    nextStep: "Reply with the setup link from /for-providers/ and start their 2 free months ($499/month per firm after, statewide, not exclusive).",
   },
   {
     key: "memphisseniorcarehomes",
@@ -435,7 +431,7 @@ export const BUSINESSES: Business[] = [
           "with communities.\n\nI'm looking for one community to work with closely on the families who fit. " +
           "If that might be you, just reply here.",
       },
-      ...GUIDE_FOLLOW_UPS(SENIOR_VOICE("assisted living and memory care", "It's free for the first two months, then $249 a month on a six-month term, plus one month's rent when a family we send moves in.")),
+      ...GUIDE_FOLLOW_UP(SENIOR_VOICE("assisted living and memory care", "It's free for the first two months, then $249 a month on a six-month term, plus one month's rent when a family we send moves in.")),
     ],
     seat: {
       url: "https://memphisseniorcarehomes.com/_seat.json",
@@ -451,7 +447,7 @@ export const BUSINESSES: Business[] = [
             "budget and timeline, no names. Meeting them is a flat $800, or one month's rent only if they move " +
             "in. Want the next family who fits? Just reply here.",
         },
-        ...GUIDE_FOLLOW_UPS(SENIOR_VOICE("senior care", "Meeting a family is a flat $800, or one month's rent only if they move in. Nothing monthly.", "senior care around Memphis")),
+        ...GUIDE_FOLLOW_UP(SENIOR_VOICE("senior care", "Meeting a family is a flat $800, or one month's rent only if they move in. Nothing monthly.")),
       ],
     },
     nextStep: "Reply with the setup link from /for-providers/: the exclusive seat (2 free months, then $249/month) if it is open, otherwise the open round (teasers, $800 or one month's rent).",
@@ -486,11 +482,6 @@ export const BUSINESSES: Business[] = [
         body:
           "Hi {org} team,\n\nFollowing up on the referral partnership: 30% of first-year revenue for each " +
           "family you send, tracked by your own code. Reply \"yes\" and it is yours.",
-      },
-      {
-        afterDays: 7,
-        subject: "Re: {subject}",
-        body: "Hi {org} team,\n\nLast note from us. If it is ever useful, the offer stands: {offer_url}",
       },
     ],
     nextStep: "Reply with their referral code and link (30% of first-year revenue).",
@@ -562,11 +553,6 @@ export const BUSINESSES: Business[] = [
         subject: "Re: {subject}",
         body: "Hi {org} team,\n\nFollowing up: 30% of first-year revenue per referred client. Reply \"yes\" for your code.",
       },
-      {
-        afterDays: 7,
-        subject: "Re: {subject}",
-        body: "Hi {org} team,\n\nLast note from us. The offer stands if it is ever useful: {offer_url}",
-      },
     ],
     nextStep: "Reply with their referral code and link (30% of first-year revenue).",
   },
@@ -606,11 +592,6 @@ export const BUSINESSES: Business[] = [
         subject: "Re: {subject}",
         body: "Hi {org} team,\n\nFollowing up: 30% of first-year revenue per referral, tracked by your code. Reply \"yes\" for yours.",
       },
-      {
-        afterDays: 7,
-        subject: "Re: {subject}",
-        body: "Hi {org} team,\n\nLast note from us. The offer stands if it is ever useful: {offer_url}",
-      },
     ],
     nextStep: "Reply with their referral code and link (30% of first-year revenue).",
   },
@@ -641,11 +622,6 @@ export const BUSINESSES: Business[] = [
         afterDays: 4,
         subject: "Re: {subject}",
         body: "Hi {org} team,\n\nFollowing up: 30% of first-year revenue per couple you refer. Reply \"yes\" for your code.",
-      },
-      {
-        afterDays: 7,
-        subject: "Re: {subject}",
-        body: "Hi {org} team,\n\nLast note from us. The offer stands if it is ever useful: {offer_url}",
       },
     ],
     nextStep: "Reply with their referral code and link (30% of first-year revenue).",

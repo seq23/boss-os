@@ -151,7 +151,7 @@ outreach.post("/test-send", async (c) => {
   const body = await c.req.json<{ business_key?: string; step?: number }>().catch(() => ({} as any));
   const b = businessByKey(body.business_key ?? "");
   if (!b) throw badRequest("business_key names no business.");
-  const step = [0, 1, 2].includes(Number(body.step)) ? (Number(body.step) as 0 | 1 | 2) : 0;
+  const step = [0, 1].includes(Number(body.step)) ? (Number(body.step) as 0 | 1) : 0;
   const settings = await readSettings(c.env.DB);
   if (settings.killSwitch) throw badRequest("The kill switch is on.");
   const st = await domainState(c.env.DB, b.key, Date.now());

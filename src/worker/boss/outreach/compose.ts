@@ -6,7 +6,7 @@
  *   · an honest From (the business's own address) and a subject that describes the email.
  * `composeEmail` throws rather than produce a message without the unsubscribe link or the address.
  */
-import { GUIDES_SIGNER, UMBRELLA_COMPANY, UMBRELLA_CONTACT, type Business } from "./catalog";
+import { GUIDES_SIGNER, MAX_FOLLOW_UPS, UMBRELLA_COMPANY, UMBRELLA_CONTACT, type Business } from "./catalog";
 import { seatEndMonth, type Pitch } from "./seat";
 import { GROUPS_KEY, outboundProblems } from "../../../shared/boss/t2rGroups/rules.mjs";
 
@@ -37,7 +37,7 @@ export const UNSUBSCRIBE_BASE = "https://boss.sequoiataylor.com/api/boss/outreac
 
 export interface ComposeInput {
   business: Business;
-  step: 0 | 1 | 2;
+  step: 0 | 1;
   to: string;
   org: string;
   metro: string;
@@ -92,6 +92,9 @@ export function composeEmail(i: ComposeInput): Composed {
   if (i.pitch === "B" && !i.business.seat) throw new Error(`Refused: ${i.business.brand} has no seat, so it has no pitch B.`);
   if (i.pitch === "B" && !(i.seatEnd && /^\d{4}-\d{2}-\d{2}$/.test(i.seatEnd))) {
     throw new Error("Refused: pitch B names the month the exclusive seat ends, and no end date was given.");
+  }
+  if (!(i.step >= 0 && i.step <= MAX_FOLLOW_UPS)) {
+    throw new Error(`Refused: email number ${i.step + 1} would be a second follow-up; outreach sends the first email and one follow-up only.`);
   }
   const steps = i.pitch === "B" && i.business.seat ? i.business.seat.taken : i.business.steps;
   const step = steps[i.step];

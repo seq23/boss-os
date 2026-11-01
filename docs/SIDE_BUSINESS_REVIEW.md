@@ -58,7 +58,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 #### Live now
 
 - Six guides under one company: the same footer and contact (hello@theindustryguides.com) on every page; Spry Labs removed, a build check keeps it out.
-- $249/month listing with 2 months free; $499 per state for injury firms on theaccidentguides.com.
+- $249/month listing with 2 months free; $499/month per injury firm on theaccidentguides.com (statewide listing, not exclusive; other firms may list too).
 - **Memphis Senior Care Homes** (13 Oct): 37 licensed facilities, nine-screen intake, teaser leads at **$800 flat or one month’s rent** on move-in, a $249/month exclusive seat, 30/60/90-day family follow-ups, Stripe account "The Industry Guides".
 - Dentistry: sourced safety-net clinic sections in 6 metros.
 - **Neuro Evaluation Guides now serves evaluation AND therapy** (16 Oct, local-guides-generator \#74): headline “ADHD and autism: getting evaluated, and finding therapy — with or without a diagnosis”, two equal buttons, providers tagged Evaluation / Therapy / both, callback asks which. 83 verified therapy-only practices now listed on 50 of 56 city pages (#75; autism/ABA so far, ADHD therapists being added).

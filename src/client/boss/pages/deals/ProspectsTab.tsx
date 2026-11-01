@@ -110,7 +110,7 @@ export function ProspectsTab() {
         </table>
       </div>
       <p className="row-sub">
-        Three emails at most, then they stop. Anyone who replies or opts out is never emailed again. At most 20 new a day.
+        {MAX_TOUCHES} emails at most (the first and one follow-up), then they stop. Anyone who replies or opts out is never emailed again. At most 20 new a day.
         {credits ? ` ${eightRaiseFooter(credits.used)}.` : ""}
       </p>
     </div>
