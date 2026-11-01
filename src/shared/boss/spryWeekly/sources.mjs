@@ -49,6 +49,20 @@ export const SPRY_WEEKLY_SOURCES = {
       "ready_by_ct": "07:43"
     },
     {
+      "key": "approvalprep",
+      "label": "ApprovalPrep",
+      "repo": "approvalprep",
+      "workflow": ".github/workflows/spry-weekly-summary.yml",
+      "ready_by_ct": "07:48"
+    },
+    {
+      "key": "dream-wedding",
+      "label": "Dream Wedding",
+      "repo": "dream-wedding-builder",
+      "workflow": ".github/workflows/spry-weekly-summary.yml",
+      "ready_by_ct": "07:53"
+    },
+    {
       "key": "how-we-know",
       "label": "How We Know",
       "repo": "how-we-know",

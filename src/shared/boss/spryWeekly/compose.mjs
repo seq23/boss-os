@@ -15,6 +15,8 @@ import { SPRY_WEEKLY_SOURCES } from "./sources.mjs";
 
 export const SPRY_WEEKLY = SPRY_WEEKLY_SOURCES;
 const MAX_LOOKS = 3;
+/** A business's own lines: ApprovalPrep and Dream Wedding each send four (sales, search, Pinterest, pages). */
+export const MAX_NOTES = 4;
 const n = (v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (k, one, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 
@@ -71,7 +73,7 @@ export function sectionFor(source, summary, problem = null) {
   }
   // "Needs you" from a repo's own wording becomes "waiting on you": this email asks nothing of her
   // (its decisions live in Simone's morning email), and the plain-email gate holds the contradiction.
-  for (const note of (summary.notes ?? []).slice(0, 3)) items.push(String(note).replace(/\bneeds you\b/gi, "waiting on you"));
+  for (const note of (summary.notes ?? []).slice(0, MAX_NOTES)) items.push(String(note).replace(/\bneeds you\b/gi, "waiting on you"));
   if (!items.length) items.push(hidden ? "Ran. Nothing of yours to report." : "Ran. Nothing to report.");
   if (summary.state === "needs-a-look" && !sites.length) items.unshift("Worth a look this week.");
   return { title, items, link: summary.run_url ? { label: "Full report", url: summary.run_url } : undefined };

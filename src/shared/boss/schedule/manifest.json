@@ -239,14 +239,16 @@
         {
           "time": "7:00–8:00",
           "tag": "sl",
-          "text": "Five side businesses each work out their weekly results: A Player Mode, Creator Network, Citation Velocity, the Spry Labs site, Local Guides",
+          "text": "Seven side businesses each work out their weekly results: A Player Mode, Creator Network, Citation Velocity, the Spry Labs site, Local Guides, ApprovalPrep, Dream Wedding",
           "emails": false,
           "refs": [
             "aplayer-mode-weekly-outcome-report",
             "creator-network-weekly-owner-report",
             "local-guides-citation-velocity-search-outcomes-weekly",
             "sprylabs-hpc-site-weekly-outcome-report",
-            "local-guides-generator-weekly-outcome-report"
+            "local-guides-generator-weekly-outcome-report",
+            "approvalprep-spry-weekly-summary",
+            "dream-wedding-builder-spry-weekly-summary"
           ]
         },
         {
@@ -438,13 +440,11 @@
         {
           "time": "4:00–8:00",
           "tag": "sl",
-          "text": "Weekly upkeep and growth checks for every side business, 15 min apart: whether AI answers cite each site, Pinterest results (where the site posts there), ApprovalPrep's own checks and Dream Wedding's Pinterest refill",
+          "text": "Weekly upkeep for the side businesses, 15 min apart: ApprovalPrep's own weekly checks (Search Console results, Pinterest visits, the page refresh queue) and Dream Wedding's Pinterest refill",
           "emails": false,
           "refs": [
             "approvalprep-entity-backlink-watch",
             "approvalprep-page-refresh-queue",
-            "approvalprep-weekly-growth-ops",
-            "approvalprep-growth-health-refresh",
             "approvalprep-citation-os-weekly",
             "approvalprep-pinterest-metrics",
             "approvalprep-competitor-watch-refresh",
@@ -764,26 +764,6 @@
       }
     },
     {
-      "id": "approvalprep-growth-health-refresh",
-      "name": "Growth Health Refresh",
-      "what": "Growth Health Refresh",
-      "business": "spry",
-      "brand": "ApprovalPrep",
-      "system": "github",
-      "slots": [
-        "sat 05:20"
-      ],
-      "emails": false,
-      "heavy": false,
-      "trigger": {
-        "repo": "approvalprep",
-        "file": ".github/workflows/growth-health-refresh.yml",
-        "crons": [
-          "CRON_TZ=America/Chicago 20 5 * * 6"
-        ]
-      }
-    },
-    {
       "id": "approvalprep-growth-maintenance-analysis",
       "name": "Intelligence - Growth Maintenance Analysis",
       "what": "Intelligence - Growth Maintenance Analysis",
@@ -944,22 +924,22 @@
       }
     },
     {
-      "id": "approvalprep-weekly-growth-ops",
-      "name": "Weekly Growth Ops",
-      "what": "Weekly Growth Ops",
+      "id": "approvalprep-spry-weekly-summary",
+      "name": "Spry Labs weekly summary",
+      "what": "Measures the week and hands it to the Spry Labs weekly email (no email of its own).",
       "business": "spry",
       "brand": "ApprovalPrep",
       "system": "github",
       "slots": [
-        "sat 04:40"
+        "wed 07:48"
       ],
       "emails": false,
       "heavy": false,
       "trigger": {
         "repo": "approvalprep",
-        "file": ".github/workflows/weekly-growth-ops.yml",
+        "file": ".github/workflows/spry-weekly-summary.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 4 * * 6"
+          "CRON_TZ=America/Chicago 48 7 * * 3"
         ]
       }
     },
@@ -1814,6 +1794,26 @@
         "file": ".github/workflows/self-heal.yml",
         "crons": [
           "CRON_TZ=America/Chicago 10 10 * * 3"
+        ]
+      }
+    },
+    {
+      "id": "dream-wedding-builder-spry-weekly-summary",
+      "name": "Spry Labs weekly summary",
+      "what": "Measures the week and hands it to the Spry Labs weekly email (no email of its own).",
+      "business": "spry",
+      "brand": "Dream Wedding",
+      "system": "github",
+      "slots": [
+        "wed 07:53"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "repo": "dream-wedding-builder",
+        "file": ".github/workflows/spry-weekly-summary.yml",
+        "crons": [
+          "CRON_TZ=America/Chicago 53 7 * * 3"
         ]
       }
     },
