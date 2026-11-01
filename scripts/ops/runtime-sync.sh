@@ -117,7 +117,11 @@ finish() {
   local RC="$1" N
   if [ "${#NOTES[@]}" -gt 0 ] && [ -f "${RT:-}/src/shared/boss/mail/morning.mjs" ]; then
     for N in "${NOTES[@]}"; do
-      node --input-type=module -e 'const [m, l] = process.argv.slice(1); const { addMorningLines } = await import(m); addMorningLines("notices", { lines: [l] });' \
+      # Through the vault (the passcode), so the note also reaches the Boss OS morning sections store
+      # the cloud morning email reads; without it, the Mac file alone.
+      ( cd "$RT" && node scripts/vault/vault.mjs run -- node --input-type=module -e 'const [m, l] = process.argv.slice(1); const { addMorningLines } = await import(m); addMorningLines("notices", { lines: [l] });' \
+        "$RT/src/shared/boss/mail/morning.mjs" "Boss OS jobs' checkout: ${N#NAMED STOP }" ) >/dev/null 2>&1 \
+      || node --input-type=module -e 'const [m, l] = process.argv.slice(1); const { addMorningLines } = await import(m); addMorningLines("notices", { lines: [l] });' \
         "$RT/src/shared/boss/mail/morning.mjs" "Boss OS jobs' checkout: ${N#NAMED STOP }" >/dev/null 2>&1 || say "could not add the note to the morning email"
     done
   fi

@@ -1,0 +1,32 @@
+name: job · Simone's morning email · daily 06:40 CT
+
+# Simone's one morning email. Moved off her Mac 1 Nov 2026 (was launchd com.seq.boss-your-day, same
+# 06:40 Central) after a cloud-assembled morning matched the Mac-assembled one line for line (dry, sent
+# nothing). Its sections come from the Boss OS morning sections store (D1 morning_sections), written by
+# every producer on the Mac or a runner. It waits for Camille's briefing up to 07:45, as on the Mac.
+# 07:50 is a SAFETY TICK in case GitHub drops the 06:40 one: the day's sent marker (state your-day)
+# makes it exit "already sent" without sending.
+on:
+  schedule:
+    - cron: '40 6 * * *'  # America/Chicago, all year
+      timezone: America/Chicago
+    - cron: '50 7 * * *'  # America/Chicago, all year — safety tick
+      timezone: America/Chicago
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-your-day
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/cloud-job.yml
+    secrets: inherit
+    with:
+      job: your-day
+      state: your-day,sent-mail-pending,held-mail
+      timeout: 100
+      command: bash scripts/ops/duty-run.sh your-day.mjs -- npm run --silent your-day

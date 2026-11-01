@@ -950,8 +950,10 @@ Owner-approved: a job that does not need her Mac runs on GitHub Actions, so a cl
 - **Stay on the Mac, and why**: capital-nudge (reads the interest ledger and CONTACTS.json, which by
   her rule never leave the Mac); pnp-outreach (its research runs through the Codex / Claude Code seats);
   the LP family — lp (lp-daily), prospects, prospect-discovery, scooter-sheet — share `~/.boss-os/lp`
-  with each other and the Mac scorecard reader, so they move together or not at all; your-day until a
-  cloud-assembled morning has matched the Mac's.
+  with each other and the Mac scorecard reader, so they move together or not at all.
+- **Simone's morning email (your-day)** moved 1 Nov 2026 (`job-your-day.yml`, 06:40 + a 07:50 safety
+  tick, state `your-day,sent-mail-pending,held-mail`) after a cloud dry build matched the Mac's line for
+  line (the only difference: the P&P feed's read time, a minute apart).
 - **Read a run's private log**: `npm run -s vault:run -- npx wrangler r2 object get boss-os-documents/job-state/logs/<job>/<stamp>.log --remote --pipe`.
 
 ## The Scorecard (1 Nov 2026)
