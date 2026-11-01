@@ -35,14 +35,12 @@ jobs:
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
       - name: Install
-        run: npm ci --ignore-scripts --no-audit --no-fund > /dev/null
+        run: npm ci --no-audit --no-fund > /dev/null
       - name: Run ${{ inputs.job }}
         env:
           BOSS_OS_CLOUD_RUN: "1"
