@@ -29,8 +29,7 @@ when a time moves (the page is). All times are Central. Client sites are never l
 | Time | Whose | What | Emails you |
 |---|---|---|---|
 | 6:30 | Spry Labs · side businesses | Fixes the gaps Monday's search audit found, and puts the fixes live |  |
-| 6:50 | Spry Ventures · brokerage | Filing research: which funds hold what you're selling, and who there can sign |  |
-| 7:00 | Spry Ventures · brokerage | Buyers for what you're selling: funds that hold it, plus brokers in your contacts already working it (two emails merged into one) | ✉ yes |
+| 7:00 | Spry Ventures · brokerage | Buyers for what you're selling: one email, people in your own mail who want it and funds that hold it (two emails merged into one) | ✉ yes |
 | 7:11 | Spry Labs · side businesses | Backlink network: updates its USCIS form-and-fee page |  |
 | 7:15 | West Peek Ventures · fund | Brings Scooter's LP tracker up to date before Wednesday's sync |  |
 | 7:30 | West Peek Ventures · fund | Pre-seed watch: new pre-seed companies worth knowing | ✉ yes |
@@ -60,7 +59,7 @@ when a time moves (the page is). All times are Central. Client sites are never l
 |---|---|---|---|
 | 5:00 | Spry Labs · side businesses | Ahrefs audit: crawls each site, fixes problems at the source | ✉ yes |
 | 7:00–8:00 | Spry Labs · side businesses | Checks which outside sites link to How We Know, Time-2-Read, Dream Wedding and westpeek, one every 20 min |  |
-| 7:00 | Spry Ventures · brokerage | NEW: Sellers for what your LPs want to buy (the mirror of Tuesday) | ✉ yes |
+| 7:00 | Spry Ventures · brokerage | Sellers for what your LPs want to buy: one email, the mirror of Tuesday for your buy orders | ✉ yes |
 | 7:30 | Spry Labs · side businesses | Backlink prospecting: finds new places to earn links |  |
 | 8:00 | You · personal | Tools worth knowing about this week | ✉ yes |
 | 10pm | Spry Labs · side businesses | How We Know: food episode session |  |

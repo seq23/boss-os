@@ -146,7 +146,8 @@ describe("the week is wired", () => {
   });
   it("prospect emails: weekdays only on the Mac job, one follow-up", () => {
     const line = installer.split("\n").find((l) => l.startsWith("install_l_job com.seq.boss-prospects ")) ?? "";
-    expect(line).toMatch(/for d in 1 2 3 4 5/);
+    for (const d of [1, 2, 3, 4, 5]) expect(line).toContain(`<dict><key>Weekday</key><integer>${d}</integer><key>Hour</key><integer>9</integer>`);
+    expect(line).not.toMatch(/<integer>[06]<\/integer><key>Hour/);
     expect(MAX_TOUCHES).toBe(2);
     expect(isSendDay(Date.parse("2026-11-07T15:30:00Z"))).toBe(false); // Saturday 09:30 Central
     expect(isSendDay(Date.parse("2026-11-08T15:30:00Z"))).toBe(false); // Sunday
