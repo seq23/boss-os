@@ -39,7 +39,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { passingItems,
   loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, summaryLines,
-  metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
+  metaContent, links, samplePages, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 
 const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "search-readiness");
@@ -92,16 +92,6 @@ async function readSitemaps(host, robotsText) {
   };
   for (const r of roots) await visit(r, 0);
   return { ok: any, why: any ? null : "no sitemap answered 200", roots, children, urls };
-}
-
-function samplePages(urls, n, protectedPaths) {
-  const all = [...urls].filter((u) => !/\.(xml|pdf|txt|jpg|png|webp|svg)$/i.test(u));
-  if (all.length <= n) return all;
-  const step = all.length / n; const out = [];
-  for (let i = 0; i < n; i++) out.push(all[Math.floor(i * step)]);
-  // A protected page is always looked at (its hash and buy link are verified separately).
-  for (const p of protectedPaths) { const hit = all.find((u) => new URL(u).pathname.replace(/\.html$/, "") === p); if (hit && !out.includes(hit)) out.push(hit); }
-  return out;
 }
 
 async function crawl(host, startHtml, cap) {
@@ -300,11 +290,9 @@ async function auditSite(site, checklist, g, gscSites, portfolio) {
   // Two coverage town pages, so the directory checks read real town pages.
   for (const t of (coverage.targets ?? []).filter((x) => x.kind === "town" && x.html).slice(0, 2)) pages.push({ url: t.url, final: t.url, status: 200, html: t.html, headers: {}, fromSitemap: t.inSitemap, coverageKind: "town" });
 
-  // og:image, Clarity loader, IndexNow key, portfolio link targets.
+  // og:image, IndexNow key, portfolio link targets.
   const ogUrl = metaContent(home.html, "og:image")[0];
   if (ogUrl) { const abs = new URL(ogUrl, home.url).href; const r = await get(abs, { text: false }); files.__og_image = { url: abs, status: r.status }; }
-  const loader = tags(home.html, "script").map((t) => t.src).find((s) => s && /clarity/i.test(s));
-  if (loader) files.__clarity_loader = true;
   // Probe every key the repo holds: this host answers at most one of them (readRepo, indexnowKeys).
   for (const key of repo.ok ? repo.indexnowKeys ?? [] : []) {
     const r = await get(`https://${host}/${key}.txt`);

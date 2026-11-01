@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice, nextFixStatus,
-  indexnowKeyFiles, INDEXNOW_KEY_NAME,
+  indexnowKeyFiles, INDEXNOW_KEY_NAME, loadsClarity, samplePages,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { renderChecklistPage, loadTemplate, standingsSummary } from "../src/shared/boss/searchReadiness/page.mjs";
 import { lineProblems } from "../src/shared/boss/mail/plain.mjs";
@@ -595,6 +595,47 @@ describe("the 26 Oct 2026 lessons catch what they guard", () => {
     expect(CHECKS.clarity!({ site: t2r, home: { html: "<html></html>" }, files: {}, pages: [form] } as any).status).toBe("pass");
     const buy = at("https://x.com/p/", html("Buy it", '<a href="https://sprylabs.gumroad.com/l/x">Buy</a>' + CLARITY));
     expect(CHECKS.clarity_scoped!({ site: t2r, pages: [buy] } as any).status).toBe("pass");
+  });
+
+  it("e9: the privacy disclosure is not a recording tag; actual inline and external loaders still count", () => {
+    const privacy = html("Privacy | Porch & Party", '<p>We use Microsoft Clarity. Read <a href="https://clarity.microsoft.com/terms">the terms</a>.</p>');
+    expect(loadsClarity(privacy)).toBe(false);
+    for (const inert of [
+      `<!-- ${CLARITY} -->`, `<template>${CLARITY}</template>`, `<noscript>${CLARITY}</noscript>`,
+      '<script type="application/ld+json">{"description":"Microsoft Clarity at clarity.ms"}</script>',
+    ]) expect(loadsClarity(inert)).toBe(false);
+    expect(CHECKS.clarity_scoped!({ pages: [at("https://porchandparty901.com/privacy-policy", privacy)] } as any).status).toBe("pass");
+    expect(CHECKS.clarity!({ home: { html: privacy }, pages: [] } as any).status).toBe("fail");
+    const inline = '<script data-clarity-loader>var s=document.createElement("script");s.src="https://www.clarity.ms/tag/"+id;document.head.appendChild(s)</script>';
+    for (const tag of [CLARITY, inline, '<script src="/clarity-consent.js"></script>']) {
+      expect(loadsClarity(tag)).toBe(true);
+      expect(CHECKS.clarity_scoped!({ pages: [at("https://porchandparty901.com/privacy-policy", privacy + tag)] } as any).status).toBe("fail");
+    }
+  });
+
+  it("e6/i8: a 99-page sample must inspect /request even when the evenly spaced pages skip it", () => {
+    const base = "https://porchandparty901.com";
+    const urls = Array.from({ length: 99 }, (_, i) => `${base}/areas/place-${i}`);
+    urls[79] = `${base}/request`;
+    urls[77] = `${base}/privacy-policy`;
+    urls[98] = `${base}/protected`;
+    const sampled = samplePages(new Set(urls), 12, ["/protected"]);
+    expect(sampled).toContain(`${base}/request`);
+    expect(sampled).toContain(`${base}/protected`);
+    expect(new Set(sampled).size).toBe(sampled.length);
+    expect(sampled.length).toBeLessThanOrEqual(21);
+    const pages = sampled.map((url: string) => at(url, url.endsWith("/request") ? html("Request", '<form action="/request"></form>' + CLARITY) : html("Information")));
+    const key = "test-indexnow-key";
+    const ctx = { home: { html: html("Porch & Party") }, pages, repo: { ok: true, indexnowKeys: [key] }, files: { [`/${key}.txt`]: { status: 200, text: key } } } as any;
+    expect(CHECKS.clarity!(ctx).status).toBe("pass");
+    expect(CHECKS.clarity_indexnow!(ctx).status).toBe("pass");
+    expect(CHECKS.clarity_scoped!(ctx).status).toBe("pass");
+    const broken = { ...ctx, pages: pages.map((p: any) => ({ ...p, html: p.html.replace(CLARITY, "") })) };
+    expect(CHECKS.clarity!(broken).status).toBe("fail");
+    expect(CHECKS.clarity_indexnow!(broken).status).toBe("fail");
+    const runner = readFileSync("scripts/ops/search-readiness-audit.mjs", "utf8");
+    expect(runner).toMatch(/import\s*\{[^}]*samplePages[^}]*\}\s*from[^;]+searchReadiness\/audit\.mjs/s);
+    expect(runner).not.toMatch(/function samplePages\(/);
   });
 
   it("b10: a title naming a sibling site fails, one naming neither fails, one naming its own site passes", () => {

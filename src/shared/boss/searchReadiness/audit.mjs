@@ -194,6 +194,23 @@ export function links(html, base) {
   return out;
 }
 
+/** Keep the broad sitemap sample, plus the conversion steps e6/i8 must examine. */
+export function samplePages(urls, n, protectedPaths = []) {
+  const all = [...urls].filter((u) => !/\.(xml|pdf|txt|jpg|png|webp|svg)$/i.test(u));
+  if (all.length <= n) return all;
+  const step = all.length / n, out = [];
+  for (let i = 0; i < n; i++) out.push(all[Math.floor(i * step)]);
+  for (const p of protectedPaths) {
+    const hit = all.find((u) => new URL(u).pathname.replace(/\.html$/, "") === p);
+    if (hit && !out.includes(hit)) out.push(hit);
+  }
+  // An evenly spaced sample of Porch & Party's 99 URLs skipped /request, the
+  // only form. Do not infer missing analytics without looking at that step.
+  const conversion = all.filter((u) => /\/(request|contact(?:-us)?|quote|checkout|cart|buy|order|book(?:ing)?)(?:\/|\.html|$)/i.test(new URL(u).pathname));
+  for (const u of conversion.slice(0, 8)) if (!out.includes(u)) out.push(u);
+  return out;
+}
+
 const norm = (u) => { try { const x = new URL(u); return `${x.protocol}//${x.hostname}${x.pathname.replace(/\/+$/, "") || ""}${x.search}`; } catch { return String(u); } };
 const isUtility = (url) => /\/(privacy|terms|legal|cookie|disclaimer|accessibility|contact|thank|thanks|login|signin|404|search|unsubscribe|sitemap)/i.test(new URL(url).pathname);
 
@@ -534,10 +551,10 @@ export const CHECKS = {
     // 2026: Clarity only where visitors fill a form or buy; how-we-know's audience is on YouTube).
     if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
     const h = ctx.home?.html ?? "";
-    if (CLARITY_RE.test(h) || ctx.files?.__clarity_loader) return pass("Clarity loads on the homepage");
+    if (loadsClarity(h)) return pass("Clarity loads on the homepage");
     // Clarity belongs on the pages where visitors fill a form or buy (e9), so one of those loading it
     // is Clarity installed, whether or not the homepage is such a page.
-    const scoped = (ctx.pages ?? []).find((p) => p.status === 200 && p.html && CLARITY_RE.test(p.html) && formOrBuy(p.html, p.url));
+    const scoped = (ctx.pages ?? []).find((p) => p.status === 200 && p.html && loadsClarity(p.html) && formOrBuy(p.html, p.url));
     return scoped ? pass(`Clarity loads on ${scoped.url}, a page where visitors fill a form or buy`) : fail("neither the homepage nor any sampled form or buy page loads Clarity");
   },
   /*
@@ -547,7 +564,7 @@ export const CHECKS = {
    */
   clarity_scoped(ctx) {
     if (ctx.site?.clarity === false) return pass(`Clarity not used on this site: ${ctx.site.clarity_why || "owner ruling"}`);
-    const loading = okPages(ctx).filter((p) => CLARITY_RE.test(p.html));
+    const loading = okPages(ctx).filter((p) => loadsClarity(p.html));
     if (!loading.length) return pass("no sampled page loads Clarity outside a form or buy page");
     const bad = loading.filter((p) => !formOrBuy(p.html, p.url)).map((p) => p.url);
     return bad.length
@@ -773,7 +790,19 @@ export const CHECKS = {
   },
 };
 
-export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]|microsoft clarity/i;
+export const CLARITY_RE = /clarity\.ms|clarity\.js|\/clarity[-.]/i;
+
+/** A privacy disclosure or link to Clarity is not a recording script. */
+export function loadsClarity(html) {
+  const active = String(html ?? "").replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+  for (const m of active.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    const a = attrs(m[1]), type = (a.type ?? "").trim().toLowerCase();
+    if (type && !/^(module|(?:text|application)\/(?:java|ecma)script)(?:\s*;|$)/.test(type)) continue;
+    if (CLARITY_RE.test(a.src ?? "") || (!a.src && CLARITY_RE.test(m[2]))) return true;
+  }
+  return false;
+}
 
 /** A page where a visitor fills a form or buys: a real <form>, or a link to a checkout. */
 export function formOrBuy(html, base = "https://x.invalid/") {

@@ -33,6 +33,8 @@ export function jsonLd(html: string): { nodes: any[]; errors: string[] };
 export function typesOf(n: any): string[];
 export function deepNodes(nodes: any, re: RegExp): any[];
 export function links(html: string, base: string): { url: string; host: string; rel: string; raw: string }[];
+export function samplePages(urls: Iterable<string>, n: number, protectedPaths?: string[]): string[];
+export function loadsClarity(html: string | null | undefined): boolean;
 export const CHECKS: Record<string, (ctx: any, params?: any) => any> & { [K in "sitemap_valid" | "robots_ok" | "hyperlocal_coverage" | "canonical_self"]: (ctx: any, params?: any) => any };
 export function runChecks(checklist: any, ctx: any): any[];
 export function fixBriefs(checklist: any, siteResults: any[], opts?: { now?: number }): any[];
