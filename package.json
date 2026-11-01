@@ -145,7 +145,7 @@
     "capital:review": "node scripts/ops/interest-extract.mjs --review",
     "validate:capital-staleness": "node scripts/validate/capital-staleness.mjs && node scripts/validate/capital-staleness.mjs --self-test",
     "capital:buyers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs",
-    "capital:sellers": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --side sell",
+    "capital:sellers": "node scripts/vault/vault.mjs run -- node scripts/ops/seller-hunt.mjs",
     "capital:hunts": "node scripts/vault/vault.mjs run -- node scripts/ops/buyer-hunt.mjs --from-boss",
     "capital:filings": "node scripts/vault/vault.mjs run -- node scripts/ops/filing-hunt.mjs",
     "capital:ledger-hunt": "node scripts/vault/vault.mjs run -- node scripts/ops/ledger-hunt.mjs",

@@ -54,6 +54,18 @@ const SOURCE_DIR = process.env.PROSPECT_SOURCE_DIR ?? path.join(os.homedir(), "8
 const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? path.join(os.homedir(), ".boss-os", "morning");
 const PREVIEW = path.join(os.homedir(), ".boss-os", "lp", "prospect-preview.txt");
 const LIVE = process.argv.includes("--live");
+
+/**
+ * WEEKDAYS ONLY, CENTRAL (owner, 1 Nov 2026). No prospect email — first or follow-up — goes on a
+ * Saturday or Sunday in Chicago. A follow-up due at the weekend is still due on Monday: `dueTouch`
+ * counts days since the first email, so skipping a day loses nothing. The launchd job only fires
+ * Monday to Friday and the Worker's plan refuses outside weekdays 9–5; this is the third lock, on the
+ * Mac, so even a by-hand `--live` on a Sunday sends nothing and spends no NeverBounce credit.
+ */
+export function isSendDay(now = Date.now()) {
+  const day = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", weekday: "short" }).format(new Date(now));
+  return day !== "Sat" && day !== "Sun";
+}
 const VERIFY_ONLY = process.argv.includes("--verify-only");
 
 /* ─── The 11 Oct files (pure parsers, tested with synthetic text) ─────────── */
@@ -398,14 +410,18 @@ async function main() {
 
   // 4. Her NeverBounce on every address due a touch (first emails and follow-ups), then the plan —
   // which sends only checked addresses, and only "valid" ones while the bounce brake is on.
-  if (LIVE) {
+  const sendDay = isSendDay();
+  if (LIVE && !sendDay) console.log("WEEKEND: no prospect email goes on Saturday or Sunday (Central); anything due goes on Monday.");
+  if (LIVE && sendDay) {
     try { await verifyDue(api); } catch (e) { console.log(`note: NeverBounce did not run (${e.message}); unchecked addresses wait.`); }
   }
   const plan = await api.get("/lp/prospects/plan");
   if (plan.note) console.log(`plan: ${plan.note}`);
   let sent = 0;
   if (plan.sends?.length) {
-    if (!LIVE || plan.dryRun) {
+    if (LIVE && !sendDay) {
+      console.log(`WEEKEND: ${plan.sends.length} due; held for Monday. Nothing sent.`);
+    } else if (!LIVE || plan.dryRun) {
       fs.mkdirSync(path.dirname(PREVIEW), { recursive: true });
       fs.writeFileSync(PREVIEW, plan.sends.map((s) => `To: ${blur(s.name, s.email)}\nTouch ${s.touch}\nSubject: ${s.subject}\n\n${s.body}\n`).join("\n────────\n"), { mode: 0o600 });
       console.log(`DRY RUN: ${plan.sends.length} due (${plan.dryRun ? "outreach sending is not live" : "no --live"}); preview at ${PREVIEW}. Nothing sent.`);

@@ -3,8 +3,12 @@
  * validate:deal-grid — Boss fix D (owner, 23 Oct 2026), the deal grid and what Monique finds.
  *
  * Each check is a defect from her inbox review, made impossible to ship again:
- *   1. NO STANDALONE DEAL EMAIL. The match, the hunts and the grid never mail her; their findings go
- *      to the morning sections and the Deals page. A send call in any of them fails the build.
+ *   1. NO STANDALONE DEAL EMAIL. The match, the daily hunt and the grid never mail her; their findings
+ *      go to the morning sections and the Deals page. A send call in any of them fails the build.
+ *   1a. THE WEEKLY HUNT EMAIL IS ONE SEND, AND NEVER A DECIDE (owner, 1 Nov 2026, "the brokerage
+ *      week"): Tuesday "Buyers for what you're selling" and Thursday "Sellers for what your LPs want
+ *      to buy" are her two deal emails. `buyer-hunt.mjs` holds exactly one send, behind `--email`;
+ *      `seller-hunt.mjs` sends nothing of its own; the built email has no Decide item (the ⭐ rule).
  *   2. HER OWN NAME IS NEVER A COUNTERPARTY. "Unnamed buyer of Sequoia Taylor" becomes a Yours row
  *      from "You"; her firm address by local part is hers.
  *   3. NO ABSURD PRICE. "$ 1,484,000 M" prints as "—".
@@ -21,8 +25,9 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 
-const NO_MAIL_FILES = ["scripts/ops/interest-match.mjs", "scripts/ops/ledger-hunt.mjs", "scripts/ops/buyer-hunt.mjs",
-  "scripts/ops/interest-grid.mjs", "scripts/ops/filing-hunt.mjs"];
+const NO_MAIL_FILES = ["scripts/ops/interest-match.mjs", "scripts/ops/ledger-hunt.mjs", "scripts/ops/seller-hunt.mjs",
+  "scripts/ops/interest-grid.mjs", "scripts/ops/filing-hunt.mjs", "scripts/ops/lib/side-hunt.mjs"];
+const WEEKLY_HUNT_FILE = "scripts/ops/buyer-hunt.mjs";
 const WINDOW_READERS = ["scripts/ops/interest-match.mjs", "scripts/ops/ledger-hunt.mjs", "scripts/ops/interest-grid.mjs", "src/worker/boss/capital/grid.ts"];
 /** sha256 of each seeded list entry, lowercased. The entries themselves are never written here. */
 const SEEDED_HASHES = new Set([
@@ -33,8 +38,23 @@ const SEEDED_HASHES = new Set([
 const sha = (s) => createHash("sha256").update(String(s).toLowerCase()).digest("hex");
 
 export function checkNoMail(sources) {
-  return Object.entries(sources).filter(([, src]) => /\b(postEmployeeMail|sendersFor|employeeMail)\s*\(/.test(src))
+  return Object.entries(sources).filter(([, src]) => /\b(postEmployeeMail|sendersFor|employeeMail|sendAsEmployee)\s*\(/.test(src))
     .map(([f]) => `${f} sends an email; deal findings go to the morning sections and the Deals page, never a standalone email`);
+}
+
+/** 1a: the weekly hunt sends once, only behind `--email`, and its email never carries a Decide item. */
+export function checkWeeklyHunt(src, build) {
+  const out = [];
+  const sends = [...src.matchAll(/\b(postEmployeeMail|sendersFor|employeeMail|sendAsEmployee)\s*\(/g)];
+  if (sends.length !== 1 || sends[0][1] !== "sendAsEmployee") out.push(`${WEEKLY_HUNT_FILE} must hold exactly one send (sendAsEmployee), found ${sends.length}`);
+  if (!/const EMAIL = ARGS\.includes\("--email"\)/.test(src) || !/if \(EMAIL\)/.test(src)) out.push(`${WEEKLY_HUNT_FILE} sends without the --email gate; a hunt she asked for by email would mail her twice`);
+  for (const side of ["buy", "sell"]) {
+    const lot = { asset: "Acme", size_usd: 15e6, received_on: "2026-10-30", ageDays: 2 };
+    const row = { principal: "A. Broker", quote: "we have Acme", size_usd: 100e6, price_text: null };
+    const mail = build({ side, hunts: [{ lot, people: { hits: [{ row, ageDays: 3, fill: "$100M", price: "worth asking" }] }, funds: { holders: [] } }], now: Date.parse("2026-11-03T13:00:00Z") });
+    if ((mail.layout.decide ?? []).length || (mail.layout.needs ?? []).length) out.push(`the ${side === "sell" ? "Thursday" : "Tuesday"} hunt email carries a Decide item; matches never go to Decide`);
+  }
+  return out;
 }
 
 export function checkHerself(lib) {
@@ -90,17 +110,22 @@ export function checkNoSeededNames(files, read, hashes = SEEDED_HASHES) {
 async function load() {
   const lib = await import("../ops/interest-grid.mjs");
   const hunt = await import("../ops/filing-hunt.mjs");
+  const { buildHuntEmail } = await import("../ops/lib/side-hunt.mjs");
   const { LOOKBACK_DAYS } = await import("../../src/shared/boss/capital/partyLists.mjs");
-  return { lib, hunt, LOOKBACK_DAYS };
+  return { lib, hunt, LOOKBACK_DAYS, buildHuntEmail };
 }
 
 const readSources = (files) => Object.fromEntries(files.map((f) => [f, fs.readFileSync(f, "utf8")]));
 
 async function main() {
-  const { lib, hunt, LOOKBACK_DAYS } = await load();
+  const { lib, hunt, LOOKBACK_DAYS, buildHuntEmail } = await load();
   if (process.argv.includes("--self-test")) {
     const cases = [
       ["a hunt that emails her is caught", checkNoMail({ "x.mjs": "await postEmployeeMail(sender, m)" }).length === 1],
+      ["a no-mail file using sendAsEmployee is caught", checkNoMail({ "x.mjs": "await sendAsEmployee(\"monique\", m)" }).length === 1],
+      ["a second weekly send is caught", checkWeeklyHunt('const EMAIL = ARGS.includes("--email"); if (EMAIL) {} sendAsEmployee(a); sendAsEmployee(b)', buildHuntEmail).length === 1],
+      ["a weekly send with no --email gate is caught", checkWeeklyHunt("sendAsEmployee(a)", buildHuntEmail).length === 1],
+      ["a hunt email with a Decide item is caught", checkWeeklyHunt('const EMAIL = ARGS.includes("--email"); if (EMAIL) {} sendAsEmployee(a)', (x) => ({ layout: { decide: ["match"] } })).length === 2],
       ["her name as a counterparty is caught", checkHerself({ ...lib, gridRow: (r, c) => ({ ...lib.gridRow(r, c), side: "buy", from_text: "Sequoia Taylor" }) }).length >= 1],
       ["an absurd price printed is caught", checkPrice({ priceWords: (s) => s }).length === 3],
       ["a filing reader that throws is caught", checkNport({ positionFromXml: () => { throw new ReferenceError("assetKey is not defined"); } }).length === 1],
@@ -119,6 +144,7 @@ async function main() {
     .filter((f) => f && !/\.(png|jpg|jpeg|gif|webp|woff2?|ttf|otf|ico|pdf|zip)$/i.test(f));
   const errors = [
     ...checkNoMail(readSources(NO_MAIL_FILES)),
+    ...checkWeeklyHunt(fs.readFileSync(WEEKLY_HUNT_FILE, "utf8"), buildHuntEmail),
     ...checkHerself(lib),
     ...checkPrice(lib),
     ...checkNport(hunt),

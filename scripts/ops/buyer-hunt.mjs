@@ -63,11 +63,13 @@ import path from "node:path";
 import os from "node:os";
 import { parseLiveBook, describeLot } from "../../src/shared/boss/intake/liveBook.mjs";
 import { assignedSearch, assetKey, atHerBrokerage } from "./interest-match.mjs";
-import { namesOnce } from "./notify.mjs";
+import { namesOnce, sendAsEmployee } from "./notify.mjs";
 import { loadContacts, reachFor } from "./lib/reach.mjs";
 import { researchLot, renderFilings, renderReach, recordFound } from "./filing-hunt.mjs";
 import { mirrorOrStop } from "./lib/book-mirror.mjs";
 import { herLots } from "./lib/her-lots.mjs";
+import { gmailUrl } from "./interest-grid.mjs";
+import { orderLots, peopleFor, fundsFor, buildHuntEmail, huntTitle } from "./lib/side-hunt.mjs";
 
 const DIR = process.env.BOSS_OS_CAPITAL_DIR ?? path.join(os.homedir(), ".boss-os", "capital");
 const LEDGER = path.join(DIR, "ledger.json");
@@ -78,6 +80,13 @@ const WRONG_FILE = path.join(DIR, "wrong.json");
 const ARGS = process.argv.slice(2);
 const argOf = (n) => { const i = ARGS.indexOf(`--${n}`); return i === -1 ? null : ARGS[i + 1] ?? null; };
 const SEND = ARGS.includes("--send");
+/*
+ * `--email` IS THE WEEKLY EMAIL (owner, 1 Nov 2026): Tuesday "Buyers for what you're selling", Thursday
+ * "Sellers for what your LPs want to buy" (`seller-hunt.mjs`). Separate from `--send`, because a hunt
+ * she asked for by email (`--from-boss`) re-runs this file with `--send` and must still land on her
+ * card only, never as a second email.
+ */
+const EMAIL = ARGS.includes("--email");
 const ONE_ASSET = argOf("asset");
 const ONE_SIZE = Number(argOf("size") ?? 0);
 
@@ -152,13 +161,29 @@ const loadJson = (p, key) => { try { return JSON.parse(fs.readFileSync(p, "utf8"
  * suppressed: a colleague at her own firm holding the other side is not a buyer she introduces. She
  * is already down the hall from them.
  */
-function fromHerInbox(asset, size) {
+/**
+ * The inbox records she may be shown, read once per run: not struck as wrong, not her own firm.
+ * `error` (Rule 0) when the records cannot be read, so the email's section says so plainly.
+ */
+export function usableInbox({ ledger = LEDGER } = {}) {
+  if (!fs.existsSync(ledger)) return { rows: [], suppressed: new Set(), error: "your email records have not been read yet (the 5:30 morning scan builds them)" };
+  let interests;
+  try { interests = JSON.parse(fs.readFileSync(ledger, "utf8")).interests ?? []; }
+  catch { return { rows: [], suppressed: new Set(), error: "your email records could not be opened" }; }
+  const wrong = new Set(loadJson(WRONG_FILE, "rows"));
+  const suppressed = new Set(loadJson(SUPPRESS, "people"));
+  const rows = interests.filter((r) => !wrong.has(r.source_message) && !atHerBrokerage(r))
+    .map((r) => ({ ...r, email_url: r.source_message ? gmailUrl(r.source_message) : null }));
+  return { rows, suppressed, error: null };
+}
+
+function fromHerInbox(asset, size, side = SIDE) {
   if (!fs.existsSync(LEDGER)) return { hits: [], note: "the ledger does not exist — run npm run capital:scan" };
   const { interests = [] } = JSON.parse(fs.readFileSync(LEDGER, "utf8"));
   const wrong = new Set(loadJson(WRONG_FILE, "rows"));
   const suppressed = new Set(loadJson(SUPPRESS, "people"));
   const usable = interests.filter((r) => !wrong.has(r.source_message) && !atHerBrokerage(r));
-  const hits = assignedSearch(usable, asset, SIDE, size || 0, suppressed)
+  const hits = assignedSearch(usable, asset, side, size || 0, suppressed)
     // Precision bar: a candidate with no sentence behind it is not a candidate.
     .filter((h) => h.row?.quote || h.row?.evidence);
   return { hits, considered: usable.filter((r) => assetKey(r.asset) === assetKey(asset)).length };
@@ -178,7 +203,7 @@ function fromHerInbox(asset, size) {
 // `renderFilings`, so one ask produces one email carrying both people's work under their own
 // bylines — two people's work reported together, not two separate asks.
 
-function renderAsset(lot, inbox, filings, contacts) {
+function renderAsset(lot, inbox, filings, contacts, SIDE) {
   const size = lot.size_usd ?? 0;
   const want = describeLot(lot).split(" — ").slice(2).join(" — ") || lot.size_text;
   const lines = [
@@ -208,13 +233,22 @@ function renderAsset(lot, inbox, filings, contacts) {
 
 // ─── The run ─────────────────────────────────────────────────────────────────
 
-async function main() {
+async function main(SIDE = "buy") {
+  const HER_SIDE = SIDE === "sell" ? "buy" : "sell";
+  const HUNTING = SIDE === "sell" ? "seller" : "buyer";
   /*
    * INBOX FIRST, THE BOOK IS AN OPTIONAL EXTRA (owner, 26 Oct 2026: "Yes, inbox only"; lib/her-lots.mjs).
    * Nothing of hers on this side anywhere is still a NAMED STOP, never an empty result — but it no
    * longer asks her for a book: Monique works from the inbox grid.
    */
   const book = ONE_ASSET ? loadBook() : herLots(HER_SIDE, { book: loadBook() });
+  /*
+   * THE WEEKLY EMAIL GOES EVEN ON AN EMPTY WEEK (Rule 0): "you have no sell orders from the last six
+   * months" is an answer she can read; a job that exits quietly is not.
+   */
+  if (EMAIL && !ONE_ASSET && (!book || !book.positions.some((p) => p.side === HER_SIDE))) {
+    return weeklyEmail(SIDE, []);
+  }
   if (!book) {
     console.error(`NAMED STOP [NO_SELL_SIDE] nothing of yours on the ${HER_SIDE} side in the inbox grid (and no book adds any). Nothing to hunt for this week.`);
     process.exit(5);
@@ -238,8 +272,9 @@ async function main() {
   const contacts = loadContacts();
 
   const sections = [];
-  for (const lot of priced) {
-    const inbox = fromHerInbox(lot.asset, lot.size_usd);
+  // Her newest orders first; an order past the ~6-month lookback is not hunted (lib/side-hunt.mjs).
+  for (const lot of orderLots(priced)) {
+    const inbox = fromHerInbox(lot.asset, lot.size_usd, SIDE);
     /*
      * DANIELLE'S HALF, RUN INSIDE MONIQUE'S REQUEST. `researchLot` does the N-PORT read, the capacity
      * arithmetic, the Form ADV lookup and the contact discovery. One ask, both halves, one email.
@@ -270,8 +305,13 @@ async function main() {
   ].join("\n");
 
   const body = header
-    + sections.map((s) => renderAsset(s.lot, s.inbox, s.filings, contacts)).join("\n");
+    + sections.map((s) => renderAsset(s.lot, s.inbox, s.filings, contacts, SIDE)).join("\n");
   console.log(body);
+
+  if (EMAIL) {
+    if (SEND) for (const sec of sections) recordFound(sec.lot.asset, { holders: sec.filings.holders ?? [], spvs: sec.filings.spvs ?? [] });
+    return weeklyEmail(SIDE, sections);
+  }
 
   if (!SEND) { console.log("\nRe-run with --send to keep it for the morning email."); return; }
   /*
@@ -379,7 +419,46 @@ async function fromBoss() {
   }
 }
 
+/**
+ * THE ONE WEEKLY EMAIL, BOTH SOURCES IN IT (owner, 1 Nov 2026). Monique sends it to her once:
+ * Tuesday for buyers, Thursday for sellers. Both computations ran above; only the output merges.
+ * Nothing in it is a Decide item (the ⭐ rule), nobody is contacted, nothing calls a model.
+ *
+ * RULE 0: a source that failed is written into its own section, the email still goes, and the run
+ * then exits 3 so the duty row goes red for the part that did not run.
+ */
+export function huntsFor(side, sections, inbox = usableInbox()) {
+  return sections.map(({ lot, filings }) => ({
+    lot,
+    people: inbox.error ? { hits: [], error: inbox.error } : { hits: peopleFor(inbox.rows, lot, side, { suppressed: inbox.suppressed }) },
+    funds: filings?.note ? { holders: [], error: "the public SEC filings could not be read this week" }
+      : { holders: fundsFor(filings), total: filings?.total, scanned: filings?.scanned },
+  }));
+}
+
+async function weeklyEmail(side, sections) {
+  const mail = buildHuntEmail({ side, hunts: huntsFor(side, sections) });
+  const to = process.env.BOSS_NOTIFY_TO ?? "seq.taylor@gmail.com";
+  if (!SEND) {
+    console.log(`\nDRY RUN: "${huntTitle(side)}" was not sent. Re-run with --send --email to send it.`);
+  } else {
+    const res = await sendAsEmployee("monique", { to, subject: mail.subject, layout: mail.layout });
+    if (!res.ok) {
+      console.error(`NAMED STOP [HUNT_EMAIL_NOT_SENT] "${huntTitle(side)}" could not be sent: ${res.error}`);
+      process.exit(2);
+    }
+    console.log(`\nSent "${huntTitle(side)}" to you, from ${res.from}.`);
+  }
+  if (mail.failed.length) {
+    console.error(`NAMED STOP [SOURCE_FAILED] part of "${huntTitle(side)}" did not run, and the email says so: ${mail.failed.join("; ")}`);
+    process.exitCode = 3;
+  }
+}
+
+/** The weekly run for one side: `buyer-hunt.mjs` (Tuesday) and `seller-hunt.mjs` (Thursday) both call this. */
+export const runHunt = (side) => main(side === "sell" ? "sell" : "buy");
+
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const run = ARGS.includes("--from-boss") ? fromBoss() : main();
+  const run = ARGS.includes("--from-boss") ? fromBoss() : main(SIDE);
   run.catch((err) => { console.error(`BUYER HUNT FAILED: ${err?.stack ?? err}`); process.exit(1); });
 }

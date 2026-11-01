@@ -25,14 +25,36 @@
   "rows": [
     {
       "id": "brokerage-deal-finds", "business": "brokerage",
-      "what": "New deals and the matches Monique found (buy and sell on the same company), the buyer and holder hunts, and the monthly ask for your live book",
+      "what": "New deals and the matches Monique found (buy and sell on the same company), what the hunts found, and the monthly ask for your live book",
       "sender": "Monique", "owner": "Monique",
       "from": "Inside Simone's morning email", "to": "You",
-      "when": "Daily scan 5:30 AM; buyer and holder hunts Tuesdays 7:00 AM; the monthly nudge on the 1st; a hunt you ask for within 5 minutes",
-      "runs": "folded", "trigger": "Mac jobs com.seq.boss-capital, com.seq.boss-capital-buyers, com.seq.boss-capital-nudge and com.seq.boss-hunt-ondemand write the deals and Monique found sections",
-      "pause": "Turn off the Mac jobs: launchctl bootout gui/501/com.seq.boss-capital (and -capital-buyers, -capital-nudge, boss-hunt-ondemand)",
-      "launchd": ["com.seq.boss-capital", "com.seq.boss-capital-buyers", "com.seq.boss-capital-nudge", "com.seq.boss-hunt-ondemand"],
-      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/interest-match.mjs", "scripts/ops/ledger-hunt.mjs", "scripts/ops/buyer-hunt.mjs", "scripts/ops/interest-grid.mjs"] }]
+      "when": "Daily scan 5:30 AM; the monthly nudge on the 1st; a hunt you ask for within 5 minutes",
+      "runs": "folded", "trigger": "Mac jobs com.seq.boss-capital, com.seq.boss-capital-nudge and com.seq.boss-hunt-ondemand write the deals and Monique found sections",
+      "pause": "Turn off the Mac jobs: launchctl bootout gui/501/com.seq.boss-capital (and -capital-nudge, boss-hunt-ondemand)",
+      "launchd": ["com.seq.boss-capital", "com.seq.boss-capital-nudge", "com.seq.boss-hunt-ondemand"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/interest-match.mjs", "scripts/ops/ledger-hunt.mjs", "scripts/ops/interest-grid.mjs"] }]
+    },
+    {
+      "id": "brokerage-buyers-tuesday", "business": "brokerage",
+      "what": "Buyers for what you're selling: one email, two sections (people in your own mail who want it, and funds that report holding it), sized and priced against your sell orders",
+      "sender": "Monique", "owner": "Monique",
+      "from": "Monique <monique@sequoiataylor.com>", "to": "You",
+      "when": "Tuesdays 7:00 AM",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-capital-buyers (capital:buyers --send --email; the funds half runs first in the same job)",
+      "pause": "launchctl bootout gui/501/com.seq.boss-capital-buyers",
+      "launchd": ["com.seq.boss-capital-buyers"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/buyer-hunt.mjs", "scripts/ops/filing-hunt.mjs", "scripts/ops/lib/side-hunt.mjs"] }]
+    },
+    {
+      "id": "brokerage-sellers-thursday", "business": "brokerage",
+      "what": "Sellers for what your LPs want to buy: one email, two sections (people in your own mail who hold or can source it, and funds that report holding it), sized and priced against your buy orders",
+      "sender": "Monique", "owner": "Monique",
+      "from": "Monique <monique@sequoiataylor.com>", "to": "You",
+      "when": "Thursdays 7:00 AM",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-capital-sellers (capital:sellers --send --email)",
+      "pause": "launchctl bootout gui/501/com.seq.boss-capital-sellers",
+      "launchd": ["com.seq.boss-capital-sellers"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/seller-hunt.mjs", "scripts/ops/buyer-hunt.mjs", "scripts/ops/filing-hunt.mjs", "scripts/ops/lib/side-hunt.mjs"] }]
     },
     {
       "id": "people-worth-a-call", "business": "brokerage",
@@ -159,10 +181,10 @@
     },
     {
       "id": "monique-prospects", "business": "west-peek-ventures",
-      "what": "Monique's prospect emails to the people you approved: one first email and at most two follow-ups, then never again",
+      "what": "Monique's prospect emails to the people you approved: one first email and one follow-up, weekdays only, then never again",
       "sender": "Monique", "owner": "Monique",
       "from": "Your fund outreach mailbox (through the delegation you OK'd)", "to": "Prospects you approved, at most 20 new a day",
-      "when": "Daily 9:30 AM, once you approved the template",
+      "when": "Weekdays 9:30 AM (never Saturday or Sunday), once you approved the template",
       "runs": "mac", "trigger": "Mac job com.seq.boss-prospects (lp:prospects --live)",
       "pause": "Outreach kill switch on Team → Outreach, or launchctl bootout gui/501/com.seq.boss-prospects",
       "launchd": ["com.seq.boss-prospects"],
