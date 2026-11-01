@@ -48,4 +48,4 @@ INSERT OR IGNORE INTO standing_duties
    'Every buy order of hers from the last ~6 months is hunted, newest first. Each person listed said in her own mail that they hold or can source the company, with their size against hers (overlap, never equality: a $100M seller fills a $15M buy) and a price within the deal grid tolerance or marked worth asking. Each fund listed has a public filing link. A section whose source failed says so in the email and the run goes red. Nothing is a Decide item.',
    0);
 
-INSERT OR IGNORE INTO schema_version (migration) VALUES ('0326_boss_the_brokerage_week');
+INSERT OR IGNORE INTO schema_version (migration) VALUES ('0328_boss_the_brokerage_week');

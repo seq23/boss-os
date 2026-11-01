@@ -140,7 +140,7 @@ describe("the week is wired", () => {
     expect(thu).toMatch(/<key>Weekday<\/key><integer>4<\/integer><key>Hour<\/key><integer>7<\/integer><key>Minute<\/key><integer>0<\/integer>/);
   });
   it("the Thursday duty is Monique's, weekly on Thursday at 07:00", () => {
-    const sql = readFileSync(join(ROOT, "migrations/0326_boss_the_brokerage_week.sql"), "utf8");
+    const sql = readFileSync(join(ROOT, "migrations/0328_boss_the_brokerage_week.sql"), "utf8");
     expect(sql).toMatch(/'duty_seller_hunt',[\s\S]*?'emp_relationship', 'ops',\s*7, 0, 'America\/Chicago', 'weekly', 4,/);
     expect(sql).toMatch(/'local_job', 'seller-hunt\.mjs'/);
   });
