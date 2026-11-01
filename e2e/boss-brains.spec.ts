@@ -53,7 +53,7 @@ for (const vp of [PHONE, LAPTOP]) {
 
     test("the scoreboard says 'not tracked yet' and never invents a number", async ({ page }) => {
       await unlock(page);
-      await page.goto("/?tab=brains&view=scoreboard");
+      await page.goto("/boss?tab=brains&view=scoreboard");
       const board = page.getByTestId("scoreboard");
       await expect(board).toHaveAttribute("open", "");
       await expect(board.locator("tbody tr")).toHaveCount(7);
