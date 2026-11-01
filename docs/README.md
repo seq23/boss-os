@@ -43,7 +43,7 @@ most surprising behaviour in the codebase traces back to one of them.
 | | |
 |---|---|
 | [WEST_PEEK_DESIGN_SYSTEM.md](WEST_PEEK_DESIGN_SYSTEM.md) | Tokens, spacing, components. |
-| [../WEST_PEEK_BRAND_SYSTEM.md](../WEST_PEEK_BRAND_SYSTEM.md) | The brand rules the `validate:brand` scanner enforces. |
+| [../WEST_PEEK_BRAND_SYSTEM.md](../WEST_PEEK_BRAND_SYSTEM.md) | The brand rules (reviewed by hand; the style scanner was retired 1 Nov 2026). |
 | [WEST_PEEK_DESIGN_REFERENCE_AUDIT.md](WEST_PEEK_DESIGN_REFERENCE_AUDIT.md) | Audit of the built surfaces against the design reference. |
 
 ## Build history

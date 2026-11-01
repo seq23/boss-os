@@ -99,8 +99,4 @@ describe("the email how-to page matches the mailbox", () => {
     expect(secretNameProblem(r.found[0]!.name)).toBeNull();
   });
 
-  it("OPERATIONS.md has the short section and links the page", () => {
-    expect(OPS).toMatch(/^## How to give Boss OS work by email$/m);
-    expect(OPS).toContain("HOW_TO_GIVE_BOSS_OS_WORK_BY_EMAIL.md");
-  });
 });

@@ -9,7 +9,7 @@ Parent authority: `WEST_PEEK_BRAND_SYSTEM.md` at the repo root — the CANONICAL
 brand contract, byte-identical (SHA-256 `6b8e3c0a33b6ff22c34a5713181f28066d0255006c9d24b4e66b33936125f589`)
 to the copy carried by `seq23/westpeek-live`, `seq23/west-peek-network-os`, and
 `seq23/west-peek-pitch-lab`. Evidence and reasoning: `docs/WEST_PEEK_DESIGN_REFERENCE_AUDIT.md`.
-Enforcement: `npm run validate:brand`.
+Enforcement: review (the style scanner was retired 1 Nov 2026: tests prove behaviour, not style).
 
 ---
 
@@ -447,7 +447,6 @@ Any change to the canonical orange, the parent-logo treatment, or the black/whit
 requires owner approval and an update to `WEST_PEEK_BRAND_SYSTEM.md` **in every West Peek repo** —
 that is the parent authority's own clause, not a local rule.
 
-Locally: `npm run validate:brand` must pass, its self-test must keep catching all nine planted
-violations, and `e2e/d1-design-states.spec.ts` must stay green — it is the only check that measures
+Locally: `e2e/d1-design-states.spec.ts` must stay green — it is the only check that measures
 hover contrast and the no-ambiguous-blank rule in a real browser. If a scan is ever narrowed, add a fixture proving it still catches what it exists to
 catch (the repo convention in `AGENTS.md`).

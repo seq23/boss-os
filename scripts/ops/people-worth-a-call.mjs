@@ -213,7 +213,7 @@ const CLASS_LABEL = ["You owe them a reply", "Your rhythm has slipped", "The rel
  * The note's text. ONE LINE PER PARAGRAPH, never hard-wrapped (26 Oct 2026): the intro was wrapped
  * at 100 columns, and the plain-email path read each wrapped line as its own line, so the email
  * showed "pick out the people worth a" and then a bullet "- Conversation — not everyone…". Line
- * breaks here mean what they say. Pinned by tests/moniqueWeeklyNote.test.ts (text and HTML).
+ * breaks here mean what they say.
  */
 export function weeklyNote(picks, examined, considered) {
   return [

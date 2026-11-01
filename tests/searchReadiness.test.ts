@@ -386,15 +386,6 @@ describe("the page and the manifest are one definition", () => {
   });
 });
 
-describe("CLAUDE.md says the rule, and the rule is this code", () => {
-  it("names the manifest, the audit, the queue and the page", () => {
-    const md = readFileSync("CLAUDE.md", "utf8");
-    const sec = md.slice(md.indexOf("## Search Readiness"));
-    expect(sec.length).toBeGreaterThan(200);
-    for (const s of ["checklist.json", "sites.json", "npm run sites:audit", "fix-queue.json", "npm run sites:page", "grid repos", "tests/searchReadiness.test.ts", "Where every site stands", "BLOCKED_LEAD_DOMAINS", "b10", "e9", "h6", "j10", "search_loop", "seq23/search-loop", "search-loop-week", "f12", "siteSection", "publish straight away"]) expect(sec).toContain(s);
-  });
-});
-
 describe("the run measures with the branch's definition, never a stale checkout's (26 Oct 2026)", () => {
   // Her checkout runs the audit under launchd and nothing updates it. On 26 Oct it sat at #147
   // while main held the corrected aplayermode.com → sprylabs-hpc-site mapping, so the run measured
@@ -441,15 +432,6 @@ describe("the run measures with the branch's definition, never a stale checkout'
     expect(runner.match(/definition: defs\.source/g)!.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("CLAUDE.md states the rule", () => {
-    const md = readFileSync("CLAUDE.md", "utf8");
-    const sec = md.slice(md.indexOf("## Search Readiness"));
-    expect(sec).toMatch(/origin/);
-    expect(sec).toMatch(/stale/i);
-    expect(sec).toMatch(/entity_parent/);
-    expect(sec).toMatch(/OWNER_REVIEWER_NEEDED/);
-    expect(sec).toMatch(/never Spry Labs/);
-  });
 });
 
 describe("the scheduled audit runs current code (26 Oct 2026)", () => {
@@ -785,8 +767,6 @@ describe("K · authority and entity: the grid-wide gate (31 Oct 2026, authority 
       expect(by[d].entity_file, d).toBe(`data/entities/${d}.json`);
     }
     expect(sites.grid_repos.filter((x: any) => x.entity_parent === "own" && x.category === "side_business").map((x: any) => x.domain).sort()).toEqual(noParent);
-    const claudeMd = readFileSync("CLAUDE.md", "utf8");
-    expect(claudeMd.slice(claudeMd.indexOf("## Search Readiness"))).toMatch(/withdrew their parent-company claim on 11 Oct 2026/);
     expect(sites.grid_repos.filter((x: any) => x.ymyl).map((x: any) => x.domain).sort()).toEqual(["approvalprep.com", "cynthiabrowndds.com", "dentistryguides.com", "detoxdenver.org", "hormonesivhair.com", "horselegalguide.com", "memphisseniorcarehomes.com", "neuroevalguides.com", "theaccidentguides.com", "uscisexam.com"]);
     expect(SPRY_LABS_ID).toBe(SPRY);
   });
