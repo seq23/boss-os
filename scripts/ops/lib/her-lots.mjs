@@ -33,7 +33,9 @@ export function inboxLots(side, { dir = CAPITAL_DIR, now = Date.now() } = {}) {
     const k = String(g.company).toLowerCase();
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ asset: g.company, side, size_usd: g.size_usd, size_min_usd: null, size_max_usd: null, size_shares: null, size_text: g.size_text === "—" ? "" : g.size_text, source_line: `inbox ${g.received_on}` });
+    out.push({ asset: g.company, side, size_usd: g.size_usd, size_min_usd: null, size_max_usd: null, size_shares: null, size_text: g.size_text === "—" ? "" : g.size_text, source_line: `inbox ${g.received_on}`,
+      // The order's own date and price (1 Nov 2026): the weekly hunts rank older orders lower and match on price.
+      received_on: g.received_on || null, price_text: g._row?.price_text ?? null });
   }
   return out;
 }

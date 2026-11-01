@@ -10,3 +10,4 @@ export function templateDecide(...args: any[]): any;
 export function prospectsMorning(...args: any[]): any;
 export function neverBounceCheck(emails: string[], opts?: { key?: string; fetchImpl?: any; cacheFile?: string }): Promise<{ verdicts: { email: string; result: string }[]; checked: number; marks: Record<string, number> }>;
 export function verifyDue(api: { get: (u: string) => Promise<any>; post: (u: string, b: any) => Promise<any> }, opts?: { key?: string; fetchImpl?: any; cacheFile?: string }): Promise<{ verdicts: { email: string; result: string }[]; marks: Record<string, number> }>;
+export function isSendDay(now?: number): boolean;

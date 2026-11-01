@@ -381,6 +381,11 @@ echo "Installed $NUDGE_LABEL — the 1st at 07:30 Central (interest-match.mjs --
 # list of people to call. It reads a book filed by email over the weekend against a ledger the Sunday
 # mailbox sweep refreshed.
 #
+# ONE EMAIL (owner, 1 Nov 2026, "the brokerage week"): "Buyers for what you're selling", Tuesday
+# 07:00, two calm sections — people in her own mail, and funds that report holding it. Both halves
+# still run (and each still reaches its own duty row); only the output merges, in buyer-hunt.mjs
+# --email. Thursday's mirror, for her buy orders, is the com.seq.boss-capital-sellers stanza below.
+#
 # TWO DUTIES, ONE PLIST, AND THE ORDER IS THE ARGUMENT. `filing-hunt.mjs` is Danielle's research half
 # and runs FIRST, at 06:50 by its duty row; `buyer-hunt.mjs` is Monique's mailbox half and renders the
 # combined email at 07:00. Running them the other way round would put last week's filings in this
@@ -409,7 +414,7 @@ cat > "$BUYERS_PLIST" <<BUYERSEOF
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent capital:book -- --pull; cd $REPO &amp;&amp; npm run --silent capital:hunts -- --send; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh filing-hunt.mjs -- npm run --silent capital:filings; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh buyer-hunt.mjs -- npm run --silent capital:buyers -- --send</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:book -- --pull; cd $REPO &amp;&amp; npm run --silent capital:hunts -- --send; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh filing-hunt.mjs -- npm run --silent capital:filings; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh buyer-hunt.mjs -- npm run --silent capital:buyers -- --send --email</string>
   </array>
   <key>StartCalendarInterval</key>
   <array>
@@ -425,6 +430,44 @@ launchctl unload "$BUYERS_PLIST" 2>/dev/null || true
 lint_plist "$BUYERS_PLIST"
 launchctl load "$BUYERS_PLIST"
 echo "Installed $BUYERS_LABEL — Tuesdays 07:00 Central (buyer-hunt.mjs, duty_buyer_hunt)."
+
+# ─── Thursday: sellers for what her LPs want to buy (owner, 1 Nov 2026) ──────
+#
+# The mirror of Tuesday for her BUY orders: people in her own mail who hold or can source the
+# company, and funds that report holding it, matched on size overlap and price, older orders lower,
+# ~6-month lookback. One email from Monique, Thursday 07:00 Central. `seller-hunt.mjs` is the same
+# code as buyer-hunt.mjs with the side inverted; its own name is what links this run to
+# `duty_seller_hunt` (validate:launchd-duty-link). The book pull first, as on Tuesday, so a book she
+# emailed is read; its failure is not this job's failure.
+SELLERS_LABEL="com.seq.boss-capital-sellers"
+SELLERS_PLIST="$HOME/Library/LaunchAgents/$SELLERS_LABEL.plist"
+
+cat > "$SELLERS_PLIST" <<SELLERSEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$SELLERS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent capital:book -- --pull; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh seller-hunt.mjs -- npm run --silent capital:sellers -- --send --email</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$LOGS/capital-sellers.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/capital-sellers.err</string>
+  <key>RunAtLoad</key><false/>
+</dict></plist>
+SELLERSEOF
+
+launchctl unload "$SELLERS_PLIST" 2>/dev/null || true
+lint_plist "$SELLERS_PLIST"
+launchctl load "$SELLERS_PLIST"
+echo "Installed $SELLERS_LABEL — Thursdays 07:00 Central (seller-hunt.mjs, duty_seller_hunt)."
 
 # ─── The weekly property read ────────────────────────────────────────────────
 #
@@ -1233,7 +1276,10 @@ LJEOF
   launchctl load "$plist"
   echo "Installed $label (${cmd%% --*})."
 }
-install_l_job com.seq.boss-prospects "duty-run.sh lp-prospects.mjs -- npm run --silent lp:prospects -- --live" '<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>' lp-prospects
+# WEEKDAYS ONLY (owner, 1 Nov 2026): no prospect email goes on a Saturday or Sunday, Central. A
+# follow-up due at the weekend is simply still due on Monday (dueTouch counts days since the first
+# email, so nothing is lost). lp-prospects.mjs refuses a weekend --live run as well.
+install_l_job com.seq.boss-prospects "duty-run.sh lp-prospects.mjs -- npm run --silent lp:prospects -- --live" "$(for d in 1 2 3 4 5; do printf '<dict><key>Weekday</key><integer>%s</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>' "$d"; done)" lp-prospects
 install_l_job com.seq.boss-prospect-discovery "duty-run.sh lp-prospect-discovery.mjs -- npm run --silent lp:discover -- --live" '<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>' lp-discovery
 # MONIQUE: TIME-2-READ GROUPS & INSTITUTIONS (owner, 31 Oct 2026). Weekdays 08:15 Central, before the
 # 09:00 outreach window: research, NeverBounce, each group's own code, queue. Reports to duty_t2r_groups (0324).
@@ -1635,6 +1681,7 @@ require_loaded "$GRID_LABEL"
 # September and neither was ever on this list; the grid job was on the list and had never been
 # installed at all, because nobody ran the installer after writing it. Measured on 15 September.
 require_loaded "$BUYERS_LABEL"
+require_loaded "$SELLERS_LABEL"
 require_loaded "$AHREFS_LABEL"
 # A FIFTH TIME, on 21 September: the repo-change lane was installed, loaded, and the "Verified" line
 # did not name it. `validate:plists-well-formed` now fails the build when a label the installer

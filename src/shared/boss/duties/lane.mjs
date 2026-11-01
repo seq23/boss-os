@@ -267,6 +267,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "search-readiness-fix.sh",
   "archive-audit.mjs",
   "buyer-hunt.mjs",
+  "seller-hunt.mjs", // Thursday: sellers for what her LPs want to buy (owner, 1 Nov 2026)
   "credential-check.mjs",
   "filing-hunt.mjs",
   "grid-watch.mjs",
