@@ -698,6 +698,12 @@ suppression, stop-on-reply) are pinned in `tests/boss/moniqueOutreach.test.ts`.
 
 Both rules are also in `CLAUDE.md` ("Outreach rules") and are read by the test.
 
+**The Accident Guides never write to a personal-injury firm in CA, CO, KY, MI, RI, TX, or FL**
+(FL until its annual Bar reporting is set up; owner, 1 Nov 2026, spry brain). The one list is
+`PI_NO_OUTREACH_STATES` in `catalog.ts`: list building never reads a metro touching one of those
+states, and each tick drops any queued prospect in one (`prospect_state_blocked` in `system_events`,
+with the reason) before anything is composed. Each metro names the states its box touches.
+
 ## Email the businesses send
 
 Every email any of the businesses sends, the fund included — who sends it, to whom, on what schedule,

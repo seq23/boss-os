@@ -57,28 +57,55 @@ export interface Metro {
   label: string;
   /** south, west, north, east */
   bbox: [number, number, number, number];
+  /** Every US state the box touches; a business that may not write to one of them never reads the metro. */
+  states: string[];
 }
 
 export const METROS: Metro[] = [
-  { key: "nyc", label: "New York City", bbox: [40.49, -74.26, 40.92, -73.7] },
-  { key: "la", label: "Los Angeles", bbox: [33.7, -118.67, 34.34, -118.15] },
-  { key: "chicago", label: "Chicago", bbox: [41.64, -87.94, 42.02, -87.52] },
-  { key: "dallas", label: "Dallas", bbox: [32.62, -97.0, 33.02, -96.55] },
-  { key: "houston", label: "Houston", bbox: [29.52, -95.79, 30.11, -95.01] },
+  { key: "nyc", label: "New York City", bbox: [40.49, -74.26, 40.92, -73.7], states: ["NY", "NJ"] },
+  { key: "la", label: "Los Angeles", bbox: [33.7, -118.67, 34.34, -118.15], states: ["CA"] },
+  { key: "chicago", label: "Chicago", bbox: [41.64, -87.94, 42.02, -87.52], states: ["IL", "IN"] },
+  { key: "dallas", label: "Dallas", bbox: [32.62, -97.0, 33.02, -96.55], states: ["TX"] },
+  { key: "houston", label: "Houston", bbox: [29.52, -95.79, 30.11, -95.01], states: ["TX"] },
   /*
    * Memphis: Shelby County TN, plus the second ring, DeSoto County MS (south) and Crittenden County
    * AR (west, across the river). Read ONLY for the businesses that name it in `metros`.
    */
-  { key: "memphis", label: "Memphis", bbox: [34.75, -90.5, 35.45, -89.63] },
+  { key: "memphis", label: "Memphis", bbox: [34.75, -90.5, 35.45, -89.63], states: ["TN", "MS", "AR"] },
 ];
 
 /** The metros a business reads when it names none: the five national metros, never a regional one. */
 export const NATIONAL_METROS = ["nyc", "la", "chicago", "dallas", "houston"] as const;
 
-/** The metros this business's public listings are read in. */
+/**
+ * PERSONAL-INJURY LAW FIRMS: STATES OUTREACH NEVER WRITES TO (owner, 1 Nov 2026; spry brain,
+ * "Accident guides / PI law firms"; research file pi-states-2026-11-01.md, not legal advice).
+ * THE ONE LIST: `metrosFor` never reads a metro touching one of these, and `outreachStateBlock`
+ * refuses a queued prospect in one before any email is composed (engine.ts drops it, logged).
+ */
+export const PI_NO_OUTREACH_STATES: Readonly<Record<string, string>> = {
+  CA: "California: a for-profit service referring clients must be State-Bar-certified (B&P 6155, SB 37)",
+  CO: "Colorado: selling leads to lawyers is a deceptive trade practice (SB26-174, since 12 Aug 2026)",
+  KY: "Kentucky: lawyers may pay only a not-for-profit referral service (SCR 3.130(7.20))",
+  MI: "Michigan: a per-lead fee is paying for a recommendation (Op. RI-365)",
+  RI: "Rhode Island: a for-profit per-lead service violates Rule 7.2(c) (Op. 2019-03)",
+  TX: "Texas: a for-profit site forwarding inquiries is a prohibited referral (Op. 561; barratry)",
+  FL: "Florida: not until the annual Florida Bar reporting for paid directories is set up (Rule 4-7.22)",
+};
+
+/** Why `b` may not write to a prospect in `metro` (a key, "key:qN" or label), or null when it may. Unknown metro = refused. */
+export function outreachStateBlock(b: Business, metro: string | null | undefined): string | null {
+  if (!b.noOutreachStates) return null;
+  const m = METROS.find((x) => x.key === String(metro ?? "").split(":")[0] || x.label === metro);
+  if (!m) return `metro "${metro ?? ""}" is not in the catalog, so its state cannot be checked`;
+  const hit = m.states.find((s) => s in b.noOutreachStates!);
+  return hit ? `${m.label} is in ${hit}. ${b.noOutreachStates[hit]}` : null;
+}
+
+/** The metros this business's public listings are read in: never one in a state it may not write to. */
 export function metrosFor(b: Business): Metro[] {
   const keys: readonly string[] = b.metros ?? NATIONAL_METROS;
-  return METROS.filter((m) => keys.includes(m.key));
+  return METROS.filter((m) => keys.includes(m.key) && !outreachStateBlock(b, m.key));
 }
 
 export interface Segment {
@@ -134,6 +161,8 @@ export interface Business {
    * prospect; a row with only a website goes to the usual website read.
    */
   directory?: string;
+  /** States this business never writes to, each with its reason (PI_NO_OUTREACH_STATES). */
+  noOutreachStates?: Readonly<Record<string, string>>;
 }
 
 /*
@@ -357,6 +386,7 @@ export const BUSINESSES: Business[] = [
       osm: ['["office"="lawyer"]'],
       qualify: /personal injury|car accident|truck accident|injury (attorney|lawyer)/i,
     }],
+    noOutreachStates: PI_NO_OUTREACH_STATES,
     steps: [
       {
         afterDays: 0,
