@@ -23,6 +23,9 @@ for (const vp of [PHONE, LAPTOP]) {
       await tab(page, "Brains");
       await expect(page.getByText(/^9 brains · /)).toBeVisible({ timeout: 15_000 });
       await expect(page.locator(".brain-card")).toHaveCount(9);
+      // Restructure (1 Nov 2026): the community has its own card; the retired Industry Guides has none.
+      await expect(page.getByTestId("brain-west-peek")).toContainText("West Peek — the community");
+      await expect(page.getByTestId("brain-industry-guides")).toHaveCount(0);
       const card = page.getByTestId("brain-friends");
       await expect(card).toContainText("gaps to fill");
       await expect(card).toContainText("Tap to open ›");

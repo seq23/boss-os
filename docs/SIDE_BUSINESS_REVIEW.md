@@ -38,7 +38,7 @@ Every business now has **a price, a working checkout and a way to reach buyers**
 
 ### heygetonmylevel
 
-*heygetonmylevel.com · bonus for Time2Read*
+*heygetonmylevel.com · a Spry Labs company, an app like Time2Read (and a bonus for Time2Read Premium) · **parked, no active work** (owner, 1 Nov 2026: "we aren't doing anything w it right now"). Not an Industry Guides business, not a Monique outreach target, no brain of its own (it is listed in the `spry` brain); excluded from SEO/AEO/GEO work.*
 
 #### Live now
 

@@ -1,7 +1,7 @@
 /**
  * BRAINS (owner, 31 Oct 2026: "time to work"). One markdown document per business — the single
  * source of truth every employee reads first. This module is the ONE definition of what a brain is:
- * the eight businesses, the eight sections in order, the skeleton, how gaps and private spans are
+ * the brains (seven businesses, personal and the team doc), the eight sections in order, the skeleton, how gaps and private spans are
  * written, and who reads which brain. The Worker (routes, prompts, mail edits, the Monday check),
  * the screen and the Mac scripts (the morning email, the local copy) all import it, so there is no
  * second list to drift.
@@ -10,16 +10,18 @@
  * lives only in D1 (and in her private local copy, ~/Brains).
  */
 
-/** The eight businesses, in the order the screen and the scoreboard list them. */
+/** The brains, in the order the screen and the scoreboard list them. */
 export const BRAINS = Object.freeze([
-  // The brokerage is its own business; West Peek Events (TLC & Rooms) and westpeek.live are part of
-  // West Peek Ventures (owner, 31 Oct 2026). Scoreboard order: brokerage, then the fund, then the rest.
-  { slug: "brokerage", title: "Brokerage (secondaries)" },
-  { slug: "west-peek-ventures", title: "West Peek Ventures (fund, TLC & Rooms, westpeek.live)" },
+  // Restructure (owner, 1 Nov 2026): the brokerage is Spry Ventures (spry.vc), priority 1. West Peek
+  // Ventures is the FUND only; West Peek the community (Rooms, TLC, westpeek.live, the join site) is
+  // its own brain, `west-peek`; neither repeats the other's facts. Spry Labs is the umbrella for every
+  // side business and holds what was the `industry-guides` brain (retired: see RETIRED_BRAINS).
+  { slug: "brokerage", title: "Spry Ventures (spry.vc) — the brokerage" },
+  { slug: "west-peek-ventures", title: "West Peek Ventures — the fund" },
+  { slug: "west-peek", title: "West Peek — the community" },
   { slug: "porch-and-party", title: "Porch & Party 901" },
-  { slug: "time-2-read", title: "Time-2-Read" },
-  { slug: "industry-guides", title: "Industry Guides" },
-  { slug: "spry", title: "Spry" },
+  { slug: "time-2-read", title: "Time-2-Read — a Spry Labs company" },
+  { slug: "spry", title: "Spry Labs — the umbrella for every side business" },
   { slug: "friends", title: "Friends' businesses" },
   // Not a business (coordinator, 31 Oct 2026): Boss OS itself, Spirit, gates, coaching, her schedule.
   { slug: "personal", title: "Personal" },
@@ -27,6 +29,21 @@ export const BRAINS = Object.freeze([
   // OS employees. No sections, no skeleton; every employee reads a short excerpt to route work.
   { slug: "team", title: "Who's who — your AI teams" },
 ]);
+/**
+ * Retired brains and the brain that took them over (owner, 1 Nov 2026). The old row and its revisions
+ * stay in D1 (history is never deleted), but the screen, the scoreboard and every reader see only the
+ * live brain: GET/PUT on a retired slug resolve to its successor, so old links and pointers keep working.
+ */
+export const RETIRED_BRAINS = Object.freeze({ "industry-guides": "spry" });
+/** A slug as asked for → the live brain that answers it (a retired slug → its successor). */
+export function resolveBrainSlug(slug) {
+  const s = String(slug ?? "");
+  return Object.prototype.hasOwnProperty.call(RETIRED_BRAINS, s) ? RETIRED_BRAINS[s] : s;
+}
+/** Every slug whose revisions belong to a live brain's history: itself and anything retired into it. */
+export function historySlugsFor(slug) {
+  return [slug, ...Object.keys(RETIRED_BRAINS).filter((old) => RETIRED_BRAINS[old] === slug)];
+}
 export const BRAIN_SLUGS = Object.freeze(BRAINS.map((b) => b.slug));
 /** Brains that are businesses. The scoreboard and "all" (every business) read only these. */
 export const NOT_A_BUSINESS = Object.freeze(["personal", "team"]);
@@ -258,16 +275,17 @@ export function stripConfidential(text) {
  * "all" means every BUSINESS brain, summarised (Company, Priorities, Settled decisions); Simone
  * also reads "personal" (her own life and Boss OS itself), so hers is "all+personal". From the roster
  * (STATUS.md, migration 0175/0192): Simone is chief of staff to everything; Camille runs the
- * Porch & Party briefing and Marketplace; Monique runs the brokerage and West Peek's LPs (TLC and
- * Rooms jobs read West Peek Ventures too) AND the outreach for time-2-read (its groups and
- * institutions, owner 31 Oct 2026) and the Industry Guides, so she reads those two brains as well;
- * Danielle fixes every grid repo; Zora keeps the archive.
+ * Porch & Party briefing and Marketplace; Monique runs the brokerage and the fund's LP replies, the
+ * outreach for time-2-read (its groups and institutions, owner 31 Oct 2026) and for Spry Labs (the
+ * Industry Guides and the side businesses), and her TLC/Rooms-related jobs read the community brain
+ * (`west-peek`, restructure 1 Nov 2026), so she reads all five; Danielle fixes every grid repo; Zora keeps the archive.
  * Kendra (systems), Toni (the isolated trading lane) and Imani (her own practice) serve no business.
+ * Wynn and Parker are West Peek OS employees and read no Boss OS brain.
  */
 export const EMPLOYEE_BRAINS = Object.freeze({
   emp_chief: "all+personal",
   emp_research: ["porch-and-party"],
-  emp_relationship: ["brokerage", "west-peek-ventures", "time-2-read", "industry-guides"],
+  emp_relationship: ["brokerage", "west-peek-ventures", "west-peek", "time-2-read", "spry"],
   emp_repo: "all",
   emp_knowledge: "all",
   emp_continuity: [],
@@ -338,10 +356,13 @@ export function whosWhoBlock(teamDoc, { keepConfidential = false } = {}) {
 const BRAIN_ALIASES = [
   [/^(p ?& ?p|p ?and ?p|pnp|porch( ?(&|and) ?party)?( ?901)?)$/, "porch-and-party"],
   [/^(time ?-? ?2 ?-? ?read|time ?to ?read|t2r)$/, "time-2-read"],
-  [/^(brokerage|the ?brokerage|secondaries|the ?desk)$/, "brokerage"],
-  [/^(wpv|west ?peek( ?ventures)?|the fund|west ?peek ?events|events|tlc|rooms|tlc ?(&|and) ?rooms|westpeek\.?live|wpl|west ?peek ?live)$/, "west-peek-ventures"],
-  [/^(industry ?guides|guides|the ?industry ?guides)$/, "industry-guides"],
-  [/^(spry|spry ?labs)$/, "spry"],
+  // The fund (owner, 1 Nov 2026): West Peek Ventures is the fund only.
+  [/^(wpv|west ?peek ?ventures|the fund|fund ?i|fund)$/, "west-peek-ventures"],
+  // The community: West Peek itself, Rooms, TLC, westpeek.live, the join site.
+  [/^(west ?peek|the ?community|community|west ?peek ?community|west ?peek ?events|events|tlc|rooms|tlc ?(&|and) ?rooms|westpeek\.?live|wpl|west ?peek ?live)$/, "west-peek"],
+  // Spry Labs took in the Industry Guides (retired brain, 1 Nov 2026).
+  [/^(spry|spry ?labs|industry ?guides|guides|the ?industry ?guides|industry-guides)$/, "spry"],
+  [/^(spry ?ventures|spry\.?vc|brokerage|the ?brokerage|secondaries|the ?desk)$/, "brokerage"],
   [/^(friends|friends'? ?businesses)$/, "friends"],
   [/^(personal|boss ?os)$/, "personal"],
   [/^(who'?s ?who)$/, "team"],
@@ -349,6 +370,7 @@ const BRAIN_ALIASES = [
 export function brainSlugFor(words) {
   const n = String(words ?? "").toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9&.' -]/g, " ").replace(/\s+/g, " ").trim();
   if (BRAIN_SLUGS.includes(n)) return n;
+  if (RETIRED_BRAINS[n]) return RETIRED_BRAINS[n];
   for (const [re, slug] of BRAIN_ALIASES) if (re.test(n)) return slug;
   return null;
 }
@@ -450,7 +472,10 @@ export function applyEdit(md, edit, today) {
 
 // ─── The Monday check ────────────────────────────────────────────────────────
 
-const SHORT = { "porch-and-party": "P&P", "west-peek-ventures": "West Peek Ventures", brokerage: "Brokerage" };
+const SHORT = {
+  "porch-and-party": "P&P", "west-peek-ventures": "West Peek Ventures", "west-peek": "West Peek", brokerage: "Spry Ventures",
+  spry: "Spry Labs", "time-2-read": "Time-2-Read",
+};
 export const shortName = (b) => SHORT[b.slug] ?? b.title;
 
 /** The stale-brain phrase both lines share, or null: "P&P brain not updated in 94 days". */
