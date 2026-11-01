@@ -104,7 +104,6 @@ through ~6:25 AM CT"*.
 ```
 com.seq.boss-agent       claims and runs agent work        5×/day
 com.seq.boss-network     mailbox → touch list              Sun 18:00
-com.seq.boss-properties  heartbeat + Search Console        Mon 07:00
 com.seq.kdp-watch        the KDP case, read and chased      Mon/Wed/Fri 09:23
 com.seq.boss-mailbox     mailbox → findings                 Sun 18:30
 com.seq.boss-credentials are the logins still working?      daily 06:15
@@ -938,5 +937,6 @@ Owner-approved: a job that does not need her Mac runs on GitHub Actions, so a cl
 - **Never both live**: the installer's `cloud_moved <label>` unloads the Mac copy and moves its plist to
   `~/Archive/launchagents-retired-2026-11-01/`; `validate:launchd-duty-link` counts `duty-run.sh` across
   the installer and `job-*.yml` and fails on two.
-- **Moved so far**: errand reminders (`job-errand-reminders.yml`).
+- **Moved so far**: errand reminders (`job-errand-reminders.yml`), Spry heartbeat and properties
+  (`job-properties.yml`), Time-2-Read numbers (`job-t2r-numbers.yml`, state `t2r-test-accounts.txt`).
 - **Read a run's private log**: `npm run -s vault:run -- npx wrangler r2 object get boss-os-documents/job-state/logs/<job>/<stamp>.log --remote --pipe`.

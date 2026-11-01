@@ -519,35 +519,19 @@ lint_plist "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
 lint_plist "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
 launchctl load "$HOME/Library/LaunchAgents/$GRID_LABEL.plist"
 
+# Archive a job that now runs on GitHub Actions (owner-approved 1 Nov 2026): unload it and move its plist
+# to ~/Archive/launchagents-retired-2026-11-01 (never deleted), so the Mac and the cloud are never both live.
+cloud_moved() {
+  local label="$1" plist="$HOME/Library/LaunchAgents/$1.plist" archive="$HOME/Archive/launchagents-retired-2026-11-01"
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  if [ -f "$plist" ]; then mkdir -p "$archive" && mv "$plist" "$archive/" && echo "Moved $label to the cloud; plist archived."; fi
+}
+
 PROPS_LABEL="com.seq.boss-properties"
 PROPS_PLIST="$HOME/Library/LaunchAgents/$PROPS_LABEL.plist"
 
-cat > "$PROPS_PLIST" <<PROPSEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>$PROPS_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent spry:heartbeat; npm run --silent properties</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
-  </array>
-  <key>StandardOutPath</key><string>$LOGS/properties.log</string>
-  <key>StandardErrorPath</key><string>$LOGS/properties.err</string>
-  <key>RunAtLoad</key><false/>
-</dict></plist>
-PROPSEOF
-
-launchctl unload "$PROPS_PLIST" 2>/dev/null || true
-lint_plist "$PROPS_PLIST"
-launchctl load "$PROPS_PLIST"
-echo "Installed $PROPS_LABEL — Wednesday 06:45 Central (rebalanced week, 1 Nov 2026: Spry Labs day)."
+# MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-properties.yml, Wednesday 06:45 Central.
+cloud_moved "$PROPS_LABEL"
 
 # ─── The Spry Labs weekly — one email, a short section per side business (owner, 1 Nov 2026) ────
 #
@@ -692,29 +676,8 @@ echo "Installed $COHESION_LABEL — Sunday 18:45 Central (counts for the week th
 # cannot read is a named "not read: <reason>" in the cell (scripts/brains/t2r-numbers.mjs).
 T2R_NUMBERS_LABEL="com.seq.boss-t2r-numbers"
 T2R_NUMBERS_PLIST="$HOME/Library/LaunchAgents/$T2R_NUMBERS_LABEL.plist"
-cat > "$T2R_NUMBERS_PLIST" <<T2RNEOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>$T2R_NUMBERS_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>-lc</string>
-    <string>cd $REPO &amp;&amp; npm run --silent vault:run -- npm run --silent brains:t2r-numbers</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>
-  <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>$BRAINS_LOGS/t2r-numbers.log</string>
-  <key>StandardErrorPath</key><string>$BRAINS_LOGS/t2r-numbers.err</string>
-</dict></plist>
-T2RNEOF
-launchctl unload "$T2R_NUMBERS_PLIST" 2>/dev/null || true
-lint_plist "$T2R_NUMBERS_PLIST"
-launchctl load "$T2R_NUMBERS_PLIST"
-echo "Installed $T2R_NUMBERS_LABEL — Wednesday 07:30 Central."
+# MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-t2r-numbers.yml, Wednesday 07:30 Central.
+cloud_moved "$T2R_NUMBERS_LABEL"
 
 # ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
 #
@@ -1307,11 +1270,6 @@ install_l_job com.seq.boss-waiting-on "duty-run.sh waiting-on.mjs -- npm run --s
 # .github/workflows/job-errand-reminders.yml, same ten-minute tick, same duty. The Mac copy is unloaded
 # and its plist archived (never deleted), so the two can never both be live; verified gone below.
 ERRAND_LABEL="com.seq.boss-errand-reminders"
-cloud_moved() {
-  local label="$1" plist="$HOME/Library/LaunchAgents/$1.plist" archive="$HOME/Archive/launchagents-retired-2026-11-01"
-  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-  if [ -f "$plist" ]; then mkdir -p "$archive" && mv "$plist" "$archive/" && echo "Moved $label to the cloud; plist archived."; fi
-}
 cloud_moved "$ERRAND_LABEL"
 install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>' mac-cleanup
 install_l_job com.seq.boss-preseed-watch "duty-run.sh preseed-watch.mjs -- npm run --silent preseed:watch" '<dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer></dict>' preseed-watch
@@ -1628,7 +1586,7 @@ echo
 loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
 
 for _ in $(seq 1 20); do
-  if loaded "$LABEL" && loaded "$NETWORK_LABEL" && loaded "$PROPS_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL" && loaded "$SURFACE_LABEL" && loaded "$GRID_LABEL" && loaded "$BUYERS_LABEL"; then break; fi
+  if loaded "$LABEL" && loaded "$NETWORK_LABEL" && loaded "$MAILBOX_LABEL" && loaded "$CRED_LABEL" && loaded "$LP_LABEL" && loaded "$SURFACE_LABEL" && loaded "$GRID_LABEL" && loaded "$BUYERS_LABEL"; then break; fi
   sleep 1
 done
 
@@ -1649,7 +1607,8 @@ require_gone() { checked="$checked !$1"; loaded "$1" && missing="$missing $1(sho
 require_loaded "$LABEL"
 require_loaded "$POLL_LABEL"
 require_loaded "$NETWORK_LABEL"
-require_loaded "$PROPS_LABEL"
+require_gone "$PROPS_LABEL"
+require_gone "$T2R_NUMBERS_LABEL"
 require_loaded "$SPRYWK_LABEL"
 require_loaded "$XMATCH_LABEL"
 require_loaded "$SR_LABEL"

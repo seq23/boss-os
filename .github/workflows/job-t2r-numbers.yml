@@ -1,0 +1,27 @@
+name: job · Time-2-Read numbers · wed 07:30 CT
+
+# Paying subscribers, MRR and free signups into the time-2-read brain, before the Wednesday Spry Labs
+# email. Moved off her Mac 1 Nov 2026 (was launchd com.seq.boss-t2r-numbers, same Wednesday 07:30
+# Central). The test-account exclusion list stays private: it rides in R2 as cloud state, never the repo.
+on:
+  schedule:
+    - cron: '30 7 * * 3'  # America/Chicago, all year
+      timezone: America/Chicago
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-t2r-numbers
+  cancel-in-progress: false
+
+jobs:
+  run:
+    uses: ./.github/workflows/cloud-job.yml
+    secrets: inherit
+    with:
+      job: t2r-numbers
+      state: t2r-test-accounts.txt
+      timeout: 15
+      command: npm run --silent vault:run -- npm run --silent brains:t2r-numbers

@@ -54,6 +54,9 @@ jobs:
           BOSS_PASSCODE: ${{ secrets.BOSS_PASSCODE }}
           BOSS_OS_MAIL_KEY: ${{ secrets.BOSS_OS_MAIL_KEY }}
           BOSS_OS_FALLBACK_MAIL_KEY: ${{ secrets.BOSS_OS_FALLBACK_MAIL_KEY }}
+          GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
+          DAILYSTORY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DAILYSTORY_SUPABASE_SERVICE_ROLE_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "$STATE" ]; then
             bash scripts/ops/cloud-job.sh "$JOB" --state "$STATE" -- bash -c "$COMMAND"

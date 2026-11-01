@@ -174,13 +174,14 @@ describe("Rule 0: the brain cells", () => {
   });
 });
 
-describe("the CLAUDE.md rule is the code's", () => {
-  it("names the job, the day and the script", () => {
-    const doc = readFileSync("CLAUDE.md", "utf8");
-    expect(doc).toMatch(/com\.seq\.boss-t2r-numbers/);
-    expect(doc).toMatch(/Wednesday 07:30 Central/);
+describe("the job runs in the cloud, Wednesday 07:30 Central (moved off the Mac 1 Nov 2026)", () => {
+  it("is scheduled by its workflow with its private exclusion list as state, and not on the Mac", () => {
+    const wf = readFileSync(".github/workflows/job-t2r-numbers.yml", "utf8");
+    expect(wf).toMatch(/brains:t2r-numbers/);
+    expect(wf).toMatch(/cron: '30 7 \* \* 3'\s+# America\/Chicago[^\n]*\n\s+timezone: America\/Chicago/);
+    expect(wf).toMatch(/state: t2r-test-accounts\.txt/);
     const installer = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");
-    expect(installer).toMatch(/brains:t2r-numbers/);
-    expect(installer).toMatch(/<key>Weekday<\/key><integer>3<\/integer><key>Hour<\/key><integer>7<\/integer><key>Minute<\/key><integer>30<\/integer>/);
+    expect(installer).toMatch(/cloud_moved "\$T2R_NUMBERS_LABEL"/);
+    expect(installer).not.toMatch(/brains:t2r-numbers/);
   });
 });
