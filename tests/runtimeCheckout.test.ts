@@ -36,6 +36,7 @@ function world() {
     BOSS_OS_RUNTIME_SALVAGE: join(base, "salvage"),
     BOSS_OS_LAUNCH_AGENTS: join(base, "agents"),
     BOSS_OS_RUNTIME_NO_NPM: "1",
+    BOSS_OS_RUNTIME_NO_LAUNCHCTL: "1",
   };
   const sync = () => {
     const r = spawnSync("bash", [SYNC], { env, encoding: "utf8" });
@@ -95,14 +96,18 @@ describe("runtime-sync: the jobs' checkout is always origin/main", () => {
     expect(existsSync(join(w.base, "salvage"))).toBe(false);
   });
 
-  it("names every launchd plist that still runs the working checkout", () => {
+  it("repoints every launchd plist that still runs the working checkout, and leaves the rest alone", () => {
     const w = world();
     mkdirSync(join(w.base, "agents"));
-    writeFileSync(join(w.base, "agents", "com.seq.boss-old.plist"), `<string>cd ${w.working} &amp;&amp; npm run x</string>`);
-    writeFileSync(join(w.base, "agents", "com.seq.boss-new.plist"), `<string>cd ${w.rt} &amp;&amp; npm run x</string>`);
+    const old = join(w.base, "agents", "com.seq.boss-old.plist");
+    const near = join(w.base, "agents", "com.seq.boss-near.plist");
+    writeFileSync(old, `<string>cd ${w.working} &amp;&amp; bash ${w.working}/scripts/x.sh</string>`);
+    writeFileSync(near, `<string>cd ${w.working}-other &amp;&amp; npm run x</string>`);
     const out = w.sync().out;
-    expect(out).toContain("NAMED STOP [PLIST_RUNS_WORKING_CHECKOUT] com.seq.boss-old.plist");
-    expect(out).not.toContain("com.seq.boss-new.plist");
+    expect(out).toContain("repointed com.seq.boss-old to");
+    expect(readFileSync(old, "utf8")).toBe(`<string>cd ${w.rt} &amp;&amp; bash ${w.rt}/scripts/x.sh</string>`);
+    expect(readFileSync(near, "utf8")).toContain(`${w.working}-other`);
+    expect(out).not.toContain("com.seq.boss-near");
   });
 });
 
