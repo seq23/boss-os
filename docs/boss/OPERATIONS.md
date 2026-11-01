@@ -947,6 +947,12 @@ Owner-approved: a job that does not need her Mac runs on GitHub Actions, so a cl
   section). `your-day` reads `GET /morning/sections` plus the Mac files, the newer copy of each section
   winning whole, and marks the told ones (`POST /morning/sections/told`). A cloud writer whose post fails
   stops by name (`MORNING_STORE_UNREACHED`); on the Mac the file stands.
+- **A section that did not report in is said and repaired** (rule 0, 1 Nov 2026): the one registry
+  (`MORNING_SECTION_SPECS` in `src/shared/boss/mail/morningSections.mjs`) says which weekdays expect
+  each section. `your-day` treats an expected section with no copy from the last 24 hours as missing:
+  yesterday's copy is not shown, one line near the top says "⚠ Not in today's email: …", and one
+  repair task opens per section (none while one is open). Producers with nothing to say post an empty
+  all clear (risk-watch, archive-audit), so absence means the job did not run or its post failed.
 - **Stay on the Mac, and why**: capital-nudge (reads the interest ledger and CONTACTS.json, which by
   her rule never leave the Mac); pnp-outreach (its research runs through the Codex / Claude Code seats);
   the LP family — lp (lp-daily), prospects, prospect-discovery, scooter-sheet — share `~/.boss-os/lp`

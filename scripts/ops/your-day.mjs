@@ -48,6 +48,7 @@ import { sendAsEmployee } from "./notify.mjs";
 import { createHash } from "node:crypto";
 import { layoutEmail, clockWords, lineProblems, proseRuns, proseText, cleanText, quotedSentence } from "../../src/shared/boss/mail/plain.mjs";
 import { readMorningSections, clearToldSections } from "../../src/shared/boss/mail/morning.mjs";
+import { sectionsNotReported, notReportedLine } from "../../src/shared/boss/mail/morningSections.mjs";
 import { templateDecide } from "./lp-prospects.mjs";
 import { yoursThisWeek } from "../../src/shared/boss/waiting/register.mjs";
 
@@ -756,6 +757,8 @@ export function buildDay(data, now = Date.now()) {
   }
 
   const val = valerieItems(data.feed, now);
+  // A section expected today that did not report in: one thin line near the top (rule 0, 1 Nov 2026).
+  const notReported = notReportedLine(data.notReported);
   // Every call and meeting of the day, once (the diary merges a copy on a second calendar), with who
   // and the join link when there is one (owner, 26 Oct 2026: "tell me when i have calls").
   const calls = callsOn(data.diary, today).map((c) => `${timeOf(c.scheduled_at)} ${c.title}${c.with ? ` with ${c.with}` : ""}${/^https:\/\/\S+$/.test(String(c.location ?? "")) ? ` (join: ${c.location})` : ""}`);
@@ -784,7 +787,7 @@ export function buildDay(data, now = Date.now()) {
     kind: "morning",
     maxDecide: Infinity,
     subject,
-    happened: `${lawLine(data.law) ? `${lawLine(data.law)} ` : ""}Good morning. Here is your ${dayWords(today)}.${ancestral ? ` ${ancestral}` : ""}${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
+    happened: `${lawLine(data.law) ? `${lawLine(data.law)} ` : ""}Good morning. Here is your ${dayWords(today)}.${notReported ? ` ${notReported}` : ""}${ancestral ? ` ${ancestral}` : ""}${calls.length ? ` On your calendar: ${calls.join("; ")}.` : ""}`,
     decide,
     sections: [
       ...(stillYours.length ? [{ title: "Still yours to answer", items: stillYours.map((d) => ({
@@ -918,7 +921,10 @@ async function read(api, now) {
   const store = await api.get("/morning/sections").then((d) => d?.rows ?? []).catch((e) => { console.error(`your-day: the morning sections in Boss OS not read (${e.message}); the Mac files only`); return null; });
   const { sections, skipped } = readMorningSections({ now, store });
   for (const s of skipped) console.error(`your-day: morning section skipped — ${s}`);
-  return { brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: sections };
+  // A section expected today that did not report in is said in one line and repaired (rule 0).
+  const reported = sectionsNotReported(sections, { weekday: parts(now).weekday, now });
+  for (const m of reported.missing) console.error(`your-day: morning section not reported in — ${m.name}`);
+  return { brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 async function feedOf(range) {
@@ -932,6 +938,18 @@ async function feedOf(range) {
 async function fixJob(api, title, prompt, kind = "self_repair") {
   try { await api.post("/tasks", { title, lane: "ops", employee_id: "emp_repo", input: { origin: "repair", repair_kind: kind, prompt: `seq23/boss-os — ${prompt}` } }); console.log(`your-day: fix job opened — ${title}`); }
   catch (e) { console.error(`your-day: the fix job "${title}" was not opened (${e.message})`); }
+}
+
+/**
+ * ONE REPAIR PER SECTION THAT DID NOT REPORT IN (rule 0, 1 Nov 2026), none while one for it is still
+ * open, so a job broken for days is one repair, not one a morning. Pure.
+ */
+export function notReportedRepairs(missing, tasks = []) {
+  const open = new Set((tasks ?? []).filter((t) => OPEN.has(t.status)).map((t) => t.title));
+  return (missing ?? []).map((m) => ({
+    title: `The morning section "${m.name}" did not report in`,
+    prompt: `the section "${m.name}" (${m.label}) was expected in Simone's morning email today and Boss OS held no copy written in the last 24 hours (src/shared/boss/mail/morningSections.mjs MORNING_SECTION_SPECS). Its producer did not run, failed, or its post to /api/boss/morning/sections failed. Read the producer's log (on her Mac: ~/.boss-os/logs; in the cloud: the job's private R2 log), fix the cause at source, and run it again.`,
+  })).filter((r) => !open.has(r.title));
 }
 
 /** Keep the morning in Boss OS (one retry). `true` when it is there. */
@@ -997,6 +1015,8 @@ async function main() {
   }
   failTold.push(...failedNow.map((f) => f.id));
   try { fs.mkdirSync(SENT_DIR, { recursive: true }); fs.writeFileSync(failMarks, JSON.stringify(failTold.slice(-500))); } catch { /* best effort */ }
+
+  for (const r of notReportedRepairs(data.notReported, data.tasks)) await fixJob(api, r.title, r.prompt);
   if (d.error) await fixJob(api, "Valerie's list did not load for the morning email", `the Porch & Party owner feed answered: ${d.error}. Simone's morning email said so in one line. Fix the read (PNP_OWNER_FEED_TOKEN, ${FEED}).`);
 
   // The morning goes to Boss OS FIRST: every link in the email opens one of its items, and Today
