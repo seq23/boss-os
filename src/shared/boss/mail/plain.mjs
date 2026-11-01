@@ -848,7 +848,15 @@ const STRUCTURE_RE = /^(?:Decide \(\d+\)|Nothing to decide — this is just so y
 export function simplifyForOwner({ subject, text, html = null, kind = null }) {
   const moved = [];
   const out = [];
-  for (const [i, line] of String(text ?? "").split("\n").entries()) {
+  for (const [i, rawLine] of String(text ?? "").split("\n").entries()) {
+    /*
+     * A KNOWN LINK (her research page) IS REWRITTEN BEFORE IT IS JUDGED, NEVER AFTER (repair, 1 Nov
+     * 2026: held mail f1ea62c2edaacc01.json — `cleanText`'s `pageLinkFor` rewrite never ran on this
+     * line here, so the line-level check below still saw the raw /api link, and the whole "Page: …"
+     * line was moved into the attached file instead of surviving as her page address). Checked on
+     * the line she would actually see.
+     */
+    const line = rawLine.replace(URL_RE, (u) => pageLinkFor(u));
     // The line as written, not as the cleaner would have it: what she would read is what is checked.
     const probs = line.trim() ? [...contentProblems(visibleText({ text: line }, { prose: "drop" })), ...(linksIn({ text: line }).some(isApiLink) ? ["API path"] : [])] : [];
     if (!probs.length) { out.push(line); continue; }
