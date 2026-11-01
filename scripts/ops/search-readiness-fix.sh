@@ -25,7 +25,7 @@
 #
 # RULE 0: it never exits 0 having done nothing it can explain. Every stop is a NAMED STOP line.
 set -u
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 MAX_ROUNDS="${SR_MAX_ROUNDS:-4}"
 PARALLEL="${SR_PARALLEL:-3}"
 LOG_DIR="$HOME/Library/Logs/boss-sr-fix"

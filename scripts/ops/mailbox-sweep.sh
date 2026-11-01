@@ -25,7 +25,7 @@
 
 set -uo pipefail
 
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 PROMPT_FILE="${MAILBOX_SWEEP_PROMPT:-${BOSS_DUTY_PROMPT_FILE:-$REPO/scripts/ops/mailbox-sweep-prompt.md}}"
 MAP_FILE="${BOSS_OS_CONTACTS_DIR:-$HOME/.boss-os/contacts}/MAP.json"
 OUT_DIR="${BOSS_OS_MAILBOX_DIR:-$HOME/.boss-os/mailbox}"

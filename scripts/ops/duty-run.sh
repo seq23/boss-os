@@ -44,7 +44,7 @@
 
 set -uo pipefail
 
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 LOG_DIR="$HOME/Library/Logs/boss-duty"
 mkdir -p "$LOG_DIR"
 

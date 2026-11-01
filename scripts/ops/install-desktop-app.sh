@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in
 ORIGIN="${BOSS_OS_ORIGIN:-https://boss.sequoiataylor.com}"
 APPS="$HOME/Applications"
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"

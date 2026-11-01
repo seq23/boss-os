@@ -52,7 +52,7 @@ set -uo pipefail
 # it, so a file rewritten under a running pass shifted the bytes under it. A function is parsed whole.
 main() {
 
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 PROMPT_FILE="${AHREFS_AUDIT_PROMPT:-${BOSS_DUTY_PROMPT_FILE:-$REPO/scripts/ops/ahrefs-audit-fix-prompt.md}}"
 OUT_DIR="${BOSS_OS_SITE_AUDIT_DIR:-$HOME/.boss-os/site-audit}"
 # A SCOPED PASS OWNS ITS REPO, NOT THE MACHINE (25 Oct 2026). search-readiness-fix.sh runs up to three

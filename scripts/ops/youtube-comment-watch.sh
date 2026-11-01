@@ -17,7 +17,7 @@
 # repo's .secrets/.
 set -uo pipefail
 
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 LOG_DIR="$HOME/Library/Logs/youtube-comment-watch"
 LOCK="$LOG_DIR/.lock"
 RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M%S)-$$.log"

@@ -21,7 +21,7 @@
 #   launchctl bootout gui/$(id -u)/com.seq.boss-mail-tail
 set -uo pipefail
 
-REPO="${BOSS_OS_REPO:-$HOME/GitHub/boss-os}"
+REPO="${BOSS_OS_REPO:-$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)}"  # the checkout this script lives in, symlinks followed (launchd: the runtime)
 LOG_DIR="$HOME/Library/Logs/boss-mail-tail"
 STATE_DIR="$LOG_DIR/state"
 mkdir -p "$STATE_DIR"

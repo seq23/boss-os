@@ -20,9 +20,10 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const ORIGIN = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
-const REPO = process.env.BOSS_OS_REPO ?? `${process.env.HOME}/GitHub/boss-os`;
+const REPO = process.env.BOSS_OS_REPO ?? fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, ""); // the checkout this runs from
 
 async function main() {
   if (!process.env.BOSS_PASSCODE) {

@@ -30,7 +30,7 @@ set -euo pipefail
 
 LABEL="com.seq.boss-agent"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-REPO="$HOME/GitHub/boss-os"
+REPO="${BOSS_OS_RUNTIME:-$HOME/.boss-os/runtime}"  # launchd runs the runtime checkout, never her working one (runtime-sync.sh)
 LOGS="$HOME/Library/Logs/boss-agent"
 
 # THE DEVICE ID IS NOT A SECRET AND DOES NOT BELONG IN THE VAULT. It names which machine claimed a
