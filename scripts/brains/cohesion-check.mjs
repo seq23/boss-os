@@ -15,6 +15,8 @@
  *      the Email Map's derived list; creator-studios is allowed); git worktrees are skipped.
  *   3. Skills: a ~/.claude/skills/<name>/SKILL.md carrying a phrase that contradicts
  *      ~/.claude/CLAUDE.md (BAD_SKILL_PHRASES). Cheap by design: phrases, not judgement.
+ *   3b. Skills: a SKILL.md line that restates a rule from ~/.claude/CLAUDE.md or a brain's Settled
+ *      decisions instead of pointing to it (checkRestating; normalized phrase overlap, never blocking).
  *   4. The local brain copy: ~/Brains older than COPY_MAX_HOURS means com.seq.boss-brains-pull is
  *      broken; it is restarted (launchctl kickstart) and re-measured.
  *
@@ -129,6 +131,53 @@ export function checkSkills({ home }) {
   return { skills_checked: checked, skills_flagged: flagged, unchecked: checked ? [] : ["the skills"] };
 }
 
+/*
+ * 3b. Skills that RESTATE a rule instead of pointing to it (owner, 1 Nov 2026: skills point to the
+ * rules, never copy them; trimmed that day). Cheap by design: a skill line of RESTATE_MIN_WORDS+
+ * words whose RESTATE_SHINGLE-word runs mostly (RESTATE_OVERLAP; measured 1 Nov 2026: 0 lines today, 6 in the
+ * pre-trim archive) appear in ~/.claude/CLAUDE.md or in a
+ * brain's "## Settled decisions" section is said once in the Monday line. Never blocking.
+ */
+export const RESTATE_SHINGLE = 4;
+export const RESTATE_MIN_WORDS = 10;
+export const RESTATE_OVERLAP = 0.5;
+const words = (line) => line.toLowerCase().replace(/\[\[[^\]]*\]\]|`|\*\*|https?:\/\/\S+/g, " ").match(/[a-z0-9$%']+/g) ?? [];
+const shingles = (w) => { const out = []; for (let i = 0; i + RESTATE_SHINGLE <= w.length; i++) out.push(w.slice(i, i + RESTATE_SHINGLE).join(" ")); return out; };
+
+/** The rule text a skill must point to: ~/.claude/CLAUDE.md and every brain's Settled decisions. */
+export function ruleSources(home) {
+  const out = [];
+  const claude = join(home, ".claude", "CLAUDE.md");
+  if (existsSync(claude)) out.push({ source: "CLAUDE.md", text: readFileSync(claude, "utf8") });
+  const brains = join(home, "Brains");
+  if (isDir(brains)) for (const n of readdirSync(brains).filter((x) => x.endsWith(".md")).sort()) {
+    const m = /^## Settled decisions\b[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(readFileSync(join(brains, n), "utf8"));
+    if (m) out.push({ source: `the ${n.replace(/\.md$/, "")} brain`, text: m[1] });
+  }
+  return out;
+}
+
+/** Each skill line that restates a rule, with where the rule lives. `sources` from ruleSources. */
+export function checkRestating({ home, sources = ruleSources(home) }) {
+  const root = join(home, ".claude", "skills");
+  const index = new Map();
+  for (const { source, text } of sources) for (const sh of shingles(words(text.replace(/\n(?!\s*[-*#\d])/g, " ")))) if (!index.has(sh)) index.set(sh, source);
+  const restating = [];
+  if (!index.size || !isDir(root)) return { skills_restating: restating, unchecked: index.size ? [] : ["the house rules"] };
+  for (const name of readdirSync(root).sort()) {
+    const f = join(root, name, "SKILL.md");
+    if (!existsSync(f)) continue;
+    for (const [i, line] of readFileSync(f, "utf8").split("\n").entries()) {
+      const w = words(line);
+      if (w.length < RESTATE_MIN_WORDS) continue;
+      const sh = shingles(w);
+      const hits = sh.filter((x) => index.has(x));
+      if (hits.length / sh.length >= RESTATE_OVERLAP) restating.push({ skill: name, line: i + 1, source: index.get(hits[0]) });
+    }
+  }
+  return { skills_restating: restating, unchecked: [] };
+}
+
 /** Age in hours of the newest file in ~/Brains, or null when there is none. */
 export function copyAgeHours(home, now = Date.now()) {
   const dir = join(home, "Brains");
@@ -167,10 +216,11 @@ export async function runChecks({ home = homedir(), now = Date.now(), dryRun = f
   const m = checkMemory({ home, today, dryRun });
   const r = checkRepos({ home, now, ...(lastCommit ? { lastCommit } : {}) });
   const s = checkSkills({ home });
+  const rs = checkRestating({ home });
   const age = copyAgeHours(home);
   const c = dryRun ? { copy_age_hours: age == null ? null : round(age), copy_restarted: false, copy_fresh_after: age != null && age <= COPY_MAX_HOURS }
     : await checkCopy({ home, ...(restart ? { restart } : {}), ...(wait ? { wait } : {}) });
-  return { ...m, ...r, ...s, ...c, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked] };
+  return { ...m, ...r, ...s, ...rs, ...c, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked] };
 }
 
 export async function post(record, { passcode = process.env.BOSS_PASSCODE, fetchImpl = fetch, origin = ORIGIN } = {}) {
@@ -191,6 +241,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       console.log(`memory: ${rec.strays_moved.length} strays; index ${rec.memory_index_lines} lines${rec.memory_index_too_big ? " (too big)" : ""}`);
       console.log(`repos: ${rec.repos_checked} active checked; missing pointer: ${rec.repos_missing_pointer.join(", ") || "none"}`);
       console.log(`skills: ${rec.skills_checked} checked; flagged: ${rec.skills_flagged.map((f) => `${f.skill} ("${f.phrase}")`).join(", ") || "none"}`);
+      console.log(`skills restating a rule: ${rec.skills_restating.map((f) => `${f.skill}:${f.line} (${f.source})`).join(", ") || "none"}`);
       console.log(`brains copy: ${rec.copy_age_hours ?? "none"} h old${rec.copy_restarted ? `; restarted, ${rec.copy_fresh_after ? "fresh now" : "still stale"}` : ""}`);
       if (rec.unchecked.length) console.log(`unchecked: ${rec.unchecked.join(", ")}`);
       if (dryRun) return;

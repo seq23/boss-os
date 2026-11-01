@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkMemory, checkRepos, checkSkills, checkCopy, runChecks, MEMORY_INDEX_MAX_LINES } from "../scripts/brains/cohesion-check.mjs";
+import { checkMemory, checkRepos, checkSkills, checkCopy, checkRestating, runChecks, MEMORY_INDEX_MAX_LINES } from "../scripts/brains/cohesion-check.mjs";
 import { cohesionCheckLine, cohesionLine } from "../src/shared/boss/brains/brain.mjs";
 
 const NOW = Date.parse("2026-11-02T12:05:00Z");
@@ -67,6 +67,23 @@ describe("the Mac half", () => {
     expect(r.skills_flagged).toEqual([{ skill: "old-gate", phrase: "human merge gate" }]);
   });
 
+  it("flags a skill line that copies a house rule or a brain's settled decision, never one that points to it", () => {
+    const home = fakeHome();
+    put(join(home, ".claude", "CLAUDE.md"), "# rules\n- **Agents never spend money**: prepare everything up to checkout and let her or Scooter pay for it.\n");
+    put(join(home, "Brains", "spry.md"), "# Spry\n## Settled decisions\n- Outreach is signed by S.L. Taylor on every local guide and every follow up email.\n## Open questions\n- the colour of the new studio logo and the domain to buy next\n");
+    put(join(home, ".claude", "skills", "copier", "SKILL.md"), "intro\nRemember: agents never spend money, prepare everything up to checkout and let her or Scooter pay.\nOutreach is signed by S.L. Taylor on every local guide and every follow up.\nThe colour of the new studio logo and the domain to buy next matter here a lot.\n");
+    put(join(home, ".claude", "skills", "pointer", "SKILL.md"), "Rules: follow ~/.claude/CLAUDE.md (Do it yourself) and the brain's Settled decisions; this skill is only the how-to.\n");
+    const r = checkRestating({ home });
+    expect(r.unchecked).toEqual([]);
+    expect(r.skills_restating).toEqual([
+      { skill: "copier", line: 2, source: "CLAUDE.md" },
+      { skill: "copier", line: 3, source: "the spry brain" },
+    ]);
+    // Rule 0: with no rules to compare against it is "could not be checked", never clean.
+    const bare = mkdtempSync(join(tmpdir(), "cohesion-"));
+    expect(checkRestating({ home: bare }).unchecked).toHaveLength(1);
+  });
+
   it("restarts a stale brain copy and re-measures it", async () => {
     const home = fakeHome();
     const f = join(home, "Brains", "team.md");
@@ -83,7 +100,7 @@ describe("the Mac half", () => {
   it("Rule 0: an empty home is 'could not be checked', never clean", async () => {
     const home = mkdtempSync(join(tmpdir(), "cohesion-empty-"));
     const r = await runChecks({ home, now: NOW, restart: () => {}, wait: async () => null });
-    expect(r.unchecked).toEqual(["memory", "the repos", "the skills"]);
+    expect(r.unchecked).toEqual(["memory", "the repos", "the skills", "the house rules"]);
     expect(cohesionCheckLine([], r, NOW)).not.toMatch(/all clear/);
   });
 });
@@ -111,6 +128,14 @@ describe("the one line in Simone's Monday email", () => {
     expect(cohesionCheckLine(fresh, { ...clean, skills_flagged: [{ skill: "old-gate", phrase: "human merge gate" }] }, NOW)).toBe("Cohesion: the old-gate skill has a rule that contradicts the house rules");
     expect(cohesionCheckLine(fresh, { ...clean, repos_missing_pointer: ["a", "b", "c", "d", "e"] }, NOW)).toBe("Cohesion: 5 repos are missing their brain pointer (a, b, c and 2 more)");
     expect(cohesionCheckLine(fresh, { ...clean, copy_restarted: true, copy_fresh_after: false, copy_age_hours: 7 }, NOW)).toBe("Cohesion: the brain copy on the Mac is 7 hours old and a restart did not bring it back");
+  });
+
+  it("says skill lines that copy a rule in the same one line, without blocking anything else", () => {
+    const line = cohesionCheckLine(fresh, { ...clean, skills_restating: [{ skill: "a", line: 3, source: "CLAUDE.md" }, { skill: "b", line: 9, source: "the spry brain" }] }, NOW);
+    expect(line).not.toMatch(/all clear/);
+    expect(line).toMatch(/2 skill lines/);
+    expect(line).toMatch(/\(a and b\)|a, b/);
+    expect(line.split("\n")).toHaveLength(1);
   });
 
   it("reuses the brains line's staleness words", () => {

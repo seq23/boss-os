@@ -187,6 +187,7 @@ export async function recordMacCohesion(env: Env, body: unknown, now = Date.now(
     repos_missing_pointer: list(b.repos_missing_pointer).map((x) => str(x, 100)),
     skills_checked: Number(b.skills_checked) || 0,
     skills_flagged: list(b.skills_flagged).map((x: any) => ({ skill: str(x?.skill, 100), phrase: str(x?.phrase, 100) })),
+    skills_restating: list(b.skills_restating).slice(0, 200).map((x: any) => ({ skill: str(x?.skill, 100), line: Number(x?.line) || 0, source: str(x?.source, 100) })),
     copy_age_hours: b.copy_age_hours == null ? null : Number(b.copy_age_hours),
     copy_restarted: b.copy_restarted === true,
     copy_fresh_after: b.copy_fresh_after === true,

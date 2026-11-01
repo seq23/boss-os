@@ -57,6 +57,7 @@ export interface MacCheck {
   repos_missing_pointer?: string[];
   skills_checked?: number;
   skills_flagged?: { skill: string; phrase: string }[];
+  skills_restating?: { skill: string; line: number; source: string }[];
   copy_age_hours?: number | null;
   copy_restarted?: boolean;
   copy_fresh_after?: boolean;
