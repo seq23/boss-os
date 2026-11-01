@@ -26,7 +26,7 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
-import { BUSINESSES, TEST_RECIPIENTS, businessByKey, outreachStateBlock, type Business } from "./catalog";
+import { BUSINESSES, MAX_FOLLOW_UPS, TEST_RECIPIENTS, businessByKey, outreachStateBlock, type Business } from "./catalog";
 import {
   BOUNCE_WINDOW_MS, DAY_MS, chicagoParts, dailyCap, inSendWindow, pauseReason, refusal, sendsThisTick, type Sending,
 } from "./brakes";
@@ -350,7 +350,7 @@ async function proveRoutes(env: Env, mailbox: GmailSession, now: number): Promis
 
 /** Send one sample of a business's sequence step to the test recipient. Never to anyone else. */
 export async function sendTest(
-  env: Env, mailbox: GmailSession, b: Business, step: 0 | 1 | 2, now: number, why: string,
+  env: Env, mailbox: GmailSession, b: Business, step: 0 | 1, now: number, why: string,
 ): Promise<{ ok: true; id: string } | { ok: false; detail: string }> {
   const db = env.DB;
   const to = TEST_RECIPIENTS[0];
@@ -391,9 +391,13 @@ async function recordSend(
   ).bind(newId("osd"), key, prospectId, to, step, isTest ? 1 : 0, sent?.id ?? null, sent?.threadId ?? null, status, detail, now).run();
 }
 
-/** The last step a business sends: 1 for a one-follow-up business, 2 for the usual three emails. */
+/**
+ * The last step a business sends: the first email is step 0, so this is never past MAX_FOLLOW_UPS
+ * (one follow-up, risk brain R-EML-04), whatever a catalog entry holds. A prospect already past it is
+ * marked done by the send loop below and never written to again.
+ */
 export function lastStepOf(b: Business): number {
-  return b.steps.length - 1;
+  return Math.min(b.steps.length - 1, MAX_FOLLOW_UPS);
 }
 
 /** First emails still allowed today under a business's own weekday limit. Pure. */
@@ -493,7 +497,7 @@ async function sendForBusiness(
       await db.prepare(`UPDATE outreach_prospects SET state = 'done', next_due_at = NULL, updated_at = ? WHERE id = ?`).bind(now, p.id).run();
       continue;
     }
-    const step = p.step as 0 | 1 | 2;
+    const step = p.step as 0 | 1;
     let groupCode: string | null = null;
     if (b.key === GROUPS_KEY) {
       const gate = await groupSendGate(db, p.id);
