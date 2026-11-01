@@ -4,14 +4,17 @@ Sequoia approved this week on 1 Nov 2026 ([the approved page](https://claude.ai/
 **The living version is the Schedule page in Boss OS: ☰ More → Schedule** (`/?tab=schedule`), rendered from
 `src/shared/boss/schedule/manifest.json`. `tests/schedule.test.ts` and `npm run schedule:check` fail when a job
 runs at a time that page does not show. This file is the approved plan as she approved it; it is not edited
-when a time moves (the page is). All times are Central. Client sites are never listed here (her rule).
+when a time moves (the page is), with one exception: on 1 Nov 2026 the jobs the week did not move were
+set back to their intended Central times (the page had listed them an hour early, where they fired after
+the clock change), and How We Know's draft is shown at Monday 12am. All times are Central. Client sites are never listed here (her rule).
 
 ## Monday
 
-9 weekly jobs · 4 emails to you
+10 weekly jobs · 4 emails to you
 
 | Time | Whose | What | Emails you |
 |---|---|---|---|
+| 12am (Sunday night) | Spry Labs · side businesses | How We Know: drafts next week's videos |  |
 | Before 6am | Creator studios | Weekly recap emails go to Mercedes, Sheila and Hadiyah, 20 minutes apart (5:00 / 5:20 / 5:40). The P&P Studio recap to you is cancelled. |  |
 | 5:30 | Spry Ventures · brokerage | Brokerage sourcing sweep: looks for new sellers and deals (also Wed and Fri) |  |
 | 6:00 | Spry Labs · side businesses | Search checklist audit of every side-business site | ✉ yes |
@@ -30,7 +33,7 @@ when a time moves (the page is). All times are Central. Client sites are never l
 |---|---|---|---|
 | 6:30 | Spry Labs · side businesses | Fixes the gaps Monday's search audit found, and puts the fixes live |  |
 | 7:00 | Spry Ventures · brokerage | Buyers for what you're selling: one email, people in your own mail who want it and funds that hold it (two emails merged into one) | ✉ yes |
-| 7:11 | Spry Labs · side businesses | Backlink network: updates its USCIS form-and-fee page |  |
+| 8:11 | Spry Labs · side businesses | Backlink network: updates its USCIS form-and-fee page |  |
 | 7:15 | West Peek Ventures · fund | Brings Scooter's LP tracker up to date before Wednesday's sync |  |
 | 7:30 | West Peek Ventures · fund | Pre-seed watch: new pre-seed companies worth knowing | ✉ yes |
 | 9:00 | West Peek · community | westpeek.live: weekly hire search for Scooter |  |
@@ -47,7 +50,7 @@ when a time moves (the page is). All times are Central. Client sites are never l
 | 7:00 | Spry Labs · side businesses | What Google Search saw last week, for each site |  |
 | 7:00–8:00 | Spry Labs · side businesses | Five side businesses each work out their weekly results: A Player Mode, Creator Network, Citation Velocity, the Spry Labs site, Local Guides |  |
 | 8:15 | Spry Labs · side businesses | ONE "Spry Labs weekly" email: results for every side business (A Player Mode, Creator Network, Citation Velocity, Spry Labs site, Local Guides, ApprovalPrep, Dream Wedding, How We Know). Replaces 7 separate emails. | ✉ yes |
-| 9:23 | Porch & Party | Checks which outside sites link to the P&P site |  |
+| 10:23 | Porch & Party | Checks which outside sites link to the P&P site |  |
 | 10:00–10:30 | Spry Labs · side businesses | Sites fix their own small problems (Dream Wedding, backlink network, P&P, westpeek) |  |
 | 2pm | Spry Labs · side businesses | How We Know: reads the YouTube channel's comments; acts only on your word |  |
 
@@ -71,13 +74,13 @@ when a time moves (the page is). All times are Central. Client sites are never l
 | Time | Whose | What | Emails you |
 |---|---|---|---|
 | 5:30 | Spry Ventures · brokerage | Brokerage sourcing sweep |  |
-| 7:00 | Spry Labs · side businesses | How We Know: this week's videos go public |  |
+| 8:00 | Spry Labs · side businesses | How We Know: this week's videos go public |  |
 | 7:00 | Spry Labs · side businesses | Checks which outside sites link to Citation Velocity |  |
 | 7:45 | West Peek · community | westpeek: checks its keys and passwords still work |  |
 | 8:00 | You · personal | CI sweep: fixes any repo with failing tests |  |
 | 8:40 | You · personal | Outside locks: anyone put a lock on your accounts? Emails you only if yes | ✉ yes |
 | 8:40 | You · personal | Archive check: nothing went stale, everything delivered can be found |  |
-| 3pm | Spry Labs · side businesses | How We Know: measures how this week's videos did |  |
+| 4pm | Spry Labs · side businesses | How We Know: measures how this week's videos did |  |
 
 ## Saturday
 
@@ -86,22 +89,21 @@ when a time moves (the page is). All times are Central. Client sites are never l
 | Time | Whose | What | Emails you |
 |---|---|---|---|
 | 4:00–8:00 | Spry Labs · side businesses | Weekly upkeep and growth checks for every side business, 15 min apart: whether AI answers cite each site, Pinterest results (where the site posts there), ApprovalPrep's own checks and Dream Wedding's Pinterest refill |  |
-| 4:00 | Spry Labs · side businesses | How We Know: scores which topics people want |  |
+| 5:00 | Spry Labs · side businesses | How We Know: scores which topics people want |  |
 
 ## Sunday
 
-8 weekly jobs · 2 emails to you
+7 weekly jobs · 2 emails to you
 
 | Time | Whose | What | Emails you |
 |---|---|---|---|
-| 4:00 | Spry Labs · side businesses | How We Know: ranks next week's topics |  |
-| 7:30 | Spry Labs · side businesses | Backlink network: checks who links to it |  |
+| 5:00 | Spry Labs · side businesses | How We Know: ranks next week's topics |  |
+| 8:30 | Spry Labs · side businesses | Backlink network: checks who links to it |  |
 | 9:00 | You · personal | Mac cleanup: keeps the disk from filling up |  |
 | 5pm | You · personal | Practice: the week ahead | ✉ yes |
 | 6:00pm | You · personal | Syncs your network contacts |  |
 | 6:30pm | Spry Ventures · brokerage | Mailbox sweep: missed deals, buyers going cold, connectors | ✉ yes |
 | 6:45pm | You · personal | Cohesion check: brains, repos and rules still line up (its result goes in Monday's email) |  |
-| 11pm | Spry Labs · side businesses | How We Know: drafts next week's videos |  |
 
 ## Every day (not moving)
 

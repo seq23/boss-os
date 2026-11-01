@@ -44,6 +44,15 @@
       "label": "Monday",
       "items": [
         {
+          "time": "12am",
+          "tag": "sl",
+          "text": "How We Know: drafts next week's videos",
+          "emails": false,
+          "refs": [
+            "how-we-know-loop-mon-draft"
+          ]
+        },
+        {
           "time": "Before 6am",
           "tag": "cs",
           "text": "Weekly recap emails go to Mercedes, Sheila and Hadiyah, 20 minutes apart (5:00 / 5:20 / 5:40). The P&P Studio recap to you is cancelled.",
@@ -122,8 +131,7 @@
           "emails": true,
           "refs": [
             "wpos-tlc-roundup"
-          ],
-          "pending": true
+          ]
         }
       ]
     },
@@ -151,14 +159,13 @@
           ]
         },
         {
-          "time": "7:11",
+          "time": "8:11",
           "tag": "sl",
           "text": "Backlink network: updates its USCIS form-and-fee page",
           "emails": false,
           "refs": [
             "authority-backlink-network-uscis-changelog"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "7:15",
@@ -185,8 +192,7 @@
           "emails": false,
           "refs": [
             "wpos-productions-hire-search"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "10pm",
@@ -253,14 +259,13 @@
           ]
         },
         {
-          "time": "9:23",
+          "time": "10:23",
           "tag": "pp",
           "text": "Checks which outside sites link to the P&P site",
           "emails": false,
           "refs": [
             "p-n-p-entity-backlink-watch"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "10:00–10:30",
@@ -272,8 +277,7 @@
             "authority-backlink-network-self-heal",
             "p-n-p-self-heal",
             "wpp-llm-self-heal"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "2pm",
@@ -309,8 +313,7 @@
             "dailystory-entity-backlink-watch",
             "dream-wedding-builder-entity-backlink-watch",
             "wpp-llm-entity-backlink-watch"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "7:00",
@@ -364,14 +367,13 @@
           ]
         },
         {
-          "time": "7:00",
+          "time": "8:00",
           "tag": "sl",
           "text": "How We Know: this week's videos go public",
           "emails": false,
           "refs": [
             "how-we-know-loop-fri-publish"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "7:00",
@@ -420,14 +422,13 @@
           ]
         },
         {
-          "time": "3pm",
+          "time": "4pm",
           "tag": "sl",
           "text": "How We Know: measures how this week's videos did",
           "emails": false,
           "refs": [
             "how-we-know-loop-fri-measure"
-          ],
-          "pending": true
+          ]
         }
       ]
     },
@@ -452,14 +453,13 @@
           ]
         },
         {
-          "time": "4:00",
+          "time": "5:00",
           "tag": "sl",
           "text": "How We Know: scores which topics people want",
           "emails": false,
           "refs": [
             "how-we-know-loop-sat-score"
-          ],
-          "pending": true
+          ]
         }
       ]
     },
@@ -468,24 +468,22 @@
       "label": "Sunday",
       "items": [
         {
-          "time": "4:00",
+          "time": "5:00",
           "tag": "sl",
           "text": "How We Know: ranks next week's topics",
           "emails": false,
           "refs": [
             "how-we-know-loop-sun-rank"
-          ],
-          "pending": true
+          ]
         },
         {
-          "time": "7:30",
+          "time": "8:30",
           "tag": "sl",
           "text": "Backlink network: checks who links to it",
           "emails": false,
           "refs": [
             "authority-backlink-network-entity-backlink-watch"
-          ],
-          "pending": true
+          ]
         },
         {
           "time": "9:00",
@@ -531,16 +529,6 @@
           "refs": [
             "cohesion"
           ]
-        },
-        {
-          "time": "11pm",
-          "tag": "sl",
-          "text": "How We Know: drafts next week's videos",
-          "emails": false,
-          "refs": [
-            "how-we-know-loop-mon-draft"
-          ],
-          "pending": true
         }
       ]
     }
@@ -1105,7 +1093,7 @@
       "brand": "Authority network",
       "system": "github",
       "slots": [
-        "wed 11:34"
+        "wed 10:20"
       ],
       "emails": false,
       "heavy": false,
@@ -1113,7 +1101,7 @@
         "repo": "authority-backlink-network",
         "file": ".github/workflows/self-heal.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 34 11 * * 3"
+          "CRON_TZ=America/Chicago 20 10 * * 3"
         ]
       }
     },
@@ -1500,7 +1488,7 @@
       "brand": "Time-2-Read",
       "system": "github",
       "slots": [
-        "thu 07:40"
+        "thu 07:20"
       ],
       "emails": false,
       "heavy": false,
@@ -1508,7 +1496,7 @@
         "repo": "dailystory",
         "file": ".github/workflows/entity-backlink-watch.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 40 7 * * 4"
+          "CRON_TZ=America/Chicago 20 7 * * 4"
         ]
       }
     },
@@ -1738,7 +1726,7 @@
       "brand": "Dream Wedding",
       "system": "github",
       "slots": [
-        "fri 07:00"
+        "thu 07:40"
       ],
       "emails": false,
       "heavy": false,
@@ -1746,7 +1734,7 @@
         "repo": "dream-wedding-builder",
         "file": ".github/workflows/entity-backlink-watch.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 0 7 * * 5"
+          "CRON_TZ=America/Chicago 40 7 * * 4"
         ]
       }
     },
@@ -1818,7 +1806,7 @@
       "brand": "Dream Wedding",
       "system": "github",
       "slots": [
-        "wed 11:18"
+        "wed 10:10"
       ],
       "emails": false,
       "heavy": false,
@@ -1826,7 +1814,7 @@
         "repo": "dream-wedding-builder",
         "file": ".github/workflows/self-heal.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 18 11 * * 3"
+          "CRON_TZ=America/Chicago 10 10 * * 3"
         ]
       }
     },
@@ -1960,7 +1948,7 @@
       "brand": "How We Know",
       "system": "github",
       "slots": [
-        "thu 07:20"
+        "thu 07:00"
       ],
       "emails": false,
       "heavy": false,
@@ -1968,7 +1956,7 @@
         "repo": "how-we-know",
         "file": ".github/workflows/entity-backlink-watch.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 20 7 * * 4"
+          "CRON_TZ=America/Chicago 0 7 * * 4"
         ]
       }
     },
@@ -3109,7 +3097,7 @@
       "brand": "Porch & Party",
       "system": "github",
       "slots": [
-        "wed 11:11"
+        "wed 10:00"
       ],
       "emails": false,
       "heavy": false,
@@ -3117,7 +3105,7 @@
         "repo": "p-n-p",
         "file": ".github/workflows/self-heal.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 11 11 * * 3"
+          "CRON_TZ=America/Chicago 0 10 * * 3"
         ]
       }
     },
@@ -4041,7 +4029,7 @@
       "brand": "West Peek OS",
       "system": "west-peek-os",
       "slots": [
-        "mon 08:00"
+        "tue 09:00"
       ],
       "emails": false,
       "heavy": true,
@@ -4153,7 +4141,7 @@
       "brand": "West Peek OS",
       "system": "west-peek-os",
       "slots": [
-        "mon 08:00"
+        "mon 08:30"
       ],
       "emails": true,
       "heavy": false,
@@ -4355,7 +4343,7 @@
       "brand": "WPP",
       "system": "github",
       "slots": [
-        "wed 11:26"
+        "wed 10:30"
       ],
       "emails": false,
       "heavy": false,
@@ -4363,7 +4351,7 @@
         "repo": "WPP-llm",
         "file": ".github/workflows/self-heal.yml",
         "crons": [
-          "CRON_TZ=America/Chicago 26 11 * * 3"
+          "CRON_TZ=America/Chicago 30 10 * * 3"
         ]
       }
     },
