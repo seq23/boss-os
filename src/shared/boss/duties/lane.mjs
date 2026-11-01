@@ -281,6 +281,7 @@ export const INSTALLED_LOCAL_JOBS = [
   "lp-prospect-discovery.mjs", // boss fix L
   "lp-prospects.mjs", // boss fix L
   "pnp-corporate-outreach.mjs",
+  "t2r-groups.mjs", // Monique: Time-2-Read groups & institutions (owner, 31 Oct 2026)
   "lp-tracker-sync.mjs",
   "mailbox-sweep.sh",
   "outside-locks.mjs",

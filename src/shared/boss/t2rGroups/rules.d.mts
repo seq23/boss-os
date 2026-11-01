@@ -1,0 +1,15 @@
+export const GROUPS_KEY: "time2read_groups";
+export const NEW_GROUPS_PER_WEEKDAY: number;
+export const MAX_FOLLOW_UPS: number;
+export const FOLLOW_UP_AFTER_DAYS: number;
+export const GROUP_TRIAL_DAYS: number;
+export const TIER_KINDS: Readonly<Record<1 | 2 | 3, readonly string[]>>;
+export function tierOfKind(kind: unknown): number | null;
+export function outboundProblems(text: string): string[];
+export function wantsPrice(words: string): boolean;
+export function suggestedPrice(groupSize?: number | null): string;
+export function groupSizeIn(words: string): number | null;
+export function isRoleEmail(email: string, orgName?: string): boolean;
+export function groupProspectProblems(row: unknown): string[];
+export function groupCodeFor(orgName: string, rand?: () => number): string;
+export function weeklyLine(x?: { emailed?: number; replied?: number; codesInUse?: number | null }): string;

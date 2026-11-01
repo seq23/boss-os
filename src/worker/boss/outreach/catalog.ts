@@ -48,6 +48,8 @@ export const GUIDES_SENDER = UMBRELLA_CONTACT;
 export const GUIDES_SIGNER = "S.L. Taylor";
 
 
+import { FOLLOW_UP_AFTER_DAYS, GROUPS_KEY, NEW_GROUPS_PER_WEEKDAY } from "../../../shared/boss/t2rGroups/rules.mjs";
+
 export type BusinessKind = "local_guide" | "affiliate" | "direct";
 
 export interface Metro {
@@ -107,8 +109,14 @@ export interface Business {
   /** One line, used on Monique's card. */
   offer: string;
   segments: Segment[];
-  /** Placeholders: {org} {metro} {brand} {offer_url} {ref_link}. */
-  steps: [Step, Step, Step];
+  /**
+   * Placeholders: {org} {metro} {brand} {offer_url} {ref_link} {code}. Three emails, or TWO for a
+   * business that allows one follow-up only (Time-2-Read groups, owner 31 Oct 2026). The engine sends
+   * exactly `steps.length` emails, never more.
+   */
+  steps: [Step, Step, Step] | [Step, Step];
+  /** At most this many FIRST emails a weekday, on top of the ramp (Time-2-Read groups: 10). */
+  newPerDay?: number;
   /** What the owner's card suggests when someone says yes. */
   nextStep: string;
   /** Metro keys whose listings are read for this business. Absent = the five national metros. */
@@ -458,6 +466,45 @@ export const BUSINESSES: Business[] = [
       },
     ],
     nextStep: "Reply with their referral code and link (30% of first-year revenue).",
+  },
+  {
+    /*
+     * TIME-2-READ GROUPS & INSTITUTIONS (owner, 31 Oct 2026). Not the affiliate pitch above: a free
+     * 15-day trial code of the group's own ({code}), for its families. Prospects are never read from
+     * public map listings (no segments): the Mac job researches public pages, NeverBounce checks each
+     * address and the code is made before groups.ts queues a group here. One follow-up, never a
+     * price, never a call ask, no "no screens", no medical claims, no other languages
+     * (src/shared/boss/t2rGroups/rules.mjs `outboundProblems`, checked on every build of these words).
+     */
+    key: GROUPS_KEY,
+    domain: "time-2-read.com",
+    brand: "Time2Read",
+    kind: "direct",
+    sender: "st@time-2-read.com",
+    offerUrl: "https://time-2-read.com/",
+    offer: "A free 15-day trial code for a group's families (homeschool groups, libraries, programs)",
+    segments: [],
+    newPerDay: NEW_GROUPS_PER_WEEKDAY,
+    steps: [
+      {
+        afterDays: 0,
+        subject: "A free reading trial for {org}",
+        body:
+          "Hi {org} team,\n\nI'm writing from Time2Read. It uses AI to write a new story for each child, " +
+          "at their reading level and about the things they love, so reading time is something they look " +
+          "forward to.\n\nWe'd like to give your families a free 15-day trial. Each family enters the code " +
+          "{code} when they start at {offer_url}.\n\nPlease share the code with your group if it would help. " +
+          "Any questions, just reply here.",
+      },
+      {
+        afterDays: FOLLOW_UP_AFTER_DAYS,
+        subject: "Re: {subject}",
+        body:
+          "Hi {org} team,\n\nA short note in case my last one got buried. Your families are welcome to a " +
+          "free 15-day Time2Read trial with the code {code} at {offer_url}. It's yours to share whenever it's useful.",
+      },
+    ],
+    nextStep: "Answer their question in your own words. If they ask the price or want to pay, the card carries a suggested price; Monique never quotes one.",
   },
   {
     key: "aplayermode",

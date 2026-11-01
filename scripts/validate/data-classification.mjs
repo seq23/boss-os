@@ -43,7 +43,7 @@ export function tablesIn(sql) {
 export function policyRows(sql) {
   const out = new Map();
   const block = sql.slice(sql.indexOf("INSERT INTO data_policy"));
-  for (const m of block.matchAll(/\(\s*'([a-z_]+)'\s*,\s*'([a-z_0-9]+)'\s*,\s*'([A-Z_]+)'\s*,\s*'([A-Z_]+)'/g)) {
+  for (const m of block.matchAll(/\(\s*'([a-z_0-9]+)'\s*,\s*'([a-z_0-9]+)'\s*,\s*'([A-Z_]+)'\s*,\s*'([A-Z_]+)'/g)) {
     out.set(m[1], { subsystem: m[2], residency: m[3], ai_processing: m[4] });
   }
   return out;
@@ -158,8 +158,14 @@ function selfTest() {
     console.error("SELF-TEST FAILED — a policy row is not parsed");
     failed++;
   }
+  // A table name with a digit (t2r_groups, 31 Oct 2026) was read as unclassified while its row existed.
+  const digits = policyRows("INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES\n  ('t2r_groups', 'relationships', 'CLOUD_SYNC', 'EXTERNAL_OK', 'r');");
+  if (digits.get("t2r_groups")?.residency !== "CLOUD_SYNC") {
+    console.error("SELF-TEST FAILED — a policy row whose table name has a digit is not parsed");
+    failed++;
+  }
   if (failed) process.exit(1);
-  console.log(`SELF-TEST PASSED: ${cases.length + 1}/${cases.length + 1} cases.`);
+  console.log(`SELF-TEST PASSED: ${cases.length + 2}/${cases.length + 2} cases.`);
 }
 
 if (problems.length > 0) {

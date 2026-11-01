@@ -71,9 +71,12 @@ describe("private spans", () => {
 });
 
 describe("who reads which brain", () => {
-  it("maps the roster: Camille P&P, Monique the brokerage and the fund, Simone everything plus personal, Toni nothing", () => {
+  it("maps the roster: Camille P&P, Monique the brokerage, the fund and the two businesses whose outreach she runs, Simone everything plus personal, Toni nothing", () => {
     expect(B.brainsFor("emp_research").slugs).toEqual(["porch-and-party"]);
-    expect(B.brainsFor("emp_relationship").slugs).toEqual(["brokerage", "west-peek-ventures"]);
+    // Owner, 31 Oct 2026: Monique runs time-2-read's group and institution sales and the Industry
+    // Guides' outreach, so she reads those brains too (#195 left her on the first two only).
+    expect(B.brainsFor("emp_relationship").slugs).toEqual(["brokerage", "west-peek-ventures", "time-2-read", "industry-guides"]);
+    expect(B.brainsFor("emp_relationship").summarised).toBe(false);
     const simone = B.brainsFor("emp_chief");
     expect(simone.summarised).toBe(true);
     expect(simone.slugs).toEqual([...B.BUSINESS_SLUGS, "personal"]);

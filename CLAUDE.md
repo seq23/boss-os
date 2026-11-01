@@ -221,7 +221,8 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    `dispatchRunForTask` (the row a non-Claude seat claims) and `/backends/claim` (a run handed down to
    another seat). An unclosed mark cuts everything after it.
 4. **Every employee reads first** (`buildPromptParts`): the brain(s) of the business(es) they serve
-   (`EMPLOYEE_BRAINS`; Camille P&P, Monique the brokerage and West Peek Ventures; Simone, Danielle and Zora read every business summarised, Simone also
+   (`EMPLOYEE_BRAINS`; Camille P&P, Monique the brokerage, West Peek Ventures, time-2-read and the
+   Industry Guides — she runs their outreach; Simone, Danielle and Zora read every business summarised, Simone also
    `personal`) and a short who's-who from `team`.
 5. **Edits** on the Brains screen (one section at a time, history kept) or by email to Simone
    ("P&P brain: add settled decision …", "time-2-read priorities: 1 … 2 …", "spry brain: set Sales to
@@ -231,3 +232,32 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    one plain line from the weekly check (computed on the hourly tick, never red).
 7. **Her local copy** is `npm run brains:pull` → `~/Brains/<slug>.md` (private spans kept; passcode
    injected as `BOSS_PASSCODE` by the caller; launchd is installed outside this repo).
+
+## Time-2-Read groups & institutions: Monique's duty
+
+Owner, 31 Oct 2026 ("Monique should do inst sales and i want to find like home school pods and
+institutions too"). Rules in `src/shared/boss/t2rGroups/rules.mjs`; the Worker half is
+`src/worker/boss/outreach/groups.ts` (desk `/api/boss/t2r-groups`), the Mac job
+`scripts/ops/t2r-groups.mjs` (`duty_t2r_groups`, weekdays 08:15 Central). Pinned by
+`tests/t2rGroups.test.ts` (which reads this section) and `tests/boss/t2rGroups.test.ts`:
+1. **Tiers are data** (`t2r_group_tiers`, migration 0324): 1 homeschool pods, co-ops, microschools;
+   2 libraries, after-school programs, literacy nonprofits, tutoring centers; 3 schools and districts,
+   **off until Phase 8** (teacher dashboard, rosters, privacy agreements, reading-gain proof). An off
+   tier is refused at import, never queued, and refused again at send time (`groupSendGate`).
+2. **Public sources only.** Every group keeps the `source_url` its address was published on, and the
+   Mac job reads that page before importing; a published role or group mailbox only, never a guess.
+3. **NeverBounce "valid" before the first email**; anything else is skipped for good. A bounced
+   address is never written to again.
+4. **Each group its own 15-day code** (`groupCodeFor`, e.g. MAPLEG15K7Q) through the existing
+   governed path to time-2-read's code table (`runCode`, simone-commands.mjs); no group is emailed
+   until its code is live. Each code's use is read back from the signups view, per group.
+5. **Sent by the outreach engine** as business `time2read_groups` from st@time-2-read.com: at most
+   `NEW_GROUPS_PER_WEEKDAY` (10) new groups a weekday, **one follow-up** (two steps, never a third),
+   automatic like all Monique outreach. The words carry no price, no call ask, no "no screens" or
+   anti-AI framing, no medical claim and no other language (`outboundProblems`, checked on every build).
+6. **Replies:** interest or a question is a card for her; "not now", an unsubscribe, an auto-reply
+   or a bounce is filed. A question about price or paying is always a card, with a suggested price
+   (`suggestedPrice`). **Monique never quotes**: approved words go to her drafts.
+7. **What she reads:** Mondays one line in Simone's email, "Time-2-Read groups: N emailed, N replied,
+   N codes in use" (`weeklyLine`); the time-2-read scoreboard's "Institutional pipeline" and "Outreach
+   replies" are written by the hourly tick (`feedScoreboard`), a revision only when a number moved.

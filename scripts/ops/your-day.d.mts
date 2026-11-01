@@ -45,5 +45,6 @@ export const SCOREBOARD_URL: string;
 export const SCOREBOARD_KEY_METRICS: number;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function brainsSectionFor(data: Record<string, unknown>, now?: number): any;
+export function t2rGroupsSectionFor(data: Record<string, unknown>, now?: number): any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function scoreboardSectionFor(data: Record<string, unknown>, now?: number): any;
