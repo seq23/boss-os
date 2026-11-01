@@ -1012,6 +1012,9 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
       expect(html).not.toContain(s.repo);
     }
     expect(lines).toContain(`all ${sites.grid_repos.length - client.length} grid repo sites`);
+    // The whole page (template lessons included) never names a client site or repo.
+    const page = renderChecklistPage(checklist, loadTemplate(), { results: { day: "2026-11-02", sites: results } });
+    for (const s of client) for (const name of [s.domain, s.repo]) expect(page, name).not.toContain(name);
     expect(standingsSummary({ sites: results }).sites).toBe(sites.grid_repos.length - client.length);
     // A report-only client repo's briefs are recorded, never worked.
     const briefs = fixBriefs(checklist, results.filter((r: any) => r.site.repo === "dianne-place-recovery-services"));
