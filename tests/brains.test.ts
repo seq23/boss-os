@@ -22,16 +22,16 @@ describe("the rules in CLAUDE.md are the rules in code", () => {
     expect(section).toContain("<!-- confidential -->…<!-- /confidential -->");
     expect(B.CONFIDENTIAL_OPEN).toBe("<!-- confidential -->");
     expect(B.CONFIDENTIAL_CLOSE).toBe("<!-- /confidential -->");
-    expect(B.BRAINS).toHaveLength(9);
+    expect(B.BRAINS).toHaveLength(10);
     expect(B.BRAIN_SLUGS).not.toContain("west-peek-events");
     expect(B.BRAIN_SLUGS).not.toContain("westpeek-live");
   });
 });
 
 describe("the restructure (owner, 1 Nov 2026)", () => {
-  it("has exactly nine slugs: eight brains and the team doc, in scoreboard order", () => {
+  it("has exactly ten slugs: eight brains, the risk rules and the team doc, in scoreboard order", () => {
     expect([...B.BRAIN_SLUGS]).toEqual([
-      "brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends", "personal", "team",
+      "brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends", "personal", "risk", "team",
     ]);
     expect([...B.BUSINESS_SLUGS]).toEqual(["brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends"]);
     expect(B.BRAIN_SLUGS).not.toContain("industry-guides");
@@ -111,7 +111,8 @@ describe("who reads which brain", () => {
     expect(simone.summarised).toBe(true);
     expect(simone.slugs).toEqual([...B.BUSINESS_SLUGS, "personal"]);
     expect(B.brainsFor("emp_repo").slugs).not.toContain("personal");
-    expect(B.brainsFor("emp_risk").slugs).toEqual([]);
+    expect(B.brainsFor("emp_risk").slugs).toEqual(["risk"]);
+    expect(B.BUSINESS_SLUGS).not.toContain("risk");
     expect(B.brainsFor(null).slugs).toEqual([]);
   });
   it("the who's who is empty while the team doc is still its placeholder", () => {

@@ -236,16 +236,18 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
 Owner, 31 Oct 2026 ("time to work"). One definition, `src/shared/boss/brains/brain.mjs`; stored in D1
 (`brains`, `brain_revisions`, migration 0323); pinned by `tests/brains.test.ts` (which reads this
 section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
-1. **Nine brains.** Seven businesses, in scoreboard order (`brokerage` — Spry Ventures (spry.vc), the
+1. **Ten brains.** Seven businesses, in scoreboard order (`brokerage` — Spry Ventures (spry.vc), the
    brokerage, priority 1 — `west-peek-ventures` — the fund ONLY — `west-peek` — the community: Rooms,
    TLC, westpeek.live, the join site — `porch-and-party`, `time-2-read` — a Spry Labs company — `spry` —
    Spry Labs, the umbrella for every side business, holding the Industry Guides — `friends`), `personal`
-   (Boss OS itself, Spirit, gates, coaching, her schedule) and `team` (who's who across her AI teams, a
-   plain document). Restructured by the owner on 1 Nov 2026 (migration 0326): the fund and the community
+   (Boss OS itself, Spirit, gates, coaching, her schedule), `risk` ("don't get sued", 1 Nov 2026,
+   migration 0329: numbered rules R-AREA-NN for every site and project she touches, each naming where it
+   is enforced or "judgment"; a plain document with no confidential data, so any model may read it; Toni
+   keeps it and reads it first) and `team` (who's who across her AI teams, a plain document). Restructured by the owner on 1 Nov 2026 (migration 0326): the fund and the community
    are separate brains that link to each other and never repeat each other's facts; `industry-guides` is
    RETIRED into `spry` (`RETIRED_BRAINS`): its row and revisions stay as history, GET/PUT on the slug
    resolve to `spry`, and nothing lists, scores or reads it.
-   Every brain but `team` has the eight sections in order: Company, Numbers, Priorities, People, Voice,
+   Every brain but `risk` and `team` has the eight sections in order: Company, Numbers, Priorities, People, Voice,
    Settled decisions, Open questions, Who does what. Gaps are written `[MISSING]`; Settled decisions
    lines read `- YYYY-MM-DD — decision — why`; Numbers is `| Metric | Definition | Source | Value | Last updated |`.
 2. **The repo is public: seeds are skeletons only.** No real brain content in any git file, fixture,
@@ -263,7 +265,7 @@ section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
    ("P&P brain: add settled decision …", "time-2-read priorities: 1 … 2 …", "spry brain: set Sales to
    3"); every change is a revision, an email one noted "by email".
 6. **The scoreboard never invents a number**: "not tracked yet" when a Value is `[MISSING]`;
-   `personal` and `team` are not on it. On the 1st, Simone's morning email carries one grid; on Mondays
+   `personal`, `risk` and `team` are not on it. On the 1st, Simone's morning email carries one grid; on Mondays
    one plain line from the weekly check (rule 8, never red).
 7. **Her local copy** is `npm run brains:pull` → `~/Brains/<slug>.md` (private spans kept; passcode
    injected as `BOSS_PASSCODE` by the caller), hourly at :23 from launchd `com.seq.boss-brains-pull`,
@@ -360,3 +362,22 @@ forget"). Pinned by `tests/schedule.test.ts`, which reads this section's files:
    Camille sends ONE email, a short section per business. A report that did not arrive is a plain line
    and a fix job, never silence (rule 0).
 
+
+## The validator matrix: every validator × repo
+
+Owner, 1 Nov 2026 ("New repos start lean": every validator is listed in its repo's registry AND in the
+central matrix). Pinned by `tests/validatorMatrix.test.ts` and `tests/boss/validators.test.ts`:
+1. **One module.** `src/shared/boss/validators/matrix.mjs`: the key a validator's name compares by,
+   the review-file reader, a repo's registry (`registryFrom`: package scripts, validator files, CI
+   step names, from `origin/<default>`), `buildMatrix` and the Monday words (`matrixFlagWords`).
+2. **Sources stay on her Mac.** Every `~/.boss-os/reviews/validators-<repo>.json` (written by each
+   repo's clean-up agent: name, protects, why, kind safety · behaviour · central-seo, runs) is picked
+   up by its file name; nothing in this repo lists the repos. `npm run validators:matrix`
+   (`scripts/ops/validator-matrix.mjs`) prints the census; exit 2 `NAMED STOP
+   [VALIDATOR_MATRIX_NOTHING_CHECKED]` when there is no review file.
+3. **Weekly, inside the Sunday cohesion check** (`scripts/brains/cohesion-check.mjs`): the matrix is
+   posted to `POST /api/boss/validators` (setting `validator_matrix`, stamped on arrival) and the page
+   (☰ More → Validators, `/?tab=validators`, `src/client/boss/pages/Validators.tsx`) reads it back.
+4. **Flagged, never blocking**: a matrix row its repo does not carry, or a validator a repo carries
+   that the matrix lacks, is one clause in Simone's Monday cohesion line. Duplicates across repos are
+   shown on the page as candidates for one shared check.

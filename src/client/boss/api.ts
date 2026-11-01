@@ -120,6 +120,8 @@ export const api = {
     call<{ fired: boolean; duty: string; reason?: string; note?: string; task_id?: string }>(`/duties/${id}/run-now`, post("")),
   unlock: (passcode: string) => call<{ unlocked: boolean }>("/auth/unlock", post("", { passcode })),
   lock: () => call("/auth/lock", post("")),
+  // The validator matrix (1 Nov 2026): every validator × repo, read from the Mac on Sunday evenings.
+  validators: () => call<{ matrix: import("@shared/boss/validators/matrix.mjs").Matrix | null; summary: string | null; flagged: string | null }>("/validators"),
   // Brains (31 Oct 2026): one document per business, read first by every employee.
   brains: () => call<{ brains: BrainSummary[] }>("/brains"),
   brain: (slug: string) => call<BrainFull>(`/brains/${encodeURIComponent(slug)}`),
