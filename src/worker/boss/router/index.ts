@@ -23,6 +23,7 @@ import {
 } from "./gradient";
 import { experienceFor, mayBePreferredForProtectedWork, rank as experienceRank, recordOutcome } from "./experience";
 import { getNumber } from "../lib/settings";
+import { hasConfidential, stripConfidential } from "../../../shared/boss/brains/brain.mjs";
 
 /**
  * Refusal codes from the backend guard that mean "money", as opposed to "not
@@ -429,7 +430,21 @@ interface CandidateNote {
  *
  * Every exit — including every refusal — writes a `routing_decisions` row.
  */
-export async function routeCompletion(env: Env, opts: RouteRequest): Promise<RouteResult> {
+export async function routeCompletion(env: Env, rawOpts: RouteRequest): Promise<RouteResult> {
+  /*
+   * ─── PRIVATE SPANS NEVER LEAVE THROUGH A CLOUD ROUTE (brains, 31 Oct 2026) ───
+   *
+   * LP names, fund and deal terms are wrapped `<!-- confidential -->…<!-- /confidential -->` in a
+   * brain. Only her Claude seat may read them, and the Worker has no Claude seat, so EVERY message
+   * is cut here, first, before a candidate is screened or a request body exists. Fail closed: an
+   * unclosed mark cuts everything after it, and if any mark survived the cut the run is refused.
+   * Pinned by tests/boss/brains.test.ts ("a non-Claude route never receives a confidential span").
+   */
+  const opts: RouteRequest = { ...rawOpts, messages: rawOpts.messages.map((m) => ({ ...m, content: stripConfidential(m.content) })) };
+  if (opts.messages.some((m) => hasConfidential(m.content))) {
+    throw new RoutingBlocked("A private part of a brain could not be removed, so nothing was sent", "blocked_policy",
+      "Check the brain's private marks: each opening mark needs its closing one.");
+  }
   const db = env.DB;
   await rollBudgetWindows(db);
 

@@ -200,3 +200,34 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    entity-backlink-watch is green and under eight days old. a1-a6 were taken, hence K. k5 with no
    reviewer is a **named stop** (`OWNER_REVIEWER_NEEDED`, disposition `named_stop`): said every week,
    never worked, because nobody invents a person. Pinned by `tests/searchReadiness.test.ts`.
+
+## Brains: one document per business, read first
+
+Owner, 31 Oct 2026 ("time to work"). One definition, `src/shared/boss/brains/brain.mjs`; stored in D1
+(`brains`, `brain_revisions`, migration 0323); pinned by `tests/brains.test.ts` (which reads this
+section), `tests/boss/brains.test.ts` and `npm run validate:brains`:
+1. **Nine brains.** Seven businesses, in scoreboard order (`brokerage`, `west-peek-ventures` — the fund,
+   TLC & Rooms and westpeek.live — `porch-and-party`, `time-2-read`, `industry-guides`, `spry`,
+   `friends`), `personal` (Boss OS itself,
+   Spirit, gates, coaching, her schedule) and `team` (who's who across her AI teams, a plain document).
+   Every brain but `team` has the eight sections in order: Company, Numbers, Priorities, People, Voice,
+   Settled decisions, Open questions, Who does what. Gaps are written `[MISSING]`; Settled decisions
+   lines read `- YYYY-MM-DD — decision — why`; Numbers is `| Metric | Definition | Source | Value | Last updated |`.
+2. **The repo is public: seeds are skeletons only.** No real brain content in any git file, fixture,
+   commit or PR. `validate:brains` fails the build if a seed is anything but `seedFor(slug, title)`.
+3. **Private spans** (LP names, fund terms, deal terms, investor names) are wrapped
+   `<!-- confidential -->…<!-- /confidential -->`. They reach her Claude seat (`bk_claude_code`) only.
+   Cut, fail closed, at all three exits: `routeCompletion` (every cloud route, before a request exists),
+   `dispatchRunForTask` (the row a non-Claude seat claims) and `/backends/claim` (a run handed down to
+   another seat). An unclosed mark cuts everything after it.
+4. **Every employee reads first** (`buildPromptParts`): the brain(s) of the business(es) they serve
+   (`EMPLOYEE_BRAINS`; Camille P&P, Monique the brokerage and West Peek Ventures; Simone, Danielle and Zora read every business summarised, Simone also
+   `personal`) and a short who's-who from `team`.
+5. **Edits** on the Brains screen (one section at a time, history kept) or by email to Simone
+   ("P&P brain: add settled decision …", "time-2-read priorities: 1 … 2 …", "spry brain: set Sales to
+   3"); every change is a revision, an email one noted "by email".
+6. **The scoreboard never invents a number**: "not tracked yet" when a Value is `[MISSING]`;
+   `personal` and `team` are not on it. On the 1st, Simone's morning email carries one grid; on Mondays
+   one plain line from the weekly check (computed on the hourly tick, never red).
+7. **Her local copy** is `npm run brains:pull` → `~/Brains/<slug>.md` (private spans kept; passcode
+   injected as `BOSS_PASSCODE` by the caller; launchd is installed outside this repo).

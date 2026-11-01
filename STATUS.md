@@ -386,6 +386,24 @@ to her" and pinned by tests and `validate:email-plain`:
 - Fixed templates, no model; an LP scheduling draft is a confidential kind (Claude seat only; the
   Worker's router refuses it). Pinned by `tests/lpScheduling.test.ts` and `tests/boss/lpSchedulingTap.test.ts`.
 
+### 31 October 2026 — Brains: one document per business, read first
+
+- **Nine brains** in D1 (migration 0323: `brains`, `brain_revisions`): seven businesses (the brokerage;
+  West Peek Ventures holds the fund, TLC & Rooms and westpeek.live; P&P, Time-2-Read, Industry Guides,
+  Spry, Friends), `personal`
+  and `team` (who's who). Seeded as skeletons only — the repo is public; real content is written in
+  Boss OS. Definition and rules: `src/shared/boss/brains/brain.mjs`, CLAUDE.md "Brains", `docs/boss/BRAINS.md`.
+- **Screen:** ☰ More → Brains (`/?tab=brains`): one card per brain with "Updated N days ago" and
+  "N gaps to fill"; read by section, "Edit this section", yellow "Fill this in" on every gap, history
+  under an expander, ← Back everywhere; the Scoreboard is an expander on the same page.
+- **API:** `/api/boss/brains` (list, `/:slug`, `PUT /:slug`, `/:slug/revisions`, `/scoreboard`, `/cohesion`).
+- **Every employee reads first:** their business brain(s) and a who's-who excerpt, at the top of every
+  job prompt (`buildPromptParts`). Private spans reach the Claude seat only; cut at the router, the
+  dispatch row and the claim hand-over (fail closed).
+- **By email:** "P&P brain: add settled decision …" to Simone edits the brain, revision "by email".
+- **Morning email:** Mondays one Brains line (weekly check on the hourly tick); the 1st, the scoreboard grid.
+- **Local copy:** `npm run brains:pull` → `~/Brains` (launchd installed outside the repo).
+
 ### Monique's outreach — fully automatic, braked in code (9 October 2026)
 
 **Owner: "u do it all".** Monique writes to businesses for ten side businesses (five local guides,

@@ -1,4 +1,5 @@
-import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT, isConfidentialDraft, confidentialLadder } from "../duties/seatOrder";
+import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT, CLAUDE_SEAT, isConfidentialDraft, confidentialLadder } from "../duties/seatOrder";
+import { brainBlockFor } from "../brains/store";
 import type { Env, TaskMessage } from "../env";
 import { newId } from "../lib/id";
 import { audit } from "../lib/audit";
@@ -214,7 +215,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       lane: task.lane,
       backendId,
       title: task.title,
-      ...(await buildPromptParts(env, task, input).then((p) => ({ prompt: p.instruction, firmContext: p.firmContext }))),
+      ...(await buildPromptParts(env, task, input, { backendId }).then((p) => ({ prompt: p.instruction, firmContext: p.firmContext }))),
       kind: task.intake_kind ?? null,
       envelopeId: task.envelope_id ?? null,
       requested,
@@ -511,6 +512,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
  * rewrite that reads the key and drops it on the floor.
  */
 export async function buildPrompt(env: Env, task: any, input: Record<string, any>): Promise<string> {
+  // The cloud path: never the Claude seat, so a brain's private spans are cut here (and again in the router).
   const { firmContext, instruction } = await buildPromptParts(env, task, input);
   return firmContext ? `${firmContext}\n\n${instruction}` : instruction;
 }
@@ -525,7 +527,16 @@ export async function buildPrompt(env: Env, task: any, input: Record<string, any
  * it above the fence. The deadline line is built from her parsed words, so it stays with the task.
  * Pinned by tests/boss/firmContextOutsideTheFence.test.ts.
  */
-export async function buildPromptParts(env: Env, task: any, input: Record<string, any>): Promise<{ firmContext: string; instruction: string }> {
+export async function buildPromptParts(env: Env, task: any, input: Record<string, any>, opts: { backendId?: string | null } = {}): Promise<{ firmContext: string; instruction: string }> {
+  /*
+   * ─── THE BUSINESS'S BRAIN GOES FIRST (31 Oct 2026) ─────────────────────────
+   *
+   * Every employee reads the brain(s) of the business(es) they serve at the top of every job
+   * (src/shared/boss/brains/brain.mjs, EMPLOYEE_BRAINS). Private spans (LP names, fund and deal
+   * terms) stay only when this run is for her Claude seat; `dispatchRunForTask` and the router cut
+   * them again before any request exists, so a mistake here still fails closed.
+   */
+  const brain = await brainBlockFor(env, task?.employee_id ?? null, opts.backendId === CLAUDE_SEAT);
   /*
    * ─── THE FIRM'S STANDING NOTICES GO IN FRONT OF EVERY EMPLOYEE RUN ─────────
    *
@@ -554,7 +565,7 @@ export async function buildPromptParts(env: Env, task: any, input: Record<string
   const deadline = due ? `DEADLINE: this is ${due}. Say in your reply if anything could make it late.\n\n` : "";
 
   return {
-    firmContext: notices ? `${notices}\n\n${practices}` : practices,
+    firmContext: [brain, notices, practices].filter(Boolean).join("\n\n"),
     instruction: `${deadline}${await buildInstruction(env, task, input)}`,
   };
 }

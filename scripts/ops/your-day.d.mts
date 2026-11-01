@@ -40,3 +40,10 @@ export const CUT_ORDER: ReadonlyArray<[string, Record<string, any>]>;
 export function lawLine(law: { n: number; title: string; text: string } | null | undefined): string | null;
 export declare const oneLine: (t: string | null | undefined) => string;
 export declare function carriedLines(carried: any[], opts: { shown?: Set<string>; keys?: Set<string>; today: string }): any[];
+export const BRAINS_URL: string;
+export const SCOREBOARD_URL: string;
+export const SCOREBOARD_KEY_METRICS: number;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function brainsSectionFor(data: Record<string, unknown>, now?: number): any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function scoreboardSectionFor(data: Record<string, unknown>, now?: number): any;

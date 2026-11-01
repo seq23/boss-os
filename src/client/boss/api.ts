@@ -26,6 +26,11 @@ export interface TellSimoneResult {
   reply: string | null;
 }
 
+export interface BrainSummary { slug: string; title: string; updated_at: number; updated_by: string | null; missing_count: number; stale: boolean; days_since: number }
+export interface BrainFull extends BrainSummary { body_md: string; sections: { name: string; body: string }[] }
+export interface BrainRevision { id: string; slug: string; body_md: string; changed_at: number; changed_by: string; note: string | null }
+export interface ScoreRow { slug: string; business: string; metric: string | null; value: string | null; words: string; last_updated: string | null }
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -115,6 +120,15 @@ export const api = {
     call<{ fired: boolean; duty: string; reason?: string; note?: string; task_id?: string }>(`/duties/${id}/run-now`, post("")),
   unlock: (passcode: string) => call<{ unlocked: boolean }>("/auth/unlock", post("", { passcode })),
   lock: () => call("/auth/lock", post("")),
+  // Brains (31 Oct 2026): one document per business, read first by every employee.
+  brains: () => call<{ brains: BrainSummary[] }>("/brains"),
+  brain: (slug: string) => call<BrainFull>(`/brains/${encodeURIComponent(slug)}`),
+  saveBrainSection: (slug: string, section: string, text: string) =>
+    call<BrainFull>(`/brains/${encodeURIComponent(slug)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ section, text }) }),
+  saveBrainBody: (slug: string, body_md: string) =>
+    call<BrainFull>(`/brains/${encodeURIComponent(slug)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ body_md, note: "Page edited" }) }),
+  brainRevisions: (slug: string) => call<{ revisions: BrainRevision[] }>(`/brains/${encodeURIComponent(slug)}/revisions`),
+  scoreboard: () => call<{ rows: ScoreRow[] }>("/brains/scoreboard"),
 
   /**
    * One group of Today's blocks — the only way the screen reads the day now. The whole-day form
