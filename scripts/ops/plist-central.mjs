@@ -12,8 +12,25 @@
  */
 import fs from "node:fs";
 
-/** Hours to add to a Central hour to get the Mac's local hour, now (both zones' DST included). */
+/**
+ * Hours to add to a Central hour to get the Mac's local hour (both zones' DST included).
+ *
+ * NOT AT THE INSTANT ALONE (1 Nov 2026). Eastern leaves daylight time at 06:00 UTC and Central an
+ * hour later, so between 06:00 and 07:00 UTC on a clock-change night the two zones read the same
+ * hour: an install in that hour wrote every plist unshifted, and each job would have fired an hour
+ * early for the whole winter. The offset is read at noon UTC of the day `now` falls in and of the
+ * next day, when both zones are settled; if those disagree (a zone that changes on a different
+ * date), the next day's wins, because that is the clock the jobs will run under.
+ */
 export function centralToLocalOffset(now = new Date(), localTz = Intl.DateTimeFormat().resolvedOptions().timeZone) {
+  const noon = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12));
+  const today = rawOffset(noon(now), localTz);
+  const tomorrow = rawOffset(noon(new Date(now.getTime() + 86_400_000)), localTz);
+  return today === tomorrow ? today : tomorrow;
+}
+
+/** The offset at exactly this instant: wrong for the hour between the two zones' clock changes. */
+export function rawOffset(now = new Date(), localTz = Intl.DateTimeFormat().resolvedOptions().timeZone) {
   const off = (tz) => {
     const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(now);
     const g = (t) => Number(p.find((x) => x.type === t)?.value);
