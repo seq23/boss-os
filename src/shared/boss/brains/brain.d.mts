@@ -11,6 +11,9 @@ export function historySlugsFor(slug: string): string[];
 export const NOT_A_BUSINESS: readonly string[];
 export const BUSINESS_SLUGS: readonly string[];
 export const PLAIN_DOCS: readonly string[];
+export const RISK_SLUG: string;
+export const RISK_PLACEHOLDER_LINE: string;
+export const PLAIN_PLACEHOLDERS: Readonly<Record<string, string>>;
 export const TEAM_SLUG: string;
 export const TEAM_PLACEHOLDER_LINE: string;
 export function seedFor(slug: string, title: string): string;
@@ -62,6 +65,8 @@ export interface MacCheck {
   copy_restarted?: boolean;
   copy_fresh_after?: boolean;
   unchecked?: string[];
+  validators_checked?: number;
+  validators_flag?: string | null;
 }
 export function cohesionCheckLine(brains: { slug: string; title: string; body_md: string; updated_at: number }[], mac: MacCheck | null, now?: number): string;
 export function staleBit(brains: { slug: string; title: string; updated_at: number }[], now?: number): string | null;

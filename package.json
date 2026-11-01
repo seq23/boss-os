@@ -25,6 +25,7 @@
     "test:boss": "vitest run --config vitest.boss.config.ts",
     "typecheck": "tsc --noEmit",
     "brains:pull": "node scripts/brains/pull.mjs",
+    "validators:matrix": "node scripts/ops/validator-matrix.mjs",
     "brains:cohesion": "bash scripts/ops/self-update-checkout.sh && node scripts/brains/cohesion-check.mjs",
     "brains:t2r-numbers": "bash scripts/ops/self-update-checkout.sh && node scripts/brains/t2r-numbers.mjs",
     "validate:migrations-keep-data": "node scripts/validate/migrations-keep-their-data.mjs && node scripts/validate/migrations-keep-their-data.mjs --self-test",

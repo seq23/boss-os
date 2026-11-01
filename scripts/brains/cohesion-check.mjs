@@ -36,6 +36,8 @@ import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { isClientRepo } from "../ops/lib/email-map.mjs";
 import { readRepoCategories } from "../ops/lib/repo-categories.mjs";
+import { readMatrix } from "../ops/validator-matrix.mjs";
+import { matrixFlagWords } from "../../src/shared/boss/validators/matrix.mjs";
 
 const ORIGIN = process.env.BOSS_ORIGIN ?? "https://boss.sequoiataylor.com";
 export const HOME_PROJECT = "-Users-sequoiataylor";
@@ -213,7 +215,7 @@ async function waitForCopy(home) {
 }
 
 /** Every check, merged into the record the Worker keeps. */
-export async function runChecks({ home = homedir(), now = Date.now(), dryRun = false, lastCommit, restart, wait } = {}) {
+export async function runChecks({ home = homedir(), now = Date.now(), dryRun = false, lastCommit, restart, wait, validators = () => readMatrix({ home }) } = {}) {
   const today = new Date(now).toISOString().slice(0, 10);
   const m = checkMemory({ home, today, dryRun });
   const r = checkRepos({ home, now, ...(lastCommit ? { lastCommit } : {}) });
@@ -222,14 +224,24 @@ export async function runChecks({ home = homedir(), now = Date.now(), dryRun = f
   const age = copyAgeHours(home);
   const c = dryRun ? { copy_age_hours: age == null ? null : round(age), copy_restarted: false, copy_fresh_after: age != null && age <= COPY_MAX_HOURS }
     : await checkCopy({ home, ...(restart ? { restart } : {}), ...(wait ? { wait } : {}) });
-  return { ...m, ...r, ...s, ...rs, ...c, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked] };
+  // 5. The validator matrix (owner, 1 Nov 2026): flagged in the Monday line, never blocking. The whole
+  // matrix rides along as `matrix` for POST /api/boss/validators; it is not part of the cohesion record.
+  let matrix = null;
+  try { matrix = validators(); } catch { matrix = null; }
+  const v = { validators_checked: matrix ? matrix.rows.length : 0, validators_flag: matrixFlagWords(matrix) };
+  return { ...m, ...r, ...s, ...rs, ...c, ...v, matrix, unchecked: [...m.unchecked, ...r.unchecked, ...s.unchecked, ...rs.unchecked] };
 }
 
-export async function post(record, { passcode = process.env.BOSS_PASSCODE, fetchImpl = fetch, origin = ORIGIN } = {}) {
+export async function post(record, { passcode = process.env.BOSS_PASSCODE, fetchImpl = fetch, origin = ORIGIN, matrix = null } = {}) {
   if (!passcode) throw Object.assign(new Error("NAMED STOP [NO_PASSCODE] BOSS_PASSCODE is not set; the caller injects it from the vault."), { code: 3 });
   const u = await fetchImpl(`${origin}/api/boss/auth/unlock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode }) });
   if (!u.ok) throw Object.assign(new Error(`NAMED STOP [UNLOCK_REFUSED] Boss OS refused the passcode (${u.status}).`), { code: 3 });
   const cookie = (u.headers.get("set-cookie") ?? "").split(";")[0];
+  if (matrix) {
+    const vm = await fetchImpl(`${origin}/api/boss/validators`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(matrix) });
+    // Said in the Monday line rather than stopping the cohesion record.
+    if (!vm.ok) record = { ...record, validators_flag: `the validator matrix was read but Boss OS did not keep it (${vm.status})` };
+  }
   const r = await fetchImpl(`${origin}/api/boss/brains/cohesion/mac`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(record) });
   if (!r.ok) throw Object.assign(new Error(`NAMED STOP [NOT_RECORDED] Boss OS did not keep the check (${r.status}).`), { code: 2 });
   return (await r.json()).data;
@@ -246,8 +258,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       console.log(`skills restating a rule: ${rec.skills_restating.map((f) => `${f.skill}:${f.line} (${f.source})`).join(", ") || "none"}`);
       console.log(`brains copy: ${rec.copy_age_hours ?? "none"} h old${rec.copy_restarted ? `; restarted, ${rec.copy_fresh_after ? "fresh now" : "still stale"}` : ""}`);
       if (rec.unchecked.length) console.log(`unchecked: ${rec.unchecked.join(", ")}`);
+      console.log(`validators: ${rec.validators_checked} in the matrix; ${rec.validators_flag ?? "nothing flagged"}`);
       if (dryRun) return;
-      const out = await post(rec);
+      const { matrix, ...record } = rec;
+      const out = await post(record, { matrix });
       console.log(`cohesion: ${out.line}`);
     })
     .catch((e) => { console.error(e.message); process.exit(e.code ?? 1); });

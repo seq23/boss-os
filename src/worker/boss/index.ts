@@ -69,6 +69,7 @@ import { morning } from "./routes/morning";
 import { pnpOutreach } from "./routes/pnpOutreach";
 import { t2rGroups } from "./routes/t2rGroups";
 import { brains } from "./routes/brains";
+import { validators } from "./routes/validators";
 import { runBrainsCohesion } from "./brains/store";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -251,6 +252,8 @@ app.route("/api/auth/tap", lpTap); // boss fix L
 app.route("/api/morning", morning);
 // Brains (31 Oct 2026): one document per business, read first by every employee (routes/brains.ts).
 app.route("/api/brains", brains);
+// The validator matrix (1 Nov 2026): every validator × repo, posted by the Mac (routes/validators.ts).
+app.route("/api/validators", validators);
 //
 // === end Her jobs ===
 

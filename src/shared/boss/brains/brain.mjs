@@ -25,6 +25,11 @@ export const BRAINS = Object.freeze([
   { slug: "friends", title: "Friends' businesses" },
   // Not a business (coordinator, 31 Oct 2026): Boss OS itself, Spirit, gates, coaching, her schedule.
   { slug: "personal", title: "Personal" },
+  // Not a business (owner, 1 Nov 2026, "don't get sued"): numbered rules R-AREA-NN that keep every
+  // site and project out of legal trouble, each saying where it is enforced or that it is judgment.
+  // A plain document with NO confidential data, so any model may read it; client specifics stay in
+  // their own repos under the same numbering. ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md point here.
+  { slug: "risk", title: "Risk — don't get sued" },
   // A plain document, not a business (coordinator, 31 Oct 2026): the roster of West Peek OS and Boss
   // OS employees. No sections, no skeleton; every employee reads a short excerpt to route work.
   { slug: "team", title: "Who's who — your AI teams" },
@@ -46,11 +51,15 @@ export function historySlugsFor(slug) {
 }
 export const BRAIN_SLUGS = Object.freeze(BRAINS.map((b) => b.slug));
 /** Brains that are businesses. The scoreboard and "all" (every business) read only these. */
-export const NOT_A_BUSINESS = Object.freeze(["personal", "team"]);
+export const NOT_A_BUSINESS = Object.freeze(["personal", "risk", "team"]);
 /** Brains that are one plain document rather than the eight sections. */
-export const PLAIN_DOCS = Object.freeze(["team"]);
+export const PLAIN_DOCS = Object.freeze(["risk", "team"]);
 export const TEAM_SLUG = "team";
 export const TEAM_PLACEHOLDER_LINE = "Write the roster here in Boss OS: each West Peek OS and Boss OS employee, what they own, and who to send what to.";
+export const RISK_SLUG = "risk";
+export const RISK_PLACEHOLDER_LINE = "Write the risk rules here in Boss OS: one numbered rule per line (R-AREA-NN), why, where it applies, and where it is enforced or \"judgment\". No confidential data.";
+/** The one placeholder line each plain document is seeded with. */
+export const PLAIN_PLACEHOLDERS = Object.freeze({ team: TEAM_PLACEHOLDER_LINE, risk: RISK_PLACEHOLDER_LINE });
 export const BUSINESS_SLUGS = Object.freeze(BRAIN_SLUGS.filter((s) => !NOT_A_BUSINESS.includes(s)));
 
 /** The sections, in order. Every brain has all eight. */
@@ -67,7 +76,7 @@ const DAY_MS = 86_400_000;
 
 /** The seed for any brain: the skeleton, or for a plain doc its title and one placeholder line. */
 export function seedFor(slug, title) {
-  return PLAIN_DOCS.includes(slug) ? `# ${title}\n\n${TEAM_PLACEHOLDER_LINE}\n` : skeleton(title);
+  return PLAIN_DOCS.includes(slug) ? `# ${title}\n\n${PLAIN_PLACEHOLDERS[slug] ?? TEAM_PLACEHOLDER_LINE}\n` : skeleton(title);
 }
 
 /** A new brain: every section present, every gap written [MISSING]. The migration seeds exactly this. */
@@ -281,6 +290,7 @@ export function stripConfidential(text) {
  * (`west-peek`, restructure 1 Nov 2026), so she reads all five; Danielle fixes every grid repo; Zora keeps the archive.
  * Kendra (systems), Toni (the isolated trading lane) and Imani (her own practice) serve no business.
  * Wynn and Parker are West Peek OS employees and read no Boss OS brain.
+ * Toni (emp_risk) keeps the `risk` brain (owner, 1 Nov 2026: one Boss OS person owns it, Claude reviews).
  */
 export const EMPLOYEE_BRAINS = Object.freeze({
   emp_chief: "all+personal",
@@ -289,7 +299,7 @@ export const EMPLOYEE_BRAINS = Object.freeze({
   emp_repo: "all",
   emp_knowledge: "all",
   emp_continuity: [],
-  emp_risk: [],
+  emp_risk: ["risk"],
   emp_practice: [],
 });
 
@@ -313,7 +323,9 @@ export function brainBlock(brains, { summarised = false, keepConfidential = fals
   const clean = (s) => (keepConfidential ? s : stripConfidential(s));
   const parts = [
     "==================================================",
-    summarised ? "THE BUSINESSES YOU SERVE (their brains, summarised — read this first)" : "THE BUSINESS YOU SERVE (its brain — read this first)",
+    summarised ? "THE BUSINESSES YOU SERVE (their brains, summarised — read this first)"
+      : brains.every((b) => b.slug === RISK_SLUG) ? "THE RISK RULES YOU KEEP (the risk brain — read this first)"
+      : "THE BUSINESS YOU SERVE (its brain — read this first)",
     "==================================================",
     "This is the single source of truth about the business. Where it says [MISSING], nobody has written it yet: never invent it, say it is missing.",
     "",
@@ -548,6 +560,9 @@ export function cohesionCheckLine(brains, mac, now = Date.now()) {
     const restating = Array.isArray(mac.skills_restating) ? mac.skills_restating : [];
     const restSkills = [...new Set(restating.map((s) => s.skill ?? s))];
     if (restating.length) problems.push(`${plural(restating.length, "skill line")} ${restating.length === 1 ? "copies a rule" : "copy rules"} instead of pointing to ${restating.length === 1 ? "it" : "them"} (${names(restSkills)})`);
+    // The validator matrix (1 Nov 2026): a validator missing from its repo's list or from the matrix is
+    // said here, never blocking (`matrixFlagWords`, src/shared/boss/validators/matrix.mjs).
+    if (typeof mac.validators_flag === "string" && mac.validators_flag) problems.push(mac.validators_flag);
     const unchecked = Array.isArray(mac.unchecked) ? mac.unchecked : [];
     if (unchecked.length) problems.push(`${names(unchecked, 5)} could not be checked`);
   }

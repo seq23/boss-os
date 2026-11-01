@@ -4,7 +4,7 @@ One markdown document per business — the single source of truth every Boss OS 
 Owner, 31 Oct 2026. The rules are in code (`src/shared/boss/brains/brain.mjs`) and pinned by the tests
 named in CLAUDE.md "Brains"; this page says how to use and operate it.
 
-## The nine brains
+## The ten brains
 
 | Slug | Title | Shape |
 |---|---|---|
@@ -16,6 +16,7 @@ named in CLAUDE.md "Brains"; this page says how to use and operate it.
 | `spry` | Spry Labs — the umbrella for every side business | eight sections |
 | `friends` | Friends' businesses | eight sections |
 | `personal` | Personal (Boss OS itself, Spirit, gates, coaching, her schedule) | eight sections, not on the scoreboard |
+| `risk` | Risk — don't get sued (rules R-AREA-NN, each enforced or judgment; no confidential data; Toni keeps it; migration 0329) | one plain document, not on the scoreboard |
 | `team` | Who's who — your AI teams | one plain document, not on the scoreboard |
 
 The scoreboard lists the brokerage first, then the fund, then the community, then the rest.

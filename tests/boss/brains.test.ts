@@ -39,7 +39,7 @@ describe("the brains API", () => {
     expect(r.status).toBe(200);
     const list = r.body.data.brains;
     expect(list.map((b: any) => b.slug)).toEqual(BRAINS.map((b) => b.slug));
-    expect(list).toHaveLength(9);
+    expect(list).toHaveLength(10);
     expect(list.slice(0, 3).map((b: any) => b.slug)).toEqual(["brokerage", "west-peek-ventures", "west-peek"]);
     const pnp = list.find((b: any) => b.slug === "porch-and-party");
     expect(pnp).toMatchObject({ title: "Porch & Party 901", missing_count: 8, stale: false });
@@ -155,7 +155,7 @@ describe("employees read their brains first", () => {
     await apiJson("/api/brains/team", { method: "PUT", body: { body_md: "# Who's who — your AI teams\n\nCamille: Porch & Party. Monique: LPs and outreach." } });
   });
 
-  it("Camille reads P&P at the top; Toni reads no business brain; everyone reads the who's who", async () => {
+  it("Camille reads P&P at the top; Toni reads the risk rules and no business brain; everyone reads the who's who", async () => {
     const camille = await buildPrompt(env as any, { id: "t1", title: "x", employee_id: "emp_research" }, { prompt: "Write the briefing." });
     // At the top: the brain is the first thing the employee reads, before the firm's notices and the job.
     expect(camille.slice(0, 160)).toContain("THE BUSINESS YOU SERVE");
@@ -165,6 +165,8 @@ describe("employees read their brains first", () => {
     const toni = await buildPrompt(env as any, { id: "t2", title: "x", employee_id: "emp_risk" }, { prompt: "Check the book." });
     expect(toni).not.toContain("Porch rentals");
     expect(toni).toContain("WHO'S WHO");
+    // Toni keeps the risk brain (owner, 1 Nov 2026): he reads it whole, first.
+    expect(toni.slice(0, 160)).toContain("THE RISK RULES YOU KEEP");
   });
 
   it("Simone reads every business and Personal, summarised, but not the team doc as a business", async () => {
@@ -243,7 +245,7 @@ describe("the Monday check rides the hourly tick", () => {
   it("runs once on a Monday, skips other days, and says why", async () => {
     expect(await runBrainsCohesion(env as any, TUESDAY)).toEqual({ ran: false, reason: "not_monday" });
     const first = await runBrainsCohesion(env as any, MONDAY);
-    expect(first).toMatchObject({ ran: true, week: "2026-11-02", brains: 9 });
+    expect(first).toMatchObject({ ran: true, week: "2026-11-02", brains: 10 });
     expect(await runBrainsCohesion(env as any, MONDAY + 3_600_000)).toEqual({ ran: false, reason: "done_this_week" });
   });
 

@@ -101,7 +101,7 @@ function useReadingPosition() {
   return { progress, scrollable, atEnd };
 }
 
-export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "emails" | "schedule" | "memory" | "trading" | "vault" | "systems";
+export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "emails" | "schedule" | "validators" | "memory" | "trading" | "vault" | "systems";
 
 const ICONS: Record<TabId, ReactNode> = {
   today: <path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.5 2" />,
@@ -112,6 +112,7 @@ const ICONS: Record<TabId, ReactNode> = {
   brains: <path d="M9 4a3 3 0 00-3 3 3 3 0 00-2 5 3 3 0 002 5 3 3 0 006 1V5a3 3 0 00-3-1zM15 4a3 3 0 013 3 3 3 0 012 5 3 3 0 01-2 5 3 3 0 01-6 1" />,
   emails: <path d="M3 6h18v12H3zM3 6l9 7 9-7" />,
   schedule: <path d="M4 5h16v15H4zM4 10h16M9 3v4M15 3v4" />,
+  validators: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5" />,
   memory: <path d="M12 4v16M12 7a3 3 0 013-3h4v13h-4a3 3 0 00-3 3M12 7a3 3 0 00-3-3H5v13h4a3 3 0 013 3" />,
   trading: <path d="M3 17l5-6 4 3 5-8M21 6h-4M21 6v4" />,
   vault: <path d="M4 4h16v16H4zM12 9a3 3 0 100 6 3 3 0 000-6zM12 15v3" />,
@@ -121,17 +122,17 @@ const ICONS: Record<TabId, ReactNode> = {
 /** Canon §15: Today is the default operating screen, and so the first tab. */
 const LABELS: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", schedule: "Schedule", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", schedule: "Schedule", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
 
 /*
  * FIVE TABS AND "☰ MORE" (owner approved the new Today, 31 Oct 2026). Nine tabs in two rows took
- * ~250 of the phone's 844px. Today, Inbox, Capital and Spirit stay one tap away; Team, Brains, Email Map (31 Oct 2026), Schedule (1 Nov 2026), Memory,
+ * ~250 of the phone's 844px. Today, Inbox, Capital and Spirit stay one tap away; Team, Brains, Email Map (31 Oct 2026), Schedule (1 Nov 2026), Validators (1 Nov 2026), Memory,
  * Trading, Vault, Systems and Operations (the settings) are in "☰ More", two taps away.
  */
 export const PRIMARY_TABS: readonly TabId[] = ["today", "inbox", "capital", "spirit"];
-export const MORE_TABS: readonly TabId[] = ["team", "brains", "emails", "schedule", "memory", "trading", "vault", "systems"];
+export const MORE_TABS: readonly TabId[] = ["team", "brains", "emails", "schedule", "validators", "memory", "trading", "vault", "systems"];
 
 export function Shell({
   tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, onBack, children,
