@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { mailHistory } from "../mail/history";
 import { ok, badRequest } from "../lib/http";
-import { macWork, cancelCommand, errandTap, handleErrandSelf, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent, errandFollowedUp, errandRemindersDue, errandReminded, openMeetingPrep, prepFinished, prepMentions } from "./run";
+import { macWork, cancelCommand, errandTap, handleErrandSelf, codeAnswered, lookupAnswered, draftReady, bounced, noticeSent, commandFailed, getCommand, errandSent, errandFollowedUp, errandRemindersDue, errandReminded, openMeetingPrep, prepFinished, prepMentions, personalPreps } from "./run";
 
 export const commands = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -23,6 +23,7 @@ commands.post("/meeting-prep", async (c) => {
   return ok(c, { id: await openMeetingPrep(c.env, { key: b.key, spec: b.spec, asked: Boolean(b.asked) }) });
 });
 commands.get("/meeting-prep/mentions", async (c) => ok(c, { cards: await prepMentions(c.env, c.req.queries("q") ?? []) }));
+commands.get("/meeting-prep/personal", async (c) => ok(c, await personalPreps(c.env)));
 commands.post("/:id/prep-done", async (c) => {
   const b = await c.req.json<{ message_id?: string }>().catch(() => ({} as { message_id?: string }));
   return ok(c, { recorded: await prepFinished(c.env, c.req.param("id"), { message_id: b?.message_id ?? null }) });

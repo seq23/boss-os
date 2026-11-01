@@ -92,6 +92,52 @@ export function dedupeEvents(events) {
 /** A hold on her own calendar is not a meeting. */
 const NOT_A_MEETING = /^(focus( time)?|busy|hold|blocked?|ooo|out of office|travel|flight|gym|workout|lunch|dinner|break|reminder|birthday|home)\b/i;
 
+/*
+ * WORK OR HER OWN LIFE (owner, 1 Nov 2026: "she should discern brunches from real work stuff"). A
+ * "Reservation at <restaurant>" with nobody else on it was asked about, and prepped anyway. Prep is for
+ * work. A social or personal word anywhere in the title (brunch, dinner, drinks, birthday, party, date
+ * night, a reservation, the gym, the doctor, an errand) is never prepped unless something says work: a
+ * work word in the title, or a guest on a company domain. Deterministic: no model decides this.
+ */
+const SOCIAL_WORDS = "brunch|lunch|dinner|supper|breakfast|drinks|happy hour|cocktails?|wine|birthday|bday|b-day|party|parties|celebration|shower|wedding|anniversary|date night|reservation|res at|gym|workout|work out|yoga|pilates|spin class|run club|massage|spa|nails|mani|pedi|manicure|pedicure|hair|haircut|salon|barber|facial|doctor|dentist|dental|dermatologist|therapy|therapist|physio|chiropractor|checkup|check-up|vet|church|errands?|groceries|pick ?up|drop ?off|playdate|play date|recital|concert|movie|bbq|cookout|picnic|vacation|holiday|funeral|girls'? night|game night|hang ?out|friends?|family|mom|dad|sister|brother|cousin";
+const SOCIAL_RE = new RegExp(`\\b(?:${SOCIAL_WORDS})\\b`, "i");
+const WORK_RE = /\b(?:LPs?|investors?|fund|pitch|diligence|term sheet|deal|board|partnership|sponsor(?:ship)?|brand|client|customer|sales|demo|interview|onboarding|kick-?off|secondar(?:y|ies)|allocation|raise|capital|contract|proposal|negotiation|webinar|panel|podcast|portfolio|founder|vc)\b/i;
+
+const normTitle = (t) => String(t ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const seriesOf = (e) => String(e.ical_uid || e.calendar_uid || "").toLowerCase();
+
+/**
+ * "personal", "work" or "unsure". `personal`: what her "ignore" replies remembered ({ series, titles }
+ * from /commands/meeting-prep/personal); a remembered series or title is personal, never asked again.
+ */
+export function meetingKind(event, { herAddresses = [], personal = null } = {}) {
+  const title = String(event?.title ?? "").trim();
+  if (personal) {
+    const s = seriesOf(event);
+    if ((s && (personal.series ?? []).some((x) => String(x).toLowerCase() === s)) || (personal.titles ?? []).some((x) => normTitle(x) === normTitle(title) && normTitle(title))) return "personal";
+  }
+  if (event?.all_day || NOT_A_MEETING.test(title)) return "personal";
+  const workGuest = others(event, herAddresses).some((a) => companyDomain(a.email));
+  const workWord = WORK_RE.test(title);
+  if (SOCIAL_RE.test(title)) return workWord || workGuest ? "work" : "personal";
+  return workWord || workGuest ? "work" : "unsure";
+}
+
+/*
+ * HER "IGNORE" IS AN ANSWER (owner, 1 Nov 2026). She replied "Ignore this is brunch with a friend" to
+ * "what's this meeting about?" and the reply was taken as the meeting's purpose, so a full prep went
+ * out. A reply that says skip it, or that it is social, cancels the prep and is remembered.
+ */
+const IGNORE_START = /^\s*(?:(?:pls|please|oh|ah|no|nah)[,!.]?\s+)?(?:ignore|skip|disregard|no need|no prep|not needed|nothing to prep|not work|not a work|not a meeting|personal|social|don'?t (?:worry|bother|prep|need)|n\/a)\b/i;
+const IGNORE_ANY = new RegExp(`\\b(?:not (?:a )?work\\b|no (?:need|prep)\\b|(?:it'?s|this is|that'?s|its) (?:personal|social|not work)\\b|(?:just|only) (?:a |an |some |my )?(?:${SOCIAL_WORDS})\\b)`, "i");
+export function ignoreReplyIn(text) {
+  const t = String(text ?? "").replace(/[’]/g, "'").trim();
+  if (!t) return false;
+  const first = t.split("\n").find((l) => l.trim()) ?? "";
+  if (IGNORE_START.test(first)) return true;
+  return IGNORE_ANY.test(first) && !WORK_RE.test(first);
+}
+
 /** The idempotency key: the event's own id and the day it is on. */
 export const prepKey = (e) => `${e.ical_uid || e.calendar_uid}|${dayOfCt(e.scheduled_at)}`;
 
@@ -99,12 +145,12 @@ export const prepKey = (e) => `${e.ical_uid || e.calendar_uid}|${dayOfCt(e.sched
  * What is due now. From 18:00 Central: every meeting tomorrow. Any hour: a meeting later today that
  * has had no prep (added today, or the Mac was asleep last evening). Never one already sent.
  */
-export function dueMeetings(events, { now = Date.now(), sent = new Set(), day = null } = {}) {
+export function dueMeetings(events, { now = Date.now(), sent = new Set(), day = null, herAddresses = [], personal = null } = {}) {
   const today = dayOfCt(now);
   const tomorrow = addDays(today, 1);
   const evening = hourOfCt(now) >= EVENING_HOUR;
   return dedupeEvents(events).filter((e) => {
-    if (e.all_day || NOT_A_MEETING.test(String(e.title ?? "").trim())) return false;
+    if (meetingKind(e, { herAddresses, personal }) === "personal") return false;
     const d = dayOfCt(e.scheduled_at);
     if (day) { if (d !== day) return false; }
     else if (!((d === tomorrow && evening) || (d === today && e.scheduled_at > now))) return false;
