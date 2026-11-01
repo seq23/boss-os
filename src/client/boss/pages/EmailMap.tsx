@@ -57,7 +57,7 @@ export function EmailMap() {
   const [pick, setPick] = useState<string>(EMAIL_MAP.businesses.some((b) => b.key === start) ? (start as string) : "all");
   const shown = EMAIL_MAP.businesses.filter((b) => pick === "all" || b.key === pick);
   return (
-    <div className="brains email-map" data-testid="email-map">
+    <div className="brains" data-testid="email-map">
       <p className="brain-summary">{summaryLine()}</p>
       <p className="brain-hint">Tap a business to see its emails. Each one says who sends it, to whom and when; "Show details ▾" says where it runs and how to pause it.</p>
       <label className="email-map-filter">
