@@ -305,13 +305,13 @@ for (const vp of [PHONE, LAPTOP]) {
       if (vp.name === "phone") await expectNoSidewaysScroll(page);
     });
 
-    test("five tabs and ☰ More, which holds Team, Brains, Memory, Trading, Vault, Systems and Operations", async ({ page }) => {
+    test("five tabs and ☰ More, which holds Team, Brains, Email Map, Memory, Trading, Vault, Systems and Operations", async ({ page }) => {
       await unlock(page);
       const nav = page.getByRole("navigation", { name: "Sections" });
       await expect(nav.locator(":scope > button")).toHaveCount(5);
       await nav.getByRole("button", { name: "☰ More", exact: true }).click();
       const more = page.getByTestId("more-panel");
-      for (const t of ["Team", "Brains", "Memory", "Trading", "Vault", "Systems", "Operations"]) await expect(more.getByRole("button", { name: t === "Operations" ? "Open settings" : t, exact: true })).toBeVisible();
+      for (const t of ["Team", "Brains", "Email Map", "Memory", "Trading", "Vault", "Systems", "Operations"]) await expect(more.getByRole("button", { name: t === "Operations" ? "Open settings" : t, exact: true })).toBeVisible();
       await nav.getByRole("button", { name: "☰ More", exact: true }).click();
       await expect(more).toHaveCount(0);
       // One row of tabs, not two: the old nine took ~250 of the phone's 844px.

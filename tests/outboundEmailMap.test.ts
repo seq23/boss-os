@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { FUND_SIDE_CHASSIS_SENDERS } from "../scripts/ops/notify.mjs";
 import { BUSINESSES } from "../src/worker/boss/outreach/catalog";
 import { OWNER_OK_CROSSINGS, fundCrossings } from "./helpers/fundCrossings";
+import { addressProblems, checkOtherRepos, citedIn, isScanned as mapScanned, readManifest, sends, shapeProblems, uncovered } from "../scripts/ops/lib/email-map.mjs";
 
 /**
  * docs/OUTBOUND_EMAIL_MAP.md is read by code, so it is a rule and not a wish (owner, 12 Oct 2026:
@@ -186,9 +187,14 @@ describe("the map and the side-business review are linked where people look", ()
     expect(text).toMatch(/Email the businesses send/);
     expect(text).toMatch(/same PR/);
   });
-  it("each copy starts with its source page and the repo-copy line", () => {
+  it("the map names the Email Map page as the living version, generated from the manifest (31 Oct 2026)", () => {
+    expect(MAP.split("\n")[0]).toBe("Living map: Boss OS → ☰ More → Email Map (/?tab=emails), generated from src/shared/boss/emailMap/manifest.json.");
+    expect(exists("src/shared/boss/emailMap/manifest.json")).toBe(true);
+    expect(MAP).toMatch(/every Id below is a manifest row with the same owner/);
+    expect(MAP).not.toContain("Repo copy; the page is the living version");
+  });
+  it("the side-business review starts with its source page and the repo-copy line", () => {
     for (const [file, url] of <Array<[string, string]>>[
-      [MAP_PATH, "https://claude.ai/artifact/8wsHZmD7QJEuNnZEPideCr"],
       ["docs/SIDE_BUSINESS_REVIEW.md", "https://claude.ai/artifact/2XkmYNmppidkqr4SU8xwiv"],
     ]) {
       const text = readFileSync(path.join(ROOT, file), "utf8");
@@ -421,5 +427,73 @@ describe("the 22 Oct 2026 repairs stay repaired", () => {
     const risk = readFileSync(path.join(ROOT, "scripts/ops/risk-watch.mjs"), "utf8");
     expect((risk.match(/\bsendAs\(/g) ?? []).length).toBe(1);
     expect(risk).toMatch(/if \(plan\.urgent\) \{/);
+  });
+});
+
+/**
+ * THE EMAIL MAP PAGE (owner, 31 Oct 2026: "one Email Map page inside Boss OS, all businesses").
+ * src/shared/boss/emailMap/manifest.json is the one list the page renders, every business, the fund
+ * included (her ruling: Boss OS may handle anything she wants). This fails, by name, on a file in
+ * this repo that SENDS (a transport, or a call to a helper that wraps one) with no manifest row
+ * citing it; on a cited path that is gone; on a row of this document missing from the manifest or
+ * owned by someone else there; on an address that is not a business sending address (public repo).
+ */
+describe("the Email Map page's manifest covers every sender", () => {
+  const manifest = readManifest(ROOT);
+  const owners = (JSON.parse(readFileSync(path.join(ROOT, "docs/outbound_email_owners.json"), "utf8")) as { owners: Record<string, { seat: string }> }).owners;
+  const tracked = execFileSync("git", ["ls-files"], { cwd: ROOT, encoding: "utf8" })
+    .split("\n")
+    .filter((f) => f && existsSync(path.join(ROOT, f)))
+    .map((file) => ({ file, source: readFileSync(path.join(ROOT, file), "utf8") }));
+
+  it("reads rows for every business (hard fail on zero) and every row is whole", () => {
+    expect(manifest.rows.length).toBeGreaterThan(50);
+    expect(shapeProblems(manifest)).toEqual([]);
+  });
+
+  it("names business sending addresses only (the repo is public)", () => {
+    expect(addressProblems(manifest)).toEqual([]);
+  });
+
+  it("every file in this repo that sends email is cited by a manifest row", () => {
+    const senders = tracked.filter(({ file, source }) => mapScanned(file) && sends(source));
+    expect(senders.length, "the sender scan found nothing: the patterns went stale").toBeGreaterThan(10);
+    const missing = uncovered(tracked, manifest, "boss-os");
+    expect(missing, `These files send email and no row of src/shared/boss/emailMap/manifest.json cites them:\n  ${missing.join("\n  ")}`).toEqual([]);
+  });
+
+  it("every boss-os path a row cites exists", () => {
+    const gone = [...citedIn(manifest, "boss-os")].filter((p) => !exists(p));
+    expect(gone).toEqual([]);
+  });
+
+  it("every row of this document is on the page, with the same owner", () => {
+    const ids = new Map(manifest.rows.map((r: { id: string; owner: string }) => [r.id, r.owner]));
+    const bad = inventoryRows(MAP).flatMap((r) =>
+      !ids.has(r.id) ? [`${r.id}: not in the manifest`] : ids.get(r.id) !== owners[r.id]?.seat ? [`${r.id}: owner ${ids.get(r.id)} on the page, ${owners[r.id]?.seat} in the owners file`] : []);
+    expect(inventoryRows(MAP).length).toBeGreaterThan(0);
+    expect(bad).toEqual([]);
+  });
+
+  it("the guard is not watching an empty room", () => {
+    const probe = [{ file: "scripts/ops/new-sender.mjs", source: "await sendAsEmployee('Simone', msg)" }, { file: "src/worker/boss/x.ts", source: "fetch('https://api.resend.com/emails')" }, { file: "scripts/ops/site.mjs", source: "call('/api/outreach/send', body)" }];
+    expect(uncovered(probe, manifest, "boss-os")).toEqual(probe.map((p) => p.file));
+    expect(uncovered([{ file: "tests/x.test.ts", source: "sendAsEmployee(" }], manifest, "boss-os")).toEqual([]);
+    expect(addressProblems({ rows: [{ to: "someone@gmail.com" }] })).toHaveLength(1);
+    expect(shapeProblems({ ...manifest, rows: [...manifest.rows, { ...manifest.rows[0]!, pause: "" }] }).length).toBeGreaterThan(0);
+  });
+
+  it("the page renders the manifest itself and sits in ☰ More next to Brains", () => {
+    const page = readFileSync(path.join(ROOT, "src/client/boss/pages/EmailMap.tsx"), "utf8");
+    expect(page).toContain('from "@shared/boss/emailMap/manifest.json"');
+    const shell = readFileSync(path.join(ROOT, "src/client/boss/components/Shell.tsx"), "utf8");
+    expect(shell).toMatch(/MORE_TABS[^\n]*"brains", "emails"/);
+  });
+
+  // The other repos are read where their checkouts are (her Mac); CI has only this repo.
+  // Paths only here (fast); `npm run email-map:check` also scans those repos for uncited senders.
+  const others = checkOtherRepos(manifest, ROOT, { scanSenders: false });
+  it.runIf(others.checked.length > 0)("every path a row cites in another repo exists on its default branch", () => {
+    expect(others.problems).toEqual([]);
   });
 });
