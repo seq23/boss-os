@@ -31,6 +31,9 @@ cat > "$MT_PLIST" <<MTEOF
   <key>AbandonProcessGroup</key><true/>
 </dict></plist>
 MTEOF
+# Central hours, moved to the Mac's zone before launchd reads them (the one mover; 1 Nov 2026: this
+# installer skipped it and Simone's commands ran 05:00-22:50 Central on an Eastern Mac).
+node "$REPO/scripts/ops/plist-central.mjs" "$MT_PLIST" || { echo "NAMED STOP [PLIST_TZ] could not move $MT_PLIST to this Mac's zone; not loaded." >&2; exit 1; }
 plutil -lint "$MT_PLIST" >/dev/null
 launchctl bootout "gui/$(id -u)/$MT_LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$MT_PLIST"

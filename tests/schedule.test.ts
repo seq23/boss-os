@@ -45,6 +45,18 @@ describe("the Schedule manifest", () => {
     expect(launchdProblems(m, jobs)).toEqual([]);
   });
 
+  it("every installer that writes a calendar plist moves its Central hours to the Mac's zone", () => {
+    const dir = path.join(ROOT, "scripts/ops");
+    const installers = readdirSync(dir).filter((f) => /^install-.*\.sh$/.test(f));
+    expect(installers.length).toBeGreaterThan(2);
+    const bypass = installers.filter((f) => {
+      const t = readFileSync(path.join(dir, f), "utf8");
+      return /StartCalendarInterval/.test(t) && !/plist-central\.mjs|lint_plist /.test(t);
+    });
+    // 1 Nov 2026: install-simone-commands.sh skipped the mover, so Simone ran 05:00-22:50 Central.
+    expect(bypass).toEqual([]);
+  });
+
   it("NEGATIVE: a moved plist, a missing row and a wrong row each fail", () => {
     const jobs = installerJobs(SH);
     delete jobs["com.seq.boss-repo-change"];
