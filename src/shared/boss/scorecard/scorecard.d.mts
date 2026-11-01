@@ -1,0 +1,33 @@
+// Types for scorecard.mjs (the Scorecard's rules). Rows are loosely typed on purpose: shapeProblems checks them.
+export const STATES: readonly string[];
+export const READER_IDS: readonly string[];
+export const EXEMPT_KINDS: readonly string[];
+export const FLOOR_OPS: readonly string[];
+export const DAY_MS: number;
+export function centralDay(t?: number): string;
+export function addDays(day: string, n: number): string;
+export function daysBetween(a: string, b: string): number;
+export function mondayOnOrAfter(day: string): string;
+export function isMonday(day: string): boolean;
+export function shortDate(day: string | null | undefined): string;
+export function floorDate(by: number | string, start: string | null): string | null;
+export function sqlOf(m: any): string[];
+export function shapeProblems(sc: any): string[];
+export function coverageProblems(sc: any, schedule: any): string[];
+export function pauseTargets(row: any, schedule: any): Array<{ kind: string; [k: string]: any }>;
+export const plainStop: (e: unknown) => string;
+export function noNumberWords(result: any): string;
+export function emptyRecord(): Record<string, any>;
+export function metricValue(metric: any, key: string, raw: number | null, history: any[], today: string): { value: number | null; note?: string };
+export function meets(metric: any, key: string, value: number | null, history: any[], today: string): boolean | null;
+export function isStuck(metric: any, key: string, raw: unknown, history: any[], weeks?: number): boolean;
+export function floorWords(metric: any): string;
+export function valueWords(metric: any, v: number | null): string;
+export interface Judged { id: string; state: string; note: string; next: string | null; actions: Array<{ kind: string; [k: string]: any }>; values: Record<string, any>; record: Record<string, any> }
+export function judge(a: { row: any; record?: any; reading: any; today: string; defaults?: any }): Judged;
+export function needsLook(results: any[], today: string): any[];
+export function emailSection(results: any[], rows: any[], o: { today: string; links: (row: any) => { open: string; restart?: string | null } }): { title: string; lines: Array<string | { text: string; links: Array<{ label: string; url: string }> }> };
+export function groupByBusiness(sc: any): Array<{ key: string; label: string; rows: any[] }>;
+export function trend(record: any, key?: string, weeks?: number): Array<number | null>;
+export function summaryLine(states: string[]): string;
+export function findStrays(a: { schedule: any; scorecard: any; labels?: string[]; repoFiles?: Array<{ repo: string; files: Array<{ file: string }> }> }): Array<{ key: string; name: string; where: string }>;

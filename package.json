@@ -93,6 +93,8 @@
     "meeting-prep": "node scripts/vault/vault.mjs run -- node scripts/ops/meeting-prep.mjs",
     "your-day": "node scripts/vault/vault.mjs run -- node scripts/ops/your-day.mjs",
     "pnp:photo-ask": "node scripts/vault/vault.mjs run -- node scripts/ops/pnp-photo-ask.mjs",
+    "scorecard:monday": "node scripts/vault/vault.mjs run -- node scripts/ops/scorecard-monday.mjs",
+    "scorecard:sweep": "node scripts/vault/vault.mjs run -- node scripts/ops/scorecard-sweep.mjs",
     "duty:ruling": "node scripts/vault/vault.mjs run -- node scripts/ops/duty-ruling.mjs",
     "validate:email-plain": "node scripts/validate/email-plain.mjs && node scripts/validate/email-plain.mjs --self-test",
     "kdp:covers": "node scripts/vault/vault.mjs run -- node scripts/ops/kdp-covers-submit.mjs",

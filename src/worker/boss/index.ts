@@ -70,6 +70,7 @@ import { pnpOutreach } from "./routes/pnpOutreach";
 import { t2rGroups } from "./routes/t2rGroups";
 import { brains } from "./routes/brains";
 import { validators } from "./routes/validators";
+import { scorecardRoutes } from "./routes/scorecard";
 import { runBrainsCohesion } from "./brains/store";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -254,6 +255,8 @@ app.route("/api/morning", morning);
 app.route("/api/brains", brains);
 // The validator matrix (1 Nov 2026): every validator × repo, posted by the Mac (routes/validators.ts).
 app.route("/api/validators", validators);
+// The Scorecard (1 Nov 2026): each initiative's state and history, posted by the Monday run (routes/scorecard.ts).
+app.route("/api/scorecard", scorecardRoutes);
 //
 // === end Her jobs ===
 
