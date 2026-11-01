@@ -1896,3 +1896,18 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .brain-tablewrap { overflow-x: auto; margin: 0 0 8px; }
 .brain-table { border-collapse: collapse; font-size: 14px; width: 100%; }
 .brain-table th, .brain-table td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+
+/* THE EMAIL MAP (31 Oct 2026): calm, phone first; reuses the Brains cards and expanders. */
+.email-map-filter { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--ink); }
+.email-map-filter select { flex: 1; font-family: var(--body); font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--card-2); color: var(--ink); }
+.email-map-business > summary { display: flex; flex-direction: column; gap: 2px; }
+.email-map-business-name { font-family: var(--display); font-size: 20px; color: var(--ink); }
+.email-map-count { font-size: 14px; color: var(--muted); }
+.email-map-business .brain-cards { margin-top: 8px; }
+.email-map-card { cursor: default; }
+.email-map-what { font-size: 16px; color: var(--ink); line-height: 1.4; }
+.email-map-runs { align-self: flex-start; font-size: 13px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
+.email-map-dl { display: grid; grid-template-columns: 1fr; gap: 2px; margin: 8px 0 0; font-size: 14px; }
+.email-map-dl dt { color: var(--muted); margin-top: 6px; }
+.email-map-dl dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.email-map-code { font-family: var(--mono); font-size: 12px; }

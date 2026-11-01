@@ -1,0 +1,901 @@
+{
+  "_note": "THE EMAIL MAP (owner, 31 Oct 2026: \"one Email Map page inside Boss OS, all businesses\"). The ONE list of every automated email anything of hers sends, in every business, the fund included (her ruling: Boss OS may handle anything she wants). The Email Map page renders it; docs/OUTBOUND_EMAIL_MAP.md keeps the detailed audit of the Boss OS and side-business paths, and every Id there is a row here with the same owner (tests/emailMap.test.ts). A new sending path goes here in the same PR: the test fails on a sending file in boss-os that no row cites, and `npm run email-map:check` does the same for the other repos and the Mac's launchd jobs. Public repo: business sending addresses only; you are 'You'; never a customer, LP, prospect or investor name.",
+  "businesses": [
+    { "key": "brokerage", "label": "Brokerage", "blurb": "Deals, matches and the people worth a call." },
+    { "key": "west-peek-ventures", "label": "West Peek Ventures", "blurb": "The fund, TLC and Rooms, westpeek.live: the West Peek OS team (Porter, Wynn, Parker) and Monique's LP work." },
+    { "key": "porch-and-party", "label": "Porch & Party", "blurb": "Valerie's business: her admin emails, customer emails, Camille's office outreach and the P&P Studio." },
+    { "key": "time-2-read", "label": "Time-2-Read", "blurb": "Monique's groups and institutions outreach, and the app's own emails." },
+    { "key": "industry-guides", "label": "Industry Guides / Spry", "blurb": "The guides, their lead forms and outreach, and the Spry side businesses (ApprovalPrep, the wedding checklist, A Player Mode, Creator Studios, How We Know, Kindle)." },
+    { "key": "personal", "label": "Personal", "blurb": "Boss OS to you: Simone's morning email, Spirit, Brains, errands, practice and lapse emails, meeting prep, and the team's notices." },
+    { "key": "friends", "label": "Friends' businesses & clients", "blurb": "Client properties you look after. Their own mail, listed so the map is whole." }
+  ],
+  "runs": {
+    "cloud-cron": "In the cloud, on a schedule. Your Mac can be off.",
+    "cloud-event": "In the cloud, when something happens (a form, a purchase, a tap). Your Mac can be off.",
+    "github": "On GitHub, on a schedule. Your Mac can be off.",
+    "supabase": "In the app's own cloud (Supabase). Your Mac can be off.",
+    "mac": "On your Mac. It waits while the Mac sleeps and sends when it wakes.",
+    "session": "Only while a Claude session is open.",
+    "folded": "No email of its own: its lines go into Simone's morning email.",
+    "inert": "Switched off. It looks like a sender and sends nothing.",
+    "not-email": "Not an email. Listed so nobody hunts for it."
+  },
+  "rows": [
+    {
+      "id": "brokerage-deal-finds", "business": "brokerage",
+      "what": "New deals and the matches Monique found (buy and sell on the same company), the buyer and holder hunts, and the monthly ask for your live book",
+      "sender": "Monique", "owner": "Monique",
+      "from": "Inside Simone's morning email", "to": "You",
+      "when": "Daily scan 5:30 AM; buyer and holder hunts Tuesdays 7:00 AM; the monthly nudge on the 1st; a hunt you ask for within 5 minutes",
+      "runs": "folded", "trigger": "Mac jobs com.seq.boss-capital, com.seq.boss-capital-buyers, com.seq.boss-capital-nudge and com.seq.boss-hunt-ondemand write the deals and Monique found sections",
+      "pause": "Turn off the Mac jobs: launchctl bootout gui/501/com.seq.boss-capital (and -capital-buyers, -capital-nudge, boss-hunt-ondemand)",
+      "launchd": ["com.seq.boss-capital", "com.seq.boss-capital-buyers", "com.seq.boss-capital-nudge", "com.seq.boss-hunt-ondemand"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/interest-match.mjs", "scripts/ops/ledger-hunt.mjs", "scripts/ops/buyer-hunt.mjs", "scripts/ops/interest-grid.mjs"] }]
+    },
+    {
+      "id": "people-worth-a-call", "business": "brokerage",
+      "what": "Three to five people worth a conversation this week, by name, with why each one and what to say",
+      "sender": "Monique", "owner": "Monique",
+      "from": "Monique <monique@sequoiataylor.com>", "to": "You",
+      "when": "Mondays 7:15 AM",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-people (people:recommend --send)",
+      "pause": "launchctl bootout gui/501/com.seq.boss-people",
+      "launchd": ["com.seq.boss-people"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/people-worth-a-call.mjs", "scripts/ops/notify.mjs"] }]
+    },
+
+    {
+      "id": "wpv-front-door", "business": "west-peek-ventures",
+      "what": "The front door: every email to os@joinwestpeek.com is read, filed onto a card and answered by Porter or the employee who owns it",
+      "sender": "Porter", "owner": "Porter",
+      "from": "Porter or the employee who owns the card, as name@joinwestpeek.com", "to": "The partner who wrote (you or Scooter)",
+      "when": "Within a minute of the email arriving",
+      "runs": "cloud-event", "trigger": "Cloudflare Email Routing hands os@ mail to the west-peek-os Worker; replies go out on its every-minute tick",
+      "pause": "In west-peek-os wrangler.toml set WP_OS_AI_EMAIL_PARTNERS = \"off\", then npm run deploy:production",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/effects/inboundEmail.ts", "src/worker/services/emailRouting.ts", "src/worker/services/execEmail.ts"] }]
+    },
+    {
+      "id": "wpv-partner-mail", "business": "west-peek-ventures",
+      "what": "Every West Peek OS email to the partners: previews to approve, finished work, \"Porter, tell Scooter\" notes, hand-offs, Walker's monthly note",
+      "sender": "Porter (and the employee who did the work)", "owner": "Porter",
+      "from": "name@joinwestpeek.com (\"Name · West Peek\"); system mail from os@westpeek.ventures", "to": "You and Scooter only (code-enforced)",
+      "when": "As work finishes; the Worker ticks every minute",
+      "runs": "cloud-cron", "trigger": "west-peek-os Worker cron (every minute) and card actions",
+      "pause": "In west-peek-os wrangler.toml set WP_OS_EMAIL_SEND to anything but \"enabled\" (stops every West Peek send), then npm run deploy:production",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/services/execEmail.ts", "src/worker/services/previewApproval.ts", "src/worker/services/handOff.ts", "src/worker/services/deliverables.ts", "src/worker/effects/emailTransport.ts", "src/worker/effects/resendClient.ts", "src/worker/effects/cloudflareEmailClient.ts"] }]
+    },
+    {
+      "id": "wpv-wynn-brand-emails", "business": "west-peek-ventures",
+      "what": "TLC brand emails: Wynn's pitches and follow-ups to brands, signed as you, sent only after you approve each one",
+      "sender": "Wynn", "owner": "Wynn",
+      "from": "Your fund mailbox, through your own Gmail", "to": "Brands (sponsors for the Learning Club and Rooms)",
+      "when": "Approved emails go every half hour",
+      "runs": "cloud-cron", "trigger": "An approved email.send on its card; the west-peek-os Worker sends it on its drip pass",
+      "pause": "Do not approve; or in west-peek-os wrangler.toml set WP_OS_EMAIL_SEND off and deploy",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/effects/executor.ts", "src/worker/services/googleConnect.ts", "src/worker/effects/googleClient.ts"] }]
+    },
+    {
+      "id": "wpv-wynn-weekly-approval", "business": "west-peek-ventures",
+      "what": "One email a week with every brand draft waiting for you, numbered by club; reply \"approve all\", \"approve 1, 3\", \"skip 2\" or \"change 2: …\"",
+      "sender": "Wynn", "owner": "Wynn",
+      "from": "Wynn <wynn@joinwestpeek.com>", "to": "You",
+      "when": "Weekly, once the Monday brand batch has finished",
+      "runs": "cloud-cron", "trigger": "west-peek-os Worker drip pass after the week's brand batch card finishes",
+      "pause": "In west-peek-os wrangler.toml set WP_OS_AI_EMAIL_PARTNERS = \"off\", then deploy",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/services/tlcDraftNotice.ts", "src/worker/services/learningClub.ts"] }]
+    },
+    {
+      "id": "wpv-wynn-catch-up", "business": "west-peek-ventures",
+      "what": "Catch-up approval email: brand drafts that waited a day without being in an email, all in one list",
+      "sender": "Wynn", "owner": "Wynn",
+      "from": "Wynn <wynn@joinwestpeek.com>", "to": "You",
+      "when": "Only when a draft has waited 24 hours; at most one a day",
+      "runs": "cloud-cron", "trigger": "west-peek-os Worker drip pass (sendCatchUpNotice)",
+      "pause": "Answer the drafts; or WP_OS_AI_EMAIL_PARTNERS = \"off\" and deploy",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/services/tlcDraftNotice.ts"] }]
+    },
+    {
+      "id": "wpv-wynn-brand-reply", "business": "west-peek-ventures",
+      "what": "A brand replied: Wynn's answer for you to approve before it goes",
+      "sender": "Wynn", "owner": "Wynn",
+      "from": "Wynn <wynn@joinwestpeek.com>", "to": "You",
+      "when": "When a brand replies",
+      "runs": "cloud-event", "trigger": "A brand's reply stops the drip; the Worker drafts the answer and asks you",
+      "pause": "WP_OS_AI_EMAIL_PARTNERS = \"off\" and deploy",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/services/tlcBrandReply.ts"] }]
+    },
+    {
+      "id": "wpv-wynn-roundup", "business": "west-peek-ventures",
+      "what": "Monday TLC roundup: what waits on you, anything stuck, each club's dates and go/no-go, brands by stage, cash and in-kind committed",
+      "sender": "Wynn", "owner": "Wynn",
+      "from": "Wynn <wynn@joinwestpeek.com>", "to": "You only (never Scooter)",
+      "when": "Mondays 9:00 AM",
+      "runs": "cloud-cron", "trigger": "west-peek-os Worker tick, Mondays from 14:00 UTC",
+      "pause": "WP_OS_AI_EMAIL_PARTNERS = \"off\" and deploy",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/services/tlcRoundup.ts"] }]
+    },
+    {
+      "id": "wpv-club-pace", "business": "west-peek-ventures",
+      "what": "Club pace and go/no-go: a club behind pace (60 and 42 days out) or at its go/no-go (21 and 14 days out), and a brand's counter for your yes, no or counter",
+      "sender": "Wynn", "owner": "Wynn",
+      "from": "Wynn <wynn@joinwestpeek.com>", "to": "You (both partners for a counter)",
+      "when": "Only at those dates, or when a brand counters",
+      "runs": "cloud-cron", "trigger": "west-peek-os Worker tick (learningClub)",
+      "pause": "WP_OS_AI_EMAIL_PARTNERS = \"off\" and deploy",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/services/learningClub.ts"] }]
+    },
+    {
+      "id": "wpv-parker-rooms", "business": "west-peek-ventures",
+      "what": "Parker's Room proposal with a one-sheet per pick, next Learning Club topics and host options",
+      "sender": "Parker", "owner": "Parker",
+      "from": "Parker <parker@joinwestpeek.com>", "to": "You and Scooter",
+      "when": "Monthly (topics on the 1st) and when a Room packet is built",
+      "runs": "cloud-cron", "trigger": "west-peek-os Worker hourly Rooms job and Parker's card",
+      "pause": "WP_OS_AI_EMAIL_PARTNERS = \"off\" and deploy",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/services/roomPacket.ts", "src/worker/services/learningClub.ts"] }]
+    },
+    {
+      "id": "wpv-approved-outside-email", "business": "west-peek-ventures",
+      "what": "Any other outside email on an approved card: your own words sent as you, or an employee's signed with its own address",
+      "sender": "Porter (gatekeeper)", "owner": "Porter",
+      "from": "You through your own Gmail, or name@joinwestpeek.com", "to": "The card's recipient (only if the card is on your Outside email list)",
+      "when": "When you approve it",
+      "runs": "cloud-event", "trigger": "An approved email.send effect; nothing goes without its approval",
+      "pause": "Set WP_OS_OUTSIDE_EMAIL_BREAK_GLASS = \"off-hard\" in west-peek-os wrangler.toml and deploy; or revoke Gmail send in Settings",
+      "code": [{ "repo": "west-peek-os", "paths": ["src/worker/effects/executor.ts", "src/shared/policy/outsideEmail.ts"] }]
+    },
+    {
+      "id": "wpv-partner-tail", "business": "west-peek-ventures",
+      "what": "The partner tail: a fix report for each new email Scooter sends os@, and a Monday digest (ends 4 Jan 2027)",
+      "sender": "Porter", "owner": "Porter",
+      "from": "os@westpeek.ventures", "to": "You (your fund inbox)",
+      "when": "Checks every 15 minutes; digest Mondays 7:00 AM",
+      "runs": "mac", "trigger": "Mac jobs com.seq.scooter-watch and com.seq.scooter-watch-digest",
+      "pause": "launchctl bootout gui/501/com.seq.scooter-watch (and com.seq.scooter-watch-digest)",
+      "launchd": ["com.seq.scooter-watch", "com.seq.scooter-watch-digest"],
+      "code": [{ "repo": "~/bin", "paths": ["scooter-watch.sh", "scooter-watch-report.mjs", "scooter-watch-digest.sh"] }]
+    },
+    {
+      "id": "monique-prospects", "business": "west-peek-ventures",
+      "what": "Monique's prospect emails to the people you approved: one first email and at most two follow-ups, then never again",
+      "sender": "Monique", "owner": "Monique",
+      "from": "Your fund outreach mailbox (through the delegation you OK'd)", "to": "Prospects you approved, at most 20 new a day",
+      "when": "Daily 9:30 AM, once you approved the template",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-prospects (lp:prospects --live)",
+      "pause": "Outreach kill switch on Team → Outreach, or launchctl bootout gui/501/com.seq.boss-prospects",
+      "launchd": ["com.seq.boss-prospects"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp-prospects.mjs", "src/shared/boss/lp/plan.mjs"] }]
+    },
+    {
+      "id": "her-tap-send", "business": "west-peek-ventures",
+      "what": "A held LP reply, sent the moment you tap \"Send as is\" in the morning email; a picked time adds the calendar invite",
+      "sender": "Monique", "owner": "Monique",
+      "from": "The address the person wrote to (their own thread)", "to": "The person who replied",
+      "when": "Only when you tap",
+      "runs": "cloud-event", "trigger": "Your one-tap page (/tap/…) in Boss OS",
+      "pause": "Skip it in the email; nothing sends without your tap",
+      "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/routes/lpTap.ts", "src/worker/boss/lp/schedule.ts", "src/worker/boss/commands/google.ts"] }]
+    },
+    {
+      "id": "wpv-lp-outcomes", "business": "west-peek-ventures",
+      "what": "What happened to every LP email: opt-outs first, then replies and bounces",
+      "sender": "Monique", "owner": "Monique",
+      "from": "Monique <monique@sequoiataylor.com>", "to": "You",
+      "when": "Tuesdays 7:15 AM",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-scooter-sheet (lp:sync then lp:outcomes --commit)",
+      "pause": "launchctl bootout gui/501/com.seq.boss-scooter-sheet",
+      "launchd": ["com.seq.boss-scooter-sheet"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp-outcomes.mjs", "scripts/ops/notify.mjs"] }]
+    },
+    {
+      "id": "wpv-lp-morning-lines", "business": "west-peek-ventures",
+      "what": "LP replies to answer, people to catch up with, and the 8Raise line when something is wrong",
+      "sender": "Monique", "owner": "Monique",
+      "from": "Inside Simone's morning email", "to": "You",
+      "when": "Daily (LP run 6:15 AM, catch-ups 6:20 AM, 8Raise 6:25 AM)",
+      "runs": "folded", "trigger": "Mac jobs com.seq.boss-lp, com.seq.boss-catchups, com.seq.boss-eightraise write morning sections",
+      "pause": "launchctl bootout gui/501/com.seq.boss-lp (and -catchups, -eightraise)",
+      "launchd": ["com.seq.boss-lp", "com.seq.boss-catchups", "com.seq.boss-eightraise"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/lp-daily.mjs", "scripts/ops/lp-catchups.mjs", "scripts/ops/lp-eightraise.mjs"] }]
+    },
+    {
+      "id": "wpv-site-lead", "business": "west-peek-ventures",
+      "what": "A joinwestpeek.com site-form lead",
+      "sender": "The site (no employee)", "owner": "Porter",
+      "from": "The site's EMAIL_FROM setting", "to": "A managing partner, and the network sheet",
+      "when": "When someone submits the form",
+      "runs": "cloud-event", "trigger": "Pages Function /api/lead on join-west-peek-main",
+      "pause": "Unset EMAIL_FROM on the join-west-peek-main Pages project",
+      "code": [{ "repo": "join-west-peek-main", "paths": ["functions/api/lead.js"] }]
+    },
+    {
+      "id": "wpv-topbarz-code", "business": "west-peek-ventures",
+      "what": "Top Barz vote verification code",
+      "sender": "The site (no employee)", "owner": "Porter",
+      "from": "Top Barz Voting <topbarz@joinwestpeek.com>", "to": "The voter",
+      "when": "When someone votes",
+      "runs": "cloud-event", "trigger": "Pages Function on vote",
+      "pause": "Remove RESEND_API_KEY from the topbarz-voting project",
+      "code": [{ "repo": "topbarz-voting", "paths": ["functions/_lib/config.js"] }]
+    },
+    {
+      "id": "wpv-westpeek-live", "business": "west-peek-ventures",
+      "what": "westpeek.live sign-in links and event-request emails (plus a by-hand delivery probe)",
+      "sender": "The site (no employee)", "owner": "Porter",
+      "from": "notifications@events.westpeek.live", "to": "The person signing in or asking for an event",
+      "when": "On sign-in or an event request",
+      "runs": "cloud-event", "trigger": "westpeek-live server actions",
+      "pause": "Remove its RESEND_API_KEY",
+      "code": [{ "repo": "westpeek-live", "paths": ["services/email/ResendEmailProvider.ts", "scripts/tier4_real_provider_journey_probe.mjs"] }]
+    },
+    {
+      "id": "wpv-network-introductions", "business": "west-peek-ventures",
+      "what": "Network OS double-opt-in introductions (retired 27 Sep 2026)",
+      "sender": "Nobody now", "owner": "Porter",
+      "from": "The Gmail account behind its token", "to": "The introduced contacts",
+      "when": "Never: nothing calls it",
+      "runs": "inert", "trigger": "POST /api/introductions/send, called by no schedule",
+      "pause": "Already off: the delegation excludes Gmail send",
+      "code": [{ "repo": "west-peek-network-os", "paths": ["functions/api/introductions/send.ts"] }]
+    },
+
+    {
+      "id": "pnp-corporate-outreach", "business": "porch-and-party",
+      "what": "Camille's office Christmas outreach to Memphis offices: one email and one follow-up, plain text; stops at 4 bookings or 5 Dec",
+      "sender": "Camille", "owner": "Camille",
+      "from": "Porch & Party 901 <sequoia@porchandparty901.com>", "to": "Memphis offices (published addresses, checked first)",
+      "when": "Weekdays 10:20 AM",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-pnp-outreach (pnp:outreach --live) asks the Porch & Party site to send",
+      "pause": "launchctl bootout gui/501/com.seq.boss-pnp-outreach",
+      "launchd": ["com.seq.boss-pnp-outreach"],
+      "code": [
+        { "repo": "boss-os", "paths": ["scripts/ops/pnp-corporate-outreach.mjs", "src/shared/boss/pnp/outreach.mjs"] },
+        { "repo": "p-n-p", "paths": ["functions/_lib/outreach.mjs"] }
+      ]
+    },
+    {
+      "id": "pnp-marketplace-report", "business": "porch-and-party",
+      "what": "Marketplace listings: an email only when Camille could not finish the day's listing run (what happened, what she did, status)",
+      "sender": "Camille", "owner": "Camille",
+      "from": "Camille <camille@sequoiataylor.com>", "to": "You",
+      "when": "Daily 1:40 PM, only on a failed run",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-fb-renew (~/bin/pnp-listings.sh)",
+      "pause": "launchctl bootout gui/501/com.seq.boss-fb-renew",
+      "launchd": ["com.seq.boss-fb-renew"],
+      "code": [{ "repo": "~/bin", "paths": ["pnp-listings.sh"] }]
+    },
+    {
+      "id": "pnp-valerie-todo", "business": "porch-and-party",
+      "what": "Valerie's 7 AM to-do; on Mondays the same email carries \"Your week\"",
+      "sender": "Porch & Party (its own system)", "owner": "Danielle",
+      "from": "Porch & Party <hello@porchandparty901.com>", "to": "Valerie",
+      "when": "Daily 7:00 AM",
+      "runs": "cloud-cron", "trigger": "pnp-mailer Worker, hourly; sends on the 7 AM run",
+      "pause": "Unset the to-do address in /admin Settings, or remove the cron in workers/pnp-mailer/wrangler.toml",
+      "code": [{ "repo": "p-n-p", "paths": ["workers/pnp-mailer/src/index.js", "functions/_lib/todo-email.mjs"] }]
+    },
+    {
+      "id": "pnp-new-request", "business": "porch-and-party",
+      "what": "New request notice when a customer fills in the request form",
+      "sender": "Porch & Party (its own system)", "owner": "Danielle",
+      "from": "Porch & Party <hello@porchandparty901.com>", "to": "Valerie",
+      "when": "When a request arrives",
+      "runs": "cloud-event", "trigger": "The request form (Pages Function)",
+      "pause": "Unset the owner address in /admin Settings",
+      "code": [{ "repo": "p-n-p", "paths": ["functions/_lib/owner-new-request.mjs", "functions/_lib/request-submit.mjs"] }]
+    },
+    {
+      "id": "pnp-invoices", "business": "porch-and-party",
+      "what": "Invoices to customers with a copy to Valerie; the year-end summary on request",
+      "sender": "Porch & Party (Valerie presses Send)", "owner": "Danielle",
+      "from": "Porch & Party <hello@porchandparty901.com>", "to": "The customer; Valerie (copy)",
+      "when": "When Valerie presses Send in /admin",
+      "runs": "cloud-event", "trigger": "Send on an invoice in /admin",
+      "pause": "Do not press Send",
+      "code": [{ "repo": "p-n-p", "paths": ["functions/_lib/email.mjs", "functions/_lib/admin.mjs", "functions/_lib/admin-money.mjs"] }]
+    },
+    {
+      "id": "pnp-hold-reminders", "business": "porch-and-party",
+      "what": "Reminder to a customer whose unpaid rental hold is about to end (once per end time)",
+      "sender": "Porch & Party (its own system)", "owner": "Danielle",
+      "from": "Porch & Party <hello@porchandparty901.com>", "to": "The customer",
+      "when": "Checked every hour",
+      "runs": "cloud-cron", "trigger": "pnp-mailer Worker, hourly",
+      "pause": "Set the reminder window to 0 in /admin Settings",
+      "code": [{ "repo": "p-n-p", "paths": ["workers/pnp-mailer/src/index.js", "functions/_lib/customer-messages.mjs", "functions/_lib/holds.mjs"] }]
+    },
+    {
+      "id": "pnp-customer-reminders", "business": "porch-and-party",
+      "what": "Day-before booking reminders, and thank-yous for jobs marked done",
+      "sender": "Porch & Party (its own system)", "owner": "Danielle",
+      "from": "Porch & Party <hello@porchandparty901.com>", "to": "The customer",
+      "when": "Daily 10:00 AM",
+      "runs": "cloud-cron", "trigger": "pnp-mailer Worker, the 10 AM run",
+      "pause": "Remove the cron in workers/pnp-mailer/wrangler.toml",
+      "code": [{ "repo": "p-n-p", "paths": ["functions/_lib/reminders.mjs", "functions/_lib/customer-messages.mjs"] }]
+    },
+    {
+      "id": "pnp-marketplace-renew", "business": "porch-and-party",
+      "what": "Facebook Marketplace \"Renew listing\" reminder",
+      "sender": "Porch & Party (its own system)", "owner": "Danielle",
+      "from": "Porch & Party <hello@porchandparty901.com>", "to": "You",
+      "when": "Every 7th day, 9:00 AM",
+      "runs": "cloud-cron", "trigger": "pnp-mailer Worker",
+      "pause": "Clear the renew start date in /admin Settings",
+      "code": [{ "repo": "p-n-p", "paths": ["functions/_lib/marketplace-renew.mjs"] }]
+    },
+    {
+      "id": "pnp-studio-mail", "business": "porch-and-party",
+      "what": "P&P Studio: sign-in codes, brief ready, clips ready, the weekly recap and posting problems",
+      "sender": "P&P Studio (its own system)", "owner": "Danielle",
+      "from": "The studio's sender (Creator Studios)", "to": "The studio's owner",
+      "when": "Hourly checks, a 7:30 AM brief, Monday recap",
+      "runs": "cloud-cron", "trigger": "creator-studios Worker for pnpstudio.spryexecutiveos.com (the sample1studio deploy)",
+      "pause": "Remove the studio's RESEND_API_KEY secret (sends are skipped) or its crons",
+      "code": [{ "repo": "creator-studios", "paths": ["worker/services/email.ts", "wrangler.jsonc"] }]
+    },
+
+    {
+      "id": "t2r-groups-outreach", "business": "time-2-read",
+      "what": "Monique's emails to homeschool pods, co-ops, microschools, libraries and programs: a free 15-day code each, one follow-up at most",
+      "sender": "Monique", "owner": "Monique",
+      "from": "st@time-2-read.com", "to": "Groups and institutions (published addresses, checked first)",
+      "when": "Up to 10 new groups a weekday; the Mac imports weekdays 8:15 AM, the cloud sends hourly",
+      "runs": "cloud-cron", "trigger": "boss-os Worker hourly outreach tick (business time2read_groups); Mac job com.seq.boss-t2r-groups",
+      "pause": "Outreach kill switch on Team → Outreach, or pause the time2read_groups business there",
+      "launchd": ["com.seq.boss-t2r-groups"],
+      "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/outreach/groups.ts", "src/worker/boss/outreach/engine.ts", "scripts/ops/t2r-groups.mjs"] }]
+    },
+    {
+      "id": "t2r-app-auth", "business": "time-2-read",
+      "what": "App sign-in and account emails",
+      "sender": "The app (no employee)", "owner": "Danielle",
+      "from": "Time-2-Read <noreply@time2read.com>", "to": "The user",
+      "when": "On sign-up, sign-in or a password reset",
+      "runs": "supabase", "trigger": "Supabase auth hook (send-custom-auth-email)",
+      "pause": "Turn off the custom auth email hook in Supabase",
+      "code": [{ "repo": "dailystory", "paths": ["supabase/functions/send-custom-auth-email/index.ts"] }]
+    },
+    {
+      "id": "t2r-app-parents", "business": "time-2-read",
+      "what": "Parent emails: consent requests, privacy and safety alerts about a child's content, activity alerts",
+      "sender": "The app (no employee)", "owner": "Danielle",
+      "from": "Time2Read <noreply@time2read.app>; Time2Read Safety <safety@time-2-read.com>", "to": "The parent",
+      "when": "When a child signs up or something needs a parent",
+      "runs": "supabase", "trigger": "Supabase functions verify-parental-consent, send-coppa-notification, send-parental-notification, notification-service",
+      "pause": "Remove the function's RESEND_API_KEY secret in Supabase",
+      "code": [{ "repo": "dailystory", "paths": ["supabase/functions/verify-parental-consent/index.ts", "supabase/functions/send-coppa-notification/index.ts", "supabase/functions/send-parental-notification/index.ts", "supabase/functions/notification-service/index.ts"] }]
+    },
+    {
+      "id": "t2r-app-feedback", "business": "time-2-read",
+      "what": "App feedback: to the team inbox, with a copy to the user who sent it",
+      "sender": "The app (no employee)", "owner": "Danielle",
+      "from": "The app's feedback sender", "to": "The team inbox; the user",
+      "when": "When someone sends feedback",
+      "runs": "supabase", "trigger": "Supabase function send-feedback-notification",
+      "pause": "Remove its RESEND_API_KEY secret in Supabase",
+      "code": [{ "repo": "dailystory", "paths": ["supabase/functions/send-feedback-notification/index.ts"] }]
+    },
+    {
+      "id": "t2r-app-admin-reports", "business": "time-2-read",
+      "what": "App cost report and traffic alerts",
+      "sender": "The app (no employee)", "owner": "Danielle",
+      "from": "Time2Read Reports / Alerts (Resend's test sender)", "to": "The app's admin address",
+      "when": "On the app's schedule, and when traffic jumps or drops",
+      "runs": "supabase", "trigger": "Supabase functions cost-report and traffic-alert",
+      "pause": "Remove their RESEND_API_KEY secret in Supabase",
+      "code": [{ "repo": "dailystory", "paths": ["supabase/functions/cost-report/index.ts", "supabase/functions/traffic-alert/index.ts"] }]
+    },
+    {
+      "id": "t2r-app-breach-notice", "business": "time-2-read",
+      "what": "Security notice to users if there is ever a data breach",
+      "sender": "The app (no employee)", "owner": "Danielle",
+      "from": "Time2Read Security <privacy@time2read.com>", "to": "Affected users",
+      "when": "Only if someone runs it",
+      "runs": "supabase", "trigger": "Supabase function notify-data-breach, by hand only",
+      "pause": "Nothing runs it on a schedule",
+      "code": [{ "repo": "dailystory", "paths": ["supabase/functions/notify-data-breach/index.ts"] }]
+    },
+    {
+      "id": "hgoml-app-mail", "business": "time-2-read",
+      "what": "heygetonmylevel (the subscriber bonus): feedback, cost report and traffic alerts",
+      "sender": "The app (no employee)", "owner": "Danielle",
+      "from": "The app's senders", "to": "The team inbox; the user for feedback",
+      "when": "On feedback, and on the app's schedule",
+      "runs": "supabase", "trigger": "Supabase functions send-feedback, cost-report, traffic-alert",
+      "pause": "Remove their RESEND_API_KEY secret in Supabase",
+      "code": [{ "repo": "heygetonmylevel", "paths": ["supabase/functions/send-feedback/index.ts", "supabase/functions/cost-report/index.ts", "supabase/functions/traffic-alert/index.ts"] }]
+    },
+
+    {
+      "id": "monique-outreach", "business": "industry-guides",
+      "what": "Monique's outreach to businesses for the guides and the side businesses (A Player Mode, ApprovalPrep, the wedding checklist, Time-2-Read): first email, day 4, day 7, then never again",
+      "sender": "Monique", "owner": "Monique",
+      "from": "hello@theindustryguides.com for every guide; hello@aplayermode.com, hello@approvalprep.com, hello@weddingchecklistpdf.com, st@time-2-read.com", "to": "Prospect businesses (about 10 a day per site)",
+      "when": "Hourly in the sending window",
+      "runs": "cloud-cron", "trigger": "boss-os Worker hourly outreach tick",
+      "pause": "Team → Outreach: kill switch, or sending off; per business there too. A domain pauses itself over 3% bounces",
+      "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/outreach/engine.ts", "src/worker/boss/outreach/gmail.ts", "src/worker/boss/outreach/compose.ts", "src/worker/boss/outreach/catalog.ts"] }]
+    },
+    {
+      "id": "memphis-senior-outreach", "business": "industry-guides",
+      "what": "Monique's outreach to senior living communities for Memphis Senior Care Homes",
+      "sender": "Monique", "owner": "Monique",
+      "from": "hello@theindustryguides.com", "to": "Assisted living and memory care communities around Memphis",
+      "when": "Hourly in the sending window, once the guides' sender is live",
+      "runs": "cloud-cron", "trigger": "boss-os Worker hourly outreach tick",
+      "pause": "Team → Outreach, the memphisseniorcarehomes business",
+      "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/outreach/engine.ts", "src/worker/boss/outreach/seat.ts"] }]
+    },
+    {
+      "id": "senior-lead-notification", "business": "industry-guides",
+      "what": "Memphis Senior Care Homes: a new family lead",
+      "sender": "The site (no employee)", "owner": "Camille",
+      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "You",
+      "when": "When a family submits the form",
+      "runs": "cloud-event", "trigger": "local-guides-generator senior Pages Functions",
+      "pause": "Remove RESEND_API_KEY on the senior-living Pages project",
+      "code": [{ "repo": "local-guides-generator", "paths": ["lib/senior/email.mjs"] }]
+    },
+    {
+      "id": "senior-facility-teaser", "business": "industry-guides",
+      "what": "Memphis Senior Care Homes: a no-names teaser to communities that fit a family",
+      "sender": "The site (no employee)", "owner": "Camille",
+      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "Matching communities",
+      "when": "On a new lead",
+      "runs": "cloud-event", "trigger": "local-guides-generator senior Pages Functions",
+      "pause": "Remove RESEND_API_KEY on the senior-living Pages project",
+      "code": [{ "repo": "local-guides-generator", "paths": ["lib/senior/email.mjs"] }]
+    },
+    {
+      "id": "senior-facility-release", "business": "industry-guides",
+      "what": "Memphis Senior Care Homes: the family's details to a community that accepted",
+      "sender": "The site (no employee)", "owner": "Camille",
+      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "The accepting community",
+      "when": "When a community accepts",
+      "runs": "cloud-event", "trigger": "local-guides-generator senior Pages Functions",
+      "pause": "Remove RESEND_API_KEY on the senior-living Pages project",
+      "code": [{ "repo": "local-guides-generator", "paths": ["lib/senior/email.mjs"] }]
+    },
+    {
+      "id": "senior-pass-notice", "business": "industry-guides",
+      "what": "Memphis Senior Care Homes: the family went elsewhere or the round filled",
+      "sender": "The site (no employee)", "owner": "Camille",
+      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "Communities that passed or missed the round",
+      "when": "When the round closes",
+      "runs": "cloud-event", "trigger": "local-guides-generator senior Pages Functions",
+      "pause": "Remove RESEND_API_KEY on the senior-living Pages project",
+      "code": [{ "repo": "local-guides-generator", "paths": ["lib/senior/email.mjs"] }]
+    },
+    {
+      "id": "senior-family-followups", "business": "industry-guides",
+      "what": "Memphis Senior Care Homes: 30, 60 and 90-day follow-ups to the family",
+      "sender": "The site (no employee)", "owner": "Camille",
+      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "The family who asked for help",
+      "when": "30, 60 and 90 days after the lead",
+      "runs": "cloud-event", "trigger": "local-guides-generator senior Pages Functions",
+      "pause": "Remove RESEND_API_KEY on the senior-living Pages project",
+      "code": [{ "repo": "local-guides-generator", "paths": ["lib/senior/email.mjs"] }]
+    },
+    {
+      "id": "guides-lead-notification", "business": "industry-guides",
+      "what": "A visitor asked for help on one of the five guides",
+      "sender": "The site (no employee)", "owner": "Camille",
+      "from": "The guide's EMAIL_FROM setting", "to": "The guide's lead list",
+      "when": "When someone submits request-assistance",
+      "runs": "cloud-event", "trigger": "Pages Function /api/request-assistance",
+      "pause": "Remove RESEND_API_KEY or EMAIL_FROM on the guide's Pages project",
+      "code": [{ "repo": "local-guides-generator", "paths": ["functions/api/request-assistance.js"] }]
+    },
+    {
+      "id": "industryguides-lead-notification", "business": "industry-guides",
+      "what": "A visitor asked for help on theindustryguides.com (no page posts to it today)",
+      "sender": "The site (no employee)", "owner": "Camille",
+      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "The hub's lead list",
+      "when": "When someone submits request-assistance",
+      "runs": "cloud-event", "trigger": "Pages Function /api/request-assistance",
+      "pause": "Remove RESEND_API_KEY on the local-guides-citation-velocity Pages project",
+      "code": [{ "repo": "local-guides-citation-velocity", "paths": ["functions/api/request-assistance.js"] }]
+    },
+    {
+      "id": "lgcv-search-outcomes-weekly", "business": "industry-guides",
+      "what": "Weekly search report for every portfolio site (red, watch, green)",
+      "sender": "The Industry Guides (no employee)", "owner": "Camille",
+      "from": "The Industry Guides <hello@theindustryguides.com>", "to": "You",
+      "when": "Mondays 8:00 AM",
+      "runs": "github", "trigger": "GitHub Action search-outcomes-weekly.yml",
+      "pause": "gh workflow disable search-outcomes-weekly.yml -R seq23/local-guides-citation-velocity",
+      "code": [{ "repo": "local-guides-citation-velocity", "paths": [".github/workflows/search-outcomes-weekly.yml", "scripts/search_console/search_outcomes_weekly.py"] }]
+    },
+    {
+      "id": "spry-weekly-outcomes", "business": "industry-guides",
+      "what": "Weekly search outcome report for A Player Mode and the Spry Labs site",
+      "sender": "The site (no employee)", "owner": "Camille",
+      "from": "The repo's report sender setting", "to": "The report address set on the repo",
+      "when": "Mondays 8:00 AM",
+      "runs": "github", "trigger": "GitHub Action weekly-outcome-report.yml in each repo",
+      "pause": "gh workflow disable weekly-outcome-report.yml in that repo",
+      "code": [
+        { "repo": "aplayer-mode", "paths": [".github/workflows/weekly-outcome-report.yml"] },
+        { "repo": "sprylabs-hpc-site", "paths": [".github/scripts/weekly_outcome_notify.mjs"] }
+      ]
+    },
+    {
+      "id": "approvalprep-download-email", "business": "industry-guides",
+      "what": "ApprovalPrep download link after a purchase",
+      "sender": "The site (no employee)", "owner": "Danielle",
+      "from": "ApprovalPrep <hello@approvalprep.com>", "to": "The buyer",
+      "when": "On a purchase or a resend request",
+      "runs": "cloud-event", "trigger": "Pages Function /api/resend-download-email",
+      "pause": "Remove RESEND_API_KEY from the approvalprep Pages project",
+      "code": [{ "repo": "approvalprep", "paths": ["functions/api/resend-download-email.js"] }]
+    },
+    {
+      "id": "approvalprep-notification-dispatch", "business": "industry-guides",
+      "what": "ApprovalPrep weekly notification dispatch (records only, sends nothing)",
+      "sender": "Nobody", "owner": "Danielle",
+      "from": "None", "to": "None",
+      "when": "Fridays, dry run",
+      "runs": "inert", "trigger": "GitHub Action notification-dispatch.yml",
+      "pause": "Already sends nothing",
+      "code": [{ "repo": "approvalprep", "paths": ["scripts/notifications/send-notifications.mjs"] }]
+    },
+    {
+      "id": "wedding-delivery-email", "business": "industry-guides",
+      "what": "Wedding checklist order delivery (the $9 PDF and $39 bundle), retries, and an alert to you if a delivery fails",
+      "sender": "The site (no employee)", "owner": "Danielle",
+      "from": "Dream Wedding Builder <orders@mail.weddingchecklistpdf.com>", "to": "The buyer; you for a failed delivery",
+      "when": "On purchase; failed sends retried hourly",
+      "runs": "cloud-event", "trigger": "Stripe webhook, hourly retry cron, and the admin Resend button",
+      "pause": "Remove RESEND_API_KEY from the Worker",
+      "code": [{ "repo": "dream-wedding-builder", "paths": ["lib/delivery-email.ts", "lib/delivery-alert.ts", "lib/delivery-retry.ts"] }]
+    },
+    {
+      "id": "creator-studios-mail", "business": "industry-guides",
+      "what": "Creator Studios: sign-in codes, brief ready, clips ready, weekly recap, posting problems",
+      "sender": "The studio (no employee)", "owner": "Danielle",
+      "from": "The studio's sender", "to": "The studio's owner",
+      "when": "Hourly checks, a 7:30 AM brief, Monday recap",
+      "runs": "cloud-cron", "trigger": "creator-studios Worker crons per studio",
+      "pause": "Remove the studio's RESEND_API_KEY secret, or its crons",
+      "code": [{ "repo": "creator-studios", "paths": ["worker/services/email.ts"] }]
+    },
+    {
+      "id": "aplayer-mode-user-actions", "business": "industry-guides",
+      "what": "A Player Mode: emails a user approved in the app, sent from their own Gmail",
+      "sender": "The user", "owner": "Danielle",
+      "from": "The user's own Gmail", "to": "Whoever the user wrote to",
+      "when": "When the user approves",
+      "runs": "cloud-cron", "trigger": "Worker every 15 minutes + the user's approval",
+      "pause": "Disable the email action type in the product",
+      "code": [{ "repo": "aplayer-mode", "paths": ["services/api/src/actionEngine.ts"] }]
+    },
+    {
+      "id": "youtube-comment-watch", "business": "industry-guides",
+      "what": "How We Know: new YouTube comments worth a reply",
+      "sender": "Monique", "owner": "Monique",
+      "from": "Monique <monique@sequoiataylor.com>", "to": "You",
+      "when": "Daily 2:05 PM and 7:05 PM",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-comment-watch",
+      "pause": "launchctl bootout gui/501/com.seq.boss-comment-watch",
+      "launchd": ["com.seq.boss-comment-watch"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/youtube-comment-watch.mjs"] }]
+    },
+    {
+      "id": "hwk-loop-stops", "business": "industry-guides",
+      "what": "How We Know: \"needs you\" stops, as GitHub issues GitHub emails you",
+      "sender": "GitHub", "owner": "Monique",
+      "from": "notifications@github.com", "to": "You",
+      "when": "When a loop stage stops",
+      "runs": "github", "trigger": "how-we-know loop stages and its Mac batch",
+      "pause": "Unwatch seq23/how-we-know, or disable the stage",
+      "code": [{ "repo": "how-we-know", "paths": ["bin/loop-stage.sh", "loop/mac_batch_stop.py"] }]
+    },
+    {
+      "id": "hwk-sunday-digest", "business": "industry-guides",
+      "what": "How We Know: Sunday digest issue",
+      "sender": "GitHub", "owner": "Monique",
+      "from": "notifications@github.com", "to": "You",
+      "when": "Sundays 11:00 AM",
+      "runs": "github", "trigger": "GitHub Action loop-sun-digest.yml",
+      "pause": "gh workflow disable loop-sun-digest.yml -R seq23/how-we-know",
+      "code": [{ "repo": "how-we-know", "paths": [".github/workflows/loop-sun-digest.yml"] }]
+    },
+    {
+      "id": "hwk-monthly-review", "business": "industry-guides",
+      "what": "How We Know: monthly review issue",
+      "sender": "GitHub", "owner": "Monique",
+      "from": "notifications@github.com", "to": "You",
+      "when": "The 1st, early morning",
+      "runs": "github", "trigger": "GitHub Action loop-monthly-review.yml",
+      "pause": "gh workflow disable loop-monthly-review.yml -R seq23/how-we-know",
+      "code": [{ "repo": "how-we-know", "paths": [".github/workflows/loop-monthly-review.yml"] }]
+    },
+    {
+      "id": "authority-network-issues", "business": "industry-guides",
+      "what": "Backlink network: autopilot and distribution issues (emailed if you watch the repo)",
+      "sender": "GitHub", "owner": "Monique",
+      "from": "notifications@github.com", "to": "You, if watching",
+      "when": "Daily",
+      "runs": "github", "trigger": "GitHub Actions authority-v4-autopilot.yml and post-publish distribution",
+      "pause": "gh workflow disable, or unwatch the repo",
+      "code": [{ "repo": "authority-backlink-network", "paths": [".github/workflows/authority-v4-autopilot.yml"] }]
+    },
+    {
+      "id": "kdp-surface-report", "business": "industry-guides",
+      "what": "Kindle: what this month's Amazon KDP mail means, and anything that needs you",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Simone <simone@sequoiataylor.com>", "to": "You",
+      "when": "Monthly, the 1st at 8:30 AM",
+      "runs": "mac", "trigger": "Mac job com.seq.kdp-surface",
+      "pause": "launchctl bootout gui/501/com.seq.kdp-surface",
+      "launchd": ["com.seq.kdp-surface"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/kdp-surface.sh", "scripts/ops/kdp-surface-report.mjs"] }]
+    },
+
+    {
+      "id": "simone-your-day", "business": "personal",
+      "what": "Your one morning email: Decide, new deals and Monique found, Spirit, Camille's briefing in five lines, Done for you, Catch up with, Porch & Party to-do for Valerie",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Simone <simone@sequoiataylor.com>", "to": "You",
+      "when": "Daily, as Camille's briefing lands; 6:45 AM at the latest",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-your-day",
+      "pause": "launchctl bootout gui/501/com.seq.boss-your-day",
+      "launchd": ["com.seq.boss-your-day"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/your-day.mjs", "scripts/ops/notify.mjs", "src/shared/boss/mail/morning.mjs", "src/shared/boss/mail/plain.mjs"] }]
+    },
+    {
+      "id": "spirit-in-morning", "business": "personal",
+      "what": "Spirit: the week, moon and sky, the morning sequence, a new gratitude sentence, the week's practice",
+      "sender": "Simone", "owner": "Imani",
+      "from": "Inside Simone's morning email", "to": "You",
+      "when": "Daily, in the morning email",
+      "runs": "folded", "trigger": "Part of Simone's morning email",
+      "pause": "Pausing the morning email pauses it",
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/your-day.mjs"] }]
+    },
+    {
+      "id": "brains-lines", "business": "personal",
+      "what": "Brains: the scoreboard grid on the 1st and one line from the weekly check on Mondays",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Inside Simone's morning email", "to": "You",
+      "when": "The 1st and Mondays",
+      "runs": "folded", "trigger": "Part of Simone's morning email",
+      "pause": "Pausing the morning email pauses it",
+      "code": [{ "repo": "boss-os", "paths": ["src/shared/boss/brains/brain.mjs"] }]
+    },
+    {
+      "id": "meeting-prep", "business": "personal",
+      "what": "Meeting prep the evening before each call: who, what was said, what to ask",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Simone <simone@sequoiataylor.com>", "to": "You",
+      "when": "From 6:00 PM for tomorrow's meetings; any hour for a meeting later today with no prep",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-meeting-prep, hourly",
+      "pause": "launchctl bootout gui/501/com.seq.boss-meeting-prep",
+      "launchd": ["com.seq.boss-meeting-prep"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/meeting-prep.mjs", "src/shared/boss/meetingPrep/prep.mjs"] }]
+    },
+    {
+      "id": "simone-errands", "business": "personal",
+      "what": "Errands: a booking or request to the business you named in your email, signed as your assistant",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Simone <simone@sequoiataylor.com>", "to": "The one business address you wrote",
+      "when": "Within 10 minutes of your email",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-simone-commands (every 10 minutes, 6 AM to 11 PM)",
+      "pause": "Reply \"cancel\" before the next tick",
+      "launchd": ["com.seq.boss-simone-commands"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/simone-commands.mjs", "scripts/ops/notify.mjs", "src/worker/boss/commands/run.ts"] }]
+    },
+    {
+      "id": "errand-reminders", "business": "personal",
+      "what": "\"Do you still want to go?\" 28 hours before a booking Simone made, with Yes, keep it / Cancel it",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Simone <simone@sequoiataylor.com>", "to": "You",
+      "when": "28 hours before each booking",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-errand-reminders (every 10 minutes)",
+      "pause": "launchctl bootout gui/501/com.seq.boss-errand-reminders",
+      "launchd": ["com.seq.boss-errand-reminders"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/errand-reminders.mjs"] }]
+    },
+    {
+      "id": "simone-commands", "business": "personal",
+      "what": "Simone's follow-ups on what you asked by email: a lookup's candidates, a draft to approve word for word, a bounce, a code's counts",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Simone <simone@sequoiataylor.com>", "to": "You",
+      "when": "Within 10 minutes, only when she owes you an answer",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-simone-commands",
+      "pause": "launchctl bootout gui/501/com.seq.boss-simone-commands",
+      "launchd": ["com.seq.boss-simone-commands"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/simone-commands.mjs"] }]
+    },
+    {
+      "id": "simone-sends-on-her-word", "business": "personal",
+      "what": "An email to a person, or the calendar invite you asked for, sent for you only after your Send",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Your Workspace mailbox (st@time-2-read.com for Time-2-Read)", "to": "The person you named",
+      "when": "Only when you tap Send or reply \"send\"",
+      "runs": "cloud-event", "trigger": "Your Send tap in Boss OS",
+      "pause": "Do not tap Send; reply \"cancel\" on the thread",
+      "code": [{ "repo": "boss-os", "paths": ["src/worker/boss/commands/google.ts", "src/worker/boss/commands/run.ts"] }]
+    },
+    {
+      "id": "practice-lapse", "business": "personal",
+      "what": "Tough love when you drift: the streak, one of your own laws, one tiny action (day 2, day 4, day 7, then every 3 days)",
+      "sender": "Imani", "owner": "Imani",
+      "from": "Imani <imani@sequoiataylor.com>", "to": "You",
+      "when": "From 10:00 AM, at most one a day, only while you are drifting",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-errand-reminders (practice-nudges)",
+      "pause": "Open the app, talk to the coach or close a gate; or launchctl bootout gui/501/com.seq.boss-errand-reminders",
+      "launchd": ["com.seq.boss-errand-reminders"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/practice-nudges.mjs", "src/worker/boss/practice/lapse.ts"] }]
+    },
+    {
+      "id": "practice-midday", "business": "personal",
+      "what": "The midday push: today's law and \"Did you hold it?\" with the Midday gate one tap away",
+      "sender": "Imani", "owner": "Imani",
+      "from": "Imani <imani@sequoiataylor.com>", "to": "You",
+      "when": "Noon to 3:00 PM, once, while the Midday gate is open",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-errand-reminders (practice-nudges)",
+      "pause": "Close the Midday gate",
+      "launchd": ["com.seq.boss-errand-reminders"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/practice-nudges.mjs"] }]
+    },
+    {
+      "id": "ancestral-hour-reminder", "business": "personal",
+      "what": "Your ancestral hour: 3 days before the month ends and on the last day, with Done ✓",
+      "sender": "Imani", "owner": "Imani",
+      "from": "Imani <imani@sequoiataylor.com>", "to": "You",
+      "when": "Twice at the end of each month, from 10:00 AM, until it is done",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-errand-reminders",
+      "pause": "Tap Done ✓",
+      "launchd": ["com.seq.boss-errand-reminders"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/errand-reminders.mjs", "src/worker/boss/spirit/ancestralHour.ts"] }]
+    },
+    {
+      "id": "toni-risk-watch", "business": "personal",
+      "what": "Money at risk now (paid AI calls), as a problem email after the fix is running",
+      "sender": "Toni", "owner": "Toni",
+      "from": "Toni <toni@sequoiataylor.com>", "to": "You",
+      "when": "Checked daily 8:20 AM; emails only when money is at risk",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-risk-watch",
+      "pause": "launchctl bootout gui/501/com.seq.boss-risk-watch",
+      "launchd": ["com.seq.boss-risk-watch", "com.seq.boss-outside-locks"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/risk-watch.mjs", "scripts/ops/lib/duty-kit.mjs"] }]
+    },
+    {
+      "id": "mac-disk", "business": "personal",
+      "what": "Mac disk: how much space is free after the Sunday clean-up",
+      "sender": "Simone (for Kendra)", "owner": "Kendra",
+      "from": "Simone <simone@sequoiataylor.com>", "to": "You",
+      "when": "Sundays 9:00 AM",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-mac-cleanup",
+      "pause": "launchctl bootout gui/501/com.seq.boss-mac-cleanup",
+      "launchd": ["com.seq.boss-mac-cleanup"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/mac-cleanup.mjs"] }]
+    },
+    {
+      "id": "boss-task-notices", "business": "personal",
+      "what": "A stopped task, as a problem email (what happened, what we did, status); checked again first so a false alarm never goes",
+      "sender": "The employee whose task it is", "owner": "Simone",
+      "from": "name@sequoiataylor.com", "to": "You",
+      "when": "Six checks a day, only when a task is still stopped",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-agent",
+      "pause": "launchctl bootout gui/501/com.seq.boss-agent (also stops the reports)",
+      "launchd": ["com.seq.boss-agent"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/task-notices.mjs", "scripts/ops/notify.mjs"] }]
+    },
+    {
+      "id": "repo-change", "business": "personal",
+      "what": "A site or repo change an employee ran: landed, blocked, or sent back for rework",
+      "sender": "Danielle (or the employee who ran it)", "owner": "Danielle",
+      "from": "name@sequoiataylor.com", "to": "You",
+      "when": "Every 20 minutes from 6:00 AM; only when a change finishes",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-repo-change",
+      "pause": "launchctl bootout gui/501/com.seq.boss-repo-change",
+      "launchd": ["com.seq.boss-repo-change"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/repo-change.mjs"] }]
+    },
+    {
+      "id": "service-tick", "business": "personal",
+      "what": "Vault intake: a confirmation for a key you emailed in",
+      "sender": "Kendra", "owner": "Kendra",
+      "from": "name@sequoiataylor.com", "to": "You",
+      "when": "Every 5 minutes, only when a key arrived",
+      "runs": "mac", "trigger": "Mac job com.seq.boss-agent-poll",
+      "pause": "launchctl bootout gui/501/com.seq.boss-agent-poll",
+      "launchd": ["com.seq.boss-agent-poll"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/service-tick.mjs"] }]
+    },
+    {
+      "id": "zora-archive-audit", "business": "personal",
+      "what": "Friday archive audit: stale documents fixed or flagged, newly filed pieces",
+      "sender": "Zora", "owner": "Zora",
+      "from": "Inside Simone's morning email", "to": "You",
+      "when": "Fridays 8:40 AM",
+      "runs": "folded", "trigger": "Mac job com.seq.boss-archive-audit writes a morning section",
+      "pause": "launchctl bootout gui/501/com.seq.boss-archive-audit",
+      "launchd": ["com.seq.boss-archive-audit"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/archive-audit.mjs"] }]
+    },
+    {
+      "id": "simone-mail-tail-report", "business": "personal",
+      "what": "The tail on what you email Boss OS: one line per job, followed to done",
+      "sender": "Simone", "owner": "Simone",
+      "from": "Inside Simone's morning email", "to": "You",
+      "when": "Checked every 15 minutes",
+      "runs": "folded", "trigger": "Mac job com.seq.boss-mail-tail writes a morning section",
+      "pause": "launchctl bootout gui/501/com.seq.boss-mail-tail",
+      "launchd": ["com.seq.boss-mail-tail"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/boss-mail-tail-report.mjs"] }]
+    },
+    {
+      "id": "exec-report", "business": "personal",
+      "what": "Camille's Executive Intelligence Report: shown on Today, not emailed",
+      "sender": "Camille", "owner": "Camille",
+      "from": "No email", "to": "Today in Boss OS",
+      "when": "Daily, early morning",
+      "runs": "not-email", "trigger": "Mac job com.seq.boss-agent",
+      "pause": "launchctl bootout gui/501/com.seq.boss-agent",
+      "launchd": ["com.seq.boss-agent"],
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/agent-claim.sh"] }]
+    },
+    {
+      "id": "ci-sweep-issues", "business": "personal",
+      "what": "Red builds across the repos, as GitHub issues GitHub emails you",
+      "sender": "GitHub", "owner": "Danielle",
+      "from": "notifications@github.com", "to": "You",
+      "when": "Mondays and Fridays 7:00 AM (retry 8:00 AM)",
+      "runs": "mac", "trigger": "Mac job com.seq.ci-sweep",
+      "pause": "launchctl bootout gui/501/com.seq.ci-sweep (and -retry, -resume)",
+      "launchd": ["com.seq.ci-sweep", "com.seq.ci-sweep-retry"],
+      "code": [{ "repo": "~/bin", "paths": ["ci-sweep.sh"] }]
+    },
+    {
+      "id": "claude-gmail-connector", "business": "personal",
+      "what": "Emails a Claude session sends for you when you ask (client updates, replies)",
+      "sender": "Claude (on your request)", "owner": "Simone",
+      "from": "Your personal Gmail", "to": "Whoever the session addresses",
+      "when": "Only while a session is open",
+      "runs": "session", "trigger": "The claude.ai Gmail connector",
+      "pause": "Disconnect the connector in claude.ai",
+      "code": [{ "repo": "external", "paths": [] }]
+    },
+    {
+      "id": "boss-worker-mail", "business": "personal",
+      "what": "The Boss OS Worker's own email effects (switched off)",
+      "sender": "Nobody", "owner": "Kendra",
+      "from": "None", "to": "None",
+      "when": "Never",
+      "runs": "inert", "trigger": "Would run on approved effects; WP_OS_EMAIL_SEND is off",
+      "pause": "Already off",
+      "code": [{ "repo": "boss-os", "paths": ["src/worker/effects/resendClient.ts", "src/worker/effects/cloudflareEmailClient.ts", "src/worker/effects/googleClient.ts", "src/worker/effects/executor.ts", "src/worker/services/deliverables.ts", "src/worker/services/googleConnect.ts"] }]
+    },
+
+    {
+      "id": "client-dashboards-mail", "business": "friends",
+      "what": "Client creator dashboards and studios: briefs and recaps",
+      "sender": "The client's dashboard", "owner": "The client",
+      "from": "The client's sender", "to": "The client",
+      "when": "Hourly checks, a morning brief, Monday recap",
+      "runs": "cloud-cron", "trigger": "Worker crons in each client's dashboard",
+      "pause": "Remove the client's RESEND_API_KEY",
+      "code": [
+        { "repo": "mercedes-creator-dashboard", "paths": ["worker/services/email.ts", "scripts/staging-login-code.mjs"] },
+        { "repo": "sheila-creator-dashboard", "paths": ["worker/services/email.ts", "scripts/staging-login-code.mjs"] }
+      ]
+    },
+    {
+      "id": "client-publication-mail", "business": "friends",
+      "what": "Client publication and approved-content notices",
+      "sender": "The client's site", "owner": "The client",
+      "from": "The client's sender", "to": "The client",
+      "when": "Daily",
+      "runs": "github", "trigger": "GitHub Actions in each client repo",
+      "pause": "gh workflow disable in that repo",
+      "code": [
+        { "repo": "horse-legal-guide-velocity", "paths": ["scripts/social/send_approved_content_email.py"] },
+        { "repo": "hicks-consulting-canonical", "paths": ["scripts/autonomy/lib/notification.mjs"] }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
-Source: https://claude.ai/artifact/8wsHZmD7QJEuNnZEPideCr
+Living map: Boss OS → ☰ More → Email Map (/?tab=emails), generated from src/shared/boss/emailMap/manifest.json.
 
-Repo copy; the page is the living version; refreshed when it changes.
+The Email Map page is the living map of every automated email, in every business (owner, 31 Oct 2026: "one Email Map page inside Boss OS, all businesses"). It renders the manifest and nothing else; a new or changed sender goes into the manifest in the same PR, and `tests/outboundEmailMap.test.ts` fails on a sending file in this repo that no manifest row cites (`npm run email-map:check` does the same for the other repos and the Mac's launchd jobs). This document stays as the detailed audit of the Boss OS and side-business paths that Team → Duties reads: every Id below is a manifest row with the same owner. The earlier claude.ai page (8wsHZmD7QJEuNnZEPideCr) is retired.
 
 # Outbound Email Map
 
@@ -8,7 +8,7 @@ Last verified 23 Oct 2026 (the combined boss fix: Monique's prospect emails and 
 
 Question answered: "What controls all the emails going out from The Industry Guides and all side businesses? Is it a Mac launchd job only?"
 
-Scope: Boss OS and the side businesses it runs, only. The fund's sending paths are not listed here; they live in the fund's own repo and never share a repo, a seat or a ledger with Boss OS.
+Scope of this audit table: Boss OS and the side businesses it runs. The Email Map page covers every business, the fund included (owner, 31 Oct 2026); the fund's rows live in the manifest, not in this table.
 
 ## Answer
 

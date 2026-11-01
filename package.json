@@ -83,6 +83,7 @@
     "risk:watch": "node scripts/vault/vault.mjs run -- node scripts/ops/risk-watch.mjs",
     "risk:locks": "node scripts/vault/vault.mjs run -- node scripts/ops/outside-locks.mjs",
     "archive:audit": "node scripts/vault/vault.mjs run -- node scripts/ops/archive-audit.mjs",
+    "email-map:check": "node scripts/ops/email-map-check.mjs",
     "mac:cleanup": "node scripts/vault/vault.mjs run -- node scripts/ops/mac-cleanup.mjs",
     "preseed:watch": "node scripts/vault/vault.mjs run -- node scripts/ops/preseed-watch.mjs",
     "waiting-on": "node scripts/vault/vault.mjs run -- node scripts/ops/waiting-on.mjs",
