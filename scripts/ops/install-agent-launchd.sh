@@ -716,6 +716,41 @@ lint_plist "$T2R_NUMBERS_PLIST"
 launchctl load "$T2R_NUMBERS_PLIST"
 echo "Installed $T2R_NUMBERS_LABEL — Wednesday 07:30 Central."
 
+# ─── Marketplace listings: real job photos first (owner ruling, 1 Nov 2026) ───────────────────────
+#
+# "Before each refresh or new listing, first use real P&P job photos and clips … newest first.
+# Prefer real work over stock or AI images. When there's nothing new from the last 2 weeks, ask ME
+# … at most once a week." The listings job itself (com.seq.boss-fb-renew) only fires on renewal
+# days, so a weekly ask tied to it could be missed for weeks; this runs daily, independently, at
+# 06:20 — before Simone's 06:40 morning email — so a due ask is never later than the next morning.
+PNP_PHOTOS_LABEL="com.seq.boss-pnp-photos"
+PNP_PHOTOS_PLIST="$HOME/Library/LaunchAgents/$PNP_PHOTOS_LABEL.plist"
+PNP_PHOTOS_LOGS="$HOME/Library/Logs/boss-pnp-photos"
+mkdir -p "$PNP_PHOTOS_LOGS"
+cat > "$PNP_PHOTOS_PLIST" <<PNPPEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$PNP_PHOTOS_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd $REPO &amp;&amp; npm run --silent pnp:photo-ask</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>20</integer></dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>$PNP_PHOTOS_LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$PNP_PHOTOS_LOGS/launchd.err</string>
+</dict></plist>
+PNPPEOF
+launchctl unload "$PNP_PHOTOS_PLIST" 2>/dev/null || true
+lint_plist "$PNP_PHOTOS_PLIST"
+launchctl load "$PNP_PHOTOS_PLIST"
+echo "Installed $PNP_PHOTOS_LABEL — daily 06:20 Central."
+
 # ─── The Search Readiness repair pass — weekly, Tuesday; the DUTY ROW is the clock ────────────────
 #
 # Owner, 25 Oct 2026: the queue was worked to empty that day; after that it runs WEEKLY, Tuesday 06:30
@@ -1712,6 +1747,8 @@ require_loaded "$SIMONE_CMD_LABEL"
 # WITH THE JOBS, 31 October: the brains copy and the Monday cohesion check.
 require_loaded "$BRAINS_PULL_LABEL"
 require_loaded "$COHESION_LABEL"
+# WITH THE JOB, 1 November: real job photos first, before the Marketplace listings run.
+require_loaded "$PNP_PHOTOS_LABEL"
 
 # THE SYMLINKS ARE VERIFIED TOO. An installer that loaded a job pointing at a prompt that is not
 # there would exit 0 having installed something inert, which is Rule 0's exact prohibition.
