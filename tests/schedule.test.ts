@@ -15,7 +15,7 @@ import {
   canonical, chicagoOffset, cronEvents, cronProblems, displayWindow, dutyProblems, dutySlots, gatedCrons, activeCrons,
   installerJobs, launchdProblems, plistEvents, readSchedule, scheduleClientProblems, shapeProblems, weekProblems, wranglerCrons, workflowCrons,
 } from "../scripts/ops/lib/schedule.mjs";
-import { composeSpryWeekly, hostAllowed, SPRY_WEEKLY } from "../src/shared/boss/spryWeekly/compose.mjs";
+import { composeSpryWeekly, hostAllowed, loopSection, SPRY_WEEKLY } from "../src/shared/boss/spryWeekly/compose.mjs";
 import { createTestDb, disposeTestDb, type TestDb } from "./helpers/db";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -189,9 +189,16 @@ describe("the Spry Labs weekly", () => {
 
   it("rule 0: a report that did not arrive is a plain line, never silence", () => {
     const mail = composeSpryWeekly({ "aplayer-mode": fresh([{ host: "aplayermode.com", state: "fine", why: [] }]) }, { now });
-    expect(mail.sections).toHaveLength(SPRY_WEEKLY.sources.length);
+    // Every business section, then the one "Search loop" section (1 Nov 2026).
+    expect(mail.sections).toHaveLength(SPRY_WEEKLY.sources.length + 1);
     expect(mail.missing).toBe(SPRY_WEEKLY.sources.length - 1);
-    for (const s of mail.sections.slice(1)) expect(s.items[0]).toMatch(/^No report this week/);
+    for (const s of mail.sections.slice(1, SPRY_WEEKLY.sources.length)) expect(s.items[0]).toMatch(/^No report this week/);
+    // An unread loop is said for every site, never a zero and never left out.
+    const loop = mail.sections[SPRY_WEEKLY.sources.length]!;
+    expect(loop.title).toBe("Search loop");
+    expect(loop.items).toHaveLength(SPRY_WEEKLY.search_loop.sites.length);
+    for (const i of loop.items) expect(i).toMatch(/: could not be read this week\.$/);
+    expect(JSON.stringify(loop.items)).not.toMatch(/\b0\b/);
     expect(mail.happened).toMatch(/did not arrive/);
   });
 
@@ -203,10 +210,55 @@ describe("the Spry Labs weekly", () => {
       { host: "theindustryguides.com", state: "needs-a-look", why: ["impressions down"] },
     ]) }, { now });
     expect(site.sections[0]!.items[0]).toMatch(/not this week/);
-    const text = JSON.stringify(site.sections);
+    // The business sections never name a client or a parked business. heygetonmylevel's business is
+    // still parked; its SEARCH work is in since 1 Nov 2026, so it has exactly one Search loop line.
+    const text = JSON.stringify(site.sections.filter((s: any) => s.title !== "Search loop"));
     expect(text).not.toMatch(/horselegalguide|heygetonmylevel/);
+    const loopText = site.sections.find((s: any) => s.title === "Search loop")!.items;
+    expect(loopText.filter((i: string) => /heygetonmylevel/.test(i))).toHaveLength(1);
+    expect(JSON.stringify(loopText)).not.toMatch(/horse|hicks|dianne|detoxdenver|cynthia|porch/i);
     expect(text).toContain("theindustryguides.com: impressions down.");
     expect(hostAllowed("www.hicksconsulting.org")).toBe(false);
+  });
+
+  describe("the search loop line (owner, 1 Nov 2026)", () => {
+    const week = (site: string, over: any = {}) => ({ schema: "search-loop-week-v1", site, generated_at: "2026-11-03T12:00:00Z", state: "running", published: 21, indexed: 38, pace: 10, ai_visitors: 4, ai_bot_hits: 90, conversions: 2, wins: 2, undone: 1, merged: 0, notes: [], run_url: "https://github.com/x", ...over });
+    const all = (v: any) => Object.fromEntries(SPRY_WEEKLY.search_loop.sites.flatMap((x: any) => x.repos).map((r: string) => [r, v]));
+
+    it("her sites only: never a client site, never Porch & Party (not Spry Labs), every Spry Labs seller", () => {
+      const repos = SPRY_WEEKLY.search_loop.sites.flatMap((x: any) => x.repos);
+      expect(repos.sort()).toEqual(["approvalprep", "dailystory", "dream-wedding-builder", "heygetonmylevel", "local-guides-citation-velocity", "local-guides-generator", "sprylabs-hpc-site"]);
+      for (const bad of ["horse-legal-guide-velocity", "hicks-consulting-canonical", "dianne-place-recovery-services", "cynthia-brown-dds-site", "p-n-p"]) expect(repos).not.toContain(bad);
+    });
+
+    it("one plain line per site from its report", () => {
+      const loop = all({ weeks: [], adopted: false });
+      loop["approvalprep"] = { weeks: [week("approvalprep.com")], adopted: true };
+      const { section, late } = loopSection(loop, { now });
+      expect(section.items).toContain("ApprovalPrep: Published 21 pages · 38 indexed · 4 AI visitors · 2 sales · 2 wins, 1 undone.");
+      expect(late).toEqual([]);
+    });
+
+    it("several sites in one business add up, and a re-run never counts twice", () => {
+      const loop = all({ weeks: [], adopted: false });
+      loop["local-guides-generator"] = { weeks: [week("uscisexam.com"), week("uscisexam.com", { generated_at: "2026-11-02T12:00:00Z", published: 99 }), week("dentistryguides.com", { published: 1, merged: 3 })], adopted: true };
+      const { section } = loopSection(loop, { now });
+      expect(section.items).toContain("Industry Guides: Published 22 pages · 76 indexed · 8 AI visitors · 4 form fills · 4 wins, 2 undone, 3 merged (2 sites).");
+    });
+
+    it("rule 0: not adopted says not started yet; adopted with nothing fresh says it did not arrive; a missing number is not read, never 0", () => {
+      const loop = all({ weeks: [], adopted: false });
+      loop["dailystory"] = { weeks: [week("time-2-read.com", { generated_at: "2026-10-20T12:00:00Z" })], adopted: true };
+      loop["approvalprep"] = { weeks: [week("approvalprep.com", { ai_visitors: null, conversions: undefined })], adopted: true };
+      const { section, late } = loopSection(loop, { now });
+      expect(section.items).toContain("Dream Wedding: not started yet.");
+      expect(section.items).toContain("Time-2-Read: this week's report did not arrive. The team checks why.");
+      expect(late).toEqual(["time-2-read"]);
+      const ap = section.items.find((i: string) => i.startsWith("ApprovalPrep"))!;
+      expect(ap).toMatch(/AI visitors not read/);
+      expect(ap).toMatch(/sales not read/);
+      expect(ap).not.toMatch(/\b0 (AI|sales)/);
+    });
   });
 
   it("a quiet week says so in one line", () => {

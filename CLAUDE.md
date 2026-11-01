@@ -177,14 +177,16 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
 2. **The grid repos** are `src/shared/boss/searchReadiness/sites.json`: category (side business,
    client, own business), kind, and a coverage entry for every site. Hyperlocal sites list the towns
    inside their radius, the neighborhoods, the local anchors and the service × town pages; the
-   generator's guide sites read their own city list. heygetonmylevel.com is excluded (no payment
-   mechanism yet); nothing West Peek, nothing of Shirley Brown's senior housing work.
+   generator's guide sites read their own city list. heygetonmylevel.com is IN since 1 Nov 2026
+   (reverses the 25 Oct exclusion; its pages lead to Time-2-Read's free week); nothing West Peek,
+   nothing of Shirley Brown's senior housing work.
 3. **Weekly, Monday 06:00** (`com.seq.boss-sites-audit`, `npm run sites:audit -- --morning`; by hand
    `npm run sites:audit`). Spends nothing: plain GETs, Search Console read-only, free PageSpeed, `gh` reads.
    Results go into the Monday morning email as "The grid repos" section, told once.
 4. **Every failure is a fix brief** in `~/.boss-os/search-readiness/fix-queue.json`
    (`npm run sites:fix-queue`), which Danielle's repair run reads (prompt section 1b) and fixes like an
-   Ahrefs finding. The two client sites are fixed too. The Spry Labs download page is PROTECTED: fixed
+   Ahrefs finding. Client sites on the grid are fixed too, except a report-only client repo
+   (repoPolicy `NO_AUTO_FIX`), whose briefs are recorded as `client_repo`. The Spry Labs download page is PROTECTED: fixed
    only on its own, single-page, Gumroad buy link checked before and after, never cosmetic or bulk.
 5. **The run measures with main's definition, never a stale checkout's** (26 Oct 2026). The audit
    runs from her own checkout, which nothing updates: it sat at #147 while main held the corrected
@@ -210,6 +212,21 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    entity-backlink-watch is green and under eight days old. a1-a6 were taken, hence K. k5 with no
    reviewer is a **named stop** (`OWNER_REVIEWER_NEEDED`, disposition `named_stop`): said every week,
    never worked, because nobody invents a person. Pinned by `tests/searchReadiness.test.ts`.
+7. **The search growth loop on every selling site (owner, 1 Nov 2026; spec in the spry brain's
+   Settled decisions).** A site with a `search_loop` entry in sites.json (its wave: 1 Industry Guides,
+   ApprovalPrep, Dream Wedding, the Spry HPC sites; 2 Time-2-Read, heygetonmylevel; 3 Porch & Party and
+   the client sites) is held to the loop's stages, each automatic and reaching only those sites
+   (`flag:search_loop`): f2 new pages publish straight away under a quality gate (rewritten from
+   "frozen until the query has a number"), f7 low-competition searches found weekly at $0, f8 pace set
+   by indexing (10 a day, +5 a week, cap 30, halved on a drop), f9 every page ends in the site's one
+   action, f10 the 2/4/8-week checks strengthen, undo or merge, f11 AI-referral visits and AI-bot reads
+   measured, f12 the site runs the shared `seq23/search-loop` engine (a `search-loop.config.json` naming
+   the site and its `one_action`, and a workflow that `uses:` the engine). The running stages read the
+   site's newest `search-loop-week` artifact (`src/shared/boss/searchLoop/week.mjs`, fetched by
+   `scripts/ops/lib/search-loop-week.mjs`); a site with none fails each by name, an unread one is not
+   checked. The Wednesday Spry Labs email carries one "Search loop" line per Spry Labs site of hers.
+   **Client sites are audited, never shown** (`shownToOwner`): no client row on her page or in her
+   email, and a report-only client repo's briefs are `client_repo`, never worked.
 
 ## Brains: one document per business, read first
 

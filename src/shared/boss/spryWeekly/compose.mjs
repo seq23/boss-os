@@ -12,6 +12,7 @@ import { GRID } from "../grid.mjs";
 /** Client property domains (grid.mjs `owner: "client"`), never named in her email. */
 const CLIENT_DOMAINS = GRID.filter((p) => p.owner === "client").flatMap((p) => p.domains ?? []);
 import { SPRY_WEEKLY_SOURCES } from "./sources.mjs";
+import { loopLine, weekProblem } from "../searchLoop/week.mjs";
 
 export const SPRY_WEEKLY = SPRY_WEEKLY_SOURCES;
 const MAX_LOOKS = 3;
@@ -79,13 +80,40 @@ export function sectionFor(source, summary, problem = null) {
   return { title, items, link: summary.run_url ? { label: "Full report", url: summary.run_url } : undefined };
 }
 
+/**
+ * The "Search loop" section: one plain line per site of hers. `loop` maps a repo to what was read:
+ * `{ weeks, adopted }` or `{ problem }`. RULE 0: a site whose numbers were not read never shows a 0.
+ *   no report and not adopted → "not started yet"; adopted, nothing fresh → "this week's report did not
+ *   arrive"; GitHub unreadable → "could not be read this week".
+ * Returns the section and the keys whose report did not arrive (the run opens a fix job for them).
+ */
+export function loopSection(loop, { now = Date.now(), sites = SPRY_WEEKLY.search_loop.sites } = {}) {
+  const items = [], late = [];
+  for (const site of sites) {
+    const reads = site.repos.map((r) => loop?.[r] ?? { problem: "not read" });
+    if (reads.some((r) => r.problem)) { items.push(`${site.label}: could not be read this week.`); continue; }
+    const fresh = reads.flatMap((r) => r.weeks ?? []).filter((w) => !weekProblem(w, { now }));
+    // A site reports once a week; keep the newest report per site, so a re-run never counts twice.
+    const newest = Object.values(fresh.reduce((a, w) => {
+      const k = String(w.site).toLowerCase();
+      if (!a[k] || Date.parse(w.generated_at) > Date.parse(a[k].generated_at)) a[k] = w;
+      return a;
+    }, {}));
+    if (newest.length) { items.push(`${site.label}: ${loopLine(newest, { actionWord: site.action_word })}.`); continue; }
+    if (reads.some((r) => r.adopted)) { items.push(`${site.label}: this week's report did not arrive. The team checks why.`); late.push(site.key); continue; }
+    items.push(`${site.label}: not started yet.`);
+  }
+  return { section: { title: "Search loop", items }, late };
+}
+
 /** The whole email's parts. `got` maps source key → { summary } or { problem }. */
-export function composeSpryWeekly(got, { now = Date.now() } = {}) {
+export function composeSpryWeekly(got, { now = Date.now(), loop = null } = {}) {
   const sections = SPRY_WEEKLY.sources.map((src) => {
     const g = got[src.key] ?? { problem: "it did not arrive" };
     const problem = g.problem ?? summaryProblem(g.summary, { now, maxAgeHours: src.max_age_hours ?? 36 });
     return sectionFor(src, g.summary, problem);
   });
+  const loopPart = loopSection(loop, { now });
   const missing = sections.filter((s) => s.items[0].startsWith("No report this week")).length;
   const looks = SPRY_WEEKLY.sources.reduce((a, src) => {
     const s = got[src.key]?.summary;
@@ -96,5 +124,5 @@ export function composeSpryWeekly(got, { now = Date.now() } = {}) {
     ? "Every Spry Labs business reported this week, and all is quiet."
     : [looks ? `${plural(looks, "thing")} worth a look` : null, missing ? `${plural(missing, "report")} did not arrive` : null].filter(Boolean).join("; ").replace(/^./, (c) => c.toUpperCase()) + ". The team has each one.";
   const date = new Date(now).toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric" });
-  return { subject: `Spry Labs weekly, ${date}`, happened, sections, missing, looks };
+  return { subject: `Spry Labs weekly, ${date}`, happened, sections: [...sections, loopPart.section], missing, looks, loopLate: loopPart.late };
 }

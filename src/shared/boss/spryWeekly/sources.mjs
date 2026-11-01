@@ -12,6 +12,23 @@ export const SPRY_WEEKLY_SOURCES = {
   "parked_hosts": [
     "heygetonmylevel.com"
   ],
+  /*
+   * THE SEARCH LOOP LINE (owner, 1 Nov 2026: the search growth loop on every selling site). One plain
+   * line per site of hers in a "Search loop" section, from each repo's newest `search-loop-week`
+   * artifact (src/shared/boss/searchLoop/week.mjs). heygetonmylevel is in search work since 1 Nov
+   * 2026 (its business stays parked, so it stays in parked_hosts for the business summaries).
+   * Porch & Party is not a Spry Labs business, so it is not in this email; client sites never are.
+   */
+  "search_loop": {
+    "sites": [
+      { "key": "industry-guides", "label": "Industry Guides", "repos": ["local-guides-citation-velocity", "local-guides-generator"], "action_word": "form fills" },
+      { "key": "approvalprep", "label": "ApprovalPrep", "repos": ["approvalprep"], "action_word": "sales" },
+      { "key": "dream-wedding", "label": "Dream Wedding", "repos": ["dream-wedding-builder"], "action_word": "sales" },
+      { "key": "sprylabs-site", "label": "A Player Mode and the Spry HPC sites", "repos": ["sprylabs-hpc-site"], "action_word": "sign-ups" },
+      { "key": "time-2-read", "label": "Time-2-Read", "repos": ["dailystory"], "action_word": "free-week starts" },
+      { "key": "heygetonmylevel", "label": "heygetonmylevel", "repos": ["heygetonmylevel"], "action_word": "free-week starts" }
+    ]
+  },
   "sources": [
     {
       "key": "aplayer-mode",

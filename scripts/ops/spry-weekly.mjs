@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { composeSpryWeekly, SPRY_WEEKLY, summaryProblem } from "../../src/shared/boss/spryWeekly/compose.mjs";
 import { layoutEmail } from "../../src/shared/boss/mail/plain.mjs";
 import { bossApi, fixJob, sendAs } from "./lib/duty-kit.mjs";
+import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8", maxBuffer: 32 << 20, stdio: ["ignore", "pipe", "pipe"] });
 
@@ -81,7 +82,9 @@ async function main() {
     await new Promise((r) => setTimeout(r, 120_000));
     got = fetchAll();
   }
-  const mail = composeSpryWeekly(got);
+  // The search loop line (1 Nov 2026): each repo's newest search-loop-week reports, read once.
+  const loop = Object.fromEntries([...new Set(SPRY_WEEKLY.search_loop.sites.flatMap((x) => x.repos))].map((r) => [r, fetchLoopWeeks(r)]));
+  const mail = composeSpryWeekly(got, { loop });
   const laid = layoutEmail({ who: "Camille", subject: mail.subject, happened: mail.happened, sections: mail.sections });
   if (dry) { console.log(laid.subject); console.log(laid.text); return; }
   if (!(await sendAs("Camille", { subject: laid.subject, text: laid.text, html: laid.html, prelaid: laid }))) {
@@ -91,10 +94,14 @@ async function main() {
   // "THE TEAM CHECKS WHY" IS A PROMISE THE EMAIL MAKES, SO IT IS KEPT HERE: one fix job on Danielle's
   // desk naming each report that did not arrive (rule 3: a chore for the team, never her mail).
   const late = SPRY_WEEKLY.sources.filter((s) => got[s.key]?.problem);
-  if (late.length) {
+  const loopLate = SPRY_WEEKLY.search_loop.sites.filter((x) => mail.loopLate.includes(x.key));
+  if (late.length || loopLate.length) {
     const why = await fixJob(await bossApi().catch(() => null), {
-      title: `Spry Labs weekly: ${late.length} report(s) did not arrive`,
-      prompt: late.map((s) => `${s.label} (seq23/${s.repo}, ${s.workflow}): ${got[s.key].problem}. Find why the Wednesday run did not upload the ${SPRY_WEEKLY.artifact} artifact, fix it at source, and dispatch the workflow.`).join("\n"),
+      title: `Spry Labs weekly: ${late.length + loopLate.length} report(s) did not arrive`,
+      prompt: [
+        ...late.map((s) => `${s.label} (seq23/${s.repo}, ${s.workflow}): ${got[s.key].problem}. Find why the Wednesday run did not upload the ${SPRY_WEEKLY.artifact} artifact, fix it at source, and dispatch the workflow.`),
+        ...loopLate.map((x) => `${x.label} search loop (${x.repos.map((r) => `seq23/${r}`).join(", ")}): the site runs the shared search-loop engine but uploaded no search-loop-week report in the last eight days. Find why its loop run did not upload it, fix it at source, and dispatch the workflow.`),
+      ].join("\n"),
     }).catch((e) => e?.message ?? String(e));
     if (why) console.error(`NOTE [FIX_JOB_NOT_OPENED] ${why}`);
   }

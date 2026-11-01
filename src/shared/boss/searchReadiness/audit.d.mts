@@ -57,3 +57,14 @@ export function liveSameAs(html: string): string[];
 export function entityFor(repo: any, site: any): { path: string; node: any; root: any } | null;
 export function namedPeople(nodes: any[]): string[];
 export function reviewerRoster(repo: any): Set<string> | null;
+/** Client sites (category "client") are audited but never shown on her page or in her email (1 Nov 2026). */
+export function shownToOwner(site: any): boolean;
+/** F · The search growth loop (1 Nov 2026): the engine's caller workflow, the per-site config and the weekly report. */
+export const LOOP_ENGINE_USES: string;
+export const LOOP_CONFIG_RE: RegExp;
+export const PAID_SEO_RE: RegExp;
+export function loopCaller(repo: any): { name: string; text: string } | null;
+export function loopConfigFor(repo: any, domain: string): { path: string; raw?: string; cfg?: any; node?: any; error?: string } | null;
+export function oneActionOf(cfg: any): string | null;
+export function actionMatches(target: string, action: string, base: string): boolean;
+export function loopWeek(ctx: any): { week?: any; result?: any };

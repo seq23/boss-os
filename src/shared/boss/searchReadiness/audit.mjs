@@ -18,6 +18,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { weekFor, publishingOn, paceOk, checksRan, aiMeasured, PACE } from "../searchLoop/week.mjs";
+import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const CHECKLIST_PATH = join(HERE, "checklist.json");
@@ -57,8 +59,17 @@ export const STATUS = Object.freeze(["pass", "fail", "not_checked", "no_repo", "
 export function applies(item, site) {
   const a = item.check?.applies_to ?? [];
   // `flag:ymyl` reaches only the sites sites.json marks ymyl: true (medical, legal, financial; k5).
-  return a.includes(site.kind) || (site.roles ?? []).some((r) => a.includes(`role:${r}`)) || (site.ymyl === true && a.includes("flag:ymyl"));
+  // `flag:search_loop` reaches only the selling sites sites.json gives a `search_loop` entry (1 Nov 2026).
+  return a.includes(site.kind) || (site.roles ?? []).some((r) => a.includes(`role:${r}`)) || (site.ymyl === true && a.includes("flag:ymyl"))
+    || (!!site.search_loop && a.includes("flag:search_loop"));
 }
+
+/**
+ * CLIENT SITES ARE AUDITED, NEVER SHOWN (her standing rule; 1 Nov 2026: "client sites report in their
+ * own repos, never Boss OS"). A `category: "client"` site is measured like any other, and its fix
+ * briefs go to its own repo's lane, but it never appears on her page or in her email.
+ */
+export const shownToOwner = (site) => site?.category !== "client";
 
 // ─── Coverage ────────────────────────────────────────────────────────────────
 
@@ -912,7 +923,143 @@ export const CHECKS = {
     if (!(days <= 8)) return fail(`${w.name} last ran ${Math.round(days)} days ago (weekly means under 8)`);
     return pass(`${w.name} green ${days.toFixed(1)} days ago`);
   },
+  // ─── F · The search growth loop (owner, 1 Nov 2026) ────────────────────────
+  // Every selling site runs the shared engine (seq23/search-loop): find low-competition searches
+  // weekly → publish straight away under a quality gate → pace set by indexing → every page ends in
+  // the site's one action → 2/4/8-week checks strengthen, undo or merge → AI visits and bot reads
+  // measured. The repo side (config + caller workflow) is read from the clone; the running side from
+  // the newest `search-loop-week` report (src/shared/boss/searchLoop/week.mjs). A site with no report
+  // fails every running stage by name, so a site missing a stage is never a quiet pass.
+  search_loop_adopted(ctx) {
+    const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const why = [];
+    const cfg = loopConfigFor(r, ctx.site.domain);
+    if (!cfg) why.push(`no search-loop config names ${ctx.site.domain} (search-loop.config.json, or search-loop/<site>.json)`);
+    else if (cfg.error) why.push(`${cfg.path} ${cfg.error}`);
+    const caller = loopCaller(r);
+    if (!caller) why.push(`no workflow calls the shared engine (uses: ${LOOP_ENGINE_USES})`);
+    return why.length ? fail(why.join("; ")) : pass(`${cfg.path} names the site; ${caller.name} calls the shared engine`);
+  },
+  publish_straight_away(ctx) {
+    const w = loopWeek(ctx); if (w.result) return w.result;
+    const cfg = loopConfigFor(ctx.repo, ctx.site.domain);
+    const node = cfg?.node ?? {};
+    if (node.freeze === true || node.frozen === true || node.hold_until_measured === true) return fail(`${cfg.path} still holds new pages until their query is measured (the 1 Nov 2026 rule retired that)`);
+    const p = publishingOn(w.week);
+    return p.ok ? pass(p.why) : fail(p.why);
+  },
+  loop_discovery_weekly(ctx) {
+    const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const caller = loopCaller(r);
+    if (!caller) return fail(`no workflow calls the shared engine, so nothing finds new searches (uses: ${LOOP_ENGINE_USES})`);
+    if (!/schedule:/.test(caller.text) || !/cron:/.test(caller.text)) return fail(`${caller.name} has no schedule, so discovery is not weekly`);
+    const cfg = loopConfigFor(r, ctx.site.domain);
+    const paid = [caller.text, cfg?.raw ?? ""].join("\n").match(PAID_SEO_RE);
+    if (paid) return fail(`discovery names a paid search-data service (${paid[0]}); the loop is $0: measured Search Console rows or free signals`);
+    const w = loopWeek(ctx); if (w.result) return w.result;
+    return pass(`${caller.name} runs on a schedule; the newest weekly report is from ${String(w.week.generated_at).slice(0, 10)}`);
+  },
+  loop_pace(ctx) {
+    const w = loopWeek(ctx); if (w.result) return w.result;
+    const cap = Number(loopConfigFor(ctx.repo, ctx.site.domain)?.node?.pace?.cap);
+    if (Number.isFinite(cap) && cap > PACE.cap) return fail(`the config caps the pace at ${cap} a day (the rule's cap is ${PACE.cap})`);
+    const p = paceOk(w.week);
+    return p.ok ? pass(p.why) : fail(p.why);
+  },
+  one_action_every_page(ctx) {
+    const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const cfg = loopConfigFor(r, ctx.site.domain);
+    const action = oneActionOf(cfg);
+    if (!action) return fail(`no one_action for ${ctx.site.domain} in the search-loop config, so no page can be held to it`);
+    const pages = okPages(ctx).filter((p) => { const u = new URL(pageUrl(p)); return u.pathname !== "/" && !isUtility(u.href); });
+    if (!pages.length) return notChecked("no content page in the sample");
+    const hits = (p) => {
+      const base = pageUrl(p);
+      const targets = [...links(p.html, base).map((l) => l.url), ...tags(p.html, "form").map((f) => { try { return new URL(f.action ?? "", base).href; } catch { return ""; } })];
+      return targets.some((t) => actionMatches(t, action, base));
+    };
+    const bad = pages.filter((p) => !hits(p)).map(pageUrl);
+    return bad.length ? fail(`${bad.length} of ${pages.length} sampled pages do not lead to the site's one action (${action}): ${list(bad, 3)}`, { evidence: bad }) : pass(`all ${pages.length} sampled content pages lead to ${action}`);
+  },
+  loop_checks_248(ctx) {
+    const w = loopWeek(ctx); if (w.result) return w.result;
+    const c = checksRan(w.week);
+    return c.ok ? pass(c.why) : fail(c.why);
+  },
+  ai_measured(ctx) {
+    const w = loopWeek(ctx); if (w.result) return w.result;
+    const a = aiMeasured(w.week);
+    return a.ok ? pass(a.why) : fail(a.why);
+  },
 };
+
+// ─── Search growth loop helpers (f2, f7–f12; 1 Nov 2026) ────────────────────
+
+/** The `uses:` prefix of a workflow that calls the shared engine. */
+export const LOOP_ENGINE_USES = "seq23/search-loop";
+const LOOP_CALLER_RE = /uses:\s*['"]?seq23\/search-loop[/@]/;
+/** Where a repo keeps its loop config: one per repo, or one per site under search-loop/. */
+export const LOOP_CONFIG_RE = /(^|\/)(\.?search-loop(\.config)?\.json|search-loop\/[^/]+\.json)$/;
+/** Paid search-data services; the loop is $0. */
+export const PAID_SEO_RE = /(?<![a-z])(ahrefs|semrush|dataforseo|moz_?api|serpapi|spyfu|openseo|similarweb)(?![a-z])/i;
+
+export function loopCaller(repo) {
+  return (repo?.workflows ?? []).find((w) => LOOP_CALLER_RE.test(w.text ?? "")) ?? null;
+}
+
+/**
+ * The loop config that names this site: `{ path, raw, cfg, node }` (node = the site's own block when the
+ * config holds several sites), `{ path, error }` when it does not parse, or null when none names it.
+ * A config names a site by `site`, by a `sites` list of domains, or by a `sites` object keyed by domain.
+ */
+export function loopConfigFor(repo, domain) {
+  const d = bare(domain);
+  const paths = (repo?.files ?? []).filter((f) => LOOP_CONFIG_RE.test(f) && !/(^|\/)(node_modules|tests?|fixtures?)\//.test(f));
+  let broken = null;
+  for (const path of paths) {
+    const raw = repo.show?.(path);
+    if (raw == null) continue;
+    let cfg; try { cfg = JSON.parse(raw); } catch { broken = broken ?? { path, error: "does not parse as JSON" }; continue; }
+    const sites = cfg?.sites;
+    if (sites && !Array.isArray(sites) && typeof sites === "object") {
+      const key = Object.keys(sites).find((k) => bare(k) === d);
+      if (key) return { path, raw, cfg, node: { ...cfg, ...sites[key] } };
+    }
+    if (Array.isArray(sites)) {
+      const hit = sites.find((x) => bare(typeof x === "string" ? x : x?.site) === d);
+      if (hit) return { path, raw, cfg, node: typeof hit === "string" ? cfg : { ...cfg, ...hit } };
+    }
+    if (bare(cfg?.site) === d) return { path, raw, cfg, node: cfg };
+  }
+  return broken;
+}
+
+/** The site's one action as written in its config (a path or a URL), or null. */
+export function oneActionOf(cfg) {
+  const a = cfg?.node?.one_action;
+  const v = typeof a === "string" ? a : a?.url ?? a?.path ?? null;
+  return v && String(v).trim() ? String(v).trim() : null;
+}
+
+/** Does a link or form target reach the one action? Same host (or the action's own host) and path prefix. */
+export function actionMatches(target, action, base) {
+  let t, a;
+  try { t = new URL(target, base); a = new URL(action, base); } catch { return false; }
+  if (bare(t.hostname) !== bare(a.hostname)) return false;
+  const ap = a.pathname.replace(/\/+$/, "");
+  return ap === "" ? t.pathname.replace(/\/+$/, "") === "" : t.pathname.replace(/\/+$/, "") === ap || t.pathname.startsWith(`${ap}/`);
+}
+
+/** The site's newest usable weekly report, or `{ result }`: the status to return instead. */
+export function loopWeek(ctx) {
+  const r = ctx.repo;
+  if (!r?.ok) return { result: r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read") };
+  if (r.loopWeeks === undefined || r.loopWeeks === null) return { result: notChecked(`the weekly search-loop report was not read${r.loopWhy ? `: ${r.loopWhy}` : ""}`) };
+  const got = weekFor(r.loopWeeks, { domain: ctx.site.domain, repo: ctx.site.repo, now: ctx.now ?? Date.now() });
+  if (got.none) return { result: fail("no search-loop-week report from this site: it does not run the shared search loop yet") };
+  if (got.problem) return { result: fail(`the newest search-loop-week report cannot be used: ${got.problem}`) };
+  return { week: got.week };
+}
 
 // ─── Authority and entity helpers (k1–k6) ────────────────────────────────────
 
@@ -1163,7 +1310,9 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         protected: prot.length ? prot.map((pp) => ({ path: pp.path, rule: pp.rule, buy_link: pp.buy_link, sha256: pp.sha256 })) : null,
         // A NAMED STOP is a failure only the owner can clear (k5: a real reviewer's written consent).
         // It stays in the queue so it is said every week, but no fix pass is ever spent on it.
-        disposition: !s.site.repo ? "no_repo" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
+        // A repo the fixer may never branch (a client's report-only repo, repoPolicy NO_AUTO_FIX) is
+        // recorded, never worked: its site reports in its own repo (1 Nov 2026).
+        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
         ...(limit ? { known_limit: limit.why } : {}),
         ...(r.named_stop ? { named_stop: r.named_stop } : {}),
       });
@@ -1181,7 +1330,9 @@ const short = (s) => s.domain;
  * broken, what was fixed, what is being built; plain words, no ids, no commands). `previous` is
  * last week's result so a fix can be named as fixed.
  */
-export function morningLines(checklist, siteResults, { previous = null, queued = 0, lastRepair = null, max = 4 } = {}) {
+export function morningLines(checklist, allResults, { previous = null, queued = 0, lastRepair = null, max = 4 } = {}) {
+  // Client sites are audited but never named to her (shownToOwner).
+  const siteResults = (allResults ?? []).filter((x) => shownToOwner(x.site));
   const byId = Object.fromEntries(checklist.items.map((i) => [i.id, i]));
   const failing = siteResults.map((s) => ({ s, f: s.results.filter((r) => r.status === "fail") }));
   const clean = failing.filter((x) => !x.f.length).length;
@@ -1195,7 +1346,7 @@ export function morningLines(checklist, siteResults, { previous = null, queued =
     lines.push(`Most to fix: ${top.join(", ")}.`);
   }
   if (previous) {
-    const was = new Set(previous.sites.flatMap((s) => s.results.filter((r) => r.status === "fail").map((r) => `${s.site.domain}|${r.id}`)));
+    const was = new Set(previous.sites.filter((x) => shownToOwner(x.site)).flatMap((s) => s.results.filter((r) => r.status === "fail").map((r) => `${s.site.domain}|${r.id}`)));
     const now = new Set(siteResults.flatMap((s) => s.results.filter((r) => r.status === "fail").map((r) => `${s.site.domain}|${r.id}`)));
     const fixed = [...was].filter((k) => !now.has(k)).length;
     if (fixed) lines.push(`Fixed since last week: ${fixed} gaps closed.`);

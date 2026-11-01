@@ -1,5 +1,5 @@
 {
- "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (82 = the page's 71 plus j9, the four 26 Oct 2026 lessons (b10, e9, h6, j10) and the six authority items k1-k6 of 31 Oct 2026) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
+ "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (88 = the page's 71 plus j9, the four 26 Oct 2026 lessons (b10, e9, h6, j10), the six authority items k1-k6 of 31 Oct 2026 and the six search growth loop stages f7-f12 of 1 Nov 2026, when f2 was rewritten from 'frozen until measured' to 'publish straight away under a quality gate') or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
  "version": 1,
  "page_item_count": 71,
  "kinds": [
@@ -915,18 +915,18 @@
   {
    "id": "f2",
    "phase": "F",
-   "title": "New pages frozen until their query has a number; held pages publish automatically once it does",
-   "title_html": "New pages frozen until their query has a number; held pages publish automatically once it does",
+   "title": "New pages publish straight away under a quality gate; nothing waits for a Search Console number",
+   "title_html": "New pages publish straight away under a quality gate; nothing waits for a Search Console number",
    "burned": false,
-   "why_html": "Stops the thin-page pile from growing while the measured pages get the effort.",
-   "how_html": "A config flag the publisher reads, with a validator; a frozen page logs why.",
+   "why_html": "Owner, 1 Nov 2026: \"we just want to dominate aeo geo SEO and move fast.\" Holding pages until their query had a number (the 11 Oct rule) meant the selling sites barely grew. Speed now comes from publishing, safety from the quality gate and the 2/4/8-week checks that undo or merge what does not earn its place.",
+   "how_html": "The shared search-loop engine publishes each new page the day it passes the site's quality gate (health and dental sites: a strict gate, no claims, no invented reviews). No config flag holds pages until measured, and the weekly <code>search-loop-week</code> report says how many pages went live.",
    "check": {
-    "mode": "manual",
-    "reason": "The page freeze is a per-repo publisher flag; its existence is a code review question, not a live check.",
+    "mode": "auto",
+    "type": "publish_straight_away",
+    "source": "github",
+    "how": "The newest search-loop-week report (under eight days old) is not frozen, held or paused and says how many pages were published; the site's search-loop config holds no freeze flag.",
     "applies_to": [
-     "guide",
-     "hyperlocal",
-     "authority"
+     "flag:search_loop"
     ]
    }
   },
@@ -1005,6 +1005,114 @@
      "hyperlocal",
      "brand",
      "authority"
+    ]
+   }
+  },
+  {
+   "id": "f7",
+   "phase": "F",
+   "title": "Low-competition searches are found every week, at $0",
+   "title_html": "Low-competition searches are found every week, at $0",
+   "burned": false,
+   "why_html": "New pages only win if they aim at searches the site can actually win. A weekly pass keeps the queue full of them without anyone choosing by hand, and $0 keeps the loop running for ever.",
+   "how_html": "The engine's weekly run scores candidate searches from measured Search Console rows or free signals (autocomplete, related searches, questions people ask), each with its source and score. No paid keyword tool.",
+   "check": {
+    "mode": "auto",
+    "type": "loop_discovery_weekly",
+    "source": "github",
+    "how": "A workflow calls the shared seq23/search-loop engine on a schedule, names no paid search-data service, and its newest search-loop-week report is under eight days old.",
+    "applies_to": [
+     "flag:search_loop"
+    ]
+   }
+  },
+  {
+   "id": "f8",
+   "phase": "F",
+   "title": "The pace is set by indexing: 10 a day to start, +5 a week, cap 30, halved on a drop",
+   "title_html": "The pace is set by indexing: 10 a day to start, +5 a week, cap 30, halved on a drop",
+   "burned": false,
+   "why_html": "Publishing faster than Google indexes builds a pile of pages nobody sees. Tying the pace to indexing speeds up while most pages are indexed within two weeks and slows down by itself when they are not.",
+   "how_html": "The engine starts each site at 10 new pages a day, adds 5 a week while most are indexed within two weeks, stops at 30, and halves the pace automatically when indexing falls. The weekly report carries the pace and the indexed count.",
+   "check": {
+    "mode": "auto",
+    "type": "loop_pace",
+    "source": "github",
+    "how": "The newest search-loop-week report carries a pace between 1 and 30 a day and the indexed count it was set from; the config never caps above 30.",
+    "applies_to": [
+     "flag:search_loop"
+    ]
+   }
+  },
+  {
+   "id": "f9",
+   "phase": "F",
+   "title": "Every page ends in the site's one action",
+   "title_html": "Every page ends in the site's one action",
+   "burned": false,
+   "why_html": "A visit that ends on a page with no next step earns nothing. Each site has one thing it wants a visitor to do (buy, book, sign up, fill the form), and every page leads there.",
+   "how_html": "The site's search-loop config names its <code>one_action</code> (a path or URL); the page template ends every page with it.",
+   "check": {
+    "mode": "auto",
+    "type": "one_action_every_page",
+    "source": "html",
+    "how": "The site's search-loop config names its one action, and every sampled content page links to it or carries a form that posts to it.",
+    "applies_to": [
+     "flag:search_loop"
+    ]
+   }
+  },
+  {
+   "id": "f10",
+   "phase": "F",
+   "title": "Every new page is checked at 2, 4 and 8 weeks: strengthened, undone or merged",
+   "title_html": "Every new page is checked at 2, 4 and 8 weeks: strengthened, undone or merged",
+   "burned": false,
+   "why_html": "Publishing straight away is only safe if what does not work is taken back. The checks keep the winners growing and stop thin pages piling up.",
+   "how_html": "The engine reads each page's indexing, impressions and clicks at 2, 4 and 8 weeks: a page that is moving is strengthened, one that is not indexed or shown is undone (noindex or removed), and near-duplicates are merged with a redirect. The weekly report counts wins, undone and merged.",
+   "check": {
+    "mode": "auto",
+    "type": "loop_checks_248",
+    "source": "github",
+    "how": "The newest search-loop-week report carries a number for wins, undone and merged.",
+    "applies_to": [
+     "flag:search_loop"
+    ]
+   }
+  },
+  {
+   "id": "f11",
+   "phase": "F",
+   "title": "AI-referral visits and AI-bot reads are measured every week",
+   "title_html": "AI-referral visits and AI-bot reads are measured every week",
+   "burned": false,
+   "why_html": "Answer engines are half the goal (AEO and GEO). Visits sent by ChatGPT, Perplexity, Gemini or Copilot, and the AI crawlers that read the pages, are the only way to see whether that half is working.",
+   "how_html": "Visits are counted by referrer (chatgpt.com, perplexity.ai, gemini.google.com, copilot.microsoft.com and similar); bot reads from the host's request logs by user agent (GPTBot, ClaudeBot, PerplexityBot, Google-Extended and similar). Both go into the weekly report; an unread source is said as not read, never 0.",
+   "check": {
+    "mode": "auto",
+    "type": "ai_measured",
+    "source": "github",
+    "how": "The newest search-loop-week report carries a number for AI-referral visits and for AI-bot reads.",
+    "applies_to": [
+     "flag:search_loop"
+    ]
+   }
+  },
+  {
+   "id": "f12",
+   "phase": "F",
+   "title": "The site runs the shared search-loop engine (its config and the caller workflow)",
+   "title_html": "The site runs the shared search-loop engine (its config and the caller workflow)",
+   "burned": false,
+   "why_html": "One engine for every selling site means a fix or a better rule reaches all of them at once, instead of each repo growing its own loop that drifts.",
+   "how_html": "The repo carries <code>search-loop.config.json</code> (or <code>search-loop/&lt;site&gt;.json</code>) naming the site and its one action, and a workflow with <code>uses: seq23/search-loop/…</code> on a schedule. The engine uploads the <code>search-loop-week</code> report every run.",
+   "check": {
+    "mode": "auto",
+    "type": "search_loop_adopted",
+    "source": "repo",
+    "how": "A search-loop config in the repo names the site, and a workflow calls the shared seq23/search-loop engine.",
+    "applies_to": [
+     "flag:search_loop"
     ]
    }
   },
