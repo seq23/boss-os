@@ -57,14 +57,15 @@ export function findings(files) {
   const w = files[WRITER] ?? "";
   if (!w.includes(MIRROR)) bad.push(`${WRITER}: does not take its paths from ${MIRROR}`);
   const sh = files[INSTALLER] ?? "";
-  const buyers = /<string>([^<]*duty-run\.sh buyer-hunt\.mjs[^<]*)<\/string>/.exec(sh);
-  if (!buyers) bad.push(`${INSTALLER}: no buyers stanza runs duty-run.sh buyer-hunt.mjs`);
-  else {
-    const cmd = buyers[1];
+  // Both weekly jobs (Tuesday buyers, Thursday sellers since 1 Nov 2026) pull the mirror before they hunt.
+  for (const [name, script] of [["buyers", "buyer-hunt.mjs"], ["sellers", "seller-hunt.mjs"]]) {
+    const stanza = new RegExp(`<string>([^<]*duty-run\\.sh ${script.replace(".", "\\.")}[^<]*)</string>`).exec(sh);
+    if (!stanza) { bad.push(`${INSTALLER}: no ${name} stanza runs duty-run.sh ${script}`); continue; }
+    const cmd = stanza[1];
     const pull = cmd.indexOf("capital:book -- --pull");
-    const hunt = Math.min(...["filing-hunt.mjs", "buyer-hunt.mjs", "capital:hunts"].map((t) => (cmd.indexOf(t) === -1 ? Infinity : cmd.indexOf(t))));
-    if (pull === -1) bad.push(`${INSTALLER}: the buyers job never pulls the mirror (capital:book -- --pull)`);
-    else if (pull > hunt) bad.push(`${INSTALLER}: the buyers job pulls the mirror AFTER hunting`);
+    const hunt = Math.min(...["filing-hunt.mjs", "buyer-hunt.mjs", "seller-hunt.mjs", "capital:hunts"].map((t) => (cmd.indexOf(t) === -1 ? Infinity : cmd.indexOf(t))));
+    if (pull === -1) bad.push(`${INSTALLER}: the ${name} job never pulls the mirror (capital:book -- --pull)`);
+    else if (pull > hunt) bad.push(`${INSTALLER}: the ${name} job pulls the mirror AFTER hunting`);
   }
   return bad;
 }
@@ -104,8 +105,11 @@ function selfTest() {
     if (!f.some((b) => b.includes(e))) { console.error(`self-test: expected a finding containing "${e}", got ${JSON.stringify(f)}`); process.exit(1); }
   }
   // A pull that runs after the hunt is the same defect with better manners.
-  const late = { ...real, [INSTALLER]: real[INSTALLER].replace("npm run --silent capital:book -- --pull; ", "").replace("capital:buyers -- --send</string>", "capital:buyers -- --send; npm run --silent capital:book -- --pull</string>") };
+  const late = { ...real, [INSTALLER]: real[INSTALLER].replace("npm run --silent capital:book -- --pull; ", "").replace("capital:buyers -- --send --email</string>", "capital:buyers -- --send --email; npm run --silent capital:book -- --pull</string>") };
   if (!findings(late).some((b) => b.includes("AFTER hunting"))) { console.error("self-test: a late pull must be caught"); process.exit(1); }
+  // The Thursday job pulling late, or not at all, is the same defect.
+  const lateThu = { ...real, [INSTALLER]: real[INSTALLER].replace("npm run --silent capital:book -- --pull; cd $REPO &amp;&amp; bash $REPO/scripts/ops/duty-run.sh seller-hunt.mjs", "bash $REPO/scripts/ops/duty-run.sh seller-hunt.mjs") };
+  if (!findings(lateThu).some((b) => b.includes("sellers job never pulls"))) { console.error("self-test: a Thursday job with no pull must be caught"); process.exit(1); }
   // An unreadable hunt is Rule 0.
   if (!findings({ ...real, "scripts/ops/buyer-hunt.mjs": null }).some((b) => b.includes("unreadable"))) { console.error("self-test: an unreadable hunt must fail"); process.exit(1); }
   console.log("self-test OK: the real tree passes; the 15 September state, a late pull and an unreadable hunt each fail.");
