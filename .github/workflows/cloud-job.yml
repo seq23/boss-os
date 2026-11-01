@@ -54,6 +54,8 @@ jobs:
           BOSS_OS_FALLBACK_MAIL_KEY: ${{ secrets.BOSS_OS_FALLBACK_MAIL_KEY }}
           GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
           DAILYSTORY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DAILYSTORY_SUPABASE_SERVICE_ROLE_KEY }}
+          # Valerie's list in the morning email (your-day): the P&P owner feed's read key.
+          PNP_OWNER_FEED_TOKEN: ${{ secrets.PNP_OWNER_FEED_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "$STATE" ]; then
