@@ -36,7 +36,7 @@ export function links(html: string, base: string): { url: string; host: string; 
 export const CHECKS: Record<string, (ctx: any, params?: any) => any> & { [K in "sitemap_valid" | "robots_ok" | "hyperlocal_coverage" | "canonical_self"]: (ctx: any, params?: any) => any };
 export function runChecks(checklist: any, ctx: any): any[];
 export function fixBriefs(checklist: any, siteResults: any[], opts?: { now?: number }): any[];
-export function morningLines(checklist: any, siteResults: any[], opts?: { previous?: any; queued?: number; lastRepair?: { fixed?: number } | null; max?: number }): string[];
+export function morningLines(checklist: any, siteResults: any[], opts?: { previous?: any; queued?: number; lastRepair?: { fixed?: number } | null; categories?: any; max?: number }): string[];
 export function summaryLines(siteResults: any[]): string[];
 export function workQueue(briefs: unknown[], opts?: { chunkSize?: number }): { total: number; workable: number; protected: number; no_repo: number; repos: { repo: string; n: number }[]; chunks: { repo: string; ids: string[] }[] };
 export function queueRunLine(args: { started: number; fixed: number; left: number; protectedLeft?: number; noRepo?: number }): string;
@@ -58,7 +58,7 @@ export function entityFor(repo: any, site: any): { path: string; node: any; root
 export function namedPeople(nodes: any[]): string[];
 export function reviewerRoster(repo: any): Set<string> | null;
 /** Client sites (category "client") are audited but never shown on her page or in her email (1 Nov 2026). */
-export function shownToOwner(site: any): boolean;
+export function siteSection(site: any, categories: any): "mine" | "friends" | "system";
 /** F · The search growth loop (1 Nov 2026): the engine's caller workflow, the per-site config and the weekly report. */
 export const LOOP_ENGINE_USES: string;
 export const LOOP_CONFIG_RE: RegExp;

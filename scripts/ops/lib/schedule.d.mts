@@ -17,7 +17,7 @@ export function workflowCrons(yaml: string): string[];
 export function wranglerCrons(text: string): string[];
 export function readSchedule(root: string): any;
 export function shapeProblems(m: any): string[];
-export function scheduleClientProblems(m: any, scanned?: string[]): string[];
+export function scheduleCategoryProblems(m: any, scanned?: string[], cats?: any): string[];
 export function dutyProblems(m: any, duties: any[]): string[];
 export function launchdProblems(m: any, jobs: Record<string, string[]>): string[];
 export function missingLabels(m: any, jobs: Record<string, string[]>): string[];
@@ -26,7 +26,9 @@ export function repoCronFiles(repo: string, root: string, opts?: { fetch?: boole
 export function repoCronFilesApi(owner: string, repo: string): CronFile[];
 export function scheduleRepoDir(repo: string, root: string): string | null;
 export function disabledWorkflows(owner: string, repo: string): Set<string>;
-export function candidateRepos(owner: string): string[];
+export function candidateRepos(owner: string, keep?: string[]): string[];
 export function displayWindow(t: string): { from: number; to: number } | null;
 export function slotTimes(slot: string): Array<{ day: string; mins: number }>;
 export function weekProblems(m: any): { problems: string[]; pending: string[] };
+
+export function ghApiRetrying(p: string, o?: { run?: (args: string[]) => string; waitMs?: number; tries?: number }): any;

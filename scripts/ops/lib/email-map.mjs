@@ -10,8 +10,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { EXCLUDED, GRID } from "../../../src/shared/boss/grid.mjs";
-import { NO_AUTO_FIX } from "../../../src/shared/boss/siteAudit/repoPolicy.mjs";
+import { categoryOf } from "../../../src/shared/boss/repos/categories.mjs";
+import { readRepoCategories } from "./repo-categories.mjs";
 
 /**
  * What counts as SENDING an email: a transport call (Resend's endpoint, Gmail's send, a Workers
@@ -69,40 +69,27 @@ export function addressProblems(manifest) {
 }
 
 /**
- * CLIENT REPOS NEVER APPEAR ON THE EMAIL MAP. Owner's standing rule: the client repos (horse, hicks,
- * the client micro-sites) are never listed, scheduled or raised in Boss OS — the only exception is
- * creator-studios work, which Boss OS handles (22 Oct 2026). The client list is not kept here: it is
- * derived from the places the repo already names its clients (grid.mjs `owner: "client"` properties,
- * grid.mjs EXCLUDED client micro-sites, repoPolicy.mjs NO_AUTO_FIX `kind: "client"`), so a client
- * added there is refused here with no second list to fall behind. Matching is by prefix, as grid.mjs does.
+ * REPO CATEGORIES DECIDE, NOT A BAN (owner, 1 Nov 2026: the old "client repos never appear" ban is
+ * replaced by the categories in the personal brain, "## Repo categories"; no repo name is copied
+ * here). Every repo the map cites or scans must sit in one category, so the brain's list stays the one
+ * list; a Friends & clients repo is recognised by its category (`isClientRepo`).
  */
-export const CREATOR_STUDIO_REPOS = ["creator-studios", "mercedes-creator-dashboard", "sheila-creator-dashboard"];
-export const CLIENT_REPO_EXCLUSION = [...new Set([
-  ...GRID.filter((p) => p.owner === "client").flatMap((p) => p.repos),
-  ...EXCLUDED.filter((e) => /client/i.test(e.why)).map((e) => e.match),
-  ...NO_AUTO_FIX.filter((r) => r.kind === "client").map((r) => r.repo),
-])].filter((r) => !CREATOR_STUDIO_REPOS.includes(r));
-
-/** Client property domains (grid.mjs), which a row's prose must not name either. */
-export const CLIENT_DOMAINS = GRID.filter((p) => p.owner === "client").flatMap((p) => p.domains ?? []);
-
-/** Is this repo name a client repo the map must never carry? Creator-studio repos are allowed. */
-export function isClientRepo(repo) {
-  const name = String(repo ?? "").trim().replace(/\/+$/, "").split("/").pop()?.toLowerCase() ?? "";
-  if (!name || CREATOR_STUDIO_REPOS.includes(name)) return false;
-  return CLIENT_REPO_EXCLUSION.some((c) => name.startsWith(c.toLowerCase()));
+export function isClientRepo(repo, cats = readRepoCategories()) {
+  return categoryOf(repo, cats) === "friends";
 }
 
-/** Every row or scanned repo that names a client repo, by name. Empty is the only passing answer. */
-export function clientRepoProblems(manifest, scannedRepos = []) {
-  if (CLIENT_REPO_EXCLUSION.length === 0) return ["the client-repo exclusion list is empty: the guard cannot see anything"];
+/**
+ * Every repo a row cites that sits in no category, by name; unreadable categories are a named stop.
+ * Scanned repos are not judged: a scan looks for unregistered jobs in every repo of hers.
+ */
+export function categoryProblems(manifest, _scannedRepos = [], cats = readRepoCategories()) {
+  if (!cats || cats.problem) return [`NAMED STOP [NO_REPO_CATEGORIES] ${cats?.problem ?? "the repo categories were not read"}`];
+  const repos = new Set((manifest.rows ?? []).flatMap((r) => (r.code ?? []).map((c) => c.repo)));
   const out = [];
-  for (const r of manifest.rows ?? []) {
-    for (const c of r.code ?? []) if (isClientRepo(c.repo)) out.push(`${r.id}: cites client repo ${c.repo} (client repos never appear in Boss OS)`);
-    const text = JSON.stringify({ ...r, code: undefined }).toLowerCase();
-    for (const c of [...CLIENT_REPO_EXCLUSION, ...CLIENT_DOMAINS]) if (text.includes(c.toLowerCase())) out.push(`${r.id}: names client ${c} (client repos never appear in Boss OS)`);
+  for (const repo of repos) {
+    if (!repo || repo === "external") continue;
+    if (!categoryOf(repo, cats)) out.push(`${repo} is in no repo category (add it to the personal brain's "Repo categories")`);
   }
-  for (const repo of scannedRepos) if (isClientRepo(repo)) out.push(`scanned client repo ${repo} (client repos never appear in Boss OS)`);
   return out;
 }
 

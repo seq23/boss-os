@@ -7,7 +7,7 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkLaunchd, checkOtherRepos, clientRepoProblems, readManifest } from "./lib/email-map.mjs";
+import { checkLaunchd, checkOtherRepos, categoryProblems, readManifest } from "./lib/email-map.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const manifest = readManifest(ROOT);
@@ -17,7 +17,7 @@ if (repos.checked.length === 0) {
   console.error("NAMED STOP [EMAIL_MAP_NOTHING_CHECKED] no other repo checkout was found next to this one, in ~/GitHub or in ~.");
   process.exit(2);
 }
-const problems = [...clientRepoProblems(manifest, [...repos.checked, ...repos.missingRepos]), ...repos.problems, ...launchd.missing.map((l) => `launchd ${l} is not installed`)];
+const problems = [...categoryProblems(manifest, [...repos.checked, ...repos.missingRepos]), ...repos.problems, ...launchd.missing.map((l) => `launchd ${l} is not installed`)];
 console.log(`Email Map: ${manifest.rows.length} rows; ${repos.checked.length} repos read${repos.missingRepos.length ? ` (not on this Mac: ${repos.missingRepos.join(", ")})` : ""}; ${launchd.labels.length} launchd labels.`);
 if (problems.length) {
   console.error(problems.map((p) => `  ${p}`).join("\n"));

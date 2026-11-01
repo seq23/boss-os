@@ -11,8 +11,8 @@
  *      (never deleted) into ~/.claude/memory-archive/<date>/<p>/, and said. The home MEMORY.md
  *      growing past an index (MEMORY_INDEX_MAX_LINES) is said, not touched.
  *   2. Repo pointers: an active repo under ~/GitHub (a commit in the last ACTIVE_DAYS days) whose
- *      CLAUDE.md has no "## Company brain" section. Client repos are never named (isClientRepo,
- *      the Email Map's derived list; creator-studios is allowed); git worktrees are skipped.
+ *      CLAUDE.md has no "## Company brain" section. Friends & clients repos are skipped (their
+ *      category in the personal brain: results stay in their own repo); git worktrees are skipped.
  *   3. Skills: a ~/.claude/skills/<name>/SKILL.md carrying a phrase that contradicts
  *      ~/.claude/CLAUDE.md (BAD_SKILL_PHRASES). Cheap by design: phrases, not judgement.
  *   4. The local brain copy: ~/Brains older than COPY_MAX_HOURS means com.seq.boss-brains-pull is
@@ -33,6 +33,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { isClientRepo } from "../ops/lib/email-map.mjs";
+import { readRepoCategories } from "../ops/lib/repo-categories.mjs";
 
 const ORIGIN = process.env.BOSS_ORIGIN ?? "https://boss.sequoiataylor.com";
 export const HOME_PROJECT = "-Users-sequoiataylor";
@@ -95,17 +96,18 @@ export function checkRepos({ home, now = Date.now(), lastCommit = gitLastCommit 
   if (!isDir(root)) return { repos_checked: 0, repos_missing_pointer: [], unchecked: ["the repos"] };
   const missing = [];
   let checked = 0;
+  const cats = readRepoCategories({ home, fresh: true });
   for (const name of readdirSync(root).sort()) {
     const dir = join(root, name);
     if (!isDir(join(dir, ".git"))) continue; // not a repo, or a worktree (its .git is a file)
-    if (isClientRepo(name)) continue; // never named in Boss OS
+    if (isClientRepo(name, cats)) continue; // Friends & clients: results stay in their own repo
     const at = lastCommit(dir);
     if (!at || now - at > ACTIVE_DAYS * 86_400_000) continue;
     checked++;
     const claude = join(dir, "CLAUDE.md");
     if (!existsSync(claude) || !POINTER.test(readFileSync(claude, "utf8"))) missing.push(name);
   }
-  return { repos_checked: checked, repos_missing_pointer: missing, unchecked: checked ? [] : ["the repos"] };
+  return { repos_checked: checked, repos_missing_pointer: missing, unchecked: [...(checked ? [] : ["the repos"]), ...(cats.problem ? ["the repo categories"] : [])] };
 }
 
 function gitLastCommit(dir) {

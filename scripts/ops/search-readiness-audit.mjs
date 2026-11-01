@@ -42,6 +42,7 @@ import { passingItems,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
+import { readRepoCategories } from "./lib/repo-categories.mjs";
 
 const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "search-readiness");
 const REPOS = join(OUT, "repos");
@@ -447,7 +448,7 @@ async function main() {
     const { writeMorningSection } = await import("../../src/shared/boss/mail/morning.mjs");
     const statusPath = join(OUT, "fix-status.json");
     const lastRepair = existsSync(statusPath) ? JSON.parse(readFileSync(statusPath, "utf8")) : null;
-    const lines = morningLines(checklist, siteResults, { previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
+    const lines = morningLines(checklist, siteResults, { categories: readRepoCategories(), previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
     writeMorningSection("grid_repos", { lines, link: { label: "See every site's checks →", url: "https://boss.sequoiataylor.com/?view=morning" } });
     say(`Morning section written: ${lines.length} lines.`);
   }
