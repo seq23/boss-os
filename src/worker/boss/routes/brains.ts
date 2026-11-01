@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest } from "../lib/http";
-import { canonicalSection, replaceSection, parseSections, SECTIONS, BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
+import { canonicalSection, replaceSection, parseSections, resolveBrainSlug, SECTIONS, BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
 import { allBrains, currentCohesion, recordMacCohesion, listEntry, oneBrain, revisions, saveBrain, scoreboard } from "../brains/store";
 
 /**
@@ -14,6 +14,9 @@ import { allBrains, currentCohesion, recordMacCohesion, listEntry, oneBrain, rev
  *   GET  /:slug                 one brain, whole, with its sections
  *   PUT  /:slug                 { body_md } or { section, text } (+ note) — records a revision
  *   GET  /:slug/revisions       its history, newest first
+ *
+ * A retired slug (RETIRED_BRAINS: `industry-guides`) resolves to its successor (`spry`) on every
+ * route, so old links and pointers keep working; the answer carries the live slug.
  *
  * Behind the same session as the rest of /api/boss (index.ts). Private spans come back to her: she
  * is the owner; they are cut only on the way to a model (router + dispatch).
@@ -44,7 +47,7 @@ brains.get("/:slug", async (c) => {
 });
 
 brains.put("/:slug", async (c) => {
-  const slug = c.req.param("slug");
+  const slug = resolveBrainSlug(c.req.param("slug"));
   if (!BRAIN_SLUGS.includes(slug)) throw badRequest(`There is no brain called ${slug}`);
   const body = await c.req.json<{ body_md?: unknown; section?: unknown; text?: unknown; note?: unknown }>().catch(() => null);
   if (!body) throw badRequest("Send the brain or one section to save");

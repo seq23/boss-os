@@ -3,7 +3,7 @@
  * the "Brains" section of CLAUDE.md, which this file reads. Synthetic data only.
  */
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as B from "../src/shared/boss/brains/brain.mjs";
@@ -25,6 +25,32 @@ describe("the rules in CLAUDE.md are the rules in code", () => {
     expect(B.BRAINS).toHaveLength(9);
     expect(B.BRAIN_SLUGS).not.toContain("west-peek-events");
     expect(B.BRAIN_SLUGS).not.toContain("westpeek-live");
+  });
+});
+
+describe("the restructure (owner, 1 Nov 2026)", () => {
+  it("has exactly nine slugs: eight brains and the team doc, in scoreboard order", () => {
+    expect([...B.BRAIN_SLUGS]).toEqual([
+      "brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends", "personal", "team",
+    ]);
+    expect([...B.BUSINESS_SLUGS]).toEqual(["brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends"]);
+    expect(B.BRAIN_SLUGS).not.toContain("industry-guides");
+  });
+  it("carries the approved titles", () => {
+    const t = Object.fromEntries(B.BRAINS.map((b) => [b.slug, b.title]));
+    expect(t.brokerage).toBe("Spry Ventures (spry.vc) — the brokerage");
+    expect(t["west-peek-ventures"]).toBe("West Peek Ventures — the fund");
+    expect(t["west-peek"]).toBe("West Peek — the community");
+    expect(t.spry).toBe("Spry Labs — the umbrella for every side business");
+    expect(t["time-2-read"]).toBe("Time-2-Read — a Spry Labs company");
+  });
+  it("industry-guides is retired into spry: the alias resolves, live slugs resolve to themselves", () => {
+    expect(B.RETIRED_BRAINS).toEqual({ "industry-guides": "spry" });
+    expect(B.resolveBrainSlug("industry-guides")).toBe("spry");
+    for (const s of B.BRAIN_SLUGS) expect(B.resolveBrainSlug(s)).toBe(s);
+    expect(B.resolveBrainSlug("nope")).toBe("nope");
+    expect(B.historySlugsFor("spry")).toEqual(["spry", "industry-guides"]);
+    expect(B.historySlugsFor("brokerage")).toEqual(["brokerage"]);
   });
 });
 
@@ -71,11 +97,15 @@ describe("private spans", () => {
 });
 
 describe("who reads which brain", () => {
-  it("maps the roster: Camille P&P, Monique the brokerage, the fund and the two businesses whose outreach she runs, Simone everything plus personal, Toni nothing", () => {
+  it("maps the roster: Camille P&P, Monique the brokerage, the fund, the community and the two businesses whose outreach she runs, Simone everything plus personal, Toni nothing", () => {
     expect(B.brainsFor("emp_research").slugs).toEqual(["porch-and-party"]);
     // Owner, 31 Oct 2026: Monique runs time-2-read's group and institution sales and the Industry
-    // Guides' outreach, so she reads those brains too (#195 left her on the first two only).
-    expect(B.brainsFor("emp_relationship").slugs).toEqual(["brokerage", "west-peek-ventures", "time-2-read", "industry-guides"]);
+    // Guides' outreach. Restructure 1 Nov 2026: the Industry Guides live in Spry Labs (`spry`), and
+    // her TLC/Rooms-related work reads the community brain (`west-peek`).
+    expect(B.brainsFor("emp_relationship").slugs).toEqual(["brokerage", "west-peek-ventures", "west-peek", "time-2-read", "spry"]);
+    // Nobody reads a retired brain; every live brain is read by someone.
+    for (const emp of Object.keys(B.EMPLOYEE_BRAINS)) expect(B.brainsFor(emp).slugs).not.toContain("industry-guides");
+    for (const s of B.BUSINESS_SLUGS) expect(Object.keys(B.EMPLOYEE_BRAINS).some((e) => B.brainsFor(e).slugs.includes(s))).toBe(true);
     expect(B.brainsFor("emp_relationship").summarised).toBe(false);
     const simone = B.brainsFor("emp_chief");
     expect(simone.summarised).toBe(true);
@@ -96,9 +126,21 @@ describe("edits in her words", () => {
     expect(B.brainSlugFor("P&P")).toBe("porch-and-party");
     expect(B.brainSlugFor("pnp")).toBe("porch-and-party");
     expect(B.brainSlugFor("time-2-read")).toBe("time-2-read");
-    expect(B.brainSlugFor("TLC")).toBe("west-peek-ventures");
-    expect(B.brainSlugFor("westpeek.live")).toBe("west-peek-ventures");
+    // Restructure 1 Nov 2026: TLC, Rooms and westpeek.live are the community; the fund is the fund.
+    expect(B.brainSlugFor("TLC")).toBe("west-peek");
+    expect(B.brainSlugFor("Rooms")).toBe("west-peek");
+    expect(B.brainSlugFor("westpeek.live")).toBe("west-peek");
+    expect(B.brainSlugFor("West Peek")).toBe("west-peek");
+    expect(B.brainSlugFor("west-peek")).toBe("west-peek");
+    expect(B.brainSlugFor("the fund")).toBe("west-peek-ventures");
+    expect(B.brainSlugFor("West Peek Ventures")).toBe("west-peek-ventures");
+    expect(B.brainSlugFor("WPV")).toBe("west-peek-ventures");
     expect(B.brainSlugFor("brokerage")).toBe("brokerage");
+    expect(B.brainSlugFor("Spry Ventures")).toBe("brokerage");
+    expect(B.brainSlugFor("spry.vc")).toBe("brokerage");
+    expect(B.brainSlugFor("Spry Labs")).toBe("spry");
+    expect(B.brainSlugFor("industry guides")).toBe("spry");
+    expect(B.brainSlugFor("industry-guides")).toBe("spry");
     expect(B.brainSlugFor("lunch")).toBeNull();
   });
   it("a settled decision becomes a dated line with its why", () => {
@@ -199,6 +241,22 @@ describe("the local copy", () => {
     expect(file.split("\n")[0]).toBe("Source: Boss OS · pulled 2026-10-31T12:00:00.000Z · edit in Boss OS, not here");
     expect(header(at)).toBe(file.split("\n")[0]);
     expect(file).toContain("Synthetic Fund Q");
+  });
+
+  it("a brain Boss OS no longer lists is moved into _retired/, never deleted; her own files are left alone", async () => {
+    const out = mkdtempSync(join(tmpdir(), "brains-"));
+    writeFileSync(join(out, "industry-guides.md"), "Source: Boss OS · pulled 2026-10-31T00:00:00.000Z · edit in Boss OS, not here\n\n# Old\n");
+    writeFileSync(join(out, "notes.md"), "my own notes\n");
+    mkdirSync(join(out, "_retired"));
+    writeFileSync(join(out, "_retired", "industry-guides.md"), "Source: Boss OS · an even older copy\n");
+    const { impl } = fakeBossOS([{ slug: "spry", title: "Spry Labs", body_md: "# Spry Labs\n" }]);
+    const at = new Date("2026-11-01T12:00:00Z");
+    await pull({ out, passcode: "test-passcode", fetchImpl: impl as any, origin: "https://boss.test", now: at });
+    expect(readdirSync(out).sort()).toEqual(["_retired", "notes.md", "spry.md"]);
+    const retired = readdirSync(join(out, "_retired")).sort();
+    expect(retired).toEqual(["industry-guides.2026-11-01T12-00-00-000Z.md", "industry-guides.md"]);
+    expect(readFileSync(join(out, "_retired", "industry-guides.2026-11-01T12-00-00-000Z.md"), "utf8")).toContain("# Old");
+    expect(readFileSync(join(out, "_retired", "industry-guides.md"), "utf8")).toContain("an even older copy");
   });
 
   it("Rule 0: no passcode or no brains is a named stop, never a quiet success", async () => {

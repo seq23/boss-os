@@ -12,9 +12,13 @@
  *   npm run brains:pull -- --out <dir>          # somewhere else
  *   BOSS_ORIGIN=http://localhost:8787 npm run brains:pull   # a local Worker
  *
+ * A brain that Boss OS no longer lists (a retired one, e.g. industry-guides on 1 Nov 2026) is never
+ * deleted here: its old copy is MOVED into <out>/_retired/. Only files this script wrote (headed
+ * "Source: Boss OS") are ever moved; anything else in the folder is left alone.
+ *
  * Rule 0: it exits non-zero, with a named stop, when it wrote nothing.
  */
-import { mkdirSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -55,7 +59,26 @@ export async function pull({ out = join(homedir(), "Brains"), passcode = process
     written.push(path);
   }
   if (!written.length) throw Object.assign(new Error("NAMED STOP [NOTHING_WRITTEN] No brain could be written."), { code: 2 });
+  retireStale(out, written, now);
   return written;
+}
+
+/** Old copies of brains Boss OS no longer lists → <out>/_retired/ (never deleted). Returns the moved paths. */
+export function retireStale(out, written, now = new Date()) {
+  const keep = new Set(written.map((p) => p.split("/").pop()));
+  const moved = [];
+  for (const name of readdirSync(out)) {
+    if (!name.endsWith(".md") || keep.has(name) || !SLUG.test(name.slice(0, -3))) continue;
+    const from = join(out, name);
+    if (!readFileSync(from, "utf8").startsWith("Source: Boss OS")) continue;
+    const dir = join(out, "_retired");
+    mkdirSync(dir, { recursive: true });
+    let to = join(dir, name);
+    if (existsSync(to)) to = join(dir, `${name.slice(0, -3)}.${now.toISOString().replace(/[:.]/g, "-")}.md`);
+    renameSync(from, to);
+    moved.push(to);
+  }
+  return moved;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

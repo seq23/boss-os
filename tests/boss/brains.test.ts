@@ -40,7 +40,7 @@ describe("the brains API", () => {
     const list = r.body.data.brains;
     expect(list.map((b: any) => b.slug)).toEqual(BRAINS.map((b) => b.slug));
     expect(list).toHaveLength(9);
-    expect(list.slice(0, 2).map((b: any) => b.slug)).toEqual(["brokerage", "west-peek-ventures"]);
+    expect(list.slice(0, 3).map((b: any) => b.slug)).toEqual(["brokerage", "west-peek-ventures", "west-peek"]);
     const pnp = list.find((b: any) => b.slug === "porch-and-party");
     expect(pnp).toMatchObject({ title: "Porch & Party 901", missing_count: 8, stale: false });
     expect(list.find((b: any) => b.slug === "team").missing_count).toBe(0);
@@ -92,7 +92,33 @@ describe("the brains API", () => {
     ]);
     expect(rows.filter((r: any) => r.slug === "porch-and-party")).toEqual([expect.objectContaining({ metric: null, value: null, words: "not tracked yet" })]);
     expect(rows.some((r: any) => r.slug === "personal" || r.slug === "team")).toBe(false);
-    expect([...new Set(rows.map((r: any) => r.slug))]).toEqual(["brokerage", "west-peek-ventures", "porch-and-party", "time-2-read", "industry-guides", "spry", "friends"]);
+    // One row set per live business brain, in order (restructure 1 Nov 2026): the community is new,
+    // the retired industry-guides is not scored.
+    expect([...new Set(rows.map((r: any) => r.slug))]).toEqual(["brokerage", "west-peek-ventures", "west-peek", "porch-and-party", "time-2-read", "spry", "friends"]);
+  });
+
+  it("industry-guides is retired into spry: GET and PUT resolve to spry, its history is kept, the list never shows it", async () => {
+    // The old row stays in D1 as history (migration 0326 retitles it; nothing is deleted).
+    const old = await row<any>(`SELECT slug, title FROM brains WHERE slug = 'industry-guides'`);
+    expect(old).toMatchObject({ slug: "industry-guides", title: "Industry Guides (retired 1 Nov 2026: now in Spry Labs)" });
+    await env.DB.prepare(`INSERT INTO brain_revisions (id, slug, body_md, changed_at, changed_by, note) VALUES ('brv_old_ig', 'industry-guides', '# old', 1, 'Sequoia', 'before the fold')`).run();
+
+    const got = await apiJson<any>("/api/brains/industry-guides");
+    expect(got.status).toBe(200);
+    expect(got.body.data).toMatchObject({ slug: "spry", title: "Spry Labs — the umbrella for every side business" });
+
+    const put = await apiJson<any>("/api/brains/industry-guides", { method: "PUT", body: { section: "Priorities", text: "1. guides", note: "via old link" } });
+    expect(put.status).toBe(200);
+    expect(put.body.data.slug).toBe("spry");
+    expect((await row<any>(`SELECT body_md FROM brains WHERE slug = 'spry'`)).body_md).toContain("1. guides");
+    expect((await row<any>(`SELECT body_md FROM brains WHERE slug = 'industry-guides'`)).body_md).not.toContain("1. guides");
+
+    const revs = (await apiJson<any>("/api/brains/industry-guides/revisions")).body.data.revisions;
+    expect(revs.map((r: any) => r.note)).toEqual(["via old link", "before the fold"]);
+
+    const list = (await apiJson<any>("/api/brains")).body.data.brains;
+    expect(list.map((b: any) => b.slug)).not.toContain("industry-guides");
+    expect(list.find((b: any) => b.slug === "west-peek")).toMatchObject({ title: "West Peek — the community", missing_count: 8 });
   });
 });
 
@@ -144,8 +170,13 @@ describe("employees read their brains first", () => {
   it("Simone reads every business and Personal, summarised, but not the team doc as a business", async () => {
     const p = await buildPrompt(env as any, { id: "t3", title: "x", employee_id: "emp_chief" }, { prompt: "Plan the day." });
     expect(p).toContain("THE BUSINESSES YOU SERVE");
-    for (const t of ["### Brokerage (secondaries)", "### West Peek Ventures (fund, TLC & Rooms, westpeek.live)", "### Porch & Party 901", "### Friends' businesses", "### Personal"]) expect(p).toContain(t);
+    for (const t of [
+      "### Spry Ventures (spry.vc) — the brokerage", "### West Peek Ventures — the fund", "### West Peek — the community",
+      "### Porch & Party 901", "### Time-2-Read — a Spry Labs company", "### Spry Labs — the umbrella for every side business",
+      "### Friends' businesses", "### Personal",
+    ]) expect(p).toContain(t);
     expect(p).not.toContain("### Who's who");
+    expect(p).not.toContain("### Industry Guides");
     expect(p).toContain("Close the gates daily");
   });
 

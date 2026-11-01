@@ -5,7 +5,7 @@ import { getSetting, setSetting } from "../lib/settings";
 import { notFound } from "../lib/http";
 import { dayIdInZone, wallClock } from "../../../shared/boss/timezone";
 import {
-  BRAIN_SLUGS, applyEdit, brainBlock, brainsFor, cohesionCheckLine, cohesionLine, type MacCheck, daysSince, isStale, missingCount,
+  BRAIN_SLUGS, applyEdit, historySlugsFor, resolveBrainSlug, brainBlock, brainsFor, cohesionCheckLine, cohesionLine, type MacCheck, daysSince, isStale, missingCount,
   parseBrainEdits, scoreboardRows, shortName, whosWhoBlock, TEAM_SLUG, type BrainEdit, type BrainRow,
 } from "../../../shared/boss/brains/brain.mjs";
 
@@ -14,15 +14,22 @@ import {
  * who and how. The definition (sections, gaps, private spans, who reads what) is brain.mjs.
  */
 
+/**
+ * The live brains only. A retired brain's row stays in D1 with its history (RETIRED_BRAINS, 1 Nov
+ * 2026) but is never listed, scored or read: its successor holds its facts.
+ */
 export async function allBrains(env: Env): Promise<BrainRow[]> {
   const { results } = await env.DB
     .prepare(`SELECT slug, title, body_md, updated_at, updated_by FROM brains`)
     .all<BrainRow>();
   const order = new Map(BRAIN_SLUGS.map((s, i) => [s, i]));
-  return (results ?? []).sort((a, b) => (order.get(a.slug) ?? 99) - (order.get(b.slug) ?? 99));
+  return (results ?? []).filter((b) => order.has(b.slug)).sort((a, b) => (order.get(a.slug) ?? 99) - (order.get(b.slug) ?? 99));
 }
 
-export async function oneBrain(env: Env, slug: string): Promise<BrainRow> {
+/** One live brain. A retired slug (e.g. `industry-guides`) answers with its successor (`spry`). */
+export async function oneBrain(env: Env, asked: string): Promise<BrainRow> {
+  const slug = resolveBrainSlug(asked);
+  if (!BRAIN_SLUGS.includes(slug)) throw notFound(`There is no brain called ${asked}`);
   const row = await env.DB
     .prepare(`SELECT slug, title, body_md, updated_at, updated_by FROM brains WHERE slug = ?`)
     .bind(slug)
@@ -39,8 +46,8 @@ export function listEntry(b: BrainRow, now = Date.now()) {
 }
 
 /** Write the whole document and its revision in one batch. */
-export async function saveBrain(env: Env, slug: string, body: string, by: string, note: string, now = Date.now()) {
-  await oneBrain(env, slug);
+export async function saveBrain(env: Env, asked: string, body: string, by: string, note: string, now = Date.now()) {
+  const { slug } = await oneBrain(env, asked);
   const id = newId("brv");
   await env.DB.batch([
     env.DB.prepare(`UPDATE brains SET body_md = ?, updated_at = ?, updated_by = ? WHERE slug = ?`).bind(body, now, by, slug),
@@ -51,11 +58,13 @@ export async function saveBrain(env: Env, slug: string, body: string, by: string
   return id;
 }
 
-export async function revisions(env: Env, slug: string) {
-  await oneBrain(env, slug);
+/** Its history, newest first, including the revisions of any brain retired into it. */
+export async function revisions(env: Env, asked: string) {
+  const { slug } = await oneBrain(env, asked);
+  const slugs = historySlugsFor(slug);
   const { results } = await env.DB
-    .prepare(`SELECT id, slug, body_md, changed_at, changed_by, note FROM brain_revisions WHERE slug = ? ORDER BY changed_at DESC LIMIT 100`)
-    .bind(slug)
+    .prepare(`SELECT id, slug, body_md, changed_at, changed_by, note FROM brain_revisions WHERE slug IN (${slugs.map(() => "?").join(",")}) ORDER BY changed_at DESC LIMIT 100`)
+    .bind(...slugs)
     .all();
   return results ?? [];
 }
