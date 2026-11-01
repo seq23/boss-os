@@ -55,7 +55,9 @@ describe("follow-ups: the draft is a fixed template", () => {
     expect(body).not.toContain("Example");
     expect(body).toMatch(/Thursday, October 29.*2:00 PM Central/);
     expect(body.endsWith("Sequoia")).toBe(true);
-    expect(draftBody({ name: "", bucket: "warm", slots: [] })).toMatch(/^Hi there,[\s\S]*Send me a couple of times/);
+    expect(draftBody({ name: "", bucket: "call", slots: [] })).toMatch(/^Hi there,[\s\S]*Send me a couple of times/);
+    // They did not ask for a call: no times are offered, even when the calendar has them.
+    expect(draftBody({ name: "", bucket: "warm", slots: [chicagoInstant("2026-10-29", 14, 0)] })).not.toMatch(/October 29/);
     expect(firstName("<script>")).toBe("there");
   });
 });
@@ -81,11 +83,10 @@ describe("follow-ups: never sends, and no model sees a name (fail closed)", () =
     // lp-daily reaches Gmail only through these two pinned files: it calls no Gmail host itself.
     expect(src("lp-daily.mjs")).not.toMatch(/gmail\.googleapis\.com/);
   });
-  it("the held reply speaks in her voice: we, more than $100M in secondary transactions, a short call, no fund size", () => {
+  it("the held reply speaks in her voice: we, more than $100M in secondary transactions, no fund size", () => {
     const body = draftBody({ name: "Blake Example", bucket: "warm", slots: [] });
     expect(body).toMatch(/more than \$100M in secondary transactions/);
     expect(body).toMatch(/\bWe've\b/);
-    expect(body).toMatch(/short call/);
     expect(body).not.toMatch(/fund size|\$\d+\s?(M|B)\s+fund/i);
   });
 });

@@ -37,7 +37,7 @@ describe("the standing rules for every prospect email", () => {
 
 describe("her changes, applied plainly", () => {
   it("\"say 'X' not 'Y'\" and \"drop the … line\" are applied; anything else is kept as her note", () => {
-    const r = applyTemplateNotes(DEFAULT_PROSPECT_TEMPLATE, "drop the floating line, say 'compare notes' not 'compare notes', and make it warmer");
+    const r = applyTemplateNotes(DEFAULT_PROSPECT_TEMPLATE, "drop the floating line, say 'add or trim' not 'add or trim', and make it warmer");
     expect(r.applied).toContain("dropped the floating line");
     expect(r.template.follow_up).not.toContain("Just floating this back up.");
     expect(r.template.follow_up.split("\n\n")[0]).toBe("Hi {first},");

@@ -8,7 +8,7 @@ import worker from "../../src/worker/boss/index";
 import { apiJson } from "./helpers";
 import {
   DEFAULT_PROSPECT_TEMPLATE, PROSPECT_BANNED, canSpend, dueTouch, eightRaiseFooter, excluded, lpDecideItems,
-  lpReplyBody, lpStatusFrom, namesLine, nameRulesIn, pickCatchups, proposeFeatured, prospectProblems,
+  CALL_ASK, lpReplyBody, lpStatusFrom, namesLine, nameRulesIn, pickCatchups, proposeFeatured, prospectProblems,
   renderProspect, sideFromReply, staleFeatured, templateHash, wordCount, INBOX_LOOKBACK_DAYS, MAX_TOUCHES, nextTouchAt,
 } from "../../src/shared/boss/lp/plan.mjs";
 import { prospectPlan, proposeTemplate, approveTemplate, importProspects, recordProspectEvents, suppressAddresses, prospectsToVerify, recordVerdicts } from "../../src/worker/boss/lp/desk";
@@ -28,13 +28,12 @@ async function tap(path: string, method = "GET") {
 }
 
 describe("the prospect email (her tone rules, 23 Oct 2026)", () => {
-  it("is soft, side-neutral, short, a chat ask, with her names line and the opt-out", () => {
+  it("is soft, side-neutral, short, with her names line and the opt-out", () => {
     for (const touch of [1, 2]) {
       const r = renderProspect(DEFAULT_PROSPECT_TEMPLATE, { first: "Alex Example", names: NAMES, touch });
       expect(prospectProblems(r, NAMES)).toEqual([]);
       // 25 Oct 2026: the names are examples of a wider book, never the full list.
       expect(r.body).toContain("Some of the names crossing my desk right now include Alpha, Beta and Gamma, among others.");
-      expect(r.body).toMatch(/15 minutes to compare notes/);
       expect(r.body).toMatch(/add or trim/);
       expect(wordCount(r.body)).toBeLessThanOrEqual(90);
       expect(r.body).toMatch(/more than \$100M in secondary transactions|floating this back up/);
@@ -51,8 +50,8 @@ describe("the prospect email (her tone rules, 23 Oct 2026)", () => {
       expect(prospectProblems(r).join(" "), phrase).toMatch(/sales phrase/);
     }
     expect(PROSPECT_BANNED.length).toBeGreaterThanOrEqual(10);
-    const noAsk = renderProspect({ ...DEFAULT_PROSPECT_TEMPLATE, body: "Hi {first},\n\nWe've done more than $100M in secondary transactions. {names_line}\n\nSequoia Taylor\nWest Peek Ventures\n\n" + "If this isn't relevant, just reply \"no thanks\" and I won't write again." }, { first: "Alex", names: NAMES });
-    expect(prospectProblems(noAsk).join(" ")).toMatch(/chat ask/);
+    const noAsk = renderProspect({ ...DEFAULT_PROSPECT_TEMPLATE, body: "Hi {first},\n\nWe've done more than $100M in secondary transactions. {names_line} Could we find 15 minutes for a quick call?\n\nSequoia Taylor\nWest Peek Ventures\n\n" + "If this isn't relevant, just reply \"no thanks\" and I won't write again." }, { first: "Alex", names: NAMES });
+    expect(prospectProblems(noAsk).join(" ")).toMatch(/suggests a call/);
     expect(prospectProblems(noAsk).join(" ")).toMatch(/either side/);
   });
 
@@ -276,6 +275,21 @@ describe("routes and the one-tap links", () => {
     expect(byEmail["old.one@example.com"].touch).toBe(2);
     expect(byEmail["old.one@example.com"].thread_id).toBe("t1");
     expect(byEmail["old.one@example.com"].subject).toBe("Re: Up to $1B secondary inquiry: Alpha");
+  });
+
+  it("a template approved before 1 Nov 2026 that asks for a call never sends that ask; an edit that adds one is refused", async () => {
+    const t = await proposeTemplate(env.DB, null, NAMES);
+    const id = (t as any).template.id;
+    await approveTemplate(env.DB, id);
+    await env.DB.prepare(`UPDATE prospect_templates SET body = body || ?, follow_up = follow_up || ? WHERE id = ?`)
+      .bind("\n\nWould love to find 15 minutes to compare notes.", "\n\nCould we find 15 minutes for a quick call?", id).run();
+    await importProspects(env.DB, [{ email: "cal.one@example.com", name: "Cal One", source: "inbox", kind: "inbox_buyer" }]);
+    await recordVerdicts(env.DB, [{ email: "cal.one@example.com", result: "valid" }], WED_10AM);
+    const plan = await prospectPlan(env.DB, WED_10AM);
+    expect(plan.sends.length).toBeGreaterThan(0);
+    for (const s of plan.sends as any[]) expect(s.body).not.toMatch(CALL_ASK);
+    const add = await proposeTemplate(env.DB, { ...DEFAULT_PROSPECT_TEMPLATE, body: DEFAULT_PROSPECT_TEMPLATE.body.replace("I hope", "Could we find 15 minutes for a quick call? I hope") }, NAMES);
+    expect(add.ok).toBe(false);
   });
 
   it("refuses a template that breaks her tone rules, and one with too few names", async () => {

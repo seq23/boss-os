@@ -98,13 +98,14 @@ export function slotLine(t) {
 
 /**
  * The draft body. A FIXED TEMPLATE — no model writes any part of it. Her outreach voice (ruling 10:
- * "we", "more than $100M in secondary transactions", never a fund size, a short call ask), with up
- * to three open times from her calendar when it can be read.
+ * "we", "more than $100M in secondary transactions", never a fund size; a call only when they asked
+ * for one), with up to three open times from her calendar when it can be read.
  */
 export function draftBody({ name, bucket, slots }) {
   const base = lpReplyBody({ name, bucket }).split("\n");
   const sign = base.slice(-2);
-  const times = slots.length
+  // Times only when THEY asked for a call: a warm reply is never offered one (owner, 1 Nov 2026).
+  const times = slots.length && bucket === "call"
     ? ["", "Any of these would work on our side:", ...slots.map((t) => `- ${slotLine(t)}`)]
     : [];
   return [...base.slice(0, -3), ...times, "", ...sign].join("\n");
@@ -212,7 +213,8 @@ export function againReply({ name, said, offered = [], slots = [], busy = null, 
   const theirs = proposedFit(said, { busy, zoneOn, now });
   if (theirs) return { kind: "confirm", body: lpConfirmBody({ name, slot: theirs }), picked: { start: theirs.start, zone: theirs.zone }, offered };
   if (wantsToMeet(said) && slots.length) return { kind: "times", body: lpTimesBody({ name, slots }), picked: null, offered: slots };
-  return { kind: "plain", body: lpAgainBody({ name }), picked: null, offered };
+  // Warm about meeting but no open times readable: still a yes, asking for theirs (never a call they did not ask for).
+  return { kind: "plain", body: lpAgainBody({ name, wantsCall: wantsToMeet(said) }), picked: null, offered };
 }
 
 async function againDraft(draftTok, state, p, th, now, plan) {

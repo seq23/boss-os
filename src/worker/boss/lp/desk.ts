@@ -13,7 +13,7 @@ import { isSuppressed, suppress } from "../outreach/suppression";
 import { readSettings } from "../outreach/engine";
 import {
   DEFAULT_PROSPECT_TEMPLATE, MAX_NEW_PER_DAY, MAX_TOUCHES, dueTouch, nextTouchAt, excluded, prospectProblems, renderProspect,
-  templateHash, verdictGate, PROSPECT_VARIANTS, applyTemplateNotes, featuredNamesProblems, type Template, type ProspectForecast,
+  templateHash, verdictGate, PROSPECT_VARIANTS, templateAsksForCall, applyTemplateNotes, featuredNamesProblems, type Template, type ProspectForecast,
 } from "../../../shared/boss/lp/plan.mjs";
 
 /** 144 random bits, url-safe. The tap links carry it and nothing else. */
@@ -238,7 +238,8 @@ export async function redraftTemplate(db: D1Database, id: string, input: { notes
   const stored: Template = { subject: row.subject, body: row.body, follow_up: row.follow_up };
   // A draft written before a standing rule existed (a "Re:" subject, a closed list of names) starts
   // again from its own template as the rules now write it, then takes her words.
-  const breaksStanding = featuredNamesProblems(renderProspect(stored, { first: "Alex", names }), names).length > 0;
+  const breaksStanding = featuredNamesProblems(renderProspect(stored, { first: "Alex", names }), names).length > 0
+    || templateAsksForCall(stored);
   const base: Template = input.tryAgain || breaksStanding ? { ...(PROSPECT_VARIANTS[variant] as Template) } : stored;
   const edited = note ? applyTemplateNotes(base, note) : { template: base, applied: [], kept: [] };
   const r = await proposeTemplate(db, edited.template, names, now, { variant, notes, parentId: row.id });
@@ -332,7 +333,12 @@ export async function prospectPlan(db: D1Database, now = Date.now()) {
   if (stops.length) return { sends: [], stops, dryRun, template: tpl ?? null, forecast, held: count };
 
   const names = JSON.parse(tpl!.names_json ?? "[]");
-  const template: Template = { subject: tpl!.subject, body: tpl!.body, follow_up: tpl!.follow_up };
+  const approved: Template = { subject: tpl!.subject, body: tpl!.body, follow_up: tpl!.follow_up };
+  // Approved before agents stopped suggesting calls (owner, 1 Nov 2026): its own variant's words as
+  // they are now written, with the names she approved. Nothing that asks for a call goes out.
+  const template: Template = templateAsksForCall(approved)
+    ? { ...(PROSPECT_VARIANTS[Number(tpl!.variant ?? 0) % PROSPECT_VARIANTS.length] as Template), subject: approved.subject }
+    : approved;
   const sends = go.map(({ p, touch }, i) => {
     const r = renderProspect(template, { first: (p.name ?? "").split(/\s+/)[0], names, touch, variant: i });
     return {

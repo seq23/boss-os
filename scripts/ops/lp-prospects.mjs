@@ -46,6 +46,7 @@ import {
   DEFAULT_PROSPECT_TEMPLATE, FEATURED_MIN, blur, gmailThreadUrl, proposeFeatured, renderProspect,
   staleFeatured, tapUrl, MAX_TOUCHES, approveOutcome,
 } from "../../src/shared/boss/lp/plan.mjs";
+import { wantsToMeet } from "../../src/shared/boss/lp/schedule.mjs";
 
 const MAILBOX = "sequoia@westpeek.ventures";
 const SCOPE = "https://www.googleapis.com/auth/gmail.compose";
@@ -189,10 +190,16 @@ export function sendShape(s, { inReplyTo = s.in_reply_to ?? null } = {}) {
   return { mailbox: MAILBOX, threadId: null, message: { to: s.email, subject: s.subject, body: s.body, inReplyTo: null, from: MAILBOX } };
 }
 
-/** A held reply to an interested prospect: fixed, soft, either side. */
-export function interestedReply(first) {
+/**
+ * A held reply to an interested prospect: fixed, soft, either side. A call only when THEY asked for
+ * one, and then always yes (owner, 1 Nov 2026: agents never suggest a call).
+ */
+export function interestedReply(first, wantsCall = false) {
   const hi = /^[A-Za-z][A-Za-z'’-]{0,30}$/.test(String(first ?? "")) ? first : "there";
-  return [`Hi ${hi},`, "", "Thank you for coming back to me. Would love to find 15 minutes to compare notes. Send me a couple of times that suit and we'll make it work.", "", "Best,", "Sequoia"].join("\n");
+  const ask = wantsCall
+    ? "Thank you for coming back to me. A call would be great. Send me a couple of times that suit and we'll make it work."
+    : "Thank you for coming back to me. What are you looking to add or trim? A line here is plenty, and I'll come back with what we're seeing.";
+  return [`Hi ${hi},`, "", ask, "", "Best,", "Sequoia"].join("\n");
 }
 
 /* ─── NeverBounce (her account; key NEVERBOUNCE_API_KEY injected by the vault) ─ */
@@ -365,7 +372,7 @@ async function main() {
       let draft_id = null;
       if (r.kind === "interested" && p.thread_id) {
         const first = String(p.name ?? "").split(/\s+/)[0];
-        const raw = b64url(mime({ to: email, subject: `Re: ${p.subject ?? ""}`.replace(/^Re: Re:/, "Re:"), body: interestedReply(first), inReplyTo: p.last_message_id }));
+        const raw = b64url(mime({ to: email, subject: `Re: ${p.subject ?? ""}`.replace(/^Re: Re:/, "Re:"), body: interestedReply(first, wantsToMeet(r.note ?? "")), inReplyTo: p.last_message_id }));
         const d = await call(tok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message: { raw, threadId: p.thread_id } }) }).catch(() => null);
         draft_id = d?.id ?? null;
       }
