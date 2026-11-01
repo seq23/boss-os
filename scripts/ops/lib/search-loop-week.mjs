@@ -56,7 +56,7 @@ export function fetchLoopWeeks(repo, { run = gh, now = Date.now(), maxAgeDays = 
       for (const f of jsonFiles(dir)) {
         try {
           const w = JSON.parse(readFileSync(f, "utf8"));
-          if (w && typeof w === "object" && (w.schema === undefined || w.schema === LOOP_SCHEMA) && w.site) weeks.push(w);
+          if (w && typeof w === "object" && w.schema === LOOP_SCHEMA && w.site) weeks.push(w);
         } catch { /* a file that is not JSON is not a report */ }
       }
     } catch { /* this run's report could not be downloaded; the others still count */ }

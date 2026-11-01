@@ -69,7 +69,9 @@ export function renderStandings(results, checklist) {
       const cell = fails.length
         ? fails.map((r) => `<b>${esc(r.id)}</b> ${esc(title[r.id] ?? "")}`).join("<br>")
         : '<span class="ok">nothing failing</span>';
-      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}</td></tr>`;
+      // Not on the search loop yet: said once, informational (the rollout owns adoption, wave by wave).
+      const loopNote = res.find((r) => r.status === "skipped")?.detail;
+      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
     });
   return [
     `  <h2 id="standings">Where every site stands</h2>`,

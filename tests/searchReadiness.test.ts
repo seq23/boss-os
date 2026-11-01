@@ -351,7 +351,11 @@ describe("checks catch what they guard", () => {
     const results = runChecks(checklist, baseCtx());
     const want = checklist.items.filter((i: any) => applies(i, site)).map((i: any) => i.id);
     expect(results.map((r: any) => r.id)).toEqual(want);
-    for (const r of results) expect(["pass", "fail", "not_checked", "no_repo", "manual"]).toContain(r.status);
+    for (const r of results) {
+      expect(["pass", "fail", "not_checked", "no_repo", "manual", "skipped"]).toContain(r.status);
+      // A skip is never silent: it is only the search loop's "not adopted yet", said with its wave.
+      if (r.status === "skipped") expect(r.detail, r.id).toMatch(/^Search loop: not adopted yet/);
+    }
   });
 });
 
@@ -893,14 +897,17 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
   const LOOP = { f2: ["publish_straight_away", "github"], f7: ["loop_discovery_weekly", "github"], f8: ["loop_pace", "github"], f9: ["one_action_every_page", "html"], f10: ["loop_checks_248", "github"], f11: ["ai_measured", "github"], f12: ["search_loop_adopted", "repo"] } as const;
   const NOW = Date.parse("2026-11-04T12:00:00Z");
   const site = { domain: "approvalprep.com", repo: "approvalprep", kind: "brand", category: "side_business", search_loop: { wave: 1 } };
-  const CALLER = "on:\n  schedule:\n    - cron: '0 9 * * 1'\n  workflow_dispatch:\njobs:\n  loop:\n    uses: seq23/search-loop/.github/workflows/loop.yml@main\n";
+  // The real contract (seq23/search-loop @v1 README; adopter seq23/sprylabs-hpc-site, 1 Nov 2026).
+  const CALLER = "on:\n  schedule:\n    - cron: \"41 11 * * *\"\n  workflow_dispatch:\njobs:\n  search-loop:\n    uses: seq23/search-loop/.github/workflows/search-loop.yml@v1\n    with:\n      engine_ref: v1\n";
+  const CONFIG = (over: any = {}) => JSON.stringify({ schema: "search-loop-config-v1", site: "approvalprep.com", base_url: "https://approvalprep.com", site_name: "ApprovalPrep", action: { label: "Start", url: "https://approvalprep.com/checkout/" }, pace: { start_per_day: 10, step_per_week: 5, cap: 30 }, menu_pages_need_approval: false, health_gate: "none", ...over });
   const week = (over: any = {}) => ({ schema: "search-loop-week-v1", site: "approvalprep.com", generated_at: "2026-11-02T12:00:00Z", state: "running", published: 21, indexed: 38, pace: 15, ai_visitors: 4, ai_bot_hits: 90, conversions: 2, wins: 2, undone: 1, merged: 0, notes: [], run_url: "x", ...over });
   const repo = (o: any = {}) => {
-    const files: Record<string, string> = { "search-loop.config.json": JSON.stringify({ site: "approvalprep.com", one_action: "/checkout/" }), ...(o.files ?? {}) };
+    const files: Record<string, string> = { "search-loop.config.json": CONFIG(), ...(o.files ?? {}) };
+    for (const k of Object.keys(files)) if (files[k] === null) delete files[k];
     return { ok: true, files: Object.keys(files), show: (f: string) => files[f] ?? null, workflows: o.workflows ?? [{ name: "search-loop.yml", text: CALLER }], loopWeeks: "weeks" in o ? o.weeks : [week()] };
   };
   const page = (path: string, body: string) => ({ url: `https://approvalprep.com${path}`, final: `https://approvalprep.com${path}`, status: 200, html: `<html><body>${body}</body></html>` });
-  const ctx = (o: any = {}) => ({ site, host: "approvalprep.com", pages: [], files: {}, portfolio: [], now: NOW, repo: repo(o), ...o.ctx }) as any;
+  const ctx = (o: any = {}) => ({ site: o.site ?? site, host: "approvalprep.com", pages: [], files: {}, portfolio: [], now: NOW, repo: repo(o), ...o.ctx }) as any;
   const run = (type: string, o: any = {}) => CHECKS[type]!(ctx(o));
 
   it("every stage is an item in phase F, automatic, implemented, and reaches only the selling sites", () => {
@@ -913,54 +920,57 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     }
   });
 
-  it("f2 is the 1 Nov truth: publish straight away under a quality gate, never 'frozen until measured'", () => {
-    const f2 = checklist.items.find((i: any) => i.id === "f2");
-    expect(f2.title).toMatch(/publish straight away/i);
-    expect(f2.title).toMatch(/quality gate/i);
-    expect(f2.title + f2.how_html).not.toMatch(/frozen until/i);
-    expect(f2.check.mode).toBe("auto"); // was a manual item: now the Monday audit proves it
-    expect(run("publish_straight_away").status).toBe("pass");
-    expect(run("publish_straight_away", { weeks: [week({ state: "frozen" })] }).status).toBe("fail");
-    expect(run("publish_straight_away", { weeks: [week({ state: "held until measured" })] }).status).toBe("fail");
-    expect(run("publish_straight_away", { weeks: [week({ published: null })] }).status).toBe("fail");
-    expect(run("publish_straight_away", { weeks: [] }).detail).toMatch(/does not run the shared search loop/);
-    expect(run("publish_straight_away", { weeks: [week({ generated_at: "2026-10-20T12:00:00Z" })] }).status).toBe("fail");
-    expect(run("publish_straight_away", { files: { "search-loop.config.json": JSON.stringify({ site: "approvalprep.com", one_action: "/checkout/", freeze: true }) } }).status).toBe("fail");
-    // An unread report is never a pass, and never a fail that invents work.
-    expect(run("publish_straight_away", { weeks: undefined }).status).toBe("not_checked");
-  });
-
-  it("the audit marks a site missing any stage (a site with no engine fails every stage by name)", () => {
-    const bare = { ok: true, files: [], show: () => null, workflows: [], loopWeeks: [] };
-    const c = { site, host: "approvalprep.com", pages: [page("/guide/", "<a href='/elsewhere/'>x</a>")], files: {}, portfolio: [], now: NOW, repo: bare } as any;
+  it("a site that has not adopted the engine is said (wave N), never failed, and makes no fix brief", () => {
+    const c = { site, host: "approvalprep.com", pages: [page("/guide/", "<a href='/elsewhere/'>x</a>")], files: {}, portfolio: [], now: NOW, repo: { ok: true, files: [], show: () => null, workflows: [], loopWeeks: [] } } as any;
     const res = runChecks(checklist, c).filter((r: any) => Object.keys(LOOP).includes(r.id));
     expect(res.map((r: any) => r.id).sort()).toEqual(Object.keys(LOOP).sort());
-    for (const r of res) expect(r.status, r.id).toBe("fail");
+    for (const r of res) expect(r, r.id).toMatchObject({ status: "skipped", detail: "Search loop: not adopted yet (wave 1)" });
+    const briefs = fixBriefs(checklist, [{ site, host: "approvalprep.com", results: res }], { now: NOW });
+    expect(briefs.filter((b: any) => Object.keys(LOOP).includes(b.item_id))).toEqual([]);
+    // Once the config exists the stages judge, and brief: a missing caller is a fail with a brief.
+    const adopted = { ...c, repo: repo({ workflows: [], weeks: [] }) };
+    const res2 = runChecks(checklist, adopted).filter((r: any) => Object.keys(LOOP).includes(r.id));
+    expect(res2.filter((r: any) => r.status === "fail").map((r: any) => r.id)).toEqual(expect.arrayContaining(["f7", "f9", "f12"]));
+    expect(fixBriefs(checklist, [{ site, host: "approvalprep.com", results: res2 }], { now: NOW }).some((b: any) => b.item_id === "f12")).toBe(true);
     // And a site that runs every stage passes every one.
     const good = { ...c, pages: [page("/guide/", "<a href='/checkout/'>Buy</a>")], repo: repo() };
     for (const r of runChecks(checklist, good).filter((r: any) => Object.keys(LOOP).includes(r.id))) expect(r.status, `${r.id}: ${r.detail}`).toBe("pass");
   });
 
-  it("f7: discovery is weekly and $0", () => {
+  it("f2: publishing is on unless the engine says off or stopped; an unread report is never a pass", () => {
+    expect(run("publish_straight_away").status).toBe("pass");
+    expect(run("publish_straight_away", { weeks: [week({ state: "slow" })] }).status).toBe("pass");
+    expect(run("publish_straight_away", { weeks: [week({ state: "off", pace: 0 })] }).status).toBe("fail");
+    expect(run("publish_straight_away", { weeks: [week({ state: "stopped", notes: ["NAMED STOP [NOTHING_DONE] x"] })] }).detail).toMatch(/NOTHING_DONE/);
+    expect(run("publish_straight_away", { weeks: [week({ state: "frozen" })] }).status).toBe("fail");
+    expect(run("publish_straight_away", { weeks: [week({ published: null })] }).status).toBe("fail");
+    expect(run("publish_straight_away", { weeks: [week({ schema: undefined })] }).status).toBe("fail");
+    expect(run("publish_straight_away", { weeks: [] }).status).toBe("fail");
+    expect(run("publish_straight_away", { weeks: [week({ generated_at: "2026-10-20T12:00:00Z" })] }).status).toBe("fail");
+    expect(run("publish_straight_away", { files: { "search-loop.config.json": CONFIG({ mode: "off" }) } }).status).toBe("fail");
+    expect(run("publish_straight_away", { weeks: undefined }).status).toBe("not_checked");
+  });
+
+  it("f7: discovery is scheduled and $0", () => {
     expect(run("loop_discovery_weekly").status).toBe("pass");
-    expect(run("loop_discovery_weekly", { workflows: [{ name: "x.yml", text: CALLER.replace(/  schedule:\n    - cron: '0 9 \* \* 1'\n/, "") }] }).detail).toMatch(/no schedule/);
-    expect(run("loop_discovery_weekly", { workflows: [{ name: "x.yml", text: CALLER + "    secrets:\n      key: ${{ secrets.DATAFORSEO_KEY }}\n" }] }).detail).toMatch(/paid/);
+    expect(run("loop_discovery_weekly", { workflows: [{ name: "x.yml", text: CALLER.replace(/  schedule:\n    - cron: "41 11 \* \* \*"\n/, "") }] }).status).toBe("fail");
+    expect(run("loop_discovery_weekly", { workflows: [{ name: "x.yml", text: CALLER + "    secrets:\n      key: ${{ secrets.DATAFORSEO_KEY }}\n" }] }).status).toBe("fail");
     expect(run("loop_discovery_weekly", { workflows: [] }).status).toBe("fail");
   });
 
-  it("f8: the pace sits inside 1 to 30 and comes with an indexed count", () => {
+  it("f8: the pace sits inside 1 to 30 and comes with an indexed count; the config cap is pace.cap", () => {
     expect(run("loop_pace").status).toBe("pass");
     expect(run("loop_pace", { weeks: [week({ pace: 45 })] }).status).toBe("fail");
     expect(run("loop_pace", { weeks: [week({ pace: 0 })] }).status).toBe("fail");
-    expect(run("loop_pace", { weeks: [week({ indexed: null })] }).status).toBe("fail");
-    expect(run("loop_pace", { files: { "search-loop.config.json": JSON.stringify({ site: "approvalprep.com", pace: { cap: 50 } }) } }).status).toBe("fail");
+    expect(run("loop_pace", { weeks: [week({ indexed: "not read: no GSC key" })] }).status).toBe("fail");
+    expect(run("loop_pace", { files: { "search-loop.config.json": CONFIG({ pace: { cap: 50 } }) } }).status).toBe("fail");
   });
 
-  it("f9: every sampled content page leads to the one action", () => {
+  it("f9: every sampled content page leads to the config's action.url", () => {
     const pages = (b: string) => ({ ctx: { pages: [page("/a/", b), page("/b/", "<form action='/checkout/start'></form>")] } });
-    expect(run("one_action_every_page", pages("<a href='https://approvalprep.com/checkout/'>Buy</a>")).status).toBe("pass");
+    expect(run("one_action_every_page", pages("<a href='/checkout/'>Buy</a>")).status).toBe("pass");
     expect(run("one_action_every_page", pages("<a href='/checkoutish/'>no</a>")).status).toBe("fail");
-    expect(run("one_action_every_page", { files: { "search-loop.config.json": JSON.stringify({ site: "approvalprep.com" }) }, ...pages("<a href='/checkout/'>x</a>") }).detail).toMatch(/no one_action/);
+    expect(run("one_action_every_page", { files: { "search-loop.config.json": CONFIG({ action: undefined, one_action: "/checkout/" }) }, ...pages("<a href='/checkout/'>x</a>") }).status).toBe("fail");
     expect(run("one_action_every_page").status).toBe("not_checked"); // no content page sampled
     expect(actionMatches("https://approvalprep.com/checkout/x", "/checkout/", "https://approvalprep.com/a/")).toBe(true);
     expect(actionMatches("https://other.com/checkout/", "/checkout/", "https://approvalprep.com/a/")).toBe(false);
@@ -968,19 +978,29 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
 
   it("f10 and f11: the 2/4/8-week checks and the AI numbers are each a number, never assumed", () => {
     expect(run("loop_checks_248").status).toBe("pass");
-    expect(run("loop_checks_248", { weeks: [week({ merged: undefined })] }).detail).toMatch(/merged/);
+    expect(run("loop_checks_248", { weeks: [week({ merged: undefined })] }).status).toBe("fail");
     expect(run("ai_measured").status).toBe("pass");
-    expect(run("ai_measured", { weeks: [week({ ai_bot_hits: "not read" })] }).detail).toMatch(/AI-bot reads/);
+    expect(run("ai_measured", { weeks: [week({ ai_bot_hits: "not read: no Cloudflare token" })] }).status).toBe("fail");
   });
 
-  it("f12: the config names the site and a workflow calls the shared engine", () => {
+  it("f12: a v1 config names the site and a workflow pins the shared engine @v1; site rules reach the config", () => {
     expect(run("search_loop_adopted").status).toBe("pass");
-    expect(run("search_loop_adopted", { workflows: [{ name: "own-loop.yml", text: "on: push" }] }).detail).toMatch(/seq23\/search-loop/);
-    expect(run("search_loop_adopted", { files: { "search-loop.config.json": JSON.stringify({ site: "other.com" }) } }).detail).toMatch(/names approvalprep.com/);
-    // A repo serving several sites keeps one block per site.
-    const multi = { ok: true, files: ["search-loop.config.json"], show: () => JSON.stringify({ sites: { "uscisexam.com": { one_action: "/find/" }, "dentistryguides.com": { one_action: "/list/" } } }) };
-    expect(oneActionOf(loopConfigFor(multi, "www.dentistryguides.com"))).toBe("/list/");
-    expect(loopConfigFor(multi, "approvalprep.com")).toBeNull();
+    expect(run("search_loop_adopted", { workflows: [{ name: "own.yml", text: "jobs:\n  x:\n    uses: seq23/search-loop/.github/workflows/loop.yml@main\n" }] }).status).toBe("fail");
+    expect(run("search_loop_adopted", { files: { "search-loop.config.json": CONFIG({ schema: undefined }) } }).status).toBe("fail");
+    expect(run("search_loop_adopted", { files: { "search-loop.config.json": "{" } }).status).toBe("fail");
+    // A config for another site is not this site's: not adopted yet, said, no brief.
+    expect(run("search_loop_adopted", { files: { "search-loop.config.json": CONFIG({ site: "other.com", base_url: "https://other.com" }) } }).status).toBe("skipped");
+    // A caller may point at another config path.
+    const moved = { files: { "search-loop.config.json": null, "config/loop.json": CONFIG() }, workflows: [{ name: "search-loop.yml", text: CALLER + "      config: config/loop.json\n" }] };
+    expect(run("search_loop_adopted", moved).status).toBe("pass");
+    expect(oneActionOf(loopConfigFor(repo(), "www.approvalprep.com"))).toBe("https://approvalprep.com/checkout/");
+    // A site whose menu pages need her approval, or a strict health site, must say so to the engine.
+    const menuSite = { ...site, search_loop: { wave: 3, menu_pages_need_approval: true } };
+    expect(run("search_loop_adopted", { site: menuSite }).status).toBe("fail");
+    expect(run("search_loop_adopted", { site: menuSite, files: { "search-loop.config.json": CONFIG({ menu_pages_need_approval: true }) } }).status).toBe("pass");
+    const healthSite = { ...site, search_loop: { wave: 3, strict_health_gate: true } };
+    expect(run("search_loop_adopted", { site: healthSite }).status).toBe("fail");
+    expect(run("search_loop_adopted", { site: healthSite, files: { "search-loop.config.json": CONFIG({ health_gate: "dental" }) } }).status).toBe("pass");
   });
 
   it("the loop reaches exactly the selling sites of the approved waves, and nothing else", () => {

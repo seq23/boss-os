@@ -932,24 +932,28 @@ export const CHECKS = {
   // fails every running stage by name, so a site missing a stage is never a quiet pass.
   search_loop_adopted(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const na = notAdopted(ctx); if (na) return na;
     const why = [];
     const cfg = loopConfigFor(r, ctx.site.domain);
-    if (!cfg) why.push(`no search-loop config names ${ctx.site.domain} (search-loop.config.json, or search-loop/<site>.json)`);
-    else if (cfg.error) why.push(`${cfg.path} ${cfg.error}`);
+    if (cfg.error) why.push(`${cfg.path} ${cfg.error}`);
     const caller = loopCaller(r);
     if (!caller) why.push(`no workflow calls the shared engine (uses: ${LOOP_ENGINE_USES})`);
+    // A site whose menu pages need her approval (sites.json) must say so to the engine.
+    if (ctx.site.search_loop?.menu_pages_need_approval === true && cfg.node?.menu_pages_need_approval !== true) why.push(`${cfg.path} does not set menu_pages_need_approval: true, so the engine may edit its menu pages`);
+    if (ctx.site.search_loop?.strict_health_gate === true && !["health", "dental"].includes(cfg.node?.health_gate)) why.push(`${cfg.path} does not set health_gate to health or dental, so health claims are not gated`);
     return why.length ? fail(why.join("; ")) : pass(`${cfg.path} names the site; ${caller.name} calls the shared engine`);
   },
   publish_straight_away(ctx) {
+    const na = notAdopted(ctx); if (na) return na;
     const w = loopWeek(ctx); if (w.result) return w.result;
     const cfg = loopConfigFor(ctx.repo, ctx.site.domain);
-    const node = cfg?.node ?? {};
-    if (node.freeze === true || node.frozen === true || node.hold_until_measured === true) return fail(`${cfg.path} still holds new pages until their query is measured (the 1 Nov 2026 rule retired that)`);
+    if (cfg?.node?.mode === "off") return fail(`${cfg.path} sets mode "off", so the site publishes nothing`);
     const p = publishingOn(w.week);
     return p.ok ? pass(p.why) : fail(p.why);
   },
   loop_discovery_weekly(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const na = notAdopted(ctx); if (na) return na;
     const caller = loopCaller(r);
     if (!caller) return fail(`no workflow calls the shared engine, so nothing finds new searches (uses: ${LOOP_ENGINE_USES})`);
     if (!/schedule:/.test(caller.text) || !/cron:/.test(caller.text)) return fail(`${caller.name} has no schedule, so discovery is not weekly`);
@@ -960,6 +964,7 @@ export const CHECKS = {
     return pass(`${caller.name} runs on a schedule; the newest weekly report is from ${String(w.week.generated_at).slice(0, 10)}`);
   },
   loop_pace(ctx) {
+    const na = notAdopted(ctx); if (na) return na;
     const w = loopWeek(ctx); if (w.result) return w.result;
     const cap = Number(loopConfigFor(ctx.repo, ctx.site.domain)?.node?.pace?.cap);
     if (Number.isFinite(cap) && cap > PACE.cap) return fail(`the config caps the pace at ${cap} a day (the rule's cap is ${PACE.cap})`);
@@ -968,9 +973,10 @@ export const CHECKS = {
   },
   one_action_every_page(ctx) {
     const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const na = notAdopted(ctx); if (na) return na;
     const cfg = loopConfigFor(r, ctx.site.domain);
     const action = oneActionOf(cfg);
-    if (!action) return fail(`no one_action for ${ctx.site.domain} in the search-loop config, so no page can be held to it`);
+    if (!action) return fail(`${cfg.path} has no action.url, so no page can be held to the site's one action`);
     const pages = okPages(ctx).filter((p) => { const u = new URL(pageUrl(p)); return u.pathname !== "/" && !isUtility(u.href); });
     if (!pages.length) return notChecked("no content page in the sample");
     const hits = (p) => {
@@ -982,11 +988,13 @@ export const CHECKS = {
     return bad.length ? fail(`${bad.length} of ${pages.length} sampled pages do not lead to the site's one action (${action}): ${list(bad, 3)}`, { evidence: bad }) : pass(`all ${pages.length} sampled content pages lead to ${action}`);
   },
   loop_checks_248(ctx) {
+    const na = notAdopted(ctx); if (na) return na;
     const w = loopWeek(ctx); if (w.result) return w.result;
     const c = checksRan(w.week);
     return c.ok ? pass(c.why) : fail(c.why);
   },
   ai_measured(ctx) {
+    const na = notAdopted(ctx); if (na) return na;
     const w = loopWeek(ctx); if (w.result) return w.result;
     const a = aiMeasured(w.week);
     return a.ok ? pass(a.why) : fail(a.why);
@@ -995,11 +1003,24 @@ export const CHECKS = {
 
 // ─── Search growth loop helpers (f2, f7–f12; 1 Nov 2026) ────────────────────
 
-/** The `uses:` prefix of a workflow that calls the shared engine. */
-export const LOOP_ENGINE_USES = "seq23/search-loop";
-const LOOP_CALLER_RE = /uses:\s*['"]?seq23\/search-loop[/@]/;
-/** Where a repo keeps its loop config: one per repo, or one per site under search-loop/. */
-export const LOOP_CONFIG_RE = /(^|\/)(\.?search-loop(\.config)?\.json|search-loop\/[^/]+\.json)$/;
+/** The reusable workflow a site's caller pins (seq23/search-loop README, "How a site adopts it"). */
+export const LOOP_ENGINE_USES = "seq23/search-loop/.github/workflows/search-loop.yml@v1";
+const LOOP_CALLER_RE = /uses:\s*['"]?seq23\/search-loop\/\.github\/workflows\/search-loop\.yml@v1(?:\.\d+){0,2}['"]?\s*$/m;
+/** The engine's config file (a caller may name another path with `with: config:`). */
+export const LOOP_CONFIG_RE = /(^|\/)search-loop\.config\.json$/;
+export const LOOP_CONFIG_SCHEMA = "search-loop-config-v1";
+
+/**
+ * A site with no engine config that names it has not adopted the loop yet. The rollout agents own
+ * adoption, wave by wave, so this is said ("Search loop: not adopted yet (wave N)") and never a fix
+ * brief; the loop items only judge (and brief) once the config exists. A config that does not parse
+ * counts as adopted, so it fails by name.
+ */
+export function notAdopted(ctx) {
+  if (loopConfigFor(ctx.repo, ctx.site.domain)) return null;
+  const wave = ctx.site.search_loop?.wave;
+  return { status: "skipped", detail: `Search loop: not adopted yet${wave ? ` (wave ${wave})` : ""}` };
+}
 /** Paid search-data services; the loop is $0. */
 export const PAID_SEO_RE = /(?<![a-z])(ahrefs|semrush|dataforseo|moz_?api|serpapi|spyfu|openseo|similarweb)(?![a-z])/i;
 
@@ -1008,36 +1029,31 @@ export function loopCaller(repo) {
 }
 
 /**
- * The loop config that names this site: `{ path, raw, cfg, node }` (node = the site's own block when the
- * config holds several sites), `{ path, error }` when it does not parse, or null when none names it.
- * A config names a site by `site`, by a `sites` list of domains, or by a `sites` object keyed by domain.
+ * The engine config that names this site (`site`, one host, schema search-loop-config-v1):
+ * `{ path, raw, cfg, node }`, `{ path, error, node: {} }` when a config file that may be this site's does
+ * not parse or is not v1, or null when none names it. Read from `search-loop.config.json` anywhere in
+ * the repo and from any path a caller passes as `with: config:`.
  */
 export function loopConfigFor(repo, domain) {
   const d = bare(domain);
-  const paths = (repo?.files ?? []).filter((f) => LOOP_CONFIG_RE.test(f) && !/(^|\/)(node_modules|tests?|fixtures?)\//.test(f));
+  const named = (repo?.workflows ?? []).filter((w) => LOOP_CALLER_RE.test(w.text ?? ""))
+    .map((w) => /^\s*config:\s*['"]?([^'"\s#]+)/m.exec(w.text ?? "")?.[1]).filter(Boolean);
+  const paths = [...new Set([...(repo?.files ?? []).filter((f) => LOOP_CONFIG_RE.test(f) && !/(^|\/)(node_modules|tests?|fixtures?|examples?)\//.test(f)), ...named])];
   let broken = null;
   for (const path of paths) {
     const raw = repo.show?.(path);
     if (raw == null) continue;
-    let cfg; try { cfg = JSON.parse(raw); } catch { broken = broken ?? { path, error: "does not parse as JSON" }; continue; }
-    const sites = cfg?.sites;
-    if (sites && !Array.isArray(sites) && typeof sites === "object") {
-      const key = Object.keys(sites).find((k) => bare(k) === d);
-      if (key) return { path, raw, cfg, node: { ...cfg, ...sites[key] } };
-    }
-    if (Array.isArray(sites)) {
-      const hit = sites.find((x) => bare(typeof x === "string" ? x : x?.site) === d);
-      if (hit) return { path, raw, cfg, node: typeof hit === "string" ? cfg : { ...cfg, ...hit } };
-    }
-    if (bare(cfg?.site) === d) return { path, raw, cfg, node: cfg };
+    let cfg; try { cfg = JSON.parse(raw); } catch { broken = broken ?? { path, error: "does not parse as JSON", node: {} }; continue; }
+    if (bare(cfg?.site) !== d && bare(cfg?.base_url) !== d) continue;
+    if (cfg?.schema !== LOOP_CONFIG_SCHEMA) return { path, error: `is not a ${LOOP_CONFIG_SCHEMA} config (schema ${JSON.stringify(cfg?.schema ?? null)})`, node: cfg };
+    return { path, raw, cfg, node: cfg };
   }
   return broken;
 }
 
-/** The site's one action as written in its config (a path or a URL), or null. */
+/** The site's one action: the config's `action.url` (a URL or a path), or null. */
 export function oneActionOf(cfg) {
-  const a = cfg?.node?.one_action;
-  const v = typeof a === "string" ? a : a?.url ?? a?.path ?? null;
+  const v = cfg?.node?.action?.url;
   return v && String(v).trim() ? String(v).trim() : null;
 }
 
@@ -1056,7 +1072,7 @@ export function loopWeek(ctx) {
   if (!r?.ok) return { result: r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read") };
   if (r.loopWeeks === undefined || r.loopWeeks === null) return { result: notChecked(`the weekly search-loop report was not read${r.loopWhy ? `: ${r.loopWhy}` : ""}`) };
   const got = weekFor(r.loopWeeks, { domain: ctx.site.domain, repo: ctx.site.repo, now: ctx.now ?? Date.now() });
-  if (got.none) return { result: fail("no search-loop-week report from this site: it does not run the shared search loop yet") };
+  if (got.none) return { result: fail("no search-loop-week report from this site yet: the engine has not uploaded one") };
   if (got.problem) return { result: fail(`the newest search-loop-week report cannot be used: ${got.problem}`) };
   return { week: got.week };
 }

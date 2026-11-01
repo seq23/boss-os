@@ -23,8 +23,8 @@ export const LOOP_ENGINE_REPO = "seq23/search-loop";
 export const LOOP_MAX_AGE_DAYS = 8;
 /** The pace rule (10 a day to start, +5 a week while indexing holds, cap 30, halve on a drop). */
 export const PACE = Object.freeze({ start: 10, step: 5, cap: 30, min: 1 });
-/** States that mean new pages are being held back, which the 1 Nov ruling retired. */
-export const HELD_STATES = Object.freeze(["frozen", "held", "paused", "waiting", "blocked"]);
+/** The report's `state` (schema search-loop-week-v1): running (normal), slow / off (the global throttle), stopped (a named stop). */
+export const LOOP_STATES = Object.freeze(["running", "slow", "off", "stopped"]);
 export const NUMBER_FIELDS = Object.freeze(["published", "indexed", "pace", "ai_visitors", "ai_bot_hits", "conversions", "wins", "undone", "merged"]);
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -33,7 +33,7 @@ const bare = (h) => String(h ?? "").trim().toLowerCase().replace(/^https?:\/\//,
 /** Why one parsed report cannot be used, or null. */
 export function weekProblem(week, { now = Date.now(), maxAgeDays = LOOP_MAX_AGE_DAYS } = {}) {
   if (!week || typeof week !== "object") return "it could not be read";
-  if (week.schema !== undefined && week.schema !== LOOP_SCHEMA) return "it was in a format Boss OS does not know";
+  if (week.schema !== LOOP_SCHEMA) return "it was in a format Boss OS does not know";
   if (!week.site) return "it named no site";
   const at = Date.parse(week.generated_at ?? "");
   if (Number.isNaN(at)) return "it carried no date";
@@ -57,8 +57,10 @@ export function weekFor(weeks, { domain, repo = null, now = Date.now(), maxAgeDa
 
 /** Is new-page publishing on (the 1 Nov rule: straight away, under the quality gate)? */
 export function publishingOn(week) {
-  const state = String(week?.state ?? "").toLowerCase();
-  if (HELD_STATES.some((s) => state.includes(s))) return { ok: false, why: `the loop says it is ${state}` };
+  const state = String(week?.state ?? "");
+  if (!LOOP_STATES.includes(state)) return { ok: false, why: `the report's state "${state}" is not one the engine writes` };
+  if (state === "off") return { ok: false, why: "the search loop is switched off (mode=off)" };
+  if (state === "stopped") return { ok: false, why: `the loop stopped: ${(week.notes ?? []).find((n) => /NAMED STOP/.test(n)) ?? "a named stop (see the report's notes)"}` };
   if (num(week?.published) == null) return { ok: false, why: "the report does not say how many pages were published" };
   return { ok: true, why: `${week.published} pages published this week` };
 }

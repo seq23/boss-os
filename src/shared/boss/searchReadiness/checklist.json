@@ -924,7 +924,7 @@
     "mode": "auto",
     "type": "publish_straight_away",
     "source": "github",
-    "how": "The newest search-loop-week report (under eight days old) is not frozen, held or paused and says how many pages were published; the site's search-loop config holds no freeze flag.",
+    "how": "The newest search-loop-week report (schema search-loop-week-v1, under eight days old) has state running or slow (never off or stopped) and says how many pages were published; the site's search-loop.config.json does not set mode off. A site with no config yet is said as \"not adopted yet (wave N)\", never briefed.",
     "applies_to": [
      "flag:search_loop"
     ]
@@ -1051,7 +1051,7 @@
    "title_html": "Every page ends in the site's one action",
    "burned": false,
    "why_html": "A visit that ends on a page with no next step earns nothing. Each site has one thing it wants a visitor to do (buy, book, sign up, fill the form), and every page leads there.",
-   "how_html": "The site's search-loop config names its <code>one_action</code> (a path or URL); the page template ends every page with it.",
+   "how_html": "The site's <code>search-loop.config.json</code> names its one action as <code>action.url</code>; the engine ends every page with it, and the sampled content pages must link or post to it.",
    "check": {
     "mode": "auto",
     "type": "one_action_every_page",
@@ -1105,12 +1105,12 @@
    "title_html": "The site runs the shared search-loop engine (its config and the caller workflow)",
    "burned": false,
    "why_html": "One engine for every selling site means a fix or a better rule reaches all of them at once, instead of each repo growing its own loop that drifts.",
-   "how_html": "The repo carries <code>search-loop.config.json</code> (or <code>search-loop/&lt;site&gt;.json</code>) naming the site and its one action, and a workflow with <code>uses: seq23/search-loop/…</code> on a schedule. The engine uploads the <code>search-loop-week</code> report every run.",
+   "how_html": "The repo carries <code>search-loop.config.json</code> (<code>schema: search-loop-config-v1</code>, <code>site</code> = the host, <code>action.url</code>; or the path a caller passes as <code>with: config:</code>) and a workflow with <code>uses: seq23/search-loop/.github/workflows/search-loop.yml@v1</code> on a schedule. Sites marked so set <code>menu_pages_need_approval: true</code> and a health gate. The engine uploads the <code>search-loop-week</code> report every run.",
    "check": {
     "mode": "auto",
     "type": "search_loop_adopted",
     "source": "repo",
-    "how": "A search-loop config in the repo names the site, and a workflow calls the shared seq23/search-loop engine.",
+    "how": "A search-loop-config-v1 config names the site, and a workflow pins seq23/search-loop/.github/workflows/search-loop.yml@v1. No config yet = not adopted yet (wave N): said, never briefed.",
     "applies_to": [
      "flag:search_loop"
     ]
