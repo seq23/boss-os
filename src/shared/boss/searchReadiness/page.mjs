@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { shownToOwner } from "./audit.mjs";
 
 export const TEMPLATE_PATH = join(dirname(fileURLToPath(import.meta.url)), "page-template.html");
 export const loadTemplate = () => readFileSync(TEMPLATE_PATH, "utf8");
@@ -46,7 +47,8 @@ export function renderPhase(phase, items) {
  * those with a verdict, and each failing item by id and title. Counts are computed here, never typed.
  */
 export function standingsSummary(results) {
-  const sites = results?.sites ?? [];
+  // Client sites are audited but never shown on her page (shownToOwner, 1 Nov 2026).
+  const sites = (results?.sites ?? []).filter((s) => shownToOwner(s.site));
   let pass = 0, failing = 0, notChecked = 0;
   for (const s of sites) for (const r of s.results ?? []) {
     if (r.status === "pass") pass++; else if (r.status === "fail") failing++; else if (r.status === "not_checked") notChecked++;
@@ -57,7 +59,7 @@ export function standingsSummary(results) {
 export function renderStandings(results, checklist) {
   const title = Object.fromEntries(checklist.items.map((i) => [i.id, i.title]));
   const sum = standingsSummary(results);
-  const rows = [...(results?.sites ?? [])]
+  const rows = [...(results?.sites ?? [])].filter((s) => shownToOwner(s.site))
     .sort((a, b) => (b.failing?.length ?? 0) - (a.failing?.length ?? 0) || String(a.site?.domain).localeCompare(String(b.site?.domain)))
     .map((s) => {
       const res = s.results ?? [];

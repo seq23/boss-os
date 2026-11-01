@@ -1,17 +1,12 @@
 {
- "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry. entity_parent (31 Oct 2026, authority audit): spry-labs = a side business whose entity points parentOrganization at Spry Labs (https://billionairehighperformancecoach.com/spry-labs#organization), directly or through a grid parent such as The Industry Guides; client = a friend's business, never the Spry Labs parent; own = her own business outside Spry Labs (Porch & Party, Virtual Agency OS) or a side business whose parent claim the owner has withdrawn (the three authority-network publications, 11 Oct 2026; entity_parent_why says so on the row), never the Spry Labs parent. ymyl: true marks a medical, legal or financial site whose pages need a named reviewer (k5). entity_file names the entity file when it is not called entity.json.",
+ "_why": "THE GRID REPOS: every site the Search Readiness checklist is enforced on, with its category, kind and coverage. Owner, 25 Oct 2026: the side businesses on her Side Business Review page, plus Porch & Party, Virtual Agency OS, the Spry HPC sites and the two client sites (horselegalguide.com, hicksconsulting.org), all on the full auto-fix lane. Never anything West Peek, never Shirley Brown's senior housing work. tests/searchReadiness.test.ts fails if a site has no coverage entry. entity_parent (31 Oct 2026, authority audit): spry-labs = a side business whose entity points parentOrganization at Spry Labs (https://billionairehighperformancecoach.com/spry-labs#organization), directly or through a grid parent such as The Industry Guides; client = a friend's business, never the Spry Labs parent; own = her own business outside Spry Labs (Porch & Party, Virtual Agency OS) or a side business whose parent claim the owner has withdrawn (the three authority-network publications, 11 Oct 2026; entity_parent_why says so on the row), never the Spry Labs parent. ymyl: true marks a medical, legal or financial site whose pages need a named reviewer (k5). entity_file names the entity file when it is not called entity.json. search_loop (1 Nov 2026, owner: the search growth loop on every selling site): the site runs the shared seq23/search-loop engine and every growth-loop item (f2, f7-f12, applies_to flag:search_loop) is enforced on it; wave is the rollout order she approved (1 Industry Guides, ApprovalPrep, Dream Wedding, the Spry HPC sites; 2 Time-2-Read and heygetonmylevel; 3 Porch & Party and the client sites). Client sites (category client) are audited but never shown on her page or in her email: they report in their own repos.",
  "never": [
   "westpeek.",
   "joinwestpeek.",
   "Shirley Brown",
   "WHA"
  ],
- "excluded": [
-  {
-   "domain": "heygetonmylevel.com",
-   "why": "Owner, 25 Oct 2026: off this work entirely until it has a payment mechanism."
-  }
- ],
+ "excluded": [],
  "grid_repos": [
   {
    "domain": "theindustryguides.com",
@@ -26,6 +21,9 @@
    "coverage": {
     "model": "not_local",
     "why": "Topical, not local: it carries the vertical hubs and velocity pieces that route readers to the six canonical guides, which hold the city pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -48,6 +46,9 @@
      "status": "live"
     },
     "url_pattern": "/{slug}/"
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -82,6 +83,9 @@
      "status": "live"
     },
     "url_pattern": "/{slug}/"
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -104,6 +108,9 @@
      "status": "live"
     },
     "url_pattern": "/{slug}/"
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -126,6 +133,9 @@
      "status": "live"
     },
     "url_pattern": "/{slug}/"
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -148,6 +158,9 @@
      "status": "live"
     },
     "url_pattern": "/{slug}/"
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -494,6 +507,9 @@
      "anchor": "/{slug}/",
      "service_town": "/{service}-{town}/"
     }
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -681,6 +697,9 @@
      "neighborhood": "/areas/{slug}-party-decor",
      "anchor": "/areas/{slug}-hotel-room-decor"
     }
+   },
+   "search_loop": {
+    "wave": 3
    }
   },
   {
@@ -695,6 +714,9 @@
    "coverage": {
     "model": "not_local",
     "why": "A national loan-document product; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -708,6 +730,9 @@
    "coverage": {
     "model": "not_local",
     "why": "A national planning tool; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -721,6 +746,9 @@
    "coverage": {
     "model": "not_local",
     "why": "A national planning tool; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -734,6 +762,9 @@
    "coverage": {
     "model": "not_local",
     "why": "A national planning tool; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -747,6 +778,9 @@
    "coverage": {
     "model": "not_local",
     "why": "A national planning tool; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -761,6 +795,9 @@
    "coverage": {
     "model": "not_local",
     "why": "A national product; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -784,7 +821,26 @@
      "item": "a9",
      "why": "Lovable serves the app shell with 200 for every unknown path; a real 404 status is not configurable from the repo."
     }
-   ]
+   ],
+   "search_loop": {
+    "wave": 2
+   }
+  },
+  {
+   "domain": "heygetonmylevel.com",
+   "repo": "heygetonmylevel",
+   "category": "side_business",
+   "entity_parent": "spry-labs",
+   "kind": "brand",
+   "roles": [],
+   "label": "heygetonmylevel",
+   "coverage": {
+    "model": "not_local",
+    "why": "An app companion to Time-2-Read; no place-based pages. In search work since 1 Nov 2026 (reverses the 25 Oct exclusion); its pages lead to the Time-2-Read free week."
+   },
+   "search_loop": {
+    "wave": 2
+   }
   },
   {
    "domain": "howweknowdeep.com",
@@ -864,6 +920,10 @@
    "coverage": {
     "model": "not_local",
     "why": "Topical equine-law scenarios and comparisons; no place-based pages today."
+   },
+   "search_loop": {
+    "wave": 3,
+    "menu_pages_need_approval": true
    }
   },
   {
@@ -878,6 +938,46 @@
    "coverage": {
     "model": "not_local",
     "why": "A consulting practice site; place pages are the practice's own call, none are targeted."
+   },
+   "search_loop": {
+    "wave": 3,
+    "menu_pages_need_approval": true
+   }
+  },
+  {
+   "domain": "detoxdenver.org",
+   "repo": "dianne-place-recovery-services",
+   "category": "client",
+   "entity_parent": "client",
+   "ymyl": true,
+   "kind": "brand",
+   "roles": [],
+   "label": "Dianne’s Place",
+   "coverage": {
+    "model": "not_local",
+    "why": "A recovery-housing site; place pages are the client’s own call and none are targeted here."
+   },
+   "search_loop": {
+    "wave": 3,
+    "strict_health_gate": true
+   }
+  },
+  {
+   "domain": "cynthiabrowndds.com",
+   "repo": "cynthia-brown-dds-site",
+   "category": "client",
+   "entity_parent": "client",
+   "ymyl": true,
+   "kind": "brand",
+   "roles": [],
+   "label": "Cynthia Brown DDS",
+   "coverage": {
+    "model": "not_local",
+    "why": "A dentist’s personal-professional site; place pages are the client’s own call and none are targeted here."
+   },
+   "search_loop": {
+    "wave": 3,
+    "strict_health_gate": true
    }
   },
   {
@@ -928,6 +1028,9 @@
    "coverage": {
     "model": "not_local",
     "why": "A national product; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   },
   {
@@ -965,6 +1068,9 @@
    "coverage": {
     "model": "not_local",
     "why": "A national product; no place-based pages."
+   },
+   "search_loop": {
+    "wave": 1
    }
   }
  ]

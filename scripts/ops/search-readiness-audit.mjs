@@ -41,6 +41,7 @@ import { passingItems,
   loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, summaryLines, liveSameAs, hostOf, bare, entityFor, ENTITY_WATCH_RE,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
+import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
 
 const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "search-readiness");
 const REPOS = join(OUT, "repos");
@@ -256,7 +257,11 @@ async function readRepo(name) {
     const o = spawnSync("gh", ["run", "list", "-R", `${OWNER}/${name}`, "--workflow", w.name, "--limit", "1", "--json", "conclusion,status,createdAt"], { encoding: "utf8" });
     if (o.status === 0) { try { entityWatchRuns[w.name] = JSON.parse(o.stdout || "[]")[0] ?? null; } catch { /* left unread: not_checked */ } }
   }
-  const v = { ok: true, ref, files, show, workflows, entityWatchRuns, fresh, indexnowKey, indexnowKeys, scriptsMentioningGscTruth, visibility: view.status === 0 ? view.stdout.trim() : null, prRunMinutes, llmRouting: show("config/llm_routing.json"), claudeMd: show("CLAUDE.md") };
+  // f2, f7, f8, f10, f11 (the search growth loop, 1 Nov 2026): the newest search-loop-week reports.
+  // Unread stays undefined (not_checked, with the reason), never an empty list that reads as "none".
+  const loop = fetchLoopWeeks(name);
+  const loopWeeks = loop.problem ? undefined : loop.weeks;
+  const v = { ok: true, ref, files, show, workflows, entityWatchRuns, loopWeeks, loopWhy: loop.problem ?? null, fresh, indexnowKey, indexnowKeys, scriptsMentioningGscTruth, visibility: view.status === 0 ? view.stdout.trim() : null, prRunMinutes, llmRouting: show("config/llm_routing.json"), claudeMd: show("CLAUDE.md") };
   repoCache.set(name, v);
   return v;
 }
