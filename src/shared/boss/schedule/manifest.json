@@ -1261,6 +1261,24 @@
       }
     },
     {
+      "id": "housekeeping",
+      "name": "Mac housekeeping",
+      "what": "Turns unsaved work, backup stops and the monthly rules clean-up into Open Loops rows.",
+      "business": "personal",
+      "brand": "Mac",
+      "system": "mac",
+      "slots": [
+        "daily 03:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.housekeeping"
+        ]
+      }
+    },
+    {
       "id": "ci-sweep-resume",
       "name": "CI sweep resume",
       "what": "Resumes a sweep the Mac's sleep interrupted.",
