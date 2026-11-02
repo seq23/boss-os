@@ -48,7 +48,8 @@ import path from "node:path";
 import os from "node:os";
 import { lpReplyBody, lpAgainBody } from "../../src/shared/boss/lp/plan.mjs";
 import {
-  instantIn, openSlots, slotText, slotsFrom, zoneResolver, wantsToMeet, pickedSlot, proposedFit, lpTimesBody, lpConfirmBody, SLOT_MINUTES,
+  instantIn, openSlots, slotText, slotsFrom, zoneResolver, wantsToMeet, pickedSlot, proposedFit, lpTimesBody, lpConfirmBody,
+  offeredIn, zonelessTime, lpAskZoneBody, SLOT_MINUTES,
 } from "../../src/shared/boss/lp/schedule.mjs";
 import { herBusyAndZone } from "./lp-calendar.mjs";
 import { replyNeed, replyAllRecipients } from "../../src/shared/boss/mail/replyNeed.mjs";
@@ -228,15 +229,27 @@ function rawDraft({ to, cc = [], subject, inReplyTo, body }) {
  * free and still ahead → a confirmation (the tap also sends the invite); warm words about meeting →
  * 2–3 open times; anything else → the plain "when suits you" reply.
  */
-export function againReply({ name, said, offered = [], slots = [], busy = null, now = Date.now(), zoneOn = null }) {
-  const pick = busy ? pickedSlot(said, offered) : null;
+export function againReply({ name, said, offered = [], slots = [], busy = null, now = Date.now(), zoneOn = null, quoted = null }) {
+  /*
+   * The times she offered: the recorded ones, else the ones in her message they quote under their
+   * reply (an offer she wrote herself records nothing; 2 Nov 2026, "Nov 5 at 11am can work" got the
+   * generic reply). Their own words are read without the quote; the quote only supplies her offer.
+   */
+  const ownSaid = String(said ?? "").split(/\s+On [^\n]{4,200}?wrote:|\n>/)[0];
+  const herOffer = offered.length ? offered : offeredIn(quoted, now);
+  const pick = busy ? pickedSlot(ownSaid, herOffer) : null;
   const stillFree = pick && pick.start > now + 3 * 3600_000
     && !busy.some(([bs, be]) => bs < pick.start + SLOT_MINUTES * 60_000 && be > pick.start);
-  if (stillFree) return { kind: "confirm", body: lpConfirmBody({ name, slot: pick }), picked: pick, offered };
+  if (stillFree) return { kind: "confirm", body: lpConfirmBody({ name, slot: pick }), picked: pick, offered: herOffer };
   // THEY proposed times ("my availability (PT): 11/3 – 10 am …"): the earliest that is free on both
   // her calendars and inside her working hours in her zone that day is confirmed; the tap sends the invite.
-  const theirs = proposedFit(said, { busy, zoneOn, now });
+  // No zone in their words: the one zone her quoted offer named, if it named exactly one.
+  const offerZones = [...new Set(herOffer.map((x) => x.zone))];
+  const theirs = proposedFit(ownSaid, { busy, zoneOn, now, zone: offerZones.length === 1 ? offerZones[0] : null });
   if (theirs) return { kind: "confirm", body: lpConfirmBody({ name, slot: theirs }), picked: { start: theirs.start, zone: theirs.zone }, offered };
+  // A day and a time with no zone anywhere: yes to it, and ask which zone (no invite until she knows).
+  const when = zonelessTime(ownSaid, now);
+  if (when) return { kind: "ask_zone", body: lpAskZoneBody({ name, when }), picked: null, offered: herOffer };
   if (wantsToMeet(said) && slots.length) return { kind: "times", body: lpTimesBody({ name, slots }), picked: null, offered: slots };
   // Warm about meeting but no open times readable: still a yes, asking for theirs (never a call they did not ask for).
   return { kind: "plain", body: lpAgainBody({ name, wantsCall: wantsToMeet(said) }), picked: null, offered };
@@ -313,6 +326,8 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       delete state.drafts[p.address];
       // What they said after her reply, in their own words: the morning email's one line for it.
       const lastReplyText = status === "replied_again" && th?.id ? await latestWords(th.id) : null;
+      // Their message with her quoted offer under it: where the times she offered are read from.
+      const lastReplyQuoted = status === "replied_again" && th?.id ? await draftWords(th.id) : null;
       // EVERY WAITING REPLY HAS A READY DRAFT (Today v4): one held in their thread for their new message,
       // redrafted when they write again. A fixed template; nothing is sent here.
       // Does their new message need a reply at all? A hand-off, "we'll review", a thank-you: no draft.
@@ -326,7 +341,7 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
         continue;
       }
       const plan = status === "replied_again"
-        ? againReply({ name: p.name, said: lastReplyText, offered: slotsFrom(state.offered[p.address] ?? offered[p.address]), slots, busy, now, zoneOn })
+        ? againReply({ name: p.name, said: lastReplyText, quoted: lastReplyQuoted, offered: slotsFrom(state.offered[p.address] ?? offered[p.address]), slots, busy, now, zoneOn })
         : null;
       const again = plan && draftTok ? await againDraft(draftTok, state, p, th, now, plan) : null;
       if (status !== "replied_again") delete state.again?.[p.address];

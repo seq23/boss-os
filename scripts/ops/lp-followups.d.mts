@@ -6,8 +6,8 @@ export function chicagoInstant(ymd: string, hour: number, minute: number): numbe
 export function pickSlots(busy: [number, number][], now?: number, want?: number, zone?: string): number[];
 export function slotLine(t: number | { start: number; zone: string }): string;
 export function draftBody(args: { name?: string | null; bucket: string; slots: Array<number | { start: number; zone: string }> }): string;
-export function againReply(a: { name?: string | null; said?: string | null; offered?: { start: number; zone: string }[]; slots?: { start: number; zone: string }[]; busy?: [number, number][] | null; now?: number; zoneOn?: ((ymd: string) => string | null) | null }):
-  { kind: "confirm" | "times" | "plain"; body: string; picked: { start: number; zone: string } | null; offered: { start: number; zone: string }[] };
+export function againReply(a: { name?: string | null; said?: string | null; offered?: { start: number; zone: string }[]; slots?: { start: number; zone: string }[]; busy?: [number, number][] | null; now?: number; zoneOn?: ((ymd: string) => string | null) | null; quoted?: string | null }):
+  { kind: "confirm" | "times" | "plain" | "ask_zone"; body: string; picked: { start: number; zone: string } | null; offered: { start: number; zone: string }[] };
 export function hashOf(s: string): string;
 export type UnansweredRow = { name: string; address: string; bucket: string; first_seen: string; draft: string; days?: number | null };
 export function unansweredOrder(rows: UnansweredRow[], now?: number): (UnansweredRow & { days: number | null })[];

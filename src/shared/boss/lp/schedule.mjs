@@ -245,9 +245,10 @@ const DATE_RE = new RegExp(`\\b(?:(\\d{1,2})/(\\d{1,2})|(${MONTHS.map((m) => `${
  * closed) and an explicit date (M/D or "November 3"); every time after a date belongs to it until the
  * next date. The year is the next one on or after `now`'s.
  */
-export function proposedTimes(text, now = Date.now()) {
+export function proposedTimes(text, now = Date.now(), { zone: fallbackZone = null } = {}) {
   const t = String(text ?? "");
-  const zone = THEIR_ZONE.find(([re]) => re.test(t))?.[1] ?? null;
+  // Their stated zone, else the one zone named in the message they answer (`fallbackZone`); never a guess.
+  const zone = THEIR_ZONE.find(([re]) => re.test(t))?.[1] ?? fallbackZone ?? null;
   if (!zone || REFUSE.test(t) || NO.test(t)) return [];
   const dates = [...t.matchAll(DATE_RE)];
   const out = [];
@@ -272,13 +273,45 @@ export function proposedTimes(text, now = Date.now()) {
 }
 
 /**
+ * Pure: the times a message OFFERS, one per line that names a date, a time and a zone ("- Thursday,
+ * November 5 at 11:00 AM Central"). Read from the message they answered, quoted under their reply,
+ * so a pick of one of her times is recognised even when that offer was written outside this file and
+ * no offered times were recorded (2 Nov 2026: "Nov 5 at 11am can work" got the generic reply).
+ */
+export function offeredIn(text, now = Date.now()) {
+  const lines = String(text ?? "").split(/\n/).map((l) => l.replace(/^[\s>]+/, ""));
+  const out = [];
+  for (const line of lines) for (const x of proposedTimes(line, now)) if (!out.some((o) => o.start === x.start)) out.push(x);
+  return out;
+}
+
+/**
+ * Pure: a day and a time they named with NO zone anywhere, as a wall-clock pair, or null. The reply
+ * then asks which zone (never a guess) and carries no invite.
+ */
+export function zonelessTime(text, now = Date.now()) {
+  const t = String(text ?? "");
+  if (THEIR_ZONE.some(([re]) => re.test(t)) || REFUSE.test(t) || NO.test(t)) return null;
+  const d = [...t.matchAll(DATE_RE)][0];
+  if (!d) return null;
+  const x = timesIn(t.slice(d.index + d[0].length))[0];
+  if (!x) return null;
+  const mo = d[1] ? Number(d[1]) : MONTHS.findIndex((m) => m.startsWith(String(d[3]).toLowerCase().slice(0, 3))) + 1;
+  const da = Number(d[2] ?? d[4]);
+  const y = Number(new Date(now).toISOString().slice(0, 4));
+  const ymd = [y, y + 1].map((yy) => `${yy}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}`).find((v) => Date.parse(`${v}T23:59:00Z`) >= now - DAY);
+  if (!ymd) return null;
+  return { ymd, hour: x.ampm ? x.h : x.h < 8 ? x.h + 12 : x.h, minute: x.min };
+}
+
+/**
  * Pure: the earliest time they proposed that suits her — ahead by at least `leadMs`, inside her
  * working hours in the zone she is in that day, and free on both calendars. `{ start, zone, theirs }`
  * with `zone` hers (the card) and `theirs` theirs (the reply), or null.
  */
-export function proposedFit(text, { busy, zoneOn, now = Date.now(), leadMs = 3 * 3600_000, minutes = SLOT_MINUTES } = {}) {
+export function proposedFit(text, { busy, zoneOn, now = Date.now(), leadMs = 3 * 3600_000, minutes = SLOT_MINUTES, zone = null } = {}) {
   if (!busy || typeof zoneOn !== "function") return null;
-  for (const p of proposedTimes(text, now)) {
+  for (const p of proposedTimes(text, now, { zone })) {
     if (p.start < now + leadMs) continue;
     const mine = zoneOn(wall(p.start, "America/Chicago").ymd);
     if (!mine || !inWorkingHours(p.start, mine, minutes)) continue;
@@ -305,6 +338,16 @@ export function lpTimesBody({ name, slots }) {
   ].join("\n");
 }
 
+/**
+ * A slot as the reply says it, with Central in brackets when it is in another zone: "Wednesday,
+ * November 4 at 10:00 AM Eastern (9:00 AM Central)" (her rule: CT in brackets when different).
+ */
+export function slotTextCentral(slot) {
+  if (slot.zone === "America/Chicago") return slotText(slot);
+  const ct = new Date(slot.start).toLocaleTimeString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit" });
+  return `${slotText(slot)} (${ct} Central)`;
+}
+
 /** The reply when they picked one of her times. The same tap sends the invite. */
 export function lpConfirmBody({ name, slot }) {
   // A time they proposed is said back on THEIR clock ("10:00 AM Pacific"); one of hers on hers.
@@ -312,9 +355,23 @@ export function lpConfirmBody({ name, slot }) {
   return [
     `Hi ${firstName(name)},`,
     "",
-    `${slotText(said)} is perfect. I'm sending a calendar invite with a video link now.`,
+    `${slotTextCentral(said)} is perfect. I'm sending a calendar invite with a video link now.`,
     "",
     "Looking forward to it.",
+    "",
+    "Best,",
+    "Sequoia",
+  ].join("\n");
+}
+
+/** They named a day and a time but no zone: yes to the time, and one short question. No invite rides on it. */
+export function lpAskZoneBody({ name, when }) {
+  const day = new Date(`${when.ymd}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" });
+  const time = new Date(Date.UTC(2000, 0, 1, when.hour, when.minute)).toLocaleTimeString("en-US", { timeZone: "UTC", hour: "numeric", minute: "2-digit" });
+  return [
+    `Hi ${firstName(name)},`,
+    "",
+    `${day} at ${time} works on my side. Which time zone is that in? As soon as I know, I'll send a calendar invite with a video link.`,
     "",
     "Best,",
     "Sequoia",

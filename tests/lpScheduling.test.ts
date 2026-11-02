@@ -100,7 +100,7 @@ describe("times THEY proposed (the shape of a live reply, 31 Oct 2026)", () => {
     expect(slotText(fit)).toBe("Tuesday, November 3 at 1:00 PM Eastern"); // her card: New York that day
     const r = againReply({ name: "Robin Example", said: THEIRS, slots: [], busy: [], now: NOW, zoneOn });
     expect(r.kind).toBe("confirm");
-    expect(r.body).toContain("Tuesday, November 3 at 10:00 AM Pacific is perfect");
+    expect(r.body).toContain("Tuesday, November 3 at 10:00 AM Pacific (12:00 PM Central) is perfect");
     expect(r.picked).toEqual({ start: fit.start, zone: "America/New_York" });
     // 11/3 taken → the next one that fits; 8 am PT on 11/17 is 10 am Central (inside her day).
     const taken: [number, number][] = [[fit.start - 60_000, fit.start + 3600_000]];
@@ -128,6 +128,23 @@ describe("the reply held for someone who wrote back: a fixed template, never a m
     expect(r.body.match(/^- /gm)?.length).toBe(slots.length);
     for (const s of slots) expect(r.body).toContain(slotText(s));
     expect(r.body.endsWith("Sequoia")).toBe(true);
+  });
+
+  it("a reply naming a day and time she offered (her offer quoted under it, no zone in their words) is a confirmation of that time (2 Nov 2026)", () => {
+    const quoted = "No problem.  Nov 5 at 11am can work.\n\nOn Sun, Nov 1, 2026 at 10:09 AM Her <her@example.com> wrote:\n\n> Would any of these work?\n>\n> - Tuesday, November 3 at 10:00 AM Central\n> - Thursday, November 5 at 11:00 AM Central\n>\n> Best";
+    const r = againReply({ name: "Avery Example", said: "No problem.  Nov 5 at 11am can work. On Sun, Nov 1, 2026 at 10:09 AM Her <her@example.com> wrote:", quoted, offered: [], slots: [], busy: [], now: NOW, zoneOn });
+    expect(r.kind).toBe("confirm");
+    expect(r.picked!.start).toBe(instantIn("America/Chicago", "2026-11-05", 11, 0));
+    expect(r.body).toContain("Thursday, November 5 at 11:00 AM Central is perfect.");
+    expect(r.body).not.toMatch(/most useful/);
+    // Her offer in another zone: said on that clock, with Central in brackets.
+    const east = againReply({ name: "A", said: "Nov 4 at 10am works", quoted: "> - Wednesday, November 4 at 10:00 AM Eastern", offered: [], slots: [], busy: [], now: NOW, zoneOn });
+    expect(east.body).toContain("Wednesday, November 4 at 10:00 AM Eastern (9:00 AM Central) is perfect.");
+    // No zone anywhere: yes to the time, and which zone? No invite rides on it.
+    const ask = againReply({ name: "A", said: "Nov 5 at 11am can work", quoted: null, offered: [], slots: [], busy: [], now: NOW, zoneOn });
+    expect(ask.kind).toBe("ask_zone");
+    expect(ask.picked).toBeNull();
+    expect(ask.body).toContain("Thursday, November 5 at 11:00 AM works on my side. Which time zone is that in?");
   });
 
   it("a pick of an offered time that is still free is a confirmation; a pick now busy is not", () => {
