@@ -23,3 +23,8 @@ export function morningSection(loops: Partial<Loop>[], today: string, opts?: { o
 export function repairsDue<T extends Partial<Loop>>(loops: T[] | null | undefined, today: string): T[];
 export function loopProblems(b: unknown, opts?: { partial?: boolean; slugs?: readonly string[] }): string[];
 export function sourceKeyOf(repo: unknown, stop: unknown): string | null;
+export function overdueRoute(loop: Partial<Loop> | null | undefined): "her" | "danielle";
+export const REMIND_EVERY_DAYS: number;
+export const REMIND_MAX: number;
+export function remindersDue<T extends Partial<Loop>>(loops: T[] | null | undefined, today: string): Array<{ loop: T; slot: string; nth: number; late: number }>;
+export function reminderEmail(loop: Partial<Loop>, opts: { origin: string; late: number; nth: number; names?: Record<string, string> }): { subject: string; body: string };

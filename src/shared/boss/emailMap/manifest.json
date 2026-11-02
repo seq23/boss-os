@@ -853,14 +853,14 @@
     },
     {
       "id": "boss-task-notices", "business": "personal",
-      "what": "A stopped task, as a problem email (what happened, what we did, status); checked again first so a false alarm never goes",
+      "what": "A stopped task, as a problem email (what happened, what we did, status); checked again first so a false alarm never goes. Also the reminder for an overdue Open Loops item that needs you (day 1 late, then every 3 days, at most 3)",
       "sender": "The employee whose task it is", "owner": "Simone",
       "from": "name@sequoiataylor.com", "to": "You",
-      "when": "Six checks a day, only when a task is still stopped",
+      "when": "Six checks a day, only when a task is still stopped or an open loop that needs you is late",
       "runs": "mac", "trigger": "Mac job com.seq.boss-agent",
       "pause": "launchctl bootout gui/501/com.seq.boss-agent (also stops the reports)",
       "launchd": ["com.seq.boss-agent"],
-      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/task-notices.mjs", "scripts/ops/notify.mjs"] }]
+      "code": [{ "repo": "boss-os", "paths": ["scripts/ops/task-notices.mjs", "scripts/ops/notify.mjs", "src/worker/boss/routes/openLoops.ts"] }]
     },
     {
       "id": "repo-change", "business": "personal",

@@ -25,7 +25,7 @@ import { readSession } from "../auth";
 import { dayIdInZone } from "../../../shared/boss/timezone";
 import { BRAIN_SLUGS } from "../../../shared/boss/brains/brain.mjs";
 import { MORNING_SECTIONS, morningSectionProblems } from "../../../shared/boss/mail/morningSections.mjs";
-import { loopProblems, morningSection, repairsDue, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
+import { loopProblems, morningSection, repairsDue, remindersDue, reminderEmail, sourceKeyOf, visibleLoops, isOwner, isDay, type Loop } from "../../../shared/boss/openLoops/openLoops.mjs";
 import { admitTask } from "../tasks/admit";
 
 export const openLoops = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -177,10 +177,11 @@ function centralHour(now: number): number {
 
 /**
  * ONCE A DAY: writes the "open_loops" morning section (an empty list included, so a missing copy
- * means this did not run) and opens one repair per team-owned row more than three days past its date,
+ * means this did not run), opens one repair per overdue row Danielle can do (three days past its date)
+ * and one reminder email per slot for a row that needs her (`overdueRoute`),
  * through the same admission every repair uses. Returns what it did, never silence.
  */
-export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ ran: boolean; reason?: string; shown?: number; overdue?: number; repairs?: string[] }> {
+export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ ran: boolean; reason?: string; shown?: number; overdue?: number; repairs?: string[]; reminders?: string[] }> {
   if (!MORNING_SECTIONS.includes(SECTION)) return { ran: false, reason: "NAMED STOP [OPEN_LOOPS_SECTION_UNREGISTERED]" };
   const today = dayIdInZone(now);
   if (centralHour(now) < WRITE_FROM_HOUR) return { ran: false, reason: "before 05:00 Central" };
@@ -214,5 +215,21 @@ export async function runOpenLoopsDaily(env: Env, now = Date.now()): Promise<{ r
     await env.DB.prepare(`UPDATE owner_open_loops SET repair_for = ? WHERE id = ?`).bind(l.next_date, l.id).run();
     opened.push(l.id);
   }
-  return { ran: true, shown: visibleLoops(loops).shown.length, overdue: sec.lines.length, repairs: opened };
+  /*
+   * AN OVERDUE LOOP THAT NEEDS HER STOPS AND REMINDS HER (owner, 2 Nov 2026: "if Danielle can do it
+   * she should but if not stop and remind me"). No Danielle job, no Decide, no plan: one plain
+   * three-part reminder through the existing notice drain (boss_task_notices → task-notices.mjs on
+   * her Mac), once per slot (`<next_date>#<n>` in secret_name keeps it to one per slot).
+   */
+  const reminded: string[] = [];
+  for (const { loop: l, slot, nth, late } of remindersDue(loops, today)) {
+    const already = await env.DB.prepare(`SELECT id FROM boss_task_notices WHERE task_id = ? AND kind = 'open_loop_reminder' AND secret_name = ? LIMIT 1`).bind(l.id, slot).first();
+    if (already) continue;
+    const mail = reminderEmail(l, { origin: ORIGIN, late, nth, names });
+    await env.DB.prepare(
+      `INSERT INTO boss_task_notices (id, task_id, lane, from_name, kind, subject, body, created_at, secret_name) VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).bind(newId("tnt"), l.id, "ops", "Simone", "open_loop_reminder", mail.subject, mail.body, now, slot).run();
+    reminded.push(l.id);
+  }
+  return { ran: true, shown: visibleLoops(loops).shown.length, overdue: sec.lines.length, repairs: opened, reminders: reminded };
 }

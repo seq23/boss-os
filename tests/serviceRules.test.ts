@@ -16,14 +16,14 @@ const markdown = readFileSync(DOC, "utf8");
 describe("the service rules document", () => {
   const { rules, problems } = parseRules(markdown);
 
-  it("holds R1–R35, contiguous, with no malformed line", () => {
+  it("holds R1–R36, contiguous, with no malformed line", () => {
     expect(problems).toEqual([]);
-    expect(rules.map((r) => r.n)).toEqual(Array.from({ length: 35 }, (_, i) => i + 1));
+    expect(rules.map((r) => r.n)).toEqual(Array.from({ length: 36 }, (_, i) => i + 1));
   });
 
-  it("tags R1–R23 and R32 ALL-KINDS and R24–R31 REPO-ONLY, as West Peek OS numbers them (R32–R35 are Boss OS's own; R33–R35 REPO-ONLY)", () => {
+  it("tags R1–R23 and R32 ALL-KINDS and R24–R31 REPO-ONLY, as West Peek OS numbers them (R32–R36 are Boss OS's own; R33–R36 REPO-ONLY)", () => {
     expect(rules.filter((r) => r.tag === "ALL-KINDS").map((r) => r.n)).toEqual([...Array.from({ length: 23 }, (_, i) => i + 1), 32]);
-    expect(rules.filter((r) => r.tag === "REPO-ONLY").map((r) => r.n)).toEqual([24, 25, 26, 27, 28, 29, 30, 31, 33, 34, 35]);
+    expect(rules.filter((r) => r.tag === "REPO-ONLY").map((r) => r.n)).toEqual([24, 25, 26, 27, 28, 29, 30, 31, 33, 34, 35, 36]);
   });
 
   it("passes the validator against the real tree: every anchor exists, every ALL-KINDS rule on the shared layer", () => {

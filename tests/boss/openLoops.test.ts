@@ -10,8 +10,9 @@ import { runOpenLoopsDaily } from "../../src/worker/boss/routes/openLoops";
  *      ("outcome reached"); only the machine token or a session gets through the intake's door;
  *   2. her row waiting on an open step is hidden from the main list (counted as waiting), and shows
  *      once that step is closed;
- *   3. a team-owned row more than three days late opens ONE repair (never a second on the next tick),
- *      and her own late row only reaches the morning section.
+ *   3. an overdue row Danielle can do opens ONE silent repair (never a second on the next tick); one
+ *      that needs her (her row, her account, a step only she holds, or nothing written) opens no job
+ *      and sends ONE reminder email per slot (owner, 2 Nov 2026).
  */
 const raw = async (path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => {
   const ctx = createExecutionContext();
@@ -66,24 +67,37 @@ describe("Open Loops", () => {
     expect(visibleLoops(d.loops).shown.map((l: any) => l.id)).toContain(hers.id);
   });
 
-  it("a team row more than three days late opens one repair; her late row is only in the morning section", async () => {
-    const team = await create({ title: "Wire the store keys", owner: "claude", next_date: "2026-11-05" });
-    await create({ title: "Pay for the accounts", owner: "sequoia", next_date: "2026-11-04" });
-    await create({ title: "Two days late, not yet", owner: "codex", next_date: "2026-11-08" });
+  it("an overdue row Danielle can do is one silent repair; one that needs her is a reminder email and no job (2 Nov 2026)", async () => {
+    // Doable: a team row with a written step and nothing only she holds, four days late.
+    const team = await create({ title: "Fix the sitemap build", next_step: "Fix the sitemap script and run it again.", owner: "claude", next_date: "2026-11-06" });
+    // Needs her: a named-stop row about her Play account, one day late (team-owned, still hers).
+    const play = await create({ title: "KeepMyProof on Google Play", next_step: "Finish the Google Play ID check.", owner: "codex", next_date: "2026-11-09" });
+    // Her own row, one day late; and a team row with no step written (fail closed: hers).
+    const mine = await create({ title: "Pay for the accounts", owner: "sequoia", next_date: "2026-11-09" });
+    const blank = await create({ title: "Something unclear", owner: "claude", next_date: "2026-11-09" });
     await create({ title: "An idea", owner: "sequoia", section: "parked", next_date: "2026-01-01" });
+    await env.DB.prepare(`DELETE FROM boss_task_notices WHERE kind = 'open_loop_reminder'`).run();
 
     const first = await runOpenLoopsDaily(env as any, NOW);
-    expect(first).toMatchObject({ ran: true, shown: 3, overdue: 3, repairs: [team.id] });
+    expect(first).toMatchObject({ ran: true, repairs: [team.id] });
+    expect([...(first.reminders ?? [])].sort()).toEqual([play.id, mine.id, blank.id].sort());
     const sec = await env.DB.prepare(`SELECT body FROM morning_sections WHERE section = 'open_loops'`).first<{ body: string }>();
-    const body = JSON.parse(sec!.body);
-    expect(body.title).toBe("Open loops: 3, 3 overdue");
-    expect(body.lines.map((l: any) => l.text).join("\n")).toContain("Pay for the accounts");
+    expect(JSON.parse(sec!.body).lines.map((l: any) => l.text).join("\n")).toContain("Pay for the accounts");
 
-    // The same day again, and the next day: never a second repair for the same date.
-    expect((await runOpenLoopsDaily(env as any, NOW)).ran).toBe(false);
-    await env.DB.prepare(`DELETE FROM morning_sections`).run();
-    expect((await runOpenLoopsDaily(env as any, NOW + 86_400_000)).repairs).toEqual([]);
+    // The reminder is three plain parts and reaches the notice drain; no job was opened for it.
+    const notes = await env.DB.prepare(`SELECT task_id, subject, body FROM boss_task_notices WHERE kind = 'open_loop_reminder'`).all<any>();
+    const playNote = notes.results.find((n: any) => n.task_id === play.id);
+    expect(playNote.subject).toBe("Reminder: KeepMyProof on Google Play");
+    expect(playNote.body).toMatch(/What is waiting: .*\nWhy it is yours: .*\nWhat clears it: Finish the Google Play ID check\./);
+    expect(notes.results.map((n: any) => n.task_id)).not.toContain(team.id);
     const tasks = await env.DB.prepare(`SELECT title FROM tasks WHERE title LIKE 'Open loop overdue:%'`).all<{ title: string }>();
-    expect(tasks.results.map((t) => t.title)).toEqual([`Open loop overdue: Wire the store keys [${team.id}]`]);
+    expect(tasks.results.map((t) => t.title)).toEqual([`Open loop overdue: Fix the sitemap build [${team.id}]`]);
+
+    // The next day: no second repair, no second reminder. Three days on: reminder 2.
+    await env.DB.prepare(`DELETE FROM morning_sections`).run();
+    expect(await runOpenLoopsDaily(env as any, NOW + 86_400_000)).toMatchObject({ repairs: [], reminders: [] });
+    await env.DB.prepare(`DELETE FROM morning_sections`).run();
+    expect((await runOpenLoopsDaily(env as any, NOW + 3 * 86_400_000)).reminders).toHaveLength(3);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE title LIKE 'Open loop overdue:%'`).first<{ n: number }>())!.n).toBe(1);
   });
 });
