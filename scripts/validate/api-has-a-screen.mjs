@@ -54,7 +54,7 @@ const CONSUMER_DIR = "src/client/boss";
  * because the build failed and you are tempted to raise the number: the failure is telling you that
  * an endpoint has no way in, which is the whole point.
  */
-const CEILING = 79;
+const CEILING = 77;
 
 /**
  * Names that appear at the same indentation as an API method but are not one.

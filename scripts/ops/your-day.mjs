@@ -737,6 +737,11 @@ export function buildDay(data, now = Date.now()) {
   const scLines = (m.scorecard?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
   const scorecardSection = scLines.length ? { title: m.scorecard.title ?? "📊 Scorecard", tone: "done", items: scLines, empty: null } : null;
 
+  // 4b''. Open Loops (owner ruling, 1 Nov 2026): every morning, "Open loops: N, M overdue" and one line
+  // per overdue row with its link (written by the Worker's tick, routes/openLoops.ts). Quiet = the title alone.
+  const olLines = (m.open_loops?.lines ?? []).map((l) => (typeof l === "string" ? { text: l, links: [] } : { links: [], ...l }));
+  const openLoopsSection = m.open_loops?.title ? { title: m.open_loops.title, tone: olLines.length ? undefined : "done", items: olLines, link: m.open_loops.link ?? null, empty: null } : null;
+
   // 4c. Brains (31 Oct 2026): Mondays one plain line, never red; the 1st of the month the scoreboard.
   const brainsSection = brainsSectionFor(data, now);
   const t2rGroupsSection = t2rGroupsSectionFor(data, now);
@@ -801,6 +806,7 @@ export function buildDay(data, now = Date.now()) {
       { title: "This morning's briefing (Camille)", items: briefTop ?? ["Briefing late — it will be on your Today page."], link: { label: "Read the full briefing →", url: BRIEFING_URL } },
       { title: "Done for you", tone: "done", items: doneShown, empty: null },
       ...(gridRepos ? [gridRepos] : []),
+      ...(openLoopsSection ? [openLoopsSection] : []),
       ...(scorecardSection ? [scorecardSection] : []),
       ...(scoreSection ? [scoreSection] : []),
       ...(brainsSection ? [brainsSection] : []),

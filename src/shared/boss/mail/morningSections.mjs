@@ -40,6 +40,10 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   // Mondays 06:10: "📊 Scorecard: N on track, M need a look" (scripts/ops/scorecard-monday.mjs; owner ruling, 1 Nov 2026).
   // Carries its own `title`; lists only switches, pauses and rows with no number.
   { name: "scorecard", label: "the Scorecard", expect: Object.freeze(["Monday"]) },
+  // Every morning from 05:00 Central: "Open loops: N, M overdue" + one line per overdue row, written by
+  // the Worker's hourly tick (src/worker/boss/routes/openLoops.ts runOpenLoopsDaily; owner ruling, 1 Nov 2026).
+  // Carries its own `title`; an empty list is still written, so absence means the tick did not run.
+  { name: "open_loops", label: "Open loops", expect: DAILY },
 ].map((s) => Object.freeze(s)));
 export const MORNING_SECTIONS = Object.freeze(MORNING_SECTION_SPECS.map((s) => s.name));
 

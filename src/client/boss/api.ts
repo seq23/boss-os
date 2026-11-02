@@ -121,6 +121,11 @@ export const api = {
   unlock: (passcode: string) => call<{ unlocked: boolean }>("/auth/unlock", post("", { passcode })),
   lock: () => call("/auth/lock", post("")),
   // The validator matrix (1 Nov 2026): every validator × repo, read from the Mac on Sunday evenings.
+  // Open Loops (1 Nov 2026): everything approved but not finished (routes/openLoops.ts).
+  openLoops: () => call<{ loops: import("@shared/boss/openLoops/openLoops.mjs").Loop[]; waiting: number; names: Record<string, string>; today: string }>("/open-loops"),
+  createOpenLoop: (body: Record<string, unknown>) => call<{ loop: any }>("/open-loops", post("", body)),
+  updateOpenLoop: (id: string, body: Record<string, unknown>) => call<{ loop: any }>(`/open-loops/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }),
+  closeOpenLoop: (id: string, reason: string) => call<{ closed: string }>(`/open-loops/${encodeURIComponent(id)}/close`, post("", { reason })),
   scorecard: () => call<{ state: { at: number; week: string; rows: Record<string, any> } | null; strays: any[] }>("/scorecard"),
   validators: () => call<{ matrix: import("@shared/boss/validators/matrix.mjs").Matrix | null; summary: string | null; flagged: string | null }>("/validators"),
   // Brains (31 Oct 2026): one document per business, read first by every employee.

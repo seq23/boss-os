@@ -164,6 +164,9 @@ const SNAPSHOT_TABLES = [
   // 0330 — the morning email's sections before it goes (the Mac→cloud move): what each job wrote for
   // the next morning. Lose them in a rebuild and that morning's email is missing its sections.
   "morning_sections",
+  // 0331 — Open Loops: everything she approved that is not finished. Typed by hand and by agents;
+  // not re-derivable from anywhere else.
+  "owner_open_loops",
   "capital_matches",
   "capital_match_taps",
   "capital_dismissed",

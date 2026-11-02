@@ -1932,3 +1932,15 @@ a.btn { text-decoration: none; text-align: center; display: inline-block; }
 .scorecard-red { color: var(--reject); border-color: var(--reject); }
 .scorecard-early { color: var(--muted); }
 .scorecard-spark { color: var(--muted); }
+
+/* Open Loops (1 Nov 2026): a late row is a gold nudge with a one-tap answer, never red. */
+.loops-business { font-family: var(--body); font-size: 16px; font-weight: 600; color: var(--ink); margin: 6px 0 0; }
+.loops-nudge { align-self: flex-start; font-size: 13px; color: var(--gold-deep); border: 1px solid var(--gold); background: var(--card-2); border-radius: 6px; padding: 2px 8px; }
+.loops-actions { flex-wrap: wrap; }
+.loops-actions .done-btn, .loops-confirm .done-btn, .loops-add { min-height: 44px; }
+.loops-quiet { color: var(--muted); }
+.loops-add { align-self: flex-start; margin-top: 10px; }
+.loops-parked-h { margin-top: 24px; }
+.loops-closed { margin-top: 18px; }
+.loops-focus { border-color: var(--gold); }
+.loops-confirm input { overflow-wrap: anywhere; }

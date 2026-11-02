@@ -396,3 +396,18 @@ Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/s
    section of Simone's morning email. Zero rows or every row unreadable is a NAMED STOP.
 3. **The page** is ☰ More → Scorecard (`/?tab=scorecard`). **Kendra's sweep** (`npm run scorecard:sweep`,
    the 1st, 09:45) gives anything running with no row a default row.
+
+## Open Loops: everything approved but not finished
+
+Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/boss/openLoops.test.ts`:
+1. **One list in D1** (`owner_open_loops`, migration 0331; `open_loops` is the older Today day-loops
+   table), rules in `src/shared/boss/openLoops/openLoops.mjs`, API `/api/boss/open-loops`, page
+   ☰ More → Open Loops (`/?tab=loops`). Not finished (finish line, next step, owner, date) and Parked
+   ideas (no dates, no chasing). Her rows waiting on an open `blocked_by` step are hidden and counted.
+2. **Chased by the Worker's hourly tick** (`runOpenLoopsDaily`, once a day from 05:00 Central): the
+   "open_loops" section of Simone's morning email (registered in `MORNING_SECTION_SPECS`, so a missing
+   copy is flagged) and one repair per team-owned row more than 3 days late (one per date). Her own
+   late rows are only in the email.
+3. **Repos' named stops report in** through `POST /api/boss/open-loops/intake` with the machine token
+   `BOSS_OPEN_LOOPS_TOKEN` (vault): upsert by `repo#STOP`, closed "outcome reached" when cleared.
+   How to adopt: `docs/open-loops.md`. Seed rows are posted at runtime, never written in the repo.
