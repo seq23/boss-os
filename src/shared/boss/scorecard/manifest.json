@@ -898,6 +898,51 @@
       "pause": []
     },
     {
+      "id": "keepmyproof-search",
+      "initiative": "KeepMyProof search pages",
+      "business": "spry",
+      "owner": "Spry Labs · Wednesday Spry Labs email",
+      "result": "Search clicks to keepmyproof.com per week",
+      "jobs": [],
+      "start": "2026-11-02",
+      "first": {
+        "label": "Google search clicks to keepmyproof.com (last 7 days)",
+        "by": 30,
+        "floor": {
+          "op": ">=",
+          "value": 500
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "keepmyproof.com"
+          ],
+          "metric": "clicks",
+          "days": 7
+        }
+      },
+      "real": {
+        "label": "Google search clicks to keepmyproof.com (last 7 days)",
+        "by": 60,
+        "floor": {
+          "op": ">=",
+          "value": 2000
+        },
+        "reader": "gsc",
+        "params": {
+          "sites": [
+            "keepmyproof.com"
+          ],
+          "metric": "clicks",
+          "days": 7
+        }
+      },
+      "versionB": {
+        "text": "The engine shifts from new pages to strengthening pages Google shows but nobody clicks, and every printable PDF carries the store link on every sheet."
+      },
+      "pause": []
+    },
+    {
       "id": "t2r-institutional",
       "initiative": "Time-2-Read institutional sales (Monique)",
       "business": "time-2-read",
