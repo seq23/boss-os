@@ -10,8 +10,9 @@ import { parseUnits, daysFromCapturedJson, daysFromPageText, mergeDays } from ".
  * "KDP-SURFACE-COMPLETE: quiet" in 39 seconds having never opened a browser. This pins the fix,
  * reading the real files:
  *
- *   1. THE PARSERS, over fixtures of the dashboard's own JSON and its rendered text. Zero days
- *      parsed from either source is a hard failure, never an empty object read back as zero sold.
+ *   1. THE PARSERS, over fixtures of the dashboard's own JSON and its rendered text. Nothing
+ *      recognisable from either source is a hard failure; a recognised widget whose own array is
+ *      empty is a real zero (confirmed live against this account, 2 Nov 2026) and is not one.
  *   2. THE WRAPPER runs the units read in code, after sign-in and before the model — the same place
  *      kdp-open.mjs and kdp-signin.mjs already sit — and treats its failure as a named stop line.
  *   3. THE PROMPT no longer tells the model to read the reports page or write units.json itself.
@@ -22,9 +23,14 @@ import { parseUnits, daysFromCapturedJson, daysFromPageText, mergeDays } from ".
 const ROOT = new URL("..", import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, ROOT), "utf8");
 
-describe("the units parsers hard-fail on zero days rather than returning an empty object", () => {
+describe("the units parsers hard-fail on an unread page, but a recognised widget's real zero is not one", () => {
   it("reads units sold per day out of the dashboard's own captured JSON", () => {
     const rows = daysFromCapturedJson({ dataPoints: [{ date: "2026-10-30", units: 3 }, { date: "2026-10-31", unitsSold: 1 }] });
+    expect(rows).toEqual([{ day: "2026-10-30", units: 3 }, { day: "2026-10-31", units: 1 }]);
+  });
+
+  it("reads the real dashboard shape — the series nested one level under a named widget key (confirmed live against kdpreports.amazon.com, 2 Nov 2026)", () => {
+    const rows = daysFromCapturedJson({ histogram: { data: [{ date: "2026-10-30", value: 3 }, { date: "2026-10-31", value: 1 }], props: {}, title: "OrdersForLast30Days" } });
     expect(rows).toEqual([{ day: "2026-10-30", units: 3 }, { day: "2026-10-31", units: 1 }]);
   });
 
@@ -42,8 +48,13 @@ describe("the units parsers hard-fail on zero days rather than returning an empt
     expect(r).toEqual({ days: { "2026-11-01": 9 }, source: "capture" });
   });
 
-  it("throws rather than returning {} when neither source parsed a single day", () => {
-    expect(() => parseUnits({ captured: [{ dataPoints: [] }], text: "nothing parseable here" })).toThrow();
+  it("throws when nothing recognisable came back from either source", () => {
+    expect(() => parseUnits({ captured: [{ somethingElse: true }], text: "nothing parseable here" })).toThrow();
+  });
+
+  it("does NOT throw when a known widget was recognised but its own array was empty — confirmed live, 2 Nov 2026: two brand-new titles genuinely sold nothing in the dashboard's last-30-days histogram, and that is a real zero from a page that was read, not an unread page", () => {
+    const r = parseUnits({ captured: [{ histogram: { data: [], props: {}, title: "OrdersForLast30Days" } }], text: "" });
+    expect(r).toEqual({ days: {}, source: "capture" });
   });
 });
 
