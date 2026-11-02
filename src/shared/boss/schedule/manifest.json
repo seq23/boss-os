@@ -1261,6 +1261,24 @@
       }
     },
     {
+      "id": "tz-watch",
+      "name": "Time zone watch",
+      "what": "Re-runs the launchd installers when the Mac changes zone, so every job stays on its Central time.",
+      "business": "personal",
+      "brand": "Mac",
+      "system": "mac",
+      "slots": [
+        "every 3600s"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.tz-watch"
+        ]
+      }
+    },
+    {
       "id": "housekeeping",
       "name": "Mac housekeeping",
       "what": "Turns unsaved work, backup stops and the monthly rules clean-up into Open Loops rows.",

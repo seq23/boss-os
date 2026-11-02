@@ -1,5 +1,8 @@
 /** Every installer schedule is Central time, whatever zone the Mac is in (26 Oct 2026). */
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { centralToLocalOffset, rawOffset, shiftPlist } from "../scripts/ops/plist-central.mjs";
 
@@ -25,6 +28,18 @@ describe("Central schedules on an Eastern Mac", () => {
     expect(out).toContain("<dict><key>Minute</key><integer>5</integer></dict>");
     expect(shiftPlist(ONE, 1)).toContain("<key>Hour</key><integer>7</integer><key>Minute</key><integer>20</integer>");
     expect(shiftPlist(ARR, 0)).toBe(ARR);
+  });
+  it("the CLI shifts a plist when reached through a symlinked path (it used to exit 0 doing nothing)", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "pc-"));
+    const link = path.join(dir, "link");
+    symlinkSync(path.resolve("scripts/ops"), link);
+    const f = path.join(dir, "x.plist");
+    writeFileSync(f, ONE);
+    execFileSync(process.execPath, [path.join(link, "plist-central.mjs"), f], { env: { ...process.env, TZ: "America/New_York" } });
+    const out = readFileSync(f, "utf8");
+    expect(out).toContain("<!-- central-shifted -->");
+    expect(out).toContain("<key>Hour</key><integer>7</integer><key>Minute</key><integer>20</integer>");
+    rmSync(dir, { recursive: true, force: true });
   });
   it("the installer runs it on every plist before launchd loads it", () => {
     const sh = readFileSync("scripts/ops/install-agent-launchd.sh", "utf8");
