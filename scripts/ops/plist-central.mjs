@@ -11,6 +11,7 @@
  *   node scripts/ops/plist-central.mjs <file.plist>     # rewrite in place; prints the shift
  */
 import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 
 /**
  * Hours to add to a Central hour to get the Mac's local hour (both zones' DST included).
@@ -68,7 +69,9 @@ export function shiftPlist(text, offset) {
   return head + shifted + (end === -1 ? "" : rest.slice(end));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run as a CLI by its REAL path: a caller reaching it through a symlink (/var -> /private/var, a linked
+// checkout) used to fail this test silently, so the plist was loaded unshifted and exit was 0.
+if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   const file = process.argv[2];
   const offset = centralToLocalOffset();
   const before = fs.readFileSync(file, "utf8");
