@@ -86,6 +86,19 @@ if [ -d "$REPO" ]; then
     || say "NAMED STOP [SIGNIN_NOT_OK] Simone could not sign in to KDP herself — see the KDP-SIGNIN line above; the run proceeds and the report step tells her only if it is truly hers."
 fi
 
+# ─── UNITS SOLD, READ IN CODE — NOT LEFT TO A PARAGRAPH IN THE PROMPT ─────────
+#
+# Owner ruling, 1 Nov 2026: "nothing runs unmeasured". Until 2 Nov the only instruction to write
+# ~/.boss-os/kdp/units.json was English inside the prompt below, and nothing checked it happened.
+# This reads it in code, after sign-in and before the model, exactly where kdp-open and kdp-signin
+# already sit. A page that could not be read writes a NAMED reason instead of a number
+# (scripts/ops/kdp-units.mjs); the Scorecard shows "No number" on either a missing file or a reason.
+rm -f "$HOME/.boss-os/kdp/units.json"
+if [ -d "$REPO" ]; then
+  ( cd "$REPO" && node scripts/ops/kdp-units.mjs ) >> "$RUN_LOG" 2>&1 \
+    || say "NAMED STOP [UNITS_NOT_READ] units sold could not be read today — see the KDP-UNITS line above; the Scorecard shows the KDP row as No number until a later run reads it."
+fi
+
 "$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
 RC=$?
 say "=== claude exited rc=$RC ==="
