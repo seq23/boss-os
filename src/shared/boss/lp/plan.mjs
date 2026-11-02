@@ -11,6 +11,7 @@ import { quotedSentence } from "../mail/plain.mjs";
 import { isRoleMailbox } from "../people/role.mjs";
 // Function-level use only (schedule.mjs reads firstName from here): the cycle is safe in ESM.
 import { slotText, slotsFrom } from "./schedule.mjs";
+import { recipientLines } from "../mail/replyNeed.mjs";
 
 export const LP_MAILBOX = "sequoia@westpeek.ventures";
 /**
@@ -32,6 +33,9 @@ export const LP_STATUS_LABEL = Object.freeze({
   not_answered: "Not answered yet",
   replied_again: "They replied again",
 });
+
+/** The tracker word for a row whose last message needs no reply (`waiting_why`): the thread waits on them. */
+export const LP_WAITING_LABEL = "Waiting on them";
 
 /** First name for the greeting, or "there". */
 export function firstName(name) {
@@ -138,6 +142,20 @@ export function gmailThreadUrl(threadId, mailbox = LP_MAILBOX) {
   return `https://mail.google.com/mail/u/${mailbox}/#all/${encodeURIComponent(threadId ?? "")}`;
 }
 
+const listOf = (v) => { try { const a = JSON.parse(v ?? "null"); return Array.isArray(a) ? a.map(String).filter(Boolean) : []; } catch { return []; } };
+/**
+ * Who the held reply goes to, as her approval email shows it (owner, 2 Nov 2026): reply-all to their
+ * latest message minus us, "To: …" and, when anyone is copied, "Cc: …". A row read before the
+ * recipients were kept shows their address alone.
+ */
+export function lpReplyRecipients(r) {
+  const to = listOf(r.reply_to);
+  return { to: to.length ? to : [r.address], cc: listOf(r.reply_cc) };
+}
+export function lpRecipientLines(r) {
+  return recipientLines(lpReplyRecipients(r));
+}
+
 const daysSince = (ms, now) => (ms ? Math.floor((now - ms) / DAY) : null);
 
 const domainOf = (address) => String(address ?? "").split("@")[1] ?? "";
@@ -172,6 +190,7 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
         ...(said ? [`What they wrote: ${quotedSentence(said0)}`] : []),
         `History: they answered your outreach on ${r.first_seen}${r.subject ? ` ("${trimEnd(r.subject)}")` : ""}; you have not replied yet.`,
         `Your reply goes from ${r.reply_from ?? LP_MAILBOX}, in their thread.`,
+        ...lpRecipientLines(r),
       ],
       draft: showable ? { heading: "Your reply, word for word (Send as is sends exactly this)", text: r.draft_body } : null,
       urgent: days >= LP_UNSENT_URGENT_DAYS,
@@ -218,6 +237,7 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
         ...(said ? [`What they wrote: ${quotedSentence(said0)}`] : []),
         `History: they answered your outreach on ${r.first_seen}; you replied${r.sent_at ? ` on ${new Date(Number(r.sent_at)).toISOString().slice(0, 10)}` : ""}; they wrote again${r.last_reply_at ? ` on ${new Date(Number(r.last_reply_at)).toISOString().slice(0, 10)}` : ""}.`,
         ready ? `Your reply goes from ${r.reply_from ?? LP_MAILBOX}, in their thread.` : "No reply is drafted for this one yet: it needs your own words.",
+        ...(ready ? lpRecipientLines(r) : []),
         ...(picked ? [`Send as is also sends the calendar invite for ${slotText(picked)} (30 minutes, with a video link) from ${r.reply_from ?? LP_MAILBOX}, only if that time is still free.`] : []),
         ...(offered.length ? ["The times are open on both your calendars, in your working hours, in the time zone you are in that day."] : []),
       ],

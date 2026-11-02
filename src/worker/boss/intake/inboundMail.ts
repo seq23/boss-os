@@ -1,3 +1,4 @@
+import { replyAllRecipients } from "../../../shared/boss/mail/replyNeed.mjs";
 import type { Env } from "../env";
 import { refsForChain, chainIds, refTail } from "./mailRefs";
 import { newId } from "../lib/id";
@@ -383,7 +384,10 @@ export async function handleBossInboundMail(message: BossMailMessage, env: Env):
       return { mailId, outcome: "ADMITTED_MAIL", employeeId: null, taskId: null, reply: null };
     }
     await env.DB.prepare(`UPDATE boss_inbound_mail SET command_id = ?, thread_id = ? WHERE id = ?`).bind(errand.id, errand.id, mailId).run();
-    await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId, mailId }, now);
+    // Everyone on their message stays on Simone's answer, minus us and her (owner, 2 Nov 2026).
+    const all = replyAllRecipients({ from: message.headers.get("from"), to: message.headers.get("to"), cc: message.headers.get("cc"), "reply-to": message.headers.get("reply-to") });
+    const copied = [...all.to, ...all.cc].filter((x) => !isOwner(extractAddress(x) ?? x, env.BOSS_EXTRA_OWNER_SENDERS ?? ""));
+    await errandReplied(env, errand, { from: sender, subject, text, dmarc, messageId, mailId, copied }, now);
     await finish({ outcome: "ERRAND_REPLY", why: `Their answer to Simone's request ${errand.id}, told to you plainly.`, employeeId: "emp_chief", objectKey: externalKey, reply: null });
     return { mailId, outcome: "ERRAND_REPLY", employeeId: "emp_chief", taskId: null, reply: null };
   }

@@ -658,6 +658,31 @@ describe("the tick", () => {
     expect(g.sends).toHaveLength(0);
   });
 
+  it("a reply that only passes it on gets no card; one that asks and copies someone new keeps them on Cc (owner, 2 Nov 2026)", async () => {
+    await readyWithAddress("time2read");
+    await addProspect("time2read", "pass@school.example", { state: "in_sequence", step: 1, thread_id: "th-pass", next_due_at: TUESDAY_10AM });
+    await addProspect("time2read", "ask@school.example", { state: "in_sequence", step: 1, thread_id: "th-ask", next_due_at: TUESDAY_10AM });
+    const g = fakeGmail({ inbound: [
+      { id: "p1", threadId: "th-pass", from: "Pat <pass@school.example>", subject: "Re: x", body: "Sounds interesting, I've forwarded this to our reading team. They'll be in touch." },
+      { id: "a1", threadId: "th-ask", from: "Ash <ask@school.example>", subject: "Re: x", body: "Yes, interested! Can you send the code? Copying our librarian.",
+        headers: { To: OUTREACH_MAILBOX, Cc: "Lib Rarian <librarian@school.example>" } },
+    ] });
+    await runOutreachTick(await tickEnv(), TUESDAY_10AM, g.fetchImpl);
+    const pass = await row<any>(`SELECT approval_id, reply_need FROM outreach_replies WHERE gmail_message_id = 'p1'`);
+    expect(pass.approval_id).toBeNull();
+    expect(pass.reply_need).toBe("pass_along");
+    // The sequence still stopped on their reply: no follow-up goes to someone who wrote back.
+    expect((await row<any>(`SELECT state, next_due_at FROM outreach_prospects WHERE email = 'pass@school.example'`)).next_due_at).toBeNull();
+    const ask = await row<any>(`SELECT approval_id, reply_need FROM outreach_replies WHERE gmail_message_id = 'a1'`);
+    expect(ask.approval_id).toBeTruthy();
+    const card = await row<any>(`SELECT question, resume_detail FROM judgement_calls WHERE approval_id = ?`, ask.approval_id);
+    const d = JSON.parse(card.resume_detail);
+    expect(d.to).toBe("Ash <ask@school.example>");
+    expect(d.cc).toEqual(["Lib Rarian <librarian@school.example>"]);
+    expect(card.question).toContain("Cc: Lib Rarian <librarian@school.example>");
+    expect(g.sends).toHaveLength(0);
+  });
+
   it("a complaint pauses the domain on the same tick, shown with its reason", async () => {
     await readyWithAddress("time2read");
     await addProspect("time2read", "angry@school.example", { state: "in_sequence", step: 1, thread_id: "th-angry" });

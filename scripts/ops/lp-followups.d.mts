@@ -12,3 +12,5 @@ export function hashOf(s: string): string;
 export type UnansweredRow = { name: string; address: string; bucket: string; first_seen: string; draft: string; days?: number | null };
 export function unansweredOrder(rows: UnansweredRow[], now?: number): (UnansweredRow & { days: number | null })[];
 export function followUps(people: unknown[], opts?: { now?: number; skipped?: Set<string>; where?: { away_city?: string | null; away_until?: string | null } | null; offered?: Record<string, unknown> }): Promise<{ unanswered: (UnansweredRow & { days: number | null })[]; stops: string[]; counts: Record<string, number> }>;
+export function lpReplyDecision(words: string | null | undefined): { draft: boolean; kind: string; why: string };
+export function draftRecipients(address: string, th: { recipients?: { to: string[]; cc: string[] } } | null | undefined): { to: string[]; cc: string[] };

@@ -38,7 +38,7 @@ import {
   upsertLpRows, listLpRows, importProspects, prospectPlan, prospectsToVerify, recordVerdicts, recordProspectEvents, suppressAddresses, proposeTemplate,
   approvedTemplate, pendingTemplate, ledgerRows, readExclusions, prospectActivity, backfillTouches,
 } from "../lp/desk";
-import { LP_STATUS_LABEL, canSpend, monthOf, monthSpent, nameRulesIn, MONIQUE_MONTHLY } from "../../../shared/boss/lp/plan.mjs";
+import { LP_STATUS_LABEL, LP_WAITING_LABEL, canSpend, monthOf, monthSpent, nameRulesIn, MONIQUE_MONTHLY } from "../../../shared/boss/lp/plan.mjs";
 
 export const lp = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -169,7 +169,7 @@ lp.get("/replies", async (c) => {
   return ok(c, {
     rows: rows.map((r) => ({
       id: r.id, name: r.name, firm: r.firm, address: r.address, bucket: r.bucket, quote: r.quote,
-      status: r.status, status_label: (LP_STATUS_LABEL as Record<string, string>)[r.status] ?? r.status,
+      status: r.status, status_label: r.waiting_why ? LP_WAITING_LABEL : (LP_STATUS_LABEL as Record<string, string>)[r.status] ?? r.status, waiting_why: r.waiting_why ?? null,
       first_seen: r.first_seen, drafted_at: r.drafted_at, sent_at: r.sent_at, thread_id: r.thread_id,
       draft_message_id: r.draft_message_id, send_error: r.send_error,
       said: r.said, draft_body: r.draft_body, last_reply_text: r.last_reply_text, last_reply_at: r.last_reply_at,

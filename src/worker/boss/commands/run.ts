@@ -27,6 +27,7 @@ import { admitTask } from "../tasks/admit";
 import {
   commandsIn, commandReplyIn, ownWords, readErrandReply, errandAnswerIn, errandFollowUpText, errandCancelText, followUpProblems, partyIn, errandDateIn, bookingAt, bookingWhen, reminderDueAt, ERRAND_TZ, errandReplyNotice, confirmLine, renderUrl, slotText, zoneLabel, OWNER_TZ, DEFAULT_MAILBOX, codeLines, ACCESS_CODE_SHAPE,
 } from "../../../shared/boss/commands/parse.mjs";
+import { recipientLines } from "../../../shared/boss/mail/replyNeed.mjs";
 import { clashes, createInvite, replaceGuest, deleteInvite, sendOne } from "./google";
 
 export const ORIGIN = "https://boss.sequoiataylor.com";
@@ -589,7 +590,7 @@ export async function macWork(env: Env, now = Date.now()) {
     preps: await prepsDue(env),
     errand_follow_ups: followUps.filter((r) => j(r.result).pending?.text).map((r) => {
       const res = j(r.result);
-      return { id: r.id, to: j(r.spec).to, subject: res.pending.subject, text: res.pending.text, purpose: res.pending.purpose, in_reply_to: res.thread?.message_id ?? null };
+      return { id: r.id, to: j(r.spec).to, cc: Array.isArray(res.thread?.cc) ? res.thread.cc : [], subject: res.pending.subject, text: res.pending.text, purpose: res.pending.purpose, in_reply_to: res.thread?.message_id ?? null };
     }),
   };
 }
@@ -693,14 +694,17 @@ async function ensureTap(env: Env, row: CommandRow, now: number): Promise<string
  * a choice, a question or a fee is a Decide item she answers by replying, and a card or deposit is
  * hers, never an agent's. Nothing goes back to them from here: her reply is what sends a follow-up.
  */
-export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean; messageId?: string | null; mailId?: string }, now = Date.now()): Promise<void> {
+export async function errandReplied(env: Env, row: CommandRow, reply: { from: string; subject: string; text: string; dmarc: boolean; messageId?: string | null; mailId?: string; copied?: string[] }, now = Date.now()): Promise<void> {
   if (row.state === "done") return;
   const spec = j(row.spec); const result = j(row.result);
   const read = readErrandReply(reply.text || reply.subject, spec.to, reply.subject);
   const offer = read.offer;
   // Full originals live in R2; keep this operational preview bounded as a thread grows.
   const replies = [...(result.replies ?? []), { at: now, from: reply.from, subject: reply.subject.slice(0, 300), text: reply.text.slice(0, 8000), mail_id: reply.mailId ?? null, kind: read.kind, dmarc: reply.dmarc, message_id: reply.messageId ?? null }];
-  const thread = { message_id: reply.messageId ?? result.thread?.message_id ?? null, subject: /^re:/i.test(reply.subject) ? reply.subject.slice(0, 200) : `Re: ${String(result.subject ?? reply.subject).slice(0, 196)}`, greet: offer.greet ?? result.thread?.greet ?? null };
+  // Her answer goes to everyone on their latest message (owner, 2 Nov 2026): the business, plus whoever they copied.
+  const toAddr = String(spec.to ?? "").toLowerCase();
+  const cc = (reply.copied ?? []).filter((x) => !String(x).toLowerCase().includes(`<${toAddr}>`) && String(x).toLowerCase() !== toAddr).slice(0, 10);
+  const thread = { cc, message_id: reply.messageId ?? result.thread?.message_id ?? null, subject: /^re:/i.test(reply.subject) ? reply.subject.slice(0, 200) : `Re: ${String(result.subject ?? reply.subject).slice(0, 196)}`, greet: offer.greet ?? result.thread?.greet ?? null };
   const asked = String(result.request ?? spec.ask ?? "").slice(0, 300);
   const unproven = reply.dmarc ? [] : ["Their email could not be fully proven to come from them, so check it before acting on it."];
 
@@ -744,6 +748,8 @@ export async function errandReplied(env: Env, row: CommandRow, reply: { from: st
     answerUrl: decideOpen && token ? tapUrl(token, "answer") : null,
     cancelUrl: decideOpen && token ? tapUrl(token, "cancel") : null,
   });
+  // Who her answer goes to, shown to her (owner, 2 Nov 2026): the business, and whoever they copied.
+  if (decideOpen && cc.length && Array.isArray((notice as any).details)) (notice as any).details.push("Your answer goes to everyone on their email:", ...recipientLines({ to: [spec.to], cc }));
   await owe(env, row.id, notice);
   await audit(env.DB, { actor: "system", lane: "ops", entityType: "boss_command", entityId: row.id, action: "errand_answered", detail: { kind, confirmed, from: reply.from, dmarc: reply.dmarc } });
 }

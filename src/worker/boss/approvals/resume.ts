@@ -315,13 +315,13 @@ export const RESUME_HANDLERS: Record<string, ResumeHandler> = {
    */
   outreach_interested: async (env, j, verdict, note, now) => {
     const row = await env.DB.prepare(`SELECT resume_detail FROM judgement_calls WHERE id = ?`).bind(j.id).first<{ resume_detail: string | null }>();
-    let d: { to?: string; subject?: string; body?: string; prospect_id?: string } | null = null;
+    let d: { to?: string; cc?: string[]; subject?: string; body?: string; prospect_id?: string } | null = null;
     try { d = row?.resume_detail ? JSON.parse(row.resume_detail) : null; } catch { d = null; }
     if (verdict === "try_again") {
       return { detail: note ? `Left with you. Monique will not write to them again; your note is on the card: ${note}` : "Left with you. Monique will not write to them again." };
     }
     if (!d?.to || !d.body) throw new Error("This card carries no reply to draft. It stays on your screen rather than recording a decision over nothing.");
-    const outcome = await createGmailDraft(env, { subject: d.subject ?? "Re:", body: d.body, to: d.to }, fetch, OUTREACH_MAILBOX);
+    const outcome = await createGmailDraft(env, { subject: d.subject ?? "Re:", body: d.body, to: d.to, cc: Array.isArray(d.cc) ? d.cc : [] }, fetch, OUTREACH_MAILBOX);
     return {
       detail: outcome.state === "created" ? `The reply to ${d.to} is in your drafts in ${OUTREACH_MAILBOX}.` : outcome.detail,
       gmail_draft: { state: outcome.state, gmail_draft_id: outcome.gmail_draft_id, failure_code: outcome.failure_code },

@@ -121,6 +121,8 @@ describe("LP replies: who, what they said, the history, and the reply word for w
       'What they wrote: "Thanks for reaching out. I\'m happy to connect. Jo on our team should join."',
       'History: they answered your outreach on 2026-10-20 ("Exploring a small LP group"); you have not replied yet.',
       "Your reply goes from owner@westpeek.example, in their thread.",
+      // Who it goes to (owner, 2 Nov 2026): a row read before recipients were kept goes to their address alone.
+      "To: lee@foundation.example",
     ]);
     expect(d.body).toBe("They want a call. Who: an LP you wrote to in West Peek's fundraising outreach (foundation.example).");
     expect(d.draft?.text).toBe(base.draft_body);
