@@ -230,6 +230,18 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    owner, 1 Nov 2026): her sites in "Where every site stands" and her email; Friends & clients in a
    separate "Friends' sites" section, in her email only when one needs her (a named stop). A report-only
    client repo's briefs are `client_repo`, never worked. Client data never feeds her own networks.
+8. **Outcomes, not only presence (owner, 2 Nov 2026).** virtualagency-os.com lost ~99% of its Google
+   impressions on 25-26 Aug 2026 while the audit scored it 53 checks, 0 failing. Every Monday the audit
+   also (a) compares each site's last 28 days of Search Console impressions and clicks with the 28
+   before (`search-outcomes.mjs`): red on a fall of more than half (prior window at least 50
+   impressions / 10 clicks) or, for a site of 200+ sitemap pages, under one impression per ten pages;
+   an unreadable source is "not read: <reason>", never 0; (b) samples five live content pages a week
+   per site against b3, b4, b5, c4, c6, d1-d4 and a template-filler test (`page-quality-sample.mjs`),
+   notes only, one red line when most of the sample fails; (c) queues pages 90+ days old with zero
+   impressions in 90 days as fold-into-hub briefs (`consolidation-queue.mjs`, f4), never a deletion.
+   Red lines head "The grid repos" section and the checklist page; their briefs are `disposition:
+   "weekly"`, worked once in the repair run's first round (`--plan` ONCE lines), never counted as
+   workable. Pinned by `tests/searchOutcomes.test.ts` (the real WPP-llm August rows must go red).
 
 ## Brains: one document per business, read first
 

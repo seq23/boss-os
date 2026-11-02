@@ -120,6 +120,19 @@ built by the site's own generator (its city or area list), never hand-written on
 own, in a single-page PR that touches nothing else: open its Gumroad buy link before and after and
 confirm both answer, and never fold it into a bulk or cosmetic change.
 
+**Weekly briefs (2 Nov 2026) carry a `kind` and a `brief` field; follow the `brief` word for word.**
+They are worked once a week, not until empty:
+- `kind: "outcome"` (item o1): Google stopped showing the site (impressions or clicks down more than
+  half, or under one impression per ten sitemap pages). Find the cause first (Search Console's Pages
+  report and Manual actions; robots, noindex, canonical, host or redirect changes in the week the line
+  fell, from `git log`), fix it at source, and record what you found even when the cause is outside
+  the repo.
+- `kind: "quality"` (item q1): sampled pages fall short of the page shape or are template filler. Fix
+  the generator or template that built them, never the sampled pages by hand.
+- `kind: "consolidate"` (item f4): `fold_urls` had no Google impressions in 90 days. Fold each into
+  `suggested_hub`: move its useful words into the hub, 301 it there, drop it from the sitemap, record it
+  in the consolidation ledger. **Never delete a page without its 301**; skip a protected or paying page.
+
 A queue older than eight days is stale: say so in `because` and do not act on it.
 
 ## 2. Map each project to a repository BY EVIDENCE

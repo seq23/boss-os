@@ -960,7 +960,7 @@
     "mode": "auto",
     "type": "consolidation_ledger",
     "source": "repo",
-    "how": "The repo's default branch has a consolidation ledger (a file whose name contains \"consolidat\").",
+    "how": "The repo's default branch has a consolidation ledger (a file whose name contains \"consolidat\"). And every Monday the pages at least 90 days old with zero Search Console impressions in 90 days are queued as fold-into-hub briefs for the repair run (consolidation-queue.mjs); nothing is ever deleted by the audit.",
     "applies_to": [
      "guide",
      "hyperlocal",

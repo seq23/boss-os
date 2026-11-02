@@ -192,6 +192,12 @@ main() {
   for ROUND in $(seq 1 "$MAX_ROUNDS"); do
     # One pass per CHUNK (at most 10 briefs of one repo), so no pass runs out of turns before it lands.
     CHUNKS="$(echo "$P" | awk '/^CHUNK /{print $2" "$3" "$4}')"
+    # The weekly briefs (outcome alarm, quality sample, fold queue) get one pass, in the first round
+    # only: they are not counted as workable, so they can never stall the loop (2 Nov 2026).
+    if [ "$ROUND" -eq 1 ]; then
+      ONCE="$(echo "$P" | awk '/^ONCE /{print $2" "$3" "$4}')"
+      [ -n "$ONCE" ] && CHUNKS="$(printf '%s\n%s' "$CHUNKS" "$ONCE" | sed '/^$/d')"
+    fi
     [ -n "$CHUNKS" ] || break
     BEFORE="$LEFT"
     : > "$RCS"
