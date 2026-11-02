@@ -59,6 +59,10 @@ export interface LpRowIn {
   draft_body?: string | null; said?: string | null; last_reply_text?: string | null;
   /** The times her held reply offers (JSON [{start, zone}]) and the one they picked (lp/schedule.mjs). */
   offered_slots?: string | null; picked_start?: number | null; picked_zone?: string | null;
+  /** Reply-all to their latest message, minus us: JSON ["Name <address>"] (shared/boss/mail/replyNeed.mjs). */
+  reply_to?: string | null; reply_cc?: string | null;
+  /** Why their message needs no reply (status "waiting" from the Mac); the thread waits on them. */
+  waiting_why?: string | null;
 }
 
 /** A mailbox address as stored: lower case, an address only, or null. */
@@ -67,7 +71,19 @@ export const sentFrom = (v: unknown): string | null => {
   return m ? m[0].toLowerCase() : null;
 };
 
-const LP_STATUSES = new Set(["drafted", "sent", "scheduled", "skipped", "not_answered", "replied_again"]);
+const LP_STATUSES = new Set(["drafted", "sent", "scheduled", "skipped", "not_answered", "replied_again", "waiting"]);
+
+/**
+ * "WAITING ON THEM" (owner, 2 Nov 2026: "Every email doesn't need a fucking reply"). The Mac says
+ * `waiting` when their message passes it on, loops someone in, says they are reviewing, thanks, is an
+ * auto-reply or is only for information. Stored without widening the status CHECK (migrations are
+ * additive): her reply already went → "sent"; none went → "skipped"; `waiting_why` says it was the
+ * rule, not her, so a later message that asks something brings the draft back. Pure.
+ */
+export function storedLpStatus(r: Pick<LpRowIn, "status" | "sent_at">): { status: string; waiting: boolean } {
+  if (r.status !== "waiting") return { status: r.status, waiting: false };
+  return { status: Number(r.sent_at) > 0 ? "sent" : "skipped", waiting: true };
+}
 
 /** Upsert what the morning read found. A decision she already made (skip) is never undone by a read. */
 export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.now()): Promise<number> {
@@ -76,11 +92,12 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
     const address = String(r.address ?? "").toLowerCase().trim();
     if (!address.includes("@") || !LP_STATUSES.has(r.status) || !["call", "warm"].includes(r.bucket)) continue;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r.first_seen))) continue;
+    const stored = storedLpStatus(r);
     stmts.push(db.prepare(
       `INSERT INTO lp_reply_drafts (id, address, name, firm, bucket, quote, reply_from, thread_id, in_reply_to, subject,
          draft_id, draft_message_id, body_hash, status, tap_token, first_seen, drafted_at, sent_at, last_reply_at, created_at, updated_at,
-         draft_body, said, last_reply_text, offered_slots, picked_start, picked_zone)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         draft_body, said, last_reply_text, offered_slots, picked_start, picked_zone, reply_to, reply_cc, waiting_why)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(address) DO UPDATE SET
          name = excluded.name, firm = COALESCE(excluded.firm, lp_reply_drafts.firm), bucket = excluded.bucket,
          quote = excluded.quote, reply_from = excluded.reply_from, thread_id = excluded.thread_id,
@@ -88,11 +105,12 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
          draft_id = COALESCE(excluded.draft_id, lp_reply_drafts.draft_id),
          draft_message_id = COALESCE(excluded.draft_message_id, lp_reply_drafts.draft_message_id),
          body_hash = COALESCE(excluded.body_hash, lp_reply_drafts.body_hash),
-         status = CASE WHEN lp_reply_drafts.status = 'skipped' AND excluded.status IN ('drafted','not_answered')
+         -- Her own skip sticks; a "waiting on them" skip (waiting_why) gives way to a message that needs a reply.
+         status = CASE WHEN lp_reply_drafts.status = 'skipped' AND lp_reply_drafts.waiting_why IS NULL AND excluded.status IN ('drafted','not_answered')
                        THEN 'skipped'
                        -- Her own words held in their thread (lp/decideReply.ts) wait for her tap; a read
                        -- that still sees "they wrote again" does not take them off her email.
-                       WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
+                       WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND (excluded.status = 'replied_again' OR excluded.waiting_why IS NOT NULL)
                        THEN 'drafted' ELSE excluded.status END,
          tap_token = COALESCE(lp_reply_drafts.tap_token, excluded.tap_token),
          drafted_at = COALESCE(lp_reply_drafts.drafted_at, excluded.drafted_at),
@@ -100,27 +118,36 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
          last_reply_at = excluded.last_reply_at, updated_at = excluded.updated_at,
          -- The held draft word for word (0296). NULL when she edited it in Gmail: then the morning email
          -- shows no "Send as is", because it could not show what would be sent.
-         draft_body = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
+         draft_body = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND (excluded.status = 'replied_again' OR excluded.waiting_why IS NOT NULL)
                            THEN lp_reply_drafts.draft_body ELSE excluded.draft_body END,
          said = COALESCE(excluded.said, lp_reply_drafts.said),
          last_reply_text = COALESCE(excluded.last_reply_text, lp_reply_drafts.last_reply_text),
          -- The times offered are kept until a new offer; the pick is the morning read's, each morning,
          -- except under her own words (then no invite rides on the tap: lp/schedule.ts).
          offered_slots = COALESCE(excluded.offered_slots, lp_reply_drafts.offered_slots),
-         picked_start = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
+         picked_start = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND (excluded.status = 'replied_again' OR excluded.waiting_why IS NOT NULL)
                              THEN NULL ELSE excluded.picked_start END,
-         picked_zone = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND excluded.status = 'replied_again'
-                            THEN NULL ELSE excluded.picked_zone END`,
+         picked_zone = CASE WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' AND (excluded.status = 'replied_again' OR excluded.waiting_why IS NOT NULL)
+                            THEN NULL ELSE excluded.picked_zone END,
+         reply_to = COALESCE(excluded.reply_to, lp_reply_drafts.reply_to),
+         reply_cc = COALESCE(excluded.reply_cc, lp_reply_drafts.reply_cc),
+         -- Her own skip, or her own words held for her tap, is hers: never relabelled by the rule.
+         waiting_why = CASE WHEN lp_reply_drafts.status = 'skipped' AND lp_reply_drafts.waiting_why IS NULL AND excluded.status = 'skipped'
+                            THEN NULL
+                            WHEN lp_reply_drafts.status = 'drafted' AND lp_reply_drafts.decision = 'edit' THEN NULL
+                            ELSE excluded.waiting_why END`,
     ).bind(
       newId("lpr"), address, r.name ?? null, r.firm ?? null, r.bucket, r.quote ? String(r.quote).slice(0, 300) : null,
       String(r.reply_from).toLowerCase(), r.thread_id ?? null, r.in_reply_to ?? null, r.subject ?? null,
-      r.draft_id ?? null, r.draft_message_id ?? null, r.body_hash ?? null, r.status, tapToken(),
+      r.draft_id ?? null, r.draft_message_id ?? null, r.body_hash ?? null, stored.status, tapToken(),
       r.first_seen, r.drafted_at ?? (r.status === "drafted" ? now : null), r.sent_at ?? null, r.last_reply_at ?? null, now, now,
       r.draft_body ? String(r.draft_body).slice(0, 6000) : null, r.said ? String(r.said).slice(0, 1200) : null,
       r.last_reply_text ? String(r.last_reply_text).slice(0, 1200) : null,
       r.offered_slots ? String(r.offered_slots).slice(0, 600) : null,
       Number.isFinite(Number(r.picked_start)) && Number(r.picked_start) > 0 ? Number(r.picked_start) : null,
       r.picked_start && r.picked_zone ? String(r.picked_zone).slice(0, 60) : null,
+      r.reply_to ? String(r.reply_to).slice(0, 2000) : null, r.reply_cc ? String(r.reply_cc).slice(0, 4000) : null,
+      stored.waiting ? String(r.waiting_why ?? "nothing_asked").slice(0, 40) : null,
     ));
   }
   if (stmts.length) await db.batch(stmts);

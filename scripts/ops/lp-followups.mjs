@@ -51,6 +51,7 @@ import {
   instantIn, openSlots, slotText, slotsFrom, zoneResolver, wantsToMeet, pickedSlot, proposedFit, lpTimesBody, lpConfirmBody, SLOT_MINUTES,
 } from "../../src/shared/boss/lp/schedule.mjs";
 import { herBusyAndZone } from "./lp-calendar.mjs";
+import { replyNeed, replyAllRecipients } from "../../src/shared/boss/mail/replyNeed.mjs";
 
 const MAILBOX = process.env.LP_MAILBOX ?? "sequoia@westpeek.ventures";
 const OUT_DIR = process.env.BOSS_OS_LP_DIR ?? path.join(os.homedir(), ".boss-os", "lp");
@@ -113,6 +114,21 @@ export function draftBody({ name, bucket, slots }) {
 
 export const hashOf = (s) => crypto.createHash("sha256").update(String(s)).digest("hex").slice(0, 16);
 
+/**
+ * DOES THIS PERSON'S MESSAGE NEED A REPLY? (owner, 2 Nov 2026: "Every email doesn't need a fucking
+ * reply"; "Make sure this is the case for boss os - Simone too"). The FIRST decision for both drafts
+ * this file makes, the first reply and the reply to someone who wrote again. A message that passes the
+ * note on, loops someone in, says they are reviewing or will get back, says thanks, is an auto-reply or
+ * is only for information gets NO draft: the row is "waiting" (the thread waits on them) and any
+ * unedited draft this file held for it is taken back out of her Drafts. Pure.
+ * A row with no words to read (an entry older than the stored words) keeps its draft.
+ */
+export function lpReplyDecision(words) {
+  if (!String(words ?? "").trim()) return { draft: true, kind: "unread", why: "their words were not kept, so the reply is held as before" };
+  const need = replyNeed(words);
+  return { draft: need.needed, kind: need.kind, why: need.why };
+}
+
 /** Oldest first, with days waiting. Pure. */
 export function unansweredOrder(rows, now = Date.now()) {
   return [...rows].map((r) => ({ ...r, days: daysWaiting(r.first_seen, now) })).sort((a, b) => (b.days ?? 0) - (a.days ?? 0));
@@ -168,16 +184,25 @@ async function threadOf(tok, address) {
   if (!m) return null;
   const u = new URL(`${GMAIL}/messages/${m.id}`);
   u.searchParams.set("format", "metadata");
-  for (const h of ["Message-ID", "Subject"]) u.searchParams.append("metadataHeaders", h);
+  for (const h of ["Message-ID", "Subject", "From", "To", "Cc", "Reply-To"]) u.searchParams.append("metadataHeaders", h);
   const msg = await call(tok, u.toString());
   const h = Object.fromEntries((msg?.payload?.headers ?? []).map((x) => [x.name.toLowerCase(), x.value]));
-  return { id: m.id, threadId: m.threadId, messageId: h["message-id"] ?? null, subject: h.subject ?? "", at: Number(msg?.internalDate ?? 0) || null };
+  // Reply-all to their latest message, minus us (owner, 2 Nov 2026): whoever they copied stays on it.
+  const recipients = replyAllRecipients({ from: h.from, to: h.to, cc: h.cc, "reply-to": h["reply-to"] }, { ours: [MAILBOX] });
+  return { id: m.id, threadId: m.threadId, messageId: h["message-id"] ?? null, subject: h.subject ?? "", at: Number(msg?.internalDate ?? 0) || null, recipients };
 }
 
-function rawDraft({ to, subject, inReplyTo, body }) {
+/** Who the draft goes to: everyone on their latest message, minus us; their address alone when unread. */
+export function draftRecipients(address, th) {
+  const r = th?.recipients;
+  return r?.to?.length ? { to: r.to, cc: r.cc ?? [] } : { to: [address], cc: [] };
+}
+
+function rawDraft({ to, cc = [], subject, inReplyTo, body }) {
   const subj = /^re:/i.test(subject) ? subject : `Re: ${subject || "our conversation"}`;
   const lines = [
-    `To: ${to}`,
+    `To: ${[].concat(to).join(", ")}`,
+    ...(cc.length ? [`Cc: ${cc.join(", ")}`] : []),
     `Subject: ${subj}`,
     ...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`, `References: ${inReplyTo}`] : []),
     "Content-Type: text/plain; charset=UTF-8",
@@ -217,6 +242,13 @@ export function againReply({ name, said, offered = [], slots = [], busy = null, 
   return { kind: "plain", body: lpAgainBody({ name, wantsCall: wantsToMeet(said) }), picked: null, offered };
 }
 
+/** A draft this file made and she has not touched leaves her Drafts; one she edited stays hers. */
+async function dropOwnDraft(draftTok, had) {
+  if (!had?.id) return;
+  const existing = await call(draftTok, `${GMAIL}/drafts/${had.id}?format=metadata`).catch(() => null);
+  if (existing && existing.message?.id === had.message_id) await call(draftTok, `${GMAIL}/drafts/${had.id}`, { method: "DELETE" }).catch(() => null);
+}
+
 async function againDraft(draftTok, state, p, th, now, plan) {
   state.again = state.again ?? {};
   const had = state.again[p.address];
@@ -229,7 +261,7 @@ async function againDraft(draftTok, state, p, th, now, plan) {
     return { id: had.id, message_id: mid, hash: had.hash, body: await draftWords(mid), kind: had.kind ?? "plain", picked: had.picked ?? null, offered: slotsFrom(had.offered) };
   }
   const body = plan.body;
-  const message = { raw: rawDraft({ to: p.address, subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
+  const message = { raw: rawDraft({ ...draftRecipients(p.address, th), subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
   const res = existing
     ? await call(draftTok, `${GMAIL}/drafts/${had.id}`, { method: "PUT", body: JSON.stringify({ id: had.id, message }) }).catch(() => null)
     : await call(draftTok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message }) }).catch(() => null);
@@ -268,6 +300,7 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       address: p.address, name: p.name ?? "", bucket: p.bucket, quote: p.quote ?? null, said: p.said ?? null, first_seen: p.first_seen,
       reply_from: MAILBOX, thread_id: th?.threadId ?? null, in_reply_to: th?.messageId ?? null, subject: th?.subject ?? null,
       last_reply_at: th?.at ?? null,
+      reply_to: JSON.stringify(draftRecipients(p.address, th).to), reply_cc: JSON.stringify(draftRecipients(p.address, th).cc),
     };
     const [mine] = await search(read, `in:sent from:${MAILBOX} to:${p.address} after:${after}`);
     if (mine) {
@@ -282,6 +315,16 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       const lastReplyText = status === "replied_again" && th?.id ? await latestWords(th.id) : null;
       // EVERY WAITING REPLY HAS A READY DRAFT (Today v4): one held in their thread for their new message,
       // redrafted when they write again. A fixed template; nothing is sent here.
+      // Does their new message need a reply at all? A hand-off, "we'll review", a thank-you: no draft.
+      const need = status === "replied_again" ? lpReplyDecision(lastReplyText) : null;
+      if (need && !need.draft) {
+        status = "waiting";
+        counts.waiting = (counts.waiting ?? 0) + 1;
+        if (draftTok) await dropOwnDraft(draftTok, state.again?.[p.address]);
+        delete state.again?.[p.address];
+        rows.push({ ...base, status, sent_at: sentAt, last_reply_text: lastReplyText, waiting_why: need.kind });
+        continue;
+      }
       const plan = status === "replied_again"
         ? againReply({ name: p.name, said: lastReplyText, offered: slotsFrom(state.offered[p.address] ?? offered[p.address]), slots, busy, now, zoneOn })
         : null;
@@ -301,6 +344,15 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       rows.push({ ...base, status: "skipped" });
       continue;
     }
+    // Does their reply need one from her at all? A hand-off, "we'll review", a thank-you: no draft.
+    const need = lpReplyDecision(p.said);
+    if (!need.draft) {
+      counts.waiting = (counts.waiting ?? 0) + 1;
+      if (draftTok) await dropOwnDraft(draftTok, state.drafts[p.address]);
+      delete state.drafts[p.address];
+      rows.push({ ...base, status: "waiting", waiting_why: need.kind });
+      continue;
+    }
     let held = null;
     if (draftTok) {
       const had = state.drafts[p.address];
@@ -312,7 +364,7 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
       if (existing && !(stale && unedited)) { counts.kept += 1; held = { id: had.id, message_id: existing.message?.id ?? had.message_id, hash: had.hash, body: await draftWords(existing.message?.id ?? had.message_id) }; }
       else {
         const body = draftBody({ name: p.name, bucket: p.bucket, slots });
-        const message = { raw: rawDraft({ to: p.address, subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
+        const message = { raw: rawDraft({ ...draftRecipients(p.address, th), subject: th?.subject ?? "", inReplyTo: th?.messageId, body }), ...(th?.threadId ? { threadId: th.threadId } : {}) };
         const res = existing
           ? await call(draftTok, `${GMAIL}/drafts/${had.id}`, { method: "PUT", body: JSON.stringify({ id: had.id, message }) })
           : await call(draftTok, `${GMAIL}/drafts`, { method: "POST", body: JSON.stringify({ message }) });
@@ -333,6 +385,6 @@ export async function followUps(people, { now = Date.now(), skipped = new Set(),
   state.updated_at = new Date(now).toISOString();
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(STATE, JSON.stringify(state, null, 2), "utf8");
-  console.log(`LP replies: ${counts.drafted} held, ${counts.sent} sent, ${counts.replied_again} replied again, ${counts.skipped} skipped, ${counts.not_answered} without a draft; drafts ${counts.made} new, ${counts.refreshed} refreshed, ${counts.kept} kept; wrote-again replies ${counts.again_times ?? 0} offering times, ${counts.again_confirm ?? 0} confirming a time; ${slots.length} open time(s); ${stops.length} stop(s).`);
+  console.log(`LP replies: ${counts.drafted} held, ${counts.waiting ?? 0} waiting on them (no reply needed), ${counts.sent} sent, ${counts.replied_again} replied again, ${counts.skipped} skipped, ${counts.not_answered} without a draft; drafts ${counts.made} new, ${counts.refreshed} refreshed, ${counts.kept} kept; wrote-again replies ${counts.again_times ?? 0} offering times, ${counts.again_confirm ?? 0} confirming a time; ${slots.length} open time(s); ${stops.length} stop(s).`);
   return { rows, stops, counts, unanswered: unansweredOrder(rows.filter((r) => ["drafted", "not_answered"].includes(r.status)).map((r) => ({ ...r, draft: r.status === "drafted" ? "waiting" : "none" })), now) };
 }

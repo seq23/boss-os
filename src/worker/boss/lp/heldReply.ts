@@ -3,6 +3,7 @@ import { audit } from "../lib/audit";
 import { holdThreadReply } from "../wealth/gmailDraft";
 import { sendDraft, lpReplyClosed } from "../routes/lpTap";
 import { tapToken } from "./desk";
+import { lpReplyRecipients } from "../../../shared/boss/lp/plan.mjs";
 import { inviteGate, sendInvite } from "./schedule";
 
 /**
@@ -53,7 +54,7 @@ export async function holdHerWords(env: Env, row: any, words: string, now = Date
   if (!text) return { ok: false, line: "Type the reply you want to send.", text: null };
   if (["sent", "skipped", "scheduled"].includes(row.status)) return { ok: false, line: "That reply has already gone, so nothing was changed.", text: null };
   const held = await holdThreadReply(env, row.reply_from, {
-    draftId: row.draft_id, to: row.address, subject: row.subject ?? "", inReplyTo: row.in_reply_to, threadId: row.thread_id, body: text,
+    draftId: row.draft_id, ...lpReplyRecipients(row), subject: row.subject ?? "", inReplyTo: row.in_reply_to, threadId: row.thread_id, body: text,
   }, fetchImpl);
   if (!held.ok) {
     await audit(env.DB, { actor: "owner", lane: "ops", entityType: "lp_reply_drafts", entityId: row.id, action: "her_words_not_held", detail: { why: held.why, via: "today" } });

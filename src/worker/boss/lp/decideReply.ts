@@ -19,7 +19,7 @@
 import type { Env } from "../env";
 import { audit } from "../lib/audit";
 import { ownWords } from "../../../shared/boss/intake/messageBody.mjs";
-import { gmailDraftUrl, gmailThreadUrl, tapUrl } from "../../../shared/boss/lp/plan.mjs";
+import { gmailDraftUrl, gmailThreadUrl, lpRecipientLines, lpReplyRecipients, tapUrl } from "../../../shared/boss/lp/plan.mjs";
 import { holdThreadReply } from "../wealth/gmailDraft";
 import { answerBlockFromMail } from "../service/blockReply";
 import { commandReplyIn } from "../../../shared/boss/commands/parse.mjs";
@@ -87,7 +87,7 @@ async function answerLp(env: Env, card: DecideCard, n: number, row: any, words: 
     return note;
   }
   const held = await holdThreadReply(env, row.reply_from, {
-    draftId: row.draft_id, to: row.address, subject: row.subject ?? "", inReplyTo: row.in_reply_to, threadId: row.thread_id, body: words,
+    draftId: row.draft_id, ...lpReplyRecipients(row), subject: row.subject ?? "", inReplyTo: row.in_reply_to, threadId: row.thread_id, body: words,
   }, fetchImpl);
   if (!held.ok) {
     const note = `I kept your answer to ${n} on that item, but could not put it in ${who}'s thread: ${held.why}. Nothing was sent. You can reply in their thread yourself: ${gmailThreadUrl(row.thread_id, row.reply_from)}`;
@@ -105,6 +105,7 @@ async function answerLp(env: Env, card: DecideCard, n: number, row: any, words: 
   await audit(env.DB, { actor: "owner", lane: "ops", entityType: "lp_reply_drafts", entityId: row.id, action: "her_words_held", detail: { via: "numbered_reply", draft_id: held.draftId } });
   const note = [
     `Your reply to ${who} is ready in their thread, word for word. Nothing goes until you tap Send.`,
+    ...lpRecipientLines(row),
     "",
     ...quoted(words),
     "",

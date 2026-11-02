@@ -142,12 +142,14 @@ export async function mintComposeToken(
 }
 
 /** RFC 5322, plain text, UTF-8. No From (Gmail sets it), no To (she puts the address in). */
-export function draftMime(subject: string, body: string, to?: string | null): string {
+export function draftMime(subject: string, body: string, to?: string | null, cc?: string[] | null): string {
   const encodedSubject = `=?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`;
   return [
     // A To line only when the caller names one (an outreach reply to a business that wrote back).
     // The brokerage letters still carry none: she puts that address in herself.
     ...(to ? [`To: ${to}`] : []),
+    // Everyone else on their latest message, minus us (owner, 2 Nov 2026; shared/boss/mail/replyNeed.mjs).
+    ...(to && cc?.length ? [`Cc: ${cc.join(", ")}`] : []),
     `Subject: ${encodedSubject}`,
     `Content-Type: text/plain; charset="UTF-8"`,
     `Content-Transfer-Encoding: base64`,
@@ -161,7 +163,7 @@ export function draftMime(subject: string, body: string, to?: string | null): st
  */
 export async function createGmailDraft(
   env: Env,
-  letter: { subject: string; body: string; to?: string | null },
+  letter: { subject: string; body: string; to?: string | null; cc?: string[] | null },
   fetchImpl: typeof fetch = fetch,
   mailbox: string = BROKERAGE_MAILBOX,
 ): Promise<GmailDraftOutcome> {
@@ -204,7 +206,7 @@ export async function createGmailDraft(
     const res = await fetchImpl(DRAFTS_ENDPOINT, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ message: { raw: b64url(draftMime(letter.subject, letter.body, letter.to)) } }),
+      body: JSON.stringify({ message: { raw: b64url(draftMime(letter.subject, letter.body, letter.to, letter.cc)) } }),
       signal: controller.signal,
     });
     const text = await res.text();
@@ -313,10 +315,14 @@ export async function createDraftForOutreach(
  * delegation grants gmail.compose, and drafts.create / drafts.update are all this calls. An existing
  * held draft is replaced in place, so her mailbox never keeps two replies to one person.
  */
-export function threadReplyMime(r: { to: string; subject: string; inReplyTo?: string | null; body: string }): string {
+export function threadReplyMime(r: { to: string | string[]; cc?: string[] | null; subject: string; inReplyTo?: string | null; body: string }): string {
   const subject = /^\s*re:/i.test(r.subject) ? r.subject : `Re: ${r.subject}`.trim();
+  // Reply-all to their latest message, minus us (owner, 2 Nov 2026; shared/boss/mail/replyNeed.mjs).
+  const to = ([] as string[]).concat(r.to).filter(Boolean);
+  const cc = (r.cc ?? []).filter(Boolean);
   return [
-    `To: ${r.to}`,
+    `To: ${to.join(", ")}`,
+    ...(cc.length ? [`Cc: ${cc.join(", ")}`] : []),
     `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
     ...(r.inReplyTo ? [`In-Reply-To: ${r.inReplyTo}`, `References: ${r.inReplyTo}`] : []),
     `Content-Type: text/plain; charset="UTF-8"`,
@@ -329,7 +335,7 @@ export function threadReplyMime(r: { to: string; subject: string; inReplyTo?: st
 export async function holdThreadReply(
   env: Env,
   mailbox: string,
-  r: { draftId?: string | null; to: string; subject: string; inReplyTo?: string | null; threadId?: string | null; body: string },
+  r: { draftId?: string | null; to: string | string[]; cc?: string[] | null; subject: string; inReplyTo?: string | null; threadId?: string | null; body: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ ok: true; draftId: string; messageId: string | null } | { ok: false; why: string }> {
   const creds = serviceAccountFrom(env);

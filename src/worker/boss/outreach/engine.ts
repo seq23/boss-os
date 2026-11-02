@@ -41,6 +41,9 @@ import { ensurePartner, runMonthlyPayouts } from "./referrals";
 import { SEAT_OPEN, isSeatHolder, pitchFor, readSeat, type Seat } from "./seat";
 import { feedScoreboard, groupSendGate, queueReady, summary as groupSummary } from "./groups";
 import { GROUPS_KEY, groupSizeIn, suggestedPrice, wantsPrice } from "../../../shared/boss/t2rGroups/rules.mjs";
+import { recipientLines, replyAllRecipients, replyNeed } from "../../../shared/boss/mail/replyNeed.mjs";
+
+type Recipients = { to: string[]; cc: string[] };
 
 export interface OutreachSettings {
   killSwitch: boolean;
@@ -575,12 +578,22 @@ export async function processReplies(env: Env, mailbox: GmailSession, now: numbe
     if (!prospect && cls !== "bounce") continue;
     // Time-2-Read groups: a question about the price or paying goes to her whatever else it said.
     const groupPrice = prospect?.business_key === GROUPS_KEY && cls !== "bounce" && cls !== "auto_reply" && cls !== "unsubscribe" && cls !== "complaint" && wantsPrice(ownWords(msg.body));
-    const approvalId = (cls === "interested" || groupPrice) && prospect ? await raiseInterested(env, prospect, from, msg, now) : null;
+    /*
+     * DOES IT NEED A REPLY? (owner, 2 Nov 2026: "Every email doesn't need a fucking reply".) Asked
+     * FIRST: a reply that passes it on, loops someone in, says they are reviewing or will get back, a
+     * thank-you, an auto-reply or an FYI gets no card and no draft. The sequence already stopped on
+     * their reply (`act`), so nothing more goes; the reply row records why (`reply_need`).
+     */
+    const need = cls === "bounce" ? null : replyNeed(msg.body, { subject: msg.headers["subject"] ?? "", headers: msg.headers });
+    const biz = prospect ? businessByKey(prospect.business_key) : null;
+    const recipients: Recipients = replyAllRecipients(msg.headers, { ours: biz ? [biz.domain, biz.sender] : [] });
+    if (!recipients.to.length) recipients.to.push(from);
+    const approvalId = (cls === "interested" || groupPrice) && need?.needed && prospect ? await raiseInterested(env, prospect, from, msg, now, recipients) : null;
     await db.prepare(
-      `INSERT INTO outreach_replies (id, gmail_message_id, business_key, prospect_id, from_email, classification, excerpt, approval_id, received_at)
-       VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(gmail_message_id) DO NOTHING`,
+      `INSERT INTO outreach_replies (id, gmail_message_id, business_key, prospect_id, from_email, classification, excerpt, approval_id, received_at, reply_need)
+       VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(gmail_message_id) DO NOTHING`,
     ).bind(newId("orp"), c.id, prospect?.business_key ?? null, prospect?.id ?? null, subject, cls,
-      ownWords(msg.body).slice(0, 300), approvalId, msg.internalDate || now).run();
+      ownWords(msg.body).slice(0, 300), approvalId, msg.internalDate || now, need ? need.kind : null).run();
     handled += 1;
   }
   return handled;
@@ -601,11 +614,11 @@ async function act(env: Env, cls: ReplyClass, p: any, from: string, msg: { body:
   }
 }
 
-async function raiseInterested(env: Env, p: any, from: string, msg: { body: string }, now: number): Promise<string | null> {
+async function raiseInterested(env: Env, p: any, from: string, msg: { body: string }, now: number, recipients: Recipients): Promise<string | null> {
   const b = businessByKey(p.business_key);
   if (!b) return null;
   const { raiseJudgementCall } = await import("../approvals/raise");
-  if (b.key === GROUPS_KEY) return raiseGroupReply(env, b, p, from, msg, now, raiseJudgementCall);
+  if (b.key === GROUPS_KEY) return raiseGroupReply(env, b, p, from, msg, now, raiseJudgementCall, recipients);
   let code: string | null = null;
   if (b.kind === "affiliate") code = (await ensurePartner(env.DB, b, p, now)).code;
   const link = code ? `${b.offerUrl}?ref=${code}` : b.offerUrl;
@@ -621,12 +634,12 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
     title: `${b.brand}: ${p.org_name ?? from} is interested`,
     question:
       `${p.org_name ?? from} (${from}) replied to Monique's outreach for ${b.brand}:\n\n"${ownWords(msg.body).slice(0, 500)}"\n\n` +
-      `Suggested next step: ${b.nextStep}\n\nApprove and the reply below goes to your drafts in ${"st@time-2-read.com"}, addressed to them:\n\n${reply}`,
+      `Suggested next step: ${b.nextStep}\n\nApprove and the reply below goes to your drafts in ${"st@time-2-read.com"}, to everyone on their email:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,
     resumeKind: "outreach_interested",
     employeeId: "emp_relationship",
     lane: "ops",
     risk: "low",
-    resumeDetail: { prospect_id: p.id, to: from, subject: `Re: ${p.last_subject ?? b.brand}`, body: reply, business_key: b.key },
+    resumeDetail: { prospect_id: p.id, to: recipients.to.join(", "), cc: recipients.cc, subject: `Re: ${p.last_subject ?? b.brand}`, body: reply, business_key: b.key },
   }, now);
   return raised.approvalId;
 }
@@ -639,6 +652,7 @@ async function raiseInterested(env: Env, p: any, from: string, msg: { body: stri
 async function raiseGroupReply(
   env: Env, b: Business, p: any, from: string, msg: { body: string }, now: number,
   raise: typeof import("../approvals/raise").raiseJudgementCall,
+  recipients: Recipients = { to: [from], cc: [] },
 ): Promise<string | null> {
   const words = ownWords(msg.body);
   const g = await env.DB.prepare(`SELECT code, tier, kind, checkouts_started, signups FROM t2r_groups WHERE prospect_id = ?`).bind(p.id).first<any>();
@@ -657,12 +671,12 @@ async function raiseGroupReply(
       `${p.org_name ?? from} (${from}), a ${g?.kind ?? "group"} Monique wrote to, replied:\n\n"${words.slice(0, 500)}"\n\n` +
       `Their code: ${code ?? "none yet"} (${used}).${totals ? ` All groups so far: ${totals.line}.` : ""}\n\n` +
       (price ? `${suggestion} Monique never quotes a price; this is yours to set.\n\n` : "") +
-      `Approve and the reply below goes to your drafts in st@time-2-read.com, addressed to them:\n\n${reply}`,
+      `Approve and the reply below goes to your drafts in st@time-2-read.com, to everyone on their email:\n${recipientLines(recipients).join("\n")}\n\n${reply}`,
     resumeKind: "outreach_interested",
     employeeId: "emp_relationship",
     lane: "ops",
     risk: "low",
-    resumeDetail: { prospect_id: p.id, to: from, subject: `Re: ${p.last_subject ?? b.brand}`, body: reply, business_key: b.key },
+    resumeDetail: { prospect_id: p.id, to: recipients.to.join(", "), cc: recipients.cc, subject: `Re: ${p.last_subject ?? b.brand}`, body: reply, business_key: b.key },
   }, now);
   return raised.approvalId;
 }

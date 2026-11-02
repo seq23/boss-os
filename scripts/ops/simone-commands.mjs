@@ -187,7 +187,7 @@ async function main() {
     const problems = followUpProblems(f.text);
     if (problems.length) { await api.post(`/commands/${f.id}/failed`, { why: `the follow-up was not fit to send (${problems.join("; ")})` }); failures.push(f.id); continue; }
     if ((await api.get(`/commands/${f.id}`)).state !== "follow_up") continue;
-    const sent = await postErrandMail(errandMail({ to: f.to, subject: f.subject, text: f.text, inReplyTo: f.in_reply_to }), fetch, { commandId: f.id });
+    const sent = await postErrandMail(errandMail({ to: f.to, cc: f.cc ?? [], subject: f.subject, text: f.text, inReplyTo: f.in_reply_to }), fetch, { commandId: f.id });
     if (sent.ok) { await api.post(`/commands/${f.id}/errand-followed-up`, { message_id: sent.id }); did++; }
     else { console.error(`NAMED STOP [ERRAND_FOLLOW_UP_NOT_SENT] ${f.id}: ${sent.error}`); failures.push(f.id); }
   }
