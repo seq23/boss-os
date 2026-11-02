@@ -98,6 +98,8 @@ export function renderStandings(results, checklist, { categories = null } = {}) 
   const fsum = standingsSummary(results, { categories, section: "friends" });
   return [
     `  <h2 id="standings">Where every site stands</h2>`,
+    // Outcome and quality red lines first (2 Nov 2026): did Google keep showing the site, are the pages worth quoting.
+    ...((results?.red_lines ?? []).length ? [`  <ul class="red-lines" data-red="${results.red_lines.length}">`, ...results.red_lines.map((r) => `    <li class="bad">${esc(r.line)}</li>`), `  </ul>`] : []),
     ...(categories?.problem ? [`  <p class="muted">Your repo categories could not be read (${esc(categories.problem)}), so every site is listed here.</p>`] : []),
     `  <p data-standings="${sum.sites}/${sum.checks}/${sum.failing}">The Monday audit of ${esc(sum.day ?? "the latest week")}: <b>${sum.sites} sites, ${sum.checks} automatic checks with a verdict, ${sum.failing} failing</b>${sum.notChecked ? ` (${sum.notChecked} could not be checked that week)` : ""}. Every failure is a fix brief Danielle works on Tuesday.</p>`,
     ...table(standingRows(mine, title)),

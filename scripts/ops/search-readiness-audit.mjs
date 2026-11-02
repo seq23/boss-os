@@ -42,6 +42,9 @@ import { passingItems,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
+import { outcomeVerdict, outcomeWindows, redLines, weeklyBriefs } from "../../src/shared/boss/searchReadiness/search-outcomes.mjs";
+import { pickSample, qualitySample } from "../../src/shared/boss/searchReadiness/page-quality-sample.mjs";
+import { consolidationQueue, nextFirstSeen, CONSOLIDATION } from "../../src/shared/boss/searchReadiness/consolidation-queue.mjs";
 import { readRepoCategories } from "./lib/repo-categories.mjs";
 
 const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "search-readiness");
@@ -83,7 +86,7 @@ const lastmods = (xml) => [...String(xml).matchAll(/<lastmod>\s*([^<\s]+)\s*<\/l
 
 async function readSitemaps(host, robotsText) {
   const roots = [...new Set([...(robotsText ?? "").matchAll(/^\s*sitemap\s*:\s*(\S+)/gim)].map((m) => m[1]).concat([`https://${host}/sitemap.xml`]))];
-  const children = [], urls = new Set(), seen = new Set(); let any = false;
+  const children = [], urls = new Set(), seen = new Set(), urlLastmod = {}; let any = false;
   const visit = async (u, depth) => {
     if (seen.has(u)) return; seen.add(u);
     const r = await get(u);
@@ -93,9 +96,14 @@ async function readSitemaps(host, robotsText) {
     const l = locs(r.text);
     children.push({ url: u, status: 200, count: l.length, lastmods: lastmods(r.text) });
     for (const x of l) urls.add(x);
+    // Each page's own lastmod (the consolidation queue's age floor).
+    for (const m of r.text.matchAll(/<url>([\s\S]*?)<\/url>/gi)) {
+      const loc = locs(m[1])[0], lm = lastmods(m[1])[0];
+      if (loc && lm) urlLastmod[loc] = lm;
+    }
   };
   for (const r of roots) await visit(r, 0);
-  return { ok: any, why: any ? null : "no sitemap answered 200", roots, children, urls };
+  return { ok: any, why: any ? null : "no sitemap answered 200", roots, children, urls, urlLastmod };
 }
 
 function samplePages(urls, n, protectedPaths) {
@@ -159,6 +167,27 @@ async function gscFor(g, gscSites, site, host) {
     return { url: u, status: r.status, error: r.error };
   });
   return { ok: true, property, sitemaps: (sm.sitemap ?? []).map((s) => ({ path: s.path, errors: s.errors, lastDownloaded: s.lastDownloaded })), pages: q.__error ? null : pages };
+}
+
+/**
+ * THE ONE READER for the outcome alarm and the consolidation queue (2 Nov 2026): Search Console's
+ * daily impressions and clicks for the two 28-day windows, and every page with an impression in the
+ * last 90 days. An unread source comes back { ok: false, why }, never an empty list.
+ */
+async function readOutcomes(g, gsc, site) {
+  const no = (why) => ({ daily: { ok: false, why }, pages: { ok: false, why } });
+  if (!g.ok) return no(g.why);
+  if (!gsc?.ok) return no(gsc?.why ?? "Search Console was not read");
+  if (!gsc.property) return no(`no Search Console property for ${site.domain} is shared with the audit's service account`);
+  const enc = encodeURIComponent(gsc.property);
+  const w = outcomeWindows();
+  const d = await gscGet(g.token, `sites/${enc}/searchAnalytics/query`, { startDate: w.start, endDate: w.end, dimensions: ["date"], rowLimit: 500 });
+  const pStart = new Date(Date.parse(w.end) - (CONSOLIDATION.WINDOW_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+  const p = await gscGet(g.token, `sites/${enc}/searchAnalytics/query`, { startDate: pStart, endDate: w.end, dimensions: ["page"], rowLimit: 25000 });
+  return {
+    daily: d.__error ? { ok: false, why: `Search Console answered ${d.__error} for the daily numbers` } : { ok: true, rows: (d.rows ?? []).map((r) => ({ date: r.keys[0], impressions: r.impressions, clicks: r.clicks })) },
+    pages: p.__error ? { ok: false, why: `Search Console answered ${p.__error} for the page rows` } : { ok: true, pages: (p.rows ?? []).filter((r) => r.impressions > 0).map((r) => r.keys[0]) },
+  };
 }
 
 // ─── PageSpeed Insights (free, keyless) ───────────────────────────────────────
@@ -269,7 +298,7 @@ async function readRepo(name) {
 
 // ─── one site ─────────────────────────────────────────────────────────────────
 
-async function auditSite(site, checklist, g, gscSites, portfolio) {
+async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}) {
   const t0 = Date.now();
   const start = await get(`https://${site.domain}/`);
   const host = start.final ? new URL(start.final).hostname : site.domain;
@@ -340,6 +369,16 @@ async function auditSite(site, checklist, g, gscSites, portfolio) {
   const gsc = await gscFor(g, gscSites, site, host);
   const ps = await psi(host);
 
+  // Outcomes, page quality and the fold queue (2 Nov 2026): notes and red lines, never a failing check.
+  const read = await readOutcomes(g, gsc, site);
+  const outcome = outcomeVerdict({ read: read.daily, sitemapUrls: sitemap.ok ? sitemap.urls.size : null });
+  const qUrls = pickSample(sitemap.urls, { exclude: protectedPaths });
+  const qFetched = await pool(qUrls, 5, (u) => get(u));
+  const quality = qualitySample({ site, host, checklist, pages: qFetched.map((r, i) => ({ url: qUrls[i], status: r.status, error: r.error, html: r.status === 200 ? r.text : null })) });
+  const consolidation = sitemap.ok
+    ? consolidationQueue({ sitemapUrls: [...sitemap.urls], lastmods: sitemap.urlLastmod, firstSeen, gsc: read.pages, protectedPaths })
+    : { status: "not_read", candidates: 0, hubs: [], why: sitemap.why ?? "no sitemap" };
+
   // The protected pages: hash and buy link, every run.
   const protectedReport = [];
   for (const pp of site.protected_pages ?? []) {
@@ -360,7 +399,7 @@ async function auditSite(site, checklist, g, gscSites, portfolio) {
     site, host, seconds: Math.round((Date.now() - t0) / 1000), home_status: home.status,
     sitemap: { ok: sitemap.ok, urls: sitemap.urls.size, children: sitemap.children.map(({ url, status, count }) => ({ url, status, count })) },
     coverage: coverage.error ? { error: coverage.error } : { targets: coverage.targets.length, missing: coverage.targets.filter((t) => !t.inSitemap || t.status !== 200).map((t) => t.url) },
-    protected: protectedReport, results,
+    protected: protectedReport, results, outcome, quality, consolidation, sitemapUrls: [...sitemap.urls],
   };
 }
 
@@ -381,7 +420,8 @@ async function main() {
     const w = workQueue(JSON.parse(readFileSync(q, "utf8")).briefs);
     for (const r of w.repos) console.log(`REPO ${r.repo} ${r.n}`);
     for (const c of w.chunks) console.log(`CHUNK ${c.repo} ${c.ids.length} ${c.ids.join(",")}`);
-    console.log(`QUEUE total=${w.total} workable=${w.workable} protected=${w.protected} no_repo=${w.no_repo}`);
+    for (const c of w.once) console.log(`ONCE ${c.repo} ${c.ids.length} ${c.ids.join(",")}`);
+    console.log(`QUEUE total=${w.total} workable=${w.workable} protected=${w.protected} no_repo=${w.no_repo} weekly=${w.weekly}`);
     return;
   }
   if (flag("--queue")) {
@@ -406,10 +446,12 @@ async function main() {
   if (g.ok) { const l = await gscGet(g.token, "sites"); gscSites = new Set((l.siteEntry ?? []).map((s) => s.siteUrl)); say(`Search Console: ${gscSites.size} properties visible to the service account.`); }
   else say(`Search Console: not read — ${g.why}`);
 
+  const firstSeenPath = join(OUT, "first-seen.json");
+  const firstSeen = existsSync(firstSeenPath) ? JSON.parse(readFileSync(firstSeenPath, "utf8")) : {};
   const siteResults = [];
   for (const site of sites) {
     try {
-      const r = await auditSite(site, checklist, g, gscSites, portfolio);
+      const r = await auditSite(site, checklist, g, gscSites, portfolio, firstSeen[site.domain] ?? {});
       siteResults.push(r);
       say(summaryLines([r])[0]);
     } catch (e) {
@@ -421,17 +463,23 @@ async function main() {
   if (!ran) stop(8, "CHECKED_NOTHING", `${siteResults.length} sites and zero checks reached a verdict. Not a clean week: the auditor is blind.`);
 
   const day = new Date().toISOString().slice(0, 10);
+  // The first-seen ledger: the day each sitemap page was first seen (the fold queue's age floor).
+  for (const s of siteResults) if (s.sitemapUrls) { firstSeen[s.site.domain] = nextFirstSeen(firstSeen[s.site.domain], s.sitemapUrls, day); delete s.sitemapUrls; }
+  if (!only) writeJson(firstSeenPath, firstSeen);
+  const red = redLines(siteResults);
   const prevPath = join(OUT, "latest.json");
   const previous = existsSync(prevPath) ? JSON.parse(readFileSync(prevPath, "utf8")) : null;
   const report = {
     day, at: new Date().toISOString(), checklist_items: checklist.items.length,
     // Which definition measured this run, so a brief can always be traced to the sites.json that made it.
     definition: defs.source,
+    // The red lines head the report and the Monday email: outcomes and quality, never presence.
+    red_lines: red,
     sites: siteResults.map((s) => ({ ...s, failing: s.results.filter((r) => r.status === "fail").map((r) => r.id) })),
   };
   writeJson(join(OUT, `results-${day}.json`), report);
   if (!only) writeJson(prevPath, report);
-  const briefs = fixBriefs(checklist, siteResults);
+  const briefs = [...fixBriefs(checklist, siteResults), ...weeklyBriefs(siteResults)];
   if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, definition: defs.source, consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
 
   // What passes now clears its old open finding in Boss OS, so nothing asks her for what is already true.
@@ -442,13 +490,16 @@ async function main() {
   }
 
   const fails = siteResults.reduce((n, s) => n + s.results.filter((r) => r.status === "fail").length, 0);
+  say(`\nRED LINES (${red.length}):${red.length ? "" : " none"}`);
+  for (const r of red) say(`  RED ${r.line}`);
+  for (const s of siteResults) if (s.outcome?.status === "not_read") say(`  ${s.site.domain}: search results not read: ${s.outcome.why}`);
   say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} briefs=${briefs.length} → ${join(OUT, `results-${day}.json`)}`);
 
   if (flag("--morning") && !only) {
     const { writeMorningSection } = await import("../../src/shared/boss/mail/morning.mjs");
     const statusPath = join(OUT, "fix-status.json");
     const lastRepair = existsSync(statusPath) ? JSON.parse(readFileSync(statusPath, "utf8")) : null;
-    const lines = morningLines(checklist, siteResults, { categories: readRepoCategories(), previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
+    const lines = morningLines(checklist, siteResults, { redLines: red, categories: readRepoCategories(), previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
     writeMorningSection("grid_repos", { lines, link: { label: "See every site's checks →", url: "https://boss.sequoiataylor.com/?view=morning" } });
     say(`Morning section written: ${lines.length} lines.`);
   }

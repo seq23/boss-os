@@ -213,7 +213,7 @@ export function links(html, base) {
 }
 
 const norm = (u) => { try { const x = new URL(u); return `${x.protocol}//${x.hostname}${x.pathname.replace(/\/+$/, "") || ""}${x.search}`; } catch { return String(u); } };
-const isUtility = (url) => /\/(privacy|terms|legal|cookie|disclaimer|accessibility|contact|thank|thanks|login|signin|404|search|unsubscribe|sitemap)/i.test(new URL(url).pathname);
+export const isUtility = (url) => /\/(privacy|terms|legal|cookie|disclaimer|accessibility|contact|thank|thanks|login|signin|404|search|unsubscribe|sitemap)/i.test(new URL(url).pathname);
 
 // ─── The checks ───────────────────────────────────────────────────────────────
 // Each takes the fetched context and returns { status, detail, evidence?, missing? }.
@@ -1352,7 +1352,7 @@ const short = (s) => s.domain;
  * broken, what was fixed, what is being built; plain words, no ids, no commands). `previous` is
  * last week's result so a fix can be named as fixed.
  */
-export function morningLines(checklist, allResults, { previous = null, queued = 0, lastRepair = null, max = 4, categories = null } = {}) {
+export function morningLines(checklist, allResults, { previous = null, queued = 0, lastRepair = null, max = 4, categories = null, redLines = [] } = {}) {
   // Her own sites carry the routine lines; a friend's site only when it needs her (a named stop).
   const mine = (x) => siteSection(x.site, categories) === "mine";
   const siteResults = (allResults ?? []).filter(mine);
@@ -1379,6 +1379,25 @@ export function morningLines(checklist, allResults, { previous = null, queued = 
   if (queued || lastRepair) lines.push(repairLine(lastRepair, queued));
   const out = lines.slice(0, needsHer.length ? max - 1 : max);
   if (needsHer.length) out.push(`Friends' sites that need you: ${needsHer.slice(0, 2).join(", ")}${needsHer.length > 2 ? `, and ${needsHer.length - 2} more` : ""}.`);
+  return [...redTop(redLines, allResults, categories), ...out];
+}
+
+/**
+ * THE RED LINES GO FIRST (2 Nov 2026, the WPP-llm cliff nobody saw). Outcome and quality red lines
+ * (search-outcomes.mjs `redLines`) head the section, never cut by `max`: her own sites one line each
+ * (at most MAX_RED, then "and N more"), friends' sites folded into one line. A blind alarm (no site
+ * read) is always shown.
+ */
+const MAX_RED = 5;
+function redTop(red, allResults, categories) {
+  if (!red?.length) return [];
+  const siteOf = new Map((allResults ?? []).map((x) => [x.site?.domain, x.site]));
+  const blind = red.filter((r) => !r.domain).map((r) => r.line);
+  const mine = red.filter((r) => r.domain && siteSection(siteOf.get(r.domain) ?? { domain: r.domain }, categories) !== "friends");
+  const friends = [...new Set(red.filter((r) => r.domain && !mine.includes(r)).map((r) => r.domain))];
+  const out = [...blind, ...mine.slice(0, MAX_RED).map((r) => `Red: ${r.line}`)];
+  if (mine.length > MAX_RED) out.push(`And ${mine.length - MAX_RED} more red lines on the checklist page.`);
+  if (friends.length) out.push(`Friends' sites with a red line: ${friends.slice(0, 3).join(", ")}${friends.length > 3 ? `, and ${friends.length - 3} more` : ""}.`);
   return out;
 }
 
@@ -1419,7 +1438,18 @@ export function workQueue(briefs, { chunkSize = 10 } = {}) {
     const ids = workable.filter((b) => b.repo === repo).map((b) => b.id);
     for (let i = 0; i < ids.length; i += chunkSize) chunks.push({ repo, ids: ids.slice(i, i + chunkSize) });
   }
-  return { total: list.length, workable: workable.length, protected: prot.length, no_repo: noRepo.length, repos, chunks };
+  /*
+   * WEEKLY BRIEFS (2 Nov 2026): the outcome alarm, the quality sample and the fold queue. Each gets ONE
+   * pass a week (the first round, `--plan` ONCE lines), never the round-until-empty loop: a 28-day
+   * window stays red for weeks after its fix lands, so counting it as workable would stall every run.
+   */
+  const weekly = list.filter((b) => b.repo && b.disposition === "weekly" && !isProtected(b));
+  const once = [];
+  for (const repo of [...new Set(weekly.map((b) => b.repo))]) {
+    const ids = weekly.filter((b) => b.repo === repo).map((b) => b.id);
+    for (let i = 0; i < ids.length; i += chunkSize) once.push({ repo, ids: ids.slice(i, i + chunkSize) });
+  }
+  return { total: list.length, workable: workable.length, protected: prot.length, no_repo: noRepo.length, weekly: weekly.length, repos, chunks, once };
 }
 
 /**
