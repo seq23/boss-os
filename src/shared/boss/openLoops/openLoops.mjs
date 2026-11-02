@@ -106,11 +106,73 @@ export function morningSection(loops, today, { origin, names = {} } = {}) {
 /**
  * THE REPAIRS: a row the team owns (an employee, Claude or Codex) more than REPAIR_AFTER_DAYS past its
  * date opens ONE repair task per date (`repair_for` keeps the date it was opened for; moving the date
- * and missing again opens a new one). Her own rows are only ever in the email. Pure.
+ * and missing again opens a new one), only for a row Danielle can do (`overdueRoute`). Pure.
  */
 export function repairsDue(loops, today) {
   return (loops ?? []).filter((l) =>
-    l.owner !== HER && isOverdue(l, today) && daysBetween(l.next_date, today) > REPAIR_AFTER_DAYS && l.repair_for !== l.next_date);
+    overdueRoute(l) === "danielle" && isOverdue(l, today) && daysBetween(l.next_date, today) > REPAIR_AFTER_DAYS && l.repair_for !== l.next_date);
+}
+
+/**
+ * ─── AN OVERDUE LOOP: DANIELLE DOES IT, OR IT STOPS AND REMINDS HER (owner, 2 Nov 2026) ────────
+ *
+ * "Over due open loops should be reminder emails to me and nothing else. Well if Danielle can do it
+ * she should but if not stop and remind me". One reader decides, from what the row carries:
+ *   her   — her own row; a named stop whose name says a key, account, sign-in, payment, legal step or
+ *           an LP/investor (e.g. PLAY_ACCOUNT_MISSING, X_KEY_MISSING, LP_*); or words in the row that
+ *           need her hand (her account or sign-in, an ID check, money, legal, her decision, an investor
+ *           reply, Google Ads, Blogger, WordPress). No Danielle job — a reminder email.
+ *   danielle — a team-owned row with a written next step and none of the above: a silent repair.
+ * Anything it cannot place (no next step written) is hers: fail closed, never a Danielle job.
+ */
+const HER_STOP = /(^|_)(ACCOUNT|KEY|SECRET|TOKEN|LOGIN|SIGN_?IN|OAUTH|PAYMENT|BILLING|PURCHASE|LEGAL|OWNER|IDENTITY|ID_CHECK|VERIFY)(_|$)|^LP_|_LP_|INVESTOR/;
+const HER_WORDS = /\b(her (own )?(account|sign-?in|login|key|card|decision|call|ok|approval)|sign(s|ed)? in|log(s|ged)? in|signs? up|identity|id (check|verification)|verify (her|the owner)|pays?|payment|purchase|buy|checkout|subscription|billing|legal|lawyer|contract|sign(s|ed)? the|her (yes|word)|she (decides|picks|chooses|approves)|investor|lp replies|\blps?\b|google ads|blogger|wordpress|play (console )?id)\b/i;
+export function overdueRoute(loop) {
+  if (!loop || loop.owner === HER || !isOwner(loop.owner)) return "her";
+  const stop = String(loop.source_key ?? "").split("#")[1] ?? "";
+  if (stop && HER_STOP.test(stop.toUpperCase())) return "her";
+  if (HER_WORDS.test(`${loop.title ?? ""} ${loop.next_step ?? ""} ${loop.finish_line ?? ""}`)) return "her";
+  if (!String(loop.next_step ?? "").trim()) return "her";
+  return "danielle";
+}
+
+/** Reminders: on the first day late, then every REMIND_EVERY_DAYS, at most REMIND_MAX per date. */
+export const REMIND_EVERY_DAYS = 3;
+export const REMIND_MAX = 3;
+
+/** The reminders due today, each with its one-per-slot key `<next_date>#<n>`. Pure. */
+export function remindersDue(loops, today) {
+  const out = [];
+  for (const l of loops ?? []) {
+    if (overdueRoute(l) !== "her" || !isOverdue(l, today) || !l.next_date) continue;
+    const late = daysBetween(l.next_date, today);
+    if (late < 1) continue;
+    const n = Math.floor((late - 1) / REMIND_EVERY_DAYS);
+    if (n >= REMIND_MAX || (late - 1) % REMIND_EVERY_DAYS !== 0) continue;
+    out.push({ loop: l, slot: `${l.next_date}#${n + 1}`, nth: n + 1, late });
+  }
+  return out;
+}
+
+/** The reminder email in three parts (R7): what is waiting, why it is hers, the step that clears it. Pure. */
+export function reminderEmail(loop, { origin, late, nth, names = {} }) {
+  const stop = String(loop.source_key ?? "").split("#")[1] ?? "";
+  const why = loop.owner === HER
+    ? "It is yours on the list."
+    : stop ? `It needs something only you hold (${stop.toLowerCase().replace(/_/g, " ")}), so nobody on the team can finish it for you.`
+    : "It needs your account, your sign-in, money or your decision, so the team stopped instead of guessing.";
+  const step = loop.next_step ? String(loop.next_step).trim() : "Do the next step, or tell Boss OS what it is.";
+  const url = `${origin}${PAGE_PATH}&loop=${encodeURIComponent(loop.id)}`;
+  return {
+    subject: `Reminder: ${String(loop.title).slice(0, 120)}`,
+    body: [
+      `What is waiting: ${loop.title}. It was due ${dayWords(loop.next_date)} and is ${late} day${late === 1 ? "" : "s"} late. Finish line: ${loop.finish_line}.`,
+      `Why it is yours: ${why}`,
+      `What clears it: ${step} Then mark it done or give it a new date on Open Loops: ${url}`,
+      "",
+      nth >= REMIND_MAX ? "This is the last reminder for this date; it stays on Open Loops and in your morning email." : `Reminder ${nth} of ${REMIND_MAX}; the next is in ${REMIND_EVERY_DAYS} days if it is still open.`,
+    ].join("\n"),
+  };
 }
 
 /** What is wrong with a row as sent, by name. `partial` = an update (only the fields sent are checked). Pure. */

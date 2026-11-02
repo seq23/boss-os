@@ -406,8 +406,11 @@ Owner ruling, 1 Nov 2026 (personal brain, Settled decisions). Pinned by `tests/b
    ideas (no dates, no chasing). Her rows waiting on an open `blocked_by` step are hidden and counted.
 2. **Chased by the Worker's hourly tick** (`runOpenLoopsDaily`, once a day from 05:00 Central): the
    "open_loops" section of Simone's morning email (registered in `MORNING_SECTION_SPECS`, so a missing
-   copy is flagged) and one repair per team-owned row more than 3 days late (one per date). Her own
-   late rows are only in the email.
+   copy is flagged). An overdue row splits (owner, 2 Nov 2026: "if Danielle can do it she should but
+   if not stop and remind me"; `overdueRoute`): one Danielle can do is one silent repair once 3 days
+   late (one per date); one that needs her (her row, her account, a key, money, legal, her decision,
+   or nothing written) opens no job and sends ONE plain reminder through the notice drain on day 1,
+   then every 3 days, at most 3 per date.
 3. **Repos' named stops report in** through `POST /api/boss/open-loops/intake` with the machine token
    `BOSS_OPEN_LOOPS_TOKEN` (vault): upsert by `repo#STOP`, closed "outcome reached" when cleared.
    How to adopt: `docs/open-loops.md`. Seed rows are posted at runtime, never written in the repo.
