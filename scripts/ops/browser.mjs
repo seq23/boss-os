@@ -242,17 +242,34 @@ async function main() {
     /*
      * READ, NEVER WRITE. This command exists so a scheduled run can establish what is actually true
      * on a page rather than taking somebody's word for it. It clicks nothing and submits nothing.
+     *
+     * WAITS, BOUNDED, FOR THE BODY TO CARRY TEXT. `domcontentloaded` fires before a client-rendered
+     * page has painted anything, and `BROWSER_OK — 0 characters read` used to pass that off as a
+     * successful read (proven live against the KDP reports page, 2 Nov 2026). An empty body is not
+     * evidence the page is fine; it is evidence nothing was read yet.
      */
+    const minChars = Number(flag("min-chars", 1));
+    const settleDeadline = Date.now() + Math.min(timeoutMs, 15_000);
+    let body = text;
+    while (body.length < minChars && Date.now() < settleDeadline) {
+      await page.waitForTimeout(500);
+      body = await page.locator("body").innerText().catch(() => body);
+    }
+    if (body.length < minChars) {
+      await context.close();
+      say("PAGE_EMPTY", `${url} loaded but the body carried only ${body.length} character(s), under --min-chars ${minChars}. Not read as OK.`, 7);
+      return;
+    }
     const out = flag("out");
     if (out) {
       const { mkdir, writeFile } = await import("node:fs/promises");
       const { dirname } = await import("node:path");
       await mkdir(dirname(out), { recursive: true });
-      await writeFile(out, text);
+      await writeFile(out, body);
     }
     await context.close();
     if (late) console.log(`BROWSER: WOKE_LATE — this ran ${late} minutes after its slot. The read itself is fine.`);
-    say("BROWSER_OK", `${text.length} characters read from ${url}${out ? ` and written to ${out}` : ""}`, 0);
+    say("BROWSER_OK", `${body.length} characters read from ${url}${out ? ` and written to ${out}` : ""}`, 0);
     return;
   }
 

@@ -210,8 +210,9 @@ function lpOutcomes(params, ctx) {
 
 function kdpUnits(params, ctx) {
   const file = join(ctx.home, ".boss-os", "kdp", "units.json");
-  if (!existsSync(file)) throw new NamedStop("KDP_UNITS_NOT_RECORDED", "Simone's monthly KDP check has not recorded units sold yet (~/.boss-os/kdp/units.json: { at, days: { \"YYYY-MM-DD\": units } }).");
+  if (!existsSync(file)) throw new NamedStop("KDP_UNITS_NOT_RECORDED", "the daily KDP units read (scripts/ops/kdp-units.mjs, wired into kdp-surface.sh after sign-in) has not written ~/.boss-os/kdp/units.json yet.");
   const o = JSON.parse(readFileSync(file, "utf8"));
+  if (o.unread) throw new NamedStop("KDP_UNITS_UNREAD", `not read: ${o.unread}`);
   const at = Date.parse(o.at);
   if (!Number.isFinite(at) || ctx.now - at > (params.maxAgeDays ?? 35) * DAY_MS) throw new NamedStop("SOURCE_STALE", "the KDP units count is more than a month old.");
   const since = new Date(sinceMs(ctx.now, params.days)).toISOString().slice(0, 10);
