@@ -27,7 +27,7 @@ import { repoChangeById, taskEvent, describePhase, safeList, recordForce, retryR
 import {
   claimablePhase, claimIsLive, canLand, canEnterBuild, canPreview, needsPreview, isForced, RUNNABLE_PHASES, PHASE_MODELS, PHASE_MAX_TURNS,
   CLAIM_LEASE_MS, TASK_KIND, EXECUTOR_SCRIPT, gridRepoNames,
-  MAX_REWORKS, isRepair, REPAIR_ANSWER_TEXT, REPAIR_APPROVED_BY,
+  MAX_REWORKS, isRepair, REPAIR_ANSWER_TEXT, REPAIR_APPROVED_BY, redChecksAction,
 } from "../../../shared/boss/repoChange/lane.mjs";
 import { propertyForRepo } from "../../../shared/boss/grid.mjs";
 import { constraintsOnRecord } from "../service/constraints";
@@ -309,6 +309,28 @@ repoChanges.post("/:id/checks", async (c) => {
     await taskEvent(c.env, row.task_id, "repo_change_checks_green", { repo_change_id: row.id, pr_number: row.pr_number, detail, phase: next });
     return ok(c, { id: row.id, phase: next, checks_green_at: row.checks_green_at ?? now });
   }
+  if (state === "red" && b?.rework === true) {
+    /*
+     * RED CHECKS ARE DANIELLE'S REWORK, NOT HER EMAIL (owner, 2 Nov 2026: "I'd rather Danielle have
+     * not asked me anything and just fixed it all"). The PR goes back to BUILD on its own branch with
+     * the failing checks as the brief, under the one `MAX_REWORKS` budget. At the cap this is refused,
+     * and the runner records the stop (a repair) or emails her (her own request).
+     */
+    const count = Number(row.rework_count ?? 0);
+    if (redChecksAction(row) !== "rework") throw conflict(`${row.id} has been reworked ${count} time(s); the budget is ${MAX_REWORKS}`, isRepair(row) ? "A repair records the stop on the change; she is not emailed." : "The next word is the owner's: the stop email.");
+    const brief = `The checks on pull request #${row.pr_number ?? "?"} went red before it landed: ${detail ?? "no detail"}`;
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE repo_changes SET phase = 'build', rework_count = ?, rework_note = ?, checks_state = 'red', checks_detail = ?, checks_green_at = NULL,
+                failure = NULL, claimed_at = NULL, claimed_by = NULL, claimed_phase = NULL, updated_at = ?
+          WHERE id = ? AND phase IN ('landing', 'previewing', 'preview')`,
+      ).bind(count + 1, brief.slice(0, 4000), detail, now, row.id),
+      c.env.DB.prepare(`UPDATE tasks SET status = 'queued', error = NULL, finished_at = NULL WHERE id = ?`).bind(row.task_id),
+    ]);
+    await taskEvent(c.env, row.task_id, "repo_change_reworked", { repo_change_id: row.id, rework: count + 1, of: MAX_REWORKS, why: "checks red", detail });
+    await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "reworked", detail: { task_id: row.task_id, rework: count + 1, of: MAX_REWORKS, why: "checks red", detail: (detail ?? "").slice(0, 300) } });
+    return ok(c, { id: row.id, phase: "build", rework_count: count + 1, max_reworks: MAX_REWORKS });
+  }
   if (state === "red") {
     const told = text(b?.notified_message_id, 200);
     if (!told) throw badRequest("A red check needs notified_message_id", "Email her first; the id proves she was told.");
@@ -332,8 +354,14 @@ repoChanges.post("/:id/land", async (c) => {
   if (!gate.ok) throw conflict(`${row.id} may not land: ${gate.why}`);
   const mergeSha = text(b?.merge_sha, 64);
   if (!mergeSha || !/^[0-9a-f]{7,40}$/i.test(mergeSha)) throw badRequest("A land report needs merge_sha", "The merge commit ~/bin/land printed.");
+  /*
+   * A REPAIR'S RESULT IS ONE MORNING LINE, NEVER A SEPARATE EMAIL (owner, 2 Nov 2026). It reports the
+   * line it put in Simone's "Done for you" (`done_line`) instead of a message id; her own request
+   * still needs the id of the DONE email that reached her.
+   */
+  const doneLine = isRepair(row) ? text(b?.done_line, 400) : null;
   const doneMessageId = text(b?.done_message_id, 200);
-  if (!doneMessageId) throw badRequest("A land report needs done_message_id", "The DONE email must have gone before the row says done.");
+  if (!doneMessageId && !doneLine) throw badRequest("A land report needs done_message_id", isRepair(row) ? "A repair reports done_line: the one line it put in the morning email." : "The DONE email must have gone before the row says done.");
   const now = Date.now();
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -342,7 +370,7 @@ repoChanges.post("/:id/land", async (c) => {
         WHERE id = ? AND phase = 'land'`,
     ).bind(mergeSha, now, b?.live_proof ? JSON.stringify(b.live_proof).slice(0, 60_000) : null, now, doneMessageId, text(b?.run_log, 500), now, row.id),
     c.env.DB.prepare(`UPDATE tasks SET status = 'done', output = ?, finished_at = ? WHERE id = ?`)
-      .bind(JSON.stringify({ text: `Landed ${row.pr_url} as ${mergeSha}; proven live.`, model: "repo-change.sh on her Mac", repo_change_id: row.id }), now, row.task_id),
+      .bind(JSON.stringify({ text: doneLine ? `Landed ${row.pr_url} as ${mergeSha}; proven live. Morning line: ${doneLine}` : `Landed ${row.pr_url} as ${mergeSha}; proven live.`, model: "repo-change.sh on her Mac", repo_change_id: row.id }), now, row.task_id),
   ]);
   await taskEvent(c.env, row.task_id, "completed", { repo_change_id: row.id, merge_sha: mergeSha, pr_url: row.pr_url });
   await audit(c.env.DB, { actor: "system", lane: "ops", entityType: "repo_change", entityId: row.id, action: "landed", detail: { task_id: row.task_id, merge_sha: mergeSha, pr_url: row.pr_url } });

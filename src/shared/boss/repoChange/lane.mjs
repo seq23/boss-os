@@ -91,6 +91,28 @@ export const PHASE_TIMEOUT_MIN = { plan: 25, build: 90, land: 30 };
  */
 export const MAX_REWORKS = 2;
 
+/**
+ * RED CHECKS ARE REWORK TOO (owner, 2 Nov 2026: "just fixed it all"). A pull request whose checks go
+ * red before it lands goes back to BUILD on the SAME branch and PR, with the failing checks' output as
+ * the brief — the same `rework_count` budget as a failed post-land step. Which kind of rework a row is
+ * on is read from the row: a red-checks rework keeps its PR (nothing merged); a post-land rework clears
+ * it (the merge stands, the fix is a new PR). Pure.
+ */
+export function reworkKind(row) {
+  if (!(Number(row?.rework_count ?? 0) > 0)) return null;
+  return row?.pr_url ? "checks_red" : "post_land";
+}
+
+/**
+ * What the runner does with red checks: `rework` while the budget lasts (any change, hers or a
+ * repair), then `record` for a repair (on the change, never emailed) or `email` for her own request
+ * (today's stop). Pure; tests/boss/redChecksRework.test.ts pins it.
+ */
+export function redChecksAction(row) {
+  if (Number(row?.rework_count ?? 0) < MAX_REWORKS) return "rework";
+  return isRepair(row) ? "record" : "email";
+}
+
 /** How long a claim is honoured before the Worker treats the run as dead and lets another claim it. */
 export const CLAIM_LEASE_MS = 2 * 60 * 60 * 1000;
 
@@ -331,13 +353,26 @@ export function parseRepoChange(text, opts = {}) {
  * `planWaitsForOwner` is the one reader: the Worker's /plan route and the Mac runner both ask it,
  * and tests/boss/repairsNeverWait.test.ts pins both directions.
  */
-export const REPAIR_KINDS = Object.freeze(["held_mail", "failed_task", "refused_run", "red_check", "self_repair", "rework"]);
+export const REPAIR_KINDS = Object.freeze(["held_mail", "failed_task", "refused_run", "red_check", "self_repair", "rework", "waiting_on", "open_loop_overdue"]);
 export const REPAIR_ANSWER_TEXT = "repair — Boss OS opened this to fix something broken, and repairs never wait on the owner (25 Oct 2026): every ask takes the recommended default";
 export const REPAIR_APPROVED_BY = "standing rule: repairs never wait on the owner (25 Oct 2026)";
 
+/**
+ * ─── WORK BOSS OS STARTED ITSELF NEVER ASKS HER (owner, 2 Nov 2026) ─────────
+ *
+ * "I'd rather Danielle have not asked me anything and just fixed it all" — after Zora's register
+ * opened a dated check-in (wo_wpp_thin) as an ordinary task, so it ran the owner-request flow: a plan
+ * email to approve, then "Stopped work on WPP-llm: the checks failed". A task Boss OS opens on its
+ * own — a dated waiting-on action (`origin: "waiting_on"`, or `repair_kind: "waiting_on"`), an
+ * overdue open loop, any self-repair — is a REPAIR: no plan email, her own defaults, its own red
+ * checks reworked, one line in the morning. Her mail and her console never set `origin`.
+ */
+export const SYSTEM_ORIGINS = Object.freeze({ waiting_on: "waiting_on" });
+
 /** The origin a task's input declares: "repair" only with a known kind; everything else is hers. */
 export function repairOriginOf(input) {
-  const kind = input && typeof input === "object" && input.origin === "repair" ? String(input.repair_kind ?? "") : "";
+  const o = input && typeof input === "object" ? input : null;
+  const kind = o?.origin === "repair" ? String(o.repair_kind ?? "") : o && Object.hasOwn(SYSTEM_ORIGINS, String(o.origin)) ? SYSTEM_ORIGINS[String(o.origin)] : "";
   return REPAIR_KINDS.includes(kind) ? { origin: "repair", repair_kind: kind } : { origin: "owner", repair_kind: null };
 }
 

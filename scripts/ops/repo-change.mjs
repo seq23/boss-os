@@ -40,7 +40,7 @@ import { fileURLToPath } from "node:url";
 import {
   PHASE_MODELS, PHASE_MAX_TURNS, PHASE_TIMEOUT_MIN, ASK_POLICY, TASK_KIND, EXECUTOR_SCRIPT,
   canEnterBuild, canLand, canPreview, needsPreview, isForced, changeToken, gridRepoNames, APPROVED_DEFAULTS_TEXT, PREVIEW_DEFAULTS_TEXT, FORCED_TEXT, MAX_REWORKS,
-  REGISTERED_REPOS, isRepair, planWaitsForOwner, namesPostLandStep,
+  REGISTERED_REPOS, isRepair, planWaitsForOwner, namesPostLandStep, redChecksAction, reworkKind,
 } from "../../src/shared/boss/repoChange/lane.mjs";
 import { GRID_OWNER } from "../../src/shared/boss/grid.mjs";
 import { sendersFor, employeeMail, postEmployeeMail, filesAt, FALLBACK_STOP } from "./notify.mjs";
@@ -51,6 +51,7 @@ import { waitDetail, threeParts, missingSecretLine } from "../../src/shared/boss
 import { seatEnv } from "./lib/seat-env.mjs";
 import { layoutEmail, layoutProblem, refsIn } from "../../src/shared/boss/mail/plain.mjs";
 import { repairReport, plainSentence, ownerTextProblems } from "../../src/shared/boss/repoChange/repairReport.mjs";
+import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
 import { detectUsageLimit } from "../lib/seat-usage-limit.mjs";
 import { CODEX_BUILD_NOTE, codexExecArgs, codexSeatUsable, finishCodexBuild, helpMentions, runWithCodexFallback } from "../lib/codex-seat.mjs";
 import { resolveDeviceId, missingDeviceIdMessage } from "./device-id.mjs";
@@ -131,6 +132,27 @@ export function repairDoneMail(row, plan, at = Date.now()) {
   const r = repairReport({ kind: row.repair_kind, whatBroke: plain.what_broke ?? named, whatWeDid: plain.what_we_did, live: true, at });
   if (named && r.whatBroke !== plainSentence(plain.what_broke) && plainSentence(named)) r.whatBroke = plainSentence(named);
   return layoutProblem({ who: "Danielle", subject: r.subject, happenedLabel: "What broke:", happened: r.whatBroke, did: r.whatWeDid, status: r.status, refs: [String(row.id).toLowerCase()] });
+}
+
+/**
+ * A REPAIR'S RESULT IS ONE LINE IN SIMONE'S MORNING "DONE FOR YOU", NEVER A SEPARATE EMAIL (owner,
+ * 2 Nov 2026: "I'd rather Danielle have not asked me anything and just fixed it all"). Plain by
+ * construction: `repairReport` swaps anything that fails the owner check for a stock sentence. Pure.
+ */
+export function repairDoneLine(row, plan, at = Date.now()) {
+  const plain = plan?.in_plain && typeof plan.in_plain === "object" ? plan.in_plain : {};
+  const r = repairReport({ kind: row.repair_kind, whatBroke: plain.what_broke, whatWeDid: plain.what_we_did, live: true, at });
+  return `Danielle fixed it: ${r.whatWeDid}`;
+}
+
+/**
+ * What the runner does when a PR's checks go red, as data (pure): rework while the budget lasts, for
+ * ANY change; past it, a repair is recorded on the change (no email) and her own request gets the
+ * stop email. `emails` is the only path that writes to her.
+ */
+export function redChecksPlan(row) {
+  const action = redChecksAction(row);
+  return { action, emails: action === "email" };
 }
 
 /**
@@ -451,6 +473,20 @@ function checksFor(repo, prNumber) {
   return { state: "pending", detail };
 }
 
+/** The failing checks' own output (the tail of `gh run view --log-failed`), as the rework's brief. Best effort. */
+function failedCheckOutput(repo, prNumber) {
+  const run = spawnSync("gh", ["pr", "checks", String(prNumber), "--repo", `seq23/${repo}`, "--json", "name,bucket,link"], { encoding: "utf8" });
+  let rows = [];
+  try { rows = JSON.parse(run.stdout || "[]"); } catch { rows = []; }
+  const ids = [...new Set(rows.filter((r) => r.bucket === "fail").map((r) => /\/actions\/runs\/(\d+)/.exec(String(r.link ?? ""))?.[1]).filter(Boolean))].slice(0, 2);
+  const parts = ids.map((id) => {
+    const v = spawnSync("gh", ["run", "view", id, "--repo", `seq23/${repo}`, "--log-failed"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    const tail = String(v.stdout ?? "").trim().split("\n").slice(-60).map((l) => l.replace(/^[^\t]*\t[^\t]*\t/, "")).join("\n");
+    return tail ? `run ${id}:\n${tail}` : "";
+  }).filter(Boolean);
+  return parts.join("\n\n").slice(-3000);
+}
+
 // ─── The service rules, for this lane (docs/SERVICE_RULES.md) ──────────────────
 
 async function serviceApi(path, body) {
@@ -709,12 +745,14 @@ async function runPhase(claim) {
     PR_URL: row.pr_url ?? "", PR_NUMBER: row.pr_number ?? "", BRANCH: branch ?? "", OUT_FILE: outFile, WORK_DIR: dir,
     ASK_LIST: ASK_POLICY.ask.map((a) => `- ${a}`).join("\n"), DECIDE_LIST: ASK_POLICY.decide.map((d) => `- ${d}`).join("\n"),
     LAND: LAND, PROOF: row.proof ? JSON.stringify(row.proof, null, 2) : "{}",
-    REWORK: Number(row.rework_count ?? 0) > 0
+    REWORK: reworkKind(row) === "checks_red"
+      ? `YES — rework ${row.rework_count}/${MAX_REWORKS}. Your pull request ${row.pr_url ?? ""} did NOT land: its checks went red. ${String(row.rework_note ?? "").slice(0, 3000)} That failure is yours to fix, in this repo, now (owner, 2 Nov 2026: "I'd rather Danielle have not asked me anything and just fixed it all"): read the failing output, find the cause, fix it at source on THIS branch, run the same checks locally, push to the SAME pull request (never a second one), and report that PR. Never skip, loosen or delete a test to get green. Do not ask the owner anything.`
+      : Number(row.rework_count ?? 0) > 0
       ? `YES — rework ${row.rework_count}/${MAX_REWORKS}. Your previous PR for this change LANDED (merge ${(() => { try { return JSON.parse(row.reworked_merge_shas ?? "[]").join(", "); } catch { return "?"; } })()}) and then the recorded post-land step \`${row.post_land_command ?? "?"}\` FAILED: ${String(row.rework_note ?? "").slice(0, 1500)}. That failure is yours to fix, in this repo, now: read the step's own output, find the cause in the script or the content it pushes (a limit, a format, a missing field — not a credential unless the output names one), fix it at source, add a guard that would have caught it before the request left the Mac, and open a NEW pull request on this branch. The step runs again after this PR lands; it must exit 0 then. Do not ask the owner anything the output already answers.`
       : "no — a first build.",
     CONTINUATION: (() => { const c = continuationCount(dir, phase); if (!c.count) return "no — a fresh start."; const b = stateBehind({ phase, dir, repo, repoPath, buildPath, branch }); return `YES — continuation ${c.count}/${MAX_CONTINUATIONS}. The previous attempt: ${c.notes?.at(-1)?.note ?? "(no note)"}. What is already there: ${b.facts.join("; ") || "(nothing readable)"}. Do not redo it; verify it and FINISH — write ${outFile} first if the result already exists.`; })(),
     REPAIR: isRepair(row)
-      ? `YES — Boss OS opened this itself to repair something broken (${row.repair_kind ?? "a repair"}). Repairs never wait on the owner (25 Oct 2026): there is no plan email and no reply. Every decision is yours — "asks" MUST be empty — and write in_plain.what_broke and in_plain.what_we_did for the one short report she gets after it lands.`
+      ? `YES — Boss OS opened this itself (${row.repair_kind ?? "a repair"}: something broken, a dated check-in or an overdue loop), not her. Work Boss OS started never asks her (25 Oct and 2 Nov 2026: "I'd rather Danielle have not asked me anything and just fixed it all"): there is no plan email and no reply. Every decision is yours — take your own recommended default on anything you would have asked, list it under "decided" with the default as the decision; "asks" MUST be empty — and write in_plain.what_broke and in_plain.what_we_did for the one line in her morning email after it lands.`
       : "no — she asked for this; the plan goes to her for one word.",
     PRE_APPROVED: row.pre_approved_phrase
       ? `YES — she wrote "${row.pre_approved_phrase}" in the request. Every decision is yours: put what you would have asked under "decided" with your recommended default AS the decision and the reason. "asks" MUST be an empty list; the Worker refuses a pre-approved plan that asks.`
@@ -945,12 +983,22 @@ async function runPhase(claim) {
       "", `Run log on your Mac: ${log}`,
       "", "— Danielle, Technical Program Manager",
     ].join("\n");
-    const repairMail = isRepair(row) ? repairDoneMail(row, readJson(join(dir, "plan.json"))) : null;
-    const messageId = repairMail
+    /*
+     * A REPAIR LANDED IS ONE LINE IN THE MORNING'S "DONE FOR YOU" (owner, 2 Nov 2026), never its own
+     * email. Only if the line cannot be written (rule 0: never silent) does the short report go.
+     */
+    let doneLine = null;
+    if (isRepair(row)) {
+      const line = repairDoneLine(row, readJson(join(dir, "plan.json")));
+      try { addMorningLines("notices", { lines: [line] }); doneLine = line; say(`repair landed: one morning line, no email — ${line}`); }
+      catch (e) { say(`NAMED STOP [MORNING_LINE_NOT_WRITTEN] ${e?.message ?? e} — sending the short repair report instead.`); }
+    }
+    const repairMail = isRepair(row) && !doneLine ? repairDoneMail(row, readJson(join(dir, "plan.json"))) : null;
+    const messageId = doneLine ? null : repairMail
       ? await email(repairMail.subject, repairMail.text, [], repairMail)
       : await email(subject, text, filesAt(screenshotPaths(row.proof ?? {}, row)));
-    if (!messageId) { say("NAMED STOP [DONE_NOT_SENT] landed, and the DONE email could not be sent; the row stays in land until it can."); await release(row, "landed; DONE email not sent — retry the email next tick", log); writeFileSync(join(dir, "landed-unreported.json"), JSON.stringify(out)); return; }
-    const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: postLand ? { ...proof, post_land: postLand } : proof, done_message_id: messageId, run_log: log });
+    if (!messageId && !doneLine) { say("NAMED STOP [DONE_NOT_SENT] landed, and the DONE email could not be sent; the row stays in land until it can."); await release(row, "landed; DONE email not sent — retry the email next tick", log); writeFileSync(join(dir, "landed-unreported.json"), JSON.stringify(out)); return; }
+    const r = await api(`/${row.id}/land`, { device_id: DEVICE, merge_sha: out.merge_sha, live_proof: postLand ? { ...proof, post_land: postLand } : proof, done_message_id: messageId ?? undefined, done_line: doneLine ?? undefined, run_log: log });
     if (!r.ok) say(`NAMED STOP [LAND_NOT_RECORDED] ${r.status} ${r.error ?? ""} — it landed and she was told; Boss OS was not.`);
     else {
       markReported(); say(`done: ${out.merge_sha}`);
@@ -1040,6 +1088,25 @@ async function watchChecks(row, log, waitMinutes) {
       return;
     }
     if (verdict.state === "red") {
+      /*
+       * RED CHECKS ARE DANIELLE'S REWORK (owner, 2 Nov 2026: "I'd rather Danielle have not asked me
+       * anything and just fixed it all"). Any change — hers or a repair — goes back to BUILD on its own
+       * PR with the failing output as the brief, up to MAX_REWORKS. Past it: a repair is recorded on
+       * the change (Systems page), never emailed; her own request gets today's stop email.
+       */
+      const plan = redChecksPlan(row);
+      if (plan.action === "rework") {
+        const output = failedCheckOutput(row.repo, row.pr_number);
+        const r = await api(`/${row.id}/checks`, { state: "red", rework: true, detail: `${verdict.detail}${output ? `\nFailing output:\n${output}` : ""}` });
+        if (r.ok) {
+          // The next build starts fresh on the same branch and PR: the previous build's outputs are not the fix.
+          for (const f of ["build.json", "build.json.reported", "continuations-build.json"]) spawnSync("rm", ["-f", join(WORK_ROOT, row.id, f)]);
+          say(`REWORK ${r.data?.rework_count ?? "?"}/${MAX_REWORKS} for ${row.id}: checks red on ${row.pr_url} — back to build with the failing output as the brief.`);
+          return;
+        }
+        say(`red-checks rework not recorded (${r.status} ${r.error ?? ""}); ${isRepair(row) ? "recording the stop" : "stopping to the owner instead"}.`);
+      }
+      if (isRepair(row)) { await fail(row, "CHECKS_RED", `the checks on ${row.pr_url} went red after ${Number(row.rework_count ?? 0)} rework(s): ${String(verdict.detail ?? "").slice(0, 300)}`, log); return; }
       const laid = stoppedMail({
         id: row.id, repo: row.repo, reason: stopWords("CHECKS_RED"),
         happened: `The checks on the ${row.repo} change went red, so I did not make it live.`,
@@ -1051,6 +1118,7 @@ async function watchChecks(row, log, waitMinutes) {
       return;
     }
     if (verdict.state === "none") {
+      if (isRepair(row)) { await fail(row, "NO_CHECKS", `no checks ran on ${row.pr_url}: ${verdict.detail}`, log); return; }
       const laid = stoppedMail({
         id: row.id, repo: row.repo, reason: stopWords("NO_CHECKS"),
         happened: `No checks ran on the ${row.repo} change, so there was nothing green to make it live on.`,

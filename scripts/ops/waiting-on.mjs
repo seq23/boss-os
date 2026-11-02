@@ -4,13 +4,20 @@
  * com.seq.boss-waiting-on through duty-run.sh → duty_waiting_on.
  *
  * Reads the one register (`waiting_on`, Team → Zora). An item due today with an owner and an action:
- * the action is opened as a task for that owner, the item marked actioned, and a measurement gets one
+ * the action is opened as a task for that owner (a repair: never a plan email to her, 2 Nov 2026), the item marked actioned, and a measurement gets one
  * line in Simone's morning email. An item with no owner, or a passed date with nothing set to happen:
  * a repair for Danielle the same day (fix first; never a Decide for her).
  */
 import { bossApi } from "./lib/duty-kit.mjs";
 import { addMorningLines } from "../../src/shared/boss/mail/morning.mjs";
 import { zoraPass } from "../../src/shared/boss/waiting/register.mjs";
+
+/**
+ * The task a due item opens (pure). Boss OS started it, not her, so it is a REPAIR (owner, 2 Nov 2026:
+ * "I'd rather Danielle have not asked me anything and just fixed it all"): for Danielle that means no
+ * plan email, her own defaults, her own red checks reworked, one morning line when it lands.
+ */
+export const actionTask = (i) => ({ title: i.what.slice(0, 120), lane: "ops", employee_id: i.owner, input: { origin: "repair", repair_kind: "waiting_on", waiting_on: i.id, prompt: i.action } });
 
 /** The morning line for a measurement opened today (pure). */
 export const measuringLine = (i) => `Measuring today: ${i.what}. If it is missed, the fix starts the same day.`;
@@ -21,7 +28,7 @@ async function main() {
   const { act, repair } = zoraPass(items ?? []);
   const lines = [];
   for (const i of act) {
-    const t = await api.post("/tasks", { title: i.what.slice(0, 120), lane: "ops", employee_id: i.owner, input: { origin: "waiting_on", waiting_on: i.id, prompt: i.action } });
+    const t = await api.post("/tasks", actionTask(i));
     await api.post(`/waiting-on/${i.id}`, { state: "actioned", task_id: t?.id ?? t?.task_id ?? null });
     if (i.kind === "measurement") lines.push(measuringLine(i));
     console.log(`waiting-on: opened "${i.what.slice(0, 60)}" for ${i.owner}`);
