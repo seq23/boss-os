@@ -29,7 +29,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1622,6 +1622,14 @@ export default {
         console.log("boss outreach tick", JSON.stringify({ sent: r.sent, replies: r.replies, paused: r.paused, stop: r.stop ?? null }));
       }).catch((err) => {
         console.error("boss outreach failed", err);
+      }),
+    );
+    // Open Loops: once a day from 05:00 Central, the morning section and the overdue repairs.
+    ctx.waitUntil(
+      runBossOpenLoops(toBossEnvForCron(env), now.getTime()).then((r) => {
+        if (r.ran || /NAMED STOP/.test(r.reason ?? "")) console.log("boss open loops", JSON.stringify(r));
+      }).catch((err) => {
+        console.error("boss open loops failed", err);
       }),
     );
     ctx.waitUntil(

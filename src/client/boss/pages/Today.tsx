@@ -266,6 +266,11 @@ export function Today({ onOpenOperations: _ops, onOpenRecentWork: _recent, focus
       )}
 
       <div className="t-below">
+        {/* Open Loops (1 Nov 2026): everything approved but not finished lives on its own page. */}
+        <button className="row mi-row" onClick={() => go("/?tab=loops")} data-testid="today-open-loops">
+          <span className="row-main"><span className="row-title">Open loops · everything approved but not finished</span></span>
+          <span className="row-val">Open ›</span>
+        </button>
         <details data-testid="coming-up">
           <summary>
             Coming up · {meetings?.diary_summary?.startsWith("Nothing today") || !next ? "nothing today" : ""}

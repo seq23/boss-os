@@ -14,7 +14,7 @@ describe("the Worker's scheduled() handler", () => {
   const handler = src.slice(src.indexOf("async scheduled("), src.indexOf("} satisfies ExportedHandler"));
 
   it("runs the chassis jobs, the Boss drain, the duties, the reaper and the nightly, each in its own waitUntil", () => {
-    for (const call of ["runDueJobs(", "drainBossTasks(", "runBossDuties(", "runBossReaper(", "runBossNightly("]) {
+    for (const call of ["runDueJobs(", "drainBossTasks(", "runBossDuties(", "runBossReaper(", "runBossNightly(", "runBossOpenLoops("]) {
       expect(handler, `scheduled() no longer calls ${call}`).toContain(call);
     }
     expect((handler.match(/ctx\.waitUntil\(/g) ?? []).length).toBeGreaterThanOrEqual(5);

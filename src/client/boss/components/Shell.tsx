@@ -101,7 +101,7 @@ function useReadingPosition() {
   return { progress, scrollable, atEnd };
 }
 
-export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "emails" | "schedule" | "scorecard" | "validators" | "memory" | "trading" | "vault" | "systems";
+export type TabId = "today" | "inbox" | "capital" | "spirit" | "team" | "brains" | "emails" | "schedule" | "scorecard" | "loops" | "validators" | "memory" | "trading" | "vault" | "systems";
 
 const ICONS: Record<TabId, ReactNode> = {
   today: <path d="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.5 2" />,
@@ -113,6 +113,7 @@ const ICONS: Record<TabId, ReactNode> = {
   emails: <path d="M3 6h18v12H3zM3 6l9 7 9-7" />,
   schedule: <path d="M4 5h16v15H4zM4 10h16M9 3v4M15 3v4" />,
   scorecard: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
+  loops: <path d="M4 6h11M4 12h11M4 18h7M18 5l2 2 3-3" />,
   validators: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5" />,
   memory: <path d="M12 4v16M12 7a3 3 0 013-3h4v13h-4a3 3 0 00-3 3M12 7a3 3 0 00-3-3H5v13h4a3 3 0 013 3" />,
   trading: <path d="M3 17l5-6 4 3 5-8M21 6h-4M21 6v4" />,
@@ -123,7 +124,7 @@ const ICONS: Record<TabId, ReactNode> = {
 /** Canon §15: Today is the default operating screen, and so the first tab. */
 const LABELS: Record<TabId, string> = {
   today: "Today", inbox: "Inbox", capital: "Capital",
-  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", schedule: "Schedule", scorecard: "Scorecard", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
+  spirit: "Spirit", team: "Team", brains: "Brains", emails: "Email Map", schedule: "Schedule", scorecard: "Scorecard", loops: "Open Loops", validators: "Validators", memory: "Memory", trading: "Trading", vault: "Vault",
   systems: "Systems",
 };
 
@@ -133,7 +134,7 @@ const LABELS: Record<TabId, string> = {
  * Trading, Vault, Systems and Operations (the settings) are in "☰ More", two taps away.
  */
 export const PRIMARY_TABS: readonly TabId[] = ["today", "inbox", "capital", "spirit"];
-export const MORE_TABS: readonly TabId[] = ["team", "brains", "emails", "schedule", "scorecard", "validators", "memory", "trading", "vault", "systems"];
+export const MORE_TABS: readonly TabId[] = ["team", "brains", "emails", "schedule", "scorecard", "loops", "validators", "memory", "trading", "vault", "systems"];
 
 export function Shell({
   tab, onTab, title, lane, pending, onSettings, settingsOpen, offline, waiting, onBack, children,

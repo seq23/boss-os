@@ -71,6 +71,7 @@ import { t2rGroups } from "./routes/t2rGroups";
 import { brains } from "./routes/brains";
 import { validators } from "./routes/validators";
 import { scorecardRoutes } from "./routes/scorecard";
+import { openLoops, INTAKE_PATH as OPEN_LOOPS_INTAKE, runOpenLoopsDaily } from "./routes/openLoops";
 import { runBrainsCohesion } from "./brains/store";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -132,6 +133,8 @@ app.route("/api/outreach/u", unsubscribe);
 
 app.use("/api/*", async (c, next) => {
   if (c.req.path.startsWith("/api/auth/") || c.req.path === "/api/health" || c.req.path.startsWith("/api/outreach/u/")) return next();
+  // Open Loops' intake checks its own door (the machine token or a session): routes/openLoops.ts.
+  if (c.req.path === OPEN_LOOPS_INTAKE && c.req.method === "POST") return next();
   return requireSession(c, next);
 });
 
@@ -257,6 +260,8 @@ app.route("/api/brains", brains);
 app.route("/api/validators", validators);
 // The Scorecard (1 Nov 2026): each initiative's state and history, posted by the Monday run (routes/scorecard.ts).
 app.route("/api/scorecard", scorecardRoutes);
+// Open Loops (1 Nov 2026): everything approved but not finished, chased each morning (routes/openLoops.ts).
+app.route("/api/open-loops", openLoops);
 //
 // === end Her jobs ===
 
@@ -438,6 +443,11 @@ export async function runDuties(env: Env, now = Date.now()) {
 export async function runOutreach(env: Env, now = Date.now()) {
   const { runOutreachTick } = await import("./outreach/engine");
   return runOutreachTick(env, now);
+}
+
+/** Open Loops' daily chase: the morning section and the overdue repairs (routes/openLoops.ts). */
+export async function runOpenLoops(env: Env, now = Date.now()) {
+  return runOpenLoopsDaily(env, now);
 }
 
 export async function runReaper(env: Env, now = Date.now()) {
