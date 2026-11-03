@@ -4,6 +4,7 @@ import { apiJson, row } from "./helpers";
 import { scoreDay, FLOORS } from "../../src/worker/boss/today/verdict";
 import { lensFor, TRACKS, coachingFocus } from "../../src/worker/boss/today/faculty";
 import { selectSomatic, logSomatic, buildBodyContract, MOVEMENT_LANES } from "../../src/worker/boss/today/body";
+import { routineFor, fallbackFor } from "../../src/shared/boss/body/morningRoutine.mjs";
 
 /**
  * THE FOUR DOCUMENTS, AND THE THINGS ABOUT THEM THAT ARE EASY TO BREAK.
@@ -220,16 +221,27 @@ describe("the Body contract and the novelty engine", () => {
     await env.DB.prepare(`DELETE FROM movement_log`).run();
   });
 
-  it("prints the stored morning sequence exactly, in order", async () => {
+  it("the morning routine: 10 minutes, a bed-only fallback, and one list per day on every surface (2 Nov 2026)", async () => {
     const body = await buildBodyContract(env as any, DAY, null);
-    // §6.9: "Print this exactly, in order." Not paraphrased, reordered or trimmed.
-    expect(body.launch_sequence).toEqual([
-      "10 in-bed leg raises per side",
-      "10 seated knee-to-chest pulls per side",
-      "10 seated torso twists per side",
-      "30 seconds shoulder rolls",
-      "30 seconds deep breathing",
-    ]);
+    // Ten minutes, nine steps, bed → floor → standing → wall; a swap never adds a step.
+    expect(body.routine.reduce((n, st) => n + st.minutes, 0)).toBe(10);
+    expect(body.routine.map((st) => st.place)).toEqual(["bed", "bed", "bed", "floor", "floor", "floor", "floor", "standing", "wall"]);
+    const swapped = body.routine.filter((st) => st.swapped).length;
+    expect(swapped).toBeGreaterThanOrEqual(3);
+    expect(swapped).toBeLessThanOrEqual(4);
+    // The same day reads the same list from the shared default (Today, Spirit and the email) and twice in a row.
+    expect(body.routine).toEqual(routineFor(DAY));
+    expect((await buildBodyContract(env as any, DAY, null)).routine).toEqual(body.routine);
+    // And it switches up: across a week, the swaps are not all the same.
+    const week = ["2031-04-07", "2031-04-08", "2031-04-09", "2031-04-10", "2031-04-11", "2031-04-12", "2031-04-13"]
+      .map((d) => routineFor(d).filter((st) => st.swapped).map((st) => st.n).join(","));
+    expect(new Set(week).size).toBeGreaterThan(1);
+    // The fallback is the first three steps of THIS day's routine, every one in bed.
+    expect(body.minimum_viable).toEqual(body.routine.slice(0, 3).map((st) => st.move));
+    const reduced = await buildBodyContract(env as any, DAY, "recovery");
+    expect(reduced.routine.length).toBe(3);
+    expect(reduced.routine.every((st) => st.place === "bed")).toBe(true);
+    for (const d of week) expect(fallbackFor(d).every((st) => st.place === "bed")).toBe(true);
   });
 
   it("ACTUALLY ROTATES — the same movement does not come up two days running", async () => {

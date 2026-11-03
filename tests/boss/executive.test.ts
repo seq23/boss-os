@@ -188,7 +188,8 @@ describe("Phase 11 — the three gates", () => {
      * reason it is today's.
      */
     const agenda = JSON.parse(day!.morning_agenda);
-    expect(agenda.pillars.body.launch_sequence[0]).toBe("10 in-bed leg raises per side");
+    expect(agenda.pillars.body.routine.length).toBe(9);
+    expect(agenda.pillars.body.launch_sequence[0]).toBe(agenda.pillars.body.routine[0].line);
     expect(agenda.pillars.body.somatic.length).toBeGreaterThan(0);
     for (const pillar of ["spirit", "wealth", "execution"] as const) {
       expect(agenda.pillars[pillar].action, `${pillar} has no act`).toBeTruthy();
