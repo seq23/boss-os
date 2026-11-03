@@ -41,6 +41,20 @@ describe("morning sections that did not report in", () => {
     expect(notReportedRepairs(r.missing, [{ title: repairs[0]!.title, status: "queued" }])).toHaveLength(1);
   });
 
+  // 3 Nov 2026: this prompt sent a repair to "~/.boss-os/logs", which does not exist — the real
+  // producer logs are ~/Library/Logs/boss-duty (a local_job's own dated run) and ~/Library/Logs/
+  // boss-agent (the launchd chain it ran inside). A prompt that names an empty directory wastes the
+  // whole repair run, so this is pinned negatively.
+  it("the repair prompt points at the real log directories, never the one that does not exist", () => {
+    const sections: Record<string, any> = everyExpected();
+    delete sections.lp;
+    const r = sectionsNotReported(sections, { weekday: "Tuesday", now: NOW });
+    const [repair] = notReportedRepairs(r.missing, []);
+    expect(repair!.prompt).toContain("~/Library/Logs/boss-duty/");
+    expect(repair!.prompt).toContain("~/Library/Logs/boss-agent/");
+    expect(repair!.prompt).not.toContain("~/.boss-os/logs");
+  });
+
   it("a weekly section is expected only on its day", () => {
     expect(sectionsNotReported({}, { weekday: "Monday", now: NOW }).missing.map((m) => m.name)).toContain("scorecard");
     expect(sectionsNotReported({}, { weekday: "Tuesday", now: NOW }).missing.map((m) => m.name)).not.toContain("scorecard");

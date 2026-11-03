@@ -2581,6 +2581,43 @@
       }
     },
     {
+      "id": "deal-grid",
+      "name": "The deal grid and Monique found",
+      "what": "Every buy and sell in your inbox as one row, and what Monique found for them.",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "daily 05:30"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "duty": "duty_deal_grid",
+        "launchd": [
+          "com.seq.boss-capital"
+        ]
+      }
+    },
+    {
+      "id": "capital-resume",
+      "name": "Capital chain resume",
+      "what": "Picks up an unfinished capital chain (the deal grid's producer).",
+      "business": "brokerage",
+      "brand": "Brokerage",
+      "system": "mac",
+      "slots": [
+        "always"
+      ],
+      "emails": false,
+      "heavy": false,
+      "trigger": {
+        "launchd": [
+          "com.seq.boss-capital-resume"
+        ]
+      }
+    },
+    {
       "id": "link-prospects",
       "name": "Backlink prospecting",
       "what": "Finds sites worth asking for a link.",

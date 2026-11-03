@@ -172,6 +172,7 @@
     "agent:claim": "bash scripts/ops/agent-claim.sh",
     "drive:pull": "node scripts/vault/vault.mjs run -- node scripts/ops/drive-pull.mjs",
     "capital:book": "node scripts/vault/vault.mjs run -- node scripts/ops/capital-book.mjs",
+    "capital:chain": "node scripts/ops/capital-chain.mjs",
     "capital:grid": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-grid.mjs",
     "capital:senders": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-ledger.mjs --senders",
     "capital:lists-seed": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-lists-seed.mjs",
