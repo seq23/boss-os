@@ -62,7 +62,18 @@ export async function ancestralReminder(api, fetchImpl = fetch, senders = sender
  * emails the client: the only way the words reach them is her Approve, which opens her own Gmail.
  */
 export async function hicksUpdateNotice(api, fetchImpl = fetch, senders = sendersFor) {
-  const r = await api.post("/clients/hicks-update/notice");
+  /*
+   * 3 Nov 2026, 13:47 and 13:57 UTC: main ran this before production served the route (land promotes
+   * only after e2e on main, ~25 minutes), the 404 threw, and the whole tick went red. A route this
+   * Worker does not serve yet is a named note the next run retries, never a red tick; any other
+   * failure is still a failure by name, and the errands and practice emails above have already gone.
+   */
+  let r;
+  try { r = await api.post("/clients/hicks-update/notice"); } catch (e) {
+    const why = String(e?.message ?? e);
+    if (/→ 404\b/.test(why)) return { line: "NAMED STOP [HICKS_ROUTE_NOT_LIVE] Boss OS does not serve the Hicks update yet (deploy pending); the next run retries.", sent: false };
+    return { line: "Hicks update: NOT checked.", failed: `hicks-update notice (${why.slice(0, 120)})`, sent: false };
+  }
   if (!r?.due) return { line: `Hicks update: nothing waiting (${r?.reason ?? "no answer"}).`, sent: false };
   const [camille] = senders("Camille");
   const res = await postEmployeeMail(camille, employeeMail(camille, { to: OWNER_TO, subject: r.notice.subject, layout: { happened: r.notice.happened, details: r.notice.details ?? [], decide: r.notice.decide ?? [] } }), fetchImpl);
