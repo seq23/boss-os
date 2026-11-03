@@ -14,7 +14,8 @@
 #
 # Remote deployment targets the explicit `[env.production]` profile below
 # (`wrangler deploy --env production`), where WP_OS_ENV = "production" and identity is
-# `Cf-Access-Authenticated-User-Email` only. See docs/ENVIRONMENTS.md.
+# the signed `email` / `common_name` claim of a verified `Cf-Access-Jwt-Assertion` only
+# (src/worker/accessJwt.ts; Boss OS accepts no Access application today). See docs/ENVIRONMENTS.md.
 #
 # Declaring that profile is NOT a deployment and NOT a proof of one: remote deployment,
 # Cloudflare Access configuration, and remote migration apply all remain human-gated and
@@ -22,6 +23,9 @@
 # live only in the encrypted vault and in Worker secret storage.
 name = "boss-os"
 main = "src/worker/index.ts"
+# No version preview URLs (<version>-<name>.<sub>.workers.dev): a hostname outside any Access
+# application. Identity is verified either way (accessJwt.ts); this removes the surface too.
+preview_urls = false
 compatibility_date = "2025-10-01"
 # Required by @cloudflare/puppeteer, which pulls in node:buffer. Without it the Worker does not
 # start at all — caught by E2E, invisible to unit tests because they never boot the runtime.
@@ -188,6 +192,7 @@ crons = ["0 * * * *"]
 # ---------------------------------------------------------------------------
 [env.production]
 name = "boss-os"
+preview_urls = false
 
 [env.production.assets]
 directory = "./dist/client"
@@ -255,7 +260,7 @@ binding = "BROWSER"
 WP_OS_AI_EMAIL_PARTNERS = "off"
 WP_OS_AI_EMAIL_EXTERNAL = "off"
 # Not "local": the dev identity header `x-wpos-dev-user` is refused outside local,
-# and identity comes from `Cf-Access-Authenticated-User-Email` (src/worker/auth.ts).
+# and identity comes from the signed `email` / `common_name` claim of a verified `Cf-Access-Jwt-Assertion` (src/worker/auth.ts).
 WP_OS_ENV = "production"
 
 # See the note on the local profile. Restated because wrangler does not inherit vars.

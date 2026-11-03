@@ -1,4 +1,5 @@
 import type { Env } from "./env";
+import { verifyAccessAssertion } from "./accessJwt";
 
 /**
  * Runtime identity resolution (ADR-006).
@@ -10,7 +11,8 @@ import type { Env } from "./env";
  *
  * Identity headers:
  * - WP_OS_ENV === "local": explicit dev identity header `x-wpos-dev-user: <email>`.
- * - otherwise: `Cf-Access-Authenticated-User-Email` set by Cloudflare Access.
+ * - otherwise: the `email` (person) or `common_name` (service token) claim of a VERIFIED
+ *   `Cf-Access-Jwt-Assertion` (src/worker/accessJwt.ts). No valid assertion, no identity.
  */
 export interface FirmUserIdentity {
   id: string;
@@ -22,7 +24,6 @@ export interface FirmUserIdentity {
 }
 
 const DEV_IDENTITY_HEADER = "x-wpos-dev-user";
-const ACCESS_IDENTITY_HEADER = "Cf-Access-Authenticated-User-Email";
 
 /**
  * The firm's own browser, authenticated by an Access service token.
@@ -50,79 +51,40 @@ const ACCESS_JWT_HEADER = "Cf-Access-Jwt-Assertion";
 const BROWSER_AGENT_EMAIL = "browser-agent@westpeek.ventures";
 
 /**
- * The service token's client id, read out of the Access assertion.
- *
- * WHERE THE IDENTITY ACTUALLY IS. `CF-Access-Client-Id` is what a caller SENDS, and Access strips
- * it — the origin never sees it. What arrives is `Cf-Access-Jwt-Assertion`, a token Access signed
- * after it verified the client id and secret against its own store, and for a service token the
- * client id is the `common_name` claim. Two deploys were spent on the wrong header before the
- * health endpoint was made to list what actually arrives.
- *
- * WHY THE SIGNATURE IS NOT VERIFIED HERE, stated plainly because it is the kind of decision that
- * should be argued with rather than discovered:
- *
- *   This assertion is minted by Access and the request cannot reach this Worker without passing
- *   through Access — both the custom domain and the workers.dev hostname sit behind it, so there is
- *   no path on which a forged assertion could arrive. Verifying would mean fetching Cloudflare's
- *   JWKS on every request, which is an egress dependency and a per-request round trip in front of
- *   the whole application.
- *
- *   WHAT WOULD CHANGE THAT: the moment any route becomes reachable without Access — a public
- *   endpoint, a second hostname, a Worker route added outside the protected zone — this becomes
- *   forgeable and must verify against the JWKS. That is the trigger to watch for.
- *
- * The `aud` claim is checked as well, so an assertion minted for a DIFFERENT Access application in
- * this same account cannot be replayed here.
+ * The AUD tags of the Access applications in front of this Worker. NONE (Access API, 3 Nov 2026):
+ * boss.sequoiataylor.com has no Access application — Boss OS's own routes (/api/boss/*) carry their
+ * passcode session — and the tag this file used to accept belonged to West Peek OS's application,
+ * so an assertion minted for West Peek OS would have been honoured here. With the list empty, no
+ * assertion resolves to anyone on this Worker. Add a tag here only with an Access application in
+ * front of this Worker.
  */
-const ACCESS_APP_AUD = "3ee619ef7997f1d25f57d7ffe87bb3f2f6b66b801c6a31937f8dc734b3189b63";
+export const ACCESS_APP_AUDS: readonly string[] = [];
 
-function serviceTokenClientId(request: Request): string | null {
-  const jwt = request.headers.get(ACCESS_JWT_HEADER);
-  if (!jwt) return null;
-  const parts = jwt.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const json = atob(parts[1]!.replace(/-/g, "+").replace(/_/g, "/"));
-    const claims = JSON.parse(json) as {
-      common_name?: string;
-      aud?: string | string[];
-      exp?: number;
-      type?: string;
-    };
-
-    // Expired assertions are refused even though Access would not have forwarded one.
-    if (typeof claims.exp === "number" && claims.exp * 1000 < Date.now()) return null;
-
-    // Minted for THIS application, not another one in the same account.
-    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-    if (!aud.includes(ACCESS_APP_AUD)) return null;
-
-    return typeof claims.common_name === "string" && claims.common_name.length > 0 ? claims.common_name : null;
-  } catch {
-    return null;
-  }
-}
-
-function identityEmail(request: Request, env: Env): string | null {
-  const header = env.WP_OS_ENV === "local" ? DEV_IDENTITY_HEADER : ACCESS_IDENTITY_HEADER;
-  const value = request.headers.get(header);
-  if (value) {
-    const email = value.trim().toLowerCase();
+async function identityEmail(request: Request, env: Env): Promise<string | null> {
+  // Local dev only: the explicit dev header. Never read in any deployed environment.
+  if (env.WP_OS_ENV === "local") {
+    const value = request.headers.get(DEV_IDENTITY_HEADER);
+    const email = value ? value.trim().toLowerCase() : "";
     if (email.length > 0) return email;
   }
 
   /*
-   * A HUMAN IDENTITY ALWAYS WINS. This is checked only after the header above is absent, so a
-   * partner browsing normally is never downgraded to the agent — and a request cannot upgrade
-   * itself by adding a header, because it would need a human email to be worth upgrading from.
-   *
-   * Inert unless the client id is configured. No secret bound, no agent.
+   * Everything else comes from a VERIFIED Access assertion (src/worker/accessJwt.ts): signature,
+   * issuer, our aud, not expired. `Cf-Access-Authenticated-User-Email` is no longer read: the
+   * signed `email` claim is the same fact without trusting a header.
    */
+  const claims = await verifyAccessAssertion(request.headers.get(ACCESS_JWT_HEADER), ACCESS_APP_AUDS);
+  if (!claims) return null;
+
+  // A HUMAN IDENTITY ALWAYS WINS: an assertion that names a person is that person, never an agent.
+  const human = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
+  if (human.length > 0) return human;
+
+  // A service token: its client id is the `common_name` claim. Inert unless configured.
+  const name = typeof claims.common_name === "string" ? claims.common_name : "";
+  if (name.length === 0) return null;
   const configured = env.CF_ACCESS_CLIENT_ID;
-  if (typeof configured === "string" && configured.length > 0) {
-    const presented = serviceTokenClientId(request);
-    if (presented && presented === configured) return BROWSER_AGENT_EMAIL;
-  }
+  if (typeof configured === "string" && configured.length > 0 && name === configured) return BROWSER_AGENT_EMAIL;
   return null;
 }
 
@@ -139,7 +101,7 @@ interface FirmUserRow {
  * header both resolve to null → caller answers 401.
  */
 export async function resolveFirmUser(request: Request, env: Env): Promise<FirmUserIdentity | null> {
-  const email = identityEmail(request, env);
+  const email = await identityEmail(request, env);
   if (!email) return null;
 
   const user = await env.WP_OS_DB.prepare(
