@@ -161,6 +161,16 @@ then add the domain to that repo's `REPO_IDENTITY.md` in your PR. If no reposito
 Known-good mappings: Virtualagency-os → `WPP-llm`; Spryexecutiveos and
 Billionairehighperformancecoach → `sprylabs-hpc-site`.
 
+### DRAFTED FOR THE CLIENT'S APPROVAL, AND HELD FOR HERS (owner, 3 Nov 2026)
+
+- `disposition: "client_draft"` (horselegalguide.com, sites.json `client_approval`): work the brief, but
+  NOTHING goes live until the Horse owners approve it in the repo's own approval queue (`/admin/`,
+  RUNBOOK.md). New content goes in as a draft awaiting approval; a change to a live page or template is
+  a draft too, or an open PR labelled for client approval that you never merge. Record it as drafted,
+  not fixed.
+- `disposition: "owner_approval"` (hicksconsulting.org, sites.json `owner_approval`): never worked. It
+  waits for Sequoia's yes on the fix plan in Decide; the next run's briefs come back as ordinary work.
+
 ### CLIENT REPOSITORIES ARE REPORT-ONLY
 
 The list is `src/shared/boss/siteAudit/repoPolicy.mjs` (`NO_AUTO_FIX`, kind `client`): today

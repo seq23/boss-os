@@ -182,7 +182,7 @@ export function slipLines(siteResults) {
 }
 
 /** The same disposition rule as every other brief: no repo, a client's report-only repo, or weekly. */
-const dispositionOf = (site, approved = false) => (!site?.repo ? "no_repo" : !mayAutoFix(site.repo) ? "client_repo" : site.owner_approval && !approved ? "owner_approval" : "weekly");
+const dispositionOf = (site, approved = false) => (!site?.repo ? "no_repo" : !mayAutoFix(site.repo) ? "client_repo" : site.owner_approval && !approved ? "owner_approval" : site.client_approval ? "client_draft" : "weekly");
 
 /**
  * HER YES FIRST (Hicks, owner 3 Nov 2026: "i need to approve any changes to hicks live published site

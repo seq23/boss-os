@@ -250,8 +250,9 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    searches, pages Google stopped showing, URL Inspection on the top five losers, sitemap count against
    last week, commits in the site's repo, the quality sample and fold queue; ≤6 lines, most likely
    first, CONFIRMED or SUSPECTED, unread sources "not read". In latest.json (`gold_lines`, each site's
-   `diagnosis`), the site's row on the checklist page and its Monday line. Owner, 3 Nov 2026: Horse is
-   repaired like her own sites, live pages included. Hicks (`owner_approval` in sites.json) changes
+   `diagnosis`), the site's row on the checklist page and its Monday line. Owner, 3 Nov 2026: Horse
+   (`client_approval`) repairs are drafted, disposition `client_draft`, and go live only once the Horse
+   owners approve them in their approval queue. Hicks (`owner_approval` in sites.json) changes
    only with her yes: every brief there is `owner_approval`, never worked, and a red or gold drop
    raises ONE approval a week (`approvalCard`, POST /api/boss/approvals, shown in Decide) with the
    diagnosis and the proposed plan; an approved plan in the last 14 days releases the next run's

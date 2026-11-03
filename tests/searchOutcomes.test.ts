@@ -291,7 +291,7 @@ describe("where the warning and the diagnosis go", () => {
     expect(weeklyBriefs(res.map((r) => ({ ...r, host: "uscisexam.com" })))[0]).toMatchObject({ kind: "outcome", disposition: "weekly" });
   });
 
-  it("Horse is repaired like her own sites; Hicks waits for her yes; their numbers stay in their own row", () => {
+  it("Horse repairs are drafted for the owners' approval; Hicks waits for her yes; their numbers stay in their own row", () => {
     const horse = siteOf("horselegalguide.com"), hicks = siteOf("hicksconsulting.org");
     const consolidation = { status: "queued", candidates: 2, hubs: [{ hub: "/guides/", hubUrl: `https://horselegalguide.com/guides/`, urls: ["https://horselegalguide.com/guides/a"], total: 1 }] };
     const quality = { red: true, line: "x", pages: [{ url: "u", failing: ["filler"], notes: [] }] };
@@ -299,11 +299,14 @@ describe("where the warning and the diagnosis go", () => {
     const res: any[] = [{ site: horse, host: "horselegalguide.com", results: [fail], outcome: gold, diagnosis, consolidation, quality }, { site: hicks, host: "hicksconsulting.org", results: [fail], outcome: { ...gold, status: "red" }, diagnosis, consolidation, quality }];
     const briefs = [...fixBriefs(checklist, res), ...weeklyBriefs(res)];
     const by = (d: string) => briefs.filter((b: any) => b.domain === d).map((b: any) => [b.kind ?? "check", b.disposition]);
-    expect(by("horselegalguide.com")).toEqual([["check", "fix"], ["outcome", "weekly"], ["quality", "weekly"], ["consolidate", "weekly"]]);
+    expect(by("horselegalguide.com")).toEqual([["check", "client_draft"], ["outcome", "client_draft"], ["quality", "client_draft"], ["consolidate", "client_draft"]]);
+    expect(by("horselegalguide.com").every(([, d]) => d !== "fix" && d !== "weekly")).toBe(true); // never auto-applied
     expect(by("hicksconsulting.org")).toEqual([["check", "owner_approval"], ["outcome", "owner_approval"], ["quality", "owner_approval"], ["consolidate", "owner_approval"]]);
     // nothing of Hicks reaches the repair run without her yes
     const q = workQueue(briefs);
     expect([...q.repos.map((r) => r.repo), ...q.once.map((r) => r.repo)]).not.toContain(hicks.repo);
+    expect(q.repos.map((r) => r.repo)).toContain(horse.repo); // Horse is still worked: drafted, not held
+    expect(q.once.map((r) => r.repo)).toContain(horse.repo); // its weekly drafts once a week, never round-until-empty
     // ONE approval card with the diagnosis and the proposed plan; none for Horse, none once approved
     const card = approvalCard(res[1], briefs, { now: T("2026-11-03") });
     expect(card).toMatchObject({ kind: "search_fix_plan", origin_id: "sr-hicksconsulting.org-2026-11-02" });
