@@ -74,4 +74,15 @@ INSERT OR IGNORE INTO client_update_subjects (client, subject, sent_at) VALUES
   ('hicks', 'Good news on hicksconsulting.org: more people are visiting from Google', 1793710557000),
   ('hicks', 'A new way we''re tracking how people find you', 1793710600000);
 
+-- Classified: the drafts hold a client's email (her greeting name, the words, numbers), so no model
+-- route reads them; the subjects and carried-over lines are plain operating text.
+INSERT INTO data_policy (entity, subsystem, residency, ai_processing, reason) VALUES
+  ('client_update_drafts', 'clients', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'Each quarter''s client update draft and her decision: a client''s email in her words. Kept in the cloud so the tick and her taps work; never sent to a model.'),
+  ('client_update_carryover', 'clients', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'Lines carried into the next client update. Client-facing words, kept off model routes like the drafts.'),
+  ('client_update_subjects', 'clients', 'CLOUD_SYNC', 'LOCAL_ONLY',
+   'Every subject already sent to a client, so a subject is never reused. Client-facing words, kept off model routes.')
+ON CONFLICT(entity) DO NOTHING;
+
 INSERT OR IGNORE INTO schema_version (migration) VALUES ('0334_boss_hicks_quarterly_update');

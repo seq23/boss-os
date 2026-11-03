@@ -2,7 +2,7 @@
 /**
  * DRY RUN OF THE HICKS QUARTERLY UPDATE: live numbers, nothing stored, nothing sent.
  *
- *   npm run -s vault:run -- node scripts/ops/hicks-update-dry-run.mjs --name <greeting name> \
+ *   npm run -s vault:run -- npm run -s hicks:dry-run -- --name <greeting name> \
  *     --last-sent <clicks> --last-sent-at <ISO time> [--told author,ai-visits] [--carry "<line>"] [--past-subjects "a|b"]
  *
  * Reads Search Console as the read-only service account (GSC_SERVICE_ACCOUNT_JSON, injected by the
