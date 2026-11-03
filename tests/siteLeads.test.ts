@@ -32,7 +32,7 @@ describe("the leads verdict", () => {
     const named = leadVerdict({ site: own({ lead_source: { kind: "none", action: "a signup", track_with: "a ref tag on the link" } }), read: null, outcome: clicks(40) })!;
     expect(named.line).toBe("leads: not tracked yet — a ref tag on the link");
     // Negative: the same site with a source that read 0 is a number, so the two can never be confused.
-    expect(leadVerdict({ site: own({ lead_source: d1Src }), read: { ok: true, current: 0, previous: 0 }, outcome: clicks(0) })!.line).toBe("leads: 0 (was 0)");
+    expect(leadVerdict({ site: own({ lead_source: d1Src }), read: { ok: true, current: 0, previous: 0 }, outcome: clicks(0) })!.line).toBe("leads: 0 (was 0) — too few visits to judge");
   });
 
   it("a failed source says not read with its reason, never 0 and never red", () => {
