@@ -24,14 +24,16 @@
  *   "leads: N (was M)"                         read
  *   "leads: not tracked yet — <what would>"    no source (never 0)
  *   "leads: not read: <reason>"                a source that failed (never 0, never last week's)
- *   RED when Google sent clicks in the last 28 days and the site's action counted zero:
- *   "people come, nobody acts".
+ *   RED when Google sent at least LEADS.MIN_CLICKS (10) clicks in the last 28 days and the site's
+ *   action counted zero: "people come, nobody acts". Fewer clicks with zero leads is a plain line
+ *   that says "too few visits to judge".
  *
  * Pure. The reader is scripts/ops/lib/site-leads-read.mjs; the audit runner wires the two.
  * Pinned by tests/siteLeads.test.ts.
  */
 
-export const LEADS = Object.freeze({ WINDOW_DAYS: 28 });
+/** Red needs at least MIN_CLICKS Google visits in the window (owner, 3 Nov 2026: one click is too weak). */
+export const LEADS = Object.freeze({ WINDOW_DAYS: 28, MIN_CLICKS: 10 });
 export const OWN_CATEGORIES = Object.freeze(["side_business", "own_business"]);
 export const LEAD_KINDS = Object.freeze(["d1", "airtable", "stripe", "gumroad", "t2r", "cf_web_analytics", "none"]);
 
@@ -91,10 +93,11 @@ export function leadVerdict({ site, read, outcome } = {}) {
   const current = Number(read.current), previous = Number(read.previous);
   if (!Number.isFinite(current) || !Number.isFinite(previous)) return { status: "not_read", red: false, action, why: "the source answered without a number", line: "leads: not read: the source answered without a number" };
   const clicks = outcome?.status && outcome.status !== "not_read" ? Number(outcome.current?.clicks ?? 0) : null;
-  const red = clicks != null && clicks > 0 && current === 0;
+  const red = clicks != null && clicks >= LEADS.MIN_CLICKS && current === 0;
+  const tooFew = clicks != null && clicks < LEADS.MIN_CLICKS && current === 0;
   return {
     status: "read", red, action, current, previous, clicks, note: read.note ?? null,
-    line: `leads: ${num(current)} (was ${num(previous)})`,
+    line: `leads: ${num(current)} (was ${num(previous)})${tooFew ? " — too few visits to judge" : ""}`,
   };
 }
 
