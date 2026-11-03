@@ -476,12 +476,24 @@ export const CHECKS = {
   },
   business_type(ctx) {
     const all = okPages(ctx).flatMap((p) => jsonLd(p.html).nodes);
-    if (ctx.site.kind === "hyperlocal") {
-      const lb = deepNodes(all, /LocalBusiness|HomeAndConstructionBusiness|EntertainmentBusiness|FoodEstablishment|ProfessionalService/).find((n) => n.telephone && n.address && n.areaServed);
-      return lb ? pass(`${typesOf(lb)[0]} with telephone, address and areaServed`) : fail("no LocalBusiness with telephone, address and areaServed on any sampled page");
-    }
+    // "The business type THAT FITS, fully filled" (the item's own title). A fully filled
+    // LocalBusiness counts wherever it is found, not only on a site whose kind is "hyperlocal".
+    //
+    // 3 Nov 2026: cynthiabrowndds.com is kind "brand" — a dentist's personal-professional site with
+    // two real offices and no product. The brand branch asked it for a priced Offer, which is the
+    // one thing that site must never publish: dental advertising rules and the repo's own claims
+    // gate (risk brain R-ADV-08 / R-CLI-07, cynthia-brown-dds-site/scripts/validate_dental_
+    // compliance.js) bar cost promises and guarantees in dental copy. So the check was unpassable
+    // by any honest fix, and a site kind is not the right thing to read to learn whether a business
+    // has a phone and an address. This is not a loosening: a site with neither a filled
+    // LocalBusiness nor a priced Offer still fails, and telephone + address + areaServed is harder
+    // evidence to fake than a price. `kind` still decides the WORDING of the failure, so a brand
+    // site is still told what a brand site is expected to carry.
+    const lb = deepNodes(all, /LocalBusiness|HomeAndConstructionBusiness|EntertainmentBusiness|FoodEstablishment|ProfessionalService/).find((n) => n.telephone && n.address && n.areaServed);
+    if (lb) return pass(`${typesOf(lb)[0]} with telephone, address and areaServed`);
+    if (ctx.site.kind === "hyperlocal") return fail("no LocalBusiness with telephone, address and areaServed on any sampled page");
     const prod = deepNodes(all, /^(SoftwareApplication|WebApplication|MobileApplication|Product|Service|Course|Book)$/).find((n) => deepNodes([n], /^(Offer|AggregateOffer)$/).some((o) => o.price !== undefined || o.lowPrice !== undefined));
-    return prod ? pass(`${typesOf(prod)[0]} with an Offer and a price`) : fail("no SoftwareApplication, Product or Service with a priced Offer on any sampled page");
+    return prod ? pass(`${typesOf(prod)[0]} with an Offer and a price`) : fail("no SoftwareApplication, Product or Service with a priced Offer, and no LocalBusiness with telephone, address and areaServed, on any sampled page");
   },
   speakable(ctx) {
     const bad = []; let any = 0;

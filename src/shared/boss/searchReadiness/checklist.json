@@ -566,7 +566,7 @@
     "mode": "auto",
     "type": "business_type",
     "source": "schema",
-    "how": "At least one fully filled business node: LocalBusiness with telephone, address and areaServed (hyperlocal), or SoftwareApplication/Product/Service with an Offer and price (brand).",
+    "how": "At least one fully filled business node: LocalBusiness with telephone, address and areaServed, or SoftwareApplication/Product/Service with an Offer and price. A filled LocalBusiness counts on any site; a brand site with neither is told it is missing both.",
     "applies_to": [
      "hyperlocal",
      "brand"
