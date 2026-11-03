@@ -250,7 +250,8 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    of the action's path), or `none` with what would track it (`site-leads.mjs`, read by
    `scripts/ops/lib/site-leads-read.mjs`, counts only). Every Monday: "leads: N (was M)" for the last
    28 days against the 28 before, "not tracked yet — …" or "not read: <reason>", never 0; red when
-   Google sent clicks and the action counted zero ("people come, nobody acts"). In latest.json, the
+   Google sent 10+ clicks and the action counted zero ("people come, nobody acts"; fewer clicks with
+   zero leads is plain, "too few visits to judge"). In latest.json, the
    site's row on the checklist page and the Monday email. **Client sites are never read or reported.**
    Pinned by `tests/siteLeads.test.ts`.
 

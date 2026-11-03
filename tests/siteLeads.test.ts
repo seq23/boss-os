@@ -44,19 +44,27 @@ describe("the leads verdict", () => {
     expect(garbled.status).toBe("not_read");
   });
 
-  it("clicks in the last 28 days and zero leads is red: people come, nobody acts", () => {
+  it("10+ Google clicks in 28 days and zero leads is red: people come, nobody acts", () => {
     const site = own({ lead_source: d1Src });
-    const red = leadVerdict({ site, read: { ok: true, current: 0, previous: 3 }, outcome: clicks(12) })!;
+    const red = leadVerdict({ site, read: { ok: true, current: 0, previous: 3 }, outcome: clicks(10) })!;
     expect(red.red).toBe(true);
     expect(red.line).toBe("leads: 0 (was 3)");
-    expect(leadRedLine(site, red)).toMatch(/12 visits.*people come, nobody acts/);
-    const lines = redLines([{ site, outcome: clicks(12), leads: red }]);
-    expect(lines.filter((l) => l.kind === "leads").map((l) => l.domain)).toEqual(["own.example"]);
-    // Negatives: a lead, no clicks, or unread clicks are never red.
-    expect(leadVerdict({ site, read: { ok: true, current: 1, previous: 0 }, outcome: clicks(12) })!.red).toBe(false);
+    expect(leadRedLine(site, red)).toMatch(/10 visits.*people come, nobody acts/);
+    expect(redLines([{ site, outcome: clicks(10), leads: red }]).filter((l) => l.kind === "leads").map((l) => l.domain)).toEqual(["own.example"]);
+    // 9 clicks and no lead: plain, not red, and it says why it is not judged.
+    const few = leadVerdict({ site, read: { ok: true, current: 0, previous: 3 }, outcome: clicks(9) })!;
+    expect(few.red).toBe(false);
+    expect(few.line).toBe("leads: 0 (was 3) — too few visits to judge");
+    expect(leadRedLine(site, few)).toBeNull();
+    expect(redLines([{ site, outcome: clicks(9), leads: few }]).filter((l) => l.kind === "leads")).toEqual([]);
+    // 14 clicks and one lead: not red, no hedge.
+    const one = leadVerdict({ site, read: { ok: true, current: 1, previous: 0 }, outcome: clicks(14) })!;
+    expect(one.red).toBe(false);
+    expect(one.line).toBe("leads: 1 (was 0)");
+    expect(redLines([{ site, outcome: clicks(14), leads: one }]).filter((l) => l.kind === "leads")).toEqual([]);
+    // No clicks, or clicks not read, are never red.
     expect(leadVerdict({ site, read: { ok: true, current: 0, previous: 0 }, outcome: clicks(0) })!.red).toBe(false);
     expect(leadVerdict({ site, read: { ok: true, current: 0, previous: 0 }, outcome: { status: "not_read", why: "x" } })!.red).toBe(false);
-    expect(redLines([{ site, outcome: clicks(12), leads: leadVerdict({ site, read: { ok: true, current: 2, previous: 0 }, outcome: clicks(12) }) }]).filter((l) => l.kind === "leads")).toEqual([]);
   });
 });
 
@@ -155,10 +163,10 @@ describe("the reader", () => {
 
 describe("where the line shows", () => {
   const site = own({ lead_source: d1Src });
-  const leads = leadVerdict({ site, read: { ok: true, current: 0, previous: 2 }, outcome: clicks(9) })!;
+  const leads = leadVerdict({ site, read: { ok: true, current: 0, previous: 2 }, outcome: clicks(10) })!;
   const untracked = own({ domain: "quiet.example" });
   const results = [
-    { site, results: [], outcome: clicks(9), leads },
+    { site, results: [], outcome: clicks(10), leads },
     { site: untracked, results: [], outcome: clicks(0), leads: leadVerdict({ site: untracked, read: null, outcome: clicks(0) }) },
     { site: client(), results: [], outcome: clicks(9) },
   ];
@@ -166,7 +174,7 @@ describe("where the line shows", () => {
   it("the Monday email carries the leads next to Google's visits, in plain words", () => {
     const lines = morningLines(checklist, results, { redLines: redLines(results) });
     const all = lines.join("\n");
-    expect(all).toMatch(/own\.example 9 Google visits → 0 \(was 2\)/);
+    expect(all).toMatch(/own\.example 10 Google visits → 0 \(was 2\)/);
     expect(all).toMatch(/not tracked yet on 1 site \(quiet\.example\)/);
     expect(all).toMatch(/Red: own\.example: .*nobody acts/);
     expect(all).not.toMatch(/client\.example/);
