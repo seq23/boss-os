@@ -19,6 +19,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { FAKE_AI_RUN } from "./fakeAiRun";
 
 const TEMPLATE_SENTINEL =
   "AHREFS-AUDIT-COMPLETE: projects=<n> fixed=<n> surfaced=<n> off_limits=<n> no_repo=<n> ahrefs_side=<n> ahrefs_credits=<n> client_repo=<n> in_flight=<n>";
@@ -57,6 +58,8 @@ exit 0`
   );
   w("gh", `[ "$1" = auth ] && exit 0; exit 0`);
   w("curl", `printf 200`);
+  writeFileSync(join(bin, "ai-run"), FAKE_AI_RUN);
+  chmodSync(join(bin, "ai-run"), 0o755);
   return bin;
 }
 
@@ -95,24 +98,22 @@ function runFixer(opts: { claudeSignedIn: boolean; mode: "usage_limit" | "comple
 }
 
 describe("ahrefs-audit-fix.sh: the sentinel is a result, not the prompt's own template", () => {
-  it("codex echoes the template sentinel and hits its usage limit, Claude signed out: AI_USAGE_EXHAUSTED, exit 13, no stack, never judged complete", () => {
+  it("codex echoes the template sentinel and hits its usage limit: CODEX_LIMIT with its reset, exit 13 (retried), no stack, never judged complete, no Claude", () => {
     const { rc, out, retryAfter, claudeRan } = runFixer({ claudeSignedIn: false, mode: "usage_limit" });
     expect(rc, out).toBe(13);
-    expect(out).toMatch(/NAMED STOP \[AI_USAGE_EXHAUSTED\]/);
+    expect(out).toMatch(/NAMED STOP \[CODEX_LIMIT\] resets 12:04 PM/);
     expect(out).not.toMatch(/^sentinel:/m);
     expect(out).not.toMatch(/ENOENT|at Object\.|at async|TypeError|node:internal/);
     expect(readFileSync(retryAfter, "utf8").trim()).toBe("12:04 PM");
     expect(claudeRan).toBe(false);
   }, 60000);
 
-  it("codex hits its usage limit, Claude signed in: the SAME pass reruns once on Claude and finishes", () => {
+  it("owner, 3 Nov 2026: a Codex limit with Claude signed in still waits for the reset — the pass is never handed to Claude", () => {
     const { rc, out, claudeRan } = runFixer({ claudeSignedIn: true, mode: "usage_limit" });
-    expect(out).toMatch(/Codex ran out of usage.*rerunning the same pass on Claude/);
-    expect(claudeRan).toBe(true);
-    expect(out).toMatch(/sentinel: AHREFS-AUDIT-COMPLETE: projects=1/);
-    expect(out).not.toMatch(/NAMED STOP \[AI_USAGE_EXHAUSTED\]/);
-    expect(out).not.toMatch(/NAMED STOP \[AUDIT_DID_NOT_COMPLETE\]/);
-    expect(rc).not.toBe(13);
+    expect(claudeRan).toBe(false);
+    expect(out).toMatch(/NAMED STOP \[CODEX_LIMIT\] resets 12:04 PM/);
+    expect(out).not.toMatch(/^sentinel:/m);
+    expect(rc, out).toBe(13);
   }, 60000);
 
   it("a real sentinel with real numbers is accepted: never AUDIT_DID_NOT_COMPLETE or AI_USAGE_EXHAUSTED", () => {

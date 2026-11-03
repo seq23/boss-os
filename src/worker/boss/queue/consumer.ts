@@ -1,4 +1,5 @@
 import { orderSeats, isOn, OPENAI_FIRST_KEY, OPENAI_SEAT, CLAUDE_SEAT, isConfidentialDraft, confidentialLadder } from "../duties/seatOrder";
+import { roleFor, CODEX_LIMIT_WAITS } from "../../../shared/boss/aiRoles.mjs";
 import { brainBlockFor } from "../brains/store";
 import type { Env, TaskMessage } from "../env";
 import { newId } from "../lib/id";
@@ -186,7 +187,14 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   // A Chrome job (1 Nov 2026) runs in her Chrome through Claude in Chrome: Claude's seat only. Codex
   // has no Chrome, and the "OpenAI first" switch handed the first one to it.
   const claudeOnly = confidential || input.chrome_job === true;
-  const ladder = claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
+  // Owner, 3 Nov 2026 ("default OpenAI and Claude just be the brains"): Codex is the worker for every
+  // employee duty (aiRoles.mjs "agent_queue.default"), so Codex's seat goes first on every ladder that
+  // has it. This supersedes the 24 Oct "OpenAI first" switch, which now only matters if that row ever
+  // makes agent work a brain job again. A Codex limit WAITS on Codex's seat (`codex_limit_waits`,
+  // honoured at dispatch and at /claim), never Claude, never a cloud rung.
+  const codexWorks = roleFor("agent_queue.default") === "worker";
+  const ladder = claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, codexWorks || isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
+  const codexLimitWaits = !claudeOnly && codexWorks && CODEX_LIMIT_WAITS && ladder.includes(OPENAI_SEAT);
   const refusals: { backend_id: string; refused: string }[] = [];
   const modelBySeat = input.requested && typeof input.requested === "object" && (input.requested as any).model_by_backend
     ? ((input.requested as any).model_by_backend as Record<string, string | null>)
@@ -208,6 +216,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     }
     requested.backend_ladder = ladder;
     requested.model_by_backend = modelBySeat ?? undefined;
+    if (codexLimitWaits) requested.codex_limit_waits = true;
 
     const dispatched = await dispatchRunForTask(env, {
       // Scheduled: a duty made this, so the budget may refuse it. Work she asks for arrives through
@@ -222,6 +231,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
       kind: task.intake_kind ?? null,
       envelopeId: task.envelope_id ?? null,
       requested,
+      waitOutSpentPlan: codexLimitWaits && backendId === OPENAI_SEAT,
       sensitivity: task.sensitivity ?? null,
       estimatedCostMicros: envelope?.budget_micros ?? 0,
     });

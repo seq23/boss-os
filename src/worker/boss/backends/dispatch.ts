@@ -54,6 +54,8 @@ export interface DispatchInput {
   envelopeId: string | null;
   /** Free-form extras the runner understands: repo_path, allowed_paths, verification, model. */
   requested?: Record<string, unknown>;
+  /** Park on the seat even while its plan is spent (a Codex limit waits; aiRoles.mjs). */
+  waitOutSpentPlan?: boolean;
   actions?: string[];
   requires?: string | null;
   sensitivity?: Sensitivity | null;
@@ -152,6 +154,7 @@ export async function dispatchRunForTask(env: Env, input: DispatchInput): Promis
     aiProcessing: input.aiProcessing ?? null,
     model: null,
     estimatedCostMicros: input.estimatedCostMicros,
+    waitOutSpentPlan: input.waitOutSpentPlan === true,
   });
 
   if (verdict.refused) {

@@ -802,28 +802,17 @@ function NoticeComposer({ onPosted }: { onPosted: () => void }) {
  * on her subscription seats tries OpenAI's seat before Claude's. Off: each job's own order. The daily
  * briefing is OpenAI first either way. The switch is read in one place (duties/seatOrder.ts).
  */
-function OpenAiFirst({ onError }: { onError: (e: unknown) => void }) {
-  const [row, setRow] = useState<{ value: string; updated_at: number } | null | undefined>(undefined);
-  const load = () => api.settings().then((rows) => setRow((rows ?? []).find((r: any) => r.key === "seat_order_openai_first") ?? null)).catch(onError);
-  useEffect(() => { load(); }, []);
-  if (row === undefined) return null;
-  const on = row?.value === "on" || row?.value === "true";
-  async function flip() {
-    try { await api.setSetting("seat_order_openai_first", on ? "off" : "on"); await load(); } catch (e) { onError(e); }
-  }
+function OpenAiFirst(_props: { onError: (e: unknown) => void }) {
+  // Superseded by her call of 3 Nov 2026 (src/shared/boss/aiRoles.mjs): Codex does the work, Claude
+  // plans and reviews, so there is no order left to switch.
   return (
     <>
-      <p className="eyebrow">Which AI goes first</p>
+      <p className="eyebrow">Which AI does the work</p>
       <div className="row" data-testid="openai-first">
         <div className="row-main">
-          <div className="row-title">Use OpenAI first for everything (saves Claude usage){on ? <span className="pill">on</span> : <span className="pill">off</span>}</div>
-          <div className="row-sub">
-            {on
-              ? `On since ${new Date(row!.updated_at).toLocaleDateString("en-US", { month: "long", day: "numeric" })}. Every job tries OpenAI first and Claude only if OpenAI cannot do it.`
-              : "Off. Each job uses its own order. The morning briefing always tries OpenAI first."}
-          </div>
+          <div className="row-title">Codex does the work; Claude plans and reviews</div>
+          <div className="row-sub">Your call, 3 November. When Codex is out of usage the work waits for it to reset; it never moves to Claude.</div>
         </div>
-        <button className="btn btn-small" onClick={flip}>{on ? "Turn it off" : "Turn it on"}</button>
       </div>
     </>
   );

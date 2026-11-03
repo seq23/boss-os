@@ -13,7 +13,12 @@ import { all, completionResponse, insertTask, row, stubFetch } from "./helpers";
  *   Free only + private work + Claude Code out of usage + Codex out of usage
  *     → the task stops, in words that name the two spent seats and the lever,
  *       no request leaves the Worker, no paid model is chosen, and no free lane sees the text.
- *   The same two spent seats, public-safe work → a `:free` rung answers, at $0.
+ *   The same two spent seats, public-safe work → a `:free` rung answered, at $0 — until 3 Nov 2026.
+ *
+ * OWNER, 3 Nov 2026 ("default OpenAI and Claude just be the brains"): Codex is the worker for every
+ * employee duty and a Codex limit WAITS for its reset — never Claude, never a cloud rung. So with
+ * Codex's plan spent the run is parked on Codex's seat (`codex_limit_waits`), unclaimed, the task is
+ * not failed, nothing leaves the Worker, and no other seat or rung ever sees it.
  */
 
 let restore: (() => void) | null = null;
@@ -46,48 +51,37 @@ function withKey() {
 beforeEach(async () => { await seatsReset(); });
 afterEach(async () => { await seatsReset(); });
 
-describe("Free only, both seats out of usage, private work", () => {
-  it("stops the executive briefing by name at the seats (it never falls to the cloud), names both spent seats, and never makes a network call", async () => {
+async function expectParkedOnCodex(taskId: string, hosts: string[]) {
+  expect(hosts, "a request left the Worker while Codex's limit was being waited out").toEqual([]);
+  const runs = await all<any>(`SELECT backend_id, claimed_at, status, requested FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
+  expect(runs, "the run was not parked on Codex's seat").toHaveLength(1);
+  expect(runs[0].backend_id).toBe("bk_codex");
+  expect(runs[0].claimed_at).toBeNull();
+  expect(JSON.parse(runs[0].requested).codex_limit_waits).toBe(true);
+  const steps = await all<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_step'`, taskId);
+  expect(steps.map((x) => JSON.parse(x.detail).backend_id), "a seat after Codex was tried").not.toContain("bk_claude_code");
+  const t = await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId);
+  expect(t.status, "a Codex limit failed the task instead of waiting").not.toBe("failed");
+  expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId), "a cloud rung was asked").toHaveLength(0);
+  expect(await row(`SELECT 1 FROM approvals WHERE origin_id = ?`, taskId), "a spend card was raised").toBeNull();
+}
+
+describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 2026)", () => {
+  it("the executive briefing is parked on Codex, never Claude, never the cloud, and no network call is made", async () => {
     await setLever("FREE_ONLY");
     await bothSeatsSpent();
     await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
     const out = await materialiseDueDuties(env as any, NOW, "duty_exec_intel");
     expect(out.fired, JSON.stringify(out.skipped)).toHaveLength(1);
     const taskId = out.fired[0]!.task_id!;
-
     const hosts: string[] = [];
     restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("must not be reached"); });
     await handleTask(withKey() as any, { taskId, lane: "ops" });
-
-    expect(hosts, "a request left the Worker while both seats were spent and the lever was Free only").toEqual([]);
-
-    const steps = await all<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_step' ORDER BY ts`, taskId);
-    // OpenAI first, Claude second (owner, 24 Oct 2026).
-    expect(steps.map((s) => JSON.parse(s.detail).backend_id)).toEqual(["bk_codex", "bk_claude_code"]);
-    for (const s of steps) expect(JSON.parse(s.detail).refused).toMatch(/out of usage/);
-
-    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
-    // "Nothing paid" (24 Oct 2026): the briefing has no cloud rung beneath the seats, so it stops by
-    // name at the seats — no spend card, no router call — and the morning email says so.
-    expect(t.status, "the task did not stop").toBe("failed");
-    expect(t.error).toMatch(/bk_codex: .*out of usage/);
-    expect(await row(`SELECT 1 FROM approvals WHERE origin_id = ?`, taskId), "a spend card was raised for a route that must not exist").toBeNull();
-    expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId), "the router was asked").toHaveLength(0);
+    await expectParkedOnCodex(taskId, hosts);
     expect(await row(`SELECT 1 FROM executive_reports WHERE task_id = ?`, taskId), "a report was written by nothing").toBeNull();
-
-    // Whatever the router was asked, it chose nothing: no paid model (lever) and no free lane (privacy).
-    const dec = await all<any>(`SELECT chosen_model_id, outcome, candidates FROM routing_decisions WHERE task_id = ?`, taskId);
-    for (const d of dec) {
-      expect(d.chosen_model_id ?? null).toBeNull();
-      for (const c of JSON.parse(d.candidates) as { model_id: string; verdict: string; reason: string }[]) {
-        expect(c.verdict, `${c.model_id} was left standing`).not.toMatch(/^(chosen|allowed|ok)$/i);
-      }
-    }
-    const spend = await row<any>(`SELECT COALESCE(SUM(cost_micros),0) AS n FROM tasks WHERE id = ?`, taskId);
-    expect(spend.n).toBe(0);
   });
 
-  it("a one-seat duty on the same day stops with the plan-spent sentence, not a silent skip", async () => {
+  it("a private duty whose own ladder names Claude first still goes to Codex first and waits there", async () => {
     await setLever("FREE_ONLY");
     await bothSeatsSpent();
     const taskId = await insertTask({
@@ -97,17 +91,10 @@ describe("Free only, both seats out of usage, private work", () => {
     const hosts: string[] = [];
     restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });
     await handleTask(withKey() as any, { taskId, lane: "ops" });
-    expect(hosts).toEqual([]);
-    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
-    expect(t.status).toBe("failed");
-    expect(t.error).toMatch(/out of usage/);
-    expect(t.error).toMatch(/bk_claude_code/);
-    expect(t.error).toMatch(/bk_codex/);
+    await expectParkedOnCodex(taskId, hosts);
   });
-});
 
-describe("the same two spent seats, public-safe work", () => {
-  it("is answered by a :free rung at $0, and the lever never had to move", async () => {
+  it("public-safe work with cloud_fallback waits on Codex too: no free rung, no model called", async () => {
     await setLever("FREE_ONLY");
     await bothSeatsSpent();
     const taskId = await insertTask({
@@ -117,19 +104,26 @@ describe("the same two spent seats, public-safe work", () => {
         prompt: "In two sentences, explain what a lighthouse does.",
       }),
     });
-    const models: string[] = [];
-    restore = stubFetch(async (req) => {
-      const body = await req.clone().json().catch(() => ({} as any));
-      models.push(String((body as any).model ?? ""));
-      return completionResponse("A lighthouse warns ships of hazards. It also marks a safe harbour.", 20, 15);
-    });
+    const hosts: string[] = [];
+    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });
     await handleTask(withKey() as any, { taskId, lane: "ops" });
+    await expectParkedOnCodex(taskId, hosts);
+  });
 
-    expect(models.length, "no cloud lane answered public work").toBeGreaterThan(0);
-    for (const m of models) expect(m, `a paid model answered at Free only: ${m}`).toMatch(/:free$/);
-    const d = await row<any>(`SELECT chosen_model_id FROM routing_decisions WHERE task_id = ? ORDER BY ts DESC LIMIT 1`, taskId);
-    const chosen = await row<any>(`SELECT slug, in_micros_1k, out_micros_1k FROM models WHERE id = ?`, d.chosen_model_id);
-    expect(chosen.slug).toMatch(/:free$/);
-    expect(chosen.in_micros_1k + chosen.out_micros_1k).toBe(0);
+  it("NEGATIVE: an LP draft (Claude seat only) is never parked on Codex; with Claude spent it stops by name", async () => {
+    await setLever("FREE_ONLY");
+    await bothSeatsSpent();
+    const taskId = await insertTask({
+      status: "queued", title: "LP reply", intake_kind: "research", sensitivity: "private",
+      input: JSON.stringify({ backend_ladder: ["bk_claude_code", "bk_codex"], draft_kind: "lp_reply", prompt: "Draft the reply." }),
+    });
+    const hosts: string[] = [];
+    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });
+    await handleTask(withKey() as any, { taskId, lane: "ops" });
+    expect(hosts).toEqual([]);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
+    const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
+    expect(t.status).toBe("failed");
+    expect(t.error).toMatch(/bk_claude_code: .*out of usage/);
   });
 });

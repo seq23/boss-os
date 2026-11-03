@@ -43,8 +43,10 @@ fi
 echo $$ > "$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
-CLAUDE="$(command -v claude || echo /opt/homebrew/bin/claude)"
-[ -x "$CLAUDE" ] || { say "NAMED STOP [NO_CLAUDE_CLI] $CLAUDE"; exit 4; }
+# THE ENGINE IS ~/bin/ai-run IN THE ROLE src/shared/boss/aiRoles.mjs NAMES ("kdp_surface"; owner, 3 Nov 2026).
+AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
+[ -x "$AI_RUN" ] || { say "NAMED STOP [AI_RUN_MISSING] $AI_RUN is not installed (seq-bin); the next run retries."; exit 4; }
+AI_ROLE="$(node "$REPO/scripts/ops/lib/ai-run.mjs" role kdp_surface)" || { say "NAMED STOP [NO_AI_ROLE] kdp_surface"; exit 4; }
 [ -f "$PROMPT_FILE" ] || { say "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE"; exit 5; }
 
 # The connector is what reads the mailbox, and it is revoked by any Google password change. The daily
@@ -99,9 +101,9 @@ if [ -d "$REPO" ]; then
     || say "NAMED STOP [UNITS_NOT_READ] units sold could not be read today — see the KDP-UNITS line above; the Scorecard shows the KDP row as No number until a later run reads it."
 fi
 
-"$CLAUDE" -p "$(cat "$PROMPT_FILE")" --model "$MODEL" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1
+AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$AI_ROLE" --out "$RUN_LOG" < "$PROMPT_FILE"
 RC=$?
-say "=== claude exited rc=$RC ==="
+say "=== ai-run --role $AI_ROLE exited rc=$RC ==="
 
 # ─── ONE POSTER. THE SENTINEL COMES FROM THE FILE, NOT FROM THE MODEL ────────
 #
