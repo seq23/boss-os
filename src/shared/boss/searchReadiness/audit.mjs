@@ -1383,7 +1383,7 @@ const short = (s) => s.domain;
  * broken, what was fixed, what is being built; plain words, no ids, no commands). `previous` is
  * last week's result so a fix can be named as fixed.
  */
-export function morningLines(checklist, allResults, { previous = null, queued = 0, lastRepair = null, max = 4, categories = null, redLines = [] } = {}) {
+export function morningLines(checklist, allResults, { previous = null, queued = 0, lastRepair = null, max = 4, categories = null, redLines = [], goldLines = [] } = {}) {
   // Her own sites carry the routine lines; a friend's site only when it needs her (a named stop).
   const mine = (x) => siteSection(x.site, categories) === "mine";
   const siteResults = (allResults ?? []).filter(mine);
@@ -1411,7 +1411,7 @@ export function morningLines(checklist, allResults, { previous = null, queued = 
   const out = lines.slice(0, needsHer.length ? max - 1 : max);
   if (needsHer.length) out.push(`Friends' sites that need you: ${needsHer.slice(0, 2).join(", ")}${needsHer.length > 2 ? `, and ${needsHer.length - 2} more` : ""}.`);
   // Leads next to Google's visits, her own sites only (3 Nov 2026, site-leads.mjs).
-  return [...redTop(redLines, allResults, categories), ...out, ...leadsMorningLines(siteResults)];
+  return [...redTop(redLines, allResults, categories), ...goldTop(goldLines, allResults, categories), ...out, ...leadsMorningLines(siteResults)];
 }
 
 /**
@@ -1430,6 +1430,23 @@ function redTop(red, allResults, categories) {
   const out = [...blind, ...mine.slice(0, MAX_RED).map((r) => `Red: ${r.line}`)];
   if (mine.length > MAX_RED) out.push(`And ${mine.length - MAX_RED} more red lines on the checklist page.`);
   if (friends.length) out.push(`Friends' sites with a red line: ${friends.slice(0, 3).join(", ")}${friends.length > 3 ? `, and ${friends.length - 3} more` : ""}.`);
+  return out;
+}
+
+/**
+ * THE GOLD LINES (3 Nov 2026): a quarter or more down two weeks running ("slipping"), each with its
+ * diagnosis's most likely cause. A nudge, never an alarm, so after the red lines. Friends' and
+ * clients' sites are named in one line only; their numbers and diagnosis stay in their own row on
+ * the checklist page (client data never feeds her own lines).
+ */
+function goldTop(gold, allResults, categories) {
+  if (!gold?.length) return [];
+  const siteOf = new Map((allResults ?? []).map((x) => [x.site?.domain, x.site]));
+  const mine = gold.filter((r) => siteSection(siteOf.get(r.domain) ?? { domain: r.domain }, categories) !== "friends");
+  const friends = [...new Set(gold.filter((r) => !mine.includes(r)).map((r) => r.domain))];
+  const out = mine.slice(0, MAX_RED).map((r) => `Slipping: ${r.line}`);
+  if (mine.length > MAX_RED) out.push(`And ${mine.length - MAX_RED} more slipping sites on the checklist page.`);
+  if (friends.length) out.push(`Friends' sites slipping in Google: ${friends.slice(0, 3).join(", ")}${friends.length > 3 ? `, and ${friends.length - 3} more` : ""}. Why is on their row of the checklist page.`);
   return out;
 }
 

@@ -8,7 +8,10 @@
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { outcomeVerdict, outcomeWindows, redLines, weeklyBriefs, OUTCOME } from "../src/shared/boss/searchReadiness/search-outcomes.mjs";
+import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay, OUTCOME } from "../src/shared/boss/searchReadiness/search-outcomes.mjs";
+import { diagnoseDrop } from "../src/shared/boss/searchReadiness/drop-diagnosis.mjs";
+import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
+import { renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
 import { qualitySample, pickSample, repeatedSlots, similarity } from "../src/shared/boss/searchReadiness/page-quality-sample.mjs";
 import { consolidationQueue, nextFirstSeen } from "../src/shared/boss/searchReadiness/consolidation-queue.mjs";
 import { loadChecklist, loadSites, morningLines, workQueue, fixBriefs } from "../src/shared/boss/searchReadiness/audit.mjs";
@@ -170,7 +173,138 @@ describe("the consolidation queue (f4 made real)", () => {
 });
 
 describe("constants stay what the owner approved", () => {
-  it("drop > 50%, prior ≥ 50 impressions, ≥ 200 pages at < 1 per 10", () => {
-    expect(OUTCOME).toMatchObject({ DROP: 0.5, MIN_PRIOR_IMPRESSIONS: 50, DENSITY_MIN_URLS: 200, DENSITY_PER_PAGE: 0.1, WINDOW_DAYS: 28 });
+  it("drop > 50% red, ≥ 25% two weeks gold, prior ≥ 50 impressions, ≥ 200 pages at < 1 per 10", () => {
+    expect(OUTCOME).toMatchObject({ DROP: 0.5, SLIP: 0.25, MIN_PRIOR_IMPRESSIONS: 50, DENSITY_MIN_URLS: 200, DENSITY_PER_PAGE: 0.1, WINDOW_DAYS: 28 });
+  });
+});
+
+/**
+ * THE EARLY WARNING AND THE DIAGNOSIS (owner, 3 Nov 2026). horselegalguide.com sat at -27% and
+ * hicksconsulting.org at -21%, both unflagged under the 50% rule. Gold ("slipping") needs a quarter
+ * down on two weekly audits in a row; one week is nothing; half is still red. Either one carries a
+ * read-only diagnosis built from the page and search rows, with an unread source said "not read".
+ */
+describe("slipping: a quarter down two weeks running is gold", () => {
+  const now = T("2026-11-02");
+  const w = outcomeWindows(now);
+  const rowsAt = (prev: number, cur: number) => [...steady(w.previous.start, 28, prev, 3), ...steady(w.current.start, 28, cur, 3)];
+  const lastWeek = (prev: number, cur: number) => ({ current: { impressions: cur * 28 }, previous: { impressions: prev * 28 } });
+
+  it("25%+ down this week and last week → gold, with its line", () => {
+    const v = outcomeVerdict({ read: { ok: true, rows: rowsAt(30, 21) }, now, lastWeek: lastWeek(30, 22) });
+    expect(v.status).toBe("gold");
+    expect(v.reasons.map((r: any) => r.rule)).toEqual(["impressions_slipping"]);
+    expect(v.slipping_weeks).toBe(2);
+    const site = siteOf("uscisexam.com");
+    expect(slipLines([{ site, outcome: v }])).toHaveLength(1);
+    expect(redLines([{ site, outcome: v }])).toEqual([]); // gold is never red
+  });
+
+  it("one week only → nothing", () => {
+    const v = outcomeVerdict({ read: { ok: true, rows: rowsAt(30, 21) }, now, lastWeek: lastWeek(30, 28) });
+    expect(v.status).toBe("green");
+    expect(v.slipping_weeks).toBe(1);
+    expect(outcomeVerdict({ read: { ok: true, rows: rowsAt(30, 21) }, now, lastWeek: null }).status).toBe("green");
+  });
+
+  it("50%+ down is red, never gold, even when last week slipped too", () => {
+    const v = outcomeVerdict({ read: { ok: true, rows: rowsAt(30, 12) }, now, lastWeek: lastWeek(30, 20) });
+    expect(v.status).toBe("red");
+    expect(v.reasons.map((r: any) => r.rule)).toEqual(["impressions_drop"]);
+  });
+
+  it("a slip below the volume floor is noise", () => {
+    const v = outcomeVerdict({ read: { ok: true, rows: rowsAt(1, 0.5) }, now, lastWeek: lastWeek(1, 0.5) });
+    expect(v.status).toBe("green");
+  });
+
+  it("with no stored week, last week is recomputed from rows that reach back far enough", () => {
+    const from = new Date(Date.parse(w.previous.start) - 7 * 86_400_000).toISOString().slice(0, 10);
+    // 30 a day until a week before the newest window, 21 that week, 18 since: both weeks slip a quarter
+    const fell = [...steady(from, 28, 30, 3), ...steady(new Date(Date.parse(w.current.start) - 7 * 86_400_000).toISOString().slice(0, 10), 7, 21, 3), ...steady(w.current.start, 28, 18, 3)];
+    const v = outcomeVerdict({ read: { ok: true, from, rows: fell }, now });
+    expect(v.last_week.source).toBe("recomputed");
+    expect(v.status).toBe("gold");
+    expect(outcomeVerdict({ read: { ok: true, rows: fell }, now }).status).toBe("green"); // no `from`: nothing recomputed
+  });
+
+  it("last week is the newest dated audit 5 to 10 days back", () => {
+    expect(pickLastWeekDay(["2026-10-25", "2026-10-26", "2026-10-28", "2026-10-30", "2026-11-02"], "2026-11-03")).toBe("2026-10-28");
+    expect(pickLastWeekDay(["2026-11-01", "2026-10-01"], "2026-11-03")).toBeNull();
+  });
+});
+
+describe("the drop diagnosis (read-only)", () => {
+  const H = "https://horselegalguide.com";
+  const pages = {
+    ok: true,
+    previous: [{ key: `${H}/boarding-contracts`, impressions: 400 }, { key: `${H}/liability-waivers`, impressions: 250 }, { key: `${H}/sale-disputes`, impressions: 120 }, { key: `${H}/vet-liens`, impressions: 89 }],
+    current: [{ key: `${H}/boarding-contracts`, impressions: 310 }, { key: `${H}/liability-waivers`, impressions: 200 }, { key: `${H}/sale-disputes`, impressions: 115 }],
+  };
+  const queries = { ok: true, previous: [{ key: "horse boarding contract", impressions: 300 }, { key: "equine liability", impressions: 200 }], current: [{ key: "horse boarding contract", impressions: 240 }, { key: "equine liability", impressions: 190 }] };
+
+  it("lists the top losing pages and the page that fell out, most likely cause first, at most six lines", () => {
+    const d = diagnoseDrop({
+      pages, queries,
+      inspections: { ok: true, items: [{ url: `${H}/boarding-contracts`, verdict: "PASS", googleCanonical: `${H}/boarding-contracts`, userCanonical: `${H}/boarding-contracts/` }, { url: `${H}/vet-liens`, verdict: "NEUTRAL", coverageState: "Crawled - currently not indexed" }] },
+      sitemap: { now: 325, before: 325 }, commits: { ok: true, repo: "horse-legal-guide-velocity", count: 4, recent: 1 },
+    });
+    expect(d.status).toBe("diagnosed");
+    expect(d.top_pages.map((r: any) => r.key)).toEqual([`${H}/boarding-contracts`, `${H}/vet-liens`, `${H}/liability-waivers`, `${H}/sale-disputes`]);
+    expect(d.lost_pages).toEqual([`${H}/vet-liens`]);
+    expect(d.text.length).toBeLessThanOrEqual(6);
+    expect(d.text[0]).toMatch(/^CONFIRMED: 1 of 2 top losing pages are not in Google's index now \(Crawled - currently not indexed\)/);
+    expect(d.text.some((l: string) => /^CONFIRMED: Pages that lost the most Google showings: \/boarding-contracts \(400 → 310\)/.test(l))).toBe(true);
+    expect(d.text.some((l: string) => /^SUSPECTED: 4 commits landed in horse-legal-guide-velocity/.test(l))).toBe(true);
+    // a trailing slash is the same address, never "Google chose a different one"
+    expect(d.text.some((l: string) => /different main address/.test(l))).toBe(false);
+  });
+
+  it("an unread Search Console is 'not read: <reason>', never zero losses", () => {
+    const why = "Search Console answered 403 for the page rows";
+    const d = diagnoseDrop({ pages: { ok: false, why }, queries: { ok: false, why }, inspections: { ok: false, why }, sitemap: { now: 10, before: 10 }, commits: { ok: true, repo: "r", count: 0 } });
+    expect(d.status).toBe("not_read");
+    expect(d.text).toEqual([`not read: ${why}`]);
+    expect(d.top_pages).toEqual([]);
+  });
+
+  it("an unread side source is named in the diagnosis, not dropped", () => {
+    const d = diagnoseDrop({ pages, queries, inspections: { ok: false, why: "URL Inspection answered 429" }, sitemap: { now: 325, before: null }, commits: { ok: false, why: "gh could not read r's commits" } });
+    expect(d.status).toBe("diagnosed");
+    expect(d.text.at(-1)).toMatch(/^Not read: .*URL Inspection \(URL Inspection answered 429\).*commits \(gh could not read r's commits\)/);
+  });
+});
+
+describe("where the warning and the diagnosis go", () => {
+  const now = T("2026-11-02");
+  const w = outcomeWindows(now);
+  const rows = [...steady(w.previous.start, 28, 30, 3), ...steady(w.current.start, 28, 21, 3)];
+  const gold = outcomeVerdict({ read: { ok: true, rows }, now, lastWeek: { current: { impressions: 600 }, previous: { impressions: 840 } } });
+  const diagnosis = { status: "diagnosed", lines: [{ confidence: "CONFIRMED", text: "The sitemap lists 10 pages, down from 40 a week ago" }], text: ["CONFIRMED: The sitemap lists 10 pages, down from 40 a week ago."] };
+  const categories = parseRepoCategories("## Repo categories\n**Mine**\n- Biz: uscisexam\n**Friends & clients**\n- Friends: horse-legal-guide-velocity, hicks-consulting-canonical\n**The system**\n- boss-os\n");
+
+  it("her own site: a plain Slipping line with the most likely cause, after the red lines", () => {
+    const res = [{ site: siteOf("uscisexam.com"), results: [], outcome: gold, diagnosis }];
+    const lines = morningLines(checklist, res, { goldLines: slipLines(res) });
+    expect(lines[0]).toMatch(/^Slipping: uscisexam\.com: Google showed it 588 times .* Most likely \(confirmed\): the sitemap lists 10 pages/);
+    for (const l of lines) expect(lineProblems(l), l).toEqual([]);
+    expect(weeklyBriefs(res.map((r) => ({ ...r, host: "uscisexam.com" })))[0]).toMatchObject({ kind: "outcome", disposition: "weekly" });
+  });
+
+  it("Horse and Hicks: diagnosis in their own row only, no brief, never folded", () => {
+    const horse = siteOf("horselegalguide.com"), hicks = siteOf("hicksconsulting.org");
+    expect(horse.published_frozen && hicks.published_frozen).toBeTruthy();
+    const consolidation = { status: "queued", candidates: 2, hubs: [{ hub: "/guides/", hubUrl: `https://horselegalguide.com/guides/`, urls: ["https://horselegalguide.com/guides/a"], total: 1 }] };
+    const quality = { red: true, line: "x", pages: [{ url: "u", failing: ["filler"], notes: [] }] };
+    const res = [{ site: horse, host: "horselegalguide.com", results: [], outcome: gold, diagnosis, consolidation, quality }, { site: hicks, host: "hicksconsulting.org", results: [], outcome: { ...gold, status: "red" }, diagnosis, consolidation, quality }];
+    expect(weeklyBriefs(res)).toEqual([]);
+    const lines = morningLines(checklist, res, { goldLines: slipLines(res), redLines: redLines(res), categories });
+    expect(lines.join("\n")).not.toMatch(/588|sitemap lists/); // a client's numbers stay in its row
+    expect(lines.some((l) => /^Friends' sites slipping in Google: horselegalguide\.com\./.test(l))).toBe(true);
+    const html = renderStandings({ sites: res, red_lines: redLines(res), gold_lines: slipLines(res) }, checklist, { categories });
+    const row = html.split("<tr").find((r) => r.includes('data-site="horselegalguide.com"'))!;
+    expect(row).toMatch(/class="gold" data-outcome="gold"/);
+    expect(row).toMatch(/CONFIRMED: The sitemap lists 10 pages/);
+    expect(html).not.toMatch(/class="gold-lines"/); // her own gold list holds no friend's site
   });
 });

@@ -33,7 +33,7 @@
  */
 import { createSign } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +42,8 @@ import { passingItems,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
-import { outcomeVerdict, outcomeWindows, redLines, weeklyBriefs } from "../../src/shared/boss/searchReadiness/search-outcomes.mjs";
+import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay } from "../../src/shared/boss/searchReadiness/search-outcomes.mjs";
+import { diagnoseDrop, windowLosses, DIAG } from "../../src/shared/boss/searchReadiness/drop-diagnosis.mjs";
 import { pickSample, qualitySample } from "../../src/shared/boss/searchReadiness/page-quality-sample.mjs";
 import { consolidationQueue, nextFirstSeen, CONSOLIDATION } from "../../src/shared/boss/searchReadiness/consolidation-queue.mjs";
 import { readRepoCategories } from "./lib/repo-categories.mjs";
@@ -184,13 +185,85 @@ async function readOutcomes(g, gsc, site) {
   if (!gsc.property) return no(`no Search Console property for ${site.domain} is shared with the audit's service account`);
   const enc = encodeURIComponent(gsc.property);
   const w = outcomeWindows();
-  const d = await gscGet(g.token, `sites/${enc}/searchAnalytics/query`, { startDate: w.start, endDate: w.end, dimensions: ["date"], rowLimit: 500 });
+  // A week further back than the two windows, so last week's verdict can be recomputed (the gold rule).
+  const from = new Date(Date.parse(w.start) - 7 * 86_400_000).toISOString().slice(0, 10);
+  const d = await gscGet(g.token, `sites/${enc}/searchAnalytics/query`, { startDate: from, endDate: w.end, dimensions: ["date"], rowLimit: 500 });
   const pStart = new Date(Date.parse(w.end) - (CONSOLIDATION.WINDOW_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
   const p = await gscGet(g.token, `sites/${enc}/searchAnalytics/query`, { startDate: pStart, endDate: w.end, dimensions: ["page"], rowLimit: 25000 });
   return {
-    daily: d.__error ? { ok: false, why: `Search Console answered ${d.__error} for the daily numbers` } : { ok: true, rows: (d.rows ?? []).map((r) => ({ date: r.keys[0], impressions: r.impressions, clicks: r.clicks })) },
+    daily: d.__error ? { ok: false, why: `Search Console answered ${d.__error} for the daily numbers` } : { ok: true, from, rows: (d.rows ?? []).map((r) => ({ date: r.keys[0], impressions: r.impressions, clicks: r.clicks })) },
     pages: p.__error ? { ok: false, why: `Search Console answered ${p.__error} for the page rows` } : { ok: true, pages: (p.rows ?? []).filter((r) => r.impressions > 0).map((r) => r.keys[0]) },
   };
+}
+
+/**
+ * THE DROP DIAGNOSIS'S READS (3 Nov 2026), only for a red or gold outcome. READ-ONLY: Search
+ * Console rows by page and by search for both windows, URL Inspection on the top losing pages, and
+ * the commit count in the site's repo over the windows (`gh api`, GET). Each unread source is
+ * { ok: false, why }; drop-diagnosis.mjs says it "not read", never 0.
+ */
+async function readDiagnosis(g, gsc, site, outcome, { sitemapNow, lastWeekSite, quality, consolidation }) {
+  const no = (why) => ({ ok: false, why });
+  const sitemap = { now: sitemapNow, before: lastWeekSite?.sitemap?.ok ? lastWeekSite.sitemap.urls : null };
+  const commits = readCommits(site.repo, outcome.windows);
+  if (!g.ok || !gsc?.ok || !gsc.property) {
+    const why = !g.ok ? g.why : !gsc?.ok ? (gsc?.why ?? "Search Console was not read") : `no Search Console property for ${site.domain}`;
+    return diagnoseDrop({ pages: no(why), queries: no(why), inspections: no(why), sitemap, commits, quality, consolidation });
+  }
+  const enc = encodeURIComponent(gsc.property);
+  const q = (dim, win) => gscGet(g.token, `sites/${enc}/searchAnalytics/query`, { startDate: win.start, endDate: win.end, dimensions: [dim], rowLimit: 5000 });
+  const [pc, pp, qc, qp] = await Promise.all([q("page", outcome.windows.current), q("page", outcome.windows.previous), q("query", outcome.windows.current), q("query", outcome.windows.previous)]);
+  const rows = (r) => (r.rows ?? []).map((x) => ({ key: x.keys[0], impressions: x.impressions, clicks: x.clicks }));
+  const pair = (a, b, what) => (a.__error || b.__error ? no(`Search Console answered ${a.__error ?? b.__error} for the ${what} rows`) : { ok: true, current: rows(a), previous: rows(b) });
+  const pages = pair(pc, pp, "page"), queries = pair(qc, qp, "search");
+  let inspections;
+  if (!pages.ok) inspections = no(pages.why);
+  else {
+    const urls = windowLosses(pages.current, pages.previous).slice(0, DIAG.INSPECT).map((r) => r.key);
+    const items = [];
+    for (const url of urls) {
+      const res = await fetch("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", { method: "POST", headers: { authorization: `Bearer ${g.token}`, "content-type": "application/json" }, body: JSON.stringify({ inspectionUrl: url, siteUrl: gsc.property }) }).catch(() => null);
+      if (!res?.ok) { items.push({ url, why: `URL Inspection answered ${res?.status ?? "no answer"}` }); continue; }
+      const r = (await res.json())?.inspectionResult?.indexStatusResult ?? {};
+      items.push({ url, verdict: r.verdict ?? null, coverageState: r.coverageState ?? null, googleCanonical: r.googleCanonical ?? null, userCanonical: r.userCanonical ?? null, lastCrawlTime: r.lastCrawlTime ?? null, robotsTxtState: r.robotsTxtState ?? null, indexingState: r.indexingState ?? null });
+    }
+    inspections = { ok: true, items };
+  }
+  return diagnoseDrop({ pages, queries, inspections, sitemap, commits, quality, consolidation });
+}
+
+/** Commits on the site repo's default branch over both windows, and in the newest one (gh, GET). */
+function readCommits(repo, windows) {
+  if (!repo) return { ok: false, why: "the site has no repo" };
+  const count = (since, until) => {
+    const r = spawnSync("gh", ["api", "--paginate", `repos/${OWNER}/${repo}/commits?since=${since}T00:00:00Z&until=${until}T23:59:59Z&per_page=100`, "--jq", ".[].sha"], { encoding: "utf8", timeout: 60_000 });
+    return r.status === 0 ? r.stdout.split("\n").filter(Boolean).length : null;
+  };
+  const all = count(windows.previous.start, windows.current.end);
+  if (all == null) return { ok: false, why: `gh could not read ${repo}'s commits` };
+  return { ok: true, repo, count: all, recent: count(windows.current.start, windows.current.end) ?? 0 };
+}
+
+/**
+ * Last week's audit, from the dated results files (results-<day>.json): the newest 5-10 days ago that
+ * holds each site. → Map domain → that site's row, plus `day`. A missing history is an empty map.
+ */
+function lastWeekRows(today) {
+  const days = existsSync(OUT) ? readdirSync(OUT).map((f) => /^results-(\d{4}-\d{2}-\d{2})\.json$/.exec(f)?.[1]).filter(Boolean) : [];
+  const out = new Map();
+  const tried = new Set();
+  for (;;) {
+    const day = pickLastWeekDay(days.filter((d) => !tried.has(d)), today);
+    if (!day) break;
+    tried.add(day);
+    try {
+      for (const s of JSON.parse(readFileSync(join(OUT, `results-${day}.json`), "utf8")).sites ?? []) {
+        const d = s.site?.domain;
+        if (d && !out.has(d)) out.set(d, { ...s, day });
+      }
+    } catch { /* an unreadable file: the older one is tried */ }
+  }
+  return out;
 }
 
 // ─── PageSpeed Insights (free, keyless) ───────────────────────────────────────
@@ -301,7 +374,7 @@ async function readRepo(name) {
 
 // ─── one site ─────────────────────────────────────────────────────────────────
 
-async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}) {
+async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}, lastWeekSite = null) {
   const t0 = Date.now();
   const start = await get(`https://${site.domain}/`);
   const host = start.final ? new URL(start.final).hostname : site.domain;
@@ -374,7 +447,9 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
 
   // Outcomes, page quality and the fold queue (2 Nov 2026): notes and red lines, never a failing check.
   const read = await readOutcomes(g, gsc, site);
-  const outcome = outcomeVerdict({ read: read.daily, sitemapUrls: sitemap.ok ? sitemap.urls.size : null });
+  // Last week's stored outcome when that run had one; otherwise recomputed from this week's rows.
+  const lwo = lastWeekSite?.outcome;
+  const outcome = outcomeVerdict({ read: read.daily, sitemapUrls: sitemap.ok ? sitemap.urls.size : null, ...(lwo?.current && lwo?.previous ? { lastWeek: { current: lwo.current, previous: lwo.previous, source: "stored", day: lastWeekSite.day } } : {}) });
   // Leads (3 Nov 2026): her own sites only; a client site is never read (site-leads.mjs).
   const leads = isOwnSite(site) ? leadVerdict({ site, read: await readLeads(site, macContext()), outcome }) : null;
   const qUrls = pickSample(sitemap.urls, { exclude: protectedPaths });
@@ -383,6 +458,11 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
   const consolidation = sitemap.ok
     ? consolidationQueue({ sitemapUrls: [...sitemap.urls], lastmods: sitemap.urlLastmod, firstSeen, gsc: read.pages, protectedPaths })
     : { status: "not_read", candidates: 0, hubs: [], why: sitemap.why ?? "no sitemap" };
+
+  // Red or gold → the read-only diagnosis (3 Nov 2026).
+  const diagnosis = outcome.status === "red" || outcome.status === "gold"
+    ? await readDiagnosis(g, gsc, site, outcome, { sitemapNow: sitemap.ok ? sitemap.urls.size : null, lastWeekSite, quality, consolidation })
+    : null;
 
   // The protected pages: hash and buy link, every run.
   const protectedReport = [];
@@ -404,7 +484,7 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
     site, host, seconds: Math.round((Date.now() - t0) / 1000), home_status: home.status,
     sitemap: { ok: sitemap.ok, urls: sitemap.urls.size, children: sitemap.children.map(({ url, status, count }) => ({ url, status, count })) },
     coverage: coverage.error ? { error: coverage.error } : { targets: coverage.targets.length, missing: coverage.targets.filter((t) => !t.inSitemap || t.status !== 200).map((t) => t.url) },
-    protected: protectedReport, results, outcome, ...(leads ? { leads } : {}), quality, consolidation, sitemapUrls: [...sitemap.urls],
+    protected: protectedReport, results, outcome, ...(diagnosis ? { diagnosis } : {}), ...(leads ? { leads } : {}), quality, consolidation, sitemapUrls: [...sitemap.urls],
   };
 }
 
@@ -454,9 +534,10 @@ async function main() {
   const firstSeenPath = join(OUT, "first-seen.json");
   const firstSeen = existsSync(firstSeenPath) ? JSON.parse(readFileSync(firstSeenPath, "utf8")) : {};
   const siteResults = [];
+  const lastWeek = lastWeekRows(new Date().toISOString().slice(0, 10));
   for (const site of sites) {
     try {
-      const r = await auditSite(site, checklist, g, gscSites, portfolio, firstSeen[site.domain] ?? {});
+      const r = await auditSite(site, checklist, g, gscSites, portfolio, firstSeen[site.domain] ?? {}, lastWeek.get(site.domain) ?? null);
       siteResults.push(r);
       say(summaryLines([r])[0]);
       if (r.leads) say(`  ${r.leads.line}${r.leads.red ? " — RED: people come, nobody acts" : ""}`);
@@ -473,6 +554,7 @@ async function main() {
   for (const s of siteResults) if (s.sitemapUrls) { firstSeen[s.site.domain] = nextFirstSeen(firstSeen[s.site.domain], s.sitemapUrls, day); delete s.sitemapUrls; }
   if (!only) writeJson(firstSeenPath, firstSeen);
   const red = redLines(siteResults);
+  const gold = slipLines(siteResults);
   const prevPath = join(OUT, "latest.json");
   const previous = existsSync(prevPath) ? JSON.parse(readFileSync(prevPath, "utf8")) : null;
   const report = {
@@ -481,6 +563,8 @@ async function main() {
     definition: defs.source,
     // The red lines head the report and the Monday email: outcomes and quality, never presence.
     red_lines: red,
+    // Gold (3 Nov 2026): a quarter or more down two weeks running, each with its diagnosis.
+    gold_lines: gold,
     sites: siteResults.map((s) => ({ ...s, failing: s.results.filter((r) => r.status === "fail").map((r) => r.id) })),
   };
   writeJson(join(OUT, `results-${day}.json`), report);
@@ -498,6 +582,9 @@ async function main() {
   const fails = siteResults.reduce((n, s) => n + s.results.filter((r) => r.status === "fail").length, 0);
   say(`\nRED LINES (${red.length}):${red.length ? "" : " none"}`);
   for (const r of red) say(`  RED ${r.line}`);
+  say(`SLIPPING (${gold.length}):${gold.length ? "" : " none"}`);
+  for (const r of gold) say(`  GOLD ${r.line}`);
+  for (const s of siteResults) for (const l of s.diagnosis?.text ?? []) say(`    ${s.site.domain} · ${l}`);
   for (const s of siteResults) if (s.outcome?.status === "not_read") say(`  ${s.site.domain}: search results not read: ${s.outcome.why}`);
   say(`\nSEARCH-READINESS: sites=${siteResults.length} checks=${ran} failing=${fails} briefs=${briefs.length} → ${join(OUT, `results-${day}.json`)}`);
 
@@ -505,7 +592,7 @@ async function main() {
     const { writeMorningSection } = await import("../../src/shared/boss/mail/morning.mjs");
     const statusPath = join(OUT, "fix-status.json");
     const lastRepair = existsSync(statusPath) ? JSON.parse(readFileSync(statusPath, "utf8")) : null;
-    const lines = morningLines(checklist, siteResults, { redLines: red, categories: readRepoCategories(), previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
+    const lines = morningLines(checklist, siteResults, { redLines: red, goldLines: gold, categories: readRepoCategories(), previous: previous?.day !== day ? previous : null, queued: briefs.filter((b) => b.disposition === "fix").length, lastRepair });
     writeMorningSection("grid_repos", { lines, link: { label: "See every site's checks →", url: "https://boss.sequoiataylor.com/?view=morning" } });
     say(`Morning section written: ${lines.length} lines.`);
   }

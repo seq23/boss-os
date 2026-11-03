@@ -20,7 +20,9 @@ const STYLE = `
   .check b { font-weight: 600; }
   .check.manual b { color: var(--muted, #666); }
   .standings td:first-child { white-space: nowrap; }
-  .standings .ok { color: var(--ok, #2b7a4b); }`;
+  .standings .ok { color: var(--ok, #2b7a4b); }
+  .gold { color: var(--warn); }
+  .diag { margin: 4px 0 0; padding-left: 18px; font-size: 13px; white-space: normal; }`;
 
 export function renderItem(item) {
   const label = item.title_html ?? esc(item.title);
@@ -71,8 +73,24 @@ function standingRows(sites, title) {
       const loopNote = res.find((r) => r.status === "skipped")?.detail;
       // The leads line under the site's name (3 Nov 2026): her own sites only; a client site has none.
       const leads = s.leads?.line ? `<br><span class="${s.leads.red ? "bad" : "muted"}" data-leads="${esc(s.leads.status)}">${esc(s.leads.line)}</span>` : "";
-      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}${leads}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
+      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}${leads}${outcomeCell(s)}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
     });
+}
+
+/**
+ * The outcome under the site's name (3 Nov 2026): red (more than half gone) or gold (slipping) with
+ * the diagnosis, at most six lines, in the site's OWN row; "not read: <reason>" when Google's numbers
+ * were not read. A client's numbers never leave its row.
+ */
+function outcomeCell(s) {
+  const o = s.outcome;
+  if (!o) return "";
+  if (o.status === "not_read") return `<br><span class="muted" data-outcome="not_read">Google's numbers: not read: ${esc(o.why ?? "")}</span>`;
+  if (o.status !== "red" && o.status !== "gold") return "";
+  const cls = o.status === "red" ? "bad" : "gold";
+  const label = o.status === "red" ? "Google dropped it" : "Slipping in Google";
+  const diag = (s.diagnosis?.text ?? []).slice(0, 7).map((l) => `<li>${esc(l)}</li>`).join("");
+  return `<br><span class="${cls}" data-outcome="${o.status}">${label}: ${esc(o.reasons.map((r) => r.text).join("; "))}</span>${diag ? `<ul class="diag" data-diagnosis="${esc(s.diagnosis.status)}">${diag}</ul>` : ""}`;
 }
 
 function table(rows) {
@@ -102,6 +120,8 @@ export function renderStandings(results, checklist, { categories = null } = {}) 
     `  <h2 id="standings">Where every site stands</h2>`,
     // Outcome and quality red lines first (2 Nov 2026): did Google keep showing the site, are the pages worth quoting.
     ...((results?.red_lines ?? []).length ? [`  <ul class="red-lines" data-red="${results.red_lines.length}">`, ...results.red_lines.map((r) => `    <li class="bad">${esc(r.line)}</li>`), `  </ul>`] : []),
+    // Gold, her own sites only up here (a friend's stays in its own row below).
+    ...(() => { const g = (results?.gold_lines ?? []).filter((r) => mine.some((s) => s.site?.domain === r.domain)); return g.length ? [`  <ul class="gold-lines" data-gold="${g.length}">`, ...g.map((r) => `    <li class="gold">Slipping: ${esc(r.line)}</li>`), `  </ul>`] : []; })(),
     ...(categories?.problem ? [`  <p class="muted">Your repo categories could not be read (${esc(categories.problem)}), so every site is listed here.</p>`] : []),
     `  <p data-standings="${sum.sites}/${sum.checks}/${sum.failing}">The Monday audit of ${esc(sum.day ?? "the latest week")}: <b>${sum.sites} sites, ${sum.checks} automatic checks with a verdict, ${sum.failing} failing</b>${sum.notChecked ? ` (${sum.notChecked} could not be checked that week)` : ""}. Every failure is a fix brief Danielle works on Tuesday.</p>`,
     ...table(standingRows(mine, title)),

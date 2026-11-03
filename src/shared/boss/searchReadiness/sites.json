@@ -1083,6 +1083,7 @@
   },
   {
    "domain": "horselegalguide.com",
+   "published_frozen": "owner, 3 Nov 2026 (friends brain): never touch anything already published; no edit, redirect, merge, unpublish or fold of a published page. Diagnosis only.",
    "repo": "horse-legal-guide-velocity",
    "category": "client",
    "entity_parent": "client",
@@ -1101,6 +1102,7 @@
   },
   {
    "domain": "hicksconsulting.org",
+   "published_frozen": "owner, 3 Nov 2026 (friends brain): never touch anything already published; no edit, redirect, merge, unpublish or fold of a published page. Diagnosis only.",
    "repo": "hicks-consulting-canonical",
    "category": "client",
    "entity_parent": "client",

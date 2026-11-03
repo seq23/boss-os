@@ -243,6 +243,16 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    Red lines head "The grid repos" section and the checklist page; their briefs are `disposition:
    "weekly"`, worked once in the repair run's first round (`--plan` ONCE lines), never counted as
    workable. Pinned by `tests/searchOutcomes.test.ts` (the real WPP-llm August rows must go red).
+   **Slipping (owner, 3 Nov 2026):** impressions 25%+ below the 28 days before on two weekly audits in
+   a row (same 50-impression floor; last week from the dated `results-<day>.json` 5-10 days back, or
+   recomputed from the same daily rows) is GOLD, never red; 50% stays red. Either one carries a
+   read-only diagnosis (`drop-diagnosis.mjs`, read by the runner's `readDiagnosis`): losing pages and
+   searches, pages Google stopped showing, URL Inspection on the top five losers, sitemap count against
+   last week, commits in the site's repo, the quality sample and fold queue; ≤6 lines, most likely
+   first, CONFIRMED or SUSPECTED, unread sources "not read". In latest.json (`gold_lines`, each site's
+   `diagnosis`), the site's row on the checklist page and its Monday line. Sites with
+   `published_frozen` in sites.json (horselegalguide.com, hicksconsulting.org: never touch a published
+   page) get diagnosis only: no outcome, quality or fold brief; their numbers stay in their own row.
 9. **Leads, not only visits (owner, 3 Nov 2026).** WPP-llm had Google clicks for months and zero
    inquiries, unseen. Each of HER OWN sites (category side_business / own_business) names in sites.json
    a `lead_source` where its one action is already counted (D1 count, Airtable lead table, Stripe or
