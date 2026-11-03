@@ -915,11 +915,11 @@
   {
    "id": "f2",
    "phase": "F",
-   "title": "New pages publish straight away under a quality gate; nothing waits for a Search Console number",
-   "title_html": "New pages publish straight away under a quality gate; nothing waits for a Search Console number",
+   "title": "New pages publish only when distinct, under a per-site cap that grows with Google results",
+   "title_html": "New pages publish only when distinct, under a per-site cap that grows with Google results",
    "burned": false,
-   "why_html": "Owner, 1 Nov 2026: \"we just want to dominate aeo geo SEO and move fast.\" Holding pages until their query had a number (the 11 Oct rule) meant the selling sites barely grew. Speed now comes from publishing, safety from the quality gate and the 2/4/8-week checks that undo or merge what does not earn its place.",
-   "how_html": "The shared search-loop engine publishes each new page the day it passes the site's quality gate (health and dental sites: a strict gate, no claims, no invented reviews). No config flag holds pages until measured, and the weekly <code>search-loop-week</code> report says how many pages went live.",
+   "why_html": "Owner, 3 Nov 2026 (supersedes the 1 Nov pace): WPP-llm, theindustryguides.com, spryexecutiveos.com, weddingbudgetspreadsheet.com and howweknowdeep.com lost most of their Google exposure under thousands of near-identical template pages, and recovered only by cutting to a few dozen to a few hundred distinct pages. Volume of look-alike pages makes Google distrust the whole site; one strong page beats ten variants.",
+   "how_html": "The shared search-loop engine publishes a new page only when it answers a question no existing page on that site answers (same intent becomes a strengthen brief for the existing page), and only while the site is under its live-page cap. The cap rises only when the site's Google impressions beat the previous 28 days. The weekly <code>search-loop-week</code> report says how many pages were published, held by the cap, or turned into strengthen briefs.",
    "check": {
     "mode": "auto",
     "type": "publish_straight_away",
