@@ -11,6 +11,7 @@ import { writeEvidence } from "../lib/evidence";
 import { getSetting } from "../lib/settings";
 import { loadEnvelope } from "../intake/envelope";
 import { routeCompletion, BudgetExceeded, RoutingBlocked, ProviderFailure, type RouteRequest } from "../router";
+import { scanForModelAccess, privateLexicon } from "../router/modelAccess";
 import { dispatchRunForTask } from "../backends/dispatch";
 import { deliverExecutiveReport } from "../duties/deliverReport";
 import { firmNoticeBlock } from "../prompt/notices";
@@ -188,16 +189,40 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
   const confidential = isConfidentialDraft(input as any);
   // A Chrome job (1 Nov 2026) runs in her Chrome through Claude in Chrome: Claude's seat only. Codex
   // has no Chrome, and the "OpenAI first" switch handed the first one to it.
-  const claudeOnly = confidential || input.chrome_job === true;
+  /*
+   * THE PRIVACY SCREEN DECIDES WHO MAY SEE THE PROMPT, BEFORE A WORKER IS CHOSEN (3 Nov 2026). A
+   * ChatGPT plan is a setting, not a no-training contract, so Codex is held to the same screen as the
+   * free cloud rungs (the router's `scanForModelAccess`; west-peek-os #326 does the same). A seat
+   * prompt it flags — an LP, investor or deal term, a private name, children's data, or a lexicon it
+   * cannot read — is BRAIN work (aiRoles.mjs "agent_queue.private_prompt"): Claude's seat only, never
+   * Codex, never a cloud rung, fail closed.
+   */
+  let privatePrompt = false;
+  if (baseLadder.length > 0 && !confidential) {
+    const parts = await buildPromptParts(env, task, input, { backendId: OPENAI_SEAT });
+    const verdict = scanForModelAccess(
+      [{ role: "user", content: `${parts.firmContext ?? ""}\n${parts.instruction ?? ""}` }],
+      await privateLexicon(env.DB),
+      { modelAccess: task.model_access ?? null, sensitivity: task.sensitivity ?? null },
+    );
+    privatePrompt = verdict.privateOnly;
+    if (privatePrompt) {
+      await env.DB
+        .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'ladder_step',?)`)
+        .bind(newId("tev"), task.id, Date.now(), JSON.stringify({ backend_id: OPENAI_SEAT, refused: `the privacy screen kept this prompt off Codex: ${verdict.reason ?? "private"}; it runs on the Claude seat only`, next: CLAUDE_SEAT }))
+        .run();
+    }
+  }
+  const claudeOnly = confidential || privatePrompt || input.chrome_job === true;
   // Owner, 3 Nov 2026 ("default OpenAI and Claude just be the brains"): Codex is the worker for every
   // employee duty (aiRoles.mjs "agent_queue.default"), so Codex's seat goes first on every ladder that
   // has it. This supersedes the 24 Oct "OpenAI first" switch, which now only matters if that row ever
   // makes agent work a brain job again. A Codex limit WAITS on Codex's seat (`codex_limit_waits`,
   // honoured at dispatch and at /claim), never Claude, never a cloud rung.
   const codexWorks = roleFor("agent_queue.default") === "worker";
-  const ladder = claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, codexWorks || isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
+  const ladder = privatePrompt ? [CLAUDE_SEAT] : claudeOnly ? confidentialLadder(baseLadder) : orderSeats(baseLadder, codexWorks || isOn(await getSetting(env.DB, OPENAI_FIRST_KEY)));
   // After a Codex limit: public work → the $0 free rung (never Claude, never paid); the rest waits.
-  const publicFreeRung = afterCodexLimit({ sensitivity: task.sensitivity, confidential, chromeJob: input.chrome_job === true }) === "free_rung";
+  const publicFreeRung = afterCodexLimit({ sensitivity: task.sensitivity, confidential: confidential || privatePrompt, chromeJob: input.chrome_job === true }) === "free_rung";
   const codexLimitWaits = !claudeOnly && codexWorks && CODEX_LIMIT_WAITS && ladder.includes(OPENAI_SEAT) && !publicFreeRung;
   const codexToFreeRung = !claudeOnly && codexWorks && publicFreeRung && ladder.includes(OPENAI_SEAT) &&
     isPlanSpent(await getBackend(env.DB, OPENAI_SEAT), Date.now());
@@ -270,7 +295,7 @@ export async function handleTask(env: Env, msg: TaskMessage): Promise<void> {
     return;
   }
 
-  if (confidential) {
+  if (confidential || privatePrompt) {
     // FAIL CLOSED: an LP / deal-terms draft that Claude's seat did not take is never sent anywhere else.
     await failTask(env, task, employee, envelope, costMode,
       [refusals.map((r) => `${r.backend_id}: ${r.refused}`).join(" | "), "an LP or deal-terms draft runs on the Claude seat only"].filter(Boolean).join(" | "),

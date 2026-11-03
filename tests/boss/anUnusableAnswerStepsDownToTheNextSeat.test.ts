@@ -25,8 +25,10 @@ async function seats(openaiFirst: boolean) {
 beforeEach(() => seats(true));
 afterEach(() => seats(false));
 
+// A seat duty whose prompt passes the privacy screen (the briefing's reads as deal material and is
+// brain work since 3 Nov 2026: tests/boss/aPrivatePromptIsBrainWork.test.ts), so it starts on Codex.
 async function fireBriefing() {
-  const out = await materialiseDueDuties(env as any, NOW, "duty_exec_intel");
+  const out = await materialiseDueDuties(env as any, NOW, "duty_tool_scout");
   expect(out.fired, JSON.stringify(out.skipped)).toHaveLength(1);
   const taskId = out.fired[0]!.task_id!;
   await handleTask(env as any, { taskId, lane: "ops" });
@@ -51,7 +53,7 @@ describe("a seat that gives an unusable answer hands the run to the next seat at
   it("Codex answers with no searches → released AND re-parked on Claude → Claude claims it with no fallback_from → Claude delivers", async () => {
     const taskId = await fireBriefing();
     const parked = await row<any>(`SELECT id, backend_id FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
-    expect(parked.backend_id, "OpenAI-first did not park the briefing on Codex").toBe("bk_codex");
+    expect(parked.backend_id, "OpenAI-first did not park the duty on Codex").toBe("bk_codex");
 
     const first = await claim("bk_codex");
     expect(first.run?.run_id).toBe(parked.id);

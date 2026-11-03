@@ -167,7 +167,7 @@ describe("a Codex limit UNDER a run waits for the reset — never Claude (owner,
 describe("the next firing with Codex known to be out", () => {
   it("parks on Codex anyway and waits for the reset — no step to Claude", async () => {
     await env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = 'usage limit reached' WHERE id = 'bk_codex'`).bind(Date.now() + 3600_000).run();
-    const { taskId } = await fire("duty_brokerage_sourcing");
+    const { taskId } = await fire("duty_tool_scout");
     const parked = await row<any>(`SELECT backend_id, requested, claimed_at FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
     expect(parked.backend_id).toBe("bk_codex");
     expect(parked.claimed_at).toBeNull();
@@ -177,9 +177,9 @@ describe("the next firing with Codex known to be out", () => {
 
   it("a spent Claude seat is not in the way: the duty parks on Codex as usual", async () => {
     await env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = 'usage limit reached' WHERE id = 'bk_claude_code'`).bind(Date.now() + 3600_000).run();
-    const { taskId } = await fire("duty_brokerage_sourcing");
+    const { taskId } = await fire("duty_tool_scout");
     const parked = await row<any>(`SELECT backend_id, requested FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
     expect(parked.backend_id).toBe("bk_codex");
-    expect(JSON.parse(parked.requested).model, "brokerage's Claude model reached Codex").toBeUndefined();
+    expect(JSON.parse(parked.requested).model, "the duty's Claude model reached Codex").toBeUndefined();
   });
 });
