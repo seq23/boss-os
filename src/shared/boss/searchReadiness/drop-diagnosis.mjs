@@ -40,6 +40,8 @@ export const DIAG = Object.freeze({
   SITEMAP_SURGE: 0.5,
 });
 
+/** One full stop at the end, never two (a quoted line may already end in one). */
+export const endStop = (t) => `${String(t).replace(/[.\s]+$/, "")}.`;
 const num = (n) => Number(n).toLocaleString("en-US");
 const pctOf = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
 
@@ -150,7 +152,7 @@ export function diagnoseDrop({ pages, queries, inspections, sitemap = {}, commit
   causes.sort((a, b) => b.weight - a.weight);
   const room = DIAG.MAX_LINES - (notRead.length ? 1 : 0);
   const lines = causes.slice(0, room).map(({ confidence, text }) => ({ confidence, text }));
-  const text = lines.map((l) => `${l.confidence}: ${l.text}.`);
+  const text = lines.map((l) => `${l.confidence}: ${endStop(l.text)}`);
   if (notRead.length) text.push(`Not read: ${notRead.map((n) => `${n.source} (${n.why})`).join("; ")}.`);
   return {
     status: "diagnosed", lines, text,

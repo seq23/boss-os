@@ -30,7 +30,7 @@
  */
 import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
 import { isOwnSite, leadRedLine } from "./site-leads.mjs";
-import { mostLikely } from "./drop-diagnosis.mjs";
+import { mostLikely, endStop } from "./drop-diagnosis.mjs";
 
 /** A site whose published pages may never be touched (sites.json `published_frozen`; Horse, Hicks). */
 export const isFrozen = (site) => Boolean(site?.published_frozen);
@@ -169,7 +169,7 @@ export function redLines(siteResults) {
 /** One site's outcome line: what fell, then the diagnosis's most likely cause. */
 function outcomeLine(s, d) {
   const why = mostLikely(s.diagnosis);
-  return `${d}: ${s.outcome.reasons.map((r) => r.text).join("; ")}.${why ? ` ${why}.` : ""}`;
+  return `${d}: ${endStop(s.outcome.reasons.map((r) => r.text).join("; "))}${why ? ` ${endStop(why)}` : ""}`;
 }
 
 /**

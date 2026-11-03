@@ -1365,7 +1365,9 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         // It stays in the queue so it is said every week, but no fix pass is ever spent on it.
         // A repo the fixer may never branch (a client's report-only repo, repoPolicy NO_AUTO_FIX) is
         // recorded, never worked: its site reports in its own repo (1 Nov 2026).
-        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
+        // A site whose published pages are frozen (sites.json `published_frozen`: Horse and Hicks, owner
+        // 3 Nov 2026, "do not touch anything already published") is reported, never worked.
+        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : s.site.published_frozen ? "report_only" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
         ...(limit ? { known_limit: limit.why } : {}),
         ...(r.named_stop ? { named_stop: r.named_stop } : {}),
       });

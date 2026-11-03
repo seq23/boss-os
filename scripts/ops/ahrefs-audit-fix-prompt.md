@@ -166,7 +166,10 @@ Billionairehighperformancecoach → `sprylabs-hpc-site`.
 The list is `src/shared/boss/siteAudit/repoPolicy.mjs` (`NO_AUTO_FIX`, kind `client`): today
 dianne-place-recovery-services and the sheila / mercedes repositories. **horselegalguide.com
 (horse-legal-guide-velocity) and hicksconsulting.org (hicks-consulting-canonical) are NOT on it**
-(owner, 25 Oct 2026): fix them like every other grid repo site.
+(owner, 25 Oct 2026), BUT since 3 Nov 2026 (owner: "do not touch anything already published") their
+Search Readiness briefs are `disposition: "report_only"` (sites.json `published_frozen`): never
+worked, no edit, redirect, merge, unpublish or fold of a published page there. New pages only, under
+their own approval rules.
 A finding there is `disposition: "client_repo"`, headline starting `CLIENT_REPO:` — no branch, no
 commit, no PR. `audit-worktree.sh` refuses them and the ingest endpoint refuses a fix claimed
 against one.

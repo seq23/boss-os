@@ -308,3 +308,23 @@ describe("where the warning and the diagnosis go", () => {
     expect(html).not.toMatch(/class="gold-lines"/); // her own gold list holds no friend's site
   });
 });
+
+/**
+ * HORSE AND HICKS: NOTHING PUBLISHED IS TOUCHED (owner, 3 Nov 2026). Every Search Readiness brief on a
+ * `published_frozen` site is report-only: none is workable, none reaches the repair run, and the
+ * quality line never promises a template fix there.
+ */
+describe("frozen sites are reported, never worked", () => {
+  it("a failing check on Horse or Hicks is report_only, never fix; the same failure elsewhere is fix", () => {
+    const fail = { id: "b3", status: "fail", detail: "missing" };
+    const res = ["horselegalguide.com", "hicksconsulting.org", "uscisexam.com"].map((d) => ({ site: siteOf(d), host: d, results: [fail] }));
+    const briefs = fixBriefs(checklist, res);
+    expect(briefs.map((b: any) => [b.domain, b.disposition])).toEqual([["horselegalguide.com", "report_only"], ["hicksconsulting.org", "report_only"], ["uscisexam.com", "fix"]]);
+    expect(workQueue(briefs).repos.map((r) => r.repo)).toEqual([siteOf("uscisexam.com").repo]);
+    const pages = ["a", "b", "c", "d", "e"].map((c) => page(`https://horselegalguide.com/${c}`, FILLER(c), `Lawyers in ${c}`));
+    const q = qualitySample({ site: siteOf("horselegalguide.com"), host: "horselegalguide.com", checklist, pages });
+    expect(q.line).not.toMatch(/Danielle is fixing/);
+    const red = redLines([{ site: siteOf("uscisexam.com"), outcome: { status: "red", reasons: [{ text: "fell." }] }, diagnosis: { status: "diagnosed", lines: [{ confidence: "CONFIRMED", text: "x ends." }] } }]);
+    expect(red[0]!.line).not.toMatch(/\.\./);
+  });
+});

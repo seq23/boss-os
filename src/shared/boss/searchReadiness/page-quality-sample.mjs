@@ -171,7 +171,7 @@ export function qualitySample({ site, host, pages, checklist }) {
   const red = failingPages > ok.length / 2;
   const common = Object.entries(scored.flatMap((p) => p.failing).reduce((m, id) => ((m[id] = (m[id] ?? 0) + 1), m), {})).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id]) => WORDS[id] ?? id);
   const line = red
-    ? `${failingPages} of ${ok.length} pages sampled this week fall short of the page shape (most often: ${common.join(", ")}). Danielle is fixing the template.`
+    ? `${failingPages} of ${ok.length} pages sampled this week fall short of the page shape (most often: ${common.join(", ")}). ${site?.published_frozen ? "Published pages are left as they are; this is a diagnosis only." : "Danielle is fixing the template."}`
     : `${ok.length - failingPages} of ${ok.length} sampled pages meet the page shape.`;
   return { sampled: ok.length, items, pages: scored, failingPages, red, status: red ? "red" : "noted", line };
 }
