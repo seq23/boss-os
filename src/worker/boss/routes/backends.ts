@@ -103,6 +103,7 @@ backends.get("/", async (c) => {
 backends.get("/runs", async (c) => {
   const status = c.req.query("status");
   const backendId = c.req.query("backend_id");
+  const heldBy = c.req.query("held_by");
   const params: unknown[] = [];
   const where: string[] = [];
   if (status) { where.push(`r.status = ?`); params.push(status); }
@@ -111,13 +112,22 @@ backends.get("/runs", async (c) => {
    * `unclaimed=1` — RUNS THAT ARE PARKED AND WAITING FOR A MACHINE (1 Oct 2026). The five-minute poll on her Mac asks this, read-only,
    * BEFORE it refreshes the market and sky data and claims: an idle poll then costs one read and fetches nothing from any feed. Not
    * finished and not claimed is exactly what `/claim` takes; `claimed_at` is returned so a caller can tell the listing honours the filter.
+   *
+   * `held_by=<device_id>` WIDENS THE SAME READ TO "UNCLAIMED, OR CLAIMED BY ME" (3 Nov 2026). A run
+   * a device is recorded as holding is invisible to that device otherwise — which is why the Mac's
+   * poll answered "nothing waiting" twenty times in a row after a restart while a run with its own
+   * name on it sat unseen. `claimed_by` is returned on every row, so the caller can tell the two
+   * cases apart rather than guessing from `claimed_at` alone.
    */
-  if (c.req.query("unclaimed") === "1") where.push(`r.claimed_at IS NULL AND r.finished_at IS NULL`);
+  if (c.req.query("unclaimed") === "1") {
+    if (heldBy) { where.push(`(r.claimed_at IS NULL OR r.claimed_by = ?) AND r.finished_at IS NULL`); params.push(heldBy); }
+    else { where.push(`r.claimed_at IS NULL AND r.finished_at IS NULL`); }
+  }
 
   const rows = await c.env.DB
     .prepare(
       `SELECT r.id, r.task_id, r.backend_id, r.envelope_id, r.requested, r.summary,
-              r.cost_micros, r.started_at, r.claimed_at, r.finished_at, r.status, r.refusal_reason, r.error,
+              r.cost_micros, r.started_at, r.claimed_at, r.claimed_by, r.finished_at, r.status, r.refusal_reason, r.error,
               b.display_name AS backend_name
          FROM backend_runs r
          JOIN execution_backends b ON b.id = r.backend_id
@@ -386,6 +396,53 @@ backends.post("/claim", async (c) => {
   const deviceId = optionalText(b?.device_id);
   const backendId = optionalText(b?.backend_id) ?? "bk_claude_code";
   if (!deviceId) throw badRequest("A claim needs a device", "Send { device_id, backend_id }.");
+
+  /*
+   * ─── A DEVICE RELEASES THE RUNS IT IS RECORDED AS HOLDING, AT THE START OF ITS OWN CYCLE (3 Nov
+   * 2026) ──────────────────────────────────────────────────────────────────────────────────────
+   *
+   * `release_claims: true` — opt in from the runner, never assumed here, because only the device
+   * holding the claim can know it is dead; the Worker never guesses that a claim has gone stale.
+   * It is sound rather than a guess: `agent-claim.sh` holds one Mac-wide lock, this route has
+   * exactly one caller per device (`runner.mjs`'s `claimRun`, reached only through `agent.mjs
+   * work-once` under that lock), and a run executes inside the claiming process. So a run still
+   * stamped `claimed_by = deviceId` while that same device is starting a fresh claim cycle is a
+   * corpse by construction — the process that would be running it is the one asking again.
+   *
+   * ONLY `claimed_at`/`claimed_by` MOVE. `backend_id` and `requested` are untouched, so the run
+   * stays parked where its ladder left it and the seats already tried stay tried. A run claimed by
+   * ANOTHER device is never touched. Not silent: one `task_events` row (`claim_released_dead`) and
+   * one log event per release. The waiting query just below then re-claims it in the same request,
+   * so a Mac that restarted mid-run gets its own work back on its very next poll instead of the
+   * hourly reaper (3 Nov 2026: a restart 11 minutes into the morning briefing left the run claimed
+   * by a dead process for two hours — past the 07:45 cap the morning email waits to).
+   */
+  if (b?.release_claims === true) {
+    const dead = await c.env.DB
+      .prepare(
+        `SELECT id, task_id FROM backend_runs
+          WHERE status = 'running' AND finished_at IS NULL AND claimed_by = ?`,
+      )
+      .bind(deviceId)
+      .all<{ id: string; task_id: string | null }>();
+    for (const r of dead.results ?? []) {
+      await c.env.DB
+        .prepare(`UPDATE backend_runs SET claimed_at = NULL, claimed_by = NULL WHERE id = ? AND claimed_by = ?`)
+        .bind(r.id, deviceId)
+        .run();
+      if (r.task_id) {
+        await c.env.DB
+          .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'claim_released_dead',?)`)
+          .bind(newId("tev"), r.task_id, Date.now(), JSON.stringify({ run_id: r.id, device_id: deviceId }))
+          .run();
+      }
+      await logEvent(c.env.DB, {
+        level: "warn", scope: "backends", event: "claim_released_dead", entityId: r.id,
+        detail: { run_id: r.id, task_id: r.task_id, device_id: deviceId },
+      });
+    }
+  }
+
   /*
    * ─── A SEAT MAY TAKE WORK PARKED FOR A SEAT ABOVE IT ON THE SAME LADDER ────
    *
