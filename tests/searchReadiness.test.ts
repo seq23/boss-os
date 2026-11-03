@@ -600,9 +600,22 @@ describe("known limits and one page counted once (25 Oct 2026)", () => {
     const off = CHECKS.clarity!({ site: hwk, home: { html: "<html></html>" }, files: {} } as any);
     expect(off.status).toBe("pass");
     expect(off.detail).toMatch(/YouTube/);
+    const cbd = sites.grid_repos.find((s: any) => s.domain === "cynthiabrowndds.com");
+    expect(cbd.clarity).toBe(false);
+    const dental = CHECKS.clarity!({ site: cbd, home: { html: "<html></html>" }, files: {} } as any);
+    expect(dental.status).toBe("pass");
+    expect(dental.detail).toMatch(/no form and no sale/);
     const t2r = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
     expect(CHECKS.clarity!({ site: t2r, home: { html: "<html></html>" }, files: {} } as any).status).toBe("fail");
-    expect(sites.grid_repos.filter((s: any) => s.clarity === false).map((s: any) => s.domain)).toEqual(["howweknowdeep.com"]);
+    // The exemption is a ruling with a reason, never a flag someone reached for to clear an item:
+    // every exempt site is named here AND has to say why, in a sentence long enough to be one.
+    const exempt = sites.grid_repos.filter((s: any) => s.clarity === false);
+    expect(exempt.map((s: any) => s.domain).sort()).toEqual(["cynthiabrowndds.com", "howweknowdeep.com"]);
+    for (const s of exempt) {
+      expect(typeof s.clarity_why).toBe("string");
+      expect(s.clarity_why.length).toBeGreaterThan(40);
+      expect(CHECKS.clarity!({ site: s, home: { html: "<html></html>" }, files: {} } as any).detail).toContain(s.clarity_why);
+    }
   });
   it("a known limit stays in the queue with its reason and is never workable", () => {
     const site = sites.grid_repos.find((s: any) => s.domain === "time-2-read.com");
