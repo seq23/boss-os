@@ -45,6 +45,7 @@ export const AI_ROLES = Object.freeze({
   // ── The agent queue (com.seq.boss-agent*): duties parked for her Mac's seats ──────────────────
   "agent_queue.default": { role: WORKER, why: "An employee's duty run is hands-on work: Codex's seat goes first on every ladder that has it." },
   "agent_queue.chrome_job": { role: BRAIN, why: "Runs in her Chrome through Claude in Chrome; Codex has no browser (1 Nov 2026)." },
+  "agent_queue.private_prompt": { role: BRAIN, why: "A seat prompt the privacy screen flags (LP, investor or deal terms, a private name, children's data, an unreadable lexicon) runs on Claude only, fail closed: a ChatGPT plan is a setting, not a no-training contract (private-data-routing; west-peek-os #326)." },
   "agent_queue.confidential_draft": { role: BRAIN, why: "LP and deal-terms drafts run on the Claude seat only (private-data-routing, 31 Oct 2026)." },
 
   // ── Company brains ────────────────────────────────────────────────────────────────────────────

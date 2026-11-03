@@ -117,7 +117,9 @@ describe("scenario (a): Codex capped or unavailable → Claude Code serves the s
   beforeEach(seatsReset);
   afterEach(seatsReset);
 
-  it("walks past a capped bk_codex to bk_claude_code at dispatch, and records the step on the task", async () => {
+  // 3 Nov 2026: the briefing's prompt reads as deal material to the privacy screen, so it is brain
+  // work — Claude's seat only, fail closed (tests/boss/aPrivatePromptIsBrainWork.test.ts).
+  it("the briefing is brain work: parked on Claude's seat with Claude's model and the same spec, the screen's step recorded, Codex never offered it", async () => {
     await seatCapped("bk_codex");
     const { taskId } = await briefingTask();
     let calls = 0;
@@ -126,51 +128,39 @@ describe("scenario (a): Codex capped or unavailable → Claude Code serves the s
     await handleTask(env as any, { taskId, lane: "ops" });
 
     const runs = await all<any>(`SELECT id, backend_id, status, requested FROM backend_runs WHERE task_id = ? ORDER BY started_at`, taskId);
+    expect(runs.map((r) => r.backend_id), "the briefing reached Codex").not.toContain("bk_codex");
     const parked = runs.filter((r) => r.status === "running");
     expect(parked, "no run was parked for a seat").toHaveLength(1);
     expect(parked[0]!.backend_id).toBe("bk_claude_code");
     const requested = JSON.parse(parked[0]!.requested);
     expect(requested.model, "Claude's seat lost its model").toBe("claude-sonnet-4-5-20250929");
-    expect(requested.backend_ladder).toEqual(["bk_codex", "bk_claude_code"]);
-    // The prompt Codex gets is the same specification, verbatim.
+    expect(requested.backend_ladder).toEqual(["bk_claude_code"]);
     expect(requested.instruction).toMatch(/EXECUTIVE INTELLIGENCE ENGINE/);
     expect(requested.instruction).toMatch(/Never invent/);
 
     const steps = await all<any>(`SELECT event, detail FROM task_events WHERE task_id = ? AND event IN ('ladder_step','dispatched') ORDER BY ts`, taskId);
     expect(steps.map((s) => s.event)).toEqual(["ladder_step", "dispatched"]);
     expect(JSON.parse(steps[0]!.detail)).toMatchObject({ backend_id: "bk_codex", next: "bk_claude_code" });
-    expect(JSON.parse(steps[0]!.detail).refused).toMatch(/budget is spent/);
-    expect(calls, "the walk went to the cloud while a seat was still available").toBe(0);
+    expect(JSON.parse(steps[0]!.detail).refused).toMatch(/privacy screen kept this prompt off Codex/);
+    expect(calls, "the walk went to the cloud while Claude's seat was available").toBe(0);
   });
 
-  it("lets the Claude Code seat claim a run parked for Codex when the Mac says that seat is down, with its own model and a hand-off event", async () => {
+  it("Codex cannot claim the briefing even saying Claude is down; Claude's seat claims it and its report lands under the grader", async () => {
     const { taskId } = await briefingTask();
     await handleTask(env as any, { taskId, lane: "ops" });
     const parked = await row<any>(`SELECT id, backend_id FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
-    expect(parked.backend_id).toBe("bk_codex");
+    expect(parked.backend_id).toBe("bk_claude_code");
 
-    // Claude alone, without saying Codex is down: nothing. A seat never takes another's work unasked.
-    const alone = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_claude_code" } });
-    expect(alone.status).toBe(200);
-    expect((await alone.json() as any).data.run).toBeNull();
+    const byCodex = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_codex", fallback_from: ["bk_claude_code"] } });
+    expect(byCodex.status).toBe(200);
+    expect((await byCodex.json() as any).data.run, "Codex was handed a brain-only run").toBeNull();
 
-    // Claude, reporting that the Codex seat failed preflight: it takes the run, re-labelled.
-    const res = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_claude_code", fallback_from: ["bk_codex"] } });
-    expect(res.status).toBe(200);
+    const res = await api("/api/backends/claim", { method: "POST", body: { device_id: "dev_test", backend_id: "bk_claude_code" } });
     const envelope = (await res.json() as any).data.run;
-    expect(envelope, "the fallback claim returned nothing").not.toBeNull();
-    expect(envelope.run_id).toBe(parked.id);
-    expect(envelope.backend_id).toBe("bk_claude_code");
-    expect(envelope.model, "Claude's seat did not get its own model").toBe("claude-sonnet-4-5-20250929");
-    expect(envelope.instruction).toMatch(/EXECUTIVE INTELLIGENCE ENGINE/);
+    expect(envelope?.run_id).toBe(parked.id);
+    expect(envelope.model).toBe("claude-sonnet-4-5-20250929");
     expect(envelope.web_tools).toEqual(["WebSearch", "WebFetch"]);
 
-    const run = await row<any>(`SELECT backend_id, claimed_by FROM backend_runs WHERE id = ?`, parked.id);
-    expect(run.backend_id).toBe("bk_claude_code");
-    const handoff = await row<any>(`SELECT detail FROM task_events WHERE task_id = ? AND event = 'ladder_handoff'`, taskId);
-    expect(JSON.parse(handoff.detail)).toMatchObject({ from: "bk_codex", to: "bk_claude_code" });
-
-    // And the report Codex delivers lands under the same grader, saying who wrote it.
     const report = await api("/api/backends/report", {
       method: "POST",
       body: {
@@ -179,15 +169,15 @@ describe("scenario (a): Codex capped or unavailable → Claude Code serves the s
           run_id: parked.id, task_id: taskId, backend_id: "bk_claude_code", status: "succeeded", summary: "done",
           files_touched: [], commands: [], checks_run: { run: 0, passed: 0, failed: 0, detail: [] }, remaining_risks: [], violations: [],
           rollback_ref: null, refusal_reason: null, error: null, cost_micros: 0, started_at: NOW, finished_at: NOW + 1000,
-          delivers: { status: "partial", headline: "Codex wrote this morning.", summary: "A short one.", sections: [{ key: "key_events", heading: "Key Events Today", so_what: "Nothing scheduled.", bullets: ["Markets closed.", "Nothing scheduled."] }], sources: [], gaps: [{ wanted: "everything else", why: "test" }] },
+          delivers: { status: "partial", headline: "Claude wrote this morning.", summary: "A short one.", sections: [{ key: "key_events", heading: "Key Events Today", so_what: "Nothing scheduled.", bullets: ["Markets closed.", "Nothing scheduled."] }], sources: [], gaps: [{ wanted: "everything else", why: "test" }] },
           market_data: null,
         },
       },
     });
     expect(report.status, await report.text()).toBe(200);
-    const stored = await row<any>(`SELECT written_by, status FROM executive_reports WHERE task_id = ?`, taskId);
+    const stored = await row<any>(`SELECT written_by FROM executive_reports WHERE task_id = ?`, taskId);
     const by = JSON.parse(stored.written_by);
-    expect(by).toMatchObject({ kind: "seat", backend_id: "bk_claude_code", refused_seats: ["bk_codex"] });
+    expect(by).toMatchObject({ kind: "seat", backend_id: "bk_claude_code" });
     expect(by.label).toMatch(/Claude Code on her Max seat/);
   });
 
@@ -242,10 +232,12 @@ describe("scenario (b): both seats unavailable → the briefing stops by name; i
     expect(seen, "a request left the Worker for a cloud rung").toEqual([]);
     const steps = await all<any>(`SELECT event, detail FROM task_events WHERE task_id = ? AND event = 'ladder_step' ORDER BY ts`, taskId);
     expect(steps.map((s) => JSON.parse(s.detail).backend_id)).toEqual(["bk_codex", "bk_claude_code"]);
+    expect(JSON.parse(steps[0]!.detail).refused, "Codex was considered for brain work").toMatch(/privacy screen kept this prompt off Codex/);
     expect(JSON.parse(steps[1]!.detail).next).toBeNull();
     const t = await row<any>(`SELECT status, error FROM tasks WHERE id = ?`, taskId);
     expect(t.status).toBe("failed");
-    expect(t.error).toMatch(/bk_codex: .*bk_claude_code: /);
+    expect(t.error).toMatch(/bk_claude_code: /);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_codex'`, taskId)).toHaveLength(0);
     expect(await row(`SELECT 1 FROM executive_reports WHERE task_id = ?`, taskId)).toBeNull();
     expect(await all<any>(`SELECT 1 FROM routing_decisions WHERE task_id = ?`, taskId)).toHaveLength(0);
   });
