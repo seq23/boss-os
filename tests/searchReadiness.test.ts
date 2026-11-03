@@ -705,6 +705,22 @@ describe("the 26 Oct 2026 lessons catch what they guard", () => {
     expect(CHECKS.blocked_lead_domains!(repo({ "functions/api/lead.js": "export const onRequestPost = () => new Response('ok')" })).detail).toMatch(/no lead endpoint reads BLOCKED_LEAD_DOMAINS/);
     expect(CHECKS.blocked_lead_domains!(repo({ "src/index.js": "x" })).status).toBe("pass");
   });
+
+  it("i11: a committed password hash, a fallback password, or a paid call with no rate limit fails; gated code passes", () => {
+    const repo = (files: Record<string, string>) => ({ repo: { ok: true, files: Object.keys(files), show: (f: string) => files[f] ?? null } }) as any;
+    const hash = CHECKS.paid_routes_gated!(repo({ "worker/admin_runtime.mjs": `const ADMIN_PASSWORD_HASH = '${"ab".repeat(32)}';` }));
+    expect(hash.status).toBe("fail");
+    expect(hash.detail).toMatch(/password hash is committed/);
+    expect(CHECKS.paid_routes_gated!(repo({ "functions/api/admin-auth.ts": "const expected = env.ADMIN_PASSWORD || 'letmein';" })).detail).toMatch(/hardcoded fallback/);
+    const open = CHECKS.paid_routes_gated!(repo({ "functions/api/tts.js": "await fetch('https://api.elevenlabs.io/v1/text-to-speech/x', {})" }));
+    expect(open.status).toBe("fail");
+    expect(open.detail).toMatch(/no rate limit/);
+    const gated = repo({ "functions/api/tts.js": "await fetch('https://api.elevenlabs.io/v1/text-to-speech/x', {})", "functions/_lib/guard.js": "if (await rateLimit(env, user.id, 20)) return json({}, 429);" });
+    expect(CHECKS.paid_routes_gated!(gated).status).toBe("pass");
+    expect(CHECKS.paid_routes_gated!(repo({ "functions/api/form.js": "const to = env.LEAD_TO;" })).status).toBe("pass");
+    expect(CHECKS.paid_routes_gated!(repo({ "index.html": "<p>hi</p>" })).detail).toMatch(/no server code/);
+    expect(CHECKS.paid_routes_gated!({ repo: { ok: false, why: "clone failed" } } as any).status).toBe("not_checked");
+  });
 });
 
 describe("the page shows where every site stands, counted from the results file", () => {

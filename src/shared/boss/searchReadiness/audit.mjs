@@ -234,6 +234,12 @@ const okPages = (ctx) => ctx.pages.filter((p) => p.status === 200 && p.html);
 const pageUrl = (p) => p.final ?? p.url;
 const urlKey = (u) => String(u).replace(/[?#].*$/, "").replace(/\/+$/, "");
 const list = (arr, n = 5) => arr.slice(0, n).join("; ") + (arr.length > n ? `; and ${arr.length - n} more` : "");
+// i11 paid_routes_gated: where server code lives, what a paid call looks like, and the two credential shapes.
+const SERVER_PATH = /^(functions|workers?|api|server|supabase\/functions|app\/api|pages\/api|src\/(worker|server|pages\/api|app\/api))\/|(^|\/)_worker\.js$/;
+const PAID_CALL = /api\.openai\.com|api\.anthropic\.com|openrouter\.ai\/api|api\.elevenlabs\.io|api\.fish\.audio|api\.d-id\.com|api\.heygen\.com|generativelanguage\.googleapis\.com|api\.replicate\.com|fal\.run|api\.resend\.com|api\.sendgrid\.com|api\.twilio\.com|maps\.googleapis\.com|places\.googleapis\.com|env\.AI\.run\(/;
+const ACCEPTED_HASH = /(PASSWORD|PASSCODE|ADMIN)[A-Z_]*HASH\s*=\s*['"`][0-9a-fA-F]{32,}['"`]/;
+const FALLBACK_SECRET = /(PASSWORD|PASSCODE|SECRET|ADMIN_KEY|ADMIN_TOKEN)[A-Z_]*\s*(\|\||\?\?)\s*['"`][^'"`\s]{3,}['"`]/;
+const RATE_LIMIT = /rate.?limit|too many|\b429\b/i;
 
 export const CHECKS = {
   host_redirect(ctx) {
@@ -822,6 +828,29 @@ export const CHECKS = {
     if (!r.files.includes("docs/cost/zero-paid-llm.md")) why.push("no docs/cost/zero-paid-llm.md");
     if (!/nothing paid/i.test(r.claudeMd ?? "")) why.push('CLAUDE.md does not say "nothing paid"');
     return why.length ? fail(why.join("; ")) : pass("zero-paid doc and CLAUDE.md line present");
+  },
+
+  // i11 (3 Nov 2026): an outside scanner found Time-2-Read's ElevenLabs TTS callable with no login and
+  // no limit, and the sweep that followed found a site whose admin "password" was a hash committed in
+  // the repo. Three shapes are cheap to see in code: a password hash the server accepts (the hash IS the
+  // credential), a hardcoded fallback password, and a paid API called from server code that has no
+  // rate limit anywhere. The full list (auth, ceilings, RLS, webhooks) is the risk brain's rule.
+  paid_routes_gated(ctx) {
+    const r = ctx.repo; if (!r?.ok) return r?.noRepo ? { status: "no_repo", detail: r.why } : notChecked(r?.why ?? "repo not read");
+    const code = (r.files ?? []).filter((f) => /\.(m?[jt]sx?|py)$/.test(f) && !/(^|\/)(node_modules|dist|build|tests?|__tests__)\//.test(f) && !/\.(test|spec)\./.test(f));
+    const server = code.filter((f) => SERVER_PATH.test(f)).slice(0, 300);
+    const shipped = code.filter((f) => /^(assets|public|static)\//.test(f)).slice(0, 100);
+    if (!server.length && !shipped.length) return pass("no server code in this repo");
+    const text = (f) => r.show?.(f) ?? "";
+    const hashHits = [...server, ...shipped].filter((f) => ACCEPTED_HASH.test(text(f)));
+    if (hashHits.length) return fail(`a password hash is committed in code (whoever reads the repo holds the credential): ${list(hashHits, 3)}`, { evidence: hashHits });
+    const fallbackHits = server.filter((f) => FALLBACK_SECRET.test(text(f)));
+    if (fallbackHits.length) return fail(`a hardcoded fallback password or secret: ${list(fallbackHits, 3)}`, { evidence: fallbackHits });
+    const paid = server.filter((f) => PAID_CALL.test(text(f)));
+    if (!paid.length) return pass(`${server.length} server files, none calls a paid service directly`);
+    const limited = server.filter((f) => RATE_LIMIT.test(text(f)));
+    if (!limited.length) return fail(`paid service called with no rate limit anywhere in server code: ${list(paid, 3)}`, { evidence: paid });
+    return pass(`paid calls in ${list(paid, 2)}; rate limit in ${list(limited, 2)}`);
   },
 
   // ─── K · Authority and entity (31 Oct 2026, the authority audit) ───────────

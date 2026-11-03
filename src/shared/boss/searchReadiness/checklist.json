@@ -1,5 +1,5 @@
 {
- "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (88 = the page's 71 plus j9, the four 26 Oct 2026 lessons (b10, e9, h6, j10), the six authority items k1-k6 of 31 Oct 2026 and the six search growth loop stages f7-f12 of 1 Nov 2026, when f2 was rewritten from 'frozen until measured' to 'publish straight away under a quality gate') or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
+ "_why": "THE SEARCH READINESS CHECKLIST AS DATA. One definition: scripts/ops/search-readiness-audit.mjs runs every auto check against every site in sites.json (the grid repos) each Monday, and scripts/ops/search-readiness-page.mjs renders the pinned checklist page from this file. tests/searchReadiness.test.ts fails if an item is lost (88 = the page's 71 plus j9, the four 26 Oct 2026 lessons (b10, e9, h6, j10), the six authority items k1-k6 of 31 Oct 2026 and the six search growth loop stages f7-f12 of 1 Nov 2026, when f2 was rewritten from 'frozen until measured' to 'publish straight away under a quality gate'; plus i11, paid endpoints gated, 3 Nov 2026) or a site has no coverage entry. Owner, 25 Oct 2026: make the checklist enforce itself on all her sites.",
  "version": 1,
  "page_item_count": 71,
  "kinds": [
@@ -1704,6 +1704,27 @@
     "type": "zero_paid_doc",
     "source": "repo",
     "how": "docs/cost/zero-paid-llm.md exists and CLAUDE.md says \"nothing paid\" (any case).",
+    "applies_to": [
+     "guide",
+     "hyperlocal",
+     "brand",
+     "authority"
+    ]
+   }
+  },
+  {
+   "id": "i11",
+   "phase": "I",
+   "title": "Every endpoint that spends money needs a signed-in user or signed guest token, a per-user/IP rate limit and a global daily ceiling",
+   "title_html": "Every endpoint that spends money needs a signed-in user or signed guest token, a per-user/IP rate limit and a global daily ceiling",
+   "burned": true,
+   "why_html": "3 Nov 2026: an outside scanner found Time-2-Read's ElevenLabs voice callable with no login and no limit (bill run-up), and the sweep after it found an open email relay, open AI voice and video routes, and an admin password hash committed in a public repo. A public repo plus an open paid route is a bill anyone can run up.",
+   "how_html": "One shared helper wraps every paid route (LLM, TTS, image/video, email/SMS send, Stripe, scraping, maps): auth (session or signed guest token, never an anon key or an <code>Origin</code> check), <code>rateLimit(key, perHour)</code> and <code>dailyCeiling(name, max)</code>; a behaviour test per route: no auth → 401, over limit → 429, ceiling → 503 named stop, valid → passes. Also: no recipient, link or body of an email taken from the request; no secret, service-role key or password hash in code; Supabase <code>verify_jwt</code> on and RLS on every user table (no <code>using (true)</code>); user uploads land pending; webhooks verify signatures; admin routes check an admin session and lock out repeated wrong passwords; no <code>*</code> CORS on paid routes. The full check and fix recipe is the <code>app-security</code> skill; run it before launch.",
+   "check": {
+    "mode": "auto",
+    "type": "paid_routes_gated",
+    "source": "repo",
+    "how": "Server code holds no committed password hash or hardcoded fallback password, and a repo whose server code calls a paid API also has a rate limit in its server code (the rest is the launch review).",
     "applies_to": [
      "guide",
      "hyperlocal",
