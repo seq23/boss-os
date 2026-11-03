@@ -11,39 +11,50 @@
  * a copy written within REPORT_IN_MS — the producer's schedule, said once here; a producer with
  * nothing to say posts an empty "all clear" so absence means it did not run (rule 0, 1 Nov 2026).
  * `null` = event-driven, never expected. `label` is the plain name her email uses when one is missing.
+ *
+ * `catchUp` (an expected section only, repair rc_m6gtk44dhfjq6rvj, 3 Nov 2026): the `npm run` args
+ * that rewrite this section safely before the 06:32 Central catch-up's 06:40 deadline — only a
+ * producer that sends nothing (proved against SENDING_PATTERNS by tests/morningCatchup.test.ts).
+ * `catchUpWhy` is the plain reason it has none. Every expected section carries exactly one of the two.
  */
 const DAILY = Object.freeze(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]);
 export const MORNING_SECTION_SPECS = Object.freeze([
-  // interest-grid.mjs, daily 05:30 on her Mac (com.seq.boss-capital).
-  { name: "deals", label: "New deals", expect: DAILY },
-  { name: "monique_found", label: "Monique's matches", expect: DAILY },
+  // interest-grid.mjs, daily 05:30 on her Mac (com.seq.boss-capital). No email: safe to catch up.
+  { name: "deals", label: "New deals", expect: DAILY, catchUp: "capital:grid -- --keep-seen" },
+  { name: "monique_found", label: "Monique's matches", expect: DAILY, catchUp: "capital:grid -- --keep-seen" },
   // lp-daily.mjs 06:15 (Mac); prospects Mon–Fri 09:30, so the next morning's email (Mac);
   // catchups 06:20 (cloud, job-catchups.yml); eightraise 06:25 (Mac).
-  { name: "lp", label: "LP updates", expect: DAILY },
-  { name: "prospects", label: "Prospect emails", expect: Object.freeze(["Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]) },
-  { name: "catchups", label: "Catch up with", expect: DAILY },
-  { name: "eightraise", label: "the 8Raise credits", expect: DAILY },
+  { name: "lp", label: "LP updates", expect: DAILY, catchUpWhy: "lp-daily.mjs can act on live LP replies; never re-run blind before the email" },
+  {
+    name: "prospects", label: "Prospect emails", expect: Object.freeze(["Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]),
+    catchUpWhy: "lp-prospects.mjs sends prospect outreach; never re-run blind before the email",
+  },
+  { name: "catchups", label: "Catch up with", expect: DAILY, catchUpWhy: "moved to the cloud (job-catchups.yml, 1 Nov 2026); not a Mac script to re-run" },
+  { name: "eightraise", label: "the 8Raise credits", expect: DAILY, catchUpWhy: "rides the same LP sending pipeline's cadence; never re-run blind before the email" },
   // risk-watch.mjs daily 08:20 (Mac), so the next morning's email; posts an empty all clear.
-  { name: "risk", label: "Toni's money and mail check", expect: DAILY },
-  // archive-audit.mjs Fridays 08:40 (Mac), so Saturday's email; posts an empty all clear.
-  { name: "archive", label: "Zora's archive check", expect: Object.freeze(["Saturday"]) },
+  { name: "risk", label: "Toni's money and mail check", expect: DAILY, catchUpWhy: "risk-watch.mjs can send an alert when money is at risk (sendAs); never re-run blind" },
+  // archive-audit.mjs Fridays 08:40 (Mac), so Saturday's email; posts an empty all clear. No email: safe to catch up.
+  { name: "archive", label: "Zora's archive check", expect: Object.freeze(["Saturday"]), catchUp: "archive:audit" },
   // One line per email she sent Boss OS (boss-mail-tail-report.mjs): event-driven.
   { name: "tail", label: "Your email jobs", expect: null },
   { name: "bounces", label: "Bounces", expect: null },
   { name: "notices", label: "Notices", expect: null },
   // Mondays 06:00: the weekly Search Readiness check of the grid repo sites (scripts/ops/search-readiness-audit.mjs).
-  { name: "grid_repos", label: "the grid repos' search check", expect: Object.freeze(["Monday"]) },
+  {
+    name: "grid_repos", label: "the grid repos' search check", expect: Object.freeze(["Monday"]),
+    catchUpWhy: "the weekly Search Readiness audit (sites:audit) runs long — longer than the window before the email",
+  },
   // Camille's office outreach: a campaign that ends, so never expected.
   { name: "pnp_outreach", label: "Office outreach", expect: null },
   // Camille's Marketplace listings: the at-most-weekly ask for new real-job photos (scripts/ops/pnp-photo-ask.mjs).
   { name: "pnp_marketplace", label: "Marketplace photos", expect: null },
   // Mondays 06:10: "📊 Scorecard: N on track, M need a look" (scripts/ops/scorecard-monday.mjs; owner ruling, 1 Nov 2026).
-  // Carries its own `title`; lists only switches, pauses and rows with no number.
-  { name: "scorecard", label: "the Scorecard", expect: Object.freeze(["Monday"]) },
+  // Carries its own `title`; lists only switches, pauses and rows with no number. No email: safe to catch up.
+  { name: "scorecard", label: "the Scorecard", expect: Object.freeze(["Monday"]), catchUp: "scorecard:monday" },
   // Every morning from 05:00 Central: "Open loops: N, M overdue" + one line per overdue row, written by
   // the Worker's hourly tick (src/worker/boss/routes/openLoops.ts runOpenLoopsDaily; owner ruling, 1 Nov 2026).
   // Carries its own `title`; an empty list is still written, so absence means the tick did not run.
-  { name: "open_loops", label: "Open loops", expect: DAILY },
+  { name: "open_loops", label: "Open loops", expect: DAILY, catchUpWhy: "written by the Worker's hourly tick (runOpenLoopsDaily); not a Mac script to re-run" },
 ].map((s) => Object.freeze(s)));
 export const MORNING_SECTIONS = Object.freeze(MORNING_SECTION_SPECS.map((s) => s.name));
 
@@ -76,6 +87,23 @@ export function notReportedLine(missing) {
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   return `⚠ Not in today's email: ${list} (${names.length === 1 ? "its job" : "their jobs"} did not report in). The team is fixing it.`;
 }
+/**
+ * THE CATCH-UP PLAN (repair rc_m6gtk44dhfjq6rvj, 3 Nov 2026): the distinct `catchUp` commands the
+ * sections in `missing` need, in registry order (so two sections sharing one producer — deals and
+ * monique_found both run `capital:grid`— run it once), plus every section with none, named with why.
+ * Pure.
+ */
+export function catchUpPlan(missing) {
+  const commands = [];
+  const cannotCatchUp = [];
+  for (const m of missing ?? []) {
+    const spec = MORNING_SECTION_SPECS.find((s) => s.name === m.name);
+    if (spec?.catchUp) { if (!commands.includes(spec.catchUp)) commands.push(spec.catchUp); }
+    else cannotCatchUp.push({ name: m.name, label: m.label, why: spec?.catchUpWhy ?? "no catch-up is defined for this section" });
+  }
+  return { commands, cannotCatchUp };
+}
+
 export const STALE_MS = 30 * 3_600_000;
 
 const isButton = (b) => b && typeof b.label === "string" && typeof b.url === "string" && /^(?:https?:\/\/|mailto:)\S+$/.test(b.url);

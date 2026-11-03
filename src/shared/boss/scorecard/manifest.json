@@ -1514,6 +1514,10 @@
       "kind": "system",
       "why": "The Scorecard's own Monday run: it measures the other rows."
     },
+    "morning-catchup": {
+      "kind": "system",
+      "why": "Keeps the morning email's sections running on time; the sections themselves are judged by other rows, not this catch-up."
+    },
     "scorecard-sweep": {
       "kind": "system",
       "why": "The Scorecard's monthly stray sweep: it finds things running with no row."

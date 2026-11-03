@@ -173,6 +173,7 @@
     "drive:pull": "node scripts/vault/vault.mjs run -- node scripts/ops/drive-pull.mjs",
     "capital:book": "node scripts/vault/vault.mjs run -- node scripts/ops/capital-book.mjs",
     "capital:grid": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-grid.mjs",
+    "morning:catchup": "node scripts/vault/vault.mjs run -- node scripts/ops/morning-catchup.mjs",
     "capital:senders": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-ledger.mjs --senders",
     "capital:lists-seed": "node scripts/vault/vault.mjs run -- node scripts/ops/interest-lists-seed.mjs",
     "validate:retired-duty-fk": "node scripts/validate/retired-duty-fk.mjs && node scripts/validate/retired-duty-fk.mjs --self-test",

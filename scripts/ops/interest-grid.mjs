@@ -23,6 +23,8 @@
  *
  *   npm run capital:grid                 # build, write the morning sections, push the grid
  *   npm run capital:grid -- --dry-run    # print what it would write; touch nothing
+ *   npm run capital:grid -- --keep-seen  # catch-up run (morning-catchup.mjs): do everything but mark
+ *                                         # rows "seen", so the chain's own next run still finds them new
  */
 
 import fs from "node:fs";
@@ -707,6 +709,7 @@ export function writeMorning(name, section) {
 
 async function main() {
   const DRY = process.argv.includes("--dry-run");
+  const KEEP_SEEN = process.argv.includes("--keep-seen");
   const ledger = readJson(path.join(DIR, "ledger.json"), null);
   if (!ledger?.interests?.length) {
     console.error(`NAMED STOP [NO_LEDGER] ${path.join(DIR, "ledger.json")} is missing or empty. Run npm run capital:scan && npm run capital:extract.`);
@@ -795,8 +798,8 @@ async function main() {
       if (!res?.ok) console.error(`  holders for ${c.company} NOT pushed [${res?.status ?? "no response"}]`);
     }
   }
-  fs.writeFileSync(seenFile, JSON.stringify({ updated_at: new Date().toISOString(), ids: grid.map((g) => g.id) }, null, 2));
-  console.log(`CAPITAL-GRID-COMPLETE: ${grid.length} row(s), ${newRows.length} new, morning sections written${pushed ? ", Deals page updated" : ""}.`);
+  if (!KEEP_SEEN) fs.writeFileSync(seenFile, JSON.stringify({ updated_at: new Date().toISOString(), ids: grid.map((g) => g.id) }, null, 2));
+  console.log(`CAPITAL-GRID-COMPLETE: ${grid.length} row(s), ${newRows.length} new, morning sections written${pushed ? ", Deals page updated" : ""}${KEEP_SEEN ? " (--keep-seen: grid-seen.json untouched)" : ""}.`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
