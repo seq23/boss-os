@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { loadChecklist, loadSites, fixBriefs } from "../src/shared/boss/searchReadiness/audit.mjs";
+// @ts-expect-error — plain .mjs with no types; landAll is the function the runner calls.
 import { landAll } from "../scripts/ops/site-audit-lib.mjs";
 
 describe("Hicks: published Resources repairs are fixed directly, core pages wait for her yes", () => {
