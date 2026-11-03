@@ -1133,7 +1133,7 @@
     {
       "id": "boss-os-wrangler-toml",
       "name": "Boss OS hourly tick",
-      "what": "Boss OS hourly tick",
+      "what": "Boss OS hourly tick; Open Loops and 8Raise ledger morning sections daily from 05:00 Central",
       "business": "personal",
       "brand": "Boss OS",
       "system": "cloudflare",

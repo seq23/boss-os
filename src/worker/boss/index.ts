@@ -1,3 +1,4 @@
+import { runEightraiseDaily } from "./lp/eightraiseSection";
 import { Hono } from "hono";
 import type { Env, TaskMessage, Vars } from "./env";
 import { waitingOn } from "./routes/waitingOn";
@@ -510,3 +511,7 @@ export default {
     ctx.waitUntil(runScheduled(env, event.scheduledTime ?? Date.now()));
   },
 };
+
+export async function runEightraise(env: Env, now = Date.now()) {
+  return runEightraiseDaily(env, now);
+}
