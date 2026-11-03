@@ -1101,6 +1101,7 @@
   },
   {
    "domain": "hicksconsulting.org",
+   "owner_approval": "owner, 3 Nov 2026: \"she cares deeply about her site so i need to approve any changes to hicks live published site and published resources\". Every repair of a published page or published Resources post waits for her yes; new scheduled Resources posts still auto-publish and unpublished drafts may be rewritten.",
    "repo": "hicks-consulting-canonical",
    "category": "client",
    "entity_parent": "client",

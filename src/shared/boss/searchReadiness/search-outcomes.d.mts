@@ -8,3 +8,4 @@ export function pickLastWeekDay(days: string[], today: string): string | null;
 export function slipLines(siteResults: any[]): { domain: string | null; kind: string; line: string }[];
 export function redLines(siteResults: any[]): { domain: string | null; kind: string; line: string }[];
 export function weeklyBriefs(siteResults: any[], opts?: { now?: number }): any[];
+export function approvalCard(s: any, briefs: any[], opts?: { now?: number }): any;

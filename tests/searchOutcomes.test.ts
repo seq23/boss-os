@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay, OUTCOME } from "../src/shared/boss/searchReadiness/search-outcomes.mjs";
+import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay, approvalCard, OUTCOME } from "../src/shared/boss/searchReadiness/search-outcomes.mjs";
 import { diagnoseDrop } from "../src/shared/boss/searchReadiness/drop-diagnosis.mjs";
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
@@ -291,17 +291,28 @@ describe("where the warning and the diagnosis go", () => {
     expect(weeklyBriefs(res.map((r) => ({ ...r, host: "uscisexam.com" })))[0]).toMatchObject({ kind: "outcome", disposition: "weekly" });
   });
 
-  it("Horse and Hicks are repaired like her own sites, and their numbers stay in their own row", () => {
+  it("Horse is repaired like her own sites; Hicks waits for her yes; their numbers stay in their own row", () => {
     const horse = siteOf("horselegalguide.com"), hicks = siteOf("hicksconsulting.org");
     const consolidation = { status: "queued", candidates: 2, hubs: [{ hub: "/guides/", hubUrl: `https://horselegalguide.com/guides/`, urls: ["https://horselegalguide.com/guides/a"], total: 1 }] };
     const quality = { red: true, line: "x", pages: [{ url: "u", failing: ["filler"], notes: [] }] };
-    const res = [{ site: horse, host: "horselegalguide.com", results: [], outcome: gold, diagnosis, consolidation, quality }, { site: hicks, host: "hicksconsulting.org", results: [], outcome: { ...gold, status: "red" }, diagnosis, consolidation, quality }];
-    const briefs = weeklyBriefs(res);
-    expect(briefs.map((b: any) => [b.domain, b.kind, b.disposition])).toEqual([
-      ["horselegalguide.com", "outcome", "weekly"], ["horselegalguide.com", "quality", "weekly"], ["horselegalguide.com", "consolidate", "weekly"],
-      ["hicksconsulting.org", "outcome", "weekly"], ["hicksconsulting.org", "quality", "weekly"], ["hicksconsulting.org", "consolidate", "weekly"],
-    ]);
-    expect(briefs[0].evidence[0]).toMatch(/^CONFIRMED: The sitemap lists 10 pages/); // the diagnosis rides in the brief
+    const fail = { id: "b3", status: "fail", detail: "missing" };
+    const res: any[] = [{ site: horse, host: "horselegalguide.com", results: [fail], outcome: gold, diagnosis, consolidation, quality }, { site: hicks, host: "hicksconsulting.org", results: [fail], outcome: { ...gold, status: "red" }, diagnosis, consolidation, quality }];
+    const briefs = [...fixBriefs(checklist, res), ...weeklyBriefs(res)];
+    const by = (d: string) => briefs.filter((b: any) => b.domain === d).map((b: any) => [b.kind ?? "check", b.disposition]);
+    expect(by("horselegalguide.com")).toEqual([["check", "fix"], ["outcome", "weekly"], ["quality", "weekly"], ["consolidate", "weekly"]]);
+    expect(by("hicksconsulting.org")).toEqual([["check", "owner_approval"], ["outcome", "owner_approval"], ["quality", "owner_approval"], ["consolidate", "owner_approval"]]);
+    // nothing of Hicks reaches the repair run without her yes
+    const q = workQueue(briefs);
+    expect([...q.repos.map((r) => r.repo), ...q.once.map((r) => r.repo)]).not.toContain(hicks.repo);
+    // ONE approval card with the diagnosis and the proposed plan; none for Horse, none once approved
+    const card = approvalCard(res[1], briefs, { now: T("2026-11-03") });
+    expect(card).toMatchObject({ kind: "search_fix_plan", origin_id: "sr-hicksconsulting.org-2026-11-02" });
+    expect(card.summary).toMatch(/sitemap lists 10 pages.*nothing changes on the live site until you say yes/);
+    expect(card.payload.brief_ids).toHaveLength(4);
+    expect(approvalCard(res[0], briefs)).toBeNull();
+    const yes = { ...res[1], approved: true };
+    expect(approvalCard(yes, briefs)).toBeNull();
+    expect([...fixBriefs(checklist, [yes]), ...weeklyBriefs([yes])].map((b: any) => b.disposition)).toEqual(["fix", "weekly", "weekly", "weekly"]);
     const lines = morningLines(checklist, res, { goldLines: slipLines(res), redLines: redLines(res), categories });
     expect(lines.join("\n")).not.toMatch(/588|sitemap lists/); // a client's numbers stay in its row
     expect(lines.some((l) => /^Friends' sites slipping in Google: horselegalguide\.com\./.test(l))).toBe(true);
@@ -309,7 +320,7 @@ describe("where the warning and the diagnosis go", () => {
     const row = html.split("<tr").find((r) => r.includes('data-site="horselegalguide.com"'))!;
     expect(row).toMatch(/class="gold" data-outcome="gold"/);
     expect(row).toMatch(/CONFIRMED: The sitemap lists 10 pages/);
-    expect(html).not.toMatch(/class="gold-lines"/); // her own gold list holds no friend's site
+    expect(html).not.toMatch(/class="gold-lines"/);
   });
 });
 

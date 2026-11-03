@@ -42,7 +42,7 @@ import { passingItems,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
-import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay } from "../../src/shared/boss/searchReadiness/search-outcomes.mjs";
+import { outcomeVerdict, outcomeWindows, redLines, slipLines, weeklyBriefs, pickLastWeekDay, approvalCard } from "../../src/shared/boss/searchReadiness/search-outcomes.mjs";
 import { diagnoseDrop, windowLosses, DIAG } from "../../src/shared/boss/searchReadiness/drop-diagnosis.mjs";
 import { pickSample, qualitySample } from "../../src/shared/boss/searchReadiness/page-quality-sample.mjs";
 import { consolidationQueue, nextFirstSeen, CONSOLIDATION } from "../../src/shared/boss/searchReadiness/consolidation-queue.mjs";
@@ -569,7 +569,18 @@ async function main() {
   };
   writeJson(join(OUT, `results-${day}.json`), report);
   if (!only) writeJson(prevPath, report);
+  // Her yes (Hicks, 3 Nov 2026): an approved plan for a site in the last 14 days lets its briefs be worked.
+  const boss = await bossSession();
+  const approvedOrigins = boss.ok ? await approvedPlanOrigins(boss) : null;
+  for (const s of siteResults) if (s.site?.owner_approval) s.approved = Boolean(approvedOrigins?.some((o) => o.startsWith(`sr-${s.site.domain}-`)));
   const briefs = [...fixBriefs(checklist, siteResults), ...weeklyBriefs(siteResults)];
+  if (!only) for (const s of siteResults) {
+    const card = approvalCard(s, briefs);
+    if (!card) continue;
+    const r = boss.ok ? await raiseApproval(boss, card) : { ok: false, why: boss.why };
+    s.approval = r.ok ? { origin_id: card.origin_id, raised: r.raised } : { not_read: r.why };
+    say(r.ok ? `${s.site.domain}: fix plan ${r.raised ? "sent to you for approval" : "already waiting for your approval"}.` : `${s.site.domain}: NAMED STOP [APPROVAL_NOT_RAISED] the fix plan could not be sent for approval (${r.why}); its briefs stay held.`);
+  }
   if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, definition: defs.source, consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
 
   // What passes now clears its old open finding in Boss OS, so nothing asks her for what is already true.
@@ -596,6 +607,38 @@ async function main() {
     writeMorningSection("grid_repos", { lines, link: { label: "See every site's checks →", url: "https://boss.sequoiataylor.com/?view=morning" } });
     say(`Morning section written: ${lines.length} lines.`);
   }
+}
+
+/** A Boss OS session cookie, or { ok: false, why }. */
+async function bossSession() {
+  if (!process.env.BOSS_PASSCODE) return { ok: false, why: "no passcode in this process" };
+  try {
+    const origin = process.env.BOSS_OS_ORIGIN ?? "https://boss.sequoiataylor.com";
+    const u = await fetch(`${origin}/api/boss/auth/unlock`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: process.env.BOSS_PASSCODE }) });
+    if (!u.ok) return { ok: false, why: `unlock ${u.status}` };
+    return { ok: true, origin, cookie: (u.headers.get("set-cookie") ?? "").split(";")[0] };
+  } catch (e) { return { ok: false, why: String(e?.message ?? e).slice(0, 120) }; }
+}
+const approvalRows = async (b, status) => {
+  const r = await fetch(`${b.origin}/api/boss/approvals?status=${status}`, { headers: { cookie: b.cookie } }).catch(() => null);
+  return r?.ok ? ((await r.json()).data ?? []) : null;
+};
+/** A row time as ms: epoch number or ISO text. */
+const whenMs = (v) => (typeof v === "number" ? v : /^\d+$/.test(String(v ?? "")) ? Number(v) : Date.parse(String(v ?? "")) || 0);
+/** Origins of search fix plans she approved in the last 14 days; null when unread (then nothing is released). */
+async function approvedPlanOrigins(b) {
+  const rows = await approvalRows(b, "approved");
+  if (!rows) return null;
+  const since = Date.now() - 14 * 86_400_000;
+  return rows.filter((a) => a.kind === "search_fix_plan" && whenMs(a.decided_at ?? a.requested_at) >= since).map((a) => String(a.origin_id ?? ""));
+}
+/** Raise the card once per site per week: a pending row with the same origin is left alone. */
+async function raiseApproval(b, card) {
+  const pending = await approvalRows(b, "pending");
+  if (!pending) return { ok: false, why: "the pending approvals could not be read" };
+  if (pending.some((a) => a.origin_id === card.origin_id)) return { ok: true, raised: false };
+  const r = await fetch(`${b.origin}/api/boss/approvals`, { method: "POST", headers: { cookie: b.cookie, "content-type": "application/json" }, body: JSON.stringify(card) }).catch(() => null);
+  return r?.ok ? { ok: true, raised: true } : { ok: false, why: `Boss OS answered ${r?.status ?? "nothing"}` };
 }
 
 /** POST the passing items; `{ ok, archived }` or `{ ok: false, why }`. Never fails the audit. */
