@@ -1374,7 +1374,8 @@ cloud_moved com.seq.boss-waiting-on
 # and its plist archived (never deleted), so the two can never both be live; verified gone below.
 ERRAND_LABEL="com.seq.boss-errand-reminders"
 cloud_moved "$ERRAND_LABEL"
-install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>' mac-cleanup
+# Daily since 3 Nov 2026 (was Sundays): a week of render working folders filled the disk and the Mac panicked on low swap.
+install_l_job com.seq.boss-mac-cleanup "duty-run.sh mac-cleanup.mjs -- npm run --silent mac:cleanup" '<dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>' mac-cleanup
 # MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-preseed-watch.yml, Tuesday 07:30 Central, state preseed.
 cloud_moved com.seq.boss-preseed-watch
 # MOVED TO THE CLOUD (1 Nov 2026): .github/workflows/job-catchups.yml, daily 06:20 Central, same duty.

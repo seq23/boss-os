@@ -1,7 +1,11 @@
 export declare const NEVER: string[];
 export declare const LOW_GB: number;
+export declare const TRASH_GB: number;
 export declare const forbidden: (p: string) => boolean;
 export declare function pickWorktrees(trees: any[], now?: number): { remove: any[]; list: any[] };
 export declare function pickRenders(files: Array<{ name: string; mtime: number }>, published: string[], now?: number): Array<{ name: string; mtime: number }>;
 export declare function pickPlaywright(dirs: string[]): string[];
-export declare function lowDiskLine(freeGb: number, cleanedGb: number, biggest: string[]): string | null;
+export declare function lowDiskLine(freeGb: number, cleanedGb: number, biggest: string[], trashGb?: number): string | null;
+export declare function pickRenderWork(dirs: Array<{ path: string; rel?: string; kind: "work" | "hash"; episode: string; final: boolean; newest: number }>, procs: string[] | null, now?: number): Array<{ path: string; rel?: string; kind: "work" | "hash"; episode: string; final: boolean; newest: number }>;
+export declare const workEpisode: (name: string) => string;
+export declare function spaceNotice(freeGb: number, trashGb: number): string | null;

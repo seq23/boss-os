@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { zoraPass, yoursThisWeek, todoEditsIn, matchTodo } from "../src/shared/boss/waiting/register.mjs";
 import { measuringLine } from "../scripts/ops/waiting-on.mjs";
-import { pickWorktrees, pickRenders, pickPlaywright, lowDiskLine, forbidden } from "../scripts/ops/mac-cleanup.mjs";
+import { pickWorktrees, pickRenders, pickRenderWork, pickPlaywright, lowDiskLine, spaceNotice, workEpisode, forbidden } from "../scripts/ops/mac-cleanup.mjs";
 import { crossedRow, fundedRow, compareLists, preseedLine, companyOf } from "../src/shared/boss/capital/preseed.mjs";
 import { recipientsOf } from "../scripts/ops/warm-references.mjs";
 import { buildDay } from "../scripts/ops/your-day.mjs";
@@ -72,7 +72,20 @@ describe("Kendra keeps the Mac's disk from filling up", () => {
     expect(pickRenders(files, ["deep-sea"], NOW).map((f: any) => f.name)).toEqual(["01-deep-sea-final.mp4"]);
     expect(pickPlaywright(["chromium-1200", "chromium-1243", "chromium_headless_shell-1243", "ffmpeg-1011"])).toEqual(["chromium-1200"]);
     expect(lowDiskLine(25, 3, [])).toBeNull();
-    expect(lowDiskLine(14.2, 6.5, ["Caches 40 GB"])).toBe("Mac disk: 14 GB free; cleaned 6.5 GB; biggest: Caches 40 GB.");
+    expect(lowDiskLine(14.2, 6.5, ["Caches 40 GB"], 6.1)).toContain("Trash 6.1 GB");
+  });
+  it("removes a render working folder only when old, its episode has a final, and no render process names it", () => {
+    const w = (over: any) => ({ path: "x/7c44241361c4", kind: "hash", episode: "what-is-inside-honey", final: true, newest: NOW - 3 * DAY, ...over });
+    const dirs = [w({ path: "old/7c44241361c4" }), w({ path: "nofinal/7c44241361c4", final: false }), w({ path: "fresh/7c44241361c4", newest: NOW - 3_600_000 }),
+      w({ path: "busy/a.mp4.work", kind: "work", episode: "busy" }), w({ path: "notHex/plans" })];
+    expect(pickRenderWork(dirs, ["2215 ffmpeg -i renders/busy-final.mp4"], NOW).map((d: any) => d.path)).toEqual(["old/7c44241361c4"]);
+    expect(pickRenderWork(dirs, null, NOW)).toEqual([]); // processes not read: nothing goes
+    expect(workEpisode("does-damascus-steel-rust-final.mp4.work")).toBe("does-damascus-steel-rust");
+  });
+  it("tells her about the Trash only past 2 GB or under 20 GB free", () => {
+    expect(spaceNotice(29, 0.5)).toBeNull();
+    expect(spaceNotice(29, 6.1)).toMatch(/6\.1 GB/);
+    expect(spaceNotice(14, NaN)).toMatch(/14 GB free/);
   });
 });
 
