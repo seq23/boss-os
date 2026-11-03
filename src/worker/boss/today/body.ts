@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { newId } from "../lib/id";
+import { routineFor, fallbackFor, type RoutineStep } from "../../../shared/boss/body/morningRoutine.mjs";
 
 /**
  * THE BODY CONTRACT — §6.9's stored sequence, §6.10's somatic lane, and the Somatic brain's novelty
@@ -12,8 +13,8 @@ import { newId } from "../lib/id";
  *
  *   BED FIRST (§6.8, and the Somatic brain's §2). "Minimum Viable means the entire fallback sequence
  *   must be completable WITHOUT GETTING OUT OF BED. No standing, walking pad, outdoor walking, or
- *   out-of-bed exercise may appear in the minimum-viable fallback." Every movement in this file is
- *   bed-based, so the fallback cannot acquire a standing move by accident.
+ *   out-of-bed exercise may appear in the minimum-viable fallback." The fallback is the routine's
+ *   first three steps, all in bed, and a reduced day prints only those.
  *
  *   NOVELTY (Somatic brain §10). "Do NOT generate essentially the same routine every morning. Track
  *   recent movement selections whenever history is available. Avoid using the exact same major
@@ -22,14 +23,13 @@ import { newId } from "../lib/id";
  *   deterministic, which means it also never needs a model — and cannot repeat by chance.
  */
 
-/** §6.9. "Print this exactly, in order." It is not paraphrased, reordered, or trimmed. */
-export const STORED_MORNING_SEQUENCE = [
-  "10 in-bed leg raises per side",
-  "10 seated knee-to-chest pulls per side",
-  "10 seated torso twists per side",
-  "30 seconds shoulder rolls",
-  "30 seconds deep breathing",
-];
+/**
+ * HER MORNING ROUTINE (owner, 2 Nov 2026): ten minutes, bed → floor → standing → wall, everything
+ * every day, 3–4 steps swapped to their alternate by the date. The default lives in
+ * `src/shared/boss/body/morningRoutine.mjs` so the Worker and the Mac read one list; this is the
+ * plain list for a day, as lines.
+ */
+export const morningSequenceFor = (dayId: string): string[] => routineFor(dayId).map((st) => st.line);
 
 /** The Somatic brain's rotation lanes, with its own movement names. */
 export const MOVEMENT_LANES: { key: string; title: string; movements: string[] }[] = [
@@ -304,6 +304,7 @@ export async function markSomaticDone(
 
 export interface BodyContract {
   launch_sequence: string[];
+  routine: RoutineStep[];
   somatic: SomaticSelection[];
   hydration: string;
   medication: string;
@@ -344,7 +345,9 @@ export async function buildBodyContractWithState(
   const reduced = dayMode === "recovery" || dayMode === "mvd";
 
   const body: BodyContract = {
-    launch_sequence: STORED_MORNING_SEQUENCE,
+    // A reduced day is the hard-day fallback alone: all in bed (§6.8), so nothing standing is printed.
+    launch_sequence: (reduced ? fallbackFor(dayId) : routineFor(dayId)).map((st) => st.line),
+    routine: reduced ? fallbackFor(dayId) : routineFor(dayId),
     // A reduced day keeps regulation and the lower back, which are the two the brain leads with.
     somatic: reduced ? somatic.filter((s) => s.lane === "neck" || s.lane === "pelvis_lumbar") : somatic,
     hydration: "One full Stanley cup minimum, two is the target — about 80 oz.",
@@ -363,19 +366,11 @@ export async function buildBodyContractWithState(
       ? "10 minutes minimum, all of it in bed. Nothing here needs you to stand up."
       : "10 minutes minimum. Outside walk, walking pad, bed yoga or somatic all count.",
     /*
-     * THE FALLBACK IS THE SAME FIVE MOVEMENTS AS THE LAUNCH SEQUENCE, AND THAT IS DELIBERATE.
-     *
-     * It reads like a copy-paste accident, so it is written down here rather than left to be
-     * rediscovered. §6.9's stored sequence is entirely bed-based — leg raises, knee-to-chest pulls,
-     * torso twists, shoulder rolls, breathing — and §6.8 requires the minimum-viable fallback to be
-     * completable WITHOUT GETTING OUT OF BED. The launch sequence already clears that bar, so on the
-     * worst day there is nothing to cut: the fallback IS the sequence, and inventing a shorter
-     * second list would be inventing content her documents do not contain.
-     *
-     * The screen does not print the five twice. `BodyContract.tsx` DERIVES the identity and says it
-     * in one line, and prints the fallback as its own list should the two ever diverge.
+     * THE FALLBACK IS THE ROUTINE'S FIRST THREE STEPS, ALL IN BED (§6.8), about three minutes, and
+     * the same day's version of them (a swapped step keeps its place, so it is still in bed).
+     * `BodyContract.tsx` prints it as its own short line when it differs from the launch list.
      */
-    minimum_viable: STORED_MORNING_SEQUENCE,
+    minimum_viable: fallbackFor(dayId).map((st) => st.move),
     safety_stop: SAFETY_STOP,
     language_rule: LANGUAGE_RULE,
     bed_only: reduced,

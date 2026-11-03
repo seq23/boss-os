@@ -54,7 +54,7 @@ export const GATE_DEFAULTS: Record<GateName, readonly GateItem[]> = {
   morning: [
     { key: "gratitude", kind: "gratitude", label: "Say the gratitude sentence aloud", short: "Gratitude sentence aloud" },
     { key: "practice", kind: "practice", label: "Meditation: the 20-minute practice (7 steps)", short: "Meditation" },
-    { key: "move", kind: "move", label: "Movement: 10 min, 5 bed moves + somatic rotation", short: "Movement" },
+    { key: "move", kind: "move", label: "Movement: 10 min, bed → floor → standing", short: "Movement" },
     { key: "water", kind: "water", label: "Medicine: BP medicine + water in the first hour", short: "Medicine" },
     { key: "bp_tea", kind: "bp_tea", label: "Blood pressure tea", short: "Blood pressure tea" },
     { key: "agree", kind: "agree", label: "Agree the day: priorities, identity cue, state, body floor, revenue reality, commitment", required: true },

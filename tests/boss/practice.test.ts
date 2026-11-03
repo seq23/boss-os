@@ -96,7 +96,8 @@ describe("the day payload — what the screen can actually render", () => {
      * "runs but inert" shape this repository names, and introduced by this session's own work.
      */
     const { body } = await apiJson("/api/spirit/day");
-    expect(body.data.practice.body.launch_sequence[0]).toBe("10 in-bed leg raises per side");
+    expect(body.data.practice.body.launch_sequence.length).toBeGreaterThan(0);
+    expect(body.data.practice.body.routine[0].place).toBe("bed");
     expect(body.data.practice.body.somatic.length).toBeGreaterThan(0);
     expect(body.data.practice.body.safety_stop).toContain("do not push through");
   });

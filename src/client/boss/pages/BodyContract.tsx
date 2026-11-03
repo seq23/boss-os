@@ -43,6 +43,7 @@ export type BodyKind = "movement" | "intake" | "medical" | "stop";
 export const BODY_FIELD_GROUPS: Record<string, BodyKind> = {
   movement_floor: "movement",
   launch_sequence: "movement",
+  routine: "movement",
   minimum_viable: "movement",
   somatic: "movement",
   bed_only: "movement",
@@ -72,6 +73,7 @@ export interface SomaticLane {
 
 export interface BodyPayload {
   launch_sequence?: string[];
+  routine?: { n: number; at: string; where: string; move: string; purpose: string }[];
   somatic?: SomaticLane[];
   hydration?: string;
   medication?: string;
@@ -84,23 +86,14 @@ export interface BodyPayload {
 }
 
 /**
- * IS THE FALLBACK THE SAME LIST AS THE LAUNCH SEQUENCE? ON HER CONTRACT, YES — DELIBERATELY.
+ * IS THE FALLBACK THE SAME LIST AS THE LAUNCH SEQUENCE?
  *
- * `buildBodyContract` sets `minimum_viable: STORED_MORNING_SEQUENCE`, the same array it sets
- * `launch_sequence` to, and that looked like a copy-paste accident. It is not. §6.9's stored
- * sequence is five bed-based movements — leg raises, knee-to-chest pulls, torso twists, shoulder
- * rolls, breathing — and §6.8 requires the minimum-viable fallback to be completable WITHOUT
- * GETTING OUT OF BED. The launch sequence already satisfies that, so on the worst day there is
- * nothing to cut: the fallback IS the sequence.
- *
- * That is a fact worth one line and worth reading. Printing the same five movements twice under two
- * headings is not — it reads as a bug and it doubles the length of the thing she reads first.
- *
- * So the relationship is DERIVED rather than assumed: should the two ever diverge, the fallback
- * prints as its own list. The screen tells the truth either way.
+ * On a normal day, no: the routine is ten minutes, bed → floor → standing → wall, and the hard-day
+ * fallback is its first three steps, all in bed. On a reduced day the launch list IS the fallback,
+ * and saying so in one line beats printing it twice. Derived, never assumed.
  */
 export function minimumViableIsTheLaunchSequence(body: BodyPayload): boolean {
-  const launch = body.launch_sequence ?? [];
+  const launch = body.routine?.length ? body.routine.map((st) => st.move) : body.launch_sequence ?? [];
   const fallback = body.minimum_viable ?? [];
   if (launch.length === 0 || fallback.length === 0) return false;
   return launch.length === fallback.length && launch.every((m, i) => m === fallback[i]);
@@ -172,27 +165,28 @@ export function BodyContractView({ body, onChanged }: { body: BodyPayload; onCha
         {body.movement_floor && <p className="bodygroup-floor">{body.movement_floor}</p>}
         {body.bed_only && <p className="bodygroup-note">A bed-only day. Nothing below asks you to stand up.</p>}
 
-        <ol className="bodyseq">
-          {(body.launch_sequence ?? []).map((m, i) => (
-            <li key={i}>{m}</li>
-          ))}
-        </ol>
+        {(body.routine ?? []).length > 0 ? (
+          <ul className="bodylanes">
+            {(body.routine ?? []).map((st) => (
+              <li key={st.n}>
+                <span className="bodylane-move">{st.move}</span>
+                <span className="bodylane-why">{st.at} · {st.where} · {st.purpose}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <ol className="bodyseq">
+            {(body.launch_sequence ?? []).map((m, i) => (
+              <li key={i}>{m}</li>
+            ))}
+          </ol>
+        )}
 
         {fallbackIsLaunch ? (
-          <p className="bodygroup-note">
-            That list is also the minimum viable version — all five are doable in bed, so on a hard day
-            there is nothing to cut.
-          </p>
+          <p className="bodygroup-note">That is the whole of it today, all in bed.</p>
         ) : (
           (body.minimum_viable ?? []).length > 0 && (
-            <>
-              <p className="bodygroup-note">If today is a hard day, this is the whole of it:</p>
-              <ol className="bodyseq">
-                {(body.minimum_viable ?? []).map((m, i) => (
-                  <li key={i}>{m}</li>
-                ))}
-              </ol>
-            </>
+            <p className="bodygroup-note">Hard day? Just the first three, all in bed (about 3 min): {(body.minimum_viable ?? []).join(" → ")}.</p>
           )
         )}
 
