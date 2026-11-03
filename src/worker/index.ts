@@ -29,7 +29,7 @@ import {
 } from "./services/lpCommitments";
 import { resolveFirmUser } from "./auth";
 import { Router, json, type RouteContext } from "./router";
-import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, toBossEnv as toBossEnvForCron } from "./bossMount";
+import { isBossRoute, handleBossRequest, tapPageToBossPath, researchPageToBossPath, drainBossTasks, runBossNightly, runBossDuties, runBossReaper, runBossOutreach, runBossOpenLoops, runBossEightraise, toBossEnv as toBossEnvForCron } from "./bossMount";
 import {
   handleAcceptCandidate,
   handleAddAlias,
@@ -1623,6 +1623,11 @@ export default {
       }).catch((err) => {
         console.error("boss outreach failed", err);
       }),
+    );
+    ctx.waitUntil(
+      runBossEightraise(toBossEnvForCron(env), now.getTime()).then((r) => {
+        if (r.ran || /NAMED STOP/.test(r.reason ?? "")) console.log("boss eightraise", JSON.stringify(r));
+      }).catch((err) => console.error("boss eightraise failed", err)),
     );
     // Open Loops: once a day from 05:00 Central, the morning section and the overdue repairs.
     ctx.waitUntil(

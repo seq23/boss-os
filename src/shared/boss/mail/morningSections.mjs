@@ -7,7 +7,7 @@
 
 /**
  * THE ONE SECTION REGISTRY. Producers: D writes deals + monique_found; L writes lp, prospects,
- * catchups, eightraise; E the rest. `expect` is the weekdays (Central) whose morning email must carry
+ * catchups; the Worker writes eightraise (L adds the live balance); E the rest. `expect` is the weekdays (Central) whose morning email must carry
  * a copy written within REPORT_IN_MS — the producer's schedule, said once here; a producer with
  * nothing to say posts an empty "all clear" so absence means it did not run (rule 0, 1 Nov 2026).
  * `null` = event-driven, never expected. `label` is the plain name her email uses when one is missing.
@@ -18,7 +18,8 @@ export const MORNING_SECTION_SPECS = Object.freeze([
   { name: "deals", label: "New deals", expect: DAILY },
   { name: "monique_found", label: "Monique's matches", expect: DAILY },
   // lp-daily.mjs 06:15 (Mac); prospects Mon–Fri 09:30, so the next morning's email (Mac);
-  // catchups 06:20 (cloud, job-catchups.yml); eightraise 06:25 (Mac).
+  // catchups 06:20 (cloud, job-catchups.yml). Eightraise: Worker hourly tick from 05:00 Central;
+  // lp-eightraise.mjs replaces it at 06:25 (Mac) with the live balance when readable.
   { name: "lp", label: "LP updates", expect: DAILY },
   { name: "prospects", label: "Prospect emails", expect: Object.freeze(["Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]) },
   { name: "catchups", label: "Catch up with", expect: DAILY },
