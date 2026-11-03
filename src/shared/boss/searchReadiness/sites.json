@@ -24,6 +24,11 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "none",
+    "action": "a reader reaching a guide site's request form",
+    "track_with": "a counted link from the hub to the guide sites' request forms (the hub's one action is 'read the full guide', which nothing records)"
    }
   },
   {
@@ -49,6 +54,18 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "airtable",
+    "action": "requests to hear from a provider (the request-assistance form)",
+    "code": "local-guides-generator functions/api/request-assistance.js (Airtable, source_domain)",
+    "params": {
+     "key": "AIRTABLE_LKG_LEADS_TOKEN",
+     "base": "appDgpv4F5ORCtUU3",
+     "table": "Lead Requests",
+     "where": "FIND('uscisexam.com', {source_domain})",
+     "only_field": "source_domain"
+    }
    }
   },
   {
@@ -86,6 +103,18 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "airtable",
+    "action": "requests to hear from a provider (the request-assistance form)",
+    "code": "local-guides-generator functions/api/request-assistance.js (Airtable, source_domain)",
+    "params": {
+     "key": "AIRTABLE_LKG_LEADS_TOKEN",
+     "base": "appDgpv4F5ORCtUU3",
+     "table": "Lead Requests",
+     "where": "FIND('dentistryguides.com', {source_domain})",
+     "only_field": "source_domain"
+    }
    }
   },
   {
@@ -111,6 +140,18 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "airtable",
+    "action": "requests to hear from a provider (the request-assistance form)",
+    "code": "local-guides-generator functions/api/request-assistance.js (Airtable, source_domain)",
+    "params": {
+     "key": "AIRTABLE_LKG_LEADS_TOKEN",
+     "base": "appDgpv4F5ORCtUU3",
+     "table": "Lead Requests",
+     "where": "FIND('theaccidentguides.com', {source_domain})",
+     "only_field": "source_domain"
+    }
    }
   },
   {
@@ -136,6 +177,18 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "airtable",
+    "action": "requests to hear from a provider (the request-assistance form)",
+    "code": "local-guides-generator functions/api/request-assistance.js (Airtable, source_domain)",
+    "params": {
+     "key": "AIRTABLE_LKG_LEADS_TOKEN",
+     "base": "appDgpv4F5ORCtUU3",
+     "table": "Lead Requests",
+     "where": "FIND('neuroevalguides.com', {source_domain})",
+     "only_field": "source_domain"
+    }
    }
   },
   {
@@ -161,6 +214,18 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "airtable",
+    "action": "requests to hear from a provider (the request-assistance form)",
+    "code": "local-guides-generator functions/api/request-assistance.js (Airtable, source_domain)",
+    "params": {
+     "key": "AIRTABLE_LKG_LEADS_TOKEN",
+     "base": "appDgpv4F5ORCtUU3",
+     "table": "Lead Requests",
+     "where": "FIND('hormonesivhair.com', {source_domain})",
+     "only_field": "source_domain"
+    }
    }
   },
   {
@@ -510,6 +575,15 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "d1",
+    "action": "families and professionals who finished the senior intake",
+    "code": "local-guides-generator functions/api/senior-lead.js (D1 senior-leads, leads)",
+    "params": {
+     "db": "senior-leads",
+     "sql": "SELECT COUNT(*) AS n FROM leads WHERE datetime(created_at) >= datetime(:since_iso)"
+    }
    }
   },
   {
@@ -700,6 +774,15 @@
    },
    "search_loop": {
     "wave": 3
+   },
+   "lead_source": {
+    "kind": "d1",
+    "action": "quote requests (test requests left out)",
+    "code": "p-n-p functions/_lib/request-submit.mjs (D1 pnp-admin, requests)",
+    "params": {
+     "db": "pnp-admin",
+     "sql": "SELECT COUNT(*) AS n FROM requests WHERE is_test = 0 AND datetime(submitted_at) >= datetime(:since_iso)"
+    }
    }
   },
   {
@@ -717,6 +800,15 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "d1",
+    "action": "paid kit purchases",
+    "code": "approvalprep functions/api/stripe-webhook.js (D1 approvalprep-products, download_entitlements)",
+    "params": {
+     "db": "approvalprep-products",
+     "sql": "SELECT COUNT(*) AS n FROM download_entitlements WHERE payment_status = 'paid' AND revoked_at IS NULL AND datetime(created_at) >= datetime(:since_iso)"
+    }
    }
   },
   {
@@ -733,6 +825,15 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "d1",
+    "action": "paid orders of this site's product (the suite counts nowhere single)",
+    "code": "dream-wedding-builder app/api/stripe-webhook/route.ts (orders)",
+    "params": {
+     "db": "dream-wedding-builder",
+     "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND sku = 'DWB-CHECKLIST-001' AND datetime(created_at) >= datetime(:since_iso)"
+    }
    }
   },
   {
@@ -749,6 +850,15 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "d1",
+    "action": "paid orders of this site's product (the suite counts nowhere single)",
+    "code": "dream-wedding-builder app/api/stripe-webhook/route.ts (orders)",
+    "params": {
+     "db": "dream-wedding-builder",
+     "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND sku = 'DWB-BUDGET-001' AND datetime(created_at) >= datetime(:since_iso)"
+    }
    }
   },
   {
@@ -765,6 +875,15 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "d1",
+    "action": "paid orders of this site's product (the suite counts nowhere single)",
+    "code": "dream-wedding-builder app/api/stripe-webhook/route.ts (orders)",
+    "params": {
+     "db": "dream-wedding-builder",
+     "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND sku = 'DWB-SEATING-001' AND datetime(created_at) >= datetime(:since_iso)"
+    }
    }
   },
   {
@@ -781,6 +900,15 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "d1",
+    "action": "paid orders of this site's product (the suite counts nowhere single)",
+    "code": "dream-wedding-builder app/api/stripe-webhook/route.ts (orders)",
+    "params": {
+     "db": "dream-wedding-builder",
+     "sql": "SELECT COUNT(*) AS n FROM orders WHERE payment_status = 'paid' AND sku = 'DWB-TIMELINE-001' AND datetime(created_at) >= datetime(:since_iso)"
+    }
    }
   },
   {
@@ -798,6 +926,18 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "cf_web_analytics",
+    "action": "visits to the Spry Executive OS download page sent from this site",
+    "code": "sprylabs-hpc-site search-loop.config.json (action: billionairehighperformancecoach.com/download)",
+    "params": {
+     "host": "billionairehighperformancecoach.com",
+     "paths": [
+      "/download"
+     ],
+     "referer_host": "aplayermode.com"
+    }
    }
   },
   {
@@ -824,6 +964,14 @@
    ],
    "search_loop": {
     "wave": 2
+   },
+   "lead_source": {
+    "kind": "t2r",
+    "action": "new free signups (her own and test accounts left out)",
+    "code": "dailystory Supabase accounts, read by boss-os scripts/brains/t2r-numbers.mjs",
+    "params": {
+     "metric": "signups"
+    }
    }
   },
   {
@@ -840,6 +988,11 @@
    },
    "search_loop": {
     "wave": 2
+   },
+   "lead_source": {
+    "kind": "none",
+    "action": "a free Time-2-Read week started from here",
+    "track_with": "a ref tag on its Time-2-Read link (the 14 links to time-2-read.com/pricing carry none) or Web Analytics on time-2-read.com"
    }
   },
   {
@@ -855,6 +1008,11 @@
    "coverage": {
     "model": "not_local",
     "why": "The YouTube channel's companion site; topical, no place-based pages."
+   },
+   "lead_source": {
+    "kind": "none",
+    "action": "a visitor going on to the channel",
+    "track_with": "a counted link from the site to the channel (a /go/ hop with Web Analytics)"
    }
   },
   {
@@ -872,6 +1030,11 @@
    "coverage": {
     "model": "not_local",
     "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."
+   },
+   "lead_source": {
+    "kind": "none",
+    "action": "a reader following a link to the site it serves",
+    "track_with": "a counted /go/ hop on its outbound links (the library has no action of its own)"
    }
   },
   {
@@ -889,6 +1052,11 @@
    "coverage": {
     "model": "not_local",
     "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."
+   },
+   "lead_source": {
+    "kind": "none",
+    "action": "a reader following a link to the site it serves",
+    "track_with": "a counted /go/ hop on its outbound links (the library has no action of its own)"
    }
   },
   {
@@ -906,6 +1074,11 @@
    "coverage": {
     "model": "not_local",
     "why": "An authority library: topical resource pages that link the portfolio; the Memphis library lists vendors, it does not sell by town."
+   },
+   "lead_source": {
+    "kind": "none",
+    "action": "a reader following a link to the site it serves",
+    "track_with": "a counted /go/ hop on its outbound links (the library has no action of its own)"
    }
   },
   {
@@ -991,6 +1164,18 @@
    "coverage": {
     "model": "not_local",
     "why": "A national software product; no place-based pages."
+   },
+   "lead_source": {
+    "kind": "cf_web_analytics",
+    "action": "visits to the West Peek Productions inquiry site sent from this site",
+    "code": "WPP-llm search-loop.config.json (action: westpeekproductions.com, linked from every page)",
+    "params": {
+     "host": "westpeekproductions.com",
+     "paths": [
+      "/*"
+     ],
+     "referer_host": "virtualagency-os.com"
+    }
    }
   },
   {
@@ -1031,6 +1216,15 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "gumroad",
+    "action": "paid Spry Executive OS sales",
+    "code": "sprylabs-hpc-site download page (Gumroad buy link, protected page)",
+    "params": {
+     "kind": "paid",
+     "product": "billionaire-high-performance-coach"
+    }
    }
   },
   {
@@ -1071,6 +1265,18 @@
    },
    "search_loop": {
     "wave": 1
+   },
+   "lead_source": {
+    "kind": "cf_web_analytics",
+    "action": "visits to the Spry Executive OS download page sent from this site",
+    "code": "sprylabs-hpc-site search-loop.config.json (action: billionairehighperformancecoach.com/download)",
+    "params": {
+     "host": "billionairehighperformancecoach.com",
+     "paths": [
+      "/download"
+     ],
+     "referer_host": "spryexecutiveos.com"
+    }
    }
   }
  ]

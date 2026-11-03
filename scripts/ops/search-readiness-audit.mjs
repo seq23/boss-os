@@ -46,6 +46,9 @@ import { outcomeVerdict, outcomeWindows, redLines, weeklyBriefs } from "../../sr
 import { pickSample, qualitySample } from "../../src/shared/boss/searchReadiness/page-quality-sample.mjs";
 import { consolidationQueue, nextFirstSeen, CONSOLIDATION } from "../../src/shared/boss/searchReadiness/consolidation-queue.mjs";
 import { readRepoCategories } from "./lib/repo-categories.mjs";
+import { isOwnSite, leadVerdict } from "../../src/shared/boss/searchReadiness/site-leads.mjs";
+import { readLeads } from "./lib/site-leads-read.mjs";
+import { macContext } from "./lib/scorecard-readers.mjs";
 
 const OUT = process.env.SEARCH_READINESS_DIR ?? join(homedir(), ".boss-os", "search-readiness");
 const REPOS = join(OUT, "repos");
@@ -372,6 +375,8 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
   // Outcomes, page quality and the fold queue (2 Nov 2026): notes and red lines, never a failing check.
   const read = await readOutcomes(g, gsc, site);
   const outcome = outcomeVerdict({ read: read.daily, sitemapUrls: sitemap.ok ? sitemap.urls.size : null });
+  // Leads (3 Nov 2026): her own sites only; a client site is never read (site-leads.mjs).
+  const leads = isOwnSite(site) ? leadVerdict({ site, read: await readLeads(site, macContext()), outcome }) : null;
   const qUrls = pickSample(sitemap.urls, { exclude: protectedPaths });
   const qFetched = await pool(qUrls, 5, (u) => get(u));
   const quality = qualitySample({ site, host, checklist, pages: qFetched.map((r, i) => ({ url: qUrls[i], status: r.status, error: r.error, html: r.status === 200 ? r.text : null })) });
@@ -399,7 +404,7 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
     site, host, seconds: Math.round((Date.now() - t0) / 1000), home_status: home.status,
     sitemap: { ok: sitemap.ok, urls: sitemap.urls.size, children: sitemap.children.map(({ url, status, count }) => ({ url, status, count })) },
     coverage: coverage.error ? { error: coverage.error } : { targets: coverage.targets.length, missing: coverage.targets.filter((t) => !t.inSitemap || t.status !== 200).map((t) => t.url) },
-    protected: protectedReport, results, outcome, quality, consolidation, sitemapUrls: [...sitemap.urls],
+    protected: protectedReport, results, outcome, ...(leads ? { leads } : {}), quality, consolidation, sitemapUrls: [...sitemap.urls],
   };
 }
 
@@ -454,6 +459,7 @@ async function main() {
       const r = await auditSite(site, checklist, g, gscSites, portfolio, firstSeen[site.domain] ?? {});
       siteResults.push(r);
       say(summaryLines([r])[0]);
+      if (r.leads) say(`  ${r.leads.line}${r.leads.red ? " — RED: people come, nobody acts" : ""}`);
     } catch (e) {
       say(`${site.domain}: AUDIT FAILED ${e?.stack ?? e}`);
       siteResults.push({ site, host: site.domain, results: [{ id: "audit", status: "not_checked", detail: `the audit of this site threw: ${String(e?.message ?? e).slice(0, 200)}` }] });

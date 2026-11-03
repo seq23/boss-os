@@ -19,8 +19,9 @@ import { categoryOf } from "../repos/categories.mjs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { weekFor, publishingOn, paceOk, checksRan, aiMeasured, PACE } from "../searchLoop/week.mjs";
+import { weekFor, publishingOn, capOk, checksRan, aiMeasured, CAP } from "../searchLoop/week.mjs";
 import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
+import { leadsMorningLines } from "./site-leads.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const CHECKLIST_PATH = join(HERE, "checklist.json");
@@ -931,7 +932,7 @@ export const CHECKS = {
   },
   // ─── F · The search growth loop (owner, 1 Nov 2026) ────────────────────────
   // Every selling site runs the shared engine (seq23/search-loop): find low-competition searches
-  // weekly → publish straight away under a quality gate → pace set by indexing → every page ends in
+  // weekly → publish straight away under a quality gate and a cap that grows with results → every page ends in
   // the site's one action → 2/4/8-week checks strengthen, undo or merge → AI visits and bot reads
   // measured. The repo side (config + caller workflow) is read from the clone; the running side from
   // the newest `search-loop-week` report (src/shared/boss/searchLoop/week.mjs). A site with no report
@@ -972,9 +973,10 @@ export const CHECKS = {
   loop_pace(ctx) {
     const na = notAdopted(ctx); if (na) return na;
     const w = loopWeek(ctx); if (w.result) return w.result;
-    const cap = Number(loopConfigFor(ctx.repo, ctx.site.domain)?.node?.pace?.cap);
-    if (Number.isFinite(cap) && cap > PACE.cap) return fail(`the config caps the pace at ${cap} a day (the rule's cap is ${PACE.cap})`);
-    const p = paceOk(w.week);
+    // v1.3.0: the run guard (cap.max_per_day) never grows past 10 a day; the cap itself grows only with results.
+    const perDay = Number(loopConfigFor(ctx.repo, ctx.site.domain)?.node?.cap?.max_per_day);
+    if (Number.isFinite(perDay) && perDay > CAP.max_per_day) return fail(`the config lets the engine publish ${perDay} pages a day (the run guard is at most ${CAP.max_per_day})`);
+    const p = capOk(w.week);
     return p.ok ? pass(p.why) : fail(p.why);
   },
   one_action_every_page(ctx) {
@@ -1379,7 +1381,8 @@ export function morningLines(checklist, allResults, { previous = null, queued = 
   if (queued || lastRepair) lines.push(repairLine(lastRepair, queued));
   const out = lines.slice(0, needsHer.length ? max - 1 : max);
   if (needsHer.length) out.push(`Friends' sites that need you: ${needsHer.slice(0, 2).join(", ")}${needsHer.length > 2 ? `, and ${needsHer.length - 2} more` : ""}.`);
-  return [...redTop(redLines, allResults, categories), ...out];
+  // Leads next to Google's visits, her own sites only (3 Nov 2026, site-leads.mjs).
+  return [...redTop(redLines, allResults, categories), ...out, ...leadsMorningLines(siteResults)];
 }
 
 /**

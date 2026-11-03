@@ -1029,16 +1029,16 @@
   {
    "id": "f8",
    "phase": "F",
-   "title": "The pace is set by indexing: 10 a day to start, +5 a week, cap 30, halved on a drop",
-   "title_html": "The pace is set by indexing: 10 a day to start, +5 a week, cap 30, halved on a drop",
+   "title": "New pages publish under a per-site cap that grows only when Google impressions grow; a same-intent search strengthens an existing page",
+   "title_html": "New pages publish under a per-site cap that grows only when Google impressions grow; a same-intent search strengthens an existing page",
    "burned": false,
-   "why_html": "Publishing faster than Google indexes builds a pile of pages nobody sees. Tying the pace to indexing speeds up while most pages are indexed within two weeks and slows down by itself when they are not.",
-   "how_html": "The engine starts each site at 10 new pages a day, adds 5 a week while most are indexed within two weeks, stops at 30, and halves the pace automatically when indexing falls. The weekly report carries the pace and the indexed count.",
+   "why_html": "Publishing more pages than search rewards builds a pile of near-duplicates nobody sees. A cap tied to results lets a site grow only while Google shows it more, and sending a same-intent search to the page that already answers it keeps every page distinct (owner, 3 Nov 2026, engine v1.3.0).",
+   "how_html": "The engine starts each site at its distinct live pages (at least 20), raises the cap 10% a week only when the last 28 days of Google impressions beat the 28 before, lowers it 10% on a drop (never under 10) and holds it when Search Console has no numbers. At most 10 new pages a day as a run guard. A search with the same intent as an existing page becomes a strengthen brief for that page. The weekly report carries the cap and why, the searches it held back, and each search sent to an existing page.",
    "check": {
     "mode": "auto",
     "type": "loop_pace",
     "source": "github",
-    "how": "The newest search-loop-week report carries a pace between 1 and 30 a day and the indexed count it was set from; the config never caps above 30.",
+    "how": "The newest search-loop-week report carries cap (max_live_pages of at least 10, with why), held_by_cap and redirected (each with the existing URL it strengthens); the config never lets the run guard (cap.max_per_day) exceed 10 a day.",
     "applies_to": [
      "flag:search_loop"
     ]
