@@ -3,7 +3,8 @@ import { newId } from "../lib/id";
 import { logEvent } from "../lib/log";
 import { conflict, notFound } from "../lib/http";
 import { checkBackend, getBackend } from "./registry";
-import { recordRefusal } from "./guard";
+import { recordRefusal, type Refusal } from "./guard";
+import { guardKindFor } from "./taskKind";
 import type { AiProcessing } from "../policy/airlock";
 import type { Sensitivity } from "../../../shared/boss/governance";
 import { CLAUDE_SEAT } from "../duties/seatOrder";
@@ -111,7 +112,39 @@ export async function dispatchRunForTask(env: Env, input: DispatchInput): Promis
     }
   }
 
-  const verdict = await checkBackend(env, input.backendId, input.kind, {
+  /*
+   * SPEAK THE SEAT'S VOCABULARY, NOT THE INTAKE DOOR'S (3 Nov 2026).
+   *
+   * `input.kind` arrives as whichever vocabulary its caller holds — the queue consumer hands it
+   * `task.intake_kind`, an `IntakeKind` (`one_off`, `research`…); the owner's own
+   * `POST /backends/dispatch` already speaks backend kinds. `guardKindFor` tells the two apart and
+   * translates only the first: `bk_claude_code.allowed_kinds` is backend vocabulary
+   * (`document`, `research`…), and comparing it against an untranslated intake kind is the exact
+   * defect this file exists to close (`backends/taskKind.ts`). The original is kept as
+   * `intakeKind` so the record below still says what was asked for.
+   */
+  const { guardKind, intakeKind, unmapped } = guardKindFor(input.kind);
+
+  if (unmapped) {
+    const refusal: Refusal = {
+      refused: true,
+      code: "task_kind_absent",
+      backend_id: input.backendId,
+      sentence:
+        `No seat vocabulary is defined for the intake kind "${intakeKind}". Add it to ` +
+        `INTAKE_KIND_TO_BACKEND_KIND (src/worker/boss/backends/taskKind.ts) before dispatching it.`,
+      detail: { intake_kind: intakeKind },
+      approvable: false,
+    };
+    const refusedRunId = await recordRefusal(env, {
+      backendId: input.backendId,
+      requested: JSON.stringify({ title: input.title, intake_kind: intakeKind, task_id: input.taskId }),
+      refusal,
+    });
+    return { run_id: refusedRunId, backend_id: input.backendId, refused: refusal.sentence };
+  }
+
+  const verdict = await checkBackend(env, input.backendId, guardKind, {
     lane: input.lane,
     actions: input.actions ?? [],
     requires: input.requires ?? null,
@@ -124,7 +157,7 @@ export async function dispatchRunForTask(env: Env, input: DispatchInput): Promis
   if (verdict.refused) {
     const refusedRunId = await recordRefusal(env, {
       backendId: input.backendId,
-      requested: JSON.stringify({ title: input.title, kind: input.kind, task_id: input.taskId }),
+      requested: JSON.stringify({ title: input.title, kind: guardKind, intake_kind: intakeKind, task_id: input.taskId }),
       refusal: verdict,
     });
     return { run_id: refusedRunId, backend_id: input.backendId, refused: verdict.sentence };
@@ -145,7 +178,7 @@ export async function dispatchRunForTask(env: Env, input: DispatchInput): Promis
        VALUES (?,?,'system',?,'backend_run',?,'dispatched',?)`,
     )
     .bind(receipt, now, input.lane, runId,
-      JSON.stringify({ backend_id: input.backendId, task_id: input.taskId, kind: input.kind, title: input.title, origin: "queue_consumer" }))
+      JSON.stringify({ backend_id: input.backendId, task_id: input.taskId, kind: guardKind, intake_kind: intakeKind, title: input.title, origin: "queue_consumer" }))
     .run();
 
   /*
@@ -160,7 +193,8 @@ export async function dispatchRunForTask(env: Env, input: DispatchInput): Promis
     instruction: prompt,
     ...(firmContext ? { firm_context: firmContext } : {}),
     instruction_origin: "standing_duty",
-    kind: input.kind,
+    kind: guardKind,
+    ...(intakeKind ? { intake_kind: intakeKind } : {}),
     receipt,
     title: input.title,
     ...(input.requested ?? {}),
@@ -178,7 +212,7 @@ export async function dispatchRunForTask(env: Env, input: DispatchInput): Promis
 
   await logEvent(env.DB, {
     level: "info", scope: "backends", event: "dispatched", lane: input.lane, entityId: runId,
-    detail: { backend_id: input.backendId, task_id: input.taskId, kind: input.kind, origin: "queue_consumer" },
+    detail: { backend_id: input.backendId, task_id: input.taskId, kind: guardKind, intake_kind: intakeKind, origin: "queue_consumer" },
   });
 
   return { run_id: runId, backend_id: input.backendId, refused: null };
