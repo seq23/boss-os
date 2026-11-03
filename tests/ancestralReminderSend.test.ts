@@ -3,7 +3,7 @@
  * when Boss OS says one is due, only to the owner, from Imani, and reports it sent. Synthetic data only.
  */
 import { describe, expect, it } from "vitest";
-import { ancestralReminder } from "../scripts/ops/errand-reminders.mjs";
+import { ancestralReminder, hicksUpdateNotice } from "../scripts/ops/errand-reminders.mjs";
 
 const fakeApi = (answer: any) => {
   const posts: string[] = [];
@@ -39,5 +39,24 @@ describe("the ancestral-hour reminder send", () => {
     const r = await ancestralReminder(api, (async () => new Response("no", { status: 403 })) as any, senders);
     expect(r.failed).toContain("403");
     expect(api.posts).toEqual(["/spirit/ancestral-hour/reminder"]);
+  });
+});
+
+describe("the Hicks update's approval email on the same tick", () => {
+  const throwing = (msg: string) => ({ posts: [] as string[], post: async () => { throw new Error(msg); } });
+  it("a route production does not serve yet is a named note, not a failed tick (3 Nov 2026, deploy lag)", async () => {
+    const r: any = await hicksUpdateNotice(throwing('POST /clients/hicks-update/notice → 404 "No such endpoint"'), (async () => { throw new Error("no send"); }) as any, senders);
+    expect(r.failed).toBeUndefined();
+    expect(r.line).toMatch(/NAMED STOP \[HICKS_ROUTE_NOT_LIVE\]/);
+  });
+  it("any other refusal is still a failure by name", async () => {
+    const r: any = await hicksUpdateNotice(throwing("POST /clients/hicks-update/notice → 500 boom"), (async () => new Response("{}")) as any, senders);
+    expect(r.failed).toMatch(/500/);
+  });
+  it("nothing waiting sends nothing", async () => {
+    let calls = 0;
+    const r: any = await hicksUpdateNotice({ post: async () => ({ due: false, reason: "nothing waiting" }) }, (async () => { calls++; return new Response("{}"); }) as any, senders);
+    expect(calls).toBe(0);
+    expect(r.sent).toBe(false);
   });
 });
