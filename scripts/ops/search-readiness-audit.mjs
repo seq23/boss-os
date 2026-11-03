@@ -584,7 +584,7 @@ async function main() {
     s.approval = r.ok ? { origin_id: card.origin_id, raised: r.raised } : { not_read: r.why };
     say(r.ok ? `${s.site.domain}: fix plan ${r.raised ? "sent to you for approval" : "already waiting for your approval"}.` : `${s.site.domain}: NAMED STOP [APPROVAL_NOT_RAISED] the fix plan could not be sent for approval (${r.why}); its briefs stay held.`);
   }
-  if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, definition: defs.source, consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
+  if (!only) writeJson(join(OUT, "fix-queue.json"), { written_at: report.at, from: `results-${day}.json`, definition: defs.source, approved_sites: siteResults.filter((s) => s.site?.owner_approval && s.approved).map((s) => s.site.domain), consumer: "Danielle's Tuesday repair run (scripts/ops/search-readiness-fix.sh, one site's repo at a time through scripts/ops/ahrefs-audit-fix.sh) and her Thursday repair run, section 'The Search Readiness fix queue' of its prompt", briefs });
 
   // What passes now clears its old open finding in Boss OS, so nothing asks her for what is already true.
   if (!only) {

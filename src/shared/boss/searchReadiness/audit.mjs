@@ -21,6 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { weekFor, publishingOn, capOk, checksRan, aiMeasured, laneLine, LANES_NOT_YET, CAP } from "../searchLoop/week.mjs";
 import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
+import { heldForOwner } from "./ownerApproval.mjs";
 import { leadsMorningLines } from "./site-leads.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1380,8 +1381,11 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         // A repo the fixer may never branch (a client's report-only repo, repoPolicy NO_AUTO_FIX) is
         // recorded, never worked: its site reports in its own repo (1 Nov 2026).
         // A site whose published pages change only with her yes (sites.json `owner_approval`: Hicks,
-        // owner 3 Nov 2026) holds every brief until she approves this week's plan (`s.approved`).
-        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : s.site.owner_approval && !s.approved ? "owner_approval" : s.site.client_approval ? "client_draft" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
+        // owner 3 Nov 2026) holds a brief until she approves this week's plan (`s.approved`), EXCEPT a
+        // repair whose every page is an already-published post under the site's direct-repair paths
+        // (owner, 3 Nov 2026: "if it has repairs for already published resources they should just fix
+        // them not queue"): that one is worked like any other site (`heldForOwner`, ownerApproval.mjs).
+        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : heldForOwner(s.site, { approved: s.approved, texts: [r.detail, ...(r.evidence ?? []), ...(r.missing ?? [])] }) ? "owner_approval" : s.site.client_approval ? "client_draft" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
         ...(limit ? { known_limit: limit.why } : {}),
         ...(r.named_stop ? { named_stop: r.named_stop } : {}),
       });

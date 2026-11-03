@@ -28,6 +28,19 @@ import { join } from "node:path";
 import { mayAutoFix } from "../../src/shared/boss/siteAudit/repoPolicy.mjs";
 import { scopeSnapshot } from "../../src/shared/boss/siteAudit/evidence.mjs";
 import { repoForDomain } from "../../src/shared/boss/siteAudit/domainRepos.mjs";
+import { heldForOwner } from "../../src/shared/boss/searchReadiness/ownerApproval.mjs";
+
+const SITES = JSON.parse(readFileSync(new URL("../../src/shared/boss/searchReadiness/sites.json", import.meta.url), "utf8")).grid_repos ?? [];
+const repoName = (r) => String(r ?? "").trim().replace(/\/+$/, "").split("/").pop();
+/**
+ * The `owner_approval` sites whose fix plan she approved this cycle, as the Monday audit wrote them
+ * into the fix queue (`approved_sites`). Unreadable → none approved: fail closed.
+ */
+export function approvedSitesFromQueue(path = process.env.SR_FIX_QUEUE ?? join(homedir(), ".boss-os/search-readiness/fix-queue.json")) {
+  try { const q = JSON.parse(readFileSync(path, "utf8")); return Array.isArray(q.approved_sites) ? q.approved_sites : []; } catch { return []; }
+}
+/** The sites.json row with `owner_approval` this finding belongs to (by domain, then repo), or null. */
+const ownerApprovalSite = (f, sites) => sites.find((s) => s.owner_approval && ((f.domain && String(f.domain).replace(/^www\./, "") === s.domain) || (f.repo && repoName(f.repo) === s.repo))) ?? null;
 
 /** Dispositions that are a CONFIRMED site defect in a repo the fixer may change. */
 const FIXABLE_LEFT = new Set(["surfaced"]);
@@ -130,7 +143,7 @@ export function inflight(repo, terms) {
  * worktree. The result is written onto the row (`land`, `land_detail`) so the verdict and Boss OS
  * both see it. `run` is injectable for the test.
  */
-export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT_LAND_BIN ?? join(homedir(), "bin/land") } = {}) {
+export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT_LAND_BIN ?? join(homedir(), "bin/land"), sites = SITES, approvedSites = approvedSitesFromQueue() } = {}) {
   /*
    * ONE LAND PER PULL REQUEST (26 Oct 2026). A PR that fixes five briefs is five `fixed_pr` rows, and
    * this used to watch checks and run ~/bin/land once per ROW: five lands of one PR, four of them
@@ -141,6 +154,19 @@ export function landAll(payload, { run = defaultRun, landBin = process.env.AUDIT
   for (const f of payload.findings ?? []) {
     if (f.disposition !== "fixed_pr" || !f.pr_url || f.land === "landed") continue;
     if (!mayAutoFix(f.repo)) { f.land = "refused_policy"; continue; }
+    /*
+     * HER YES ON AN `owner_approval` SITE (Hicks, owner 3 Nov 2026). A fix to already-published
+     * Resources posts lands like any other ("if it has repairs for already published resources they
+     * should just fix them not queue"); a fix touching a core page, or naming no page at all, is
+     * never landed: it waits for her approved plan. The pages are the row's `pages` (the published
+     * URLs the PR changes), else any URL in its headline or reason. Fails closed.
+     */
+    const oa = ownerApprovalSite(f, sites);
+    if (oa && heldForOwner(oa, { approved: approvedSites.includes(oa.domain), texts: f.pages?.length ? f.pages : [f.headline, f.because] })) {
+      f.land = "held_owner_approval";
+      f.land_detail = `${oa.domain}: a repair outside its published posts (${(oa.owner_approval_direct_repairs?.paths ?? []).join(", ") || "none listed"}) waits for her approved fix plan.`;
+      continue;
+    }
     const prior = done.get(f.pr_url);
     if (prior) {
       f.land = prior.land; f.land_detail = prior.land_detail;
