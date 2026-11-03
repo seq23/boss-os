@@ -972,6 +972,20 @@
       "pause": "In Twin: pause the campaign",
       "external_why": "Twin is an outside tool, not code in any repo of hers, so there is no path to cite and the code scan expects none. Monique's daily read of the replies is com.seq.boss-lp (lp-daily.mjs).",
       "code": [{"repo": "external", "paths": []}]
+    },
+    {
+      "id": "hicks-quarterly-update",
+      "business": "personal",
+      "what": "The Hicks Consulting quarterly website update, drafted for your OK: the email word for word with Approve and open in Gmail / Change the words / Skip. Nothing reaches the client until you approve, and then only from your own Gmail.",
+      "sender": "Camille",
+      "owner": "Camille",
+      "from": "Camille <camille@sequoiataylor.com>",
+      "to": "You",
+      "when": "First Monday of February, May, August and November, from 8:00 AM Central",
+      "runs": "github",
+      "trigger": "Drafted by the Boss OS hourly tick; sent by GitHub Actions job-errand-reminders.yml (every 10 minutes)",
+      "pause": "Tap Skip this quarter",
+      "code": [{"repo": "boss-os", "paths": ["scripts/ops/errand-reminders.mjs", "src/worker/boss/clients/hicksUpdate.ts", "src/shared/boss/clients/hicksUpdate.mjs"]}]
     }
   ]
 }

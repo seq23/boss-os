@@ -24,6 +24,7 @@
     "test": "vitest run && vitest run --config vitest.boss.config.ts",
     "test:boss": "vitest run --config vitest.boss.config.ts",
     "typecheck": "tsc --noEmit",
+    "hicks:dry-run": "node scripts/ops/hicks-update-dry-run.mjs",
     "brains:pull": "node scripts/brains/pull.mjs",
     "validators:matrix": "node scripts/ops/validator-matrix.mjs",
     "brains:cohesion": "bash scripts/ops/self-update-checkout.sh && node scripts/brains/cohesion-check.mjs",

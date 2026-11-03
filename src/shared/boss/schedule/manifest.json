@@ -4680,6 +4680,31 @@
           "CRON_TZ=America/Chicago 17 8,13,18 * * *"
         ]
       }
+    },
+    {
+      "id": "hicks-quarterly-update",
+      "name": "Hicks quarterly website update (draft for your OK)",
+      "what": "Camille drafts the quarterly website update for Hicks Consulting from live Google numbers, research wins and the fixes since your last email, and sends it to you to approve, change or skip. First Monday of Feb, May, Aug and Nov from 8:00; the hourly tick decides the day in Central.",
+      "business": "personal",
+      "brand": "Boss OS",
+      "system": "cloudflare",
+      "slots": [
+        "mon 08:00"
+      ],
+      "emails": true,
+      "heavy": false,
+      "trigger": {
+        "repo": "boss-os",
+        "file": "wrangler.toml",
+        "crons": [
+          "0 * * * *"
+        ],
+        "ticks": {
+          "wrangler.toml": [
+            "hourly :00"
+          ]
+        }
+      }
     }
   ]
 }

@@ -32,8 +32,10 @@ async function main() {
   // The practice emails (the lapse ladder, the midday push, the ancestral hour's 6pm warning) ride this tick too.
   const practice = await practiceNudges(api);
   failed.push(...practice.failed);
+  const hicks = await hicksUpdateNotice(api);
+  if (hicks.failed) failed.push(hicks.failed);
   if (failed.length) { console.error(`NAMED STOP [REMINDER_NOT_SENT] ${failed.join(", ")}`); process.exit(1); }
-  console.log(`${sent ? `ERRAND-REMINDERS: ${sent} reminder(s) sent.` : "ERRAND-REMINDERS: checked; no booking is 28 hours away."} ${ancestral.line} ${practice.line}`);
+  console.log(`${sent ? `ERRAND-REMINDERS: ${sent} reminder(s) sent.` : "ERRAND-REMINDERS: checked; no booking is 28 hours away."} ${ancestral.line} ${practice.line} ${hicks.line}`);
 }
 
 /**
@@ -51,6 +53,22 @@ export async function ancestralReminder(api, fetchImpl = fetch, senders = sender
   if (!res.ok) return { line: "Ancestral hour: reminder NOT sent.", failed: `ancestral-hour ${r.day} (${res.status ?? res.error ?? "refused"})`, sent: false };
   await api.post(`/spirit/ancestral-hour/reminder/${r.day}/sent`);
   return { line: `Ancestral hour: reminder sent for ${r.day}.`, sent: true };
+}
+
+/**
+ * THE HICKS QUARTERLY UPDATE'S APPROVAL EMAIL (owner, 3 Nov 2026). Boss OS drafts it on the first Monday
+ * of Feb/May/Aug/Nov (src/worker/boss/clients/hicksUpdate.ts); this sends the waiting draft to HER only,
+ * from Camille, word for word with Approve / Change the words / Skip, then reports it emailed. It never
+ * emails the client: the only way the words reach them is her Approve, which opens her own Gmail.
+ */
+export async function hicksUpdateNotice(api, fetchImpl = fetch, senders = sendersFor) {
+  const r = await api.post("/clients/hicks-update/notice");
+  if (!r?.due) return { line: `Hicks update: nothing waiting (${r?.reason ?? "no answer"}).`, sent: false };
+  const [camille] = senders("Camille");
+  const res = await postEmployeeMail(camille, employeeMail(camille, { to: OWNER_TO, subject: r.notice.subject, layout: { happened: r.notice.happened, details: r.notice.details ?? [], decide: r.notice.decide ?? [] } }), fetchImpl);
+  if (!res.ok) return { line: "Hicks update: approval email NOT sent.", failed: `hicks-update ${r.id} (${res.status ?? res.error ?? "refused"})`, sent: false };
+  await api.post(`/clients/hicks-update/${r.id}/emailed?version=${r.version ?? 0}`);
+  return { line: "Hicks update: approval email sent to you.", sent: true };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

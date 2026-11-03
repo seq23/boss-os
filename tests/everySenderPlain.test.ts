@@ -10,6 +10,7 @@ import { employeeMail, sendersFor, plainOrSimplified, mailGate } from "../script
 import { planMail, stoppedMail, repairDoneMail } from "../scripts/ops/repo-change.mjs";
 import { stoppedEmail } from "../scripts/ops/task-notices.mjs";
 import { buildDay } from "../scripts/ops/your-day.mjs";
+import { approvalNotice, composeDraft } from "../src/shared/boss/clients/hicksUpdate.mjs";
 
 process.env.BOSS_OS_MAIL_KEY = process.env.BOSS_OS_MAIL_KEY ?? "test-key-not-real";
 const NOW = Date.parse("2026-10-25T12:15:00Z");
@@ -33,6 +34,13 @@ function senders(): Array<[string, string, any]> {
   out.push(["Monique", "comments digest (legacy text)", employeeMail(mon, { to: "o@example.com", subject: "3 comments worth a reply [cw_m5abc123]", text: "Three new comments are worth a reply.\n\nReply with one line per number: `1 delete`, `2 reply as drafted`." })]);
   const cam = as("Camille");
   out.push(["Camille", "research note (legacy text)", employeeMail(cam, { to: "o@example.com", subject: "Your research is ready", text: "The briefing is on its screen. The validator passed on report.json." })]);
+  // The Hicks quarterly update's approval email (owner, 3 Nov 2026): the real builder, synthetic numbers.
+  const clicks = { ok: true as const, now: 40, prev: 30, lastSent: 34, lastSentAt: NOW };
+  const fixes = { ok: true as const, items: [{ key: "schema", line: "Fixing the behind-the-scenes labels that tell Google what each page is about." }] };
+  const hq = approvalNotice({ draft: composeDraft({ name: "Pat", clicks, fixes, carryOver: [{ id: "c", line: "A carried line." }], now: NOW }), clicks, fixes,
+    recipient: { name: "Pat", to: "pat@example.com" }, research: { wins: [], unread: [], dropped: ["AI-tool visits (not up)"] },
+    taps: { approve: "https://boss.sequoiataylor.com/tap/hqAAAAAAAAAAAAAAAAAAAAAAAAAAAA?do=approve", change: "https://boss.sequoiataylor.com/tap/hqAAAAAAAAAAAAAAAAAAAAAAAAAAAA?do=change", skip: "https://boss.sequoiataylor.com/tap/hqAAAAAAAAAAAAAAAAAAAAAAAAAAAA?do=skip" } });
+  out.push(["Camille", "Hicks quarterly update for approval", employeeMail(cam, { to: "o@example.com", subject: hq.subject, layout: { happened: hq.happened, details: hq.details, decide: hq.decide } as any })]);
   const toni = as("Toni");
   out.push(["Toni", "money at risk (legacy text)", employeeMail(toni, { to: "o@example.com", subject: "Paid AI calls are being charged — the team is on it", text: "New OpenRouter spend of $0.01 since the last check, per stderr of risk-watch.mjs.\n\nThe team is switching the job back to a free model." })]);
   return out;

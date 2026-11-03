@@ -167,6 +167,11 @@ const SNAPSHOT_TABLES = [
   // 0331 — Open Loops: everything she approved that is not finished. Typed by hand and by agents;
   // not re-derivable from anywhere else.
   "owner_open_loops",
+  // 0334 — the Hicks quarterly update: each quarter's draft and her decision, the carried-over lines,
+  // and every subject already sent (never reused). Not re-derivable once a quarter has passed.
+  "client_update_drafts",
+  "client_update_carryover",
+  "client_update_subjects",
   "capital_matches",
   "capital_match_taps",
   "capital_dismissed",

@@ -27,6 +27,7 @@ import { isCommandToken, commandTapGet, commandTapPost } from "../commands/tap";
 import { isAncestralToken, markAncestralHourDone, reminderByToken } from "../spirit/ancestralHour";
 import { inviteGate, sendInvite } from "../lp/schedule";
 import { isScorecardToken, scorecardTapGet, scorecardTapPost } from "./scorecard";
+import { isHicksToken, hicksTapGet, hicksTapPost } from "../clients/hicksUpdate";
 
 export const lpTap = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -70,6 +71,8 @@ async function find(db: D1Database, token: string): Promise<Found | null> {
 const VERBS: Record<string, string> = { send: "Sending your reply…", skip: "Skipping…", approve: "Approving…", dismiss: "Dismissing…", retry: "Writing a different draft…" };
 
 lpTap.get("/:token", async (c) => {
+  // The Hicks quarterly update: Approve · Change the words · Skip (clients/hicksUpdate.ts).
+  if (isHicksToken(c.req.param("token"))) return hicksTapGet(c, c.req.param("token"));
   // The Scorecard's "Restart it" (owner ruling, 1 Nov 2026). A GET never acts: it posts itself.
   if (isScorecardToken(c.req.param("token"))) return scorecardTapGet(c, c.req.param("token"));
   // Simone's Send / Change / Try again on a draft she wrote for a person (commands/tap.ts).
@@ -126,6 +129,7 @@ export function lpReplyClosed(row: { status: string; draft_body?: string | null 
 }
 
 lpTap.post("/:token", async (c) => {
+  if (isHicksToken(c.req.param("token"))) return hicksTapPost(c, c.req.param("token"));
   if (isScorecardToken(c.req.param("token"))) return scorecardTapPost(c, c.req.param("token"));
   if (isCommandToken(c.req.param("token"))) return commandTapPost(c, c.req.param("token"));
   if (isAncestralToken(c.req.param("token"))) {
