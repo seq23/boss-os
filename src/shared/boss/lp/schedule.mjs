@@ -285,6 +285,27 @@ export function offeredIn(text, now = Date.now()) {
   return out;
 }
 
+const WEEKDAY_RE = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tues?|wed|thurs?|thu|fri)\b/i;
+
+/**
+ * "Thursday at 11 works" — a weekday and a time, no date: the next such day after today on her
+ * Central calendar (never today: a same-day weekday is read as next week's). Null without both.
+ */
+function weekdayTime(t, now) {
+  const w = WEEKDAY_RE.exec(t);
+  if (!w) return null;
+  const x = timesIn(t.slice(w.index + w[0].length))[0];
+  if (!x) return null;
+  const want = DAYS.findIndex((day) => day.startsWith(w[1].toLowerCase().slice(0, 3)));
+  for (let i = 1; i <= 7; i++) {
+    const at = wall(now + i * DAY, "America/Chicago");
+    if (DAYS[["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(at.weekday)] === DAYS[want]) {
+      return { ymd: at.ymd, hour: x.ampm ? x.h : x.h < 8 ? x.h + 12 : x.h, minute: x.min };
+    }
+  }
+  return null;
+}
+
 /**
  * Pure: a day and a time they named with NO zone anywhere, as a wall-clock pair, or null. The reply
  * then asks which zone (never a guess) and carries no invite.
@@ -293,7 +314,7 @@ export function zonelessTime(text, now = Date.now()) {
   const t = String(text ?? "");
   if (THEIR_ZONE.some(([re]) => re.test(t)) || REFUSE.test(t) || NO.test(t)) return null;
   const d = [...t.matchAll(DATE_RE)][0];
-  if (!d) return null;
+  if (!d) return weekdayTime(t, now);
   const x = timesIn(t.slice(d.index + d[0].length))[0];
   if (!x) return null;
   const mo = d[1] ? Number(d[1]) : MONTHS.findIndex((m) => m.startsWith(String(d[3]).toLowerCase().slice(0, 3))) + 1;

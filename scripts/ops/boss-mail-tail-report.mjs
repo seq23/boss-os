@@ -10,14 +10,24 @@
 import { readFileSync } from "node:fs";
 import { bossApi, fixJob, toMorning } from "./lib/duty-kit.mjs";
 
+/**
+ * Her subjects, "; "-joined by boss-mail-tail.sh, with the empty ones dropped (2 Nov 2026: two
+ * blank subjects became the job title 'Finish the job from her email "; "'). Null when none has words. Pure.
+ */
+export function cleanSubjects(subject) {
+  const kept = String(subject ?? "").split(";").map((s) => s.trim().replace(/^Re:\s*/i, "")).filter((s) => /[A-Za-z0-9]/.test(s) && !/^your email$/i.test(s));
+  return kept.length ? kept.join("; ").slice(0, 80) : null;
+}
+
 /** The report → `{ line, incomplete }`. Pure; tested. */
 export function tailLine(report, subject) {
   const lines = String(report ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
   const incomplete = lines.some((l) => /^INCOMPLETE\b/.test(l));
-  const subj = String(subject ?? "your email").replace(/^Re:\s*/i, "").slice(0, 80);
+  const subj = cleanSubjects(subject);
+  const which = subj ? `Your email "${subj}"` : "Your email";
   const said = lines.slice(1).find((l) => !/^(INCOMPLETE|FRICTION_FIXED)\b/.test(l)) ?? null;
-  if (incomplete) return { line: `Your email "${subj}": still being worked on; the team is finishing it.`, incomplete };
-  return { line: `Your email "${subj}": ${said ?? "done."}`, incomplete };
+  if (incomplete) return { line: `${which}: still being worked on; the team is finishing it.`, incomplete };
+  return { line: `${which}: ${said ?? "done."}`, incomplete };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -28,7 +38,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const { line, incomplete } = tailLine(text, subject);
   if (incomplete) {
     let why = null;
-    try { why = await fixJob(await bossApi(), { title: `Finish the job from her email "${String(subject).slice(0, 80)}"`, prompt: `the tail on her Boss OS mail stopped before her job finished (report ${file} on her Mac). Finish the job and fix what stopped the tail.` }); }
+    try { why = await fixJob(await bossApi(), { title: cleanSubjects(subject) ? `Finish the job from her email "${cleanSubjects(subject)}"` : "Finish the job from her email", prompt: `the tail on her Boss OS mail stopped before her job finished (report ${file} on her Mac). Finish the job and fix what stopped the tail.` }); }
     catch (e) { why = String(e?.message ?? e); }
     if (why) console.error(`  the fix job was not opened: ${why}`);
   }

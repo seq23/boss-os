@@ -14,3 +14,4 @@ export function unansweredOrder(rows: UnansweredRow[], now?: number): (Unanswere
 export function followUps(people: unknown[], opts?: { now?: number; skipped?: Set<string>; where?: { away_city?: string | null; away_until?: string | null } | null; offered?: Record<string, unknown> }): Promise<{ unanswered: (UnansweredRow & { days: number | null })[]; stops: string[]; counts: Record<string, number> }>;
 export function lpReplyDecision(words: string | null | undefined): { draft: boolean; kind: string; why: string };
 export function draftRecipients(address: string, th: { recipients?: { to: string[]; cc: string[] } } | null | undefined): { to: string[]; cc: string[] };
+export function keepHeldDraft(o: { had: any; exists: boolean; unedited: boolean; forAt: number | null; plan: { kind: string } | null; now?: number }): boolean;

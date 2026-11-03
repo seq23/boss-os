@@ -39,10 +39,30 @@ export function firstSentence(text) {
   return (m ? m[1] : t).trim();
 }
 
+/** What a job's kind or source says it was, for a job whose title says nothing. */
+const KIND_WORDS = Object.freeze({ self_repair: "repair", repair: "repair", employee_page: "change", email: "email", mail: "email" });
+
+/**
+ * A job's name as she reads it (2 Nov 2026: 'Danielle's "Finish the job from her email "; "" job
+ * stopped'). Quoted parts with no words in them are dropped; a title left with no words falls back
+ * to what the job is (its kind or source), never empty quotes. `{ quoted }` says whether the name is
+ * the job's own title (say it in quotes) or a description (say it bare). Pure.
+ */
+export function jobName(task) {
+  const t = jobFamily(task?.title).replace(/\s*"[^"A-Za-z0-9]*"/g, "").replace(/\s+/g, " ").trim();
+  if (/[A-Za-z0-9]/.test(t)) return { name: t, quoted: true };
+  let input = {};
+  try { input = typeof task?.input === "string" ? JSON.parse(task.input) : (task?.input ?? {}); } catch { input = {}; }
+  const kind = [input?.repair_kind, input?.origin, input?.source, input?.kind, task?.intake_kind].find((k) => typeof k === "string" && k.trim());
+  const word = kind ? (KIND_WORDS[kind] ?? String(kind).replace(/[_-]+/g, " ").trim()) : null;
+  return { name: word ? `${word} job` : "job", quoted: false };
+}
+
 /** One short Done-for-you line for a failed task. */
 export function failedDoneLine(task) {
-  const who = task?.employee_name ? `${task.employee_name}'s` : "A";
-  return `${who} "${jobFamily(task?.title)}" job stopped; Danielle is fixing it.`;
+  const { name, quoted } = jobName(task);
+  if (quoted) return `${task?.employee_name ? `${task.employee_name}'s` : "A"} "${name}" job stopped; Danielle is fixing it.`;
+  return `${task?.employee_name ? `${task.employee_name}'s` : "A"} ${name} stopped; Danielle is fixing it.`;
 }
 
 /**

@@ -49,3 +49,5 @@ export function t2rGroupsSectionFor(data: Record<string, unknown>, now?: number)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function scoreboardSectionFor(data: Record<string, unknown>, now?: number): any;
 export function notReportedRepairs(missing: Array<{ name: string; label: string }> | null | undefined, tasks?: Array<{ title?: string; status?: string }>): Array<{ title: string; prompt: string }>;
+export function dutyChangeCard(title: string, task: any, worker: string | null): { title: string; body: string } | null;
+export function bossDecisions(data: Record<string, unknown>): Array<{ key: string; title: string; body: string; details?: string[]; buttons: any[]; priority: number }>;

@@ -13,7 +13,7 @@ import {
   mergeBusy, openSlots, pickedSlot, wantsToMeet, zoneResolver, inWorkingHours, wall, slotText, lpTimesBody, lpConfirmBody,
   WORK_DAY, MIN_SLOTS, MAX_SLOTS, instantIn, proposedTimes, proposedFit,
 } from "../src/shared/boss/lp/schedule.mjs";
-import { againReply } from "../scripts/ops/lp-followups.mjs";
+import { againReply, keepHeldDraft } from "../scripts/ops/lp-followups.mjs";
 import { lpDecideItems } from "../src/shared/boss/lp/plan.mjs";
 
 const NOW = Date.parse("2026-10-31T11:15:00Z"); // Saturday morning
@@ -202,5 +202,24 @@ describe("hard rules: nothing sends from the run, no model sees a name", () => {
       expect(s.lastIndexOf("sendInvite(")).toBeGreaterThan(s.lastIndexOf("action: \"sent\""));
     }
     expect(src("scripts", "ops", "lp-followups.mjs")).not.toMatch(/sendInvite|createInvite|calendar\.events/);
+  });
+});
+
+describe("a held reply answers their latest message (2 Nov 2026: a time they accepted got a generic draft)", () => {
+  it("an untouched generic draft is redrafted when their words now call for a confirmation; an edited one stays hers", () => {
+    const had = { id: "d1", message_id: "m1", for_at: 5, kind: "plain" };
+    const plan = { kind: "ask_zone" };
+    expect(keepHeldDraft({ had, exists: true, unedited: true, forAt: 5, plan })).toBe(false);
+    expect(keepHeldDraft({ had: { ...had, kind: undefined }, exists: true, unedited: true, forAt: 5, plan })).toBe(false);
+    expect(keepHeldDraft({ had, exists: true, unedited: false, forAt: 5, plan })).toBe(true);
+    expect(keepHeldDraft({ had, exists: true, unedited: true, forAt: 5, plan: { kind: "plain" } })).toBe(true);
+    expect(keepHeldDraft({ had, exists: true, unedited: true, forAt: 6, plan: { kind: "plain" } })).toBe(false);
+  });
+  it("a weekday and a time they accept is said back, never the generic line", () => {
+    const now = Date.parse("2026-11-02T14:00:00Z"); // Monday
+    const r = againReply({ name: "Jo Example", said: "No problem. Thursday at 11am can work.", busy: null, now });
+    expect(r.kind).toBe("ask_zone");
+    expect(r.body).toContain("Thursday, November 5 at 11:00 AM works on my side");
+    expect(r.body).not.toContain("what would be most useful");
   });
 });
