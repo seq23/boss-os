@@ -477,10 +477,15 @@ export const CHECKS = {
   },
   business_type(ctx) {
     const all = okPages(ctx).flatMap((p) => jsonLd(p.html).nodes);
-    if (ctx.site.kind === "hyperlocal") {
-      const lb = deepNodes(all, /LocalBusiness|HomeAndConstructionBusiness|EntertainmentBusiness|FoodEstablishment|ProfessionalService/).find((n) => n.telephone && n.address && n.areaServed);
-      return lb ? pass(`${typesOf(lb)[0]} with telephone, address and areaServed`) : fail("no LocalBusiness with telephone, address and areaServed on any sampled page");
-    }
+    // "The business type THAT FITS, fully filled" (the item's own title). A fully filled
+    // LocalBusiness counts wherever it is found, not only on a site whose kind is "hyperlocal".
+    // 3 Nov 2026: cynthiabrowndds.com is kind "brand", a dentist with two real offices and no product;
+    // dental advertising rules (risk brain R-ADV-08 / R-CLI-07) bar the cost promises a priced Offer
+    // would be, so the brand branch was unpassable by any honest fix. Not a loosening: a site with
+    // none of these still fails, and telephone + address + areaServed is harder to fake than a price.
+    const lb = deepNodes(all, /LocalBusiness|HomeAndConstructionBusiness|EntertainmentBusiness|FoodEstablishment|ProfessionalService/).find((n) => n.telephone && n.address && n.areaServed);
+    if (lb) return pass(`${typesOf(lb)[0]} with telephone, address and areaServed`);
+    if (ctx.site.kind === "hyperlocal") return fail("no LocalBusiness with telephone, address and areaServed on any sampled page");
     // PRICE ON REQUEST (owner, 6 Nov 2026): a business with no set pricing (detoxdenver.org) never
     // invents one. An Offer with no price counts when it says so honestly (a description naming a
     // call, contact, request or quote) and gives the url to ask at. An empty Offer still fails.
@@ -490,7 +495,7 @@ export const CHECKS = {
     const prod = nodes.find((n) => deepNodes([n], /^(Offer|AggregateOffer)$/).some(priced));
     if (prod) return pass(`${typesOf(prod)[0]} with an Offer and a price`);
     const asked = nodes.find((n) => deepNodes([n], /^(Offer|AggregateOffer)$/).some(onRequest));
-    return asked ? pass(`${typesOf(asked)[0]} with a price-on-request Offer and where to ask`) : fail("no SoftwareApplication, Product or Service with a priced Offer, or an honest price-on-request Offer (description and url), on any sampled page");
+    return asked ? pass(`${typesOf(asked)[0]} with a price-on-request Offer and where to ask`) : fail("no SoftwareApplication, Product or Service with a priced Offer, or an honest price-on-request Offer (description and url), and no LocalBusiness with telephone, address and areaServed, on any sampled page");
   },
   speakable(ctx) {
     const bad = []; let any = 0;
