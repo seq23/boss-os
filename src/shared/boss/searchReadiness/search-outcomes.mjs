@@ -12,6 +12,11 @@
  *     - the site lists at least DENSITY_MIN_URLS pages in its sitemap and earned fewer than one
  *       impression per ten pages in the last 28 days (a big site Google has stopped showing: a cliff
  *       that happened before both windows still reads red).
+ *   GOLD ("slipping", owner, 3 Nov 2026) when impressions are SLIP (25%) or more below the 28 days
+ *     before on two consecutive weekly audits, prior window at least MIN_PRIOR_IMPRESSIONS each time
+ *     (horselegalguide.com -27% and hicksconsulting.org -21% sat unflagged under the 50% rule). Last
+ *     week's numbers come from last week's dated results file (`pickLastWeekDay`); when that run
+ *     predates the outcome alarm, they are recomputed from the same daily rows a week earlier.
  *   NOT READ when the numbers could not be read: said as "not read: <reason>", never 0, never silent.
  *
  * Pure: the audit runner (scripts/ops/search-readiness-audit.mjs, `readOutcomes`) is the ONE reader
@@ -25,12 +30,21 @@
  */
 import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
 import { isOwnSite, leadRedLine } from "./site-leads.mjs";
+import { mostLikely } from "./drop-diagnosis.mjs";
+
+/** A site whose published pages may never be touched (sites.json `published_frozen`; Horse, Hicks). */
+export const isFrozen = (site) => Boolean(site?.published_frozen);
 
 export const OUTCOME = Object.freeze({
   WINDOW_DAYS: 28,
   /** Search Console's numbers settle about three days late; the newest window ends three days ago. */
   LAG_DAYS: 3,
   DROP: 0.5,
+  /** Gold: a quarter or more down, two weekly audits in a row. */
+  SLIP: 0.25,
+  /** Last week's audit is the newest one 5 to 10 days before this one. */
+  LAST_WEEK_MIN_DAYS: 5,
+  LAST_WEEK_MAX_DAYS: 10,
   MIN_PRIOR_IMPRESSIONS: 50,
   MIN_PRIOR_CLICKS: 10,
   DENSITY_MIN_URLS: 200,
@@ -65,12 +79,28 @@ export function sumWindow(rows, w) {
 }
 
 /**
+ * Last week's audit day among the dated results files' days: the newest 5 to 10 days before `today`,
+ * or null (then the gold rule needs the recomputed week, or waits).
+ */
+export function pickLastWeekDay(days, today) {
+  const t = Date.parse(today);
+  const ok = (days ?? []).filter((d) => { const gap = (t - Date.parse(d)) / DAY; return gap >= OUTCOME.LAST_WEEK_MIN_DAYS && gap <= OUTCOME.LAST_WEEK_MAX_DAYS; });
+  return ok.sort().pop() ?? null;
+}
+
+/** Did impressions slip a quarter or more, from a big enough base? */
+const slips = (cur, prev) => prev >= OUTCOME.MIN_PRIOR_IMPRESSIONS && cur < prev * (1 - OUTCOME.SLIP);
+
+/**
  * The verdict for one site.
  *   read: { ok: true, rows } or { ok: false, why }
  *   sitemapUrls: how many URLs the live sitemap lists (null = unknown; the density rule then sits out)
- * → { status: "red" | "green" | "not_read", current, previous, windows, reasons[], why? }
+ *   lastWeek: last week's stored outcome ({ current, previous }) or null; undefined → recomputed from
+ *     the rows when they reach back far enough (`read.from`)
+ * → { status: "red" | "gold" | "green" | "not_read", current, previous, windows, reasons[], change,
+ *     slipping_weeks, last_week, why? }
  */
-export function outcomeVerdict({ read, sitemapUrls = null, now = Date.now() } = {}) {
+export function outcomeVerdict({ read, sitemapUrls = null, now = Date.now(), lastWeek } = {}) {
   const windows = outcomeWindows(now);
   if (!read?.ok) return { status: "not_read", windows, reasons: [], why: read?.why || "Search Console was not read" };
   if (!Array.isArray(read.rows)) return { status: "not_read", windows, reasons: [], why: "Search Console answered without daily rows" };
@@ -87,7 +117,24 @@ export function outcomeVerdict({ read, sitemapUrls = null, now = Date.now() } = 
   if (Number.isFinite(urls) && urls >= OUTCOME.DENSITY_MIN_URLS && current.impressions < urls * OUTCOME.DENSITY_PER_PAGE) {
     reasons.push({ rule: "density", text: `${num(urls)} pages earned ${num(current.impressions)} Google showings in four weeks (fewer than one per ten pages)` });
   }
-  return { status: reasons.length ? "red" : "green", windows, current, previous, sitemapUrls: Number.isFinite(urls) ? urls : null, reasons };
+  // Gold: a quarter down this week AND last week. Never on top of red: red already says more.
+  let lw = lastWeek?.current && lastWeek?.previous ? { current: lastWeek.current, previous: lastWeek.previous, source: lastWeek.source ?? "stored", day: lastWeek.day ?? null } : null;
+  if (!lw && lastWeek === undefined && read.from) {
+    const lwWin = outcomeWindows(now - 7 * DAY);
+    if (read.from <= lwWin.previous.start) lw = { current: sumWindow(read.rows, lwWin.current), previous: sumWindow(read.rows, lwWin.previous), source: "recomputed", day: iso(now - 7 * DAY) };
+  }
+  const nowSlips = slips(current.impressions, previous.impressions);
+  const lastSlipped = lw ? slips(lw.current.impressions, lw.previous.impressions) : false;
+  const red = reasons.length > 0;
+  if (!red && nowSlips && lastSlipped) {
+    reasons.push({ rule: "impressions_slipping", text: `Google showed it ${num(current.impressions)} times in the last four weeks, down from ${num(previous.impressions)} (${pct(current.impressions, previous.impressions)}), the second week running at least a quarter down` });
+  }
+  return {
+    status: red ? "red" : reasons.length ? "gold" : "green", windows, current, previous, sitemapUrls: Number.isFinite(urls) ? urls : null, reasons,
+    change: previous.impressions > 0 ? Math.round((current.impressions / previous.impressions - 1) * 100) / 100 : null,
+    slipping_weeks: nowSlips ? (lastSlipped ? 2 : 1) : 0,
+    last_week: lw,
+  };
 }
 
 const pct = (a, b) => `${Math.round((1 - a / b) * 100)}% down`;
@@ -105,7 +152,7 @@ export function redLines(siteResults) {
   const all = siteResults ?? [];
   for (const s of all) {
     const d = s.site?.domain ?? s.host;
-    if (s.outcome?.status === "red") out.push({ domain: d, kind: "outcome", line: `${d}: ${s.outcome.reasons.map((r) => r.text).join("; ")}. Danielle is looking into why.` });
+    if (s.outcome?.status === "red") out.push({ domain: d, kind: "outcome", line: outcomeLine(s, d) });
     if (s.quality?.red) out.push({ domain: d, kind: "quality", line: `${d}: ${s.quality.line}` });
     // Leads (3 Nov 2026): clicks but nobody used the one action. Her own sites only.
     const lead = isOwnSite(s.site) ? leadRedLine(s.site, s.leads) : null;
@@ -117,6 +164,23 @@ export function redLines(siteResults) {
     out.unshift({ domain: null, kind: "outcome_blind", line: `Google's numbers were not read for any site this week (${why}), so a drop would not have been seen. The team is fixing it.` });
   }
   return out;
+}
+
+/** One site's outcome line: what fell, then the diagnosis's most likely cause. */
+function outcomeLine(s, d) {
+  const why = mostLikely(s.diagnosis);
+  return `${d}: ${s.outcome.reasons.map((r) => r.text).join("; ")}.${why ? ` ${why}.` : ""}`;
+}
+
+/**
+ * The GOLD lines ("slipping", 3 Nov 2026): one per site whose outcome is gold. Never red: a quarter
+ * down two weeks running is a nudge with its diagnosis, not an alarm (make-it-calm).
+ */
+export function slipLines(siteResults) {
+  return (siteResults ?? []).filter((s) => s.outcome?.status === "gold").map((s) => {
+    const d = s.site?.domain ?? s.host;
+    return { domain: d, kind: "slipping", line: outcomeLine(s, d) };
+  });
 }
 
 /** The same disposition rule as every other brief: no repo, a client's report-only repo, or weekly. */
@@ -133,13 +197,16 @@ export function weeklyBriefs(siteResults, { now = Date.now() } = {}) {
   for (const s of siteResults ?? []) {
     const site = s.site ?? {};
     const base = { created_at: at, domain: site.domain, canonical_host: s.host, repo: site.repo ?? null, category: site.category, protected: null, missing_urls: [], disposition: dispositionOf(site) };
-    if (s.outcome?.status === "red") {
+    // Horse and Hicks (owner, 3 Nov 2026): never touch a published page. Diagnosis only: no outcome,
+    // quality or fold brief is queued for a frozen site; its diagnosis stays in its own row.
+    if (isFrozen(site)) continue;
+    if (s.outcome?.status === "red" || s.outcome?.status === "gold") {
       briefs.push({
         ...base, id: `so-${site.domain}-outcome`, kind: "outcome", item_id: "o1", item_title: "Google keeps showing the site (last 28 days against the 28 before)",
         why: "A site can pass every presence check while Google stops showing it (virtualagency-os.com, 25-26 Aug 2026: -99% for ten weeks, unseen).",
         check: "Search Console daily impressions and clicks, last 28 days against the previous 28; and impressions per sitemap page.",
         failure: s.outcome.reasons.map((r) => r.text).join("; "),
-        evidence: [`current ${s.outcome.windows.current.start}..${s.outcome.windows.current.end}: ${s.outcome.current.impressions} impressions, ${s.outcome.current.clicks} clicks`, `previous ${s.outcome.windows.previous.start}..${s.outcome.windows.previous.end}: ${s.outcome.previous.impressions} impressions, ${s.outcome.previous.clicks} clicks`, ...(s.outcome.sitemapUrls != null ? [`sitemap URLs: ${s.outcome.sitemapUrls}`] : [])],
+        evidence: [...(s.diagnosis?.text ?? []), `current ${s.outcome.windows.current.start}..${s.outcome.windows.current.end}: ${s.outcome.current.impressions} impressions, ${s.outcome.current.clicks} clicks`, `previous ${s.outcome.windows.previous.start}..${s.outcome.windows.previous.end}: ${s.outcome.previous.impressions} impressions, ${s.outcome.previous.clicks} clicks`, ...(s.outcome.sitemapUrls != null ? [`sitemap URLs: ${s.outcome.sitemapUrls}`] : [])],
         brief: "Find the cause before changing content: Search Console's Pages report (indexed count over time, 'crawled - currently not indexed', 'duplicate without user-selected canonical') and Manual actions; robots.txt, noindex and canonical changes deployed in the week the line fell (git log for that week); host or redirect changes. Fix the cause at source; if the site is mostly thin or templated pages, fold them (see the consolidation briefs) rather than add more.",
       });
     }
