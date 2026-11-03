@@ -691,8 +691,20 @@ export async function claimRun({ origin, deviceId, backendId = "bk_claude_code",
      * may then hand this seat a run parked for one of them, when the run's own ladder lists this
      * seat below it. A seat never asks for another seat's work on its own initiative — only for
      * work the other seat provably cannot take right now.
+     *
+     * `release_claims: true` — SAFE BECAUSE OF THE LOCK THIS PROCESS HOLDS, NOT A GUESS (3 Nov
+     * 2026). `agent-claim.sh` holds one Mac-wide lock and this function is the claim's only
+     * caller, reached only through `agent.mjs work-once` under that lock, with a run executing
+     * inside the claiming process. So a run still stamped with THIS device's own claim, at the
+     * moment THIS device is starting a fresh cycle, cannot be running anywhere — the process that
+     * would be running it is the one asking again. The Mac restart of 3 Nov 2026 left a run
+     * claimed by a dead process for two hours, past the morning email's 07:45 cap; this clears it
+     * on the very next claim instead of waiting for the hourly reaper.
      */
-    body: JSON.stringify({ device_id: deviceId, backend_id: backendId, ...(fallbackFrom.length ? { fallback_from: fallbackFrom } : {}) }),
+    body: JSON.stringify({
+      device_id: deviceId, backend_id: backendId, release_claims: true,
+      ...(fallbackFrom.length ? { fallback_from: fallbackFrom } : {}),
+    }),
   });
   const body = await res.json().catch(() => null);
   if (!res.ok || !body?.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
