@@ -310,21 +310,19 @@ describe("where the warning and the diagnosis go", () => {
 });
 
 /**
- * HORSE AND HICKS: NOTHING PUBLISHED IS TOUCHED (owner, 3 Nov 2026). Every Search Readiness brief on a
- * `published_frozen` site is report-only: none is workable, none reaches the repair run, and the
- * quality line never promises a template fix there.
+ * ONE TRUE LINE (3 Nov 2026). A diagnosis-only site (sites.json `published_frozen`) gets no quality
+ * brief, so its quality line never promises a template fix; and no line ends in two full stops.
  */
-describe("frozen sites are reported, never worked", () => {
-  it("a failing check on Horse or Hicks is report_only, never fix; the same failure elsewhere is fix", () => {
-    const fail = { id: "b3", status: "fail", detail: "missing" };
-    const res = ["horselegalguide.com", "hicksconsulting.org", "uscisexam.com"].map((d) => ({ site: siteOf(d), host: d, results: [fail] }));
-    const briefs = fixBriefs(checklist, res);
-    expect(briefs.map((b: any) => [b.domain, b.disposition])).toEqual([["horselegalguide.com", "report_only"], ["hicksconsulting.org", "report_only"], ["uscisexam.com", "fix"]]);
-    expect(workQueue(briefs).repos.map((r) => r.repo)).toEqual([siteOf("uscisexam.com").repo]);
+describe("the lines say what is true", () => {
+  it("a frozen site's quality line promises no fix; a line ends in one full stop", () => {
     const pages = ["a", "b", "c", "d", "e"].map((c) => page(`https://horselegalguide.com/${c}`, FILLER(c), `Lawyers in ${c}`));
     const q = qualitySample({ site: siteOf("horselegalguide.com"), host: "horselegalguide.com", checklist, pages });
+    expect(q.red).toBe(true);
     expect(q.line).not.toMatch(/Danielle is fixing/);
+    const own = qualitySample({ site: siteOf("theaccidentguides.com"), host: "theaccidentguides.com", checklist, pages });
+    expect(own.line).toMatch(/Danielle is fixing the template\.$/);
     const red = redLines([{ site: siteOf("uscisexam.com"), outcome: { status: "red", reasons: [{ text: "fell." }] }, diagnosis: { status: "diagnosed", lines: [{ confidence: "CONFIRMED", text: "x ends." }] } }]);
     expect(red[0]!.line).not.toMatch(/\.\./);
+    expect(diagnoseDrop({ pages: { ok: true, previous: [{ key: "https://s.com/a", impressions: 100 }], current: [] }, queries: { ok: false, why: "n" }, sitemap: {} }).text.every((l: string) => !/\.\.$/.test(l))).toBe(true);
   });
 });
