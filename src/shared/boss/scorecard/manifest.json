@@ -1517,6 +1517,10 @@
     "scorecard-sweep": {
       "kind": "system",
       "why": "The Scorecard's monthly stray sweep: it finds things running with no row."
+    },
+    "hicks-quarterly-update": {
+      "kind": "helper",
+      "why": "Works for you directly (a list, a prep, a reminder); you judge it, not a customer."
     }
   }
 }

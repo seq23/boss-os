@@ -65,6 +65,7 @@ import { materialiseDueDuties } from "./duties/materialise";
 import { reapSilentRuns } from "./backends/reap";
 import { newId } from "./lib/id";
 import { lpTap } from "./routes/lpTap"; // boss fix L
+import { hicksUpdateRoutes, runHicksUpdate } from "./clients/hicksUpdate";
 import { morning } from "./routes/morning";
 import { pnpOutreach } from "./routes/pnpOutreach";
 import { t2rGroups } from "./routes/t2rGroups";
@@ -262,6 +263,8 @@ app.route("/api/validators", validators);
 app.route("/api/scorecard", scorecardRoutes);
 // Open Loops (1 Nov 2026): everything approved but not finished, chased each morning (routes/openLoops.ts).
 app.route("/api/open-loops", openLoops);
+// The Hicks quarterly website update: the notice the errand-reminders tick sends her, and its config.
+app.route("/api/clients/hicks-update", hicksUpdateRoutes);
 //
 // === end Her jobs ===
 
@@ -426,6 +429,10 @@ export async function runDuties(env: Env, now = Date.now()) {
   // its own. A failure is logged and never stops the duties below.
   await runBrainsCohesion(env, now).catch((err) => logEvent(env.DB, {
     level: "warn", scope: "cron", event: "brains_cohesion_failed", detail: { message: err instanceof Error ? err.message : String(err) },
+  }).catch(() => {}));
+  // Camille's Hicks quarterly update (first Monday of Feb/May/Aug/Nov, 08:00 Central) rides this tick.
+  await runHicksUpdate(env, now).catch((err) => logEvent(env.DB, {
+    level: "warn", scope: "cron", event: "hicks_update_failed", detail: { message: err instanceof Error ? err.message : String(err) },
   }).catch(() => {}));
   return materialiseDueDuties(env, now);
 }
