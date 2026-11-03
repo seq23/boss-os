@@ -73,7 +73,9 @@ function standingRows(sites, title) {
       const loopNote = res.find((r) => r.status === "skipped")?.detail;
       // The leads line under the site's name (3 Nov 2026): her own sites only; a client site has none.
       const leads = s.leads?.line ? `<br><span class="${s.leads.red ? "bad" : "muted"}" data-leads="${esc(s.leads.status)}">${esc(s.leads.line)}</span>` : "";
-      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}${leads}${outcomeCell(s)}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
+      // Which searches win (engine v1.6.0 lanes, 3 Nov 2026): "not read" or "lanes start with engine v1.6", never 0.
+      const lanes = s.lanes?.line ? `<br><span class="muted" data-lanes>${esc(s.lanes.line)}</span>` : "";
+      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}${leads}${lanes}${outcomeCell(s)}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
     });
 }
 

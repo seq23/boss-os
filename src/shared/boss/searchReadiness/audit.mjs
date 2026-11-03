@@ -19,7 +19,7 @@ import { categoryOf } from "../repos/categories.mjs";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { weekFor, publishingOn, capOk, checksRan, aiMeasured, CAP } from "../searchLoop/week.mjs";
+import { weekFor, publishingOn, capOk, checksRan, aiMeasured, laneLine, LANES_NOT_YET, CAP } from "../searchLoop/week.mjs";
 import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
 import { leadsMorningLines } from "./site-leads.mjs";
 
@@ -1114,6 +1114,20 @@ export function loopWeek(ctx) {
   return { week: got.week };
 }
 
+/**
+ * Which kind of search wins on this site (engine v1.6.0 lanes), as `{ line }` for the site's row and
+ * the Monday email; null when the site has not adopted the loop. A report that was not read says so.
+ */
+export function searchLanes(ctx) {
+  if (!ctx?.repo?.ok || notAdopted(ctx)) return null;
+  const r = ctx.repo;
+  if (r.loopWeeks === undefined || r.loopWeeks === null) return { line: "Which searches win: not read: this week's search report did not arrive" };
+  const got = weekFor(r.loopWeeks, { domain: ctx.site.domain, repo: ctx.site.repo, now: ctx.now ?? Date.now() });
+  if (got.none) return { line: "Which searches win: not read: the site has not sent a weekly search report yet" };
+  if (got.problem) return { line: `Which searches win: not read: the newest weekly search report cannot be used (${got.problem})` };
+  return { line: laneLine(got.week) };
+}
+
 // ─── Authority and entity helpers (k1–k6) ────────────────────────────────────
 
 /** The Spry Labs entity home every side business points parentOrganization at (owner, 30 Oct 2026). */
@@ -1413,7 +1427,23 @@ export function morningLines(checklist, allResults, { previous = null, queued = 
   const out = lines.slice(0, needsHer.length ? max - 1 : max);
   if (needsHer.length) out.push(`Friends' sites that need you: ${needsHer.slice(0, 2).join(", ")}${needsHer.length > 2 ? `, and ${needsHer.length - 2} more` : ""}.`);
   // Leads next to Google's visits, her own sites only (3 Nov 2026, site-leads.mjs).
-  return [...redTop(redLines, allResults, categories), ...goldTop(goldLines, allResults, categories), ...out, ...leadsMorningLines(siteResults)];
+  return [...redTop(redLines, allResults, categories), ...goldTop(goldLines, allResults, categories), ...out, ...leadsMorningLines(siteResults), ...laneMorningLines(siteResults)];
+}
+
+/**
+ * WHICH SEARCHES WIN, PER SITE (engine v1.6.0, 3 Nov 2026), her own sites only: one line per site
+ * with lane numbers or a "not read" reason (never 0), at most MAX_LANES; sites on an older engine
+ * share one line ("lanes start with engine v1.6").
+ */
+const MAX_LANES = 8;
+export function laneMorningLines(siteResults) {
+  const withLanes = (siteResults ?? []).filter((s) => s.lanes?.line);
+  const older = withLanes.filter((s) => s.lanes.line === LANES_NOT_YET).map((s) => short(s.site));
+  const read = withLanes.filter((s) => s.lanes.line !== LANES_NOT_YET);
+  const out = read.slice(0, MAX_LANES).map((s) => `${short(s.site)}: ${s.lanes.line}.`);
+  if (read.length > MAX_LANES) out.push(`And ${read.length - MAX_LANES} more sites' search lanes on the checklist page.`);
+  if (older.length) out.push(`${older.slice(0, 3).join(", ")}${older.length > 3 ? `, and ${older.length - 3} more` : ""}: ${LANES_NOT_YET}.`);
+  return out;
 }
 
 /**

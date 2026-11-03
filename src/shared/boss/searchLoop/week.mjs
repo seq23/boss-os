@@ -131,3 +131,40 @@ export function loopLine(weeks, { actionWord = "form fills" } = {}) {
   const line = parts.join(" · ");
   return (ws.length > 1 ? `${line} (${ws.length} sites)` : line).replace(/^./, (ch) => ch.toUpperCase());
 }
+
+/**
+ * WHICH KIND OF SEARCH WINS, PER SITE (engine v1.6.0, owner 3 Nov 2026: "sometimes we find where we
+ * can just be 1 or closer to 1 and move forward"). The engine picks searches in two lanes and its
+ * report's `lanes` block says, per lane, `pages`, `measured` (pages past their 2-week Search Console
+ * check), `top3` (of those, how many reached Google's top 3) and `hit_rate` (a number, or
+ * "not read: <reason>"). Engine src/compete.mjs `laneStats`, src/report.mjs `lanesBlock`.
+ */
+export const LANE_LABELS = Object.freeze({ can_be_one: "Can be #1 now", striking: "Striking distance" });
+export const LANES_NOT_YET = "lanes start with engine v1.6";
+
+/** One lane in plain words: "3 of 5 pages reached Google's top 3", or "not read: <reason>". Never a guessed 0. */
+export function laneText(x, { first = false } = {}) {
+  if (!x || typeof x !== "object") return "not read: the report does not carry this lane";
+  const hr = x.hit_rate;
+  if (typeof hr === "string" && hr.startsWith("not read: ")) return hr;
+  const measured = Number.isInteger(x.measured) ? x.measured : null, top3 = Number.isInteger(x.top3) ? x.top3 : null;
+  if (measured == null || top3 == null || top3 > measured) return "not read: the report's counts for this lane are missing or do not add up";
+  if (typeof hr !== "number" && hr !== undefined) return "not read: the report's hit rate for this lane is not a number";
+  if (measured === 0) return "not read: no page in this lane has reached its 2-week check yet";
+  return first ? `${top3} of ${plural(measured, "page")} reached Google's top 3` : `${top3} of ${measured}`;
+}
+
+/**
+ * The lane line for one site's report: "Can be #1 now: 3 of 5 pages reached Google's top 3 ·
+ * Striking distance: 1 of 4". A report from an engine older than v1.6.0 has no `lanes` block and
+ * says "lanes start with engine v1.6"; a block that is there but unreadable says "not read".
+ */
+export function laneLine(week) {
+  if (!week || typeof week !== "object") return null;
+  if (!("lanes" in week)) return LANES_NOT_YET;
+  const L = week.lanes;
+  if (!L || typeof L !== "object") return "Lanes not read: the report's lanes block could not be read";
+  const one = laneText(L.can_be_one, { first: true });
+  const two = laneText(L.striking, { first: !/^\d/.test(one) });
+  return `${LANE_LABELS.can_be_one}: ${one} · ${LANE_LABELS.striking}: ${two}`;
+}
