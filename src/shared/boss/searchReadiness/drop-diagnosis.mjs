@@ -15,10 +15,10 @@
  *   - what the audit already holds: the sitemap's page count against last week, the quality sample,
  *     the fold queue's zero-impression pages, and the commits in the site's repo over the windows.
  *
- * NEVER CHANGES A SITE. It proposes no edit; for a site whose published pages are frozen
- * (sites.json `published_frozen`: horselegalguide.com, hicksconsulting.org) nothing downstream may
- * turn it into one either (search-outcomes.mjs `weeklyBriefs` emits no outcome or fold brief there).
- * A client's numbers stay in that client's own row; nothing here feeds her own businesses.
+ * NEVER CHANGES A SITE: it reads and writes words. The repair run works the outcome brief it lands in
+ * (search-outcomes.mjs `weeklyBriefs`), on client grid sites too (owner, 3 Nov 2026: Horse and Hicks
+ * "fix like my sites"). A client's numbers stay in that client's own row; nothing here feeds her own
+ * businesses.
  *
  * Pure. The audit runner (scripts/ops/search-readiness-audit.mjs, `readDiagnosis`) does the reads and
  * hands them here as { ok: true, ... } or { ok: false, why }. An unread source is said "not read:

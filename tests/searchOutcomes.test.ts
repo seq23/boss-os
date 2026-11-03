@@ -291,13 +291,17 @@ describe("where the warning and the diagnosis go", () => {
     expect(weeklyBriefs(res.map((r) => ({ ...r, host: "uscisexam.com" })))[0]).toMatchObject({ kind: "outcome", disposition: "weekly" });
   });
 
-  it("Horse and Hicks: diagnosis in their own row only, no brief, never folded", () => {
+  it("Horse and Hicks are repaired like her own sites, and their numbers stay in their own row", () => {
     const horse = siteOf("horselegalguide.com"), hicks = siteOf("hicksconsulting.org");
-    expect(horse.published_frozen && hicks.published_frozen).toBeTruthy();
     const consolidation = { status: "queued", candidates: 2, hubs: [{ hub: "/guides/", hubUrl: `https://horselegalguide.com/guides/`, urls: ["https://horselegalguide.com/guides/a"], total: 1 }] };
     const quality = { red: true, line: "x", pages: [{ url: "u", failing: ["filler"], notes: [] }] };
     const res = [{ site: horse, host: "horselegalguide.com", results: [], outcome: gold, diagnosis, consolidation, quality }, { site: hicks, host: "hicksconsulting.org", results: [], outcome: { ...gold, status: "red" }, diagnosis, consolidation, quality }];
-    expect(weeklyBriefs(res)).toEqual([]);
+    const briefs = weeklyBriefs(res);
+    expect(briefs.map((b: any) => [b.domain, b.kind, b.disposition])).toEqual([
+      ["horselegalguide.com", "outcome", "weekly"], ["horselegalguide.com", "quality", "weekly"], ["horselegalguide.com", "consolidate", "weekly"],
+      ["hicksconsulting.org", "outcome", "weekly"], ["hicksconsulting.org", "quality", "weekly"], ["hicksconsulting.org", "consolidate", "weekly"],
+    ]);
+    expect(briefs[0].evidence[0]).toMatch(/^CONFIRMED: The sitemap lists 10 pages/); // the diagnosis rides in the brief
     const lines = morningLines(checklist, res, { goldLines: slipLines(res), redLines: redLines(res), categories });
     expect(lines.join("\n")).not.toMatch(/588|sitemap lists/); // a client's numbers stay in its row
     expect(lines.some((l) => /^Friends' sites slipping in Google: horselegalguide\.com\./.test(l))).toBe(true);
@@ -309,20 +313,14 @@ describe("where the warning and the diagnosis go", () => {
   });
 });
 
-/**
- * ONE TRUE LINE (3 Nov 2026). A diagnosis-only site (sites.json `published_frozen`) gets no quality
- * brief, so its quality line never promises a template fix; and no line ends in two full stops.
- */
-describe("the lines say what is true", () => {
-  it("a frozen site's quality line promises no fix; a line ends in one full stop", () => {
-    const pages = ["a", "b", "c", "d", "e"].map((c) => page(`https://horselegalguide.com/${c}`, FILLER(c), `Lawyers in ${c}`));
-    const q = qualitySample({ site: siteOf("horselegalguide.com"), host: "horselegalguide.com", checklist, pages });
-    expect(q.red).toBe(true);
-    expect(q.line).not.toMatch(/Danielle is fixing/);
-    const own = qualitySample({ site: siteOf("theaccidentguides.com"), host: "theaccidentguides.com", checklist, pages });
-    expect(own.line).toMatch(/Danielle is fixing the template\.$/);
+/** ONE FULL STOP (3 Nov 2026): no outcome or diagnosis line ends in two. */
+describe("the lines end in one full stop", () => {
+  it("a red line and a diagnosis never end in '..'", () => {
     const red = redLines([{ site: siteOf("uscisexam.com"), outcome: { status: "red", reasons: [{ text: "fell." }] }, diagnosis: { status: "diagnosed", lines: [{ confidence: "CONFIRMED", text: "x ends." }] } }]);
     expect(red[0]!.line).not.toMatch(/\.\./);
-    expect(diagnoseDrop({ pages: { ok: true, previous: [{ key: "https://s.com/a", impressions: 100 }], current: [] }, queries: { ok: false, why: "n" }, sitemap: {} }).text.every((l: string) => !/\.\.$/.test(l))).toBe(true);
+    expect(red[0]!.line).toMatch(/\.$/);
+    const d = diagnoseDrop({ pages: { ok: true, previous: [{ key: "https://s.com/a", impressions: 100 }], current: [] }, queries: { ok: false, why: "n" }, sitemap: {}, quality: { red: true, line: "most pages fall short. Danielle is fixing the template." } });
+    expect(d.text.length).toBeGreaterThan(1);
+    for (const l of d.text) expect(l).not.toMatch(/\.\.$/);
   });
 });

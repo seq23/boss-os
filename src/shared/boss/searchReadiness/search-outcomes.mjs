@@ -32,8 +32,6 @@ import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
 import { isOwnSite, leadRedLine } from "./site-leads.mjs";
 import { mostLikely, endStop } from "./drop-diagnosis.mjs";
 
-/** A site whose published pages may never be touched (sites.json `published_frozen`; Horse, Hicks). */
-export const isFrozen = (site) => Boolean(site?.published_frozen);
 
 export const OUTCOME = Object.freeze({
   WINDOW_DAYS: 28,
@@ -197,9 +195,6 @@ export function weeklyBriefs(siteResults, { now = Date.now() } = {}) {
   for (const s of siteResults ?? []) {
     const site = s.site ?? {};
     const base = { created_at: at, domain: site.domain, canonical_host: s.host, repo: site.repo ?? null, category: site.category, protected: null, missing_urls: [], disposition: dispositionOf(site) };
-    // Horse and Hicks (owner, 3 Nov 2026): never touch a published page. Diagnosis only: no outcome,
-    // quality or fold brief is queued for a frozen site; its diagnosis stays in its own row.
-    if (isFrozen(site)) continue;
     if (s.outcome?.status === "red" || s.outcome?.status === "gold") {
       briefs.push({
         ...base, id: `so-${site.domain}-outcome`, kind: "outcome", item_id: "o1", item_title: "Google keeps showing the site (last 28 days against the 28 before)",

@@ -6,6 +6,5 @@ export function sumWindow(rows: any[], w: Win): { impressions: number; clicks: n
 export function outcomeVerdict(a: { read: any; sitemapUrls?: number | null; now?: number; lastWeek?: any }): any;
 export function pickLastWeekDay(days: string[], today: string): string | null;
 export function slipLines(siteResults: any[]): { domain: string | null; kind: string; line: string }[];
-export function isFrozen(site: any): boolean;
 export function redLines(siteResults: any[]): { domain: string | null; kind: string; line: string }[];
 export function weeklyBriefs(siteResults: any[], opts?: { now?: number }): any[];
