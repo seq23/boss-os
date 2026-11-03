@@ -12,7 +12,7 @@ import {
   loadChecklist, loadSites, CHECKS, applies, expandCoverage, coverageProblems, runChecks, fixBriefs,
   morningLines, haversineMiles, workQueue, queueRunLine, repairLine, definitionChoice, nextFixStatus,
   indexnowKeyFiles, INDEXNOW_KEY_NAME, entityFor, namedPeople, SPRY_LABS_ID, ENTITY_PARENTS,
-  siteSection, loopConfigFor, oneActionOf, actionMatches,
+  siteSection, loopConfigFor, oneActionOf, actionMatches, searchLanes,
 } from "../src/shared/boss/searchReadiness/audit.mjs";
 import { parseRepoCategories } from "../src/shared/boss/repos/categories.mjs";
 import { renderChecklistPage, loadTemplate, standingsSummary, renderStandings } from "../src/shared/boss/searchReadiness/page.mjs";
@@ -919,6 +919,31 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
   const page = (path: string, body: string) => ({ url: `https://approvalprep.com${path}`, final: `https://approvalprep.com${path}`, status: 200, html: `<html><body>${body}</body></html>` });
   const ctx = (o: any = {}) => ({ site: o.site ?? site, host: "approvalprep.com", pages: [], files: {}, portfolio: [], now: NOW, repo: repo(o), ...o.ctx }) as any;
   const run = (type: string, o: any = {}) => CHECKS[type]!(ctx(o));
+
+  it("the Monday report shows each site's hit rate per lane, and an unreadable lane says not read, never 0 (engine v1.6.0)", () => {
+    // The engine's lanes block (seq23/search-loop src/report.mjs lanesBlock, src/compete.mjs laneStats).
+    const lanes = { ratio: { can_be_one: 2, striking: 1 }, can_be_one: { pages: 7, measured: 5, top3: 3, hit_rate: 0.6 }, striking: { pages: 6, measured: 4, top3: 1, hit_rate: 0.25 }, weights: {}, weight_changes: [], competition: "x" };
+    const rowFor = (w: any) => ({ site, results: [], lanes: searchLanes(ctx({ weeks: [w] })) });
+    const good = rowFor(week({ lanes }));
+    expect(good.lanes?.line).toBe("Can be #1 now: 3 of 5 pages reached Google's top 3 · Striking distance: 1 of 4");
+    const lines = morningLines(checklist, [good], {});
+    expect(lines).toContain("approvalprep.com: Can be #1 now: 3 of 5 pages reached Google's top 3 · Striking distance: 1 of 4.");
+    for (const l of lines) expect(lineProblems(l), l).toEqual([]);
+    // A missing lane field, and a lane with nothing measured yet: "not read", never a 0.
+    const missing = searchLanes(ctx({ weeks: [week({ lanes: { ...lanes, striking: { pages: 6, top3: 1 } } })] }))!.line;
+    expect(missing).toMatch(/^Can be #1 now: 3 of 5 pages reached Google's top 3 · Striking distance: not read: /);
+    const none = searchLanes(ctx({ weeks: [week({ lanes: { ...lanes, can_be_one: { pages: 2, measured: 0, top3: 0, hit_rate: "not read: no page in this lane has reached its 2-week check yet" } } })] }))!.line;
+    expect(none).toMatch(/^Can be #1 now: not read: no page in this lane has reached its 2-week check yet · Striking distance: 1 of 4 pages reached Google's top 3$/);
+    for (const l of [missing, none]) expect(l).not.toMatch(/\b0 of\b|: 0\b/);
+    // An engine older than v1.6.0 (Horse v1.4.0, Hicks v1.5.0) has no lanes block yet.
+    const older = rowFor(week());
+    expect(older.lanes?.line).toBe("lanes start with engine v1.6");
+    expect(morningLines(checklist, [older], {})).toContain("approvalprep.com: lanes start with engine v1.6.");
+    // No report read: said, never 0.
+    expect(searchLanes(ctx({ weeks: undefined }))!.line).toMatch(/not read/);
+    // The site's row on the checklist page carries the same line.
+    expect(renderStandings({ day: "2026-11-02", sites: [good] }, checklist)).toContain("Can be #1 now: 3 of 5 pages reached Google's top 3");
+  });
 
   it("every stage is an item in phase F, automatic, implemented, and reaches only the selling sites", () => {
     for (const [id, [type, source]] of Object.entries(LOOP)) {

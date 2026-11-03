@@ -38,7 +38,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { passingItems,
-  loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, summaryLines, liveSameAs, hostOf, bare, entityFor, ENTITY_WATCH_RE,
+  loadChecklist, loadSites, applies, runChecks, expandCoverage, fixBriefs, morningLines, searchLanes, summaryLines, liveSameAs, hostOf, bare, entityFor, ENTITY_WATCH_RE,
   metaContent, links, tags, FRESH_FILE_NAMES, indexnowKeyFiles, definitionChoice, CHECKLIST_PATH, SITES_PATH,
 } from "../../src/shared/boss/searchReadiness/audit.mjs";
 import { fetchLoopWeeks } from "./lib/search-loop-week.mjs";
@@ -478,13 +478,15 @@ async function auditSite(site, checklist, g, gscSites, portfolio, firstSeen = {}
 
   const ctx = { site, host, home, pages, robots: { status: robots.status, type: robots.type, text: robots.text ?? "" }, sitemap, files, gsc, repo, crawl: crawled, coverage, psi: ps, portfolio, protectedPaths, now: Date.now() };
   const results = runChecks(checklist, ctx);
+  // Which searches win (engine v1.6.0 lanes): the site's row and the Monday email.
+  const lanes = searchLanes(ctx);
   const pr = protectedReport.filter((p) => !p.sha256_matches || p.buy_link_on_page === false || (p.buy_link_status && p.buy_link_status !== 200));
   if (pr.length) results.push({ id: "protected", status: "fail", detail: pr.map((p) => `${p.path}: ${p.status !== 200 ? `answered ${p.status}` : !p.sha256_matches ? "content changed (hash differs)" : p.buy_link_on_page === false ? "the Gumroad buy link is gone" : `the Gumroad buy link answered ${p.buy_link_status}`}`).join("; "), evidence: pr.map((p) => p.path) });
   return {
     site, host, seconds: Math.round((Date.now() - t0) / 1000), home_status: home.status,
     sitemap: { ok: sitemap.ok, urls: sitemap.urls.size, children: sitemap.children.map(({ url, status, count }) => ({ url, status, count })) },
     coverage: coverage.error ? { error: coverage.error } : { targets: coverage.targets.length, missing: coverage.targets.filter((t) => !t.inSitemap || t.status !== 200).map((t) => t.url) },
-    protected: protectedReport, results, outcome, ...(diagnosis ? { diagnosis } : {}), ...(leads ? { leads } : {}), quality, consolidation, sitemapUrls: [...sitemap.urls],
+    protected: protectedReport, results, outcome, ...(diagnosis ? { diagnosis } : {}), ...(leads ? { leads } : {}), ...(lanes ? { lanes } : {}), quality, consolidation, sitemapUrls: [...sitemap.urls],
   };
 }
 
@@ -540,6 +542,7 @@ async function main() {
       const r = await auditSite(site, checklist, g, gscSites, portfolio, firstSeen[site.domain] ?? {}, lastWeek.get(site.domain) ?? null);
       siteResults.push(r);
       say(summaryLines([r])[0]);
+      if (r.lanes) say(`  ${r.lanes.line}`);
       if (r.leads) say(`  ${r.leads.line}${r.leads.red ? " — RED: people come, nobody acts" : ""}`);
     } catch (e) {
       say(`${site.domain}: AUDIT FAILED ${e?.stack ?? e}`);

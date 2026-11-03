@@ -13,3 +13,7 @@ export function capOk(week: any): { ok: boolean; why: string };
 export function checksRan(week: any): { ok: boolean; why: string };
 export function aiMeasured(week: any): { ok: boolean; why: string };
 export function loopLine(weeks: any[] | null | undefined, opts?: { actionWord?: string }): string | null;
+export const LANE_LABELS: Readonly<{ can_be_one: string; striking: string }>;
+export const LANES_NOT_YET: string;
+export function laneText(x: any, opts?: { first?: boolean }): string;
+export function laneLine(week: any): string | null;

@@ -69,3 +69,5 @@ export function oneActionOf(cfg: any): string | null;
 export function actionMatches(target: string, action: string, base: string): boolean;
 export function loopWeek(ctx: any): { week?: any; result?: any };
 export function isUtility(url: string): boolean;
+export function searchLanes(ctx: any): { line: string } | null;
+export function laneMorningLines(siteResults: any[]): string[];
