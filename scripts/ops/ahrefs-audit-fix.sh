@@ -64,7 +64,8 @@ if [ -n "${SR_SCOPE_REPO:-}" ]; then
 fi
 export BOSS_OS_SITE_AUDIT_DIR="$OUT_DIR"
 
-# THE MODEL IS NAMED, AND IT MATCHES THE DUTY ROW.
+# THE MODEL IS NAMED, AND IT MATCHES THE DUTY ROW. Since 3 Nov 2026 it is the BRAIN step's model (the
+# mail digest), handed to ai-run as AI_RUN_CLAUDE_MODEL; the repair itself runs on Codex's default.
 #
 # `claude -p` with no --model runs whatever the default is, so the model is always named. It was
 # Sonnet; the owner's rule since 6 Oct 2026 is Opus for every agent (Haiku and Sonnet stay out), and
@@ -101,8 +102,10 @@ fi
 echo $$ > "$LOCK/pid"
 trap 'rm -rf "$LOCK"' EXIT
 
-CLAUDE="$(command -v claude || echo /opt/homebrew/bin/claude)"
-[ -x "$CLAUDE" ] || { say "NAMED STOP [NO_CLAUDE_CLI] $CLAUDE"; exit 4; }
+# THE ENGINE IS ~/bin/ai-run IN THE ROLE src/shared/boss/aiRoles.mjs NAMES (owner, 3 Nov 2026: Codex
+# is the worker, Claude the brain). Missing → a named stop the next run retries (exit 13).
+AI_RUN="${AI_RUN_BIN:-$HOME/bin/ai-run}"
+[ -x "$AI_RUN" ] || { say "NAMED STOP [AI_RUN_MISSING] $AI_RUN is not installed (seq-bin); the next run retries."; exit 13; }
 [ -f "$PROMPT_FILE" ] || { say "NAMED STOP [NO_PROMPT_FILE] $PROMPT_FILE"; exit 5; }
 command -v gh >/dev/null 2>&1 || { say "NAMED STOP [NO_GH_CLI] a fix that cannot open a PR is a fix nobody sees."; exit 6; }
 # OFFLINE IS NOT LOGGED OUT (25 Oct 2026). `gh auth status` fails the same way for both, and an
@@ -114,48 +117,15 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/net-wait.sh"
 gh_ready; GH_RC=$?
 [ "$GH_RC" -eq 0 ] || exit "$GH_RC"
 
-# Gmail here is a claude.ai connector, not a local MCP server. A lapsed login would make this job
-# silently find nothing for ever — indistinguishable from a week with no findings, which is the one
-# confusion this whole duty is written to prevent.
-# WHICH AI RUNS THE PASS (owner, 27 Oct 2026: "openai should do them", then "an automated fallback").
-# BOSS_AI_RUNNER: claude | codex | auto (the launchd jobs use auto).
-#   auto  = Claude first; if Claude is signed out, or the run ends without its sentinel because Claude's
-#           usage ran out, the SAME pass reruns on Codex (her ChatGPT plan) when Codex can do it — and
-#           the reverse (28 Oct 2026): a pass handed RUNNER=codex that runs out of usage reruns once on
-#           Claude when Claude is signed in, whatever BOSS_AI_RUNNER says.
-# Codex cannot reach the claude.ai Gmail connector, so Codex runs a pass only when it needs no mail:
-# a scoped Search Readiness pass, or a mail pass handed AHREFS_DIGEST (a file of that week's Ahrefs
-# reports gathered by someone who can read the mail). Otherwise Codex is a NAMED STOP, never a silent skip.
-RUNNER="${BOSS_AI_RUNNER:-claude}"
-CODEX="$(command -v codex || echo /opt/homebrew/bin/codex)"
-codex_can_run() {
-  [ -n "${SR_SCOPE_REPO:-}" ] && return 0
-  [ -n "${AHREFS_DIGEST:-}" ] && [ -s "$AHREFS_DIGEST" ] && return 0
-  return 1
-}
-claude_signed_in() { security find-generic-password -s "Claude Code-credentials" -w >/dev/null 2>&1; }
-if [ "$RUNNER" = "auto" ]; then
-  if claude_signed_in; then RUNNER="claude"; FALLBACK="codex"; else say "Claude is signed out; trying Codex."; RUNNER="codex"; FALLBACK=""; fi
-fi
-if [ "$RUNNER" = "codex" ]; then
-  if ! codex_can_run; then
-    say "NAMED STOP [MAIL_PASS_NEEDS_CLAUDE] the Ahrefs-mail pass reads Gmail through the claude.ai connector, which Codex cannot reach, and no AHREFS_DIGEST was given."
-    exit 12
-  fi
-  "$CODEX" login status >/dev/null 2>&1 || { say "NAMED STOP [CODEX_NOT_AUTHENTICATED] run: codex login"; exit 13; }
-elif ! claude_signed_in; then
-  say "NAMED STOP [CLAUDE_NOT_AUTHENTICATED] cannot read credentials from the login keychain."
-  say "  Mac may be at the login window with the keychain locked, or the session signed out."
-  say "  Danielle's duty stays overdue and Today will say so, which is correct."
-  exit 10
-fi
-# THE OTHER DIRECTION OF THE FALLBACK (28 Oct 2026). RUNNER=codex here means either auto-with-Claude-
-# signed-out (FALLBACK already "", correctly: Claude cannot take it either) or an explicit
-# BOSS_AI_RUNNER=codex — which is what the installed plists carried on 28 Oct. If Claude is signed in,
-# a codex pass that runs out of usage gets one rerun on Claude, whatever the plist says.
-if [ "$RUNNER" = "codex" ] && [ -z "${FALLBACK:-}" ] && claude_signed_in; then
-  FALLBACK="claude"
-fi
+# WHICH ENGINE DOES WHAT (owner, 3 Nov 2026), read from src/shared/boss/aiRoles.mjs — no choice here:
+#   site_audit.repair      the pass itself (crawl, edit, validate, PRs)            → worker (Codex)
+#   site_audit.mail_digest reading the week's Ahrefs mail (claude.ai Gmail connector,
+#                          which Codex cannot reach), read-only, writing a digest  → brain (Claude)
+# A Codex limit ends the pass as NAMED STOP [CODEX_LIMIT] (exit 13, retried by the next run). It is
+# never handed to Claude.
+role_of() { node "$REPO/scripts/ops/lib/ai-run.mjs" role "$1"; }
+REPAIR_ROLE="$(role_of site_audit.repair)" || { say "NAMED STOP [NO_AI_ROLE] site_audit.repair"; exit 11; }
+DIGEST_ROLE="$(role_of site_audit.mail_digest)" || { say "NAMED STOP [NO_AI_ROLE] site_audit.mail_digest"; exit 11; }
 
 # ─── THE OFF-LIMITS REPOSITORY, READ FROM THE ONE LIST ──────────────────────
 #
@@ -182,7 +152,7 @@ if [ -n "${SR_SCOPE_REPO:-}" ]; then
     || say "NAMED STOP [NO_SCOPE_SNAPSHOT] the queue could not be read before the pass; the reporter will read it again."
 fi
 
-say "=== ahrefs audit pass starting (runner $RUNNER, model $([ "$RUNNER" = codex ] && echo codex-default || echo "$MODEL")) ==="
+say "=== ahrefs audit pass starting (repair on ai-run --role $REPAIR_ROLE) ==="
 cd "$HOME" || { say "NAMED STOP [NO_HOME]"; exit 8; }
 
 # THE PROMPT'S PATHS FOLLOW $REPO. It names ~/GitHub/boss-os/scripts/ops/… for the crawler, the
@@ -212,30 +182,32 @@ briefs go to the next pass. Open the PR and get it green before you finish, so n
   fi
   say "scoped pass: Search Readiness queue, repo $SR_SCOPE_REPO"
 fi
+# THE MAIL PASS: the brain reads the mail and writes the digest; the worker repairs from it.
+if [ -z "${SR_SCOPE_REPO:-}" ] && { [ -z "${AHREFS_DIGEST:-}" ] || [ ! -s "$AHREFS_DIGEST" ]; }; then
+  AHREFS_DIGEST="$OUT_DIR/ahrefs-digest.md"
+  rm -f "$AHREFS_DIGEST"
+  AI_RUN_CLAUDE_MODEL="$MODEL" "$AI_RUN" --role "$DIGEST_ROLE" --out "$AHREFS_DIGEST" -- "Read seq.taylor@gmail.com through the Gmail connector for the Ahrefs Site Audit report emails of the last 8 days (from Ahrefs, subject containing Site Audit). Change nothing and fix nothing. Reply with ONLY a markdown digest: for each project, the site, the crawl date, the health score, and every issue named with its count and severity, exactly as the mail says. If there were none, reply exactly: NO AHREFS SITE AUDIT MAIL THIS WEEK." >> "$RUN_LOG" 2>&1
+  DIGEST_RC=$?
+  if [ ! -s "$AHREFS_DIGEST" ]; then
+    say "NAMED STOP [NO_DIGEST] the brain step (rc=$DIGEST_RC) wrote no Ahrefs digest; the next run retries."
+    exit 13
+  fi
+  say "digest written by ai-run --role $DIGEST_ROLE: $AHREFS_DIGEST"
+fi
 if [ -n "${AHREFS_DIGEST:-}" ] && [ -s "$AHREFS_DIGEST" ] && [ -z "${SR_SCOPE_REPO:-}" ]; then
   PROMPT_TEXT="$PROMPT_TEXT
 Do NOT read Gmail this pass. This week's Ahrefs reports are summarised in $AHREFS_DIGEST: read it in
 place of the mail, find the exact URLs on each live site, and fix at source as section 1 says."
   say "mail pass from digest: $AHREFS_DIGEST"
 fi
-run_codex() { "$CODEX" exec --skip-git-repo-check -s danger-full-access -c model_reasoning_effort=high "$PROMPT_TEXT" < /dev/null >> "$RUN_LOG" 2>&1; }
-run_claude() { "$CLAUDE" -p "$PROMPT_TEXT" --model "$MODEL" --max-turns "$MAX_TURNS" --dangerously-skip-permissions >> "$RUN_LOG" 2>&1; }
-if [ "$RUNNER" = "codex" ]; then run_codex; else run_claude; fi
+"$AI_RUN" --role "$REPAIR_ROLE" --network --cwd "$HOME" --out "$RUN_LOG" -- "$PROMPT_TEXT" >> "$RUN_LOG" 2>&1
 RC=$?
-# THE FALLBACK: Claude ran out of usage before finishing, so the same pass goes to Codex.
-if [ "${FALLBACK:-}" = "codex" ] && ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then
-  if codex_can_run && "$CODEX" login status >/dev/null 2>&1; then
-    say "=== Claude ran out of usage (rc=$RC); rerunning the same pass on Codex ==="
-    RUNNER="codex"; run_codex; RC=$?
-  else
-    say "NAMED STOP [FALLBACK_UNAVAILABLE] Claude ran out of usage and Codex cannot take this pass (mail pass without a digest, or Codex signed out)."
-  fi
-# THE OTHER DIRECTION: Codex ran out of usage and Claude can take this pass (it reads mail too).
-elif [ "${FALLBACK:-}" = "claude" ] && ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then
-  say "=== Codex ran out of usage (rc=$RC); rerunning the same pass on Claude ==="
-  RUNNER="claude"; run_claude; RC=$?
+say "=== ai-run --role $REPAIR_ROLE exited rc=$RC ==="
+if [ "$RC" -eq 75 ] || grep -q 'NAMED STOP \[CODEX_LIMIT\]' "$RUN_LOG"; then
+  CODEX_LIMIT_LINE="$(grep -o 'NAMED STOP \[CODEX_LIMIT\].*' "$RUN_LOG" | tail -1)"
+  CODEX_RESETS="${CODEX_LIMIT_LINE#*resets }"
+  [ "$CODEX_RESETS" = "$CODEX_LIMIT_LINE" ] && CODEX_RESETS="unknown"
 fi
-say "=== $RUNNER exited rc=$RC ==="
 
 SENTINEL_OK=1
 if ! has_sentinel "$RUN_LOG"; then
@@ -250,7 +222,13 @@ if [ "$SENTINEL_OK" -eq 0 ]; then
   # pass could use is out of usage: salvage what ran, write when it resets, and exit 13 so the caller
   # (search-readiness-fix.sh) treats this round as blocked rather than as a round that fixed nothing.
   USAGE_EXHAUSTED=0
-  if ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then
+  if [ -n "${CODEX_RESETS:-}" ] && ! has_sentinel "$RUN_LOG"; then
+    # A CODEX LIMIT WAITS (owner, 3 Nov 2026): a named note, retried by the next run, never Claude.
+    USAGE_EXHAUSTED=1
+    say "NAMED STOP [CODEX_LIMIT] resets $CODEX_RESETS — this pass waits for the reset; the next scheduled run retries it. Not handed to Claude."
+    mkdir -p "$HOME/.boss-os/search-readiness"
+    echo "$CODEX_RESETS" > "$HOME/.boss-os/search-readiness/retry-after"
+  elif ! has_sentinel "$RUN_LOG" && usage_exhausted "$RUN_LOG"; then
     USAGE_EXHAUSTED=1
     RETRY_LINE="$(grep -o 'try again at [0-9][0-9:]* *[AaPp][Mm]' "$RUN_LOG" | tail -1)"
     RETRY_AT="${RETRY_LINE#try again at }"

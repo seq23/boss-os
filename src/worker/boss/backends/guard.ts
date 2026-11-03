@@ -484,6 +484,8 @@ export interface BackendRequest {
   /** Omitting it is not a shortcut to OPEN — an absent lever is FREE_ONLY. */
   lever?: SpendLeverState;
   now?: number;
+  /** Park on this seat even while its plan is spent: the run waits for the reset (a Codex limit, aiRoles.mjs). */
+  waitOutSpentPlan?: boolean;
 }
 
 const refuse = (
@@ -523,7 +525,7 @@ export function evaluateBackend(env: Env, backend: Backend, taskKind: string | n
    * fail on. The owner's own instruction is exempt from budget refusals but not from this one: a
    * spent plan cannot answer anybody, and parking her request on it would only make it wait.
    */
-  if (isPlanSpent(backend, now)) {
+  if (isPlanSpent(backend, now) && !req.waitOutSpentPlan) {
     return refuse(
       backend.id,
       "plan_spent",

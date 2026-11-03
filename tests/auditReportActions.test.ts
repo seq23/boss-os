@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DISPOSITIONS } from "../src/shared/boss/siteAudit/repoPolicy.mjs";
+import { FAKE_AI_RUN } from "./fakeAiRun";
 
 const ROOT = process.cwd();
 const dirs: string[] = [];
@@ -147,6 +148,7 @@ function codexPass() {
   fake("codex", `if [ "$1" = login ]; then exit 0; fi
 printf '%s' "$AUDIT_FIXTURE_SUMMARY" > "$BOSS_OS_SITE_AUDIT_DIR/findings.json"
 echo 'AHREFS-AUDIT-COMPLETE: projects=3 fixed=0 surfaced=0 off_limits=0 no_repo=1 ahrefs_side=0 ahrefs_credits=0 client_repo=0 in_flight=1'`);
+  writeFileSync(join(bin, "ai-run"), FAKE_AI_RUN, { mode: 0o755 });
   writeFileSync(join(home, "digest.txt"), "Fixture audit digest");
   return { home, env: { HOME: home, PATH: `${bin}:${process.env.PATH}`, BOSS_OS_REPO: ROOT,
     BOSS_AI_RUNNER: "codex", AHREFS_DIGEST: join(home, "digest.txt"),

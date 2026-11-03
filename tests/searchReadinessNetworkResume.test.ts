@@ -11,7 +11,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { spawnSync, spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, chmodSync } from "node:fs";
+import { FAKE_AI_RUN } from "./fakeAiRun";
+import { rmSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -39,20 +40,25 @@ printf 200`);
   // auto -> Codex branch and the run ended CODEX_NOT_AUTHENTICATED (13) where the test wanted 10 —
   // green in CI only because no codex binary exists there. runFixer now pins the runner per case.
   w("codex", `if [ "$1 $2" = "login status" ]; then [ "\${FAKE_CODEX_LOGGED_IN:-0}" = 1 ]; exit $?; fi\nexit 0`);
+  writeFileSync(join(bin, "ai-run"), FAKE_AI_RUN); chmodSync(join(bin, "ai-run"), 0o755);
   return { bin, net };
 }
 
 const FAST = { SR_NET_WAIT_STEP_S: "1", SR_NET_WAIT_CAP_S: "1", SR_NET_WAIT_MAX_S: "4" };
 
-function runFixer(down: string, loggedIn: boolean, extra: Record<string, string> = {}) {
+function runFixer(down: string, loggedIn: boolean, extra: Record<string, string> = {}, opts: { noAiRun?: boolean } = {}) {
   const home = mkdtempSync(join(tmpdir(), "srnet-fix-"));
   const ops = join(home, "boss-os/scripts/ops");
   mkdirSync(join(ops, "lib"), { recursive: true });
   copyFileSync("scripts/ops/ahrefs-audit-fix.sh", join(ops, "ahrefs-audit-fix.sh"));
   copyFileSync("scripts/ops/lib/net-wait.sh", join(ops, "lib/net-wait.sh"));
+  copyFileSync("scripts/ops/lib/ai-run.mjs", join(ops, "lib/ai-run.mjs"));
+  mkdirSync(join(home, "boss-os/src/shared/boss"), { recursive: true });
+  copyFileSync("src/shared/boss/aiRoles.mjs", join(home, "boss-os/src/shared/boss/aiRoles.mjs"));
   writeFileSync(join(home, "prompt.md"), "x");
   const { bin, net } = fakeBin(home);
   writeFileSync(net, down);
+  if (opts.noAiRun) rmSync(join(bin, "ai-run"));
   const r = spawnSync("/bin/bash", [join(ops, "ahrefs-audit-fix.sh")], {
     env: { ...(process.env as Record<string, string>), ...FAST,
       // The runner choice is part of the case, never inherited: a pass that runs these tests has its
@@ -71,7 +77,9 @@ describe("ahrefs-audit-fix.sh tells the network apart from the gh login", () => 
     expect(out).toMatch(/waiting for the network/);
     expect(out).toMatch(/the network is back/);
     expect(out).not.toMatch(/GH_NOT_AUTHENTICATED/);
-    expect(rc, out).toBe(10); // reached the next check (the keychain), i.e. past gh
+    // Past gh: the engine roles are read, then the off-limits list, absent from this fake checkout (11).
+    expect(out).toMatch(/NAMED STOP \[NO_POLICY\]/);
+    expect(rc, out).toBe(11);
   }, 60000);
 
   it("NEGATIVE: network up, gh really logged out: the login stop is still named (exit 7), with no wait", () => {
@@ -90,19 +98,11 @@ describe("ahrefs-audit-fix.sh tells the network apart from the gh login", () => 
     expect(Date.now() - t0).toBeLessThan(30000);
   }, 60000);
 
-  it("the runner choice comes from the case, not from the pass that runs the test (auto -> Codex stops are named)", () => {
-    // auto + Claude signed out + a scoped pass: Codex is allowed to run, and signed out it is a
-    // named stop, exit 13 — never a silent skip, and never read as the network being down.
-    const codexOut = runFixer("0", true, { BOSS_AI_RUNNER: "auto", SR_SCOPE_REPO: "authority-backlink-network" });
-    expect(codexOut.out).toMatch(/Claude is signed out; trying Codex/);
-    expect(codexOut.out).toMatch(/NAMED STOP \[CODEX_NOT_AUTHENTICATED\] run: codex login/);
-    expect(codexOut.rc, codexOut.out).toBe(13);
-    // auto + Claude signed out + a MAIL pass: Codex cannot read the mail, so it stops at 12.
-    const mail = runFixer("0", true, { BOSS_AI_RUNNER: "auto" });
-    expect(mail.out).toMatch(/NAMED STOP \[MAIL_PASS_NEEDS_CLAUDE\]/);
-    expect(mail.rc, mail.out).toBe(12);
-    // And the default case above really is the Claude branch: it reaches the keychain stop (10).
-    expect(runFixer("0", true).rc).toBe(10);
+  it("owner, 3 Nov 2026: no ai-run installed is a named stop the next run retries (13), before any model or gh call", () => {
+    const { rc, out } = runFixer("0", true, {}, { noAiRun: true });
+    expect(out).toMatch(/NAMED STOP \[AI_RUN_MISSING\]/);
+    expect(out).not.toMatch(/waiting for the network|GH_NOT_AUTHENTICATED|NO_POLICY/);
+    expect(rc, out).toBe(13);
   }, 60000);
 
   it("the default wait is about two hours, backing off, and the body is one parsed function", () => {

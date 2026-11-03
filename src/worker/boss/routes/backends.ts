@@ -11,7 +11,7 @@
  * screen gets to decide for itself that a deliberate decline is a failure.
  */
 
-import { spentCooldownSeconds } from "../backends/spent";
+import { spentCooldownSeconds, isPlanSpent } from "../backends/spent";
 import { Hono } from "hono";
 import type { Env, Vars } from "../env";
 import { ok, badRequest, notFound, conflict, AppError } from "../lib/http";
@@ -46,7 +46,7 @@ import {
 } from "../backends/guard";
 import { eligibleFor } from "../backends/registry";
 import { deepStrip } from "../backends/dispatch";
-import { CLAUDE_SEAT } from "../duties/seatOrder";
+import { CLAUDE_SEAT, OPENAI_SEAT } from "../duties/seatOrder";
 import { afterResult } from "../service/afterResult";
 import type { AiProcessing } from "../policy/airlock";
 import type { Sensitivity } from "../../../shared/boss/governance";
@@ -495,11 +495,18 @@ backends.post("/claim", async (c) => {
     .bind(...seatIds, backendId)
     .all<{ id: string; task_id: string; envelope_id: string | null; requested: string; parked_for: string }>();
 
+  /*
+   * A CODEX LIMIT WAITS (owner, 3 Nov 2026: Codex is the worker, Claude only the brain). A run parked
+   * on Codex's seat that carries `codex_limit_waits` (the consumer stamps it, from aiRoles.mjs) is never
+   * handed to another seat while Codex's plan is spent: it waits for the reset and Codex claims it.
+   */
+  const codexSpent = fallbackFrom.includes(OPENAI_SEAT) ? isPlanSpent(await getBackend(c.env.DB, OPENAI_SEAT), Date.now()) : false;
   for (const run of waiting.results ?? []) {
     let handoff: { from: string } | null = null;
     if (run.parked_for !== backendId) {
       let parkedRequested: any = {};
       try { parkedRequested = JSON.parse(run.requested); } catch { parkedRequested = {}; }
+      if (run.parked_for === OPENAI_SEAT && parkedRequested.codex_limit_waits === true && codexSpent) continue;
       const ladder: unknown[] = Array.isArray(parkedRequested.backend_ladder) ? parkedRequested.backend_ladder : [];
       const from = ladder.indexOf(run.parked_for);
       const to = ladder.indexOf(backendId);
@@ -699,6 +706,31 @@ backends.post("/report", async (c) => {
     const ladder: string[] = Array.isArray(req.backend_ladder) ? (req.backend_ladder as unknown[]).filter((x): x is string => typeof x === "string") : [];
     const tried: string[] = Array.isArray(req.ladder_released) ? (req.ladder_released as unknown[]).filter((x): x is string => typeof x === "string") : [];
     const at = ladder.indexOf(run.backend_id);
+    /*
+     * A CODEX LIMIT WAITS FOR ITS RESET (owner, 3 Nov 2026; aiRoles.mjs). A run marked
+     * `codex_limit_waits` whose Codex seat reports its plan spent is put back, unclaimed, on Codex's
+     * seat — never handed down the ladder to Claude or a cloud rung. The seat is stamped spent, so the
+     * Mac skips it until the reset and then claims this run again.
+     */
+    if (spentEvidence && run.backend_id === OPENAI_SEAT && req.codex_limit_waits === true) {
+      const until = Date.now() + spentCooldownSeconds(spentEvidence.retry_after_seconds) * 1000;
+      const notice = (optionalText(spentEvidence.notice) ?? "").slice(0, 300) || null;
+      const parked = await c.env.DB
+        .prepare(`UPDATE backend_runs SET claimed_at = NULL, claimed_by = NULL WHERE id = ? AND finished_at IS NULL AND status = 'running'`)
+        .bind(run.id)
+        .run();
+      if ((parked.meta.changes ?? 0) > 0) {
+        await c.env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = ? WHERE id = ?`).bind(until, notice, run.backend_id).run();
+        if (run.task_id) {
+          await c.env.DB
+            .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'codex_limit_wait',?)`)
+            .bind(newId("tev"), run.task_id, Date.now(), JSON.stringify({ run_id: run.id, why: `NAMED STOP [CODEX_LIMIT] waits for the reset${notice ? `: ${notice}` : ""}`, exhausted_until: until }))
+            .run();
+        }
+        await logEvent(c.env.DB, { level: "info", scope: "backends", event: "codex_limit_wait", entityId: run.task_id ?? run.id, detail: { run_id: run.id, exhausted_until: until } });
+        return ok(c, { released: true, run_id: run.id, next_seat: OPENAI_SEAT, outcome_class: "waiting_for_reset", approval_id: null, exhausted_until: until });
+      }
+    }
     const next = at === -1 ? undefined : ladder.slice(at + 1).find((id) => !tried.includes(id) && id !== run.backend_id);
     if (next) {
       const releasedAt = Date.now();
