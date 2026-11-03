@@ -1143,6 +1143,8 @@
    "category": "client",
    "entity_parent": "client",
    "ymyl": true,
+   "clarity": false,
+   "clarity_why": "the site has no form and no sale: it collects nothing (a validator in the repo forbids any PHI form) and every booking link goes off-site to the practice's real scheduling page, so there is no step her 25 Oct 2026 ruling lets session recording sit on. Recording a dental site's reading instead would be exactly the health-subject recording risk.md R-PRV-03 and R-CLI-06 keep off these pages. Proved 3 Nov 2026: 0 <form> tags and 0 checkout hosts in the whole built site, 86 booking links, all to aspendental.com",
    "kind": "brand",
    "roles": [],
    "label": "Cynthia Brown DDS",
