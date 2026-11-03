@@ -15,10 +15,10 @@
  *   - what the audit already holds: the sitemap's page count against last week, the quality sample,
  *     the fold queue's zero-impression pages, and the commits in the site's repo over the windows.
  *
- * NEVER CHANGES A SITE. It proposes no edit; for a site whose published pages are frozen
- * (sites.json `published_frozen`: horselegalguide.com, hicksconsulting.org) nothing downstream may
- * turn it into one either (search-outcomes.mjs `weeklyBriefs` emits no outcome or fold brief there).
- * A client's numbers stay in that client's own row; nothing here feeds her own businesses.
+ * NEVER CHANGES A SITE: it reads and writes words. The repair run works the outcome brief it lands in
+ * (search-outcomes.mjs `weeklyBriefs`), on client grid sites too (owner, 3 Nov 2026: Horse and Hicks
+ * "fix like my sites"). A client's numbers stay in that client's own row; nothing here feeds her own
+ * businesses.
  *
  * Pure. The audit runner (scripts/ops/search-readiness-audit.mjs, `readDiagnosis`) does the reads and
  * hands them here as { ok: true, ... } or { ok: false, why }. An unread source is said "not read:
@@ -40,6 +40,8 @@ export const DIAG = Object.freeze({
   SITEMAP_SURGE: 0.5,
 });
 
+/** One full stop at the end, never two (a quoted line may already end in one). */
+export const endStop = (t) => `${String(t).replace(/[.\s]+$/, "")}.`;
 const num = (n) => Number(n).toLocaleString("en-US");
 const pctOf = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
 
@@ -150,7 +152,7 @@ export function diagnoseDrop({ pages, queries, inspections, sitemap = {}, commit
   causes.sort((a, b) => b.weight - a.weight);
   const room = DIAG.MAX_LINES - (notRead.length ? 1 : 0);
   const lines = causes.slice(0, room).map(({ confidence, text }) => ({ confidence, text }));
-  const text = lines.map((l) => `${l.confidence}: ${l.text}.`);
+  const text = lines.map((l) => `${l.confidence}: ${endStop(l.text)}`);
   if (notRead.length) text.push(`Not read: ${notRead.map((n) => `${n.source} (${n.why})`).join("; ")}.`);
   return {
     status: "diagnosed", lines, text,

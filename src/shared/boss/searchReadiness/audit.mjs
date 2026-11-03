@@ -1365,7 +1365,9 @@ export function fixBriefs(checklist, siteResults, { now = Date.now() } = {}) {
         // It stays in the queue so it is said every week, but no fix pass is ever spent on it.
         // A repo the fixer may never branch (a client's report-only repo, repoPolicy NO_AUTO_FIX) is
         // recorded, never worked: its site reports in its own repo (1 Nov 2026).
-        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
+        // A site whose published pages change only with her yes (sites.json `owner_approval`: Hicks,
+        // owner 3 Nov 2026) holds every brief until she approves this week's plan (`s.approved`).
+        disposition: !s.site.repo ? "no_repo" : !mayAutoFix(s.site.repo) ? "client_repo" : s.site.owner_approval && !s.approved ? "owner_approval" : s.site.client_approval ? "client_draft" : limit ? "known_limit" : r.named_stop ? "named_stop" : "fix",
         ...(limit ? { known_limit: limit.why } : {}),
         ...(r.named_stop ? { named_stop: r.named_stop } : {}),
       });
@@ -1472,7 +1474,9 @@ export function workQueue(briefs, { chunkSize = 10 } = {}) {
   const isProtected = (b) => Array.isArray(b.protected) ? b.protected.length > 0 : Boolean(b.protected);
   const noRepo = list.filter((b) => !b.repo || b.disposition === "no_repo");
   const prot = list.filter((b) => b.repo && b.disposition !== "no_repo" && isProtected(b));
-  const workable = list.filter((b) => b.repo && b.disposition === "fix" && !isProtected(b));
+  // client_draft (Horse, 3 Nov 2026): worked like a fix, but drafted into the client's approval queue, never made live.
+  const WEEKLY_KINDS = ["outcome", "quality", "consolidate"];
+  const workable = list.filter((b) => b.repo && (b.disposition === "fix" || (b.disposition === "client_draft" && !WEEKLY_KINDS.includes(b.kind))) && !isProtected(b));
   const byRepo = {};
   for (const b of workable) byRepo[b.repo] = (byRepo[b.repo] ?? 0) + 1;
   const repos = Object.entries(byRepo).sort((a, b) => b[1] - a[1]).map(([repo, n]) => ({ repo, n }));
@@ -1492,7 +1496,7 @@ export function workQueue(briefs, { chunkSize = 10 } = {}) {
    * pass a week (the first round, `--plan` ONCE lines), never the round-until-empty loop: a 28-day
    * window stays red for weeks after its fix lands, so counting it as workable would stall every run.
    */
-  const weekly = list.filter((b) => b.repo && b.disposition === "weekly" && !isProtected(b));
+  const weekly = list.filter((b) => b.repo && (b.disposition === "weekly" || (b.disposition === "client_draft" && WEEKLY_KINDS.includes(b.kind))) && !isProtected(b));
   const once = [];
   for (const repo of [...new Set(weekly.map((b) => b.repo))]) {
     const ids = weekly.filter((b) => b.repo === repo).map((b) => b.id);

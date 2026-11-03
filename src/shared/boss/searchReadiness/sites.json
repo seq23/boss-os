@@ -1083,7 +1083,7 @@
   },
   {
    "domain": "horselegalguide.com",
-   "published_frozen": "owner, 3 Nov 2026 (friends brain): never touch anything already published; no edit, redirect, merge, unpublish or fold of a published page. Diagnosis only.",
+   "client_approval": "owner, 3 Nov 2026: \"horse owners want to approve everything that goes live - so we can use the engine but it needs to fill the queue still and be approved by them\". Repairs are drafted (encouraged: a velocity site) and go live only once the Horse owners approve them in their approval queue; new pages and edits to live pages alike.",
    "repo": "horse-legal-guide-velocity",
    "category": "client",
    "entity_parent": "client",
@@ -1102,7 +1102,7 @@
   },
   {
    "domain": "hicksconsulting.org",
-   "published_frozen": "owner, 3 Nov 2026 (friends brain): never touch anything already published; no edit, redirect, merge, unpublish or fold of a published page. Diagnosis only.",
+   "owner_approval": "owner, 3 Nov 2026: \"she cares deeply about her site so i need to approve any changes to hicks live published site and published resources\". Every repair of a published page or published Resources post waits for her yes; new scheduled Resources posts still auto-publish and unpublished drafts may be rewritten.",
    "repo": "hicks-consulting-canonical",
    "category": "client",
    "entity_parent": "client",

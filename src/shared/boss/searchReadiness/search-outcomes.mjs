@@ -30,10 +30,8 @@
  */
 import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
 import { isOwnSite, leadRedLine } from "./site-leads.mjs";
-import { mostLikely } from "./drop-diagnosis.mjs";
+import { mostLikely, endStop } from "./drop-diagnosis.mjs";
 
-/** A site whose published pages may never be touched (sites.json `published_frozen`; Horse, Hicks). */
-export const isFrozen = (site) => Boolean(site?.published_frozen);
 
 export const OUTCOME = Object.freeze({
   WINDOW_DAYS: 28,
@@ -169,7 +167,7 @@ export function redLines(siteResults) {
 /** One site's outcome line: what fell, then the diagnosis's most likely cause. */
 function outcomeLine(s, d) {
   const why = mostLikely(s.diagnosis);
-  return `${d}: ${s.outcome.reasons.map((r) => r.text).join("; ")}.${why ? ` ${why}.` : ""}`;
+  return `${d}: ${endStop(s.outcome.reasons.map((r) => r.text).join("; "))}${why ? ` ${endStop(why)}` : ""}`;
 }
 
 /**
@@ -184,7 +182,32 @@ export function slipLines(siteResults) {
 }
 
 /** The same disposition rule as every other brief: no repo, a client's report-only repo, or weekly. */
-const dispositionOf = (site) => (!site?.repo ? "no_repo" : !mayAutoFix(site.repo) ? "client_repo" : "weekly");
+const dispositionOf = (site, approved = false) => (!site?.repo ? "no_repo" : !mayAutoFix(site.repo) ? "client_repo" : site.owner_approval && !approved ? "owner_approval" : site.client_approval ? "client_draft" : "weekly");
+
+/**
+ * HER YES FIRST (Hicks, owner 3 Nov 2026: "i need to approve any changes to hicks live published site
+ * and published resources"). For a site with `owner_approval` whose outcome is red or gold and that
+ * she has not approved this cycle, ONE approval for Boss OS's normal route (POST /api/boss/approvals,
+ * shown in Decide): the diagnosis and the PROPOSED fix plan (every held brief). Until she says yes,
+ * every brief there is `owner_approval`, never worked; her yes (an approved row with this origin)
+ * turns next run's briefs into ordinary work. Null when nothing is to be asked.
+ */
+export function approvalCard(s, briefs, { now = Date.now() } = {}) {
+  const site = s?.site ?? {};
+  if (!site.owner_approval || s.approved) return null;
+  if (s.outcome?.status !== "red" && s.outcome?.status !== "gold") return null;
+  const held = (briefs ?? []).filter((b) => b.domain === site.domain && b.disposition === "owner_approval");
+  const monday = new Date(now - ((new Date(now).getUTCDay() + 6) % 7) * DAY).toISOString().slice(0, 10);
+  const why = (s.diagnosis?.text ?? []).slice(0, 3).join(" ");
+  const plan = held.slice(0, 6).map((b, i) => `${i + 1}. ${b.item_title}`).join(" ");
+  return {
+    title: `${site.label ?? site.domain}: approve the search fix plan?`,
+    summary: `${site.domain} is ${s.outcome.status === "red" ? "down sharply" : "slipping"} in Google: ${s.outcome.reasons.map((r) => r.text).join("; ")}. ${why} Proposed fixes, nothing changes on the live site until you say yes: ${plan || "none queued yet"}.`,
+    kind: "search_fix_plan", lane: "ops", risk: "medium",
+    origin_type: "search_readiness", origin_id: `sr-${site.domain}-${monday}`,
+    payload: { domain: site.domain, repo: site.repo, brief_ids: held.map((b) => b.id) },
+  };
+}
 
 /**
  * One brief per red outcome, per site whose quality sample found pages to fix, and per hub the
@@ -196,10 +219,7 @@ export function weeklyBriefs(siteResults, { now = Date.now() } = {}) {
   const briefs = [];
   for (const s of siteResults ?? []) {
     const site = s.site ?? {};
-    const base = { created_at: at, domain: site.domain, canonical_host: s.host, repo: site.repo ?? null, category: site.category, protected: null, missing_urls: [], disposition: dispositionOf(site) };
-    // Horse and Hicks (owner, 3 Nov 2026): never touch a published page. Diagnosis only: no outcome,
-    // quality or fold brief is queued for a frozen site; its diagnosis stays in its own row.
-    if (isFrozen(site)) continue;
+    const base = { created_at: at, domain: site.domain, canonical_host: s.host, repo: site.repo ?? null, category: site.category, protected: null, missing_urls: [], disposition: dispositionOf(site, s.approved) };
     if (s.outcome?.status === "red" || s.outcome?.status === "gold") {
       briefs.push({
         ...base, id: `so-${site.domain}-outcome`, kind: "outcome", item_id: "o1", item_title: "Google keeps showing the site (last 28 days against the 28 before)",

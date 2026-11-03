@@ -250,9 +250,13 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    searches, pages Google stopped showing, URL Inspection on the top five losers, sitemap count against
    last week, commits in the site's repo, the quality sample and fold queue; ≤6 lines, most likely
    first, CONFIRMED or SUSPECTED, unread sources "not read". In latest.json (`gold_lines`, each site's
-   `diagnosis`), the site's row on the checklist page and its Monday line. Sites with
-   `published_frozen` in sites.json (horselegalguide.com, hicksconsulting.org: never touch a published
-   page) get diagnosis only: no outcome, quality or fold brief; their numbers stay in their own row.
+   `diagnosis`), the site's row on the checklist page and its Monday line. Owner, 3 Nov 2026: Horse
+   (`client_approval`) repairs are drafted, disposition `client_draft`, and go live only once the Horse
+   owners approve them in their approval queue. Hicks (`owner_approval` in sites.json) changes
+   only with her yes: every brief there is `owner_approval`, never worked, and a red or gold drop
+   raises ONE approval a week (`approvalCard`, POST /api/boss/approvals, shown in Decide) with the
+   diagnosis and the proposed plan; an approved plan in the last 14 days releases the next run's
+   briefs. A friend's or client's numbers stay in its own row and never reach her own lines.
 9. **Leads, not only visits (owner, 3 Nov 2026).** WPP-llm had Google clicks for months and zero
    inquiries, unseen. Each of HER OWN sites (category side_business / own_business) names in sites.json
    a `lead_source` where its one action is already counted (D1 count, Airtable lead table, Stripe or

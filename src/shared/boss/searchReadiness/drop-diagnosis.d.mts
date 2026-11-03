@@ -4,3 +4,4 @@ export function shortUrl(u: string): string;
 export function windowLosses(current: any[], previous: any[]): { key: string; before: number; after: number; lost: number; gone: boolean }[];
 export function diagnoseDrop(a: any): any;
 export function mostLikely(diagnosis: any): string | null;
+export function endStop(t: string): string;
