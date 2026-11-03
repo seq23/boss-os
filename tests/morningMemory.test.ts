@@ -81,3 +81,16 @@ describe("a prospect-template card is the live one or nothing (26 Oct 2026)", ()
     expect(buildDay(d, MON).text).toContain("17 addresses held."); // no live read: the producer's card stands
   });
 });
+
+describe("a job with an empty title is named, never empty quotes (2 Nov 2026)", () => {
+  it("drops wordless quoted parts and falls back to the job's kind", () => {
+    const blank = { id: "t9", title: 'Finish the job from her email "; "', status: "failed", employee_name: "Danielle", finished_at: MON - 1_000, input: JSON.stringify({ origin: "repair", repair_kind: "self_repair" }) };
+    const none = { ...blank, id: "t8", title: '""' };
+    const e = buildDay({ ...base(MON), tasks: [blank], morning: {} }, MON);
+    expect(e.text).toContain('Danielle\'s "Finish the job from her email" job stopped');
+    expect(e.text).not.toMatch(/""|"; "/);
+    const e2 = buildDay({ ...base(MON), tasks: [none], morning: {} }, MON);
+    expect(e2.text).toContain("Danielle's repair job stopped");
+    expect(e2.text).not.toContain('""');
+  });
+});

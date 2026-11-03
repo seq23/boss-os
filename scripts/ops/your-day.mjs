@@ -39,7 +39,7 @@
  *   npm run your-day -- --dry-run    # print what would be sent, send nothing
  *   npm run your-day -- --preview <dir>   # write the HTML and text to <dir>, send nothing
  */
-import { doneForYou, failedDoneLine, jobFamily, splitRepeats, fixJobsToOpen } from "../../src/shared/boss/mail/morningMemory.mjs";
+import { doneForYou, failedDoneLine, jobFamily, jobName, splitRepeats, fixJobsToOpen } from "../../src/shared/boss/mail/morningMemory.mjs";
 import { MAX_TOUCHES } from "../../src/shared/boss/lp/plan.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -123,15 +123,64 @@ function digestOf(data, task) {
 }
 
 /**
- * Boss OS's own decisions for her: Inbox approvals, Danielle's plans and previews, work held for her
- * word. Each says what she is deciding and what each choice does, and opens its own screen.
+ * Words the system writes for itself — intake's assignment and policy reasons — never shown to her
+ * (2 Nov 2026: "Intake assigned this user only. Trading job work. No model receives execution
+ * authority here." and "Risk: high." reached a Decide item).
  */
-function bossDecisions(data) {
+const SYSTEM_TEXT = /\b(?:intake assigned|USER_ONLY|AI_DRAFT|AI_EXECUTE|HUMAN_CONTRACTOR|DEFER|execution authority|lane work|agent creation gate)\b/i;
+
+function inputOf(task) {
+  try { return typeof task?.input === "string" ? JSON.parse(task.input) : (task?.input ?? {}); } catch { return {}; }
+}
+
+/** The task an approval is about, by its origin or its payload. */
+function approvalTaskId(a) {
+  if (a?.origin_type === "tasks" && a.origin_id) return a.origin_id;
+  try { return (typeof a?.payload === "string" ? JSON.parse(a.payload) : a?.payload)?.task_id ?? null; } catch { return null; }
+}
+
+/**
+ * A change to a teammate's standing duty, in plain words: who wants what, and what yes and no do
+ * (2 Nov 2026). Null when the item is not a duty change. Pure.
+ */
+export function dutyChangeCard(title, task, worker) {
+  const t = String(title ?? "");
+  const m = /^Change how (?:the )?(?:(.+?)(?:'s)? )?duty "(.+)" works$/.exec(t) ?? /^Change (.+?)'s duty\s*[:—-]\s*(.+)$/.exec(t);
+  if (!m) return null;
+  const seat = m[1] && !/^the$/i.test(m[1]) ? m[1].trim() : null;
+  const duty = m[2].trim().replace(/^"|"$/g, "");
+  const input = inputOf(task);
+  const raw = String(input.body ?? input.prompt ?? "");
+  const words = /Her words:\s*([\s\S]+)/.exec(raw)?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+  const said = words ? (/^(.{20,200}?[.!?])(\s|$)/.exec(words)?.[1] ?? words.slice(0, 200).replace(/\s+\S*$/, "…")) : null;
+  const who = worker ?? "Danielle";
+  const whose = seat ? `${seat}'s` : "a";
+  return {
+    title: `Change how ${seat ?? "your team"} handles "${duty}"?`,
+    body: `${who} wants to change ${whose} duty "${duty}", as you asked${said ? `: "${said}"` : ""}. Yes lets ${who} make the change; no keeps it as it is.`,
+  };
+}
+
+/**
+ * Boss OS's own decisions for her: Inbox approvals, Danielle's plans and previews, work held for her
+ * word. Each says what she is deciding and what each choice does, and opens its own screen. An
+ * approval and the task that waits on it are ONE decision, shown once (2 Nov 2026: the same duty
+ * change came as items 3 and 4).
+ */
+export function bossDecisions(data) {
   const out = [];
+  const tasks = data.tasks ?? [];
+  const approvalIds = new Set((data.approvals ?? []).map((a) => a.id));
+  const covered = new Set((data.approvals ?? []).map(approvalTaskId).filter(Boolean));
   for (const a of data.approvals ?? []) {
+    const task = tasks.find((t) => t.id === approvalTaskId(a)) ?? null;
+    const worker = a.employee_name ?? task?.employee_name ?? null;
+    const duty = dutyChangeCard(a.title, task, worker);
+    const own = [a.summary, a.reason].find((x) => typeof x === "string" && x.trim() && !SYSTEM_TEXT.test(x));
     out.push({
-      key: `approval:${a.id}`, title: a.title, body: a.summary ?? a.reason ?? "It waits in your Inbox for Approve or Decline.",
-      details: [...(a.employee_name ? [`Asked by ${a.employee_name}.`] : []), ...(a.risk ? [`Risk: ${a.risk}.`] : [])],
+      key: `approval:${a.id}`, title: duty?.title ?? a.title,
+      body: duty?.body ?? `${own ? `${own.trim()} ` : ""}${worker ?? "Your team"} waits for your word. Yes lets it go ahead; no keeps things as they are.`,
+      details: [],
       buttons: [{ label: "Open it to approve or decline", url: `${ORIGIN}/?tab=inbox&approval=${encodeURIComponent(a.id)}` }], priority: 2,
     });
   }
@@ -142,7 +191,7 @@ function bossDecisions(data) {
       ? { key: `rc:${r.id}`, title: `Start Danielle's plan for ${r.repo ?? "your change"}?`, body: `${firstLine ? `You asked: "${firstLine}". ` : ""}Danielle wrote a plan and builds nothing until you say yes.`, details: ["Yes: reply approved to her email and she starts the build.", "No: reply with what to change, or drop it."], plan: r.plan_text ?? null, buttons: [], priority: 1 }
       : { key: `rc:${r.id}`, title: `Make Danielle's preview of ${r.repo ?? "your change"} live?`, body: `${firstLine ? `You asked: "${firstLine}". ` : ""}The preview is built; nothing is live until you say so.`, details: ["Yes: reply approved to her email and it goes live.", "No: reply with what to change."], plan: r.plan_text ?? null, buttons: [], priority: 1 });
   }
-  for (const t of (data.tasks ?? []).filter((x) => x.status === "awaiting_approval")) {
+  for (const t of tasks.filter((x) => x.status === "awaiting_approval" && !covered.has(x.id) && !approvalIds.has(x.approval_id))) {
     const dg = digestOf(data, t);
     if (dg) {
       const items = dg.items ?? [];
@@ -160,9 +209,10 @@ function bossDecisions(data) {
       });
       continue;
     }
+    const duty = dutyChangeCard(t.title, t, t.employee_name ?? null);
     out.push({
-      key: `task:${t.id}`, title: `${t.employee_name ?? "Your team"} is waiting for your word: ${t.title}`,
-      body: "Nothing happens on it until you answer.",
+      key: `task:${t.id}`, title: duty?.title ?? `${t.employee_name ?? "Your team"} is waiting for your word: ${t.title}`,
+      body: duty?.body ?? "Nothing happens on it until you answer.",
       buttons: [{ label: "Open it", url: taskUrl(t.id) }], priority: 1,
     });
   }
@@ -509,7 +559,7 @@ export function spiritSection(day, week, now = Date.now()) {
  */
 export function failedTaskLines(tasks, now = Date.now()) {
   return (tasks ?? []).filter((t) => t.status === "failed" && Number(t.finished_at ?? t.created_at) >= now - 26 * 3_600_000)
-    .map((t) => ({ id: t.id, text: `What happened: ${t.employee_name ?? "A teammate"}'s "${String(t.title).slice(0, 80)}" stopped (${String(t.error ?? "no reason given").split("\n")[0].slice(0, 120)}). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed; nothing needed from you.` }));
+    .map((t) => ({ id: t.id, text: `What happened: ${t.employee_name ?? "A teammate"}'s ${((j) => (j.quoted ? `"${j.name.slice(0, 80)}"` : j.name))(jobName(t))} stopped (${String(t.error ?? "no reason given").split("\n")[0].slice(0, 120)}). What we did: Danielle has a job to find the cause and fix it at source. Status: being fixed; nothing needed from you.` }));
 }
 
 const DONE_SOURCES = ["pnp_outreach", "bounces", "lp", "prospects", "tail", "notices", "risk", "archive"];

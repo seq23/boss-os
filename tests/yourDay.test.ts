@@ -215,3 +215,23 @@ describe("the morning section files (the interface D and L write)", () => {
     expect(() => writeMorningSection("lp", { decide: [{ title: "x", buttons: [{ label: "Go", url: "/api/x" }] }] }, { dir: mkdtempSync(join(tmpdir(), "m-")) })).toThrow(/without a real link/);
   });
 });
+
+describe("a duty-change approval and its task are one plain decision (2 Nov 2026)", () => {
+  it("renders once, says who wants what and what yes does, and leaks no system words", () => {
+    const title = 'Change how Robin duty "Example listings: renew and keep them true" works';
+    const task = {
+      id: "tsk_dc1", title, status: "awaiting_approval", approval_id: "apr_dc1", employee_id: "emp_repo", employee_name: "Danielle", due: null,
+      input: JSON.stringify({ prompt: "The owner asked for a change to the standing duty duty_x. Her words: Renew the listings every Monday instead. Thanks." }),
+    };
+    const approval = { id: "apr_dc1", title, summary: "Intake assigned this USER_ONLY. Trading lane work. No model receives execution authority here.", risk: "high", origin_type: "tasks", origin_id: "tsk_dc1", payload: JSON.stringify({ task_id: "tsk_dc1" }) };
+    const e = buildDay({ ...DATA, tasks: [task], approvals: [approval], repoChanges: [], morning: {} }, NOW);
+    const decide = e.text.slice(e.text.indexOf("Decide ("), e.text.indexOf("\n\n", e.text.indexOf("Decide (") + 1 + 200));
+    expect(e.text.match(/Example listings: renew and keep them true/g)?.length).toBe(2); // title + body of ONE item
+    expect(decide).toMatch(/^Decide \(1\)/);
+    expect(e.text).toContain("Danielle wants to change Robin's duty");
+    expect(e.text).toContain('"Renew the listings every Monday instead."');
+    expect(e.text).toMatch(/Yes lets Danielle make the change; no keeps it as it is\./);
+    expect(e.text).not.toMatch(/Intake assigned|execution authority|USER_ONLY|Risk: high|is waiting for your word/i);
+    expect(plainProblems({ subject: e.subject, text: e.text })).toEqual([]);
+  });
+});

@@ -2,6 +2,7 @@
 export declare function jobFamily(title: unknown): string;
 export declare function firstSentence(text: unknown): string;
 export declare function failedDoneLine(task: any): string;
+export declare function jobName(task: any): { name: string; quoted: boolean };
 export declare function doneForYou(items: any[], opts?: { told?: Set<string>; max?: number }): { shown: any[]; more: number; keys: string[]; all: any[] };
 export declare function decideLabel(d: any): string;
 export declare function daysWaiting(d: any, firstShown: string | null | undefined, now: number): number;

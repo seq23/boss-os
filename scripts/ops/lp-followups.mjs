@@ -262,14 +262,27 @@ async function dropOwnDraft(draftTok, had) {
   if (existing && existing.message?.id === had.message_id) await call(draftTok, `${GMAIL}/drafts/${had.id}`, { method: "DELETE" }).catch(() => null);
 }
 
+/**
+ * Pure: is the held reply still the one to show? Kept while it answers their newest message, unless
+ * she has not touched it and (a) the times it offered have all passed, or (b) their message now
+ * calls for a different reply than the one held (2 Nov 2026: "Nov 5 at 11am can work" kept a
+ * generic "tell me what would be most useful" draft made before their time was read). A draft she
+ * edited is always hers and kept.
+ */
+export function keepHeldDraft({ had, exists, unedited, forAt, plan, now = Date.now() }) {
+  if (!had || !exists || had.for_at !== (forAt ?? null)) return false;
+  if (!unedited) return true;
+  if (had.kind === "times" && slotsFrom(had.offered).every((x) => x.start < now + 86_400_000)) return false;
+  if (plan && (had.kind ?? "plain") !== plan.kind) return false;
+  return true;
+}
+
 async function againDraft(draftTok, state, p, th, now, plan) {
   state.again = state.again ?? {};
   const had = state.again[p.address];
   const existing = had ? await call(draftTok, `${GMAIL}/drafts/${had.id}?format=metadata`).catch(() => null) : null;
-  const unedited = existing && existing.message?.id === had?.message_id;
-  // Times offered that have all passed, in a draft she has not touched, are offered afresh.
-  const stale = had?.kind === "times" && unedited && slotsFrom(had.offered).every((x) => x.start < now + 86_400_000);
-  if (existing && had.for_at === (th?.at ?? null) && !stale) {
+  const unedited = Boolean(existing) && existing.message?.id === had?.message_id;
+  if (keepHeldDraft({ had, exists: Boolean(existing), unedited, forAt: th?.at ?? null, plan, now })) {
     const mid = existing.message?.id ?? had.message_id;
     return { id: had.id, message_id: mid, hash: had.hash, body: await draftWords(mid), kind: had.kind ?? "plain", picked: had.picked ?? null, offered: slotsFrom(had.offered) };
   }
