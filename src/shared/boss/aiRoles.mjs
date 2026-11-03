@@ -51,6 +51,19 @@ export const AI_ROLES = Object.freeze({
   "brain.write": { role: BRAIN, why: "Company-brain writes (PUT /api/boss/brains/<slug>) are Claude's." },
 });
 
+/**
+ * AFTER A CODEX LIMIT, PUBLIC WORK GOES TO A $0 FREE MODEL; EVERYTHING ELSE WAITS (coordinator, 3 Nov
+ * 2026, on her ruling). The ruling bans a CLAUDE fallback, not a $0 one, and a public duty waiting
+ * hours for Codex's reset is how the 07:45 briefing goes missing. So work DECLARED public (and not an
+ * LP/deal draft, not a Chrome job) is answered by the queue's free cloud rung with `freeOnly` — never
+ * Claude, never a paid model. Confidential, LP, deal, children's or any non-public work has no
+ * fallback at all and waits for the reset (private-data-routing: fail closed).
+ * Read by src/worker/boss/queue/consumer.ts (at dispatch) and routes/backends.ts (a limit mid-run).
+ */
+export function afterCodexLimit({ sensitivity, confidential = false, chromeJob = false } = {}) {
+  return sensitivity === "public" && !confidential && !chromeJob ? "free_rung" : "wait";
+}
+
 /** The role for a job key. An unknown key is a programming error, so it throws rather than guesses. */
 export function roleFor(key) {
   const row = AI_ROLES[key];

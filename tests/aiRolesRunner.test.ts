@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 // @ts-expect-error — plain ESM with no declaration file
 import { runPhaseModel } from "../scripts/ops/repo-change.mjs";
+import { afterCodexLimit } from "../src/shared/boss/aiRoles.mjs";
 
 /**
  * OWNER, 3 Nov 2026: "after today we need to default OpenAI and Claude just be the brains".
@@ -69,5 +70,12 @@ describe("Boss OS employees: Codex works, Claude is the brain", () => {
     expect(calls()).toHaveLength(1);
     expect(calls()[0]).toMatch(/^--role worker /);
     expect(existsSync(outFile)).toBe(false);
+  });
+
+  it("after a Codex limit, public work goes to the $0 free rung; confidential, LP/deal, Chrome and non-public work wait", () => {
+    expect(afterCodexLimit({ sensitivity: "public" })).toBe("free_rung");
+    expect(afterCodexLimit({ sensitivity: "public", confidential: true })).toBe("wait");
+    expect(afterCodexLimit({ sensitivity: "public", chromeJob: true })).toBe("wait");
+    for (const sensitivity of ["private", "restricted", "confidential", null, undefined]) expect(afterCodexLimit({ sensitivity })).toBe("wait");
   });
 });
