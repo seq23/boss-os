@@ -166,6 +166,23 @@ describe("the consolidation queue (f4 made real)", () => {
     expect(consolidationQueue({ sitemapUrls: ["https://s.com/z"], gsc: { ok: true, pages: [] }, firstSeen: fs1, now }).candidates).toBe(1);
     expect(consolidationQueue({ sitemapUrls: ["https://s.com/z"], gsc: { ok: true, pages: [] }, now }).candidates).toBe(0);
   });
+  it("a required utility page is never a fold candidate, however long it has gone unseen", () => {
+    // 3 Nov 2026: three briefs asked for the privacy, disclaimer and editorial-policy
+    // pages of three live sites to be 301'd into their home pages. Zero impressions is
+    // the correct state for a page that exists because the law and the ad programs
+    // require it, and the quality sampler already skips exactly these with isUtility().
+    const utility = [
+      "https://s.com/privacy/", "https://s.com/disclaimer/", "https://s.com/editorial-policy/",
+      "https://s.com/terms/", "https://s.com/contact/", "https://s.com/thank-you/",
+    ];
+    const all = ["https://s.com/", "https://s.com/x/y", ...utility];
+    const lm = Object.fromEntries(all.map((u) => [u, old]));
+    const q = consolidationQueue({ sitemapUrls: all, lastmods: lm, gsc: { ok: true, pages: [] }, now });
+    // The ordinary thin page is still queued, so this is an exclusion and not a mute.
+    expect(q.candidates).toBe(1);
+    expect(q.hubs.flatMap((h) => h.urls)).toEqual(["https://s.com/x/y"]);
+    for (const u of utility) expect(q.hubs.flatMap((h) => h.urls)).not.toContain(u);
+  });
   it("unread page rows are not read, never 'nothing to fold'", () => {
     const q = consolidationQueue({ sitemapUrls: urls, lastmods, gsc: { ok: false, why: "Search Console answered 403" }, now });
     expect(q).toMatchObject({ status: "not_read", why: "Search Console answered 403", hubs: [] });
