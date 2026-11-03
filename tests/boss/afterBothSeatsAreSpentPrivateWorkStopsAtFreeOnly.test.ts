@@ -67,18 +67,33 @@ async function expectParkedOnCodex(taskId: string, hosts: string[]) {
 }
 
 describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 2026)", () => {
-  it("the executive briefing is parked on Codex, never Claude, never the cloud, and no network call is made", async () => {
-    await setLever("FREE_ONLY");
+  it("the executive briefing (declared public) tries the $0 free rung first; when the free rung's privacy screen declines it, it waits on Codex — never Claude, never paid", async () => {
+    await setLever("OPEN"); // even with the lever open, a Codex limit buys nothing
     await bothSeatsSpent();
     await env.DB.prepare(`DELETE FROM tasks WHERE input LIKE '%executive_reports%'`).run();
     const out = await materialiseDueDuties(env as any, NOW, "duty_exec_intel");
     expect(out.fired, JSON.stringify(out.skipped)).toHaveLength(1);
     const taskId = out.fired[0]!.task_id!;
-    const hosts: string[] = [];
-    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("must not be reached"); });
+    const models: string[] = [];
+    restore = stubFetch(async (req) => {
+      const body = await req.clone().json().catch(() => ({} as any));
+      models.push(String((body as any).model ?? ""));
+      return completionResponse("{}", 20, 15);
+    });
     await handleTask(withKey() as any, { taskId, lane: "ops" });
-    await expectParkedOnCodex(taskId, hosts);
-    expect(await row(`SELECT 1 FROM executive_reports WHERE task_id = ?`, taskId), "a report was written by nothing").toBeNull();
+    for (const m of models) { expect(m, `a paid model was called: ${m}`).toMatch(/:free$/); expect(m).not.toMatch(/claude|anthropic/i); }
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_claude_code'`, taskId), "Claude's seat was given it").toHaveLength(0);
+    // This briefing's prompt reads as deal material, so the free rung's privacy screen declines it
+    // (fail closed) and nothing is sent; the work then waits on Codex rather than failing.
+    expect(models, "text left the Worker for a training route").toEqual([]);
+    const t = await row<any>(`SELECT status FROM tasks WHERE id = ?`, taskId);
+    expect(t.status, "a declined free rung failed the task instead of waiting").not.toBe("failed");
+    const runs = await all<any>(`SELECT backend_id, claimed_at, requested FROM backend_runs WHERE task_id = ? AND status = 'running'`, taskId);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].backend_id).toBe("bk_codex");
+    expect(runs[0].claimed_at).toBeNull();
+    expect(JSON.parse(runs[0].requested).codex_limit_waits).toBe(true);
+    expect(await row(`SELECT 1 FROM task_events WHERE task_id = ? AND event = 'codex_limit_wait'`, taskId)).not.toBeNull();
   });
 
   it("a private duty whose own ladder names Claude first still goes to Codex first and waits there", async () => {
@@ -94,20 +109,26 @@ describe("both seats out of usage: the work waits on Codex's seat (owner, 3 Nov 
     await expectParkedOnCodex(taskId, hosts);
   });
 
-  it("public-safe work with cloud_fallback waits on Codex too: no free rung, no model called", async () => {
+  it("public-safe work is answered by a :free rung at $0 — never Claude, never paid", async () => {
     await setLever("FREE_ONLY");
     await bothSeatsSpent();
     const taskId = await insertTask({
       status: "queued", title: "Explain a public concept", intake_kind: "research", sensitivity: "public",
-      input: JSON.stringify({
-        backend_ladder: ["bk_claude_code", "bk_codex"], cloud_fallback: true,
-        prompt: "In two sentences, explain what a lighthouse does.",
-      }),
+      input: JSON.stringify({ backend_ladder: ["bk_claude_code", "bk_codex"], cloud_fallback: true, prompt: "In two sentences, explain what a lighthouse does." }),
     });
-    const hosts: string[] = [];
-    restore = stubFetch((req) => { hosts.push(new URL(req.url).hostname); return completionResponse("no"); });
+    const models: string[] = [];
+    restore = stubFetch(async (req) => {
+      const body = await req.clone().json().catch(() => ({} as any));
+      models.push(String((body as any).model ?? ""));
+      return completionResponse("A lighthouse warns ships of hazards. It also marks a safe harbour.", 20, 15);
+    });
     await handleTask(withKey() as any, { taskId, lane: "ops" });
-    await expectParkedOnCodex(taskId, hosts);
+    expect(models.length, "no cloud lane answered public work").toBeGreaterThan(0);
+    for (const m of models) expect(m, `a paid model answered: ${m}`).toMatch(/:free$/);
+    expect(await all<any>(`SELECT 1 FROM backend_runs WHERE task_id = ? AND backend_id = 'bk_claude_code'`, taskId)).toHaveLength(0);
+    const d = await row<any>(`SELECT chosen_model_id FROM routing_decisions WHERE task_id = ? ORDER BY ts DESC LIMIT 1`, taskId);
+    const chosen = await row<any>(`SELECT slug, in_micros_1k, out_micros_1k FROM models WHERE id = ?`, d.chosen_model_id);
+    expect(chosen.in_micros_1k + chosen.out_micros_1k).toBe(0);
   });
 
   it("NEGATIVE: an LP draft (Claude seat only) is never parked on Codex; with Claude spent it stops by name", async () => {

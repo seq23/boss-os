@@ -506,7 +506,7 @@ backends.post("/claim", async (c) => {
     if (run.parked_for !== backendId) {
       let parkedRequested: any = {};
       try { parkedRequested = JSON.parse(run.requested); } catch { parkedRequested = {}; }
-      if (run.parked_for === OPENAI_SEAT && parkedRequested.codex_limit_waits === true && codexSpent) continue;
+      if (run.parked_for === OPENAI_SEAT && (parkedRequested.codex_limit_waits === true || parkedRequested.codex_limit_free_rung === true) && codexSpent) continue;
       const ladder: unknown[] = Array.isArray(parkedRequested.backend_ladder) ? parkedRequested.backend_ladder : [];
       const from = ladder.indexOf(run.parked_for);
       const to = ladder.indexOf(backendId);
@@ -712,6 +712,29 @@ backends.post("/report", async (c) => {
      * seat — never handed down the ladder to Claude or a cloud rung. The seat is stamped spent, so the
      * Mac skips it until the reset and then claims this run again.
      */
+    /*
+     * PUBLIC WORK DOES NOT WAIT: a Codex limit mid-run on work marked `codex_limit_free_rung` (declared
+     * public; aiRoles.mjs afterCodexLimit) closes this run as cancelled and sends the task back through
+     * the queue, where the consumer sees Codex spent and answers it from the $0 free rung. Never Claude.
+     */
+    if (spentEvidence && run.backend_id === OPENAI_SEAT && req.codex_limit_free_rung === true && run.task_id) {
+      const until = Date.now() + spentCooldownSeconds(spentEvidence.retry_after_seconds) * 1000;
+      const notice = (optionalText(spentEvidence.notice) ?? "").slice(0, 300) || null;
+      const closed = await c.env.DB
+        .prepare(`UPDATE backend_runs SET status = 'cancelled', finished_at = ?, error = ? WHERE id = ? AND finished_at IS NULL AND status = 'running'`)
+        .bind(Date.now(), `NAMED STOP [CODEX_LIMIT] handed to the $0 free rung${notice ? `: ${notice}` : ""}`, run.id)
+        .run();
+      if ((closed.meta.changes ?? 0) > 0) {
+        await c.env.DB.prepare(`UPDATE execution_backends SET exhausted_until = ?, exhausted_reason = ? WHERE id = ?`).bind(until, notice, run.backend_id).run();
+        await c.env.DB
+          .prepare(`INSERT INTO task_events (id, task_id, ts, event, detail) VALUES (?,?,?,'codex_limit_free_rung',?)`)
+          .bind(newId("tev"), run.task_id, Date.now(), JSON.stringify({ run_id: run.id, exhausted_until: until }))
+          .run();
+        const t = await c.env.DB.prepare(`SELECT lane FROM tasks WHERE id = ?`).bind(run.task_id).first<{ lane: string }>();
+        await c.env.TASKS.send({ taskId: run.task_id, lane: t?.lane ?? "ops" });
+        return ok(c, { released: true, run_id: run.id, next_seat: "free rung", outcome_class: "codex_limit_free_rung", approval_id: null, exhausted_until: until });
+      }
+    }
     if (spentEvidence && run.backend_id === OPENAI_SEAT && req.codex_limit_waits === true) {
       const until = Date.now() + spentCooldownSeconds(spentEvidence.retry_after_seconds) * 1000;
       const notice = (optionalText(spentEvidence.notice) ?? "").slice(0, 300) || null;
