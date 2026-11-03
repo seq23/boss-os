@@ -1004,7 +1004,7 @@ export function notReportedRepairs(missing, tasks = []) {
   const open = new Set((tasks ?? []).filter((t) => OPEN.has(t.status)).map((t) => t.title));
   return (missing ?? []).map((m) => ({
     title: `The morning section "${m.name}" did not report in`,
-    prompt: `the section "${m.name}" (${m.label}) was expected in Simone's morning email today and Boss OS held no copy written in the last 24 hours (src/shared/boss/mail/morningSections.mjs MORNING_SECTION_SPECS). Its producer did not run, failed, or its post to /api/boss/morning/sections failed. Read the producer's log (on her Mac: ~/.boss-os/logs; in the cloud: the job's private R2 log), fix the cause at source, and run it again.`,
+    prompt: `the section "${m.name}" (${m.label}) was expected in Simone's morning email today and Boss OS held no copy written in the last 24 hours (src/shared/boss/mail/morningSections.mjs MORNING_SECTION_SPECS). Its producer did not run, failed, or its post to /api/boss/morning/sections failed. Read the producer's log (on her Mac: ~/Library/Logs/boss-duty/ for a local_job's own dated run, ~/Library/Logs/boss-agent/ for the launchd chain it ran inside; in the cloud: the job's private R2 log), fix the cause at source, and run it again.`,
   })).filter((r) => !open.has(r.title));
 }
 
