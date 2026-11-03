@@ -8,6 +8,11 @@
  *   a sitemap page at least AGE_DAYS old (by its sitemap lastmod, or the day the Monday audit first
  *   saw it, whichever is older) with ZERO Search Console impressions in the last 90 days
  *
+ * A REQUIRED utility page (privacy, terms, disclaimer, editorial policy, contact, a thank-you
+ * page) is never a candidate, whatever its impressions: it exists because the law and the ad and
+ * affiliate programs require it, not to be found in search. The quality sampler already skips
+ * exactly those with isUtility(); this reads the same rule.
+ *
  * and groups them under their nearest hub (the closest ancestor path the sitemap lists, else the home
  * page), biggest group first, at most MAX_HUBS hubs a week and MAX_URLS pages per hub, so the repair
  * run gets a week's worth of work, not two thousand briefs. Queued as "fold into hub" briefs
@@ -15,6 +20,8 @@
  * Unread Search Console page rows → NOT READ with the reason, never "nothing to fold".
  * Pure; proven by tests/searchOutcomes.test.ts.
  */
+
+import { isUtility } from "./audit.mjs";
 
 export const CONSOLIDATION = Object.freeze({ AGE_DAYS: 90, WINDOW_DAYS: 90, MAX_HUBS: 3, MAX_URLS: 25 });
 
@@ -44,6 +51,17 @@ export function consolidationQueue({ sitemapUrls = [], lastmods = {}, firstSeen 
   };
   const cands = urls.filter((u) => {
     let path; try { path = new URL(u).pathname.replace(/\.html$/, "").replace(/\/+$/, "") || "/"; } catch { return false; }
+    // A utility page is never a fold candidate. Privacy, terms, disclaimer, an
+    // editorial policy and a contact page are REQUIRED to exist and are normally
+    // never shown in search, so "zero impressions in 90 days" is their correct
+    // state and not dilution. Queueing them produced three briefs on 3 Nov 2026
+    // asking Danielle to 301 the privacy, disclaimer and editorial-policy pages of
+    // uscisexam.com, dentistryguides.com and theaccidentguides.com into their home
+    // pages, which would have stripped legally required disclosures (and which the
+    // target repo refuses outright: it never redirects to a home page). The
+    // quality sampler already excludes exactly these pages with the same helper;
+    // this is the queue reading from the same rule rather than its own.
+    if (isUtility(u)) return false;
     return path !== "/" && !prot.has(path) && !/\.(xml|pdf|txt|jpg|png|webp|svg)$/i.test(path) && !seen.has(pageKey(u)) && old(u);
   });
   const candSet = new Set(cands);

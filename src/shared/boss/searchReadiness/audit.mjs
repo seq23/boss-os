@@ -215,7 +215,13 @@ export function links(html, base) {
 }
 
 const norm = (u) => { try { const x = new URL(u); return `${x.protocol}//${x.hostname}${x.pathname.replace(/\/+$/, "") || ""}${x.search}`; } catch { return String(u); } };
-export const isUtility = (url) => /\/(privacy|terms|legal|cookie|disclaimer|accessibility|contact|thank|thanks|login|signin|404|search|unsubscribe|sitemap)/i.test(new URL(url).pathname);
+// A page that exists because something requires it to, not to be found in search.
+// `editorial-policy` joined the list on 3 Nov 2026: it is the page a publication
+// points its byline at, required for the authorship disclosure, and never a search
+// target - but it was missing here, so the consolidation queue offered
+// uscisexam.com/editorial-policy/ and dentistryguides.com/editorial-policy/ as
+// pages to 301 into their home pages.
+export const isUtility = (url) => /\/(privacy|terms|legal|cookie|disclaimer|editorial-policy|accessibility|contact|thank|thanks|login|signin|404|search|unsubscribe|sitemap)/i.test(new URL(url).pathname);
 
 // ─── The checks ───────────────────────────────────────────────────────────────
 // Each takes the fetched context and returns { status, detail, evidence?, missing? }.
