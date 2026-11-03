@@ -170,6 +170,17 @@ Billionairehighperformancecoach → `sprylabs-hpc-site`.
   never a merge that changes the live site. Record it as drafted, not fixed.
 - `disposition: "owner_approval"` (hicksconsulting.org, sites.json `owner_approval`): never worked. It
   waits for Sequoia's yes on the fix plan in Decide; the next run's briefs come back as ordinary work.
+- **Hicks's already-published Resources posts are just fixed** (owner, 3 Nov 2026: "if it has repairs
+  for already published resources they should just fix them not queue"). A repair whose every page is
+  a published post under sites.json `owner_approval_direct_repairs.paths` (/resources/, /insights/,
+  /questions/) — broken links, meta, schema, canonical, FAQ, headings, speed, accessibility, a fact
+  the page cannot back — comes as `disposition: "fix"`: work it, record `fixed_pr` with `pages` (the
+  published URLs the PR changes), and the runner lands it. Still never worked without her approved
+  plan: the core pages (home, about, services, contact, /black-therapist-memphis/ and the other
+  landing pages, the /resources/ hub itself), a post's title or topic, unpublishing or deleting
+  anything. An Ahrefs-mail finding of that kind on Hicks is recorded `off_limits`, "held for the
+  approved Hicks fix plan". The runner never lands a Hicks `fixed_pr` whose `pages` reach outside
+  those paths (`held_owner_approval`, `heldForOwner` in ownerApproval.mjs).
 
 ### CLIENT REPOSITORIES ARE REPORT-ONLY
 

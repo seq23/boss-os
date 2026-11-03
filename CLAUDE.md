@@ -253,7 +253,10 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    `diagnosis`), the site's row on the checklist page and its Monday line. Owner, 3 Nov 2026: Horse
    (`client_approval`) repairs are drafted, disposition `client_draft`, and go live only once the Horse
    owners approve them in their approval queue. Hicks (`owner_approval` in sites.json) changes
-   only with her yes: every brief there is `owner_approval`, never worked, and a red or gold drop
+   only with her yes, except repairs to already-published Resources posts (/resources/, /insights/,
+   /questions/: `owner_approval_direct_repairs`, `heldForOwner` in ownerApproval.mjs, pinned by
+   `tests/hicksResourceRepairs.test.ts`), which are fixed and landed directly (owner, 3 Nov 2026).
+   Every other brief there is `owner_approval`, never worked, and a red or gold drop
    raises ONE approval a week (`approvalCard`, POST /api/boss/approvals, shown in Decide) with the
    diagnosis and the proposed plan; an approved plan in the last 14 days releases the next run's
    briefs. A friend's or client's numbers stay in its own row and never reach her own lines.
