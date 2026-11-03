@@ -69,7 +69,9 @@ function standingRows(sites, title) {
         : '<span class="ok">nothing failing</span>';
       // Not on the search loop yet: said once, informational (the rollout owns adoption, wave by wave).
       const loopNote = res.find((r) => r.status === "skipped")?.detail;
-      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
+      // The leads line under the site's name (3 Nov 2026): her own sites only; a client site has none.
+      const leads = s.leads?.line ? `<br><span class="${s.leads.red ? "bad" : "muted"}" data-leads="${esc(s.leads.status)}">${esc(s.leads.line)}</span>` : "";
+      return `      <tr data-site="${esc(s.site?.domain ?? "")}"><td>${esc(s.site?.domain ?? "")}${leads}</td><td><code>${esc(s.site?.repo ?? "no repo")}</code></td><td>${passed} of ${judged}</td><td>${cell}${loopNote ? `<br><span class="muted">${esc(loopNote)}</span>` : ""}</td></tr>`;
     });
 }
 

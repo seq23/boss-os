@@ -880,8 +880,8 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
   const site = { domain: "approvalprep.com", repo: "approvalprep", kind: "brand", category: "side_business", search_loop: { wave: 1 } };
   // The real contract (seq23/search-loop @v1 README; adopter seq23/sprylabs-hpc-site, 1 Nov 2026).
   const CALLER = "on:\n  schedule:\n    - cron: \"41 11 * * *\"\n  workflow_dispatch:\njobs:\n  search-loop:\n    uses: seq23/search-loop/.github/workflows/search-loop.yml@v1\n    with:\n      engine_ref: v1\n";
-  const CONFIG = (over: any = {}) => JSON.stringify({ schema: "search-loop-config-v1", site: "approvalprep.com", base_url: "https://approvalprep.com", site_name: "ApprovalPrep", action: { label: "Start", url: "https://approvalprep.com/checkout/" }, pace: { start_per_day: 10, step_per_week: 5, cap: 30 }, menu_pages_need_approval: false, health_gate: "none", ...over });
-  const week = (over: any = {}) => ({ schema: "search-loop-week-v1", site: "approvalprep.com", generated_at: "2026-11-02T12:00:00Z", state: "running", published: 21, indexed: 38, pace: 15, ai_visitors: 4, ai_bot_hits: 90, conversions: 2, wins: 2, undone: 1, merged: 0, notes: [], run_url: "x", ...over });
+  const CONFIG = (over: any = {}) => JSON.stringify({ schema: "search-loop-config-v1", site: "approvalprep.com", base_url: "https://approvalprep.com", site_name: "ApprovalPrep", action: { label: "Start", url: "https://approvalprep.com/checkout/" }, cap: { start_pages: 20, max_per_day: 10 }, menu_pages_need_approval: false, health_gate: "none", ...over });
+  const week = (over: any = {}) => ({ schema: "search-loop-week-v1", site: "approvalprep.com", generated_at: "2026-11-02T12:00:00Z", state: "running", published: 21, indexed: 38, pace: 10, ai_visitors: 4, ai_bot_hits: 90, conversions: 2, wins: 2, undone: 1, merged: 0, held_by_cap: 2, redirected: [{ query: "approval letter template", strengthen: "https://approvalprep.com/letter-of-explanation/" }], cap: { max_live_pages: 24, live: 22, room: 2, why: "impressions rose 18% (28 days against the 28 before): +10%" }, notes: [], run_url: "x", ...over });
   const repo = (o: any = {}) => {
     const files: Record<string, string> = { "search-loop.config.json": CONFIG(), ...(o.files ?? {}) };
     for (const k of Object.keys(files)) if (files[k] === null) delete files[k];
@@ -939,12 +939,23 @@ describe("F · the search growth loop on every selling site (owner, 1 Nov 2026)"
     expect(run("loop_discovery_weekly", { workflows: [] }).status).toBe("fail");
   });
 
-  it("f8: the pace sits inside 1 to 30 and comes with an indexed count; the config cap is pace.cap", () => {
-    expect(run("loop_pace").status).toBe("pass");
-    expect(run("loop_pace", { weeks: [week({ pace: 45 })] }).status).toBe("fail");
-    expect(run("loop_pace", { weeks: [week({ pace: 0 })] }).status).toBe("fail");
-    expect(run("loop_pace", { weeks: [week({ indexed: "not read: no GSC key" })] }).status).toBe("fail");
-    expect(run("loop_pace", { files: { "search-loop.config.json": CONFIG({ pace: { cap: 50 } }) } }).status).toBe("fail");
+  it("f8: publishing is held to a cap that grows with results; same-intent searches strengthen an existing page", () => {
+    const ok = run("loop_pace");
+    expect(ok.status).toBe("pass");
+    expect(ok.detail).toMatch(/cap 24 live pages .*impressions rose.*2 held back, 1 sent to strengthen/);
+    // An engine older than v1.3.0 (no cap, no held count, no redirect list) is never a pass.
+    expect(run("loop_pace", { weeks: [week({ cap: undefined })] }).status).toBe("fail");
+    expect(run("loop_pace", { weeks: [week({ held_by_cap: undefined })] }).status).toBe("fail");
+    expect(run("loop_pace", { weeks: [week({ redirected: undefined })] }).status).toBe("fail");
+    // A cap with no reason, under the floor of 10, or a redirect with no existing page.
+    expect(run("loop_pace", { weeks: [week({ cap: { max_live_pages: 24, why: "" } })] }).status).toBe("fail");
+    expect(run("loop_pace", { weeks: [week({ cap: { max_live_pages: 5, why: "x" } })] }).status).toBe("fail");
+    expect(run("loop_pace", { weeks: [week({ redirected: [{ query: "x", strengthen: null }] })] }).status).toBe("fail");
+    // The run guard never grows past 10 a day.
+    expect(run("loop_pace", { files: { "search-loop.config.json": CONFIG({ cap: { max_per_day: 30 } }) } }).status).toBe("fail");
+    expect(run("loop_pace", { files: { "search-loop.config.json": CONFIG({ cap: { max_per_day: 10 } }) } }).status).toBe("pass");
+    // No report this week stays a named failure, never a pass (Rule 0).
+    expect(run("loop_pace", { weeks: [] }).status).toBe("fail");
   });
 
   it("f9: every sampled content page leads to the config's action.url", () => {

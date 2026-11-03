@@ -117,7 +117,18 @@ async function gsc(params, ctx) {
 async function gumroad(params, ctx) {
   const tok = need(ctx.env, "GUMROAD_ACCESS_TOKEN");
   const after = new Date(sinceMs(ctx.now, params.days)).toISOString().slice(0, 10);
-  let url = `https://api.gumroad.com/v2/sales?after=${after}`; let n = 0;
+  // `product` (a permalink) counts one product's sales: Gumroad's own product_id filter, the id looked
+  // up from the product list. An unknown permalink is a named stop, never "every product".
+  let productId = null;
+  if (params.product) {
+    const r = await ctx.fetch("https://api.gumroad.com/v2/products", { headers: { authorization: `Bearer ${tok}` } });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) throw new NamedStop("KEY_REFUSED", "Gumroad refused GUMROAD_ACCESS_TOKEN (401).");
+    if (!r.ok || !j.success) throw new NamedStop("GUMROAD_UNREADABLE", `Gumroad products did not load (${r.status}).`);
+    productId = (j.products ?? []).find((p) => [p.custom_permalink, p.permalink, p.id].includes(params.product))?.id ?? null;
+    if (!productId) throw new NamedStop("GUMROAD_NO_PRODUCT", `no Gumroad product is called ${params.product}.`);
+  }
+  let url = `https://api.gumroad.com/v2/sales?after=${after}${productId ? `&product_id=${encodeURIComponent(productId)}` : ""}`; let n = 0;
   for (let page = 0; url && page < 50; page++) {
     const r = await ctx.fetch(url, { headers: { authorization: `Bearer ${tok}` } });
     const j = await r.json().catch(() => ({}));
@@ -147,10 +158,14 @@ async function stripe(params, ctx) {
 
 async function airtable(params, ctx) {
   const tok = need(ctx.env, params.key);
-  const formula = `IS_AFTER(CREATED_TIME(), DATEADD(NOW(), -${Number(params.days)}, 'days'))`;
+  // `where` narrows the count (the site's leads in a table several sites share); `only_field` asks
+  // Airtable for one non-personal column, so no contact detail is even fetched to be counted.
+  const since = `IS_AFTER(CREATED_TIME(), DATEADD(NOW(), -${Number(params.days)}, 'days'))`;
+  const formula = params.where ? `AND(${since}, ${params.where})` : since;
   let n = 0; let offset = null;
   for (let page = 0; page < 50; page++) {
     const q = new URLSearchParams({ filterByFormula: formula, pageSize: "100", ...(offset ? { offset } : {}) });
+    if (params.only_field) q.append("fields[]", params.only_field);
     const r = await ctx.fetch(`https://api.airtable.com/v0/${params.base}/${encodeURIComponent(params.table)}?${q}`, { headers: { authorization: `Bearer ${tok}` } });
     const j = await r.json().catch(() => ({}));
     if (r.status === 401 || r.status === 403) throw new NamedStop("KEY_REFUSED", `Airtable refused ${params.key} for the lead table (${r.status}).`);

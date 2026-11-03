@@ -217,8 +217,9 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    ApprovalPrep, Dream Wedding, the Spry HPC sites; 2 Time-2-Read, heygetonmylevel; 3 Porch & Party and
    the client sites) is held to the loop's stages, each automatic and reaching only those sites
    (`flag:search_loop`): f2 new pages publish straight away under a quality gate (rewritten from
-   "frozen until the query has a number"), f7 low-competition searches found weekly at $0, f8 pace set
-   by indexing (10 a day, +5 a week, cap 30, halved on a drop), f9 every page ends in the site's one
+   "frozen until the query has a number"), f7 low-competition searches found weekly at $0, f8 new pages
+   under a per-site cap that grows only with Google impressions, a same-intent search strengthening the
+   existing page instead (engine v1.3.0, 3 Nov 2026), f9 every page ends in the site's one
    action, f10 the 2/4/8-week checks strengthen, undo or merge, f11 AI-referral visits and AI-bot reads
    measured, f12 the site runs the shared `seq23/search-loop` engine (a `search-loop.config.json` naming
    the site and its `one_action`, and a workflow that `uses:` the engine). The running stages read the
@@ -242,6 +243,16 @@ site. Pinned by `tests/searchReadiness.test.ts`, which reads this section:
    Red lines head "The grid repos" section and the checklist page; their briefs are `disposition:
    "weekly"`, worked once in the repair run's first round (`--plan` ONCE lines), never counted as
    workable. Pinned by `tests/searchOutcomes.test.ts` (the real WPP-llm August rows must go red).
+9. **Leads, not only visits (owner, 3 Nov 2026).** WPP-llm had Google clicks for months and zero
+   inquiries, unseen. Each of HER OWN sites (category side_business / own_business) names in sites.json
+   a `lead_source` where its one action is already counted (D1 count, Airtable lead table, Stripe or
+   Gumroad sales through the Scorecard's readers, Time-2-Read signups, or Cloudflare Web Analytics views
+   of the action's path), or `none` with what would track it (`site-leads.mjs`, read by
+   `scripts/ops/lib/site-leads-read.mjs`, counts only). Every Monday: "leads: N (was M)" for the last
+   28 days against the 28 before, "not tracked yet — …" or "not read: <reason>", never 0; red when
+   Google sent clicks and the action counted zero ("people come, nobody acts"). In latest.json, the
+   site's row on the checklist page and the Monday email. **Client sites are never read or reported.**
+   Pinned by `tests/siteLeads.test.ts`.
 
 ## Brains: one document per business, read first
 

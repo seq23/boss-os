@@ -238,7 +238,7 @@ describe("the Spry Labs weekly", () => {
   });
 
   describe("the search loop line (owner, 1 Nov 2026)", () => {
-    const week = (site: string, over: any = {}) => ({ schema: "search-loop-week-v1", site, generated_at: "2026-11-03T12:00:00Z", state: "running", published: 21, indexed: 38, pace: 10, ai_visitors: 4, ai_bot_hits: 90, conversions: 2, wins: 2, undone: 1, merged: 0, notes: [], run_url: "https://github.com/x", ...over });
+    const week = (site: string, over: any = {}) => ({ schema: "search-loop-week-v1", site, generated_at: "2026-11-03T12:00:00Z", state: "running", published: 21, indexed: 38, pace: 10, ai_visitors: 4, ai_bot_hits: 90, conversions: 2, wins: 2, undone: 1, merged: 0, held_by_cap: 2, redirected: [], cap: { max_live_pages: 20, live: 18, room: 2, why: "started at 20" }, notes: [], run_url: "https://github.com/x", ...over });
     const all = (v: any) => Object.fromEntries(SPRY_WEEKLY.search_loop.sites.flatMap((x: any) => x.repos).map((r: string) => [r, v]));
 
     it("her sites only: never a client site, never Porch & Party (not Spry Labs), every Spry Labs seller", () => {
@@ -251,21 +251,21 @@ describe("the Spry Labs weekly", () => {
       const loop = all({ weeks: [], adopted: false });
       loop["approvalprep"] = { weeks: [week("approvalprep.com")], adopted: true };
       const { section, late } = loopSection(loop, { now });
-      expect(section.items).toContain("ApprovalPrep: Published 21 pages · 38 indexed · 4 AI visitors · 2 sales · 2 wins, 1 undone.");
+      expect(section.items).toContain("ApprovalPrep: Published 21 pages · 38 indexed · 4 AI visitors · 2 sales · 2 wins, 1 undone · cap 20 pages, 2 waiting.");
       expect(late).toEqual([]);
     });
 
     it("several sites in one business add up, and a re-run never counts twice", () => {
       const loop = all({ weeks: [], adopted: false });
-      loop["local-guides-generator"] = { weeks: [week("uscisexam.com"), week("uscisexam.com", { generated_at: "2026-11-02T12:00:00Z", published: 99 }), week("dentistryguides.com", { published: 1, merged: 3 })], adopted: true };
+      loop["local-guides-generator"] = { weeks: [week("uscisexam.com"), week("uscisexam.com", { generated_at: "2026-11-02T12:00:00Z", published: 99 }), week("dentistryguides.com", { published: 1, merged: 3, redirected: [{ query: "q", strengthen: "https://dentistryguides.com/guides/x/" }] })], adopted: true };
       const { section } = loopSection(loop, { now });
-      expect(section.items).toContain("Industry Guides: Published 22 pages · 76 indexed · 8 AI visitors · 4 form fills · 4 wins, 2 undone, 3 merged (2 sites).");
+      expect(section.items).toContain("Industry Guides: Published 22 pages · 76 indexed · 8 AI visitors · 4 form fills · 4 wins, 2 undone, 3 merged · cap 40 pages, 4 waiting, 1 sent to existing pages (2 sites).");
     });
 
     it("rule 0: not adopted says not started yet; adopted with nothing fresh says it did not arrive; a missing number is not read, never 0", () => {
       const loop = all({ weeks: [], adopted: false });
       loop["dailystory"] = { weeks: [week("time-2-read.com", { generated_at: "2026-10-20T12:00:00Z" })], adopted: true };
-      loop["approvalprep"] = { weeks: [week("approvalprep.com", { ai_visitors: null, conversions: undefined })], adopted: true };
+      loop["approvalprep"] = { weeks: [week("approvalprep.com", { ai_visitors: null, conversions: undefined, cap: undefined })], adopted: true };
       const { section, late } = loopSection(loop, { now });
       expect(section.items).toContain("Dream Wedding: not started yet.");
       expect(section.items).toContain("Time-2-Read: this week's report did not arrive. The team checks why.");
@@ -273,6 +273,7 @@ describe("the Spry Labs weekly", () => {
       const ap = section.items.find((i: string) => i.startsWith("ApprovalPrep"))!;
       expect(ap).toMatch(/AI visitors not read/);
       expect(ap).toMatch(/sales not read/);
+      expect(ap).toMatch(/the page cap not read/);
       expect(ap).not.toMatch(/\b0 (AI|sales)/);
     });
   });

@@ -24,6 +24,7 @@
  * them, and the repair run works each brief once a week (disposition "weekly", `--plan` ONCE lines).
  */
 import { mayAutoFix } from "../siteAudit/repoPolicy.mjs";
+import { isOwnSite, leadRedLine } from "./site-leads.mjs";
 
 export const OUTCOME = Object.freeze({
   WINDOW_DAYS: 28,
@@ -106,6 +107,9 @@ export function redLines(siteResults) {
     const d = s.site?.domain ?? s.host;
     if (s.outcome?.status === "red") out.push({ domain: d, kind: "outcome", line: `${d}: ${s.outcome.reasons.map((r) => r.text).join("; ")}. Danielle is looking into why.` });
     if (s.quality?.red) out.push({ domain: d, kind: "quality", line: `${d}: ${s.quality.line}` });
+    // Leads (3 Nov 2026): clicks but nobody used the one action. Her own sites only.
+    const lead = isOwnSite(s.site) ? leadRedLine(s.site, s.leads) : null;
+    if (lead) out.push({ domain: d, kind: "leads", line: lead });
   }
   const outcomes = all.filter((s) => s.outcome);
   if (outcomes.length && outcomes.every((s) => s.outcome.status === "not_read")) {
