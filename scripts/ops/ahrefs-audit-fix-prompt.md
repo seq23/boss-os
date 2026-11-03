@@ -165,9 +165,9 @@ Billionairehighperformancecoach → `sprylabs-hpc-site`.
 
 - `disposition: "client_draft"` (horselegalguide.com, sites.json `client_approval`): work the brief, but
   NOTHING goes live until the Horse owners approve it in the repo's own approval queue (`/admin/`,
-  RUNBOOK.md). New content goes in as a draft awaiting approval; a change to a live page or template is
-  a draft too, or an open PR labelled for client approval that you never merge. Record it as drafted,
-  not fixed.
+  RUNBOOK.md), the ONLY approval route there. New content, and every change to a live page or
+  template, goes in as an item in that /admin/ queue awaiting approval; never a PR to be held open,
+  never a merge that changes the live site. Record it as drafted, not fixed.
 - `disposition: "owner_approval"` (hicksconsulting.org, sites.json `owner_approval`): never worked. It
   waits for Sequoia's yes on the fix plan in Decide; the next run's briefs come back as ordinary work.
 
