@@ -352,7 +352,16 @@ records the queue file and the brief ids it handed you, and the reporter sends t
 
 ---
 
-## 6. Finish with the sentinel
+## 6. Clean up and finish with the sentinel
+
+After pushing each finished repository's work, leave its worktree (`cd` elsewhere), then run:
+
+```sh
+bash ~/GitHub/boss-os/scripts/ops/audit-worktree.sh --prune-only <repo>
+```
+
+This fetches origin and removes only clean audit worktrees whose commits are all on origin,
+along with their audit branches. Dirty worktrees and unpushed commits are kept and reported.
 
 Print this as the last line, exactly:
 
