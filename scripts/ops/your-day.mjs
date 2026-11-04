@@ -654,13 +654,18 @@ export function buildDay(data, now = Date.now()) {
     if (problems.length) dropped.push(`${where}: ${problems.join("; ")}`);
     return problems.length === 0;
   };
+  const quiet = data.quietPeople ?? [];
+  const isQuiet = (d) => quiet.some((r) =>
+    [`lp:${r.id}`, `lp-again:${r.id}`, `lpnudge:${r.id}`, `lp:${r.address}`, `lp-again:${r.address}`, `lpnudge:${r.address}`].includes(d.key) ||
+    (r.name && String(d.title ?? "").toLowerCase().includes(r.name.toLowerCase())) ||
+    (r.address && JSON.stringify(d).toLowerCase().includes(r.address.toLowerCase())));
   const m = {};
   for (const [name, sec] of Object.entries(data.morning ?? {})) {
     m[name] = {
       ...sec,
-      decide: (sec.decide ?? []).filter((d, i) => passes(`${name} decide ${i + 1}`, d.title, d.body, ...(d.details ?? []), ...(d.buttons ?? []).map((b) => b.label))),
-      rows: (sec.rows ?? []).filter((r, i) => passes(`${name} row ${i + 1}`, r.company, r.side, r.size, r.price, r.from)),
-      lines: (sec.lines ?? []).filter((l, i) => passes(`${name} line ${i + 1}`, typeof l === "string" ? l : l.text)),
+      decide: (sec.decide ?? []).filter((d, i) => !isQuiet(d) && passes(`${name} decide ${i + 1}`, d.title, d.body, ...(d.details ?? []), ...(d.buttons ?? []).map((b) => b.label))),
+      rows: (sec.rows ?? []).filter((r, i) => !isQuiet(r) && passes(`${name} row ${i + 1}`, r.company, r.side, r.size, r.price, r.from)),
+      lines: (sec.lines ?? []).filter((l, i) => !isQuiet(typeof l === "string" ? { title: l } : { ...l, title: l.text }) && passes(`${name} line ${i + 1}`, typeof l === "string" ? l : l.text)),
     };
   }
   const used = new Set();
@@ -680,6 +685,8 @@ export function buildDay(data, now = Date.now()) {
   const staleTemplate = (d) => livePending !== null && String(d.key ?? "").startsWith("prospect-template:") && String(d.key).slice("prospect-template:".length) !== livePending;
   for (const [name, sec] of Object.entries(m)) if (name !== "catchups") for (const d of sec.decide ?? []) if (!staleTemplate(d)) decideRaw.push({ priority: 0, from: name, ...d });
   decideRaw.push(...prospectDecisions(data.prospects ?? null, new Set(decideRaw.map((d) => d.key).filter(Boolean)), now));
+  for (let i = decideRaw.length - 1; i >= 0; i--) if (isQuiet(decideRaw[i])) decideRaw.splice(i, 1);
+  data = { ...data, carried: (data.carried ?? []).filter((d) => !isQuiet(d)) };
   decideRaw.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   /*
    * EVERY DECIDE CARD SAYS HOW TO ANSWER IT BY REPLY (owner, 25 Oct 2026): its number in this email.
@@ -965,6 +972,7 @@ async function read(api, now) {
   const practiceWeek = await api.get("/spirit/practice-week").catch(() => null);
   const waiting = await api.get("/waiting-on").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the waiting-on register not read (${e.message})`); return []; });
   // Every unanswered Decide item from earlier mornings (Today v4: they never drop off), with one-tap send.
+  const quietPeople = await api.get("/lp/replies").then((d) => (d.rows ?? []).filter((r) => r.quiet));
   const carried = await api.get("/practice/waiting").then((d) => d?.items ?? []).catch((e) => { console.error(`your-day: the carried decisions not read (${e.message})`); return []; });
   const commentWatch = await api.get("/comment-watch-items").then((d) => d?.digests ?? []).catch((e) => { console.error(`your-day: comment digests not read (${e.message})`); return []; });
   // Brains (31 Oct 2026): Monday's one-line check and, on the 1st, the scoreboard grid.
@@ -980,7 +988,7 @@ async function read(api, now) {
   // A section expected today that did not report in is said in one line and repaired (rule 0).
   const reported = sectionsNotReported(sections, { weekday: parts(now).weekday, now });
   for (const m of reported.missing) console.error(`your-day: morning section not reported in — ${m.name}`);
-  return { brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
+  return { quietPeople, brainsCheck, t2rGroups, scoreboard, diary: diary?.rows ?? null, tasks: withDue, approvals, repoChanges: rc?.items ?? [], briefing: briefingOf(today), law: lawOf(today), bounceFixes, commentWatch, prospects, spirit, practiceWeek, settings, waiting, carried, morning: reported.sections, notReported: reported.missing };
 }
 
 async function feedOf(range) {

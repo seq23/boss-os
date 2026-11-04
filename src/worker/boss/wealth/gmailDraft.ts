@@ -104,6 +104,7 @@ export async function mintComposeToken(
   mailbox: string,
   fetchImpl: typeof fetch,
   now = Date.now(),
+  retry = true,
 ): Promise<{ ok: true; token: string } | { ok: false; status: number; detail: string }> {
   const iat = Math.floor(now / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -136,6 +137,13 @@ export async function mintComposeToken(
     const token = (JSON.parse(text) as { access_token?: string }).access_token;
     if (!token) return { ok: false, status: res.status, detail: "token response carried no access_token" };
     return { ok: true, token };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      // Only sign-in is retried: no Gmail send has happened yet.
+      if (retry) return mintComposeToken(creds, mailbox, fetchImpl, now, false);
+      return { ok: false, status: 504, detail: "Google sign-in timed out; the draft was not sent" };
+    }
+    return { ok: false, status: 503, detail: "Google sign-in could not be reached; the draft was not sent" };
   } finally {
     clearTimeout(timer);
   }

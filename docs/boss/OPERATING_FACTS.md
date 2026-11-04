@@ -84,3 +84,16 @@ they live in the repo, not only in someone's memory. Non-confidential. `STATUS.m
 ## Version naming
 - It is v21. v20 Phases 0–23 and v20.1 Batches 1–10 are two numbering systems ("phase 2, the local
   model" is Batch 2, deferred indefinitely, never raised). Read `STATUS.md` first.
+
+
+### Per-person no notices (4 Nov 2026)
+`quiet_people.address` is the case-insensitive private runtime list. Migration 0336 seeds it by
+looking up the owner-named LP in D1, without copying an address into source. `listLpRows` projects
+`quiet` into the API; waiting carry-over, LP Decide/nudges, the LP morning producer and the final
+morning assembly honour it, including stale section files. Records and manual reply authority stay.
+
+### Google sign-in timeout (4 Nov 2026)
+`mintComposeToken` previously let its ten-second AbortError escape into a 500 on Today sends.
+It now retries sign-in once (before any Gmail send), then returns a structured failure that the
+held-reply path records. The send itself is never blindly retried. This reproduces the reported
+error in a test; production traces for the two reported requests were not available locally.

@@ -30,6 +30,7 @@ const MORNING_DIR = process.env.BOSS_OS_MORNING_DIR ?? morningDir();
 
 /** The morning section, per the shared interface: {decide, rows, lines}. Pure, so it is tested. */
 export function lpMorning(rows, now = Date.now()) {
+  rows = rows.filter((r) => !r.quiet);
   const decide = [...lpDecideItems(rows, now), ...lpNudgeItems(rows, now)];
   // THE TRACKER, BY NAME (owner, 24 Oct 2026: "2 drafted, 5 sent, 1 they replied again" — name them).
   // The held replies and the ones who wrote back are decisions above; this line says who is where.

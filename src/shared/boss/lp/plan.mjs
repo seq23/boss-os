@@ -113,7 +113,7 @@ export function lpNudgeBody({ name, bucket }) {
 export function lpNudgeItems(rows, now = Date.now()) {
   return (rows ?? [])
     // Shown for one week from day 7, then dropped: one nudge offered once, never a nag.
-    .filter((r) => { const d = daysSince(r.sent_at, now) ?? 0; return r.status === "sent" && !r.nudged_at && d >= LP_NUDGE_DAYS && d < 2 * LP_NUDGE_DAYS; })
+    .filter((r) => { const d = daysSince(r.sent_at, now) ?? 0; return !r.quiet && r.status === "sent" && !r.nudged_at && d >= LP_NUDGE_DAYS && d < 2 * LP_NUDGE_DAYS; })
     .map((r) => ({
       key: `lpnudge:${r.id ?? r.address}`,
       title: `No answer in ${daysSince(r.sent_at, now)} days: nudge ${r.name || "an LP"}${r.firm ? ` at ${r.firm}` : ""}?`,
@@ -178,7 +178,7 @@ export function lpWho(r) {
  * sends nothing the email did not show.
  */
 export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
-  const held = (rows ?? []).filter((r) => r.status === "drafted" && r.tap_token);
+  const held = (rows ?? []).filter((r) => !r.quiet && r.status === "drafted" && r.tap_token);
   const aged = held.map((r) => ({ r, days: daysSince(r.drafted_at, now) ?? 0 }))
     .sort((a, b) => b.days - a.days);
   const items = aged.map(({ r, days }) => {
@@ -210,7 +210,7 @@ export function lpDecideItems(rows, now = Date.now(), origin = ORIGIN) {
   });
   // Someone who wrote back after her reply: answering is hers (it goes in her name), so it is a
   // decision with their words and the thread, never a "done" line.
-  for (const r of (rows ?? []).filter((x) => x.status === "replied_again")) {
+  for (const r of (rows ?? []).filter((x) => !x.quiet && x.status === "replied_again")) {
     const said0 = r.last_reply_text || r.said || r.quote;
     const said = trimEnd(said0);
     // A reply to their new message held in the thread (Today v4): shown word for word, one tap sends it.

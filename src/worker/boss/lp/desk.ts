@@ -155,7 +155,7 @@ export async function upsertLpRows(db: D1Database, rows: LpRowIn[], now = Date.n
 }
 
 export async function listLpRows(db: D1Database): Promise<any[]> {
-  const rows = await db.prepare(`SELECT * FROM lp_reply_drafts ORDER BY first_seen ASC`).all<any>();
+  const rows = await db.prepare(`SELECT l.*, EXISTS(SELECT 1 FROM quiet_people q WHERE q.address = lower(trim(l.address))) AS quiet FROM lp_reply_drafts l ORDER BY first_seen ASC`).all<any>();
   return rows.results ?? [];
 }
 
